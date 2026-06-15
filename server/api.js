@@ -17,6 +17,8 @@ import * as Modules from './services/modules.js';
 import * as AppSettings from './services/settings.js';
 import * as BookMenu from './services/bookMenu.js';
 import * as Shifts from './services/shifts.js';
+import * as History from './services/history.js';
+import * as Misa from './services/misa.js';
 import { emit } from './realtime.js';
 
 export const api = Router();
@@ -54,8 +56,28 @@ api.get('/settings/users/:id/permissions', guard('settings.manage'), wrap((req) 
 api.post('/settings/users/:id/permissions', guard('settings.manage'), wrap((req) => Auth.setUserPerms(req.params.id, req.body.perms)));
 api.get('/settings/app', guard('settings.manage'), wrap(() => AppSettings.getSettings()));
 api.post('/settings/app', guard('settings.manage'), wrap((req) => AppSettings.updateSettings(req.body)));
+api.post('/templates/auto-save', guard('settings.manage'), wrap((req) => AppSettings.autoSaveTemplate(req.body)));
 api.get('/settings/integrations', guard('settings.manage'), wrap(() => AppSettings.getIntegrations()));
 api.post('/settings/integrations', guard('settings.manage'), wrap((req) => AppSettings.updateIntegrations(req.body)));
+// Test a single integration channel. MISA does a real auth call when live;
+// delivery channels return the webhook URL to paste into the partner portal.
+api.post('/settings/integrations/:channel/test', guard('settings.manage'), wrap(async (req) => {
+  const channel = req.params.channel;
+  const cfg = AppSettings.getIntegrations().channels?.[channel];
+  if (!cfg) throw new Error('Kênh không hợp lệ: ' + channel);
+  const base = `${req.protocol}://${req.get('host')}`;
+  if (channel === 'misa') return { channel, ...(await Misa.testConnection(cfg)) };
+  // Delivery / website channels: orders arrive at our webhook → Kênh online module.
+  const webhookUrl = `${base}/api/online/webhook`;
+  if (!cfg.enabled) return { channel, ok: false, mode: 'disabled', message: 'Kênh đang tắt. Bật để xuất hiện trong module Kênh online.', webhookUrl };
+  const haveCreds = !!(cfg.clientId && cfg.clientSecret) || !!cfg.apiKey;
+  return {
+    channel, ok: true, mode: haveCreds ? 'ready' : 'partial', webhookUrl,
+    message: haveCreds
+      ? `Đã bật. Dán Webhook URL này vào cổng đối tác để đẩy đơn về "Kênh online". Đẩy đơn realtime cần đối tác bật API cho cửa hàng (B2B onboarding).`
+      : `Đã bật nhưng chưa có Client ID/Secret. Đơn vẫn nhận được qua Webhook URL, nhưng đồng bộ menu/tồn kho 2 chiều cần khai báo credential từ cổng đối tác.`,
+  };
+}));
 api.get('/operations/config', wrap(() => AppSettings.getOperationsConfig()));
 api.get('/book-menu', wrap(() => BookMenu.getPublicBookConfig()));
 api.get('/settings/book-menu', guard('settings.manage'), wrap(() => BookMenu.getBookConfig()));
@@ -183,6 +205,8 @@ api.post('/tables/:id/merge', guard('sell'), wrap((req) => Orders.mergeTables(re
 // --- Orders ---
 api.post('/orders', wrap((req) => Orders.createOrUpdateOrder(req.body)));
 api.get('/orders/pending-confirmation', guard('sell'), wrap(() => Orders.listPendingConfirmations()));
+api.get('/orders/history', guard('pay'), wrap((req) => History.listOrderHistory('br1', req.query)));
+api.get('/orders/:id/receipt', guard('pay'), wrap((req) => History.orderReceipt(req.params.id)));
 api.get('/orders/:id', wrap((req) => Orders.getOrder(req.params.id)));
 api.post('/orders/:id/confirm', guard('sell'), wrap((req) => Orders.confirmPendingItems(req.params.id, req.body.item_ids)));
 api.post('/orders/:id/reject', guard('sell'), wrap((req) => Orders.rejectPendingItems(req.params.id, req.body.item_ids, req.body.reason)));
@@ -201,7 +225,8 @@ api.post('/calls/:table_id/resolve', wrap((req) => { Orders.resolveStaffCall(req
 // --- Payments ---
 api.post('/orders/:id/request-payment', wrap((req) => { Pay.requestPayment(req.body.table_id); return { ok: true }; }));
 api.post('/tables/:id/request-payment', wrap((req) => { Pay.requestPayment(req.params.id); return { ok: true }; }));
-api.post('/orders/:id/pay', guard('pay'), wrap((req) => Pay.payOrder(req.params.id, req.body.lines, { discount: req.body.discount })));
+api.post('/orders/:id/customer-qr-pay', wrap((req) => Pay.customerQrPay(req.params.id, req.body || {})));
+api.post('/orders/:id/pay', guard('pay'), wrap((req) => Pay.payOrder(req.params.id, req.body.lines, { discount: req.body.discount, cashier: req.user?.name || req.user?.username || '' })));
 api.get('/shifts/current', guard('pay'), wrap(() => Shifts.currentShift()));
 api.post('/shifts/open', guard('pay'), wrap((req) => Shifts.openShift(req.body, req.user)));
 api.post('/shifts/close', guard('pay'), wrap((req) => Shifts.closeShift(req.body, req.user)));
@@ -235,7 +260,7 @@ api.get('/vouchers/active', wrap(() => Vouchers.listActiveVouchers()));
 api.post('/vouchers', guard('discount'), wrap((req) => Vouchers.createVoucher(req.body)));
 api.post('/vouchers/:id/update', guard('discount'), wrap((req) => Vouchers.updateVoucher(req.params.id, req.body)));
 api.post('/vouchers/:id/toggle', guard('discount'), wrap((req) => Vouchers.toggleVoucher(req.params.id, req.body.active)));
-api.post('/retail/checkout', guard('pay'), wrap((req) => Retail.checkout(req.body)));
+api.post('/retail/checkout', guard('pay'), wrap((req) => Retail.checkout({ ...req.body, cashier: req.user?.name || req.user?.username || '' })));
 api.get('/retail/sales', wrap(() => Retail.listRetailSales()));
 api.post('/retail/:id/refund', guard('refund'), wrap((req) => Retail.refund(req.params.id, req.body.reason)));
 

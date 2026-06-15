@@ -6,13 +6,16 @@
 <link rel="stylesheet" href="/shared/app.css">
 <script src="/socket.io/socket.io.js"></script>
 <style>
-.onwrap{display:grid;grid-template-columns:1fr 360px;gap:16px;align-items:start}
-@media(max-width:980px){.onwrap{grid-template-columns:1fr}}
+.onwrap{display:grid;grid-template-columns:minmax(320px,430px) minmax(420px,1fr) 360px;gap:16px;align-items:start}
+@media(max-width:1280px){.onwrap{grid-template-columns:minmax(300px,390px) 1fr}.simcol{grid-column:1/-1}}
+@media(max-width:880px){.onwrap{grid-template-columns:1fr}.simcol{grid-column:auto}}
 .ocol{display:flex;flex-direction:column;gap:12px}
 .ocard{background:var(--surface);border:1px solid var(--border);border-radius:13px;overflow:hidden}
+.ocard.order-card{cursor:pointer;transition:.14s}
+.ocard.order-card:hover,.ocard.order-card.sel{border-color:var(--brand);box-shadow:0 10px 24px rgba(8,145,178,.12);transform:translateY(-1px)}
 .ocard .oh{padding:11px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:9px}
 .chbadge{font-size:11px;font-weight:800;padding:3px 9px;border-radius:7px;letter-spacing:.3px}
-.ch-grabfood{background:#00b14f22;color:#3fe08f}.ch-shopeefood{background:#ee4d2d22;color:#ff8f70}.ch-website{background:var(--brand-dim);color:var(--brand)}
+.ch-grabfood,.ch-grabmerchant{background:#00b14f22;color:#10b981}.ch-shopeefood{background:#ee4d2d22;color:#ef6b4b}.ch-befood{background:#2563eb18;color:#2563eb}.ch-grabmart{background:#00b14f18;color:#059669}.ch-website{background:var(--brand-dim);color:var(--brand)}
 .ocard .ref{font-family:var(--mono);font-size:12px;color:var(--muted)}
 .ocard .amt{margin-left:auto;font-family:var(--mono);color:var(--brand);font-weight:700}
 .ob{padding:11px 14px}
@@ -30,6 +33,27 @@
 .seg{display:flex;gap:6px;margin-bottom:10px}
 .seg button{flex:1;padding:9px;border-radius:9px;background:var(--surface2);border:1px solid var(--border2);color:var(--muted);font-weight:700;font-size:12px}
 .seg button.on{background:var(--brand-dim);border-color:var(--brand);color:var(--brand)}
+.permitem{display:flex;align-items:flex-start;gap:8px;background:var(--surface2);border:1px solid var(--border);border-radius:9px;padding:8px 10px;font-size:12px;color:var(--text)}
+.permitem input{margin-top:2px}
+.odetail{background:var(--surface);border:1px solid var(--border);border-radius:16px;overflow:hidden;min-height:520px}
+.odetail-top{padding:18px 20px;border-bottom:1px solid var(--border);display:flex;align-items:flex-start;gap:12px}
+.odetail-top h2{font-size:22px;line-height:1.15;margin-bottom:5px}
+.odetail-top .back{font-size:22px;color:var(--muted)}
+.odetail-actions{margin-left:auto;display:flex;gap:9px;color:var(--muted);font-size:18px}
+.delivery-ok{display:flex;gap:10px;align-items:flex-start;background:#edf9f3;border-bottom:1px solid #d9efe3;color:#375a4a;padding:13px 20px;font-size:13px}
+.delivery-ok b{display:block;color:#1f3a2f}
+.odsec{padding:14px 20px;border-bottom:1px solid var(--border)}
+.kv{display:grid;grid-template-columns:120px 1fr;gap:12px;color:var(--muted);font-size:13px}
+.kv b{color:var(--text);font-weight:700}
+.copy{border:0;background:var(--surface2);border-radius:7px;padding:3px 6px;color:var(--muted)}
+.info-strip{padding:11px 20px;background:#eef8fb;border-bottom:1px solid #d7edf5;color:#53677b;font-size:13px;display:flex;gap:8px}
+.lineitem{display:grid;grid-template-columns:1fr auto;gap:14px;padding:11px 0;border-bottom:1px solid var(--border);font-size:14px}
+.lineitem:last-child{border-bottom:0}
+.lineitem .name{font-weight:700}.lineitem .subline{color:var(--muted);font-size:12.5px;margin-top:4px}.lineitem .price{font-family:var(--mono);font-weight:700}
+.promo{color:#229653}.promo .price{color:#229653}
+.totals .row{display:grid;grid-template-columns:1fr auto;gap:14px;padding:8px 0;color:var(--muted)}
+.totals .row strong{font-size:20px;color:var(--text)}.totals .row .amt{font-family:var(--mono);font-weight:800;color:var(--text)}
+.incident{padding:15px 20px;display:flex;justify-content:space-between;align-items:center;font-weight:700;color:var(--muted)}
 </style></head>
 <body>
 <div id="top"></div>
@@ -41,12 +65,14 @@
   </div>
   <div class="onwrap">
     <div class="ocol" id="orders"></div>
-    <div class="ocard">
+    <div class="odetail" id="orderDetail"></div>
+    <div class="ocard simcol">
       <div class="oh"><b>🧪 Webhook Simulator</b></div>
       <div class="ob">
         <div class="sub" style="font-size:11.5px;color:var(--muted);margin-bottom:9px">Giả lập kênh online đẩy đơn vào (giống Grab/Shopee gọi API webhook thật).</div>
         <div class="seg" id="chSeg"></div>
         <input type="text" id="cust" placeholder="Tên khách (tuỳ chọn)" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:9px;color:var(--text);padding:9px 11px;font-size:13px;margin-bottom:10px">
+        <label class="permitem" style="margin:0 0 10px"><input type="checkbox" id="noUtensils"><span>Khách không cần dụng cụ ăn uống nhựa</span></label>
         <div style="max-height:230px;overflow-y:auto" id="simMenu"></div>
         <div class="basket" id="basket"><div class="empty" style="padding:8px">Thêm món để tạo đơn</div></div>
         <button class="btn primary" id="send" style="width:100%;padding:11px">📨 Gửi đơn online</button>
@@ -62,7 +88,8 @@ await requireModuleAccess('online'); renderUserChip();
 
 const FLOW=['received','confirmed','preparing','ready','completed'];
 const FLOW_LABEL={received:'Đã nhận',confirmed:'Xác nhận',preparing:'Đang làm',ready:'Sẵn sàng',completed:'Hoàn tất'};
-let orders=[], channels={}, menu=[], basket=[], channel='grabfood';
+const DETAIL_STATUS={received:'Đã nhận',confirmed:'Đã xác nhận',preparing:'Đang chuẩn bị',ready:'Sẵn sàng giao',completed:'Đã giao'};
+let orders=[], channels={}, menu=[], basket=[], channel='grabfood', selectedOrderId=null;
 
 connect('online', {
   'online:new':()=>load(), 'online:updated':()=>load(),
@@ -70,14 +97,16 @@ connect('online', {
 
 async function load(){
   orders=await api('/online/orders');
+  if(!orders.some(o=>o.id===selectedOrderId)) selectedOrderId=(orders.find(o=>o.online_status==='completed')||orders[0]||{}).id||null;
   document.getElementById('cnt').textContent=orders.length+' đơn';
   document.getElementById('orders').innerHTML = orders.length?orders.map(card).join(''):'<div class="empty">Chưa có đơn online. Dùng Simulator bên phải để tạo thử.</div>';
+  document.getElementById('orderDetail').innerHTML = detail(orders.find(o=>o.id===selectedOrderId));
   bindFlow();
 }
 function card(o){
   const ch=o.online_channel||'website';
   const idx=FLOW.indexOf(o.online_status||'received');
-  return `<div class="ocard">
+  return `<div class="ocard order-card ${o.id===selectedOrderId?'sel':''}" data-open-order="${o.id}">
     <div class="oh">
       <span class="chbadge ch-${ch}">${esc(o.channel_name||ch)}</span>
       <span class="ref">${esc(o.online_ref||'')}</span>
@@ -92,9 +121,62 @@ function card(o){
   </div>`;
 }
 function bindFlow(){
-  document.querySelectorAll('.step.next').forEach(b=>b.onclick=async()=>{
+  document.querySelectorAll('[data-open-order]').forEach(c=>c.onclick=()=>{selectedOrderId=c.dataset.openOrder;load();});
+  document.querySelectorAll('.step.next').forEach(b=>b.onclick=async(e)=>{
+    e.stopPropagation();
     try{ await api('/online/orders/'+b.dataset.id+'/status',{method:'POST',body:{status:b.dataset.s}}); }catch(e){toast(e.message,true);}
   });
+  document.querySelectorAll('[data-copy]').forEach(b=>b.onclick=e=>{e.stopPropagation();navigator.clipboard?.writeText(b.dataset.copy);toast('Đã copy mã đơn');});
+}
+function fmtDate(v){
+  const d=v?new Date(v):new Date();
+  if(Number.isNaN(+d)) return '';
+  return d.toLocaleString('vi-VN',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
+}
+function orderActiveItems(o){ return (o?.items||[]).filter(i=>i.status!=='cancelled'); }
+function itemMods(i){
+  if(Array.isArray(i.mods)) return i.mods.map(m=>m.name||m).filter(Boolean);
+  try{return JSON.parse(i.mods_json||'[]').map(m=>m.name||m).filter(Boolean);}catch{return [];}
+}
+function channelOrderCode(o){
+  const ref=(o?.online_ref||o?.id||'').replace(/[^a-z0-9]/gi,'').toUpperCase();
+  return ref ? `A-${ref.slice(-12)}` : '-';
+}
+function detail(o){
+  if(!o) return '<div class="empty" style="min-height:520px;justify-content:center">Chọn một đơn online để xem chi tiết</div>';
+  const items=orderActiveItems(o);
+  const subtotal=items.reduce((s,i)=>s+(Number(i.unit_price)||0)*(Number(i.qty)||1),0);
+  const discount=Math.max(0, Number(o.discount)||Math.max(0, subtotal-Number(o.total||0)));
+  const total=Number(o.total)||Math.max(0, subtotal-discount);
+  const paidAt=(o.payments||[])[0]?.created_at || o.paid_at || o.created_at;
+  const noTools=o.customer?.noUtensils || o.customer?.no_utensils || o.customer?.noPlastic;
+  const customerName=o.customer?.name ? esc(o.customer.name) : '***';
+  return `
+    <div class="odetail-top">
+      <span class="back">←</span>
+      <div><h2>${esc(DETAIL_STATUS[o.online_status]||'Đơn online')}</h2><div class="sub">${fmtDate(o.created_at)}</div></div>
+      <div class="odetail-actions"><span>🖨️</span><span>☎️</span><span>⋯</span></div>
+    </div>
+    ${o.online_status==='completed'?`<div class="delivery-ok"><span>✅</span><div><b>Đơn hàng được làm xong đúng giờ</b><span>Tiếp tục phát huy bạn nhé!</span></div></div>`:''}
+    <div class="odsec kv"><span>Mã đặt hàng</span><b>${esc(channelOrderCode(o))} <button class="copy" data-copy="${esc(channelOrderCode(o))}">⧉</button></b></div>
+    <div class="odsec"><b>${items.length} món cho ${customerName}</b> <span class="chip c-muted">Khách hàng mới</span></div>
+    ${noTools?`<div class="info-strip"><span>⛔</span><span>Không cần dụng cụ ăn uống nhựa</span></div>`:''}
+    <div class="odsec">
+      ${items.map(i=>{
+        const mods=itemMods(i);
+        return `<div class="lineitem">
+          <div><div class="name">${i.qty} × ${esc(i.name)}</div>${mods.length?`<div class="subline">Combo ăn kèm<br>${esc(mods.join(' + '))}</div>`:''}${i.note?`<div class="subline">Ghi chú: ${esc(i.note)}</div>`:''}</div>
+          <div class="price">${money((Number(i.unit_price)||0)*(Number(i.qty)||1))}</div>
+        </div>`;
+      }).join('')}
+    </div>
+    <div class="odsec totals">
+      <div class="row"><span>Tổng (tạm tính)<br><small>Bao gồm thuế GTGT theo cấu hình</small></span><span class="amt">${money(subtotal)}</span></div>
+      ${discount?`<div class="row promo"><span>Giảm giá<br><small>${esc(o.voucher_code||'Voucher / khuyến mãi')}</small></span><span class="amt">-${money(discount)}</span></div>`:''}
+      <div class="row"><strong>Tổng cộng</strong><strong class="amt">${money(total)}</strong></div>
+      <div class="row"><span>Thanh toán</span><span class="amt">${esc((o.payments||[])[0]?.reference||o.online_ref||'Online')} · ${fmtDate(paidAt)}</span></div>
+    </div>
+    <div class="incident"><span>Báo cáo sự cố</span><span>›</span></div>`;
 }
 
 // simulator
@@ -123,8 +205,8 @@ document.getElementById('send').onclick=async()=>{
   if(!basket.length) return toast('Thêm món trước',true);
   if(!channel) return toast('Chưa có kênh online được kết nối trong Setting',true);
   try{
-    await api('/online/webhook',{method:'POST',body:{channel,customer:{name:document.getElementById('cust').value.trim()},items:basket.map(b=>({menu_item_id:b.id,qty:b.qty}))}});
-    basket=[]; renderBasket(); document.getElementById('cust').value=''; toast('📨 Đã đẩy đơn online vào hệ thống');
+    await api('/online/webhook',{method:'POST',body:{channel,customer:{name:document.getElementById('cust').value.trim(),noUtensils:document.getElementById('noUtensils')?.checked},items:basket.map(b=>({menu_item_id:b.id,qty:b.qty}))}});
+    basket=[]; renderBasket(); document.getElementById('cust').value=''; if(document.getElementById('noUtensils')) document.getElementById('noUtensils').checked=false; toast('📨 Đã đẩy đơn online vào hệ thống');
   }catch(e){toast(e.message,true);}
 };
 

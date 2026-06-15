@@ -1,32 +1,58 @@
-// MISA e-invoice integration (mock issuance — same shape as a real MISA call).
-// Issues a VAT e-invoice for a paid bill, returns invoice number + lookup code.
+// MISA e-invoice integration.
+// Issues a VAT e-invoice for a paid bill. When the MISA integration is enabled
+// with production credentials, it calls the REAL MISA meInvoice API (see misa.js)
+// and stores the number/lookup code MISA returns. Otherwise it falls back to a
+// local mock number of the same shape so the demo/sandbox keeps working.
 import { db, uid, now, audit } from '../db.js';
 import { emit } from '../realtime.js';
 import { getOrder } from './orders.js';
+import { getIntegrations, getPrintConfig } from './settings.js';
+import * as Misa from './misa.js';
 
+// Số HĐ (Thuế): số thứ tự liên tục 8 chữ số theo từng ký hiệu hóa đơn (vd 00000001).
+// "Số Bill nội bộ" Dan{ddMMyy}{seq} nằm trên đơn (orders.bill_no), khác với số HĐ thuế.
 function nextInvoiceNo(branch_id) {
   const n = db.prepare(`SELECT COUNT(*) c FROM invoices WHERE branch_id=?`).get(branch_id).c + 1;
-  const yy = new Date().getFullYear().toString().slice(-2);
-  return `C${yy}MAA-${String(n).padStart(7, '0')}`;
+  return String(n).padStart(8, '0');
+}
+
+// Mã của cơ quan thuế (dạng GUID) — chỉ là mã tra cứu nội bộ khi chạy mock.
+function taxAuthorityCode() {
+  const hex = () => Math.floor(Math.random() * 16).toString(16).toUpperCase();
+  const block = (n) => Array.from({ length: n }, hex).join('');
+  return `${block(8)}-${block(4)}-${block(4)}-${block(4)}-${block(12)}`;
 }
 
 // customer: { name, tax_code, address, email }
-export function issue(order_id, customer = {}, branch_id = 'br1') {
+export async function issue(order_id, customer = {}, branch_id = 'br1') {
   const order = getOrder(order_id);
   if (!order) throw new Error('Đơn không tồn tại');
   if (order.status !== 'paid') throw new Error('Chỉ xuất hóa đơn cho bill đã thanh toán');
   const existing = db.prepare(`SELECT * FROM invoices WHERE order_id=? AND status!='cancelled'`).get(order_id);
   if (existing) throw new Error('Bill này đã có hóa đơn ' + existing.invoice_no);
 
+  // Try the real MISA meInvoice API when it's enabled in production with credentials.
+  const misaCfg = getIntegrations(branch_id).channels?.misa || {};
+  let provider = 'local', remote = null;
+  if (Misa.isLive(misaCfg)) {
+    try {
+      remote = await Misa.issueInvoice(order, customer, order.items || [], misaCfg);
+      provider = 'misa';
+    } catch (e) {
+      // Surface the real MISA error instead of silently faking a number.
+      throw new Error('MISA: ' + e.message);
+    }
+  }
+
   const id = uid('inv_');
-  const invoice_no = nextInvoiceNo(branch_id);
-  const lookup_code = (uid('') + uid('')).replace(/[^a-z0-9]/g, '').slice(0, 12).toUpperCase();
+  const invoice_no = remote?.invoice_no || nextInvoiceNo(branch_id);
+  const lookup_code = remote?.lookup_code || taxAuthorityCode();
   db.prepare(`INSERT INTO invoices (id,branch_id,order_id,invoice_no,lookup_code,status,customer_json,total,issued_at)
     VALUES (?,?,?,?,?,'issued',?,?,?)`).run(id, branch_id, order_id, invoice_no, lookup_code,
-    JSON.stringify(customer), order.total, now());
+    JSON.stringify({ ...customer, _provider: provider }), order.total, now());
   db.prepare(`UPDATE orders SET invoice_id=? WHERE id=?`).run(id, order_id);
-  audit('invoice.issue', { order: order_id, invoice_no }, branch_id);
-  const inv = get(id);
+  audit('invoice.issue', { order: order_id, invoice_no, provider }, branch_id);
+  const inv = { ...get(id), provider, lookup_url: remote?.lookup_url || get(id).lookup_url };
   emit('invoice:issued', inv, branch_id);
   return inv;
 }
@@ -34,7 +60,9 @@ export function issue(order_id, customer = {}, branch_id = 'br1') {
 export function get(id) {
   const i = db.prepare(`SELECT * FROM invoices WHERE id=?`).get(id);
   if (!i) return null;
+  const ein = getPrintConfig(i.branch_id).einvoice || {};
   return { ...i, customer: JSON.parse(i.customer_json || '{}'),
+    symbol: ein.series || '', tax_code_seller: ein.taxCode || '',
     lookup_url: `https://tracuu.example.vn/?code=${i.lookup_code}` };
 }
 

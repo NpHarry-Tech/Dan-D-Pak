@@ -373,6 +373,7 @@ export function migrate() {
   `);
 
   // Columns added after the first demo release.
+  addColumnIfMissing('orders', 'bill_no', 'TEXT');   // Số Bill nội bộ Dan{ddMMyy}{seq}, reset theo ngày
   addColumnIfMissing('order_items', 'sku_id', 'TEXT');
   addColumnIfMissing('order_items', 'lot_id', 'TEXT');
   addColumnIfMissing('order_items', 'promo_json', 'TEXT');

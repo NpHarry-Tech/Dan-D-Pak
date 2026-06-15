@@ -8,9 +8,10 @@ import { getOperationsConfig, getPrintConfig } from './settings.js';
 import { getActiveShift } from './shifts.js';
 
 const METHODS = ['cash', 'card', 'qr', 'voucher', 'bank_transfer', 'internet_banking', 'qrcode', 'momo', 'zalopay', 'visa', 'pos_card', 'online'];
+const CUSTOMER_QR_METHODS = ['qr', 'qrcode', 'internet_banking', 'momo', 'zalopay'];
 
 // lines: [{method, amount, reference}]
-export function payOrder(order_id, lines, { discount } = {}, branch_id = 'br1') {
+export function payOrder(order_id, lines, { discount, cashier } = {}, branch_id = 'br1') {
   const order = getOrder(order_id);
   if (!order) throw new Error('Order không tồn tại');
   if (order.status !== 'open') throw new Error('Order đã đóng');
@@ -50,7 +51,7 @@ export function payOrder(order_id, lines, { discount } = {}, branch_id = 'br1') 
     emit('table:updated', getTableState(order.table_id), branch_id);
   }
   audit('payment.done', { order: order_id, total: fresh.total, lines: lines.length, shift_id: shift?.id || null }, branch_id);
-  const receipt = buildReceipt(order_id, pid, lines, paid);
+  const receipt = buildReceipt(order_id, pid, lines, paid, { cashier });
   receipt.print_config = getPrintConfig(branch_id);
   printReceipt(receipt, branch_id);
   emit('payment:done', { order_id, receipt }, branch_id);
@@ -63,15 +64,47 @@ export function requestPayment(table_id, branch_id = 'br1') {
   emit('table:updated', getTableState(table_id), branch_id);
 }
 
-function buildReceipt(order_id, payment_id, lines, paid) {
+export function customerQrPay(order_id, { method = 'qrcode', reference = '' } = {}, branch_id = 'br1') {
+  const chosen = CUSTOMER_QR_METHODS.includes(method) ? method : 'qrcode';
+  const order = getOrder(order_id);
+  if (!order) throw new Error('Order khong ton tai');
+  if (order.status !== 'open') throw new Error('Order da dong');
+  const pending = order.items.filter(i => i.status === 'pending_confirm');
+  if (pending.length) throw new Error(`Con ${pending.length} dong mon dang cho nhan vien xac nhan`);
+  const ops = getOperationsConfig(branch_id);
+  const cfg = (ops.payment?.methods || []).find(m => m.key === chosen);
+  if (cfg && cfg.enabled === false) throw new Error('Phuong thuc thanh toan nay dang tat trong Cai dat');
+  const ref = String(reference || `${(ops.payment?.transferPrefix || 'DANBILL').replace(/\s+/g, '').toUpperCase()}-${order.bill_no || order_id.slice(-6).toUpperCase()}`).slice(0, 120);
+  return payOrder(order_id, [{ method: chosen, amount: order.total, reference: ref }], { cashier: 'Khach tu thanh toan QR' }, branch_id);
+}
+
+function buildReceipt(order_id, payment_id, lines, paid, { cashier = '' } = {}) {
   const order = getOrder(order_id);
   const branch = db.prepare(`SELECT name FROM branches WHERE id=?`).get(order.branch_id);
+  const printCfg = getPrintConfig(order.branch_id);
+  const cfg = printCfg.einvoice || {};
+  const billCfg = printCfg.bill || {};
   const change = Math.max(0, paid - order.total);
   return {
     payment_id, order_id, branch: branch?.name, table_code: order.table_code,
     items: order.items.filter(i => i.status !== 'cancelled'),
     subtotal: order.subtotal, discount: order.discount, total: order.total,
+    tax: {
+      price_includes_vat: cfg.priceIncludesVat !== '0',
+      vat_rate: cfg.defaultVatRate || '8',
+      standard_vat_rate: cfg.standardVatRate || '10',
+      legal_basis: cfg.legalBasis || '',
+      unit_policy: cfg.unitPolicy || 'required',
+      seller_tax_code: cfg.taxCode || billCfg.taxCode || '',
+      seller_company: cfg.company || billCfg.storeName || '',
+      seller_address: cfg.address || billCfg.address || '',
+      seller_phone: cfg.phone || billCfg.phone || '',
+      seller_email: cfg.email || billCfg.email || '',
+      invoice_series: cfg.series || 'C26TMB',
+    },
     voucher_id: order.voucher_id, voucher_code: order.voucher_code,
-    lines, paid, change, paid_at: order.paid_at, number: order_id.slice(-6).toUpperCase(),
+    lines, paid, change, paid_at: order.paid_at, number: order.bill_no || order_id.slice(-6).toUpperCase(),
+    bill_no: order.bill_no || order_id.slice(-6).toUpperCase(),
+    cashier,
   };
 }

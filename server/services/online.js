@@ -76,8 +76,11 @@ export function receive(payload, branch_id = 'br1') {
 function listOne(order_id) {
   const o = getOrder(order_id);
   if (!o) return null;
+  const payments = db.prepare(`SELECT pl.method,pl.amount,pl.reference,p.created_at
+    FROM payments p JOIN payment_lines pl ON pl.payment_id=p.id
+    WHERE p.order_id=? ORDER BY p.created_at ASC`).all(order_id);
   return { ...o, channel_name: CHANNELS[o.online_channel] || o.online_channel,
-    customer: JSON.parse(o.customer_json || '{}') };
+    customer: JSON.parse(o.customer_json || '{}'), payments };
 }
 
 export function listOnline(branch_id = 'br1', limit = 40) {

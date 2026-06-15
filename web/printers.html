@@ -25,9 +25,11 @@
 .paper .qr{width:58px;height:58px;margin:6px auto 2px;background:repeating-conic-gradient(#111 0 25%,#fdfdf8 0 50%) 0 0/11px 11px;border:3px solid #111}
 .paper .receipt-canvas-live{position:relative;width:100%;background:#fdfdf8;color:#111;aspect-ratio:var(--receipt-ratio,72/180);min-height:280px}
 .paper .label-canvas-live{position:relative;width:100%;background:#fff;color:#111;aspect-ratio:var(--label-ratio,50/30);min-height:120px;border:1px dashed #bbb}
-.paper .tpl-el{position:absolute;white-space:pre-wrap;overflow:hidden;line-height:1.12}
+.paper .tpl-el{position:absolute;white-space:pre-wrap;overflow:hidden;line-height:1.12;box-sizing:border-box}
 .paper .tpl-img img{width:100%;height:100%;object-fit:contain}
 .paper .tpl-line{border-top:1px dashed #777;height:0!important}
+.paper .tpl-qr{display:flex;align-items:center;justify-content:center}
+.paper .tpl-qr .qr{width:min(100%,64px);height:auto;aspect-ratio:1;margin:0}
 .paper .pact{display:flex;gap:7px;margin-top:9px}
 .paper .pact button{flex:1;font-size:11px;padding:5px;border-radius:6px;border:1px solid #ccc;background:#eee;color:#333;font-weight:600;font-family:var(--font)}
 .pempty{color:var(--faint);text-align:center;padding:40px 10px;font-size:12.5px}
@@ -59,15 +61,19 @@ let jobs = [], printConfig = {};
 const cfgKey=k=>`pos_erp_${k}_settings`;
 function readLocalCfg(k){ try{return JSON.parse(localStorage.getItem(cfgKey(k))||'null');}catch{return null;} }
 function hasLocalPrintCfg(){ return ['einvoice','labels','bill','printers','label_template','cup_label_template','bill_template'].some(k=>localStorage.getItem(cfgKey(k))); }
+function isLegacyBillTemplate(tpl){
+  return tpl?.standard==='bcm_fiscal_receipt' && (Number(tpl.version||0)<3 || Number(tpl.heightMm||0)>260);
+}
 function mergePrintConfig(remote={}){
   const r=remote||{};
   if(r.updated_at||!hasLocalPrintCfg()) return r;
+  const localBillTemplate=readLocalCfg('bill_template');
   const local={
     einvoice:readLocalCfg('einvoice')||{},
     labels:readLocalCfg('labels')||{},
     bill:readLocalCfg('bill')||{},
     printers:readLocalCfg('printers')||r.printers,
-    templates:{label:readLocalCfg('cup_label_template')||readLocalCfg('label_template')||r.templates?.label,bill:readLocalCfg('bill_template')||r.templates?.bill},
+    templates:{label:readLocalCfg('cup_label_template')||readLocalCfg('label_template')||r.templates?.label,bill:isLegacyBillTemplate(localBillTemplate)?r.templates?.bill:(localBillTemplate||r.templates?.bill)},
   };
   return {...r,einvoice:{...(r.einvoice||{}),...local.einvoice},labels:{...(r.labels||{}),...local.labels},bill:{...(r.bill||{}),...local.bill},printers:local.printers||r.printers,templates:{...(r.templates||{}),...local.templates}};
 }
@@ -111,15 +117,58 @@ function activeBillTemplate(r){ return activePrintConfig(r).templates?.bill || n
 function activeLabelTemplate(r){ return activePrintConfig(r).templates?.label || null; }
 function methodLabel(m){return {cash:'Tien mat',card:'May POS',qr:'QR',qrcode:'QR Code',voucher:'Voucher',bank_transfer:'Chuyen khoan',internet_banking:'Internet Banking',momo:'MoMo Pay',zalopay:'ZaloPay',visa:'Visa',pos_card:'May POS',online:'Online'}[m]||m;}
 function replaceVars(text, vars){ return String(text||'').replace(/\{(\w+)\}/g,(_,k)=>vars[k]??`{${k}}`); }
+function vndPlain(n){ return Math.round(Number(n)||0).toLocaleString('en-US'); }
+function pad2(n){ return String(n).padStart(2,'0'); }
+function receiptDate(d){ return `${pad2(d.getDate())}/${pad2(d.getMonth()+1)}/${d.getFullYear()}`; }
+function receiptTime(d){ return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`; }
+function internalBillNo(r,d){
+  if(r.bill_no && /^Dan\d{10}$/i.test(r.bill_no)) return r.bill_no;
+  const seed=String(r.order_id||r.number||'1');
+  let n=0; for(const ch of seed) n=(n*31+ch.charCodeAt(0))%10000;
+  return `Dan${pad2(d.getDate())}${pad2(d.getMonth()+1)}${String(d.getFullYear()).slice(-2)}${String(n||1).padStart(4,'0')}`;
+}
+function numberToVietnamese(n){
+  n=Math.round(Number(n)||0);
+  if(n===0) return 'Khong dong';
+  const digit=['khong','mot','hai','ba','bon','nam','sau','bay','tam','chin'], unit=['','nghin','trieu','ty'];
+  function triad(num, full=false){
+    const tr=Math.floor(num/100), ch=Math.floor((num%100)/10), dv=num%10, out=[];
+    if(tr>0||full) out.push(digit[tr]+' tram');
+    if(ch>1){ out.push(digit[ch]+' muoi'); if(dv===1) out.push('mot'); else if(dv===5) out.push('lam'); else if(dv) out.push(digit[dv]); }
+    else if(ch===1){ out.push('muoi'); if(dv===5) out.push('lam'); else if(dv) out.push(digit[dv]); }
+    else if(dv){ if(tr>0||full) out.push('le'); out.push(digit[dv]); }
+    return out.join(' ');
+  }
+  const parts=[]; let x=n, idx=0;
+  while(x>0){ const g=x%1000; if(g) parts.unshift(`${triad(g, parts.length>0)} ${unit[idx]}`.trim()); x=Math.floor(x/1000); idx++; }
+  const s=parts.join(' ').replace(/\s+/g,' ').trim();
+  return s.charAt(0).toUpperCase()+s.slice(1)+' dong chan';
+}
+function lineCategory(i){ return i.station==='retail'||i.sku_id ? 'retail' : 'fnb'; }
+function itemLineAmount(i,rate,priceIncludesVat){
+  const gross=(Number(i.unit_price)||0)*(Number(i.qty)||1);
+  return priceIncludesVat ? Math.round(gross/(1+rate/100)) : gross;
+}
+function formatReceiptItemRow(idx,i,rate,priceIncludesVat){
+  const name=String(i.name||'').replace(/\s+/g,' ').slice(0,24).padEnd(24,' ');
+  const qty=String(i.qty||1).padStart(2,' ');
+  const unit=Math.round(itemLineAmount({...i,qty:1},rate,priceIncludesVat));
+  const amount=itemLineAmount(i,rate,priceIncludesVat);
+  return `${String(idx).padStart(2,'0')}   ${name} ${qty} ${vndPlain(unit).padStart(9,' ')} ${vndPlain(amount).padStart(12,' ')}`;
+}
 function receiptItemsText(r){
-  return (r.items||[]).map(i=>{
-    const mods=(i.mods||[]).map(m=>m.name).filter(Boolean);
-    const head=`${i.qty}x ${i.name}  ${money((i.unit_price||0)*(i.qty||1))}`;
-    return mods.length ? `${head}\n  + ${mods.join(', ')}` : head;
-  }).join('\n');
+  const tax=r.tax||{}, rate=Number(tax.vat_rate||8)||0, inc=tax.price_includes_vat!==false;
+  const groups={fnb:[],retail:[]};
+  (r.items||[]).forEach(i=>groups[lineCategory(i)].push(i));
+  const rows=[]; let idx=1;
+  if(groups.fnb.length){ rows.push('[DANH MUC F&B - NHA HANG / DO UONG]'); groups.fnb.forEach(i=>rows.push(formatReceiptItemRow(idx++,i,rate,inc))); }
+  if(groups.retail.length){ if(rows.length) rows.push(''); rows.push('[DANH MUC RETAIL - SAN PHAM TIEU DUNG]'); groups.retail.forEach(i=>rows.push(formatReceiptItemRow(idx++,i,rate,inc))); }
+  return rows.join('\n');
 }
 function receiptVars(r){
   const cfg=activeBillCfg(r), lines=r.lines||[];
+  const tax=r.tax||{};
+  const taxNote=cfg.taxIncludedText || (tax.price_includes_vat!==false ? `Gia da bao gom thue GTGT ${tax.vat_rate||''}% theo quy dinh` : `Chua bao gom thue GTGT ${tax.vat_rate||''}%`);
   return {
     storeName:cfg.storeName||r.branch||'POS/ERP',
     address:cfg.address||'',
@@ -132,32 +181,86 @@ function receiptVars(r){
     subtotal:money(r.subtotal||0),
     discount:money(r.discount||0),
     total:money(r.total||0),
+    taxNote,
     method:lines.map(l=>`${methodLabel(l.method)} ${money(l.amount)}`).join('\n')||'-',
+    footer:cfg.footer||'Cam on quy khach',
+  };
+}
+function receiptVarsBcm(r){
+  const cfg=activeBillCfg(r), ein=activePrintConfig(r).einvoice || {};
+  const lines=r.lines||[], tax=r.tax||{};
+  const rate=Number(tax.vat_rate||ein.defaultVatRate||8)||0;
+  const priceIncludesVat=tax.price_includes_vat!==false;
+  const gross=Number(r.total||0);
+  const taxable=priceIncludesVat ? Math.round(gross/(1+rate/100)) : Number(r.subtotal||gross);
+  const vat=priceIncludesVat ? gross-taxable : Math.round(taxable*rate/100);
+  const grand=priceIncludesVat ? gross : taxable+vat-(Number(r.discount)||0);
+  const d=new Date(r.paid_at||Date.now());
+  const billNo=internalBillNo(r,d);
+  const taxNote=cfg.taxIncludedText || (priceIncludesVat ? `Gia da bao gom thue GTGT ${rate}% theo quy dinh` : `Chua bao gom thue GTGT ${rate}%`);
+  return {
+    storeName:cfg.storeName||r.branch||'POS/ERP',
+    storeSubtitle:cfg.storeSubtitle||'(He thong Phan phoi F&B & Retail BCM)',
+    address:cfg.address||'',
+    sellerTaxCode:tax.seller_tax_code||ein.taxCode||cfg.taxCode||'',
+    phone:cfg.phone||'',
+    email:cfg.email||ein.email||'',
+    invoiceSeries:tax.invoice_series||ein.series||'C26TMB',
+    taxInvoiceNo:r.tax_invoice_no||r.invoice?.invoice_no||'00000001',
+    billNo,
+    orderNo:billNo,
+    table:r.table_code||'Tai quay',
+    cashier:r.cashier||'',
+    date:receiptDate(d),
+    time:receiptDate(d)+' '+receiptTime(d),
+    timeOnly:receiptTime(d),
+    customerName:r.customer?.name||'Khach le',
+    customerTaxCode:r.customer?.tax_code||'',
+    items:receiptItemsText(r),
+    subtotal:vndPlain(r.subtotal||0),
+    taxableAmount:vndPlain(taxable),
+    vatRate:String(rate),
+    vatAmount:vndPlain(vat),
+    discount:vndPlain(r.discount||0),
+    total:vndPlain(r.total||0),
+    grandTotal:vndPlain(grand),
+    totalWords:numberToVietnamese(grand),
+    taxNote,
+    method:lines.length?lines.map(l=>methodLabel(l.method)).join(' / '):'-',
+    paymentStatus:'Da thanh toan',
+    taxAuthorityCode:r.tax_authority_code||r.invoice?.lookup_code||'00F83A7B-2C9D-4E1A-8B6C-5D4E3F2A1B0C',
     footer:cfg.footer||'Cam on quy khach',
   };
 }
 function templateReceiptBody(r){
   const tpl=activeBillTemplate(r);
   if(!tpl?.elements?.length) return '';
-  const vars=receiptVars(r);
+  const vars=receiptVarsBcm(r);
   const w=Number(tpl.widthMm)||72, h=Number(tpl.heightMm)||180;
   const els=tpl.elements.map((el,i)=>{
     const pos=`left:${Number(el.x)||0}%;top:${Number(el.y)||0}%;width:${Number(el.w)||20}%;height:${el.type==='line'?0:(Number(el.h)||8)}%;z-index:${i+1}`;
     if(el.type==='image') return `<div class="tpl-el tpl-img" style="${pos}">${el.src?`<img src="${esc(el.src)}">`:''}</div>`;
     if(el.type==='line') return `<div class="tpl-el tpl-line" style="${pos}"></div>`;
-    const align=el.align==='center'?'center':el.align==='right'?'right':'left';
+    if(el.type==='qr') return `<div class="tpl-el tpl-qr" style="${pos}"><div class="qr"></div></div>`;
+    const align=el.align==='center'?'center':el.align==='right'?'right':el.align==='justify'?'justify':'left';
     const justify=align==='center'?'center':align==='right'?'flex-end':'flex-start';
     const decoration=[el.underline?'underline':'',el.strike?'line-through':''].filter(Boolean).join(' ')||'none';
-    return `<div class="tpl-el" style="${pos};font-size:${Math.max(7,(Number(el.fontSize)||5)*1.55)}px;font-weight:${el.bold?800:500};font-style:${el.italic?'italic':'normal'};text-decoration:${decoration};text-align:${align};display:flex;align-items:center;justify-content:${justify}">${esc(replaceVars(el.text,vars))}</div>`;
+    const block=el.id==='bill_body';
+    return `<div class="tpl-el" style="${pos};font-size:${Math.max(7,(Number(el.fontSize)||5)*1.55)}px;font-weight:${el.bold?800:500};font-style:${el.italic?'italic':'normal'};text-decoration:${decoration};text-align:${align};display:${block?'block':'flex'};align-items:${block?'flex-start':'center'};justify-content:${justify};padding:${block?'7px 8px':'0'}">${esc(replaceVars(el.text,vars))}</div>`;
   }).join('');
   const cfg=activeBillCfg(r);
-  return `<div class="receipt-canvas-live" style="--receipt-ratio:${w}/${h}">${els}</div>${cfg.showQr!=='0'?`<div class="qr"></div><div class="c" style="font-size:9px">Quet QR tra cuu hoa don</div>`:''}`;
+  const hasTaxNote=tpl.elements.some(el=>String(el.text||'').includes('{taxNote}'));
+  const taxFallback=cfg.showTax!=='0' && !hasTaxNote ? `<div class="c" style="font-size:9px;color:#666">${esc(vars.taxNote||'')}</div>` : '';
+  return `<div class="receipt-canvas-live" style="--receipt-ratio:${w}/${h}">${els}</div>${taxFallback}${cfg.showQr!=='0'?`<div class="qr"></div><div class="c" style="font-size:9px">Quet QR tra cuu hoa don</div>`:''}`;
 }
 function basicReceiptBody(r){
   const cfg=activeBillCfg(r);
+  const tax=r.tax||{};
+  const taxNote=cfg.taxIncludedText || (tax.price_includes_vat!==false ? `Gia da bao gom thue GTGT ${tax.vat_rate||''}% theo quy dinh` : `Chua bao gom thue GTGT ${tax.vat_rate||''}%`);
   return `<div class="c"><h4>${esc(cfg.storeName||r.branch||'POS/ERP')}</h4>${cfg.address?`<div>${esc(cfg.address)}</div>`:''}<div>HOA DON #${esc(r.number||'')}</div>${r.table_code?`<div>Ban ${esc(r.table_code)}</div>`:''}</div><hr>
     ${(r.items||[]).map(i=>`<div class="li"><span>${i.qty}x ${esc(i.name)}</span><span>${money((i.unit_price||0)*(i.qty||1))}</span></div>`).join('')}<hr>
     <div class="li big"><span>TONG</span><span>${money(r.total)}</span></div>
+    ${cfg.showTax!=='0'?`<div class="c" style="font-size:9px;color:#666">${esc(taxNote)}</div>`:''}
     ${(r.lines||[]).map(l=>`<div class="li"><span>${esc(methodLabel(l.method))}</span><span>${money(l.amount)}</span></div>`).join('')}
     ${cfg.showQr!=='0'?`<div class="qr"></div><div class="c" style="font-size:9px">Quet QR tra cuu hoa don</div>`:''}<div class="c" style="font-size:9px">${esc(cfg.footer||'Cam on quy khach')}</div>`;
 }

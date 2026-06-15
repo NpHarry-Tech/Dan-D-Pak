@@ -83,6 +83,15 @@
 .ipad-overlay{background:rgba(13,20,29,.58);backdrop-filter:blur(7px) brightness(.76) saturate(.86);-webkit-backdrop-filter:blur(7px) brightness(.76) saturate(.86);z-index:900;padding:18px;overflow:hidden}
 .ipad-overlay::before{content:"";position:absolute;inset:0;background:rgba(255,255,255,.035);pointer-events:none}
 .ipad-overlay .modal{position:relative;z-index:1;background:#fff;color:var(--text);box-shadow:0 22px 58px rgba(17,30,43,.28)}
+.pay-customer-modal{max-width:520px}
+.pay-choice-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:9px;margin:10px 0 14px}
+.pay-choice{min-height:64px;border:1px solid var(--border);border-radius:12px;background:var(--surface2);display:flex;flex-direction:column;align-items:flex-start;justify-content:center;gap:3px;padding:10px 12px;color:var(--text);font-weight:800}
+.pay-choice small{font-size:10.5px;color:var(--muted);font-weight:700}
+.pay-choice.sel{border-color:var(--brand);background:var(--brand-dim);color:var(--brand)}
+.customer-qr{display:grid;grid-template-columns:148px 1fr;gap:14px;align-items:center;background:var(--surface2);border:1px dashed var(--border2);border-radius:14px;padding:13px}
+.customer-qr img{width:148px;height:148px;object-fit:contain;background:#fff;border:1px solid var(--border);border-radius:10px}
+.customer-qr b{font-size:15px}.customer-qr .amount{font-family:var(--mono);font-size:20px;font-weight:900;color:var(--brand);margin:4px 0}.customer-qr .ref{font-family:var(--mono);font-size:11px;color:var(--muted);word-break:break-word}
+@media(max-width:540px){.pay-choice-grid{grid-template-columns:1fr}.customer-qr{grid-template-columns:1fr}.customer-qr img{margin:auto}}
 .opt small{font-size:9px;opacity:.8;margin-left:3px}
 .opt.addon-opt.off{opacity:.5;cursor:not-allowed;border-color:rgba(255,107,107,.4)}
 .opt.addon-opt.off small{color:var(--late)}
@@ -200,6 +209,7 @@ let tableCode = localStorage.getItem('ipad_tablecode') || null;
 let activeCat = null;
 let cart = [];          // {key, item, qty, mods:[], note}
 let sentOrder = null;   // last fetched open order
+let operationsConfig = null;
 const frame = document.getElementById('frame');
 let staffTapCount = 0, staffTapTimer = null;
 let BOOK = {
@@ -229,6 +239,15 @@ const socket = connect('ipad', {
 
 async function loadMenu(){ MENU = await api('/menu'); if(!activeCat) activeCat = MENU.categories[0]?.id; }
 async function refreshOrder(){ if(!tableId) return; const t = await api('/tables/'+tableId); sentOrder = t.order; }
+async function loadOperations(){
+  try{ operationsConfig = await api('/operations/config'); }
+  catch{ operationsConfig = { payment:{bankCode:'VCB',bankAccount:'0123456789',accountName:'DAN D PAK',transferPrefix:'DANBILL',methods:[
+    {key:'qrcode',label:'QR Code',enabled:true,kind:'qr'},
+    {key:'internet_banking',label:'Internet Banking',enabled:true,kind:'qr'},
+    {key:'cash',label:'Tiền mặt',enabled:true,kind:'cash'},
+    {key:'card',label:'Cà thẻ',enabled:true,kind:'pos'},
+  ]}}; }
+}
 async function loadBookManifest(){
   try{
     const payload = await api('/book-menu');
@@ -398,7 +417,7 @@ function sentHeader(active){
 function renderSent(){
   if(!sentOrder || !sentOrder.items?.length) return '';
   const active = sentOrder.items.filter(i=>i.status!=='cancelled');
-  return `<div class="sentlist"><h4>${sentHeader(active)} · bill #${sentOrder.id.slice(-6).toUpperCase()}</h4>
+  return `<div class="sentlist"><h4>${sentHeader(active)} · bill #${esc(sentOrder.bill_no||sentOrder.id.slice(-6).toUpperCase())}</h4>
     ${active.map(i=>`<div class="sline"><b>${i.qty}×</b> ${esc(i.name)} <span class="st">${statusChip(i.status)}</span></div>`).join('')}
     <div class="sline" style="margin-top:6px;border-top:1px dashed var(--border);padding-top:7px">
       <b>Tổng đã gọi</b><span class="st" style="font-family:var(--mono);color:var(--brand);font-weight:700">${money(sentOrder.total)}</span></div>
@@ -407,7 +426,7 @@ function renderSent(){
 function renderBookSent(){
   if(!sentOrder || !sentOrder.items?.length) return '';
   const active = sentOrder.items.filter(i=>i.status!=='cancelled');
-  return `<div class="book-sent"><b>${sentHeader(active)} · bill #${sentOrder.id.slice(-6).toUpperCase()}</b><br>
+  return `<div class="book-sent"><b>${sentHeader(active)} · bill #${esc(sentOrder.bill_no||sentOrder.id.slice(-6).toUpperCase())}</b><br>
     ${active.slice(0,5).map(i=>`${i.qty}× ${esc(i.name)}`).join(' · ')}
     ${active.length>5?` · và ${active.length-5} món khác`:''}<br>
     Tổng đã gọi: <b>${money(sentOrder.total)}</b>
@@ -684,10 +703,76 @@ async function callStaff(){
   if(r===null) return;
   try{ await api('/calls',{method:'POST',body:{table_id:tableId,reason:r}}); toast('🔔 Đã gọi nhân viên'); }catch(e){toast(e.message,true);}
 }
+function paymentMethods(){
+  return operationsConfig?.payment?.methods || [];
+}
+function enabledPayment(kindKeys){
+  return paymentMethods().find(m=>m.enabled!==false && kindKeys.includes(m.key)) || null;
+}
+function paymentRef(method){
+  const prefix=(operationsConfig?.payment?.transferPrefix||'DANBILL').replace(/\s+/g,'').toUpperCase();
+  const code=sentOrder?.bill_no||(sentOrder?.id||tableId||Date.now().toString()).slice(-6).toUpperCase();
+  return `${prefix}-${code}`;
+}
+function dynamicQrUrl(amount, ref){
+  const p=operationsConfig?.payment||{};
+  const bank=(p.bankCode||'').trim();
+  const account=(p.bankAccount||'').trim();
+  const name=(p.accountName||'').trim();
+  if(!bank || !account) return '';
+  return `https://img.vietqr.io/image/${encodeURIComponent(bank)}-${encodeURIComponent(account)}-compact2.png?amount=${encodeURIComponent(amount)}&addInfo=${encodeURIComponent(ref)}&accountName=${encodeURIComponent(name)}`;
+}
 async function requestPay(){
-  try{ await api('/tables/'+tableId+'/request-payment',{method:'POST'}); toast('💳 Đã báo thu ngân tới thanh toán'); }catch(e){toast(e.message,true);}
+  try{ await loadOperations(); await refreshOrder(); }
+  catch(e){ return toast(e.message,true); }
+  const active=(sentOrder?.items||[]).filter(i=>i.status!=='cancelled');
+  if(!sentOrder || !active.length) return toast('Chưa có bill để thanh toán', true);
+  const qr=enabledPayment(['qrcode','qr','internet_banking','momo','zalopay']);
+  const cash=enabledPayment(['cash']);
+  const card=enabledPayment(['card','visa','pos_card']);
+  let mode=qr?'qr':cash?'cash':'card';
+  const ov=document.createElement('div'); ov.className='overlay show ipad-overlay';
+  function body(){
+    const ref=paymentRef(qr?.key||'qrcode');
+    const qrSrc=dynamicQrUrl(sentOrder.total,ref);
+    return `<div class="modal pay-customer-modal">
+      <h2>Thanh toán bàn ${esc(tableCode)}</h2>
+      <div class="sub">Tổng cần thanh toán: <b style="font-family:var(--mono);color:var(--brand)">${money(sentOrder.total)}</b></div>
+      <div class="pay-choice-grid">
+        ${qr?`<button class="pay-choice ${mode==='qr'?'sel':''}" data-pay-mode="qr">📱 QR tự thanh toán<small>Tự in hóa đơn sau khi xác nhận</small></button>`:''}
+        ${cash?`<button class="pay-choice ${mode==='cash'?'sel':''}" data-pay-mode="cash">💵 Tiền mặt<small>Gọi thu ngân ra bàn</small></button>`:''}
+        ${card?`<button class="pay-choice ${mode==='card'?'sel':''}" data-pay-mode="card">💳 Cà thẻ<small>Gọi nhân viên cầm máy POS</small></button>`:''}
+      </div>
+      <div id="payModeBody">${mode==='qr'?`
+        <div class="customer-qr">
+          ${qrSrc?`<img src="${esc(qrSrc)}" alt="QR thanh toán">`:'<div class="empty">Chưa cấu hình ngân hàng trong Setting</div>'}
+          <div><b>${esc(qr?.label||'QR Code')}</b><div class="amount">${money(sentOrder.total)}</div><div class="sub" style="margin-bottom:7px">Nội dung chuyển khoản</div><div class="ref">${esc(ref)}</div></div>
+        </div>`:`
+        <div class="customer-qr" style="grid-template-columns:1fr"><b>${mode==='cash'?'Thanh toán tiền mặt':'Thanh toán bằng thẻ'}</b><div class="sub">Hệ thống sẽ báo thu ngân tới bàn ${esc(tableCode)} để nhận tiền hoặc cà thẻ.</div></div>`}
+      </div>
+      <div class="mfoot"><button class="btn" id="cancelPay">Đóng</button><button class="btn primary" id="confirmCustomerPay">${mode==='qr'?'Tôi đã chuyển khoản':'Gọi thu ngân'}</button></div>
+    </div>`;
+  }
+  function redraw(){
+    ov.innerHTML=body();
+    ov.querySelectorAll('[data-pay-mode]').forEach(b=>b.onclick=()=>{mode=b.dataset.payMode;redraw();});
+    ov.querySelector('#cancelPay').onclick=()=>ov.remove();
+    ov.querySelector('#confirmCustomerPay').onclick=async()=>{
+      try{
+        if(mode==='qr'){
+          await api('/orders/'+sentOrder.id+'/customer-qr-pay',{method:'POST',body:{method:qr?.key||'qrcode',reference:paymentRef(qr?.key||'qrcode')}});
+          sentOrder=null; cart=[]; ov.remove(); render(); toast('✅ Đã thanh toán QR. Nhân viên sẽ đưa hóa đơn cho quý khách.');
+        }else{
+          await api('/tables/'+tableId+'/request-payment',{method:'POST'});
+          ov.remove(); toast('💳 Đã báo thu ngân tới thanh toán');
+        }
+      }catch(e){toast(e.message,true);}
+    };
+  }
+  document.body.appendChild(ov);
+  redraw();
 }
 
-(async()=>{ try{ await Promise.all([loadMenu(), loadBookManifest()]); await refreshOrder(); render(); preloadBookPages(); }catch(e){ showFatal(e.message); } })();
+(async()=>{ try{ await Promise.all([loadMenu(), loadBookManifest(), loadOperations()]); await refreshOrder(); render(); preloadBookPages(); }catch(e){ showFatal(e.message); } })();
 </script>
 </body></html>

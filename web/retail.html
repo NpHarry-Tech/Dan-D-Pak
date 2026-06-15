@@ -97,8 +97,8 @@
     <div class="sub">Quét mã vạch hoặc chạm sản phẩm · chọn lot/date trong giỏ · voucher retail</div>
     <div class="right">
       <span id="shiftMount"></span>
+      <span id="histMount"></span>
       <button class="btn sm" id="voucherBtn">🎁 Voucher</button>
-      <button class="btn sm" id="salesBtn">📜 Đơn gần đây / Đổi trả</button>
     </div>
   </div>
   <div class="rtwrap">
@@ -126,6 +126,7 @@
 <script type="module">
 import { api, connect, money, toast, esc, startClock, topbar, requireModuleAccess, renderUserChip } from '/shared/client.js';
 import { mountShift } from '/shared/shift.js';
+import { mountOrderHistory } from '/shared/orderHistory.js';
 document.getElementById('top').innerHTML = topbar('retail');
 await requireModuleAccess('retail'); renderUserChip();
 
@@ -136,8 +137,25 @@ connect('retail', {
   'shift:updated':()=>shiftCtl&&shiftCtl.reload(),
 });
 shiftCtl = await mountShift('#shiftMount');  // mở/kết ca — dùng chung 1 ca với POS
+mountOrderHistory('#histMount', { allowRefund: true, onAfterChange: () => loadData() });  // lịch sử + in lại + đổi trả chung 1 chỗ
 
 const scan=document.getElementById('scan');
+
+function retailShiftRequired(){
+  const cfg = operationsCfg || shiftCtl?.getState?.()?.config || {};
+  return cfg.shifts?.requireOpenShift !== false;
+}
+function retailSalesLocked(){
+  return retailShiftRequired() && !shiftCtl?.getState?.()?.shift;
+}
+async function ensureRetailShiftOpen(){
+  operationsCfg = await api('/operations/config').catch(()=>operationsCfg);
+  if(shiftCtl?.reload) await shiftCtl.reload();
+  if(!retailSalesLocked()) return true;
+  toast('Cần mở ca làm việc trước khi bán hàng.', true);
+  shiftCtl?.openPanel?.();
+  return false;
+}
 
 async function loadData(){
   operationsCfg=await api('/operations/config').catch(()=>operationsCfg);
@@ -206,7 +224,8 @@ function renderGrid(){
   });
 }
 
-function addToCart(s){
+async function addToCart(s){
+  if(!(await ensureRetailShiftOpen())) return;
   const lot=defaultLot(s);
   const line=cart.find(c=>c.sku.id===s.id);
   if(line){
@@ -327,7 +346,8 @@ function voucherAmount(v, base, qty){
 }
 function promoLabel(v){ return v.type==='pct' ? `${v.value}%` : money(v.value); }
 
-function openPay(){
+async function openPay(){
+  if(!(await ensureRetailShiftOpen())) return;
   let voucherId='', lines=[], method='cash';
   const methods=enabledRetailMethods();
   if(!methods.some(m=>m.key===method)) method=methods[0]?.key||'cash';
@@ -466,23 +486,6 @@ function voucherRow(v){
     <button class="btn sm" data-edit-v="${v.id}">Sửa</button>
   </div>`;
 }
-
-document.getElementById('salesBtn').onclick=async()=>{
-  const sales=await api('/retail/sales');
-  const ov=document.createElement('div'); ov.className='overlay show';
-  ov.innerHTML=`<div class="modal"><h2>Đơn bán lẻ gần đây</h2><div class="sub">Bấm Đổi trả để hoàn tiền & nhập lại kho theo lot cũ nếu có</div>
-    <div style="max-height:55vh;overflow-y:auto">${sales.length?sales.map(s=>`
-      <div class="salerow"><span>#${s.number}</span><span style="color:var(--muted)">${s.items.length} SP</span>
-      <b style="margin-left:auto;color:var(--brand)">${money(s.total)}</b>
-      <button class="btn sm danger" data-ref="${s.id}">Đổi trả</button></div>`).join(''):'<div class="empty">Chưa có đơn</div>'}</div>
-    <div class="mfoot"><button class="btn primary" id="cl">Đóng</button></div></div>`;
-  document.body.appendChild(ov);
-  ov.querySelector('#cl').onclick=()=>ov.remove();
-  ov.querySelectorAll('[data-ref]').forEach(b=>b.onclick=async()=>{
-    const reason=prompt('Lý do đổi trả:','Khách trả hàng'); if(reason===null)return;
-    try{ const r=await api('/retail/'+b.dataset.ref+'/refund',{method:'POST',body:{reason}}); toast('Đã hoàn '+money(r.refunded)); ov.remove(); loadData(); }catch(e){toast(e.message,true);}
-  });
-};
 
 function roundQty(n){ return Math.round((Number(n)||0)*100)/100; }
 

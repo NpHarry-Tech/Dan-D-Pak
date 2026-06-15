@@ -8,7 +8,7 @@ import { returnSku } from './inventory.js';
 import { calculateRetailDiscount } from './vouchers.js';
 
 // lines (cart): [{sku_id, qty, lot_id}]; payments: [{method, amount, reference}]
-export function checkout({ items, payments, voucher_id = null, branch_id = 'br1' }) {
+export function checkout({ items, payments, voucher_id = null, branch_id = 'br1', cashier = '' }) {
   if (!items?.length) throw new Error('Giỏ hàng trống');
   const lines = normalizeCheckoutItems(items, branch_id);
   const discountPlan = calculateRetailDiscount(lines, voucher_id, branch_id);
@@ -24,7 +24,7 @@ export function checkout({ items, payments, voucher_id = null, branch_id = 'br1'
   const order = createOrUpdateOrder({ branch_id, table_id: null, channel: 'retail', items: orderItems });
   db.prepare(`UPDATE orders SET voucher_id=?, voucher_code=? WHERE id=?`)
     .run(discountPlan.orderVoucher?.id || null, discountPlan.orderVoucher?.code || null, order.id);
-  const receipt = payOrder(order.id, Array.isArray(payments) ? payments : [], { discount: discountPlan.discount }, branch_id);
+  const receipt = payOrder(order.id, Array.isArray(payments) ? payments : [], { discount: discountPlan.discount, cashier }, branch_id);
   receipt.discount_breakdown = {
     product_promos: discountPlan.lineDiscount,
     voucher: discountPlan.orderDiscount,
@@ -37,7 +37,7 @@ export function checkout({ items, payments, voucher_id = null, branch_id = 'br1'
 export function listRetailSales(branch_id = 'br1', limit = 40) {
   const rows = db.prepare(`SELECT * FROM orders WHERE branch_id=? AND channel='retail' AND status='paid' ORDER BY paid_at DESC LIMIT ?`)
     .all(branch_id, limit);
-  return rows.map(o => ({ ...o, number: o.id.slice(-6).toUpperCase(),
+  return rows.map(o => ({ ...o, number: o.bill_no || o.id.slice(-6).toUpperCase(),
     items: db.prepare(`
       SELECT oi.name, oi.qty, oi.unit_price, oi.sku_id, oi.lot_id, oi.promo_json, l.lot_no, l.expiry_date
       FROM order_items oi

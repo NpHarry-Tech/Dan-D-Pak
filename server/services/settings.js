@@ -10,49 +10,138 @@ const DEFAULT_PRINT_CONFIG = {
   version: 1,
   einvoice: {
     provider: 'MISA',
-    taxCode: '0312345678',
-    company: 'District 1 - HCMC',
-    address: 'HCMC',
-    series: '1C26TAA',
+    taxCode: '0316756674',
+    company: 'CÔNG TY TNHH DỊCH VỤ TIẾP THỊ BCM',
+    address: '00.08 Tháp A1 - Khu chung cư phức hợp lô M1-M2 (Sarimi), Số 74 Nguyễn Cơ Thạch, Phường An Lợi Đông, TP. Thủ Đức, TP. Hồ Chí Minh',
+    phone: '0938525659',
+    email: 'customerservice@bcm-vn.com',
+    series: 'C26TMB',
     template: '1/001',
     environment: 'demo',
     autoIssue: '0',
+    invoiceMode: 'cash_register',
+    legalBasis: 'ND70-2025_TT32-2025',
+    issueTiming: 'at_payment',
+    priceIncludesVat: '1',
+    defaultVatRate: '8',
+    standardVatRate: '10',
+    vatReductionValidFrom: '2025-07-01',
+    vatReductionValidTo: '2026-12-31',
+    itemNamePolicy: 'exact_menu_sku',
+    unitPolicy: 'required',
   },
   labels: {
     paper: '50x30',
     widthMm: 50,
     heightMm: 30,
-    printerName: 'May in tem ly',
+    printerName: 'Máy in tem ly',
     copies: '1',
     printScale: 100,
     autoPrint: '1',
     templateKind: 'cup',
   },
   bill: {
-    storeName: 'District 1 - HCMC',
-    address: 'Branch: District 1 - HCMC',
-    phone: '',
+    storeName: 'CÔNG TY TNHH DỊCH VỤ TIẾP THỊ BCM',
+    storeSubtitle: '(Hệ thống Phân phối F&B & Retail BCM)',
+    address: '00.08 Tháp A1 - Khu chung cư phức hợp lô M1-M2 (Sarimi), Số 74 Nguyễn Cơ Thạch, Phường An Lợi Đông, Thành phố Thủ Đức, Thành phố Hồ Chí Minh, Việt Nam',
+    taxCode: '0316756674',
+    phone: '0938525659',
+    email: 'customerservice@bcm-vn.com',
     paper: 'K80',
     widthMm: 72,
-    heightMm: 180,
-    printerName: 'May in Bill',
+    heightMm: 210,
+    printerName: 'Máy in Bill',
     copies: '1',
     printScale: 100,
-    footer: 'Cam on quy khach',
+    footer: 'CẢM ƠN QUÝ KHÁCH - HẸN GẶP LẠI TẠI BCM!',
     showQr: '1',
+    showTax: '1',
+    taxIncludedText: 'Giá đã bao gồm thuế GTGT theo quy định',
+    unitPriceMode: 'vat_included',
     autoPrint: '1',
   },
   printers: [
-    { id: 'kitchen', name: 'May in Bep', type: 'Phieu bep', active: true, auto: true },
-    { id: 'bar', name: 'May in Bar', type: 'Phieu bar', active: true, auto: true },
-    { id: 'bill', name: 'May in Bill', type: 'Hoa don', active: true, auto: true },
-    { id: 'label', name: 'May in Tem nhan', type: 'Tem nhan', active: true, auto: false },
+    { id: 'kitchen', name: 'Máy in Bếp', type: 'Phiếu bếp', active: true, auto: true },
+    { id: 'bar', name: 'Máy in Bar', type: 'Phiếu bar', active: true, auto: true },
+    { id: 'bill', name: 'Máy in Bill', type: 'Hóa đơn', active: true, auto: true },
+    { id: 'label', name: 'Máy in Tem nhãn', type: 'Tem nhãn', active: true, auto: false },
   ],
   templates: {
     label: null,
     bill: null,
   },
 };
+
+function defaultBcmBillText() {
+  return [
+    '==================================================',
+    '        {storeName}',
+    '     {storeSubtitle}',
+    'Địa chỉ: {address}',
+    'Mã số thuế: {sellerTaxCode}',
+    'Số điện thoại: {phone}',
+    'Email: {email}',
+    '==================================================',
+    '',
+    '                HÓA ĐƠN BÁN HÀNG',
+    '          (Khởi tạo từ máy tính tiền)',
+    '',
+    'Ký hiệu HĐ: {invoiceSeries}      Số HĐ (Thuế): {taxInvoiceNo}',
+    'Số Bill (Nội bộ): {billNo}',
+    'Ngày lập: {date}       Giờ lập: {timeOnly}',
+    'Thu ngân: {cashier}    Quầy/Bàn: {table}',
+    '',
+    'Khách hàng: {customerName}',
+    'Mã số thuế: {customerTaxCode}',
+    '--------------------------------------------------',
+    'STT  Tên mặt hàng/Dịch vụ   SL   Đơn giá    Thành tiền',
+    '--------------------------------------------------',
+    '{items}',
+    '--------------------------------------------------',
+    'Cộng tiền hàng:                       {taxableAmount} VNĐ',
+    'Thuế suất GTGT ({vatRate}%):          {vatAmount} VNĐ',
+    '--------------------------------------------------',
+    'TỔNG TIỀN THANH TOÁN:                 {grandTotal} VNĐ',
+    '--------------------------------------------------',
+    'Số tiền bằng chữ: {totalWords}.',
+    '',
+    'Hình thức thanh toán: {method}',
+    'Trạng thái: {paymentStatus}',
+    '',
+    '--------------------------------------------------',
+    'MÃ CỦA CƠ QUAN THUẾ:',
+    '{taxAuthorityCode}',
+    '',
+    '(Quý khách có thể tra cứu hóa đơn này tại website:',
+    'https://gdt.gov.vn bằng mã số thuế người bán',
+    'và mã cơ quan thuế ở trên)',
+    '',
+    '==================================================',
+    ' HÓA ĐƠN ĐIỆN TỬ KHỞI TẠO TỪ MÁY TÍNH TIỀN',
+    '      {footer}',
+  ].join('\n');
+}
+
+function defaultBcmBillTemplate(bill = DEFAULT_PRINT_CONFIG.bill) {
+  const widthMm = Number(bill.widthMm) || 72;
+  const requestedHeight = Number(bill.heightMm) || DEFAULT_PRINT_CONFIG.bill.heightMm;
+  const heightMm = requestedHeight > 260 ? DEFAULT_PRINT_CONFIG.bill.heightMm : requestedHeight;
+  return {
+    kind: 'bill',
+    version: 3,
+    standard: 'bcm_fiscal_receipt',
+    paper: bill.paper || 'K80',
+    widthMm,
+    heightMm,
+    printerName: bill.printerName || 'Máy in Bill',
+    copies: bill.copies || '1',
+    printScale: Number(bill.printScale) || 100,
+    selectedId: 'bill_body',
+    elements: [
+      { id: 'bill_body', type: 'text', x: 4, y: 3, w: 92, h: 94, text: defaultBcmBillText(), fontSize: 3.8, bold: false, align: 'left' },
+    ],
+  };
+}
 const DEFAULT_INTEGRATIONS = {
   version: 1,
   channels: {
@@ -225,6 +314,22 @@ function plainObject(v) {
 function mergePlain(def, input = {}) {
   return { ...def, ...plainObject(input) };
 }
+function migrateBcmBillDefaults(bill = {}) {
+  const legacyName = !bill.storeName || ['District 1 - HCMC', 'CONG TY TNHH DICH VU TIEP THI BCM'].includes(String(bill.storeName));
+  const legacyAddress = !bill.address || String(bill.address).startsWith('Branch:') || String(bill.address).includes('00.08 Thap A1');
+  const legacyFooter = !bill.footer || String(bill.footer).includes('CAM ON QUY KHACH') || String(bill.footer).includes('Cam on quy khach');
+  return {
+    ...bill,
+    storeName: legacyName ? DEFAULT_PRINT_CONFIG.bill.storeName : bill.storeName,
+    storeSubtitle: !bill.storeSubtitle || String(bill.storeSubtitle).includes('He thong') ? DEFAULT_PRINT_CONFIG.bill.storeSubtitle : bill.storeSubtitle,
+    address: legacyAddress ? DEFAULT_PRINT_CONFIG.bill.address : bill.address,
+    taxCode: bill.taxCode || DEFAULT_PRINT_CONFIG.bill.taxCode,
+    phone: bill.phone || DEFAULT_PRINT_CONFIG.bill.phone,
+    email: bill.email || DEFAULT_PRINT_CONFIG.bill.email,
+    heightMm: Number(bill.heightMm) > 260 ? DEFAULT_PRINT_CONFIG.bill.heightMm : (Number(bill.heightMm) || DEFAULT_PRINT_CONFIG.bill.heightMm),
+    footer: legacyFooter ? DEFAULT_PRINT_CONFIG.bill.footer : bill.footer,
+  };
+}
 function sanitizePrintTemplate(tpl) {
   if (!tpl || typeof tpl !== 'object') return null;
   return {
@@ -232,15 +337,27 @@ function sanitizePrintTemplate(tpl) {
     elements: Array.isArray(tpl.elements) ? tpl.elements.map(el => plainObject(el)) : [],
   };
 }
+function sanitizeBillTemplate(tpl, bill) {
+  const clean = sanitizePrintTemplate(tpl);
+  if (!clean || clean.kind !== 'bill' || Number(clean.version || 0) < 3) return defaultBcmBillTemplate(bill);
+  const legacyBcm = clean.standard === 'bcm_fiscal_receipt'
+    && (
+      Number(clean.heightMm || 0) > 260
+      || clean.elements.some(el => String(el.text || '').includes('HOA DON BAN HANG'))
+    );
+  if (legacyBcm) return defaultBcmBillTemplate(bill);
+  return clean;
+}
 function sanitizePrintConfig(raw = {}) {
   const input = plainObject(raw);
+  const bill = migrateBcmBillDefaults(mergePlain(DEFAULT_PRINT_CONFIG.bill, input.bill));
   const printers = Array.isArray(input.printers) ? input.printers : DEFAULT_PRINT_CONFIG.printers;
   return {
     version: 1,
     updated_at: input.updated_at || null,
     einvoice: mergePlain(DEFAULT_PRINT_CONFIG.einvoice, input.einvoice),
     labels: mergePlain(DEFAULT_PRINT_CONFIG.labels, input.labels),
-    bill: mergePlain(DEFAULT_PRINT_CONFIG.bill, input.bill),
+    bill,
     printers: printers.map((p, i) => ({
       id: str(p?.id || `printer_${i + 1}`, 80) || `printer_${i + 1}`,
       name: str(p?.name || `Printer ${i + 1}`, 200),
@@ -250,7 +367,7 @@ function sanitizePrintConfig(raw = {}) {
     })),
     templates: {
       label: sanitizePrintTemplate(input.templates?.label || input.label_template),
-      bill: sanitizePrintTemplate(input.templates?.bill || input.bill_template),
+      bill: sanitizeBillTemplate(input.templates?.bill || input.bill_template, bill),
     },
   };
 }
@@ -329,6 +446,34 @@ export function updateSettings(body = {}, branch_id = 'br1') {
   }
   audit('settings.update', { keys: Object.keys(next) }, branch_id);
   return { ...current, ...next };
+}
+
+export function autoSaveTemplate(body = {}, branch_id = 'br1') {
+  const kind = body.kind === 'label' ? 'label' : 'bill';
+  const current = getPrintConfig(branch_id);
+  const next = sanitizePrintConfig({
+    ...current,
+    bill: body.bill ? mergePlain(current.bill, body.bill) : current.bill,
+    labels: body.labels ? mergePlain(current.labels, body.labels) : current.labels,
+    templates: {
+      ...(current.templates || {}),
+      [kind]: body.template,
+    },
+    updated_at: now(),
+  });
+  db.prepare(`INSERT OR REPLACE INTO app_settings (branch_id,key,value,updated_at) VALUES (?,?,?,?)`)
+    .run(branch_id, PRINT_CONFIG_KEY, JSON.stringify(next), now());
+  audit('settings.template_autosave', {
+    kind,
+    elements: next.templates?.[kind]?.elements?.length || 0,
+  }, branch_id);
+  return {
+    ok: true,
+    kind,
+    saved_at: next.updated_at,
+    template: next.templates?.[kind] || null,
+    print_config: next,
+  };
 }
 
 export function verifyIpadStaffPin(pin, branch_id = 'br1') {

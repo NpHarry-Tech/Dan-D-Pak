@@ -4,6 +4,21 @@ import { db, uid, now, audit } from '../db.js';
 import { emit } from '../realtime.js';
 import { printKitchenTickets, printRunnerSlip, printCupLabels } from './printing.js';
 import { getMenuItemForOrder } from './catalog.js';
+import { getOperationsConfig } from './settings.js';
+import { getActiveShift } from './shifts.js';
+
+// Số Bill nội bộ: Dan{ddMMyy}{seq} — seq là số thứ tự đơn trong NGÀY (reset mỗi
+// ngày vận hành: ca sáng → ca tối đều trong 1 ngày dương lịch). VD Dan1506260001.
+function nextBillNo(branch_id = 'br1') {
+  const d = new Date();
+  const pad = (x) => String(x).padStart(2, '0');
+  const ddMMyy = pad(d.getDate()) + pad(d.getMonth() + 1) + String(d.getFullYear()).slice(-2);
+  const start = new Date(d); start.setHours(0, 0, 0, 0);
+  const end = new Date(d); end.setHours(24, 0, 0, 0);
+  const n = db.prepare(`SELECT COUNT(*) c FROM orders WHERE branch_id=? AND bill_no IS NOT NULL AND created_at>=? AND created_at<?`)
+    .get(branch_id, start.toISOString(), end.toISOString()).c + 1;
+  return `Dan${ddMMyy}${String(n).padStart(4, '0')}`;
+}
 
 export function getOpenOrderForTable(table_id, branch_id = 'br1') {
   if (!table_id) return undefined;
@@ -28,17 +43,25 @@ function setTableByOpenOrders(table_id, branch_id = 'br1') {
   emit('table:updated', getTableState(table_id), branch_id);
 }
 
+function requireOpenShiftForSales(branch_id = 'br1') {
+  const ops = getOperationsConfig(branch_id);
+  if (ops.shifts?.requireOpenShift !== false && !getActiveShift(branch_id)) {
+    throw new Error('Cần mở ca làm việc trước khi bán hàng.');
+  }
+}
+
 // items: [{menu_item_id, qty, note, mods:[{group,name,price}]}] or [{sku_id, qty}]
 export function createOrUpdateOrder({ branch_id = 'br1', table_id, channel = 'dine_in', source = 'staff_pos', require_confirm = false, items }) {
   if (!items?.length) throw new Error('Order trống');
+  requireOpenShiftForSales(branch_id);
   const needsStaffConfirm = source === 'customer_ipad' || require_confirm === true;
 
   let order = table_id ? getOpenOrderForTable(table_id, branch_id) : null;
   const isNew = !order;
   if (isNew) {
     const id = uid('o_');
-    db.prepare(`INSERT INTO orders (id,branch_id,table_id,channel,status,created_at) VALUES (?,?,?,?,'open',?)`)
-      .run(id, branch_id, table_id || null, channel, now());
+    db.prepare(`INSERT INTO orders (id,branch_id,table_id,channel,status,bill_no,created_at) VALUES (?,?,?,?,'open',?,?)`)
+      .run(id, branch_id, table_id || null, channel, nextBillNo(branch_id), now());
     order = db.prepare(`SELECT * FROM orders WHERE id=?`).get(id);
   }
 
@@ -240,8 +263,8 @@ export function splitOrderItems(order_id, item_ids = [], branch_id = 'br1') {
   if (!selected.length) throw new Error('Không tìm thấy dòng hợp lệ để tách');
   if (selected.length >= active.length) throw new Error('Không cần tách nếu chọn toàn bộ bill');
   const newId = uid('o_');
-  db.prepare(`INSERT INTO orders (id,branch_id,table_id,channel,status,created_at) VALUES (?,?,?,?,'open',?)`)
-    .run(newId, branch_id, order.table_id || null, order.channel || 'dine_in', now());
+  db.prepare(`INSERT INTO orders (id,branch_id,table_id,channel,status,bill_no,created_at) VALUES (?,?,?,?,'open',?,?)`)
+    .run(newId, branch_id, order.table_id || null, order.channel || 'dine_in', nextBillNo(branch_id), now());
   const upd = db.prepare(`UPDATE order_items SET order_id=? WHERE id=? AND order_id=?`);
   for (const id of selected) upd.run(newId, id, order_id);
   recomputeTotals(order_id);

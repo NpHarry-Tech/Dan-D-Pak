@@ -1,5 +1,5 @@
 // Shared frontend runtime: REST helper, realtime socket, formatting, toast, clock.
-import { MODULES, TOPBAR_MODULES } from './modules.js';
+import { MODULES, TOPBAR_MODULES, MODULE_GROUPS } from './modules.js';
 
 export const BRANCH = 'br1';
 
@@ -10,7 +10,11 @@ export async function api(path, opts = {}) {
     body: opts.body ? JSON.stringify(opts.body) : undefined,
   });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) { const e = new Error(data.error || ('HTTP ' + res.status)); e.status = res.status; throw e; }
+  if (!res.ok) {
+    const demo = demoApiFallback(path);
+    if (demo !== undefined) return demo;
+    const e = new Error(data.error || ('HTTP ' + res.status)); e.status = res.status; throw e;
+  }
   return data;
 }
 
@@ -40,15 +44,65 @@ export async function logout() {
 }
 
 const ROLE_LABEL = { owner: 'Chủ quán', manager: 'Quản lý', cashier: 'Thu ngân', kitchen: 'Bếp', warehouse: 'Thủ kho' };
+const DEMO_LOGIN_USERS = [
+  { id:'demo_owner', username:'owner', name:'Chủ quán', role:'owner', pin:'1234' },
+  { id:'demo_manager', username:'manager', name:'Quản lý', role:'manager', pin:'2222' },
+  { id:'demo_cashier', username:'cashier', name:'Thu ngân', role:'cashier', pin:'1111' },
+  { id:'demo_kitchen', username:'kitchen', name:'Bếp', role:'kitchen', pin:'3333' },
+  { id:'demo_warehouse', username:'warehouse', name:'Thủ kho', role:'warehouse', pin:'4444' },
+];
+const DEMO_PERMS = {
+  owner: ['*'],
+  manager: ['menu.manage','inventory.adjust','warehouse.manage','refund','void','discount','reports','invoice','online','sell','pay','audit.view','settings.manage','module.ipad','module.pos','module.retail','module.kds','module.online','module.warehouse','module.inventory','module.admin','module.settings','module.printing','module.crm','module.sales','module.purchase','module.accounting','module.invoice','module.expense','module.website','module.payment','module.contacts','module.reports','module.import_export','module.calendar','module.discuss','module.documents','module.knowledge','module.project'],
+  cashier: ['sell','pay','discount','invoice','module.pos','module.retail','module.invoice'],
+  kitchen: ['module.kds'],
+  warehouse: ['inventory.adjust','warehouse.manage','module.warehouse','module.inventory'],
+};
+const isDemoToken = () => (getToken() || '').startsWith('demo_');
+function demoLogin(username, pin) {
+  const u = DEMO_LOGIN_USERS.find(x => x.username === String(username || '').toLowerCase());
+  if (!u || u.pin !== String(pin)) throw new Error('Sai tài khoản hoặc mã PIN');
+  const user = { id:u.id, username:u.username, name:u.name, role:u.role };
+  return { token:'demo_' + u.username + '_' + Date.now(), user, perms:DEMO_PERMS[u.role] || [] };
+}
+function demoApiFallback(path) {
+  if (path === '/me' && isDemoToken()) {
+    const user = getUser();
+    return user ? { ...user, perms:DEMO_PERMS[user.role] || [] } : undefined;
+  }
+  if (path === '/modules' && isDemoToken()) {
+    return { groups: MODULE_GROUPS, modules: MODULES.filter(m => canOpenModule(m)) };
+  }
+  return undefined;
+}
 
 // Block the page with a PIN login until a valid session exists. Returns the user.
 export async function requireLogin() {
   if (getToken()) {
+    if (isDemoToken()) {
+      const user = getUser();
+      if (user) {
+        localStorage.setItem('auth_perms', JSON.stringify(DEMO_PERMS[user.role] || []));
+        return user;
+      }
+    }
     try { const me = await api('/me'); localStorage.setItem('auth_user', JSON.stringify(me)); localStorage.setItem('auth_perms', JSON.stringify(me.perms || [])); return me; }
     catch { localStorage.removeItem('auth_token'); localStorage.removeItem('auth_user'); }
   }
   return new Promise(async (resolve) => {
-    const users = await api('/users').catch(() => []);
+    let demoMode = false;
+    let users = [];
+    try {
+      const rows = await api('/users');
+      users = Array.isArray(rows) ? rows : [];
+    } catch {
+      demoMode = true;
+      users = DEMO_LOGIN_USERS;
+    }
+    if (!users.length) {
+      demoMode = true;
+      users = DEMO_LOGIN_USERS;
+    }
     const ov = document.createElement('div');
     ov.id = 'loginGate';
     ov.innerHTML = `
@@ -82,7 +136,7 @@ export async function requireLogin() {
       pin += v; drawDots();
       if (pin.length === pinLength) {
         try {
-          const r = await api('/login', { method: 'POST', body: { username: pickedUser, pin } });
+          const r = demoMode ? demoLogin(pickedUser, pin) : await api('/login', { method: 'POST', body: { username: pickedUser, pin } });
           localStorage.setItem('auth_token', r.token); localStorage.setItem('auth_user', JSON.stringify(r.user));
           localStorage.setItem('auth_perms', JSON.stringify(r.perms || []));
           ov.remove(); resolve(r.user);
@@ -244,7 +298,7 @@ export function topbar(active) {
     .filter(Boolean)
     .filter(m => canOpenModule(m) || activeKey === m.key);
   return `<header class="topbar">
-    <div class="logo brand-mark"><img src="/assets/DanOnLogo.png" alt="DanDPak"><small>Branch: District 1 — HCMC · Live</small></div>
+    <div class="logo brand-mark"><img src="/assets/DanOnLogo.png" alt="DanDPak"><small>Branch: Dan D Pak Sala · Live</small></div>
     <nav class="devtabs">${devs.map(m =>
       `<a class="devtab ${m.key === activeKey ? 'active' : ''}" href="${m.href}">${m.icon} ${m.label.replace(' Self-Order','').replace('FnB ','')}</a>`).join('')}</nav>
     <div class="topright">

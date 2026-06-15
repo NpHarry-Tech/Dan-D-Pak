@@ -15,6 +15,15 @@ function cashTotal(counts = {}) {
   }, 0);
 }
 
+function dayBounds(ref = new Date()) {
+  const d = ref instanceof Date ? new Date(ref) : new Date(ref || Date.now());
+  if (Number.isNaN(d.getTime())) return dayBounds(new Date());
+  d.setHours(0, 0, 0, 0);
+  const start = d.toISOString();
+  d.setHours(24, 0, 0, 0);
+  return { start, end: d.toISOString() };
+}
+
 function publicShift(row) {
   if (!row) return null;
   return {
@@ -57,22 +66,25 @@ export function closeShift(body = {}, user = {}, branch_id = 'br1') {
   const counts = body.counts && typeof body.counts === 'object' ? body.counts : {};
   const closing_cash = Number.isFinite(Number(body.closing_cash)) ? Math.max(0, parseInt(body.closing_cash) || 0) : cashTotal(counts);
   const report = shiftReport(shift.id, branch_id);
+  const closed_at = now();
   db.prepare(`UPDATE shifts SET shift_key=?, shift_label=?, closing_cash=?, closing_count_json=?, status='closed', closed_at=? WHERE id=?`)
-    .run(picked.key, picked.label, closing_cash, JSON.stringify(counts), now(), shift.id);
+    .run(picked.key, picked.label, closing_cash, JSON.stringify(counts), closed_at, shift.id);
+  const day_report = operationDayReport(branch_id, closed_at);
   audit('shift.close', {
     shift: picked.label,
     opening_cash: shift.opening_cash,
     closing_cash,
     expected_cash: report.expected_cash,
     revenue: report.total_revenue,
+    day_revenue: day_report.total_revenue,
   }, branch_id, user.username || 'system');
-  emit('shift:updated', { status: 'closed', shift_label: picked.label }, branch_id);
-  return { shift: publicShift(db.prepare(`SELECT * FROM shifts WHERE id=?`).get(shift.id)), report: { ...report, closing_cash } };
+  emit('shift:updated', { status: 'closed', shift_label: picked.label, day_report }, branch_id);
+  return { shift: publicShift(db.prepare(`SELECT * FROM shifts WHERE id=?`).get(shift.id)), report: { ...report, closing_cash }, day_report };
 }
 
 export function currentShift(branch_id = 'br1') {
   const shift = getActiveShift(branch_id);
-  return { shift, config: getOperationsConfig(branch_id), report: shift ? shiftReport(shift.id, branch_id) : null };
+  return { shift, config: getOperationsConfig(branch_id), report: shift ? shiftReport(shift.id, branch_id) : null, day_report: operationDayReport(branch_id) };
 }
 
 export function listShifts(branch_id = 'br1', limit = 40) {
@@ -84,7 +96,7 @@ export function shiftReport(shift_id, branch_id = 'br1') {
   const shift = publicShift(db.prepare(`SELECT * FROM shifts WHERE id=? AND branch_id=?`).get(shift_id, branch_id));
   if (!shift) throw new Error('Ca lam viec khong ton tai.');
   const payments = db.prepare(`
-    SELECT p.id payment_id, p.order_id, p.total, p.created_at, o.channel, o.table_id, t.code table_code
+    SELECT p.id payment_id, p.order_id, p.total, p.created_at, o.channel, o.table_id, o.bill_no, t.code table_code
     FROM payments p
     JOIN orders o ON o.id=p.order_id
     LEFT JOIN tables t ON t.id=o.table_id
@@ -99,7 +111,7 @@ export function shiftReport(shift_id, branch_id = 'br1') {
   const billLines = db.prepare(`SELECT method,amount,reference FROM payment_lines WHERE payment_id=? ORDER BY rowid`);
   const bills = payments.map(p => ({
     ...p,
-    number: p.order_id.slice(-6).toUpperCase(),
+    number: p.bill_no || p.order_id.slice(-6).toUpperCase(),
     lines: billLines.all(p.payment_id),
   }));
   const methodTotals = Object.fromEntries(lines.map(l => [l.method, Number(l.amount) || 0]));
@@ -120,5 +132,61 @@ export function shiftReport(shift_id, branch_id = 'br1') {
     method_totals: methodTotals,
     method_lines: lines,
     bills,
+  };
+}
+
+export function operationDayReport(branch_id = 'br1', endAt = null) {
+  const ref = endAt ? new Date(endAt) : new Date();
+  const bounds = dayBounds(ref);
+  const firstShift = db.prepare(`
+    SELECT opened_at FROM shifts
+    WHERE branch_id=? AND opened_at>=? AND opened_at<?
+    ORDER BY opened_at ASC LIMIT 1`).get(branch_id, bounds.start, bounds.end);
+  const lastShift = db.prepare(`
+    SELECT opened_at,closed_at,status FROM shifts
+    WHERE branch_id=? AND opened_at>=? AND opened_at<?
+    ORDER BY opened_at DESC LIMIT 1`).get(branch_id, bounds.start, bounds.end);
+  const start = firstShift?.opened_at || bounds.start;
+  const end = endAt || (lastShift?.status === 'closed' && lastShift.closed_at ? lastShift.closed_at : now());
+  const payments = db.prepare(`
+    SELECT p.id payment_id, p.order_id, p.total, p.created_at, o.channel, o.table_id, t.code table_code
+    FROM payments p
+    JOIN orders o ON o.id=p.order_id
+    LEFT JOIN tables t ON t.id=o.table_id
+    WHERE o.branch_id=? AND p.created_at>=? AND p.created_at<=?
+    ORDER BY p.created_at`).all(branch_id, start, end);
+  const lines = db.prepare(`
+    SELECT pl.method, SUM(pl.amount) amount, COUNT(*) count
+    FROM payment_lines pl
+    JOIN payments p ON p.id=pl.payment_id
+    JOIN orders o ON o.id=p.order_id
+    WHERE o.branch_id=? AND p.created_at>=? AND p.created_at<=?
+    GROUP BY pl.method
+    ORDER BY amount DESC`).all(branch_id, start, end);
+  const methodTotals = Object.fromEntries(lines.map(l => [l.method, Number(l.amount) || 0]));
+  const cash = Number(methodTotals.cash) || 0;
+  const transfer = ['bank_transfer', 'internet_banking', 'qrcode', 'qr', 'momo', 'zalopay']
+    .reduce((s, k) => s + (Number(methodTotals[k]) || 0), 0);
+  const pos = ['card', 'visa', 'pos_card'].reduce((s, k) => s + (Number(methodTotals[k]) || 0), 0);
+  const byChannel = {};
+  for (const p of payments) byChannel[p.channel] = (byChannel[p.channel] || 0) + (Number(p.total) || 0);
+  const total_revenue = payments.reduce((s, p) => s + (Number(p.total) || 0), 0);
+  const shift_count = db.prepare(`
+    SELECT COUNT(*) n FROM shifts
+    WHERE branch_id=? AND opened_at>=? AND opened_at<?`).get(branch_id, bounds.start, bounds.end).n;
+  return {
+    start,
+    end,
+    source: firstShift ? 'shift' : 'calendar',
+    closed: !!(lastShift?.status === 'closed' && lastShift.closed_at && end === lastShift.closed_at),
+    shift_count,
+    bill_count: payments.length,
+    total_revenue,
+    cash_sales: cash,
+    transfer_sales: transfer,
+    pos_sales: pos,
+    method_totals: methodTotals,
+    method_lines: lines,
+    by_channel: byChannel,
   };
 }
