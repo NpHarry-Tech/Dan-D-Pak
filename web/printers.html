@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="vi"><head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Printer Monitor — POS/ERP</title>
+<link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/shared/app.css">
+<script src="/socket.io/socket.io.js"></script>
+<style>
+.pgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(228px,1fr));gap:16px}
+.paper .runner-tbl{text-align:center;font-weight:800;margin:2px 0 4px}
+.paper .runner-tbl .big-tbl{display:block;font-size:30px;line-height:1.05;letter-spacing:1px}
+.paper .runner-name{font-size:16px;font-weight:800;text-align:center;margin:4px 0}
+.printer{background:var(--surface);border:1px solid var(--border);border-radius:14px;display:flex;flex-direction:column;min-height:420px}
+.printer .ph{padding:12px 15px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:9px;font-weight:700}
+.printer .ph .st{margin-left:auto;font-size:11px;font-weight:600}
+.tray{flex:1;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:14px;background:repeating-linear-gradient(180deg,transparent,transparent 26px,rgba(255,255,255,.015) 26px,rgba(255,255,255,.015) 27px)}
+.paper{background:#fdfdf8;color:#1a1a1a;font-family:var(--mono);font-size:11.5px;border-radius:4px;padding:14px 14px;box-shadow:0 6px 20px rgba(0,0,0,.4);animation:slideIn .35s ease}
+@keyframes slideIn{from{transform:translateY(-14px);opacity:0}to{transform:none;opacity:1}}
+.paper.printed{opacity:.6}
+.paper .c{text-align:center}.paper h4{font-size:13px;margin:1px 0}
+.paper hr{border:none;border-top:1px dashed #999;margin:6px 0}
+.paper .li{display:flex;justify-content:space-between;gap:8px;padding:1px 0}
+.paper .big{font-size:14px;font-weight:700}
+.paper .note{color:#b35; font-size:11px}
+.paper .qr{width:58px;height:58px;margin:6px auto 2px;background:repeating-conic-gradient(#111 0 25%,#fdfdf8 0 50%) 0 0/11px 11px;border:3px solid #111}
+.paper .receipt-canvas-live{position:relative;width:100%;background:#fdfdf8;color:#111;aspect-ratio:var(--receipt-ratio,72/180);min-height:280px}
+.paper .label-canvas-live{position:relative;width:100%;background:#fff;color:#111;aspect-ratio:var(--label-ratio,50/30);min-height:120px;border:1px dashed #bbb}
+.paper .tpl-el{position:absolute;white-space:pre-wrap;overflow:hidden;line-height:1.12}
+.paper .tpl-img img{width:100%;height:100%;object-fit:contain}
+.paper .tpl-line{border-top:1px dashed #777;height:0!important}
+.paper .pact{display:flex;gap:7px;margin-top:9px}
+.paper .pact button{flex:1;font-size:11px;padding:5px;border-radius:6px;border:1px solid #ccc;background:#eee;color:#333;font-weight:600;font-family:var(--font)}
+.pempty{color:var(--faint);text-align:center;padding:40px 10px;font-size:12.5px}
+.dotled{width:8px;height:8px;border-radius:50%;background:var(--done);box-shadow:0 0 7px var(--done)}
+</style></head>
+<body>
+<div id="top"></div>
+<div class="view">
+  <div class="viewhead">
+    <h1>🖨️ Printer Monitor</h1>
+    <div class="sub">Máy in ảo — phiếu bếp/bar tự in khi gửi món, receipt tự in khi thanh toán</div>
+    <div class="right"><label style="font-size:12px;color:var(--muted)"><input type="checkbox" id="autoP" checked> Tự động in (auto-print)</label></div>
+  </div>
+  <div class="pgrid">
+    <div class="printer"><div class="ph">🔥 Máy in Bếp <span class="dotled"></span><span class="st" style="color:var(--done)">Sẵn sàng</span></div><div class="tray" id="tray-kitchen"><div class="pempty">Chưa có phiếu</div></div></div>
+    <div class="printer"><div class="ph">🍹 Máy in Bar <span class="dotled"></span><span class="st" style="color:var(--done)">Sẵn sàng</span></div><div class="tray" id="tray-bar"><div class="pempty">Chưa có phiếu</div></div></div>
+    <div class="printer"><div class="ph">🧾 Máy in Bill <span class="dotled"></span><span class="st" style="color:var(--done)">Sẵn sàng</span></div><div class="tray" id="tray-bill"><div class="pempty">Chưa có phiếu</div></div></div>
+    <div class="printer"><div class="ph">🏷️ Máy in Tem <span class="dotled"></span><span class="st" style="color:var(--done)">Sẵn sàng</span></div><div class="tray" id="tray-label"><div class="pempty">Chưa có tem</div></div></div>
+    <div class="printer"><div class="ph">🍽️ Phiếu chạy món <span class="dotled"></span><span class="st" style="color:var(--done)">Sẵn sàng</span></div><div class="tray" id="tray-runner"><div class="pempty">Chưa có phiếu</div></div></div>
+  </div>
+</div>
+
+<script type="module">
+import { api, connect, money, toast, esc, startClock, topbar, requireModuleAccess, renderUserChip } from '/shared/client.js';
+document.getElementById('top').innerHTML = topbar('printers');
+await requireModuleAccess('printing'); renderUserChip();
+
+let jobs = [], printConfig = {};
+const cfgKey=k=>`pos_erp_${k}_settings`;
+function readLocalCfg(k){ try{return JSON.parse(localStorage.getItem(cfgKey(k))||'null');}catch{return null;} }
+function hasLocalPrintCfg(){ return ['einvoice','labels','bill','printers','label_template','cup_label_template','bill_template'].some(k=>localStorage.getItem(cfgKey(k))); }
+function mergePrintConfig(remote={}){
+  const r=remote||{};
+  if(r.updated_at||!hasLocalPrintCfg()) return r;
+  const local={
+    einvoice:readLocalCfg('einvoice')||{},
+    labels:readLocalCfg('labels')||{},
+    bill:readLocalCfg('bill')||{},
+    printers:readLocalCfg('printers')||r.printers,
+    templates:{label:readLocalCfg('cup_label_template')||readLocalCfg('label_template')||r.templates?.label,bill:readLocalCfg('bill_template')||r.templates?.bill},
+  };
+  return {...r,einvoice:{...(r.einvoice||{}),...local.einvoice},labels:{...(r.labels||{}),...local.labels},bill:{...(r.bill||{}),...local.bill},printers:local.printers||r.printers,templates:{...(r.templates||{}),...local.templates}};
+}
+connect('printers', {
+  'print:new': (j) => { jobs.unshift(j); render(); if(document.getElementById('autoP').checked) setTimeout(()=>doPrint(j.id), 600); },
+  'print:done': () => { load(); },
+});
+
+async function load(){
+  const out = await Promise.all([api('/print/jobs'), api('/print/config').catch(()=>printConfig||{})]);
+  jobs = out[0]; printConfig = mergePrintConfig(out[1]);
+  render();
+}
+function render(){
+  for(const p of ['kitchen','bar','bill','label','runner']){
+    const list = jobs.filter(j => j.printer === p).slice(0, 12);
+    const el = document.getElementById('tray-'+p);
+    if(el) el.innerHTML = list.length ? list.map(paper).join('') : '<div class="pempty">Chưa có phiếu</div>';
+  }
+  document.querySelectorAll('[data-print]').forEach(b=>b.onclick=()=>doPrint(b.dataset.print));
+  document.querySelectorAll('[data-reprint]').forEach(b=>b.onclick=()=>reprint(b.dataset.reprint));
+}
+function paper(j){
+  const body = j.type==='receipt' ? receiptBody(j.payload) : j.type==='cup_label' ? labelBody(j.payload) : j.type==='runner' ? runnerBody(j.payload) : ticketBody(j.payload);
+  const acts = j.status==='queued'
+    ? `<div class="pact"><button data-print="${j.id}">🖨️ In</button></div>`
+    : `<div class="pact"><button data-reprint="${j.id}">In lại</button></div>`;
+  return `<div class="paper ${j.status==='printed'?'printed':''}">${body}${acts}</div>`;
+}
+function ticketBody(p){
+  return `<div class="c"><h4>=== ${esc(p.station||'KITCHEN')} ===</h4></div><hr>
+    <div class="li"><span>Bàn: <b>${esc(p.table||'—')}</b></span><span>#${esc(p.order_no||'')}</span></div>
+    <div class="li"><span>${esc(p.time||'')}</span></div><hr>
+    ${(p.items||[]).map(i=>`<div class="big">${i.qty}× ${esc(i.name)}</div>
+      ${(i.mods&&i.mods.length)?`<div class="note">+ ${esc(i.mods.join(', '))}</div>`:''}
+      ${i.note?`<div class="note">📝 ${esc(i.note)}</div>`:''}`).join('<hr style="border-top-style:dotted">')}`;
+}
+function activePrintConfig(r){ return r?.print_config || printConfig || {}; }
+function activeBillCfg(r){ return activePrintConfig(r).bill || {}; }
+function activeBillTemplate(r){ return activePrintConfig(r).templates?.bill || null; }
+function activeLabelTemplate(r){ return activePrintConfig(r).templates?.label || null; }
+function methodLabel(m){return {cash:'Tien mat',card:'May POS',qr:'QR',qrcode:'QR Code',voucher:'Voucher',bank_transfer:'Chuyen khoan',internet_banking:'Internet Banking',momo:'MoMo Pay',zalopay:'ZaloPay',visa:'Visa',pos_card:'May POS',online:'Online'}[m]||m;}
+function replaceVars(text, vars){ return String(text||'').replace(/\{(\w+)\}/g,(_,k)=>vars[k]??`{${k}}`); }
+function receiptItemsText(r){
+  return (r.items||[]).map(i=>{
+    const mods=(i.mods||[]).map(m=>m.name).filter(Boolean);
+    const head=`${i.qty}x ${i.name}  ${money((i.unit_price||0)*(i.qty||1))}`;
+    return mods.length ? `${head}\n  + ${mods.join(', ')}` : head;
+  }).join('\n');
+}
+function receiptVars(r){
+  const cfg=activeBillCfg(r), lines=r.lines||[];
+  return {
+    storeName:cfg.storeName||r.branch||'POS/ERP',
+    address:cfg.address||'',
+    phone:cfg.phone||'',
+    orderNo:`#${r.number||''}`,
+    table:r.table_code||'-',
+    cashier:'',
+    time:new Date(r.paid_at||Date.now()).toLocaleString('vi-VN'),
+    items:receiptItemsText(r),
+    subtotal:money(r.subtotal||0),
+    discount:money(r.discount||0),
+    total:money(r.total||0),
+    method:lines.map(l=>`${methodLabel(l.method)} ${money(l.amount)}`).join('\n')||'-',
+    footer:cfg.footer||'Cam on quy khach',
+  };
+}
+function templateReceiptBody(r){
+  const tpl=activeBillTemplate(r);
+  if(!tpl?.elements?.length) return '';
+  const vars=receiptVars(r);
+  const w=Number(tpl.widthMm)||72, h=Number(tpl.heightMm)||180;
+  const els=tpl.elements.map((el,i)=>{
+    const pos=`left:${Number(el.x)||0}%;top:${Number(el.y)||0}%;width:${Number(el.w)||20}%;height:${el.type==='line'?0:(Number(el.h)||8)}%;z-index:${i+1}`;
+    if(el.type==='image') return `<div class="tpl-el tpl-img" style="${pos}">${el.src?`<img src="${esc(el.src)}">`:''}</div>`;
+    if(el.type==='line') return `<div class="tpl-el tpl-line" style="${pos}"></div>`;
+    const align=el.align==='center'?'center':el.align==='right'?'right':'left';
+    const justify=align==='center'?'center':align==='right'?'flex-end':'flex-start';
+    const decoration=[el.underline?'underline':'',el.strike?'line-through':''].filter(Boolean).join(' ')||'none';
+    return `<div class="tpl-el" style="${pos};font-size:${Math.max(7,(Number(el.fontSize)||5)*1.55)}px;font-weight:${el.bold?800:500};font-style:${el.italic?'italic':'normal'};text-decoration:${decoration};text-align:${align};display:flex;align-items:center;justify-content:${justify}">${esc(replaceVars(el.text,vars))}</div>`;
+  }).join('');
+  const cfg=activeBillCfg(r);
+  return `<div class="receipt-canvas-live" style="--receipt-ratio:${w}/${h}">${els}</div>${cfg.showQr!=='0'?`<div class="qr"></div><div class="c" style="font-size:9px">Quet QR tra cuu hoa don</div>`:''}`;
+}
+function basicReceiptBody(r){
+  const cfg=activeBillCfg(r);
+  return `<div class="c"><h4>${esc(cfg.storeName||r.branch||'POS/ERP')}</h4>${cfg.address?`<div>${esc(cfg.address)}</div>`:''}<div>HOA DON #${esc(r.number||'')}</div>${r.table_code?`<div>Ban ${esc(r.table_code)}</div>`:''}</div><hr>
+    ${(r.items||[]).map(i=>`<div class="li"><span>${i.qty}x ${esc(i.name)}</span><span>${money((i.unit_price||0)*(i.qty||1))}</span></div>`).join('')}<hr>
+    <div class="li big"><span>TONG</span><span>${money(r.total)}</span></div>
+    ${(r.lines||[]).map(l=>`<div class="li"><span>${esc(methodLabel(l.method))}</span><span>${money(l.amount)}</span></div>`).join('')}
+    ${cfg.showQr!=='0'?`<div class="qr"></div><div class="c" style="font-size:9px">Quet QR tra cuu hoa don</div>`:''}<div class="c" style="font-size:9px">${esc(cfg.footer||'Cam on quy khach')}</div>`;
+}
+function receiptBody(r){
+  return templateReceiptBody(r) || basicReceiptBody(r);
+  return `<div class="c"><h4>${esc(r.branch||'POS/ERP')}</h4><div>HÓA ĐƠN #${esc(r.number||'')}</div>${r.table_code?`<div>Bàn ${esc(r.table_code)}</div>`:''}</div><hr>
+    ${(r.items||[]).map(i=>`<div class="li"><span>${i.qty}× ${esc(i.name)}</span><span>${money(i.unit_price*i.qty)}</span></div>`).join('')}<hr>
+    <div class="li big"><span>TỔNG</span><span>${money(r.total)}</span></div>
+    ${(r.lines||[]).map(l=>`<div class="li"><span>${esc(l.method)}</span><span>${money(l.amount)}</span></div>`).join('')}
+    <div class="qr"></div><div class="c" style="font-size:9px">Cảm ơn quý khách</div>`;
+}
+function labelVars(p){
+  return {
+    itemName:p.itemName||p.name||'',
+    options:p.options||'',
+    note:p.note||'',
+    orderNo:p.order_no||'',
+    table:p.table||'',
+    qty:p.qty||1,
+    channel:p.channel||'',
+    customer:p.customer||'',
+    phone:p.phone||'',
+    time:p.time||'',
+  };
+}
+function templateLabelBody(p){
+  const tpl=activeLabelTemplate(p);
+  if(!tpl?.elements?.length) return '';
+  const vars=labelVars(p);
+  const w=Number(tpl.widthMm)||50, h=Number(tpl.heightMm)||30;
+  const els=tpl.elements.map((el,i)=>{
+    const pos=`left:${Number(el.x)||0}%;top:${Number(el.y)||0}%;width:${Number(el.w)||20}%;height:${el.type==='line'?0:(Number(el.h)||8)}%;z-index:${i+1}`;
+    if(el.type==='image') return `<div class="tpl-el tpl-img" style="${pos}">${el.src?`<img src="${esc(el.src)}">`:''}</div>`;
+    if(el.type==='line') return `<div class="tpl-el tpl-line" style="${pos}"></div>`;
+    const align=el.align==='center'?'center':el.align==='right'?'right':'left';
+    const justify=align==='center'?'center':align==='right'?'flex-end':'flex-start';
+    const decoration=[el.underline?'underline':'',el.strike?'line-through':''].filter(Boolean).join(' ')||'none';
+    return `<div class="tpl-el" style="${pos};font-size:${Math.max(7,(Number(el.fontSize)||5)*1.8)}px;font-weight:${el.bold?800:500};font-style:${el.italic?'italic':'normal'};text-decoration:${decoration};text-align:${align};display:flex;align-items:center;justify-content:${justify}">${esc(replaceVars(el.text,vars))}</div>`;
+  }).join('');
+  return `<div class="label-canvas-live" style="--label-ratio:${w}/${h}">${els}</div>`;
+}
+function basicLabelBody(p){
+  return `<div class="c"><h4>TEM LY</h4><div>${esc(p.order_no||'')}</div></div><hr>
+    <div class="big">${esc(p.itemName||'')}</div>
+    ${p.options?`<div class="note">+ ${esc(p.options)}</div>`:''}
+    ${p.note?`<div class="note">📝 ${esc(p.note)}</div>`:''}
+    <hr><div class="li" style="font-size:10px"><span>${esc(p.channel||'')}</span><span>${esc(p.table||'')}</span><span>${esc(p.time||'')}</span></div>`;
+}
+function labelBody(p){ return templateLabelBody(p) || basicLabelBody(p); }
+function runnerBody(p){
+  return `<div class="runner-tbl"><span style="font-size:10px">CHẠY MÓN · BÀN</span><span class="big-tbl">${esc(p.table||'—')}</span></div><hr>
+    <div class="runner-name">${esc(p.name||'')}</div>
+    ${p.seq?`<div class="c" style="font-size:10px;color:#555">phần ${esc(p.seq)}</div>`:''}
+    ${(p.mods&&p.mods.length)?`<div class="note c">+ ${esc(p.mods.join(', '))}</div>`:''}
+    ${p.note?`<div class="note c">📝 ${esc(p.note)}</div>`:''}
+    <hr><div class="li" style="font-size:10px"><span>#${esc(p.order_no||'')}</span><span>${esc(p.station||'')}</span><span>${esc(p.time||'')}</span></div>`;
+}
+async function doPrint(id){ try{ await api('/print/jobs/'+id+'/printed',{method:'POST'}); }catch(e){toast(e.message,true);} }
+async function reprint(id){ try{ await api('/print/jobs/'+id+'/reprint',{method:'POST'}); toast('Đã in lại'); }catch(e){toast(e.message,true);} }
+
+startClock(); load();
+</script>
+</body></html>

@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="vi"><head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Cài đặt — POS/ERP</title>
+<link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/shared/app.css">
+<script src="/socket.io/socket.io.js"></script>
+<style>
+.subtabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px}
+.subtab{padding:9px 16px;border-radius:9px;background:var(--surface);border:1px solid var(--border);color:var(--muted);font-size:13px;font-weight:700}
+.subtab:hover{color:var(--text);border-color:var(--border2)}
+.subtab.active{background:var(--brand-dim);border-color:var(--brand);color:var(--brand)}
+.rolecard{background:var(--surface);border:1px solid var(--border);border-radius:13px;padding:16px;margin-bottom:14px}
+.roleHead{display:flex;align-items:center;gap:10px;margin-bottom:4px}
+.roleHead b{font-size:15px}
+.permgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:8px;margin:12px 0}
+.permitem{display:flex;align-items:flex-start;gap:9px;padding:9px 11px;border:1px solid var(--border);border-radius:9px;cursor:pointer;font-size:12.5px;background:var(--surface2)}
+.permitem.on{border-color:var(--brand);background:var(--brand-dim)}
+.permitem.lock{opacity:.7;cursor:default}
+.permbox{width:18px;height:18px;border-radius:5px;border:2px solid var(--border2);flex:0 0 auto;margin-top:1px;position:relative}
+.permitem.on .permbox{background:var(--brand);border-color:var(--brand)}
+.permitem.on .permbox::after{content:"";position:absolute;left:4px;top:1px;width:5px;height:9px;border:solid #fff;border-width:0 2px 2px 0;transform:rotate(45deg)}
+.permitem .pl b{display:block;font-weight:700}.permitem .pl span{color:var(--muted);font-size:11px}
+.badge{display:inline-block;padding:2px 9px;border-radius:99px;font-size:11px;font-weight:700}
+.badge.role{background:var(--brand-dim);color:var(--brand)}
+.badge.on{background:var(--done-bg);color:#0a7d46}.badge.off{background:var(--late-bg);color:#b42318}
+.urow td{vertical-align:middle}
+.uactions{display:flex;gap:6px;justify-content:flex-end}
+.logrow{display:grid;grid-template-columns:130px 110px 1fr;gap:12px;padding:9px 4px;border-bottom:1px dashed var(--border);font-size:12.5px;align-items:baseline}
+.logrow:last-child{border:none}
+.logrow .lt{font-family:var(--mono);color:var(--faint);font-size:11px}
+.logrow .la{font-weight:700}
+.noaccess{max-width:460px;margin:60px auto;text-align:center;background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:34px}
+</style></head>
+<body>
+<div id="top"></div>
+<div class="view">
+  <div class="viewhead">
+    <h1>Cài đặt</h1>
+    <div class="sub">Quản lý người dùng, phân quyền và nhật ký hoạt động</div>
+  </div>
+  <div id="body"></div>
+</div>
+
+<script type="module">
+import { api, money, toast, esc, startClock, topbar, requireModuleAccess, renderUserChip, hasPerm, describeAudit } from '/shared/client.js';
+document.getElementById('top').innerHTML = topbar('settings');
+await requireModuleAccess('settings'); renderUserChip(); startClock();
+
+const ROLE_VN={owner:'Chủ quán',manager:'Quản lý',cashier:'Thu ngân',kitchen:'Bếp',warehouse:'Thủ kho'};
+const body=document.getElementById('body');
+
+if(!hasPerm('settings.manage')){
+  body.innerHTML=`<div class="noaccess"><h2 style="font-size:17px;margin-bottom:8px">Bạn không có quyền truy cập</h2>
+    <p style="color:var(--muted);font-size:13px">Trang Cài đặt chỉ dành cho tài khoản được cấp quyền "Quản lý người dùng và phân quyền". Liên hệ Chủ quán để được cấp quyền.</p></div>`;
+} else { initSettings(); }
+
+const TABS=[['users','Người dùng'],['roles','Phân quyền theo vai trò'],['modules','Phân hệ / Modules'],['logs','Nhật ký hoạt động']];
+let tab='users';
+
+function initSettings(){
+  render();
+}
+function render(){
+  body.innerHTML=`<div class="subtabs">${TABS.map(([k,n])=>`<button class="subtab ${k===tab?'active':''}" data-t="${k}">${n}</button>`).join('')}</div><div id="panel"></div>`;
+  document.querySelectorAll('.subtab').forEach(b=>b.onclick=()=>{tab=b.dataset.t;render();});
+  ({users:renderUsers,roles:renderRoles,modules:renderModules,logs:renderLogs}[tab])();
+}
+
+/* ---------- Users ---------- */
+async function renderUsers(){
+  const panel=document.getElementById('panel');
+  panel.innerHTML=`<div class="panel"><h3>Tài khoản nhân viên <button class="btn sm primary" id="addUser" style="margin-left:auto">Thêm người dùng</button></h3>
+    <table><thead><tr><th>Họ tên</th><th>Tài khoản</th><th>Vai trò</th><th>Trạng thái</th><th></th></tr></thead><tbody id="ub"><tr><td colspan="5" class="empty">Đang tải…</td></tr></tbody></table></div>`;
+  document.getElementById('addUser').onclick=()=>openUserForm(null);
+  const users=await api('/settings/users');
+  document.getElementById('ub').innerHTML=users.map(u=>`<tr class="urow">
+    <td>${esc(u.name)}</td>
+    <td style="font-family:var(--mono)">${esc(u.username)}</td>
+    <td><span class="badge role">${ROLE_VN[u.role]||u.role}</span></td>
+    <td><span class="badge ${u.active?'on':'off'}">${u.active?'Đang hoạt động':'Đã khóa'}</span></td>
+    <td><div class="uactions">
+      <button class="btn sm" data-perm="${u.id}">Quyền riêng</button>
+      <button class="btn sm" data-edit="${u.id}">Sửa</button>
+      <button class="btn sm danger" data-del="${u.id}">Xóa</button>
+    </div></td></tr>`).join('')||'<tr><td colspan="5" class="empty">Chưa có người dùng</td></tr>';
+  panel.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>openUserForm(users.find(u=>u.id===b.dataset.edit)));
+  panel.querySelectorAll('[data-perm]').forEach(b=>b.onclick=()=>openUserPerms(users.find(u=>u.id===b.dataset.perm)));
+  panel.querySelectorAll('[data-del]').forEach(b=>b.onclick=async()=>{
+    const u=users.find(x=>x.id===b.dataset.del);
+    if(!confirm(`Xóa người dùng "${u.name}"?`))return;
+    try{ await api('/settings/users/'+u.id+'/delete',{method:'POST'}); toast('Đã xóa'); renderUsers(); }catch(e){toast(e.message,true);}
+  });
+}
+function openUserForm(u){
+  const isEdit=!!u;
+  const ov=document.createElement('div'); ov.className='overlay show';
+  ov.innerHTML=`<div class="modal"><h2>${isEdit?'Sửa người dùng':'Thêm người dùng'}</h2>
+    <label>Họ tên</label><input id="uname" value="${esc(u?.name||'')}" placeholder="Nguyễn Văn A">
+    <label>Tên đăng nhập</label><input id="uuser" value="${esc(u?.username||'')}" placeholder="vananh" ${isEdit?'disabled style="opacity:.6"':''}>
+    <label>Mã PIN (4–6 số)${isEdit?' — để trống nếu không đổi':''}</label><input id="upin" type="text" inputmode="numeric" placeholder="${isEdit?'••••':'1234'}">
+    <label>Vai trò</label><select id="urole">${Object.entries(ROLE_VN).map(([k,v])=>`<option value="${k}" ${u?.role===k?'selected':''}>${v}</option>`).join('')}</select>
+    ${isEdit?`<label style="display:flex;align-items:center;gap:8px;margin-top:14px"><input type="checkbox" id="uactive" ${u.active?'checked':''} style="width:auto"> Đang hoạt động</label>`:''}
+    <div class="mfoot"><button class="btn" id="ucancel">Hủy</button><button class="btn primary" id="usave">${isEdit?'Lưu':'Tạo'}</button></div></div>`;
+  document.body.appendChild(ov);
+  ov.querySelector('#ucancel').onclick=()=>ov.remove();
+  ov.querySelector('#usave').onclick=async()=>{
+    const b={name:ov.querySelector('#uname').value.trim(),role:ov.querySelector('#urole').value};
+    const pin=ov.querySelector('#upin').value.trim(); if(pin)b.pin=pin;
+    if(isEdit){ b.active=ov.querySelector('#uactive').checked; }
+    else { b.username=ov.querySelector('#uuser').value.trim(); if(!pin)b.pin=''; }
+    try{ await api(isEdit?'/settings/users/'+u.id+'/update':'/settings/users',{method:'POST',body:b}); ov.remove(); toast(isEdit?'Đã lưu':'Đã tạo người dùng'); renderUsers(); }
+    catch(e){toast(e.message,true);}
+  };
+}
+async function openUserPerms(u){
+  const [cat, det]=await Promise.all([api('/settings/permissions'),api('/settings/users/'+u.id+'/permissions')]);
+  const perms=cat.catalog; const eff=new Set(det.perms);
+  const owner=u.role==='owner';
+  const ov=document.createElement('div'); ov.className='overlay show';
+  ov.innerHTML=`<div class="modal" style="max-width:560px"><h2>Quyền riêng · ${esc(u.name)}</h2>
+    <div class="sub">Mặc định theo vai trò <b>${ROLE_VN[u.role]||u.role}</b>. Tích/bỏ tích để cấp thêm hoặc thu hồi quyền cho riêng người này.</div>
+    ${owner?'<div class="empty">Chủ quán luôn toàn quyền, không thể chỉnh.</div>':`<div id="upgrid" style="display:flex;flex-direction:column;gap:7px;margin-top:6px"></div>`}
+    <div class="mfoot"><button class="btn" id="pcancel">Đóng</button>${owner?'':'<button class="btn primary" id="psave">Lưu quyền</button>'}</div></div>`;
+  document.body.appendChild(ov);
+  ov.querySelector('#pcancel').onclick=()=>ov.remove();
+  if(!owner){
+    const grid=ov.querySelector('#upgrid');
+    grid.innerHTML=perms.map(p=>`<label class="permitem ${eff.has(p.key)?'on':''}" data-k="${p.key}"><span class="permbox"></span><span class="pl"><b>${esc(p.label.split('—')[0])}</b><span>${esc(p.label)}</span></span></label>`).join('');
+    grid.querySelectorAll('.permitem').forEach(el=>el.onclick=()=>el.classList.toggle('on'));
+    ov.querySelector('#psave').onclick=async()=>{
+      const sel=[...grid.querySelectorAll('.permitem.on')].map(el=>el.dataset.k);
+      try{ await api('/settings/users/'+u.id+'/permissions',{method:'POST',body:{perms:sel}}); ov.remove(); toast('Đã lưu quyền riêng'); }catch(e){toast(e.message,true);}
+    };
+  }
+}
+
+/* ---------- Roles matrix ---------- */
+async function renderRoles(){
+  const panel=document.getElementById('panel');
+  panel.innerHTML='<div class="empty">Đang tải…</div>';
+  const {catalog, roles}=await api('/settings/permissions');
+  panel.innerHTML=roles.map(r=>`<div class="rolecard" data-role="${r.key}">
+    <div class="roleHead"><b>${ROLE_VN[r.key]||r.label}</b> ${r.locked?'<span class="badge role">Toàn quyền</span>':''}
+      ${r.locked?'':`<button class="btn sm primary" data-save="${r.key}" style="margin-left:auto">Lưu</button>`}</div>
+    <div class="sub" style="color:var(--muted);font-size:12px">${esc(r.note||'')}</div>
+    <div class="permgrid">${catalog.map(p=>{
+      const on=r.locked||r.perms.includes(p.key);
+      return `<label class="permitem ${on?'on':''} ${r.locked?'lock':''}" data-k="${p.key}"><span class="permbox"></span><span class="pl"><b>${esc(p.label.split('—')[0])}</b><span>${esc(p.label)}</span></span></label>`;
+    }).join('')}</div>
+  </div>`).join('');
+  panel.querySelectorAll('.rolecard').forEach(card=>{
+    const locked=roles.find(r=>r.key===card.dataset.role)?.locked;
+    if(locked) return;
+    card.querySelectorAll('.permitem').forEach(el=>el.onclick=()=>el.classList.toggle('on'));
+    card.querySelector('[data-save]').onclick=async()=>{
+      const sel=[...card.querySelectorAll('.permitem.on')].map(el=>el.dataset.k);
+      try{ await api('/settings/roles/'+card.dataset.role+'/permissions',{method:'POST',body:{perms:sel}}); toast('Đã lưu quyền vai trò '+(ROLE_VN[card.dataset.role]||card.dataset.role)); }
+      catch(e){toast(e.message,true);}
+    };
+  });
+}
+
+/* ---------- Logs ---------- */
+async function renderModules(){
+  const panel=document.getElementById('panel');
+  panel.innerHTML='<div class="empty">Đang tải phân hệ...</div>';
+  let data; try{ data=await api('/modules/all'); }catch(e){ panel.innerHTML=`<div class="empty">${esc(e.message)}</div>`; return; }
+  const groupName=Object.fromEntries(data.groups.map(g=>[g.key,g.label]));
+  panel.innerHTML=`<div class="panel"><h3>Danh mục phân hệ ERP</h3>
+    <div class="hint" style="color:var(--muted);font-size:12px;margin-bottom:10px">Phân hệ active có màn hình sử dụng ngay. Phân hệ roadmap đã được đặt mã, quyền và dependency để phát triển từng phần.</div>
+    <table><thead><tr><th>Phân hệ</th><th>Nhóm</th><th>Trạng thái</th><th>Quyền</th><th>Phụ thuộc</th></tr></thead><tbody>
+      ${data.modules.map(m=>`<tr>
+        <td><b>${esc(m.icon||'')} ${esc(m.label)}</b><br><span class="mini">${esc(m.description||'')}</span></td>
+        <td>${esc(groupName[m.group]||m.group)}</td>
+        <td><span class="badge ${m.status==='active'?'on':'off'}">${m.status==='active'?'Active':'Roadmap'}</span></td>
+        <td style="font-family:var(--mono);font-size:11px">${esc(m.perm||'')}</td>
+        <td style="font-family:var(--mono);font-size:11px">${esc((m.depends||[]).join(', ')||'-')}</td>
+      </tr>`).join('')}
+    </tbody></table></div>`;
+}
+
+/* ---------- Logs ---------- */
+async function renderLogs(){
+  const panel=document.getElementById('panel');
+  panel.innerHTML=`<div class="panel"><h3>Nhật ký hoạt động <button class="btn sm" id="logRefresh" style="margin-left:auto">Làm mới</button></h3>
+    <div class="hint" style="color:var(--muted);font-size:12px;margin-bottom:10px">Ghi lại mọi thao tác quan trọng. Chỉ tài khoản có quyền mới xem được.</div>
+    <div id="logs"><div class="empty">Đang tải…</div></div></div>`;
+  document.getElementById('logRefresh').onclick=loadLogs;
+  loadLogs();
+}
+async function loadLogs(){
+  const el=document.getElementById('logs');
+  let rows; try{ rows=await api('/audit?limit=80'); }catch(e){ el.innerHTML=`<div class="empty">${esc(e.message)}</div>`; return; }
+  el.innerHTML=rows.length?rows.map(r=>`<div class="logrow">
+    <span class="lt">${new Date(r.created_at).toLocaleString('vi-VN')}</span>
+    <span class="la">${esc(r.actor||'hệ thống')}</span>
+    <span>${esc(describeAudit(r.action, r.detail))}</span>
+  </div>`).join(''):'<div class="empty">Chưa có hoạt động</div>';
+}
+</script>
+</body></html>

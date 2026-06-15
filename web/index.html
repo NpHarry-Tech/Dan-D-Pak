@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="vi"><head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>POS/ERP System — Device Launcher</title>
+<link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/shared/app.css">
+<style>
+body{overflow:auto;align-items:center;justify-content:center;padding:30px}
+.hub{max-width:920px;margin:auto;width:100%}
+.brand{text-align:center;margin:0 0 30px}
+.brand img{max-width:260px;max-height:140px;width:auto;height:auto;object-fit:contain}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:16px}
+.dev{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:22px;transition:.15s;display:block}
+.dev:hover{border-color:var(--brand);transform:translateY(-3px)}
+.dev.disabled{opacity:.58;cursor:not-allowed}
+.dev.disabled:hover{border-color:var(--border);transform:none}
+.dev .ic{font-size:38px}
+.dev h2{font-size:16px;font-weight:800;margin:12px 0 5px}
+.dev p{color:var(--muted);font-size:12.5px;line-height:1.5}
+.dev .go{margin-top:14px;color:var(--brand);font-weight:700;font-size:12.5px}
+.foot{text-align:center;color:var(--faint);font-size:11.5px;margin-top:26px}
+</style></head>
+<body>
+<div class="hub">
+  <div class="brand"><img src="/assets/logo.png" alt="Dan — Góc Bếp Bon Appétit" onerror="this.style.display='none'"></div>
+  <div class="grid" id="appGrid">
+    <a class="dev" href="/ipad"><div class="ic">📱</div><h2>Customer iPad</h2><p>Khách tự chọn món, topping, ghi chú, gửi bếp, gọi nhân viên, yêu cầu thanh toán.</p><div class="go">Mở thiết bị →</div></a>
+    <a class="dev" href="/pos"><div class="ic">💳</div><h2>POS Cashier</h2><p>Sơ đồ bàn, mở bill, theo dõi món, discount, thanh toán nhiều phương thức, in receipt.</p><div class="go">Mở thiết bị →</div></a>
+    <a class="dev" href="/retail"><div class="ic">🛒</div><h2>BCM Retail POS</h2><p>Quét mã vạch / chạm SKU, chọn lot/date trong giỏ, voucher và thanh toán retail.</p><div class="go">Mở thiết bị →</div></a>
+    <a class="dev" href="/kds"><div class="ic">👨‍🍳</div><h2>KDS Bếp / Bar</h2><p>Màn hình station nhận món realtime, food timing/SLA, Accept → Preparing → Ready.</p><div class="go">Mở thiết bị →</div></a>
+    <a class="dev" href="/warehouse"><div class="ic">📦</div><h2>Warehouse / Kho</h2><p>Nhập hàng, kiểm kho (chênh lệch), lịch sử xuất/nhập, cảnh báo tồn dưới mức tối thiểu.</p><div class="go">Mở thiết bị →</div></a>
+    <a class="dev" href="/online"><div class="ic">🌐</div><h2>Online Channels</h2><p>Nhận đơn GrabFood/ShopeeFood/Website qua webhook, điều phối fulfillment, simulator đẩy đơn thử.</p><div class="go">Mở thiết bị →</div></a>
+    <a class="dev" href="/printers"><div class="ic">🖨️</div><h2>Printer Monitor</h2><p>Máy in ảo bếp/bar/bill — tự in phiếu khi gửi món & receipt khi thanh toán, in lại.</p><div class="go">Mở thiết bị →</div></a>
+    <a class="dev" href="/admin"><div class="ic">📊</div><h2>Quản lý</h2><p>Doanh thu realtime, biểu đồ, top món, tồn kho, thực đơn, hóa đơn MISA, cloud sync/offline.</p><div class="go">Mở thiết bị →</div></a>
+  </div>
+  <p class="foot">Mẹo: mở các tab cạnh nhau → order ở iPad sẽ hiện ngay ở KDS, POS và Quản lý nhờ WebSocket.<br>
+  📲 Muốn xem trong khung iPad mô phỏng? Mở <a href="/sim" style="color:var(--brand);font-weight:700">iPad Simulator →</a><br>
+  🔐 Trang nhân viên (POS/Retail/Kho/Quản lý/Online) yêu cầu đăng nhập PIN — Chủ quán <b>1234</b> · Quản lý <b>2222</b> · Thu ngân <b>1111</b> · Bếp <b>3333</b> · Kho <b>4444</b></p>
+</div>
+<script type="module">
+import { api, requireLogin, esc } from '/shared/client.js';
+
+await requireLogin();
+const grid=document.getElementById('appGrid');
+grid.innerHTML='<div class="empty">Đang tải ứng dụng...</div>';
+try{
+  const {groups,modules}=await api('/modules');
+  const active=modules.filter(m=>m.status==='active');
+  const planned=modules.filter(m=>m.status!=='active');
+  const byGroup=Object.fromEntries(groups.map(g=>[g.key,g]));
+  const card=m=>`<a class="dev ${m.status!=='active'?'disabled':''}" href="${m.status==='active'&&m.href?m.href:'#'}" ${m.status!=='active'?'onclick="return false"':''}>
+    <div class="ic">${esc(m.icon||'•')}</div>
+    <h2>${esc(m.label)}</h2>
+    <p>${esc(m.description||'')}</p>
+    <div class="go">${m.status==='active'?'Mở module →':'Đang nằm trong roadmap'}</div>
+  </a>`;
+  grid.innerHTML=[
+    ...groups.map(g=>{
+      const list=active.filter(m=>m.group===g.key);
+      return list.length?`<div style="grid-column:1/-1;margin-top:4px;color:var(--muted);font-size:12px;font-weight:800;text-transform:uppercase">${esc(g.label)}</div>${list.map(card).join('')}`:'';
+    }),
+    planned.length?`<div style="grid-column:1/-1;margin-top:16px;color:var(--muted);font-size:12px;font-weight:800;text-transform:uppercase">Roadmap theo kiến trúc ERP</div>${planned.map(m=>card({...m,description:(byGroup[m.group]?.label||m.group)+' · '+(m.description||'')})).join('')}`:'',
+  ].join('') || '<div class="empty">Tài khoản này chưa được cấp module nào.</div>';
+}catch(e){
+  grid.innerHTML=`<div class="empty">${esc(e.message)}</div>`;
+}
+</script>
+</body></html>

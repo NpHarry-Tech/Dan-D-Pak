@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="vi"><head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Online Channels — POS/ERP</title>
+<link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/shared/app.css">
+<script src="/socket.io/socket.io.js"></script>
+<style>
+.onwrap{display:grid;grid-template-columns:1fr 360px;gap:16px;align-items:start}
+@media(max-width:980px){.onwrap{grid-template-columns:1fr}}
+.ocol{display:flex;flex-direction:column;gap:12px}
+.ocard{background:var(--surface);border:1px solid var(--border);border-radius:13px;overflow:hidden}
+.ocard .oh{padding:11px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:9px}
+.chbadge{font-size:11px;font-weight:800;padding:3px 9px;border-radius:7px;letter-spacing:.3px}
+.ch-grabfood{background:#00b14f22;color:#3fe08f}.ch-shopeefood{background:#ee4d2d22;color:#ff8f70}.ch-website{background:var(--brand-dim);color:var(--brand)}
+.ocard .ref{font-family:var(--mono);font-size:12px;color:var(--muted)}
+.ocard .amt{margin-left:auto;font-family:var(--mono);color:var(--brand);font-weight:700}
+.ob{padding:11px 14px}
+.oitem{font-size:12.5px;color:var(--muted);padding:2px 0}.oitem b{color:var(--text)}
+.flow{display:flex;gap:6px;flex-wrap:wrap;padding:11px 14px;border-top:1px solid var(--border)}
+.step{font-size:11px;font-weight:700;padding:5px 10px;border-radius:7px;background:var(--surface2);border:1px solid var(--border2);color:var(--muted)}
+.step.done{background:var(--done-bg);color:var(--done);border-color:rgba(63,224,143,.4)}
+.step.cur{background:var(--brand-dim);color:var(--brand);border-color:var(--brand)}
+.step.next{cursor:pointer}.step.next:hover{border-color:var(--brand);color:var(--brand)}
+.simitem{display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px dashed var(--border);font-size:12.5px}
+.simitem .add{margin-left:auto;width:26px;height:26px;border-radius:7px;background:var(--surface3);color:var(--text);font-weight:700}
+.simitem .add:hover{background:var(--brand);color:#06222b}
+.basket{background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:10px;margin:10px 0;font-size:12.5px}
+.bk{display:flex;justify-content:space-between;padding:3px 0}
+.seg{display:flex;gap:6px;margin-bottom:10px}
+.seg button{flex:1;padding:9px;border-radius:9px;background:var(--surface2);border:1px solid var(--border2);color:var(--muted);font-weight:700;font-size:12px}
+.seg button.on{background:var(--brand-dim);border-color:var(--brand);color:var(--brand)}
+</style></head>
+<body>
+<div id="top"></div>
+<div class="view">
+  <div class="viewhead">
+    <h1>🌐 Online Channels</h1>
+    <div class="sub">Nhận đơn GrabFood / ShopeeFood / Website qua webhook · điều phối fulfillment</div>
+    <div class="right"><span class="chip c-muted" id="cnt">0 đơn</span></div>
+  </div>
+  <div class="onwrap">
+    <div class="ocol" id="orders"></div>
+    <div class="ocard">
+      <div class="oh"><b>🧪 Webhook Simulator</b></div>
+      <div class="ob">
+        <div class="sub" style="font-size:11.5px;color:var(--muted);margin-bottom:9px">Giả lập kênh online đẩy đơn vào (giống Grab/Shopee gọi API webhook thật).</div>
+        <div class="seg" id="chSeg"></div>
+        <input type="text" id="cust" placeholder="Tên khách (tuỳ chọn)" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:9px;color:var(--text);padding:9px 11px;font-size:13px;margin-bottom:10px">
+        <div style="max-height:230px;overflow-y:auto" id="simMenu"></div>
+        <div class="basket" id="basket"><div class="empty" style="padding:8px">Thêm món để tạo đơn</div></div>
+        <button class="btn primary" id="send" style="width:100%;padding:11px">📨 Gửi đơn online</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+import { api, connect, money, toast, esc, startClock, topbar, requireModuleAccess, renderUserChip } from '/shared/client.js';
+document.getElementById('top').innerHTML = topbar('online');
+await requireModuleAccess('online'); renderUserChip();
+
+const FLOW=['received','confirmed','preparing','ready','completed'];
+const FLOW_LABEL={received:'Đã nhận',confirmed:'Xác nhận',preparing:'Đang làm',ready:'Sẵn sàng',completed:'Hoàn tất'};
+let orders=[], channels={}, menu=[], basket=[], channel='grabfood';
+
+connect('online', {
+  'online:new':()=>load(), 'online:updated':()=>load(),
+});
+
+async function load(){
+  orders=await api('/online/orders');
+  document.getElementById('cnt').textContent=orders.length+' đơn';
+  document.getElementById('orders').innerHTML = orders.length?orders.map(card).join(''):'<div class="empty">Chưa có đơn online. Dùng Simulator bên phải để tạo thử.</div>';
+  bindFlow();
+}
+function card(o){
+  const ch=o.online_channel||'website';
+  const idx=FLOW.indexOf(o.online_status||'received');
+  return `<div class="ocard">
+    <div class="oh">
+      <span class="chbadge ch-${ch}">${esc(o.channel_name||ch)}</span>
+      <span class="ref">${esc(o.online_ref||'')}</span>
+      ${o.customer?.name?`<span style="font-size:12px;color:var(--muted)">· ${esc(o.customer.name)}</span>`:''}
+      <span class="amt">${money(o.total)}</span>
+    </div>
+    <div class="ob">${o.items.filter(i=>i.status!=='cancelled').map(i=>`<div class="oitem"><b>${i.qty}×</b> ${esc(i.name)}</div>`).join('')}</div>
+    <div class="flow">${FLOW.map((s,si)=>{
+      const cls = si<idx?'done':si===idx?'cur':si===idx+1?'next':'';
+      return `<span class="step ${cls}" ${cls==='next'?`data-id="${o.id}" data-s="${s}"`:''}>${si<idx?'✓ ':''}${FLOW_LABEL[s]}</span>`;
+    }).join('')}</div>
+  </div>`;
+}
+function bindFlow(){
+  document.querySelectorAll('.step.next').forEach(b=>b.onclick=async()=>{
+    try{ await api('/online/orders/'+b.dataset.id+'/status',{method:'POST',body:{status:b.dataset.s}}); }catch(e){toast(e.message,true);}
+  });
+}
+
+// simulator
+async function initSim(){
+  channels=await api('/online/channels');
+  const keys=Object.keys(channels);
+  channel=keys.includes(channel)?channel:(keys[0]||'');
+  document.getElementById('send').disabled=!keys.length;
+  document.getElementById('chSeg').innerHTML=Object.entries(channels).map(([k,n])=>`<button data-c="${k}" class="${k===channel?'on':''}">${esc(n)}</button>`).join('');
+  if(!keys.length) document.getElementById('chSeg').innerHTML='<div class="empty" style="width:100%;padding:8px">Chưa bật kênh online nào trong Setting.</div>';
+  document.querySelectorAll('#chSeg button').forEach(b=>b.onclick=()=>{channel=b.dataset.c;document.querySelectorAll('#chSeg button').forEach(x=>x.classList.toggle('on',x.dataset.c===channel));});
+  const m=await api('/menu'); menu=m.items;
+  document.getElementById('simMenu').innerHTML=menu.map(i=>`<div class="simitem"><span>${i.emoji||''} ${esc(i.name)}</span><span style="color:var(--brand);font-family:var(--mono);font-size:11px">${money(i.price)}</span><button class="add" data-m="${i.id}">+</button></div>`).join('');
+  document.querySelectorAll('#simMenu .add').forEach(b=>b.onclick=()=>{addBasket(b.dataset.m);});
+}
+function addBasket(id){ const it=menu.find(x=>x.id===id); const l=basket.find(b=>b.id===id); if(l)l.qty++; else basket.push({id,name:it.name,price:it.price,qty:1}); renderBasket(); }
+function renderBasket(){
+  const el=document.getElementById('basket');
+  if(!basket.length){ el.innerHTML='<div class="empty" style="padding:8px">Thêm món để tạo đơn</div>'; return; }
+  const tot=basket.reduce((s,b)=>s+b.price*b.qty,0);
+  el.innerHTML=basket.map((b,i)=>`<div class="bk"><span>${b.qty}× ${esc(b.name)}</span><span style="font-family:var(--mono)">${money(b.price*b.qty)} <button data-rm="${i}" style="background:none;color:var(--faint)">✕</button></span></div>`).join('')
+    +`<div class="bk" style="border-top:1px dashed var(--border);margin-top:5px;padding-top:6px;font-weight:800"><span>Tổng</span><span style="font-family:var(--mono);color:var(--brand)">${money(tot)}</span></div>`;
+  el.querySelectorAll('[data-rm]').forEach(b=>b.onclick=()=>{basket.splice(+b.dataset.rm,1);renderBasket();});
+}
+document.getElementById('send').onclick=async()=>{
+  if(!basket.length) return toast('Thêm món trước',true);
+  if(!channel) return toast('Chưa có kênh online được kết nối trong Setting',true);
+  try{
+    await api('/online/webhook',{method:'POST',body:{channel,customer:{name:document.getElementById('cust').value.trim()},items:basket.map(b=>({menu_item_id:b.id,qty:b.qty}))}});
+    basket=[]; renderBasket(); document.getElementById('cust').value=''; toast('📨 Đã đẩy đơn online vào hệ thống');
+  }catch(e){toast(e.message,true);}
+};
+
+startClock(); load(); initSim();
+</script>
+</body></html>
