@@ -11,13 +11,16 @@ const METHODS = ['cash', 'card', 'qr', 'voucher', 'bank_transfer', 'internet_ban
 const CUSTOMER_QR_METHODS = ['qr', 'qrcode', 'internet_banking', 'momo', 'zalopay'];
 
 // lines: [{method, amount, reference}]
-export function payOrder(order_id, lines, { discount, cashier } = {}, branch_id = 'br1') {
+export function payOrder(order_id, lines, { discount, cashier, customer } = {}, branch_id = 'br1') {
   const order = getOrder(order_id);
   if (!order) throw new Error('Order không tồn tại');
   if (order.status !== 'open') throw new Error('Order đã đóng');
 
   if (typeof discount === 'number') {
     db.prepare(`UPDATE orders SET discount=?, total=MAX(0,subtotal-?) WHERE id=?`).run(discount, discount, order_id);
+  }
+  if (customer && typeof customer === 'object') {
+    db.prepare(`UPDATE orders SET customer_json=? WHERE id=?`).run(JSON.stringify(customer), order_id);
   }
   const fresh = getOrder(order_id);
   const pending = fresh.items.filter(i => i.status === 'pending_confirm');
@@ -103,6 +106,7 @@ function buildReceipt(order_id, payment_id, lines, paid, { cashier = '' } = {}) 
       invoice_series: cfg.series || 'C26TMB',
     },
     voucher_id: order.voucher_id, voucher_code: order.voucher_code,
+    customer: (() => { try { return order.customer_json ? JSON.parse(order.customer_json) : null; } catch { return null; } })(),
     lines, paid, change, paid_at: order.paid_at, number: order.bill_no || order_id.slice(-6).toUpperCase(),
     bill_no: order.bill_no || order_id.slice(-6).toUpperCase(),
     cashier,

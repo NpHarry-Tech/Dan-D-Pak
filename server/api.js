@@ -13,6 +13,7 @@ import * as Invoices from './services/invoices.js';
 import * as Sync from './services/sync.js';
 import * as Catalog from './services/catalog.js';
 import * as Vouchers from './services/vouchers.js';
+import * as Customers from './services/customers.js';
 import * as Modules from './services/modules.js';
 import * as AppSettings from './services/settings.js';
 import * as BookMenu from './services/bookMenu.js';
@@ -67,6 +68,17 @@ api.post('/settings/integrations/:channel/test', guard('settings.manage'), wrap(
   if (!cfg) throw new Error('Kênh không hợp lệ: ' + channel);
   const base = `${req.protocol}://${req.get('host')}`;
   if (channel === 'misa') return { channel, ...(await Misa.testConnection(cfg)) };
+  if (channel === 'payos') {
+    const payosWebhook = `${base}/api/payos/webhook`;
+    if (!cfg.enabled) return { channel, ok: false, mode: 'disabled', message: 'payOS đang tắt. Bật kết nối trước khi kiểm tra.', webhookUrl: payosWebhook };
+    const ok = !!(cfg.clientId && cfg.apiKey && cfg.checksumKey);
+    return {
+      channel, ok, mode: ok ? 'ready' : 'partial', webhookUrl: payosWebhook,
+      message: ok
+        ? 'Đã đủ Client ID / API Key / Checksum Key. Dán Webhook URL ở trên vào payOS Dashboard. Khi backend payOS bật, hệ thống sẽ tạo link thanh toán và nhận xác nhận tại URL này.'
+        : 'Thiếu Client ID / API Key / Checksum Key (lấy ở payOS Dashboard → Cài đặt → Thông tin xác thực).',
+    };
+  }
   // Delivery / website channels: orders arrive at our webhook → Kênh online module.
   const webhookUrl = `${base}/api/online/webhook`;
   if (!cfg.enabled) return { channel, ok: false, mode: 'disabled', message: 'Kênh đang tắt. Bật để xuất hiện trong module Kênh online.', webhookUrl };
@@ -226,7 +238,11 @@ api.post('/calls/:table_id/resolve', wrap((req) => { Orders.resolveStaffCall(req
 api.post('/orders/:id/request-payment', wrap((req) => { Pay.requestPayment(req.body.table_id); return { ok: true }; }));
 api.post('/tables/:id/request-payment', wrap((req) => { Pay.requestPayment(req.params.id); return { ok: true }; }));
 api.post('/orders/:id/customer-qr-pay', wrap((req) => Pay.customerQrPay(req.params.id, req.body || {})));
-api.post('/orders/:id/pay', guard('pay'), wrap((req) => Pay.payOrder(req.params.id, req.body.lines, { discount: req.body.discount, cashier: req.user?.name || req.user?.username || '' })));
+api.post('/orders/:id/pay', guard('pay'), wrap((req) => {
+  const receipt = Pay.payOrder(req.params.id, req.body.lines, { discount: req.body.discount, customer: req.body.customer || null, cashier: req.user?.name || req.user?.username || '' });
+  if (req.body.customer?.id) Customers.recordPurchase(req.body.customer.id, receipt.total, 'br1');
+  return receipt;
+}));
 api.get('/shifts/current', guard('pay'), wrap(() => Shifts.currentShift()));
 api.post('/shifts/open', guard('pay'), wrap((req) => Shifts.openShift(req.body, req.user)));
 api.post('/shifts/close', guard('pay'), wrap((req) => Shifts.closeShift(req.body, req.user)));
@@ -261,6 +277,13 @@ api.post('/vouchers', guard('discount'), wrap((req) => Vouchers.createVoucher(re
 api.post('/vouchers/:id/update', guard('discount'), wrap((req) => Vouchers.updateVoucher(req.params.id, req.body)));
 api.post('/vouchers/:id/toggle', guard('discount'), wrap((req) => Vouchers.toggleVoucher(req.params.id, req.body.active)));
 api.post('/retail/checkout', guard('pay'), wrap((req) => Retail.checkout({ ...req.body, cashier: req.user?.name || req.user?.username || '' })));
+
+// --- Customers (directory + perks + tax-code lookup) ---
+api.get('/customers', guard(), wrap((req) => Customers.listCustomers('br1', req.query.q || '')));
+api.get('/customers/:id', guard(), wrap((req) => Customers.getCustomer(req.params.id)));
+api.post('/customers', guard(), wrap((req) => Customers.upsertCustomer(req.body)));
+api.post('/customers/:id/delete', guard('settings.manage'), wrap((req) => Customers.deleteCustomer(req.params.id)));
+api.get('/customers/lookup/tax/:mst', guard(), wrap((req) => Customers.lookupTaxCode(req.params.mst)));
 api.get('/retail/sales', wrap(() => Retail.listRetailSales()));
 api.post('/retail/:id/refund', guard('refund'), wrap((req) => Retail.refund(req.params.id, req.body.reason)));
 

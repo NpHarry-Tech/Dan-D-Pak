@@ -160,6 +160,17 @@ const DEFAULT_INTEGRATIONS = {
       syncCustomers: true,
       note: '',
     },
+    payos: {
+      enabled: false,
+      environment: 'sandbox',
+      clientId: '',
+      apiKey: '',
+      checksumKey: '',
+      apiBase: 'https://api-merchant.payos.vn',
+      returnUrl: '',
+      cancelUrl: '',
+      note: '',
+    },
     grabmerchant: {
       enabled: false,
       environment: 'sandbox',

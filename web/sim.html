@@ -56,6 +56,7 @@ body.is-fullscreen .hint{display:none}
   </div>
   <span class="dimtag" id="dim"></span>
   <span class="spacer"></span>
+  <button class="fsbtn" id="reloadBtn" title="Nạp lại nội dung iPad (lấy bản giao diện mới nhất)">↻ Tải lại</button>
   <button class="fsbtn" id="fsBtn">⛶ Full màn</button>
   <a class="exit" href="/">✕ Thoát ra Launcher</a>
 </div>
@@ -81,6 +82,8 @@ const savedState = readState();
 let device = DEVICES.includes(savedState.device) ? savedState.device : 'ipad';
 let ori = ORIS.includes(savedState.ori) ? savedState.ori : 'portrait';
 let model = MODELS[savedState.model] ? savedState.model : 'air';
+let loadedDevice = null;
+function loadFrame(){ document.getElementById('frame').src = '/' + device + '?v=' + Date.now(); }
 
 function apply(){
   syncControls();
@@ -93,9 +96,8 @@ function apply(){
   screen.style.width=w+'px'; screen.style.height=h+'px';
   frame.style.width=w+'px'; frame.style.height=h+'px';
   document.getElementById('dim').textContent=`UI ${w}×${h} · ${mw}×${mh}`;
-  // load device if changed
-  const url='/'+device;
-  if(!frame.src.endsWith(url)) frame.src=url;
+  // load device if changed — cache-bust so the iframe always pulls the latest UI
+  if(loadedDevice!==device){ loadedDevice=device; loadFrame(); }
   requestAnimationFrame(scaleToFit);
 }
 function scaleToFit(){
@@ -135,6 +137,7 @@ document.getElementById('fsBtn').onclick=async()=>{
     else await document.exitFullscreen();
   }catch(e){ console.warn(e); }
 };
+document.getElementById('reloadBtn').onclick=()=>{ loadFrame(); };
 document.addEventListener('fullscreenchange',()=>{
   const on=!!document.fullscreenElement;
   document.body.classList.toggle('is-fullscreen',on);

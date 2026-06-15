@@ -259,6 +259,27 @@ export function migrate() {
 
   CREATE INDEX IF NOT EXISTS idx_vouchers_branch_active ON vouchers(branch_id, active, scope);
 
+  CREATE TABLE IF NOT EXISTS customers (
+    id TEXT PRIMARY KEY,
+    branch_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    phone TEXT,
+    email TEXT,
+    tax_code TEXT,
+    company TEXT,
+    address TEXT,
+    perk_type TEXT NOT NULL DEFAULT 'none',
+    perk_value INTEGER NOT NULL DEFAULT 0,
+    note TEXT,
+    total_orders INTEGER NOT NULL DEFAULT 0,
+    total_spent INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL,
+    updated_at TEXT
+  );
+  CREATE INDEX IF NOT EXISTS idx_customers_branch ON customers(branch_id);
+  CREATE INDEX IF NOT EXISTS idx_customers_tax ON customers(tax_code);
+  CREATE INDEX IF NOT EXISTS idx_customers_phone ON customers(phone);
+
   CREATE TABLE IF NOT EXISTS payments (
     id TEXT PRIMARY KEY,
     order_id TEXT NOT NULL,

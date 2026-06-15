@@ -53,8 +53,11 @@
 .integration-card{background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:12px;display:flex;flex-direction:column;gap:10px}
 .integration-card.on{border-color:rgba(63,224,143,.55);box-shadow:0 0 0 3px rgba(63,224,143,.10)}
 .integration-head{display:flex;align-items:flex-start;gap:10px}
-.integration-ic{width:38px;height:38px;border-radius:10px;background:#fff;border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:19px;flex:0 0 auto}
+.integration-ic{width:38px;height:38px;border-radius:10px;background:#fff;border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:19px;flex:0 0 auto;overflow:hidden;padding:4px}
+.integration-ic img{width:100%;height:100%;object-fit:contain;display:block}
 .integration-head b{font-size:14px}.integration-head .mini{margin-top:2px}
+.payos-endpoints{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:9px 11px;margin-top:2px}
+.payos-endpoints code{font-family:var(--mono);font-size:11px;color:var(--brand);word-break:break-all}
 .integration-actions{display:flex;gap:7px;flex-wrap:wrap;margin-top:auto}
 .webhook-box{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center;background:var(--surface);border:1px dashed var(--border2);border-radius:9px;padding:8px 10px}
 .webhook-box code{font-family:var(--mono);font-size:11px;color:var(--muted);word-break:break-all}
@@ -123,6 +126,11 @@
 .billd-field{margin:0 5px 6px 0}.billd-layer{display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;border:1px solid var(--border);border-radius:8px;background:var(--surface);padding:7px 8px;margin-bottom:6px;text-align:left;font-size:11.5px}
 .billd-layer.on{border-color:var(--brand);background:var(--brand-dim);color:var(--brand)}
 .billd-layer small{color:var(--muted);font-size:10px}
+.print-switch{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap}
+.print-switch-btn{padding:9px 16px;border:1px solid var(--border);border-radius:10px;background:var(--surface);font-size:13px;font-weight:600;cursor:pointer}
+.print-switch-btn.on{border-color:var(--brand);background:var(--brand-dim);color:var(--brand)}
+.billd-img-tools{display:flex;flex-direction:column;gap:6px}.billd-img-tools button{width:100%;justify-content:flex-start}
+.billd-img-tools button.on{border-color:var(--brand);background:var(--brand-dim);color:var(--brand)}
 @media(max-width:1180px){.billd-layout{grid-template-columns:1fr}.billd-side,.billd-side.right{border:0;border-bottom:1px solid var(--border)}.billd-stage{min-height:560px}.billd-toolbar{position:fixed}}
 @media(max-width:1120px){.label-designer{grid-template-columns:1fr}.label-workbench{min-height:330px}.label-canvas{width:min(100%,720px)}}
 @media(max-width:1080px){.bookmenu-grid{grid-template-columns:1fr}.bookmenu-preview{max-width:520px}}
@@ -631,7 +639,7 @@ document.getElementById('settingsBtn').onclick=openSettings;
 
 async function openSettings(){
   const ov=document.createElement('div'); ov.className='overlay show'; document.body.appendChild(ov);
-  let tab='users', users=[], permData=null, editingUser=null;
+  let tab='users', users=[], permData=null, editingUser=null, printMode='bill';
   let bookCfg=null, bookItems=[], bookEditingId=null, bookPageIdx=0, bookHotspotId=null;
   let integrationsCfg=null;
   let printCfg=null;
@@ -772,8 +780,7 @@ async function openSettings(){
         <button class="settings-tab ${tab==='operations'?'on':''}" data-tab="operations">Thanh toán & ca</button>
         <button class="settings-tab ${tab==='invoices'?'on':''}" data-tab="invoices">Hóa đơn điện tử</button>
         <button class="settings-tab ${tab==='einvoice'?'on':''}" data-tab="einvoice">Cấu hình HĐĐT</button>
-        <button class="settings-tab ${tab==='labels'?'on':''}" data-tab="labels">Tem nhãn</button>
-        <button class="settings-tab ${tab==='bill'?'on':''}" data-tab="bill">Bill</button>
+        <button class="settings-tab ${tab==='print'?'on':''}" data-tab="print">Bill &amp; Tem nhãn</button>
         <button class="settings-tab ${tab==='devices'?'on':''}" data-tab="devices">Thiết bị khách</button>
         <button class="settings-tab ${tab==='bookmenu'?'on':''}" data-tab="bookmenu">Menu quyển</button>
         <button class="settings-tab ${tab==='printers'?'on':''}" data-tab="printers">Danh mục in</button>
@@ -795,8 +802,7 @@ async function openSettings(){
       operations:operationsHtml,
       invoices:invoicesHtml,
       einvoice:einvoiceHtml,
-      labels:labelsHtml,
-      bill:billHtml,
+      print:printDesignHtml,
       devices:devicesHtml,
       bookmenu:bookMenuHtml,
       printers:printersHtml,
@@ -811,8 +817,7 @@ async function openSettings(){
     if(tab==='operations') return bindOperations();
     if(tab==='invoices') return bindSettingsInvoices();
     if(tab==='einvoice') return bindConfigForm('einvoice');
-    if(tab==='labels') return bindLabelDesigner();
-    if(tab==='bill') return bindBillDesigner();
+    if(tab==='print') return bindPrintDesigner();
     if(tab==='devices') return bindDeviceSettings();
     if(tab==='bookmenu') return bindBookMenuSettings();
     if(tab==='printers') return bindPrinters();
@@ -880,12 +885,15 @@ async function openSettings(){
   }
   const integrationDefs=[
     {key:'misa',icon:'🧾',name:'MISA',desc:'Xuất hóa đơn điện tử, đồng bộ khách hàng và trạng thái hóa đơn.',type:'misa'},
-    {key:'grabmerchant',icon:'🟢',name:'GrabMerchant / GrabFood',desc:'Nhận đơn, đồng bộ menu, trạng thái món và tồn khả dụng cho kênh Grab.',type:'delivery',channel:'grabmerchant'},
-    {key:'shopeefood',icon:'🟠',name:'Shopee Food',desc:'Nhận đơn Shopee Food, quản lý xác nhận đơn và đồng bộ món bán online.',type:'delivery',channel:'shopeefood'},
-    {key:'befood',icon:'🟡',name:'Be / beFood',desc:'Chuẩn bị cấu hình merchant, store và webhook cho đơn từ Be.',type:'delivery',channel:'befood'},
-    {key:'grabmart',icon:'🛒',name:'GrabMart',desc:'Đồng bộ sản phẩm retail, tồn kho và đơn hàng mart.',type:'mart',channel:'grabmart'},
+    {key:'payos',icon:'💳',logo:'/assets/payoslogo.png',name:'payOS',desc:'Cổng thanh toán QR/thẻ payOS — tạo link thanh toán và nhận webhook xác nhận đã thanh toán.',type:'payos',channel:'payos'},
+    {key:'grabmerchant',icon:'🟢',logo:'/assets/grabmerchantlogo.webp',name:'GrabMerchant / GrabFood',desc:'Nhận đơn, đồng bộ menu, trạng thái món và tồn khả dụng cho kênh Grab.',type:'delivery',channel:'grabmerchant'},
+    {key:'shopeefood',icon:'🟠',logo:'/assets/shopeefoodlogo.png',name:'Shopee Food',desc:'Nhận đơn Shopee Food, quản lý xác nhận đơn và đồng bộ món bán online.',type:'delivery',channel:'shopeefood'},
+    {key:'befood',icon:'🟡',logo:'/assets/befoodlogo.png',name:'Be / beFood',desc:'Chuẩn bị cấu hình merchant, store và webhook cho đơn từ Be.',type:'delivery',channel:'befood'},
+    {key:'grabmart',icon:'🛒',logo:'/assets/grabmartlogo.png',name:'GrabMart',desc:'Đồng bộ sản phẩm retail, tồn kho và đơn hàng mart.',type:'mart',channel:'grabmart'},
     {key:'website',icon:'🌐',name:'Website / QR order',desc:'Kênh đặt món từ website, QR bàn, landing page hoặc kiosk tự gọi món.',type:'website',channel:'website'},
   ];
+  const integrationIcon=def=>def.logo?`<img src="${def.logo}" alt="${esc(def.name)}" onerror="this.replaceWith(document.createTextNode('${def.icon||'🔌'}'))">`:def.icon;
+  const payosWebhookUrl=()=>`${location.origin}/api/payos/webhook`;
   const integBool=(c,k,def=false)=>c?.[k]===true||c?.[k]==='1'||(c?.[k]===undefined&&def);
   const integVal=(c,k)=>esc(c?.[k]??'');
   const webhookUrl=()=>`${location.origin}/api/online/webhook`;
@@ -904,8 +912,39 @@ async function openSettings(){
     const c=integrationsCfg?.channels?.[def.key]||{};
     const on=integBool(c,'enabled');
     const status=on?'<span class="chip c-done">Đang bật</span>':'<span class="chip c-muted">Đang tắt</span>';
+    if(def.type==='payos'){
+      const base=integVal(c,'apiBase')||'https://api-merchant.payos.vn';
+      const origin=esc(location.origin);
+      return `<div class="integration-card ${on?'on':''}" data-integ-card="${def.key}">
+      <div class="integration-head"><div class="integration-ic">${integrationIcon(def)}</div><div style="min-width:0;flex:1"><b>${esc(def.name)}</b><div class="mini">${esc(def.desc)}</div></div>${status}</div>
+      <div class="webhook-box"><code>${esc(payosWebhookUrl())}</code><button class="btn sm" data-copy-payos="1">Copy</button><div class="mini" style="grid-column:1/-1">Dán URL này vào payOS Dashboard → <b>Kênh thanh toán → Cấu hình Webhook</b>. payOS sẽ gọi về đây khi khách thanh toán xong (backend nhận tại endpoint này — soạn sẵn để nối sau).</div></div>
+      <div class="setting-form">
+        <label class="permitem"><input type="checkbox" data-integ="${def.key}" data-field="enabled" ${on?'checked':''}><span>Bật cổng thanh toán payOS</span></label>
+        <div><label>Môi trường</label><select data-integ="${def.key}" data-field="environment"><option value="sandbox" ${c.environment!=='production'?'selected':''}>Sandbox / thử nghiệm</option><option value="production" ${c.environment==='production'?'selected':''}>Production / chạy thật</option></select></div>
+        <div><label>Client ID (x-client-id)</label><input data-integ="${def.key}" data-field="clientId" value="${integVal(c,'clientId')}" placeholder="payOS Dashboard → Cài đặt → Thông tin xác thực"></div>
+        <div><label>API Key (x-api-key)</label><input type="password" data-integ="${def.key}" data-field="apiKey" value="${integVal(c,'apiKey')}"></div>
+        <div><label>Checksum Key (ký &amp; xác thực webhook)</label><input type="password" data-integ="${def.key}" data-field="checksumKey" value="${integVal(c,'checksumKey')}"></div>
+        <div><label>API base URL</label><input data-integ="${def.key}" data-field="apiBase" value="${esc(base)}"></div>
+        <div><label>Return URL (thanh toán thành công)</label><input data-integ="${def.key}" data-field="returnUrl" value="${integVal(c,'returnUrl')}" placeholder="${origin}/pay/success"></div>
+        <div><label>Cancel URL (huỷ thanh toán)</label><input data-integ="${def.key}" data-field="cancelUrl" value="${integVal(c,'cancelUrl')}" placeholder="${origin}/pay/cancel"></div>
+      </div>
+      <div class="payos-endpoints">
+        <div class="mini" style="font-weight:700;margin-bottom:5px">📌 Đường dẫn API payOS (soạn sẵn để nối sau)</div>
+        <ul class="mini" style="margin:0;padding-left:17px;line-height:1.75">
+          <li>Tạo link thanh toán: <b>POST</b> <code>${esc(base)}/v2/payment-requests</code></li>
+          <li>Lấy thông tin đơn: <b>GET</b> <code>${esc(base)}/v2/payment-requests/{id}</code></li>
+          <li>Huỷ link thanh toán: <b>POST</b> <code>${esc(base)}/v2/payment-requests/{id}/cancel</code></li>
+          <li>Đăng ký webhook: <b>POST</b> <code>${esc(base)}/confirm-webhook</code></li>
+          <li>Header bắt buộc mọi request: <code>x-client-id</code> + <code>x-api-key</code></li>
+          <li>Xác thực dữ liệu webhook: ký <b>HMAC-SHA256</b> bằng <b>Checksum Key</b> rồi so với field <code>signature</code></li>
+        </ul>
+      </div>
+      <label>Ghi chú nội bộ</label><textarea rows="2" data-integ="${def.key}" data-field="note">${integVal(c,'note')}</textarea>
+      <div class="integration-actions"><button class="btn sm" data-test-integ="${def.key}">Kiểm tra cấu hình</button></div>
+    </div>`;
+    }
     if(def.type==='misa') return `<div class="integration-card ${on?'on':''}" data-integ-card="${def.key}">
-      <div class="integration-head"><div class="integration-ic">${def.icon}</div><div style="min-width:0;flex:1"><b>${esc(def.name)}</b><div class="mini">${esc(def.desc)}</div></div>${status}</div>
+      <div class="integration-head"><div class="integration-ic">${integrationIcon(def)}</div><div style="min-width:0;flex:1"><b>${esc(def.name)}</b><div class="mini">${esc(def.desc)}</div></div>${status}</div>
       <div class="setting-form">
         <label class="permitem"><input type="checkbox" data-integ="${def.key}" data-field="enabled" ${on?'checked':''}><span>Bật kết nối MISA</span></label>
         <div><label>Môi trường</label><select data-integ="${def.key}" data-field="environment"><option value="sandbox" ${c.environment!=='production'?'selected':''}>Sandbox / thử nghiệm</option><option value="production" ${c.environment==='production'?'selected':''}>Production / chạy thật</option></select></div>
@@ -924,7 +963,7 @@ async function openSettings(){
       <div class="integration-actions"><button class="btn sm" data-test-integ="${def.key}">Kiểm tra cấu hình</button></div>
     </div>`;
     if(def.type==='website') return `<div class="integration-card ${on?'on':''}" data-integ-card="${def.key}">
-      <div class="integration-head"><div class="integration-ic">${def.icon}</div><div style="min-width:0;flex:1"><b>${esc(def.name)}</b><div class="mini">${esc(def.desc)}</div></div>${status}</div>
+      <div class="integration-head"><div class="integration-ic">${integrationIcon(def)}</div><div style="min-width:0;flex:1"><b>${esc(def.name)}</b><div class="mini">${esc(def.desc)}</div></div>${status}</div>
       <div class="webhook-box"><code>${esc(webhookUrl())}</code><button class="btn sm" data-copy-webhook="${def.key}">Copy</button><div class="mini" style="grid-column:1/-1">Webhook nhận JSON có field <b>channel="website"</b>. Tắt kết nối này thì simulator/kênh Website sẽ không gửi đơn được.</div></div>
       <div class="setting-form">
         <label class="permitem"><input type="checkbox" data-integ="${def.key}" data-field="enabled" ${on?'checked':''}><span>Bật Website / QR order</span></label>
@@ -941,7 +980,7 @@ async function openSettings(){
       <div class="integration-actions"><button class="btn sm" data-test-integ="${def.key}">Kiểm tra cấu hình</button></div>
     </div>`;
     return `<div class="integration-card ${on?'on':''}" data-integ-card="${def.key}">
-      <div class="integration-head"><div class="integration-ic">${def.icon}</div><div style="min-width:0;flex:1"><b>${esc(def.name)}</b><div class="mini">${esc(def.desc)}</div></div>${status}</div>
+      <div class="integration-head"><div class="integration-ic">${integrationIcon(def)}</div><div style="min-width:0;flex:1"><b>${esc(def.name)}</b><div class="mini">${esc(def.desc)}</div></div>${status}</div>
       <div class="webhook-box"><code>${esc(webhookUrl())}</code><button class="btn sm" data-copy-webhook="${def.key}">Copy</button><div class="mini" style="grid-column:1/-1">Webhook hiện tại nhận JSON có field <b>channel="${esc(def.channel)}"</b>. Sau này khi có API chính thức, adapter của từng bên sẽ đọc cùng cấu hình này.</div></div>
       <div class="setting-form">
         <label class="permitem"><input type="checkbox" data-integ="${def.key}" data-field="enabled" ${on?'checked':''}><span>Bật kết nối ${esc(def.name)}</span></label>
@@ -987,7 +1026,7 @@ async function openSettings(){
         <div class="integration-list">${integrationDefs.map(d=>{
           const on=integBool(integrationsCfg.channels?.[d.key],'enabled');
           return `<button type="button" class="integration-tab ${d.key===active.key?'on':''}" data-integ-pick="${d.key}">
-            <span class="integration-ic">${d.icon}</span><span><b>${esc(d.name)}</b><small>${on?'Đã kết nối':'Chưa kết nối'}</small></span>
+            <span class="integration-ic">${integrationIcon(d)}</span><span><b>${esc(d.name)}</b><small>${on?'Đã kết nối':'Chưa kết nối'}</small></span>
           </button>`;
         }).join('')}</div>
         <div>${integrationCard(active)}<div class="mfoot"><button class="btn primary" id="saveIntegrations">Lưu kết nối đang chọn</button></div></div>
@@ -1243,6 +1282,7 @@ async function openSettings(){
       text:el.text??(el.type==='barcode'?'{barcode}':'Text'), fontSize:Number(el.fontSize)||7,
       bold:!!el.bold, align:el.align||'left', human:el.human!==false,
       src:el.src||'', originalSrc:el.originalSrc||el.src||'', bw:!!el.bw,
+      imgMode:el.imgMode||(el.bw?'threshold':'color'), threshold:Number(el.threshold)||150, contrast:Number(el.contrast)||1,
     }));
     if(!out.elements.some(e=>e.id===out.selectedId)) out.selectedId=out.elements[0]?.id||null;
     return out;
@@ -1283,9 +1323,43 @@ async function openSettings(){
     </div></div>`;
   }
   async function fileToDataUrl(file){ return new Promise((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(r.result);r.onerror=reject;r.readAsDataURL(file);}); }
-  async function toBlackWhite(src){
-    return new Promise((resolve,reject)=>{const img=new Image(); img.onload=()=>{const canvas=document.createElement('canvas'), ctx=canvas.getContext('2d'); canvas.width=img.naturalWidth||img.width; canvas.height=img.naturalHeight||img.height; ctx.drawImage(img,0,0,canvas.width,canvas.height); const data=ctx.getImageData(0,0,canvas.width,canvas.height); for(let i=0;i<data.data.length;i+=4){const g=data.data[i]*.299+data.data[i+1]*.587+data.data[i+2]*.114; const v=g>150?255:0; data.data[i]=data.data[i+1]=data.data[i+2]=v;} ctx.putImageData(data,0,0); resolve(canvas.toDataURL('image/png'));}; img.onerror=reject; img.src=src;});
+  // mode: 'grayscale' (xám mượt) | 'threshold' (đen trắng 1-bit) | 'dither' (chấm điểm Floyd–Steinberg) | 'color'
+  async function processImage(src,mode='grayscale',opt={}){
+    return new Promise((resolve,reject)=>{
+      const img=new Image();
+      img.onload=()=>{
+        const c=document.createElement('canvas'), ctx=c.getContext('2d');
+        c.width=img.naturalWidth||img.width; c.height=img.naturalHeight||img.height;
+        ctx.drawImage(img,0,0,c.width,c.height);
+        if(mode==='color'){ resolve(c.toDataURL('image/png')); return; }
+        const d=ctx.getImageData(0,0,c.width,c.height), p=d.data, w=c.width, h=c.height;
+        const contrast=Number(opt.contrast)||1;
+        const gray=new Float32Array(w*h);
+        for(let i=0,j=0;i<p.length;i+=4,j++){
+          let g=p[i]*.299+p[i+1]*.587+p[i+2]*.114;
+          g=(g-128)*contrast+128;                       // tăng/giảm tương phản
+          gray[j]=g<0?0:g>255?255:g;
+        }
+        if(mode==='grayscale'){
+          for(let i=0,j=0;i<p.length;i+=4,j++){ const v=Math.round(gray[j]); p[i]=p[i+1]=p[i+2]=v; }
+        } else if(mode==='threshold'){
+          const t=Number(opt.threshold)||150;
+          for(let i=0,j=0;i<p.length;i+=4,j++){ const v=gray[j]>=t?255:0; p[i]=p[i+1]=p[i+2]=v; }
+        } else if(mode==='dither'){
+          const t=Number(opt.threshold)||128;
+          for(let y=0;y<h;y++) for(let x=0;x<w;x++){
+            const idx=y*w+x, old=gray[idx], nv=old<t?0:255, err=old-nv; gray[idx]=nv;
+            if(x+1<w) gray[idx+1]+=err*7/16;
+            if(y+1<h){ if(x>0) gray[idx+w-1]+=err*3/16; gray[idx+w]+=err*5/16; if(x+1<w) gray[idx+w+1]+=err/16; }
+          }
+          for(let i=0,j=0;i<p.length;i+=4,j++){ const v=gray[j]<128?0:255; p[i]=p[i+1]=p[i+2]=v; }
+        }
+        ctx.putImageData(d,0,0); resolve(c.toDataURL('image/png'));
+      };
+      img.onerror=reject; img.src=src;
+    });
   }
+  async function toBlackWhite(src){ return processImage(src,'threshold',{threshold:150}); }
   function bindLabelDesigner(){
     let tpl=readLabelTemplate(readCfg('labels'));
     let imageMode='add';
@@ -1396,6 +1470,7 @@ async function openSettings(){
       text:el.text??(el.type==='barcode'?'{barcode}':'Text'), fontSize:Number(el.fontSize)||7,
       bold:!!el.bold, align:el.align||'left', human:el.human!==false,
       src:el.src||'', originalSrc:el.originalSrc||el.src||'', bw:!!el.bw,
+      imgMode:el.imgMode||(el.bw?'threshold':'color'), threshold:Number(el.threshold)||150, contrast:Number(el.contrast)||1,
     }));
     if(!out.elements.some(e=>e.id===out.selectedId)) out.selectedId=out.elements[0]?.id||null;
     return out;
@@ -1606,6 +1681,7 @@ async function openSettings(){
       text:el.text??'Text', fontSize:Number(el.fontSize)||6,
       bold:!!el.bold, italic:!!el.italic, underline:!!el.underline, strike:!!el.strike, align:el.align||'left',
       src:el.src||'', originalSrc:el.originalSrc||el.src||'', bw:!!el.bw,
+      imgMode:el.imgMode||(el.bw?'threshold':'color'), threshold:Number(el.threshold)||150, contrast:Number(el.contrast)||1,
     }));
     if(!out.elements.some(e=>e.id===out.selectedId)) out.selectedId=out.elements[0]?.id||null;
     return out;
@@ -1661,6 +1737,17 @@ async function openSettings(){
     </div></div>`;
   }
   function labelsHtml(){ return printTemplateHtml('label'); }
+  function printDesignHtml(){
+    const seg=`<div class="print-switch">
+      <button type="button" class="print-switch-btn ${printMode==='bill'?'on':''}" data-print-mode="bill">🧾 Mẫu Bill (hóa đơn)</button>
+      <button type="button" class="print-switch-btn ${printMode==='label'?'on':''}" data-print-mode="label">🏷️ Tem nhãn (ly/cốc)</button>
+    </div>`;
+    return seg + (printMode==='label' ? labelsHtml() : billHtml());
+  }
+  function bindPrintDesigner(){
+    ov.querySelectorAll('[data-print-mode]').forEach(b=>b.onclick=()=>{ printMode=b.dataset.printMode; draw(); });
+    if(printMode==='label') bindLabelDesigner(); else bindBillDesigner();
+  }
   const billPresets={
     K80:{paper:'K80',label:'Bill K80 (80mm)',widthMm:80,heightMm:210,widthPx:420},
     K57:{paper:'K57',label:'Bill K57 (57mm)',widthMm:57,heightMm:210,widthPx:320},
@@ -1722,6 +1809,7 @@ async function openSettings(){
             <button class="btn sm billd-tool" data-bd-tool="line" type="button">Line</button>
             <button class="btn sm billd-tool" data-bd-tool="image" type="button">Ảnh/logo</button>
             <button class="btn sm billd-tool" data-bd-tool="qr" type="button">Mã QR</button>
+            <button class="btn sm primary" id="billdAddLogo" type="button" style="width:100%;justify-content:center;margin-top:4px">⬆ Logo lên đầu (trắng đen)</button>
             <input id="billdImageFile" type="file" accept="image/*" style="display:none">
           </div>
           <div class="billd-section"><h4>Thông tin bill</h4>
@@ -1738,6 +1826,19 @@ async function openSettings(){
         </main>
         <aside class="billd-side right">
           <div class="billd-section"><h4>Biến dữ liệu</h4>${fields.map(([k,n])=>`<button class="btn sm billd-field" data-bd-field="${k}" type="button">${n}</button>`).join('')}</div>
+          <div class="billd-section" id="billdImagePanel" style="display:none"><h4>Kiểu ảnh / logo</h4>
+            <div class="billd-img-tools">
+              <button class="btn sm" data-bd-img="grayscale" type="button">Xám mượt (khuyên dùng)</button>
+              <button class="btn sm" data-bd-img="dither" type="button">Chấm điểm (máy in nhiệt)</button>
+              <button class="btn sm" data-bd-img="threshold" type="button">Đen trắng tương phản</button>
+              <button class="btn sm" data-bd-img="color" type="button">Màu gốc</button>
+              <button class="btn sm" data-bd-img="replace" type="button">Đổi ảnh khác</button>
+            </div>
+            <label style="margin-top:10px">Ngưỡng đen/trắng (<span id="billdThrVal">150</span>)</label>
+            <input id="billdImgThreshold" type="range" min="60" max="220" value="150" style="width:100%">
+            <label style="margin-top:6px">Độ tương phản (<span id="billdConVal">1.0</span>)</label>
+            <input id="billdImgContrast" type="range" min="0.5" max="2.5" step="0.1" value="1" style="width:100%">
+          </div>
           <div class="billd-section"><h4>Layer</h4><div id="billdLayers"></div><div class="billd-tools"><button class="btn sm" id="billdDuplicate" type="button">Nhân đôi</button><button class="btn sm danger" id="billdDelete" type="button">Xóa</button></div></div>
         </aside>
       </div>
@@ -1825,7 +1926,7 @@ async function openSettings(){
     let tpl=readBillTemplate(cfg);
     tpl.kind='bill'; tpl.version=3; tpl.standard='bcm_fiscal_receipt';
     let selectedId=tpl.selectedId||tpl.elements[0]?.id||null;
-    let saveTimer=null, pendingImagePoint=null, lastToolDrag=0;
+    let saveTimer=null, pendingImagePoint=null, lastToolDrag=0, imageReplaceId=null;
     const canvas=root.querySelector('#billdCanvas');
     const stage=root.querySelector('#billdStage');
     const toolbar=root.querySelector('#billdToolbar');
@@ -1879,7 +1980,8 @@ async function openSettings(){
     }
     function elementStyle(el){
       const h=el.type==='line'?Math.max(.25,Number(el.h)||.35):Math.max(1,Number(el.h)||8);
-      return `left:${Number(el.x)||0}%;top:${Number(el.y)||0}%;width:${Number(el.w)||20}%;height:${h}%;z-index:${tpl.elements.indexOf(el)+1};font-size:${pxFont(el)}px;font-weight:${el.bold?800:500};font-style:${el.italic?'italic':'normal'};text-decoration:${el.underline?'underline':'none'};`;
+      const z=el.id===selectedId?500:tpl.elements.indexOf(el)+1;
+      return `left:${Number(el.x)||0}%;top:${Number(el.y)||0}%;width:${Number(el.w)||20}%;height:${h}%;z-index:${z};font-size:${pxFont(el)}px;font-weight:${el.bold?800:500};font-style:${el.italic?'italic':'normal'};text-decoration:${el.underline?'underline':'none'};`;
     }
     function renderBillNode(el){
       const sel=el.id===selectedId?' selected':'';
@@ -1931,10 +2033,35 @@ async function openSettings(){
     function selectElement(id,updateLayer=true){
       selectedId=id&&tpl.elements.some(e=>e.id===id)?id:null;
       tpl.selectedId=selectedId;
-      canvas.querySelectorAll('.billd-el').forEach(n=>n.classList.toggle('selected',n.dataset.bdId===selectedId));
+      canvas.querySelectorAll('.billd-el').forEach(n=>{
+        const isSel=n.dataset.bdId===selectedId;
+        n.classList.toggle('selected',isSel);
+        n.style.zIndex=isSel?500:(tpl.elements.findIndex(e=>e.id===n.dataset.bdId)+1);
+      });
       if(updateLayer) renderLayers();
       updateToolbar();
+      updateImagePanel();
       syncMemory();
+    }
+    function updateImagePanel(){
+      const panel=root.querySelector('#billdImagePanel'); if(!panel) return;
+      const el=selected();
+      if(!el||el.type!=='image'){ panel.style.display='none'; return; }
+      panel.style.display='';
+      const mode=el.imgMode||(el.bw?'threshold':'color');
+      panel.querySelectorAll('[data-bd-img]').forEach(b=>b.classList.toggle('on',b.dataset.bdImg===mode));
+      const thr=root.querySelector('#billdImgThreshold'), con=root.querySelector('#billdImgContrast');
+      if(thr){ thr.value=Number(el.threshold)||150; root.querySelector('#billdThrVal').textContent=thr.value; thr.disabled=!(mode==='threshold'||mode==='dither'); }
+      if(con){ con.value=Number(el.contrast)||1; root.querySelector('#billdConVal').textContent=Number(con.value).toFixed(1); con.disabled=(mode==='color'); }
+    }
+    async function applyImageMode(el,mode){
+      if(!el||el.type!=='image'||!el.originalSrc) return;
+      setStatus('Đang xử lý ảnh...');
+      try{
+        el.imgMode=mode; el.bw=mode!=='color';
+        el.src = mode==='color' ? el.originalSrc : await processImage(el.originalSrc,mode,{threshold:Number(el.threshold)||150,contrast:Number(el.contrast)||1});
+        applyElement(el); scheduleSave(); setStatus('Đã đổi kiểu ảnh');
+      }catch(e){ setStatus('Lỗi xử lý ảnh'); toast(e.message||'Không xử lý được ảnh',true); }
     }
     function updateToolbar(){
       const el=selected();
@@ -2006,14 +2133,14 @@ async function openSettings(){
       if(!lib) return;
       lib('.billd-el').draggable({
         ignoreFrom:'.bd-handle,.billd-text-body[contenteditable="true"]',
-        modifiers:[lib.modifiers.restrictRect({restriction:canvas,endOnly:false})],
         listeners:{
           start:e=>selectElement(e.target.dataset.bdId),
           move:e=>{
             if(e.target.classList.contains('editing')) return;
             const el=tpl.elements.find(x=>x.id===e.target.dataset.bdId); if(!el) return;
+            const elH=el.type==='line'?(Number(el.h)||.35):(Number(el.h)||1);
             el.x=clamp((Number(el.x)||0)+e.dx/canvas.clientWidth*100,0,100-(Number(el.w)||1));
-            el.y=clamp((Number(el.y)||0)+e.dy/canvas.clientHeight*100,0,100-(Number(el.h)||1));
+            el.y=clamp((Number(el.y)||0)+e.dy/canvas.clientHeight*100,0,100-elH);
             applyElement(el,e.target); positionToolbar(); scheduleSave();
           }
         }
@@ -2082,12 +2209,57 @@ async function openSettings(){
       }else addElement('text',8,8,{text:token});
     });
     imageInput.onchange=async e=>{
-      const file=e.target.files?.[0]; if(!file) return;
+      const file=e.target.files?.[0]; if(!file){ imageReplaceId=null; return; }
       const src=await fileToDataUrl(file);
+      if(imageReplaceId){
+        const el=tpl.elements.find(x=>x.id===imageReplaceId); imageReplaceId=null;
+        if(el){ el.src=src; el.originalSrc=src; el.bw=false; el.imgMode='color'; applyElement(el); updateImagePanel(); scheduleSave(); }
+        e.target.value=''; return;
+      }
       const p=pendingImagePoint||{x:8,y:8};
       pendingImagePoint=null;
-      addElement('image',p.x,p.y,{src});
+      addElement('image',p.x,p.y,{src,imgMode:'color'});
       e.target.value='';
+    };
+    root.querySelectorAll('[data-bd-img]').forEach(b=>b.onclick=async()=>{
+      const el=selected(); if(!el||el.type!=='image') return;
+      const mode=b.dataset.bdImg;
+      if(mode==='replace'){ pendingImagePoint=null; imageReplaceId=el.id; imageInput.click(); return; }
+      await applyImageMode(el,mode); updateImagePanel();
+    });
+    {
+      const thr=root.querySelector('#billdImgThreshold'), con=root.querySelector('#billdImgContrast');
+      if(thr) thr.oninput=async()=>{ const el=selected(); root.querySelector('#billdThrVal').textContent=thr.value; if(el?.type==='image'){ el.threshold=Number(thr.value)||150; if(el.imgMode==='threshold'||el.imgMode==='dither') await applyImageMode(el,el.imgMode); } };
+      if(con) con.oninput=async()=>{ const el=selected(); root.querySelector('#billdConVal').textContent=Number(con.value).toFixed(1); if(el?.type==='image'){ el.contrast=Number(con.value)||1; if(el.imgMode&&el.imgMode!=='color') await applyImageMode(el,el.imgMode); } };
+    }
+    const addLogoBtn=root.querySelector('#billdAddLogo');
+    if(addLogoBtn) addLogoBtn.onclick=async()=>{
+      try{
+        setStatus('Đang tải logo...');
+        const resp=await fetch('/assets/logo.png',{cache:'no-store'});
+        if(!resp.ok) throw new Error('Không tìm thấy /assets/logo.png');
+        const blob=await resp.blob();
+        const raw=await new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result);r.onerror=rej;r.readAsDataURL(blob);});
+        const bwSrc=await processImage(raw,'grayscale');
+        const logoW=60, logoX=(100-logoW)/2, logoY=1.6, logoH=18, gap=2.5;
+        const offset=logoY+logoH+gap;
+        // bỏ logo cũ nếu có, rồi đẩy toàn bộ nội dung xuống dưới logo
+        tpl.elements=tpl.elements.filter(e=>e.id!=='bill_logo');
+        const others=tpl.elements;
+        const minY=others.length?Math.min(...others.map(e=>Number(e.y)||0)):offset;
+        const shift=offset-minY;
+        if(shift>0) others.forEach(e=>{
+          e.y=clamp((Number(e.y)||0)+shift,0,99);
+          const maxH=99-e.y;
+          if((Number(e.h)||0)>maxH) e.h=Math.max(e.type==='line'?.25:2,maxH);
+        });
+        const logo={id:'bill_logo',type:'image',x:logoX,y:logoY,w:logoW,h:logoH,src:bwSrc,originalSrc:raw,bw:true,imgMode:'grayscale',threshold:150,contrast:1,text:'',fontSize:4,bold:false,italic:false,underline:false,align:'center'};
+        tpl.elements.unshift(logo);
+        selectedId='bill_logo'; tpl.selectedId='bill_logo';
+        applyCanvasSize(); renderCanvas(); scheduleSave();
+        setStatus('Đã thêm logo lên đầu');
+        toast('Đã thêm logo (xám mượt) lên đầu bill – chọn logo để đổi kiểu trắng đen ở panel bên phải');
+      }catch(err){ setStatus('Lỗi logo'); toast(err.message||'Không thêm được logo',true); }
     };
     toolbar.querySelector('#billdFontSize').onchange=e=>{const el=selected(); if(el?.type==='text'){el.fontSize=Number(e.target.value)||el.fontSize;applyElement(el);positionToolbar();scheduleSave();}};
     toolbar.querySelectorAll('[data-bd-style]').forEach(b=>b.onclick=()=>{const el=selected(); if(el?.type==='text'){el[b.dataset.bdStyle]=!el[b.dataset.bdStyle];applyElement(el);updateToolbar();scheduleSave();}});
@@ -2242,6 +2414,10 @@ async function openSettings(){
       return miss.length?`MISA còn thiếu: ${miss.join(', ')}.`:'';
     }
     if(def.type==='website') return '';
+    if(def.type==='payos'){
+      const miss=['clientId','apiKey','checksumKey'].filter(k=>!String(c[k]||'').trim());
+      return miss.length?`payOS còn thiếu: ${miss.join(', ')}.`:'';
+    }
     const miss=['merchantId','storeId','clientId'].filter(k=>!String(c[k]||'').trim());
     return miss.length?`${def.name} còn thiếu: ${miss.join(', ')}.`:'';
   }
@@ -2270,6 +2446,10 @@ async function openSettings(){
     ov.querySelectorAll('[data-copy-webhook]').forEach(btn=>btn.onclick=async()=>{
       try{if(!navigator.clipboard?.writeText) throw new Error('clipboard unavailable'); await navigator.clipboard.writeText(webhookUrl());toast('Đã copy webhook URL');}
       catch{toast(webhookUrl());}
+    });
+    ov.querySelectorAll('[data-copy-payos]').forEach(btn=>btn.onclick=async()=>{
+      try{if(!navigator.clipboard?.writeText) throw new Error('clipboard unavailable'); await navigator.clipboard.writeText(payosWebhookUrl());toast('Đã copy webhook payOS');}
+      catch{toast(payosWebhookUrl());}
     });
     ov.querySelectorAll('[data-test-integ]').forEach(btn=>btn.onclick=async()=>{
       const def=integrationDefs.find(x=>x.key===btn.dataset.testInteg);

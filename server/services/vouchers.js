@@ -70,7 +70,11 @@ export function getVoucher(id, branch_id = 'br1') {
   return row ? normalizeRow(row) : null;
 }
 
-export function calculateRetailDiscount(lines, voucher_id = null, branch_id = 'br1') {
+// Universal promo: "mua 5 tặng 1 cùng loại" — mỗi 5 cái tặng thêm 1 (free = floor(qty/5)).
+export const BUY_X_GET_1 = 5;
+export function buy5get1FreeUnits(qty) { return Math.floor((Number(qty) || 0) / BUY_X_GET_1); }
+
+export function calculateRetailDiscount(lines, voucher_id = null, branch_id = 'br1', opts = {}) {
   const active = listActiveVouchers(branch_id);
   const skuVouchers = active.filter(v => v.scope === 'sku');
   const subtotal = lines.reduce((s, l) => s + l.qty * l.price, 0);
@@ -79,22 +83,35 @@ export function calculateRetailDiscount(lines, voucher_id = null, branch_id = 'b
 
   for (const [line_index, line] of lines.entries()) {
     const base = line.qty * line.price;
-    const candidates = skuVouchers
+    let amount = 0;
+    const parts = [];
+    // 1) Khuyến mãi toàn hệ thống: mua 5 tặng 1 cùng loại.
+    const freeUnits = buy5get1FreeUnits(line.qty);
+    if (freeUnits > 0 && line.price > 0) {
+      const a = Math.min(base, freeUnits * line.price);
+      amount += a;
+      parts.push(`Mua 5 tặng 1 (tặng ${freeUnits})`);
+    }
+    // 2) Voucher gán riêng SKU (nếu có), áp trên phần còn lại.
+    const remaining = Math.max(0, base - amount);
+    const best = skuVouchers
       .filter(v => v.sku_id === line.sku_id && base >= (v.min_total || 0))
-      .map(v => ({ voucher: v, amount: voucherAmount(v, base, line.qty) }))
+      .map(v => ({ voucher: v, amount: Math.min(remaining, voucherAmount(v, remaining, line.qty)) }))
       .filter(x => x.amount > 0)
-      .sort((a, b) => b.amount - a.amount);
-    const best = candidates[0];
-    if (!best) continue;
-    const amount = Math.min(base, best.amount);
+      .sort((a, b) => b.amount - a.amount)[0];
+    let voucher = null;
+    if (best) { amount += best.amount; parts.push(best.voucher.name); voucher = best.voucher; }
+    if (amount <= 0) continue;
+    amount = Math.min(base, amount);
     lineDiscount += amount;
     appliedSkuPromos.push({
       line_index,
       sku_id: line.sku_id,
-      voucher_id: best.voucher.id,
-      code: best.voucher.code,
-      name: best.voucher.name,
+      voucher_id: voucher?.id || null,
+      code: voucher?.code || 'BUY5GET1',
+      name: parts.join(' + '),
       amount,
+      free_units: freeUnits,
     });
   }
 
@@ -109,11 +126,16 @@ export function calculateRetailDiscount(lines, voucher_id = null, branch_id = 'b
     orderVoucher = brief(v, orderDiscount);
   }
 
-  const discount = Math.min(subtotal, Math.round(lineDiscount + orderDiscount));
+  // Giảm giá thêm: ưu đãi khách hàng + giảm giá tay (nhân viên nhập). Áp sau cùng, không vượt phần còn lại.
+  const remainAfterVoucher = Math.max(0, baseAfterLinePromos - orderDiscount);
+  const extraDiscount = Math.min(remainAfterVoucher, Math.max(0, Math.round(Number(opts.extraDiscount) || 0)));
+
+  const discount = Math.min(subtotal, Math.round(lineDiscount + orderDiscount + extraDiscount));
   return {
     subtotal,
     lineDiscount: Math.round(lineDiscount),
     orderDiscount: Math.round(orderDiscount),
+    extraDiscount,
     discount,
     total: Math.max(0, subtotal - discount),
     appliedSkuPromos,

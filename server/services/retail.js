@@ -6,12 +6,36 @@ import { createOrUpdateOrder, getOrder } from './orders.js';
 import { payOrder } from './payments.js';
 import { returnSku } from './inventory.js';
 import { calculateRetailDiscount } from './vouchers.js';
+import { getCustomer, perkDiscount, recordPurchase } from './customers.js';
+
+function snapshotCustomer(c) {
+  if (!c) return null;
+  return {
+    id: c.id || null, name: c.name || '', phone: c.phone || '', email: c.email || '',
+    tax_code: c.tax_code || '', company: c.company || '', address: c.address || '',
+    perk_type: c.perk_type || 'none', perk_value: c.perk_value || 0,
+  };
+}
 
 // lines (cart): [{sku_id, qty, lot_id}]; payments: [{method, amount, reference}]
-export function checkout({ items, payments, voucher_id = null, branch_id = 'br1', cashier = '' }) {
+export function checkout({ items, payments, voucher_id = null, customer = null, customer_id = null, manual_discount = 0, branch_id = 'br1', cashier = '' }) {
   if (!items?.length) throw new Error('Giỏ hàng trống');
   const lines = normalizeCheckoutItems(items, branch_id);
-  const discountPlan = calculateRetailDiscount(lines, voucher_id, branch_id);
+
+  // Resolve customer: saved (authoritative perk from DB) or ad-hoc walk-in object.
+  let cust = null;
+  if (customer_id) cust = getCustomer(customer_id, branch_id);
+  else if (customer?.id) cust = getCustomer(customer.id, branch_id) || customer;
+  else if (customer && (customer.name || customer.tax_code)) cust = customer;
+
+  // First pass (promos + order voucher) to know the base the perk/manual applies on.
+  const pre = calculateRetailDiscount(lines, voucher_id, branch_id);
+  const baseForExtra = Math.max(0, pre.subtotal - pre.lineDiscount - pre.orderDiscount);
+  const customerPerk = cust ? perkDiscount(cust, baseForExtra) : 0;
+  const manual = Math.max(0, Math.round(Number(manual_discount) || 0));
+  const extraDiscount = customerPerk + manual;
+
+  const discountPlan = calculateRetailDiscount(lines, voucher_id, branch_id, { extraDiscount });
   const orderItems = lines.map((line, idx) => {
     const promo = discountPlan.appliedSkuPromos.find(p => p.line_index === idx);
     return {
@@ -24,13 +48,18 @@ export function checkout({ items, payments, voucher_id = null, branch_id = 'br1'
   const order = createOrUpdateOrder({ branch_id, table_id: null, channel: 'retail', items: orderItems });
   db.prepare(`UPDATE orders SET voucher_id=?, voucher_code=? WHERE id=?`)
     .run(discountPlan.orderVoucher?.id || null, discountPlan.orderVoucher?.code || null, order.id);
-  const receipt = payOrder(order.id, Array.isArray(payments) ? payments : [], { discount: discountPlan.discount, cashier }, branch_id);
+  const snap = snapshotCustomer(cust);
+  const receipt = payOrder(order.id, Array.isArray(payments) ? payments : [], { discount: discountPlan.discount, cashier, customer: snap }, branch_id);
+  if (cust?.id) recordPurchase(cust.id, receipt.total, branch_id);
   receipt.discount_breakdown = {
     product_promos: discountPlan.lineDiscount,
     voucher: discountPlan.orderDiscount,
+    customer_perk: customerPerk,
+    manual,
   };
   receipt.voucher = discountPlan.orderVoucher;
   receipt.promotions = discountPlan.appliedSkuPromos;
+  receipt.customer = snap;
   return receipt;
 }
 
