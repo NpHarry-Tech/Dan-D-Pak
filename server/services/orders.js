@@ -7,8 +7,8 @@ import { getMenuItemForOrder } from './catalog.js';
 import { getOperationsConfig } from './settings.js';
 import { getActiveShift } from './shifts.js';
 
-// Số Bill nội bộ: Dan{ddMMyy}{seq} — seq là số thứ tự đơn trong NGÀY (reset mỗi
-// ngày vận hành: ca sáng → ca tối đều trong 1 ngày dương lịch). VD Dan1506260001.
+// Internal bill number: Dan{ddMMyy}{seq} — seq is the order count within the DAY
+// (resets each calendar day; morning and evening shifts share the same counter). e.g. Dan1506260001.
 function nextBillNo(branch_id = 'br1') {
   const d = new Date();
   const pad = (x) => String(x).padStart(2, '0');
