@@ -4,7 +4,7 @@ import { createServer } from 'node:http';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { existsSync } from 'node:fs';
-import { db, migrate } from './db.js';
+import { db, migrate, purgeOldAudit } from './db.js';
 import { initRealtime } from './realtime.js';
 import { api } from './api.js';
 import { startSyncEngine } from './services/sync.js';
@@ -35,6 +35,17 @@ for (const v of ['ipad', 'pos', 'kds', 'admin', 'retail', 'warehouse', 'sim', 'p
 const server = createServer(app);
 initRealtime(server);
 startSyncEngine();
+
+// Nhật ký hoạt động chỉ giữ 7 ngày gần nhất — dọn khi khởi động rồi lặp lại mỗi ngày.
+const AUDIT_RETENTION_DAYS = 7;
+function purgeAudit() {
+  try {
+    const removed = purgeOldAudit(AUDIT_RETENTION_DAYS);
+    if (removed) console.log(`  [audit] đã xóa ${removed} dòng nhật ký quá ${AUDIT_RETENTION_DAYS} ngày`);
+  } catch (e) { console.warn('  [audit] dọn nhật ký lỗi:', e.message); }
+}
+purgeAudit();
+setInterval(purgeAudit, 24 * 60 * 60 * 1000).unref();
 
 server.listen(PORT, () => {
   console.log(`\n  POS/ERP Local Store Server`);

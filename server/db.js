@@ -367,6 +367,7 @@ export function migrate() {
     detail TEXT,
     created_at TEXT NOT NULL
   );
+  CREATE INDEX IF NOT EXISTS idx_audit_branch_time ON audit_log(branch_id, created_at);
 
   CREATE TABLE IF NOT EXISTS app_settings (
     branch_id TEXT NOT NULL,
@@ -444,6 +445,8 @@ export function migrate() {
   addColumnIfMissing('orders', 'voucher_id', 'TEXT');
   addColumnIfMissing('orders', 'voucher_code', 'TEXT');
   addColumnIfMissing('payments', 'shift_id', 'TEXT');
+  addColumnIfMissing('order_items', 'table_path', 'TEXT');
+  addColumnIfMissing('order_items', 'kds_dismissed', 'INTEGER DEFAULT 0');
 
   bootstrapWarehouseDefaults();
 }
@@ -459,6 +462,13 @@ export const uid = (p = '') => p + Math.random().toString(36).slice(2, 8) + Date
 export function audit(action, detail, branch_id = 'br1', actor = 'system') {
   db.prepare(`INSERT INTO audit_log (id,branch_id,actor,action,detail,created_at) VALUES (?,?,?,?,?,?)`)
     .run(uid('a_'), branch_id, actor, action, typeof detail === 'string' ? detail : JSON.stringify(detail), now());
+}
+
+// Giữ nhật ký hoạt động trong `days` ngày gần nhất (cửa sổ trượt). Sang ngày thứ 8
+// các dòng của ngày đầu tiên đã quá 7 ngày nên bị xóa. Trả về số dòng đã xóa.
+export function purgeOldAudit(days = 7) {
+  const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+  return db.prepare(`DELETE FROM audit_log WHERE created_at < ?`).run(cutoff).changes;
 }
 
 export function bootstrapWarehouseDefaults(branch_id = 'br1') {

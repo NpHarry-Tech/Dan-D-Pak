@@ -24,6 +24,8 @@ import { emit } from './realtime.js';
 
 export const api = Router();
 const guard = Auth.requireAuth;
+api.use(Auth.attachUser()); // gắn req.user (nếu có token) cho mọi route, kể cả route không bắt buộc đăng nhập
+const actor = Auth.actorName; // người phụ trách thao tác cho nhật ký hoạt động
 const wrap = (fn) => (req, res) => {
   try {
     const out = fn(req, res);
@@ -211,20 +213,52 @@ api.get('/tables/:id', wrap((req) => ({
   table: Orders.getTableState(req.params.id),
   order: Orders.getOrder(Orders.getOpenOrderForTable(req.params.id)?.id),
 })));
-api.post('/tables/:id/move', guard('sell'), wrap((req) => Orders.moveTable(req.params.id, req.body.to_table_id)));
-api.post('/tables/:id/merge', guard('sell'), wrap((req) => Orders.mergeTables(req.params.id, req.body.target_table_id)));
+api.post('/tables/:id/move', guard('sell'), wrap((req) => Orders.moveTable(req.params.id, req.body.to_table_id, 'br1', actor(req))));
+api.post('/tables/:id/merge', guard('sell'), wrap((req) => Orders.mergeTables(req.params.id, req.body.target_table_id, 'br1', actor(req))));
+api.post('/settings/tables', guard('settings.manage'), wrap((req) => Orders.createTable(req.body)));
+api.post('/settings/tables/:id/update', guard('settings.manage'), wrap((req) => Orders.updateTable(req.params.id, req.body)));
+api.post('/settings/tables/:id/delete', guard('settings.manage'), wrap((req) => Orders.deleteTable(req.params.id)));
 
 // --- Orders ---
-api.post('/orders', wrap((req) => Orders.createOrUpdateOrder(req.body)));
+api.post('/orders', wrap((req) => Orders.createOrUpdateOrder({ ...req.body, actor: actor(req) })));
 api.get('/orders/pending-confirmation', guard('sell'), wrap(() => Orders.listPendingConfirmations()));
 api.get('/orders/history', guard('pay'), wrap((req) => History.listOrderHistory('br1', req.query)));
 api.get('/orders/:id/receipt', guard('pay'), wrap((req) => History.orderReceipt(req.params.id)));
 api.get('/orders/:id', wrap((req) => Orders.getOrder(req.params.id)));
-api.post('/orders/:id/confirm', guard('sell'), wrap((req) => Orders.confirmPendingItems(req.params.id, req.body.item_ids)));
-api.post('/orders/:id/reject', guard('sell'), wrap((req) => Orders.rejectPendingItems(req.params.id, req.body.item_ids, req.body.reason)));
-api.post('/orders/:id/split', guard('pay'), wrap((req) => Orders.splitOrderItems(req.params.id, req.body.item_ids)));
-api.post('/orders/items/:id/status', wrap((req) => Orders.setItemStatus(req.params.id, req.body.status)));
-api.post('/orders/items/:id/cancel', wrap((req) => Orders.cancelItem(req.params.id, req.body.reason)));
+api.post('/orders/:id/confirm', guard('sell'), wrap((req) => Orders.confirmPendingItems(req.params.id, req.body.item_ids, 'br1', actor(req))));
+api.post('/orders/:id/reject', guard('sell'), wrap((req) => Orders.rejectPendingItems(req.params.id, req.body.item_ids, req.body.reason, 'br1', actor(req))));
+api.post('/orders/:id/split', guard('pay'), wrap((req) => Orders.splitOrderItems(req.params.id, req.body.item_ids, 'br1', actor(req))));
+api.post('/orders/items/:id/status', wrap((req) => Orders.setItemStatus(req.params.id, req.body.status, 'br1', actor(req))));
+api.post('/orders/items/:id/cancel', wrap((req) => {
+  const itemId = req.params.id;
+  const item = db.prepare(`SELECT * FROM order_items WHERE id=?`).get(itemId);
+  if (!item) throw new Error('Món không tồn tại');
+  
+  if (item.status === 'preparing' || item.status === 'ready' || item.status === 'served') {
+    throw new Error('Bếp đã chế biến món này, không thể hủy!');
+  }
+  
+  if (item.status !== 'pending_confirm') {
+    const pin = req.body.pin;
+    if (!pin) throw new Error('Yêu cầu nhập mã PIN Quản lý/Chủ quán để hủy món đã gửi.');
+    const user = db.prepare(`SELECT * FROM users WHERE pin=? AND active=1`).get(String(pin));
+    if (!user || (user.role !== 'owner' && user.role !== 'manager')) {
+      throw new Error('Mã PIN không đúng hoặc không có quyền Quản lý/Chủ quán.');
+    }
+  }
+  const res = Orders.cancelItem(itemId, req.body.reason || 'Nhân viên hủy', 'br1', actor(req));
+  emit('kds:refresh', { station: item.station }, 'br1');
+  return res;
+}));
+
+api.post('/orders/items/:id/kds-dismiss', wrap((req) => {
+  const itemId = req.params.id;
+  const item = db.prepare(`SELECT * FROM order_items WHERE id=?`).get(itemId);
+  if (!item) throw new Error('Món không tồn tại');
+  db.prepare(`UPDATE order_items SET kds_dismissed=1 WHERE id=?`).run(itemId);
+  emit('kds:refresh', { station: item.station }, 'br1');
+  return { ok: true };
+}));
 
 // --- KDS ---
 api.get('/kds/:station', wrap((req) => Orders.getStationTickets(req.params.station)));
@@ -328,4 +362,4 @@ api.post('/sync/now', guard('reports'), wrap(() => Sync.syncNow()));
 
 // --- Reports ---
 api.get('/dashboard', wrap(() => Reports.dashboard()));
-api.get('/audit', guard('audit.view'), wrap((req) => Reports.recentAudit('br1', parseInt(req.query.limit) || 40)));
+api.get('/audit', guard('audit.view'), wrap((req) => Reports.recentAudit('br1', parseInt(req.query.limit) || 40, req.query.before || null)));

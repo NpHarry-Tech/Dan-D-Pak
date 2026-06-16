@@ -18,6 +18,8 @@
 .ticket{background:var(--surface);border:1px solid var(--border);border-radius:13px;overflow:hidden;display:flex;flex-direction:column}
 .ticket.late{border-color:var(--late);box-shadow:0 0 0 1px var(--late),0 0 18px rgba(255,107,107,.25)}
 .ticket.ready{border-color:var(--done)}
+.ticket.cancelled{border-color:var(--late);box-shadow:0 0 0 1px var(--late),0 0 18px rgba(255,107,107,.15);background:#fff5f5}
+.ticket.cancelled .th{background:#ffebee}
 .ticket .th{display:flex;align-items:center;gap:8px;padding:9px 12px;background:var(--surface2);border-bottom:1px solid var(--border)}
 .ticket .th .ord{font-family:var(--mono);font-weight:700;font-size:12px;color:var(--brand)}
 .ticket .th .tb{font-family:var(--mono);font-size:11px;color:var(--muted)}
@@ -93,26 +95,31 @@ function render(){
 
 function card(t){
   const elapsedMin=(Date.now()-new Date(t.created_at))/60000;
-  const late = elapsedMin > t.sla_minutes && t.status!=='ready';
+  const isCancelled = t.status === 'cancelled';
+  const late = elapsedMin > t.sla_minutes && t.status!=='ready' && !isCancelled;
   const pct=Math.min(100,Math.round(elapsedMin/t.sla_minutes*100));
   const mm=Math.floor(elapsedMin), ss=Math.floor((elapsedMin-mm)*60);
   const modTxt=(t.mods||[]).map(m=>m.name).join(', ');
-  return `<div class="ticket ${late?'late':''} ${t.status==='ready'?'ready':''}" data-id="${t.id}">
+  return `<div class="ticket ${isCancelled?'cancelled':late?'late':''} ${t.status==='ready'?'ready':''}" data-id="${t.id}">
     <div class="th">
       <span class="ord">#${t.order_id.slice(-5).toUpperCase()}</span>
-      <span class="tb">🪑 ${esc(t.table_code||'—')}</span>
+      <span class="tb">🪑 ${esc(t.table_path || t.table_code || '—')}</span>
       <span class="tm">${late?'⚠ ':''}${mm}:${String(ss).padStart(2,'0')}</span>
     </div>
     <div class="tbody">
-      <div class="nm"><span class="qy">${t.qty}×</span> ${esc(t.name)}</div>
+      <div class="nm">
+        <span class="qy">${t.qty}×</span> ${esc(t.name)}
+        ${isCancelled?`<span style="margin-left:8px;background:#ffebee;color:var(--late);border:1px solid rgba(255,107,107,0.4);font-size:11px;padding:2px 6px;border-radius:4px;font-weight:700">MÓN ĐÃ HỦY</span>`:''}
+      </div>
       ${modTxt?`<div class="md">+ ${esc(modTxt)}</div>`:''}
       ${t.note?`<div class="nt">📝 ${esc(t.note)}</div>`:''}
-      <div class="sla">⏱ SLA ${t.sla_minutes}′ <div class="bar"><i style="width:${pct}%;background:${late?'var(--late)':pct>70?'var(--doing)':'var(--done)'}"></i></div></div>
+      <div class="sla">⏱ SLA ${t.sla_minutes}′ <div class="bar"><i style="width:${pct}%;background:${isCancelled?'var(--faint)':late?'var(--late)':pct>70?'var(--doing)':'var(--done)'}"></i></div></div>
     </div>
     <div class="tact">${actions(t)}</div>
   </div>`;
 }
 function actions(t){
+  if(t.status==='cancelled') return `<button class="btn danger" data-act="dismiss" style="background:var(--late);color:#fff;border-color:var(--late);flex:1">Xác nhận đã hủy</button>`;
   if(t.status==='new') return `<button class="btn primary" data-act="accepted">Nhận món</button>`;
   if(t.status==='accepted') return `<button class="btn warn" data-act="preparing">Bắt đầu làm</button>`;
   if(t.status==='preparing') return `<button class="btn green" data-act="ready">Xong ✓</button>`;
@@ -123,7 +130,13 @@ function bind(){
   document.querySelectorAll('.ticket').forEach(c=>{
     c.querySelectorAll('[data-act]').forEach(b=>b.onclick=async(e)=>{
       e.stopPropagation();
-      try{ await api('/orders/items/'+c.dataset.id+'/status',{method:'POST',body:{status:b.dataset.act}}); }
+      try{
+        if (b.dataset.act === 'dismiss') {
+          await api('/orders/items/'+c.dataset.id+'/kds-dismiss',{method:'POST'});
+        } else {
+          await api('/orders/items/'+c.dataset.id+'/status',{method:'POST',body:{status:b.dataset.act}});
+        }
+      }
       catch(err){toast(err.message,true);}
     });
   });

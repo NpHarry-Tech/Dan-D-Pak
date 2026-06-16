@@ -130,6 +130,9 @@
   min-height: 0;
   height: auto !important;
 }
+.x-btn{background:none;border:none;color:var(--faint);font-size:16px;cursor:pointer;padding:4px 8px;transition:color 0.12s}
+.x-btn.warn:hover{color:var(--doing)}
+.x-btn.danger:hover{color:var(--late)}
 </style></head>
 <body>
 <div id="top"></div>
@@ -417,6 +420,39 @@ function renderBill(table,o){
     <div class="empty" style="margin:auto">Bàn chưa có order.<br>Khách order từ iPad sẽ hiện ở đây.</div>`;
     if(table.call) bp.querySelector('.empty').insertAdjacentHTML('beforebegin',callBar(table));
     bindBillButtons(table,o); return; }
+
+  // Recalculate client-side discount and total before rendering
+  const customer = orderCust[o.id] || null;
+  if (customer && customer.perk_type && customer.perk_type !== 'none' && !orderPromo[o.id]) {
+    const pa = perkAmount(customer, o.subtotal || 0);
+    if (pa > 0) {
+      orderPromo[o.id] = {
+        key: 'customer_perk',
+        icon: '👤',
+        name: `Ưu đãi khách — ${customer.name}`,
+        amount: pa
+      };
+    }
+  }
+  const activePromo = orderPromo[o.id];
+  if (activePromo) {
+    if (activePromo.key === 'customer_perk' && customer) {
+      activePromo.amount = perkAmount(customer, o.subtotal || 0);
+    } else if (activePromo.key === 'buy5get1') {
+      activePromo.amount = buy5get1AmountForOrder(o);
+    } else if (activePromo.key.startsWith('p') && activePromo.key !== 'pos_card') {
+      const pct = parseInt(activePromo.key.slice(1));
+      if (!isNaN(pct)) activePromo.amount = Math.round((o.subtotal || 0) * pct / 100);
+    }
+    if (activePromo.key === '__manual') {
+      activePromo.amount = Math.min(o.subtotal || 0, activePromo.amount || 0);
+    }
+    o.discount = activePromo.amount;
+  } else {
+    o.discount = 0;
+  }
+  o.total = Math.max(0, (o.subtotal || 0) - (o.discount || 0));
+
   const items=o.items.filter(i=>i.status!=='cancelled');
   const hasPending=items.some(i=>i.status==='pending_confirm');
   bp.innerHTML=`
@@ -439,6 +475,7 @@ function renderBill(table,o){
       ${o.discount?`<div class="brow"><span>Giảm giá</span><span style="color:var(--late)">-${money(o.discount)}</span></div>`:''}
       <div class="brow tt"><span>Tổng cộng</span><span>${money(o.total)}</span></div>
       <div class="billbtns">
+        ${hasPending?`<button class="btn primary" id="sendBtn" style="grid-column:1/-1;padding:12px;background:var(--brand);margin-bottom:8px">🔥 Gửi món vô bếp</button>`:''}
         <button class="btn" id="discBtn">% Giảm giá</button>
         <button class="btn" id="printBtn">🧾 In tạm tính</button>
         <button class="btn primary" id="payBtn" style="grid-column:1/-1;padding:12px" ${hasPending?'disabled':''}>Thanh toán · ${money(o.total)}</button>
@@ -450,8 +487,14 @@ function callBar(table){return `<div class="callbar" style="margin:12px">🔔 Kh
   <button class="btn sm" id="resolveCall" style="margin-left:auto">Đã xử lý</button></div>`;}
 function bitem(i){
   const mod=(i.mods||[]).map(m=>m.name).join(', ');
-  return `<div class="bitem"><div class="r1"><span>${i.qty}× ${esc(i.name)}</span><span class="p">${money(i.unit_price*i.qty)}</span></div>
-    <div class="meta">${statusChip(i.status)}${mod?`<span>+ ${esc(mod)}</span>`:''}${i.note?`<span style="color:var(--doing)">📝 ${esc(i.note)}</span>`:''}</div></div>`;
+  const isPending = i.status === 'pending_confirm';
+  return `<div class="bitem" style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+    <div style="flex:1">
+      <div class="r1"><span>${i.qty}× ${esc(i.name)}</span><span class="p">${money(i.unit_price*i.qty)}</span></div>
+      <div class="meta">${statusChip(i.status)}${mod?`<span>+ ${esc(mod)}</span>`:''}${i.note?`<span style="color:var(--doing)">📝 ${esc(i.note)}</span>`:''}</div>
+    </div>
+    <button class="x-btn ${isPending ? 'warn' : 'danger'}" data-cancel-item-id="${i.id}" title="${isPending ? 'Xóa món nháp' : 'Hủy món'}">✕</button>
+  </div>`;
 }
 function statusChip(s){const m={pending_confirm:['c-doing','Chờ xác nhận'],new:['c-new','Chờ bếp'],accepted:['c-doing','Đã nhận'],preparing:['c-doing','Đang làm'],ready:['c-done','Sẵn sàng'],served:['c-muted','Đã phục vụ']}[s];return m?`<span class="chip ${m[0]}">${m[1]}</span>`:'';}
 
@@ -511,10 +554,82 @@ function bindBillButtons(table,o){
   const pay=document.getElementById('payBtn'); if(pay) pay.onclick=async()=>{ if(await ensureShiftOpen(()=>openPay(o))) openPay(o); };
   document.getElementById('discBtn').onclick=()=>{
     const v=prompt('Nhập số tiền giảm (VND):','0'); if(v===null)return;
-    o.discount=Math.max(0,parseInt(v)||0); o.total=Math.max(0,o.subtotal-o.discount); renderBill(table,o);
+    const amt=Math.max(0,parseInt(v)||0);
+    orderPromo[o.id]={key:'__manual',icon:'✏️',name:'Giảm tay',amount:amt};
+    renderBill(table,o);
   };
-  const cb=document.getElementById('custBtn'); if(cb) cb.onclick=()=>openCustomerPicker(orderCust[o.id], c=>{ if(c) orderCust[o.id]=c; else delete orderCust[o.id]; renderBill(table,o); });
+  const cb=document.getElementById('custBtn'); if(cb) cb.onclick=()=>openCustomerPicker(orderCust[o.id], c=>{
+    if(c) {
+      orderCust[o.id]=c;
+      if (c.perk_type && c.perk_type !== 'none') {
+        const pa = perkAmount(c, o.subtotal || 0);
+        if (pa > 0) {
+          orderPromo[o.id] = {
+            key: 'customer_perk',
+            icon: '👤',
+            name: `Ưu đãi khách — ${c.name}`,
+            amount: pa
+          };
+        } else {
+          delete orderPromo[o.id];
+        }
+      } else {
+        if (orderPromo[o.id]?.key === 'customer_perk') delete orderPromo[o.id];
+      }
+    } else {
+      delete orderCust[o.id];
+      if (orderPromo[o.id]?.key === 'customer_perk') delete orderPromo[o.id];
+    }
+    renderBill(table,o);
+  });
   document.getElementById('printBtn').onclick=()=>showReceipt(buildPreview(table,o));
+
+  const sendBtn = document.getElementById('sendBtn');
+  if (sendBtn) {
+    sendBtn.onclick = async () => {
+      try {
+        await api('/orders/' + o.id + '/confirm', { method: 'POST', body: { item_ids: [] } });
+        toast('Đã gửi món vào bếp!');
+        loadBill(table.id);
+      } catch (e) {
+        toast(e.message, true);
+      }
+    };
+  }
+
+  document.querySelectorAll('[data-cancel-item-id]').forEach(btn => {
+    btn.onclick = async () => {
+      const itemId = btn.dataset.cancelItemId;
+      const isPending = btn.classList.contains('warn');
+      
+      if (isPending) {
+        if (!confirm('Xóa món này khỏi danh sách nháp?')) return;
+        try {
+          await api('/orders/items/' + itemId + '/cancel', { method: 'POST', body: { reason: 'Nhân viên xóa nháp' } });
+          toast('Đã xóa món nháp');
+          loadBill(table.id);
+        } catch (e) {
+          toast(e.message, true);
+        }
+      } else {
+        const pin = prompt('Món đã được gửi. Nhập mã PIN Quản lý/Chủ quán để hủy:');
+        if (pin === null) return;
+        if (!pin.trim()) return toast('Cần nhập mã PIN để hủy', true);
+        const reason = prompt('Nhập lý do hủy món:');
+        if (reason === null) return;
+        try {
+          await api('/orders/items/' + itemId + '/cancel', {
+            method: 'POST',
+            body: { pin: pin.trim(), reason: reason.trim() || 'Nhân viên hủy' }
+          });
+          toast('Đã hủy món');
+          loadBill(table.id);
+        } catch (e) {
+          toast(e.message, true);
+        }
+      }
+    };
+  });
 }
 
 function stationName(s){return {kitchen:'Bếp',bar:'Bar',salad:'Salad/Lạnh',beverage:'Quầy nước',retail:'Retail'}[s]||s||'Không rõ';}
@@ -620,7 +735,7 @@ async function openAddMenu(table){
       <button class="btn sm primary" data-add-menu="${i.id}">Thêm</button></div>`).join('')||'<div class="empty">Không tìm thấy món</div>';
     ov.querySelectorAll('[data-add-menu]').forEach(b=>b.onclick=async()=>{
       const qty=parseInt(prompt('Số lượng:', '1'))||1;
-      try{ await api('/orders',{method:'POST',body:{table_id:table.id,channel:'dine_in',items:[{menu_item_id:b.dataset.addMenu,qty}]}}); toast('Đã thêm món'); ov.remove(); refreshFloor(); loadBill(table.id); }
+      try{ await api('/orders',{method:'POST',body:{table_id:table.id,channel:'dine_in',source:'staff_pos',items:[{menu_item_id:b.dataset.addMenu,qty}]}}); toast('Đã thêm món'); ov.remove(); refreshFloor(); loadBill(table.id); }
       catch(e){toast(e.message,true);}
     });
   };
@@ -644,7 +759,7 @@ async function openAddRetail(table){
       <button class="btn sm primary" data-add-sku="${s.id}" ${Number(s.stock)<=0?'disabled':''}>Thêm</button></div>`).join('')||'<div class="empty">Không tìm thấy sản phẩm</div>';
     ov.querySelectorAll('[data-add-sku]').forEach(b=>b.onclick=async()=>{
       const qty=parseInt(prompt('Số lượng:', '1'))||1;
-      try{ await api('/orders',{method:'POST',body:{table_id:table.id,channel:'dine_in',items:[{sku_id:b.dataset.addSku,qty}]}}); toast('Đã thêm sản phẩm retail'); ov.remove(); refreshFloor(); loadBill(table.id); }
+      try{ await api('/orders',{method:'POST',body:{table_id:table.id,channel:'dine_in',source:'staff_pos',items:[{sku_id:b.dataset.addSku,qty}]}}); toast('Đã thêm sản phẩm retail'); ov.remove(); refreshFloor(); loadBill(table.id); }
       catch(e){toast(e.message,true);}
     });
   };

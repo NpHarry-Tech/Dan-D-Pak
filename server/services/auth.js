@@ -291,3 +291,17 @@ export function requireAuth(perm) {
     next();
   };
 }
+
+// Optional auth: attach req.user when a valid token is present, but never block.
+// Lets unguarded routes (POS/iPad) record who acted in the activity log.
+export function attachUser() {
+  return (req, _res, next) => {
+    if (!req.user) req.user = userFor(tokenFromReq(req)) || null;
+    next();
+  };
+}
+
+// Người phụ trách thao tác, dùng cho nhật ký hoạt động. Mặc định 'system'.
+export function actorName(req) {
+  return req?.user?.name || req?.user?.username || 'system';
+}

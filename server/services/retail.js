@@ -45,7 +45,7 @@ export function checkout({ items, payments, voucher_id = null, customer = null, 
       promo: promo ? { voucher_id: promo.voucher_id, code: promo.code, name: promo.name, amount: promo.amount } : null,
     };
   });
-  const order = createOrUpdateOrder({ branch_id, table_id: null, channel: 'retail', items: orderItems });
+  const order = createOrUpdateOrder({ branch_id, table_id: null, channel: 'retail', items: orderItems, actor: cashier || 'system' });
   db.prepare(`UPDATE orders SET voucher_id=?, voucher_code=? WHERE id=?`)
     .run(discountPlan.orderVoucher?.id || null, discountPlan.orderVoucher?.code || null, order.id);
   const snap = snapshotCustomer(cust);

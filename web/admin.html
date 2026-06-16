@@ -43,8 +43,25 @@
 .auditrow .ameta{font-size:11px;color:var(--muted);line-height:1.45;margin-top:2px}
 .auditrow .actor{display:inline-flex;align-items:center;gap:5px;margin-left:6px;padding:1px 7px;border-radius:99px;background:var(--surface2);color:var(--muted);font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.3px}
 .settings-tabs{display:flex;gap:7px;margin:10px 0 14px;flex-wrap:wrap}.settings-tab{padding:7px 12px;border-radius:9px;background:var(--surface2);border:1px solid var(--border);font-size:12px;font-weight:800;color:var(--muted)}.settings-tab.on{background:var(--brand-dim);border-color:var(--brand);color:var(--brand)}
+/* Cài đặt quản lý: phóng to full màn, header & nút Đóng cố định, chỉ vùng nội dung cuộn. */
+.settings-modal{max-width:none;width:96vw;height:94vh;max-height:94vh;overflow:hidden;display:flex;flex-direction:column;position:relative}
+.settings-modal>#settingsBody{flex:1 1 auto;overflow-y:auto;min-height:0;padding-right:4px}
+.settings-modal>h2,.settings-modal>.sub,.settings-modal>.settings-tabs,.settings-modal>.mfoot{flex:0 0 auto}
+.modal-x{position:absolute;top:14px;right:16px;width:36px;height:36px;border-radius:50%;border:1px solid var(--border);background:var(--surface2);color:var(--muted);font-size:20px;font-weight:800;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;z-index:3}
+.modal-x:hover{background:var(--late);color:#fff;border-color:var(--late)}
 .setting-row{display:grid;grid-template-columns:1fr 130px 90px 112px;gap:8px;align-items:center;padding:8px 0;border-bottom:1px dashed var(--border)}.setting-row:last-child{border-bottom:none}
 .setting-card{background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:12px;margin-bottom:10px}
+/* Danh mục in: mỗi dòng là 1 lưới cố định, mọi ô cao bằng nhau và thẳng hàng đáy. */
+.printer-grid{display:flex;flex-direction:column;gap:10px;margin-bottom:14px}
+.printer-row{display:grid;grid-template-columns:minmax(110px,1fr) minmax(150px,1.5fr) minmax(130px,1.1fr) 138px 138px 92px;gap:12px;align-items:end;background:var(--surface2);border:1px solid var(--border);border-radius:11px;padding:14px}
+.printer-row .pr-field{display:flex;flex-direction:column;gap:6px;min-width:0}
+.printer-row .pr-field>label{font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);font-weight:800}
+.printer-row .pr-field input,.printer-row .pr-field select{height:40px;width:100%;box-sizing:border-box;margin:0}
+.printer-row .pr-check{display:flex;align-items:center;justify-content:center;gap:8px;height:40px;border:1px solid var(--border);border-radius:9px;background:var(--surface);font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.3px;color:var(--muted);cursor:pointer;user-select:none;white-space:nowrap;transition:border-color .12s,color .12s,background .12s}
+.printer-row .pr-check:has(input:checked){border-color:var(--brand);color:var(--brand);background:var(--brand-dim)}
+.printer-row .pr-check input{width:16px;height:16px;margin:0;accent-color:var(--brand);cursor:pointer;flex:none}
+.printer-row .pr-del{height:40px;width:100%;justify-content:center}
+@media(max-width:980px){.printer-row{grid-template-columns:1fr 1fr;align-items:stretch}.printer-row .pr-del{grid-column:1/-1}}
 .setting-form{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:10px}
 .setting-line{display:flex;justify-content:space-between;gap:12px;align-items:center;padding:9px 0;border-bottom:1px dashed var(--border)}
 .setting-line:last-child{border-bottom:none}
@@ -123,6 +140,8 @@
 .billd-toolbar.show{display:flex}.billd-toolbar button,.billd-toolbar select{height:30px;padding:4px 8px;border-radius:7px}
 .billd-toolbar button.on{background:var(--brand-dim);border-color:var(--brand);color:var(--brand)}
 .billd-tool{width:100%;justify-content:flex-start;margin-bottom:7px;cursor:grab}.billd-tool:active{cursor:grabbing}
+.billd-hint{margin-top:8px;padding:8px 10px;border-radius:9px;background:var(--brand-dim);color:var(--brand);font-size:11px;line-height:1.5;font-weight:600}.billd-hint b{font-weight:800}
+.billd-stage:focus-visible{outline:none}
 .billd-field{margin:0 5px 6px 0}.billd-layer{display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;border:1px solid var(--border);border-radius:8px;background:var(--surface);padding:7px 8px;margin-bottom:6px;text-align:left;font-size:11.5px}
 .billd-layer.on{border-color:var(--brand);background:var(--brand-dim);color:var(--brand)}
 .billd-layer small{color:var(--muted);font-size:10px}
@@ -135,6 +154,10 @@
 @media(max-width:1120px){.label-designer{grid-template-columns:1fr}.label-workbench{min-height:330px}.label-canvas{width:min(100%,720px)}}
 @media(max-width:1080px){.bookmenu-grid{grid-template-columns:1fr}.bookmenu-preview{max-width:520px}}
 @media(max-width:720px){.setting-row{grid-template-columns:1fr}.permgrid{grid-template-columns:1fr}.integration-shell{grid-template-columns:1fr}.operations-method,.shift-label-row{grid-template-columns:1fr}}
+.zone{margin-top:14px;font-weight:700;color:var(--muted);border-left:3px solid var(--brand);padding-left:8px;font-size:13px}
+.tablegrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:10px;margin-top:10px}
+.tcard{padding:12px 10px;text-align:center;border:1px solid var(--border);border-radius:12px;background:var(--surface);display:flex;flex-direction:column;justify-content:space-between;align-items:center;height:95px;position:relative}
+.tcard:hover{border-color:var(--brand);box-shadow:0 6px 16px rgba(18,31,45,.06)}
 </style></head>
 <body>
 <div id="top"></div>
@@ -264,7 +287,9 @@ async function loadIngredients(){ ingredients=await api('/inventory?item_type=in
 async function loadMenu(){
   await loadIngredients();
   menu=await api('/menu/manage');
-  document.getElementById('menuToggle').innerHTML=menu.items.map(i=>`
+  const mt = document.getElementById('menuToggle');
+  const smt = document.getElementById('settingsMenuToggle');
+  const html = menu.items.map(i=>`
     <div class="togglerow">
       <span class="mthumb">${thumb(i)}</span>
       <span style="line-height:1.35">${esc(i.name)} ${i.hidden?'<span class="chip c-muted">Ẩn</span>':''} ${!i.schedule_available?'<span class="chip c-doing">Ngoài lịch</span>':''}<br>
@@ -274,17 +299,26 @@ async function loadMenu(){
       <button class="btn sm danger" data-del="${i.id}">Xóa</button>
       <div class="sw ${i.available?'on':''}" data-id="${i.id}" data-av="${i.available?1:0}" title="Bật/tắt tạm thời"></div>
     </div>`).join('');
-  document.querySelectorAll('#menuToggle [data-del]').forEach(b=>b.onclick=async()=>{
-    const it=menu.items.find(x=>x.id===b.dataset.del); if(!confirm(`Xóa món "${it.name}"?\n(Nếu món đã từng được order, hệ thống sẽ lưu trữ ẩn thay vì xóa cứng.)`))return;
-    try{ const r=await api('/menu/'+it.id+'/delete',{method:'POST'}); toast(r.archived?'Đã lưu trữ món (đã có order)':'Đã xóa món'); loadMenu(); }catch(e){toast(e.message,true);}
+  if (mt) mt.innerHTML = html;
+  if (smt) smt.innerHTML = html;
+  
+  const selectors = ['#menuToggle', '#settingsMenuToggle'];
+  selectors.forEach(sel => {
+    const root = document.getElementById(sel.slice(1));
+    if (!root) return;
+    
+    root.querySelectorAll('[data-del]').forEach(b=>b.onclick=async()=>{
+      const it=menu.items.find(x=>x.id===b.dataset.del); if(!confirm(`Xóa món "${it.name}"?\n(Nếu món đã từng được order, hệ thống sẽ lưu trữ ẩn thay vì xóa cứng.)`))return;
+      try{ const r=await api('/menu/'+it.id+'/delete',{method:'POST'}); toast(r.archived?'Đã lưu trữ món (đã có order)':'Đã xóa món'); loadMenu(); }catch(e){toast(e.message,true);}
+    });
+    root.querySelectorAll('.sw').forEach(s=>s.onclick=async()=>{
+      const av=s.dataset.av==='1'?0:1;
+      try{await api('/menu/'+s.dataset.id+'/availability',{method:'POST',body:{available:!!av}});
+        s.dataset.av=av;s.classList.toggle('on',!!av);toast(av?'Đã bật món':'Đã tắt món');}catch(e){toast(e.message,true);}
+    });
+    root.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>openItemForm(menu.items.find(x=>x.id===b.dataset.edit)));
+    root.querySelectorAll('[data-hide]').forEach(b=>b.onclick=async()=>{const it=menu.items.find(x=>x.id===b.dataset.hide);await api('/menu/'+it.id+'/hide',{method:'POST',body:{hidden:!it.hidden}});toast(it.hidden?'Đã hiện món':'Đã ẩn món');loadMenu();});
   });
-  document.querySelectorAll('#menuToggle .sw').forEach(s=>s.onclick=async()=>{
-    const av=s.dataset.av==='1'?0:1;
-    try{await api('/menu/'+s.dataset.id+'/availability',{method:'POST',body:{available:!!av}});
-      s.dataset.av=av;s.classList.toggle('on',!!av);toast(av?'Đã bật món':'Đã tắt món');}catch(e){toast(e.message,true);}
-  });
-  document.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>openItemForm(menu.items.find(x=>x.id===b.dataset.edit)));
-  document.querySelectorAll('[data-hide]').forEach(b=>b.onclick=async()=>{const it=menu.items.find(x=>x.id===b.dataset.hide);await api('/menu/'+it.id+'/hide',{method:'POST',body:{hidden:!it.hidden}});toast(it.hidden?'Đã hiện món':'Đã ẩn món');loadMenu();});
 }
 const catName=id=>menu.categories.find(c=>c.id===id)?.name||'';
 const thumb=i=>i.image?`<img src="${esc(i.image)}" onerror="this.remove()">`:(i.emoji||'🍽️');
@@ -429,6 +463,14 @@ async function loadAuditNatural(){
   }).join('')||'<div class="empty">Chưa có hoạt động</div>';
 }
 
+// Nhật ký có thể trải nhiều ngày: hôm nay chỉ hiện giờ, ngày khác kèm ngày/tháng.
+function auditTime(iso){
+  const d=new Date(iso), n=new Date();
+  const sameDay=d.getDate()===n.getDate()&&d.getMonth()===n.getMonth()&&d.getFullYear()===n.getFullYear();
+  return sameDay
+    ? d.toLocaleTimeString('vi-VN')
+    : d.toLocaleDateString('vi-VN',{day:'2-digit',month:'2-digit'})+' '+d.toLocaleTimeString('vi-VN',{hour:'2-digit',minute:'2-digit'});
+}
 function parseAuditDetail(r){
   if(!r.detail) return {};
   if(typeof r.detail==='object') return r.detail;
@@ -574,21 +616,37 @@ async function loadSettingsInvoices(){
     <td style="font-family:var(--mono);font-size:10px;color:var(--faint)">${esc(i.lookup_code)}</td>
   </tr>`).join(''):'<tr><td colspan="4" class="empty">Chưa có hóa đơn</td></tr>';
 }
-async function loadSettingsAudit(){
+const AUDIT_PAGE=50;
+let auditCursor=null; // mốc thời gian dòng cũ nhất đang hiển thị, dùng để "Xem thêm"
+function auditRowHtml(r){
+  const msg=auditMessage(r);
+  return `<div class="auditrow">
+    <div class="atime">${auditTime(r.created_at)}</div>
+    <div>
+      <div class="atext">${esc(msg.text)}${r.actor&&r.actor!=='system'?`<span class="actor">${esc(r.actor)}</span>`:''}</div>
+      ${msg.meta?`<div class="ameta">${esc(msg.meta)}</div>`:''}
+    </div>
+  </div>`;
+}
+async function loadSettingsAudit(append=false){
   const el=document.getElementById('settingsAudit');
   if(!el) return;
-  const rows=await api('/audit').catch(()=>[]);
-  el.innerHTML=rows.slice(0,28).map(r=>{
-    const t=new Date(r.created_at).toLocaleTimeString('vi-VN');
-    const msg=auditMessage(r);
-    return `<div class="auditrow">
-      <div class="atime">${t}</div>
-      <div>
-        <div class="atext">${esc(msg.text)}${r.actor&&r.actor!=='system'?`<span class="actor">${esc(r.actor)}</span>`:''}</div>
-        ${msg.meta?`<div class="ameta">${esc(msg.meta)}</div>`:''}
-      </div>
-    </div>`;
-  }).join('')||'<div class="empty">Chưa có hoạt động</div>';
+  el.querySelector('#settingsAuditMore')?.remove();
+  el.querySelector('#settingsAuditEnd')?.remove();
+  if(!append){ auditCursor=null; el.innerHTML='<div class="empty">Đang tải...</div>'; }
+  const qs=new URLSearchParams({limit:String(AUDIT_PAGE)});
+  if(append&&auditCursor) qs.set('before',auditCursor);
+  const rows=await api('/audit?'+qs).catch(()=>[]);
+  const html=rows.map(auditRowHtml).join('');
+  if(!append) el.innerHTML=html||'<div class="empty">Chưa có hoạt động</div>';
+  else if(html) el.insertAdjacentHTML('beforeend',html);
+  if(rows.length) auditCursor=rows[rows.length-1].created_at;
+  if(rows.length>=AUDIT_PAGE){
+    el.insertAdjacentHTML('beforeend','<button class="btn sm" id="settingsAuditMore" style="margin:12px auto;display:block">Xem thêm</button>');
+    el.querySelector('#settingsAuditMore').onclick=()=>loadSettingsAudit(true);
+  } else if(append||rows.length){
+    el.insertAdjacentHTML('beforeend','<div class="empty" id="settingsAuditEnd" style="padding:10px">Đã hết — nhật ký chỉ lưu 7 ngày gần nhất.</div>');
+  }
 }
 async function loadSettingsPrintJobs(){
   const box=document.getElementById('settingsPrintJobs');
@@ -769,7 +827,8 @@ async function openSettings(){
     }
   }
   function draw(){
-    ov.innerHTML=`<div class="modal" style="max-width:1280px">
+    ov.innerHTML=`<div class="modal settings-modal">
+      <button class="modal-x" id="settingsCloseX" title="Đóng" aria-label="Đóng">✕</button>
       <h2>⚙ Cài đặt quản lý</h2>
       <div class="sub">Nhân viên, phân quyền, đồng bộ, hóa đơn và cấu hình in được gom ở đây.</div>
       <div class="settings-tabs">
@@ -782,7 +841,9 @@ async function openSettings(){
         <button class="settings-tab ${tab==='einvoice'?'on':''}" data-tab="einvoice">Cấu hình HĐĐT</button>
         <button class="settings-tab ${tab==='print'?'on':''}" data-tab="print">Bill &amp; Tem nhãn</button>
         <button class="settings-tab ${tab==='devices'?'on':''}" data-tab="devices">Thiết bị khách</button>
+        <button class="settings-tab ${tab==='menu'?'on':''}" data-tab="menu">Thực đơn FnB</button>
         <button class="settings-tab ${tab==='bookmenu'?'on':''}" data-tab="bookmenu">Menu quyển</button>
+        <button class="settings-tab ${tab==='tables'?'on':''}" data-tab="tables">Cấu hình bàn &amp; Sơ đồ</button>
         <button class="settings-tab ${tab==='printers'?'on':''}" data-tab="printers">Danh mục in</button>
         <button class="settings-tab ${tab==='audit'?'on':''}" data-tab="audit">Nhật ký hoạt động</button>
       </div>
@@ -790,6 +851,7 @@ async function openSettings(){
       <div class="mfoot"><button class="btn primary" id="settingsClose">Đóng</button></div>
     </div>`;
     ov.querySelector('#settingsClose').onclick=()=>ov.remove();
+    ov.querySelector('#settingsCloseX').onclick=()=>ov.remove();
     ov.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{tab=b.dataset.tab;editingUser=null;draw();});
     bindActiveTab();
   }
@@ -804,7 +866,9 @@ async function openSettings(){
       einvoice:einvoiceHtml,
       print:printDesignHtml,
       devices:devicesHtml,
+      menu:menuHtml,
       bookmenu:bookMenuHtml,
+      tables:tablesHtml,
       printers:printersHtml,
       audit:auditHtml,
     }[tab]||usersHtml)();
@@ -819,7 +883,9 @@ async function openSettings(){
     if(tab==='einvoice') return bindConfigForm('einvoice');
     if(tab==='print') return bindPrintDesigner();
     if(tab==='devices') return bindDeviceSettings();
+    if(tab==='menu') return bindMenuTab();
     if(tab==='bookmenu') return bindBookMenuSettings();
+    if(tab==='tables') return bindTablesTab();
     if(tab==='printers') return bindPrinters();
     if(tab==='audit') return bindSettingsAudit();
   }
@@ -1231,21 +1297,32 @@ async function openSettings(){
       <div class="mfoot"><button class="btn primary" id="saveDeviceSettings">Lưu thiết bị khách</button></div>
     </div>`;
   }
+  function menuHtml(){
+    return `<div class="panel" style="margin:0">
+      <h3>Thực đơn FnB <span style="margin-left:auto;display:flex;gap:7px"><button class="btn sm" id="tabManageCats">🗂️ Danh mục</button><button class="btn sm primary" id="tabAddItem">➕ Thêm món</button></span></h3>
+      <div id="settingsMenuToggle" style="margin-top:12px">Đang tải thực đơn…</div>
+    </div>`;
+  }
+  function tablesHtml(){
+    return `<div class="panel" style="margin:0">
+      <div id="settingsTablesContainer">
+        <div class="empty">Đang tải sơ đồ bàn…</div>
+      </div>
+    </div>`;
+  }
   function printersHtml(){
     const rows=readPrinterCfg();
     const types=['Phiếu bếp','Phiếu bar','Hóa đơn','Tem nhãn','Báo cáo'];
     return `<div class="panel" style="margin:0">
       <h3>Danh mục in</h3>
       <div class="mini" style="margin-bottom:10px">Khai báo nhóm máy in và hành vi auto-print cho từng loại phiếu.</div>
-      <div id="printerCfgRows">${rows.map((p,i)=>`<div class="setting-card" data-print-row="${i}">
-        <div class="setting-form">
-          <div><label>Mã</label><input data-pr-id value="${esc(p.id||'')}"></div>
-          <div><label>Tên máy in</label><input data-pr-name value="${esc(p.name||'')}"></div>
-          <div><label>Loại phiếu</label><select data-pr-type>${types.map(t=>`<option value="${t}" ${p.type===t?'selected':''}>${t}</option>`).join('')}</select></div>
-          <label class="permitem"><input type="checkbox" data-pr-active ${p.active?'checked':''}><span>Đang sử dụng</span></label>
-          <label class="permitem"><input type="checkbox" data-pr-auto ${p.auto?'checked':''}><span>Tự động in</span></label>
-          <button class="btn sm danger" data-del-printer="${i}" type="button">Xóa dòng</button>
-        </div>
+      <div id="printerCfgRows" class="printer-grid">${rows.map((p,i)=>`<div class="printer-row" data-print-row="${i}">
+        <div class="pr-field"><label>Mã</label><input data-pr-id value="${esc(p.id||'')}"></div>
+        <div class="pr-field"><label>Tên máy in</label><input data-pr-name value="${esc(p.name||'')}"></div>
+        <div class="pr-field"><label>Loại phiếu</label><select data-pr-type>${types.map(t=>`<option value="${t}" ${p.type===t?'selected':''}>${t}</option>`).join('')}</select></div>
+        <label class="pr-check"><input type="checkbox" data-pr-active ${p.active?'checked':''}><span>Đang sử dụng</span></label>
+        <label class="pr-check"><input type="checkbox" data-pr-auto ${p.auto?'checked':''}><span>Tự động in</span></label>
+        <button class="btn sm danger pr-del" data-del-printer="${i}" type="button">Xóa dòng</button>
       </div>`).join('')}</div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">
         <button class="btn sm" id="addPrinterRow">➕ Thêm danh mục in</button>
@@ -1765,12 +1842,18 @@ async function openSettings(){
   function ensureInteract(){
     if(window.interact) return Promise.resolve(window.interact);
     if(window.__interactPromise) return window.__interactPromise;
+    // Ưu tiên bản đóng gói cục bộ (chạy được cả khi máy offline); nếu thiếu mới tải từ CDN.
+    const sources=['/vendor/interact.min.js','https://cdn.jsdelivr.net/npm/interactjs@1.10.27/dist/interact.min.js'];
     window.__interactPromise=new Promise((resolve,reject)=>{
-      const s=document.createElement('script');
-      s.src='https://cdn.jsdelivr.net/npm/interactjs@1.10.27/dist/interact.min.js';
-      s.onload=()=>window.interact?resolve(window.interact):reject(new Error('Không tải được interact.js'));
-      s.onerror=()=>reject(new Error('Không tải được interact.js'));
-      document.head.appendChild(s);
+      const tryLoad=i=>{
+        if(i>=sources.length) return reject(new Error('Không tải được interact.js'));
+        const s=document.createElement('script');
+        s.src=sources[i];
+        s.onload=()=>window.interact?resolve(window.interact):tryLoad(i+1);
+        s.onerror=()=>tryLoad(i+1);
+        document.head.appendChild(s);
+      };
+      tryLoad(0);
     });
     return window.__interactPromise;
   }
@@ -1811,6 +1894,7 @@ async function openSettings(){
             <button class="btn sm billd-tool" data-bd-tool="qr" type="button">Mã QR</button>
             <button class="btn sm primary" id="billdAddLogo" type="button" style="width:100%;justify-content:center;margin-top:4px">⬆ Logo lên đầu (trắng đen)</button>
             <input id="billdImageFile" type="file" accept="image/*" style="display:none">
+            <div class="billd-hint">💡 Bấm chọn 1 ô rồi dùng <b>phím mũi tên</b> để xê dịch từng chút. Giữ <b>Shift</b> để đi nhanh hơn.</div>
           </div>
           <div class="billd-section"><h4>Thông tin bill</h4>
             <label>Tên công ty</label><input data-bd-cfg="storeName" value="${esc(cfg.storeName||'')}">
@@ -2011,7 +2095,7 @@ async function openSettings(){
       });
     }
     function bindNode(node){
-      node.addEventListener('pointerdown',e=>{ if(!node.classList.contains('editing')) selectElement(node.dataset.bdId); e.stopPropagation(); });
+      node.addEventListener('pointerdown',e=>{ if(!node.classList.contains('editing')){ selectElement(node.dataset.bdId); stage.focus({preventScroll:true}); } e.stopPropagation(); });
       node.addEventListener('dblclick',e=>{
         const el=tpl.elements.find(x=>x.id===node.dataset.bdId);
         if(el?.type==='text') startInlineEdit(node,el);
@@ -2026,7 +2110,7 @@ async function openSettings(){
     }
     function renderLayers(){
       layersEl.innerHTML=tpl.elements.map(el=>`<button class="billd-layer ${el.id===selectedId?'on':''}" data-bd-layer="${esc(el.id)}" type="button"><span>${esc(billElementLabel(el))}</span><small>${esc(el.type)}</small></button>`).join('')||'<div class="empty">Chưa có layer</div>';
-      layersEl.querySelectorAll('[data-bd-layer]').forEach(b=>b.onclick=()=>selectElement(b.dataset.bdLayer));
+      layersEl.querySelectorAll('[data-bd-layer]').forEach(b=>b.onclick=()=>{selectElement(b.dataset.bdLayer);stage.focus({preventScroll:true});});
       root.querySelector('#billdDelete').disabled=!selected();
       root.querySelector('#billdDuplicate').disabled=!selected();
     }
@@ -2174,6 +2258,21 @@ async function openSettings(){
     canvas.addEventListener('pointerdown',e=>{ if(e.target===canvas) selectElement(null); });
     stage.addEventListener('scroll',positionToolbar);
     window.addEventListener('resize',positionToolbar,{passive:true});
+    // Tinh chỉnh bằng phím mũi tên: chọn ô rồi xê dịch từng 0.4% (giữ Shift = 2%).
+    stage.tabIndex=0;
+    stage.addEventListener('keydown',e=>{
+      if(!e.key.startsWith('Arrow')) return;
+      if(document.activeElement?.isContentEditable) return; // đang sửa chữ thì để mũi tên di chuyển con trỏ
+      const el=selected(); if(!el) return;
+      e.preventDefault();
+      const step=e.shiftKey?2:0.4;
+      const elH=el.type==='line'?(Number(el.h)||.35):(Number(el.h)||1);
+      if(e.key==='ArrowLeft') el.x=clamp((Number(el.x)||0)-step,0,100-(Number(el.w)||1));
+      if(e.key==='ArrowRight') el.x=clamp((Number(el.x)||0)+step,0,100-(Number(el.w)||1));
+      if(e.key==='ArrowUp') el.y=clamp((Number(el.y)||0)-step,0,100-elH);
+      if(e.key==='ArrowDown') el.y=clamp((Number(el.y)||0)+step,0,100-elH);
+      applyElement(el); positionToolbar(); scheduleSave();
+    });
     root.querySelectorAll('[data-bd-preset]').forEach(b=>b.onclick=()=>{
       const p=billPresets[b.dataset.bdPreset]; if(!p) return;
       tpl.paper=p.paper; tpl.widthMm=p.widthMm; tpl.heightMm=p.heightMm;
@@ -2472,7 +2571,7 @@ async function openSettings(){
   }
   function bindSettingsAudit(){
     loadSettingsAudit();
-    ov.querySelector('#settingsAuditRefresh').onclick=loadSettingsAudit;
+    ov.querySelector('#settingsAuditRefresh').onclick=()=>loadSettingsAudit();
   }
   function bindConfigForm(name){
     const btn=ov.querySelector(`[data-save-config="${name}"]`);
@@ -2622,6 +2721,368 @@ async function openSettings(){
       h.angle=clamp(q('#bmHsAngle').value,-180,180);
       h.enabled=q('#bmHsEnabled').checked;
       saveBookMenuSettings();
+    };
+  }
+  function bindMenuTab(){
+    const tabManageCats = ov.querySelector('#tabManageCats');
+    const tabAddItem = ov.querySelector('#tabAddItem');
+    if (tabManageCats) tabManageCats.onclick = openCategoryManager;
+    if (tabAddItem) tabAddItem.onclick = () => { if(!menu.categories?.length) return toast('Hãy tạo danh mục trước (🗂️ Danh mục)',true); openItemForm(null); };
+    loadMenu();
+  }
+
+  async function bindTablesTab(){
+    const container = ov.querySelector('#settingsTablesContainer');
+    if (!container) return;
+    
+    let tables = [];
+    try {
+      tables = await api('/tables');
+    } catch (e) {
+      container.innerHTML = `<div class="empty" style="color:var(--late)">${esc(e.message)}</div>`;
+      return;
+    }
+
+    container.innerHTML = `
+      <div style="display:grid;grid-template-columns:1fr 340px;gap:20px;align-items:start">
+        <div>
+          <div class="panel" style="margin:0">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+              <h3 style="margin:0">Layout Sơ Đồ Bàn</h3>
+              <span class="badge role" id="tableCountBadge" style="margin-left:auto;background:var(--brand-dim);color:var(--brand);padding:2px 8px;border-radius:99px;font-size:11px;font-weight:700">${tables.length} bàn</span>
+            </div>
+            <div id="settingsFloor"></div>
+          </div>
+        </div>
+        
+        <div style="display:flex;flex-direction:column;gap:16px">
+          <div class="panel" style="margin:0">
+            <h3 id="formTitle">Thêm bàn mới</h3>
+            <form id="tableForm" style="display:flex;flex-direction:column;gap:8px">
+              <input type="hidden" id="editTableId" value="">
+              <div style="display:flex;flex-direction:column;gap:4px">
+                <label style="font-size:12px;font-weight:700">Khu vực / Zone</label>
+                <select id="tableZoneSelect" required style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:9px;color:var(--text);padding:10px 12px;font-size:13px"></select>
+                <input type="text" id="tableZoneNew" placeholder="Nhập tên khu vực mới (VD: Lầu 1)" style="display:none;width:100%;background:var(--bg);border:1px solid var(--border);border-radius:9px;color:var(--text);padding:10px 12px;font-size:13px;margin-top:6px">
+              </div>
+              
+              <div style="display:flex;flex-direction:column;gap:4px">
+                <label style="font-size:12px;font-weight:700">Mã số bàn</label>
+                <input type="text" id="tableCode" placeholder="A01" required autocomplete="off" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:9px;color:var(--text);padding:10px 12px;font-size:13px">
+              </div>
+              
+              <div style="display:flex;flex-direction:column;gap:4px">
+                <label style="font-size:12px;font-weight:700">Số lượng ghế</label>
+                <input type="number" id="tableSeats" min="1" max="50" value="4" required style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:9px;color:var(--text);padding:10px 12px;font-size:13px">
+              </div>
+              
+              <div style="display:flex;gap:8px;margin-top:10px">
+                <button type="submit" class="btn primary" id="saveTableBtn" style="flex:1">Thêm bàn</button>
+                <button type="button" class="btn" id="cancelEditTableBtn" style="display:none">Hủy sửa</button>
+              </div>
+            </form>
+          </div>
+
+          <div class="panel" style="margin:0">
+            <h3>Tạo bàn hàng loạt</h3>
+            <form id="bulkTableForm" style="display:flex;flex-direction:column;gap:8px">
+              <div style="display:flex;flex-direction:column;gap:4px">
+                <label style="font-size:12px;font-weight:700">Khu vực / Zone</label>
+                <select id="bulkZoneSelect" required style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:9px;color:var(--text);padding:10px 12px;font-size:13px"></select>
+                <input type="text" id="bulkZoneNew" placeholder="Nhập tên khu vực mới (VD: Lầu 1)" style="display:none;width:100%;background:var(--bg);border:1px solid var(--border);border-radius:9px;color:var(--text);padding:10px 12px;font-size:13px;margin-top:6px">
+              </div>
+              
+              <div style="display:flex;flex-direction:column;gap:4px">
+                <label style="font-size:12px;font-weight:700">Mã bắt đầu (Tiền tố)</label>
+                <input type="text" id="bulkPrefix" placeholder="B" required autocomplete="off" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:9px;color:var(--text);padding:10px 12px;font-size:13px">
+              </div>
+              
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+                <div style="display:flex;flex-direction:column;gap:4px">
+                  <label style="font-size:12px;font-weight:700">Bắt đầu từ số</label>
+                  <input type="number" id="bulkStart" min="1" value="1" required style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:9px;color:var(--text);padding:10px 12px;font-size:13px">
+                </div>
+                <div style="display:flex;flex-direction:column;gap:4px">
+                  <label style="font-size:12px;font-weight:700">Số lượng bàn</label>
+                  <input type="number" id="bulkCount" min="1" max="100" value="6" required style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:9px;color:var(--text);padding:10px 12px;font-size:13px">
+                </div>
+              </div>
+
+              <div style="display:flex;flex-direction:column;gap:4px">
+                <label style="font-size:12px;font-weight:700">Số ghế mỗi bàn</label>
+                <input type="number" id="bulkSeats" min="1" max="50" value="4" required style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:9px;color:var(--text);padding:10px 12px;font-size:13px">
+              </div>
+              
+              <label style="display:flex;align-items:center;gap:8px;margin:6px 0;font-size:11.5px;color:var(--muted);cursor:pointer;font-weight:normal;letter-spacing:0;text-transform:none">
+                <input type="checkbox" id="bulkZeroPadding" checked style="width:auto"> Thêm số 0 phía trước (ví dụ B01 thay vì B1)
+              </label>
+
+              <button type="submit" class="btn primary" style="margin-top:4px">Tạo tự động</button>
+            </form>
+          </div>
+        </div>
+      </div>
+    `;
+
+    const floor = container.querySelector('#settingsFloor');
+    const tableZoneSelect = container.querySelector('#tableZoneSelect');
+    const tableZoneNew = container.querySelector('#tableZoneNew');
+    const bulkZoneSelect = container.querySelector('#bulkZoneSelect');
+    const bulkZoneNew = container.querySelector('#bulkZoneNew');
+
+    // Handle show/hide new zone text inputs
+    tableZoneSelect.onchange = () => {
+      if (tableZoneSelect.value === '__new__') {
+        tableZoneNew.style.display = 'block';
+        tableZoneNew.required = true;
+        tableZoneNew.focus();
+      } else {
+        tableZoneNew.style.display = 'none';
+        tableZoneNew.required = false;
+        tableZoneNew.value = '';
+      }
+    };
+
+    bulkZoneSelect.onchange = () => {
+      if (bulkZoneSelect.value === '__new__') {
+        bulkZoneNew.style.display = 'block';
+        bulkZoneNew.required = true;
+        bulkZoneNew.focus();
+      } else {
+        bulkZoneNew.style.display = 'none';
+        bulkZoneNew.required = false;
+        bulkZoneNew.value = '';
+      }
+    };
+
+    function drawSettingsFloor() {
+      const activeZones = [...new Set(tables.map(t => t.zone))];
+      
+      // Keep track of current selection before rebuilding select options
+      const prevSingleSel = tableZoneSelect.value;
+      const prevBulkSel = bulkZoneSelect.value;
+
+      const selectOpts = `
+        <option value="">-- Chọn khu vực --</option>
+        ${activeZones.map(z => `<option value="${esc(z)}">${esc(z)}</option>`).join('')}
+        <option value="__new__">+ Thêm khu vực mới...</option>
+      `;
+
+      tableZoneSelect.innerHTML = selectOpts;
+      bulkZoneSelect.innerHTML = selectOpts;
+
+      // Restore values
+      if (activeZones.includes(prevSingleSel) || prevSingleSel === '__new__') tableZoneSelect.value = prevSingleSel;
+      if (activeZones.includes(prevBulkSel) || prevBulkSel === '__new__') bulkZoneSelect.value = prevBulkSel;
+
+      if (!tables.length) {
+        floor.innerHTML = `<div class="empty">Chưa có bàn nào được cấu hình. Sử dụng các form bên phải để tạo bàn.</div>`;
+        return;
+      }
+
+      floor.innerHTML = activeZones.map(z => {
+        const zoneTables = tables.filter(t => t.zone === z);
+        return `
+          <div class="zone">${esc(z)}</div>
+          <div class="tablegrid">
+            ${zoneTables.map(t => `
+              <div class="tcard" data-id="${t.id}">
+                <b style="font-size:14.5px;color:var(--text);margin-top:2px">${esc(t.code)}</b>
+                <span style="font-size:10.5px;color:var(--muted)">👤 ${t.seats} ghế</span>
+                <div style="display:flex;gap:4px;margin-top:6px;width:100%">
+                  <button class="btn sm" data-edit-tbl="${t.id}" style="flex:1;padding:2px 0;font-size:10.5px;min-height:22px">Sửa</button>
+                  <button class="btn sm danger" data-del-tbl="${t.id}" style="flex:1;padding:2px 0;font-size:10.5px;min-height:22px">Xóa</button>
+                </div>
+              </div>
+            `).join('')}
+          </div>
+        `;
+      }).join('');
+
+      // Bind edit events
+      floor.querySelectorAll('[data-edit-tbl]').forEach(btn => {
+        btn.onclick = () => {
+          const id = btn.dataset.editTbl;
+          const t = tables.find(x => x.id === id);
+          if (!t) return;
+          
+          container.querySelector('#editTableId').value = t.id;
+          
+          if (activeZones.includes(t.zone)) {
+            tableZoneSelect.value = t.zone;
+            tableZoneNew.style.display = 'none';
+            tableZoneNew.required = false;
+            tableZoneNew.value = '';
+          } else {
+            tableZoneSelect.value = '__new__';
+            tableZoneNew.style.display = 'block';
+            tableZoneNew.required = true;
+            tableZoneNew.value = t.zone;
+          }
+
+          container.querySelector('#tableCode').value = t.code;
+          container.querySelector('#tableSeats').value = t.seats;
+          
+          container.querySelector('#formTitle').textContent = 'Sửa thông tin bàn';
+          container.querySelector('#saveTableBtn').textContent = 'Lưu thay đổi';
+          container.querySelector('#cancelEditTableBtn').style.display = 'inline-block';
+          container.querySelector('#tableCode').focus();
+        };
+      });
+
+      // Bind delete events
+      floor.querySelectorAll('[data-del-tbl]').forEach(btn => {
+        btn.onclick = async () => {
+          const id = btn.dataset.delTbl;
+          const t = tables.find(x => x.id === id);
+          if (!t) return;
+          
+          if (!confirm(`Bạn có chắc chắn muốn xóa bàn "${t.code}"?`)) return;
+          
+          try {
+            await api(`/settings/tables/${id}/delete`, { method: 'POST' });
+            toast(`Đã xóa bàn ${t.code}`);
+            tables = tables.filter(x => x.id !== id);
+            drawSettingsFloor();
+            container.querySelector('#tableCountBadge').textContent = `${tables.length} bàn`;
+          } catch (e) {
+            toast(e.message, true);
+          }
+        };
+      });
+    }
+
+    // Draw initial
+    drawSettingsFloor();
+
+    const cancelBtn = container.querySelector('#cancelEditTableBtn');
+    const editIdInput = container.querySelector('#editTableId');
+    const codeInput = container.querySelector('#tableCode');
+    const seatsInput = container.querySelector('#tableSeats');
+    const saveBtn = container.querySelector('#saveTableBtn');
+    const formTitle = container.querySelector('#formTitle');
+
+    function resetForm() {
+      editIdInput.value = '';
+      tableZoneSelect.value = '';
+      tableZoneNew.value = '';
+      tableZoneNew.style.display = 'none';
+      tableZoneNew.required = false;
+      codeInput.value = '';
+      seatsInput.value = '4';
+      formTitle.textContent = 'Thêm bàn mới';
+      saveBtn.textContent = 'Thêm bàn';
+      cancelBtn.style.display = 'none';
+    }
+
+    cancelBtn.onclick = resetForm;
+
+    // Form submit (Add/Edit)
+    container.querySelector('#tableForm').onsubmit = async (e) => {
+      e.preventDefault();
+      const id = editIdInput.value;
+      const zoneSel = tableZoneSelect.value;
+      const zoneVal = (zoneSel === '__new__' ? tableZoneNew.value : zoneSel).trim();
+
+      if (!zoneVal) {
+        toast('Vui lòng chọn hoặc nhập tên khu vực mới', true);
+        return;
+      }
+
+      const body = {
+        zone: zoneVal,
+        code: codeInput.value.trim(),
+        seats: parseInt(seatsInput.value) || 4
+      };
+
+      try {
+        if (id) {
+          const updated = await api(`/settings/tables/${id}/update`, { method: 'POST', body });
+          toast('Đã cập nhật bàn thành công');
+          tables = tables.map(x => x.id === id ? updated : x);
+        } else {
+          const created = await api('/settings/tables', { method: 'POST', body });
+          toast('Đã thêm bàn mới thành công');
+          tables.push(created);
+        }
+        tables.sort((a, b) => a.code.localeCompare(b.code, undefined, { numeric: true }));
+        resetForm();
+        drawSettingsFloor();
+        container.querySelector('#tableCountBadge').textContent = `${tables.length} bàn`;
+      } catch (e) {
+        toast(e.message, true);
+      }
+    };
+
+    // Bulk creation form submit
+    container.querySelector('#bulkTableForm').onsubmit = async (e) => {
+      e.preventDefault();
+      const zoneSel = bulkZoneSelect.value;
+      const zoneVal = (zoneSel === '__new__' ? bulkZoneNew.value : zoneSel).trim();
+
+      if (!zoneVal) {
+        toast('Vui lòng chọn hoặc nhập tên khu vực mới', true);
+        return;
+      }
+
+      const prefix = container.querySelector('#bulkPrefix').value.trim();
+      const start = parseInt(container.querySelector('#bulkStart').value) || 1;
+      const count = parseInt(container.querySelector('#bulkCount').value) || 1;
+      const seats = parseInt(container.querySelector('#bulkSeats').value) || 4;
+      const pad = container.querySelector('#bulkZeroPadding').checked;
+
+      if (count > 100) {
+        toast('Số lượng tạo hàng loạt tối đa là 100 bàn', true);
+        return;
+      }
+
+      let createdCount = 0;
+      let errors = [];
+
+      const promises = [];
+      for (let i = 0; i < count; i++) {
+        const num = start + i;
+        const codeSuffix = pad ? String(num).padStart(2, '0') : String(num);
+        const code = prefix + codeSuffix;
+        
+        promises.push((async () => {
+          try {
+            const created = await api('/settings/tables', {
+              method: 'POST',
+              body: { zone: zoneVal, code, seats }
+            });
+            tables.push(created);
+            createdCount++;
+          } catch (err) {
+            errors.push(`${code}: ${err.message}`);
+          }
+        })());
+      }
+
+      try {
+        await Promise.all(promises);
+        if (createdCount > 0) {
+          toast(`Đã tạo thành công ${createdCount} bàn`);
+          tables.sort((a, b) => a.code.localeCompare(b.code, undefined, { numeric: true }));
+          drawSettingsFloor();
+          container.querySelector('#tableCountBadge').textContent = `${tables.length} bàn`;
+          
+          // Reset form fields
+          bulkZoneSelect.value = '';
+          bulkZoneNew.value = '';
+          bulkZoneNew.style.display = 'none';
+          bulkZoneNew.required = false;
+          container.querySelector('#bulkPrefix').value = '';
+          container.querySelector('#bulkStart').value = '1';
+          container.querySelector('#bulkCount').value = '6';
+          container.querySelector('#bulkSeats').value = '4';
+        }
+        if (errors.length > 0) {
+          toast(`Gặp lỗi tại ${errors.length} bàn: ${errors.slice(0, 3).join(', ')}`, true);
+        }
+      } catch (err) {
+        toast(err.message, true);
+      }
     };
   }
   function collectPrinterRows(){

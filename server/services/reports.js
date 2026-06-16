@@ -71,7 +71,13 @@ export function dashboard(branch_id = 'br1') {
   return { revenue, bills, avg, openOrders, byHour, byChannel, methods, topItems, lowStock, stations, window };
 }
 
-export function recentAudit(branch_id = 'br1', limit = 30) {
-  return db.prepare(`SELECT action,detail,actor,created_at FROM audit_log WHERE branch_id=? ORDER BY created_at DESC LIMIT ?`)
-    .all(branch_id, limit);
+// before: con trỏ phân trang — chỉ lấy các dòng cũ hơn mốc thời gian này (để "Xem thêm").
+export function recentAudit(branch_id = 'br1', limit = 30, before = null) {
+  const lim = Math.min(Math.max(parseInt(limit) || 30, 1), 200);
+  if (before) {
+    return db.prepare(`SELECT action,detail,actor,created_at FROM audit_log
+      WHERE branch_id=? AND created_at < ? ORDER BY created_at DESC LIMIT ?`).all(branch_id, before, lim);
+  }
+  return db.prepare(`SELECT action,detail,actor,created_at FROM audit_log
+    WHERE branch_id=? ORDER BY created_at DESC LIMIT ?`).all(branch_id, lim);
 }
