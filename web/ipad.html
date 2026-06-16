@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="vi">
+<html lang="en">
 
 <head>
   <meta charset="UTF-8">
@@ -169,7 +169,7 @@
       border-color: rgba(52, 210, 238, .35)
     }
 
-    /* 3 cột cố định trên mọi kích thước không phải mobile */
+    /* 3 fixed columns on all non-mobile sizes */
     .menulist {
       padding: 14px;
       overflow-y: auto;
@@ -181,8 +181,8 @@
       align-content: start
     }
 
-    /* Food card — dùng padding-bottom trick thay aspect-ratio
-       để chiều cao LUÔN đều nhau 100% dù grid stretch hay không */
+    /* Food card — uses padding-bottom trick instead of aspect-ratio
+       so card height is ALWAYS equal 100% regardless of grid stretch */
     .mi {
       background: var(--surface2);
       border: 1px solid var(--border);
@@ -193,7 +193,7 @@
       position: relative;
       display: block;
       width: 100%;
-      /* height:0 + padding-bottom:75% = tỉ lệ 4:3 chuẩn, mọi card đều cao bằng nhau */
+      /* height:0 + padding-bottom:75% = standard 4:3 ratio, all cards same height */
       height: 0;
       padding-bottom: 75%;
       min-width: 0
@@ -272,7 +272,7 @@
     }
 
     .mi.off .mi-img::after {
-      content: "TẠM HẾT";
+      content: "SOLD OUT";
       position: absolute;
       inset: 0 0 58px;
       display: flex;
@@ -806,7 +806,7 @@
     }
 
     .book-item.off .book-photo::after {
-      content: "TẠM HẾT";
+      content: "SOLD OUT";
       position: absolute;
       inset: 0;
       background: rgba(20, 20, 24, .58);
@@ -1460,7 +1460,7 @@
 
     /* ── Responsive breakpoints ────────────────────────────────────────────── */
 
-    /* Desktop / tablet ngang (> 640px): luôn đúng 3 cột */
+    /* Desktop / landscape tablet (> 640px): always 3 columns */
     @media (min-width:641px) {
       .ipad-body {
         grid-template-columns: clamp(70px, 9vw, 120px) minmax(0, 1fr) clamp(160px, 22vw, 300px)
@@ -1472,7 +1472,7 @@
       }
     }
 
-    /* Mobile (≤ 640px): 2 cột */
+    /* Mobile (≤ 640px): 2 columns */
     @media (max-width:640px) {
       .ipad-body {
         grid-template-columns: clamp(58px, 14vw, 88px) minmax(0, 1fr) clamp(120px, 36vw, 190px)
@@ -1507,7 +1507,7 @@
       }
     }
 
-    /* Rất nhỏ (≤ 380px): 2 cột compact */
+    /* Very small (≤ 380px): 2 compact columns */
     @media (max-width:380px) {
       .ipad-body {
         grid-template-columns: clamp(50px, 15vw, 70px) minmax(0, 1fr) clamp(108px, 40vw, 156px)
@@ -1524,7 +1524,7 @@
 
 <body>
   <div class="ipad-frame" id="frame">
-    <div class="empty" style="margin:auto">Đang tải iPad…</div>
+    <div class="empty" style="margin:auto">Loading iPad…</div>
   </div>
 
   <script type="module">
@@ -1544,14 +1544,14 @@
       title: 'Menu Bon Appetit Dan',
       pageWidth: 566.929016,
       pageHeight: 850.394043,
-      pages: Array.from({ length: 28 }, (_, i) => ({ id: `p_${i + 1}`, src: `/assets/menu-book/${String(i + 1).padStart(2, '0')}.webp`, label: `Trang ${i + 1}` })),
+      pages: Array.from({ length: 28 }, (_, i) => ({ id: `p_${i + 1}`, src: `/assets/menu-book/${String(i + 1).padStart(2, '0')}.webp`, label: `Page ${i + 1}` })),
       hotspots: [],
     };
     let bookPage = 0, bookAnimating = false, audioCtx = null;
     const portraitMq = window.matchMedia('(orientation: portrait)');
     portraitMq.addEventListener?.('change', () => render());
 
-    function showFatal(msg) { if (frame) frame.innerHTML = `<div style="padding:30px;color:var(--late);font-family:var(--mono);font-size:13px;line-height:1.7">⚠ Lỗi iPad:<br>${msg}<br><br><button class="btn" onclick="location.reload()">Tải lại</button></div>`; }
+    function showFatal(msg) { if (frame) frame.innerHTML = `<div style="padding:30px;color:var(--late);font-family:var(--mono);font-size:13px;line-height:1.7">⚠ iPad Error:<br>${msg}<br><br><button class="btn" onclick="location.reload()">Reload</button></div>`; }
     window.addEventListener('error', e => showFatal((e.message || 'Script error') + (e.filename ? ('<br>@ ' + e.filename + ':' + e.lineno) : '')));
     window.addEventListener('unhandledrejection', e => showFatal('Promise: ' + (e.reason?.message || e.reason)));
 
@@ -1561,7 +1561,7 @@
       'order:item': (p) => { if (sentOrder && p.order_id === sentOrder.id) { sentOrder = p.order; render(); } },
       'order:pending': (p) => { if (sentOrder && p.order?.id === sentOrder.id) { sentOrder = p.order; render(); } },
       'order:updated': (p) => { if (sentOrder && p?.id === sentOrder.id) { sentOrder = p; render(); } },
-      'payment:done': (p) => { if (sentOrder && p.order_id === sentOrder.id) { sentOrder = null; cart = []; toast('Bàn đã thanh toán xong. Cảm ơn quý khách!'); render(); } },
+      'payment:done': (p) => { if (sentOrder && p.order_id === sentOrder.id) { sentOrder = null; cart = []; toast('Table payment complete. Thank you!'); render(); } },
     });
 
     async function loadMenu() { MENU = await api('/menu'); if (!activeCat) activeCat = MENU.categories[0]?.id; }
@@ -1574,8 +1574,8 @@
             bankCode: 'VCB', bankAccount: '0123456789', accountName: 'DAN D PAK', transferPrefix: 'DANBILL', methods: [
               { key: 'qrcode', label: 'QR Code', enabled: true, kind: 'qr' },
               { key: 'internet_banking', label: 'Internet Banking', enabled: true, kind: 'qr' },
-              { key: 'cash', label: 'Tiền mặt', enabled: true, kind: 'cash' },
-              { key: 'card', label: 'Cà thẻ', enabled: true, kind: 'pos' },
+              { key: 'cash', label: 'Cash', enabled: true, kind: 'cash' },
+              { key: 'card', label: 'Card', enabled: true, kind: 'pos' },
             ]
           }
         };
@@ -1589,8 +1589,8 @@
     }
     function normalizeBook(b) {
       const pages = (b.pages || []).map((p, i) => typeof p === 'string'
-        ? { id: `p_${i + 1}`, src: p, label: `Trang ${i + 1}` }
-        : { id: p.id || `p_${i + 1}`, src: p.src, label: p.label || `Trang ${i + 1}` }).filter(p => p.src);
+        ? { id: `p_${i + 1}`, src: p, label: `Page ${i + 1}` }
+        : { id: p.id || `p_${i + 1}`, src: p.src, label: p.label || `Page ${i + 1}` }).filter(p => p.src);
       return {
         id: b.id || 'book_default',
         title: b.title || 'Menu',
@@ -1612,9 +1612,9 @@
     }
 
     /**
-     * Sắp xếp danh sách món: món còn hàng lên trước,
-     * món tạm ngưng (available === false) xuống cuối.
-     * Giữ thứ tự gốc trong từng nhóm.
+     * Sort menu items: available items first,
+     * out-of-stock items (available === false) at the bottom.
+     * Preserve original order within each group.
      */
     function sortMenuItems(items) {
       return [
@@ -1630,30 +1630,30 @@
     }
 
     function renderLandscape() {
-      // Sắp xếp: món còn hàng trước, tạm ngưng xuống cuối
+      // Sort: available items first, out-of-stock items at the bottom
       const items = sortMenuItems(MENU.items.filter(i => i.category_id === activeCat));
       frame.innerHTML = `
   <div class="ipad-top">
     <span class="staff-logo" id="staffUnlock" title=""></span>
-    <span class="tbl">Bàn ${esc(tableCode)}</span>
-    <div class="sub" style="color:var(--muted);font-size:12px">Tự chọn món · chờ nhân viên xác nhận</div>
+    <span class="tbl">Table ${esc(tableCode)}</span>
+    <div class="sub" style="color:var(--muted);font-size:12px">Self-order · staff will confirm</div>
     <div class="right">
       <span class="onlinedot"><i></i><span>Online</span></span>
-      <button class="btn sm" id="callBtn">🔔 Gọi nhân viên</button>
-      <button class="btn sm" id="payBtn">💳 Yêu cầu thanh toán</button>
+      <button class="btn sm" id="callBtn">🔔 Call Staff</button>
+      <button class="btn sm" id="payBtn">💳 Request Payment</button>
     </div>
   </div>
   <div class="ipad-body">
     <div class="cats">${MENU.categories.map(c => `
       <div class="cat ${c.id === activeCat ? 'active' : ''}" data-c="${c.id}">
         <span class="ci">${c.icon || '🍽️'}</span>${esc(c.name)}</div>`).join('')}</div>
-    <div class="menulist">${items.map(renderMI).join('') || '<div class="empty">Chưa có món trong nhóm này</div>'}</div>
+    <div class="menulist">${items.map(renderMI).join('') || '<div class="empty">No items in this category</div>'}</div>
     <div class="cartpane">
-      <h3>🛒 Giỏ hàng <span class="chip c-muted">${cart.reduce((s, c) => s + c.qty, 0)} món</span></h3>
-      <div class="cartitems">${cart.length ? cart.map(renderCart).join('') : '<div class="empty">Chạm vào món để thêm</div>'}</div>
+      <h3>🛒 Cart <span class="chip c-muted">${cart.reduce((s, c) => s + c.qty, 0)} items</span></h3>
+      <div class="cartitems">${cart.length ? cart.map(renderCart).join('') : '<div class="empty">Tap an item to add</div>'}</div>
       <div class="cartfoot">
-        <div class="tot"><span>Tạm tính</span><span>${money(cartTotal())}</span></div>
-        <button class="btn primary" id="sendBtn" style="width:100%;padding:12px" ${cart.length ? '' : 'disabled'}>Gửi yêu cầu →</button>
+        <div class="tot"><span>Subtotal</span><span>${money(cartTotal())}</span></div>
+        <button class="btn primary" id="sendBtn" style="width:100%;padding:12px" ${cart.length ? '' : 'disabled'}>Send Order →</button>
       </div>
       ${renderSent()}
     </div>
@@ -1669,16 +1669,16 @@
       frame.innerHTML = `
   <div class="ipad-top">
     <span class="staff-logo" id="staffUnlock" title=""></span>
-    <span class="tbl">Bàn ${esc(tableCode)}</span>
-    <div class="sub" style="color:var(--muted);font-size:12px">Vuốt để lật menu</div>
+    <span class="tbl">Table ${esc(tableCode)}</span>
+    <div class="sub" style="color:var(--muted);font-size:12px">Swipe to flip menu</div>
     <div class="right">
       <span class="onlinedot"><i></i><span>Online</span></span>
-      <button class="btn sm" id="callBtn">🔔 Gọi nhân viên</button>
-      <button class="btn sm" id="payBtn">💳 Yêu cầu thanh toán</button>
+      <button class="btn sm" id="callBtn">🔔 Call Staff</button>
+      <button class="btn sm" id="payBtn">💳 Request Payment</button>
     </div>
   </div>
   <div class="realbook">
-    <div class="realbook-hint">Vuốt trái/phải để lật trang</div>
+    <div class="realbook-hint">Swipe left/right to turn pages</div>
     <div class="realbook-reader-wrap" id="bookSwipe">
       <div class="realbook-reader" id="bookReader" style="--book-ratio:${ratio}">${bookSheetHtml(bookPage)}</div>
     </div>
@@ -1690,10 +1690,10 @@
     <div class="realbook-carttab ${cart.length ? 'has-items' : 'is-empty'}">
       <button class="cart-toggle" type="button">🛒</button>
       <div class="cart-summary">
-        <b>${cart.reduce((s, c) => s + c.qty, 0)} món trong giỏ</b>
+        <b>${cart.reduce((s, c) => s + c.qty, 0)} items in cart</b>
         <span>${money(cartTotal())}</span>
       </div>
-      ${cart.length ? '<button class="btn primary send" id="sendBtn">Gửi yêu cầu →</button>' : ''}
+      ${cart.length ? '<button class="btn primary send" id="sendBtn">Send Order →</button>' : ''}
     </div>
   </div>`;
       bind();
@@ -1706,7 +1706,7 @@
     <img src="${esc(bookPageSrc(idx))}" alt="Menu page ${idx + 1}" draggable="false">
     <div class="realbook-hotspots">${hotspots.map(h => {
         const it = MENU.items.find(i => i.id === h.menu_item_id);
-        return `<button class="book-hotspot" data-hotspot="${esc(h.id)}" title="${esc(h.label || it?.name || 'Món')}" style="left:${Number(h.x) || 0}%;top:${Number(h.y) || 0}%;rotate:${Number(h.angle) || 0}deg"></button>`;
+        return `<button class="book-hotspot" data-hotspot="${esc(h.id)}" title="${esc(h.label || it?.name || 'Item')}" style="left:${Number(h.x) || 0}%;top:${Number(h.y) || 0}%;rotate:${Number(h.angle) || 0}deg"></button>`;
       }).join('')}</div>
     <span class="realbook-curl next"></span><span class="realbook-curl prev"></span>
     <span class="realbook-dragcurl next"></span><span class="realbook-dragcurl prev"></span>
@@ -1735,7 +1735,7 @@
     <div class="book-photo">${img}</div>
     <div class="book-info">
       <b>${esc(i.name)}</b>
-      <p>${esc(i.description || ((i.ingredients || []).length ? 'Nguyên liệu: ' + i.ingredients.slice(0, 5).join(', ') : 'Chạm để xem chi tiết và tùy chọn món.'))}</p>
+      <p>${esc(i.description || ((i.ingredients || []).length ? 'Ingredients: ' + i.ingredients.slice(0, 5).join(', ') : 'Tap to view details and options.'))}</p>
       <div class="price">${money(i.price)}</div>
     </div>
   </div>`;
@@ -1745,7 +1745,7 @@
       return `<div class="cline">
     <div class="r1"><span>${c.item.emoji || ''} ${esc(c.item.name)}</span><span class="p">${money(lineTotal(c))}</span></div>
     ${modTxt ? `<div class="mods">+ ${esc(modTxt)}</div>` : ''}
-    ${c.note ? `<div class="note">“${esc(c.note)}”</div>` : ''}
+    ${c.note ? `<div class="note">"${esc(c.note)}"</div>` : ''}
     <div class="r2">
       <button class="qbtn" data-dec="${c.key}">−</button>
       <span class="qty">${c.qty}</span>
@@ -1755,10 +1755,10 @@
   </div>`;
     }
     function sentHeader(active) {
-      if (active.some(i => i.status === 'pending_confirm')) return 'Chờ nhân viên xác nhận';
-      if (active.some(i => ['new', 'accepted', 'preparing'].includes(i.status))) return 'Bếp đang chuẩn bị món của bạn';
-      if (active.length && active.every(i => ['ready', 'served'].includes(i.status))) return 'Món đã sẵn sàng — mời quý khách dùng bữa';
-      return 'Đơn của bàn';
+      if (active.some(i => i.status === 'pending_confirm')) return 'Awaiting staff confirmation';
+      if (active.some(i => ['new', 'accepted', 'preparing'].includes(i.status))) return 'Kitchen is preparing your order';
+      if (active.length && active.every(i => ['ready', 'served'].includes(i.status))) return 'Your order is ready — enjoy your meal';
+      return 'Table order';
     }
     function renderSent() {
       if (!sentOrder || !sentOrder.items?.length) return '';
@@ -1766,7 +1766,7 @@
       return `<div class="sentlist"><h4>${sentHeader(active)} · bill #${esc(sentOrder.bill_no || sentOrder.id.slice(-6).toUpperCase())}</h4>
     ${active.map(i => `<div class="sline"><b>${i.qty}×</b><span class="sname">${esc(i.name)}</span><span class="st">${statusChip(i.status)}</span></div>`).join('')}
     <div class="sline" style="margin-top:6px;border-top:1px dashed var(--border);padding-top:7px">
-      <b>Tổng đã gọi</b><span class="st" style="font-family:var(--mono);color:var(--brand);font-weight:700">${money(sentOrder.total)}</span></div>
+      <b>Total ordered</b><span class="st" style="font-family:var(--mono);color:var(--brand);font-weight:700">${money(sentOrder.total)}</span></div>
   </div>`;
     }
     function renderBookSent() {
@@ -1774,30 +1774,30 @@
       const active = sentOrder.items.filter(i => i.status !== 'cancelled');
       return `<div class="book-sent"><b>${sentHeader(active)} · bill #${esc(sentOrder.bill_no || sentOrder.id.slice(-6).toUpperCase())}</b><br>
     ${active.slice(0, 5).map(i => `${i.qty}× ${esc(i.name)}`).join(' · ')}
-    ${active.length > 5 ? ` · và ${active.length - 5} món khác` : ''}<br>
-    Tổng đã gọi: <b>${money(sentOrder.total)}</b>
+    ${active.length > 5 ? ` · and ${active.length - 5} more items` : ''}<br>
+    Total ordered: <b>${money(sentOrder.total)}</b>
   </div>`;
     }
     function statusChip(s) {
       const map = {
-        pending_confirm: '<span class="chip c-doing">Chờ xác nhận</span>', new: '<span class="chip c-new">Chờ bếp</span>', accepted: '<span class="chip c-doing">Đã nhận</span>',
-        preparing: '<span class="chip c-doing">Đang làm</span>', ready: '<span class="chip c-done">Sẵn sàng</span>',
-        served: '<span class="chip c-muted">Đã phục vụ</span>'
+        pending_confirm: '<span class="chip c-doing">Pending</span>', new: '<span class="chip c-new">Queued</span>', accepted: '<span class="chip c-doing">Accepted</span>',
+        preparing: '<span class="chip c-doing">Preparing</span>', ready: '<span class="chip c-done">Ready</span>',
+        served: '<span class="chip c-muted">Served</span>'
       };
       return map[s] || '';
     }
-    function stationLabel(s) { return { kitchen: 'Bếp', bar: 'Bar', salad: 'Salad', beverage: 'Beverage' }[s] || s; }
+    function stationLabel(s) { return { kitchen: 'Kitchen', bar: 'Bar', salad: 'Salad', beverage: 'Beverage' }[s] || s; }
 
     function renderTablePick() {
-      frame.innerHTML = `<div class="ipad-top"><span class="tbl">📱 Chọn bàn</span>
-    <div class="sub" style="color:var(--muted);font-size:12px">Thiết bị này sẽ gắn cố định với bàn đã chọn</div>
+      frame.innerHTML = `<div class="ipad-top"><span class="tbl">📱 Select Table</span>
+    <div class="sub" style="color:var(--muted);font-size:12px">This device will be fixed to the selected table</div>
     <div class="right"><span class="onlinedot"><i></i><span>Online</span></span></div></div>
-    <div class="tablepick" id="tp"><div class="empty">Đang tải bàn…</div></div>`;
+    <div class="tablepick" id="tp"><div class="empty">Loading tables…</div></div>`;
       api('/tables').then(tables => {
         document.getElementById('tp').innerHTML = tables.map(t => `
       <div class="tp ${t.status !== 'free' ? 'busy' : ''}" data-t="${t.id}" data-code="${t.code}">
         <b>${t.code}</b><span>${t.zone}</span>
-        <span style="color:${t.status === 'free' ? 'var(--done)' : 'var(--doing)'}">${t.status === 'free' ? 'Trống' : 'Đang dùng'}</span>
+        <span style="color:${t.status === 'free' ? 'var(--done)' : 'var(--doing)'}">${t.status === 'free' ? 'Available' : 'Occupied'}</span>
       </div>`).join('');
         document.querySelectorAll('#tp .tp').forEach(el => el.onclick = () => {
           tableId = el.dataset.t; tableCode = el.dataset.code;
@@ -1937,10 +1937,10 @@
     function openStaffUnlock() {
       const ov = document.createElement('div'); ov.className = 'overlay show ipad-overlay';
       ov.innerHTML = `<div class="modal" style="max-width:360px">
-    <h2>Xác nhận nhân viên</h2>
-    <div class="sub">Nhập mật khẩu thiết bị để quay lại màn hình chọn bàn.</div>
-    <label>Mật khẩu</label><input id="staffPin" type="password" inputmode="numeric" autocomplete="off" placeholder="000000">
-    <div class="mfoot"><button class="btn" id="staffCancel">Hủy</button><button class="btn primary" id="staffOk">Mở chọn bàn</button></div>
+    <h2>Staff Confirmation</h2>
+    <div class="sub">Enter the device PIN to return to the table selection screen.</div>
+    <label>PIN</label><input id="staffPin" type="password" inputmode="numeric" autocomplete="off" placeholder="000000">
+    <div class="mfoot"><button class="btn" id="staffCancel">Cancel</button><button class="btn primary" id="staffOk">Open Table Selection</button></div>
   </div>`;
       document.body.appendChild(ov);
       const pin = ov.querySelector('#staffPin'); pin.focus();
@@ -1964,10 +1964,10 @@
         ? `<div class="modal-img"><img src="${esc(it.image)}" alt=""></div>`
         : `<div class="modal-img emoji">${it.emoji || '🍽️'}</div>`;
       const ingredients = (it.ingredients || []).length
-        ? `<div style="margin:8px 0 4px"><label>Nguyên liệu</label><div class="optrow" style="gap:5px">${it.ingredients.map(x => `<span class="chip c-muted">${esc(x)}</span>`).join('')}</div></div>`
+        ? `<div style="margin:8px 0 4px"><label>Ingredients</label><div class="optrow" style="gap:5px">${it.ingredients.map(x => `<span class="chip c-muted">${esc(x)}</span>`).join('')}</div></div>`
         : '';
       const allergens = (it.allergens || []).length
-        ? `<div style="margin:6px 0 8px"><label>Dị ứng / allergen</label><div class="optrow" style="gap:5px">${it.allergens.map(x => `<span class="chip c-late">${esc(x)}</span>`).join('')}</div></div>`
+        ? `<div style="margin:6px 0 8px"><label>Allergens</label><div class="optrow" style="gap:5px">${it.allergens.map(x => `<span class="chip c-late">${esc(x)}</span>`).join('')}</div></div>`
         : '';
       ov.innerHTML = `<div class="modal">
     ${banner}
@@ -1978,17 +1978,17 @@
     ${allergens}
     <div id="mods"></div>
     <div id="addons"></div>
-    <label>Ghi chú món</label>
-    <textarea id="note" rows="2" placeholder="VD: ít cay, không hành, tách sốt…"></textarea>
+    <label>Item Note</label>
+    <textarea id="note" rows="2" placeholder="E.g. less spicy, no onion, sauce on the side…"></textarea>
     <div class="mfoot">
-      <button class="btn" id="cancel">Hủy</button>
-      <button class="btn primary" id="add" ${canAdd ? '' : 'disabled'}>${canAdd ? 'Thêm' : 'Tạm hết'} · <span id="mp">${money(it.price)}</span></button>
+      <button class="btn" id="cancel">Cancel</button>
+      <button class="btn primary" id="add" ${canAdd ? '' : 'disabled'}>${canAdd ? 'Add' : 'Sold Out'} · <span id="mp">${money(it.price)}</span></button>
     </div></div>`;
       document.body.appendChild(ov);
       const modsEl = ov.querySelector('#mods');
       (it.modifiers || []).forEach((g, gi) => {
         const wrap = document.createElement('div');
-        wrap.innerHTML = `<label>${esc(g.group)} ${g.multi ? '<span style="color:var(--faint)">(chọn nhiều)</span>' : ''}</label>
+        wrap.innerHTML = `<label>${esc(g.group)} ${g.multi ? '<span style="color:var(--faint)">(multiple)</span>' : ''}</label>
       <div class="optrow" data-g="${gi}"></div>`;
         const row = wrap.querySelector('.optrow');
         g.options.forEach(o => {
@@ -2003,16 +2003,16 @@
         });
         modsEl.appendChild(wrap);
       });
-      // Add-ons: combos (món ăn kèm) + extras, availability synced from system
+      // Add-ons: combos (side dishes) + extras, availability synced from system
       const addonsEl = ov.querySelector('#addons');
       function addonGroup(title, list) {
         if (!list.length) return;
         const wrap = document.createElement('div');
-        wrap.innerHTML = `<label>${title} <span style="color:var(--faint)">(chọn nhiều)</span></label><div class="optrow addon-grp"></div>`;
+        wrap.innerHTML = `<label>${title} <span style="color:var(--faint)">(multiple)</span></label><div class="optrow addon-grp"></div>`;
         const row = wrap.querySelector('.addon-grp');
         list.forEach(a => {
           const b = document.createElement('div'); b.className = 'opt addon-opt' + (a.available ? '' : ' off') + (a.type === 'free' ? ' free' : '');
-          const tag = a.available ? (a.type === 'free' ? 'Tặng kèm' : (a.price ? `+${(a.price / 1000)}k` : 'Mua thêm')) : 'Tạm hết';
+          const tag = a.available ? (a.type === 'free' ? 'Complimentary' : (a.price ? `+${(a.price / 1000)}k` : 'Add-on')) : 'Sold Out';
           b.innerHTML = `${a.emoji ? esc(a.emoji) + ' ' : ''}${esc(a.name)} <small>${tag}</small>`;
           b.dataset.name = a.name; b.dataset.price = a.type === 'free' ? 0 : (a.price || 0); b.dataset.type = a.type;
           if (a.available) b.onclick = () => { b.classList.toggle('sel'); recalc(); };
@@ -2020,12 +2020,12 @@
         });
         addonsEl.appendChild(wrap);
       }
-      addonGroup('🍽️ Món ăn kèm', (it.addons || []).filter(a => a.kind === 'combo'));
+      addonGroup('🍽️ Side Dishes', (it.addons || []).filter(a => a.kind === 'combo'));
       addonGroup('➕ Extra / Topping', (it.addons || []).filter(a => a.kind !== 'combo'));
       function gather() {
         const mods = [];
         modsEl.querySelectorAll('.opt.sel').forEach(o => mods.push({ group: o.closest('.optrow').dataset.g, name: o.dataset.name, price: +o.dataset.price }));
-        addonsEl.querySelectorAll('.addon-opt.sel').forEach(o => mods.push({ group: o.dataset.type === 'free' ? 'Tặng kèm' : 'Thêm', name: o.dataset.name, price: +o.dataset.price }));
+        addonsEl.querySelectorAll('.addon-opt.sel').forEach(o => mods.push({ group: o.dataset.type === 'free' ? 'Complimentary' : 'Add', name: o.dataset.name, price: +o.dataset.price }));
         return mods;
       }
       function recalc() { const mods = gather(); const p = it.price + mods.reduce((s, m) => s + m.price, 0); ov.querySelector('#mp').textContent = money(p); ov.querySelector('#add').dataset.p = p; }
@@ -2034,7 +2034,7 @@
         if (!canAdd) return;
         const mods = gather(); const note = ov.querySelector('#note').value.trim();
         cart.push({ key: Math.random().toString(36).slice(2), item: it, qty: 1, mods, note });
-        ov.remove(); render(); toast('Đã thêm ' + it.name);
+        ov.remove(); render(); toast('Added ' + it.name);
       };
     }
 
@@ -2042,14 +2042,14 @@
       try {
         const items = cart.map(c => ({ menu_item_id: c.item.id, qty: c.qty, note: c.note, mods: c.mods }));
         const order = await api('/orders', { method: 'POST', body: { table_id: tableId, channel: 'dine_in', source: 'customer_ipad', items } });
-        sentOrder = order; cart = []; render(); toast('✅ Đã gửi yêu cầu! Nhân viên sẽ xác nhận lại với bàn ' + tableCode);
+        sentOrder = order; cart = []; render(); toast('✅ Order sent! Staff will confirm with table ' + tableCode);
       } catch (e) { toast(e.message, true); }
     }
     async function callStaff() {
-      const reasons = ['Gọi món thêm', 'Thêm nước/đá', 'Hỗ trợ', 'Yêu cầu thanh toán'];
-      const r = prompt('Lý do gọi nhân viên:\n' + reasons.map((x, i) => `${i + 1}. ${x}`).join('\n'), 'Hỗ trợ');
+      const reasons = ['Order more food', 'More water/ice', 'Assistance', 'Request payment'];
+      const r = prompt('Reason for calling staff:\n' + reasons.map((x, i) => `${i + 1}. ${x}`).join('\n'), 'Assistance');
       if (r === null) return;
-      try { await api('/calls', { method: 'POST', body: { table_id: tableId, reason: r } }); toast('🔔 Đã gọi nhân viên'); } catch (e) { toast(e.message, true); }
+      try { await api('/calls', { method: 'POST', body: { table_id: tableId, reason: r } }); toast('🔔 Staff called'); } catch (e) { toast(e.message, true); }
     }
     function paymentMethods() {
       return operationsConfig?.payment?.methods || [];
@@ -2074,7 +2074,7 @@
       try { await loadOperations(); await refreshOrder(); }
       catch (e) { return toast(e.message, true); }
       const active = (sentOrder?.items || []).filter(i => i.status !== 'cancelled');
-      if (!sentOrder || !active.length) return toast('Chưa có bill để thanh toán', true);
+      if (!sentOrder || !active.length) return toast('No bill to pay yet', true);
       const qr = enabledPayment(['qrcode', 'qr', 'internet_banking', 'momo', 'zalopay']);
       const cash = enabledPayment(['cash']);
       const card = enabledPayment(['card', 'visa', 'pos_card']);
@@ -2084,21 +2084,21 @@
         const ref = paymentRef(qr?.key || 'qrcode');
         const qrSrc = dynamicQrUrl(sentOrder.total, ref);
         return `<div class="modal pay-customer-modal">
-      <h2>Thanh toán bàn ${esc(tableCode)}</h2>
-      <div class="sub">Tổng cần thanh toán: <b style="font-family:var(--mono);color:var(--brand)">${money(sentOrder.total)}</b></div>
+      <h2>Payment for Table ${esc(tableCode)}</h2>
+      <div class="sub">Total to pay: <b style="font-family:var(--mono);color:var(--brand)">${money(sentOrder.total)}</b></div>
       <div class="pay-choice-grid">
-        ${qr ? `<button class="pay-choice ${mode === 'qr' ? 'sel' : ''}" data-pay-mode="qr">📱 QR tự thanh toán<small>Tự in hóa đơn sau khi xác nhận</small></button>` : ''}
-        ${cash ? `<button class="pay-choice ${mode === 'cash' ? 'sel' : ''}" data-pay-mode="cash">💵 Tiền mặt<small>Gọi thu ngân ra bàn</small></button>` : ''}
-        ${card ? `<button class="pay-choice ${mode === 'card' ? 'sel' : ''}" data-pay-mode="card">💳 Cà thẻ<small>Gọi nhân viên cầm máy POS</small></button>` : ''}
+        ${qr ? `<button class="pay-choice ${mode === 'qr' ? 'sel' : ''}" data-pay-mode="qr">📱 QR Self-Pay<small>Print receipt after confirmation</small></button>` : ''}
+        ${cash ? `<button class="pay-choice ${mode === 'cash' ? 'sel' : ''}" data-pay-mode="cash">💵 Cash<small>Cashier comes to your table</small></button>` : ''}
+        ${card ? `<button class="pay-choice ${mode === 'card' ? 'sel' : ''}" data-pay-mode="card">💳 Card<small>Staff brings POS terminal</small></button>` : ''}
       </div>
       <div id="payModeBody">${mode === 'qr' ? `
         <div class="customer-qr">
-          ${qrSrc ? `<img src="${esc(qrSrc)}" alt="QR thanh toán">` : '<div class="empty">Chưa cấu hình ngân hàng trong Setting</div>'}
-          <div><b>${esc(qr?.label || 'QR Code')}</b><div class="amount">${money(sentOrder.total)}</div><div class="sub" style="margin-bottom:7px">Nội dung chuyển khoản</div><div class="ref">${esc(ref)}</div></div>
+          ${qrSrc ? `<img src="${esc(qrSrc)}" alt="Payment QR">` : '<div class="empty">Bank not configured in Settings</div>'}
+          <div><b>${esc(qr?.label || 'QR Code')}</b><div class="amount">${money(sentOrder.total)}</div><div class="sub" style="margin-bottom:7px">Transfer reference</div><div class="ref">${esc(ref)}</div></div>
         </div>`: `
-        <div class="customer-qr" style="grid-template-columns:1fr"><b>${mode === 'cash' ? 'Thanh toán tiền mặt' : 'Thanh toán bằng thẻ'}</b><div class="sub">Hệ thống sẽ báo thu ngân tới bàn ${esc(tableCode)} để nhận tiền hoặc cà thẻ.</div></div>`}
+        <div class="customer-qr" style="grid-template-columns:1fr"><b>${mode === 'cash' ? 'Cash Payment' : 'Card Payment'}</b><div class="sub">The system will notify the cashier to come to table ${esc(tableCode)} to collect payment.</div></div>`}
       </div>
-      <div class="mfoot"><button class="btn" id="cancelPay">Đóng</button><button class="btn primary" id="confirmCustomerPay">${mode === 'qr' ? 'Tôi đã chuyển khoản' : 'Gọi thu ngân'}</button></div>
+      <div class="mfoot"><button class="btn" id="cancelPay">Close</button><button class="btn primary" id="confirmCustomerPay">${mode === 'qr' ? 'I have transferred' : 'Call Cashier'}</button></div>
     </div>`;
       }
       function redraw() {
@@ -2109,10 +2109,10 @@
           try {
             if (mode === 'qr') {
               await api('/orders/' + sentOrder.id + '/customer-qr-pay', { method: 'POST', body: { method: qr?.key || 'qrcode', reference: paymentRef(qr?.key || 'qrcode') } });
-              sentOrder = null; cart = []; ov.remove(); render(); toast('✅ Đã thanh toán QR. Nhân viên sẽ đưa hóa đơn cho quý khách.');
+              sentOrder = null; cart = []; ov.remove(); render(); toast('✅ QR payment done. Staff will bring your receipt.');
             } else {
               await api('/tables/' + tableId + '/request-payment', { method: 'POST' });
-              ov.remove(); toast('💳 Đã báo thu ngân tới thanh toán');
+              ov.remove(); toast('💳 Cashier notified for payment');
             }
           } catch (e) { toast(e.message, true); }
         };
