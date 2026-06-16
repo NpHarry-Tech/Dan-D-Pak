@@ -1,7 +1,7 @@
 <!DOCTYPE html>
-<html lang="vi"><head>
+<html lang="en"><head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Warehouse - Kho</title>
+<title>Warehouse</title>
 <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/shared/app.css">
 <script src="/socket.io/socket.io.js"></script>
@@ -39,10 +39,10 @@
 <div id="top"></div>
 <div class="view">
   <div class="viewhead">
-    <h1>📦 Warehouse / Kho</h1>
-    <div class="sub">Nhập hàng · xuất hàng · lot/HSD · kiểm kho · tách kho bếp và kho retail</div>
+    <h1>📦 Warehouse</h1>
+    <div class="sub">Stock receiving · issuing · lot/expiry · stocktake · kitchen vs retail warehouse</div>
     <div class="right">
-      <button class="btn sm" id="warehouseBtn">➕ Tạo kho</button>
+      <button class="btn sm" id="warehouseBtn">➕ Create warehouse</button>
       <span id="alertChip"></span>
     </div>
   </div>
@@ -57,17 +57,17 @@ document.getElementById('top').innerHTML = topbar('warehouse');
 await requireModuleAccess('warehouse'); renderUserChip();
 
 const TABS = [
-  ['stock','Tồn kho'],
-  ['ops','Nhập / Xuất'],
-  ['docs','Phiếu nhập/xuất'],
-  ['count','Kiểm kho'],
-  ['lots','Lot & HSD'],
-  ['hist','Lịch sử'],
+  ['stock','Stock'],
+  ['ops','Receive / Issue'],
+  ['docs','Documents'],
+  ['count','Stocktake'],
+  ['lots','Lots & Expiry'],
+  ['hist','History'],
 ];
 let tab='stock', warehouses=[], activeWh='wh_kitchen', stock=[], lots=[], editingWarehouse=null;
 let countSheet=[]; // KiotViet-style stocktake sheet: [{id,stock_type,name,unit,cost,lot_id,counted}]
 
-connect('warehouse', { 'inventory:updated':()=>load(), 'inventory:alert':a=>toast(`Tồn thấp: ${a.name} còn ${a.stock}${a.unit}`, true) });
+connect('warehouse', { 'inventory:updated':()=>load(), 'inventory:alert':a=>toast(`Low stock: ${a.name} has ${a.stock}${a.unit} left`, true) });
 document.getElementById('warehouseBtn').onclick=()=>openWarehouseManager();
 
 async function load(){
@@ -84,8 +84,8 @@ async function load(){
   const exp = lots.filter(l=>l.expiry_date && daysLeft(l.expiry_date) <= 7);
   document.getElementById('alertChip').innerHTML =
     lows.length || exp.length
-      ? `<span class="chip c-late">⚠ ${lows.length} tồn thấp · ${exp.length} lot gần HSD</span>`
-      : `<span class="chip c-done">✓ Kho ổn</span>`;
+      ? `<span class="chip c-late">⚠ ${lows.length} low stock · ${exp.length} lots near expiry</span>`
+      : `<span class="chip c-done">✓ Stock OK</span>`;
   render();
 }
 
@@ -116,28 +116,28 @@ async function renderWarehouseManager(ov){
   const rows=await api('/warehouses?all=1');
   const w=editingWarehouse||{};
   ov.innerHTML=`<div class="modal" style="max-width:680px">
-    <h2>${editingWarehouse?'Sửa kho':'Tạo kho mới'}</h2>
-    <div class="sub">Admin hoặc nhân sự có quyền quản lý kho có thể tạo kho retail/showroom/kho bếp.</div>
+    <h2>${editingWarehouse?'Edit warehouse':'Create new warehouse'}</h2>
+    <div class="sub">Admins or staff with warehouse management permissions can create retail / showroom / kitchen warehouses.</div>
     <div class="formgrid">
-      <div><label>Tên kho</label><input id="whName" value="${esc(w.name||'')}" placeholder="VD: Showroom BCM"></div>
-      <div><label>Mã kho</label><input id="whCode" value="${esc(w.code||'')}" placeholder="Tự sinh nếu để trống"></div>
-      <div><label>Loại kho</label><select id="whType"><option value="retail" ${w.type!=='kitchen'?'selected':''}>Kho hàng retail</option><option value="kitchen" ${w.type==='kitchen'?'selected':''}>Kho bếp / vật dụng</option></select></div>
-      <div><label>Sắp xếp</label><input id="whSort" type="number" value="${w.sort??''}" placeholder="0"></div>
-      <div><label>Trạng thái</label><select id="whActive"><option value="1" ${w.active!==0?'selected':''}>Đang bật</option><option value="0" ${w.active===0?'selected':''}>Tắt kho</option></select></div>
+      <div><label>Warehouse name</label><input id="whName" value="${esc(w.name||'')}" placeholder="e.g. Showroom BCM"></div>
+      <div><label>Warehouse code</label><input id="whCode" value="${esc(w.code||'')}" placeholder="Auto-generated if blank"></div>
+      <div><label>Warehouse type</label><select id="whType"><option value="retail" ${w.type!=='kitchen'?'selected':''}>Retail warehouse</option><option value="kitchen" ${w.type==='kitchen'?'selected':''}>Kitchen / supplies warehouse</option></select></div>
+      <div><label>Sort order</label><input id="whSort" type="number" value="${w.sort??''}" placeholder="0"></div>
+      <div><label>Status</label><select id="whActive"><option value="1" ${w.active!==0?'selected':''}>Active</option><option value="0" ${w.active===0?'selected':''}>Inactive</option></select></div>
     </div>
     <div class="mfoot">
-      <button class="btn" id="whReset">${editingWarehouse?'Bỏ sửa':'Làm mới'}</button>
-      <button class="btn primary" id="whSave">${editingWarehouse?'Lưu kho':'➕ Tạo kho'}</button>
+      <button class="btn" id="whReset">${editingWarehouse?'Cancel edit':'Reset'}</button>
+      <button class="btn primary" id="whSave">${editingWarehouse?'Save warehouse':'➕ Create warehouse'}</button>
     </div>
     <div class="whmanage">
-      <h3>Danh sách kho</h3>
+      <h3>Warehouse list</h3>
       ${rows.map(x=>`<div class="whrow">
-        <div>${warehouseIcon(x)} <b>${esc(x.name)}</b><br><span class="hint">${esc(x.code)} · ${x.type==='retail'?'Retail / showroom':'Bếp / vật dụng'} · ${x.active?'đang bật':'đang tắt'}</span></div>
-        <span class="chip ${x.active?'c-done':'c-muted'}">${x.active?'Bật':'Tắt'}</span>
-        <button class="btn sm" data-edit-wh="${x.id}">Sửa</button>
-      </div>`).join('') || '<div class="empty">Chưa có kho</div>'}
+        <div>${warehouseIcon(x)} <b>${esc(x.name)}</b><br><span class="hint">${esc(x.code)} · ${x.type==='retail'?'Retail / showroom':'Kitchen / supplies'} · ${x.active?'active':'inactive'}</span></div>
+        <span class="chip ${x.active?'c-done':'c-muted'}">${x.active?'Active':'Inactive'}</span>
+        <button class="btn sm" data-edit-wh="${x.id}">Edit</button>
+      </div>`).join('') || '<div class="empty">No warehouses yet</div>'}
     </div>
-    <div class="mfoot"><button class="btn primary" id="whClose">Đóng</button></div>
+    <div class="mfoot"><button class="btn primary" id="whClose">Close</button></div>
   </div>`;
   ov.querySelector('#whReset').onclick=()=>{editingWarehouse=null;renderWarehouseManager(ov);};
   ov.querySelector('#whClose').onclick=()=>ov.remove();
@@ -150,11 +150,11 @@ async function renderWarehouseManager(ov){
       active:ov.querySelector('#whActive').value==='1',
     };
     if(sortText) body.sort=parseInt(sortText)||0;
-    if(!body.name) return toast('Nhập tên kho', true);
+    if(!body.name) return toast('Please enter a warehouse name', true);
     try{
       if(editingWarehouse) await api('/warehouses/'+editingWarehouse.id+'/update',{method:'POST',body});
       else await api('/warehouses',{method:'POST',body});
-      editingWarehouse=null; await load(); await renderWarehouseManager(ov); toast('Đã lưu kho');
+      editingWarehouse=null; await load(); await renderWarehouseManager(ov); toast('Warehouse saved');
     }catch(e){ toast(e.message,true); }
   };
   ov.querySelectorAll('[data-edit-wh]').forEach(b=>b.onclick=()=>{editingWarehouse=rows.find(x=>x.id===b.dataset.editWh);renderWarehouseManager(ov);});
@@ -164,23 +164,23 @@ function renderStock(){
   const wh=curWh();
   document.getElementById('panel').innerHTML = `<div class="panel">
     <div class="tools">
-      <h3 style="margin-right:auto">Tồn hiện tại · ${esc(wh?.name||'')}</h3>
-      <button class="btn sm primary" id="newItem">${wh?.type==='retail'?'➕ Tạo SKU retail':'➕ Tạo item kho bếp'}</button>
+      <h3 style="margin-right:auto">Current stock · ${esc(wh?.name||'')}</h3>
+      <button class="btn sm primary" id="newItem">${wh?.type==='retail'?'➕ Create retail SKU':'➕ Create kitchen item'}</button>
     </div>
-    <table><thead><tr><th>Mặt hàng</th><th>Loại</th><th>Tồn</th><th>Tối thiểu</th><th>Lot/HSD</th><th>Thao tác</th></tr></thead>
+    <table><thead><tr><th>Item</th><th>Type</th><th>Stock</th><th>Minimum</th><th>Lot/Expiry</th><th>Actions</th></tr></thead>
     <tbody>${stock.map(s=>`<tr>
-      <td><div class="skucell">${stockVisual(s)}<div>${esc(s.name)} ${s.low?'<span class="chip c-late">Thấp</span>':''}<br><span class="hint">${esc(s.barcode||s.category||'')}</span></div></div></td>
+      <td><div class="skucell">${stockVisual(s)}<div>${esc(s.name)} ${s.low?'<span class="chip c-late">Low</span>':''}<br><span class="hint">${esc(s.barcode||s.category||'')}</span></div></div></td>
       <td><span class="typetag">${kindLabel(s)}</span></td>
       <td style="font-family:var(--mono);color:${s.low?'var(--late)':'var(--text)'}">${fmtQty(s.stock)} ${esc(s.unit)}</td>
       <td style="font-family:var(--mono)">${fmtQty(s.min_stock)} ${esc(s.unit)}</td>
-      <td>${s.track_lot?'<span class="chip c-doing">Theo lot</span>':'<span class="chip c-muted">Không bắt buộc</span>'} ${s.expiry_required?'<span class="chip c-late">HSD</span>':''}</td>
+      <td>${s.track_lot?'<span class="chip c-doing">Lot tracked</span>':'<span class="chip c-muted">Not required</span>'} ${s.expiry_required?'<span class="chip c-late">Expiry</span>':''}</td>
       <td>
-        <button class="btn sm" data-edit="${s.id}">Sửa</button>
-        <button class="btn sm" data-in="${s.id}">Nhập</button>
-        <button class="btn sm danger" data-out="${s.id}">Xuất</button>
-        <button class="btn sm danger" data-del="${s.id}">Xóa</button>
+        <button class="btn sm" data-edit="${s.id}">Edit</button>
+        <button class="btn sm" data-in="${s.id}">Receive</button>
+        <button class="btn sm danger" data-out="${s.id}">Issue</button>
+        <button class="btn sm danger" data-del="${s.id}">Delete</button>
       </td>
-    </tr>`).join('') || '<tr><td colspan="6" class="empty">Chưa có mặt hàng trong kho này</td></tr>'}</tbody></table>
+    </tr>`).join('') || '<tr><td colspan="6" class="empty">No items in this warehouse yet</td></tr>'}</tbody></table>
   </div>`;
   document.getElementById('newItem').onclick=()=>openItemEditor();
   document.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>openItemEditor(stock.find(s=>s.id===b.dataset.edit)));
@@ -191,14 +191,14 @@ function renderStock(){
 
 function renderOps(){
   document.getElementById('panel').innerHTML = `<div class="panel">
-    <h3>Nhập / xuất nhanh</h3>
-    <div class="hint" style="margin-bottom:12px">Nhập hàng có thể đi kèm lot, hạn sử dụng, nhà cung cấp và giá vốn. Xuất hàng dùng cho hủy, hao hụt, chuyển bếp, dùng nội bộ.</div>
-    <table><thead><tr><th>Mặt hàng</th><th>Tồn</th><th>Nhập thêm</th><th>Xuất ra</th></tr></thead>
+    <h3>Quick receive / issue</h3>
+    <div class="hint" style="margin-bottom:12px">Stock receipts can include lot, expiry date, supplier and unit cost. Issues are used for write-offs, wastage, kitchen transfers, and internal use.</div>
+    <table><thead><tr><th>Item</th><th>Stock</th><th>Receive</th><th>Issue</th></tr></thead>
     <tbody>${stock.map(s=>`<tr>
       <td>${s.emoji||''} ${esc(s.name)}<br><span class="typetag">${kindLabel(s)}</span></td>
       <td style="font-family:var(--mono)">${fmtQty(s.stock)} ${esc(s.unit)}</td>
-      <td><button class="btn sm" data-in="${s.id}">Phiếu nhập</button></td>
-      <td><button class="btn sm danger" data-out="${s.id}">Phiếu xuất</button></td>
+      <td><button class="btn sm" data-in="${s.id}">Receive</button></td>
+      <td><button class="btn sm danger" data-out="${s.id}">Issue</button></td>
     </tr>`).join('')}</tbody></table>
   </div>`;
   document.querySelectorAll('[data-in]').forEach(b=>b.onclick=()=>openMove(stock.find(s=>s.id===b.dataset.in),'receipt'));
@@ -209,26 +209,26 @@ function renderOps(){
 function renderCount(){
   const wh=curWh();
   document.getElementById('panel').innerHTML=`<div class="panel">
-    <h3>Kiểm kho · ${esc(wh?.name||'')}</h3>
-    <div class="hint" style="margin-bottom:11px">Quy trình: <b>thêm/quét hàng</b> → <b>đếm thực tế</b> → <b>đối soát chênh lệch</b> → <b>Hoàn thành</b> để cân bằng kho & tạo phiếu điều chỉnh.</div>
+    <h3>Stocktake · ${esc(wh?.name||'')}</h3>
+    <div class="hint" style="margin-bottom:11px">Process: <b>add / scan items</b> → <b>count actual quantities</b> → <b>review variance</b> → <b>Finish</b> to balance stock and create an adjustment document.</div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
-      <input id="ckScan" placeholder="Quét mã vạch (đếm +1) hoặc gõ tên để thêm mặt hàng…" autocomplete="off" style="flex:1;min-width:240px;background:var(--bg);border:1px solid var(--border2);border-radius:9px;padding:11px 13px;font-size:13px;font-family:var(--mono)">
-      <button class="btn" id="ckAddAll">Kiểm toàn bộ (${stock.length})</button>
-      <button class="btn danger" id="ckClear">Xóa phiếu</button>
+      <input id="ckScan" placeholder="Scan barcode (count +1) or type item name to add…" autocomplete="off" style="flex:1;min-width:240px;background:var(--bg);border:1px solid var(--border2);border-radius:9px;padding:11px 13px;font-size:13px;font-family:var(--mono)">
+      <button class="btn" id="ckAddAll">Count all (${stock.length})</button>
+      <button class="btn danger" id="ckClear">Clear sheet</button>
     </div>
     <div id="ckSuggest"></div>
-    <table><thead><tr><th>Mặt hàng</th><th>Lô / HSD</th><th>Sổ sách</th><th>Đếm thực tế</th><th>Chênh lệch</th><th>Giá trị lệch</th><th></th></tr></thead>
+    <table><thead><tr><th>Item</th><th>Lot / Expiry</th><th>Book qty</th><th>Counted qty</th><th>Variance</th><th>Value diff</th><th></th></tr></thead>
       <tbody id="countBody"></tbody></table>
     <div id="ckSummary" style="margin-top:12px"></div>
-    <div style="margin-top:12px"><button class="btn primary" id="ckApply" style="padding:11px 22px">Hoàn thành kiểm kho</button></div>
-    <h3 style="margin-top:24px">Phiên kiểm gần đây</h3>
-    <div id="ckSessions"><div class="empty">Đang tải…</div></div>
+    <div style="margin-top:12px"><button class="btn primary" id="ckApply" style="padding:11px 22px">Finish stocktake</button></div>
+    <h3 style="margin-top:24px">Recent stocktake sessions</h3>
+    <div id="ckSessions"><div class="empty">Loading...</div></div>
   </div>`;
   const scan=document.getElementById('ckScan');
   scan.oninput=()=>renderCkSuggest(scan.value.trim());
   scan.onkeydown=(e)=>{ if(e.key==='Enter'){ e.preventDefault(); onCkEnter(scan.value.trim()); } };
   document.getElementById('ckAddAll').onclick=()=>{ stock.forEach(s=>pushSheet(s)); drawSheet(); };
-  document.getElementById('ckClear').onclick=()=>{ if(countSheet.length&&!confirm('Xóa toàn bộ phiếu kiểm đang làm?'))return; countSheet=[]; drawSheet(); };
+  document.getElementById('ckClear').onclick=()=>{ if(countSheet.length&&!confirm('Clear the entire current stocktake sheet?'))return; countSheet=[]; drawSheet(); };
   document.getElementById('ckApply').onclick=applyCount;
   drawSheet(); loadCkSessions(); scan.focus();
 }
@@ -241,34 +241,34 @@ function onCkEnter(v){
   if(bc) return scanCount(bc);
   const m=stock.filter(s=>(s.name||'').toLowerCase().includes(v.toLowerCase()));
   if(m.length===1){ pushSheet(m[0]); drawSheet(); resetCkScan(); }
-  else toast(m.length?`${m.length} kết quả — chọn bên dưới`:'Không tìm thấy',true);
+  else toast(m.length?`${m.length} results — select below`:'Not found',true);
 }
 function scanCount(s){
   let e=countSheet.find(x=>x.id===s.id);
   if(!e){ pushSheet(s); e=countSheet.find(x=>x.id===s.id); }
   e.counted=String((parseFloat(e.counted)||0)+1);
-  drawSheet(); resetCkScan(); toast(`${s.name}: đã đếm ${e.counted}`);
+  drawSheet(); resetCkScan(); toast(`${s.name}: counted ${e.counted}`);
 }
 function resetCkScan(){ const sc=document.getElementById('ckScan'); if(sc){sc.value='';sc.focus();} const sg=document.getElementById('ckSuggest'); if(sg)sg.innerHTML=''; }
 function renderCkSuggest(q){
   const el=document.getElementById('ckSuggest'); if(!el)return;
   if(!q){ el.innerHTML=''; return; }
   const m=stock.filter(s=>(s.name||'').toLowerCase().includes(q.toLowerCase())||(s.barcode||'').includes(q)).slice(0,8);
-  el.innerHTML=m.length?`<div style="border:1px solid var(--border);border-radius:9px;margin-bottom:11px;overflow:hidden">${m.map(s=>`<div data-add="${s.id}" style="padding:9px 12px;border-bottom:1px solid var(--border);cursor:pointer;font-size:12.5px">${esc(s.name)} · <span style="color:var(--muted)">tồn ${fmtQty(s.stock)} ${esc(s.unit||'')}</span></div>`).join('')}</div>`:'';
+  el.innerHTML=m.length?`<div style="border:1px solid var(--border);border-radius:9px;margin-bottom:11px;overflow:hidden">${m.map(s=>`<div data-add="${s.id}" style="padding:9px 12px;border-bottom:1px solid var(--border);cursor:pointer;font-size:12.5px">${esc(s.name)} · <span style="color:var(--muted)">stock ${fmtQty(s.stock)} ${esc(s.unit||'')}</span></div>`).join('')}</div>`:'';
   el.querySelectorAll('[data-add]').forEach(d=>d.onclick=()=>{ pushSheet(stock.find(x=>x.id===d.dataset.add)); drawSheet(); resetCkScan(); });
 }
 function drawSheet(){
   const body=document.getElementById('countBody'); if(!body)return;
-  if(!countSheet.length){ body.innerHTML='<tr><td colspan="7" class="empty">Chưa có mặt hàng. Quét mã vạch / gõ tên để thêm, hoặc "Kiểm toàn bộ".</td></tr>'; renderCkSummary(); return; }
+  if(!countSheet.length){ body.innerHTML='<tr><td colspan="7" class="empty">No items yet. Scan a barcode / type a name to add, or use "Count all".</td></tr>'; renderCkSummary(); return; }
   body.innerHTML=countSheet.map((e,i)=>{
     const book=ckBook(e), c=e.counted===''?null:parseFloat(e.counted), d=c===null?null:c-book, val=d===null?null:d*(e.cost||0);
     const its=ckLots(e.id);
-    const lotSel=its.length?`<select data-lot="${i}" style="background:var(--bg);border:1px solid var(--border);border-radius:7px;padding:5px 7px;font-size:11.5px;max-width:160px"><option value="">Tổng kho</option>${its.map(l=>`<option value="${l.id}" ${e.lot_id===l.id?'selected':''}>${esc(l.lot_no)}${l.expiry_date?' · '+esc(l.expiry_date):''}</option>`).join('')}</select>`:'<span class="typetag">—</span>';
+    const lotSel=its.length?`<select data-lot="${i}" style="background:var(--bg);border:1px solid var(--border);border-radius:7px;padding:5px 7px;font-size:11.5px;max-width:160px"><option value="">All stock</option>${its.map(l=>`<option value="${l.id}" ${e.lot_id===l.id?'selected':''}>${esc(l.lot_no)}${l.expiry_date?' · '+esc(l.expiry_date):''}</option>`).join('')}</select>`:'<span class="typetag">—</span>';
     return `<tr>
       <td>${esc(e.name)}<br><span class="typetag">${esc(e.unit||'')}</span></td>
       <td>${lotSel}</td>
       <td style="font-family:var(--mono)">${fmtQty(book)} ${esc(e.unit||'')}</td>
-      <td><input class="recv" type="number" step="0.01" data-cnt="${i}" value="${e.counted}" placeholder="đếm"></td>
+      <td><input class="recv" type="number" step="0.01" data-cnt="${i}" value="${e.counted}" placeholder="count"></td>
       <td class="var ${d>0?'var-pos':d<0?'var-neg':''}" style="font-family:var(--mono)">${d===null?'-':(d>0?'+':'')+fmtQty(d)}</td>
       <td class="${val>0?'var-pos':val<0?'var-neg':''}" style="font-family:var(--mono)">${val===null?'-':(val>0?'+':'')+money(val)}</td>
       <td><button class="btn sm danger" data-rmc="${i}">×</button></td>
@@ -292,80 +292,80 @@ function renderCkSummary(){
   let diffN=0, totalVal=0;
   for(const e of counted){ const d=parseFloat(e.counted)-ckBook(e); if(Math.abs(d)>1e-9){diffN++; totalVal+=d*(e.cost||0);} }
   el.innerHTML=`<div style="display:flex;gap:20px;flex-wrap:wrap;font-size:13px;font-weight:600;background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:11px 14px">
-    <span>Đã đếm: <b>${counted.length}/${countSheet.length}</b></span>
-    <span>Số mặt hàng lệch: <b class="${diffN?'var-neg':''}">${diffN}</b></span>
-    <span>Tổng giá trị lệch: <b class="${totalVal>0?'var-pos':totalVal<0?'var-neg':''}" style="font-family:var(--mono)">${totalVal>0?'+':''}${money(totalVal)}</b></span>
+    <span>Counted: <b>${counted.length}/${countSheet.length}</b></span>
+    <span>Items with variance: <b class="${diffN?'var-neg':''}">${diffN}</b></span>
+    <span>Total value variance: <b class="${totalVal>0?'var-pos':totalVal<0?'var-neg':''}" style="font-family:var(--mono)">${totalVal>0?'+':''}${money(totalVal)}</b></span>
   </div>`;
 }
 async function applyCount(){
   const lines=countSheet.filter(e=>e.counted!=='').map(e=>({stock_type:e.stock_type,item_id:e.id,counted_qty:parseFloat(e.counted),lot_id:e.lot_id||null}));
-  if(!lines.length) return toast('Chưa đếm mặt hàng nào',true);
-  if(!confirm(`Hoàn thành kiểm kho ${lines.length} mặt hàng?\nTồn thực tế sẽ ghi đè số sổ sách và tạo phiếu điều chỉnh (không sửa được sau khi chốt).`)) return;
+  if(!lines.length) return toast('No items counted yet',true);
+  if(!confirm(`Finish stocktake for ${lines.length} items?\nActual quantities will overwrite book quantities and an adjustment document will be created (cannot be edited after finalising).`)) return;
   try{
-    const r=await api('/warehouse/stocktake',{method:'POST',body:{warehouse_id:activeWh,name:'Kiểm kho '+new Date().toLocaleString('vi-VN'),mode:'partial',lines}});
-    toast(`Đã chốt kiểm kho · ${r.changed} mặt hàng điều chỉnh`);
+    const r=await api('/warehouse/stocktake',{method:'POST',body:{warehouse_id:activeWh,name:'Stocktake '+new Date().toLocaleString('en-US'),mode:'partial',lines}});
+    toast(`Stocktake finalised · ${r.changed} items adjusted`);
     countSheet=[]; load();
   }catch(e){ toast(e.message,true); }
 }
 async function loadCkSessions(){
   const el=document.getElementById('ckSessions'); if(!el)return;
-  let rows=[]; try{ rows=await api('/warehouse/stocktakes'); }catch{ el.innerHTML='<div class="empty">Cần quyền để xem phiên kiểm</div>'; return; }
+  let rows=[]; try{ rows=await api('/warehouse/stocktakes'); }catch{ el.innerHTML='<div class="empty">Permission required to view stocktake sessions</div>'; return; }
   rows=rows.filter(s=>!s.warehouse_id||s.warehouse_id===activeWh);
-  el.innerHTML=rows.length?`<table><thead><tr><th>Thời gian</th><th>Tên phiên</th><th>Kho</th><th>Số dòng</th><th>Trạng thái</th></tr></thead><tbody>${rows.map(s=>`<tr>
-    <td style="font-family:var(--mono);font-size:11px">${new Date(s.created_at).toLocaleString('vi-VN')}</td>
+  el.innerHTML=rows.length?`<table><thead><tr><th>Time</th><th>Session name</th><th>Warehouse</th><th>Lines</th><th>Status</th></tr></thead><tbody>${rows.map(s=>`<tr>
+    <td style="font-family:var(--mono);font-size:11px">${new Date(s.created_at).toLocaleString('en-US')}</td>
     <td>${esc(s.name||'')}</td><td>${esc(s.warehouse_name||'')}</td>
     <td style="font-family:var(--mono)">${s.lines}</td>
-    <td><span class="chip c-done">Đã chốt</span></td></tr>`).join('')}</tbody></table>`:'<div class="empty">Chưa có phiên kiểm kho</div>';
+    <td><span class="chip c-done">Finalised</span></td></tr>`).join('')}</tbody></table>`:'<div class="empty">No stocktake sessions yet</div>';
 }
 
 function renderLots(){
-  document.getElementById('panel').innerHTML = `<div class="panel"><h3>Lot / Batch / Hạn sử dụng</h3>
-    <table><thead><tr><th>Mặt hàng</th><th>Lot</th><th>Tồn lot</th><th>HSD</th><th>Nhà cung cấp</th></tr></thead>
+  document.getElementById('panel').innerHTML = `<div class="panel"><h3>Lots / Batches / Expiry dates</h3>
+    <table><thead><tr><th>Item</th><th>Lot</th><th>Lot stock</th><th>Expiry</th><th>Supplier</th></tr></thead>
     <tbody>${lots.map(l=>`<tr>
       <td>${esc(l.item_name||'?')}<br><span class="typetag">${esc(l.item_kind||'')}</span></td>
       <td style="font-family:var(--mono)">${esc(l.lot_no)}</td>
       <td style="font-family:var(--mono)">${fmtQty(l.qty_on_hand)} ${esc(l.unit||'')}</td>
-      <td class="${expiryClass(l.expiry_date)}">${l.expiry_date?`${esc(l.expiry_date)} · ${daysLeft(l.expiry_date)} ngày`:'-'}</td>
+      <td class="${expiryClass(l.expiry_date)}">${l.expiry_date?`${esc(l.expiry_date)} · ${daysLeft(l.expiry_date)} days`:'-'}</td>
       <td>${esc(l.supplier||'')}</td>
-    </tr>`).join('') || '<tr><td colspan="5" class="empty">Chưa có lot trong kho này</td></tr>'}</tbody></table></div>`;
+    </tr>`).join('') || '<tr><td colspan="5" class="empty">No lots in this warehouse yet</td></tr>'}</tbody></table></div>`;
 }
 
 async function renderHist(){
-  document.getElementById('panel').innerHTML = `<div class="panel"><h3>Lịch sử nhập / xuất / kiểm kho</h3><div id="mv"><div class="empty">Đang tải...</div></div></div>`;
+  document.getElementById('panel').innerHTML = `<div class="panel"><h3>Stock receipt / issue / stocktake history</h3><div id="mv"><div class="empty">Loading...</div></div></div>`;
   const mv = await api('/movements?limit=120');
   const rows = mv.filter(m=>!m.warehouse_id || m.warehouse_id===activeWh);
-  const typeMap={sale:'Bán retail',recipe:'Trừ recipe',receipt:'Nhập kho',opening:'Mở tồn',stocktake:'Kiểm kho',return:'Trả hàng',issue:'Xuất kho',transfer_out:'Chuyển đi',transfer_in:'Chuyển đến'};
-  document.getElementById('mv').innerHTML = rows.length ? `<table><thead><tr><th>Thời gian</th><th>Mặt hàng</th><th>Loại</th><th>Lot</th><th>Thay đổi</th><th>Lý do</th></tr></thead>
+  const typeMap={sale:'Retail sale',recipe:'Recipe deduction',receipt:'Stock receipt',opening:'Opening stock',stocktake:'Stocktake',return:'Return',issue:'Issue',transfer_out:'Transfer out',transfer_in:'Transfer in'};
+  document.getElementById('mv').innerHTML = rows.length ? `<table><thead><tr><th>Time</th><th>Item</th><th>Type</th><th>Lot</th><th>Change</th><th>Reason</th></tr></thead>
     <tbody>${rows.map(m=>`<tr>
-      <td style="font-family:var(--mono);font-size:11px">${new Date(m.created_at).toLocaleString('vi-VN')}</td>
+      <td style="font-family:var(--mono);font-size:11px">${new Date(m.created_at).toLocaleString('en-US')}</td>
       <td>${esc(m.item_name||'?')}</td>
       <td><span class="mtag mt-${m.type}">${typeMap[m.type]||m.type}</span></td>
       <td style="font-family:var(--mono);font-size:11px">${esc(m.lot_no||'')}</td>
       <td style="font-family:var(--mono);color:${m.qty>=0?'var(--done)':'var(--late)'}">${m.qty>=0?'+':''}${fmtQty(m.qty)} ${esc(m.unit||'')}</td>
       <td style="font-size:11px;color:var(--faint)">${esc(m.reason||m.ref||'')}</td>
-    </tr>`).join('')}</tbody></table>` : '<div class="empty">Chưa có giao dịch kho</div>';
+    </tr>`).join('')}</tbody></table>` : '<div class="empty">No stock transactions yet</div>';
 }
 
 // ---- Electronic goods-receipt / goods-issue documents ----
-const DOC_TITLE={receipt:'PHIẾU NHẬP KHO',opening:'PHIẾU NHẬP KHO',issue:'PHIẾU XUẤT KHO',transfer:'PHIẾU CHUYỂN KHO',stocktake:'PHIẾU ĐIỀU CHỈNH KIỂM KÊ'};
-const DOC_LABEL={receipt:'Nhập kho',opening:'Nhập tồn đầu',issue:'Xuất kho',transfer:'Chuyển kho',stocktake:'Điều chỉnh kiểm kê'};
-function docNo(d){ const p={receipt:'PN',opening:'PN',issue:'PX',transfer:'PC',stocktake:'PK'}[d.type]||'PH'; return p+'-'+String(d.id).slice(-6).toUpperCase(); }
+const DOC_TITLE={receipt:'GOODS RECEIPT',opening:'GOODS RECEIPT',issue:'GOODS ISSUE',transfer:'STOCK TRANSFER',stocktake:'STOCKTAKE ADJUSTMENT'};
+const DOC_LABEL={receipt:'Stock receipt',opening:'Opening stock',issue:'Stock issue',transfer:'Stock transfer',stocktake:'Stocktake adjustment'};
+function docNo(d){ const p={receipt:'GR',opening:'GR',issue:'GI',transfer:'ST',stocktake:'SA'}[d.type]||'WH'; return p+'-'+String(d.id).slice(-6).toUpperCase(); }
 
 async function renderDocs(){
-  document.getElementById('panel').innerHTML = `<div class="panel"><h3>Phiếu nhập / xuất / chuyển kho</h3>
-    <div class="hint" style="margin-bottom:11px">Mỗi lần nhập, xuất, chuyển hay điều chỉnh kho, hệ thống tự tạo một phiếu điện tử có thể in. Bấm "Xem" để mở mẫu phiếu.</div>
-    <div id="docs"><div class="empty">Đang tải...</div></div></div>`;
+  document.getElementById('panel').innerHTML = `<div class="panel"><h3>Receipt / issue / transfer documents</h3>
+    <div class="hint" style="margin-bottom:11px">Every receipt, issue, transfer or stocktake adjustment automatically creates a printable document. Click "View" to open it.</div>
+    <div id="docs"><div class="empty">Loading...</div></div></div>`;
   const docs = await api('/warehouse/documents?warehouse_id='+encodeURIComponent(activeWh));
-  document.getElementById('docs').innerHTML = docs.length ? `<table><thead><tr><th>Số phiếu</th><th>Loại</th><th>Thời gian</th><th>Kho</th><th>Số dòng</th><th>Giá trị</th><th></th></tr></thead>
+  document.getElementById('docs').innerHTML = docs.length ? `<table><thead><tr><th>Doc no.</th><th>Type</th><th>Time</th><th>Warehouse</th><th>Lines</th><th>Value</th><th></th></tr></thead>
     <tbody>${docs.map(d=>`<tr>
       <td style="font-family:var(--mono);color:var(--text)">${docNo(d)}</td>
       <td><span class="mtag mt-${(d.type==='issue'||d.type==='transfer')?'issue':'receipt'}">${DOC_LABEL[d.type]||d.type}</span></td>
-      <td style="font-family:var(--mono);font-size:11px">${new Date(d.created_at).toLocaleString('vi-VN')}</td>
+      <td style="font-family:var(--mono);font-size:11px">${new Date(d.created_at).toLocaleString('en-US')}</td>
       <td>${esc(d.warehouse_name||'')}${d.to_warehouse_name?' → '+esc(d.to_warehouse_name):''}</td>
       <td style="font-family:var(--mono)">${d.line_count}</td>
       <td style="font-family:var(--mono);color:var(--brand)">${money(d.total_value||0)}</td>
-      <td><button class="btn sm" data-doc="${d.id}">Xem</button></td>
-    </tr>`).join('')}</tbody></table>` : '<div class="empty">Chưa có phiếu kho nào. Hãy nhập hoặc xuất hàng để tạo phiếu.</div>';
+      <td><button class="btn sm" data-doc="${d.id}">View</button></td>
+    </tr>`).join('')}</tbody></table>` : '<div class="empty">No warehouse documents yet. Receive or issue stock to create one.</div>';
   document.querySelectorAll('[data-doc]').forEach(b=>b.onclick=()=>openDocSlip(b.dataset.doc));
 }
 
@@ -375,7 +375,7 @@ async function openDocSlip(id){
   const ov=document.createElement('div'); ov.className='overlay show';
   ov.innerHTML=`<div class="modal" style="max-width:780px;background:#fff;color:#111">
     <div id="slipArea">${html}</div>
-    <div class="mfoot"><button class="btn" id="closeDoc">Đóng</button><button class="btn primary" id="printDoc">In phiếu</button></div>
+    <div class="mfoot"><button class="btn" id="closeDoc">Close</button><button class="btn primary" id="printDoc">Print</button></div>
   </div>`;
   document.body.appendChild(ov);
   ov.querySelector('#closeDoc').onclick=()=>ov.remove();
@@ -388,18 +388,18 @@ function slipHtml(d){
   const cell='border:1px solid #999;padding:6px 9px';
   return `<div class="slip" style="color:#111;font-family:'Be Vietnam Pro',Arial,sans-serif;line-height:1.45">
     <div style="text-align:center">
-      <div style="font-weight:800;text-transform:uppercase;font-size:15px">${esc(d.branch_name||'Cửa hàng')}</div>
+      <div style="font-weight:800;text-transform:uppercase;font-size:15px">${esc(d.branch_name||'Store')}</div>
       <div style="font-size:12px;color:#555">${esc(d.branch_address||'')}</div>
-      <h2 style="margin:16px 0 3px;font-size:21px;letter-spacing:.5px">${DOC_TITLE[d.type]||'PHIẾU KHO'}</h2>
-      <div style="font-size:12.5px;color:#555">Số: <b>${docNo(d)}</b> &nbsp;·&nbsp; Ngày ${date.getDate()} tháng ${date.getMonth()+1} năm ${date.getFullYear()}</div>
+      <h2 style="margin:16px 0 3px;font-size:21px;letter-spacing:.5px">${DOC_TITLE[d.type]||'WAREHOUSE DOCUMENT'}</h2>
+      <div style="font-size:12.5px;color:#555">No: <b>${docNo(d)}</b> &nbsp;·&nbsp; Date: ${date.getDate()}/${date.getMonth()+1}/${date.getFullYear()}</div>
     </div>
     <div style="display:flex;justify-content:space-between;gap:20px;flex-wrap:wrap;font-size:13px;margin:16px 0 9px">
-      <div>Kho: <b>${esc(d.warehouse_name||'')}</b>${d.to_warehouse_name?` &nbsp;→&nbsp; Kho nhận: <b>${esc(d.to_warehouse_name)}</b>`:''}</div>
-      ${d.supplier?`<div>Nhà cung cấp: <b>${esc(d.supplier)}</b></div>`:''}
-      ${d.reason?`<div>Lý do: <b>${esc(d.reason)}</b></div>`:''}
+      <div>Warehouse: <b>${esc(d.warehouse_name||'')}</b>${d.to_warehouse_name?` &nbsp;→&nbsp; Destination: <b>${esc(d.to_warehouse_name)}</b>`:''}</div>
+      ${d.supplier?`<div>Supplier: <b>${esc(d.supplier)}</b></div>`:''}
+      ${d.reason?`<div>Reason: <b>${esc(d.reason)}</b></div>`:''}
     </div>
     <table style="width:100%;border-collapse:collapse;font-size:12.5px">
-      <thead><tr>${['STT','Tên mặt hàng','ĐVT','Lô / HSD','Số lượng','Đơn giá','Thành tiền'].map((h,i)=>`<th style="${cell};background:#eef2f6;text-align:${i>=4?'right':'left'}">${h}</th>`).join('')}</tr></thead>
+      <thead><tr>${['#','Item name','Unit','Lot / Expiry','Qty','Unit cost','Total'].map((h,i)=>`<th style="${cell};background:#eef2f6;text-align:${i>=4?'right':'left'}">${h}</th>`).join('')}</tr></thead>
       <tbody>${(d.lines||[]).map((l,i)=>{const q=Math.abs(l.qty);return `<tr>
         <td style="${cell};text-align:center">${i+1}</td>
         <td style="${cell}">${esc(l.item_name||'')}</td>
@@ -409,20 +409,20 @@ function slipHtml(d){
         <td style="${cell};text-align:right;font-family:monospace">${money(l.unit_cost||0)}</td>
         <td style="${cell};text-align:right;font-family:monospace">${money(q*(l.unit_cost||0))}</td>
       </tr>`;}).join('')}
-      <tr><td colspan="6" style="${cell};text-align:right;font-weight:700">Tổng cộng</td><td style="${cell};text-align:right;font-weight:800;font-family:monospace">${money(total)}</td></tr>
+      <tr><td colspan="6" style="${cell};text-align:right;font-weight:700">Total</td><td style="${cell};text-align:right;font-weight:800;font-family:monospace">${money(total)}</td></tr>
       </tbody>
     </table>
     <div style="display:flex;justify-content:space-around;text-align:center;margin-top:28px;font-size:12.5px">
-      <div><b>Người lập phiếu</b><div style="color:#777;font-size:11px">(Ký, ghi rõ họ tên)</div><div style="height:52px"></div></div>
-      <div><b>Thủ kho</b><div style="color:#777;font-size:11px">(Ký, ghi rõ họ tên)</div><div style="height:52px"></div></div>
-      <div><b>Người giao / nhận</b><div style="color:#777;font-size:11px">(Ký, ghi rõ họ tên)</div><div style="height:52px"></div></div>
+      <div><b>Prepared by</b><div style="color:#777;font-size:11px">(Signature &amp; full name)</div><div style="height:52px"></div></div>
+      <div><b>Warehouse keeper</b><div style="color:#777;font-size:11px">(Signature &amp; full name)</div><div style="height:52px"></div></div>
+      <div><b>Delivered / Received by</b><div style="color:#777;font-size:11px">(Signature &amp; full name)</div><div style="height:52px"></div></div>
     </div>
   </div>`;
 }
 function printSlip(html){
   const w=window.open('','_blank','width=840,height=940');
-  if(!w) return toast('Trình duyệt chặn cửa sổ in — cho phép popup để in phiếu',true);
-  w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Phiếu kho</title>
+  if(!w) return toast('Browser blocked the print window — please allow popups to print',true);
+  w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Warehouse document</title>
     <style>body{margin:26px;font-family:Arial,'Be Vietnam Pro',sans-serif}@media print{body{margin:8mm}}</style></head>
     <body>${html}</body></html>`);
   w.document.close(); w.focus(); setTimeout(()=>{ w.print(); }, 300);
@@ -432,29 +432,29 @@ function openItemForm(){
   const wh=curWh(), retail=wh?.type==='retail';
   const ov=document.createElement('div'); ov.className='overlay show';
   ov.innerHTML=`<div class="modal">
-    <h2>${retail?'Tạo SKU retail':'Tạo item kho bếp'}</h2>
+    <h2>${retail?'Create retail SKU':'Create kitchen item'}</h2>
     <div class="sub">${esc(wh?.name||'')}</div>
-    <label>Tên mặt hàng</label><input id="name" placeholder="${retail?'VD: Sữa tươi 1L':'VD: Tô sứ / Thịt bò'}">
+    <label>Item name</label><input id="name" placeholder="${retail?'e.g. Fresh milk 1L':'e.g. Ceramic bowl / Beef'}">
     <div class="formgrid">
-      <div><label>${retail?'Barcode':'Mã / barcode (tuỳ chọn)'}</label><input id="barcode"></div>
-      <div><label>Đơn vị</label><input id="unit" value="cái"></div>
+      <div><label>${retail?'Barcode':'Code / barcode (optional)'}</label><input id="barcode"></div>
+      <div><label>Unit</label><input id="unit" value="pcs"></div>
     </div>
-    ${retail?`<div class="formgrid"><div><label>Giá bán</label><input id="price" type="number" value="0"></div><div><label>Giá vốn</label><input id="cost" type="number" value="0"></div></div>`:
-      `<div class="formgrid"><div><label>Loại item</label><select id="itemType"><option value="ingredient">Nguyên liệu FnB</option><option value="supply">Vật dụng bếp</option></select></div><div><label>Giá vốn</label><input id="cost" type="number" value="0"></div></div>`}
+    ${retail?`<div class="formgrid"><div><label>Selling price</label><input id="price" type="number" value="0"></div><div><label>Cost price</label><input id="cost" type="number" value="0"></div></div>`:
+      `<div class="formgrid"><div><label>Item type</label><select id="itemType"><option value="ingredient">FnB ingredient</option><option value="supply">Kitchen supply</option></select></div><div><label>Cost price</label><input id="cost" type="number" value="0"></div></div>`}
     <div class="formgrid">
-      <div><label>Tồn tối thiểu</label><input id="min" type="number" value="0"></div>
-      <div><label>Tồn ban đầu</label><input id="opening" type="number" value="0"></div>
+      <div><label>Minimum stock</label><input id="min" type="number" value="0"></div>
+      <div><label>Opening stock</label><input id="opening" type="number" value="0"></div>
     </div>
-    <label>Nhóm / category</label><input id="category" placeholder="${retail?'Nước giải khát, Snack...':'Protein, Dụng cụ...'}">
+    <label>Group / category</label><input id="category" placeholder="${retail?'Beverages, Snacks...':'Protein, Equipment...'}">
     <div class="formgrid">
-      <label><input type="checkbox" id="trackLot"> Theo dõi lot/batch</label>
-      <label><input type="checkbox" id="expiryRequired"> Bắt buộc HSD khi nhập</label>
+      <label><input type="checkbox" id="trackLot"> Track lot/batch</label>
+      <label><input type="checkbox" id="expiryRequired"> Require expiry on receipt</label>
     </div>
     <div class="formgrid">
-      <div><label>Lot ban đầu</label><input id="lot" placeholder="OPENING"></div>
-      <div><label>HSD ban đầu</label><input id="expiry" type="date"></div>
+      <div><label>Opening lot</label><input id="lot" placeholder="OPENING"></div>
+      <div><label>Opening expiry</label><input id="expiry" type="date"></div>
     </div>
-    <div class="mfoot"><button class="btn" id="cancel">Hủy</button><button class="btn primary" id="save">Tạo</button></div>
+    <div class="mfoot"><button class="btn" id="cancel">Cancel</button><button class="btn primary" id="save">Create</button></div>
   </div>`;
   document.body.appendChild(ov);
   ov.querySelector('#cancel').onclick=()=>ov.remove();
@@ -463,7 +463,7 @@ function openItemForm(){
       warehouse_id:activeWh,
       name:ov.querySelector('#name').value.trim(),
       barcode:ov.querySelector('#barcode').value.trim(),
-      unit:ov.querySelector('#unit').value.trim()||'cái',
+      unit:ov.querySelector('#unit').value.trim()||'pcs',
       cost:parseFloat(ov.querySelector('#cost').value)||0,
       min_stock:parseFloat(ov.querySelector('#min').value)||0,
       opening_stock:parseFloat(ov.querySelector('#opening').value)||0,
@@ -473,10 +473,10 @@ function openItemForm(){
       lot_no:ov.querySelector('#lot').value.trim()||'OPENING',
       expiry_date:ov.querySelector('#expiry').value||null,
     };
-    if(!body.name) return toast('Nhập tên mặt hàng', true);
+    if(!body.name) return toast('Please enter an item name', true);
     if(!retail) body.item_type=ov.querySelector('#itemType').value;
     if(retail) body.price=parseInt(ov.querySelector('#price').value)||0;
-    try{ await api(retail?'/skus':'/inventory',{method:'POST',body}); ov.remove(); toast('Đã tạo mặt hàng'); load(); }
+    try{ await api(retail?'/skus':'/inventory',{method:'POST',body}); ov.remove(); toast('Item created'); load(); }
     catch(e){toast(e.message,true);}
   };
 }
@@ -485,16 +485,16 @@ function openMove(item, mode){
   const receipt = mode === 'receipt';
   const ov=document.createElement('div'); ov.className='overlay show';
   ov.innerHTML=`<div class="modal">
-    <h2>${receipt?'Phiếu nhập':'Phiếu xuất'} · ${esc(item.name)}</h2>
-    <div class="sub">Tồn hiện tại: ${fmtQty(item.stock)} ${esc(item.unit)}</div>
-    ${(item.units&&item.units.length)?`<div class="formgrid"><div><label>Số lượng</label><input id="qty" type="number" step="0.01" placeholder="0"></div>
-      <div><label>Đơn vị</label><select id="uom"><option value="${esc(item.unit)}">${esc(item.unit)} (gốc)</option>${item.units.map(u=>`<option value="${esc(u.name)}">${esc(u.name)} = ${u.factor} ${esc(item.unit)}</option>`).join('')}</select></div></div>
+    <h2>${receipt?'Goods receipt':'Goods issue'} · ${esc(item.name)}</h2>
+    <div class="sub">Current stock: ${fmtQty(item.stock)} ${esc(item.unit)}</div>
+    ${(item.units&&item.units.length)?`<div class="formgrid"><div><label>Quantity</label><input id="qty" type="number" step="0.01" placeholder="0"></div>
+      <div><label>Unit</label><select id="uom"><option value="${esc(item.unit)}">${esc(item.unit)} (base)</option>${item.units.map(u=>`<option value="${esc(u.name)}">${esc(u.name)} = ${u.factor} ${esc(item.unit)}</option>`).join('')}</select></div></div>
       <div class="hint" id="uomHint" style="margin-bottom:4px"></div>`
-      :`<label>Số lượng (${esc(item.unit)})</label><input id="qty" type="number" step="0.01" placeholder="0">`}
-    ${receipt?`<div class="formgrid"><div><label>Lot / batch</label><input id="lot" placeholder="${item.track_lot?'LOT-...':'NOLOT'}"></div><div><label>Hạn sử dụng</label><input id="expiry" type="date"></div></div>
-      <div class="formgrid"><div><label>Giá vốn</label><input id="cost" type="number" value="${item.cost||0}"></div><div><label>Nhà cung cấp</label><input id="supplier"></div></div>`:
-      `<label>Lý do xuất</label><select id="reason"><option value="manual_issue">Xuất dùng nội bộ</option><option value="waste">Hao hụt / hủy</option><option value="damaged">Hỏng vỡ</option><option value="sample">Dùng mẫu</option></select>`}
-    <div class="mfoot"><button class="btn" id="cancel">Hủy</button><button class="btn primary" id="save">${receipt?'Nhập kho':'Xuất kho'}</button></div>
+      :`<label>Quantity (${esc(item.unit)})</label><input id="qty" type="number" step="0.01" placeholder="0">`}
+    ${receipt?`<div class="formgrid"><div><label>Lot / batch</label><input id="lot" placeholder="${item.track_lot?'LOT-...':'NOLOT'}"></div><div><label>Expiry date</label><input id="expiry" type="date"></div></div>
+      <div class="formgrid"><div><label>Cost price</label><input id="cost" type="number" value="${item.cost||0}"></div><div><label>Supplier</label><input id="supplier"></div></div>`:
+      `<label>Issue reason</label><select id="reason"><option value="manual_issue">Internal use</option><option value="waste">Wastage / write-off</option><option value="damaged">Damaged</option><option value="sample">Sample use</option></select>`}
+    <div class="mfoot"><button class="btn" id="cancel">Cancel</button><button class="btn primary" id="save">${receipt?'Receive stock':'Issue stock'}</button></div>
   </div>`;
   document.body.appendChild(ov);
   ov.querySelector('#cancel').onclick=()=>ov.remove();
@@ -504,12 +504,12 @@ function openMove(item, mode){
   function updHint(){
     if(!uomSel||!uomHint) return;
     const q=parseFloat(ov.querySelector('#qty').value)||0; const f=factorOf(uomSel.value);
-    uomHint.innerHTML = (f!==1 && q>0) ? `= <b>${fmtQty(q*f)} ${esc(item.unit)}</b> (đơn vị gốc)` : '';
+    uomHint.innerHTML = (f!==1 && q>0) ? `= <b>${fmtQty(q*f)} ${esc(item.unit)}</b> (base unit)` : '';
   }
   if(uomSel){ uomSel.onchange=updHint; ov.querySelector('#qty').oninput=updHint; }
   ov.querySelector('#save').onclick=async()=>{
     const qty=parseFloat(ov.querySelector('#qty').value);
-    if(!qty || qty<=0) return toast('Số lượng không hợp lệ', true);
+    if(!qty || qty<=0) return toast('Invalid quantity', true);
     const body={warehouse_id:activeWh,stock_type:item.stock_type,item_id:item.id,qty};
     if(uomSel) body.uom=uomSel.value;
     if(receipt){
@@ -520,70 +520,70 @@ function openMove(item, mode){
     } else {
       body.reason=ov.querySelector('#reason').value;
     }
-    try{ await api(receipt?'/warehouse/receive':'/warehouse/issue',{method:'POST',body}); ov.remove(); toast(receipt?'Đã nhập kho':'Đã xuất kho'); load(); }
+    try{ await api(receipt?'/warehouse/receive':'/warehouse/issue',{method:'POST',body}); ov.remove(); toast(receipt?'Stock received':'Stock issued'); load(); }
     catch(e){toast(e.message,true);}
   };
 }
 
 function openItemEditor(item=null){
   const wh=curWh(), isEdit=!!item, retail=item ? item.stock_type==='sku' : wh?.type==='retail';
-  const title = isEdit ? (retail?'Sửa SKU retail':'Sửa item kho bếp') : (retail?'Tạo SKU retail':'Tạo item kho bếp');
+  const title = isEdit ? (retail?'Edit retail SKU':'Edit kitchen item') : (retail?'Create retail SKU':'Create kitchen item');
   const ov=document.createElement('div'); ov.className='overlay show';
   ov.innerHTML=`<div class="modal">
     <h2>${title}</h2>
     <div class="sub">${esc(wh?.name||'')}</div>
-    <label>Tên mặt hàng</label><input id="name" value="${esc(item?.name||'')}" placeholder="${retail?'VD: Sữa tươi 1L':'VD: Tô sứ / Thịt bò'}">
+    <label>Item name</label><input id="name" value="${esc(item?.name||'')}" placeholder="${retail?'e.g. Fresh milk 1L':'e.g. Ceramic bowl / Beef'}">
     <div class="formgrid">
-      <div><label>${retail?'Barcode':'Mã / barcode (tuỳ chọn)'}</label><input id="barcode" value="${esc(item?.barcode||'')}"></div>
-      <div><label>Đơn vị</label><input id="unit" value="${esc(item?.unit||'cái')}"></div>
+      <div><label>${retail?'Barcode':'Code / barcode (optional)'}</label><input id="barcode" value="${esc(item?.barcode||'')}"></div>
+      <div><label>Unit</label><input id="unit" value="${esc(item?.unit||'pcs')}"></div>
     </div>
     ${retail?`<div class="formgrid">
       <div><label>Emoji</label><input id="emoji" value="${esc(item?.emoji||'📦')}"></div>
-      <div><label>Nhà cung cấp</label><input id="supplier" value="${esc(item?.supplier||'')}"></div>
-      <div class="full"><label>Ảnh sản phẩm (URL)</label><input id="image" value="${esc(item?.image||'')}" placeholder="https://..."></div>
-      <div class="full"><label>Link nguồn</label><input id="sourceUrl" value="${esc(item?.source_url||'')}" placeholder="https://bcmarketing.vn/products/..."></div>
+      <div><label>Supplier</label><input id="supplier" value="${esc(item?.supplier||'')}"></div>
+      <div class="full"><label>Product image (URL)</label><input id="image" value="${esc(item?.image||'')}" placeholder="https://..."></div>
+      <div class="full"><label>Source link</label><input id="sourceUrl" value="${esc(item?.source_url||'')}" placeholder="https://bcmarketing.vn/products/..."></div>
     </div>
     <div class="formgrid">
-      <div><label>Giá bán</label><input id="price" type="number" value="${item?.price||0}"></div>
-      <div><label>Giá vốn</label><input id="cost" type="number" value="${item?.cost||0}"></div>
+      <div><label>Selling price</label><input id="price" type="number" value="${item?.price||0}"></div>
+      <div><label>Cost price</label><input id="cost" type="number" value="${item?.cost||0}"></div>
     </div>`:
     `<div class="formgrid">
-      <div><label>Loại item</label><select id="itemType"><option value="ingredient">Nguyên liệu FnB</option><option value="supply">Vật dụng bếp</option></select></div>
-      <div><label>Giá vốn</label><input id="cost" type="number" value="${item?.cost||0}"></div>
+      <div><label>Item type</label><select id="itemType"><option value="ingredient">FnB ingredient</option><option value="supply">Kitchen supply</option></select></div>
+      <div><label>Cost price</label><input id="cost" type="number" value="${item?.cost||0}"></div>
     </div>`}
     <div class="formgrid">
-      <div><label>Tồn tối thiểu</label><input id="min" type="number" step="0.01" value="${item?.min_stock||0}"></div>
-      ${isEdit?`<div><label>Tồn hiện tại</label><input value="${fmtQty(item.stock)} ${esc(item.unit)}" disabled><div class="hint">Muốn đổi tồn, dùng Kiểm kho hoặc Nhập/Xuất.</div></div>`:
-      `<div><label>Tồn ban đầu</label><input id="opening" type="number" step="0.01" value="0"></div>`}
+      <div><label>Minimum stock</label><input id="min" type="number" step="0.01" value="${item?.min_stock||0}"></div>
+      ${isEdit?`<div><label>Current stock</label><input value="${fmtQty(item.stock)} ${esc(item.unit)}" disabled><div class="hint">To change stock, use Stocktake or Receive/Issue.</div></div>`:
+      `<div><label>Opening stock</label><input id="opening" type="number" step="0.01" value="0"></div>`}
     </div>
-    <label>Nhóm / category</label><input id="category" value="${esc(item?.category||'')}" placeholder="${retail?'Nước giải khát, Snack...':'Protein, Dụng cụ...'}">
-    <label>Đơn vị quy đổi (lốc / thùng…)</label>
+    <label>Group / category</label><input id="category" value="${esc(item?.category||'')}" placeholder="${retail?'Beverages, Snacks...':'Protein, Equipment...'}">
+    <label>Conversion units (pack / case…)</label>
     <div id="unitsBox"></div>
-    <button class="btn sm" id="addUnit" type="button" style="margin-top:4px">➕ Thêm đơn vị</button>
-    <div class="hint" style="margin-top:5px">VD: 1 lốc = 6, 1 thùng = 24 (theo đơn vị gốc). Khi nhập/xuất sẽ tự quy đổi về đơn vị gốc.</div>
-    ${retail?'':`<label>Ghi chú</label><textarea id="note" rows="2">${esc(item?.note||'')}</textarea>`}
+    <button class="btn sm" id="addUnit" type="button" style="margin-top:4px">➕ Add unit</button>
+    <div class="hint" style="margin-top:5px">e.g. 1 pack = 6, 1 case = 24 (in base unit). Receipts and issues will auto-convert to the base unit.</div>
+    ${retail?'':`<label>Notes</label><textarea id="note" rows="2">${esc(item?.note||'')}</textarea>`}
     <div class="formgrid">
-      <label><input type="checkbox" id="trackLot" ${item?.track_lot?'checked':''}> Theo dõi lot/batch</label>
-      <label><input type="checkbox" id="expiryRequired" ${item?.expiry_required?'checked':''}> Bắt buộc HSD khi nhập</label>
+      <label><input type="checkbox" id="trackLot" ${item?.track_lot?'checked':''}> Track lot/batch</label>
+      <label><input type="checkbox" id="expiryRequired" ${item?.expiry_required?'checked':''}> Require expiry on receipt</label>
     </div>
     ${isEdit?'':`<div class="formgrid">
-      <div><label>Lot ban đầu</label><input id="lot" placeholder="OPENING"></div>
-      <div><label>HSD ban đầu</label><input id="expiry" type="date"></div>
+      <div><label>Opening lot</label><input id="lot" placeholder="OPENING"></div>
+      <div><label>Opening expiry</label><input id="expiry" type="date"></div>
     </div>`}
-    <div class="mfoot"><button class="btn" id="cancel">Hủy</button><button class="btn primary" id="save">${isEdit?'Lưu':'Tạo'}</button></div>
+    <div class="mfoot"><button class="btn" id="cancel">Cancel</button><button class="btn primary" id="save">${isEdit?'Save':'Create'}</button></div>
   </div>`;
   document.body.appendChild(ov);
   if(!retail && item?.item_type) ov.querySelector('#itemType').value=item.item_type;
   // units-of-measure editor
   let units=(item?.units||[]).map(u=>({name:u.name,factor:u.factor}));
   const unitsBox=ov.querySelector('#unitsBox');
-  const baseUnit=()=>ov.querySelector('#unit').value.trim()||'cái';
+  const baseUnit=()=>ov.querySelector('#unit').value.trim()||'pcs';
   function drawUnits(){
     unitsBox.innerHTML = units.length ? units.map((u,i)=>`<div style="display:grid;grid-template-columns:1fr 92px 34px;gap:7px;margin-bottom:6px;align-items:center">
-      <input data-un="${i}" value="${esc(u.name)}" placeholder="tên (lốc/thùng)">
+      <input data-un="${i}" value="${esc(u.name)}" placeholder="name (pack/case)">
       <input data-uf="${i}" type="number" step="0.01" value="${u.factor||''}" placeholder="= ? ${esc(baseUnit())}">
       <button class="btn sm danger" data-ux="${i}" type="button">×</button>
-    </div>`).join('') : `<div class="hint">Chưa có. Đơn vị gốc: <b>${esc(baseUnit())}</b>.</div>`;
+    </div>`).join('') : `<div class="hint">None yet. Base unit: <b>${esc(baseUnit())}</b>.</div>`;
     unitsBox.querySelectorAll('[data-un]').forEach(inp=>inp.oninput=()=>units[+inp.dataset.un].name=inp.value);
     unitsBox.querySelectorAll('[data-uf]').forEach(inp=>inp.oninput=()=>units[+inp.dataset.uf].factor=parseFloat(inp.value)||0);
     unitsBox.querySelectorAll('[data-ux]').forEach(b=>b.onclick=()=>{units.splice(+b.dataset.ux,1);drawUnits();});
@@ -597,7 +597,7 @@ function openItemEditor(item=null){
       warehouse_id:activeWh,
       name:ov.querySelector('#name').value.trim(),
       barcode:ov.querySelector('#barcode').value.trim(),
-      unit:ov.querySelector('#unit').value.trim()||'cái',
+      unit:ov.querySelector('#unit').value.trim()||'pcs',
       cost:parseFloat(ov.querySelector('#cost').value)||0,
       min_stock:parseFloat(ov.querySelector('#min').value)||0,
       category:ov.querySelector('#category').value.trim(),
@@ -605,7 +605,7 @@ function openItemEditor(item=null){
       expiry_required:ov.querySelector('#expiryRequired').checked,
       units:units.filter(u=>u.name.trim()&&u.factor>0),
     };
-    if(!body.name) return toast('Nhập tên mặt hàng', true);
+    if(!body.name) return toast('Please enter an item name', true);
     if(retail){
       body.price=parseInt(ov.querySelector('#price').value)||0;
       body.emoji=ov.querySelector('#emoji').value.trim()||'📦';
@@ -624,16 +624,16 @@ function openItemEditor(item=null){
     const path = isEdit
       ? (retail?`/skus/${item.id}/update`:`/inventory/${item.id}/update`)
       : (retail?'/skus':'/inventory');
-    try{ await api(path,{method:'POST',body}); ov.remove(); toast(isEdit?'Đã lưu mặt hàng':'Đã tạo mặt hàng'); load(); }
+    try{ await api(path,{method:'POST',body}); ov.remove(); toast(isEdit?'Item saved':'Item created'); load(); }
     catch(e){toast(e.message,true);}
   };
 }
 
 async function deleteItemUi(item){
   if(!item) return;
-  if(!confirm(`Xóa hẳn "${item.name}" khỏi kho?\n\nLot, movement và recipe liên quan đến mặt hàng này cũng sẽ bị dọn.`)) return;
+  if(!confirm(`Permanently delete "${item.name}" from the warehouse?\n\nLots, movements and recipes linked to this item will also be removed.`)) return;
   const path = item.stock_type === 'sku' ? `/skus/${item.id}/delete` : `/inventory/${item.id}/delete`;
-  try{ await api(path,{method:'POST'}); toast('Đã xóa '+item.name); load(); }
+  try{ await api(path,{method:'POST'}); toast('Deleted '+item.name); load(); }
   catch(e){ toast(e.message,true); }
 }
 
@@ -644,8 +644,8 @@ function stockVisual(s){
 }
 
 function kindLabel(s){
-  if(s.stock_type==='sku') return 'SKU retail';
-  return s.item_type==='supply' ? 'Vật dụng bếp' : 'Nguyên liệu FnB';
+  if(s.stock_type==='sku') return 'Retail SKU';
+  return s.item_type==='supply' ? 'Kitchen supply' : 'FnB ingredient';
 }
 function fmtQty(n){ return Math.round((Number(n||0)+Number.EPSILON)*100)/100; }
 function daysLeft(date){ const d=new Date(date+'T00:00:00'); return Math.ceil((d-Date.now())/86400000); }
