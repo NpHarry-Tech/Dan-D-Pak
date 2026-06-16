@@ -67,29 +67,29 @@ api.post('/settings/integrations', guard('settings.manage'), wrap((req) => AppSe
 api.post('/settings/integrations/:channel/test', guard('settings.manage'), wrap(async (req) => {
   const channel = req.params.channel;
   const cfg = AppSettings.getIntegrations().channels?.[channel];
-  if (!cfg) throw new Error('Kênh không hợp lệ: ' + channel);
+  if (!cfg) throw new Error('Invalid channel: ' + channel);
   const base = `${req.protocol}://${req.get('host')}`;
   if (channel === 'misa') return { channel, ...(await Misa.testConnection(cfg)) };
   if (channel === 'payos') {
     const payosWebhook = `${base}/api/payos/webhook`;
-    if (!cfg.enabled) return { channel, ok: false, mode: 'disabled', message: 'payOS đang tắt. Bật kết nối trước khi kiểm tra.', webhookUrl: payosWebhook };
+    if (!cfg.enabled) return { channel, ok: false, mode: 'disabled', message: 'payOS is disabled. Enable the connection before testing.', webhookUrl: payosWebhook };
     const ok = !!(cfg.clientId && cfg.apiKey && cfg.checksumKey);
     return {
       channel, ok, mode: ok ? 'ready' : 'partial', webhookUrl: payosWebhook,
       message: ok
-        ? 'Đã đủ Client ID / API Key / Checksum Key. Dán Webhook URL ở trên vào payOS Dashboard. Khi backend payOS bật, hệ thống sẽ tạo link thanh toán và nhận xác nhận tại URL này.'
-        : 'Thiếu Client ID / API Key / Checksum Key (lấy ở payOS Dashboard → Cài đặt → Thông tin xác thực).',
+        ? 'Client ID / API Key / Checksum Key are configured. Paste the Webhook URL above into payOS Dashboard. When payOS backend is enabled, the system will create payment links and receive confirmations at this URL.'
+        : 'Missing Client ID / API Key / Checksum Key (get from payOS Dashboard → Settings → Credentials).',
     };
   }
   // Delivery / website channels: orders arrive at our webhook → Kênh online module.
   const webhookUrl = `${base}/api/online/webhook`;
-  if (!cfg.enabled) return { channel, ok: false, mode: 'disabled', message: 'Kênh đang tắt. Bật để xuất hiện trong module Kênh online.', webhookUrl };
+  if (!cfg.enabled) return { channel, ok: false, mode: 'disabled', message: 'Channel is disabled. Enable it to appear in the Online Channels module.', webhookUrl };
   const haveCreds = !!(cfg.clientId && cfg.clientSecret) || !!cfg.apiKey;
   return {
     channel, ok: true, mode: haveCreds ? 'ready' : 'partial', webhookUrl,
     message: haveCreds
-      ? `Đã bật. Dán Webhook URL này vào cổng đối tác để đẩy đơn về "Kênh online". Đẩy đơn realtime cần đối tác bật API cho cửa hàng (B2B onboarding).`
-      : `Đã bật nhưng chưa có Client ID/Secret. Đơn vẫn nhận được qua Webhook URL, nhưng đồng bộ menu/tồn kho 2 chiều cần khai báo credential từ cổng đối tác.`,
+      ? `Enabled. Paste this Webhook URL into the partner portal to push orders to "Online Channels". Realtime order pushing requires the partner to enable API access for your store (B2B onboarding).`
+      : `Enabled but no Client ID/Secret configured. Orders can still be received via Webhook URL, but two-way menu/inventory sync requires credentials from the partner portal.`,
   };
 }));
 api.get('/operations/config', wrap(() => AppSettings.getOperationsConfig()));
@@ -106,7 +106,7 @@ api.post('/settings/book-menu/import-pubhtml5', guard('settings.manage'), wrap(a
   return out;
 }));
 api.post('/device/ipad/unlock', wrap((req) => {
-  if (!AppSettings.verifyIpadStaffPin(req.body.pin)) throw new Error('Mật khẩu không đúng');
+  if (!AppSettings.verifyIpadStaffPin(req.body.pin)) throw new Error('Wrong password');
   return { ok: true };
 }));
 
@@ -116,7 +116,7 @@ api.get('/menu/manage', guard('menu.manage'), wrap(() => Catalog.listMenu({ forC
 
 api.post('/menu', guard('menu.manage'), wrap((req) => {
   const b = req.body;
-  if (!b.name || !b.category_id) throw new Error('Thiếu tên món hoặc nhóm');
+  if (!b.name || !b.category_id) throw new Error('Missing item name or category');
   const id = uid('m_');
   const sort = (db.prepare(`SELECT COALESCE(MAX(sort),0)+1 n FROM menu_items`).get().n) || 1;
   db.prepare(`INSERT INTO menu_items
@@ -148,7 +148,7 @@ api.post('/menu', guard('menu.manage'), wrap((req) => {
 api.post('/menu/:id/update', guard('menu.manage'), wrap((req) => {
   const b = req.body;
   const cur = db.prepare(`SELECT * FROM menu_items WHERE id=?`).get(req.params.id);
-  if (!cur) throw new Error('Món không tồn tại');
+  if (!cur) throw new Error('Item not found');
   const v = (k, fallback) => (b[k] !== undefined && b[k] !== null && b[k] !== '') ? b[k] : fallback;
   db.prepare(`UPDATE menu_items SET
       name=?, emoji=?, image=?, description=?, price=?, category_id=?, station=?, sla_minutes=?,
@@ -232,21 +232,21 @@ api.post('/orders/items/:id/status', wrap((req) => Orders.setItemStatus(req.para
 api.post('/orders/items/:id/cancel', wrap((req) => {
   const itemId = req.params.id;
   const item = db.prepare(`SELECT * FROM order_items WHERE id=?`).get(itemId);
-  if (!item) throw new Error('Món không tồn tại');
+  if (!item) throw new Error('Item not found');
   
   if (item.status === 'preparing' || item.status === 'ready' || item.status === 'served') {
-    throw new Error('Bếp đã chế biến món này, không thể hủy!');
+    throw new Error('Kitchen has already prepared this item, cannot cancel!');
   }
   
   if (item.status !== 'pending_confirm') {
     const pin = req.body.pin;
-    if (!pin) throw new Error('Yêu cầu nhập mã PIN Quản lý/Chủ quán để hủy món đã gửi.');
+    if (!pin) throw new Error('Manager/Owner PIN required to cancel a sent item.');
     const user = db.prepare(`SELECT * FROM users WHERE pin=? AND active=1`).get(String(pin));
     if (!user || (user.role !== 'owner' && user.role !== 'manager')) {
-      throw new Error('Mã PIN không đúng hoặc không có quyền Quản lý/Chủ quán.');
+      throw new Error('Wrong PIN or insufficient Manager/Owner privileges.');
     }
   }
-  const res = Orders.cancelItem(itemId, req.body.reason || 'Nhân viên hủy', 'br1', actor(req));
+  const res = Orders.cancelItem(itemId, req.body.reason || 'Staff cancelled', 'br1', actor(req));
   emit('kds:refresh', { station: item.station }, 'br1');
   return res;
 }));
@@ -254,7 +254,7 @@ api.post('/orders/items/:id/cancel', wrap((req) => {
 api.post('/orders/items/:id/kds-dismiss', wrap((req) => {
   const itemId = req.params.id;
   const item = db.prepare(`SELECT * FROM order_items WHERE id=?`).get(itemId);
-  if (!item) throw new Error('Món không tồn tại');
+  if (!item) throw new Error('Item not found');
   db.prepare(`UPDATE order_items SET kds_dismissed=1 WHERE id=?`).run(itemId);
   emit('kds:refresh', { station: item.station }, 'br1');
   return { ok: true };
@@ -300,7 +300,7 @@ api.post('/skus/:id/update', guard('inventory.adjust'), wrap((req) => Inv.update
 api.post('/skus/:id/delete', guard('inventory.adjust'), wrap((req) => Inv.deleteSku(req.params.id)));
 api.get('/skus/barcode/:code', wrap((req) => {
   const s = Inv.findSkuByBarcode(req.params.code);
-  if (!s) throw new Error('Không tìm thấy mã vạch ' + req.params.code);
+  if (!s) throw new Error('Barcode not found: ' + req.params.code);
   return s;
 }));
 api.post('/skus/:id/receive', wrap((req) => Inv.receiveSku(req.params.id, parseFloat(req.body.qty), 'br1', req.body)));
