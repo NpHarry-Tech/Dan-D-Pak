@@ -19,7 +19,7 @@ const intOr = (v, fallback) => {
   return Number.isFinite(n) ? n : fallback;
 };
 const boolOr = (v, fallback) => (v === undefined || v === null) ? (fallback ? 1 : 0) : (v ? 1 : 0);
-const qtyNum = (v, label = 'Số lượng') => {
+const qtyNum = (v, label = 'Quantity') => {
   const n = parseFloat(v);
   if (!Number.isFinite(n) || n <= 0) throw new Error(label + ' is invalid');
   return n;
@@ -105,7 +105,7 @@ export function createInventoryItem(body, branch_id = 'br1') {
   db.prepare(`INSERT INTO inventory_items
     (id,branch_id,name,unit,stock,min_stock,warehouse_id,item_type,barcode,category,cost,track_lot,expiry_required,active,note,units_json)
     VALUES (?,?,?,?,0,?,?,?,?,?,?,?,?,1,?,?)`).run(
-    id, branch_id, body.name, body.unit || 'cái', parseFloat(body.min_stock) || 0,
+    id, branch_id, body.name, body.unit || 'pcs', parseFloat(body.min_stock) || 0,
     warehouse_id, item_type, body.barcode || null, body.category || null, parseFloat(body.cost) || 0,
     asBool(body.track_lot), asBool(body.expiry_required), body.note || null, JSON.stringify(normalizeUnits(body.units)));
 
@@ -172,7 +172,7 @@ export function createSku(body, branch_id = 'br1') {
     VALUES (?,?,?,?,?,?,?,?,0,?,?,?,?,?,?,?,?,1,?)`).run(
     id, branch_id, body.barcode || null, body.name, body.emoji || '📦', body.image || null,
     parseInt(body.price) || 0, parseInt(body.cost) || 0, parseFloat(body.min_stock) || 0,
-    body.unit || 'cái', warehouse_id, body.category || null, body.supplier || null, body.source_url || null,
+    body.unit || 'pcs', warehouse_id, body.category || null, body.supplier || null, body.source_url || null,
     asBool(body.track_lot), asBool(body.expiry_required), JSON.stringify(normalizeUnits(body.units)));
 
   const opening = parseFloat(body.opening_stock || body.stock || 0);
@@ -213,7 +213,7 @@ export function updateSku(id, body, branch_id = 'br1') {
     intOr(body.price, cur.price),
     intOr(body.cost, cur.cost || 0),
     numberOr(body.min_stock, cur.min_stock),
-    textOr(body.unit, cur.unit || 'cái'),
+    textOr(body.unit, cur.unit || 'pcs'),
     textOr(body.warehouse_id, cur.warehouse_id || DEFAULT_WAREHOUSE.sku),
     nullableText(body.category, cur.category),
     nullableText(body.supplier, cur.supplier),
