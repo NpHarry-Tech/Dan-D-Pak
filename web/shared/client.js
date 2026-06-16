@@ -32,9 +32,9 @@ export async function requireModuleAccess(moduleKey) {
   const m = MODULES.find(x => x.key === moduleKey);
   if (!m || canOpenModule(m)) return true;
   document.body.innerHTML = `<div class="view"><div class="panel" style="max-width:520px;margin:60px auto;text-align:center">
-    <h3>Không có quyền truy cập</h3>
-    <div class="empty">Tài khoản này chưa được cấp quyền mở module ${esc(m?.label || moduleKey)}.</div>
-    <a class="btn primary" href="/" style="display:inline-flex;margin-top:12px">Về màn hình ứng dụng</a>
+    <h3>Access Denied</h3>
+    <div class="empty">This account does not have permission to open module ${esc(m?.label || moduleKey)}.</div>
+    <a class="btn primary" href="/" style="display:inline-flex;margin-top:12px">Back to app</a>
   </div></div>`;
   throw new Error('No module access: ' + moduleKey);
 }
@@ -43,13 +43,13 @@ export async function logout() {
   localStorage.removeItem('auth_token'); localStorage.removeItem('auth_user'); localStorage.removeItem('auth_perms'); location.reload();
 }
 
-const ROLE_LABEL = { owner: 'Chủ quán', manager: 'Quản lý', cashier: 'Thu ngân', kitchen: 'Bếp', warehouse: 'Thủ kho' };
+const ROLE_LABEL = { owner: 'Owner', manager: 'Manager', cashier: 'Cashier', kitchen: 'Kitchen', warehouse: 'Warehouse' };
 const DEMO_LOGIN_USERS = [
-  { id:'demo_owner', username:'owner', name:'Chủ quán', role:'owner', pin:'1234' },
-  { id:'demo_manager', username:'manager', name:'Quản lý', role:'manager', pin:'2222' },
-  { id:'demo_cashier', username:'cashier', name:'Thu ngân', role:'cashier', pin:'1111' },
-  { id:'demo_kitchen', username:'kitchen', name:'Bếp', role:'kitchen', pin:'3333' },
-  { id:'demo_warehouse', username:'warehouse', name:'Thủ kho', role:'warehouse', pin:'4444' },
+  { id:'demo_owner', username:'owner', name:'Owner', role:'owner', pin:'1234' },
+  { id:'demo_manager', username:'manager', name:'Manager', role:'manager', pin:'2222' },
+  { id:'demo_cashier', username:'cashier', name:'Cashier', role:'cashier', pin:'1111' },
+  { id:'demo_kitchen', username:'kitchen', name:'Kitchen', role:'kitchen', pin:'3333' },
+  { id:'demo_warehouse', username:'warehouse', name:'Warehouse', role:'warehouse', pin:'4444' },
 ];
 const DEMO_PERMS = {
   owner: ['*'],
@@ -61,7 +61,7 @@ const DEMO_PERMS = {
 const isDemoToken = () => (getToken() || '').startsWith('demo_');
 function demoLogin(username, pin) {
   const u = DEMO_LOGIN_USERS.find(x => x.username === String(username || '').toLowerCase());
-  if (!u || u.pin !== String(pin)) throw new Error('Sai tài khoản hoặc mã PIN');
+  if (!u || u.pin !== String(pin)) throw new Error('Wrong account or PIN');
   const user = { id:u.id, username:u.username, name:u.name, role:u.role };
   return { token:'demo_' + u.username + '_' + Date.now(), user, perms:DEMO_PERMS[u.role] || [] };
 }
@@ -107,15 +107,15 @@ export async function requireLogin() {
     ov.id = 'loginGate';
     ov.innerHTML = `
       <div class="lg-card">
-        <div class="lg-logo"><img class="lg-brand-logo" src="/assets/DanOnLogo.png" alt="DanDPak"><div class="lg-sub">Đăng nhập nhân viên</div></div>
+        <div class="lg-logo"><img class="lg-brand-logo" src="/assets/DanOnLogo.png" alt="DanDPak"><div class="lg-sub">Staff Login</div></div>
         <div class="lg-users">${users.map(u => `<button class="lg-user" data-u="${u.username}"><span class="lg-av">${(u.name||'?')[0]}</span><span><b>${u.name}</b><small>${ROLE_LABEL[u.role] || u.role}</small></span></button>`).join('')}</div>
         <div class="lg-pin" id="lgPin">
-          <button class="lg-back" id="lgBack">← Chọn lại</button>
+          <button class="lg-back" id="lgBack">← Select again</button>
           <div class="lg-who" id="lgWho"></div>
           <div class="lg-dots" id="lgDots"></div>
           <div class="lg-pad">${[1,2,3,4,5,6,7,8,9,'',0,'⌫'].map(k => k === '' ? '<span></span>' : `<button class="lg-key" data-k="${k}">${k}</button>`).join('')}</div>
         </div>
-        <div class="lg-hint">PIN demo — Chủ quán:1234 · Quản lý:2222 · Thu ngân:1111 · Bếp:3333 · Kho:4444</div>
+        <div class="lg-hint">Demo PIN — Owner:1234 · Manager:2222 · Cashier:1111 · Kitchen:3333 · Warehouse:4444</div>
       </div>`;
     document.body.appendChild(ov);
     injectLoginCss();
@@ -196,7 +196,7 @@ export function connect(device, handlers = {}) {
 function setOnline(ok) {
   document.querySelectorAll('.onlinedot').forEach(el => {
     el.classList.toggle('off', !ok);
-    const lbl = el.querySelector('span'); if (lbl) lbl.textContent = ok ? 'Online' : 'Mất kết nối';
+    const lbl = el.querySelector('span'); if (lbl) lbl.textContent = ok ? 'Online' : 'Disconnected';
   });
 }
 
@@ -219,71 +219,71 @@ export function toast(msg, isErr = false) {
 
 export function startClock(sel = '#clock') {
   const el = document.querySelector(sel); if (!el) return;
-  const tick = () => el.textContent = new Date().toLocaleTimeString('vi-VN');
+  const tick = () => el.textContent = new Date().toLocaleTimeString('en-US');
   tick(); setInterval(tick, 1000);
 }
 
 export const esc = (s) => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
-// Turn a raw audit record (action + detail) into a plain Vietnamese sentence.
-const _ROLE_VN = { owner: 'Chủ quán', manager: 'Quản lý', cashier: 'Thu ngân', kitchen: 'Bếp', warehouse: 'Thủ kho' };
+// Turn a raw audit record (action + detail) into a plain English sentence.
+const _ROLE_VN = { owner: 'Owner', manager: 'Manager', cashier: 'Cashier', kitchen: 'Kitchen', warehouse: 'Warehouse' };
 const _CHAN_VN = { grabfood: 'GrabFood', shopeefood: 'ShopeeFood', website: 'Website' };
-const _ST_VN = { received: 'đã nhận', confirmed: 'đã xác nhận', preparing: 'đang chế biến', ready: 'sẵn sàng', completed: 'hoàn tất', accepted: 'đã nhận', served: 'đã phục vụ', cancelled: 'đã hủy', new: 'mới' };
+const _ST_VN = { received: 'received', confirmed: 'confirmed', preparing: 'preparing', ready: 'ready', completed: 'completed', accepted: 'received', served: 'served', cancelled: 'cancelled', new: 'new' };
 export function describeAudit(action, detailRaw) {
   let d = {};
   try { d = typeof detailRaw === 'string' ? JSON.parse(detailRaw) : (detailRaw || {}); } catch { d = {}; }
   const src = (d.source || '').replace(/^https?:\/\//, '').split('/')[0];
   const M = {
-    'auth.login': () => 'Đăng nhập hệ thống',
-    'menu.create': () => `Tạo món mới: ${d.name || ''}`,
-    'menu.update': () => 'Cập nhật thông tin món',
-    'menu.hide': () => `Ẩn món khỏi thực đơn${d.name ? ': ' + d.name : ''}`,
-    'menu.unhide': () => `Hiện lại món${d.name ? ': ' + d.name : ''}`,
-    'menu.archive': () => `Lưu trữ món${d.name ? ': ' + d.name : ''} (đã từng có đơn)`,
-    'menu.delete': () => `Xóa món${d.name ? ': ' + d.name : ''}`,
-    'category.create': () => `Tạo danh mục: ${d.name || ''}`,
-    'category.update': () => 'Sửa danh mục',
-    'category.delete': () => `Xóa danh mục${d.name ? ': ' + d.name : ''}`,
-    'perms.update': () => `Cập nhật quyền của vai trò ${_ROLE_VN[d.role] || d.role} (${d.count} quyền)`,
-    'user.perms.update': () => `Tùy chỉnh quyền riêng cho ${d.username || ''}`,
-    'user.create': () => `Tạo người dùng ${d.username || ''} — vai trò ${_ROLE_VN[d.role] || d.role}`,
-    'user.update': () => `Cập nhật người dùng ${d.username || ''}`,
-    'user.delete': () => `Xóa người dùng ${d.username || ''}`,
-    'payment.done': () => `Thanh toán đơn — ${money(d.total)}${d.lines ? ` · ${d.lines} phương thức` : ''}`,
-    'order.send': () => `Gửi bếp ${d.items || ''} món`,
-    'order.pending': () => `Khách vừa gửi ${d.items || ''} món, đang chờ nhân viên xác nhận`,
-    'order.confirm': () => `Nhân viên đã xác nhận ${d.items || ''} món và chuyển xuống bếp/bar`,
-    'order.reject': () => `Nhân viên đã từ chối ${d.items || ''} món${d.reason ? ': ' + d.reason : ''}`,
-    'item.status': () => `Món chuyển trạng thái: ${_ST_VN[d.status] || d.status}`,
-    'item.cancel': () => `Hủy một món${d.reason ? ': ' + d.reason : ''}`,
-    'staff.call': () => `Khách gọi nhân viên${d.reason ? ': ' + d.reason : ''}`,
-    'table.move': () => `Chuyển bill từ bàn ${d.from_code || d.from || ''} sang bàn ${d.to_code || d.to || ''}`,
-    'table.merge': () => `Gộp bàn ${d.from_code || d.from || ''} vào bàn ${d.to_code || d.to || ''}`,
-    'bill.split': () => `Tách ${d.items || 0} dòng sang bill thanh toán riêng${d.table_code ? ` tại bàn ${d.table_code}` : ''}`,
-    'settings.update': () => Array.isArray(d.keys) && d.keys.includes('integrations_config') ? 'Cập nhật cấu hình kết nối dịch vụ' : (Array.isArray(d.keys) && d.keys.includes('operations_config') ? 'Cập nhật cấu hình thanh toán, QR và ca làm việc' : (Array.isArray(d.keys) && d.keys.includes('print_config') ? 'Cập nhật cấu hình hóa đơn, bill, tem nhãn và máy in' : (Array.isArray(d.keys) && d.keys.includes('ipad_staff_pin') ? 'Đổi mật khẩu mở chọn bàn trên iPad' : 'Cập nhật cài đặt hệ thống'))),
-    'shift.open': () => `Mở ${d.shift || 'ca làm việc'} với tiền đầu ca ${money(d.opening_cash || 0)}`,
-    'shift.close': () => `Kết ${d.shift || 'ca làm việc'}: doanh thu ${money(d.revenue || 0)}, tiền mặt dự kiến ${money(d.expected_cash || 0)}`,
-    'retail.refund': () => `Hoàn trả đơn bán lẻ — ${money(d.total)}${d.reason ? ` (${d.reason})` : ''}`,
-    'online.receive': () => `Nhận đơn ${_CHAN_VN[d.channel] || d.channel} ${d.ref || ''} — ${money(d.total)}`,
-    'online.status': () => `Đơn online chuyển sang: ${_ST_VN[d.status] || d.status}`,
-    'invoice.issue': () => `Phát hành hóa đơn điện tử ${d.invoice_no || ''}`,
-    'invoice.cancel': () => `Hủy hóa đơn ${d.invoice_no || ''}${d.reason ? ` (${d.reason})` : ''}`,
-    'print.reprint': () => 'In lại phiếu',
-    'warehouse.create': () => `Tạo kho: ${d.name || ''}`,
-    'warehouse.update': () => `Cập nhật kho: ${d.name || ''}`,
-    'sku.create': () => 'Tạo sản phẩm bán lẻ',
-    'sku.update': () => 'Cập nhật sản phẩm bán lẻ',
-    'sku.delete': () => 'Xóa sản phẩm bán lẻ',
-    'sku.receive': () => `Nhập kho bán lẻ +${d.qty || ''}${d.lot ? ` (lô ${d.lot})` : ''}`,
-    'sku.issue': () => `Xuất kho bán lẻ ${d.qty || ''}`,
-    'inventory.item.create': () => 'Tạo nguyên liệu / vật dụng kho',
-    'inventory.item.update': () => 'Cập nhật mặt hàng kho',
-    'inventory.item.delete': () => 'Xóa mặt hàng kho',
-    'inventory.receive': () => `Nhập kho bếp +${d.qty || ''}${d.lot ? ` (lô ${d.lot})` : ''}`,
-    'inventory.issue': () => `Xuất kho bếp ${d.qty || ''}`,
-    'stock.transfer': () => `Chuyển kho ${d.qty || ''} mặt hàng${d.from ? ` từ ${d.from}` : ''}${d.to ? ` sang ${d.to}` : ''}`,
-    'stocktake.approve': () => `Chốt kiểm kho — ${d.changed || 0} mặt hàng điều chỉnh`,
-    'bcm.import': () => `Nhập dữ liệu BCM: ${d.skus || 0} sản phẩm${src ? ` từ ${src}` : ''}`,
+    'auth.login': () => 'System login',
+    'menu.create': () => `Created new item: ${d.name || ''}`,
+    'menu.update': () => 'Updated item info',
+    'menu.hide': () => `Hidden item from menu${d.name ? ': ' + d.name : ''}`,
+    'menu.unhide': () => `Showed item again${d.name ? ': ' + d.name : ''}`,
+    'menu.archive': () => `Archived item${d.name ? ': ' + d.name : ''} (had previous orders)`,
+    'menu.delete': () => `Deleted item${d.name ? ': ' + d.name : ''}`,
+    'category.create': () => `Created category: ${d.name || ''}`,
+    'category.update': () => 'Updated category',
+    'category.delete': () => `Deleted category${d.name ? ': ' + d.name : ''}`,
+    'perms.update': () => `Updated permissions for role ${_ROLE_VN[d.role] || d.role} (${d.count} permissions)`,
+    'user.perms.update': () => `Customized individual permissions for ${d.username || ''}`,
+    'user.create': () => `Created user ${d.username || ''} — role ${_ROLE_VN[d.role] || d.role}`,
+    'user.update': () => `Updated user ${d.username || ''}`,
+    'user.delete': () => `Deleted user ${d.username || ''}`,
+    'payment.done': () => `Payment completed — ${money(d.total)}${d.lines ? ` · ${d.lines} methods` : ''}`,
+    'order.send': () => `Sent to kitchen ${d.items || ''} items`,
+    'order.pending': () => `Customer sent ${d.items || ''} items, awaiting staff confirmation`,
+    'order.confirm': () => `Staff confirmed ${d.items || ''} items and sent to kitchen/bar`,
+    'order.reject': () => `Staff rejected ${d.items || ''} items${d.reason ? ': ' + d.reason : ''}`,
+    'item.status': () => `Item status changed: ${_ST_VN[d.status] || d.status}`,
+    'item.cancel': () => `Cancelled item${d.reason ? ': ' + d.reason : ''}`,
+    'staff.call': () => `Customer called staff${d.reason ? ': ' + d.reason : ''}`,
+    'table.move': () => `Moved bill from table ${d.from_code || d.from || ''} to table ${d.to_code || d.to || ''}`,
+    'table.merge': () => `Merged table ${d.from_code || d.from || ''} into table ${d.to_code || d.to || ''}`,
+    'bill.split': () => `Split ${d.items || 0} lines to separate payment bill${d.table_code ? ` at table ${d.table_code}` : ''}`,
+    'settings.update': () => Array.isArray(d.keys) && d.keys.includes('integrations_config') ? 'Updated service connection configuration' : (Array.isArray(d.keys) && d.keys.includes('operations_config') ? 'Updated payment, QR and shift configuration' : (Array.isArray(d.keys) && d.keys.includes('print_config') ? 'Updated invoice, bill, label and printer configuration' : (Array.isArray(d.keys) && d.keys.includes('ipad_staff_pin') ? 'Changed iPad table selection password' : 'Updated system settings'))),
+    'shift.open': () => `Opened ${d.shift || 'work shift'} with opening cash ${money(d.opening_cash || 0)}`,
+    'shift.close': () => `Closed ${d.shift || 'work shift'}: revenue ${money(d.revenue || 0)}, expected cash ${money(d.expected_cash || 0)}`,
+    'retail.refund': () => `Retail order refund — ${money(d.total)}${d.reason ? ` (${d.reason})` : ''}`,
+    'online.receive': () => `Received ${_CHAN_VN[d.channel] || d.channel} order ${d.ref || ''} — ${money(d.total)}`,
+    'online.status': () => `Online order status changed to: ${_ST_VN[d.status] || d.status}`,
+    'invoice.issue': () => `Issued e-invoice ${d.invoice_no || ''}`,
+    'invoice.cancel': () => `Cancelled invoice ${d.invoice_no || ''}${d.reason ? ` (${d.reason})` : ''}`,
+    'print.reprint': () => 'Reprinted ticket',
+    'warehouse.create': () => `Created warehouse: ${d.name || ''}`,
+    'warehouse.update': () => `Updated warehouse: ${d.name || ''}`,
+    'sku.create': () => 'Created retail product',
+    'sku.update': () => 'Updated retail product',
+    'sku.delete': () => 'Deleted retail product',
+    'sku.receive': () => `Received retail stock +${d.qty || ''}${d.lot ? ` (lot ${d.lot})` : ''}`,
+    'sku.issue': () => `Issued retail stock ${d.qty || ''}`,
+    'inventory.item.create': () => 'Created ingredient / warehouse item',
+    'inventory.item.update': () => 'Updated warehouse item',
+    'inventory.item.delete': () => 'Deleted warehouse item',
+    'inventory.receive': () => `Received kitchen stock +${d.qty || ''}${d.lot ? ` (lot ${d.lot})` : ''}`,
+    'inventory.issue': () => `Issued kitchen stock ${d.qty || ''}`,
+    'stock.transfer': () => `Transferred ${d.qty || ''} items${d.from ? ` from ${d.from}` : ''}${d.to ? ` to ${d.to}` : ''}`,
+    'stocktake.approve': () => `Approved stocktake — ${d.changed || 0} items adjusted`,
+    'bcm.import': () => `Imported BCM data: ${d.skus || 0} products${src ? ` from ${src}` : ''}`,
   };
   return M[action] ? M[action]() : action.replace(/\./g, ' › ');
 }
@@ -309,7 +309,7 @@ export function topbar(active) {
   </header>`;
 }
 
-const ROLE_LABEL2 = { owner: 'Chủ quán', manager: 'Quản lý', cashier: 'Thu ngân', kitchen: 'Bếp', warehouse: 'Thủ kho' };
+const ROLE_LABEL2 = { owner: 'Owner', manager: 'Manager', cashier: 'Cashier', kitchen: 'Kitchen', warehouse: 'Warehouse' };
 export function renderUserChip() {
   if (_activeTopbar && document.getElementById('top')) {
     document.getElementById('top').innerHTML = topbar(_activeTopbar);
@@ -317,6 +317,6 @@ export function renderUserChip() {
   const el = document.getElementById('userchip'); const u = getUser(); if (!el || !u) return;
   el.innerHTML = `<span style="display:inline-flex;align-items:center;gap:7px;background:var(--surface2);border:1px solid var(--border2);border-radius:99px;padding:4px 6px 4px 11px;font-size:12px;font-weight:600">
     👤 ${u.name} <small style="color:var(--muted)">· ${ROLE_LABEL2[u.role] || u.role}</small>
-    <button id="logoutBtn" style="background:var(--surface3);border-radius:99px;width:22px;height:22px;color:var(--muted)" title="Đăng xuất">⏻</button></span>`;
+    <button id="logoutBtn" style="background:var(--surface3);border-radius:99px;width:22px;height:22px;color:var(--muted)" title="Logout">⏻</button></span>`;
   document.getElementById('logoutBtn').onclick = () => logout();
 }
