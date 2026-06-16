@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="vi"><head>
+<html lang="en"><head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>POS — Cashier</title>
 <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
@@ -105,7 +105,7 @@
 .pay-modal .mfoot{position:sticky;bottom:-20px;background:var(--surface);padding-top:12px}
 @media(max-width:980px){.poswrap{gap:12px}.billpane{min-height:56vh}.viewhead .right{width:100%;justify-content:flex-start}.pendingbell{min-width:48px}.tablegrid{grid-template-columns:repeat(auto-fill,minmax(104px,1fr))}.confirm-shell{grid-template-columns:150px minmax(0,1fr);height:min(72vh,620px)}}
 @media(max-width:720px){.confirm-shell{grid-template-columns:1fr;height:min(76vh,660px)}.confirm-tabs{flex-direction:row;overflow-x:auto;min-height:86px}.confirm-tab{min-width:136px}.confirm-footer{grid-template-columns:1fr}.confirm-footer .btn{width:100%}.shift-box{grid-template-columns:1fr}.pay-grid{grid-template-columns:1fr}.pay-qr{grid-template-columns:1fr}.pay-qr img{margin:auto}.pay-methods{grid-template-columns:1fr}}
-/* Promo picker — đồng bộ với retail */
+/* Promo picker — sync with retail */
 .promo-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px;margin:14px 0}
 .promo-card{border:2px solid var(--border);border-radius:14px;padding:14px 16px;cursor:pointer;transition:.15s;background:var(--surface2);position:relative;display:flex;flex-direction:column;gap:6px}
 .promo-card:hover{border-color:var(--brand);box-shadow:0 4px 16px rgba(8,145,178,.14)}
@@ -141,15 +141,15 @@
     <h1>💳 POS Cashier</h1>
     <div class="sub" id="callsHint"></div>
     <div class="right">
-      <button class="btn sm pendingbell" id="pendingBell" title="Món khách vừa gọi">🔔<span class="n" id="pendingBadge" style="display:none">0</span></button>
-      <button class="btn sm shiftbtn closed" id="shiftBtn" title="Mở / kết ca">Ca: chưa mở</button>
+      <button class="btn sm pendingbell" id="pendingBell" title="Items customers just ordered">🔔<span class="n" id="pendingBadge" style="display:none">0</span></button>
+      <button class="btn sm shiftbtn closed" id="shiftBtn" title="Open / close shift">Shift: not open</button>
       <span id="histMount"></span>
-      <span class="chip c-muted" id="openCount">0 bàn mở</span>
+      <span class="chip c-muted" id="openCount">0 tables open</span>
     </div>
   </div>
   <div class="poswrap">
     <div class="posleft" id="floor"></div>
-    <div class="billpane" id="bill"><div class="empty" style="margin:auto">Chọn một bàn để xem bill</div></div>
+    <div class="billpane" id="bill"><div class="empty" style="margin:auto">Select a table to view the bill</div></div>
   </div>
 </div>
 
@@ -159,44 +159,44 @@ import { mountOrderHistory } from '/shared/orderHistory.js';
 import { perkTag, perkAmount, openCustomerPicker } from '/shared/customer.js';
 document.getElementById('top').innerHTML = topbar('pos');
 await requireModuleAccess('pos'); renderUserChip();
-mountOrderHistory('#histMount');  // xem lại đơn cũ + in lại hóa đơn
+mountOrderHistory('#histMount');  // view old orders + reprint invoices
 
 let tables=[], sel=null, order=null, calls=[], pendingConfirms=[], printConfig={}, operationsConfig=null, shiftState=null;
-let customers=[]; const orderCust={}; // khách hàng gắn theo từng bill (order id)
-const orderPromo={}; // CTKM đang áp cho từng order (chỉ 1 / bill)
-const BUY_X=5; // mua 5 tặng 1 cùng loại
+let customers=[]; const orderCust={}; // customer attached to each bill (order id)
+const orderPromo={}; // active promotion for each order (only 1 per bill)
+const BUY_X=5; // buy 5 get 1 free of same item
 function buy5get1Free(qty){ return Math.floor((qty||0)/(BUY_X+1)); }
 function buy5get1AmountForOrder(o){ return (o?.items||[]).filter(i=>i.status!=='cancelled').reduce((s,i)=>s+buy5get1Free(i.qty)*(i.unit_price||0),0); }
 
-// Xây danh sách CTKM cho 1 order cụ thể
+// Build promotion list for a specific order
 function buildOrderPromoList(o, customer){
   const subtotal = o.subtotal || 0;
   const list = [];
-  // 1. Mua 5 tặng 1
+  // 1. Buy 5 Get 1 Free
   const buy5 = buy5get1AmountForOrder(o);
   if(buy5 > 0) list.push({
-    key:'buy5get1', icon:'🎁', name:'Mua 5 Tặng 1',
-    desc:`Mua đủ ${BUY_X} món cùng loại, món thứ ${BUY_X+1} được tặng miễn phí.`,
+    key:'buy5get1', icon:'🎁', name:'Buy 5 Get 1 Free',
+    desc:`Buy ${BUY_X} of the same item, get the ${BUY_X+1}th free.`,
     tag:`-${money(buy5)}`, amount: buy5,
   });
-  // 2. Ưu đãi khách hàng
+  // 2. Customer perk
   if(customer && customer.perk_type && customer.perk_type !== 'none'){
     const pa = perkAmount(customer, subtotal);
     if(pa > 0) list.push({
-      key:'customer_perk', icon:'👤', name:`Ưu đãi khách — ${customer.name}`,
-      desc: customer.perk_type==='free'?'Miễn phí 100%'
-        : customer.perk_type==='pct'?`Giảm ${customer.perk_value}% toàn bill`
-        : `Giảm ${money(customer.perk_value)}`,
+      key:'customer_perk', icon:'👤', name:`Customer perk — ${customer.name}`,
+      desc: customer.perk_type==='free'?'100% free'
+        : customer.perk_type==='pct'?`${customer.perk_value}% off entire bill`
+        : `Discount ${money(customer.perk_value)}`,
       tag: customer.perk_type==='free'?'FREE 100%'
         : customer.perk_type==='pct'?`-${customer.perk_value}%`
         : `-${money(customer.perk_value)}`,
       amount: pa,
     });
   }
-  // 3. Giảm % nhanh
+  // 3. Quick % discounts
   [5,10].forEach(pct=>{
     const amt = Math.round(subtotal * pct / 100);
-    if(amt > 0) list.push({ key:`p${pct}`, icon:'💰', name:`Giảm ${pct}%`, desc:`Giảm ${pct}% tạm tính`, tag:`-${pct}%`, amount: amt });
+    if(amt > 0) list.push({ key:`p${pct}`, icon:'💰', name:`${pct}% Off`, desc:`${pct}% off subtotal`, tag:`-${pct}%`, amount: amt });
   });
   return list;
 }
@@ -208,8 +208,8 @@ function openOrderPromoPicker(o, customer, currentDisc, onPicked){
   function draw(){
     const curKey = orderPromo[o.id]?.key || null;
     ov2.innerHTML=`<div class="modal" style="max-width:560px">
-      <h2>🎁 Chọn chương trình khuyến mãi</h2>
-      <div class="sub">Mỗi hóa đơn chỉ áp 1 CTKM. Chạm để chọn hoặc bỏ chọn.</div>
+      <h2>🎁 Select promotion</h2>
+      <div class="sub">Only one promotion per bill. Tap to select or deselect.</div>
       <div class="promo-grid">
         ${promos.map(p=>{
           const isActive = curKey === p.key;
@@ -218,28 +218,28 @@ function openOrderPromoPicker(o, customer, currentDisc, onPicked){
             <div class="pc-name">${esc(p.name)}</div>
             <div class="pc-desc">${esc(p.desc)}</div>
             <div class="pc-tag">${esc(p.tag)}</div>
-            ${isActive?'<div style="font-size:11px;color:var(--done);font-weight:700;margin-top:4px">✓ Đang áp dụng</div>':''}
+            ${isActive?'<div style="font-size:11px;color:var(--done);font-weight:700;margin-top:4px">✓ Currently applied</div>':''}
           </div>`;
         }).join('')}
         <div class="promo-card" data-pk="__manual">
           <div class="pc-icon">✏️</div>
-          <div class="pc-name">Giảm giá thủ công</div>
-          <div class="pc-desc">Nhập số tiền giảm tùy ý</div>
-          <div class="pc-tag">${curKey==='__manual'&&currentDisc>0?`-${money(currentDisc)}`:'nhập số'}</div>
+          <div class="pc-name">Manual discount</div>
+          <div class="pc-desc">Enter a custom discount amount</div>
+          <div class="pc-tag">${curKey==='__manual'&&currentDisc>0?`-${money(currentDisc)}`:'enter amount'}</div>
         </div>
       </div>
       <div class="promo-none ${!curKey?'active':''}" id="promoNone">
         <span style="font-size:20px">🚫</span>
-        <span>${curKey?'Bỏ tất cả khuyến mãi':'Không áp khuyến mãi (đang chọn)'}</span>
+        <span>${curKey?'Remove all promotions':'No promotion applied (current)'}</span>
       </div>
-      <div class="mfoot"><button class="btn primary" id="pmClose">Xong</button></div>
+      <div class="mfoot"><button class="btn primary" id="pmClose">Done</button></div>
     </div>`;
     ov2.querySelectorAll('[data-pk]').forEach(el=>el.onclick=()=>{
       const key = el.dataset.pk;
       if(key==='__manual'){
-        const v=prompt('Nhập số tiền giảm (VND):',String(currentDisc||0)); if(v===null) return;
+        const v=prompt('Enter discount amount:',String(currentDisc||0)); if(v===null) return;
         const amt=Math.max(0,parseInt(v)||0);
-        orderPromo[o.id] = {key:'__manual',icon:'✏️',name:'Giảm tay',amount:amt};
+        orderPromo[o.id] = {key:'__manual',icon:'✏️',name:'Manual discount',amount:amt};
         onPicked(amt); ov2.remove(); return;
       }
       const p = promos.find(x=>x.key===key);
@@ -293,16 +293,16 @@ async function refreshPrintConfig(){ printConfig=mergePrintConfig(await api('/pr
 function fallbackOperations(){
   return {
     payment:{bankName:'Vietcombank',bankCode:'VCB',bankAccount:'0123456789',accountName:'DAN D PAK',transferPrefix:'DANBILL',posTerminalName:'POS May 1',methods:[
-      {key:'cash',label:'Tiền mặt',enabled:true,kind:'cash'},
+      {key:'cash',label:'Cash',enabled:true,kind:'cash'},
       {key:'internet_banking',label:'Internet Banking',enabled:true,kind:'qr'},
       {key:'qrcode',label:'QR Code',enabled:true,kind:'qr'},
-      {key:'card',label:'Máy POS',enabled:true,kind:'pos'},
+      {key:'card',label:'POS Machine',enabled:true,kind:'pos'},
       {key:'visa',label:'Visa',enabled:true,kind:'pos'},
       {key:'momo',label:'MoMo Pay',enabled:false,kind:'wallet'},
       {key:'zalopay',label:'ZaloPay',enabled:false,kind:'wallet'},
       {key:'voucher',label:'Voucher',enabled:true,kind:'voucher'},
     ]},
-    shifts:{labels:[{key:'morning',label:'Ca sáng',enabled:true},{key:'evening',label:'Ca tối',enabled:true}],denominations:[500000,200000,100000,50000,20000,10000,5000,2000,1000],requireOpenShift:true},
+    shifts:{labels:[{key:'morning',label:'Morning shift',enabled:true},{key:'evening',label:'Evening shift',enabled:true}],denominations:[500000,200000,100000,50000,20000,10000,5000,2000,1000],requireOpenShift:true},
   };
 }
 function mergeOperations(remote){
@@ -318,14 +318,14 @@ function renderShiftButton(){
   const b=document.getElementById('shiftBtn'); if(!b) return;
   const sh=shiftState?.shift;
   b.classList.toggle('open',!!sh); b.classList.toggle('closed',!sh);
-  b.textContent=sh?`Ca: ${sh.shift_label||'đang mở'}`:'Ca: chưa mở';
+  b.textContent=sh?`Shift: ${sh.shift_label||'open'}`:'Shift: not open';
 }
 function shiftRequired(){ return operationsConfig?.shifts?.requireOpenShift !== false; }
 function salesLocked(){ return shiftRequired() && !shiftState?.shift; }
 async function ensureShiftOpen(afterOpen){
   await refreshOperations(); await refreshShift();
   if(!salesLocked()) return true;
-  toast('Cần mở ca làm việc trước khi bán hàng.', true);
+  toast('Please open a shift before making sales.', true);
   openShiftPanel({afterOpen});
   return false;
 }
@@ -354,21 +354,21 @@ function denominationsHtml(counts={}){
 }
 function countCash(ov){ return [...ov.querySelectorAll('[data-denom]')].reduce((s,i)=>s+(parseInt(i.dataset.denom)||0)*(parseInt(i.value)||0),0); }
 function reportHtml(r, day=null){
-  if(!r) return '<div class="empty">Chưa có dữ liệu ca.</div>';
+  if(!r) return '<div class="empty">No shift data yet.</div>';
   const lines=Object.entries(r.method_totals||{}).map(([k,v])=>`<div class="brow"><span>${esc(methodLabel(k))}</span><span>${money(v)}</span></div>`).join('');
   const dayBox=day?`<div class="shift-report" style="margin-top:12px">
-    <div class="brow tt"><span>Tổng ngày vận hành</span><span>${money(day.total_revenue||0)}</span></div>
-    <div class="brow"><span>Số bill trong ngày</span><span>${day.bill_count||0}</span></div>
-    <div class="brow"><span>Tiền mặt trong ngày</span><span>${money(day.cash_sales||0)}</span></div>
-    <div class="brow"><span>Chuyển khoản / ví trong ngày</span><span>${money(day.transfer_sales||0)}</span></div>
-    <div class="brow"><span>Máy POS / thẻ trong ngày</span><span>${money(day.pos_sales||0)}</span></div>
+    <div class="brow tt"><span>Total daily revenue</span><span>${money(day.total_revenue||0)}</span></div>
+    <div class="brow"><span>Bills today</span><span>${day.bill_count||0}</span></div>
+    <div class="brow"><span>Cash today</span><span>${money(day.cash_sales||0)}</span></div>
+    <div class="brow"><span>Bank transfer / wallet today</span><span>${money(day.transfer_sales||0)}</span></div>
+    <div class="brow"><span>POS machine / card today</span><span>${money(day.pos_sales||0)}</span></div>
   </div>`:'';
   return `<div class="shift-report">
-    <div class="brow"><span>Số bill</span><span>${r.bill_count||0}</span></div>
-    <div class="brow"><span>Tiền mặt bán hàng</span><span>${money(r.cash_sales||0)}</span></div>
-    <div class="brow"><span>Chuyển khoản / ví</span><span>${money(r.transfer_sales||0)}</span></div>
-    <div class="brow"><span>Máy POS / thẻ</span><span>${money(r.pos_sales||0)}</span></div>
-    <div class="brow tt"><span>Tiền mặt dự kiến</span><span>${money(r.expected_cash||0)}</span></div>
+    <div class="brow"><span>Bills</span><span>${r.bill_count||0}</span></div>
+    <div class="brow"><span>Cash sales</span><span>${money(r.cash_sales||0)}</span></div>
+    <div class="brow"><span>Bank transfer / wallet</span><span>${money(r.transfer_sales||0)}</span></div>
+    <div class="brow"><span>POS machine / card</span><span>${money(r.pos_sales||0)}</span></div>
+    <div class="brow tt"><span>Expected cash</span><span>${money(r.expected_cash||0)}</span></div>
     ${lines?`<hr style="border:none;border-top:1px dashed var(--border);margin:8px 0">${lines}`:''}
   </div>${dayBox}`;
 }
@@ -380,7 +380,7 @@ function renderFloor(){
     <div class="tablegrid">${tables.filter(t=>t.zone===z).map(tcard).join('')}</div>`).join('');
   document.querySelectorAll('.tcard').forEach(c=>c.onclick=()=>loadBill(c.dataset.t));
   const open=tables.filter(t=>t.status!=='free').length;
-  document.getElementById('openCount').textContent=open+' bàn mở';
+  document.getElementById('openCount').textContent=open+' tables open';
 }
 function tcard(t){
   const pc=pendingConfirms.find(g=>g.table_id===t.id);
@@ -389,7 +389,7 @@ function tcard(t){
   return `<div class="tcard ${cls} ${sel===t.id?'sel':''}" data-t="${t.id}">
     ${flag?`<span class="flag">${flag}</span>`:''}
     <b>${t.code}</b>
-    <div class="st">${pc?`${pc.item_count} món chờ xác nhận`:t.status==='free'?'Trống':t.status==='paying'?'Chờ thu ngân':t.status==='calling'?'Đang gọi':'Đang dùng'}</div>
+    <div class="st">${pc?`${pc.item_count} items pending confirmation`:t.status==='free'?'Available':t.status==='paying'?'Awaiting cashier':t.status==='calling'?'Calling':'Occupied'}</div>
     ${t.amount?`<div class="amt">${money(t.amount)}</div>`:''}
   </div>`;
 }
@@ -400,11 +400,11 @@ function renderPendingBell(){
   btn.classList.toggle('hot', total>0);
   badge.style.display=total?'flex':'none';
   badge.textContent=total;
-  btn.title=total?`${total} món chờ xác nhận`:'Không có món chờ xác nhận';
+  btn.title=total?`${total} items pending confirmation`:'No items pending confirmation';
 }
 function renderCalls(){
   const el=document.getElementById('callsHint');
-  el.innerHTML = calls.length? `<span class="chip c-late">🔔 ${calls.length} bàn đang gọi: ${calls.map(c=>esc(c.table_code)+' ('+esc(c.reason)+')').join(', ')}</span>`:'';
+  el.innerHTML = calls.length? `<span class="chip c-late">🔔 ${calls.length} tables calling: ${calls.map(c=>esc(c.table_code)+' ('+esc(c.reason)+')').join(', ')}</span>`:'';
 }
 
 async function loadBill(tid){
@@ -412,12 +412,12 @@ async function loadBill(tid){
 }
 function renderBill(table,o){
   const bp=document.getElementById('bill');
-  if(!o){ bp.innerHTML=`<div class="bh"><b>🪑 Bàn ${esc(table.code)}</b><span class="chip c-muted">Trống</span></div>
+  if(!o){ bp.innerHTML=`<div class="bh"><b>🪑 Table ${esc(table.code)}</b><span class="chip c-muted">Available</span></div>
     <div class="billops">
-      <button class="btn" id="addMenuBtn">➕ Thêm món FnB</button>
-      <button class="btn" id="addRetailBtn">🛒 Thêm retail</button>
+      <button class="btn" id="addMenuBtn">➕ Add FnB item</button>
+      <button class="btn" id="addRetailBtn">🛒 Add retail</button>
     </div>
-    <div class="empty" style="margin:auto">Bàn chưa có order.<br>Khách order từ iPad sẽ hiện ở đây.</div>`;
+    <div class="empty" style="margin:auto">Table has no order.<br>Customer orders from iPad will appear here.</div>`;
     if(table.call) bp.querySelector('.empty').insertAdjacentHTML('beforebegin',callBar(table));
     bindBillButtons(table,o); return; }
 
@@ -429,7 +429,7 @@ function renderBill(table,o){
       orderPromo[o.id] = {
         key: 'customer_perk',
         icon: '👤',
-        name: `Ưu đãi khách — ${customer.name}`,
+        name: `Customer perk — ${customer.name}`,
         amount: pa
       };
     }
@@ -456,35 +456,35 @@ function renderBill(table,o){
   const items=o.items.filter(i=>i.status!=='cancelled');
   const hasPending=items.some(i=>i.status==='pending_confirm');
   bp.innerHTML=`
-    <div class="bh"><b>🪑 Bàn ${esc(table.code)}</b><span class="chip c-muted">#${esc(o.bill_no||o.id.slice(-6).toUpperCase())}</span>
-      <span style="margin-left:auto" class="chip ${o.status==='open'?'c-doing':'c-done'}">${o.status==='open'?'Đang mở':'Đã thanh toán'}</span></div>
+    <div class="bh"><b>🪑 Table ${esc(table.code)}</b><span class="chip c-muted">#${esc(o.bill_no||o.id.slice(-6).toUpperCase())}</span>
+      <span style="margin-left:auto" class="chip ${o.status==='open'?'c-doing':'c-done'}">${o.status==='open'?'Open':'Paid'}</span></div>
     ${table.call?callBar(table):''}
-    ${hasPending?`<div class="pending-note">🔔 Bill này có món khách vừa gọi đang chờ nhân viên xác nhận trước khi chuyển xuống bếp/bar.</div>`:''}
+    ${hasPending?`<div class="pending-note">🔔 This bill has items the customer just ordered, awaiting staff confirmation before sending to kitchen/bar.</div>`:''}
     <div class="billops">
-      <button class="btn" id="addMenuBtn">➕ Thêm món FnB</button>
-      <button class="btn" id="addRetailBtn">🛒 Thêm retail</button>
-      <button class="btn" id="moveTableBtn">↪ Chuyển bàn</button>
-      <button class="btn" id="mergeTableBtn">⇄ Gộp bàn</button>
-      <button class="btn wide" id="splitBillBtn">✂ Tách bill / thanh toán riêng</button>
+      <button class="btn" id="addMenuBtn">➕ Add FnB item</button>
+      <button class="btn" id="addRetailBtn">🛒 Add retail</button>
+      <button class="btn" id="moveTableBtn">↪ Move table</button>
+      <button class="btn" id="mergeTableBtn">⇄ Merge table</button>
+      <button class="btn wide" id="splitBillBtn">✂ Split bill / separate payment</button>
     </div>
     <div class="billitems">${items.map(bitem).join('')}</div>
     <div class="billfoot">
-      ${(()=>{const c=orderCust[o.id];return `<div class="custline"><span>👤 <b>${c?esc(c.name)+esc(perkTag(c)):'Khách lẻ'}</b></span><button class="btn sm" id="custBtn">${c?'Đổi khách':'Chọn khách'}</button></div>`;})()}
-      <div class="brow"><span>Tạm tính</span><span>${money(o.subtotal)}</span></div>
-      ${buy5get1AmountForOrder(o)?`<div class="brow"><span>🎁 Mua 5 tặng 1 (gợi ý)</span><span style="color:var(--doing)">-${money(buy5get1AmountForOrder(o))}</span></div>`:''}
-      ${o.discount?`<div class="brow"><span>Giảm giá</span><span style="color:var(--late)">-${money(o.discount)}</span></div>`:''}
-      <div class="brow tt"><span>Tổng cộng</span><span>${money(o.total)}</span></div>
+      ${(()=>{const c=orderCust[o.id];return `<div class="custline"><span>👤 <b>${c?esc(c.name)+esc(perkTag(c)):'Walk-in customer'}</b></span><button class="btn sm" id="custBtn">${c?'Change customer':'Select customer'}</button></div>`;})()}
+      <div class="brow"><span>Subtotal</span><span>${money(o.subtotal)}</span></div>
+      ${buy5get1AmountForOrder(o)?`<div class="brow"><span>🎁 Buy 5 Get 1 (suggested)</span><span style="color:var(--doing)">-${money(buy5get1AmountForOrder(o))}</span></div>`:''}
+      ${o.discount?`<div class="brow"><span>Discount</span><span style="color:var(--late)">-${money(o.discount)}</span></div>`:''}
+      <div class="brow tt"><span>Total</span><span>${money(o.total)}</span></div>
       <div class="billbtns">
-        ${hasPending?`<button class="btn primary" id="sendBtn" style="grid-column:1/-1;padding:12px;background:var(--brand);margin-bottom:8px">🔥 Gửi món vô bếp</button>`:''}
-        <button class="btn" id="discBtn">% Giảm giá</button>
-        <button class="btn" id="printBtn">🧾 In tạm tính</button>
-        <button class="btn primary" id="payBtn" style="grid-column:1/-1;padding:12px" ${hasPending?'disabled':''}>Thanh toán · ${money(o.total)}</button>
+        ${hasPending?`<button class="btn primary" id="sendBtn" style="grid-column:1/-1;padding:12px;background:var(--brand);margin-bottom:8px">🔥 Send items to kitchen</button>`:''}
+        <button class="btn" id="discBtn">% Discount</button>
+        <button class="btn" id="printBtn">🧾 Print subtotal</button>
+        <button class="btn primary" id="payBtn" style="grid-column:1/-1;padding:12px" ${hasPending?'disabled':''}>Pay · ${money(o.total)}</button>
       </div>
     </div>`;
   bindBillButtons(table,o);
 }
-function callBar(table){return `<div class="callbar" style="margin:12px">🔔 Khách bàn ${esc(table.code)} đang gọi: <b>${esc(table.call)}</b>
-  <button class="btn sm" id="resolveCall" style="margin-left:auto">Đã xử lý</button></div>`;}
+function callBar(table){return `<div class="callbar" style="margin:12px">🔔 Customer at table ${esc(table.code)} is calling: <b>${esc(table.call)}</b>
+  <button class="btn sm" id="resolveCall" style="margin-left:auto">Resolved</button></div>`;}
 function bitem(i){
   const mod=(i.mods||[]).map(m=>m.name).join(', ');
   const isPending = i.status === 'pending_confirm';
@@ -493,10 +493,10 @@ function bitem(i){
       <div class="r1"><span>${i.qty}× ${esc(i.name)}</span><span class="p">${money(i.unit_price*i.qty)}</span></div>
       <div class="meta">${statusChip(i.status)}${mod?`<span>+ ${esc(mod)}</span>`:''}${i.note?`<span style="color:var(--doing)">📝 ${esc(i.note)}</span>`:''}</div>
     </div>
-    <button class="x-btn ${isPending ? 'warn' : 'danger'}" data-cancel-item-id="${i.id}" title="${isPending ? 'Xóa món nháp' : 'Hủy món'}">✕</button>
+    <button class="x-btn ${isPending ? 'warn' : 'danger'}" data-cancel-item-id="${i.id}" title="${isPending ? 'Remove draft item' : 'Cancel item'}">✕</button>
   </div>`;
 }
-function statusChip(s){const m={pending_confirm:['c-doing','Chờ xác nhận'],new:['c-new','Chờ bếp'],accepted:['c-doing','Đã nhận'],preparing:['c-doing','Đang làm'],ready:['c-done','Sẵn sàng'],served:['c-muted','Đã phục vụ']}[s];return m?`<span class="chip ${m[0]}">${m[1]}</span>`:'';}
+function statusChip(s){const m={pending_confirm:['c-doing','Pending confirmation'],new:['c-new','Waiting kitchen'],accepted:['c-doing','Accepted'],preparing:['c-doing','In progress'],ready:['c-done','Ready'],served:['c-muted','Served']}[s];return m?`<span class="chip ${m[0]}">${m[1]}</span>`:'';}
 
 async function openShiftPanel({afterOpen}={}){
   await refreshOperations(); await refreshShift();
@@ -504,25 +504,25 @@ async function openShiftPanel({afterOpen}={}){
   const labels=(cfg.shifts.labels||[]).filter(x=>x.enabled!==false);
   const user=getUser();
   const ov=document.createElement('div'); ov.className='overlay show';
-  const title=sh?'Ca đang mở':'Mở ca làm việc';
+  const title=sh?'Shift in progress':'Open shift';
   ov.innerHTML=`<div class="modal" style="max-width:860px">
     <h2>🧾 ${title}</h2>
-    <div class="sub">${sh?`Nhân viên ${esc(sh.user_name||'')} mở ${esc(sh.shift_label||'ca')} lúc ${new Date(sh.opened_at).toLocaleString('vi-VN')}`:`Đăng nhập: ${esc(user?.name||user?.username||'Nhân viên')}. Kiểm đếm tiền mặt đầu ca trước khi bán hàng.`}</div>
+    <div class="sub">${sh?`Staff ${esc(sh.user_name||'')} opened ${esc(sh.shift_label||'shift')} at ${new Date(sh.opened_at).toLocaleString('en-US')}`:`Logged in: ${esc(user?.name||user?.username||'Staff')}. Count cash before starting sales.`}</div>
     <div class="shift-box">
       <div class="shift-card">
-        <h3>${sh?'Kiểm đếm khi kết ca':'Kiểm đếm đầu ca'}</h3>
-        <label>Ca làm việc</label>
+        <h3>${sh?'Count at shift close':'Count at shift open'}</h3>
+        <label>Shift</label>
         <select id="shiftKey">${labels.map(x=>`<option value="${esc(x.key)}" ${x.key===(sh?.shift_key||'')?'selected':''}>${esc(x.label)}</option>`).join('')}</select>
-        <label style="margin-top:8px">Mệnh giá tiền mặt</label>
+        <label style="margin-top:8px">Cash denominations</label>
         ${denominationsHtml()}
-        <div class="brow tt" style="margin-top:10px"><span>Tổng kiểm đếm</span><span id="cashTotal">0đ</span></div>
+        <div class="brow tt" style="margin-top:10px"><span>Total count</span><span id="cashTotal">0</span></div>
       </div>
       <div class="shift-card">
-        <h3>Báo cáo ca</h3>
-        ${sh?reportHtml(shiftState.report, shiftState.day_report):'<div class="empty">Chưa có ca đang mở. Sau khi mở ca, doanh thu thanh toán sẽ được gom vào báo cáo tại đây.</div>'}
+        <h3>Shift report</h3>
+        ${sh?reportHtml(shiftState.report, shiftState.day_report):'<div class="empty">No shift open yet. Once a shift is open, payment revenue will be collected into the report here.</div>'}
       </div>
     </div>
-    <div class="mfoot"><button class="btn" id="shiftCancel">Đóng</button>${sh?'<button class="btn danger" id="closeShift">Kết ca</button>':'<button class="btn primary" id="openShift">Mở ca</button>'}</div>
+    <div class="mfoot"><button class="btn" id="shiftCancel">Close</button>${sh?'<button class="btn danger" id="closeShift">Close shift</button>':'<button class="btn primary" id="openShift">Open shift</button>'}</div>
   </div>`;
   document.body.appendChild(ov);
   const updateTotal=()=>{const el=ov.querySelector('#cashTotal'); if(el) el.textContent=money(countCash(ov));};
@@ -531,14 +531,14 @@ async function openShiftPanel({afterOpen}={}){
   const open=ov.querySelector('#openShift');
   if(open) open.onclick=async()=>{
     const counts=Object.fromEntries([...ov.querySelectorAll('[data-denom]')].map(i=>[i.dataset.denom,parseInt(i.value)||0]));
-    try{ await api('/shifts/open',{method:'POST',body:{shift_key:ov.querySelector('#shiftKey').value,counts,opening_cash:countCash(ov)}}); await refreshShift(); ov.remove(); toast('Đã mở ca'); if(afterOpen) afterOpen(); }
+    try{ await api('/shifts/open',{method:'POST',body:{shift_key:ov.querySelector('#shiftKey').value,counts,opening_cash:countCash(ov)}}); await refreshShift(); ov.remove(); toast('Shift opened'); if(afterOpen) afterOpen(); }
     catch(e){toast(e.message,true);}
   };
   const close=ov.querySelector('#closeShift');
   if(close) close.onclick=async()=>{
     const counts=Object.fromEntries([...ov.querySelectorAll('[data-denom]')].map(i=>[i.dataset.denom,parseInt(i.value)||0]));
-    if(!confirm('Kết ca hiện tại?')) return;
-    try{ const r=await api('/shifts/close',{method:'POST',body:{shift_key:ov.querySelector('#shiftKey').value,counts,closing_cash:countCash(ov)}}); await refreshShift(); ov.remove(); toast(`Đã kết ca. Ca này ${money(r.report?.total_revenue||0)} · Ngày vận hành ${money(r.day_report?.total_revenue||0)}`); }
+    if(!confirm('Close current shift?')) return;
+    try{ const r=await api('/shifts/close',{method:'POST',body:{shift_key:ov.querySelector('#shiftKey').value,counts,closing_cash:countCash(ov)}}); await refreshShift(); ov.remove(); toast(`Shift closed. This shift ${money(r.report?.total_revenue||0)} · Daily total ${money(r.day_report?.total_revenue||0)}`); }
     catch(e){toast(e.message,true);}
   };
 }
@@ -553,9 +553,9 @@ function bindBillButtons(table,o){
   const sp=document.getElementById('splitBillBtn'); if(sp) sp.onclick=()=>openSplitBill(table,o);
   const pay=document.getElementById('payBtn'); if(pay) pay.onclick=async()=>{ if(await ensureShiftOpen(()=>openPay(o))) openPay(o); };
   document.getElementById('discBtn').onclick=()=>{
-    const v=prompt('Nhập số tiền giảm (VND):','0'); if(v===null)return;
+    const v=prompt('Enter discount amount:','0'); if(v===null)return;
     const amt=Math.max(0,parseInt(v)||0);
-    orderPromo[o.id]={key:'__manual',icon:'✏️',name:'Giảm tay',amount:amt};
+    orderPromo[o.id]={key:'__manual',icon:'✏️',name:'Manual discount',amount:amt};
     renderBill(table,o);
   };
   const cb=document.getElementById('custBtn'); if(cb) cb.onclick=()=>openCustomerPicker(orderCust[o.id], c=>{
@@ -567,7 +567,7 @@ function bindBillButtons(table,o){
           orderPromo[o.id] = {
             key: 'customer_perk',
             icon: '👤',
-            name: `Ưu đãi khách — ${c.name}`,
+            name: `Customer perk — ${c.name}`,
             amount: pa
           };
         } else {
@@ -589,7 +589,7 @@ function bindBillButtons(table,o){
     sendBtn.onclick = async () => {
       try {
         await api('/orders/' + o.id + '/confirm', { method: 'POST', body: { item_ids: [] } });
-        toast('Đã gửi món vào bếp!');
+        toast('Items sent to kitchen!');
         loadBill(table.id);
       } catch (e) {
         toast(e.message, true);
@@ -601,28 +601,28 @@ function bindBillButtons(table,o){
     btn.onclick = async () => {
       const itemId = btn.dataset.cancelItemId;
       const isPending = btn.classList.contains('warn');
-      
+
       if (isPending) {
-        if (!confirm('Xóa món này khỏi danh sách nháp?')) return;
+        if (!confirm('Remove this item from the draft list?')) return;
         try {
-          await api('/orders/items/' + itemId + '/cancel', { method: 'POST', body: { reason: 'Nhân viên xóa nháp' } });
-          toast('Đã xóa món nháp');
+          await api('/orders/items/' + itemId + '/cancel', { method: 'POST', body: { reason: 'Staff removed draft' } });
+          toast('Draft item removed');
           loadBill(table.id);
         } catch (e) {
           toast(e.message, true);
         }
       } else {
-        const pin = prompt('Món đã được gửi. Nhập mã PIN Quản lý/Chủ quán để hủy:');
+        const pin = prompt('Item already sent. Enter Manager/Owner PIN to cancel:');
         if (pin === null) return;
-        if (!pin.trim()) return toast('Cần nhập mã PIN để hủy', true);
-        const reason = prompt('Nhập lý do hủy món:');
+        if (!pin.trim()) return toast('PIN required to cancel', true);
+        const reason = prompt('Enter reason for cancellation:');
         if (reason === null) return;
         try {
           await api('/orders/items/' + itemId + '/cancel', {
             method: 'POST',
-            body: { pin: pin.trim(), reason: reason.trim() || 'Nhân viên hủy' }
+            body: { pin: pin.trim(), reason: reason.trim() || 'Staff cancelled' }
           });
-          toast('Đã hủy món');
+          toast('Item cancelled');
           loadBill(table.id);
         } catch (e) {
           toast(e.message, true);
@@ -632,13 +632,13 @@ function bindBillButtons(table,o){
   });
 }
 
-function stationName(s){return {kitchen:'Bếp',bar:'Bar',salad:'Salad/Lạnh',beverage:'Quầy nước',retail:'Retail'}[s]||s||'Không rõ';}
+function stationName(s){return {kitchen:'Kitchen',bar:'Bar',salad:'Salad/Cold',beverage:'Beverage counter',retail:'Retail'}[s]||s||'Unknown';}
 function pendingLineMeta(i){
   const mods=(i.mods||[]).map(m=>`${m.group?m.group+': ':''}${m.name}${m.price?` (+${money(m.price)})`:''}`).join(', ');
   const bits=[];
-  if(mods) bits.push('Ăn kèm / topping: '+mods);
-  if(i.note) bits.push('Ghi chú: '+i.note);
-  bits.push('Chuyển tới: '+stationName(i.station));
+  if(mods) bits.push('Add-ons / toppings: '+mods);
+  if(i.note) bits.push('Note: '+i.note);
+  bits.push('Send to: '+stationName(i.station));
   return bits.join(' · ');
 }
 function selectedConfirmIds(ov,orderId){
@@ -654,16 +654,16 @@ async function openPendingConfirmModal(){
     const active=pendingConfirms.find(g=>g.order_id===activeOrderId);
     const tab=g=>`
       <button class="confirm-tab ${g.order_id===activeOrderId?'on':''}" data-pending-pick="${g.order_id}">
-        <b>🔔 ${g.table_code&&g.table_code!=='—'?'Bàn '+esc(g.table_code):'Đơn khách'}</b>
-        <small>${g.line_count} dòng<br>${g.item_count} món cần xác nhận</small>
+        <b>🔔 ${g.table_code&&g.table_code!=='—'?'Table '+esc(g.table_code):'Customer order'}</b>
+        <small>${g.line_count} lines<br>${g.item_count} items pending confirmation</small>
         <span class="pill">${money(g.total)}</span>
       </button>`;
     const detail=active?`
       <div class="confirm-detail">
         <div class="confirm-detail-head">
           <div>
-            <b>${active.table_code&&active.table_code!=='—'?'Bàn '+esc(active.table_code):'Đơn khách'}</b>
-            <small>${active.line_count} dòng · ${active.item_count} món · kiểm tra với khách trước khi xử lý</small>
+            <b>${active.table_code&&active.table_code!=='—'?'Table '+esc(active.table_code):'Customer order'}</b>
+            <small>${active.line_count} lines · ${active.item_count} items · verify with customer before processing</small>
           </div>
           <span class="money">${money(active.total)}</span>
         </div>
@@ -674,16 +674,16 @@ async function openPendingConfirmModal(){
             <span class="lineamt">${money(i.qty*i.unit_price)}</span>
           </label>`).join('')}</div>
         <div class="confirm-footer">
-          <textarea data-reject-reason="${active.order_id}" placeholder="Lý do nếu từ chối, ví dụ: hết món / khách đổi ý / ghi chú không rõ..."></textarea>
+          <textarea data-reject-reason="${active.order_id}" placeholder="Reason for rejection, e.g.: item unavailable / customer changed mind / unclear note..."></textarea>
           <button class="btn danger" id="rejectPending">Reject</button>
           <button class="btn primary" id="acceptPending">Accept</button>
         </div>
-      </div>`:'<div class="confirm-empty">Không có bàn nào đang chờ xác nhận.</div>';
+      </div>`:'<div class="confirm-empty">No tables pending confirmation.</div>';
     ov.innerHTML=`<div class="modal" style="max-width:900px;width:min(900px,92vw)">
-      <h2>🔔 Món khách vừa gọi</h2>
-      <div class="sub">Nhân viên cần đọc lại với khách, kiểm tra topping/ghi chú rồi mới confirm để chuyển xuống bếp/bar.</div>
-      ${pendingConfirms.length?`<div class="confirm-shell"><div class="confirm-tabs">${pendingConfirms.map(tab).join('')}</div>${detail}</div>`:'<div class="confirm-empty">Không có món nào chờ xác nhận.</div>'}
-      <div class="mfoot"><button class="btn primary" id="closePending">Đóng</button></div>
+      <h2>🔔 Items just ordered by customer</h2>
+      <div class="sub">Staff must read back to customer, verify toppings/notes, then confirm to send to kitchen/bar.</div>
+      ${pendingConfirms.length?`<div class="confirm-shell"><div class="confirm-tabs">${pendingConfirms.map(tab).join('')}</div>${detail}</div>`:'<div class="confirm-empty">No items pending confirmation.</div>'}
+      <div class="mfoot"><button class="btn primary" id="closePending">Close</button></div>
     </div>`;
     ov.querySelector('#closePending').onclick=()=>ov.remove();
     ov.querySelectorAll('[data-pending-pick]').forEach(b=>b.onclick=()=>{activeOrderId=b.dataset.pendingPick; draw();});
@@ -691,10 +691,10 @@ async function openPendingConfirmModal(){
     if(accept) accept.onclick=async()=>{
       const orderId=activeOrderId;
       const item_ids=selectedConfirmIds(ov,orderId);
-      if(!item_ids.length) return toast('Chọn ít nhất một món để confirm',true);
+      if(!item_ids.length) return toast('Select at least one item to confirm',true);
       try{
         await api('/orders/'+orderId+'/confirm',{method:'POST',body:{item_ids}});
-        toast('Đã confirm món và chuyển xuống bếp/bar');
+        toast('Items confirmed and sent to kitchen/bar');
         await refreshPending(); await refreshFloor(); if(sel) await loadBill(sel);
         if(!pendingConfirms.length) ov.remove(); else draw();
       }catch(e){toast(e.message,true);}
@@ -704,11 +704,11 @@ async function openPendingConfirmModal(){
       const orderId=activeOrderId;
       const item_ids=selectedConfirmIds(ov,orderId);
       const reason=ov.querySelector(`[data-reject-reason="${orderId}"]`)?.value.trim();
-      if(!item_ids.length) return toast('Chọn ít nhất một món để reject',true);
-      if(!reason) return toast('Nhập lý do từ chối để nhân viên/khách dễ đối soát',true);
+      if(!item_ids.length) return toast('Select at least one item to reject',true);
+      if(!reason) return toast('Enter a rejection reason so staff/customers can reconcile',true);
       try{
         await api('/orders/'+orderId+'/reject',{method:'POST',body:{item_ids,reason}});
-        toast('Đã reject món đã chọn');
+        toast('Selected items rejected');
         await refreshPending(); await refreshFloor(); if(sel) await loadBill(sel);
         if(!pendingConfirms.length) ov.remove(); else draw();
       }catch(e){toast(e.message,true);}
@@ -722,20 +722,20 @@ async function openAddMenu(table){
   const ov=document.createElement('div'); ov.className='overlay show';
   const items=menu.items.filter(i=>i.available);
   ov.innerHTML=`<div class="modal" style="max-width:620px">
-    <h2>Thêm món cho bàn ${esc(table.code)}</h2>
-    <input id="menuSearch" placeholder="Tìm món..." style="margin-bottom:8px">
+    <h2>Add item for table ${esc(table.code)}</h2>
+    <input id="menuSearch" placeholder="Search items..." style="margin-bottom:8px">
     <div class="picklist" id="menuPick"></div>
-    <div class="mfoot"><button class="btn primary" onclick="this.closest('.overlay').remove()">Đóng</button></div>
+    <div class="mfoot"><button class="btn primary" onclick="this.closest('.overlay').remove()">Close</button></div>
   </div>`;
   document.body.appendChild(ov);
   const draw=()=>{
     const q=ov.querySelector('#menuSearch').value.trim().toLowerCase();
     ov.querySelector('#menuPick').innerHTML=items.filter(i=>!q||i.name.toLowerCase().includes(q)).slice(0,80).map(i=>`
-      <div class="pickrow"><span><b>${esc(i.emoji||'')} ${esc(i.name)} <span class="ptag" title="Mua 5 tặng 1 cùng loại">🎁 5 tặng 1</span></b><small>${money(i.price)} · ${esc(i.category_name||'FnB')}</small></span>
-      <button class="btn sm primary" data-add-menu="${i.id}">Thêm</button></div>`).join('')||'<div class="empty">Không tìm thấy món</div>';
+      <div class="pickrow"><span><b>${esc(i.emoji||'')} ${esc(i.name)} <span class="ptag" title="Buy 5 get 1 free of same item">🎁 Buy 5 get 1</span></b><small>${money(i.price)} · ${esc(i.category_name||'FnB')}</small></span>
+      <button class="btn sm primary" data-add-menu="${i.id}">Add</button></div>`).join('')||'<div class="empty">No items found</div>';
     ov.querySelectorAll('[data-add-menu]').forEach(b=>b.onclick=async()=>{
-      const qty=parseInt(prompt('Số lượng:', '1'))||1;
-      try{ await api('/orders',{method:'POST',body:{table_id:table.id,channel:'dine_in',source:'staff_pos',items:[{menu_item_id:b.dataset.addMenu,qty}]}}); toast('Đã thêm món'); ov.remove(); refreshFloor(); loadBill(table.id); }
+      const qty=parseInt(prompt('Quantity:', '1'))||1;
+      try{ await api('/orders',{method:'POST',body:{table_id:table.id,channel:'dine_in',source:'staff_pos',items:[{menu_item_id:b.dataset.addMenu,qty}]}}); toast('Item added'); ov.remove(); refreshFloor(); loadBill(table.id); }
       catch(e){toast(e.message,true);}
     });
   };
@@ -746,20 +746,20 @@ async function openAddRetail(table){
   const skus=await api('/skus');
   const ov=document.createElement('div'); ov.className='overlay show';
   ov.innerHTML=`<div class="modal" style="max-width:620px">
-    <h2>Thêm sản phẩm retail vào bàn ${esc(table.code)}</h2>
-    <input id="skuSearch" placeholder="Tìm sản phẩm / barcode..." style="margin-bottom:8px">
+    <h2>Add retail product to table ${esc(table.code)}</h2>
+    <input id="skuSearch" placeholder="Search product / barcode..." style="margin-bottom:8px">
     <div class="picklist" id="skuPick"></div>
-    <div class="mfoot"><button class="btn primary" onclick="this.closest('.overlay').remove()">Đóng</button></div>
+    <div class="mfoot"><button class="btn primary" onclick="this.closest('.overlay').remove()">Close</button></div>
   </div>`;
   document.body.appendChild(ov);
   const draw=()=>{
     const q=ov.querySelector('#skuSearch').value.trim().toLowerCase();
     ov.querySelector('#skuPick').innerHTML=skus.filter(s=>s.active!==false && (!q||s.name.toLowerCase().includes(q)||String(s.barcode||'').includes(q))).slice(0,80).map(s=>`
-      <div class="pickrow"><span><b>${esc(s.emoji||'')} ${esc(s.name)}</b><small>${money(s.price)} · Tồn ${s.stock||0} ${esc(s.unit||'cái')}</small></span>
-      <button class="btn sm primary" data-add-sku="${s.id}" ${Number(s.stock)<=0?'disabled':''}>Thêm</button></div>`).join('')||'<div class="empty">Không tìm thấy sản phẩm</div>';
+      <div class="pickrow"><span><b>${esc(s.emoji||'')} ${esc(s.name)}</b><small>${money(s.price)} · Stock ${s.stock||0} ${esc(s.unit||'pcs')}</small></span>
+      <button class="btn sm primary" data-add-sku="${s.id}" ${Number(s.stock)<=0?'disabled':''}>Add</button></div>`).join('')||'<div class="empty">No products found</div>';
     ov.querySelectorAll('[data-add-sku]').forEach(b=>b.onclick=async()=>{
-      const qty=parseInt(prompt('Số lượng:', '1'))||1;
-      try{ await api('/orders',{method:'POST',body:{table_id:table.id,channel:'dine_in',source:'staff_pos',items:[{sku_id:b.dataset.addSku,qty}]}}); toast('Đã thêm sản phẩm retail'); ov.remove(); refreshFloor(); loadBill(table.id); }
+      const qty=parseInt(prompt('Quantity:', '1'))||1;
+      try{ await api('/orders',{method:'POST',body:{table_id:table.id,channel:'dine_in',source:'staff_pos',items:[{sku_id:b.dataset.addSku,qty}]}}); toast('Retail product added'); ov.remove(); refreshFloor(); loadBill(table.id); }
       catch(e){toast(e.message,true);}
     });
   };
@@ -768,25 +768,25 @@ async function openAddRetail(table){
 
 async function openMoveTable(table,o){
   const list=(await api('/tables')).filter(t=>t.id!==table.id && t.status==='free');
-  pickTableModal(`Chuyển bàn ${table.code} sang`, list, async target=>{
+  pickTableModal(`Move table ${table.code} to`, list, async target=>{
     await api('/tables/'+table.id+'/move',{method:'POST',body:{to_table_id:target.id}});
-    toast(`Đã chuyển sang bàn ${target.code}`); sel=target.id; refreshFloor(); loadBill(target.id);
+    toast(`Moved to table ${target.code}`); sel=target.id; refreshFloor(); loadBill(target.id);
   });
 }
 
 async function openMergeTable(table,o){
   const list=(await api('/tables')).filter(t=>t.id!==table.id && t.status!=='free');
-  pickTableModal(`Gộp bàn ${table.code} vào`, list, async target=>{
+  pickTableModal(`Merge table ${table.code} into`, list, async target=>{
     await api('/tables/'+table.id+'/merge',{method:'POST',body:{target_table_id:target.id}});
-    toast(`Đã gộp vào bàn ${target.code}`); sel=target.id; refreshFloor(); loadBill(target.id);
+    toast(`Merged into table ${target.code}`); sel=target.id; refreshFloor(); loadBill(target.id);
   });
 }
 
 function pickTableModal(title, list, onPick){
   const ov=document.createElement('div'); ov.className='overlay show';
   ov.innerHTML=`<div class="modal" style="max-width:520px"><h2>${esc(title)}</h2>
-    <div class="picklist">${list.length?list.map(t=>`<div class="pickrow"><span><b>Bàn ${esc(t.code)}</b><small>${esc(t.zone)} · ${t.status==='free'?'Trống':'Đang có bill'} ${t.amount?`· ${money(t.amount)}`:''}</small></span><button class="btn sm primary" data-pick-table="${t.id}">Chọn</button></div>`).join(''):'<div class="empty">Không có bàn phù hợp</div>'}</div>
-    <div class="mfoot"><button class="btn primary" onclick="this.closest('.overlay').remove()">Đóng</button></div></div>`;
+    <div class="picklist">${list.length?list.map(t=>`<div class="pickrow"><span><b>Table ${esc(t.code)}</b><small>${esc(t.zone)} · ${t.status==='free'?'Available':'Has bill'} ${t.amount?`· ${money(t.amount)}`:''}</small></span><button class="btn sm primary" data-pick-table="${t.id}">Select</button></div>`).join(''):'<div class="empty">No suitable tables</div>'}</div>
+    <div class="mfoot"><button class="btn primary" onclick="this.closest('.overlay').remove()">Close</button></div></div>`;
   document.body.appendChild(ov);
   ov.querySelectorAll('[data-pick-table]').forEach(b=>b.onclick=async()=>{
     const t=list.find(x=>x.id===b.dataset.pickTable);
@@ -798,14 +798,14 @@ function openSplitBill(table,o){
   const items=o.items.filter(i=>i.status!=='cancelled');
   const ov=document.createElement('div'); ov.className='overlay show';
   ov.innerHTML=`<div class="modal" style="max-width:620px">
-    <h2>Tách bill bàn ${esc(table.code)}</h2>
-    <div class="sub">Chọn các dòng khách muốn thanh toán riêng.</div>
+    <h2>Split bill for table ${esc(table.code)}</h2>
+    <div class="sub">Select the items the customer wants to pay separately.</div>
     <div class="picklist">${items.map(i=>`<label class="pickrow" style="grid-template-columns:auto 1fr auto">
       <input type="checkbox" data-split-item="${i.id}">
       <span><b>${i.qty}× ${esc(i.name)}</b><small>${statusText(i.status)}</small></span>
       <b style="font-family:var(--mono);color:var(--brand)">${money(i.qty*i.unit_price)}</b>
     </label>`).join('')}</div>
-    <div class="mfoot"><button class="btn" id="splitCancel">Hủy</button><button class="btn primary" id="splitOk">Tách và thanh toán riêng</button></div>
+    <div class="mfoot"><button class="btn" id="splitCancel">Cancel</button><button class="btn primary" id="splitOk">Split and pay separately</button></div>
   </div>`;
   document.body.appendChild(ov);
   ov.querySelector('#splitCancel').onclick=()=>ov.remove();
@@ -813,27 +813,27 @@ function openSplitBill(table,o){
     const item_ids=[...ov.querySelectorAll('[data-split-item]:checked')].map(x=>x.dataset.splitItem);
     try{
       const r=await api('/orders/'+o.id+'/split',{method:'POST',body:{item_ids}});
-      ov.remove(); toast('Đã tách bill riêng');
+      ov.remove(); toast('Bill split');
       openPay(r.split,{afterPaid:()=>{sel=table.id;refreshFloor();loadBill(table.id);}});
     }catch(e){toast(e.message,true);}
   };
 }
-function statusText(s){return {pending_confirm:'Chờ nhân viên xác nhận',new:'Chờ bếp',accepted:'Đã nhận',preparing:'Đang làm',ready:'Sẵn sàng',served:'Đã phục vụ'}[s]||s;}
+function statusText(s){return {pending_confirm:'Awaiting staff confirmation',new:'Waiting kitchen',accepted:'Accepted',preparing:'In progress',ready:'Ready',served:'Served'}[s]||s;}
 
 // --- payment modal ---
 function openPayLegacy(o, opts={}){
   let lines=[];
-  const methods=[['cash','💵 Tiền mặt'],['card','💳 Thẻ'],['qr','📱 QR'],['voucher','🎟 Voucher'],['bank_transfer','🏦 Chuyển khoản']];
+  const methods=[['cash','💵 Cash'],['card','💳 Card'],['qr','📱 QR'],['voucher','🎟 Voucher'],['bank_transfer','🏦 Bank transfer']];
   const ov=document.createElement('div'); ov.className='overlay show';
-  ov.innerHTML=`<div class="modal"><h2>Thanh toán bill #${esc(o.bill_no||o.id.slice(-6).toUpperCase())}</h2>
-    <div class="sub">Tổng cần thu: <b style="color:var(--brand);font-family:var(--mono)">${money(o.total)}</b></div>
-    <label>Phương thức</label><div class="optrow" id="pm">${methods.map(([k,n])=>`<div class="opt" data-m="${k}">${n}</div>`).join('')}</div>
-    <label>Số tiền</label><input type="number" id="amt" placeholder="0">
-    <input type="text" id="ref" placeholder="Mã tham chiếu / approval code (nếu thẻ/CK)" style="margin-top:7px">
-    <button class="btn sm" id="addLine" style="margin-top:9px">+ Thêm dòng thanh toán</button>
+  ov.innerHTML=`<div class="modal"><h2>Payment for bill #${esc(o.bill_no||o.id.slice(-6).toUpperCase())}</h2>
+    <div class="sub">Amount due: <b style="color:var(--brand);font-family:var(--mono)">${money(o.total)}</b></div>
+    <label>Payment method</label><div class="optrow" id="pm">${methods.map(([k,n])=>`<div class="opt" data-m="${k}">${n}</div>`).join('')}</div>
+    <label>Amount</label><input type="number" id="amt" placeholder="0">
+    <input type="text" id="ref" placeholder="Reference / approval code (for card/transfer)" style="margin-top:7px">
+    <button class="btn sm" id="addLine" style="margin-top:9px">+ Add payment line</button>
     <div id="lines" style="margin-top:12px"></div>
     <div class="remain no" id="remain"></div>
-    <div class="mfoot"><button class="btn" id="cancel">Hủy</button><button class="btn primary" id="confirm">Xác nhận thanh toán</button></div>
+    <div class="mfoot"><button class="btn" id="cancel">Cancel</button><button class="btn primary" id="confirm">Confirm payment</button></div>
   </div>`;
   document.body.appendChild(ov);
   let curMethod='cash';
@@ -846,11 +846,11 @@ function openPayLegacy(o, opts={}){
     ov.querySelectorAll('.payline .x').forEach(b=>b.onclick=()=>{lines.splice(+b.dataset.i,1);draw();});
     const r=o.total-paid();
     remainEl.className='remain '+(r<=0?'ok':'no');
-    remainEl.innerHTML=`<span>${r>0?'Còn thiếu':'Tiền thối'}</span><span>${money(Math.abs(r))}</span>`;
+    remainEl.innerHTML=`<span>${r>0?'Still owed':'Change'}</span><span>${money(Math.abs(r))}</span>`;
   }
   function methodName(m){return methods.find(x=>x[0]===m)?.[1]||m;}
   ov.querySelector('#addLine').onclick=()=>{
-    const amt=parseInt(ov.querySelector('#amt').value)||0; if(amt<=0)return toast('Nhập số tiền',true);
+    const amt=parseInt(ov.querySelector('#amt').value)||0; if(amt<=0)return toast('Enter amount',true);
     lines.push({method:curMethod,amount:amt,reference:ov.querySelector('#ref').value.trim()});
     ov.querySelector('#amt').value='';ov.querySelector('#ref').value='';draw();
   };
@@ -859,14 +859,14 @@ function openPayLegacy(o, opts={}){
   ov.querySelector('#cancel').onclick=()=>ov.remove();
   ov.querySelector('#confirm').onclick=async()=>{
     if(!lines.length){const amt=parseInt(ov.querySelector('#amt').value)||0; if(amt>0)lines.push({method:curMethod,amount:amt,reference:ov.querySelector('#ref').value.trim()});}
-    if(paid()<o.total) return toast('Chưa đủ tiền',true);
+    if(paid()<o.total) return toast('Insufficient payment',true);
     try{
       const receipt=await api('/orders/'+o.id+'/pay',{method:'POST',body:{lines,discount:o.discount}});
-      ov.remove(); toast('✅ Thanh toán thành công'); showReceipt(receipt);
+      ov.remove(); toast('✅ Payment successful'); showReceipt(receipt);
       if(opts.afterPaid) opts.afterPaid();
       else{
         sel=null; order=null;
-        document.getElementById('bill').innerHTML='<div class="empty" style="margin:auto">Chọn một bàn để xem bill</div>';
+        document.getElementById('bill').innerHTML='<div class="empty" style="margin:auto">Select a table to view the bill</div>';
         refreshFloor();
       }
     }catch(e){toast(e.message,true);}
@@ -877,7 +877,7 @@ function openPayLegacy(o, opts={}){
 async function openPay(o, opts={}){
   await refreshOperations(); await refreshShift();
   if(operationsConfig?.shifts?.requireOpenShift!==false && !shiftState?.shift){
-    toast('Cần mở ca trước khi thanh toán', true);
+    toast('Please open a shift before processing payment', true);
     return openShiftPanel({afterOpen:()=>openPay(o,opts)});
   }
   let lines=[];
@@ -894,18 +894,18 @@ async function openPay(o, opts={}){
     o.discount=disc; o.total=total(); orderCust[o.id]=customer||undefined;
     const buy5=buy5get1AmountForOrder(o);
     const perk=customer?perkAmount(customer,o.subtotal||0):0;
-    ov.innerHTML=`<div class="modal pay-modal"><h2>Thanh toán bill #${esc(o.bill_no||o.id.slice(-6).toUpperCase())}</h2>
-      <div class="custline"><span>👤 <b>${customer?esc(customer.name)+esc(perkTag(customer)):'Khách lẻ'}</b></span><button class="btn sm" id="payCust">${customer?'Đổi khách':'Chọn khách'}</button></div>
-      <div class="brow"><span>Tạm tính</span><span>${money(o.subtotal||0)}</span></div>
-      ${disc?`<div class="brow"><span>${orderPromo[o.id]?orderPromo[o.id].icon+' '+esc(orderPromo[o.id].name):'Giảm giá'}</span><span style="color:var(--late)">-${money(disc)}</span></div>`:''}
-      <div style="margin:4px 0 10px"><button class="btn sm" id="promoPickBtn" style="width:100%;justify-content:center">${disc?'🔄 Đổi khuyến mãi':'🎁 Chọn khuyến mãi'}</button></div>
-      <div class="pay-summary"><span>Cần thanh toán</span><b>${money(total())}</b></div>
+    ov.innerHTML=`<div class="modal pay-modal"><h2>Payment for bill #${esc(o.bill_no||o.id.slice(-6).toUpperCase())}</h2>
+      <div class="custline"><span>👤 <b>${customer?esc(customer.name)+esc(perkTag(customer)):'Walk-in customer'}</b></span><button class="btn sm" id="payCust">${customer?'Change customer':'Select customer'}</button></div>
+      <div class="brow"><span>Subtotal</span><span>${money(o.subtotal||0)}</span></div>
+      ${disc?`<div class="brow"><span>${orderPromo[o.id]?orderPromo[o.id].icon+' '+esc(orderPromo[o.id].name):'Discount'}</span><span style="color:var(--late)">-${money(disc)}</span></div>`:''}
+      <div style="margin:4px 0 10px"><button class="btn sm" id="promoPickBtn" style="width:100%;justify-content:center">${disc?'🔄 Change promotion':'🎁 Select promotion'}</button></div>
+      <div class="pay-summary"><span>Amount due</span><b>${money(total())}</b></div>
       <div class="pay-grid">
-        <div><label>Phương thức</label><div class="pay-methods" id="pm">${methods.map(m=>`<div class="opt ${m.key===curMethod?'sel':''}" data-m="${esc(m.key)}">${methodIcon(m)} ${esc(m.label)}</div>`).join('')}</div></div>
-        <div class="pay-fields"><label>Số tiền</label><input type="number" id="amt" placeholder="0"><input type="text" id="ref" placeholder="Mã tham chiếu / approval code"><div id="payHelper"></div><div class="pay-actions"><button class="btn sm" id="addLine">+ Thêm dòng</button><div class="remain no" id="remain"></div></div></div>
+        <div><label>Payment method</label><div class="pay-methods" id="pm">${methods.map(m=>`<div class="opt ${m.key===curMethod?'sel':''}" data-m="${esc(m.key)}">${methodIcon(m)} ${esc(m.label)}</div>`).join('')}</div></div>
+        <div class="pay-fields"><label>Amount</label><input type="number" id="amt" placeholder="0"><input type="text" id="ref" placeholder="Reference / approval code"><div id="payHelper"></div><div class="pay-actions"><button class="btn sm" id="addLine">+ Add line</button><div class="remain no" id="remain"></div></div></div>
       </div>
-      <label>Các dòng thanh toán</label><div id="lines" class="pay-lines"></div>
-      <div class="mfoot"><button class="btn" id="cancel">Hủy</button><button class="btn primary" id="confirm">Xác nhận thanh toán</button></div>
+      <label>Payment lines</label><div id="lines" class="pay-lines"></div>
+      <div class="mfoot"><button class="btn" id="cancel">Cancel</button><button class="btn primary" id="confirm">Confirm payment</button></div>
     </div>`;
     bindModal();
   }
@@ -917,25 +917,25 @@ async function openPay(o, opts={}){
       const isQr=['qr','wallet'].includes(m.kind)||['internet_banking','qrcode','qr','momo','zalopay'].includes(m.key);
       if(isQr){
         const img=dynamicQrUrl(amt,ref);
-        helper.innerHTML=`<div class="pay-helper"><div class="pay-qr">${img?`<img src="${esc(img)}" alt="QR">`:'<div class="empty">Chưa cấu hình ngân hàng/QR trong Setting</div>'}<div><b>${esc(m.label)}</b><div class="mini">QR tự tạo đúng số tiền ${money(amt)}. Khách chuyển khoản xong nhân viên đối soát mã tham chiếu.</div><div class="pay-ref">${esc(ref)}</div></div></div></div>`;
+        helper.innerHTML=`<div class="pay-helper"><div class="pay-qr">${img?`<img src="${esc(img)}" alt="QR">`:'<div class="empty">Bank/QR not configured in Settings</div>'}<div><b>${esc(m.label)}</b><div class="mini">Auto-generated QR for exact amount ${money(amt)}. Verify reference after customer transfers.</div><div class="pay-ref">${esc(ref)}</div></div></div></div>`;
       }else if(['pos','card'].includes(m.kind)||['card','visa','pos_card'].includes(m.key)){
-        helper.innerHTML=`<div class="pay-helper"><b>${esc(operationsConfig?.payment?.posTerminalName||'Máy POS')}</b><div class="mini">Nhập approval code nếu máy POS trả về mã. Mã gợi ý: <span class="pay-ref">${esc(ref)}</span></div></div>`;
+        helper.innerHTML=`<div class="pay-helper"><b>${esc(operationsConfig?.payment?.posTerminalName||'POS Machine')}</b><div class="mini">Enter approval code if POS machine returns one. Suggested code: <span class="pay-ref">${esc(ref)}</span></div></div>`;
       }else helper.innerHTML='';
     }
     function draw(){
-      ov.querySelector('#lines').innerHTML=lines.length?lines.map((l,i)=>`<div class="payline">${methodLabel(l.method)} ${l.reference?`<span style="color:var(--faint)">· ${esc(l.reference)}</span>`:''}<b>${money(l.amount)}</b><button class="x" data-i="${i}">×</button></div>`).join(''):'<div class="empty" style="padding:9px">Chưa có dòng thanh toán</div>';
+      ov.querySelector('#lines').innerHTML=lines.length?lines.map((l,i)=>`<div class="payline">${methodLabel(l.method)} ${l.reference?`<span style="color:var(--faint)">· ${esc(l.reference)}</span>`:''}<b>${money(l.amount)}</b><button class="x" data-i="${i}">×</button></div>`).join(''):'<div class="empty" style="padding:9px">No payment lines yet</div>';
       ov.querySelectorAll('.payline .x').forEach(b=>b.onclick=()=>{lines.splice(+b.dataset.i,1);amtEl.value=remaining();draw();drawHelper();});
       const r=total()-paid();
       remainEl.className='remain '+(r<=0?'ok':'no');
-      remainEl.innerHTML=`<span>${r>0?'Còn thiếu':'Tiền thối'}</span><span>${money(Math.abs(r))}</span>`;
+      remainEl.innerHTML=`<span>${r>0?'Still owed':'Change'}</span><span>${money(Math.abs(r))}</span>`;
     }
     ov.querySelector('#payCust').onclick=()=>openCustomerPicker(customer, c=>{ customer=c||null;
-      // Nếu đang dùng promo khách cũ, reset
+      // If using previous customer promo, reset
       if(orderPromo[o.id]?.key==='customer_perk') delete orderPromo[o.id];
-      // Nếu khách mới có ưu đãi, tự chọn
+      // If new customer has perk, auto-select
       if(customer && customer.perk_type && customer.perk_type!=='none'){
         const pa = perkAmount(customer, o.subtotal||0);
-        if(pa>0){ orderPromo[o.id]={key:'customer_perk',icon:'👤',name:`Ưu đãi khách — ${customer.name}`,amount:pa}; setDisc(pa); return; }
+        if(pa>0){ orderPromo[o.id]={key:'customer_perk',icon:'👤',name:`Customer perk — ${customer.name}`,amount:pa}; setDisc(pa); return; }
       }
       renderModal();
     });
@@ -943,16 +943,16 @@ async function openPay(o, opts={}){
     ov.querySelectorAll('#pm .opt').forEach(o2=>o2.onclick=()=>{ ov.querySelectorAll('#pm .opt').forEach(x=>x.classList.remove('sel'));o2.classList.add('sel');curMethod=o2.dataset.m;refEl.value='';setDefaultRef();drawHelper(); });
     amtEl.value=total(); setDefaultRef(); drawHelper(); draw();
     amtEl.oninput=drawHelper; refEl.oninput=drawHelper;
-    ov.querySelector('#addLine').onclick=()=>{ const amt=parseInt(amtEl.value)||0; if(amt<=0)return toast('Nhập số tiền',true); lines.push({method:curMethod,amount:amt,reference:refEl.value.trim()||makePaymentRef(curMethod,o)}); amtEl.value=remaining();refEl.value='';setDefaultRef();draw();drawHelper(); };
+    ov.querySelector('#addLine').onclick=()=>{ const amt=parseInt(amtEl.value)||0; if(amt<=0)return toast('Enter amount',true); lines.push({method:curMethod,amount:amt,reference:refEl.value.trim()||makePaymentRef(curMethod,o)}); amtEl.value=remaining();refEl.value='';setDefaultRef();draw();drawHelper(); };
     ov.querySelector('#cancel').onclick=()=>ov.remove();
     ov.querySelector('#confirm').onclick=async()=>{
       if(!lines.length){const amt=parseInt(amtEl.value)||0; if(amt>0)lines.push({method:curMethod,amount:amt,reference:refEl.value.trim()||makePaymentRef(curMethod,o)});}
-      if(paid()<total()) return toast('Chưa đủ tiền',true);
+      if(paid()<total()) return toast('Insufficient payment',true);
       try{
         const receipt=await api('/orders/'+o.id+'/pay',{method:'POST',body:{lines,discount:disc,customer:customer||null}});
-        delete orderCust[o.id]; delete orderPromo[o.id]; ov.remove(); toast('✅ Thanh toán thành công'); showReceipt(receipt); refreshShift();
+        delete orderCust[o.id]; delete orderPromo[o.id]; ov.remove(); toast('✅ Payment successful'); showReceipt(receipt); refreshShift();
         if(opts.afterPaid) opts.afterPaid();
-        else{ sel=null; order=null; document.getElementById('bill').innerHTML='<div class="empty" style="margin:auto">Chọn một bàn để xem bill</div>'; refreshFloor(); }
+        else{ sel=null; order=null; document.getElementById('bill').innerHTML='<div class="empty" style="margin:auto">Select a table to view the bill</div>'; refreshFloor(); }
       }catch(e){toast(e.message,true);}
     };
   }
@@ -1150,8 +1150,8 @@ function showReceipt(r){
     </div>
     </div>
     <div class="mfoot">
-      ${(!r.preview&&r.order_id)?`<button class="btn" id="invBtn">🧾 Xuất hóa đơn VAT</button>`:''}
-      <button class="btn primary" onclick="this.closest('.overlay').remove()">Đóng</button>
+      ${(!r.preview&&r.order_id)?`<button class="btn" id="invBtn">🧾 Issue VAT invoice</button>`:''}
+      <button class="btn primary" onclick="this.closest('.overlay').remove()">Close</button>
     </div>
   </div>`;
   document.body.appendChild(ov);
@@ -1159,7 +1159,7 @@ function showReceipt(r){
 }
 function methodLabel(m){
   const cfg=(operationsConfig?.payment?.methods||[]).find(x=>x.key===m);
-  return cfg?.label || {cash:'Tiền mặt',card:'Máy POS',qr:'QR',qrcode:'QR Code',voucher:'Voucher',bank_transfer:'Chuyển khoản',internet_banking:'Internet Banking',momo:'MoMo Pay',zalopay:'ZaloPay',visa:'Visa',pos_card:'Máy POS'}[m] || m;
+  return cfg?.label || {cash:'Cash',card:'POS Machine',qr:'QR',qrcode:'QR Code',voucher:'Voucher',bank_transfer:'Bank transfer',internet_banking:'Internet Banking',momo:'MoMo Pay',zalopay:'ZaloPay',visa:'Visa',pos_card:'POS Machine'}[m] || m;
 }
 
 // MISA e-invoice form
@@ -1169,12 +1169,12 @@ async function openInvoiceForm(order_id){
   const invCfg=activePrintConfig().einvoice||{};
   const ov=document.createElement('div'); ov.className='overlay show';
   ov.innerHTML=`<div class="modal">
-    <h2>Xuất hóa đơn điện tử (${esc(invCfg.provider||'MISA')})</h2><div class="sub">Nhập thông tin người mua</div>
-    <label>Tên công ty / khách</label><input type="text" id="iname" placeholder="Công ty TNHH ABC">
-    <label>Mã số thuế</label><input type="text" id="itax" placeholder="0312345678">
-    <label>Địa chỉ</label><input type="text" id="iaddr" placeholder="12 Nguyễn Huệ, Q1">
-    <label>Email nhận hóa đơn</label><input type="text" id="iemail" placeholder="ketoan@abc.vn">
-    <div class="mfoot"><button class="btn" id="ican">Hủy</button><button class="btn primary" id="iok">Phát hành</button></div>
+    <h2>Issue e-invoice (${esc(invCfg.provider||'MISA')})</h2><div class="sub">Enter buyer information</div>
+    <label>Company / customer name</label><input type="text" id="iname" placeholder="ABC Co., Ltd.">
+    <label>Tax code</label><input type="text" id="itax" placeholder="0312345678">
+    <label>Address</label><input type="text" id="iaddr" placeholder="12 Nguyen Hue, District 1">
+    <label>Invoice email</label><input type="text" id="iemail" placeholder="accounting@abc.com">
+    <div class="mfoot"><button class="btn" id="ican">Cancel</button><button class="btn primary" id="iok">Issue</button></div>
   </div>`;
   document.body.appendChild(ov);
   ov.querySelector('#ican').onclick=()=>ov.remove();
@@ -1183,23 +1183,23 @@ async function openInvoiceForm(order_id){
       const inv=await api('/invoices/issue',{method:'POST',body:{order_id,customer:{
         name:ov.querySelector('#iname').value.trim(),tax_code:ov.querySelector('#itax').value.trim(),
         address:ov.querySelector('#iaddr').value.trim(),email:ov.querySelector('#iemail').value.trim()}}});
-      ov.remove(); toast('✅ Đã phát hành hóa đơn '+inv.invoice_no); showInvoice(inv);
+      ov.remove(); toast('✅ Invoice issued: '+inv.invoice_no); showInvoice(inv);
     }catch(e){toast(e.message,true);}
   };
 }
 function showInvoice(inv){
   const ov=document.createElement('div'); ov.className='overlay show';
   ov.innerHTML=`<div class="modal" style="max-width:400px">
-    <h2>🧾 Hóa đơn điện tử</h2>
+    <h2>🧾 E-Invoice</h2>
     <div class="receipt" style="font-size:12.5px">
-      <div class="c"><h4>HÓA ĐƠN GTGT</h4><div>Số: ${esc(inv.invoice_no)}</div></div><hr>
-      ${inv.customer?.name?`<div class="li"><span>Người mua</span><span>${esc(inv.customer.name)}</span></div>`:''}
-      ${inv.customer?.tax_code?`<div class="li"><span>MST</span><span>${esc(inv.customer.tax_code)}</span></div>`:''}
-      <div class="li tt"><span>Tổng tiền</span><span>${money(inv.total)}</span></div><hr>
+      <div class="c"><h4>VAT INVOICE</h4><div>No: ${esc(inv.invoice_no)}</div></div><hr>
+      ${inv.customer?.name?`<div class="li"><span>Buyer</span><span>${esc(inv.customer.name)}</span></div>`:''}
+      ${inv.customer?.tax_code?`<div class="li"><span>Tax code</span><span>${esc(inv.customer.tax_code)}</span></div>`:''}
+      <div class="li tt"><span>Total amount</span><span>${money(inv.total)}</span></div><hr>
       <div class="qr"></div>
-      <div class="c" style="font-size:10px">Mã tra cứu: <b>${esc(inv.lookup_code)}</b><br>${esc(inv.lookup_url||'')}</div>
+      <div class="c" style="font-size:10px">Lookup code: <b>${esc(inv.lookup_code)}</b><br>${esc(inv.lookup_url||'')}</div>
     </div>
-    <div class="mfoot"><button class="btn primary" onclick="this.closest('.overlay').remove()">Đóng</button></div>
+    <div class="mfoot"><button class="btn primary" onclick="this.closest('.overlay').remove()">Close</button></div>
   </div>`;
   document.body.appendChild(ov);
 }
