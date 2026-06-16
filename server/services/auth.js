@@ -301,7 +301,7 @@ export function attachUser() {
   };
 }
 
-// Người phụ trách thao tác, dùng cho nhật ký hoạt động. Mặc định 'system'.
+// Actor for the activity log. Defaults to 'system'.
 export function actorName(req) {
   return req?.user?.name || req?.user?.username || 'system';
 }
