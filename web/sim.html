@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="vi"><head>
+<html lang="en"><head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>iPad Simulator — POS/ERP</title>
 <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
@@ -35,18 +35,18 @@ body.is-fullscreen .hint{display:none}
 <body>
 <div class="simbar">
   <div class="logo"><div class="dot">⬢</div>iPad Simulator</div>
-  <span class="lbl">Thiết bị</span>
+  <span class="lbl">Device</span>
   <div class="seg" id="devSeg">
     <button data-d="ipad" class="on">📱 iPad</button>
     <button data-d="retail">🛒 Retail</button>
     <button data-d="pos">💳 POS</button>
     <button data-d="kds">👨‍🍳 KDS</button>
-    <button data-d="admin">📊 Quản lý</button>
+    <button data-d="admin">📊 Management</button>
   </div>
-  <span class="lbl">Hướng</span>
+  <span class="lbl">Orientation</span>
   <div class="seg" id="oriSeg">
-    <button data-o="portrait" class="on">▯ Dọc</button>
-    <button data-o="landscape">▭ Ngang</button>
+    <button data-o="portrait" class="on">▯ Portrait</button>
+    <button data-o="landscape">▭ Landscape</button>
   </div>
   <span class="lbl">Model</span>
   <div class="seg" id="modelSeg">
@@ -56,9 +56,9 @@ body.is-fullscreen .hint{display:none}
   </div>
   <span class="dimtag" id="dim"></span>
   <span class="spacer"></span>
-  <button class="fsbtn" id="reloadBtn" title="Nạp lại nội dung iPad (lấy bản giao diện mới nhất)">↻ Tải lại</button>
-  <button class="fsbtn" id="fsBtn">⛶ Full màn</button>
-  <a class="exit" href="/">✕ Thoát ra Launcher</a>
+  <button class="fsbtn" id="reloadBtn" title="Reload iPad content (fetch latest UI)">↻ Reload</button>
+  <button class="fsbtn" id="fsBtn">⛶ Fullscreen</button>
+  <a class="exit" href="/">✕ Back to Launcher</a>
 </div>
 <div class="stage">
   <div class="scaler" id="scaler">
@@ -69,7 +69,7 @@ body.is-fullscreen .hint{display:none}
       </div>
     </div>
   </div>
-  <div class="hint">Đây là khung iPad mô phỏng. Order ở đây vẫn chạy thật → hiện realtime ở các tab POS / KDS / Quản lý.</div>
+  <div class="hint">This is a simulated iPad frame. Orders placed here are real → appear realtime in POS / KDS / Management tabs.</div>
 </div>
 
 <script>
@@ -141,7 +141,7 @@ document.getElementById('reloadBtn').onclick=()=>{ loadFrame(); };
 document.addEventListener('fullscreenchange',()=>{
   const on=!!document.fullscreenElement;
   document.body.classList.toggle('is-fullscreen',on);
-  document.getElementById('fsBtn').textContent=on?'⤢ Thoát full':'⛶ Full màn';
+  document.getElementById('fsBtn').textContent=on?'⤢ Exit fullscreen':'⛶ Fullscreen';
   setTimeout(scaleToFit,80);
 });
 
