@@ -13,8 +13,8 @@ const CUSTOMER_QR_METHODS = ['qr', 'qrcode', 'internet_banking', 'momo', 'zalopa
 // lines: [{method, amount, reference}]
 export function payOrder(order_id, lines, { discount, cashier, customer } = {}, branch_id = 'br1') {
   const order = getOrder(order_id);
-  if (!order) throw new Error('Order không tồn tại');
-  if (order.status !== 'open') throw new Error('Order đã đóng');
+  if (!order) throw new Error('Order not found');
+  if (order.status !== 'open') throw new Error('Order already closed');
 
   if (typeof discount === 'number') {
     db.prepare(`UPDATE orders SET discount=?, total=MAX(0,subtotal-?) WHERE id=?`).run(discount, discount, order_id);
@@ -24,15 +24,15 @@ export function payOrder(order_id, lines, { discount, cashier, customer } = {}, 
   }
   const fresh = getOrder(order_id);
   const pending = fresh.items.filter(i => i.status === 'pending_confirm');
-  if (pending.length) throw new Error(`Còn ${pending.length} dòng món đang chờ nhân viên xác nhận`);
+  if (pending.length) throw new Error(`${pending.length} item(s) still pending staff confirmation`);
 
   const ops = getOperationsConfig(branch_id);
   const shift = getActiveShift(branch_id);
-  if (ops.shifts.requireOpenShift !== false && !shift) throw new Error('Can mo ca lam viec truoc khi thanh toan.');
+  if (ops.shifts.requireOpenShift !== false && !shift) throw new Error('Please open a work shift before processing payment.');
 
   const paid = lines.reduce((s, l) => s + (parseInt(l.amount) || 0), 0);
-  if (paid < fresh.total) throw new Error(`Chưa đủ tiền: cần ${fresh.total}, nhận ${paid}`);
-  for (const l of lines) if (!METHODS.includes(l.method)) throw new Error('Phương thức không hợp lệ: ' + l.method);
+  if (paid < fresh.total) throw new Error(`Insufficient payment: need ${fresh.total}, received ${paid}`);
+  for (const l of lines) if (!METHODS.includes(l.method)) throw new Error('Invalid payment method: ' + l.method);
 
   const pid = uid('pay_');
   db.prepare(`INSERT INTO payments (id,order_id,shift_id,total,created_at) VALUES (?,?,?,?,?)`).run(pid, order_id, shift?.id || null, fresh.total, now());
@@ -70,15 +70,15 @@ export function requestPayment(table_id, branch_id = 'br1') {
 export function customerQrPay(order_id, { method = 'qrcode', reference = '' } = {}, branch_id = 'br1') {
   const chosen = CUSTOMER_QR_METHODS.includes(method) ? method : 'qrcode';
   const order = getOrder(order_id);
-  if (!order) throw new Error('Order khong ton tai');
-  if (order.status !== 'open') throw new Error('Order da dong');
+  if (!order) throw new Error('Order not found');
+  if (order.status !== 'open') throw new Error('Order already closed');
   const pending = order.items.filter(i => i.status === 'pending_confirm');
-  if (pending.length) throw new Error(`Con ${pending.length} dong mon dang cho nhan vien xac nhan`);
+  if (pending.length) throw new Error(`${pending.length} item(s) still pending staff confirmation`);
   const ops = getOperationsConfig(branch_id);
   const cfg = (ops.payment?.methods || []).find(m => m.key === chosen);
-  if (cfg && cfg.enabled === false) throw new Error('Phuong thuc thanh toan nay dang tat trong Cai dat');
+  if (cfg && cfg.enabled === false) throw new Error('This payment method is currently disabled in Settings');
   const ref = String(reference || `${(ops.payment?.transferPrefix || 'DANBILL').replace(/\s+/g, '').toUpperCase()}-${order.bill_no || order_id.slice(-6).toUpperCase()}`).slice(0, 120);
-  return payOrder(order_id, [{ method: chosen, amount: order.total, reference: ref }], { cashier: 'Khach tu thanh toan QR' }, branch_id);
+  return payOrder(order_id, [{ method: chosen, amount: order.total, reference: ref }], { cashier: 'Customer self-payment QR' }, branch_id);
 }
 
 function buildReceipt(order_id, payment_id, lines, paid, { cashier = '' } = {}) {
