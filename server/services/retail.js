@@ -19,7 +19,7 @@ function snapshotCustomer(c) {
 
 // lines (cart): [{sku_id, qty, lot_id}]; payments: [{method, amount, reference}]
 export function checkout({ items, payments, voucher_id = null, customer = null, customer_id = null, manual_discount = 0, branch_id = 'br1', cashier = '' }) {
-  if (!items?.length) throw new Error('Giỏ hàng trống');
+  if (!items?.length) throw new Error('Cart is empty');
   const lines = normalizeCheckoutItems(items, branch_id);
 
   // Resolve customer: saved (authoritative perk from DB) or ad-hoc walk-in object.
@@ -77,8 +77,8 @@ export function listRetailSales(branch_id = 'br1', limit = 40) {
 
 export function refund(order_id, reason, branch_id = 'br1') {
   const order = getOrder(order_id);
-  if (!order) throw new Error('Đơn không tồn tại');
-  if (order.status === 'void') throw new Error('Đơn đã hoàn trước đó');
+  if (!order) throw new Error('Order not found');
+  if (order.status === 'void') throw new Error('Order has already been refunded');
   // Restock returned SKUs and reverse.
   for (const it of order.items) {
     if (it.sku_id && it.status !== 'cancelled') returnSku(it.sku_id, it.qty, order_id, branch_id, { lot_id: it.lot_id });
@@ -95,14 +95,14 @@ function normalizeCheckoutItems(items, branch_id) {
   for (const raw of items || []) {
     const qty = Math.max(1, parseInt(raw.qty) || 1);
     const sku = db.prepare(`SELECT * FROM skus WHERE id=? AND branch_id=? AND active=1`).get(raw.sku_id, branch_id);
-    if (!sku) throw new Error('SKU không tồn tại: ' + raw.sku_id);
-    if (sku.stock + 0.000001 < qty) throw new Error(`Hết hàng: ${sku.name} (còn ${sku.stock})`);
+    if (!sku) throw new Error('SKU not found: ' + raw.sku_id);
+    if (sku.stock + 0.000001 < qty) throw new Error(`Out of stock: ${sku.name} (remaining ${sku.stock})`);
     const lot_id = raw.lot_id || null;
     if (lot_id) {
       const lot = db.prepare(`SELECT * FROM stock_lots WHERE id=? AND branch_id=? AND item_type='sku' AND item_id=?`)
         .get(lot_id, branch_id, sku.id);
-      if (!lot) throw new Error('Lot không tồn tại cho ' + sku.name);
-      if (lot.qty_on_hand + 0.000001 < qty) throw new Error(`Lot ${lot.lot_no} của ${sku.name} không đủ tồn`);
+      if (!lot) throw new Error('Lot not found for ' + sku.name);
+      if (lot.qty_on_hand + 0.000001 < qty) throw new Error(`Lot ${lot.lot_no} of ${sku.name} has insufficient stock`);
     }
     out.push({ sku_id: sku.id, qty, lot_id, price: sku.price, name: sku.name });
   }
