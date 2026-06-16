@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="vi"><head>
+<html lang="en"><head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>KDS — Kitchen Display</title>
 <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
@@ -53,7 +53,7 @@ import { api, connect, toast, esc, startClock, topbar, requireModuleAccess, rend
 document.getElementById('top').innerHTML = topbar('kds');
 await requireModuleAccess('kds'); renderUserChip();
 
-const STATIONS=[['all','🍽️ Tất cả'],['kitchen','🔥 Bếp'],['bar','🍹 Bar'],['salad','🥗 Salad/Lạnh'],['beverage','🥤 Beverage']];
+const STATIONS=[['all','🍽️ All'],['kitchen','🔥 Kitchen'],['bar','🍹 Bar'],['salad','🥗 Salad/Cold'],['beverage','🥤 Beverage']];
 let station = localStorage.getItem('kds_station') || 'all';
 let allTickets = [];  // every active ticket across stations (for live badge counts)
 
@@ -79,14 +79,14 @@ function render(){
   // Station tabs with live count + overdue badge
   document.getElementById('stations').innerHTML = STATIONS.map(([k,n])=>{
     const c=stationCount(k), late=lateCount(k);
-    return `<button class="stbtn ${k===station?'active':''} ${late?'has-late':''}" data-s="${k}">${n}${c?`<span class="n">${c}</span>`:''}${late?`<span class="nlate">${late} trễ</span>`:''}</button>`;
+    return `<button class="stbtn ${k===station?'active':''} ${late?'has-late':''}" data-s="${k}">${n}${c?`<span class="n">${c}</span>`:''}${late?`<span class="nlate">${late} late</span>`:''}</button>`;
   }).join('');
   document.querySelectorAll('.stbtn').forEach(b=>b.onclick=()=>{station=b.dataset.s;localStorage.setItem('kds_station',station);render();});
 
   const grid=document.getElementById('grid');
   let active = allTickets.filter(isActive);
   if(station!=='all') active = active.filter(t=>t.station===station);
-  if(!active.length){ grid.innerHTML=`<div class="kdsempty"><div class="big">✨</div>Không có món nào đang chờ${station!=='all'?' ở station này':''}<br><span style="font-size:13px">Order mới sẽ hiện ở đây realtime</span></div>`; return; }
+  if(!active.length){ grid.innerHTML=`<div class="kdsempty"><div class="big">✨</div>No items pending${station!=='all'?' at this station':''}<br><span style="font-size:13px">New orders will appear here in realtime</span></div>`; return; }
   // newest-pending first within sort by elapsed (late ones bubble up)
   active.sort((a,b)=> new Date(a.created_at)-new Date(b.created_at));
   grid.innerHTML = active.map(card).join('');
@@ -109,7 +109,7 @@ function card(t){
     <div class="tbody">
       <div class="nm">
         <span class="qy">${t.qty}×</span> ${esc(t.name)}
-        ${isCancelled?`<span style="margin-left:8px;background:#ffebee;color:var(--late);border:1px solid rgba(255,107,107,0.4);font-size:11px;padding:2px 6px;border-radius:4px;font-weight:700">MÓN ĐÃ HỦY</span>`:''}
+        ${isCancelled?`<span style="margin-left:8px;background:#ffebee;color:var(--late);border:1px solid rgba(255,107,107,0.4);font-size:11px;padding:2px 6px;border-radius:4px;font-weight:700">ITEM CANCELLED</span>`:''}
       </div>
       ${modTxt?`<div class="md">+ ${esc(modTxt)}</div>`:''}
       ${t.note?`<div class="nt">📝 ${esc(t.note)}</div>`:''}
@@ -119,11 +119,11 @@ function card(t){
   </div>`;
 }
 function actions(t){
-  if(t.status==='cancelled') return `<button class="btn danger" data-act="dismiss" style="background:var(--late);color:#fff;border-color:var(--late);flex:1">Xác nhận đã hủy</button>`;
-  if(t.status==='new') return `<button class="btn primary" data-act="accepted">Nhận món</button>`;
-  if(t.status==='accepted') return `<button class="btn warn" data-act="preparing">Bắt đầu làm</button>`;
-  if(t.status==='preparing') return `<button class="btn green" data-act="ready">Xong ✓</button>`;
-  if(t.status==='ready') return `<button class="btn" data-act="served">Đã giao</button>`;
+  if(t.status==='cancelled') return `<button class="btn danger" data-act="dismiss" style="background:var(--late);color:#fff;border-color:var(--late);flex:1">Confirm cancelled</button>`;
+  if(t.status==='new') return `<button class="btn primary" data-act="accepted">Accept</button>`;
+  if(t.status==='accepted') return `<button class="btn warn" data-act="preparing">Start preparing</button>`;
+  if(t.status==='preparing') return `<button class="btn green" data-act="ready">Done ✓</button>`;
+  if(t.status==='ready') return `<button class="btn" data-act="served">Served</button>`;
   return '';
 }
 function bind(){
