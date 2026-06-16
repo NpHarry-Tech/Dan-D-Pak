@@ -1,17 +1,17 @@
-// Shared order/invoice history (Lịch sử bán hàng) — used by POS & Retail.
+// Shared order/invoice history — used by POS & Retail.
 // Lists past paid/void orders, shows a full receipt, and supports reprint —
-// like KiotViet "Lịch sử bán hàng" / Odoo Orders.
+// like KiotViet "Sales History" / Odoo Orders.
 import { api, money, esc, toast, getUser } from './client.js';
 
 const CHANNELS = [
-  { v: '', label: 'Tất cả kênh' },
-  { v: 'dine_in', label: 'Tại bàn' },
-  { v: 'retail', label: 'Bán lẻ' },
+  { v: '', label: 'All Channels' },
+  { v: 'dine_in', label: 'Dine In' },
+  { v: 'retail', label: 'Retail' },
   { v: 'online', label: 'Online' },
-  { v: 'takeaway', label: 'Mang đi' },
+  { v: 'takeaway', label: 'Takeaway' },
 ];
-const METHOD_VN = { cash: 'Tiền mặt', card: 'Thẻ', bank_transfer: 'Chuyển khoản', qrcode: 'QR', qr: 'QR', momo: 'MoMo', zalopay: 'ZaloPay', visa: 'Visa', voucher: 'Voucher' };
-const fmtTime = (iso) => { try { return new Date(iso).toLocaleString('vi-VN', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }); } catch { return ''; } };
+const METHOD_VN = { cash: 'Cash', card: 'Card', bank_transfer: 'Bank Transfer', qrcode: 'QR', qr: 'QR', momo: 'MoMo', zalopay: 'ZaloPay', visa: 'Visa', voucher: 'Voucher' };
+const fmtTime = (iso) => { try { return new Date(iso).toLocaleString('en-US', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }); } catch { return ''; } };
 
 let ov = null, listEl = null, detailEl = null, qEl = null, chEl = null, debTimer = null;
 let opts = { allowRefund: false, onAfterChange: null };
@@ -25,18 +25,18 @@ function ensureOverlay() {
   ov.innerHTML = `
     <div class="oh-modal">
       <div class="oh-head">
-        <h3>📋 Lịch sử bán hàng</h3>
+        <h3>📋 Order History</h3>
         <button class="oh-x" id="ohClose">✕</button>
       </div>
       <div class="oh-body">
         <div class="oh-left">
           <div class="oh-filters">
-            <input id="ohQ" class="oh-q" placeholder="Tìm mã đơn / bàn / mã HĐ…" autocomplete="off">
+            <input id="ohQ" class="oh-q" placeholder="Search order # / table / invoice #…" autocomplete="off">
             <select id="ohCh" class="oh-ch">${CHANNELS.map(c => `<option value="${c.v}">${c.label}</option>`).join('')}</select>
           </div>
-          <div class="oh-list" id="ohList"><div class="oh-empty">Đang tải…</div></div>
+          <div class="oh-list" id="ohList"><div class="oh-empty">Loading…</div></div>
         </div>
-        <div class="oh-right" id="ohDetail"><div class="oh-empty">Chọn một đơn để xem chi tiết</div></div>
+        <div class="oh-right" id="ohDetail"><div class="oh-empty">Select an order to view details</div></div>
       </div>
     </div>`;
   document.body.appendChild(ov);
@@ -54,18 +54,18 @@ async function load() {
   if (!listEl) return;
   const q = encodeURIComponent(qEl.value.trim());
   const ch = encodeURIComponent(chEl.value);
-  listEl.innerHTML = '<div class="oh-empty">Đang tải…</div>';
+  listEl.innerHTML = '<div class="oh-empty">Loading…</div>';
   let rows = [];
-  try { rows = await api(`/orders/history?limit=80&q=${q}&channel=${ch}`); } catch (e) { listEl.innerHTML = `<div class="oh-empty">Lỗi tải: ${esc(e.message)}</div>`; return; }
-  if (!rows.length) { listEl.innerHTML = '<div class="oh-empty">Không có đơn nào.</div>'; return; }
+  try { rows = await api(`/orders/history?limit=80&q=${q}&channel=${ch}`); } catch (e) { listEl.innerHTML = `<div class="oh-empty">Load error: ${esc(e.message)}</div>`; return; }
+  if (!rows.length) { listEl.innerHTML = '<div class="oh-empty">No orders found.</div>'; return; }
   listEl.innerHTML = rows.map(o => {
     const methods = (o.methods || []).map(m => METHOD_VN[m.method] || m.method).join(', ');
-    const voidBadge = o.status === 'void' ? '<span class="oh-badge void">Đã hủy</span>' : '';
-    const invBadge = o.invoice_no ? `<span class="oh-badge inv">HĐ ${esc(o.invoice_no)}</span>` : '';
+    const voidBadge = o.status === 'void' ? '<span class="oh-badge void">Voided</span>' : '';
+    const invBadge = o.invoice_no ? `<span class="oh-badge inv">INV ${esc(o.invoice_no)}</span>` : '';
     return `<div class="oh-row" data-id="${esc(o.id)}">
       <div class="oh-r1"><b>#${esc(o.number)}</b><span class="oh-tot">${money(o.total)}</span></div>
       <div class="oh-r2"><span>${esc(o.channel_label || '')}</span><span class="oh-time">${fmtTime(o.paid_at || o.created_at)}</span></div>
-      <div class="oh-r3"><span>${o.item_count || 0} món · ${esc(methods || '—')}</span><span>${voidBadge}${invBadge}</span></div>
+      <div class="oh-r3"><span>${o.item_count || 0} items · ${esc(methods || '—')}</span><span>${voidBadge}${invBadge}</span></div>
     </div>`;
   }).join('');
   listEl.querySelectorAll('.oh-row').forEach(r => r.onclick = () => {
@@ -76,7 +76,7 @@ async function load() {
 }
 
 async function showDetail(id) {
-  detailEl.innerHTML = '<div class="oh-empty">Đang tải…</div>';
+  detailEl.innerHTML = '<div class="oh-empty">Loading…</div>';
   let r;
   try {
     const [receipt, _] = await Promise.all([
@@ -84,13 +84,13 @@ async function showDetail(id) {
       refreshPrintConfig()
     ]);
     r = receipt;
-  } catch (e) { detailEl.innerHTML = `<div class="oh-empty">Lỗi: ${esc(e.message)}</div>`; return; }
+  } catch (e) { detailEl.innerHTML = `<div class="oh-empty">Error: ${esc(e.message)}</div>`; return; }
   const canRefund = opts.allowRefund && r.status === 'paid' && r.channel === 'retail';
   detailEl.innerHTML = receiptHtml(r) + `
     <div class="oh-actions">
-      <button class="btn primary" id="ohPrint">🖨️ In lại hóa đơn</button>
-      ${r.invoice ? `<a class="btn" href="${esc(r.invoice.lookup_url)}" target="_blank">🔎 Tra cứu HĐĐT</a>` : ''}
-      ${canRefund ? `<button class="btn danger" id="ohRefund">↩ Đổi trả / Hoàn hàng</button>` : ''}
+      <button class="btn primary" id="ohPrint">🖨️ Reprint Receipt</button>
+      ${r.invoice ? `<a class="btn" href="${esc(r.invoice.lookup_url)}" target="_blank">🔎 Lookup E-Invoice</a>` : ''}
+      ${canRefund ? `<button class="btn danger" id="ohRefund">↩ Return / Refund</button>` : ''}
     </div>
     <div id="ohRefundForm"></div>`;
   detailEl.querySelector('#ohPrint').onclick = () => printReceipt(r);
@@ -102,32 +102,32 @@ function showRefundForm(r) {
   const box = detailEl.querySelector('#ohRefundForm');
   if (!box) return;
   box.innerHTML = `<div class="oh-refund">
-    <label>Lý do đổi trả / hoàn hàng</label>
-    <input id="ohRfReason" placeholder="VD: Khách trả hàng" value="Khách trả hàng">
+    <label>Reason for return / refund</label>
+    <input id="ohRfReason" placeholder="e.g. Customer return" value="Customer return">
     <div class="oh-rf-act">
-      <button class="btn" id="ohRfCancel">Hủy</button>
-      <button class="btn danger" id="ohRfOk">Xác nhận hoàn ${money(r.total)}</button>
+      <button class="btn" id="ohRfCancel">Cancel</button>
+      <button class="btn danger" id="ohRfOk">Confirm Refund ${money(r.total)}</button>
     </div>
   </div>`;
   box.querySelector('#ohRfCancel').onclick = () => { box.innerHTML = ''; };
   box.querySelector('#ohRfOk').onclick = async () => {
-    const reason = (box.querySelector('#ohRfReason').value || '').trim() || 'Khách trả hàng';
-    const btn = box.querySelector('#ohRfOk'); btn.disabled = true; btn.textContent = 'Đang hoàn…';
+    const reason = (box.querySelector('#ohRfReason').value || '').trim() || 'Customer return';
+    const btn = box.querySelector('#ohRfOk'); btn.disabled = true; btn.textContent = 'Processing refund…';
     try {
       const res = await api(`/retail/${r.order_id}/refund`, { method: 'POST', body: { reason } });
-      toast('Đã hoàn ' + money(res.refunded ?? r.total));
+      toast('Refunded ' + money(res.refunded ?? r.total));
       if (opts.onAfterChange) opts.onAfterChange();
-      await load();              // refresh list (order now shows as "Đã hủy")
+      await load();              // refresh list (order now shows as "Voided")
       await showDetail(r.order_id);
-    } catch (e) { toast(e.message, true); btn.disabled = false; btn.textContent = 'Xác nhận hoàn ' + money(r.total); }
+    } catch (e) { toast(e.message, true); btn.disabled = false; btn.textContent = 'Confirm Refund ' + money(r.total); }
   };
 }
-const fmtDate = (iso) => { try { return new Date(iso).toLocaleDateString('vi-VN'); } catch { return ''; } };
-const fmtHm = (iso) => { try { return new Date(iso).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }); } catch { return ''; } };
-const placeLabel = (r) => r.table_code ? 'Bàn ' + r.table_code
-  : r.online_channel ? (r.online_channel + (r.online_ref ? ' · ' + r.online_ref : '')) : 'Quầy bán lẻ';
-const statusLabel = (r) => r.status === 'void' ? 'ĐÃ HỦY / HOÀN' : 'Đã thanh toán';
-const payLabel = (r) => (r.lines || []).map(l => METHOD_VN[l.method] || l.method).join(' / ') || 'Tiền mặt';
+const fmtDate = (iso) => { try { return new Date(iso).toLocaleDateString('en-US'); } catch { return ''; } };
+const fmtHm = (iso) => { try { return new Date(iso).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }); } catch { return ''; } };
+const placeLabel = (r) => r.table_code ? 'Table ' + r.table_code
+  : r.online_channel ? (r.online_channel + (r.online_ref ? ' · ' + r.online_ref : '')) : 'Retail Counter';
+const statusLabel = (r) => r.status === 'void' ? 'VOIDED / REFUNDED' : 'Paid';
+const payLabel = (r) => (r.lines || []).map(l => METHOD_VN[l.method] || l.method).join(' / ') || 'Cash';
 
 // Build numbered item rows, grouped by F&B vs Retail (like the BCM template).
 function itemRows(r, render) {
@@ -137,8 +137,8 @@ function itemRows(r, render) {
   const block = (arr) => arr.map(it => { stt++; return render(it, stt); }).join('');
   let out = '';
   if (fnb.length && retail.length) {
-    out += render(null, null, '[ F&B — NHÀ HÀNG / ĐỒ UỐNG ]') + block(fnb);
-    out += render(null, null, '[ RETAIL — SẢN PHẨM TIÊU DÙNG ]') + block(retail);
+    out += render(null, null, '[ F&B — RESTAURANT / BEVERAGES ]') + block(fnb);
+    out += render(null, null, '[ RETAIL — CONSUMER PRODUCTS ]') + block(retail);
   } else {
     out += block(r.items);
   }
@@ -182,22 +182,23 @@ function internalBillNo(r, d) {
   let n = 0; for (const ch of seed) n = (n * 31 + ch.charCodeAt(0)) % 10000;
   return `Dan${pad2(d.getDate())}${pad2(d.getMonth() + 1)}${String(d.getFullYear()).slice(-2)}${String(n || 1).padStart(4, '0')}`;
 }
-function numberToVietnamese(n) {
+function numberToWords(n) {
   n = Math.round(Number(n) || 0);
-  if (n === 0) return 'Không đồng';
-  const digit = ['không', 'một', 'hai', 'ba', 'bốn', 'năm', 'sáu', 'bảy', 'tám', 'chín'], unit = ['', 'nghìn', 'triệu', 'tỷ'];
-  function triad(num, full = false) {
-    const tr = Math.floor(num / 100), ch = Math.floor((num % 100) / 10), dv = num % 10, out = [];
-    if (tr > 0 || full) out.push(digit[tr] + ' trăm');
-    if (ch > 1) { out.push(digit[ch] + ' mươi'); if (dv === 1) out.push('mốt'); else if (dv === 5) out.push('lăm'); else if (dv) out.push(digit[dv]); }
-    else if (ch === 1) { out.push('mười'); if (dv === 5) out.push('lăm'); else if (dv) out.push(digit[dv]); }
-    else if (dv) { if (tr > 0 || full) out.push('lẻ'); out.push(digit[dv]); }
-    return out.join(' ');
+  if (n === 0) return 'Zero dollars';
+  const ones = ['', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine',
+    'ten', 'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen', 'sixteen', 'seventeen', 'eighteen', 'nineteen'];
+  const tens = ['', '', 'twenty', 'thirty', 'forty', 'fifty', 'sixty', 'seventy', 'eighty', 'ninety'];
+  function belowThousand(num) {
+    if (num === 0) return '';
+    if (num < 20) return ones[num];
+    if (num < 100) return tens[Math.floor(num / 10)] + (num % 10 ? '-' + ones[num % 10] : '');
+    return ones[Math.floor(num / 100)] + ' hundred' + (num % 100 ? ' ' + belowThousand(num % 100) : '');
   }
+  const units = ['', 'thousand', 'million', 'billion'];
   const parts = []; let x = n, idx = 0;
-  while (x > 0) { const g = x % 1000; if (g) parts.unshift(`${triad(g, parts.length > 0)} ${unit[idx]}`.trim()); x = Math.floor(x / 1000); idx++; }
+  while (x > 0) { const g = x % 1000; if (g) parts.unshift(belowThousand(g) + (units[idx] ? ' ' + units[idx] : '')); x = Math.floor(x / 1000); idx++; }
   const s = parts.join(' ').replace(/\s+/g, ' ').trim();
-  return s.charAt(0).toUpperCase() + s.slice(1) + ' đồng chẵn';
+  return s.charAt(0).toUpperCase() + s.slice(1) + ' dollars exactly';
 }
 function lineCategory(i) { return i.station === 'retail' || i.sku_id || i.kind === 'retail' ? 'retail' : 'fnb'; }
 function itemLineAmount(i, rate, priceIncludesVat) {
@@ -217,8 +218,8 @@ function receiptItemsText(r) {
   const groups = { fnb: [], retail: [] };
   (r.items || []).forEach(i => groups[lineCategory(i)].push(i));
   const rows = []; let idx = 1;
-  if (groups.fnb.length) { rows.push('[DANH MỤC F&B - NHÀ HÀNG / ĐỒ UỐNG]'); groups.fnb.forEach(i => rows.push(formatReceiptItemRow(idx++, i, rate, inc))); }
-  if (groups.retail.length) { if (rows.length) rows.push(''); rows.push('[DANH MỤC RETAIL - SẢN PHẨM TIÊU DÙNG]'); groups.retail.forEach(i => rows.push(formatReceiptItemRow(idx++, i, rate, inc))); }
+  if (groups.fnb.length) { rows.push('[F&B CATEGORY - RESTAURANT / BEVERAGES]'); groups.fnb.forEach(i => rows.push(formatReceiptItemRow(idx++, i, rate, inc))); }
+  if (groups.retail.length) { if (rows.length) rows.push(''); rows.push('[RETAIL CATEGORY - CONSUMER PRODUCTS]'); groups.retail.forEach(i => rows.push(formatReceiptItemRow(idx++, i, rate, inc))); }
   return rows.join('\n');
 }
 function receiptVarsBcm(r) {
@@ -232,10 +233,10 @@ function receiptVarsBcm(r) {
   const grand = priceIncludesVat ? gross : taxable + vat - (Number(r.discount) || 0);
   const d = new Date(r.paid_at || r.created_at || Date.now());
   const billNo = r.bill_no || r.number || '';
-  const taxNote = cfg.taxIncludedText || (priceIncludesVat ? `Giá đã bao gồm thuế GTGT ${rate}% theo quy định` : `Chưa bao gồm thuế GTGT ${rate}%`);
+  const taxNote = cfg.taxIncludedText || (priceIncludesVat ? `Price includes VAT ${rate}% as per regulations` : `Price excludes VAT ${rate}%`);
   return {
     storeName: cfg.storeName || r.branch || r.company?.name || 'District 1 - HCMC',
-    storeSubtitle: cfg.storeSubtitle || '(Hệ thống Phân phối F&B & Retail BCM)',
+    storeSubtitle: cfg.storeSubtitle || '(BCM F&B & Retail Distribution System)',
     address: cfg.address || r.company?.address || '',
     sellerTaxCode: ein.taxCode || cfg.taxCode || r.company?.tax_code || '',
     phone: cfg.phone || r.company?.phone || '',
@@ -244,12 +245,12 @@ function receiptVarsBcm(r) {
     taxInvoiceNo: r.tax_invoice_no || r.invoice?.invoice_no || '00000001',
     billNo,
     orderNo: billNo,
-    table: r.table_code || 'Tại quầy',
+    table: r.table_code || 'Counter',
     cashier: r.cashier || '',
     date: receiptDate(d),
     time: receiptDate(d) + ' ' + receiptTime(d),
     timeOnly: receiptTime(d),
-    customerName: r.customer?.name || 'Khách lẻ',
+    customerName: r.customer?.name || 'Walk-in Customer',
     customerTaxCode: r.customer?.tax_code || '',
     items: receiptItemsText(r),
     subtotal: vndPlain(r.subtotal || r.goods_amount || 0),
@@ -259,12 +260,12 @@ function receiptVarsBcm(r) {
     discount: vndPlain(r.discount || 0),
     total: vndPlain(r.total || 0),
     grandTotal: vndPlain(grand),
-    totalWords: r.total_words || numberToVietnamese(grand),
+    totalWords: r.total_words || numberToWords(grand),
     taxNote,
-    method: lines.length ? lines.map(l => METHOD_VN[l.method] || l.method).join(' / ') : (r.preview ? 'Chưa thanh toán' : '-'),
-    paymentStatus: r.preview ? 'Chưa thanh toán' : 'Đã thanh toán',
+    method: lines.length ? lines.map(l => METHOD_VN[l.method] || l.method).join(' / ') : (r.preview ? 'Unpaid' : '-'),
+    paymentStatus: r.preview ? 'Unpaid' : 'Paid',
     taxAuthorityCode: r.tax_authority_code || r.invoice?.lookup_code || '00F83A7B-2C9D-4E1A-8B6C-5D4E3F2A1B0C',
-    footer: cfg.footer || 'Cảm ơn quý khách!',
+    footer: cfg.footer || 'Thank you for your visit!',
   };
 }
 function renderTemplateReceipt(r) {
@@ -286,26 +287,26 @@ function renderTemplateReceipt(r) {
   const cfg = activeBillCfg(r);
   const hasTaxNote = tpl.elements.some(el => String(el.text || '').includes('{taxNote}'));
   const taxFallback = cfg.showTax !== '0' && !hasTaxNote ? `<div class="c" style="padding:0 16px 8px;font-size:10px;color:#666">${esc(vars.taxNote || '')}</div>` : '';
-  return `<div class="receipt template" style="max-width:${w <= 58 ? 270 : 340}px;margin:0 auto"><div class="receipt-canvas-live" style="--receipt-ratio:${w}/${h}">${els}</div>${taxFallback}${cfg.showQr !== '0' && !r.preview ? `<div style="padding:0 16px 14px"><div class="qr"></div><div class="c" style="font-size:10px">Quét QR tra cứu hóa đơn</div></div>` : ''}</div>`;
+  return `<div class="receipt template" style="max-width:${w <= 58 ? 270 : 340}px;margin:0 auto"><div class="receipt-canvas-live" style="--receipt-ratio:${w}/${h}">${els}</div>${taxFallback}${cfg.showQr !== '0' && !r.preview ? `<div style="padding:0 16px 14px"><div class="qr"></div><div class="c" style="font-size:10px">Scan QR to look up invoice</div></div>` : ''}</div>`;
 }
 function renderBasicReceipt(r) {
   const cfg = activeBillCfg(r);
   const store = cfg.storeName || r.branch || r.company?.name || 'District 1 - HCMC';
-  const footer = cfg.footer || 'Cảm ơn quý khách!';
-  const taxNote = cfg.taxIncludedText || `Giá đã bao gồm thuế GTGT ${r.vat_rate || 8}% theo quy định`;
+  const footer = cfg.footer || 'Thank you for your visit!';
+  const taxNote = cfg.taxIncludedText || `Price includes VAT ${r.vat_rate || 8}% as per regulations`;
   return `<div class="receipt">
-      <div class="c"><h4>${esc(store)}</h4>${cfg.address || r.company?.address ? `<div>${esc(cfg.address || r.company?.address)}</div>` : ''}${cfg.phone || r.company?.phone ? `<div>${esc(cfg.phone || r.company?.phone)}</div>` : ''}<div>${r.preview ? 'PHIẾU TẠM TÍNH' : 'HÓA ĐƠN'} #${esc(r.bill_no || r.number || '')}</div>
-      ${r.table_code ? `<div>Bàn: ${esc(r.table_code)}</div>` : ''}</div>
+      <div class="c"><h4>${esc(store)}</h4>${cfg.address || r.company?.address ? `<div>${esc(cfg.address || r.company?.address)}</div>` : ''}${cfg.phone || r.company?.phone ? `<div>${esc(cfg.phone || r.company?.phone)}</div>` : ''}<div>${r.preview ? 'DRAFT RECEIPT' : 'INVOICE'} #${esc(r.bill_no || r.number || '')}</div>
+      ${r.table_code ? `<div>Table: ${esc(r.table_code)}</div>` : ''}</div>
       <hr>
       ${(r.items || []).map(i => `<div class="li"><span>${i.qty}× ${esc(i.name)}</span><span>${money((i.unit_price || i.price || 0) * (i.qty || 1))}</span></div>`).join('')}
       <hr>
-      <div class="li"><span>Tạm tính</span><span>${money(r.subtotal || r.goods_amount || 0)}</span></div>
+      <div class="li"><span>Subtotal</span><span>${money(r.subtotal || r.goods_amount || 0)}</span></div>
       ${cfg.showTax !== '0' ? `<div class="li" style="font-size:10px;color:#666"><span>${esc(taxNote)}</span><span></span></div>` : ''}
-      ${r.discount ? `<div class="li"><span>Giảm giá</span><span>-${money(r.discount)}</span></div>` : ''}
-      <div class="li tt"><span>TỔNG</span><span>${money(r.total || 0)}</span></div>
+      ${r.discount ? `<div class="li"><span>Discount</span><span>-${money(r.discount)}</span></div>` : ''}
+      <div class="li tt"><span>TOTAL</span><span>${money(r.total || 0)}</span></div>
       ${r.lines && r.lines.length ? '<hr>' + r.lines.map(l => `<div class="li"><span>${METHOD_VN[l.method] || l.method}</span><span>${money(l.amount)}</span></div>`).join('') : ''}
-      ${!r.preview && r.change ? `<div class="li"><span>Tiền thối</span><span>${money(r.change)}</span></div>` : ''}
-      ${cfg.showQr !== '0' && !r.preview ? `<div class="qr"></div><div class="c" style="font-size:10px">Quét QR tra cứu hóa đơn</div>` : ''}
+      ${!r.preview && r.change ? `<div class="li"><span>Change</span><span>${money(r.change)}</span></div>` : ''}
+      ${cfg.showQr !== '0' && !r.preview ? `<div class="qr"></div><div class="c" style="font-size:10px">Scan QR to look up invoice</div>` : ''}
       <hr><div class="c" style="font-size:10px">${esc(footer)}</div>
     </div>`;
 }
@@ -326,41 +327,41 @@ function receiptHtml(r) {
     <div class="oh-rc-head">
       <div class="oh-rc-brand">${esc(c.name || '')}</div>
       ${c.address ? `<div class="oh-rc-addr">${esc(c.address)}</div>` : ''}
-      <div class="oh-rc-addr">${c.tax_code ? 'MST: ' + esc(c.tax_code) : ''}${c.phone ? ' · ĐT: ' + esc(c.phone) : ''}</div>
+      <div class="oh-rc-addr">${c.tax_code ? 'Tax ID: ' + esc(c.tax_code) : ''}${c.phone ? ' · Tel: ' + esc(c.phone) : ''}</div>
       ${c.email ? `<div class="oh-rc-addr">${esc(c.email)}</div>` : ''}
     </div>
-    <div class="oh-rc-title">HÓA ĐƠN BÁN HÀNG<small>(Khởi tạo từ máy tính tiền)</small></div>
+    <div class="oh-rc-title">SALES INVOICE<small>(Generated from POS terminal)</small></div>
     <div class="oh-rc-meta">
-      ${inv ? `<div><span>Ký hiệu HĐ</span><b>${esc(inv.symbol || '')}</b></div><div><span>Số HĐ (Thuế)</span><b>${esc(inv.invoice_no || '')}</b></div>` : ''}
-      <div><span>Số Bill (Nội bộ)</span><b>${esc(r.bill_no || r.number)}</b></div>
-      <div><span>Ngày lập</span><b>${fmtDate(r.paid_at || r.created_at)}</b></div>
-      <div><span>Giờ lập</span><b>${fmtHm(r.paid_at || r.created_at)}</b></div>
-      <div><span>Thu ngân</span><b>${esc(r.cashier || '—')}</b></div>
-      <div><span>Quầy / Bàn</span><b>${esc(placeLabel(r))}</b></div>
-      ${r.customer?.name ? `<div><span>Khách hàng</span><b>${esc(r.customer.name)}</b></div>` : ''}
-      ${r.customer?.tax_code ? `<div><span>MST khách</span><b>${esc(r.customer.tax_code)}</b></div>` : ''}
+      ${inv ? `<div><span>Invoice Series</span><b>${esc(inv.symbol || '')}</b></div><div><span>Invoice No. (Tax)</span><b>${esc(inv.invoice_no || '')}</b></div>` : ''}
+      <div><span>Bill No. (Internal)</span><b>${esc(r.bill_no || r.number)}</b></div>
+      <div><span>Date</span><b>${fmtDate(r.paid_at || r.created_at)}</b></div>
+      <div><span>Time</span><b>${fmtHm(r.paid_at || r.created_at)}</b></div>
+      <div><span>Cashier</span><b>${esc(r.cashier || '—')}</b></div>
+      <div><span>Counter / Table</span><b>${esc(placeLabel(r))}</b></div>
+      ${r.customer?.name ? `<div><span>Customer</span><b>${esc(r.customer.name)}</b></div>` : ''}
+      ${r.customer?.tax_code ? `<div><span>Customer Tax ID</span><b>${esc(r.customer.tax_code)}</b></div>` : ''}
     </div>
-    <table class="oh-rc-items"><thead><tr><th class="oh-stt">STT</th><th>Mặt hàng</th><th class="r">Thành tiền</th></tr></thead><tbody>${rows}</tbody></table>
+    <table class="oh-rc-items"><thead><tr><th class="oh-stt">#</th><th>Item</th><th class="r">Amount</th></tr></thead><tbody>${rows}</tbody></table>
     <div class="oh-rc-sum">
-      <div class="oh-pl"><span>Cộng tiền hàng</span><b>${money(r.goods_amount)}</b></div>
-      ${r.discount ? `<div class="oh-pl"><span>Giảm giá</span><b>-${money(r.discount)}</b></div>` : ''}
-      <div class="oh-pl"><span>Thuế GTGT (${r.vat_rate}%)</span><b>${money(r.vat_amount)}</b></div>
-      <div class="oh-pl oh-grand"><span>TỔNG THANH TOÁN</span><b>${money(r.total)}</b></div>
+      <div class="oh-pl"><span>Goods Total</span><b>${money(r.goods_amount)}</b></div>
+      ${r.discount ? `<div class="oh-pl"><span>Discount</span><b>-${money(r.discount)}</b></div>` : ''}
+      <div class="oh-pl"><span>VAT (${r.vat_rate}%)</span><b>${money(r.vat_amount)}</b></div>
+      <div class="oh-pl oh-grand"><span>TOTAL DUE</span><b>${money(r.total)}</b></div>
     </div>
-    <div class="oh-rc-words">Bằng chữ: <i>${esc(r.total_words || '')}</i></div>
+    <div class="oh-rc-words">In words: <i>${esc(r.total_words || '')}</i></div>
     <div class="oh-rc-sum">
-      <div class="oh-pl"><span>Hình thức TT</span><b>${esc(payLabel(r))}</b></div>
-      <div class="oh-pl"><span>Trạng thái</span><b>${esc(statusLabel(r))}</b></div>
-      ${r.change ? `<div class="oh-pl"><span>Tiền thối</span><b>${money(r.change)}</b></div>` : ''}
+      <div class="oh-pl"><span>Payment Method</span><b>${esc(payLabel(r))}</b></div>
+      <div class="oh-pl"><span>Status</span><b>${esc(statusLabel(r))}</b></div>
+      ${r.change ? `<div class="oh-pl"><span>Change</span><b>${money(r.change)}</b></div>` : ''}
     </div>
-    ${inv ? `<div class="oh-rc-inv">MÃ CỦA CƠ QUAN THUẾ:<br><b>${esc(inv.lookup_code || '')}</b><br><small>Tra cứu tại https://gdt.gov.vn</small></div>` : ''}
-    <div class="oh-rc-foot">HÓA ĐƠN ĐIỆN TỬ KHỞI TẠO TỪ MÁY TÍNH TIỀN<br>CẢM ƠN QUÝ KHÁCH — HẸN GẶP LẠI TẠI BCM!</div>
+    ${inv ? `<div class="oh-rc-inv">TAX AUTHORITY CODE:<br><b>${esc(inv.lookup_code || '')}</b><br><small>Verify at https://gdt.gov.vn</small></div>` : ''}
+    <div class="oh-rc-foot">ELECTRONIC INVOICE GENERATED FROM POS TERMINAL<br>THANK YOU — SEE YOU AGAIN AT BCM!</div>
   </div>`;
 }
 
 function printReceipt(r) {
   const w = window.open('', '_blank', 'width=400,height=680');
-  if (!w) { toast('Trình duyệt chặn cửa sổ in', true); return; }
+  if (!w) { toast('Browser blocked the print window', true); return; }
   const tpl = activeBillTemplate(r);
   if (tpl?.elements?.length) {
     const vars = receiptVarsBcm(r);
@@ -420,33 +421,33 @@ function printReceipt(r) {
       </style></head><body>
       <div class="ct name">${esc(c.name || '')}</div>
       ${c.address ? `<div class="ct small">${esc(c.address)}</div>` : ''}
-      <div class="ct small">${c.tax_code ? 'MST: ' + esc(c.tax_code) : ''}${c.phone ? ' · ĐT: ' + esc(c.phone) : ''}</div>
+      <div class="ct small">${c.tax_code ? 'Tax ID: ' + esc(c.tax_code) : ''}${c.phone ? ' · Tel: ' + esc(c.phone) : ''}</div>
       ${c.email ? `<div class="ct small">${esc(c.email)}</div>` : ''}
-      <div class="title">HÓA ĐƠN BÁN HÀNG<small>(Khởi tạo từ máy tính tiền)</small></div>
+      <div class="title">SALES INVOICE<small>(Generated from POS terminal)</small></div>
       <hr>
       <div class="meta">
-        ${inv ? `<div><span>Ký hiệu HĐ:</span><b>${esc(inv.symbol || '')}</b></div><div><span>Số HĐ (Thuế):</span><b>${esc(inv.invoice_no || '')}</b></div>` : ''}
-        <div><span>Số Bill (Nội bộ):</span><b>${esc(r.bill_no || r.number)}</b></div>
-        <div><span>Ngày lập:</span><span>${fmtDate(r.paid_at || r.created_at)} ${fmtHm(r.paid_at || r.created_at)}</span></div>
-        <div><span>Thu ngân:</span><span>${esc(r.cashier || '—')}</span></div>
-        <div><span>Quầy/Bàn:</span><span>${esc(placeLabel(r))}</span></div>
-        ${r.customer?.name ? `<div><span>Khách hàng:</span><span>${esc(r.customer.name)}</span></div>` : ''}
-        ${r.customer?.tax_code ? `<div><span>MST khách:</span><span>${esc(r.customer.tax_code)}</span></div>` : ''}
+        ${inv ? `<div><span>Invoice Series:</span><b>${esc(inv.symbol || '')}</b></div><div><span>Invoice No. (Tax):</span><b>${esc(inv.invoice_no || '')}</b></div>` : ''}
+        <div><span>Bill No. (Internal):</span><b>${esc(r.bill_no || r.number)}</b></div>
+        <div><span>Date:</span><span>${fmtDate(r.paid_at || r.created_at)} ${fmtHm(r.paid_at || r.created_at)}</span></div>
+        <div><span>Cashier:</span><span>${esc(r.cashier || '—')}</span></div>
+        <div><span>Counter/Table:</span><span>${esc(placeLabel(r))}</span></div>
+        ${r.customer?.name ? `<div><span>Customer:</span><span>${esc(r.customer.name)}</span></div>` : ''}
+        ${r.customer?.tax_code ? `<div><span>Customer Tax ID:</span><span>${esc(r.customer.tax_code)}</span></div>` : ''}
       </div>
       <hr>
-      <table><thead><tr><th class="stt">STT</th><th>Mặt hàng</th><th class="r">T.Tiền</th></tr></thead><tbody>${rows}</tbody></table>
+      <table><thead><tr><th class="stt">#</th><th>Item</th><th class="r">Amount</th></tr></thead><tbody>${rows}</tbody></table>
       <hr>
-      <div class="row"><span>Cộng tiền hàng:</span><span>${money(r.goods_amount)}</span></div>
-      ${r.discount ? `<div class="row"><span>Giảm giá:</span><span>-${money(r.discount)}</span></div>` : ''}
-      <div class="row"><span>Thuế GTGT (${r.vat_rate}%):</span><span>${money(r.vat_amount)}</span></div>
-      <div class="row grand"><span>TỔNG THANH TOÁN:</span><span>${money(r.total)}</span></div>
-      <div class="words">Bằng chữ: ${esc(r.total_words || '')}</div>
-      <div class="row"><span>Hình thức TT:</span><span>${esc(payLabel(r))}</span></div>
-      <div class="row"><span>Trạng thái:</span><span>${esc(statusLabel(r))}</span></div>
-      ${r.change ? `<div class="row"><span>Tiền thối:</span><span>${money(r.change)}</span></div>` : ''}
-      ${inv ? `<hr><div class="tax">MÃ CỦA CƠ QUAN THUẾ:<br><b>${esc(inv.lookup_code || '')}</b><br>Tra cứu tại https://gdt.gov.vn</div>` : ''}
+      <div class="row"><span>Goods Total:</span><span>${money(r.goods_amount)}</span></div>
+      ${r.discount ? `<div class="row"><span>Discount:</span><span>-${money(r.discount)}</span></div>` : ''}
+      <div class="row"><span>VAT (${r.vat_rate}%):</span><span>${money(r.vat_amount)}</span></div>
+      <div class="row grand"><span>TOTAL DUE:</span><span>${money(r.total)}</span></div>
+      <div class="words">In words: ${esc(r.total_words || '')}</div>
+      <div class="row"><span>Payment Method:</span><span>${esc(payLabel(r))}</span></div>
+      <div class="row"><span>Status:</span><span>${esc(statusLabel(r))}</span></div>
+      ${r.change ? `<div class="row"><span>Change:</span><span>${money(r.change)}</span></div>` : ''}
+      ${inv ? `<hr><div class="tax">TAX AUTHORITY CODE:<br><b>${esc(inv.lookup_code || '')}</b><br>Verify at https://gdt.gov.vn</div>` : ''}
       <hr>
-      <div class="foot">HÓA ĐƠN ĐIỆN TỬ KHỞI TẠO TỪ MÁY TÍNH TIỀN<br>CẢM ƠN QUÝ KHÁCH — HẸN GẶP LẠI TẠI BCM!</div>
+      <div class="foot">ELECTRONIC INVOICE GENERATED FROM POS TERMINAL<br>THANK YOU — SEE YOU AGAIN AT BCM!</div>
       <script>window.onload=function(){window.print();setTimeout(function(){window.close()},300)}<\/script>
       </body></html>`);
   }
@@ -462,8 +463,8 @@ export function mountOrderHistory(container, options = {}) {
   opts = { allowRefund: false, onAfterChange: null, ...options };
   if (typeof container === 'string') container = document.querySelector(container);
   if (container) {
-    const label = options.label || (opts.allowRefund ? '📋 Lịch sử / Đổi trả' : '📋 Lịch sử');
-    container.innerHTML = `<button class="btn sm" id="ohBtn" title="Xem lại đơn cũ, in lại hóa đơn${opts.allowRefund ? ' & đổi trả' : ''}">${label}</button>`;
+    const label = options.label || (opts.allowRefund ? '📋 History / Returns' : '📋 Order History');
+    container.innerHTML = `<button class="btn sm" id="ohBtn" title="View past orders, reprint receipts${opts.allowRefund ? ' & process returns' : ''}">${label}</button>`;
     container.querySelector('#ohBtn').onclick = open;
   }
   return { open, close };
