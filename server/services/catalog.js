@@ -21,9 +21,9 @@ export function getMenuItem(id, opts = {}) {
 
 export function getMenuItemForOrder(id) {
   const item = getMenuItem(id, { forCustomer: true });
-  if (!item || item.deleted_at || item.hidden) throw new Error('Món không tồn tại hoặc đã ẩn: ' + id);
-  if (!item.available_flag) throw new Error('Món tạm hết: ' + item.name);
-  if (!item.schedule_available) throw new Error('Món chưa tới khung giờ bán: ' + item.name);
+  if (!item || item.deleted_at || item.hidden) throw new Error('Item not found or hidden: ' + id);
+  if (!item.available_flag) throw new Error('Item temporarily out of stock: ' + item.name);
+  if (!item.schedule_available) throw new Error('Item not available during this time slot: ' + item.name);
   return item;
 }
 
@@ -96,8 +96,8 @@ export function normalizeAddons(addons) {
   return addons.map((a, i) => ({
     key: a.key || ('ad_' + i + '_' + Math.random().toString(36).slice(2, 6)),
     name: String(a.name || '').trim(),
-    kind: a.kind === 'combo' ? 'combo' : 'extra',     // combo = món ăn kèm; extra = topping/extra
-    type: a.type === 'free' ? 'free' : 'paid',         // free = tặng kèm; paid = mua thêm/bù tiền
+    kind: a.kind === 'combo' ? 'combo' : 'extra',     // combo = side dish; extra = topping/extra
+    type: a.type === 'free' ? 'free' : 'paid',         // free = complimentary; paid = add-on/surcharge
     price: Math.max(0, parseInt(a.price) || 0),
     ref_item_id: a.ref_item_id || null,                // link to another menu item
     available: a.available !== false,                  // for standalone extras
@@ -110,7 +110,7 @@ function refAvailability(ref_item_id) {
   const sched = safeJson(r.schedule_json, { mode: 'always' });
   // Add-on availability ignores `hidden`: an item can be hidden from the main menu
   // yet still sellable as an add-on. Only the green toggle (available), schedule,
-  // and deletion gate it. Turn off the toggle to make the add-on show "Tạm hết".
+  // and deletion gate it. Turn off the toggle to make the add-on show "Temporarily unavailable".
   const available = !!r.available && !r.deleted_at && isScheduleAvailable(sched);
   return { exists: true, available, name: r.name, emoji: r.emoji, image: r.image, price: r.price };
 }
@@ -189,7 +189,7 @@ export function listCategories() {
 }
 export function createCategory(body, branch_id = 'br1') {
   const name = String(body.name || '').trim();
-  if (!name) throw new Error('Thiếu tên danh mục');
+  if (!name) throw new Error('Category name is required');
   const id = 'c_' + Math.random().toString(36).slice(2, 8);
   const sort = (db.prepare(`SELECT COALESCE(MAX(sort),0)+1 n FROM categories`).get().n) || 1;
   db.prepare(`INSERT INTO categories (id,name,icon,sort) VALUES (?,?,?,?)`).run(id, name, body.icon || '🍽️', sort);
@@ -198,7 +198,7 @@ export function createCategory(body, branch_id = 'br1') {
 }
 export function updateCategory(id, body, branch_id = 'br1') {
   const cur = db.prepare(`SELECT * FROM categories WHERE id=?`).get(id);
-  if (!cur) throw new Error('Danh mục không tồn tại');
+  if (!cur) throw new Error('Category not found');
   db.prepare(`UPDATE categories SET name=?, icon=? WHERE id=?`).run(
     String(body.name || '').trim() || cur.name, body.icon || cur.icon, id);
   audit('category.update', { id }, branch_id);
@@ -206,9 +206,9 @@ export function updateCategory(id, body, branch_id = 'br1') {
 }
 export function deleteCategory(id, branch_id = 'br1') {
   const cur = db.prepare(`SELECT * FROM categories WHERE id=?`).get(id);
-  if (!cur) throw new Error('Danh mục không tồn tại');
+  if (!cur) throw new Error('Category not found');
   const used = db.prepare(`SELECT COUNT(*) n FROM menu_items WHERE category_id=? AND deleted_at IS NULL`).get(id).n;
-  if (used) throw new Error(`Không thể xóa: còn ${used} món trong danh mục này. Hãy chuyển/xóa món trước.`);
+  if (used) throw new Error(`Cannot delete: category contains ${used} item(s). Move or delete the items first.`);
   db.prepare(`DELETE FROM categories WHERE id=?`).run(id);
   audit('category.delete', { id, name: cur.name }, branch_id);
   return { ok: true };
@@ -216,7 +216,7 @@ export function deleteCategory(id, branch_id = 'br1') {
 
 export function hideMenuItem(id, hidden = true, branch_id = 'br1') {
   const row = db.prepare(`SELECT * FROM menu_items WHERE id=?`).get(id);
-  if (!row) throw new Error('Món không tồn tại');
+  if (!row) throw new Error('Item not found');
   db.prepare(`UPDATE menu_items SET hidden=? WHERE id=?`).run(hidden ? 1 : 0, id);
   audit(hidden ? 'menu.hide' : 'menu.unhide', { id, name: row.name }, branch_id);
   return getMenuItem(id);
@@ -224,7 +224,7 @@ export function hideMenuItem(id, hidden = true, branch_id = 'br1') {
 
 export function deleteMenuItem(id, branch_id = 'br1') {
   const row = db.prepare(`SELECT * FROM menu_items WHERE id=?`).get(id);
-  if (!row) throw new Error('Món không tồn tại');
+  if (!row) throw new Error('Item not found');
   const used = db.prepare(`SELECT COUNT(*) n FROM order_items WHERE menu_item_id=?`).get(id).n;
   if (used) {
     db.prepare(`UPDATE menu_items SET deleted_at=datetime('now'), hidden=1, available=0 WHERE id=?`).run(id);
