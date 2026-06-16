@@ -36,7 +36,7 @@ export function createVoucher(body, branch_id = 'br1') {
 
 export function updateVoucher(id, body, branch_id = 'br1') {
   const cur = db.prepare(`SELECT * FROM vouchers WHERE id=? AND branch_id=?`).get(id, branch_id);
-  if (!cur) throw new Error('Voucher không tồn tại');
+  if (!cur) throw new Error('Voucher not found');
   const v = normalizeInput(body, cur);
   ensureSku(v, branch_id);
   ensureUniqueCode(v.code, branch_id, id);
@@ -53,7 +53,7 @@ export function updateVoucher(id, body, branch_id = 'br1') {
 
 export function toggleVoucher(id, active, branch_id = 'br1') {
   const cur = db.prepare(`SELECT * FROM vouchers WHERE id=? AND branch_id=?`).get(id, branch_id);
-  if (!cur) throw new Error('Voucher không tồn tại');
+  if (!cur) throw new Error('Voucher not found');
   const on = active === undefined ? (cur.active ? 0 : 1) : (active ? 1 : 0);
   db.prepare(`UPDATE vouchers SET active=?, updated_at=? WHERE id=? AND branch_id=?`).run(on, now(), id, branch_id);
   audit(on ? 'voucher.enable' : 'voucher.disable', { id, name: cur.name }, branch_id);
@@ -70,7 +70,7 @@ export function getVoucher(id, branch_id = 'br1') {
   return row ? normalizeRow(row) : null;
 }
 
-// Universal promo: "mua 5 tặng 1 cùng loại" — mỗi 5 cái tặng thêm 1 (free = floor(qty/5)).
+// Universal promo: "buy 5 get 1 free" — every 5 units adds 1 free (free = floor(qty/5)).
 export const BUY_X_GET_1 = 5;
 export function buy5get1FreeUnits(qty) { return Math.floor((Number(qty) || 0) / BUY_X_GET_1); }
 
@@ -85,14 +85,14 @@ export function calculateRetailDiscount(lines, voucher_id = null, branch_id = 'b
     const base = line.qty * line.price;
     let amount = 0;
     const parts = [];
-    // 1) Khuyến mãi toàn hệ thống: mua 5 tặng 1 cùng loại.
+    // 1) System-wide promo: buy 5 get 1 free of the same item.
     const freeUnits = buy5get1FreeUnits(line.qty);
     if (freeUnits > 0 && line.price > 0) {
       const a = Math.min(base, freeUnits * line.price);
       amount += a;
-      parts.push(`Mua 5 tặng 1 (tặng ${freeUnits})`);
+      parts.push(`Buy 5 Get 1 (free: ${freeUnits})`);
     }
-    // 2) Voucher gán riêng SKU (nếu có), áp trên phần còn lại.
+    // 2) SKU-specific voucher (if any), applied on the remaining amount.
     const remaining = Math.max(0, base - amount);
     const best = skuVouchers
       .filter(v => v.sku_id === line.sku_id && base >= (v.min_total || 0))
@@ -120,13 +120,13 @@ export function calculateRetailDiscount(lines, voucher_id = null, branch_id = 'b
   let orderVoucher = null;
   if (voucher_id) {
     const v = active.find(x => x.id === voucher_id && x.scope === 'order');
-    if (!v) throw new Error('Voucher không khả dụng hoặc đã tắt');
-    if (baseAfterLinePromos < (v.min_total || 0)) throw new Error('Chưa đạt giá trị tối thiểu của voucher');
+    if (!v) throw new Error('Voucher is not available or has been disabled');
+    if (baseAfterLinePromos < (v.min_total || 0)) throw new Error('Minimum order value for this voucher has not been met');
     orderDiscount = Math.min(baseAfterLinePromos, voucherAmount(v, baseAfterLinePromos, 1));
     orderVoucher = brief(v, orderDiscount);
   }
 
-  // Giảm giá thêm: ưu đãi khách hàng + giảm giá tay (nhân viên nhập). Áp sau cùng, không vượt phần còn lại.
+  // Extra discount: customer perk + manual discount (staff-entered). Applied last, capped at remaining amount.
   const remainAfterVoucher = Math.max(0, baseAfterLinePromos - orderDiscount);
   const extraDiscount = Math.min(remainAfterVoucher, Math.max(0, Math.round(Number(opts.extraDiscount) || 0)));
 
@@ -149,15 +149,15 @@ function normalizeInput(body = {}, cur = {}) {
     ? normalizeScope(body.scope ?? body.applies_to)
     : (cur.scope || 'order');
   const name = pickText(body.name, cur.name);
-  if (!name) throw new Error('Thiếu tên voucher');
+  if (!name) throw new Error('Voucher name is required');
   const value = pickInt(body.value, cur.value ?? cur.val ?? 0);
-  if (type === 'pct' && (value <= 0 || value > 100)) throw new Error('Giảm theo % phải từ 1 đến 100');
-  if (type === 'amount' && value <= 0) throw new Error('Số tiền giảm phải lớn hơn 0');
+  if (type === 'pct' && (value <= 0 || value > 100)) throw new Error('Percentage discount must be between 1 and 100');
+  if (type === 'amount' && value <= 0) throw new Error('Discount amount must be greater than 0');
   const starts_at = pickDate(body.starts_at, cur.starts_at);
   const ends_at = pickDate(body.ends_at, cur.ends_at);
-  if (starts_at && ends_at && starts_at > ends_at) throw new Error('Ngày bắt đầu không được sau ngày kết thúc');
+  if (starts_at && ends_at && starts_at > ends_at) throw new Error('Start date cannot be after end date');
   const sku_id = scope === 'sku' ? pickText(body.sku_id, cur.sku_id) : null;
-  if (scope === 'sku' && !sku_id) throw new Error('Voucher gán sản phẩm cần chọn SKU');
+  if (scope === 'sku' && !sku_id) throw new Error('Product voucher requires a SKU to be selected');
   return {
     code: normalizeCode(body.code !== undefined ? body.code : cur.code),
     name,
@@ -176,25 +176,25 @@ function normalizeInput(body = {}, cur = {}) {
 function ensureSku(v, branch_id) {
   if (v.scope !== 'sku') return;
   const sku = db.prepare(`SELECT id FROM skus WHERE id=? AND branch_id=? AND active=1`).get(v.sku_id, branch_id);
-  if (!sku) throw new Error('SKU gán voucher không tồn tại');
+  if (!sku) throw new Error('SKU assigned to voucher does not exist');
 }
 
 function ensureUniqueCode(code, branch_id, exceptId = null) {
   if (!code) return;
   const found = db.prepare(`SELECT id FROM vouchers WHERE branch_id=? AND UPPER(code)=UPPER(?)`).get(branch_id, code);
-  if (found && found.id !== exceptId) throw new Error('Mã voucher đã tồn tại');
+  if (found && found.id !== exceptId) throw new Error('Voucher code already exists');
 }
 
 function normalizeType(v) {
   if (v === 'amt' || v === 'amount') return 'amount';
   if (v === 'pct') return 'pct';
   if (TYPES.includes(v)) return v;
-  throw new Error('Loại voucher không hợp lệ');
+  throw new Error('Invalid voucher type');
 }
 
 function normalizeScope(v) {
   const s = v === 'product' || v === 'item' ? 'sku' : (v || 'order');
-  if (!SCOPES.includes(s)) throw new Error('Phạm vi voucher không hợp lệ');
+  if (!SCOPES.includes(s)) throw new Error('Invalid voucher scope');
   return s;
 }
 
