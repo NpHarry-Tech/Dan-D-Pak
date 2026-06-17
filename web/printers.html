@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="vi"><head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Printer Monitor — POS/ERP</title>
@@ -43,13 +43,7 @@
     <div class="sub">Máy in ảo — phiếu bếp/bar tự in khi gửi món, receipt tự in khi thanh toán</div>
     <div class="right"><label style="font-size:12px;color:var(--muted)"><input type="checkbox" id="autoP" checked> Tự động in (auto-print)</label></div>
   </div>
-  <div class="pgrid">
-    <div class="printer"><div class="ph">🔥 Máy in Bếp <span class="dotled"></span><span class="st" style="color:var(--done)">Sẵn sàng</span></div><div class="tray" id="tray-kitchen"><div class="pempty">Chưa có phiếu</div></div></div>
-    <div class="printer"><div class="ph">🍹 Máy in Bar <span class="dotled"></span><span class="st" style="color:var(--done)">Sẵn sàng</span></div><div class="tray" id="tray-bar"><div class="pempty">Chưa có phiếu</div></div></div>
-    <div class="printer"><div class="ph">🧾 Máy in Bill <span class="dotled"></span><span class="st" style="color:var(--done)">Sẵn sàng</span></div><div class="tray" id="tray-bill"><div class="pempty">Chưa có phiếu</div></div></div>
-    <div class="printer"><div class="ph">🏷️ Máy in Tem <span class="dotled"></span><span class="st" style="color:var(--done)">Sẵn sàng</span></div><div class="tray" id="tray-label"><div class="pempty">Chưa có tem</div></div></div>
-    <div class="printer"><div class="ph">🍽️ Phiếu chạy món <span class="dotled"></span><span class="st" style="color:var(--done)">Sẵn sàng</span></div><div class="tray" id="tray-runner"><div class="pempty">Chưa có phiếu</div></div></div>
-  </div>
+  <div class="pgrid" id="printerGrid"></div>
 </div>
 
 <script type="module">
@@ -58,6 +52,13 @@ document.getElementById('top').innerHTML = topbar('printers');
 await requireModuleAccess('printing'); renderUserChip();
 
 let jobs = [], printConfig = {};
+const FALLBACK_PRINTERS = [
+  { id:'kitchen', systemName:'', name:'', label:'Phiếu bếp', type:'Phiếu bếp', output:'kitchen_ticket', active:true, auto:true },
+  { id:'bar', systemName:'', name:'', label:'Phiếu bar', type:'Phiếu bar', output:'kitchen_ticket', active:true, auto:true },
+  { id:'bill', systemName:'', name:'', label:'Hóa đơn', type:'Hóa đơn', output:'receipt', active:true, auto:true },
+  { id:'label', systemName:'', name:'', label:'Tem nhãn', type:'Tem nhãn', output:'cup_label', active:true, auto:false },
+  { id:'runner', systemName:'', name:'', label:'Phiếu chạy món', type:'Phiếu chạy món', output:'runner', active:true, auto:false },
+];
 const cfgKey=k=>`pos_erp_${k}_settings`;
 function readLocalCfg(k){ try{return JSON.parse(localStorage.getItem(cfgKey(k))||'null');}catch{return null;} }
 function hasLocalPrintCfg(){ return ['einvoice','labels','bill','printers','label_template','cup_label_template','bill_template'].some(k=>localStorage.getItem(cfgKey(k))); }
@@ -78,7 +79,7 @@ function mergePrintConfig(remote={}){
   return {...r,einvoice:{...(r.einvoice||{}),...local.einvoice},labels:{...(r.labels||{}),...local.labels},bill:{...(r.bill||{}),...local.bill},printers:local.printers||r.printers,templates:{...(r.templates||{}),...local.templates}};
 }
 connect('printers', {
-  'print:new': (j) => { jobs.unshift(j); render(); if(document.getElementById('autoP').checked) setTimeout(()=>doPrint(j.id), 600); },
+  'print:new': (j) => { jobs.unshift(j); render(); if(document.getElementById('autoP').checked && shouldAutoPrintJob(j)) setTimeout(()=>doPrint(j.id), 600); },
   'print:done': () => { load(); },
 });
 
@@ -87,11 +88,51 @@ async function load(){
   jobs = out[0]; printConfig = mergePrintConfig(out[1]);
   render();
 }
+function configuredPrinters(){
+  const rows = Array.isArray(printConfig.printers) && printConfig.printers.length ? printConfig.printers : FALLBACK_PRINTERS;
+  const out = rows.map((p,i)=>({ ...(FALLBACK_PRINTERS.find(x=>x.id===p.id)||{}), ...p, id:p.id||`printer_${i+1}` }));
+  const ids = new Set(out.map(p=>p.id));
+  for (const j of jobs) {
+    if (!ids.has(j.printer)) {
+      ids.add(j.printer);
+      out.push({ id:j.printer, name:j.printer, systemName:j.printer, label:j.type||'Job in', type:j.type||'Job in', output:j.type||'custom', active:true, auto:false });
+    }
+  }
+  return out;
+}
+function printerIcon(p){
+  const raw = `${p.id} ${p.output} ${p.label||p.type}`.toLowerCase();
+  if(raw.includes('bar')) return '🍹';
+  if(raw.includes('bill') || raw.includes('receipt') || raw.includes('hóa đơn')) return '🧾';
+  if(raw.includes('label') || raw.includes('tem')) return '🏷️';
+  if(raw.includes('runner') || raw.includes('chạy')) return '🍽️';
+  return '🔥';
+}
+function emptyText(p){ return /label|tem/i.test(`${p.output} ${p.label||p.type}`) ? 'Chưa có tem' : 'Chưa có phiếu'; }
+function shouldAutoPrintJob(j){
+  const p = configuredPrinters().find(x => x.id === j.printer);
+  return !p || (p.active !== false && p.auto !== false);
+}
+function renderPrinterShell(rows){
+  const grid=document.getElementById('printerGrid');
+  const hash=rows.map(p=>[p.id,p.systemName||p.name,p.label||p.type,p.active,p.auto].join(':')).join('|');
+  if(grid.dataset.hash===hash) return;
+  grid.dataset.hash=hash;
+  grid.innerHTML=rows.map(p=>{
+    const name=p.systemName||p.name||p.id||'Máy in';
+    const label=p.label||p.type||'In';
+    const st=p.active===false?'Tạm tắt':'Sẵn sàng';
+    const color=p.active===false?'var(--warn)':'var(--done)';
+    return `<div class="printer" data-printer-card="${esc(p.id)}"><div class="ph">${printerIcon(p)} ${esc(name)} <span style="font-size:11px;color:var(--muted);background:var(--surface3);padding:2px 6px;border-radius:5px">${esc(label)}</span><span class="dotled" style="background:${color};box-shadow:0 0 7px ${color}"></span><span class="st" style="color:${color}">${esc(st)}</span></div><div class="tray" id="tray-${esc(p.id)}"><div class="pempty">${emptyText(p)}</div></div></div>`;
+  }).join('');
+}
 function render(){
-  for(const p of ['kitchen','bar','bill','label','runner']){
-    const list = jobs.filter(j => j.printer === p).slice(0, 12);
-    const el = document.getElementById('tray-'+p);
-    if(el) el.innerHTML = list.length ? list.map(paper).join('') : '<div class="pempty">Chưa có phiếu</div>';
+  const rows=configuredPrinters();
+  renderPrinterShell(rows);
+  for(const p of rows){
+    const list = jobs.filter(j => j.printer === p.id).slice(0, 12);
+    const el = document.getElementById('tray-'+p.id);
+    if(el) el.innerHTML = list.length ? list.map(paper).join('') : `<div class="pempty">${emptyText(p)}</div>`;
   }
   document.querySelectorAll('[data-print]').forEach(b=>b.onclick=()=>doPrint(b.dataset.print));
   document.querySelectorAll('[data-reprint]').forEach(b=>b.onclick=()=>reprint(b.dataset.reprint));

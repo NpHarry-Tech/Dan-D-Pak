@@ -302,7 +302,7 @@ function fallbackOperations(){
       {key:'zalopay',label:'ZaloPay',enabled:false,kind:'wallet'},
       {key:'voucher',label:'Voucher',enabled:true,kind:'voucher'},
     ]},
-    shifts:{labels:[{key:'morning',label:'Ca sáng',enabled:true},{key:'evening',label:'Ca tối',enabled:true}],denominations:[500000,200000,100000,50000,20000,10000,5000,2000,1000],requireOpenShift:true},
+    shifts:{labels:[{key:'morning',label:'Ca sáng',enabled:true},{key:'evening',label:'Ca tối',enabled:true}],denominations:[500000,200000,100000,50000,20000,10000,5000,2000,1000],requireOpenShift:true,defaultDrawerCash:4000000},
   };
 }
 function mergeOperations(remote){
@@ -353,6 +353,7 @@ function denominationsHtml(counts={}){
   return `<div class="denom-grid">${denoms.map(d=>`<label class="denom-row"><b>${money(d)}</b><input type="number" min="0" step="1" value="${counts[d]||0}" data-denom="${d}"></label>`).join('')}</div>`;
 }
 function countCash(ov){ return [...ov.querySelectorAll('[data-denom]')].reduce((s,i)=>s+(parseInt(i.dataset.denom)||0)*(parseInt(i.value)||0),0); }
+function cashCountTouched(ov){ return [...ov.querySelectorAll('[data-denom]')].some(i=>i.dataset.touched==='1'); }
 function reportHtml(r, day=null){
   if(!r) return '<div class="empty">Chưa có dữ liệu ca.</div>';
   const lines=Object.entries(r.method_totals||{}).map(([k,v])=>`<div class="brow"><span>${esc(methodLabel(k))}</span><span>${money(v)}</span></div>`).join('');
@@ -366,6 +367,8 @@ function reportHtml(r, day=null){
   return `<div class="shift-report">
     <div class="brow"><span>Số bill</span><span>${r.bill_count||0}</span></div>
     <div class="brow"><span>Tiền mặt bán hàng</span><span>${money(r.cash_sales||0)}</span></div>
+    <div class="brow"><span>Chi từ két</span><span>${money(r.drawer_expenses||0)}</span></div>
+    <div class="brow"><span>Hoàn két</span><span>${money(r.drawer_reimbursements||0)}</span></div>
     <div class="brow"><span>Chuyển khoản / ví</span><span>${money(r.transfer_sales||0)}</span></div>
     <div class="brow"><span>Máy POS / thẻ</span><span>${money(r.pos_sales||0)}</span></div>
     <div class="brow tt"><span>Tiền mặt dự kiến</span><span>${money(r.expected_cash||0)}</span></div>
@@ -503,11 +506,12 @@ async function openShiftPanel({afterOpen}={}){
   const sh=shiftState?.shift, cfg=operationsConfig||fallbackOperations();
   const labels=(cfg.shifts.labels||[]).filter(x=>x.enabled!==false);
   const user=getUser();
+  const suggestion=Number(shiftState?.opening_suggestion ?? cfg.shifts?.defaultDrawerCash ?? 0)||0;
   const ov=document.createElement('div'); ov.className='overlay show';
   const title=sh?'Ca đang mở':'Mở ca làm việc';
   ov.innerHTML=`<div class="modal" style="max-width:860px">
     <h2>🧾 ${title}</h2>
-    <div class="sub">${sh?`Nhân viên ${esc(sh.user_name||'')} mở ${esc(sh.shift_label||'ca')} lúc ${new Date(sh.opened_at).toLocaleString('vi-VN')}`:`Đăng nhập: ${esc(user?.name||user?.username||'Nhân viên')}. Kiểm đếm tiền mặt đầu ca trước khi bán hàng.`}</div>
+    <div class="sub">${sh?`Nhân viên ${esc(sh.user_name||'')} mở ${esc(sh.shift_label||'ca')} lúc ${new Date(sh.opened_at).toLocaleString('vi-VN')}`:`Đăng nhập: ${esc(user?.name||user?.username||'Nhân viên')}. Không nhập kiểm đếm thì hệ thống dùng ${money(suggestion)} từ ca trước/tiền két gốc.`}</div>
     <div class="shift-box">
       <div class="shift-card">
         <h3>${sh?'Kiểm đếm khi kết ca':'Kiểm đếm đầu ca'}</h3>
@@ -525,13 +529,13 @@ async function openShiftPanel({afterOpen}={}){
     <div class="mfoot"><button class="btn" id="shiftCancel">Đóng</button>${sh?'<button class="btn danger" id="closeShift">Kết ca</button>':'<button class="btn primary" id="openShift">Mở ca</button>'}</div>
   </div>`;
   document.body.appendChild(ov);
-  const updateTotal=()=>{const el=ov.querySelector('#cashTotal'); if(el) el.textContent=money(countCash(ov));};
-  ov.querySelectorAll('[data-denom]').forEach(i=>i.oninput=updateTotal); updateTotal();
+  const updateTotal=()=>{const el=ov.querySelector('#cashTotal'); if(el) el.textContent=!sh&&!cashCountTouched(ov)?`Tự dùng ${money(suggestion)}`:money(countCash(ov));};
+  ov.querySelectorAll('[data-denom]').forEach(i=>i.oninput=()=>{i.dataset.touched='1';updateTotal();}); updateTotal();
   ov.querySelector('#shiftCancel').onclick=()=>ov.remove();
   const open=ov.querySelector('#openShift');
   if(open) open.onclick=async()=>{
     const counts=Object.fromEntries([...ov.querySelectorAll('[data-denom]')].map(i=>[i.dataset.denom,parseInt(i.value)||0]));
-    try{ await api('/shifts/open',{method:'POST',body:{shift_key:ov.querySelector('#shiftKey').value,counts,opening_cash:countCash(ov)}}); await refreshShift(); ov.remove(); toast('Đã mở ca'); if(afterOpen) afterOpen(); }
+    try{ await api('/shifts/open',{method:'POST',body:{shift_key:ov.querySelector('#shiftKey').value,counts,opening_cash:countCash(ov),cash_manual:cashCountTouched(ov)}}); await refreshShift(); ov.remove(); toast('Đã mở ca'); if(afterOpen) afterOpen(); }
     catch(e){toast(e.message,true);}
   };
   const close=ov.querySelector('#closeShift');

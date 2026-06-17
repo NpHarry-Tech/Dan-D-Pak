@@ -2,17 +2,25 @@
 // customers can carry a default perk (free / % / amount off) into retail & POS.
 import { db, uid, now, audit } from '../db.js';
 import { emit } from '../realtime.js';
+import { archiveCustomer } from './archive.js';
 
 const PERKS = ['none', 'pct', 'amount', 'free'];
 
 function normalizeRow(r) {
   if (!r) return null;
+  const favorite_items = parseJson(r.favorite_items_json, []);
   return {
     ...r,
     perk_value: parseInt(r.perk_value) || 0,
     total_orders: parseInt(r.total_orders) || 0,
     total_spent: parseInt(r.total_spent) || 0,
+    favorite_items,
+    profile_summary: favorite_items.length ? `Hay mua: ${favorite_items.slice(0, 3).map(i => i.name).join(', ')}` : '',
   };
+}
+
+function parseJson(raw, fallback) {
+  try { return raw ? JSON.parse(raw) : fallback; } catch { return fallback; }
 }
 
 export function listCustomers(branch_id = 'br1', q = '') {
@@ -21,7 +29,7 @@ export function listCustomers(branch_id = 'br1', q = '') {
   const out = rows.map(normalizeRow);
   if (!term) return out.slice(0, 200);
   return out.filter(c =>
-    [c.name, c.phone, c.tax_code, c.company, c.email].some(v => String(v || '').toLowerCase().includes(term))
+    [c.name, c.phone, c.tax_code, c.company, c.email, c.preferences, c.allergies, c.profile_summary].some(v => String(v || '').toLowerCase().includes(term))
   ).slice(0, 200);
 }
 
@@ -38,6 +46,10 @@ export function findByTaxCode(tax_code, branch_id = 'br1') {
 
 function pickPerk(v) { return PERKS.includes(v) ? v : 'none'; }
 function str(v, max = 300) { return String(v ?? '').trim().slice(0, max); }
+function birthday(v) {
+  const s = str(v, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : '';
+}
 
 export function upsertCustomer(body = {}, branch_id = 'br1') {
   const name = str(body.name, 200);
@@ -54,30 +66,38 @@ export function upsertCustomer(body = {}, branch_id = 'br1') {
     tax_code: str(body.tax_code, 40),
     company: str(body.company, 300),
     address: str(body.address, 600),
+    birthday: birthday(body.birthday),
+    preferences: str(body.preferences, 800),
+    allergies: str(body.allergies, 800),
     perk_type,
     perk_value,
     note: str(body.note, 600),
   };
   const existing = body.id ? db.prepare(`SELECT * FROM customers WHERE id=? AND branch_id=?`).get(body.id, branch_id) : null;
   if (existing) {
-    db.prepare(`UPDATE customers SET name=?,phone=?,email=?,tax_code=?,company=?,address=?,perk_type=?,perk_value=?,note=?,updated_at=? WHERE id=? AND branch_id=?`)
-      .run(fields.name, fields.phone, fields.email, fields.tax_code, fields.company, fields.address, fields.perk_type, fields.perk_value, fields.note, now(), existing.id, branch_id);
+    db.prepare(`UPDATE customers SET name=?,phone=?,email=?,tax_code=?,company=?,address=?,birthday=?,preferences=?,allergies=?,perk_type=?,perk_value=?,note=?,updated_at=? WHERE id=? AND branch_id=?`)
+      .run(fields.name, fields.phone, fields.email, fields.tax_code, fields.company, fields.address, fields.birthday, fields.preferences, fields.allergies, fields.perk_type, fields.perk_value, fields.note, now(), existing.id, branch_id);
     audit('customer.update', { id: existing.id, name: fields.name }, branch_id);
     emit('customers:updated', { id: existing.id }, branch_id);
-    return getCustomer(existing.id, branch_id);
+    const out = getCustomer(existing.id, branch_id);
+    archiveCustomer(out);
+    return out;
   }
   const id = uid('cus_');
-  db.prepare(`INSERT INTO customers (id,branch_id,name,phone,email,tax_code,company,address,perk_type,perk_value,note,total_orders,total_spent,created_at,updated_at)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,0,0,?,?)`)
-    .run(id, branch_id, fields.name, fields.phone, fields.email, fields.tax_code, fields.company, fields.address, fields.perk_type, fields.perk_value, fields.note, now(), now());
+  db.prepare(`INSERT INTO customers (id,branch_id,name,phone,email,tax_code,company,address,birthday,preferences,allergies,perk_type,perk_value,note,total_orders,total_spent,created_at,updated_at)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,0,?,?)`)
+    .run(id, branch_id, fields.name, fields.phone, fields.email, fields.tax_code, fields.company, fields.address, fields.birthday, fields.preferences, fields.allergies, fields.perk_type, fields.perk_value, fields.note, now(), now());
   audit('customer.create', { id, name: fields.name }, branch_id);
   emit('customers:updated', { id, created: true }, branch_id);
-  return getCustomer(id, branch_id);
+  const out = getCustomer(id, branch_id);
+  archiveCustomer(out);
+  return out;
 }
 
 export function deleteCustomer(id, branch_id = 'br1') {
   const c = getCustomer(id, branch_id);
   if (!c) throw new Error('Khách hàng không tồn tại');
+  archiveCustomer({ ...c, deleted: true, deleted_at: now() });
   db.prepare(`DELETE FROM customers WHERE id=? AND branch_id=?`).run(id, branch_id);
   audit('customer.delete', { id, name: c.name }, branch_id);
   emit('customers:updated', { id, deleted: true }, branch_id);
@@ -85,12 +105,37 @@ export function deleteCustomer(id, branch_id = 'br1') {
 }
 
 // Bump lifetime stats after a paid order (best-effort, never throws into checkout).
-export function recordPurchase(id, amount = 0, branch_id = 'br1') {
+export function recordPurchase(id, amount = 0, branch_id = 'br1', order_id = null) {
   try {
     if (!id) return;
     db.prepare(`UPDATE customers SET total_orders=total_orders+1, total_spent=total_spent+?, updated_at=? WHERE id=? AND branch_id=?`)
       .run(Math.max(0, parseInt(amount) || 0), now(), id, branch_id);
+    rebuildCustomerInsights(id, branch_id);
+    const out = getCustomer(id, branch_id);
+    archiveCustomer({ ...out, last_order_id: order_id || undefined });
   } catch { /* ignore */ }
+}
+
+export function rebuildCustomerInsights(id, branch_id = 'br1') {
+  if (!id) return [];
+  const rows = db.prepare(`
+    SELECT oi.menu_item_id, oi.sku_id, oi.name, SUM(oi.qty) qty, SUM(oi.qty * oi.unit_price) spent
+    FROM order_items oi
+    JOIN orders o ON o.id=oi.order_id
+    WHERE o.branch_id=? AND o.status='paid' AND o.customer_json LIKE ? AND oi.status!='cancelled'
+    GROUP BY COALESCE(oi.menu_item_id, oi.sku_id), oi.name
+    ORDER BY qty DESC, spent DESC, oi.name ASC
+    LIMIT 12`).all(branch_id, `%${id}%`);
+  const favoriteItems = rows.map(r => ({
+    type: r.menu_item_id ? 'menu' : 'sku',
+    id: r.menu_item_id || r.sku_id || '',
+    name: r.name,
+    qty: Number(r.qty) || 0,
+    spent: Number(r.spent) || 0,
+  }));
+  db.prepare(`UPDATE customers SET favorite_items_json=?, last_profiled_at=?, updated_at=? WHERE id=? AND branch_id=?`)
+    .run(JSON.stringify(favoriteItems), now(), now(), id, branch_id);
+  return favoriteItems;
 }
 
 // Compute the discount a customer's default perk grants on a given base amount.

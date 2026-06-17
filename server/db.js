@@ -4,6 +4,7 @@
 import { DatabaseSync } from 'node:sqlite';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { appendAuditArchive, ensurePermanentStorage } from './services/archive.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 export const DB_PATH = join(__dirname, 'store.db');
@@ -392,6 +393,25 @@ export function migrate() {
     opened_at TEXT NOT NULL,
     closed_at TEXT
   );
+
+  CREATE TABLE IF NOT EXISTS cash_drawer_entries (
+    id TEXT PRIMARY KEY,
+    branch_id TEXT NOT NULL,
+    shift_id TEXT,
+    kind TEXT NOT NULL CHECK(kind IN ('expense','reimbursement')),
+    occurred_at TEXT NOT NULL,
+    counterparty TEXT,
+    reason TEXT,
+    product TEXT,
+    invoice_image TEXT,
+    note TEXT,
+    actor_id TEXT,
+    actor_name TEXT,
+    amount INTEGER NOT NULL,
+    balance_before INTEGER NOT NULL DEFAULT 0,
+    balance_after INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL
+  );
   `);
 
   // Columns added after the first demo release.
@@ -447,7 +467,18 @@ export function migrate() {
   addColumnIfMissing('payments', 'shift_id', 'TEXT');
   addColumnIfMissing('order_items', 'table_path', 'TEXT');
   addColumnIfMissing('order_items', 'kds_dismissed', 'INTEGER DEFAULT 0');
-
+  addColumnIfMissing('users', 'lang', 'TEXT');
+  addColumnIfMissing('customers', 'birthday', 'TEXT');
+  addColumnIfMissing('customers', 'preferences', 'TEXT');
+  addColumnIfMissing('customers', 'allergies', 'TEXT');
+  addColumnIfMissing('customers', 'favorite_items_json', `TEXT DEFAULT '[]'`);
+  addColumnIfMissing('customers', 'last_profiled_at', 'TEXT');
+  addColumnIfMissing('cash_drawer_entries', 'invoice_image', 'TEXT');
+  addColumnIfMissing('cash_drawer_entries', 'actor_id', 'TEXT');
+  addColumnIfMissing('cash_drawer_entries', 'actor_name', 'TEXT');
+  addColumnIfMissing('cash_drawer_entries', 'balance_before', 'INTEGER NOT NULL DEFAULT 0');
+  addColumnIfMissing('cash_drawer_entries', 'balance_after', 'INTEGER NOT NULL DEFAULT 0');
+  ensurePermanentStorage();
   bootstrapWarehouseDefaults();
 }
 
@@ -460,8 +491,12 @@ export const now = () => new Date().toISOString();
 export const uid = (p = '') => p + Math.random().toString(36).slice(2, 8) + Date.now().toString(36).slice(-4);
 
 export function audit(action, detail, branch_id = 'br1', actor = 'system') {
+  const id = uid('a_');
+  const created_at = now();
+  const cleanDetail = typeof detail === 'string' ? detail : JSON.stringify(detail);
   db.prepare(`INSERT INTO audit_log (id,branch_id,actor,action,detail,created_at) VALUES (?,?,?,?,?,?)`)
-    .run(uid('a_'), branch_id, actor, action, typeof detail === 'string' ? detail : JSON.stringify(detail), now());
+    .run(id, branch_id, actor, action, cleanDetail, created_at);
+  appendAuditArchive({ id, branch_id, actor, action, detail: cleanDetail, created_at });
 }
 
 // Giữ nhật ký hoạt động trong `days` ngày gần nhất (cửa sổ trượt). Sang ngày thứ 8

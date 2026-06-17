@@ -1047,29 +1047,37 @@
 
     .book-hotspot {
       position: absolute;
-      width: 16px;
-      height: 16px;
       margin: 0;
-      padding: 0;
+      padding: 5px 11px;
       border: 2px solid rgba(255, 255, 255, .92);
-      border-radius: 999px;
+      border-radius: 22px;
       background: var(--brand);
-      box-shadow: 0 0 0 4px rgba(8, 145, 178, .24), 0 10px 18px rgba(0, 0, 0, .2);
+      box-shadow: 0 6px 14px rgba(0, 0, 0, .18);
       transform: translate(-50%, -50%);
-      pointer-events: auto
+      pointer-events: auto;
+      font-size: 10.5px;
+      font-weight: 800;
+      color: #fff;
+      white-space: nowrap;
+      cursor: pointer;
+      line-height: 1.2;
     }
 
     .book-hotspot::before {
       content: "";
       position: absolute;
-      inset: -9px;
-      border-radius: 999px;
+      inset: -5px;
+      border-radius: 26px;
       border: 1px solid rgba(8, 145, 178, .4);
       animation: hotspotPulse 1.8s ease-in-out infinite
     }
 
+    .book-hotspot.sold-out::before {
+      display: none;
+    }
+
     .book-hotspot:hover {
-      transform: translate(-50%, -50%) scale(1.14)
+      transform: translate(-50%, -50%) scale(1.08)
     }
 
     @keyframes hotspotPulse {
@@ -1528,7 +1536,7 @@
   </div>
 
   <script type="module">
-    import { api, connect, money, toast, esc, startClock } from '/shared/client.js';
+    import { api, connect, money, toast, esc, startClock, getLang, setLang } from '/shared/client.js';
 
     let MENU = { categories: [], items: [] };
     let tableId = localStorage.getItem('ipad_table') || null;
@@ -1639,6 +1647,10 @@
     <div class="sub" style="color:var(--muted);font-size:12px">Tự chọn món · chờ nhân viên xác nhận</div>
     <div class="right">
       <span class="onlinedot"><i></i><span>Online</span></span>
+      <div class="lang-selector" style="display:inline-flex;gap:4px;margin-right:10px;font-size:12px;font-weight:600;cursor:pointer;background:var(--surface2);border:1px solid var(--border2);border-radius:99px;padding:4px 10px;user-select:none;">
+        <span id="langViBtn" style="${getLang() === 'vi' ? 'color:var(--primary);text-decoration:underline;' : 'color:var(--muted);'}">VI</span> | 
+        <span id="langEnBtn" style="${getLang() === 'en' ? 'color:var(--primary);text-decoration:underline;' : 'color:var(--muted);'}">EN</span>
+      </div>
       <button class="btn sm" id="callBtn">🔔 Gọi nhân viên</button>
       <button class="btn sm" id="payBtn">💳 Yêu cầu thanh toán</button>
     </div>
@@ -1673,6 +1685,10 @@
     <div class="sub" style="color:var(--muted);font-size:12px">Vuốt để lật menu</div>
     <div class="right">
       <span class="onlinedot"><i></i><span>Online</span></span>
+      <div class="lang-selector" style="display:inline-flex;gap:4px;margin-right:10px;font-size:12px;font-weight:600;cursor:pointer;background:var(--surface2);border:1px solid var(--border2);border-radius:99px;padding:4px 10px;user-select:none;">
+        <span id="langViBtn" style="${getLang() === 'vi' ? 'color:var(--primary);text-decoration:underline;' : 'color:var(--muted);'}">VI</span> | 
+        <span id="langEnBtn" style="${getLang() === 'en' ? 'color:var(--primary);text-decoration:underline;' : 'color:var(--muted);'}">EN</span>
+      </div>
       <button class="btn sm" id="callBtn">🔔 Gọi nhân viên</button>
       <button class="btn sm" id="payBtn">💳 Yêu cầu thanh toán</button>
     </div>
@@ -1706,7 +1722,11 @@
     <img src="${esc(bookPageSrc(idx))}" alt="Menu page ${idx + 1}" draggable="false">
     <div class="realbook-hotspots">${hotspots.map(h => {
         const it = MENU.items.find(i => i.id === h.menu_item_id);
-        return `<button class="book-hotspot" data-hotspot="${esc(h.id)}" title="${esc(h.label || it?.name || 'Món')}" style="left:${Number(h.x) || 0}%;top:${Number(h.y) || 0}%;rotate:${Number(h.angle) || 0}deg"></button>`;
+        const isSoldOut = it ? (it.available === false || it.available === 0) : false;
+        const btnText = isSoldOut ? 'Hết món' : 'Chọn Món';
+        const color = isSoldOut ? '#6b7280' : (h.color || '#0891b2');
+        const styleStr = `left:${Number(h.x) || 0}%;top:${Number(h.y) || 0}%;rotate:${Number(h.angle) || 0}deg;background:${color};color:#fff;${isSoldOut ? 'opacity:0.8;cursor:not-allowed;' : ''}`;
+        return `<button class="book-hotspot ${isSoldOut ? 'sold-out' : ''}" data-hotspot="${esc(h.id)}" title="${esc(h.label || it?.name || 'Món')}" style="${styleStr}">${esc(btnText)}</button>`;
       }).join('')}</div>
     <span class="realbook-curl next"></span><span class="realbook-curl prev"></span>
     <span class="realbook-dragcurl next"></span><span class="realbook-dragcurl prev"></span>
@@ -1791,7 +1811,13 @@
     function renderTablePick() {
       frame.innerHTML = `<div class="ipad-top"><span class="tbl">📱 Chọn bàn</span>
     <div class="sub" style="color:var(--muted);font-size:12px">Thiết bị này sẽ gắn cố định với bàn đã chọn</div>
-    <div class="right"><span class="onlinedot"><i></i><span>Online</span></span></div></div>
+    <div class="right">
+      <span class="onlinedot"><i></i><span>Online</span></span>
+      <div class="lang-selector" style="display:inline-flex;gap:4px;margin-right:10px;font-size:12px;font-weight:600;cursor:pointer;background:var(--surface2);border:1px solid var(--border2);border-radius:99px;padding:4px 10px;user-select:none;">
+        <span id="langViBtn" style="${getLang() === 'vi' ? 'color:var(--primary);text-decoration:underline;' : 'color:var(--muted);'}">VI</span> | 
+        <span id="langEnBtn" style="${getLang() === 'en' ? 'color:var(--primary);text-decoration:underline;' : 'color:var(--muted);'}">EN</span>
+      </div>
+    </div></div>
     <div class="tablepick" id="tp"><div class="empty">Đang tải bàn…</div></div>`;
       api('/tables').then(tables => {
         document.getElementById('tp').innerHTML = tables.map(t => `
@@ -1834,7 +1860,13 @@
         e.preventDefault();
         e.stopPropagation();
         const it = hotspotItem(b.dataset.hotspot);
-        if (it) openItemModal(it);
+        if (it) {
+          if (it.available === false || it.available === 0) {
+            toast('Món này đã hết. Vui lòng chọn món khác hoặc bấm nút gọi nhân viên để được hỗ trợ.', true);
+            return;
+          }
+          openItemModal(it);
+        }
       });
       const swipe = document.getElementById('bookSwipe');
       if (!swipe) return;

@@ -1,0 +1,297 @@
+{
+  "archived_at": "2026-06-16T23:59:49.579Z",
+  "archive_kind": "reports.dashboard",
+  "branch_id": "br1",
+  "data": {
+    "revenue": 0,
+    "bills": 0,
+    "avg": 0,
+    "openOrders": 0,
+    "byHour": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    "byChannel": {},
+    "methods": [],
+    "topItems": [],
+    "lowStock": [
+      {
+        "name": "Hạt Macadamia Caramel Socola Sữa 120g",
+        "stock": 0,
+        "min_stock": 0,
+        "unit": "cái"
+      },
+      {
+        "name": "Thùng Hạnh Nhân Vị Nước Cốt Dừa 85G x 24 Gói",
+        "stock": 0,
+        "min_stock": 0,
+        "unit": "cái"
+      },
+      {
+        "name": "Bột Ớt Spanish 25g x 24 gói - 1 gói",
+        "stock": 0,
+        "min_stock": 0,
+        "unit": "cái"
+      },
+      {
+        "name": "Bột Thì Là 25g x 24 gói - 1 gói",
+        "stock": 0,
+        "min_stock": 0,
+        "unit": "cái"
+      },
+      {
+        "name": "Tiêu Đen Xay Hạt Lớn 350g x 12 hũ - 12 hũ",
+        "stock": 0,
+        "min_stock": 0,
+        "unit": "cái"
+      },
+      {
+        "name": "Bột Hành 100g x 12 gói - 12 gói",
+        "stock": 0,
+        "min_stock": 0,
+        "unit": "cái"
+      },
+      {
+        "name": "Ớt khô 25g x 12 gói - 12 gói",
+        "stock": 0,
+        "min_stock": 0,
+        "unit": "cái"
+      },
+      {
+        "name": "Bột Mù Tạt 100g x 12 gói - 1 gói",
+        "stock": 0,
+        "min_stock": 0,
+        "unit": "cái"
+      },
+      {
+        "name": "Bột Hương Thảo 50g x 12 gói - 1 gói",
+        "stock": 0,
+        "min_stock": 0,
+        "unit": "cái"
+      },
+      {
+        "name": "Lá Oregano",
+        "stock": 0,
+        "min_stock": 0,
+        "unit": "cái"
+      },
+      {
+        "name": "Quả sung size 2,4",
+        "stock": 0,
+        "min_stock": 0,
+        "unit": "cái"
+      },
+      {
+        "name": "Đu đủ khô",
+        "stock": 0,
+        "min_stock": 0,
+        "unit": "cái"
+      },
+      {
+        "name": "Hạt mè trắng",
+        "stock": 0,
+        "min_stock": 0,
+        "unit": "cái"
+      },
+      {
+        "name": "Đậu đỏ",
+        "stock": 0,
+        "min_stock": 0,
+        "unit": "cái"
+      },
+      {
+        "name": "Hạnh nhân có vỏ cắt lát",
+        "stock": 0,
+        "min_stock": 0,
+        "unit": "cái"
+      },
+      {
+        "name": "Điều vỏ lụa",
+        "stock": 0,
+        "min_stock": 0,
+        "unit": "cái"
+      },
+      {
+        "name": "Điều SP",
+        "stock": 0,
+        "min_stock": 0,
+        "unit": "cái"
+      },
+      {
+        "name": "Hạt bí xanh tự nhiên 1kg Dan D Pak",
+        "stock": 0,
+        "min_stock": 0,
+        "unit": "cái"
+      },
+      {
+        "name": "Thùng đậu phộng thập cẩm Crunchy Dan D Pak - 1kg x 8 hũ",
+        "stock": 0,
+        "min_stock": 0,
+        "unit": "cái"
+      },
+      {
+        "name": "Thùng hạt thập cẩm Fancy có muối 215g x 12 hũ Dan D Pak",
+        "stock": 0,
+        "min_stock": 0,
+        "unit": "cái"
+      },
+      {
+        "name": "Thùng đậu phộng nước cốt dừa 170g x 12 gói, 1kg x 8 hũ Dan D Pak - 170g x 12 gói",
+        "stock": 0,
+        "min_stock": 0,
+        "unit": "cái"
+      },
+      {
+        "name": "Đậu hà lan vị cay ăn vặt giòn thơm 285g Dan D Pak",
+        "stock": 0,
+        "min_stock": 0,
+        "unit": "cái"
+      },
+      {
+        "name": "Mơ khô Thổ Nhĩ Kỳ tự nhiên, dẻo thơm ngon, dinh dưỡng, tốt cho sức khỏe 120g Dan D Pak",
+        "stock": 0,
+        "min_stock": 0,
+        "unit": "cái"
+      },
+      {
+        "name": "Mè trắng sống, mè trắng rang, mè trắng tự nhiên dinh dưỡng, tốt cho sức khỏe, thỏa sức chế biến 200G Dan D Pak - Sống",
+        "stock": 0,
+        "min_stock": 0,
+        "unit": "cái"
+      },
+      {
+        "name": "Sung sấy khô tự nhiên nhập khẩu dinh dưỡng, giàu chất xơ, tốt cho sức khỏe 135g Dan D Pak",
+        "stock": 0,
+        "min_stock": 0,
+        "unit": "cái"
+      },
+      {
+        "name": "Mận sấy dẻo nhập khẩu 120g Dan D Pak",
+        "stock": 0,
+        "min_stock": 0,
+        "unit": "cái"
+      },
+      {
+        "name": "Thùng hạt thập cẩm Fancy muối - không muối 250g, 454g Hạt điều, Hạnh nhân, Hạt ba tây, Hồ đào, Dầu cọ Dan D Pak - Không muối 454g",
+        "stock": 0,
+        "min_stock": 0,
+        "unit": "cái"
+      },
+      {
+        "name": "Đậu hà lan wasabi có màu, không màu ăn vặt giòn thơm 100g Dan D Pak - Có màu",
+        "stock": 0,
+        "min_stock": 0,
+        "unit": "cái"
+      },
+      {
+        "name": "Hạt điều có muối, không muối ăn vặt giàu dinh dưỡng 700g Dan D Pak - Muối",
+        "stock": 0,
+        "min_stock": 0,
+        "unit": "cái"
+      },
+      {
+        "name": "Hạt điều vị cay 454g Dan D Pak",
+        "stock": 0,
+        "min_stock": 0,
+        "unit": "cái"
+      },
+      {
+        "name": "Bánh Cookies hạt điều 250g Dan D Pak",
+        "stock": 0,
+        "min_stock": 0,
+        "unit": "cái"
+      },
+      {
+        "name": "Bột Gừng 100g Dan D Pak",
+        "stock": 0,
+        "min_stock": 0,
+        "unit": "cái"
+      },
+      {
+        "name": "Hạt ngũ cốc Granola Trái Cây 40gr Dan D Pak",
+        "stock": 0,
+        "min_stock": 0,
+        "unit": "cái"
+      },
+      {
+        "name": "Đậu Phộng Vị Rau 600G",
+        "stock": 0,
+        "min_stock": 0,
+        "unit": "cái"
+      },
+      {
+        "name": "Ngũ Cốc Yến Mạch, Trái Cây 600G",
+        "stock": 0,
+        "min_stock": 0,
+        "unit": "cái"
+      },
+      {
+        "name": "Bơ Đậu Phộng Mịn Tự Nhiên 500G",
+        "stock": 0,
+        "min_stock": 0,
+        "unit": "cái"
+      },
+      {
+        "name": "Thập Cẩm Fancy Có Muối 215G",
+        "stock": 0,
+        "min_stock": 0,
+        "unit": "cái"
+      },
+      {
+        "name": "Mojito Nguyên Bản",
+        "stock": 0,
+        "min_stock": 0,
+        "unit": "cái"
+      },
+      {
+        "name": "Thập Cẩm Hạt & Trái Cây Khô Daily Nuts 227G",
+        "stock": 0,
+        "min_stock": 0,
+        "unit": "cái"
+      },
+      {
+        "name": "Bia Tiger lon",
+        "stock": 7,
+        "min_stock": 48,
+        "unit": "cái"
+      },
+      {
+        "name": "Coca-Cola lon",
+        "stock": 20,
+        "min_stock": 36,
+        "unit": "cái"
+      }
+    ],
+    "stations": [],
+    "window": {
+      "start": "2026-06-16T17:00:00.000Z",
+      "end": "2026-06-16T23:59:49.579Z",
+      "calendar_start": "2026-06-16T17:00:00.000Z",
+      "calendar_end": "2026-06-17T17:00:00.000Z",
+      "source": "calendar",
+      "closed": false
+    }
+  }
+}

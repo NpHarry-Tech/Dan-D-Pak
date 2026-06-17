@@ -2,6 +2,7 @@
 // Tokens are persisted in SQLite so refreshes and local server restarts do not
 // force staff to log in again.
 import { db, uid, now, audit } from '../db.js';
+import { archiveStaff } from './archive.js';
 import { MODULE_PERMISSIONS } from './modules.js';
 
 const sessions = new Map(); // token -> { user, at }
@@ -22,6 +23,21 @@ export const PERMISSIONS = [
   { key: 'reports', label: 'Xem báo cáo và bảng điều khiển' },
   { key: 'audit.view', label: 'Xem nhật ký hoạt động' },
   { key: 'settings.manage', label: 'Quản lý người dùng và phân quyền' },
+  { key: 'settings.users', label: 'Cài đặt — Quản lý nhân viên' },
+  { key: 'settings.perms', label: 'Cài đặt — Quản lý quyền và vai trò' },
+  { key: 'settings.sync', label: 'Cài đặt — Cloud Sync & Đồng bộ ngoại tuyến' },
+  { key: 'settings.integrations', label: 'Cài đặt — Liên kết dịch vụ (MISA, PayOS...)' },
+  { key: 'settings.connections', label: 'Cài đặt — Kết nối hệ thống (Mạng, máy in, POS...)' },
+  { key: 'settings.operations', label: 'Cài đặt — Phương thức thanh toán & Ca làm việc' },
+  { key: 'settings.invoices', label: 'Cài đặt — Quản lý hóa đơn điện tử' },
+  { key: 'settings.einvoice', label: 'Cài đặt — Cấu hình hóa đơn điện tử MISA' },
+  { key: 'settings.print', label: 'Cài đặt — Thiết kế Bill & Tem nhãn' },
+  { key: 'settings.devices', label: 'Cài đặt — Quản lý thiết bị khách' },
+  { key: 'settings.menu', label: 'Cài đặt — Cấu hình thực đơn FnB' },
+  { key: 'settings.bookmenu', label: 'Cài đặt — Thiết lập menu quyển' },
+  { key: 'settings.tables', label: 'Cài đặt — Cấu hình sơ đồ bàn' },
+  { key: 'settings.printers', label: 'Cài đặt — Quản lý danh mục máy in' },
+  { key: 'settings.audit', label: 'Cài đặt — Nhật ký hoạt động quản lý' },
   ...MODULE_PERMISSIONS,
 ];
 export const ALL_PERMS = PERMISSIONS.map(p => p.key);
@@ -73,6 +89,20 @@ function seedNewModulePerms() {
   }
 }
 seedNewModulePerms();
+function seedNewSettingsPerms() {
+  const ins = db.prepare(`INSERT OR IGNORE INTO role_perms (role,perm) VALUES (?,?)`);
+  const rolesWithSettingsManage = db.prepare(`SELECT DISTINCT role FROM role_perms WHERE perm='settings.manage'`).all().map(r => r.role);
+  if (!rolesWithSettingsManage.includes('manager')) {
+    rolesWithSettingsManage.push('manager');
+  }
+  const settingsPermKeys = PERMISSIONS.filter(p => p.key.startsWith('settings.')).map(p => p.key);
+  for (const role of rolesWithSettingsManage) {
+    for (const p of settingsPermKeys) {
+      ins.run(role, p);
+    }
+  }
+}
+seedNewSettingsPerms();
 
 let permCache = null;
 function loadPerms() {
@@ -220,44 +250,62 @@ export function listUsers(branch_id = 'br1') {
 
 // ---- User management (settings.manage) ----
 export function listAllUsers(branch_id = 'br1') {
-  return db.prepare(`SELECT id,username,name,role,active FROM users WHERE branch_id=? ORDER BY active DESC, role, name`).all(branch_id)
-    .map(u => ({ ...u, active: !!u.active, ...userPermDetails(u) }));
+  return db.prepare(`SELECT id,username,name,role,active,lang FROM users WHERE branch_id=? ORDER BY active DESC, role, name`).all(branch_id)
+    .map(u => ({ ...u, active: !!u.active, lang: u.lang || 'vi', ...userPermDetails(u) }));
 }
 function validRole(r) { return ROLES.some(x => x.key === r); }
 export function createUser(body, branch_id = 'br1') {
   const username = String(body.username || '').trim().toLowerCase();
   const name = String(body.name || '').trim();
   const pin = String(body.pin || '').trim();
+  const lang = String(body.lang || 'vi').trim();
   if (!username || !name) throw new Error('Cần nhập tên và tên đăng nhập');
   if (!/^\d{4,6}$/.test(pin)) throw new Error('Mã PIN phải 4–6 chữ số');
   if (!validRole(body.role)) throw new Error('Vai trò không hợp lệ');
   if (db.prepare(`SELECT 1 FROM users WHERE username=?`).get(username)) throw new Error('Tên đăng nhập đã tồn tại');
   const id = uid('u_');
-  db.prepare(`INSERT INTO users (id,branch_id,username,name,pin,role,active) VALUES (?,?,?,?,?,?,1)`)
-    .run(id, branch_id, username, name, pin, body.role);
+  db.prepare(`INSERT INTO users (id,branch_id,username,name,pin,role,active,lang) VALUES (?,?,?,?,?,?,1,?)`)
+    .run(id, branch_id, username, name, pin, body.role, lang);
   if (Array.isArray(body.perms)) setUserPerms(id, body.perms, branch_id);
   audit('user.create', { username, role: body.role }, branch_id);
-  const row = db.prepare(`SELECT id,username,name,role,active FROM users WHERE id=?`).get(id);
-  return { ...row, active: !!row.active, ...userPermDetails(row) };
+  const row = db.prepare(`SELECT id,username,name,role,active,lang FROM users WHERE id=?`).get(id);
+  const out = { ...row, active: !!row.active, lang: row.lang || 'vi', ...userPermDetails(row) };
+  archiveStaff(out);
+  return out;
 }
 export function updateUser(id, body, branch_id = 'br1') {
   const cur = db.prepare(`SELECT * FROM users WHERE id=?`).get(id);
   if (!cur) throw new Error('Người dùng không tồn tại');
   const name = body.name !== undefined ? String(body.name).trim() || cur.name : cur.name;
   const role = body.role !== undefined && validRole(body.role) ? body.role : cur.role;
+  const lang = body.lang !== undefined ? String(body.lang).trim() || cur.lang || 'vi' : cur.lang || 'vi';
   let pin = cur.pin;
   if (body.pin) { if (!/^\d{4,6}$/.test(String(body.pin))) throw new Error('Mã PIN phải 4–6 chữ số'); pin = String(body.pin); }
   const active = body.active !== undefined ? (body.active ? 1 : 0) : cur.active;
   if (cur.role === 'owner' && role !== 'owner' && db.prepare(`SELECT COUNT(*) n FROM users WHERE role='owner' AND active=1`).get().n <= 1)
     throw new Error('Phải còn ít nhất một Chủ quán');
-  db.prepare(`UPDATE users SET name=?, role=?, pin=?, active=? WHERE id=?`).run(name, role, pin, active, id);
+  db.prepare(`UPDATE users SET name=?, role=?, pin=?, active=?, lang=? WHERE id=?`).run(name, role, pin, active, lang, id);
   if (Array.isArray(body.perms)) setUserPerms(id, body.perms, branch_id);
   else if (role !== cur.role) db.prepare(`DELETE FROM user_perms WHERE user_id=?`).run(id);
   // revoke sessions if deactivated
   if (!active) db.prepare(`DELETE FROM auth_sessions WHERE user_id=?`).run(id);
   audit('user.update', { username: cur.username, role }, branch_id);
-  const row = db.prepare(`SELECT id,username,name,role,active FROM users WHERE id=?`).get(id);
-  return { ...row, active: !!row.active, ...userPermDetails(row) };
+  const row = db.prepare(`SELECT id,username,name,role,active,lang FROM users WHERE id=?`).get(id);
+  const out = { ...row, active: !!row.active, lang: row.lang || 'vi', ...userPermDetails(row) };
+  archiveStaff(out);
+  return out;
+}
+
+export function updateOwnLang(user_id, lang, branch_id = 'br1') {
+  const clean = lang === 'en' ? 'en' : 'vi';
+  const cur = db.prepare(`SELECT * FROM users WHERE id=? AND active=1`).get(user_id);
+  if (!cur) throw new Error('Người dùng không tồn tại');
+  db.prepare(`UPDATE users SET lang=? WHERE id=?`).run(clean, user_id);
+  audit('user.lang.update', { username: cur.username, lang: clean }, branch_id, cur.username);
+  const row = db.prepare(`SELECT id,username,name,role,active,lang FROM users WHERE id=?`).get(user_id);
+  const out = { ...row, active: !!row.active, lang: row.lang || 'vi', ...userPermDetails(row) };
+  archiveStaff(out);
+  return publicUser(out);
 }
 export function deleteUser(id, branch_id = 'br1') {
   const cur = db.prepare(`SELECT * FROM users WHERE id=?`).get(id);
@@ -278,7 +326,7 @@ function tokenFromReq(req) {
 }
 
 function publicUser(u) {
-  return { id: u.id, name: u.name, role: u.role, username: u.username };
+  return { id: u.id, name: u.name, role: u.role, username: u.username, lang: u.lang || 'vi' };
 }
 
 // Express middleware factory. Pass a permission string to gate an endpoint.

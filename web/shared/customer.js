@@ -49,17 +49,27 @@ export function openCustomerPicker(current, onPicked, opts = {}) {
   const close = () => ov.remove();
   function done(c) { close(); onPicked && onPicked(c || null); }
 
+  const favoriteText = (c) => {
+    const favs = Array.isArray(c.favorite_items) ? c.favorite_items : [];
+    return favs.length
+      ? favs.slice(0, 5).map(i => `${i.name} (${i.qty || 0})`).join(' · ')
+      : 'Chưa đủ lịch sử mua để tự kết luận.';
+  };
+
   function form(c) {
     return `<div class="panel" style="margin:14px 0 0"><h3>${c.id ? 'Sửa khách hàng' : 'Khách hàng mới'}</h3>
-      <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px">
+      <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;align-items:end">
         <div><label>Tên khách / công ty *</label><input id="cName" value="${esc(c.name||'')}"></div>
         <div><label>Số điện thoại</label><input id="cPhone" value="${esc(c.phone||'')}"></div>
+        <div><label>Ngày sinh</label><input id="cBirthday" type="date" value="${esc(c.birthday||'')}"></div>
+        <div><label>Email</label><input id="cEmail" value="${esc(c.email||'')}"></div>
         <div style="grid-column:1/-1"><label>Mã số thuế (xuất hóa đơn)</label>
-          <div style="display:flex;gap:8px"><input id="cTax" value="${esc(c.tax_code||'')}" placeholder="10 hoặc 13 chữ số" style="flex:1"><button class="btn" id="cLookup" type="button">🔎 Truy xuất MST</button></div>
+          <div style="display:flex;gap:8px;align-items:center"><input id="cTax" value="${esc(c.tax_code||'')}" placeholder="10 hoặc 13 chữ số" style="flex:1"><button class="btn" id="cLookup" type="button" style="height:40px;white-space:nowrap">🔎 Truy xuất MST</button></div>
           <div class="mini" id="cLookupHint" style="margin-top:4px"></div></div>
         <div style="grid-column:1/-1"><label>Tên công ty (trên hóa đơn)</label><input id="cCompany" value="${esc(c.company||'')}"></div>
         <div style="grid-column:1/-1"><label>Địa chỉ</label><input id="cAddress" value="${esc(c.address||'')}"></div>
-        <div><label>Email</label><input id="cEmail" value="${esc(c.email||'')}"></div>
+        <div><label>Sở thích</label><input id="cPreferences" value="${esc(c.preferences||'')}" placeholder="Ví dụ: ít cay, thích món nước"></div>
+        <div><label>Dị ứng</label><input id="cAllergies" value="${esc(c.allergies||'')}" placeholder="Ví dụ: hải sản, đậu phộng"></div>
         <div><label>Ưu đãi mặc định</label><select id="cPerkType">
           <option value="none" ${(!c.perk_type||c.perk_type==='none')?'selected':''}>Không</option>
           <option value="pct"  ${c.perk_type==='pct'?'selected':''}>Giảm theo %</option>
@@ -67,6 +77,7 @@ export function openCustomerPicker(current, onPicked, opts = {}) {
           <option value="free" ${c.perk_type==='free'?'selected':''}>Miễn phí (free 100%)</option>
         </select></div>
         <div><label>Giá trị ưu đãi</label><input type="number" id="cPerkValue" value="${c.perk_value||0}" min="0"></div>
+        <div style="grid-column:1/-1"><label>Món / sản phẩm hay mua</label><div class="mini" style="min-height:38px;border:1px dashed var(--border2);border-radius:8px;background:var(--surface2);padding:10px;color:var(--muted)">${esc(favoriteText(c))}</div></div>
         <div style="grid-column:1/-1"><label>Ghi chú</label><input id="cNote" value="${esc(c.note||'')}"></div>
       </div>
       <div class="mfoot"><button class="btn" id="cBack">${editing ? 'Hủy sửa' : 'Đóng'}</button><button class="btn primary" id="cSave">💾 Lưu khách hàng</button></div>
@@ -89,7 +100,7 @@ export function openCustomerPicker(current, onPicked, opts = {}) {
       <div class="custlist">${list.length ? list.map(c => `
         <div class="custrow ${sel?.id === c.id ? 'on' : ''}" data-pick="${c.id}">
           <div><b>${esc(c.name)}</b>${perkTag(c) ? `<span class="ptag">${esc(perkTag(c).replace(/^ · /,''))}</span>` : ''}
-            <div class="mini">${[c.phone, c.tax_code && ('MST ' + c.tax_code), c.company].filter(Boolean).map(esc).join(' · ') || '—'}</div>
+            <div class="mini">${[c.phone, c.tax_code && ('MST ' + c.tax_code), c.company, c.birthday && ('SN ' + c.birthday), c.allergies && ('Dị ứng: ' + c.allergies), c.profile_summary].filter(Boolean).map(esc).join(' · ') || '—'}</div>
           </div>
           <button class="btn sm" data-edit="${c.id}">Sửa</button>
         </div>`).join('') : '<div class="empty" style="padding:16px">Chưa có khách hàng. Bấm "＋ Khách mới".</div>'}
@@ -150,6 +161,9 @@ export function openCustomerPicker(current, onPicked, opts = {}) {
         tax_code: ov.querySelector('#cTax').value.trim(),
         company:  ov.querySelector('#cCompany').value.trim(),
         address:  ov.querySelector('#cAddress').value.trim(),
+        birthday: ov.querySelector('#cBirthday').value,
+        preferences: ov.querySelector('#cPreferences').value.trim(),
+        allergies: ov.querySelector('#cAllergies').value.trim(),
         perk_type:  ov.querySelector('#cPerkType').value,
         perk_value: parseInt(ov.querySelector('#cPerkValue').value) || 0,
         note:     ov.querySelector('#cNote').value.trim(),

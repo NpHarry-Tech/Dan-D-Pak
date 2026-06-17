@@ -20,7 +20,7 @@ export const MODULES = [
   { key: 'warehouse', label: 'Kho', icon: '📦', group: 'supply', href: '/warehouse', perm: 'module.warehouse', status: 'active', depends: ['inventory'], description: 'Kho BCM, showroom, kho bếp, nhập/xuất, kiểm kho, lot/date.' },
   { key: 'inventory', label: 'Tồn kho', icon: '🏷️', group: 'supply', href: '/warehouse', perm: 'module.inventory', status: 'active', depends: [], description: 'SKU, nguyên liệu, đơn vị tính, lot/serial, min stock và valuation nền.' },
   { key: 'admin', label: 'Quản lý', icon: '📊', group: 'essentials', href: '/admin', perm: 'module.admin', status: 'active', depends: ['pos', 'retail', 'warehouse'], description: 'Dashboard, báo cáo nhanh, thực đơn, vận hành và cài đặt trong ngày.' },
-  { key: 'settings', label: 'Cài đặt', icon: '⚙️', group: 'settings', href: '/settings', perm: 'module.settings', status: 'active', depends: [], description: 'Người dùng, phân quyền, module, cấu hình chung và nhật ký hoạt động.' },
+  { key: 'settings', label: 'Cài đặt', icon: '⚙️', group: 'settings', href: '/admin?view=settings', perm: 'module.settings', status: 'active', depends: [], description: 'Người dùng, phân quyền, module, cấu hình chung và nhật ký hoạt động.' },
   { key: 'printing', label: 'In ấn', icon: '🖨️', group: 'settings', href: '/printers', perm: 'module.printing', status: 'active', depends: ['pos'], description: 'Job in bếp/bar/bill, in lại, cấu hình bill và tem nhãn.' },
 
   { key: 'crm', label: 'CRM', icon: '🤝', group: 'sales', href: '', perm: 'module.crm', status: 'planned', depends: ['contacts'], description: 'Lead, opportunity, pipeline, đội sales và dự báo.' },
@@ -34,7 +34,7 @@ export const MODULES = [
   { key: 'fleet', label: 'Đội xe', icon: '🚚', group: 'supply', href: '', perm: 'module.fleet', status: 'planned', depends: [], description: 'Phương tiện, tài xế, chi phí, lịch bảo trì và giao nhận.' },
 
   { key: 'accounting', label: 'Kế toán', icon: '📚', group: 'finance', href: '', perm: 'module.accounting', status: 'planned', depends: ['invoice'], description: 'Sổ cái, hệ tài khoản, thuế, journal, reconciliation và báo cáo tài chính.' },
-  { key: 'invoice', label: 'Hóa đơn', icon: '🧾', group: 'finance', href: '/settings', perm: 'module.invoice', status: 'active', depends: ['accounting'], description: 'Hóa đơn điện tử, trạng thái phát hành, tra cứu, hủy và cấu hình HĐĐT.' },
+  { key: 'invoice', label: 'Hóa đơn', icon: '🧾', group: 'finance', href: '/admin?view=settings&tab=invoices', perm: 'module.invoice', status: 'active', depends: ['accounting'], description: 'Hóa đơn điện tử, trạng thái phát hành, tra cứu, hủy và cấu hình HĐĐT.' },
   { key: 'expenses', label: 'Chi phí', icon: '💸', group: 'finance', href: '', perm: 'module.expenses', status: 'planned', depends: ['accounting'], description: 'Ghi nhận chi phí, duyệt, hoàn ứng và tái xuất chi phí.' },
   { key: 'payment', label: 'Thanh toán online', icon: '💱', group: 'finance', href: '', perm: 'module.payment', status: 'planned', depends: ['invoice'], description: 'Provider, QR, terminal, settlement và đối soát.' },
 

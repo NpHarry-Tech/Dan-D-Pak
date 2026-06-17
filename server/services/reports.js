@@ -1,5 +1,6 @@
 // Reporting Core: realtime KPIs for the Admin dashboard.
 import { db } from '../db.js';
+import { archiveDashboardReport } from './archive.js';
 
 const todayStart = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return d.toISOString(); };
 const tomorrowStart = () => { const d = new Date(); d.setHours(24, 0, 0, 0); return d.toISOString(); };
@@ -68,7 +69,60 @@ export function dashboard(branch_id = 'br1') {
     SELECT oi.station, COUNT(*) n FROM order_items oi JOIN orders o ON o.id=oi.order_id
     WHERE o.branch_id=? AND oi.status IN ('new','accepted','preparing') GROUP BY oi.station`).all(branch_id);
 
-  return { revenue, bills, avg, openOrders, byHour, byChannel, methods, topItems, lowStock, stations, window };
+  const report = { revenue, bills, avg, openOrders, byHour, byChannel, methods, topItems, lowStock, stations, window };
+  archiveDashboardReport(report, branch_id);
+  return report;
+}
+
+// Revenue trends across calendar periods (day / week / month / quarter / year),
+// bucketed in server local time so labels match the dashboard clock.
+export function revenueTrends(branch_id = 'br1') {
+  const pad = (n) => String(n).padStart(2, '0');
+  const now = new Date();
+  // earliest data we need is for the 5-year series
+  const cutoff = new Date(now.getFullYear() - 4, 0, 1).toISOString();
+  const rows = db.prepare(
+    `SELECT paid_at, total FROM orders WHERE branch_id=? AND status='paid' AND paid_at>=?`
+  ).all(branch_id, cutoff);
+
+  const dayKey = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  const monthKey = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}`;
+  const quarterKey = (d) => `${d.getFullYear()}-Q${Math.floor(d.getMonth() / 3) + 1}`;
+  const yearKey = (d) => `${d.getFullYear()}`;
+  const mondayOf = (d) => {
+    const x = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); // back to Monday
+    return x;
+  };
+  const weekKey = (d) => dayKey(mondayOf(d));
+
+  // Pre-build the period buckets (chronological) so empty periods render as zero.
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const days = [];
+  for (let i = 6; i >= 0; i--) { const d = new Date(today); d.setDate(d.getDate() - i); days.push({ key: dayKey(d), label: `${pad(d.getDate())}/${pad(d.getMonth() + 1)}` }); }
+  const weeks = [];
+  const thisMonday = mondayOf(today);
+  for (let i = 7; i >= 0; i--) { const d = new Date(thisMonday); d.setDate(d.getDate() - i * 7); weeks.push({ key: dayKey(d), label: `${pad(d.getDate())}/${pad(d.getMonth() + 1)}` }); }
+  const months = [];
+  for (let i = 11; i >= 0; i--) { const d = new Date(now.getFullYear(), now.getMonth() - i, 1); months.push({ key: monthKey(d), label: `${pad(d.getMonth() + 1)}/${d.getFullYear()}` }); }
+  const quarters = [];
+  for (let i = 7; i >= 0; i--) { const d = new Date(now.getFullYear(), now.getMonth() - i * 3, 1); quarters.push({ key: quarterKey(d), label: `Q${Math.floor(d.getMonth() / 3) + 1}/${d.getFullYear()}` }); }
+  const years = [];
+  for (let i = 4; i >= 0; i--) { const d = new Date(now.getFullYear() - i, 0, 1); years.push({ key: yearKey(d), label: `${d.getFullYear()}` }); }
+
+  const sum = (list, keyFn) => {
+    const map = new Map(list.map((p) => [p.key, 0]));
+    for (const r of rows) { const k = keyFn(new Date(r.paid_at)); if (map.has(k)) map.set(k, map.get(k) + r.total); }
+    return list.map((p) => ({ label: p.label, value: map.get(p.key) || 0 }));
+  };
+
+  return {
+    byDay: sum(days, dayKey),
+    byWeek: sum(weeks, weekKey),
+    byMonth: sum(months, monthKey),
+    byQuarter: sum(quarters, quarterKey),
+    byYear: sum(years, yearKey),
+  };
 }
 
 // before: con trỏ phân trang — chỉ lấy các dòng cũ hơn mốc thời gian này (để "Xem thêm").

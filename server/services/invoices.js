@@ -8,6 +8,7 @@ import { emit } from '../realtime.js';
 import { getOrder } from './orders.js';
 import { getIntegrations, getPrintConfig } from './settings.js';
 import * as Misa from './misa.js';
+import { archiveInvoice, archiveOrder } from './archive.js';
 
 // Số HĐ (Thuế): số thứ tự liên tục 8 chữ số theo từng ký hiệu hóa đơn (vd 00000001).
 // "Số Bill nội bộ" Dan{ddMMyy}{seq} nằm trên đơn (orders.bill_no), khác với số HĐ thuế.
@@ -53,6 +54,8 @@ export async function issue(order_id, customer = {}, branch_id = 'br1') {
   db.prepare(`UPDATE orders SET invoice_id=? WHERE id=?`).run(id, order_id);
   audit('invoice.issue', { order: order_id, invoice_no, provider }, branch_id);
   const inv = { ...get(id), provider, lookup_url: remote?.lookup_url || get(id).lookup_url };
+  archiveInvoice(inv);
+  archiveOrder(getOrder(order_id));
   emit('invoice:issued', inv, branch_id);
   return inv;
 }
@@ -84,6 +87,8 @@ export function cancel(id, reason, branch_id = 'br1') {
   db.prepare(`UPDATE invoices SET status='cancelled' WHERE id=?`).run(id);
   db.prepare(`UPDATE orders SET invoice_id=NULL WHERE id=?`).run(inv.order_id);
   audit('invoice.cancel', { invoice_no: inv.invoice_no, reason }, branch_id);
+  archiveInvoice({ ...inv, status: 'cancelled', cancel_reason: reason, cancelled_at: now() });
+  archiveOrder(getOrder(inv.order_id));
   emit('invoice:cancelled', { id }, branch_id);
   return { ok: true };
 }

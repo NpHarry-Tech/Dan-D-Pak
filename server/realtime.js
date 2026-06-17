@@ -37,3 +37,18 @@ function emitPresence(branch) {
   }
   io.to('branch:' + branch).emit('presence', { count: sockets.length, devices });
 }
+
+export function getActiveConnections(branch = 'br1') {
+  if (!io) return [];
+  const room = io.sockets.adapter.rooms.get('branch:' + branch);
+  if (!room) return [];
+  return [...room].map(id => {
+    const s = io.sockets.sockets.get(id);
+    return {
+      id: s.id,
+      device: s.data.device || 'unknown',
+      ip: s.handshake.address,
+      connectedAt: s.handshake.issued || Date.now()
+    };
+  });
+}

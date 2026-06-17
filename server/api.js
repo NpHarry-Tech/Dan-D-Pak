@@ -20,10 +20,23 @@ import * as BookMenu from './services/bookMenu.js';
 import * as Shifts from './services/shifts.js';
 import * as History from './services/history.js';
 import * as Misa from './services/misa.js';
-import { emit } from './realtime.js';
+import * as Archive from './services/archive.js';
+import * as System from './services/system.js';
+import * as ReportCenter from './services/reportCenter.js';
+import * as CashDrawer from './services/cashDrawer.js';
+import { emit, getActiveConnections } from './realtime.js';
 
 export const api = Router();
 const guard = Auth.requireAuth;
+
+const guardAny = (...perms) => (req, res, next) => {
+  const user = req.user;
+  if (!user) return res.status(401).json({ error: 'Cần đăng nhập' });
+  if (user.role === 'owner') return next();
+  const hasAccess = perms.some(p => Auth.canUser(user, p)) || Auth.canUser(user, 'settings.manage');
+  if (!hasAccess) return res.status(403).json({ error: 'Không đủ quyền truy cập các mục này' });
+  next();
+};
 api.use(Auth.attachUser()); // gắn req.user (nếu có token) cho mọi route, kể cả route không bắt buộc đăng nhập
 const actor = Auth.actorName; // người phụ trách thao tác cho nhật ký hoạt động
 const wrap = (fn) => (req, res) => {
@@ -42,29 +55,31 @@ api.post('/logout', wrap((req) => {
   return { ok: true };
 }));
 api.get('/me', guard(), wrap((req) => ({ ...req.user, perms: Auth.effectivePermsForUser(req.user.id) })));
+api.post('/me/lang', guard(), wrap((req) => Auth.updateOwnLang(req.user.id, req.body.lang, req.user.branch_id || 'br1')));
 api.get('/users', wrap(() => Auth.listUsers()));
+api.get('/ping', wrap(() => ({ ok: true, serverTime: Date.now() })));
 
 // --- ERP module registry ---
 api.get('/modules', guard(), wrap((req) => ({ groups: Modules.MODULE_GROUPS, modules: Modules.visibleModules(Auth.effectivePermsForUser(req.user.id)) })));
-api.get('/modules/all', guard('settings.manage'), wrap(() => ({ groups: Modules.MODULE_GROUPS, modules: Modules.listModules(Auth.ALL_PERMS) })));
+api.get('/modules/all', guardAny('settings.perms'), wrap(() => ({ groups: Modules.MODULE_GROUPS, modules: Modules.listModules(Auth.ALL_PERMS) })));
 
 // --- Settings: user & permission management (settings.manage) ---
-api.get('/settings/permissions', guard('settings.manage'), wrap(() => ({ catalog: Auth.PERMISSIONS, roles: Auth.permMatrix() })));
-api.post('/settings/roles/:role/permissions', guard('settings.manage'), wrap((req) => Auth.setRolePerms(req.params.role, req.body.perms)));
-api.get('/settings/users', guard('settings.manage'), wrap(() => Auth.listAllUsers()));
-api.post('/settings/users', guard('settings.manage'), wrap((req) => Auth.createUser(req.body)));
-api.post('/settings/users/:id/update', guard('settings.manage'), wrap((req) => Auth.updateUser(req.params.id, req.body)));
-api.post('/settings/users/:id/delete', guard('settings.manage'), wrap((req) => Auth.deleteUser(req.params.id)));
-api.get('/settings/users/:id/permissions', guard('settings.manage'), wrap((req) => Auth.userPermDetails(req.params.id)));
-api.post('/settings/users/:id/permissions', guard('settings.manage'), wrap((req) => Auth.setUserPerms(req.params.id, req.body.perms)));
-api.get('/settings/app', guard('settings.manage'), wrap(() => AppSettings.getSettings()));
-api.post('/settings/app', guard('settings.manage'), wrap((req) => AppSettings.updateSettings(req.body)));
-api.post('/templates/auto-save', guard('settings.manage'), wrap((req) => AppSettings.autoSaveTemplate(req.body)));
-api.get('/settings/integrations', guard('settings.manage'), wrap(() => AppSettings.getIntegrations()));
-api.post('/settings/integrations', guard('settings.manage'), wrap((req) => AppSettings.updateIntegrations(req.body)));
+api.get('/settings/permissions', guardAny('settings.perms', 'settings.users'), wrap(() => ({ catalog: Auth.PERMISSIONS, roles: Auth.permMatrix() })));
+api.post('/settings/roles/:role/permissions', guardAny('settings.perms'), wrap((req) => Auth.setRolePerms(req.params.role, req.body.perms)));
+api.get('/settings/users', guardAny('settings.users'), wrap(() => Auth.listAllUsers()));
+api.post('/settings/users', guardAny('settings.users'), wrap((req) => Auth.createUser(req.body)));
+api.post('/settings/users/:id/update', guardAny('settings.users'), wrap((req) => Auth.updateUser(req.params.id, req.body)));
+api.post('/settings/users/:id/delete', guardAny('settings.users'), wrap((req) => Auth.deleteUser(req.params.id)));
+api.get('/settings/users/:id/permissions', guardAny('settings.users', 'settings.perms'), wrap((req) => Auth.userPermDetails(req.params.id)));
+api.post('/settings/users/:id/permissions', guardAny('settings.users', 'settings.perms'), wrap((req) => Auth.setUserPerms(req.params.id, req.body.perms)));
+api.get('/settings/app', guardAny('settings.sync', 'settings.operations', 'settings.einvoice', 'settings.print', 'settings.printers', 'settings.devices', 'settings.invoices'), wrap(() => AppSettings.getSettings()));
+api.post('/settings/app', guardAny('settings.sync', 'settings.operations', 'settings.einvoice', 'settings.print', 'settings.printers', 'settings.devices', 'settings.invoices'), wrap((req) => AppSettings.updateSettings(req.body)));
+api.post('/templates/auto-save', guardAny('settings.print'), wrap((req) => AppSettings.autoSaveTemplate(req.body)));
+api.get('/settings/integrations', guardAny('settings.integrations'), wrap(() => AppSettings.getIntegrations()));
+api.post('/settings/integrations', guardAny('settings.integrations'), wrap((req) => AppSettings.updateIntegrations(req.body)));
 // Test a single integration channel. MISA does a real auth call when live;
 // delivery channels return the webhook URL to paste into the partner portal.
-api.post('/settings/integrations/:channel/test', guard('settings.manage'), wrap(async (req) => {
+api.post('/settings/integrations/:channel/test', guardAny('settings.integrations'), wrap(async (req) => {
   const channel = req.params.channel;
   const cfg = AppSettings.getIntegrations().channels?.[channel];
   if (!cfg) throw new Error('Kênh không hợp lệ: ' + channel);
@@ -92,15 +107,46 @@ api.post('/settings/integrations/:channel/test', guard('settings.manage'), wrap(
       : `Đã bật nhưng chưa có Client ID/Secret. Đơn vẫn nhận được qua Webhook URL, nhưng đồng bộ menu/tồn kho 2 chiều cần khai báo credential từ cổng đối tác.`,
   };
 }));
+api.get('/settings/connections/status', guardAny('settings.connections'), wrap(async (req) => {
+  const started = Date.now();
+  const os = await import('os');
+  const interfaces = os.networkInterfaces();
+  const serverIps = [];
+  for (const name of Object.keys(interfaces)) {
+    for (const iface of interfaces[name]) {
+      if (iface.family === 'IPv4' && !iface.internal) {
+        serverIps.push(iface.address);
+      }
+    }
+  }
+  const socketConnections = getActiveConnections(req.user?.branch_id || 'br1');
+  const [internetCheck, systemPrinters] = await Promise.all([
+    System.checkInternet({ force: req.query.force === '1' }),
+    System.listSystemPrinters({ force: req.query.force === '1' }),
+  ]);
+  return {
+    serverIps,
+    connections: socketConnections,
+    internet: !!internetCheck.ok,
+    internetCheck,
+    systemPrinters,
+    serverElapsedMs: Date.now() - started,
+    checkedAt: new Date().toISOString(),
+  };
+}));
+api.get('/settings/system/printers', guardAny('settings.connections', 'settings.printers', 'settings.print'), wrap(async (req) => ({
+  printers: await System.listSystemPrinters({ force: req.query.force === '1' }),
+  checkedAt: new Date().toISOString(),
+})));
 api.get('/operations/config', wrap(() => AppSettings.getOperationsConfig()));
 api.get('/book-menu', wrap(() => BookMenu.getPublicBookConfig()));
-api.get('/settings/book-menu', guard('settings.manage'), wrap(() => BookMenu.getBookConfig()));
-api.post('/settings/book-menu', guard('settings.manage'), wrap((req) => {
+api.get('/settings/book-menu', guardAny('settings.bookmenu'), wrap(() => BookMenu.getBookConfig()));
+api.post('/settings/book-menu', guardAny('settings.bookmenu'), wrap((req) => {
   const out = BookMenu.saveBookConfig(req.body);
   emit('book-menu:updated', { activeBookId: out.activeBookId });
   return out;
 }));
-api.post('/settings/book-menu/import-pubhtml5', guard('settings.manage'), wrap(async (req) => {
+api.post('/settings/book-menu/import-pubhtml5', guardAny('settings.bookmenu'), wrap(async (req) => {
   const out = await BookMenu.importPubhtml5(req.body.url, req.body.title);
   emit('book-menu:updated', { activeBookId: out.activeBookId });
   return out;
@@ -215,9 +261,9 @@ api.get('/tables/:id', wrap((req) => ({
 })));
 api.post('/tables/:id/move', guard('sell'), wrap((req) => Orders.moveTable(req.params.id, req.body.to_table_id, 'br1', actor(req))));
 api.post('/tables/:id/merge', guard('sell'), wrap((req) => Orders.mergeTables(req.params.id, req.body.target_table_id, 'br1', actor(req))));
-api.post('/settings/tables', guard('settings.manage'), wrap((req) => Orders.createTable(req.body)));
-api.post('/settings/tables/:id/update', guard('settings.manage'), wrap((req) => Orders.updateTable(req.params.id, req.body)));
-api.post('/settings/tables/:id/delete', guard('settings.manage'), wrap((req) => Orders.deleteTable(req.params.id)));
+api.post('/settings/tables', guardAny('settings.tables'), wrap((req) => Orders.createTable(req.body)));
+api.post('/settings/tables/:id/update', guardAny('settings.tables'), wrap((req) => Orders.updateTable(req.params.id, req.body)));
+api.post('/settings/tables/:id/delete', guardAny('settings.tables'), wrap((req) => Orders.deleteTable(req.params.id)));
 
 // --- Orders ---
 api.post('/orders', wrap((req) => Orders.createOrUpdateOrder({ ...req.body, actor: actor(req) })));
@@ -233,11 +279,11 @@ api.post('/orders/items/:id/cancel', wrap((req) => {
   const itemId = req.params.id;
   const item = db.prepare(`SELECT * FROM order_items WHERE id=?`).get(itemId);
   if (!item) throw new Error('Món không tồn tại');
-  
+
   if (item.status === 'preparing' || item.status === 'ready' || item.status === 'served') {
     throw new Error('Bếp đã chế biến món này, không thể hủy!');
   }
-  
+
   if (item.status !== 'pending_confirm') {
     const pin = req.body.pin;
     if (!pin) throw new Error('Yêu cầu nhập mã PIN Quản lý/Chủ quán để hủy món đã gửi.');
@@ -274,13 +320,27 @@ api.post('/tables/:id/request-payment', wrap((req) => { Pay.requestPayment(req.p
 api.post('/orders/:id/customer-qr-pay', wrap((req) => Pay.customerQrPay(req.params.id, req.body || {})));
 api.post('/orders/:id/pay', guard('pay'), wrap((req) => {
   const receipt = Pay.payOrder(req.params.id, req.body.lines, { discount: req.body.discount, customer: req.body.customer || null, cashier: req.user?.name || req.user?.username || '' });
-  if (req.body.customer?.id) Customers.recordPurchase(req.body.customer.id, receipt.total, 'br1');
+  if (req.body.customer?.id) Customers.recordPurchase(req.body.customer.id, receipt.total, 'br1', req.params.id);
   return receipt;
 }));
 api.get('/shifts/current', guard('pay'), wrap(() => Shifts.currentShift()));
 api.post('/shifts/open', guard('pay'), wrap((req) => Shifts.openShift(req.body, req.user)));
 api.post('/shifts/close', guard('pay'), wrap((req) => Shifts.closeShift(req.body, req.user)));
 api.get('/shifts', guard('reports'), wrap((req) => Shifts.listShifts('br1', parseInt(req.query.limit) || 40)));
+api.get('/cash-drawer/current', guard('pay'), wrap(() => CashDrawer.currentDrawer('br1')));
+api.get('/cash-drawer/entries', guardAny('reports', 'pay'), wrap((req) => CashDrawer.listEntries(req.user?.branch_id || 'br1', req.query)));
+api.post('/cash-drawer/expense', guard('pay'), wrap((req) => {
+  const entry = CashDrawer.createEntry('expense', req.body, req.user, req.user?.branch_id || 'br1');
+  emit('shift:updated', { cash_drawer: true, entry }, req.user?.branch_id || 'br1');
+  emit('cash-drawer:updated', { entry }, req.user?.branch_id || 'br1');
+  return { entry, drawer: CashDrawer.currentDrawer(req.user?.branch_id || 'br1') };
+}));
+api.post('/cash-drawer/reimbursement', guard('pay'), wrap((req) => {
+  const entry = CashDrawer.createEntry('reimbursement', req.body, req.user, req.user?.branch_id || 'br1');
+  emit('shift:updated', { cash_drawer: true, entry }, req.user?.branch_id || 'br1');
+  emit('cash-drawer:updated', { entry }, req.user?.branch_id || 'br1');
+  return { entry, drawer: CashDrawer.currentDrawer(req.user?.branch_id || 'br1') };
+}));
 
 // --- Inventory / Warehouse ---
 api.get('/warehouses', wrap((req) => Inv.listWarehouses('br1', req.query)));
@@ -362,4 +422,45 @@ api.post('/sync/now', guard('reports'), wrap(() => Sync.syncNow()));
 
 // --- Reports ---
 api.get('/dashboard', wrap(() => Reports.dashboard()));
+api.get('/dashboard/trends', wrap(() => Reports.revenueTrends()));
+api.get('/reports/catalog', guard('reports'), wrap((req) => ReportCenter.catalog(req.user?.branch_id || 'br1')));
+api.get('/reports/preview', guard('reports'), wrap((req) => ReportCenter.buildReport(req.query.type || 'sales_overview', req.user?.branch_id || 'br1', req.query)));
+api.get('/reports/export', guard('reports'), async (req, res) => {
+  try {
+    const report = ReportCenter.buildReport(req.query.type || 'sales_overview', req.user?.branch_id || 'br1', req.query);
+    const format = String(req.query.format || 'html').toLowerCase();
+    if (format === 'json') return res.json(report);
+    if (format === 'html') {
+      res.setHeader('Content-Type', 'text/html; charset=utf-8');
+      res.setHeader('Content-Disposition', `inline; filename="${ReportCenter.reportFilename(report, 'html')}"`);
+      return res.send(ReportCenter.renderReportHtml(report, { mode: 'preview' }));
+    }
+    if (format === 'doc' || format === 'word') {
+      const file = ReportCenter.reportFilename(report, 'doc');
+      res.setHeader('Content-Type', 'application/msword; charset=utf-8');
+      res.setHeader('Content-Disposition', `attachment; filename="${file}"`);
+      return res.send(ReportCenter.renderReportDoc(report));
+    }
+    if (format === 'xls' || format === 'xlsx' || format === 'sheet') {
+      const file = ReportCenter.reportFilename(report, 'xls');
+      res.setHeader('Content-Type', 'application/vnd.ms-excel; charset=utf-8');
+      res.setHeader('Content-Disposition', `attachment; filename="${file}"`);
+      return res.send(ReportCenter.renderReportXls(report));
+    }
+    if (format === 'pdf') {
+      const file = ReportCenter.reportFilename(report, 'pdf');
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename="${file}"`);
+      return res.send(await ReportCenter.renderReportPdf(report));
+    }
+    return res.status(400).json({ error: 'Định dạng báo cáo không hợp lệ' });
+  } catch (e) {
+    return res.status(400).json({ error: e.message });
+  }
+});
 api.get('/audit', guard('audit.view'), wrap((req) => Reports.recentAudit('br1', parseInt(req.query.limit) || 40, req.query.before || null)));
+
+// --- Permanent archive inspection ---
+api.get('/archive/status', guard('reports'), wrap(() => Archive.storageStatus()));
+api.get('/archive/reports/latest', guard('reports'), wrap(() => Archive.latestDashboardReport('br1')));
+api.get('/archive/:kind/:id', guard('reports'), wrap((req) => Archive.readArchivedEntity(req.params.kind, req.params.id, 'br1')));

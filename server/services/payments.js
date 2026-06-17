@@ -6,6 +6,7 @@ import { deductForOrder } from './inventory.js';
 import { printReceipt } from './printing.js';
 import { getOperationsConfig, getPrintConfig } from './settings.js';
 import { getActiveShift } from './shifts.js';
+import { archiveOrder, archivePayment } from './archive.js';
 
 const METHODS = ['cash', 'card', 'qr', 'voucher', 'bank_transfer', 'internet_banking', 'qrcode', 'momo', 'zalopay', 'visa', 'pos_card', 'online'];
 const CUSTOMER_QR_METHODS = ['qr', 'qrcode', 'internet_banking', 'momo', 'zalopay'];
@@ -56,6 +57,9 @@ export function payOrder(order_id, lines, { discount, cashier, customer } = {}, 
   audit('payment.done', { order: order_id, total: fresh.total, lines: lines.length, shift_id: shift?.id || null }, branch_id);
   const receipt = buildReceipt(order_id, pid, lines, paid, { cashier });
   receipt.print_config = getPrintConfig(branch_id);
+  receipt.branch_id = branch_id;
+  archiveOrder(getOrder(order_id));
+  archivePayment(receipt);
   printReceipt(receipt, branch_id);
   emit('payment:done', { order_id, receipt }, branch_id);
   emit('stats:dirty', {}, branch_id);

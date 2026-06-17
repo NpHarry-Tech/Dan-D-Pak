@@ -6,6 +6,7 @@ import { printKitchenTickets, printRunnerSlip, printCupLabels } from './printing
 import { getMenuItemForOrder } from './catalog.js';
 import { getOperationsConfig } from './settings.js';
 import { getActiveShift } from './shifts.js';
+import { archiveOrder } from './archive.js';
 
 // Số Bill nội bộ: Dan{ddMMyy}{seq} — seq là số thứ tự đơn trong NGÀY (reset mỗi
 // ngày vận hành: ca sáng → ca tối đều trong 1 ngày dương lịch). VD Dan1506260001.
@@ -99,6 +100,7 @@ export function createOrUpdateOrder({ branch_id = 'br1', table_id, channel = 'di
   audit(needsStaffConfirm ? 'order.pending' : 'order.send', { order: order.id, items: created.length, source }, branch_id, actor);
 
   const full = getOrder(order.id);
+  archiveOrder(full);
   const printable = created.filter(i => i.status === 'new' && i.station !== 'retail');
   if (printable.length) printKitchenTickets(full, printable, branch_id);
   printCupLabels(full, created, branch_id);
@@ -169,6 +171,7 @@ export function confirmPendingItems(order_id, item_ids = [], branch_id = 'br1', 
   for (const it of pending) upd.run(it.station === 'retail' ? 'served' : 'new', it.id);
   audit('order.confirm', { order: order_id, items: pending.length }, branch_id, actor);
   const full = getOrder(order_id);
+  archiveOrder(full);
   const confirmed = db.prepare(`SELECT * FROM order_items WHERE id IN (${pending.map(() => '?').join(',')}) ORDER BY created_at`).all(...pending.map(i => i.id));
   const kitchenItems = confirmed.filter(i => i.status === 'new' && i.station !== 'retail');
   if (kitchenItems.length) printKitchenTickets(full, kitchenItems, branch_id);
@@ -201,6 +204,7 @@ export function rejectPendingItems(order_id, item_ids = [], reason = '', branch_
     if (order.table_id) setTableByOpenOrders(order.table_id, branch_id);
   }
   const full = getOrder(order_id);
+  archiveOrder(full);
   audit('order.reject', { order: order_id, items: pending.length, reason: cleanReason }, branch_id, actor);
   emit('order:updated', full, branch_id);
   emit('order:pending', { order: full, rejected: pending.map(i => i.id), reason: cleanReason }, branch_id);
@@ -233,6 +237,7 @@ export function moveTable(from_table_id, to_table_id, branch_id = 'br1', actor =
   audit('table.move', { order: order.id, from: from_table_id, to: to_table_id, from_code: source.code, to_code: target.code }, branch_id, actor);
   emit('order:updated', getOrder(order.id), branch_id);
   emit('kds:refresh', {}, branch_id);
+  archiveOrder(getOrder(order.id));
   return getOrder(order.id);
 }
 
@@ -269,6 +274,8 @@ export function mergeTables(source_table_id, target_table_id, branch_id = 'br1',
   }, branch_id, actor);
   emit('order:updated', getOrder(target.id), branch_id);
   emit('kds:refresh', {}, branch_id);
+  archiveOrder(getOrder(target.id));
+  archiveOrder(getOrder(source.id));
   return getOrder(target.id);
 }
 
@@ -293,7 +300,11 @@ export function splitOrderItems(order_id, item_ids = [], branch_id = 'br1', acto
   audit('bill.split', { source_order: order_id, split_order: newId, table: order.table_id, table_code: table?.code, items: selected.length }, branch_id, actor);
   emit('order:updated', getOrder(order_id), branch_id);
   emit('order:updated', getOrder(newId), branch_id);
-  return { source: getOrder(order_id), split: getOrder(newId) };
+  const sourceOrder = getOrder(order_id);
+  const splitOrder = getOrder(newId);
+  archiveOrder(sourceOrder);
+  archiveOrder(splitOrder);
+  return { source: sourceOrder, split: splitOrder };
 }
 
 function validateSkuLot(sku, qty, lot_id, branch_id) {
@@ -355,6 +366,7 @@ export function setItemStatus(item_id, status, branch_id = 'br1', actor = 'syste
 
   audit('item.status', { item: item_id, status }, branch_id, actor);
   const order = getOrder(item.order_id);
+  archiveOrder(order);
   // When a dish becomes ready, auto-print a per-dish runner slip (with table no.).
   if (status === 'ready') printRunnerSlip(item, order, branch_id);
   emit('order:item', { order_id: item.order_id, item_id, status, order }, branch_id);
@@ -367,8 +379,10 @@ export function cancelItem(item_id, reason, branch_id = 'br1', actor = 'system')
   const item = db.prepare(`SELECT order_id FROM order_items WHERE id=?`).get(item_id);
   recomputeTotals(item.order_id);
   audit('item.cancel', { item: item_id, reason }, branch_id, actor);
-  emit('order:updated', getOrder(item.order_id), branch_id);
-  return getOrder(item.order_id);
+  const order = getOrder(item.order_id);
+  archiveOrder(order);
+  emit('order:updated', order, branch_id);
+  return order;
 }
 
 export function createStaffCall(table_id, reason, branch_id = 'br1') {

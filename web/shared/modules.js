@@ -20,7 +20,7 @@ export const MODULES = [
   { key: 'warehouse', label: 'Kho', icon: '📦', group: 'supply', href: '/warehouse', perm: 'module.warehouse', status: 'active' },
   { key: 'inventory', label: 'Tồn kho', icon: '🏷️', group: 'supply', href: '/warehouse', perm: 'module.inventory', status: 'active' },
   { key: 'admin', label: 'Quản lý', icon: '📊', group: 'essentials', href: '/admin', perm: 'module.admin', status: 'active' },
-  { key: 'settings', label: 'Cài đặt', icon: '⚙️', group: 'settings', href: '/settings', perm: 'module.settings', status: 'active' },
+  { key: 'settings', label: 'Cài đặt', icon: '⚙️', group: 'settings', href: '/admin?view=settings', perm: 'module.settings', status: 'active' },
   { key: 'printing', label: 'In ấn', icon: '🖨️', group: 'settings', href: '/printers', perm: 'module.printing', status: 'active' },
 ];
 

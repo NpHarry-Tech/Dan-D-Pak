@@ -61,10 +61,12 @@ const DEFAULT_PRINT_CONFIG = {
     autoPrint: '1',
   },
   printers: [
-    { id: 'kitchen', name: 'Máy in Bếp', type: 'Phiếu bếp', active: true, auto: true },
-    { id: 'bar', name: 'Máy in Bar', type: 'Phiếu bar', active: true, auto: true },
-    { id: 'bill', name: 'Máy in Bill', type: 'Hóa đơn', active: true, auto: true },
-    { id: 'label', name: 'Máy in Tem nhãn', type: 'Tem nhãn', active: true, auto: false },
+    { id: 'kitchen', name: '', systemName: '', label: 'Phiếu bếp', type: 'Phiếu bếp', output: 'kitchen_ticket', location: 'Bếp', active: true, auto: true },
+    { id: 'bar', name: '', systemName: '', label: 'Phiếu bar', type: 'Phiếu bar', output: 'kitchen_ticket', location: 'Bar', active: true, auto: true },
+    { id: 'bill', name: '', systemName: '', label: 'Hóa đơn', type: 'Hóa đơn', output: 'receipt', location: 'Thu ngân', active: true, auto: true },
+    { id: 'label', name: '', systemName: '', label: 'Tem nhãn', type: 'Tem nhãn', output: 'cup_label', location: 'Quầy tem', active: true, auto: false },
+    { id: 'runner', name: '', systemName: '', label: 'Phiếu chạy món', type: 'Phiếu chạy món', output: 'runner', location: 'Runner', active: true, auto: false },
+    { id: 'report', name: '', systemName: '', label: 'Báo cáo A4', type: 'Báo cáo A4', output: 'report', location: 'Văn phòng', active: true, auto: false },
   ],
   templates: {
     label: null,
@@ -280,6 +282,7 @@ const DEFAULT_OPERATIONS_CONFIG = {
     ],
     denominations: [500000, 200000, 100000, 50000, 20000, 10000, 5000, 2000, 1000],
     requireOpenShift: true,
+    defaultDrawerCash: 4000000,
   },
 };
 
@@ -359,6 +362,14 @@ function sanitizeBillTemplate(tpl, bill) {
   if (legacyBcm) return defaultBcmBillTemplate(bill);
   return clean;
 }
+function inferPrinterOutput(p = {}) {
+  const raw = String(p.output || p.jobType || p.type || p.id || '').toLowerCase();
+  if (raw.includes('bill') || raw.includes('hóa đơn') || raw.includes('hoa don') || raw.includes('receipt')) return 'receipt';
+  if (raw.includes('tem') || raw.includes('label')) return raw.includes('sản phẩm') || raw.includes('san pham') ? 'product_label' : 'cup_label';
+  if (raw.includes('runner') || raw.includes('chạy món') || raw.includes('chay mon')) return 'runner';
+  if (raw.includes('report') || raw.includes('báo cáo') || raw.includes('bao cao')) return 'report';
+  return 'kitchen_ticket';
+}
 function sanitizePrintConfig(raw = {}) {
   const input = plainObject(raw);
   const bill = migrateBcmBillDefaults(mergePlain(DEFAULT_PRINT_CONFIG.bill, input.bill));
@@ -371,8 +382,12 @@ function sanitizePrintConfig(raw = {}) {
     bill,
     printers: printers.map((p, i) => ({
       id: str(p?.id || `printer_${i + 1}`, 80) || `printer_${i + 1}`,
-      name: str(p?.name || `Printer ${i + 1}`, 200),
-      type: str(p?.type || '', 120),
+      name: str(p?.name || p?.systemName || '', 200),
+      systemName: str(p?.systemName || p?.name || '', 200),
+      label: str(p?.label || p?.type || `Printer ${i + 1}`, 120),
+      type: str(p?.type || p?.label || '', 120),
+      output: inferPrinterOutput(p),
+      location: str(p?.location || '', 120),
       active: bool(p?.active, true),
       auto: bool(p?.auto, false),
     })),
@@ -425,6 +440,7 @@ function sanitizeOperationsConfig(raw = {}) {
       denominations: rawDenoms.map(x => Math.max(0, parseInt(x) || 0)).filter(Boolean)
         .filter((x, i, arr) => arr.indexOf(x) === i).sort((a, b) => b - a),
       requireOpenShift: bool(shifts.requireOpenShift, true),
+      defaultDrawerCash: Math.max(0, parseInt(shifts.defaultDrawerCash ?? DEFAULT_OPERATIONS_CONFIG.shifts.defaultDrawerCash) || 0),
     },
   };
 }

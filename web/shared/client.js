@@ -1,7 +1,24 @@
 // Shared frontend runtime: REST helper, realtime socket, formatting, toast, clock.
 import { MODULES, TOPBAR_MODULES, MODULE_GROUPS } from './modules.js';
+import { getLang, setLocalLang, t, translateText, TRANSLATIONS, applyDOMTranslations, watchAndTranslate, initI18n } from './i18n.js';
 
 export const BRANCH = 'br1';
+
+export { getLang, t, translateText, TRANSLATIONS, applyDOMTranslations, watchAndTranslate };
+export const setLang = async (l) => {
+  const lang = setLocalLang(l);
+  const user = getUser();
+  const token = getToken();
+  if (user?.id && token && !token.startsWith('demo_')) {
+    try {
+      const updated = await api('/me/lang', { method: 'POST', body: { lang } });
+      localStorage.setItem('auth_user', JSON.stringify({ ...user, ...updated, lang }));
+    } catch (e) {
+      console.warn('[client] could not persist language preference:', e.message);
+    }
+  }
+  location.reload();
+};
 
 export async function api(path, opts = {}) {
   const res = await fetch('/api' + path, {
@@ -43,7 +60,9 @@ export async function logout() {
   localStorage.removeItem('auth_token'); localStorage.removeItem('auth_user'); localStorage.removeItem('auth_perms'); location.reload();
 }
 
-const ROLE_LABEL = { owner: 'Chủ quán', manager: 'Quản lý', cashier: 'Thu ngân', kitchen: 'Bếp', warehouse: 'Thủ kho' };
+const ROLE_LABEL = getLang() === 'en' ?
+  { owner: 'Owner', manager: 'Manager', cashier: 'Cashier', kitchen: 'Kitchen', warehouse: 'Warehouse Keeper' } :
+  { owner: 'Chủ quán', manager: 'Quản lý', cashier: 'Thu ngân', kitchen: 'Bếp', warehouse: 'Thủ kho' };
 const DEMO_LOGIN_USERS = [
   { id:'demo_owner', username:'owner', name:'Chủ quán', role:'owner', pin:'1234' },
   { id:'demo_manager', username:'manager', name:'Quản lý', role:'manager', pin:'2222' },
@@ -83,10 +102,27 @@ export async function requireLogin() {
       const user = getUser();
       if (user) {
         localStorage.setItem('auth_perms', JSON.stringify(DEMO_PERMS[user.role] || []));
+        const userLang = user.lang || 'vi';
+        const currentPreferred = localStorage.getItem('preferred_lang') || 'vi';
+        localStorage.setItem('preferred_lang', userLang);
+        if (userLang !== currentPreferred) {
+          location.reload();
+        }
         return user;
       }
     }
-    try { const me = await api('/me'); localStorage.setItem('auth_user', JSON.stringify(me)); localStorage.setItem('auth_perms', JSON.stringify(me.perms || [])); return me; }
+    try {
+      const me = await api('/me');
+      localStorage.setItem('auth_user', JSON.stringify(me));
+      localStorage.setItem('auth_perms', JSON.stringify(me.perms || []));
+      const userLang = me.lang || 'vi';
+      const currentPreferred = localStorage.getItem('preferred_lang') || 'vi';
+      localStorage.setItem('preferred_lang', userLang);
+      if (userLang !== currentPreferred) {
+        location.reload();
+      }
+      return me;
+    }
     catch { localStorage.removeItem('auth_token'); localStorage.removeItem('auth_user'); }
   }
   return new Promise(async (resolve) => {
@@ -139,7 +175,15 @@ export async function requireLogin() {
           const r = demoMode ? demoLogin(pickedUser, pin) : await api('/login', { method: 'POST', body: { username: pickedUser, pin } });
           localStorage.setItem('auth_token', r.token); localStorage.setItem('auth_user', JSON.stringify(r.user));
           localStorage.setItem('auth_perms', JSON.stringify(r.perms || []));
-          ov.remove(); resolve(r.user);
+          const userLang = r.user.lang || 'vi';
+          const currentPreferred = localStorage.getItem('preferred_lang') || 'vi';
+          localStorage.setItem('preferred_lang', userLang);
+          ov.remove();
+          if (userLang !== currentPreferred) {
+            location.reload();
+          } else {
+            resolve(r.user);
+          }
         } catch (e) {
           pinPanel.classList.add('shake'); setTimeout(() => pinPanel.classList.remove('shake'), 400);
           pin = ''; drawDots();
@@ -184,23 +228,49 @@ function injectLoginCss() {
 export function connect(device, handlers = {}) {
   if (typeof io === 'undefined') {
     console.warn('[client] socket.io client not loaded — realtime disabled, REST still works');
+    startPingMonitor();
     return { on() {}, emit() {}, disconnect() {} };
   }
   const s = io({ query: { branch: BRANCH, device } });
   s.on('connect', () => setOnline(true));
   s.on('disconnect', () => setOnline(false));
   for (const [ev, fn] of Object.entries(handlers)) s.on(ev, fn);
+  startPingMonitor();
   return s;
 }
 
-function setOnline(ok) {
+let _pingTimer = null;
+function setOnline(ok, pingMs = null) {
+  const slow = ok && pingMs !== null && pingMs > 500;
   document.querySelectorAll('.onlinedot').forEach(el => {
     el.classList.toggle('off', !ok);
-    const lbl = el.querySelector('span'); if (lbl) lbl.textContent = ok ? 'Online' : 'Mất kết nối';
+    el.classList.toggle('slow', slow);
+    const lbl = el.querySelector('span');
+    if (lbl) {
+      if (!ok) lbl.textContent = getLang() === 'en' ? 'Offline' : 'Mất kết nối';
+      else lbl.textContent = pingMs === null ? 'Online' : `Online · ${pingMs}ms`;
+    }
   });
 }
+function startPingMonitor() {
+  if (_pingTimer) return;
+  const run = async () => {
+    const start = performance.now();
+    try {
+      const res = await fetch('/api/ping?ts=' + Date.now(), { cache: 'no-store' });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      setOnline(true, Math.max(1, Math.round(performance.now() - start)));
+    } catch {
+      setOnline(false);
+    }
+  };
+  run();
+  _pingTimer = setInterval(run, 5000);
+}
 
-export const money = (n) => (n || 0).toLocaleString('vi-VN') + 'đ';
+export const money = (n) => getLang() === 'en'
+  ? (n || 0).toLocaleString('en-US') + ' VND'
+  : (n || 0).toLocaleString('vi-VN') + 'đ';
 export const moneyShort = (n) => { n = n || 0; return n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : n >= 1e3 ? Math.round(n / 1e3) + 'k' : '' + n; };
 
 export function timeAgo(iso) {
@@ -219,7 +289,7 @@ export function toast(msg, isErr = false) {
 
 export function startClock(sel = '#clock') {
   const el = document.querySelector(sel); if (!el) return;
-  const tick = () => el.textContent = new Date().toLocaleTimeString('vi-VN');
+  const tick = () => el.textContent = new Date().toLocaleTimeString(getLang() === 'en' ? 'en-US' : 'vi-VN');
   tick(); setInterval(tick, 1000);
 }
 
@@ -297,10 +367,18 @@ export function topbar(active) {
     .map(k => MODULES.find(m => m.key === k))
     .filter(Boolean)
     .filter(m => canOpenModule(m) || activeKey === m.key);
+
+  const branchLabel = getLang() === 'en' ? 'Branch: Dan D Pak Sala · Live' : 'Chi nhánh: Dan D Pak Sala · Trực tiếp';
+
   return `<header class="topbar">
-    <div class="logo brand-mark"><img src="/assets/DanOnLogo.png" alt="DanDPak"><small>Branch: Dan D Pak Sala · Live</small></div>
-    <nav class="devtabs">${devs.map(m =>
-      `<a class="devtab ${m.key === activeKey ? 'active' : ''}" href="${m.href}">${m.icon} ${m.label.replace(' Self-Order','').replace('FnB ','')}</a>`).join('')}</nav>
+    <div class="logo brand-mark" ondblclick="location.href = '/'" style="cursor:pointer" title="${getLang() === 'en' ? 'Double-click to return to Launcher' : 'Nhấp đúp để quay lại Launcher'}"><img src="/assets/DanOnLogo.png" alt="DanDPak"><small>${branchLabel}</small></div>
+    <nav class="devtabs">${devs.map(m => {
+      let label = m.label;
+      if (getLang() === 'en') {
+        label = TRANSLATIONS[label] || label;
+      }
+      return `<a class="devtab ${m.key === activeKey ? 'active' : ''}" href="${m.href}">${m.icon} ${label.replace(' Self-Order','').replace('FnB ','')}</a>`;
+    }).join('')}</nav>
     <div class="topright">
       <span class="clock" id="clock"></span>
       <span class="onlinedot"><i></i><span>Online</span></span>
@@ -309,7 +387,9 @@ export function topbar(active) {
   </header>`;
 }
 
-const ROLE_LABEL2 = { owner: 'Chủ quán', manager: 'Quản lý', cashier: 'Thu ngân', kitchen: 'Bếp', warehouse: 'Thủ kho' };
+const ROLE_LABEL2 = getLang() === 'en' ?
+  { owner: 'Owner', manager: 'Manager', cashier: 'Cashier', kitchen: 'Kitchen', warehouse: 'Warehouse Keeper' } :
+  { owner: 'Chủ quán', manager: 'Quản lý', cashier: 'Thu ngân', kitchen: 'Bếp', warehouse: 'Thủ kho' };
 export function renderUserChip() {
   if (_activeTopbar && document.getElementById('top')) {
     document.getElementById('top').innerHTML = topbar(_activeTopbar);
@@ -317,6 +397,18 @@ export function renderUserChip() {
   const el = document.getElementById('userchip'); const u = getUser(); if (!el || !u) return;
   el.innerHTML = `<span style="display:inline-flex;align-items:center;gap:7px;background:var(--surface2);border:1px solid var(--border2);border-radius:99px;padding:4px 6px 4px 11px;font-size:12px;font-weight:600">
     👤 ${u.name} <small style="color:var(--muted)">· ${ROLE_LABEL2[u.role] || u.role}</small>
-    <button id="logoutBtn" style="background:var(--surface3);border-radius:99px;width:22px;height:22px;color:var(--muted)" title="Đăng xuất">⏻</button></span>`;
+    <button id="logoutBtn" style="background:var(--surface3);border-radius:99px;width:22px;height:22px;color:var(--muted)" title="${getLang() === 'en' ? 'Logout' : 'Đăng xuất'}">⏻</button></span>`;
   document.getElementById('logoutBtn').onclick = () => logout();
 }
+
+// Global click event to handle language switches
+document.addEventListener('click', (e) => {
+  if (e.target && e.target.id === 'langViBtn') {
+    setLang('vi');
+  }
+  if (e.target && e.target.id === 'langEnBtn') {
+    setLang('en');
+  }
+});
+
+initI18n();

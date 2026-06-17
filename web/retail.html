@@ -396,6 +396,13 @@ function saveStateToStorage() {
   } catch (e) {}
 }
 
+function renameTabs() {
+  tabs.forEach((t, index) => {
+    t.name = `Hóa đơn ${String(index + 1).padStart(2, '0')}`;
+  });
+  saveStateToStorage();
+}
+
 function loadStateFromStorage() {
   try {
     const storedTabs = localStorage.getItem('retail_tabs');
@@ -421,6 +428,7 @@ function loadStateFromStorage() {
         cart = activeTab.cart || [];
         selectedCustomer = activeTab.selectedCustomer || null;
         activePromo = activeTab.activePromo || null;
+        renameTabs();
         return;
       }
     }
@@ -477,11 +485,12 @@ function addTab() {
   const newId = tabCounter;
   tabs.push({
     id: newId,
-    name: `Hóa đơn ${String(newId).padStart(2, '0')}`,
+    name: '',
     cart: [],
     selectedCustomer: null,
     activePromo: null
   });
+  renameTabs();
   switchTab(newId);
 }
 
@@ -498,8 +507,8 @@ function closeTab(id, event) {
     switchTab(nextActiveTab.id);
   }
   tabs = tabs.filter(t => t.id !== id);
+  renameTabs();
   renderTabs();
-  saveStateToStorage();
 }
 
 window.switchTab = switchTab;

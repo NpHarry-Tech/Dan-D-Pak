@@ -13,6 +13,7 @@ function snapshotCustomer(c) {
   return {
     id: c.id || null, name: c.name || '', phone: c.phone || '', email: c.email || '',
     tax_code: c.tax_code || '', company: c.company || '', address: c.address || '',
+    birthday: c.birthday || '', preferences: c.preferences || '', allergies: c.allergies || '',
     perk_type: c.perk_type || 'none', perk_value: c.perk_value || 0,
   };
 }
@@ -50,7 +51,7 @@ export function checkout({ items, payments, voucher_id = null, customer = null, 
     .run(discountPlan.orderVoucher?.id || null, discountPlan.orderVoucher?.code || null, order.id);
   const snap = snapshotCustomer(cust);
   const receipt = payOrder(order.id, Array.isArray(payments) ? payments : [], { discount: discountPlan.discount, cashier, customer: snap }, branch_id);
-  if (cust?.id) recordPurchase(cust.id, receipt.total, branch_id);
+  if (cust?.id) recordPurchase(cust.id, receipt.total, branch_id, order.id);
   receipt.discount_breakdown = {
     product_promos: discountPlan.lineDiscount,
     voucher: discountPlan.orderDiscount,

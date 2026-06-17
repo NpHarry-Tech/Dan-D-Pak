@@ -67,6 +67,7 @@ function sanitizeHotspot(h = {}, i = 0, pageCount = 1) {
     menu_item_id: safeText(h.menu_item_id),
     label: safeText(h.label),
     enabled: h.enabled !== false,
+    color: safeText(h.color, '#0891b2') || '#0891b2',
   };
 }
 
