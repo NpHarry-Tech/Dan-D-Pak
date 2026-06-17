@@ -202,5 +202,10 @@ body.kiosk{ overscroll-behavior:none;touch-action:manipulation }
 .denom-row input{flex:1;width:100%}
 .shift-total{display:flex;justify-content:space-between;align-items:center;margin-top:11px;font-weight:700;font-size:14px}
 .shift-total b{font-family:var(--mono);color:var(--brand)}
+.shift-box{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:10px}
+.shift-card{background:var(--surface2);border:1px solid var(--border);border-radius:12px;padding:12px}
+.shift-card h3{margin:0 0 10px;font-size:13px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:var(--muted)}
+.shift-report{max-height:260px;overflow:auto;border:1px solid var(--border);border-radius:10px;background:var(--surface);padding:8px}
+@media(max-width:720px){.shift-box{grid-template-columns:1fr}}
 
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
