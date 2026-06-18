@@ -1,3 +1,0 @@
-{"archived_at":"2026-06-16T17:21:20.604Z","id":"a_lrmf15sczx","branch_id":"br1","actor":"owner","action":"auth.login","detail":"{\"user\":\"owner\",\"role\":\"owner\"}","created_at":"2026-06-16T17:21:20.589Z"}
-{"archived_at":"2026-06-16T17:21:20.760Z","id":"a_0zur4nsd4n","branch_id":"br1","actor":"owner","action":"user.lang.update","detail":"{\"username\":\"owner\",\"lang\":\"vi\"}","created_at":"2026-06-16T17:21:20.759Z"}
-{"archived_at":"2026-06-16T17:34:03.856Z","id":"a_zowkuu8pxr","branch_id":"br1","actor":"manager","action":"user.lang.update","detail":"{\"username\":\"manager\",\"lang\":\"en\"}","created_at":"2026-06-16T17:34:03.855Z"}

@@ -1,4 +1,7 @@
-﻿node_modules/
+node_modules/
+web/node_modules/
+server/node_modules/
+
 .env
 .env.*
 !.env.example
@@ -14,3 +17,20 @@ out/
 Thumbs.db
 
 backups/
+server/store.db
+server/store.db-shm
+server/store.db-wal
+server/db.sqlite
+*.db
+*.sqlite
+*.sqlite3
+uploads/
+storage/private/
+*.dump
+*.backup
+
+server/permanent-storage/**
+!server/permanent-storage/
+!server/permanent-storage/README.md
+!server/permanent-storage/**/
+!server/permanent-storage/**/.gitkeep

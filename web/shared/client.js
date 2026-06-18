@@ -1,8 +1,11 @@
 // Shared frontend runtime: REST helper, realtime socket, formatting, toast, clock.
 import { MODULES, TOPBAR_MODULES, MODULE_GROUPS } from './modules.js';
 import { getLang, setLocalLang, t, translateText, TRANSLATIONS, applyDOMTranslations, watchAndTranslate, initI18n } from './i18n.js';
+import { apiRequest, apiUrl as buildApiUrl } from '/js/core/apiClient.js';
+import { connectRealtime } from '/js/core/realtimeClient.js';
 
 export const BRANCH = 'br1';
+export const apiUrl = buildApiUrl;
 
 export { getLang, t, translateText, TRANSLATIONS, applyDOMTranslations, watchAndTranslate };
 export const setLang = async (l) => {
@@ -21,18 +24,13 @@ export const setLang = async (l) => {
 };
 
 export async function api(path, opts = {}) {
-  const res = await fetch('/api' + path, {
-    method: opts.method || 'GET',
-    headers: { 'Content-Type': 'application/json', 'x-auth-token': getToken() || '' },
-    body: opts.body ? JSON.stringify(opts.body) : undefined,
-  });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) {
+  try {
+    return await apiRequest(path, { ...opts, token: getToken() || '' });
+  } catch (e) {
     const demo = demoApiFallback(path);
     if (demo !== undefined) return demo;
-    const e = new Error(data.error || ('HTTP ' + res.status)); e.status = res.status; throw e;
+    throw e;
   }
-  return data;
 }
 
 // ---- Auth ----
@@ -226,15 +224,7 @@ function injectLoginCss() {
 
 // Socket.IO is served by the server at /socket.io/socket.io.js
 export function connect(device, handlers = {}) {
-  if (typeof io === 'undefined') {
-    console.warn('[client] socket.io client not loaded — realtime disabled, REST still works');
-    startPingMonitor();
-    return { on() {}, emit() {}, disconnect() {} };
-  }
-  const s = io({ query: { branch: BRANCH, device } });
-  s.on('connect', () => setOnline(true));
-  s.on('disconnect', () => setOnline(false));
-  for (const [ev, fn] of Object.entries(handlers)) s.on(ev, fn);
+  const s = connectRealtime(device, BRANCH, handlers, setOnline);
   startPingMonitor();
   return s;
 }
@@ -257,8 +247,7 @@ function startPingMonitor() {
   const run = async () => {
     const start = performance.now();
     try {
-      const res = await fetch('/api/ping?ts=' + Date.now(), { cache: 'no-store' });
-      if (!res.ok) throw new Error('HTTP ' + res.status);
+      await apiRequest('/ping?ts=' + Date.now(), { cache: 'no-store', token: getToken() || '' });
       setOnline(true, Math.max(1, Math.round(performance.now() - start)));
     } catch {
       setOnline(false);

@@ -3,11 +3,21 @@
 // warehouse/menu fields are added in place.
 import { DatabaseSync } from 'node:sqlite';
 import { fileURLToPath } from 'node:url';
-import { dirname, join } from 'node:path';
+import { dirname, isAbsolute, join, resolve } from 'node:path';
+import { mkdirSync } from 'node:fs';
 import { appendAuditArchive, ensurePermanentStorage } from './services/archive.js';
+import { env } from './config/env.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-export const DB_PATH = join(__dirname, 'store.db');
+const ROOT = join(__dirname, '..');
+
+function resolveDbPath() {
+  if (!env.SQLITE_PATH) return join(__dirname, 'store.db');
+  return isAbsolute(env.SQLITE_PATH) ? env.SQLITE_PATH : resolve(ROOT, env.SQLITE_PATH);
+}
+
+export const DB_PATH = resolveDbPath();
+mkdirSync(dirname(DB_PATH), { recursive: true });
 
 export const db = new DatabaseSync(DB_PATH);
 

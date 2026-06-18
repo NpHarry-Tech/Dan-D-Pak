@@ -1,0 +1,14 @@
+{
+  "rewrites": [
+    { "source": "/admin", "destination": "/admin.html" },
+    { "source": "/pos", "destination": "/pos.html" },
+    { "source": "/ipad", "destination": "/ipad.html" },
+    { "source": "/kds", "destination": "/kds.html" },
+    { "source": "/retail", "destination": "/retail.html" },
+    { "source": "/warehouse", "destination": "/warehouse.html" },
+    { "source": "/online", "destination": "/online.html" },
+    { "source": "/printers", "destination": "/printers.html" },
+    { "source": "/settings", "destination": "/settings.html" },
+    { "source": "/sim", "destination": "/sim.html" }
+  ]
+}

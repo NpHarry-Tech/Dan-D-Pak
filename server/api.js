@@ -25,6 +25,8 @@ import * as System from './services/system.js';
 import * as ReportCenter from './services/reportCenter.js';
 import * as CashDrawer from './services/cashDrawer.js';
 import { emit, getActiveConnections } from './realtime.js';
+import { errorPayload } from './core/errors.js';
+import { notImplemented } from './core/http.js';
 
 export const api = Router();
 const guard = Auth.requireAuth;
@@ -42,10 +44,14 @@ const actor = Auth.actorName; // người phụ trách thao tác cho nhật ký 
 const wrap = (fn) => (req, res) => {
   try {
     const out = fn(req, res);
-    if (out && typeof out.then === 'function') out.then(v => res.json(v ?? { ok: true })).catch(e => res.status(400).json({ error: e.message }));
+    if (out && typeof out.then === 'function') {
+      out
+        .then(v => res.json(v ?? { ok: true }))
+        .catch(e => res.status(e.status || 400).json(errorPayload(e)));
+    }
     else res.json(out ?? { ok: true });
   }
-  catch (e) { res.status(400).json({ error: e.message }); }
+  catch (e) { res.status(e.status || 400).json(errorPayload(e)); }
 };
 
 // --- Auth ---
@@ -156,6 +162,9 @@ api.get('/settings/system/printers', guardAny('settings.connections', 'settings.
   printers: await System.listSystemPrinters({ force: req.query.force === '1' }),
   checkedAt: new Date().toISOString(),
 })));
+api.get('/devices', guardAny('settings.devices', 'settings.connections'), wrap(() => notImplemented('Device registry endpoint is planned but not implemented yet. Current live device visibility is available through /api/settings/connections/status.')));
+api.post('/devices/pair', wrap(() => notImplemented()));
+api.patch('/devices/:id/approve', guardAny('settings.devices'), wrap(() => notImplemented()));
 api.get('/operations/config', wrap(() => AppSettings.getOperationsConfig()));
 api.get('/book-menu', wrap(() => BookMenu.getPublicBookConfig()));
 api.get('/settings/book-menu', guardAny('settings.bookmenu'), wrap(() => BookMenu.getBookConfig()));
@@ -285,10 +294,12 @@ api.post('/settings/tables/:id/delete', guardAny('settings.tables'), wrap((req) 
 
 // --- Orders ---
 api.post('/orders', wrap((req) => Orders.createOrUpdateOrder({ ...req.body, actor: actor(req) })));
+api.get('/orders', guard('pay'), wrap(() => notImplemented('Order list endpoint is planned. Use /api/orders/history or table-specific order reads in the current app.')));
 api.get('/orders/pending-confirmation', guard('sell'), wrap(() => Orders.listPendingConfirmations()));
 api.get('/orders/history', guard('pay'), wrap((req) => History.listOrderHistory('br1', req.query)));
 api.get('/orders/:id/receipt', guard('pay'), wrap((req) => History.orderReceipt(req.params.id)));
 api.get('/orders/:id', wrap((req) => Orders.getOrder(req.params.id)));
+api.patch('/orders/:id', guard('sell'), wrap(() => notImplemented('Generic order patch is planned. Current app uses action-specific order endpoints.')));
 api.post('/orders/:id/confirm', guard('sell'), wrap((req) => Orders.confirmPendingItems(req.params.id, req.body.item_ids, 'br1', actor(req))));
 api.post('/orders/:id/reject', guard('sell'), wrap((req) => Orders.rejectPendingItems(req.params.id, req.body.item_ids, req.body.reason, 'br1', actor(req))));
 api.post('/orders/:id/split', guard('pay'), wrap((req) => Orders.splitOrderItems(req.params.id, req.body.item_ids, 'br1', actor(req))));
@@ -325,6 +336,8 @@ api.post('/orders/items/:id/kds-dismiss', wrap((req) => {
 }));
 
 // --- KDS ---
+api.get('/kds/tickets', wrap(() => notImplemented('Generic KDS tickets endpoint is planned. Current app uses /api/kds/:station.')));
+api.patch('/kds/tickets/:id', wrap(() => notImplemented('Generic KDS ticket patch is planned. Current app uses /api/orders/items/:id/status.')));
 api.get('/kds/:station', wrap((req) => Orders.getStationTickets(req.params.station)));
 
 // --- Staff calls ---
@@ -333,6 +346,8 @@ api.get('/calls', wrap(() => Orders.listStaffCalls()));
 api.post('/calls/:table_id/resolve', wrap((req) => { Orders.resolveStaffCall(req.params.table_id); return { ok: true }; }));
 
 // --- Payments ---
+api.post('/payments', guard('pay'), wrap(() => notImplemented('Generic payment creation is planned. Current app uses /api/orders/:id/pay.')));
+api.get('/payments', guard('reports'), wrap(() => notImplemented('Payment list endpoint is planned. Current reports are available through dashboard/report center endpoints.')));
 api.post('/orders/:id/request-payment', wrap((req) => { Pay.requestPayment(req.body.table_id); return { ok: true }; }));
 api.post('/tables/:id/request-payment', wrap((req) => { Pay.requestPayment(req.params.id); return { ok: true }; }));
 api.post('/orders/:id/customer-qr-pay', wrap((req) => Pay.customerQrPay(req.params.id, req.body || {})));
@@ -370,6 +385,7 @@ api.post('/warehouses', guard('warehouse.manage'), wrap((req) => Inv.createWareh
 api.post('/warehouses/:id/update', guard('warehouse.manage'), wrap((req) => Inv.updateWarehouse(req.params.id, req.body)));
 api.get('/inventory', wrap((req) => Inv.listInventory('br1', req.query)));
 api.post('/inventory', guard('inventory.adjust'), wrap((req) => Inv.createInventoryItem(req.body)));
+api.post('/inventory/movements', guard('inventory.adjust'), wrap(() => notImplemented('Generic inventory movement endpoint is planned. Current app uses warehouse receive/issue/transfer/stocktake endpoints.')));
 api.post('/inventory/:id/update', guard('inventory.adjust'), wrap((req) => Inv.updateInventoryItem(req.params.id, req.body)));
 api.post('/inventory/:id/delete', guard('inventory.adjust'), wrap((req) => Inv.deleteInventoryItem(req.params.id)));
 api.post('/inventory/:id/receive', wrap((req) => Inv.receiveStock(req.params.id, parseFloat(req.body.qty), 'br1', req.body)));
@@ -428,6 +444,7 @@ api.post('/online/orders/:id/status', guard('online'), wrap((req) => Online.setS
 // --- Printing ---
 api.get('/print/config', wrap(() => AppSettings.getPrintConfig()));
 api.get('/print/jobs', wrap(() => Print.listJobs()));
+api.post('/print/reprint', wrap(() => notImplemented('Generic print reprint endpoint is planned. Current app uses /api/print/jobs/:id/reprint.')));
 api.post('/print/jobs/:id/printed', wrap((req) => Print.markPrinted(req.params.id)));
 api.post('/print/jobs/:id/reprint', wrap((req) => Print.reprint(req.params.id)));
 
@@ -445,6 +462,10 @@ api.post('/sync/now', guard('reports'), wrap(() => Sync.syncNow()));
 // --- Reports ---
 api.get('/dashboard', wrap(() => Reports.dashboard()));
 api.get('/dashboard/trends', wrap(() => Reports.revenueTrends()));
+api.get('/reports/sales', guard('reports'), wrap(() => notImplemented('Sales report endpoint is planned. Current app uses /api/reports/preview?type=sales_overview.')));
+api.get('/reports/inventory', guard('reports'), wrap(() => notImplemented('Inventory report endpoint is planned. Current app uses /api/reports/preview with inventory report types.')));
+api.get('/reports/payments', guard('reports'), wrap(() => notImplemented('Payments report endpoint is planned. Current app uses dashboard/report center endpoints.')));
+api.get('/reports/kds', guard('reports'), wrap(() => notImplemented('KDS timing report endpoint is planned.')));
 api.get('/reports/catalog', guard('reports'), wrap((req) => ReportCenter.catalog(req.user?.branch_id || 'br1')));
 api.get('/reports/preview', guard('reports'), wrap((req) => ReportCenter.buildReport(req.query.type || 'sales_overview', req.user?.branch_id || 'br1', req.query)));
 api.get('/reports/export', guard('reports'), async (req, res) => {

@@ -8,22 +8,51 @@ import { db, migrate, purgeOldAudit } from './db.js';
 import { initRealtime } from './realtime.js';
 import { api } from './api.js';
 import { startSyncEngine } from './services/sync.js';
+import { env } from './config/env.js';
+import { createCorsMiddleware } from './config/cors.js';
+import { runtimeSnapshot } from './config/runtime.js';
+import { apiNotFound, errorHandler } from './core/http.js';
+import { logger } from './core/logger.js';
+import { requestLogger } from './core/requestLogger.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const WEB = join(__dirname, '..', 'web');
-const PORT = process.env.PORT || 3000;
+const PORT = env.PORT;
+globalThis.__DANDPAK_STARTED_AT = new Date().toISOString();
 
 migrate();
 // Auto-seed on first run if catalog is empty.
 const hasMenu = db.prepare(`SELECT COUNT(*) n FROM menu_items`).get().n;
 if (!hasMenu) {
-  console.log('Empty catalog — seeding...');
+  logger.warn('empty catalog detected; running demo seed');
   await import('./seed.js');
 }
 
 const app = express();
+app.disable('x-powered-by');
+app.use(createCorsMiddleware(env));
 app.use(express.json({ limit: '8mb' })); // room for base64 image uploads
-app.use('/api', api);
+
+app.get('/health', (req, res) => {
+  const health = {
+    ok: true,
+    service: 'dan-d-pak-pos-erp',
+    time: new Date().toISOString(),
+    uptimeSeconds: Math.round(process.uptime()),
+    ...runtimeSnapshot(),
+    database: { ok: true, provider: env.DATABASE_PROVIDER },
+  };
+  try {
+    db.prepare('SELECT 1 AS ok').get();
+  } catch (error) {
+    health.ok = false;
+    health.database = { ok: false, provider: env.DATABASE_PROVIDER, message: error.message };
+  }
+  return res.status(health.ok ? 200 : 503).json(health);
+});
+
+app.use('/api', requestLogger, api);
+app.use('/api', apiNotFound);
 // During active development, always serve fresh HTML/CSS/JS (no stale browser cache).
 app.use((req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
 app.use(express.static(WEB, { etag: false, lastModified: false }));
@@ -31,6 +60,7 @@ app.get('/', (req, res) => res.sendFile(join(WEB, 'index.html')));
 for (const v of ['ipad', 'pos', 'kds', 'admin', 'retail', 'warehouse', 'sim', 'printers', 'online', 'settings']) {
   app.get('/' + v, (req, res) => res.sendFile(join(WEB, v + '.html')));
 }
+app.use(errorHandler);
 
 const server = createServer(app);
 initRealtime(server);
@@ -41,15 +71,33 @@ const AUDIT_RETENTION_DAYS = 7;
 function purgeAudit() {
   try {
     const removed = purgeOldAudit(AUDIT_RETENTION_DAYS);
-    if (removed) console.log(`  [audit] đã xóa ${removed} dòng nhật ký quá ${AUDIT_RETENTION_DAYS} ngày`);
-  } catch (e) { console.warn('  [audit] dọn nhật ký lỗi:', e.message); }
+    if (removed) logger.warn('old audit rows purged from live SQLite window', { removed, retentionDays: AUDIT_RETENTION_DAYS });
+  } catch (e) { logger.warn('audit purge failed', { message: e.message }); }
 }
 purgeAudit();
 setInterval(purgeAudit, 24 * 60 * 60 * 1000).unref();
 
 server.listen(PORT, () => {
-  console.log(`\n  POS/ERP Local Store Server`);
-  console.log(`  → http://localhost:${PORT}`);
-  console.log(`  Devices: /ipad  /pos  /kds  /admin\n`);
-  if (!existsSync(WEB)) console.warn('  [warn] web/ folder missing');
+  logger.info('POS/ERP server started', {
+    port: PORT,
+    localUrl: `http://localhost:${PORT}`,
+    webRoot: WEB,
+    runtime: runtimeSnapshot(),
+  });
+  if (!existsSync(WEB)) logger.warn('web folder missing', { webRoot: WEB });
 });
+
+function shutdown(signal) {
+  logger.info('shutdown signal received', { signal });
+  server.close(() => {
+    logger.info('http server closed');
+    process.exit(0);
+  });
+  setTimeout(() => {
+    logger.error('forced shutdown after timeout', { signal });
+    process.exit(1);
+  }, 10000).unref();
+}
+
+process.on('SIGINT', shutdown);
+process.on('SIGTERM', shutdown);

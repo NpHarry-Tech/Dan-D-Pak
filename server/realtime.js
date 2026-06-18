@@ -1,11 +1,13 @@
 // Socket.IO realtime hub. Every device joins its branch room and receives
 // live events: new orders, item status changes, table/payment/menu/inventory updates.
 import { Server } from 'socket.io';
+import { env } from './config/env.js';
 
 let io = null;
 
 export function initRealtime(httpServer) {
-  io = new Server(httpServer, { cors: { origin: '*' } });
+  const corsOrigin = env.CORS_ORIGINS.length ? env.CORS_ORIGINS : (env.isProduction ? [] : '*');
+  io = new Server(httpServer, { cors: { origin: corsOrigin, credentials: true } });
 
   io.on('connection', (socket) => {
     const branch = socket.handshake.query.branch || 'br1';

@@ -4,6 +4,7 @@
 <title>Quản lý - Dashboard</title>
 <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/shared/app.css">
+<script src="/runtime-config.js"></script>
 <script src="/socket.io/socket.io.js"></script>
 <style>
 .view{overflow-y:auto}
@@ -993,7 +994,7 @@
 </div>
 
 <script type="module">
-import { api, connect, money, toast, esc, startClock, topbar, requireModuleAccess, renderUserChip, hasPerm, getLang, getToken } from '/shared/client.js';
+import { api, apiUrl, connect, money, toast, esc, startClock, topbar, requireModuleAccess, renderUserChip, hasPerm, getLang, getToken } from '/shared/client.js';
 document.getElementById('top').innerHTML = topbar('admin');
 await requireModuleAccess('admin'); renderUserChip();
 
@@ -1672,7 +1673,7 @@ async function openReportsCenter(){
     return `bao_cao.${format==='xls'?'xls':format}`;
   }
   async function fetchReportBlob(format){
-    const res=await fetch('/api/reports/export?'+query(format),{headers:{'x-auth-token':getToken()||''}});
+    const res=await fetch(apiUrl('/reports/export?'+query(format)),{headers:{'x-auth-token':getToken()||''}});
     if(!res.ok){
       let msg=res.statusText;
       try{ msg=(await res.clone().json()).error||msg; }catch{ msg=(await res.text())||msg; }
