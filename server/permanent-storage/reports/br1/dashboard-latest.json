@@ -1,12 +1,12 @@
 {
-  "archived_at": "2026-06-17T04:03:05.894Z",
+  "archived_at": "2026-06-18T02:03:50.033Z",
   "archive_kind": "reports.dashboard",
   "branch_id": "br1",
   "data": {
-    "revenue": 100000,
+    "revenue": 150000,
     "bills": 1,
-    "avg": 100000,
-    "openOrders": 0,
+    "avg": 150000,
+    "openOrders": 1,
     "byHour": [
       0,
       0,
@@ -15,9 +15,9 @@
       0,
       0,
       0,
+      150000,
       0,
       0,
-      100000,
       0,
       0,
       0,
@@ -34,20 +34,20 @@
       0
     ],
     "byChannel": {
-      "dine_in": 100000
+      "dine_in": 150000
     },
     "methods": [
       {
-        "method": "cash",
-        "amt": 100000
+        "method": "qrcode",
+        "amt": 150000
       }
     ],
     "topItems": [
       {
-        "name": "Anh Đào Khô 100G",
-        "emoji": "🛍️",
+        "name": "Hủ Tiếu Xào Bò - Frieds Noodles w Beef",
+        "emoji": "🍽️",
         "qty": 1,
-        "revenue": 100000
+        "revenue": 150000
       }
     ],
     "lowStock": [
@@ -298,13 +298,18 @@
         "unit": "cái"
       }
     ],
-    "stations": [],
+    "stations": [
+      {
+        "station": "kitchen",
+        "n": 1
+      }
+    ],
     "window": {
-      "start": "2026-06-17T02:04:09.246Z",
-      "end": "2026-06-17T04:03:05.892Z",
-      "calendar_start": "2026-06-16T17:00:00.000Z",
-      "calendar_end": "2026-06-17T17:00:00.000Z",
-      "source": "shift",
+      "start": "2026-06-17T17:00:00.000Z",
+      "end": "2026-06-18T02:03:50.032Z",
+      "calendar_start": "2026-06-17T17:00:00.000Z",
+      "calendar_end": "2026-06-18T17:00:00.000Z",
+      "source": "calendar",
       "closed": false
     }
   }

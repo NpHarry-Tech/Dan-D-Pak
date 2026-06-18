@@ -331,8 +331,11 @@ export function describeAudit(action, detailRaw) {
     'table.merge': () => `Gộp bàn ${d.from_code || d.from || ''} vào bàn ${d.to_code || d.to || ''}`,
     'bill.split': () => `Tách ${d.items || 0} dòng sang bill thanh toán riêng${d.table_code ? ` tại bàn ${d.table_code}` : ''}`,
     'settings.update': () => Array.isArray(d.keys) && d.keys.includes('integrations_config') ? 'Cập nhật cấu hình kết nối dịch vụ' : (Array.isArray(d.keys) && d.keys.includes('operations_config') ? 'Cập nhật cấu hình thanh toán, QR và ca làm việc' : (Array.isArray(d.keys) && d.keys.includes('print_config') ? 'Cập nhật cấu hình hóa đơn, bill, tem nhãn và máy in' : (Array.isArray(d.keys) && d.keys.includes('ipad_staff_pin') ? 'Đổi mật khẩu mở chọn bàn trên iPad' : 'Cập nhật cài đặt hệ thống'))),
+    'settings.drawer_cash.reauth': () => `Xác thực đổi tiền két gốc từ ${money(d.from || 0)} sang ${money(d.to || 0)}`,
     'shift.open': () => `Mở ${d.shift || 'ca làm việc'} với tiền đầu ca ${money(d.opening_cash || 0)}`,
     'shift.close': () => `Kết ${d.shift || 'ca làm việc'}: doanh thu ${money(d.revenue || 0)}, tiền mặt dự kiến ${money(d.expected_cash || 0)}`,
+    'cash.expense': () => `Chi ${money(d.amount || 0)} từ két${d.product ? ` cho ${d.product}` : ''}${d.counterparty ? ` tại ${d.counterparty}` : ''}`,
+    'cash.reimbursement': () => `Hoàn ${money(d.amount || 0)} vào két${d.counterparty ? ` từ ${d.counterparty}` : ''}`,
     'retail.refund': () => `Hoàn trả đơn bán lẻ — ${money(d.total)}${d.reason ? ` (${d.reason})` : ''}`,
     'online.receive': () => `Nhận đơn ${_CHAN_VN[d.channel] || d.channel} ${d.ref || ''} — ${money(d.total)}`,
     'online.status': () => `Đơn online chuyển sang: ${_ST_VN[d.status] || d.status}`,
@@ -370,19 +373,23 @@ export function topbar(active) {
 
   const branchLabel = getLang() === 'en' ? 'Branch: Dan D Pak Sala · Live' : 'Chi nhánh: Dan D Pak Sala · Trực tiếp';
 
+  const menuLabel = getLang() === 'en' ? 'Menu' : 'Menu';
   return `<header class="topbar">
     <div class="logo brand-mark" ondblclick="location.href = '/'" style="cursor:pointer" title="${getLang() === 'en' ? 'Double-click to return to Launcher' : 'Nhấp đúp để quay lại Launcher'}"><img src="/assets/DanOnLogo.png" alt="DanDPak"><small>${branchLabel}</small></div>
-    <nav class="devtabs">${devs.map(m => {
-      let label = m.label;
-      if (getLang() === 'en') {
-        label = TRANSLATIONS[label] || label;
-      }
-      return `<a class="devtab ${m.key === activeKey ? 'active' : ''}" href="${m.href}">${m.icon} ${label.replace(' Self-Order','').replace('FnB ','')}</a>`;
-    }).join('')}</nav>
-    <div class="topright">
-      <span class="clock" id="clock"></span>
-      <span class="onlinedot"><i></i><span>Online</span></span>
-      <span id="userchip"></span>
+    <button class="topnav-toggle" id="topnavToggle" type="button" aria-label="${menuLabel}" aria-expanded="false"><span class="bars"></span></button>
+    <div class="topnav-panel">
+      <nav class="devtabs">${devs.map(m => {
+        let label = m.label;
+        if (getLang() === 'en') {
+          label = TRANSLATIONS[label] || label;
+        }
+        return `<a class="devtab ${m.key === activeKey ? 'active' : ''}" href="${m.href}">${m.icon} ${label.replace(' Self-Order','').replace('FnB ','')}</a>`;
+      }).join('')}</nav>
+      <div class="topright">
+        <span class="clock" id="clock"></span>
+        <span class="onlinedot"><i></i><span>Online</span></span>
+        <span id="userchip"></span>
+      </div>
     </div>
   </header>`;
 }
@@ -401,8 +408,21 @@ export function renderUserChip() {
   document.getElementById('logoutBtn').onclick = () => logout();
 }
 
-// Global click event to handle language switches
+// Global click event: hamburger menu toggle + language switches
 document.addEventListener('click', (e) => {
+  // Responsive topbar hamburger (iPad/tablet): toggle the dropdown panel
+  const toggle = e.target.closest && e.target.closest('#topnavToggle');
+  const tb = document.querySelector('.topbar');
+  if (toggle && tb) {
+    const open = tb.classList.toggle('open');
+    toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+    return;
+  }
+  // Click outside the open panel → close it (links inside navigate away on their own)
+  if (tb && tb.classList.contains('open') && !(e.target.closest && e.target.closest('.topnav-panel'))) {
+    tb.classList.remove('open');
+    const t = document.getElementById('topnavToggle'); if (t) t.setAttribute('aria-expanded', 'false');
+  }
   if (e.target && e.target.id === 'langViBtn') {
     setLang('vi');
   }

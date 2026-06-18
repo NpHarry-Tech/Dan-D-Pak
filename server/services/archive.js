@@ -22,6 +22,22 @@ function isoDate(iso = null) {
   return d.toISOString().slice(0, 10);
 }
 
+function pad2(n) {
+  return String(n).padStart(2, '0');
+}
+
+function localDateParts(iso = null) {
+  const d = iso ? new Date(iso) : new Date();
+  const x = Number.isNaN(d.getTime()) ? new Date() : d;
+  return {
+    yyyy: String(x.getFullYear()),
+    mm: pad2(x.getMonth() + 1),
+    dd: pad2(x.getDate()),
+    hh: pad2(x.getHours()),
+    min: pad2(x.getMinutes()),
+  };
+}
+
 function ensureDir(dir) {
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
 }
@@ -68,7 +84,53 @@ export const archiveOrder = (order) => archiveEntity('orders', order);
 export const archiveInvoice = (invoice) => archiveEntity('invoices', invoice);
 export const archivePayment = (receipt) => archiveEntity('payments', receipt, { id: receipt?.payment_id, branch_id: receipt?.branch_id });
 export const archiveStaff = (user) => archiveEntity('staff', user);
-export const archiveCashDrawerEntry = (entry) => archiveEntity('cash-drawer', entry, { id: entry?.id, branch_id: entry?.branch_id, timestamp: entry?.occurred_at || entry?.created_at });
+
+function nextCashDrawerSequence(branch) {
+  const file = join(PERMANENT_ROOT, 'cash-drawer', branch, 'journal-sequence.json');
+  let last = 0;
+  try {
+    if (existsSync(file)) last = Number(JSON.parse(readFileSync(file, 'utf8'))?.last) || 0;
+  } catch {
+    last = 0;
+  }
+  const next = last + 1;
+  writeJsonAtomic(file, { last: next, updated_at: new Date().toISOString() });
+  return next;
+}
+
+export function archiveCashDrawerEntry(entry) {
+  const base = archiveEntity('cash-drawer', entry, {
+    id: entry?.id,
+    branch_id: entry?.branch_id,
+    timestamp: entry?.occurred_at || entry?.created_at,
+  });
+  try {
+    if (!entry) return base;
+    ensurePermanentStorage();
+    const branch = safePart(entry.branch_id || 'br1');
+    const id = safePart(entry.id || entry.entry_id);
+    const parts = localDateParts(entry.occurred_at || entry.created_at);
+    const dayFolder = `${parts.yyyy}-${parts.mm}-${parts.dd}`;
+    const sequence = nextCashDrawerSequence(branch);
+    const sequenceCode = String(sequence).padStart(6, '0');
+    const fileName = `${parts.dd}${parts.mm}${parts.yyyy}-${parts.hh}${parts.min}-${sequenceCode}-${id}.json`;
+    const file = join(PERMANENT_ROOT, 'cash-drawer', branch, 'journal', dayFolder, fileName);
+    const payload = {
+      archived_at: new Date().toISOString(),
+      archive_kind: 'cash-drawer.journal',
+      branch_id: branch,
+      archive_sequence: sequence,
+      archive_file_name: fileName,
+      base_paths: base,
+      data: entry,
+    };
+    writeJsonAtomic(file, payload);
+    return { ...(base || {}), journal: file, archive_sequence: sequence, archive_file_name: fileName };
+  } catch (e) {
+    console.warn('[archive] cash drawer journal failed:', e.message);
+    return base;
+  }
+}
 
 export function archiveDashboardReport(report = {}, branch_id = 'br1') {
   try {

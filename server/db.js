@@ -404,12 +404,21 @@ export function migrate() {
     reason TEXT,
     product TEXT,
     invoice_image TEXT,
+    reimburses_entry_id TEXT,
     note TEXT,
     actor_id TEXT,
     actor_name TEXT,
     amount INTEGER NOT NULL,
     balance_before INTEGER NOT NULL DEFAULT 0,
     balance_after INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL
+  );
+  CREATE TABLE IF NOT EXISTS cash_drawer_reimbursement_allocations (
+    id TEXT PRIMARY KEY,
+    branch_id TEXT NOT NULL,
+    reimbursement_id TEXT NOT NULL,
+    expense_id TEXT NOT NULL,
+    amount INTEGER NOT NULL,
     created_at TEXT NOT NULL
   );
   `);
@@ -462,6 +471,7 @@ export function migrate() {
   addColumnIfMissing('orders', 'online_status', 'TEXT');
   addColumnIfMissing('orders', 'customer_json', 'TEXT');
   addColumnIfMissing('orders', 'invoice_id', 'TEXT');
+  addColumnIfMissing('orders', 'invoice_choice', 'TEXT');   // 'issued' | 'declined' — khách tự chọn xuất HĐ VAT hay không sau khi thanh toán
   addColumnIfMissing('orders', 'voucher_id', 'TEXT');
   addColumnIfMissing('orders', 'voucher_code', 'TEXT');
   addColumnIfMissing('payments', 'shift_id', 'TEXT');
@@ -474,10 +484,14 @@ export function migrate() {
   addColumnIfMissing('customers', 'favorite_items_json', `TEXT DEFAULT '[]'`);
   addColumnIfMissing('customers', 'last_profiled_at', 'TEXT');
   addColumnIfMissing('cash_drawer_entries', 'invoice_image', 'TEXT');
+  addColumnIfMissing('cash_drawer_entries', 'reimburses_entry_id', 'TEXT');
   addColumnIfMissing('cash_drawer_entries', 'actor_id', 'TEXT');
   addColumnIfMissing('cash_drawer_entries', 'actor_name', 'TEXT');
   addColumnIfMissing('cash_drawer_entries', 'balance_before', 'INTEGER NOT NULL DEFAULT 0');
   addColumnIfMissing('cash_drawer_entries', 'balance_after', 'INTEGER NOT NULL DEFAULT 0');
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_cash_drawer_reimburses ON cash_drawer_entries(reimburses_entry_id);`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_cash_drawer_alloc_expense ON cash_drawer_reimbursement_allocations(expense_id);`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_cash_drawer_alloc_reimbursement ON cash_drawer_reimbursement_allocations(reimbursement_id);`);
   ensurePermanentStorage();
   bootstrapWarehouseDefaults();
 }

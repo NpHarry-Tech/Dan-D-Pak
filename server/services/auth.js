@@ -217,6 +217,20 @@ export function login(username, pin) {
   return { token, user, perms: effectivePermsForUser(u) };
 }
 
+export function verifyManagerOwnerPin(pin, branch_id = 'br1') {
+  const clean = String(pin || '').trim();
+  if (!clean) return null;
+  const row = db.prepare(`
+    SELECT * FROM users
+    WHERE active=1
+      AND pin=?
+      AND role IN ('owner','manager')
+      AND (branch_id=? OR branch_id IS NULL)
+    ORDER BY CASE role WHEN 'owner' THEN 0 ELSE 1 END, name
+    LIMIT 1`).get(clean, branch_id);
+  return row ? publicUser(row) : null;
+}
+
 export function logout(token) {
   if (!token) return;
   sessions.delete(token);

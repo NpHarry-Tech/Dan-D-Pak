@@ -60,6 +60,39 @@ export async function issue(order_id, customer = {}, branch_id = 'br1') {
   return inv;
 }
 
+// Khách tự phục vụ chọn xuất/không xuất hóa đơn VAT sau khi thanh toán QR (iPad).
+// decision: 'issue' → phát hành hóa đơn theo thông tin khách nhập (MST/SĐT/email);
+//           'decline' → khách không lấy hóa đơn. Cả hai đều lưu orders.invoice_choice + ghi nhật ký để báo cáo.
+export async function customerRequest(order_id, { decision = 'issue', customer = {} } = {}, branch_id = 'br1') {
+  const order = getOrder(order_id);
+  if (!order) throw new Error('Đơn không tồn tại');
+  if (order.status !== 'paid') throw new Error('Chỉ xuất hóa đơn cho bill đã thanh toán');
+
+  if (decision === 'decline') {
+    db.prepare(`UPDATE orders SET invoice_choice='declined' WHERE id=?`).run(order_id);
+    audit('invoice.customer_declined', { order: order_id, bill_no: order.bill_no || null }, branch_id);
+    archiveOrder(getOrder(order_id));
+    emit('invoice:choice', { order_id, choice: 'declined' }, branch_id);
+    return { ok: true, choice: 'declined' };
+  }
+
+  const phone = String(customer.phone || '').trim();
+  const email = String(customer.email || '').trim();
+  if (!phone || !email) throw new Error('Vui lòng nhập số điện thoại và email để nhận hóa đơn');
+  const inv = await issue(order_id, {
+    name: customer.name || customer.company || '',
+    company: customer.company || customer.name || '',
+    tax_code: String(customer.tax_code || '').replace(/\s+/g, ''),
+    address: customer.address || '',
+    phone,
+    email,
+    _source: 'customer_self_service',
+  }, branch_id);
+  db.prepare(`UPDATE orders SET invoice_choice='issued' WHERE id=?`).run(order_id);
+  emit('invoice:choice', { order_id, choice: 'issued', invoice_no: inv.invoice_no }, branch_id);
+  return { ok: true, choice: 'issued', invoice: inv };
+}
+
 export function get(id) {
   const i = db.prepare(`SELECT * FROM invoices WHERE id=?`).get(id);
   if (!i) return null;

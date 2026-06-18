@@ -1,5 +1,5 @@
 {
-  "archived_at": "2026-06-17T04:03:05.894Z",
+  "archived_at": "2026-06-17T16:17:58.767Z",
   "archive_kind": "reports.dashboard",
   "branch_id": "br1",
   "data": {
@@ -301,7 +301,7 @@
     "stations": [],
     "window": {
       "start": "2026-06-17T02:04:09.246Z",
-      "end": "2026-06-17T04:03:05.892Z",
+      "end": "2026-06-17T16:17:58.765Z",
       "calendar_start": "2026-06-16T17:00:00.000Z",
       "calendar_end": "2026-06-17T17:00:00.000Z",
       "source": "shift",

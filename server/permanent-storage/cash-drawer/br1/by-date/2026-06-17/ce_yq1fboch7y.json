@@ -1,0 +1,24 @@
+{
+  "archived_at": "2026-06-17T15:04:41.519Z",
+  "archive_kind": "cash-drawer",
+  "branch_id": "br1",
+  "data": {
+    "id": "ce_yq1fboch7y",
+    "branch_id": "br1",
+    "shift_id": "sh_t3t34bgp7i",
+    "kind": "expense",
+    "occurred_at": "2026-06-17T15:04:00.000Z",
+    "counterparty": "Pharmacity",
+    "reason": "Chú Dan lấy tiền mua thuốc",
+    "product": "Thuốc Ho",
+    "invoice_image": "",
+    "reimburses_entry_id": null,
+    "note": "",
+    "actor_id": "u_mgr",
+    "actor_name": "Nguyễn Văn Tân",
+    "amount": 20000,
+    "balance_before": 2100000,
+    "balance_after": 2080000,
+    "created_at": "2026-06-17T15:04:41.518Z"
+  }
+}

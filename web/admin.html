@@ -162,6 +162,90 @@
   border-color: var(--brand);
   color: var(--brand);
 }
+.settings-tab-dropdown {
+  display: none;
+  position: relative;
+  flex: 0 0 auto;
+  margin-bottom: 10px;
+}
+.settings-tab-trigger {
+  width: 100%;
+  min-height: 44px;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 13px;
+  border: 1px solid var(--border2);
+  border-radius: 11px;
+  background: var(--surface2);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 800;
+  text-align: left;
+}
+.settings-tab-trigger b {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.settings-tab-trigger i {
+  width: 24px;
+  height: 24px;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--surface);
+  color: var(--brand);
+  font-style: normal;
+  transition: transform .14s ease;
+}
+.settings-tab-dropdown.open .settings-tab-trigger {
+  border-color: var(--brand);
+  background: var(--brand-dim);
+  color: var(--brand);
+}
+.settings-tab-dropdown.open .settings-tab-trigger i {
+  transform: rotate(180deg);
+}
+.settings-tab-menu {
+  display: none;
+  position: absolute;
+  z-index: 8;
+  left: 0;
+  right: 0;
+  top: calc(100% + 6px);
+  max-height: min(54vh, 430px);
+  overflow: auto;
+  padding: 7px;
+  border: 1px solid var(--border2);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: 0 18px 42px rgba(15,23,42,.18);
+}
+.settings-tab-dropdown.open .settings-tab-menu {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(172px, 1fr));
+  gap: 7px;
+}
+.settings-tab-menu-item {
+  min-height: 40px;
+  padding: 9px 10px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--surface2);
+  color: var(--muted);
+  font-size: 11.5px;
+  font-weight: 750;
+  text-align: left;
+}
+.settings-tab-menu-item.on {
+  border-color: var(--brand);
+  background: var(--brand-dim);
+  color: var(--brand);
+}
 .modal-x{position:absolute;top:14px;right:16px;width:36px;height:36px;border-radius:50%;border:1px solid var(--border);background:var(--surface2);color:var(--muted);font-size:20px;font-weight:800;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;z-index:3}
 .modal-x:hover{background:var(--late);color:#fff;border-color:var(--late)}
 .setting-row{display:grid;grid-template-columns:1fr 130px 90px 112px;gap:8px;align-items:center;padding:8px 0;border-bottom:1px dashed var(--border)}.setting-row:last-child{border-bottom:none}
@@ -345,6 +429,181 @@
 .staff-item-name-group {
   display: flex;
   flex-direction: column;
+}
+
+/* Settings modal: tablet/portrait layout tuned for the iPad simulator. */
+@media (max-width: 980px), (orientation: portrait) {
+  .settings-modal {
+    width: calc(100vw - 24px);
+    height: calc(100dvh - 24px);
+    max-height: calc(100dvh - 24px);
+    padding: 14px;
+    border-radius: 14px;
+  }
+  .settings-header {
+    margin-bottom: 10px;
+    padding: 0 48px 10px 0 !important;
+    gap: 10px;
+  }
+  .settings-header h2 {
+    font-size: 15px;
+    line-height: 1.2;
+    margin: 0;
+  }
+  .settings-header .sub {
+    margin: 3px 0 0 !important;
+    max-width: 520px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-size: 11px !important;
+  }
+  .settings-header .lang-selector {
+    margin-right: 0 !important;
+    flex: 0 0 auto;
+    padding: 4px 9px !important;
+  }
+  .settings-modal .modal-x {
+    top: 10px;
+    right: 10px;
+    width: 32px;
+    height: 32px;
+    font-size: 18px;
+  }
+  .settings-layout {
+    flex-direction: column;
+    gap: 10px;
+    overflow: hidden;
+  }
+  .settings-tab-dropdown {
+    display: block;
+  }
+  .settings-sidebar {
+    display: none;
+  }
+  .settings-main {
+    min-width: 0;
+  }
+  .settings-main>#settingsBody {
+    padding-right: 0;
+    overflow-x: hidden;
+  }
+  .settings-main>.mfoot {
+    margin-top: 9px;
+    padding-top: 9px;
+  }
+  .settings-main>.mfoot .btn {
+    min-height: 40px;
+  }
+  .settings-main .panel {
+    padding: 12px;
+    border-radius: 12px;
+  }
+  .settings-main .panel h3 {
+    margin-bottom: 10px;
+    font-size: 13px;
+  }
+  .staff-mgmt-layout {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+  .staff-mgmt-list-pane {
+    padding: 10px;
+    max-height: 258px;
+    overflow: auto;
+    border-radius: 12px;
+  }
+  .staff-mgmt-list-pane h3 {
+    font-size: 12.5px !important;
+    margin-bottom: 8px !important;
+  }
+  .staff-list-container,
+  .role-list-container {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(154px, 1fr));
+    gap: 7px;
+  }
+  .staff-item-btn,
+  .role-item-btn {
+    min-height: 48px;
+    padding: 8px 10px;
+    border-radius: 10px;
+    font-size: 11.5px;
+  }
+  .staff-item-btn .chip {
+    max-width: 72px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .staff-mgmt-details-pane {
+    padding: 12px;
+    min-height: 0;
+    border-radius: 12px;
+  }
+  .staff-mgmt-details-pane h3 {
+    font-size: 14px;
+    margin-bottom: 10px !important;
+  }
+  .staff-mgmt-details-pane .formgrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 9px !important;
+    margin-bottom: 10px !important;
+  }
+  .staff-mgmt-details-pane .formgrid > div,
+  .staff-mgmt-details-pane input,
+  .staff-mgmt-details-pane select {
+    min-width: 0;
+  }
+  .staff-mgmt-details-pane label {
+    font-size: 10.5px !important;
+  }
+  #userPermGrid .permgrid,
+  .settings-main .permgrid {
+    grid-template-columns: repeat(auto-fit, minmax(176px, 1fr));
+    gap: 7px;
+  }
+  .settings-main .permitem {
+    padding: 7px 8px;
+    font-size: 11px;
+    line-height: 1.35;
+  }
+  .settings-main .setting-form {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .settings-main .integration-shell {
+    grid-template-columns: 1fr;
+  }
+  .settings-main .integration-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  }
+  .settings-main .bookmenu-grid,
+  .settings-main .label-designer {
+    grid-template-columns: 1fr;
+  }
+  .settings-main .bookmenu-list {
+    max-height: 240px;
+  }
+}
+
+@media (max-width: 620px) {
+  .settings-header {
+    align-items: flex-start !important;
+    flex-direction: column;
+  }
+  .settings-header .sub {
+    white-space: normal;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+  }
+  .settings-tab-dropdown.open .settings-tab-menu {
+    grid-template-columns: 1fr;
+  }
+  .staff-mgmt-details-pane .formgrid,
+  .settings-main .setting-form {
+    grid-template-columns: 1fr !important;
+  }
 }
 .report-modal {
   max-width: none;
@@ -535,6 +794,20 @@
   color: var(--faint);
   font-weight: 700;
 }
+/* Report picker dropdown (mobile/iPad) — đồng bộ với dropdown bên Cài đặt */
+.report-tab-dropdown { display: none; position: relative; flex: 0 0 auto; margin-bottom: 10px; }
+.report-tab-trigger { width: 100%; min-height: 46px; display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 10px; padding: 10px 13px; border: 1px solid var(--border2); border-radius: 11px; background: var(--surface2); color: var(--text); font-size: 13px; font-weight: 800; text-align: left; cursor: pointer; }
+.report-tab-trigger b { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.report-tab-trigger i { width: 26px; height: 26px; border-radius: 8px; display: inline-flex; align-items: center; justify-content: center; background: var(--surface); color: var(--brand); font-style: normal; transition: transform .14s ease; }
+.report-tab-dropdown.open .report-tab-trigger { border-color: var(--brand); background: var(--brand-dim); color: var(--brand); }
+.report-tab-dropdown.open .report-tab-trigger i { transform: rotate(180deg); }
+.report-tab-menu { display: none; position: absolute; z-index: 1200; left: 0; right: 0; top: calc(100% + 6px); max-height: min(56vh, 460px); overflow: auto; padding: 8px; border: 1px solid var(--border2); border-radius: 12px; background: var(--surface); box-shadow: 0 18px 42px rgba(15,23,42,.18); }
+.report-tab-dropdown.open .report-tab-menu { display: grid; grid-template-columns: repeat(auto-fit, minmax(168px, 1fr)); gap: 7px; }
+.report-tab-group { grid-column: 1 / -1; color: var(--muted); font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .45px; padding: 8px 4px 2px; }
+.report-tab-group:first-child { padding-top: 2px; }
+.report-tab-menu-item { min-height: 42px; padding: 9px 11px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface2); color: var(--muted); font-size: 12px; font-weight: 750; text-align: left; cursor: pointer; }
+.report-tab-menu-item:hover { border-color: var(--border2); color: var(--text); }
+.report-tab-menu-item.on { border-color: var(--brand); background: var(--brand-dim); color: var(--brand); }
 .multi-select-container {
   position: relative;
   width: 100%;
@@ -653,11 +926,24 @@
   line-height: 32px;
 }
 @media(max-width:1180px){
-  .report-layout{grid-template-columns:1fr}
-  .report-sidebar{border-right:0;border-bottom:1px solid var(--border);padding-right:0;padding-bottom:10px;max-height:260px}
-  .report-toolbar{grid-template-columns:repeat(2,minmax(0,1fr))}
+  /* Report picker → DROPDOWN (giống mục Cài đặt): ẩn cột danh sách, hiện nút thả xuống */
+  .report-tab-dropdown{display:block}
+  .report-sidebar{display:none}
+  .report-layout{display:flex;flex-direction:column;gap:10px;min-height:0;overflow:hidden}
+  /* Bộ lọc: hàng cố định, control cao dễ chạm */
+  .report-main{gap:10px;flex:1 1 auto;min-height:0}
+  .report-toolbar{flex:0 0 auto;grid-template-columns:repeat(2,minmax(0,1fr))}
+  .report-toolbar select,.report-toolbar input{min-height:46px;font-size:14px;box-sizing:border-box}
+  .report-actions{width:100%}
+  .report-actions .btn{flex:1 1 auto;height:46px;font-size:13px}
+  /* Xem trước = vùng cuộn DUY NHẤT, chiếm phần lớn màn hình */
+  .report-preview{flex:1 1 auto;padding:14px}
+  .report-summary{grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}
+  .report-sum{font-size:11.5px;padding:11px 12px}
+  .report-sum b{font-size:18px}
+  .report-doc-head h2{font-size:19px}
 }
-@media(max-width:720px){
+@media(max-width:560px){
   .report-toolbar,.report-summary{grid-template-columns:1fr}
 }
 </style></head>
@@ -1095,6 +1381,7 @@ function auditMessage(r){
     'voucher.disable':()=>({text:`Đã tắt voucher "${d.name||d.id||'không rõ'}".`}),
     'invoice.issue':()=>({text:`Đã phát hành hóa đơn điện tử ${d.invoice_no||''}.`,meta:`Mã đơn: ${d.order||'không rõ'}.`}),
     'invoice.cancel':()=>({text:`Đã hủy hóa đơn điện tử ${d.invoice_no||''}.`,meta:`Lý do: ${d.reason||'không ghi'}.`}),
+    'invoice.customer_declined':()=>({text:`Khách chọn KHÔNG xuất hóa đơn VAT.`,meta:`Bill: ${d.bill_no||d.order||'không rõ'}.`}),
     'online.receive':()=>({text:`Đã nhận đơn online từ ${d.channel||'kênh online'} với tổng tiền ${money(Number(d.total)||0)}.`,meta:`Mã tham chiếu: ${d.ref||'không có'}.`}),
     'online.status':()=>({text:`Đã cập nhật trạng thái đơn online thành "${d.status||'không rõ'}".`,meta:`Mã đơn: ${d.order||'không rõ'}.`}),
     'print.reprint':()=>({text:`Đã yêu cầu in lại một phiếu/in hóa đơn.`,meta:`Mã job in: ${d.job||'không rõ'}.`}),
@@ -1139,12 +1426,7 @@ async function loadInvoices(){
   const list=document.getElementById('invList');
   if(!list) return;
   const inv=await api('/invoices').catch(()=>[]);
-  list.innerHTML = inv.length?inv.map(i=>`<tr>
-    <td style="font-family:var(--mono);font-size:11px">${esc(i.invoice_no)}</td>
-    <td>${esc(i.customer?.name||'Khách lẻ')} ${i.status==='cancelled'?'<span class="chip c-late">Hủy</span>':''}</td>
-    <td style="font-family:var(--mono);color:var(--brand)">${money(i.total)}</td>
-    <td style="font-family:var(--mono);font-size:10px;color:var(--faint)">${esc(i.lookup_code)}</td>
-  </tr>`).join(''):'<tr><td colspan="4" class="empty">Chưa có hóa đơn</td></tr>';
+  list.innerHTML = inv.length?inv.map(invoiceRow).join(''):'<tr><td colspan="5" class="empty">Chưa có hóa đơn</td></tr>';
 }
 
 async function loadSettingsSync(){
@@ -1176,12 +1458,19 @@ async function loadSettingsInvoices(){
   const list=document.getElementById('settingsInvList');
   if(!list) return;
   const inv=await api('/invoices').catch(()=>[]);
-  list.innerHTML = inv.length?inv.map(i=>`<tr>
+  list.innerHTML = inv.length?inv.map(invoiceRow).join(''):'<tr><td colspan="5" class="empty">Chưa có hóa đơn</td></tr>';
+}
+function invoiceRow(i){
+  const c=i.customer||{};
+  const self=c._source==='customer_self_service';
+  const contact=[c.phone,c.email].filter(Boolean).map(esc).join(' · ');
+  return `<tr>
     <td style="font-family:var(--mono);font-size:11px">${esc(i.invoice_no)}</td>
-    <td>${esc(i.customer?.name||'Khách lẻ')} ${i.status==='cancelled'?'<span class="chip c-late">Hủy</span>':''}</td>
+    <td>${esc(c.name||c.company||'Khách lẻ')} ${i.status==='cancelled'?'<span class="chip c-late">Hủy</span>':''} ${self?'<span class="chip c-done">Khách tự xuất</span>':''}${c.tax_code?`<br><small style="font-family:var(--mono);color:var(--faint)">MST: ${esc(c.tax_code)}</small>`:''}</td>
+    <td><small style="color:var(--muted)">${contact||'—'}</small></td>
     <td style="font-family:var(--mono);color:var(--brand)">${money(i.total)}</td>
     <td style="font-family:var(--mono);font-size:10px;color:var(--faint)">${esc(i.lookup_code)}</td>
-  </tr>`).join(''):'<tr><td colspan="4" class="empty">Chưa có hóa đơn</td></tr>';
+  </tr>`;
 }
 const AUDIT_PAGE=50;
 let auditCursor=null; // mốc thời gian dòng cũ nhất đang hiển thị, dùng để "Xem thêm"
@@ -1420,9 +1709,18 @@ async function openReportsCenter(){
     rememberReportScroll();
     const groups=state.catalog?.groups||[], reports=state.catalog?.reports||[];
     const products=state.catalog?.products||[], warehouses=state.catalog?.warehouses||[];
+    const activeReportLabel = reports.find(r=>r.key===state.selected)?.label || 'Chọn báo cáo';
+    const reportTabMenuHtml = () => groups.length?groups.map(g=>`<div class="report-tab-group">${esc(g.label)}</div>${reports.filter(r=>r.group===g.key).map(r=>`<button type="button" class="report-tab-menu-item ${r.key===state.selected?'on':''}" data-report-type="${esc(r.key)}">${esc(r.label)}</button>`).join('')}`).join(''):'';
     ov.innerHTML=`<div class="modal report-modal">
       <button class="modal-x" id="reportCloseX" title="Đóng" aria-label="Đóng">✕</button>
       <div class="settings-header"><h2>📄 Trung tâm báo cáo</h2><p class="mini">Xem trực tiếp, tải DOC/PDF/Sheet và in A4 từ dữ liệu bán hàng, kho, khách hàng, công nợ, nhân viên.</p></div>
+      <div class="report-tab-dropdown" id="reportTabDrop">
+        <button class="report-tab-trigger" id="reportTabDropBtn" type="button" aria-haspopup="true" aria-expanded="false">
+          <b id="reportTabDropLabel">${esc(activeReportLabel)}</b>
+          <i><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg></i>
+        </button>
+        <div class="report-tab-menu" id="reportTabMenu">${reportTabMenuHtml()}</div>
+      </div>
       <div class="report-layout">
         <div class="report-sidebar">${groups.length?groups.map(g=>`<div class="report-group-title">${esc(g.label)}</div>${reports.filter(r=>r.group===g.key).map(r=>`<button class="report-item ${r.key===state.selected?'on':''}" data-report-type="${esc(r.key)}" type="button"><b>${esc(r.label)}</b><small>${esc(r.description)}</small></button>`).join('')}`).join(''):'<div class="report-empty">Đang tải danh sách báo cáo...</div>'}</div>
         <div class="report-main">
@@ -1484,9 +1782,20 @@ async function openReportsCenter(){
       ov.remove();
     };
     ov.querySelector('#reportCloseX').onclick=closeReports;
+    // Dropdown chọn báo cáo (mobile/iPad) — đồng bộ với dropdown bên Cài đặt
+    const rDrop=ov.querySelector('#reportTabDrop'), rDropBtn=ov.querySelector('#reportTabDropBtn');
+    if(rDrop&&rDropBtn){
+      rDropBtn.onclick=(e)=>{ e.stopPropagation(); const open=!rDrop.classList.contains('open'); rDrop.classList.toggle('open',open); rDropBtn.setAttribute('aria-expanded',open?'true':'false'); };
+      rDrop.querySelector('.report-tab-menu').onclick=e=>e.stopPropagation();
+      ov.onclick=e=>{ if(!rDrop.contains(e.target)){ rDrop.classList.remove('open'); rDropBtn.setAttribute('aria-expanded','false'); } };
+    }
     ov.querySelectorAll('[data-report-type]').forEach(b=>b.onclick=()=>{
       rememberReportScroll();
       state.selected=b.dataset.reportType;
+      const lbl=ov.querySelector('#reportTabDropLabel');
+      if(lbl) lbl.textContent=reports.find(r=>r.key===state.selected)?.label||state.selected;
+      if(rDrop) rDrop.classList.remove('open');
+      if(rDropBtn) rDropBtn.setAttribute('aria-expanded','false');
       persistReportState();
       loadPreview();
     });
@@ -1835,9 +2144,32 @@ async function openSettings(initialTab){
       shifts:{...d.shifts,...(r.shifts||{}),labels:Array.isArray(r.shifts?.labels)&&r.shifts.labels.length?r.shifts.labels:d.shifts.labels,denominations:Array.isArray(r.shifts?.denominations)&&r.shifts.denominations.length?r.shifts.denominations:d.shifts.denominations},
     };
   }
-  async function saveOperationsCfg(redraw=false){
+  function requestManagerOwnerPin(message){
+    return new Promise(resolve=>{
+      const pinOv=document.createElement('div');
+      pinOv.className='overlay show';
+      pinOv.innerHTML=`<div class="modal" style="max-width:420px">
+        <h2>Xác nhận bảo mật</h2>
+        <div class="sub">${esc(message||'Nhập PIN của Manager hoặc Owner để tiếp tục.')}</div>
+        <label>PIN Manager / Owner</label>
+        <input id="securePinInput" type="password" inputmode="numeric" autocomplete="off" placeholder="Nhập PIN">
+        <div class="mini" style="margin-top:8px">Chỉ yêu cầu khi thay đổi số tiền két gốc, vì đây là mốc tiền mặt chuẩn của cửa hàng.</div>
+        <div class="mfoot"><button class="btn" id="securePinCancel">Hủy</button><button class="btn primary" id="securePinOk">Xác nhận</button></div>
+      </div>`;
+      document.body.appendChild(pinOv);
+      const input=pinOv.querySelector('#securePinInput');
+      const done=v=>{pinOv.remove();resolve(v);};
+      pinOv.querySelector('#securePinCancel').onclick=()=>done(null);
+      pinOv.querySelector('#securePinOk').onclick=()=>done(input.value.trim());
+      input.onkeydown=e=>{if(e.key==='Enter') done(input.value.trim()); if(e.key==='Escape') done(null);};
+      setTimeout(()=>input.focus(),30);
+    });
+  }
+  async function saveOperationsCfg(redraw=false, securityPin=''){
     operationsCfg=mergeOperationsCfg(operationsCfg);
-    const s=await api('/settings/app',{method:'POST',body:{operations_config:operationsCfg}});
+    const body={operations_config:operationsCfg};
+    if(securityPin) body.security_pin=securityPin;
+    const s=await api('/settings/app',{method:'POST',body});
     operationsCfg=mergeOperationsCfg(s.operations_config);
     if(redraw) draw();
     return operationsCfg;
@@ -1928,6 +2260,8 @@ async function openSettings(initialTab){
       { key: 'audit', label: '📝 Nhật ký hoạt động', perm: 'settings.audit' }
     ];
     const allowedTabs = availableTabs.filter(t => t.key === 'users' ? (hasPerm('settings.users') || hasPerm('settings.perms') || hasPerm('settings.manage')) : (hasPerm(t.perm) || hasPerm('settings.manage')));
+    const activeTabLabel = allowedTabs.find(t => t.key === tab)?.label || allowedTabs[0]?.label || 'Cài đặt';
+    const settingsTabMenuHtml = () => allowedTabs.map(t => `<button type="button" class="settings-tab-menu-item ${tab===t.key?'on':''}" data-tab="${t.key}">${t.label}</button>`).join('');
     
     const modal = ov.querySelector('.settings-modal');
     if (!modal) {
@@ -1942,6 +2276,13 @@ async function openSettings(initialTab){
             <span id="langViBtn" style="${getLang() === 'vi' ? 'color:var(--brand);text-decoration:underline;' : 'color:var(--muted);'}">VI</span> |
             <span id="langEnBtn" style="${getLang() === 'en' ? 'color:var(--brand);text-decoration:underline;' : 'color:var(--muted);'}">EN</span>
           </div>
+        </div>
+        <div class="settings-tab-dropdown" id="settingsTabDrop">
+          <button class="settings-tab-trigger" id="settingsTabDropBtn" type="button" aria-haspopup="true" aria-expanded="false">
+            <b id="settingsTabDropLabel">${activeTabLabel}</b>
+            <i><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg></i>
+          </button>
+          <div class="settings-tab-menu" id="settingsTabMenu">${settingsTabMenuHtml()}</div>
         </div>
         <div class="settings-layout">
           <div class="settings-sidebar">
@@ -1994,6 +2335,12 @@ async function openSettings(initialTab){
       if (body) {
         body.innerHTML = settingsContentHtml();
       }
+      const dropLabel = modal.querySelector('#settingsTabDropLabel');
+      if (dropLabel) dropLabel.innerHTML = activeTabLabel;
+      const dropMenu = modal.querySelector('#settingsTabMenu');
+      if (dropMenu) dropMenu.innerHTML = settingsTabMenuHtml();
+      const drop = modal.querySelector('#settingsTabDrop');
+      if (drop) drop.classList.remove('open');
       const viBtn = modal.querySelector('#langViBtn');
       const enBtn = modal.querySelector('#langEnBtn');
       if (viBtn && enBtn) {
@@ -2004,11 +2351,33 @@ async function openSettings(initialTab){
       }
     }
 
+    const drop = ov.querySelector('#settingsTabDrop');
+    const dropBtn = ov.querySelector('#settingsTabDropBtn');
+    if (drop && dropBtn) {
+      dropBtn.onclick = (e) => {
+        e.stopPropagation();
+        const open = !drop.classList.contains('open');
+        drop.classList.toggle('open', open);
+        dropBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
+      };
+      drop.onclick = e => e.stopPropagation();
+      ov.onclick = e => {
+        if (!drop.contains(e.target)) {
+          drop.classList.remove('open');
+          dropBtn.setAttribute('aria-expanded', 'false');
+        }
+      };
+    }
+
     ov.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{
       rememberSettingsScroll();
       tab=b.dataset.tab;
       skipNextSettingsScrollRemember=true;
       sessionStorage.setItem('settingsActiveTab', tab);
+      const drop = ov.querySelector('#settingsTabDrop');
+      const dropBtn = ov.querySelector('#settingsTabDropBtn');
+      if (drop) drop.classList.remove('open');
+      if (dropBtn) dropBtn.setAttribute('aria-expanded', 'false');
       if (tab === 'users') {
         if (users && users.length) {
           editingUser = users[0];
@@ -2539,7 +2908,7 @@ async function openSettings(initialTab){
         <label class="permitem"><input id="opRequireShift" type="checkbox" ${s.requireOpenShift!==false?'checked':''}><span>Bắt buộc mở ca trước khi thanh toán</span></label>
         <div class="setting-form" style="margin-top:10px">
           <div><label>Tiền két gốc / mặc định</label><input id="opDefaultDrawerCash" type="number" min="0" step="1000" value="${Number(s.defaultDrawerCash)||0}"></div>
-          <div><label>Ghi nhớ</label><div class="mini" style="padding:10px 0">Nếu mở ca mà không kiểm đếm, hệ thống tự lấy tiền ca trước; nếu chưa có ca trước thì dùng số này.</div></div>
+          <div><label>Ghi nhớ</label><div class="mini" style="padding:10px 0">Nếu mở ca mà không kiểm đếm, hệ thống tự lấy tiền ca trước; nếu chưa có ca trước thì dùng số này. Khi đổi tiền két gốc, cần nhập lại PIN Manager/Owner.</div></div>
         </div>
         <label>Tên ca hiển thị khi kết ca</label>
         <div id="opShiftLabels">${(s.labels||[]).map((x,i)=>`<div class="shift-label-row" data-op-shift="${i}"><input data-sh-key value="${esc(x.key)}"><input data-sh-label value="${esc(x.label)}"><label class="permitem" style="margin:0"><input type="checkbox" data-sh-enabled ${x.enabled!==false?'checked':''}><span>Bật</span></label></div>`).join('')}</div>
@@ -2553,7 +2922,7 @@ async function openSettings(initialTab){
   function invoicesHtml(){
     return `<div class="panel" style="margin:0">
       <h3>Hóa đơn điện tử (MISA) <button class="btn sm" id="settingsInvRefresh" style="margin-left:auto">↻ Tải lại</button></h3>
-      <table><thead><tr><th>Số HĐ</th><th>Khách</th><th>Tiền</th><th>Tra cứu</th></tr></thead><tbody id="settingsInvList"><tr><td colspan="4" class="empty">Đang tải...</td></tr></tbody></table>
+      <table><thead><tr><th>Số HĐ</th><th>Khách / MST</th><th>Liên hệ</th><th>Tiền</th><th>Tra cứu</th></tr></thead><tbody id="settingsInvList"><tr><td colspan="5" class="empty">Đang tải...</td></tr></tbody></table>
     </div>`;
   }
   function auditHtml(){
@@ -4092,6 +4461,7 @@ async function openSettings(initialTab){
     if(!save) return;
     save.onclick=async()=>{
       operationsCfg=mergeOperationsCfg(operationsCfg);
+      const originalDrawerCash=Math.max(0,parseInt(operationsCfg.shifts?.defaultDrawerCash)||0);
       operationsCfg.payment={
         ...operationsCfg.payment,
         bankName:ov.querySelector('#opBankName').value.trim(),
@@ -4118,7 +4488,13 @@ async function openSettings(initialTab){
         denominations:ov.querySelector('#opDenoms').value.split(',').map(x=>parseInt(x.trim())||0).filter(Boolean),
         defaultDrawerCash:Math.max(0,parseInt(ov.querySelector('#opDefaultDrawerCash')?.value)||0),
       };
-      try{ await saveOperationsCfg(false); toast('Đã lưu cấu hình thanh toán & ca'); }
+      let securityPin='';
+      if(operationsCfg.shifts.defaultDrawerCash!==originalDrawerCash){
+        securityPin=await requestManagerOwnerPin(`Đổi tiền két gốc từ ${money(originalDrawerCash)} sang ${money(operationsCfg.shifts.defaultDrawerCash)}.`);
+        if(securityPin===null) return;
+        if(!securityPin){toast('Cần nhập PIN Manager hoặc Owner để đổi tiền két gốc',true);return;}
+      }
+      try{ await saveOperationsCfg(false,securityPin); toast('Đã lưu cấu hình thanh toán & ca'); }
       catch(e){toast(e.message,true);}
     };
   }

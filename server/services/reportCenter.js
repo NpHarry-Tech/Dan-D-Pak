@@ -386,9 +386,25 @@ function buildCashDrawer(branch_id, query) {
   const report = reportShell('cash_drawer', query);
   const range = rangeFromQuery(query);
   const entries = db.prepare(`
-    SELECT e.*, s.shift_label, s.opened_at, s.closed_at
+    SELECT e.*, s.shift_label, s.opened_at, s.closed_at,
+      le.product linked_product, le.reason linked_reason, le.counterparty linked_counterparty,
+      le.amount linked_amount, le.occurred_at linked_occurred_at,
+      (SELECT GROUP_CONCAT(COALESCE(ae.product, ae.reason, ae.counterparty, ae.id) || ' ' || a.amount, ', ')
+       FROM cash_drawer_reimbursement_allocations a
+       JOIN cash_drawer_entries ae ON ae.id=a.expense_id
+       WHERE a.reimbursement_id=e.id) allocation_text,
+      (SELECT COALESCE(SUM(r.amount),0)
+       FROM cash_drawer_entries r
+       WHERE r.kind='reimbursement' AND r.reimburses_entry_id=e.id
+         AND NOT EXISTS (SELECT 1 FROM cash_drawer_reimbursement_allocations a WHERE a.reimbursement_id=r.id))
+      +
+      (SELECT COALESCE(SUM(a.amount),0)
+       FROM cash_drawer_reimbursement_allocations a
+       JOIN cash_drawer_entries r ON r.id=a.reimbursement_id
+       WHERE a.expense_id=e.id AND r.kind='reimbursement') reimbursed_amount
     FROM cash_drawer_entries e
     LEFT JOIN shifts s ON s.id=e.shift_id
+    LEFT JOIN cash_drawer_entries le ON le.id=e.reimburses_entry_id
     WHERE e.branch_id=? AND e.occurred_at>=? AND e.occurred_at<=?
     ORDER BY e.occurred_at DESC, e.created_at DESC`).all(branch_id, range.from, range.to);
   const shifts = db.prepare(`
@@ -410,7 +426,7 @@ function buildCashDrawer(branch_id, query) {
   report.summary = [
     { label: 'Số khoản chi/hoàn', value: entries.length },
     { label: 'Tổng chi từ két', value: money(expenseTotal) },
-    { label: 'Tổng hoàn két', value: money(reimbursementTotal) },
+    { label: 'Tổng hoàn chi', value: money(reimbursementTotal) },
     { label: 'Chênh lệch thu/chi', value: money(reimbursementTotal - expenseTotal) },
   ];
   report.sections.push(section('Tổng hợp theo ca', [
@@ -420,7 +436,7 @@ function buildCashDrawer(branch_id, query) {
     { key: 'opening_fmt', label: 'Đầu ca', align: 'right' },
     { key: 'cash_sales_fmt', label: 'Tiền mặt bán hàng', align: 'right' },
     { key: 'expense_fmt', label: 'Chi két', align: 'right' },
-    { key: 'reimburse_fmt', label: 'Hoàn két', align: 'right' },
+    { key: 'reimburse_fmt', label: 'Hoàn chi', align: 'right' },
     { key: 'expected_fmt', label: 'Số dư dự kiến', align: 'right' },
   ], shifts.map(s => ({
     ...s,
@@ -437,8 +453,11 @@ function buildCashDrawer(branch_id, query) {
     { key: 'counterparty', label: 'NCC / người hoàn' },
     { key: 'reason', label: 'Lý do' },
     { key: 'product', label: 'Sản phẩm / khoản mục' },
+    { key: 'linked_text', label: 'Hoàn cho' },
     { key: 'actor_name', label: 'Người ghi nhận' },
     { key: 'amount_fmt', label: 'Số tiền', align: 'right' },
+    { key: 'reimbursed_fmt', label: 'Đã hoàn', align: 'right' },
+    { key: 'outstanding_fmt', label: 'Còn thiếu', align: 'right' },
     { key: 'before_fmt', label: 'Trước', align: 'right' },
     { key: 'after_fmt', label: 'Sau', align: 'right' },
     { key: 'note', label: 'Ghi chú' },
@@ -446,6 +465,9 @@ function buildCashDrawer(branch_id, query) {
     ...e,
     kind_label: e.kind === 'expense' ? 'Chi tiền' : 'Hoàn tiền',
     amount_fmt: money(e.amount),
+    linked_text: e.allocation_text || (e.reimburses_entry_id ? [e.linked_product || e.linked_reason || e.linked_counterparty || e.reimburses_entry_id, e.linked_amount ? money(e.linked_amount) : ''].filter(Boolean).join(' · ') : ''),
+    reimbursed_fmt: e.kind === 'expense' ? money(e.reimbursed_amount || 0) : '',
+    outstanding_fmt: e.kind === 'expense' ? money(Math.max(0, (Number(e.amount) || 0) - (Number(e.reimbursed_amount) || 0))) : '',
     before_fmt: money(e.balance_before),
     after_fmt: money(e.balance_after),
   }))));
@@ -487,11 +509,13 @@ function buildStaff(branch_id, query) {
       (SELECT COALESCE(SUM(p.total),0) FROM payments p WHERE p.shift_id=s.id) total_revenue,
       (SELECT COALESCE(SUM(pl.amount),0)
         FROM payment_lines pl JOIN payments p ON p.id=pl.payment_id
-        WHERE p.shift_id=s.id AND pl.method='cash') cash_sales
+        WHERE p.shift_id=s.id AND pl.method='cash') cash_sales,
+      (SELECT COALESCE(SUM(amount),0) FROM cash_drawer_entries e WHERE e.shift_id=s.id AND e.kind='expense') drawer_expenses,
+      (SELECT COALESCE(SUM(amount),0) FROM cash_drawer_entries e WHERE e.shift_id=s.id AND e.kind='reimbursement') drawer_reimbursements
     FROM shifts s
     WHERE s.branch_id=? AND s.opened_at>=? AND s.opened_at<=?
     ORDER BY s.opened_at DESC`).all(branch_id, range.from, range.to)
-    .map(s => ({ ...s, expected_cash: (Number(s.opening_cash) || 0) + (Number(s.cash_sales) || 0) }));
+    .map(s => ({ ...s, expected_cash: (Number(s.opening_cash) || 0) + (Number(s.cash_sales) || 0) - (Number(s.drawer_expenses) || 0) + (Number(s.drawer_reimbursements) || 0) }));
   report.summary = [
     { label: 'Nhân viên', value: users.length },
     { label: 'Đang hoạt động', value: users.filter(u => u.active).length },

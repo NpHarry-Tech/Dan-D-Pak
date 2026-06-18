@@ -2,6 +2,7 @@
 import { db, uid, now, audit } from '../db.js';
 import { getOperationsConfig } from './settings.js';
 import { emit } from '../realtime.js';
+import * as CashDrawer from './cashDrawer.js';
 
 function parseJson(raw, fallback) {
   try { return raw ? JSON.parse(raw) : fallback; } catch { return fallback; }
@@ -46,13 +47,15 @@ export function openShift(body = {}, user = {}, branch_id = 'br1') {
   const labels = cfg.shifts.labels.filter(x => x.enabled !== false);
   const picked = labels.find(x => x.key === body.shift_key) || labels[0] || { key: 'shift', label: 'Ca lam viec' };
   const counts = body.counts && typeof body.counts === 'object' ? body.counts : {};
-  const opening_cash = Number.isFinite(Number(body.opening_cash)) ? Math.max(0, parseInt(body.opening_cash) || 0) : cashTotal(counts);
+  const counted_cash = Number.isFinite(Number(body.opening_cash)) ? Math.max(0, parseInt(body.opening_cash) || 0) : cashTotal(counts);
+  const manual_cash = body.cash_manual === true || body.cash_manual === '1' || body.cash_manual === 1;
+  const opening_cash = manual_cash ? counted_cash : CashDrawer.defaultOpeningCash(branch_id, cfg);
   const id = uid('sh_');
   db.prepare(`INSERT INTO shifts
     (id,branch_id,user_id,user_name,shift_key,shift_label,opening_cash,opening_count_json,status,opened_at)
     VALUES (?,?,?,?,?,?,?,?,?,?)`)
     .run(id, branch_id, user.id || null, user.name || user.username || null, picked.key, picked.label, opening_cash, JSON.stringify(counts), 'open', now());
-  audit('shift.open', { shift: picked.label, opening_cash, user: user.username || user.name || '' }, branch_id, user.username || 'system');
+  audit('shift.open', { shift: picked.label, opening_cash, counted_cash, cash_manual: manual_cash, user: user.username || user.name || '' }, branch_id, user.username || 'system');
   emit('shift:updated', { status: 'open', shift_label: picked.label }, branch_id);
   return { shift: getActiveShift(branch_id), config: cfg };
 }
@@ -84,7 +87,15 @@ export function closeShift(body = {}, user = {}, branch_id = 'br1') {
 
 export function currentShift(branch_id = 'br1') {
   const shift = getActiveShift(branch_id);
-  return { shift, config: getOperationsConfig(branch_id), report: shift ? shiftReport(shift.id, branch_id) : null, day_report: operationDayReport(branch_id) };
+  const config = getOperationsConfig(branch_id);
+  return {
+    shift,
+    config,
+    report: shift ? shiftReport(shift.id, branch_id) : null,
+    day_report: operationDayReport(branch_id),
+    drawer: CashDrawer.currentDrawer(branch_id),
+    opening_suggestion: CashDrawer.defaultOpeningCash(branch_id, config),
+  };
 }
 
 export function listShifts(branch_id = 'br1', limit = 40) {
@@ -120,15 +131,23 @@ export function shiftReport(shift_id, branch_id = 'br1') {
     .reduce((s, k) => s + (Number(methodTotals[k]) || 0), 0);
   const pos = ['card', 'visa', 'pos_card'].reduce((s, k) => s + (Number(methodTotals[k]) || 0), 0);
   const total_revenue = payments.reduce((s, p) => s + (Number(p.total) || 0), 0);
+  const drawer = CashDrawer.summaryForShift(shift_id, branch_id);
+  const drawer_expenses = drawer?.expenses || 0;
+  const drawer_reimbursements = drawer?.reimbursements || 0;
+  const expected_cash = shift.opening_cash + cash - drawer_expenses + drawer_reimbursements;
   return {
     shift,
     bill_count: payments.length,
     total_revenue,
     opening_cash: shift.opening_cash,
     cash_sales: cash,
+    drawer_expenses,
+    drawer_reimbursements,
     transfer_sales: transfer,
     pos_sales: pos,
-    expected_cash: shift.opening_cash + cash,
+    expected_cash,
+    cash_drawer_entries: CashDrawer.entriesForShift(shift_id, 80),
+    drawer,
     method_totals: methodTotals,
     method_lines: lines,
     bills,

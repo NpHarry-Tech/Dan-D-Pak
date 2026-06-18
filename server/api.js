@@ -72,8 +72,26 @@ api.post('/settings/users/:id/update', guardAny('settings.users'), wrap((req) =>
 api.post('/settings/users/:id/delete', guardAny('settings.users'), wrap((req) => Auth.deleteUser(req.params.id)));
 api.get('/settings/users/:id/permissions', guardAny('settings.users', 'settings.perms'), wrap((req) => Auth.userPermDetails(req.params.id)));
 api.post('/settings/users/:id/permissions', guardAny('settings.users', 'settings.perms'), wrap((req) => Auth.setUserPerms(req.params.id, req.body.perms)));
-api.get('/settings/app', guardAny('settings.sync', 'settings.operations', 'settings.einvoice', 'settings.print', 'settings.printers', 'settings.devices', 'settings.invoices'), wrap(() => AppSettings.getSettings()));
-api.post('/settings/app', guardAny('settings.sync', 'settings.operations', 'settings.einvoice', 'settings.print', 'settings.printers', 'settings.devices', 'settings.invoices'), wrap((req) => AppSettings.updateSettings(req.body)));
+api.get('/settings/app', guardAny('settings.sync', 'settings.operations', 'settings.einvoice', 'settings.print', 'settings.printers', 'settings.devices', 'settings.invoices'), wrap((req) => AppSettings.getSettings(req.user?.branch_id || 'br1')));
+api.post('/settings/app', guardAny('settings.sync', 'settings.operations', 'settings.einvoice', 'settings.print', 'settings.printers', 'settings.devices', 'settings.invoices'), wrap((req) => {
+  const branch_id = req.user?.branch_id || 'br1';
+  const shifts = req.body?.operations_config?.shifts;
+  if (shifts && Object.prototype.hasOwnProperty.call(shifts, 'defaultDrawerCash')) {
+    const current = Math.max(0, parseInt(AppSettings.getOperationsConfig(branch_id)?.shifts?.defaultDrawerCash) || 0);
+    const next = Math.max(0, parseInt(shifts.defaultDrawerCash) || 0);
+    if (next !== current) {
+      const pin = req.body.security_pin || req.body.manager_pin || req.body.owner_pin || req.body.password;
+      const approvedBy = Auth.verifyManagerOwnerPin(pin, branch_id);
+      if (!approvedBy) throw new Error('Cần nhập lại mật khẩu/PIN của Manager hoặc Owner để đổi tiền két gốc.');
+      audit('settings.drawer_cash.reauth', { from: current, to: next, approved_by: approvedBy.username }, branch_id, approvedBy.username);
+      delete req.body.security_pin;
+      delete req.body.manager_pin;
+      delete req.body.owner_pin;
+      delete req.body.password;
+    }
+  }
+  return AppSettings.updateSettings(req.body, branch_id);
+}));
 api.post('/templates/auto-save', guardAny('settings.print'), wrap((req) => AppSettings.autoSaveTemplate(req.body)));
 api.get('/settings/integrations', guardAny('settings.integrations'), wrap(() => AppSettings.getIntegrations()));
 api.post('/settings/integrations', guardAny('settings.integrations'), wrap((req) => AppSettings.updateIntegrations(req.body)));
@@ -318,6 +336,10 @@ api.post('/calls/:table_id/resolve', wrap((req) => { Orders.resolveStaffCall(req
 api.post('/orders/:id/request-payment', wrap((req) => { Pay.requestPayment(req.body.table_id); return { ok: true }; }));
 api.post('/tables/:id/request-payment', wrap((req) => { Pay.requestPayment(req.params.id); return { ok: true }; }));
 api.post('/orders/:id/customer-qr-pay', wrap((req) => Pay.customerQrPay(req.params.id, req.body || {})));
+// Khách tự phục vụ (iPad) chọn xuất / không xuất hóa đơn VAT sau khi thanh toán — route mở, không cần đăng nhập.
+api.post('/orders/:id/customer-invoice', wrap((req) => Invoices.customerRequest(req.params.id, req.body || {})));
+// Tra cứu MST công khai cho màn khách (iPad không đăng nhập) — chỉ trả thông tin doanh nghiệp công khai, không lộ khách local.
+api.get('/public/tax-lookup/:mst', wrap(async (req) => { const r = await Customers.lookupTaxCode(req.params.mst); const { existed, ...pub } = r; return pub; }));
 api.post('/orders/:id/pay', guard('pay'), wrap((req) => {
   const receipt = Pay.payOrder(req.params.id, req.body.lines, { discount: req.body.discount, customer: req.body.customer || null, cashier: req.user?.name || req.user?.username || '' });
   if (req.body.customer?.id) Customers.recordPurchase(req.body.customer.id, receipt.total, 'br1', req.params.id);
