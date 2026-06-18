@@ -577,7 +577,7 @@
       padding: 0;
       overflow: hidden;
       display: grid;
-      grid-template-columns: 4fr 1fr;
+      grid-template-columns: 1.4fr 1fr;
       border-radius: 18px;
       background: rgba(255, 255, 255, .18);
       border: 1px solid rgba(255, 255, 255, .42);
@@ -692,7 +692,8 @@
     .item-detail-actions .btn {
       min-height: 46px;
       font-size: 13px;
-      font-weight: 800
+      font-weight: 800;
+      white-space: nowrap
     }
 
     .item-detail-media {
@@ -2616,7 +2617,7 @@
       </div>
       <div class="mfoot item-detail-actions">
         <button class="btn" id="cancel">Hủy</button>
-        <button class="btn primary" id="add" ${canAdd ? '' : 'disabled'}>${canAdd ? 'Thêm' : 'Tạm hết'} · <span id="mp">${money(it.price)}</span></button>
+        <button class="btn primary" id="add" ${canAdd ? '' : 'disabled'}>${canAdd ? 'Thêm' : 'Tạm hết'} <span id="mp">${money(it.price)}</span></button>
       </div>
     </aside>
   </div>`;

@@ -1,5 +1,5 @@
 {
-  "archived_at": "2026-06-18T02:03:50.033Z",
+  "archived_at": "2026-06-18T02:16:51.418Z",
   "archive_kind": "reports.dashboard",
   "branch_id": "br1",
   "data": {
@@ -306,7 +306,7 @@
     ],
     "window": {
       "start": "2026-06-17T17:00:00.000Z",
-      "end": "2026-06-18T02:03:50.032Z",
+      "end": "2026-06-18T02:16:51.416Z",
       "calendar_start": "2026-06-17T17:00:00.000Z",
       "calendar_end": "2026-06-18T17:00:00.000Z",
       "source": "calendar",
