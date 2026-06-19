@@ -5,12 +5,18 @@ import { emit } from '../realtime.js';
 import { archiveCustomer } from './archive.js';
 
 const PERKS = ['none', 'pct', 'amount', 'free'];
+const PARTNER_TYPES = ['customer', 'supplier', 'both'];
 
 function normalizeRow(r) {
   if (!r) return null;
   const favorite_items = parseJson(r.favorite_items_json, []);
+  const partner_type = PARTNER_TYPES.includes(r.partner_type) ? r.partner_type : 'customer';
   return {
     ...r,
+    partner_type,
+    is_customer: partner_type === 'customer' || partner_type === 'both',
+    is_supplier: partner_type === 'supplier' || partner_type === 'both',
+    active: r.active === undefined || r.active === null ? 1 : (parseInt(r.active) ? 1 : 0),
     perk_value: parseInt(r.perk_value) || 0,
     total_orders: parseInt(r.total_orders) || 0,
     total_spent: parseInt(r.total_spent) || 0,
@@ -19,18 +25,44 @@ function normalizeRow(r) {
   };
 }
 
+function pickPartnerType(v) { return PARTNER_TYPES.includes(v) ? v : 'customer'; }
+
 function parseJson(raw, fallback) {
   try { return raw ? JSON.parse(raw) : fallback; } catch { return fallback; }
 }
 
+function matchesTerm(c, term) {
+  if (!term) return true;
+  return [c.name, c.phone, c.tax_code, c.company, c.email, c.contact_person, c.address, c.preferences, c.allergies, c.profile_summary]
+    .some(v => String(v || '').toLowerCase().includes(term));
+}
+
+// Sales-side customer picker (POS/retail/invoice). Suppliers never show here.
 export function listCustomers(branch_id = 'br1', q = '') {
+  const rows = db.prepare(`SELECT * FROM customers WHERE branch_id=? AND active!=0 ORDER BY updated_at DESC, created_at DESC`).all(branch_id);
+  const term = String(q || '').trim().toLowerCase();
+  const out = rows.map(normalizeRow).filter(c => c.is_customer);
+  return out.filter(c => matchesTerm(c, term)).slice(0, 200);
+}
+
+// Full contacts directory (Liên hệ): customers + suppliers, filterable by type.
+export function listPartners(branch_id = 'br1', { type = 'all', q = '', includeInactive = false } = {}) {
   const rows = db.prepare(`SELECT * FROM customers WHERE branch_id=? ORDER BY updated_at DESC, created_at DESC`).all(branch_id);
   const term = String(q || '').trim().toLowerCase();
-  const out = rows.map(normalizeRow);
-  if (!term) return out.slice(0, 200);
-  return out.filter(c =>
-    [c.name, c.phone, c.tax_code, c.company, c.email, c.preferences, c.allergies, c.profile_summary].some(v => String(v || '').toLowerCase().includes(term))
-  ).slice(0, 200);
+  let out = rows.map(normalizeRow);
+  if (!includeInactive) out = out.filter(c => c.active !== 0);
+  if (type === 'customer') out = out.filter(c => c.is_customer);
+  else if (type === 'supplier') out = out.filter(c => c.is_supplier);
+  return out.filter(c => matchesTerm(c, term)).slice(0, 500);
+}
+
+export function partnerCounts(branch_id = 'br1') {
+  const all = db.prepare(`SELECT * FROM customers WHERE branch_id=? AND active!=0`).all(branch_id).map(normalizeRow);
+  return {
+    all: all.length,
+    customer: all.filter(c => c.is_customer).length,
+    supplier: all.filter(c => c.is_supplier).length,
+  };
 }
 
 export function getCustomer(id, branch_id = 'br1') {
@@ -53,12 +85,14 @@ function birthday(v) {
 
 export function upsertCustomer(body = {}, branch_id = 'br1') {
   const name = str(body.name, 200);
-  if (!name) throw new Error('Thiếu tên khách hàng');
+  if (!name) throw new Error('Thiếu tên liên hệ');
   const perk_type = pickPerk(body.perk_type);
   let perk_value = Math.max(0, parseInt(body.perk_value) || 0);
   if (perk_type === 'pct' && perk_value > 100) perk_value = 100;
   if (perk_type === 'free') perk_value = 0;
   if (perk_type === 'none') perk_value = 0;
+  const partner_type = pickPartnerType(body.partner_type);
+  const active = body.active === undefined ? 1 : (parseInt(body.active) ? 1 : 0);
   const fields = {
     name,
     phone: str(body.phone, 40),
@@ -72,22 +106,25 @@ export function upsertCustomer(body = {}, branch_id = 'br1') {
     perk_type,
     perk_value,
     note: str(body.note, 600),
+    partner_type,
+    contact_person: str(body.contact_person, 200),
+    active,
   };
   const existing = body.id ? db.prepare(`SELECT * FROM customers WHERE id=? AND branch_id=?`).get(body.id, branch_id) : null;
   if (existing) {
-    db.prepare(`UPDATE customers SET name=?,phone=?,email=?,tax_code=?,company=?,address=?,birthday=?,preferences=?,allergies=?,perk_type=?,perk_value=?,note=?,updated_at=? WHERE id=? AND branch_id=?`)
-      .run(fields.name, fields.phone, fields.email, fields.tax_code, fields.company, fields.address, fields.birthday, fields.preferences, fields.allergies, fields.perk_type, fields.perk_value, fields.note, now(), existing.id, branch_id);
-    audit('customer.update', { id: existing.id, name: fields.name }, branch_id);
+    db.prepare(`UPDATE customers SET name=?,phone=?,email=?,tax_code=?,company=?,address=?,birthday=?,preferences=?,allergies=?,perk_type=?,perk_value=?,note=?,partner_type=?,contact_person=?,active=?,updated_at=? WHERE id=? AND branch_id=?`)
+      .run(fields.name, fields.phone, fields.email, fields.tax_code, fields.company, fields.address, fields.birthday, fields.preferences, fields.allergies, fields.perk_type, fields.perk_value, fields.note, fields.partner_type, fields.contact_person, fields.active, now(), existing.id, branch_id);
+    audit('customer.update', { id: existing.id, name: fields.name, partner_type: fields.partner_type }, branch_id);
     emit('customers:updated', { id: existing.id }, branch_id);
     const out = getCustomer(existing.id, branch_id);
     archiveCustomer(out);
     return out;
   }
   const id = uid('cus_');
-  db.prepare(`INSERT INTO customers (id,branch_id,name,phone,email,tax_code,company,address,birthday,preferences,allergies,perk_type,perk_value,note,total_orders,total_spent,created_at,updated_at)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,0,?,?)`)
-    .run(id, branch_id, fields.name, fields.phone, fields.email, fields.tax_code, fields.company, fields.address, fields.birthday, fields.preferences, fields.allergies, fields.perk_type, fields.perk_value, fields.note, now(), now());
-  audit('customer.create', { id, name: fields.name }, branch_id);
+  db.prepare(`INSERT INTO customers (id,branch_id,name,phone,email,tax_code,company,address,birthday,preferences,allergies,perk_type,perk_value,note,partner_type,contact_person,active,total_orders,total_spent,created_at,updated_at)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,0,?,?)`)
+    .run(id, branch_id, fields.name, fields.phone, fields.email, fields.tax_code, fields.company, fields.address, fields.birthday, fields.preferences, fields.allergies, fields.perk_type, fields.perk_value, fields.note, fields.partner_type, fields.contact_person, fields.active, now(), now());
+  audit('customer.create', { id, name: fields.name, partner_type: fields.partner_type }, branch_id);
   emit('customers:updated', { id, created: true }, branch_id);
   const out = getCustomer(id, branch_id);
   archiveCustomer(out);

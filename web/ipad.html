@@ -77,6 +77,51 @@
       flex: 0 0 auto
     }
 
+    .ipad-home-logo {
+      width: 150px;
+      min-height: 50px;
+      border: 0;
+      display: inline-flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 1px;
+      color: var(--muted);
+      cursor: pointer;
+      user-select: none;
+      flex: 0 0 auto;
+      text-align: center
+    }
+
+    .ipad-home-logo::before {
+      content: "";
+      width: 126px;
+      height: 38px;
+      background: url('/assets/DanOnLogo.png') center/contain no-repeat;
+      display: block;
+      filter: drop-shadow(0 5px 8px rgba(15, 23, 42, .06))
+    }
+
+    .ipad-home-logo small {
+      display: block;
+      max-width: 150px;
+      font-size: 9.5px;
+      font-weight: 650;
+      line-height: 1.1;
+      color: var(--muted);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis
+    }
+
+    .ipad-home-logo:hover {
+      opacity: .86
+    }
+
+    #staffUnlock {
+      cursor: pointer
+    }
+
     .ipad-top .right {
       margin-left: auto;
       display: flex;
@@ -1974,6 +2019,21 @@
         background-size: 88px 88px
       }
 
+      .ipad-home-logo {
+        width: 126px;
+        min-height: 42px
+      }
+
+      .ipad-home-logo::before {
+        width: 104px;
+        height: 30px
+      }
+
+      .ipad-home-logo small {
+        max-width: 126px;
+        font-size: 8.5px
+      }
+
       .ipad-top .tbl {
         padding: 4px 10px;
         font-size: 12px
@@ -2117,7 +2177,7 @@
   </div>
 
   <script type="module">
-    import { api, connect, money, toast, esc, startClock, getLang, setLang } from '/shared/client.js';
+    import { api, connect, money, toast, esc, startClock, getLang, setLang, requestPinCode, selectedBranch } from '/shared/client.js';
 
     let MENU = { categories: [], items: [] };
     let tableId = localStorage.getItem('ipad_table') || null;
@@ -2139,6 +2199,13 @@
     let bookPage = 0, bookAnimating = false, audioCtx = null;
     const portraitMq = window.matchMedia('(orientation: portrait)');
     portraitMq.addEventListener?.('change', () => render());
+
+    function ipadHomeBrand() {
+      const br = selectedBranch();
+      const name = br.name || br.code || br.id || 'Dan D Pak';
+      const label = getLang() === 'en' ? `Branch: ${name} · Live` : `Chi nhánh: ${name} · Trực tiếp`;
+      return `<a class="ipad-home-logo" href="/" aria-label="Về màn hình chính" title="Về màn hình chính"><small>${esc(label)}</small></a>`;
+    }
 
     function showFatal(msg) { if (frame) frame.innerHTML = `<div style="padding:30px;color:var(--late);font-family:var(--mono);font-size:13px;line-height:1.7">⚠ Lỗi iPad:<br>${msg}<br><br><button class="btn" onclick="location.reload()">Tải lại</button></div>`; }
     window.addEventListener('error', e => showFatal((e.message || 'Script error') + (e.filename ? ('<br>@ ' + e.filename + ':' + e.lineno) : '')));
@@ -2225,8 +2292,8 @@
       const showCartHint = !cart.length && activeSentCount === 0;
       frame.innerHTML = `
   <div class="ipad-top">
-    <span class="staff-logo" id="staffUnlock" title=""></span>
-    <span class="tbl">Bàn ${esc(tableCode)}</span>
+    ${ipadHomeBrand()}
+    <span class="tbl" id="staffUnlock" title="Chạm 3 lần để chọn lại bàn">Bàn ${esc(tableCode)}</span>
     <div class="sub" style="color:var(--muted);font-size:12px">Tự chọn món · chờ nhân viên xác nhận</div>
     <div class="right">
       <span class="onlinedot"><i></i><span>Online</span></span>
@@ -2268,8 +2335,8 @@
       const activeSentCount = (sentOrder?.items || []).filter(i => i.status !== 'cancelled').length;
       frame.innerHTML = `
   <div class="ipad-top">
-    <span class="staff-logo" id="staffUnlock" title=""></span>
-    <span class="tbl">Bàn ${esc(tableCode)}</span>
+    ${ipadHomeBrand()}
+    <span class="tbl" id="staffUnlock" title="Chạm 3 lần để chọn lại bàn">Bàn ${esc(tableCode)}</span>
     <div class="sub" style="color:var(--muted);font-size:12px">Vuốt để lật menu</div>
     <div class="right">
       <span class="onlinedot"><i></i><span>Online</span></span>
@@ -2398,7 +2465,7 @@
     function stationLabel(s) { return { kitchen: 'Bếp', bar: 'Bar', salad: 'Salad', beverage: 'Beverage' }[s] || s; }
 
     function renderTablePick() {
-      frame.innerHTML = `<div class="ipad-top"><span class="tbl">📱 Chọn bàn</span>
+      frame.innerHTML = `<div class="ipad-top">${ipadHomeBrand()}<span class="tbl">📱 Chọn bàn</span>
     <div class="sub" style="color:var(--muted);font-size:12px">Thiết bị này sẽ gắn cố định với bàn đã chọn</div>
     <div class="right">
       <span class="onlinedot"><i></i><span>Online</span></span>
@@ -2555,25 +2622,17 @@
       staffTapTimer = setTimeout(() => staffTapCount = 0, 1200);
       if (staffTapCount >= 3) { staffTapCount = 0; openStaffUnlock(); }
     }
-    function openStaffUnlock() {
-      const ov = document.createElement('div'); ov.className = 'overlay show ipad-overlay';
-      ov.innerHTML = `<div class="modal" style="max-width:360px">
-    <h2>Xác nhận nhân viên</h2>
-    <div class="sub">Nhập mật khẩu thiết bị để quay lại màn hình chọn bàn.</div>
-    <label>Mật khẩu</label><input id="staffPin" type="password" inputmode="numeric" autocomplete="off" placeholder="000000">
-    <div class="mfoot"><button class="btn" id="staffCancel">Hủy</button><button class="btn primary" id="staffOk">Mở chọn bàn</button></div>
-  </div>`;
-      document.body.appendChild(ov);
-      const pin = ov.querySelector('#staffPin'); pin.focus();
-      ov.querySelector('#staffCancel').onclick = () => ov.remove();
-      ov.querySelector('#staffOk').onclick = async () => {
-        try {
-          await api('/device/ipad/unlock', { method: 'POST', body: { pin: pin.value.trim() } });
-          localStorage.removeItem('ipad_table'); localStorage.removeItem('ipad_tablecode');
-          tableId = null; tableCode = null; cart = []; sentOrder = null; ov.remove(); render();
-        } catch (e) { toast(e.message, true); pin.value = ''; pin.focus(); }
-      };
-      pin.onkeydown = e => { if (e.key === 'Enter') ov.querySelector('#staffOk').click(); };
+    async function openStaffUnlock() {
+      const ok = await requestPinCode({
+        title:'Xác nhận nhân viên',
+        subtitle:'Nhập PIN 4 số để quay lại màn hình chọn bàn.',
+        roleLabel:'Thiết bị iPad',
+        cancelText:'Hủy',
+        onSubmit: pin => api('/device/ipad/unlock', { method: 'POST', body: { pin } }),
+      });
+      if (!ok) return;
+      localStorage.removeItem('ipad_table'); localStorage.removeItem('ipad_tablecode');
+      tableId = null; tableCode = null; cart = []; sentOrder = null; render();
     }
 
     // --- item modal (size/topping/note) ---

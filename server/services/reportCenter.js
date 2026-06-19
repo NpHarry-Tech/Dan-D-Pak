@@ -9,7 +9,9 @@ const execFileAsync = promisify(execFile);
 
 export const REPORT_GROUPS = [
   { key: 'sales', label: 'Báo cáo bán hàng' },
+  { key: 'purchase', label: 'Báo cáo mua hàng' },
   { key: 'inventory', label: 'Báo cáo kho' },
+  { key: 'expense', label: 'Báo cáo chi phí' },
   { key: 'cash', label: 'Báo cáo tiền két' },
   { key: 'debt', label: 'Báo cáo công nợ' },
   { key: 'customers', label: 'Báo cáo quản trị khách hàng' },
@@ -19,6 +21,8 @@ export const REPORT_GROUPS = [
 export const REPORTS = [
   { key: 'sales_overview', group: 'sales', label: 'Báo cáo bán hàng', description: 'Doanh thu, mặt hàng, hóa đơn, kênh bán hàng và phương thức thanh toán.' },
   { key: 'sales_online', group: 'sales', label: 'Bán hàng Online', description: 'GrabFood/ShopeeFood/Website và trạng thái fulfillment.' },
+  { key: 'purchase_orders', group: 'purchase', label: 'Báo cáo mua hàng', description: 'Đơn mua theo kỳ/NCC, đã nhận, đã trả và công nợ phải trả.' },
+  { key: 'expenses', group: 'expense', label: 'Báo cáo chi phí', description: 'Chi phí theo danh mục, nguồn tiền (két/trực tiếp) và kỳ.' },
   { key: 'purchase', group: 'inventory', label: 'Báo cáo nhập hàng', description: 'Phiếu nhập, supplier, lot, hạn dùng, giá vốn.' },
   { key: 'issue', group: 'inventory', label: 'Báo cáo xuất hàng', description: 'Xuất kho, bán hàng, recipe, chuyển kho, kiểm kho.' },
   { key: 'stock', group: 'inventory', label: 'Báo cáo tồn kho chi tiết', description: 'Tồn hiện tại, min stock, giá trị tồn, hạn dùng.' },
@@ -382,6 +386,99 @@ function buildPayables(branch_id, query) {
   ], rows.map(r => ({ ...r, supplier: r.supplier || 'Chưa khai báo', amount_fmt: money(r.amount) }))));
   return report;
 }
+function buildPurchaseOrders(branch_id, query) {
+  const report = reportShell('purchase_orders', query);
+  const range = rangeFromQuery(query);
+  const rows = db.prepare(`
+    SELECT * FROM purchase_orders
+    WHERE branch_id=? AND status!='cancelled' AND order_date>=? AND order_date<=?
+    ORDER BY order_date DESC, created_at DESC`).all(branch_id, range.from, range.to);
+  const totalVal = rowsSum(rows, 'total');
+  const totalPaid = rowsSum(rows, 'amount_paid');
+  const ST = { draft: 'Nháp', confirmed: 'Đã xác nhận', received: 'Đã nhận' };
+  report.summary = [
+    { label: 'Số đơn mua', value: rows.length },
+    { label: 'Tổng giá trị', value: money(totalVal) },
+    { label: 'Đã thanh toán', value: money(totalPaid) },
+    { label: 'Còn nợ NCC', value: money(Math.max(0, totalVal - totalPaid)) },
+  ];
+  report.sections.push(section('Đơn mua hàng theo kỳ', [
+    { key: 'order_date', label: 'Ngày' },
+    { key: 'code', label: 'Mã đơn' },
+    { key: 'supplier_name', label: 'Nhà cung cấp' },
+    { key: 'status_label', label: 'Trạng thái' },
+    { key: 'total_fmt', label: 'Tổng tiền', align: 'right' },
+    { key: 'paid_fmt', label: 'Đã trả', align: 'right' },
+    { key: 'due_fmt', label: 'Còn nợ', align: 'right' },
+  ], rows.map(r => ({
+    ...r,
+    order_date: dateOnly(r.order_date),
+    supplier_name: r.supplier_name || 'Chưa khai báo',
+    status_label: ST[r.status] || r.status,
+    total_fmt: money(r.total),
+    paid_fmt: money(r.amount_paid),
+    due_fmt: money(Math.max(0, (Number(r.total) || 0) - (Number(r.amount_paid) || 0))),
+  }))));
+  // By supplier (công nợ phải trả)
+  const bySup = new Map();
+  for (const r of rows) {
+    const k = r.supplier_name || 'Chưa khai báo';
+    const cur = bySup.get(k) || { supplier_name: k, orders: 0, total: 0, paid: 0 };
+    cur.orders += 1; cur.total += Number(r.total) || 0; cur.paid += Number(r.amount_paid) || 0;
+    bySup.set(k, cur);
+  }
+  report.sections.push(section('Tổng hợp theo nhà cung cấp', [
+    { key: 'supplier_name', label: 'Nhà cung cấp' },
+    { key: 'orders', label: 'Số đơn', align: 'right' },
+    { key: 'total_fmt', label: 'Tổng mua', align: 'right' },
+    { key: 'paid_fmt', label: 'Đã trả', align: 'right' },
+    { key: 'due_fmt', label: 'Còn nợ', align: 'right' },
+  ], [...bySup.values()].sort((a, b) => (b.total - b.paid) - (a.total - a.paid)).map(s => ({
+    ...s, total_fmt: money(s.total), paid_fmt: money(s.paid), due_fmt: money(Math.max(0, s.total - s.paid)),
+  }))));
+  return report;
+}
+function buildExpenses(branch_id, query) {
+  const report = reportShell('expenses', query);
+  const range = rangeFromQuery(query);
+  const rows = db.prepare(`
+    SELECT * FROM expenses
+    WHERE branch_id=? AND expense_date>=? AND expense_date<=?
+    ORDER BY expense_date DESC, created_at DESC`).all(branch_id, range.from, range.to);
+  const total = rowsSum(rows, 'amount');
+  const drawer = rows.filter(r => r.source === 'drawer').reduce((s, r) => s + (Number(r.amount) || 0), 0);
+  report.summary = [
+    { label: 'Tổng chi', value: money(total) },
+    { label: 'Chi từ két', value: money(drawer) },
+    { label: 'Chi trực tiếp', value: money(total - drawer) },
+    { label: 'Số phiếu', value: rows.length },
+  ];
+  report.sections.push(section('Chi tiết chi phí', [
+    { key: 'expense_date', label: 'Ngày' },
+    { key: 'code', label: 'Mã' },
+    { key: 'category_name', label: 'Danh mục' },
+    { key: 'payee_name', label: 'Người nhận' },
+    { key: 'source_label', label: 'Nguồn' },
+    { key: 'amount_fmt', label: 'Số tiền', align: 'right' },
+  ], rows.map(r => ({
+    ...r,
+    expense_date: dateOnly(r.expense_date),
+    payee_name: r.payee_name || '—',
+    source_label: r.source === 'drawer' ? 'Tiền két' : 'Chi trực tiếp',
+    amount_fmt: money(r.amount),
+  }))));
+  // By category
+  const byCat = new Map();
+  for (const r of rows) {
+    const k = r.category_name || 'Khác';
+    byCat.set(k, (byCat.get(k) || 0) + (Number(r.amount) || 0));
+  }
+  report.sections.push(section('Chi phí theo danh mục', [
+    { key: 'name', label: 'Danh mục' },
+    { key: 'amount_fmt', label: 'Số tiền', align: 'right' },
+  ], [...byCat.entries()].sort((a, b) => b[1] - a[1]).map(([name, amount]) => ({ name, amount_fmt: money(amount) }))));
+  return report;
+}
 function buildCashDrawer(branch_id, query) {
   const report = reportShell('cash_drawer', query);
   const range = rangeFromQuery(query);
@@ -557,6 +654,8 @@ export function catalog(branch_id = 'br1') {
 export function buildReport(type = 'sales_overview', branch_id = 'br1', query = {}) {
   if (['sales_fnb', 'sales_retail', 'sales_by_product'].includes(type)) type = 'sales_overview';
   if (['sales_overview', 'sales_online'].includes(type)) return buildSales(type, branch_id, query);
+  if (type === 'purchase_orders') return buildPurchaseOrders(branch_id, query);
+  if (type === 'expenses') return buildExpenses(branch_id, query);
   if (type === 'purchase') return buildMovements(type, branch_id, query);
   if (type === 'issue') return buildMovements(type, branch_id, query);
   if (type === 'stock') return buildStock(branch_id, query);

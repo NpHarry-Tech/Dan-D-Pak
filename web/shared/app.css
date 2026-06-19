@@ -17,6 +17,9 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:14
 a{color:inherit;text-decoration:none}
 button{font-family:var(--font);cursor:pointer;border:none}
 input,textarea,select{font-family:var(--font)}
+html,body,body *{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+input,textarea,select,[contenteditable="true"],.allow-select{-webkit-user-select:text;user-select:text;-webkit-touch-callout:default}
+img,svg{-webkit-user-drag:none;user-drag:none}
 ::-webkit-scrollbar{width:9px;height:9px}::-webkit-scrollbar-thumb{background:var(--surface3);border-radius:8px}
 
 /* Topbar */
@@ -24,47 +27,15 @@ input,textarea,select{font-family:var(--font)}
 .logo{display:flex;align-items:center;gap:9px;font-weight:800;font-size:14px;margin-right:6px}
 .logo .dot{width:32px;height:32px;border-radius:8px;background:linear-gradient(135deg,#34d2ee,#3fe08f);display:flex;align-items:center;justify-content:center;color:#06222b;font-size:16px}
 .logo small{display:block;font-weight:500;color:var(--muted);font-size:10px}
-.topbar .brand-mark{flex-direction:column;align-items:flex-start;gap:1px;min-width:178px;margin-right:10px}
-.topbar .brand-mark img{width:118px;height:38px;object-fit:contain;display:block;filter:drop-shadow(0 5px 8px rgba(15,23,42,.06))}
-.topbar .brand-mark small{line-height:1.1;padding-left:2px}
-.devtabs{display:flex;gap:5px;flex-wrap:wrap}
-.devtab{display:flex;align-items:center;gap:7px;padding:8px 13px;border-radius:9px;background:transparent;color:var(--muted);font-size:12.5px;font-weight:600;border:1px solid transparent;position:relative;transition:.12s}
-.devtab:hover{background:var(--surface2);color:var(--text)}
-.devtab.active{background:var(--brand-dim);border-color:rgba(52,210,238,.4);color:var(--brand)}
-.devtab .bdg{position:absolute;top:-4px;right:-4px;min-width:17px;height:17px;border-radius:99px;background:var(--late);color:#fff;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;padding:0 4px}
-.topright{margin-left:auto;display:flex;align-items:center;gap:12px}
+.topbar .brand-mark{flex-direction:column;align-items:center;justify-content:center;gap:2px;min-width:190px;margin-right:12px;text-align:center}
+.topbar .brand-mark img{width:142px;height:46px;object-fit:contain;display:block;filter:drop-shadow(0 5px 8px rgba(15,23,42,.06))}
+.topbar .brand-mark small{display:block;width:100%;max-width:190px;line-height:1.15;padding-left:0;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.topright{margin-left:auto;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
 .clock{font-family:var(--mono);font-size:13px;color:var(--muted)}
 .onlinedot{display:flex;align-items:center;gap:6px;font-size:11.5px;font-weight:600;color:var(--done)}
 .onlinedot i{width:8px;height:8px;border-radius:99px;background:var(--done);box-shadow:0 0 8px var(--done);animation:pulse 2s infinite}
 .onlinedot.off{color:var(--late)} .onlinedot.off i{background:var(--late);box-shadow:0 0 8px var(--late)}
 @keyframes pulse{50%{opacity:.4}}
-
-/* Responsive topbar: collapse nav + user/logout into a big hamburger on tablet/iPad */
-.topnav-panel{display:contents}
-.topnav-toggle{display:none;align-items:center;justify-content:center;width:48px;height:48px;border-radius:13px;background:var(--surface2);border:1px solid var(--border2);cursor:pointer;margin-left:auto;flex-shrink:0;transition:background .12s,border-color .12s}
-.topnav-toggle:hover{background:var(--brand-dim);border-color:var(--brand)}
-.topnav-toggle .bars,.topnav-toggle .bars::before,.topnav-toggle .bars::after{content:"";display:block;width:24px;height:3px;border-radius:3px;background:var(--text);transition:transform .2s,opacity .2s}
-.topnav-toggle .bars{position:relative}
-.topnav-toggle .bars::before{position:absolute;top:-8px;left:0}
-.topnav-toggle .bars::after{position:absolute;top:8px;left:0}
-.topbar.open .topnav-toggle{background:var(--brand-dim);border-color:var(--brand)}
-.topbar.open .topnav-toggle .bars{background:transparent}
-.topbar.open .topnav-toggle .bars::before{transform:translateY(8px) rotate(45deg)}
-.topbar.open .topnav-toggle .bars::after{transform:translateY(-8px) rotate(-45deg)}
-
-@media (max-width:1180px){
-  .topbar{position:relative;flex-wrap:nowrap}
-  .topnav-toggle{display:inline-flex}
-  .topnav-panel{display:none;position:absolute;top:calc(100% + 1px);left:0;right:0;z-index:60;flex-direction:column;align-items:stretch;gap:6px;background:var(--surface);border-bottom:1px solid var(--border);box-shadow:0 20px 44px rgba(15,23,42,.18);padding:12px 14px 14px}
-  .topbar.open .topnav-panel{display:flex}
-  .topnav-panel .devtabs{flex-direction:column;gap:6px;width:100%}
-  .topnav-panel .devtab{padding:14px 16px;font-size:15px;border:1px solid var(--border)}
-  .topnav-panel .topright{margin-left:0;margin-top:4px;padding-top:12px;border-top:1px dashed var(--border);flex-direction:column;align-items:stretch;gap:12px}
-  .topnav-panel .topright #userchip{width:100%}
-  .topnav-panel .topright #userchip>span{width:100%;box-sizing:border-box;justify-content:flex-start;font-size:14.5px;padding:11px 13px}
-  .topnav-panel .topright #userchip #logoutBtn{margin-left:auto;width:30px;height:30px}
-  .topnav-panel .clock,.topnav-panel .onlinedot{justify-content:flex-start;font-size:13px}
-}
 
 /* Layout */
 .view{flex:1;overflow:auto;padding:18px 20px}
@@ -199,7 +170,6 @@ tbody tr:hover{background:var(--surface2)}
   .btn.sm{padding:8px 12px;font-size:12px}
   input,select,textarea{font-size:15px;padding:11px 13px}
   .opt{padding:9px 15px}
-  .devtab{padding:10px 14px}
 }
 
 /* Subtle page-enter fade so navigation feels smooth */
@@ -238,3 +208,47 @@ body.kiosk{ overscroll-behavior:none;touch-action:manipulation }
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 
 *,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}
+
+/* POS terminal compact breakpoint: 1024x768 class screens need denser chrome,
+   not browser zoom. These rules keep every page readable and avoid clipped panes. */
+@media (max-width:1100px), (max-height:820px){
+  body{font-size:13px}
+  .topbar{padding:7px 11px;gap:8px}
+  .topbar .brand-mark{min-width:150px;margin-right:5px}
+  .topbar .brand-mark img{width:114px;height:37px}
+  .topbar .brand-mark small{font-size:9.5px;max-width:150px;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .topright{gap:8px}
+
+  .view{padding:10px 12px}
+  .viewhead{gap:8px;margin-bottom:9px}
+  .viewhead h1{font-size:16px;gap:7px}
+  .viewhead .sub{font-size:11px;line-height:1.25;max-width:520px}
+  .viewhead .right{gap:6px}
+
+  .panel{padding:11px;margin-bottom:10px;border-radius:10px}
+  .panel h3{font-size:12.5px;margin-bottom:8px}
+  .card{padding:11px 12px;border-radius:10px}
+  .cards{gap:9px;margin-bottom:10px;grid-template-columns:repeat(auto-fill,minmax(150px,1fr))}
+  .card .vl{font-size:18px}
+
+  .btn{min-height:36px;padding:8px 11px;font-size:12px}
+  .btn.sm{min-height:30px;padding:5px 8px;font-size:11px}
+  .chip{padding:2px 7px;font-size:9.5px;letter-spacing:0}
+  input[type=text],input[type=number],input[type=date],input[type=datetime-local],input[type=time],input[type=search],input[type=tel],input[type=email],input[type=file],input:not([type]),textarea,select{
+    padding:8px 10px;font-size:12px;border-radius:8px
+  }
+  table{font-size:11.5px}
+  th{font-size:9.5px;padding:6px 7px}
+  td{padding:7px}
+  .empty{padding:18px 8px;font-size:11.5px}
+  .modal{max-height:calc(100dvh - 18px);padding:14px;border-radius:12px}
+  .modal h2{font-size:15px}
+  .modal label{margin:9px 0 5px}
+  .mfoot{gap:7px;margin-top:12px}
+  .mfoot .btn{padding:9px}
+}
+
+@media (max-width:760px){
+  .viewhead .right{width:100%;margin-left:0;justify-content:flex-start}
+  .viewhead .sub{width:100%}
+}

@@ -17,13 +17,20 @@ body{height:auto;min-height:100vh;min-height:100dvh;overflow:auto;display:flex;f
 .dev.disabled:hover{border-color:var(--border);transform:none}
 .dev .ic{font-size:38px}
 .dev h2{font-size:16px;font-weight:800;margin:12px 0 5px}
-.dev p{color:var(--muted);font-size:12.5px;line-height:1.5}
+.dev p{color:var(--muted);font-size:12.5px;line-height:1.5;overflow-wrap:break-word;word-break:break-word}
 .dev .go{margin-top:14px;color:var(--brand);font-weight:700;font-size:12.5px}
+.branch-picker{display:flex;align-items:center;justify-content:center;gap:8px;margin:-24px auto 28px;color:var(--muted);font-size:12px;font-weight:750}
+.branch-picker span{font-size:11px;font-weight:850;text-transform:uppercase;color:var(--faint);letter-spacing:.35px;white-space:nowrap}
+.branch-picker select{width:auto;min-width:156px;max-width:240px;height:30px;border-radius:9px;padding:0 30px 0 10px;background:#fff;font-size:12px;font-weight:850;color:var(--text)}
+.launcher-logout{height:30px;border-radius:9px;padding:0 9px;background:transparent;border:1px solid var(--border2);color:var(--muted);font-size:11px;font-weight:800}
+.launcher-logout:hover{border-color:var(--late);color:var(--late);background:var(--late-bg)}
 .foot{text-align:center;color:var(--faint);font-size:11.5px;margin-top:26px}
+@media(max-width:560px){body{padding:18px}.branch-picker{margin-top:-18px;gap:7px;flex-wrap:wrap}.branch-picker select{height:32px;max-width:calc(100vw - 108px)}.launcher-logout{height:32px}}
 </style></head>
 <body>
 <div class="hub">
   <div class="brand"><img src="/assets/logo.png" alt="Dan — Góc Bếp Bon Appétit" onerror="this.style.display='none'"></div>
+  <div id="branchPicker"></div>
   <div class="grid" id="appGrid">
     <a class="dev" href="/ipad"><div class="ic">📱</div><h2>Customer iPad</h2><p>Khách tự chọn món, topping, ghi chú, gửi bếp, gọi nhân viên, yêu cầu thanh toán.</p><div class="go">Mở thiết bị →</div></a>
     <a class="dev" href="/pos"><div class="ic">💳</div><h2>POS Cashier</h2><p>Sơ đồ bàn, mở bill, theo dõi món, discount, thanh toán nhiều phương thức, in receipt.</p><div class="go">Mở thiết bị →</div></a>
@@ -36,12 +43,41 @@ body{height:auto;min-height:100vh;min-height:100dvh;overflow:auto;display:flex;f
   </div>
   <p class="foot">Mẹo: mở các tab cạnh nhau → order ở iPad sẽ hiện ngay ở KDS, POS và Quản lý nhờ WebSocket.<br>
   📲 Muốn xem trong khung iPad mô phỏng? Mở <a href="/sim" style="color:var(--brand);font-weight:700">iPad Simulator →</a><br>
-  🔐 Trang nhân viên (POS/Retail/Kho/Quản lý/Online) yêu cầu đăng nhập PIN — Chủ quán <b>1234</b> · Quản lý <b>2222</b> · Thu ngân <b>1111</b> · Bếp <b>3333</b> · Kho <b>4444</b></p>
+  🔐 Trang nhân viên (POS/Retail/Kho/Quản lý/Online) yêu cầu đăng nhập PIN 4 số — Chủ quán <b>1234</b> · Quản lý <b>2222</b> · Thu ngân <b>1111</b> · Bếp <b>3333</b> · Kho <b>4444</b></p>
 </div>
 <script type="module">
-import { api, requireLogin, esc } from '/shared/client.js';
+import { api, requireLogin, esc, syncBranches, getBranches, selectedBranch, setBranchId, getUser, logout } from '/shared/client.js';
 
-await requireLogin();
+async function renderBranchPicker(){
+  try { await syncBranches(); } catch {}
+  const branches = getBranches();
+  const host = document.getElementById('branchPicker');
+  if (!host || !branches.length) return;
+  const current = selectedBranch();
+  const user = getUser();
+  host.innerHTML = `<div class="branch-picker">
+    <span>Chi nhánh</span>
+    <select id="launcherBranch" aria-label="Chi nhánh">${branches.map(b=>`<option value="${esc(b.id)}" ${b.id===current.id?'selected':''}>${esc(b.name||b.code||b.id)}</option>`).join('')}</select>
+    ${user ? `<button class="launcher-logout" id="launcherLogout" type="button" title="Đăng xuất ${esc(user.name||user.username||'')}">Đăng xuất</button>` : ''}
+  </div>`;
+  host.querySelector('#launcherBranch').onchange = (e) => {
+    const next = e.target.value;
+    if (next === current.id) return;
+    setBranchId(next);
+    localStorage.removeItem('auth_token');
+    localStorage.removeItem('auth_user');
+    localStorage.removeItem('auth_perms');
+    sessionStorage.removeItem('adminActiveView');
+    sessionStorage.removeItem('settingsActiveTab');
+    location.reload();
+  };
+  const logoutBtn = host.querySelector('#launcherLogout');
+  if (logoutBtn) logoutBtn.onclick = () => logout();
+}
+
+await renderBranchPicker();
+await requireLogin({ branchLocked: true });
+await renderBranchPicker();
 const grid=document.getElementById('appGrid');
 grid.innerHTML='<div class="empty">Đang tải ứng dụng...</div>';
 try{

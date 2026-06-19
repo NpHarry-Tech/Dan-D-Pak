@@ -29,3 +29,98 @@ For every meaningful change, append a changelog entry in the PR/commit notes or 
 ## Current Change Note
 
 This restructuring pass adds docs, config/adapters, frontend API/realtime seams, VPS scaffolding, and protected-zone warnings. It does not intentionally change order/payment/inventory business behavior.
+
+## 2026-06-18 Warehouse Channel Configuration
+
+- Summary: Added warehouse-to-sales-channel configuration, moved warehouse create/config controls into Settings, and improved the Warehouse stock screen search/filter UI.
+- Files changed: `server/db.js`, `server/services/inventory.js`, `web/admin.html`, `web/warehouse.html`, `docs/CHANGELOG_WORKFLOW.md`.
+- Protected domains touched: warehouse configuration, product/SKU master visibility, inventory read UI.
+- Database impact: adds `warehouses.sales_channels_json`; no stock quantity, lot, movement, order, or payment records are changed.
+- API contract impact: `POST /warehouses` and `POST /warehouses/:id/update` now require `security_pin`/PIN from an active Owner, Manager, or Thủ kho account.
+- Deployment impact: backend restart required so the SQLite migration can add the new column.
+- Manual tests: run syntax checks, verify `/health`, open `/warehouse`, open `/settings?tab=warehouse`, read `/api/warehouses?all=1`, confirm missing/wrong PIN is rejected, and confirm a no-op update with Owner PIN succeeds.
+
+## 2026-06-18 POS 1024x768 Responsive Layout
+
+- Summary: Added compact responsive breakpoints for 1024x768 POS terminals across shared chrome, BCM Retail POS, FnB POS, and Warehouse screens.
+- Files changed: `web/shared/app.css`, `web/retail.html`, `web/pos.html`, `web/warehouse.html`, `docs/CHANGELOG_WORKFLOW.md`.
+- Protected domains touched: UI only; no order, payment, stock, lot, warehouse, or customer data changes.
+- Deployment impact: static frontend refresh only.
+- Manual tests: run frontend module syntax checks and verify `/retail`, `/pos`, `/warehouse`, `/settings?tab=warehouse` return 200 locally.
+
+## 2026-06-18 Retail POS UX Polish
+
+- Summary: Tightened BCM Retail POS layout, unified product card image/placeholder rendering, added DanDPak branded empty-cart state, and renumbered bill tabs after checkout/close.
+- Files changed: `web/retail.html`, `docs/CHANGELOG_WORKFLOW.md`.
+- Protected domains touched: UI state only; checkout API behavior and inventory quantities unchanged.
+- Manual tests: run Retail module syntax check and verify `/retail` returns 200 locally.
+
+## 2026-06-18 FnB POS UX Polish
+
+- Summary: Tightened POS Cashier table/bill layout, added DanDPak branded empty-bill states, clearer floor status counts, and more consistent table cards for POS terminal screens.
+- Files changed: `web/pos.html`, `docs/CHANGELOG_WORKFLOW.md`.
+- Protected domains touched: UI state only; order/payment APIs and table business rules unchanged.
+- Manual tests: run POS module syntax check and verify `/pos` returns 200 locally.
+
+## 2026-06-18 Warehouse UX Cleanup
+
+- Summary: Removed warehouse channel/settings prompts from the Warehouse screen and tightened the stock UI with active-warehouse status pills, clickable quick-filter chips, cleaner search/filter layout, and clearer empty states.
+- Files changed: `web/warehouse.html`, `docs/CHANGELOG_WORKFLOW.md`.
+- Protected domains touched: UI only; warehouse configuration remains managed from Settings.
+- Manual tests: run Warehouse module syntax check and verify `/warehouse` and `/settings?tab=warehouse` return 200 locally.
+
+## 2026-06-18 Warehouse Config PIN UX
+
+- Summary: Changed the warehouse configuration re-auth prompt in Settings to accept only a 4-digit numeric PIN and request the numeric keypad on touch/POS screens.
+- Files changed: `web/admin.html`, `docs/CHANGELOG_WORKFLOW.md`.
+- Protected domains touched: UI validation for warehouse configuration re-auth only; backend permissions unchanged.
+- Manual tests: run Admin module syntax check and verify `/admin` returns 200 locally.
+
+## 2026-06-18 Shared 4-Digit PIN Pad
+
+- Summary: Added a reusable iPhone-style 4-digit PIN pad module and applied it to staff login, Admin re-auth prompts, POS sent-item cancellation, and iPad staff unlock.
+- Files changed: `web/shared/client.js`, `web/admin.html`, `web/pos.html`, `web/ipad.html`, `web/index.html`, `server/services/auth.js`, `server/services/settings.js`, `docs/CHANGELOG_WORKFLOW.md`.
+- Protected domains touched: authentication UI and PIN validation; role/permission checks are unchanged.
+- API contract impact: staff user PINs and iPad staff unlock PIN now validate as exactly 4 digits.
+- Manual tests: run frontend module syntax checks, backend syntax checks, and verify `/`, `/admin`, `/pos`, and `/ipad` return 200 locally.
+
+## 2026-06-18 Retail Warehouse Channel Filtering
+
+- Summary: Retail POS now loads and scans SKUs only from active retail warehouses connected to the `retail` sales channel, and the warehouse Settings save button is enabled only after actual form changes.
+- Files changed: `server/services/inventory.js`, `server/api.js`, `web/retail.html`, `web/admin.html`, `docs/CHANGELOG_WORKFLOW.md`.
+- Protected domains touched: SKU visibility by warehouse channel and warehouse configuration UI; stock quantities, lots, checkout totals, and payments are unchanged.
+- API contract impact: `GET /skus` and `GET /skus/barcode/:code` support optional `channel=retail` filtering.
+- Deployment impact: backend restart required so Retail POS uses the new filtered API behavior.
+- Manual tests: restart local server, run backend syntax checks, verify `/api/warehouses?all=1`, verify `/api/skus?channel=retail` returns 0 when only empty `Showroom BCM` is connected to Retail POS, and verify `/retail` and `/admin` return 200 locally.
+
+## 2026-06-19 Multi-Store Branch Context
+
+- Summary: Added branch/store context across REST, realtime, Settings, login, POS, Retail, Warehouse, reports, shifts, cash drawer, print jobs, online orders, and invoices.
+- Files changed: `server/db.js`, `server/api.js`, `server/services/auth.js`, `server/services/branches.js`, `server/services/inventory.js`, `server/services/orders.js`, `web/shared/client.js`, `web/shared/app.css`, `web/admin.html`, `docs/CHANGELOG_WORKFLOW.md`.
+- Protected domains touched: branch/store configuration, user access scope, warehouse/SKU visibility, order/payment/report reads by branch.
+- Database impact: adds branch metadata columns and `users.branch_access_json`; creates branch-specific default warehouses/tables for active branches.
+- API contract impact: clients send `x-branch-id`; new `/branches` public read plus `/settings/branches` create/update endpoints protected by `settings.branches`.
+- Deployment impact: backend restart required for SQLite migration and branch bootstrap.
+- Manual tests: run backend/client syntax checks, login with a branch selected, verify `/api/skus?channel=retail` and reports change with `x-branch-id`, and verify Settings can create/update a branch and assign user branch access.
+
+## 2026-06-19 Launcher Branch + Granular Admin Permissions
+
+- Summary: Moved branch selection to the launcher before PIN login, removed the top-right branch switcher, made the Admin dashboard available to logged-in staff, and gated Reports/Settings by granular permissions.
+- Files changed: `server/api.js`, `server/services/auth.js`, `server/services/modules.js`, `web/shared/client.js`, `web/shared/modules.js`, `web/shared/app.css`, `web/index.html`, `web/admin.html`, `docs/CHANGELOG_WORKFLOW.md`.
+- Protected domains touched: authentication context, branch/store selection, permission catalog, report access control.
+- API contract impact: report center endpoints now accept either `reports` or the matching `report.<type>` permission; `/api/modules` treats Admin as a general dashboard and Settings as visible only for real settings permissions.
+- Manual tests: run backend/client syntax checks, parse Admin/Launcher inline modules, restart local server, verify `/`, `/admin`, `/retail`, `/pos`, `/warehouse` return 200, verify cashier can see Admin but receives 403 on report catalog, and verify Owner sees Settings plus all `report.*` permissions.
+
+## 2026-06-19 Settings Standalone Module
+
+- Summary: Turned Settings into a standalone launcher module at `/settings`, removed the Settings button from the Admin dashboard, and kept Settings out of the topbar by request.
+- Files changed: `server/index.js`, `server/services/modules.js`, `web/shared/modules.js`, `web/admin.html`, `web/settings.html`, `docs/CHANGELOG_WORKFLOW.md`.
+- Protected domains touched: navigation and permission-gated Settings shell only; settings APIs and stored configuration data unchanged.
+- Manual tests: run syntax checks, parse Admin/Launcher inline modules, restart local server, verify `/admin`, `/settings`, and `/settings?tab=invoices` return 200, verify Settings module href is `/settings`, and verify topbar does not include Settings.
+
+## 2026-06-19 Global Kiosk Interaction Hardening
+
+- Summary: Disabled text selection, long-press/context menus, drag, copy/cut outside form fields, and common DevTools keyboard shortcuts across the shared web UI.
+- Files changed: `web/shared/app.css`, `web/shared/client.js`, `web/sim.html`, `docs/CHANGELOG_WORKFLOW.md`.
+- Protected domains touched: frontend interaction hardening only; real data protection remains enforced by authenticated, permission-gated APIs.
+- Manual tests: run client syntax checks, parse key HTML module scripts, and verify `/`, `/admin`, `/ipad`, `/sim`, `/retail`, `/pos`, `/warehouse`, and `/settings` return 200 locally.

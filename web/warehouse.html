@@ -7,9 +7,10 @@
 <script src="/runtime-config.js"></script>
 <script src="/socket.io/socket.io.js"></script>
 <style>
-.whbar{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 12px}
-.whpill{padding:9px 13px;border-radius:10px;background:var(--surface);border:1px solid var(--border);color:var(--muted);font-weight:700;font-size:12px}
-.whpill.active{background:var(--brand-dim);border-color:rgba(52,210,238,.4);color:var(--brand)}
+.whbar{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 10px}
+.whpill{min-height:34px;padding:8px 12px;border-radius:10px;background:var(--surface);border:1px solid var(--border);color:var(--muted);font-weight:750;font-size:12px;display:inline-flex;align-items:center;gap:7px;transition:.12s}
+.whpill:hover{border-color:var(--brand);color:var(--text)}
+.whpill.active{background:var(--brand-dim);border-color:rgba(52,210,238,.4);color:var(--brand);box-shadow:0 0 0 2px rgba(52,210,238,.08)}
 .subtabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px}
 .subtab{padding:8px 12px;border-radius:9px;background:var(--surface);border:1px solid var(--border);color:var(--muted);font-size:12.5px;font-weight:700}
 .subtab.active{background:var(--surface3);color:var(--text);border-color:var(--border2)}
@@ -32,9 +33,57 @@
 .skucell{display:flex;align-items:center;gap:9px;min-width:220px}
 .skuimg{width:42px;height:42px;border-radius:8px;object-fit:cover;background:var(--surface2);border:1px solid var(--border);flex:0 0 auto}
 .skuico{width:42px;height:42px;border-radius:8px;background:var(--surface2);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:20px;flex:0 0 auto}
-.whmanage{display:flex;flex-direction:column;gap:8px;margin-top:14px}
-.whrow{display:grid;grid-template-columns:1fr auto auto;gap:8px;align-items:center;padding:9px 0;border-bottom:1px dashed var(--border)}
-.whrow:last-child{border-bottom:none}
+.warehouse-panel{padding:0;overflow:hidden}
+.whpanel-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 16px;border-bottom:1px solid var(--border)}
+.whpanel-title{min-width:220px}
+.wh-kicker{font-size:10.5px;font-weight:800;letter-spacing:.6px;text-transform:uppercase;color:var(--muted);margin-bottom:3px}
+.whpanel-head h3{margin:0;font-size:16px}
+.wh-meta{font-size:11.5px;color:var(--faint);margin-top:4px;font-weight:650}
+.whpanel-actions{display:flex;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:wrap;margin-left:auto}
+.stock-quick{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+.stock-quick .stat{display:inline-flex;align-items:center;gap:5px;border:1px solid var(--border);background:var(--surface2);border-radius:999px;padding:5px 9px;font-size:11px;color:var(--muted);font-weight:750;line-height:1;min-height:27px;cursor:pointer;transition:.12s}
+.stock-quick .stat:hover{border-color:var(--brand);color:var(--text)}
+.stock-quick .stat.active{border-color:rgba(52,210,238,.45);background:var(--brand-dim);color:var(--brand)}
+.stock-quick .stat b{font-family:var(--mono);color:var(--text)}
+.stock-quick .warn b{color:var(--late)}
+.stock-quick .ok b{color:var(--done)}
+.stock-toolbar{display:grid;grid-template-columns:minmax(280px,1fr) minmax(170px,220px) auto;gap:8px;align-items:center;margin:12px 16px 10px}
+.stock-toolbar input,.stock-toolbar select{background:var(--bg);border:1px solid var(--border2);border-radius:9px;color:var(--text);padding:10px 12px;font-size:13px;font-family:var(--font)}
+.stock-toolbar input:focus,.stock-toolbar select:focus{outline:none;border-color:var(--brand)}
+.stock-summary{font-size:11.5px;color:var(--muted);font-weight:700;margin:0 16px 8px}
+.stock-table-wrap{overflow:auto;border-top:1px solid var(--border)}
+.stock-actions{display:flex;gap:5px;flex-wrap:wrap;justify-content:flex-end;min-width:190px}
+.stock-empty{padding:34px 12px!important}
+@media(max-width:720px){.stock-toolbar{grid-template-columns:1fr}}
+@media(max-width:1180px), (max-height:820px){
+  .view{padding:9px 10px}
+  .viewhead{margin-bottom:8px}
+  .whbar{gap:6px;margin-bottom:8px}
+  .whpill{padding:7px 9px;border-radius:8px;font-size:11px}
+  .whpanel-head{padding:9px 12px;gap:8px}
+  .whpanel-head h3{font-size:14px}
+  .wh-kicker{font-size:9.5px}
+  .wh-meta{font-size:10.5px}
+  .whpanel-actions{gap:6px}
+  .stock-quick{gap:5px}
+  .stock-quick .stat{font-size:10px;padding:4px 7px;min-height:24px}
+  .subtabs{gap:5px;margin-bottom:9px;overflow-x:auto;flex-wrap:nowrap}
+  .subtab{padding:7px 9px;font-size:11px;white-space:nowrap}
+  .tools{gap:6px;margin-bottom:8px}
+  .stock-toolbar{grid-template-columns:minmax(220px,1fr) 150px auto;gap:6px;margin:8px 12px}
+  .stock-toolbar input,.stock-toolbar select{padding:8px 9px;font-size:12px}
+  .stock-summary{margin:0 12px 7px}
+  .skucell{min-width:180px;gap:7px}
+  .skuimg,.skuico{width:34px;height:34px;border-radius:7px;font-size:17px}
+  table{font-size:11.5px}
+}
+@media(max-width:820px){
+  .stock-toolbar{grid-template-columns:1fr}
+  .whpanel-head{align-items:flex-start;flex-direction:column}
+  .whpanel-actions{width:100%;justify-content:flex-start;margin-left:0}
+  .stock-quick{justify-content:flex-start}
+  .stock-actions{justify-content:flex-start}
+}
 </style></head>
 <body>
 <div id="top"></div>
@@ -43,7 +92,6 @@
     <h1>📦 Warehouse / Kho</h1>
     <div class="sub">Nhập hàng · xuất hàng · lot/HSD · kiểm kho · tách kho bếp và kho retail</div>
     <div class="right">
-      <button class="btn sm" id="warehouseBtn">➕ Tạo kho</button>
       <span id="alertChip"></span>
     </div>
   </div>
@@ -58,18 +106,18 @@ document.getElementById('top').innerHTML = topbar('warehouse');
 await requireModuleAccess('warehouse'); renderUserChip();
 
 const TABS = [
-  ['stock','Tồn kho'],
+  ['stock','Kho'],
   ['ops','Nhập / Xuất'],
   ['docs','Phiếu nhập/xuất'],
   ['count','Kiểm kho'],
   ['lots','Lot & HSD'],
   ['hist','Lịch sử'],
 ];
-let tab='stock', warehouses=[], activeWh='wh_kitchen', stock=[], lots=[], editingWarehouse=null;
+let tab='stock', warehouses=[], activeWh='wh_kitchen', stock=[], lots=[];
+let stockQuery='', stockFilter='all';
 let countSheet=[]; // KiotViet-style stocktake sheet: [{id,stock_type,name,unit,cost,lot_id,counted}]
 
 connect('warehouse', { 'inventory:updated':()=>load(), 'inventory:alert':a=>toast(`Tồn thấp: ${a.name} còn ${a.stock}${a.unit}`, true) });
-document.getElementById('warehouseBtn').onclick=()=>openWarehouseManager();
 
 async function load(){
   warehouses = await api('/warehouses');
@@ -99,7 +147,7 @@ function render(){
 }
 function renderWarehouses(){
   document.getElementById('warehouses').innerHTML = warehouses.map(w =>
-    `<button class="whpill ${w.id===activeWh?'active':''}" data-wh="${w.id}">${warehouseIcon(w)} ${esc(w.name)}</button>`).join('');
+    `<button class="whpill ${w.id===activeWh?'active':''}" data-wh="${w.id}" title="${esc(w.code||w.name)}"><span>${warehouseIcon(w)}</span>${esc(w.name)}</button>`).join('');
   document.querySelectorAll('.whpill').forEach(b=>b.onclick=()=>{activeWh=b.dataset.wh;load();});
 }
 function renderTabs(){
@@ -107,83 +155,121 @@ function renderTabs(){
   document.querySelectorAll('.subtab').forEach(b=>b.onclick=()=>{tab=b.dataset.t;render();});
 }
 
-async function openWarehouseManager(){
-  editingWarehouse=null;
-  const ov=document.createElement('div'); ov.className='overlay show'; document.body.appendChild(ov);
-  await renderWarehouseManager(ov);
-}
-
-async function renderWarehouseManager(ov){
-  const rows=await api('/warehouses?all=1');
-  const w=editingWarehouse||{};
-  ov.innerHTML=`<div class="modal" style="max-width:680px">
-    <h2>${editingWarehouse?'Sửa kho':'Tạo kho mới'}</h2>
-    <div class="sub">Admin hoặc nhân sự có quyền quản lý kho có thể tạo kho retail/showroom/kho bếp.</div>
-    <div class="formgrid">
-      <div><label>Tên kho</label><input id="whName" value="${esc(w.name||'')}" placeholder="VD: Showroom BCM"></div>
-      <div><label>Mã kho</label><input id="whCode" value="${esc(w.code||'')}" placeholder="Tự sinh nếu để trống"></div>
-      <div><label>Loại kho</label><select id="whType"><option value="retail" ${w.type!=='kitchen'?'selected':''}>Kho hàng retail</option><option value="kitchen" ${w.type==='kitchen'?'selected':''}>Kho bếp / vật dụng</option></select></div>
-      <div><label>Sắp xếp</label><input id="whSort" type="number" value="${w.sort??''}" placeholder="0"></div>
-      <div><label>Trạng thái</label><select id="whActive"><option value="1" ${w.active!==0?'selected':''}>Đang bật</option><option value="0" ${w.active===0?'selected':''}>Tắt kho</option></select></div>
-    </div>
-    <div class="mfoot">
-      <button class="btn" id="whReset">${editingWarehouse?'Bỏ sửa':'Làm mới'}</button>
-      <button class="btn primary" id="whSave">${editingWarehouse?'Lưu kho':'➕ Tạo kho'}</button>
-    </div>
-    <div class="whmanage">
-      <h3>Danh sách kho</h3>
-      ${rows.map(x=>`<div class="whrow">
-        <div>${warehouseIcon(x)} <b>${esc(x.name)}</b><br><span class="hint">${esc(x.code)} · ${x.type==='retail'?'Retail / showroom':'Bếp / vật dụng'} · ${x.active?'đang bật':'đang tắt'}</span></div>
-        <span class="chip ${x.active?'c-done':'c-muted'}">${x.active?'Bật':'Tắt'}</span>
-        <button class="btn sm" data-edit-wh="${x.id}">Sửa</button>
-      </div>`).join('') || '<div class="empty">Chưa có kho</div>'}
-    </div>
-    <div class="mfoot"><button class="btn primary" id="whClose">Đóng</button></div>
-  </div>`;
-  ov.querySelector('#whReset').onclick=()=>{editingWarehouse=null;renderWarehouseManager(ov);};
-  ov.querySelector('#whClose').onclick=()=>ov.remove();
-  ov.querySelector('#whSave').onclick=async()=>{
-    const sortText=ov.querySelector('#whSort').value.trim();
-    const body={
-      name:ov.querySelector('#whName').value.trim(),
-      code:ov.querySelector('#whCode').value.trim(),
-      type:ov.querySelector('#whType').value,
-      active:ov.querySelector('#whActive').value==='1',
-    };
-    if(sortText) body.sort=parseInt(sortText)||0;
-    if(!body.name) return toast('Nhập tên kho', true);
-    try{
-      if(editingWarehouse) await api('/warehouses/'+editingWarehouse.id+'/update',{method:'POST',body});
-      else await api('/warehouses',{method:'POST',body});
-      editingWarehouse=null; await load(); await renderWarehouseManager(ov); toast('Đã lưu kho');
-    }catch(e){ toast(e.message,true); }
-  };
-  ov.querySelectorAll('[data-edit-wh]').forEach(b=>b.onclick=()=>{editingWarehouse=rows.find(x=>x.id===b.dataset.editWh);renderWarehouseManager(ov);});
-}
-
 function renderStock(){
   const wh=curWh();
-  document.getElementById('panel').innerHTML = `<div class="panel">
-    <div class="tools">
-      <h3 style="margin-right:auto">Tồn hiện tại · ${esc(wh?.name||'')}</h3>
-      <button class="btn sm primary" id="newItem">${wh?.type==='retail'?'➕ Tạo SKU retail':'➕ Tạo item kho bếp'}</button>
+  const st=stockStats();
+  document.getElementById('panel').innerHTML = `<div class="panel warehouse-panel">
+    <div class="whpanel-head">
+      <div class="whpanel-title">
+        <div class="wh-kicker">${warehouseIcon(wh)} ${wh?.type==='retail'?'Kho retail / showroom':'Kho bếp / nguyên liệu'}</div>
+        <h3>Kho · ${esc(wh?.name||'')}</h3>
+        <div class="wh-meta">${esc(wh?.code||'')} · ${st.total} mặt hàng trong kho hiện tại</div>
+      </div>
+      <div class="whpanel-actions">
+        <div class="stock-quick" role="group" aria-label="Lọc nhanh tồn kho">
+          ${stockFilterChip('all','Tổng',st.total,'ok')}
+          ${stockFilterChip('low','Tồn thấp',st.low,st.low?'warn':'')}
+          ${stockFilterChip('nostock','Hết hàng',st.out,st.out?'warn':'')}
+          ${stockFilterChip('lot_expiry','Lot/HSD',st.lotTracked)}
+          ${stockFilterChip('expiring','Gần/Hết HSD',st.expiring,st.expiring?'warn':'')}
+        </div>
+        <button class="btn sm primary" id="newItem">${wh?.type==='retail'?'➕ Tạo SKU retail':'➕ Tạo item kho bếp'}</button>
+      </div>
     </div>
-    <table><thead><tr><th>Mặt hàng</th><th>Loại</th><th>Tồn</th><th>Tối thiểu</th><th>Lot/HSD</th><th>Thao tác</th></tr></thead>
-    <tbody>${stock.map(s=>`<tr>
+    <div class="stock-toolbar">
+      <input id="stockSearch" value="${esc(stockQuery)}" placeholder="Tìm tên, mã vạch, SKU, nhóm, loại, nhà cung cấp, tồn kho...">
+      <select id="stockFilter">
+        <option value="all" ${stockFilter==='all'?'selected':''}>Tất cả hàng</option>
+        <option value="low" ${stockFilter==='low'?'selected':''}>Sắp hết / dưới tối thiểu</option>
+        <option value="nostock" ${stockFilter==='nostock'?'selected':''}>Đang hết hàng</option>
+        <option value="lot_expiry" ${stockFilter==='lot_expiry'?'selected':''}>Có lot / HSD</option>
+        <option value="expiring" ${stockFilter==='expiring'?'selected':''}>Lot gần / hết HSD</option>
+        <option value="sku" ${stockFilter==='sku'?'selected':''}>SKU retail</option>
+        <option value="ingredient" ${stockFilter==='ingredient'?'selected':''}>Nguyên liệu FnB</option>
+        <option value="supply" ${stockFilter==='supply'?'selected':''}>Vật dụng bếp</option>
+      </select>
+      <button class="btn" id="stockClear" type="button">Xóa lọc</button>
+    </div>
+    <div class="stock-summary" id="stockCount"></div>
+    <div class="stock-table-wrap"><table><thead><tr><th>Mặt hàng</th><th>Loại</th><th>Tồn</th><th>Tối thiểu</th><th>Lot/HSD</th><th>Thao tác</th></tr></thead>
+    <tbody id="stockBody"></tbody></table></div>
+  </div>`;
+  document.getElementById('newItem').onclick=()=>openItemEditor();
+  document.querySelectorAll('[data-stock-filter]').forEach(b=>b.onclick=()=>{
+    stockFilter=b.dataset.stockFilter;
+    renderStock();
+  });
+  document.getElementById('stockSearch').oninput=(e)=>{stockQuery=e.target.value;drawStockRows();};
+  document.getElementById('stockFilter').onchange=(e)=>{stockFilter=e.target.value;renderStock();};
+  document.getElementById('stockClear').onclick=()=>{stockQuery='';stockFilter='all';renderStock();};
+  drawStockRows();
+}
+
+function stockFilterChip(key,label,count,extra=''){
+  return `<button class="stat ${extra} ${stockFilter===key?'active':''}" type="button" data-stock-filter="${key}" title="Lọc: ${esc(label)}">${esc(label)} <b>${count}</b></button>`;
+}
+
+function stockStats(){
+  return {
+    total: stock.length,
+    low: stock.filter(s=>s.low).length,
+    out: stock.filter(s=>Number(s.stock||0)<=0).length,
+    lotTracked: stock.filter(s=>s.track_lot || s.expiry_required).length,
+    expiring: stock.filter(hasExpiringLot).length,
+  };
+}
+
+function filteredStock(){
+  const q=stockQuery.trim().toLowerCase();
+  return stock
+    .filter(s=>{
+      if(stockFilter==='low') return !!s.low;
+      if(stockFilter==='nostock') return Number(s.stock||0)<=0;
+      if(stockFilter==='lot_expiry') return !!s.track_lot || !!s.expiry_required;
+      if(stockFilter==='expiring') return hasExpiringLot(s);
+      if(stockFilter==='lot') return !!s.track_lot;
+      if(stockFilter==='expiry') return !!s.expiry_required;
+      if(stockFilter==='sku') return s.stock_type==='sku';
+      if(stockFilter==='ingredient') return s.item_type==='ingredient';
+      if(stockFilter==='supply') return s.item_type==='supply';
+      return true;
+    })
+    .filter(s=>!q || stockSearchText(s).includes(q));
+}
+
+function hasExpiringLot(s){
+  return lots.some(l=>l.item_id===s.id && l.expiry_date && daysLeft(l.expiry_date)<=7);
+}
+
+function stockSearchText(s){
+  const wh=warehouses.find(w=>w.id===s.warehouse_id) || curWh() || {};
+  return [
+    s.id,s.name,s.barcode,s.category,s.supplier,s.source_url,s.unit,s.stock,s.min_stock,
+    s.stock_type,s.item_type,kindLabel(s),wh.name,wh.code
+  ].filter(v=>v!==undefined&&v!==null).join(' ').toLowerCase();
+}
+
+function drawStockRows(){
+  const rows=filteredStock();
+  const body=document.getElementById('stockBody');
+  if(!body) return;
+  document.getElementById('stockCount').textContent = `Hiển thị ${rows.length}/${stock.length} mặt hàng${stockQuery ? ` · đang tìm "${stockQuery}"` : ''}`;
+  const emptyText = stock.length ? 'Không tìm thấy mặt hàng phù hợp trong kho này' : 'Chưa có mặt hàng trong kho này';
+  body.innerHTML = rows.map(s=>`<tr>
       <td><div class="skucell">${stockVisual(s)}<div>${esc(s.name)} ${s.low?'<span class="chip c-late">Thấp</span>':''}<br><span class="hint">${esc(s.barcode||s.category||'')}</span></div></div></td>
       <td><span class="typetag">${kindLabel(s)}</span></td>
       <td style="font-family:var(--mono);color:${s.low?'var(--late)':'var(--text)'}">${fmtQty(s.stock)} ${esc(s.unit)}</td>
       <td style="font-family:var(--mono)">${fmtQty(s.min_stock)} ${esc(s.unit)}</td>
       <td>${s.track_lot?'<span class="chip c-doing">Theo lot</span>':'<span class="chip c-muted">Không bắt buộc</span>'} ${s.expiry_required?'<span class="chip c-late">HSD</span>':''}</td>
       <td>
+        <div class="stock-actions">
         <button class="btn sm" data-edit="${s.id}">Sửa</button>
         <button class="btn sm" data-in="${s.id}">Nhập</button>
         <button class="btn sm danger" data-out="${s.id}">Xuất</button>
         <button class="btn sm danger" data-del="${s.id}">Xóa</button>
+        </div>
       </td>
-    </tr>`).join('') || '<tr><td colspan="6" class="empty">Chưa có mặt hàng trong kho này</td></tr>'}</tbody></table>
-  </div>`;
-  document.getElementById('newItem').onclick=()=>openItemEditor();
+    </tr>`).join('') || `<tr><td colspan="6" class="empty stock-empty">${emptyText}</td></tr>`;
   document.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>openItemEditor(stock.find(s=>s.id===b.dataset.edit)));
   document.querySelectorAll('[data-in]').forEach(b=>b.onclick=()=>openMove(stock.find(s=>s.id===b.dataset.in),'receipt'));
   document.querySelectorAll('[data-out]').forEach(b=>b.onclick=()=>openMove(stock.find(s=>s.id===b.dataset.out),'issue'));

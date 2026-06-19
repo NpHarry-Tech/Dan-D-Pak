@@ -251,6 +251,16 @@
 .modal-x:hover{background:var(--late);color:#fff;border-color:var(--late)}
 .setting-row{display:grid;grid-template-columns:1fr 130px 90px 112px;gap:8px;align-items:center;padding:8px 0;border-bottom:1px dashed var(--border)}.setting-row:last-child{border-bottom:none}
 .setting-card{background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:12px;margin-bottom:10px}
+.warehouse-settings-grid{display:grid;grid-template-columns:minmax(280px,.95fr) minmax(360px,1.35fr);gap:12px;align-items:start}
+.wh-settings-list{display:flex;flex-direction:column;gap:8px}
+.wh-settings-row{display:grid;grid-template-columns:1fr auto auto;gap:9px;align-items:center;background:var(--surface);border:1px solid var(--border);border-radius:9px;padding:10px}
+.wh-channel-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px;margin-top:6px}
+.wh-channel-box{display:flex;align-items:center;gap:8px;border:1px solid var(--border);background:var(--surface);border-radius:9px;padding:8px 10px;font-size:12px;font-weight:750;color:var(--text);cursor:pointer}
+.wh-channel-box input{margin:0;width:16px;height:16px;accent-color:var(--brand)}
+.wh-channel-box:has(input:checked){border-color:var(--brand);background:var(--brand-dim);color:var(--brand)}
+.wh-channel-badges{display:flex;gap:5px;flex-wrap:wrap;margin-top:6px}
+.wh-form-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+@media(max-width:980px){.warehouse-settings-grid{grid-template-columns:1fr}.wh-settings-row{grid-template-columns:1fr auto}.wh-settings-row .btn{grid-column:1/-1}}
 /* Danh mục in: mỗi dòng là 1 lưới cố định, mọi ô cao bằng nhau và thẳng hàng đáy. */
 .printer-grid{display:flex;flex-direction:column;gap:10px;margin-bottom:14px}
 .printer-row{display:grid;grid-template-columns:minmax(92px,.8fr) minmax(190px,1.7fr) minmax(120px,1fr) minmax(128px,1.05fr) minmax(112px,.9fr) 126px 126px 86px;gap:12px;align-items:end;background:var(--surface2);border:1px solid var(--border);border-radius:11px;padding:14px}
@@ -954,7 +964,7 @@
   <div class="viewhead">
     <h1>📊 Quản lý</h1>
     <div class="sub">District 1 - HCMC · realtime sales, menu, inventory</div>
-    <div class="right"><button class="btn sm" id="reportsBtn" title="Báo cáo">📄 Báo cáo</button><button class="btn sm" id="settingsBtn" title="Cài đặt">⚙ Cài đặt</button><span class="onlinedot"><i></i><span>Online</span></span></div>
+    <div class="right"><button class="btn sm" id="reportsBtn" title="Báo cáo">📄 Báo cáo</button><span class="onlinedot"><i></i><span>Online</span></span></div>
   </div>
 
   <div class="cards" id="kpis"></div>
@@ -994,9 +1004,32 @@
 </div>
 
 <script type="module">
-import { api, apiUrl, connect, money, toast, esc, startClock, topbar, requireModuleAccess, renderUserChip, hasPerm, getLang, getToken } from '/shared/client.js';
-document.getElementById('top').innerHTML = topbar('admin');
-await requireModuleAccess('admin'); renderUserChip();
+import { api, apiUrl, connect, money, toast, esc, startClock, topbar, requireLogin, renderUserChip, hasPerm, getPerms, getLang, getToken, requestPinCode } from '/shared/client.js';
+const isSettingsRoute = window.location.pathname.replace(/\/+$/, '') === '/settings';
+document.getElementById('top').innerHTML = topbar(isSettingsRoute ? 'settings' : 'admin');
+const bootUrlParams = new URLSearchParams(window.location.search);
+const bootViewParam = isSettingsRoute ? 'settings' : bootUrlParams.get('view');
+const bootTabParam = bootUrlParams.get('tab');
+if (bootViewParam) {
+  sessionStorage.setItem('adminActiveView', bootViewParam);
+  if (bootTabParam) sessionStorage.setItem('settingsActiveTab', bootTabParam);
+  else sessionStorage.removeItem('settingsActiveTab');
+}
+const settingsShellPerms = ['settings.users','settings.perms','settings.branches','settings.sync','settings.integrations','settings.connections','settings.operations','settings.invoices','settings.einvoice','settings.print','settings.devices','settings.menu','settings.bookmenu','settings.tables','settings.printers','settings.audit','warehouse.manage'];
+const wantsSettingsShell = isSettingsRoute || bootViewParam === 'settings';
+const canOpenSettingsShell = () => hasPerm('settings.manage') || settingsShellPerms.some(p => hasPerm(p));
+await requireLogin();
+if (wantsSettingsShell && !canOpenSettingsShell()) {
+  document.body.innerHTML = `<div class="view"><div class="panel" style="max-width:520px;margin:60px auto;text-align:center">
+    <h3>Không có quyền truy cập</h3>
+    <div class="empty">Tài khoản này chưa có quyền mở Cài đặt.</div>
+    <a class="btn primary" href="/" style="display:inline-flex;margin-top:12px">Về màn hình ứng dụng</a>
+  </div></div>`;
+  throw new Error('No settings access');
+}
+renderUserChip();
+const settingsShellOnly = wantsSettingsShell;
+const canOpenReports = () => hasPerm('reports') || getPerms().some(p => p.startsWith('report.'));
 
 let menu={categories:[],items:[]}, ingredients=[];
 
@@ -1353,6 +1386,7 @@ function auditMessage(r){
     'inventory.receive':()=>({text:`Đã nhập thêm ${d.qty??0} đơn vị cho nguyên liệu/vật dụng ${d.item||''}.`,meta:d.lot?`Lot nhập: ${d.lot}.`:''}),
     'inventory.issue':()=>({text:`Đã xuất/trừ ${d.qty??0} đơn vị khỏi nguyên liệu/vật dụng ${d.item||''}.`,meta:d.type==='stocktake'?'Lý do: điều chỉnh sau kiểm kho.':(d.type?`Lý do: ${d.type}.`:'')}),
     'stock.transfer':()=>({text:`Đã chuyển ${d.qty??0} đơn vị hàng từ ${wh(d.from)} sang ${wh(d.to)}.`,meta:`Mặt hàng: ${d.item||'không rõ'}.`}),
+    'warehouse.config.reauth':()=>({text:`Đã xác nhận PIN để ${d.action==='create'?'tạo kho mới':'cấu hình kho'}.`,meta:`Người duyệt: ${d.approved_by||'không rõ'}${d.warehouse_id?`; kho: ${d.warehouse_id}`:''}.`}),
     'warehouse.create':()=>({text:`Đã tạo kho mới "${d.name||d.code||d.id}".`,meta:`Loại kho: ${d.type==='kitchen'?'kho bếp':'kho retail/showroom'}.`}),
     'warehouse.update':()=>({text:`Đã cập nhật kho "${d.name||d.code||d.id}".`,meta:`Trạng thái: ${d.active===0?'đang tắt':'đang bật'}; loại kho: ${d.type==='kitchen'?'kho bếp':'kho retail/showroom'}.`}),
     'menu.create':()=>({text:`Đã tạo món FnB "${d.name||d.id||'không rõ'}".`}),
@@ -1559,8 +1593,7 @@ if (btnManageCats) btnManageCats.onclick=openCategoryManager;
 const btnAddItem = document.getElementById('addItem');
 if (btnAddItem) btnAddItem.onclick=()=>{ if(!menu.categories?.length) return toast('Hãy tạo danh mục trước (🗂️ Danh mục)',true); openItemForm(null); };
 document.getElementById('reportsBtn').onclick=openReportsCenter;
-if(!hasPerm('reports')) document.getElementById('reportsBtn').style.display='none';
-document.getElementById('settingsBtn').onclick=openSettings;
+if(!canOpenReports()) document.getElementById('reportsBtn').style.display='none';
 
 function reportDateValue(d){
   const x=d instanceof Date?new Date(d):new Date(d||Date.now());
@@ -1592,7 +1625,7 @@ function reportPreviewHtml(report){
   ${(report.sections||[]).map(reportRowsHtml).join('')||'<div class="report-empty">Không có dữ liệu trong kỳ này</div>'}`;
 }
 async function openReportsCenter(){
-  if(!hasPerm('reports')){
+  if(!canOpenReports()){
     sessionStorage.removeItem('adminActiveView');
     return toast('Bạn không có quyền xem báo cáo',true);
   }
@@ -1640,13 +1673,23 @@ async function openReportsCenter(){
   }
   async function loadCatalog(){
     state.catalog=await api('/reports/catalog');
-    if(!state.catalog.reports?.some(r=>r.key===state.selected)) state.selected=state.catalog.reports?.[0]?.key||'sales_overview';
+    const reports = state.catalog.reports || [];
+    if(!reports.length) {
+      state.selected = '';
+      state.error = 'Tài khoản này chưa được cấp loại báo cáo nào.';
+      return;
+    }
+    if(!reports.some(r=>r.key===state.selected)) state.selected=reports[0].key;
   }
   function syncReportSelection(){
     ov.querySelectorAll('[data-report-type]').forEach(b=>b.classList.toggle('on',b.dataset.reportType===state.selected));
   }
   async function loadPreview(){
     const previewEl = ov.querySelector('.report-preview');
+    if (!state.selected) {
+      if (previewEl) previewEl.innerHTML = '<div class="report-empty">Tài khoản này chưa được cấp loại báo cáo nào.</div>';
+      return;
+    }
     if (previewEl) {
       previewEl.innerHTML = '<div class="report-empty">Đang dựng báo cáo...</div>';
     }
@@ -1673,7 +1716,7 @@ async function openReportsCenter(){
     return `bao_cao.${format==='xls'?'xls':format}`;
   }
   async function fetchReportBlob(format){
-    const res=await fetch(apiUrl('/reports/export?'+query(format)),{headers:{'x-auth-token':getToken()||''}});
+    const res=await fetch(apiUrl('/reports/export?'+query(format)),{headers:{'x-auth-token':getToken()||'','x-branch-id':localStorage.getItem('active_branch_id')||'br1'}});
     if(!res.ok){
       let msg=res.statusText;
       try{ msg=(await res.clone().json()).error||msg; }catch{ msg=(await res.text())||msg; }
@@ -1710,6 +1753,7 @@ async function openReportsCenter(){
     rememberReportScroll();
     const groups=state.catalog?.groups||[], reports=state.catalog?.reports||[];
     const products=state.catalog?.products||[], warehouses=state.catalog?.warehouses||[];
+    const noReports=!reports.length;
     const activeReportLabel = reports.find(r=>r.key===state.selected)?.label || 'Chọn báo cáo';
     const reportTabMenuHtml = () => groups.length?groups.map(g=>`<div class="report-tab-group">${esc(g.label)}</div>${reports.filter(r=>r.group===g.key).map(r=>`<button type="button" class="report-tab-menu-item ${r.key===state.selected?'on':''}" data-report-type="${esc(r.key)}">${esc(r.label)}</button>`).join('')}`).join(''):'';
     ov.innerHTML=`<div class="modal report-modal">
@@ -1723,7 +1767,7 @@ async function openReportsCenter(){
         <div class="report-tab-menu" id="reportTabMenu">${reportTabMenuHtml()}</div>
       </div>
       <div class="report-layout">
-        <div class="report-sidebar">${groups.length?groups.map(g=>`<div class="report-group-title">${esc(g.label)}</div>${reports.filter(r=>r.group===g.key).map(r=>`<button class="report-item ${r.key===state.selected?'on':''}" data-report-type="${esc(r.key)}" type="button"><b>${esc(r.label)}</b><small>${esc(r.description)}</small></button>`).join('')}`).join(''):'<div class="report-empty">Đang tải danh sách báo cáo...</div>'}</div>
+        <div class="report-sidebar">${groups.length?groups.map(g=>`<div class="report-group-title">${esc(g.label)}</div>${reports.filter(r=>r.group===g.key).map(r=>`<button class="report-item ${r.key===state.selected?'on':''}" data-report-type="${esc(r.key)}" type="button"><b>${esc(r.label)}</b><small>${esc(r.description)}</small></button>`).join('')}`).join(''):'<div class="report-empty">Tài khoản này chưa được cấp loại báo cáo nào.</div>'}</div>
         <div class="report-main">
           <div class="report-toolbar">
             <label>Kỳ<select data-report-filter="period">
@@ -1759,11 +1803,11 @@ async function openReportsCenter(){
             </label>
             <label>Kho<select data-report-filter="warehouse_id"><option value="">Tất cả kho</option>${warehouses.map(w=>`<option value="${esc(w.id)}" ${state.filters.warehouse_id===w.id?'selected':''}>${esc(w.name)}</option>`).join('')}</select></label>
             <div class="report-actions" style="grid-column:1/-1">
-              <button class="btn sm" id="reportRefresh" type="button">↻ Cập nhật</button>
-              <button class="btn sm" data-report-export="doc" type="button">DOC</button>
-              <button class="btn sm" data-report-export="xls" type="button">Sheet</button>
-              <button class="btn sm" data-report-export="pdf" type="button">PDF</button>
-              <button class="btn sm primary" id="reportPrint" type="button">In A4</button>
+              <button class="btn sm" id="reportRefresh" type="button" ${noReports?'disabled':''}>↻ Cập nhật</button>
+              <button class="btn sm" data-report-export="doc" type="button" ${noReports?'disabled':''}>DOC</button>
+              <button class="btn sm" data-report-export="xls" type="button" ${noReports?'disabled':''}>Sheet</button>
+              <button class="btn sm" data-report-export="pdf" type="button" ${noReports?'disabled':''}>PDF</button>
+              <button class="btn sm primary" id="reportPrint" type="button" ${noReports?'disabled':''}>In A4</button>
             </div>
           </div>
           <div class="report-preview">${state.loading?'<div class="report-empty">Đang dựng báo cáo...</div>':state.error?`<div class="report-empty">${esc(state.error)}</div>`:reportPreviewHtml(state.report)}</div>
@@ -1965,12 +2009,13 @@ async function openReportsCenter(){
 }
 
 async function openSettings(initialTab){
-  if (!hasPerm('settings.manage') && !['settings.users','settings.perms','settings.sync','settings.integrations','settings.connections','settings.operations','settings.invoices','settings.einvoice','settings.print','settings.devices','settings.menu','settings.bookmenu','settings.tables','settings.printers','settings.audit'].some(p => hasPerm(p))) {
+  if (!hasPerm('settings.manage') && !['settings.users','settings.perms','settings.branches','settings.sync','settings.integrations','settings.connections','settings.operations','settings.invoices','settings.einvoice','settings.print','settings.devices','settings.menu','settings.bookmenu','settings.tables','settings.printers','settings.audit','warehouse.manage'].some(p => hasPerm(p))) {
     return toast('Bạn không có quyền mở Cài đặt', true);
   }
   sessionStorage.setItem('adminActiveView', 'settings');
   const ov=document.createElement('div'); ov.className='overlay show'; document.body.appendChild(ov);
-  let tab=initialTab || sessionStorage.getItem('settingsActiveTab') || 'users', users=[], permData=null, editingUser=null, printMode=sessionStorage.getItem('settingsPrintMode')||'bill', selectedRolePermTab='manager';
+  let tab=initialTab || sessionStorage.getItem('settingsActiveTab') || 'users', users=[], branches=[], branchEditingId=null, permData=null, editingUser=null, printMode=sessionStorage.getItem('settingsPrintMode')||'bill', selectedRolePermTab='manager';
+  let settingsWarehouses=[], warehouseEditingId=null;
   if (tab) sessionStorage.setItem('settingsActiveTab', tab);
   let bookCfg=null, bookItems=[], bookEditingId=null, bookPageIdx=Number(sessionStorage.getItem('settingsBookPageIdx')||0)||0, bookHotspotId=sessionStorage.getItem('settingsBookHotspotId')||null, bookSaveQueue=Promise.resolve();
   let integrationsCfg=null;
@@ -1993,6 +2038,7 @@ async function openSettings(initialTab){
     ['billStage','.billd-stage','tab'],
     ['audit','#settingsAudit','tab'],
     ['floor','#settingsFloor','tab'],
+    ['warehouse','#settingsWarehouseBody','tab'],
   ];
   const settingsScrollKey=(name,scope)=>scope==='global'?`adminSettingsScroll:${name}`:`adminSettingsScroll:${tab}:${name}`;
   function saveElScroll(name,scope,el){
@@ -2024,6 +2070,33 @@ async function openSettings(initialTab){
   }
   const roles=[['owner','Chủ quán'],['manager','Quản lý'],['cashier','Thu ngân'],['kitchen','Bếp'],['warehouse','Thủ kho']];
   const roleName=k=>roles.find(r=>r[0]===k)?.[1]||k;
+  const branchName=id=>branches.find(b=>b.id===id)?.name||id||'Chi nhánh';
+  const branchBadges=(ids=[])=>{
+    const list=Array.isArray(ids)?ids:[];
+    if(list.includes('*')) return '<span class="chip c-done">Tất cả chi nhánh</span>';
+    return (list.length?list:[branches[0]?.id].filter(Boolean)).map(id=>`<span class="chip c-muted">${esc(branchName(id))}</span>`).join('');
+  };
+  const warehouseSalesChannels=[
+    ['ipad','iPad self-order'],
+    ['pos','POS nhà hàng'],
+    ['retail','BCM Retail POS'],
+    ['online','Kênh online chung'],
+    ['grabmerchant','GrabFood / GrabMerchant'],
+    ['shopeefood','ShopeeFood'],
+    ['befood','beFood'],
+    ['grabmart','GrabMart'],
+    ['website','Website order'],
+  ];
+  const warehouseChannelLabel=key=>warehouseSalesChannels.find(c=>c[0]===key)?.[1]||key;
+  const warehouseIcon=w=>w?.type==='retail'?'🏬':'🍳';
+  const warehouseDefaultChannels=type=>type==='kitchen'?['ipad','pos']:['retail'];
+  const warehouseSelectedChannels=root=>[...root.querySelectorAll('[data-settings-wh-channel]:checked')].map(i=>i.dataset.settingsWhChannel);
+  const warehouseChannelBadges=w=>{
+    const channels=Array.isArray(w?.sales_channels)?w.sales_channels:[];
+    return channels.length
+      ? `<span class="wh-channel-badges">${channels.map(c=>`<span class="chip c-doing">${esc(warehouseChannelLabel(c))}</span>`).join('')}</span>`
+      : '<span class="mini">Chưa nối kênh bán hàng</span>';
+  };
   const rolePerms=k=>new Set((permData?.roles.find(r=>r.key===k)?.perms||[]).filter(p=>p!=='*'));
   const userPerms=u=>new Set((u?.perms?.length?u.perms:[...rolePerms(u?.role||'cashier')]).filter(p=>p!=='*'));
   const permDeltaText=u=>{
@@ -2146,24 +2219,19 @@ async function openSettings(initialTab){
     };
   }
   function requestManagerOwnerPin(message){
-    return new Promise(resolve=>{
-      const pinOv=document.createElement('div');
-      pinOv.className='overlay show';
-      pinOv.innerHTML=`<div class="modal" style="max-width:420px">
-        <h2>Xác nhận bảo mật</h2>
-        <div class="sub">${esc(message||'Nhập PIN của Manager hoặc Owner để tiếp tục.')}</div>
-        <label>PIN Manager / Owner</label>
-        <input id="securePinInput" type="password" inputmode="numeric" autocomplete="off" placeholder="Nhập PIN">
-        <div class="mini" style="margin-top:8px">Chỉ yêu cầu khi thay đổi số tiền két gốc, vì đây là mốc tiền mặt chuẩn của cửa hàng.</div>
-        <div class="mfoot"><button class="btn" id="securePinCancel">Hủy</button><button class="btn primary" id="securePinOk">Xác nhận</button></div>
-      </div>`;
-      document.body.appendChild(pinOv);
-      const input=pinOv.querySelector('#securePinInput');
-      const done=v=>{pinOv.remove();resolve(v);};
-      pinOv.querySelector('#securePinCancel').onclick=()=>done(null);
-      pinOv.querySelector('#securePinOk').onclick=()=>done(input.value.trim());
-      input.onkeydown=e=>{if(e.key==='Enter') done(input.value.trim()); if(e.key==='Escape') done(null);};
-      setTimeout(()=>input.focus(),30);
+    return requestPinCode({
+      title:'Xác nhận bảo mật',
+      subtitle:message||'Nhập PIN 4 số của Manager hoặc Owner để tiếp tục.',
+      roleLabel:'Manager / Owner',
+      cancelText:'Hủy',
+    });
+  }
+  function requestWarehouseConfigPin(message){
+    return requestPinCode({
+      title:'Xác nhận cấu hình kho',
+      subtitle:message||'Nhập PIN 4 số của Thủ kho, Manager hoặc Owner để tiếp tục.',
+      roleLabel:'Thủ kho / Manager / Owner',
+      cancelText:'Hủy',
     });
   }
   async function saveOperationsCfg(redraw=false, securityPin=''){
@@ -2178,6 +2246,9 @@ async function openSettings(initialTab){
   async function load(){
     try{
       const appSettings=await api('/settings/app').catch(() => ({}));
+      if (hasPerm('settings.branches') || hasPerm('settings.users') || hasPerm('settings.manage')) {
+        branches = await api(hasPerm('settings.branches') || hasPerm('settings.manage') ? '/settings/branches' : '/branches').catch(() => []);
+      }
       if (hasPerm('settings.perms') || hasPerm('settings.users') || hasPerm('settings.manage')) {
         permData = await api('/settings/permissions').catch(() => null);
       }
@@ -2196,16 +2267,19 @@ async function openSettings(initialTab){
           catalog: []
         };
       }
+      if (!branches.length) branches = [{ id:'br1', name:'Dan D Pak Sala', code:'SALA', active:true, sort:1 }];
       printCfg=mergePrintCfg(appSettings.print_config);
       operationsCfg=mergeOperationsCfg(appSettings.operations_config);
       if(!appSettings.print_config?.updated_at && hasLocalPrintCfg()) savePrintCfg(false).catch(()=>{});
 
       const availableTabs = [
         { key: 'users', label: '👥 Nhân sự & Phân quyền', perm: 'settings.users' },
+        { key: 'branches', label: '🏬 Chi nhánh &amp; phân vùng', perm: 'settings.branches' },
         { key: 'sync', label: '☁️ Cloud Sync', perm: 'settings.sync' },
         { key: 'integrations', label: '🔌 Liên kết', perm: 'settings.integrations' },
         { key: 'connections', label: '📡 Kết nối', perm: 'settings.connections' },
         { key: 'operations', label: '💵 Thanh toán &amp; ca', perm: 'settings.operations' },
+        { key: 'warehouse', label: '📦 Kho &amp; kênh bán', perm: 'warehouse.manage' },
         { key: 'invoices', label: '🧾 Hóa đơn điện tử', perm: 'settings.invoices' },
         { key: 'einvoice', label: '⚙️ Cấu hình HĐĐT', perm: 'settings.einvoice' },
         { key: 'print', label: '🏷️ Bill &amp; Tem nhãn', perm: 'settings.print' },
@@ -2236,6 +2310,10 @@ async function openSettings(initialTab){
       ov.querySelector('#closeSet').onclick=()=>{
         sessionStorage.removeItem('adminActiveView');
         sessionStorage.removeItem('settingsActiveTab');
+        if (settingsShellOnly) {
+          location.href = '/';
+          return;
+        }
         ov.remove();
       };
     }
@@ -2246,10 +2324,12 @@ async function openSettings(initialTab){
     clearSettingsTimers();
     const availableTabs = [
       { key: 'users', label: '👥 Nhân sự & Phân quyền', perm: 'settings.users' },
+      { key: 'branches', label: '🏬 Chi nhánh &amp; phân vùng', perm: 'settings.branches' },
       { key: 'sync', label: '☁️ Cloud Sync', perm: 'settings.sync' },
       { key: 'integrations', label: '🔌 Liên kết', perm: 'settings.integrations' },
       { key: 'connections', label: '📡 Kết nối', perm: 'settings.connections' },
       { key: 'operations', label: '💵 Thanh toán &amp; ca', perm: 'settings.operations' },
+      { key: 'warehouse', label: '📦 Kho &amp; kênh bán', perm: 'warehouse.manage' },
       { key: 'invoices', label: '🧾 Hóa đơn điện tử', perm: 'settings.invoices' },
       { key: 'einvoice', label: '⚙️ Cấu hình HĐĐT', perm: 'settings.einvoice' },
       { key: 'print', label: '🏷️ Bill &amp; Tem nhãn', perm: 'settings.print' },
@@ -2300,6 +2380,10 @@ async function openSettings(initialTab){
         clearSettingsTimers();
         sessionStorage.removeItem('adminActiveView');
         sessionStorage.removeItem('settingsActiveTab');
+        if (settingsShellOnly) {
+          location.href = '/';
+          return;
+        }
         ov.remove();
       };
       ov.querySelector('#settingsClose').onclick=closeSettings;
@@ -2398,10 +2482,12 @@ async function openSettings(initialTab){
   function settingsContentHtml(){
     return ({
       users:usersHtml,
+      branches:branchesHtml,
       sync:syncHtml,
       integrations:integrationsHtml,
       connections:connectionsHtml,
       operations:operationsHtml,
+      warehouse:warehouseSettingsHtml,
       invoices:invoicesHtml,
       einvoice:einvoiceHtml,
       print:printDesignHtml,
@@ -2415,10 +2501,12 @@ async function openSettings(initialTab){
   }
   function bindActiveTab(){
     if(tab==='users') return bindUsers();
+    if(tab==='branches') return bindBranches();
     if(tab==='sync') return bindSettingsSync();
     if(tab==='integrations') return bindIntegrations();
     if(tab==='connections') return bindConnections();
     if(tab==='operations') return bindOperations();
+    if(tab==='warehouse') return bindWarehouseSettings();
     if(tab==='invoices') return bindSettingsInvoices();
     if(tab==='einvoice') return bindConfigForm('einvoice');
     if(tab==='print') return bindPrintDesigner();
@@ -2596,10 +2684,11 @@ async function openSettings(initialTab){
   }
   function renderPermGridColumns(roleKey, selectedPerms, attrStr, locked=false) {
     if (!permData || !permData.catalog) return '<div class="empty">Đang tải danh sách quyền...</div>';
+    const reportKeys = ['reports', ...permData.catalog.filter(p => p.key.startsWith('report.')).map(p => p.key), 'audit.view'];
     const groups = [
       { label:'🛒 Bán hàng & Thanh toán', prefix:null, keys:['sell','pay','discount','refund','void','invoice','kds'] },
       { label:'📦 Kho & Hàng hóa', prefix:null, keys:['menu.manage','inventory.adjust','warehouse.manage','online'] },
-      { label:'📊 Báo cáo & Kiểm toán', prefix:null, keys:['reports','audit.view'] },
+      { label:'📊 Báo cáo & Kiểm toán', prefix:null, keys:reportKeys },
       { label:'⚙️ Cài đặt hệ thống', prefix:'settings.', keys:null },
       { label:'📱 Truy cập module', prefix:'module.', keys:null },
     ];
@@ -2655,10 +2744,12 @@ async function openSettings(initialTab){
       <div class="formgrid" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">
         <div><label style="display:block;font-size:12px;font-weight:600;margin-bottom:4px">Tên hiển thị</label><input id="setName" value="${esc(u.name||'')}" placeholder="VD: Thu ngân ca sáng" style="width:100%"></div>
         <div><label style="display:block;font-size:12px;font-weight:600;margin-bottom:4px">Tên đăng nhập</label><input id="setUsername" value="${esc(u.username||'')}" ${editingUser && editingUser.id?'disabled':''} placeholder="vd: cashier2" style="width:100%"></div>
-        <div><label style="display:block;font-size:12px;font-weight:600;margin-bottom:4px">PIN đăng nhập</label><input id="setPin" type="number" placeholder="${editingUser && editingUser.id?'Để trống nếu không đổi':'4-6 số'}" style="width:100%"></div>
+        <div><label style="display:block;font-size:12px;font-weight:600;margin-bottom:4px">PIN đăng nhập</label><input id="setPin" type="password" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" autocomplete="one-time-code" placeholder="${editingUser && editingUser.id?'Để trống nếu không đổi':'4 số'}" style="width:100%"></div>
         <div><label style="display:block;font-size:12px;font-weight:600;margin-bottom:4px">Vai trò mặc định</label><select id="setRole" style="width:100%">${roles.map(([k,n])=>`<option value="${k}" ${selectedRole===k?'selected':''}>${n}</option>`).join('')}</select></div>
         <div><label style="display:block;font-size:12px;font-weight:600;margin-bottom:4px">Trạng thái</label><select id="setActive" style="width:100%"><option value="1" ${u.active!==false?'selected':''}>Đang hoạt động</option><option value="0" ${u.active===false?'selected':''}>Tắt tài khoản</option></select></div>
         <div><label style="display:block;font-size:12px;font-weight:600;margin-bottom:4px">Ngôn ngữ hiển thị</label><select id="setLang" style="width:100%"><option value="vi" ${u.lang!=='en'?'selected':''}>Tiếng Việt</option><option value="en" ${u.lang==='en'?'selected':''}>Tiếng Anh</option></select></div>
+        <div><label style="display:block;font-size:12px;font-weight:600;margin-bottom:4px">Chi nhánh chính</label><select id="setBranch" style="width:100%">${branches.map(b=>`<option value="${esc(b.id)}" ${(u.branch_id||branches[0]?.id)===b.id?'selected':''}>${esc(b.name||b.code||b.id)}</option>`).join('')}</select></div>
+        <div style="grid-column:1/-1"><label style="display:block;font-size:12px;font-weight:600;margin-bottom:6px">Phạm vi truy cập chi nhánh</label><div class="permgrid">${branches.map(b=>`<label class="permitem"><input type="checkbox" data-user-branch="${esc(b.id)}" ${((u.branch_ids||[u.branch_id||branches[0]?.id]).includes(b.id)||u.role==='owner')?'checked':''} ${u.role==='owner'?'disabled':''}><span>${esc(b.name||b.code||b.id)}</span></label>`).join('')}</div><div class="mini" style="margin-top:6px">Manager được tick nhiều chi nhánh sẽ hoạt động như quản lý khu vực. Owner luôn thấy tất cả.</div></div>
       </div>
       <div class="setting-card" style="margin-top:12px;border:1px solid var(--border);padding:14px;border-radius:10px;background:var(--surface2)">
         <h4 style="margin:0 0 6px;font-size:13px;font-weight:700">Quyền riêng của nhân viên</h4>
@@ -2679,6 +2770,78 @@ async function openSettings(initialTab){
       </div>
     </div>`;
   }
+  function branchesHtml(){
+    const editing=branches.find(b=>b.id===branchEditingId)||branches[0]||{id:'',name:'',code:'',phone:'',address:'',note:'',active:true,sort:(branches.length+1)};
+    const isNew=!editing.id || branchEditingId==='__new__';
+    const rows=branches.map(b=>`<button class="staff-item-btn ${b.id===editing.id && !isNew?'on':''}" type="button" data-branch-edit="${esc(b.id)}">
+      <div class="staff-item-name-group">
+        <span style="font-weight:750">${esc(b.name)}</span>
+        <span class="staff-item-meta">${esc(b.code||b.id)} · ${b.active!==false?'Đang bật':'Đang tắt'}</span>
+      </div>
+      <span class="chip ${b.active!==false?'c-done':'c-muted'}">${b.active!==false?'Bật':'Tắt'}</span>
+    </button>`).join('');
+    return `<div class="staff-mgmt-layout">
+      <div class="staff-mgmt-list-pane">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+          <h3 style="margin:0;font-size:14px;color:var(--text);font-weight:800">Chi nhánh / cửa hàng</h3>
+          <button class="btn sm primary" id="branchNew" type="button">＋ Tạo mới</button>
+        </div>
+        <div class="mini" style="margin-bottom:10px">Mỗi chi nhánh có kho, tồn, bàn, ca, báo cáo và cấu hình bán hàng riêng. Menu/SKU danh mục có thể dùng chung, nhưng tồn kho luôn tách theo chi nhánh.</div>
+        <div class="staff-list-container">${rows || '<div class="empty">Chưa có chi nhánh</div>'}</div>
+      </div>
+      <div class="staff-mgmt-details-pane">
+        <h3 style="margin:0 0 16px">${isNew?'Tạo chi nhánh mới':'Cấu hình chi nhánh'}</h3>
+        <div class="setting-card" style="margin-bottom:14px">
+          <div class="mini">Gợi ý mô hình 2 cửa hàng: tạo từng chi nhánh, vào tab Nhân sự cấp quyền manager khu vực vào nhiều chi nhánh, sau đó nhân viên chọn chi nhánh ở màn hình launcher trước khi đăng nhập.</div>
+        </div>
+        <div class="formgrid" style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+          <div><label style="display:block;font-size:12px;font-weight:700;margin-bottom:4px">Tên chi nhánh</label><input id="branchName" value="${esc(isNew?'':editing.name||'')}" placeholder="VD: Dan D Pak Quận 1" style="width:100%"></div>
+          <div><label style="display:block;font-size:12px;font-weight:700;margin-bottom:4px">Mã chi nhánh</label><input id="branchCode" value="${esc(isNew?'':editing.code||editing.id||'')}" placeholder="VD: Q1 / SALA / BCM2" style="width:100%"></div>
+          <div><label style="display:block;font-size:12px;font-weight:700;margin-bottom:4px">Số điện thoại</label><input id="branchPhone" value="${esc(isNew?'':editing.phone||'')}" placeholder="Hotline cửa hàng" style="width:100%"></div>
+          <div><label style="display:block;font-size:12px;font-weight:700;margin-bottom:4px">Thứ tự hiển thị</label><input id="branchSort" type="number" value="${esc(isNew?branches.length+1:(editing.sort??branches.length+1))}" style="width:100%"></div>
+          <div style="grid-column:1/-1"><label style="display:block;font-size:12px;font-weight:700;margin-bottom:4px">Địa chỉ</label><input id="branchAddress" value="${esc(isNew?'':editing.address||'')}" placeholder="Địa chỉ đầy đủ để in bill / báo cáo" style="width:100%"></div>
+          <div style="grid-column:1/-1"><label style="display:block;font-size:12px;font-weight:700;margin-bottom:4px">Ghi chú vận hành</label><textarea id="branchNote" rows="3" style="width:100%">${esc(isNew?'':editing.note||'')}</textarea></div>
+          <div><label style="display:block;font-size:12px;font-weight:700;margin-bottom:4px">Trạng thái</label><select id="branchActive" style="width:100%"><option value="1" ${editing.active!==false?'selected':''}>Đang bật</option><option value="0" ${editing.active===false?'selected':''}>Tạm tắt</option></select></div>
+        </div>
+        <div class="mfoot" style="margin-top:16px">
+          <button class="btn" id="branchReset" type="button">${isNew?'Làm mới':'Bỏ sửa'}</button>
+          <button class="btn primary" id="branchSave" type="button">${isNew?'Tạo chi nhánh':'Lưu chi nhánh'}</button>
+        </div>
+      </div>
+    </div>`;
+  }
+  function bindBranches(){
+    if(!branchEditingId && branches[0]) branchEditingId=branches[0].id;
+    ov.querySelectorAll('[data-branch-edit]').forEach(btn=>btn.onclick=()=>{ branchEditingId=btn.dataset.branchEdit; draw(); });
+    const newBtn=ov.querySelector('#branchNew');
+    if(newBtn) newBtn.onclick=()=>{ branchEditingId='__new__'; draw(); };
+    const reset=ov.querySelector('#branchReset');
+    if(reset) reset.onclick=()=>{ branchEditingId=branches[0]?.id||null; draw(); };
+    const save=ov.querySelector('#branchSave');
+    if(save) save.onclick=async()=>{
+      const body={
+        name:ov.querySelector('#branchName').value.trim(),
+        code:ov.querySelector('#branchCode').value.trim(),
+        phone:ov.querySelector('#branchPhone').value.trim(),
+        address:ov.querySelector('#branchAddress').value.trim(),
+        note:ov.querySelector('#branchNote').value.trim(),
+        sort:parseInt(ov.querySelector('#branchSort').value)||0,
+        active:ov.querySelector('#branchActive').value==='1',
+      };
+      if(!body.name) return toast('Nhập tên chi nhánh',true);
+      try{
+        const isNew=branchEditingId==='__new__' || !branchEditingId;
+        const saved=isNew
+          ? await api('/settings/branches',{method:'POST',body})
+          : await api('/settings/branches/'+encodeURIComponent(branchEditingId)+'/update',{method:'POST',body});
+        branches=await api('/settings/branches').catch(()=>branches);
+        try{ localStorage.setItem('branches_cache', JSON.stringify(await api('/branches'))); }catch{}
+        branchEditingId=saved.id;
+        toast(isNew?'Đã tạo chi nhánh và bootstrap kho/bàn mặc định':'Đã lưu chi nhánh');
+        draw();
+      }catch(e){ toast(e.message,true); }
+    };
+  }
   function usersHtml(){
     return `<div class="staff-mgmt-layout">
       <div class="staff-mgmt-list-pane">
@@ -2694,6 +2857,7 @@ async function openSettings(initialTab){
               <div class="staff-item-name-group">
                 <span style="font-weight:600">${esc(u.name)}</span>
                 <span class="staff-item-meta">@${esc(u.username)}</span>
+                <span style="display:flex;gap:4px;flex-wrap:wrap;margin-top:4px">${branchBadges((u.branch_access||[]).includes('*')?['*']:(u.branch_ids||[u.branch_id]))}</span>
               </div>
               <div style="display:flex;align-items:center;gap:6px">
                 <span class="chip sm" style="font-size:10px;padding:2px 6px">${esc(roleName(u.role))}</span>
@@ -2920,6 +3084,168 @@ async function openSettings(initialTab){
       <div class="mfoot"><button class="btn primary" id="saveOperations">Lưu thanh toán & ca</button></div>
     </div>`;
   }
+  function warehouseSettingsHtml(){
+    const body=settingsWarehouses.length?warehouseSettingsBodyHtml():'<div class="empty">Đang tải cấu hình kho...</div>';
+    return `<div class="panel" style="margin:0">
+      <h3>Kho &amp; kênh bán <button class="btn sm" id="settingsWhReload" style="margin-left:auto">↻ Tải lại</button></h3>
+      <div class="mini" style="margin-bottom:12px">Tạo kho, đổi loại kho và chọn kênh bán hàng đang nối với từng kho. Màn Kho sẽ chỉ tập trung xem tồn, nhập xuất và tra cứu hàng.</div>
+      <div id="settingsWarehouseBody">${body}</div>
+    </div>`;
+  }
+  function warehouseSettingsBodyHtml(){
+    const editing=settingsWarehouses.find(w=>w.id===warehouseEditingId)||null;
+    const selected=new Set(editing?.sales_channels||warehouseDefaultChannels(editing?.type||'retail'));
+    const canWrite=hasPerm('warehouse.manage');
+    return `<div class="warehouse-settings-grid">
+      <div class="setting-card">
+        <h3>Danh sách kho</h3>
+        <div class="mini" style="margin-bottom:10px">Chọn một kho để cấu hình kênh bán, mã kho, loại kho và trạng thái hoạt động.</div>
+        <div class="wh-settings-list">
+          ${settingsWarehouses.map(w=>`<div class="wh-settings-row">
+            <div>
+              <b>${warehouseIcon(w)} ${esc(w.name)}</b>
+              <div class="mini">${esc(w.code||w.id)} · ${w.type==='kitchen'?'Kho bếp / vật dụng':'Kho retail / showroom'} · ${w.active?'đang bật':'đang tắt'}</div>
+              ${warehouseChannelBadges(w)}
+            </div>
+            <span class="chip ${w.active?'c-done':'c-muted'}">${w.active?'Bật':'Tắt'}</span>
+            <button class="btn sm ${w.id===warehouseEditingId?'primary':''}" data-settings-wh-edit="${esc(w.id)}" type="button">Cấu hình</button>
+          </div>`).join('') || '<div class="empty">Chưa có kho nào</div>'}
+        </div>
+      </div>
+      <div class="setting-card">
+        <h3>${editing?'Cấu hình kho':'Tạo kho mới'}</h3>
+        ${canWrite?'':'<div class="empty" style="margin-bottom:10px">Tài khoản này chỉ xem được cấu hình kho, chưa có quyền lưu thay đổi.</div>'}
+        <div class="setting-form">
+          <div><label>Tên kho</label><input id="settingsWhName" value="${esc(editing?.name||'')}" placeholder="VD: Kho BCM Sala" ${canWrite?'':'disabled'}></div>
+          <div><label>Mã kho</label><input id="settingsWhCode" value="${esc(editing?.code||'')}" placeholder="Tự sinh nếu để trống" ${canWrite?'':'disabled'}></div>
+          <div><label>Loại kho</label><select id="settingsWhType" ${canWrite?'':'disabled'}><option value="retail" ${editing?.type!=='kitchen'?'selected':''}>Kho retail / showroom</option><option value="kitchen" ${editing?.type==='kitchen'?'selected':''}>Kho bếp / vật dụng</option></select></div>
+          <div><label>Sắp xếp</label><input id="settingsWhSort" type="number" value="${editing?.sort??''}" placeholder="0" ${canWrite?'':'disabled'}></div>
+          <div><label>Trạng thái</label><select id="settingsWhActive" ${canWrite?'':'disabled'}><option value="1" ${editing?.active!==false?'selected':''}>Đang bật</option><option value="0" ${editing?.active===false?'selected':''}>Tắt kho</option></select></div>
+          <div style="grid-column:1/-1">
+            <label>Kênh bán hàng đang nối với kho này</label>
+            <div class="wh-channel-grid">
+              ${warehouseSalesChannels.map(([key,label])=>`<label class="wh-channel-box"><input type="checkbox" data-settings-wh-channel="${key}" ${selected.has(key)?'checked':''} ${canWrite?'':'disabled'}><span>${esc(label)}</span></label>`).join('')}
+            </div>
+            <div class="mini" style="margin-top:7px">Ví dụ: kho bếp nối iPad/POS nhà hàng; kho BCM nối Retail POS, GrabMart hoặc Website.</div>
+          </div>
+        </div>
+        <div class="wh-form-actions">
+          <button class="btn" id="settingsWhNew" type="button">+ Tạo kho mới</button>
+          <button class="btn primary" id="settingsWhSave" type="button" disabled>${editing?'Lưu cấu hình kho':'+ Tạo kho'}</button>
+          <button class="btn" id="settingsWhOpenWarehouse" type="button">Mở màn Kho</button>
+        </div>
+      </div>
+    </div>`;
+  }
+  function warehouseChannelKey(channels){
+    const set=new Set(Array.isArray(channels)?channels:[]);
+    return warehouseSalesChannels.map(([k])=>k).filter(k=>set.has(k)).join('|');
+  }
+  function warehouseFormSnapshot(root){
+    const sortText=(root.querySelector('#settingsWhSort')?.value||'').trim();
+    return {
+      name:(root.querySelector('#settingsWhName')?.value||'').trim(),
+      code:(root.querySelector('#settingsWhCode')?.value||'').trim(),
+      type:root.querySelector('#settingsWhType')?.value||'retail',
+      active:root.querySelector('#settingsWhActive')?.value!=='0',
+      sort:sortText===''?'':String(parseInt(sortText)||0),
+      channels:warehouseChannelKey(warehouseSelectedChannels(root)),
+    };
+  }
+  function warehouseBaselineSnapshot(editing){
+    if(!editing) return {name:'',code:'',type:'retail',active:true,sort:'',channels:warehouseChannelKey(warehouseDefaultChannels('retail'))};
+    return {
+      name:String(editing.name||'').trim(),
+      code:String(editing.code||'').trim(),
+      type:editing.type==='kitchen'?'kitchen':'retail',
+      active:editing.active!==false,
+      sort:editing.sort===undefined||editing.sort===null?'':String(parseInt(editing.sort)||0),
+      channels:warehouseChannelKey(editing.sales_channels||[]),
+    };
+  }
+  function warehouseFormDirty(root){
+    const editing=settingsWarehouses.find(w=>w.id===warehouseEditingId)||null;
+    const cur=warehouseFormSnapshot(root);
+    if(!editing && !cur.name) return false;
+    const base=warehouseBaselineSnapshot(editing);
+    return ['name','code','type','active','sort','channels'].some(k=>cur[k]!==base[k]);
+  }
+  async function bindWarehouseSettings(){
+    const wrap=ov.querySelector('#settingsWarehouseBody');
+    if(!wrap) return;
+    const paint=()=>{
+      wrap.innerHTML=warehouseSettingsBodyHtml();
+      wireWarehouseSettings();
+    };
+    const reload=async()=>{
+      wrap.innerHTML='<div class="empty">Đang tải cấu hình kho...</div>';
+      try{
+        settingsWarehouses=await api('/warehouses?all=1');
+        if(warehouseEditingId && !settingsWarehouses.some(w=>w.id===warehouseEditingId)) warehouseEditingId=null;
+        paint();
+      }catch(e){
+        wrap.innerHTML=`<div class="empty">${esc(e.message||'Không tải được cấu hình kho')}</div>`;
+      }
+    };
+    const wireReload=ov.querySelector('#settingsWhReload');
+    if(wireReload) wireReload.onclick=reload;
+    const wireWarehouseSettings=()=>{
+      const typeEl=ov.querySelector('#settingsWhType');
+      const saveBtn=ov.querySelector('#settingsWhSave');
+      const updateDirty=()=>{
+        if(!saveBtn) return;
+        const dirty=hasPerm('warehouse.manage') && warehouseFormDirty(ov);
+        saveBtn.disabled=!dirty;
+        saveBtn.title=dirty?'':'Chưa có thay đổi để lưu';
+      };
+      if(typeEl && !warehouseEditingId){
+        typeEl.onchange=()=>{
+          const defaults=warehouseDefaultChannels(typeEl.value);
+          ov.querySelectorAll('[data-settings-wh-channel]').forEach(i=>{ i.checked=defaults.includes(i.dataset.settingsWhChannel); });
+          updateDirty();
+        };
+      }
+      ov.querySelectorAll('#settingsWhName,#settingsWhCode,#settingsWhType,#settingsWhSort,#settingsWhActive,[data-settings-wh-channel]').forEach(el=>{
+        el.addEventListener('input', updateDirty);
+        el.addEventListener('change', updateDirty);
+      });
+      const newBtn=ov.querySelector('#settingsWhNew');
+      if(newBtn) newBtn.onclick=()=>{ warehouseEditingId=null; paint(); };
+      const openBtn=ov.querySelector('#settingsWhOpenWarehouse');
+      if(openBtn) openBtn.onclick=()=>{ location.href='/warehouse'; };
+      ov.querySelectorAll('[data-settings-wh-edit]').forEach(btn=>btn.onclick=()=>{ warehouseEditingId=btn.dataset.settingsWhEdit; paint(); });
+      if(saveBtn) saveBtn.onclick=async()=>{
+        if(!warehouseFormDirty(ov)) return toast('Chưa có thay đổi để lưu', true);
+        const sortText=(ov.querySelector('#settingsWhSort')?.value||'').trim();
+        const body={
+          name:(ov.querySelector('#settingsWhName')?.value||'').trim(),
+          code:(ov.querySelector('#settingsWhCode')?.value||'').trim(),
+          type:ov.querySelector('#settingsWhType')?.value||'retail',
+          active:ov.querySelector('#settingsWhActive')?.value!=='0',
+          sales_channels:warehouseSelectedChannels(ov),
+        };
+        if(sortText) body.sort=parseInt(sortText)||0;
+        if(!body.name) return toast('Nhập tên kho', true);
+        const pin=await requestWarehouseConfigPin(warehouseEditingId?'Nhập PIN 4 số của Thủ kho, Manager hoặc Owner để lưu cấu hình kho.':'Nhập PIN 4 số của Thủ kho, Manager hoặc Owner để tạo kho mới.');
+        if(!pin) return toast('Đã hủy lưu cấu hình kho', true);
+        body.security_pin=pin;
+        saveBtn.disabled=true;
+        try{
+          if(warehouseEditingId) await api('/warehouses/'+encodeURIComponent(warehouseEditingId)+'/update',{method:'POST',body});
+          else await api('/warehouses',{method:'POST',body});
+          warehouseEditingId=null;
+          await reload();
+          toast('Đã lưu cấu hình kho');
+        }catch(e){
+          toast(e.message||'Không lưu được kho', true);
+          saveBtn.disabled=false;
+        }
+      };
+      updateDirty();
+    };
+    if(settingsWarehouses.length) paint();
+    await reload();
+  }
   function invoicesHtml(){
     return `<div class="panel" style="margin:0">
       <h3>Hóa đơn điện tử (MISA) <button class="btn sm" id="settingsInvRefresh" style="margin-left:auto">↻ Tải lại</button></h3>
@@ -3095,8 +3421,8 @@ async function openSettings(initialTab){
       <div class="setting-form">
         <div>
           <label>Mật khẩu mở chọn bàn trên iPad</label>
-          <input id="ipadStaffPin" type="password" inputmode="numeric" autocomplete="off" placeholder="000000" maxlength="8">
-          <div class="mini" style="margin-top:6px">Chỉ dùng số, từ 4 đến 8 chữ số. Mặc định hiện tại là 000000.</div>
+          <input id="ipadStaffPin" type="password" inputmode="numeric" pattern="[0-9]{4}" autocomplete="one-time-code" placeholder="0000" maxlength="4">
+          <div class="mini" style="margin-top:6px">Chỉ dùng đúng 4 chữ số. Mặc định hiện tại là 0000.</div>
         </div>
       </div>
       <div class="mfoot"><button class="btn primary" id="saveDeviceSettings">Lưu thiết bị khách</button></div>
@@ -4277,6 +4603,7 @@ async function openSettings(initialTab){
                   <div class="staff-item-name-group">
                     <span style="font-weight:600">${esc(u.name)}</span>
                     <span class="staff-item-meta">@${esc(u.username)}</span>
+                    <span style="display:flex;gap:4px;flex-wrap:wrap;margin-top:4px">${branchBadges((u.branch_access||[]).includes('*')?['*']:(u.branch_ids||[u.branch_id]))}</span>
                   </div>
                   <div style="display:flex;align-items:center;gap:6px">
                     <span class="chip sm" style="font-size:10px;padding:2px 6px">${esc(roleName(u.role))}</span>
@@ -4336,9 +4663,27 @@ async function openSettings(initialTab){
         if(role==='owner') return [...rolePerms('owner')];
         return [...ov.querySelectorAll('[data-user-perm]:checked')].map(x=>x.value);
       }
+      function applyBranchDefaults(role){
+        const home=ov.querySelector('#setBranch')?.value || branches[0]?.id;
+        ov.querySelectorAll('[data-user-branch]').forEach(cb=>{
+          cb.disabled=role==='owner';
+          if(role==='owner') cb.checked=true;
+          if(home && cb.dataset.userBranch===home) cb.checked=true;
+        });
+      }
+      function collectUserBranches(){
+        const role=ov.querySelector('#setRole')?.value || 'cashier';
+        const home=ov.querySelector('#setBranch')?.value || branches[0]?.id;
+        if(role==='owner') return ['*'];
+        const ids=new Set([...ov.querySelectorAll('[data-user-branch]:checked')].map(x=>x.dataset.userBranch));
+        if(home) ids.add(home);
+        return [...ids];
+      }
 
       const setRoleSel = ov.querySelector('#setRole');
-      if (setRoleSel) setRoleSel.onchange = e => applyRoleDefaults(e.target.value);
+      if (setRoleSel) setRoleSel.onchange = e => { applyRoleDefaults(e.target.value); applyBranchDefaults(e.target.value); };
+      const setBranchSel = ov.querySelector('#setBranch');
+      if (setBranchSel) setBranchSel.onchange = () => applyBranchDefaults(ov.querySelector('#setRole')?.value || 'cashier');
 
       const resetToRoleBtn = ov.querySelector('#resetUserPermsToRole');
       if (resetToRoleBtn) resetToRoleBtn.onclick = () => applyRoleDefaults(ov.querySelector('#setRole').value);
@@ -4364,6 +4709,9 @@ async function openSettings(initialTab){
       });
 
       updateUserPermHint();
+      applyBranchDefaults(ov.querySelector('#setRole')?.value || 'cashier');
+      const setPinInput = ov.querySelector('#setPin');
+      if (setPinInput) setPinInput.oninput = () => { setPinInput.value = setPinInput.value.replace(/\D/g, '').slice(0, 4); };
 
       const setResetBtn = ov.querySelector('#setReset');
       if (setResetBtn) {
@@ -4386,10 +4734,13 @@ async function openSettings(initialTab){
             role: ov.querySelector('#setRole').value,
             active: ov.querySelector('#setActive').value === '1',
             lang: ov.querySelector('#setLang').value,
+            branch_id: ov.querySelector('#setBranch')?.value || branches[0]?.id,
+            branch_access: collectUserBranches(),
             perms: collectUserPerms()
           };
           if (!body.name) return toast('Vui lòng nhập tên hiển thị', true);
           if (!body.username) return toast('Vui lòng nhập tên đăng nhập', true);
+          if ((!editingUser || !editingUser.id || body.pin) && !/^\d{4}$/.test(body.pin)) return toast('PIN đăng nhập phải đúng 4 số', true);
 
           try {
             let savedUser = null;
@@ -4410,6 +4761,7 @@ async function openSettings(initialTab){
                   <div class="staff-item-name-group">
                     <span style="font-weight:600">${esc(u.name)}</span>
                     <span class="staff-item-meta">@${esc(u.username)}</span>
+                    <span style="display:flex;gap:4px;flex-wrap:wrap;margin-top:4px">${branchBadges((u.branch_access||[]).includes('*')?['*']:(u.branch_ids||[u.branch_id]))}</span>
                   </div>
                   <div style="display:flex;align-items:center;gap:6px">
                     <span class="chip sm" style="font-size:10px;padding:2px 6px">${esc(roleName(u.role))}</span>
@@ -4610,15 +4962,17 @@ async function openSettings(initialTab){
   async function bindDeviceSettings(){
     const pin=ov.querySelector('#ipadStaffPin');
     const save=ov.querySelector('#saveDeviceSettings');
+    if(pin) pin.oninput=()=>{ pin.value=pin.value.replace(/\D/g,'').slice(0,4); };
     try{
       const s=await api('/settings/app');
-      pin.value=s.ipad_staff_pin||'000000';
+      pin.value=s.ipad_staff_pin||'0000';
     }catch(e){
       toast(e.message,true);
     }
     save.onclick=async()=>{
       try{
-        const value=pin.value.trim();
+        const value=pin.value.trim().replace(/\D/g,'').slice(0,4);
+        if(!/^\d{4}$/.test(value)) return toast('Mật khẩu iPad phải đúng 4 chữ số', true);
         await api('/settings/app',{method:'POST',body:{ipad_staff_pin:value}});
         toast('Đã lưu mật khẩu thiết bị khách');
         draw();
@@ -5314,9 +5668,9 @@ async function openSettings(initialTab){
 }
 
 const urlParams = new URLSearchParams(window.location.search);
-const viewParam = urlParams.get('view');
+const viewParam = isSettingsRoute ? 'settings' : urlParams.get('view');
 const tabParam = urlParams.get('tab');
-if (viewParam) {
+if (viewParam && !isSettingsRoute) {
   sessionStorage.setItem('adminActiveView', viewParam);
   if (tabParam) {
     sessionStorage.setItem('settingsActiveTab', tabParam);
@@ -5326,14 +5680,21 @@ if (viewParam) {
   window.history.replaceState({}, document.title, window.location.pathname);
 }
 
-startClock(); loadDash(); loadTrends(); loadMenu();
-if (sessionStorage.getItem('adminActiveView') === 'settings') {
-  openSettings(sessionStorage.getItem('settingsActiveTab'));
+startClock();
+if (!settingsShellOnly) {
+  loadDash();
+  loadTrends();
+  loadMenu();
+}
+if (wantsSettingsShell) {
+  openSettings(tabParam || sessionStorage.getItem('settingsActiveTab'));
 } else if (sessionStorage.getItem('adminActiveView') === 'reports') {
   openReportsCenter();
 }
-setInterval(loadDash, 15000);
-setInterval(loadTrends, 60000);
+if (!settingsShellOnly) {
+  setInterval(loadDash, 15000);
+  setInterval(loadTrends, 60000);
+}
 setInterval(()=>{ if(document.getElementById('settingsSyncChip')) loadSettingsSync(); }, 7000);
 </script>
 </body></html>

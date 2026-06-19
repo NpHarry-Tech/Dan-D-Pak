@@ -5,6 +5,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/shared/app.css">
 <script src="/runtime-config.js"></script>
+<script type="module">import '/shared/client.js';</script>
 <style>
 html,body{width:100%;height:100%}
 body{overflow:hidden}
@@ -57,16 +58,16 @@ body.is-fullscreen .hint{display:none}
   </div>
   <span class="dimtag" id="dim"></span>
   <span class="spacer"></span>
-  <button class="fsbtn" id="reloadBtn" title="Nạp lại nội dung iPad (lấy bản giao diện mới nhất)">↻ Tải lại</button>
+  <button class="fsbtn" id="reloadBtn" title="Nạp lại nội dung trong khung mô phỏng">↻ Tải lại khung</button>
   <button class="fsbtn" id="fsBtn">⛶ Full màn</button>
-  <a class="exit" href="/">✕ Thoát ra Launcher</a>
+  <a class="exit" id="exitLauncher" href="/">✕ Thoát ra Launcher</a>
 </div>
 <div class="stage">
   <div class="scaler" id="scaler">
     <div class="device" id="device">
       <span class="cam"></span>
       <div class="screen" id="screen">
-        <iframe id="frame" src="/ipad" allowfullscreen></iframe>
+        <iframe id="frame" src="/" allowfullscreen></iframe>
       </div>
     </div>
   </div>
@@ -83,8 +84,18 @@ const savedState = readState();
 let device = DEVICES.includes(savedState.device) ? savedState.device : 'ipad';
 let ori = ORIS.includes(savedState.ori) ? savedState.ori : 'portrait';
 let model = MODELS[savedState.model] ? savedState.model : 'air';
-let loadedDevice = null;
-function loadFrame(){ document.getElementById('frame').src = '/' + device + '?v=' + Date.now(); }
+let framePath = normalizePath(savedState.framePath) || '/';
+if (framePath === '/') device = 'ipad';
+function devicePath(value = device){ return '/' + value; }
+function normalizePath(value){
+  const clean = String(value || '').split('?')[0].split('#')[0] || '/';
+  return clean.startsWith('/') ? clean : '/' + clean;
+}
+function loadFrame(path = framePath || devicePath()){
+  framePath = normalizePath(path);
+  saveState();
+  document.getElementById('frame').src = framePath + (framePath.includes('?') ? '&' : '?') + 'v=' + Date.now();
+}
 
 function apply(){
   syncControls();
@@ -97,8 +108,6 @@ function apply(){
   screen.style.width=w+'px'; screen.style.height=h+'px';
   frame.style.width=w+'px'; frame.style.height=h+'px';
   document.getElementById('dim').textContent=`UI ${w}×${h} · ${mw}×${mh}`;
-  // load device if changed — cache-bust so the iframe always pulls the latest UI
-  if(loadedDevice!==device){ loadedDevice=device; loadFrame(); }
   requestAnimationFrame(scaleToFit);
 }
 function scaleToFit(){
@@ -115,7 +124,10 @@ function seg(id,attr,cb){
   });
 }
 seg('devSeg','d',v=>{device=v; // non-iPad devices look best landscape
-  if(v==='pos'||v==='kds'||v==='admin'||v==='retail'){ori='landscape';setOri();} apply();});
+  if(v==='pos'||v==='kds'||v==='admin'||v==='retail'){ori='landscape';setOri();}
+  apply();
+  loadFrame(devicePath(v));
+});
 seg('oriSeg','o',v=>{ori=v;apply();});
 seg('modelSeg','m',v=>{model=v;apply();});
 function setOri(){document.querySelectorAll('#oriSeg button').forEach(b=>b.classList.toggle('on',b.dataset.o===ori));}
@@ -129,7 +141,7 @@ function readState(){
   catch { return {}; }
 }
 function saveState(){
-  localStorage.setItem(STATE_KEY, JSON.stringify({ device, ori, model }));
+  localStorage.setItem(STATE_KEY, JSON.stringify({ device, ori, model, framePath }));
 }
 
 document.getElementById('fsBtn').onclick=async()=>{
@@ -138,7 +150,12 @@ document.getElementById('fsBtn').onclick=async()=>{
     else await document.exitFullscreen();
   }catch(e){ console.warn(e); }
 };
-document.getElementById('reloadBtn').onclick=()=>{ loadFrame(); };
+document.getElementById('reloadBtn').onclick=()=>{ loadFrame(framePath || '/'); };
+document.getElementById('exitLauncher').onclick=(event)=>{
+  event.preventDefault();
+  localStorage.removeItem(STATE_KEY);
+  window.location.href='/';
+};
 document.addEventListener('fullscreenchange',()=>{
   const on=!!document.fullscreenElement;
   document.body.classList.toggle('is-fullscreen',on);
@@ -148,7 +165,20 @@ document.addEventListener('fullscreenchange',()=>{
 
 window.addEventListener('resize', scaleToFit);
 apply();
+loadFrame(framePath || '/');
 // re-fit after iframe content loads
-document.getElementById('frame').addEventListener('load', scaleToFit);
+document.getElementById('frame').addEventListener('load', () => {
+  try {
+    const path = normalizePath(document.getElementById('frame').contentWindow.location.pathname);
+    framePath = path;
+    const activeDevice = DEVICES.find(d => devicePath(d) === path);
+    if (activeDevice) {
+      device = activeDevice;
+      syncControls();
+    }
+    saveState();
+  } catch {}
+  scaleToFit();
+});
 </script>
 </body></html>

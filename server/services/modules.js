@@ -19,8 +19,8 @@ export const MODULES = [
   { key: 'online', label: 'Kênh online', icon: '🌐', group: 'sales', href: '/online', perm: 'module.online', status: 'active', depends: ['pos'], description: 'Nhận đơn GrabFood/ShopeeFood/Website qua webhook và điều phối fulfillment.' },
   { key: 'warehouse', label: 'Kho', icon: '📦', group: 'supply', href: '/warehouse', perm: 'module.warehouse', status: 'active', depends: ['inventory'], description: 'Kho BCM, showroom, kho bếp, nhập/xuất, kiểm kho, lot/date.' },
   { key: 'inventory', label: 'Tồn kho', icon: '🏷️', group: 'supply', href: '/warehouse', perm: 'module.inventory', status: 'active', depends: [], description: 'SKU, nguyên liệu, đơn vị tính, lot/serial, min stock và valuation nền.' },
-  { key: 'admin', label: 'Quản lý', icon: '📊', group: 'essentials', href: '/admin', perm: 'module.admin', status: 'active', depends: ['pos', 'retail', 'warehouse'], description: 'Dashboard, báo cáo nhanh, thực đơn, vận hành và cài đặt trong ngày.' },
-  { key: 'settings', label: 'Cài đặt', icon: '⚙️', group: 'settings', href: '/admin?view=settings', perm: 'module.settings', status: 'active', depends: [], description: 'Người dùng, phân quyền, module, cấu hình chung và nhật ký hoạt động.' },
+  { key: 'admin', label: 'Quản lý', icon: '📊', group: 'essentials', href: '/admin', perm: null, status: 'active', depends: ['pos', 'retail', 'warehouse'], description: 'Dashboard, báo cáo nhanh, thực đơn, vận hành và cài đặt trong ngày.' },
+  { key: 'settings', label: 'Cài đặt', icon: '⚙️', group: 'settings', href: '/settings', perm: null, status: 'active', depends: [], description: 'Người dùng, phân quyền, module, cấu hình chung và nhật ký hoạt động.' },
   { key: 'printing', label: 'In ấn', icon: '🖨️', group: 'settings', href: '/printers', perm: 'module.printing', status: 'active', depends: ['pos'], description: 'Job in bếp/bar/bill, in lại, cấu hình bill và tem nhãn.' },
 
   { key: 'crm', label: 'CRM', icon: '🤝', group: 'sales', href: '', perm: 'module.crm', status: 'planned', depends: ['contacts'], description: 'Lead, opportunity, pipeline, đội sales và dự báo.' },
@@ -28,17 +28,17 @@ export const MODULES = [
   { key: 'subscriptions', label: 'Đăng ký', icon: '🔁', group: 'sales', href: '', perm: 'module.subscriptions', status: 'planned', depends: ['sales', 'invoice'], description: 'Gói định kỳ, gia hạn, tự động thanh toán và báo cáo churn.' },
   { key: 'ecommerce', label: 'eCommerce', icon: '🛍️', group: 'sales', href: '', perm: 'module.ecommerce', status: 'planned', depends: ['website', 'inventory', 'payment'], description: 'Catalog online, cart, checkout, payment, delivery và tài khoản khách.' },
 
-  { key: 'purchase', label: 'Mua hàng', icon: '📥', group: 'supply', href: '', perm: 'module.purchase', status: 'planned', depends: ['inventory', 'contacts'], description: 'RFQ, purchase order, nhà cung cấp, bảng giá NCC và bill control.' },
+  { key: 'purchase', label: 'Mua hàng', icon: '📥', group: 'supply', href: '/purchase', perm: 'module.purchase', status: 'active', depends: ['inventory', 'contacts'], description: 'Đơn mua hàng, nhận hàng vào kho và công nợ nhà cung cấp.' },
   { key: 'manufacturing', label: 'Sản xuất', icon: '🏭', group: 'supply', href: '', perm: 'module.manufacturing', status: 'planned', depends: ['inventory'], description: 'BoM, work center, production order, scrap, backorder và shop floor.' },
   { key: 'barcode', label: 'Mã vạch', icon: '▥', group: 'supply', href: '', perm: 'module.barcode', status: 'planned', depends: ['inventory'], description: 'Quét kho, location barcode, lot/serial barcode và RFID.' },
   { key: 'fleet', label: 'Đội xe', icon: '🚚', group: 'supply', href: '', perm: 'module.fleet', status: 'planned', depends: [], description: 'Phương tiện, tài xế, chi phí, lịch bảo trì và giao nhận.' },
 
   { key: 'accounting', label: 'Kế toán', icon: '📚', group: 'finance', href: '', perm: 'module.accounting', status: 'planned', depends: ['invoice'], description: 'Sổ cái, hệ tài khoản, thuế, journal, reconciliation và báo cáo tài chính.' },
-  { key: 'invoice', label: 'Hóa đơn', icon: '🧾', group: 'finance', href: '/admin?view=settings&tab=invoices', perm: 'module.invoice', status: 'active', depends: ['accounting'], description: 'Hóa đơn điện tử, trạng thái phát hành, tra cứu, hủy và cấu hình HĐĐT.' },
-  { key: 'expenses', label: 'Chi phí', icon: '💸', group: 'finance', href: '', perm: 'module.expenses', status: 'planned', depends: ['accounting'], description: 'Ghi nhận chi phí, duyệt, hoàn ứng và tái xuất chi phí.' },
+  { key: 'invoice', label: 'Hóa đơn', icon: '🧾', group: 'finance', href: '/settings?tab=invoices', perm: 'module.invoice', status: 'active', depends: ['accounting'], description: 'Hóa đơn điện tử, trạng thái phát hành, tra cứu, hủy và cấu hình HĐĐT.' },
+  { key: 'expenses', label: 'Chi phí', icon: '💸', group: 'finance', href: '/expenses', perm: 'module.expenses', status: 'active', depends: ['contacts'], description: 'Sổ chi phí theo danh mục: chi từ tiền két hoặc kế toán chi trực tiếp, đối chiếu quỹ.' },
   { key: 'payment', label: 'Thanh toán online', icon: '💱', group: 'finance', href: '', perm: 'module.payment', status: 'planned', depends: ['invoice'], description: 'Provider, QR, terminal, settlement và đối soát.' },
 
-  { key: 'contacts', label: 'Liên hệ', icon: '👥', group: 'essentials', href: '', perm: 'module.contacts', status: 'planned', depends: [], description: 'Khách hàng, nhà cung cấp, địa chỉ giao/nhận, import/export và merge.' },
+  { key: 'contacts', label: 'Liên hệ', icon: '👥', group: 'essentials', href: '/contacts', perm: 'module.contacts', status: 'active', depends: [], description: 'Khách hàng & nhà cung cấp dùng chung một danh bạ: SĐT, MST, địa chỉ, người liên hệ.' },
   { key: 'reports', label: 'Báo cáo', icon: '📈', group: 'essentials', href: '/admin', perm: 'module.reports', status: 'active', depends: [], description: 'Pivot/list/chart dashboard, filter/group/search và KPI vận hành.' },
   { key: 'import_export', label: 'Nhập/xuất dữ liệu', icon: '↕️', group: 'essentials', href: '', perm: 'module.import_export', status: 'planned', depends: [], description: 'Import, export, template, audit import và mapping dữ liệu.' },
 
@@ -56,7 +56,7 @@ export const MODULES = [
   { key: 'developer', label: 'Developer', icon: '🛠️', group: 'developer', href: '', perm: 'module.developer', status: 'planned', depends: ['settings'], description: 'Debug mode, technical menu, model metadata, API và tutorial nội bộ.' },
 ];
 
-export const MODULE_PERMISSIONS = MODULES.map(m => ({
+export const MODULE_PERMISSIONS = MODULES.filter(m => m.perm).map(m => ({
   key: m.perm,
   label: m.label,
 }));
@@ -64,7 +64,15 @@ export const MODULE_PERMISSIONS = MODULES.map(m => ({
 export function listModules(perms = []) {
   const set = new Set(perms || []);
   const all = set.has('*');
-  return MODULES.map(m => ({ ...m, visible: all || set.has(m.perm) }));
+  const hasSettings = [...set].some(p => p === 'settings.manage' || p.startsWith('settings.') || p === 'warehouse.manage');
+  const hasReports = set.has('reports') || [...set].some(p => p.startsWith('report.'));
+  return MODULES.map(m => ({
+    ...m,
+    visible: all
+      || (m.key === 'settings' ? hasSettings : false)
+      || (m.key === 'reports' ? hasReports || set.has(m.perm) : false)
+      || (m.key !== 'settings' && (!m.perm || set.has(m.perm))),
+  }));
 }
 
 export function visibleModules(perms = []) {

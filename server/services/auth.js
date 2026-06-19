@@ -1,11 +1,17 @@
-// Authentication & role-based permissions. PIN login (typical for POS).
+﻿// Authentication & role-based permissions. PIN login (typical for POS).
 // Tokens are persisted in SQLite so refreshes and local server restarts do not
 // force staff to log in again.
 import { db, uid, now, audit } from '../db.js';
 import { archiveStaff } from './archive.js';
 import { MODULE_PERMISSIONS } from './modules.js';
+import { REPORTS } from './reportCenter.js';
 
 const sessions = new Map(); // token -> { user, at }
+
+const REPORT_PERMISSIONS = REPORTS.map(r => ({
+  key: `report.${r.key}`,
+  label: `Báo cáo — ${r.label}`,
+}));
 
 // Catalog of every permission with a plain-language label (shown on the settings page).
 export const PERMISSIONS = [
@@ -20,11 +26,13 @@ export const PERMISSIONS = [
   { key: 'invoice', label: 'Xuất hóa đơn điện tử' },
   { key: 'online', label: 'Xử lý đơn hàng online' },
   { key: 'kds', label: 'Sử dụng màn hình bếp' },
-  { key: 'reports', label: 'Xem báo cáo và bảng điều khiển' },
+  { key: 'reports', label: 'Báo cáo — xem toàn bộ trung tâm báo cáo' },
+  ...REPORT_PERMISSIONS,
   { key: 'audit.view', label: 'Xem nhật ký hoạt động' },
   { key: 'settings.manage', label: 'Quản lý người dùng và phân quyền' },
   { key: 'settings.users', label: 'Cài đặt — Quản lý nhân viên' },
   { key: 'settings.perms', label: 'Cài đặt — Quản lý quyền và vai trò' },
+  { key: 'settings.branches', label: 'Cài đặt — Quản lý chi nhánh & phân vùng' },
   { key: 'settings.sync', label: 'Cài đặt — Cloud Sync & Đồng bộ ngoại tuyến' },
   { key: 'settings.integrations', label: 'Cài đặt — Liên kết dịch vụ (MISA, PayOS...)' },
   { key: 'settings.connections', label: 'Cài đặt — Kết nối hệ thống (Mạng, máy in, POS...)' },
@@ -55,11 +63,11 @@ export const ROLES = [
 const DEFAULT_ROLE_PERMS = {
   owner: ['*'],
   manager: ['menu.manage', 'inventory.adjust', 'warehouse.manage', 'refund', 'void', 'discount', 'reports', 'invoice', 'online', 'sell', 'pay', 'audit.view', 'settings.manage',
-    'module.ipad', 'module.pos', 'module.retail', 'module.kds', 'module.online', 'module.warehouse', 'module.inventory', 'module.admin', 'module.settings', 'module.printing',
-    'module.invoice', 'module.reports'],
+    'module.ipad', 'module.pos', 'module.retail', 'module.kds', 'module.online', 'module.warehouse', 'module.inventory', 'module.printing',
+    'module.invoice', 'module.reports', 'module.contacts', 'module.purchase', 'module.expenses'],
   cashier: ['sell', 'pay', 'discount', 'invoice', 'module.pos', 'module.retail', 'module.invoice'],
   kitchen: ['kds', 'module.kds'],
-  warehouse: ['inventory.adjust', 'warehouse.manage', 'warehouse', 'module.warehouse', 'module.inventory'],
+  warehouse: ['inventory.adjust', 'warehouse.manage', 'warehouse', 'module.warehouse', 'module.inventory', 'module.purchase'],
 };
 export const ROLE_PERMS = DEFAULT_ROLE_PERMS; // kept for backwards-compat imports
 
@@ -204,30 +212,104 @@ export function setRolePerms(role, perms, branch_id = 'br1') {
   return permMatrix();
 }
 
-export function login(username, pin) {
+function parseBranchAccess(raw) {
+  try {
+    const list = typeof raw === 'string' ? JSON.parse(raw || '[]') : raw;
+    return Array.isArray(list) ? list.map(x => String(x)).filter(Boolean) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function listBranches({ all = false } = {}) {
+  const rows = db.prepare(`SELECT * FROM branches ORDER BY sort,name`).all()
+    .map(b => ({ ...b, active: b.active !== 0 }));
+  return all ? rows : rows.filter(b => b.active);
+}
+
+function branchExists(id, { includeInactive = false } = {}) {
+  if (!id) return false;
+  const row = db.prepare(`SELECT id,active FROM branches WHERE id=?`).get(id);
+  return !!row && (includeInactive || row.active !== 0);
+}
+
+export function userBranchIds(user) {
+  if (!user) return ['br1'];
+  if (user.role === 'owner') return listBranches().map(b => b.id);
+  const access = parseBranchAccess(user.branch_access_json || user.branch_access || user.branch_ids);
+  if (access.includes('*')) return listBranches().map(b => b.id);
+  const ids = new Set([user.branch_id || 'br1', ...access]);
+  return [...ids].filter(id => branchExists(id));
+}
+
+export function canAccessBranch(user, branch_id) {
+  if (!branch_id || !branchExists(branch_id)) return false;
+  return userBranchIds(user).includes(branch_id);
+}
+
+export function publicBranch(req) {
+  const requested = String(req?.headers?.['x-branch-id'] || req?.query?.branch_id || req?.body?.branch_id || 'br1');
+  return branchExists(requested) ? requested : 'br1';
+}
+
+export function resolveBranch(req) {
+  const requested = String(req?.headers?.['x-branch-id'] || req?.query?.branch_id || req?.body?.branch_id || req?.user?.branch_id || 'br1');
+  if (!req?.user) return publicBranch(req);
+  if (canAccessBranch(req.user, requested)) return requested;
+  const fallback = req.user.branch_id || userBranchIds(req.user)[0] || 'br1';
+  if (canAccessBranch(req.user, fallback)) return fallback;
+  throw new Error('Tài khoản này không có quyền truy cập chi nhánh đã chọn.');
+}
+
+function normalizeBranchAccess(body = {}, role = 'cashier', homeBranch = 'br1') {
+  if (role === 'owner') return ['*'];
+  const raw = body.branch_access || body.branch_ids || body.branchAccess || [];
+  const ids = Array.isArray(raw) ? raw : [];
+  const clean = [...new Set([homeBranch, ...ids].map(x => String(x || '').trim()).filter(Boolean))]
+    .filter(id => branchExists(id));
+  return clean.length ? clean : [homeBranch];
+}
+
+export function login(username, pin, branch_id = 'br1') {
   const u = db.prepare(`SELECT * FROM users WHERE username=? AND active=1`).get(String(username || '').toLowerCase());
   if (!u || u.pin !== String(pin)) throw new Error('Sai tài khoản hoặc mã PIN');
+  const selectedBranch = branchExists(branch_id) ? branch_id : (u.branch_id || 'br1');
+  if (!canAccessBranch(u, selectedBranch)) throw new Error('Tài khoản này chưa được cấp quyền vào chi nhánh đã chọn.');
   const token = uid('tk_');
   const user = publicUser(u);
   const ts = now();
   sessions.set(token, { user, at: ts });
   db.prepare(`INSERT INTO auth_sessions (token,user_id,branch_id,created_at,last_seen_at) VALUES (?,?,?,?,?)`)
-    .run(token, u.id, u.branch_id || 'br1', ts, ts);
-  audit('auth.login', { user: u.username, role: u.role }, u.branch_id || 'br1', u.username);
+    .run(token, u.id, selectedBranch, ts, ts);
+  audit('auth.login', { user: u.username, role: u.role }, selectedBranch, u.username);
   return { token, user, perms: effectivePermsForUser(u) };
 }
 
 export function verifyManagerOwnerPin(pin, branch_id = 'br1') {
   const clean = String(pin || '').trim();
   if (!clean) return null;
-  const row = db.prepare(`
+  const rows = db.prepare(`
     SELECT * FROM users
     WHERE active=1
       AND pin=?
       AND role IN ('owner','manager')
-      AND (branch_id=? OR branch_id IS NULL)
     ORDER BY CASE role WHEN 'owner' THEN 0 ELSE 1 END, name
-    LIMIT 1`).get(clean, branch_id);
+    LIMIT 20`).all(clean);
+  const row = rows.find(u => canAccessBranch(u, branch_id));
+  return row ? publicUser(row) : null;
+}
+
+export function verifyWarehouseConfigPin(pin, branch_id = 'br1') {
+  const clean = String(pin || '').trim();
+  if (!clean) return null;
+  const rows = db.prepare(`
+    SELECT * FROM users
+    WHERE active=1
+      AND pin=?
+      AND role IN ('owner','manager','warehouse')
+    ORDER BY CASE role WHEN 'owner' THEN 0 WHEN 'manager' THEN 1 ELSE 2 END, name
+    LIMIT 20`).all(clean);
+  const row = rows.find(u => canAccessBranch(u, branch_id));
   return row ? publicUser(row) : null;
 }
 
@@ -259,13 +341,16 @@ export function userFor(token) {
 }
 
 export function listUsers(branch_id = 'br1') {
-  return db.prepare(`SELECT id,username,name,role FROM users WHERE branch_id=? AND active=1 ORDER BY role`).all(branch_id);
+  return db.prepare(`SELECT * FROM users WHERE active=1 ORDER BY role,name`).all()
+    .filter(u => canAccessBranch(u, branch_id))
+    .map(publicUser);
 }
 
 // ---- User management (settings.manage) ----
 export function listAllUsers(branch_id = 'br1') {
-  return db.prepare(`SELECT id,username,name,role,active,lang FROM users WHERE branch_id=? ORDER BY active DESC, role, name`).all(branch_id)
-    .map(u => ({ ...u, active: !!u.active, lang: u.lang || 'vi', ...userPermDetails(u) }));
+  return db.prepare(`SELECT * FROM users ORDER BY active DESC, role, name`).all()
+    .filter(u => canAccessBranch(u, branch_id))
+    .map(u => ({ ...publicUser(u), active: !!u.active, lang: u.lang || 'vi', ...userPermDetails(u) }));
 }
 function validRole(r) { return ROLES.some(x => x.key === r); }
 export function createUser(body, branch_id = 'br1') {
@@ -273,17 +358,19 @@ export function createUser(body, branch_id = 'br1') {
   const name = String(body.name || '').trim();
   const pin = String(body.pin || '').trim();
   const lang = String(body.lang || 'vi').trim();
+  const homeBranch = branchExists(body.branch_id) ? String(body.branch_id) : branch_id;
   if (!username || !name) throw new Error('Cần nhập tên và tên đăng nhập');
-  if (!/^\d{4,6}$/.test(pin)) throw new Error('Mã PIN phải 4–6 chữ số');
+  if (!/^\d{4}$/.test(pin)) throw new Error('Mã PIN phải đúng 4 chữ số');
   if (!validRole(body.role)) throw new Error('Vai trò không hợp lệ');
   if (db.prepare(`SELECT 1 FROM users WHERE username=?`).get(username)) throw new Error('Tên đăng nhập đã tồn tại');
   const id = uid('u_');
-  db.prepare(`INSERT INTO users (id,branch_id,username,name,pin,role,active,lang) VALUES (?,?,?,?,?,?,1,?)`)
-    .run(id, branch_id, username, name, pin, body.role, lang);
-  if (Array.isArray(body.perms)) setUserPerms(id, body.perms, branch_id);
-  audit('user.create', { username, role: body.role }, branch_id);
-  const row = db.prepare(`SELECT id,username,name,role,active,lang FROM users WHERE id=?`).get(id);
-  const out = { ...row, active: !!row.active, lang: row.lang || 'vi', ...userPermDetails(row) };
+  const access = normalizeBranchAccess(body, body.role, homeBranch);
+  db.prepare(`INSERT INTO users (id,branch_id,username,name,pin,role,active,lang,branch_access_json) VALUES (?,?,?,?,?,?,1,?,?)`)
+    .run(id, homeBranch, username, name, pin, body.role, lang, JSON.stringify(access));
+  if (Array.isArray(body.perms)) setUserPerms(id, body.perms, homeBranch);
+  audit('user.create', { username, role: body.role, branch_id: homeBranch, branch_access: access }, homeBranch);
+  const row = db.prepare(`SELECT * FROM users WHERE id=?`).get(id);
+  const out = { ...publicUser(row), active: !!row.active, lang: row.lang || 'vi', ...userPermDetails(row) };
   archiveStaff(out);
   return out;
 }
@@ -293,19 +380,21 @@ export function updateUser(id, body, branch_id = 'br1') {
   const name = body.name !== undefined ? String(body.name).trim() || cur.name : cur.name;
   const role = body.role !== undefined && validRole(body.role) ? body.role : cur.role;
   const lang = body.lang !== undefined ? String(body.lang).trim() || cur.lang || 'vi' : cur.lang || 'vi';
+  const homeBranch = body.branch_id !== undefined && branchExists(body.branch_id) ? String(body.branch_id) : (cur.branch_id || branch_id);
   let pin = cur.pin;
-  if (body.pin) { if (!/^\d{4,6}$/.test(String(body.pin))) throw new Error('Mã PIN phải 4–6 chữ số'); pin = String(body.pin); }
+  if (body.pin) { if (!/^\d{4}$/.test(String(body.pin))) throw new Error('Mã PIN phải đúng 4 chữ số'); pin = String(body.pin); }
   const active = body.active !== undefined ? (body.active ? 1 : 0) : cur.active;
   if (cur.role === 'owner' && role !== 'owner' && db.prepare(`SELECT COUNT(*) n FROM users WHERE role='owner' AND active=1`).get().n <= 1)
     throw new Error('Phải còn ít nhất một Chủ quán');
-  db.prepare(`UPDATE users SET name=?, role=?, pin=?, active=?, lang=? WHERE id=?`).run(name, role, pin, active, lang, id);
-  if (Array.isArray(body.perms)) setUserPerms(id, body.perms, branch_id);
+  const access = normalizeBranchAccess(body, role, homeBranch);
+  db.prepare(`UPDATE users SET name=?, role=?, pin=?, active=?, lang=?, branch_id=?, branch_access_json=? WHERE id=?`).run(name, role, pin, active, lang, homeBranch, JSON.stringify(access), id);
+  if (Array.isArray(body.perms)) setUserPerms(id, body.perms, homeBranch);
   else if (role !== cur.role) db.prepare(`DELETE FROM user_perms WHERE user_id=?`).run(id);
   // revoke sessions if deactivated
   if (!active) db.prepare(`DELETE FROM auth_sessions WHERE user_id=?`).run(id);
-  audit('user.update', { username: cur.username, role }, branch_id);
-  const row = db.prepare(`SELECT id,username,name,role,active,lang FROM users WHERE id=?`).get(id);
-  const out = { ...row, active: !!row.active, lang: row.lang || 'vi', ...userPermDetails(row) };
+  audit('user.update', { username: cur.username, role, branch_id: homeBranch, branch_access: access }, homeBranch);
+  const row = db.prepare(`SELECT * FROM users WHERE id=?`).get(id);
+  const out = { ...publicUser(row), active: !!row.active, lang: row.lang || 'vi', ...userPermDetails(row) };
   archiveStaff(out);
   return out;
 }
@@ -316,8 +405,8 @@ export function updateOwnLang(user_id, lang, branch_id = 'br1') {
   if (!cur) throw new Error('Người dùng không tồn tại');
   db.prepare(`UPDATE users SET lang=? WHERE id=?`).run(clean, user_id);
   audit('user.lang.update', { username: cur.username, lang: clean }, branch_id, cur.username);
-  const row = db.prepare(`SELECT id,username,name,role,active,lang FROM users WHERE id=?`).get(user_id);
-  const out = { ...row, active: !!row.active, lang: row.lang || 'vi', ...userPermDetails(row) };
+  const row = db.prepare(`SELECT * FROM users WHERE id=?`).get(user_id);
+  const out = { ...publicUser(row), active: !!row.active, lang: row.lang || 'vi', ...userPermDetails(row) };
   archiveStaff(out);
   return publicUser(out);
 }
@@ -340,7 +429,17 @@ function tokenFromReq(req) {
 }
 
 function publicUser(u) {
-  return { id: u.id, name: u.name, role: u.role, username: u.username, lang: u.lang || 'vi' };
+  const branch_ids = userBranchIds(u);
+  return {
+    id: u.id,
+    name: u.name,
+    role: u.role,
+    username: u.username,
+    lang: u.lang || 'vi',
+    branch_id: u.branch_id || branch_ids[0] || 'br1',
+    branch_ids,
+    branch_access: parseBranchAccess(u.branch_access_json || u.branch_access || u.branch_ids),
+  };
 }
 
 // Express middleware factory. Pass a permission string to gate an endpoint.
@@ -367,3 +466,4 @@ export function attachUser() {
 export function actorName(req) {
   return req?.user?.name || req?.user?.username || 'system';
 }
+

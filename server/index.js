@@ -57,7 +57,8 @@ app.use('/api', apiNotFound);
 app.use((req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
 app.use(express.static(WEB, { etag: false, lastModified: false }));
 app.get('/', (req, res) => res.sendFile(join(WEB, 'index.html')));
-for (const v of ['ipad', 'pos', 'kds', 'admin', 'retail', 'warehouse', 'sim', 'printers', 'online', 'settings']) {
+app.get('/settings', (req, res) => res.sendFile(join(WEB, 'admin.html')));
+for (const v of ['ipad', 'pos', 'kds', 'admin', 'retail', 'warehouse', 'sim', 'printers', 'online', 'contacts', 'purchase', 'expenses']) {
   app.get('/' + v, (req, res) => res.sendFile(join(WEB, v + '.html')));
 }
 app.use(errorHandler);

@@ -4,8 +4,52 @@ import { getLang, setLocalLang, t, translateText, TRANSLATIONS, applyDOMTranslat
 import { apiRequest, apiUrl as buildApiUrl } from '/js/core/apiClient.js';
 import { connectRealtime } from '/js/core/realtimeClient.js';
 
-export const BRANCH = 'br1';
+export const DEFAULT_BRANCH = 'br1';
+export const BRANCH = DEFAULT_BRANCH;
 export const apiUrl = buildApiUrl;
+const BRANCH_KEY = 'active_branch_id';
+const BRANCH_CACHE_KEY = 'branches_cache';
+
+export function getBranchId() {
+  return localStorage.getItem(BRANCH_KEY) || DEFAULT_BRANCH;
+}
+
+export function getBranches() {
+  try { return JSON.parse(localStorage.getItem(BRANCH_CACHE_KEY) || '[]'); } catch { return []; }
+}
+
+export function selectedBranch() {
+  const id = getBranchId();
+  return branchesForCurrentUser().find(b => b.id === id) || getBranches().find(b => b.id === id) || { id, name: id === DEFAULT_BRANCH ? 'Dan D Pak Sala' : id, code: id };
+}
+
+function branchesForCurrentUser() {
+  const branches = getBranches();
+  const user = getUser();
+  if (!user) return branches;
+  if ((user.branch_access || []).includes('*')) return branches;
+  const allowed = new Set(Array.isArray(user.branch_ids) ? user.branch_ids : [user.branch_id || DEFAULT_BRANCH]);
+  return branches.filter(b => allowed.has(b.id));
+}
+
+export function setBranchId(id, { reload = false } = {}) {
+  const clean = String(id || DEFAULT_BRANCH).trim() || DEFAULT_BRANCH;
+  localStorage.setItem(BRANCH_KEY, clean);
+  if (reload) location.reload();
+  return clean;
+}
+
+export async function syncBranches() {
+  const rows = await apiRequest('/branches', {
+    token: getToken() || '',
+    headers: { 'x-branch-id': getBranchId() },
+    cache: 'no-store',
+  });
+  const branches = Array.isArray(rows) ? rows : [];
+  localStorage.setItem(BRANCH_CACHE_KEY, JSON.stringify(branches));
+  if (!branches.some(b => b.id === getBranchId())) setBranchId(branches[0]?.id || DEFAULT_BRANCH);
+  return branches;
+}
 
 export { getLang, t, translateText, TRANSLATIONS, applyDOMTranslations, watchAndTranslate };
 export const setLang = async (l) => {
@@ -25,7 +69,11 @@ export const setLang = async (l) => {
 
 export async function api(path, opts = {}) {
   try {
-    return await apiRequest(path, { ...opts, token: getToken() || '' });
+    return await apiRequest(path, {
+      ...opts,
+      token: getToken() || '',
+      headers: { ...(opts.headers || {}), 'x-branch-id': getBranchId() },
+    });
   } catch (e) {
     const demo = demoApiFallback(path);
     if (demo !== undefined) return demo;
@@ -38,9 +86,16 @@ export const getToken = () => localStorage.getItem('auth_token');
 export const getUser = () => { try { return JSON.parse(localStorage.getItem('auth_user') || 'null'); } catch { return null; } };
 export const getPerms = () => { try { return JSON.parse(localStorage.getItem('auth_perms') || '[]'); } catch { return []; } };
 export const hasPerm = (p) => { const ps = getPerms(); return ps.includes('*') || ps.includes(p) || getUser()?.role === 'owner'; };
+function ensureBranchForUser(user) {
+  const allowed = Array.isArray(user?.branch_ids) ? user.branch_ids : [];
+  if (allowed.length && !allowed.includes(getBranchId())) setBranchId(user.branch_id || allowed[0] || DEFAULT_BRANCH);
+}
 export const canOpenModule = (keyOrModule) => {
   const m = typeof keyOrModule === 'string' ? MODULES.find(x => x.key === keyOrModule) : keyOrModule;
-  return !!m && (m.status === 'active') && (!m.perm || hasPerm(m.perm));
+  if (!m || m.status !== 'active') return false;
+  if (m.key === 'settings') return hasPerm('settings.manage') || getPerms().some(p => p.startsWith('settings.') || p === 'warehouse.manage');
+  if (m.key === 'reports') return hasPerm('reports') || hasPerm(m.perm) || getPerms().some(p => p.startsWith('report.'));
+  return !m.perm || hasPerm(m.perm);
 };
 export async function requireModuleAccess(moduleKey) {
   await requireLogin();
@@ -70,7 +125,7 @@ const DEMO_LOGIN_USERS = [
 ];
 const DEMO_PERMS = {
   owner: ['*'],
-  manager: ['menu.manage','inventory.adjust','warehouse.manage','refund','void','discount','reports','invoice','online','sell','pay','audit.view','settings.manage','module.ipad','module.pos','module.retail','module.kds','module.online','module.warehouse','module.inventory','module.admin','module.settings','module.printing','module.crm','module.sales','module.purchase','module.accounting','module.invoice','module.expense','module.website','module.payment','module.contacts','module.reports','module.import_export','module.calendar','module.discuss','module.documents','module.knowledge','module.project'],
+  manager: ['menu.manage','inventory.adjust','warehouse.manage','refund','void','discount','reports','invoice','online','sell','pay','audit.view','settings.manage','module.ipad','module.pos','module.retail','module.kds','module.online','module.warehouse','module.inventory','module.printing','module.crm','module.sales','module.purchase','module.accounting','module.invoice','module.expense','module.website','module.payment','module.contacts','module.reports','module.import_export','module.calendar','module.discuss','module.documents','module.knowledge','module.project'],
   cashier: ['sell','pay','discount','invoice','module.pos','module.retail','module.invoice'],
   kitchen: ['module.kds'],
   warehouse: ['inventory.adjust','warehouse.manage','module.warehouse','module.inventory'],
@@ -93,8 +148,124 @@ function demoApiFallback(path) {
   return undefined;
 }
 
+export function requestPinCode(opts = {}) {
+  const {
+    title = 'Nhập mã PIN',
+    subtitle = '',
+    roleLabel = '',
+    length = 4,
+    cancelText = 'Hủy',
+    onSubmit = null,
+    errorText = 'Mã PIN không đúng',
+  } = opts;
+  injectPinCodeCss();
+  return new Promise(resolve => {
+    const ov = document.createElement('div');
+    ov.className = 'overlay show pin-code-overlay';
+    ov.innerHTML = `<div class="pin-card" role="dialog" aria-modal="true" aria-label="${esc(title)}">
+      <button class="pin-cancel" type="button" id="pinCancel">${esc(cancelText)}</button>
+      <div class="pin-title">${esc(title)}</div>
+      ${subtitle ? `<div class="pin-sub">${esc(subtitle)}</div>` : ''}
+      ${roleLabel ? `<div class="pin-role">${esc(roleLabel)}</div>` : ''}
+      <div class="pin-dots" id="pinDots">${Array.from({ length }, () => '<i></i>').join('')}</div>
+      <div class="pin-error" id="pinError" aria-live="polite"></div>
+      <div class="pin-pad">
+        ${[1,2,3,4,5,6,7,8,9,'blank',0,'back'].map(k => {
+          if (k === 'blank') return '<span></span>';
+          if (k === 'back') return '<button class="pin-key pin-back" type="button" data-pin-key="back" aria-label="Xóa">⌫</button>';
+          return `<button class="pin-key" type="button" data-pin-key="${k}">${k}</button>`;
+        }).join('')}
+      </div>
+    </div>`;
+    document.body.appendChild(ov);
+    const card = ov.querySelector('.pin-card');
+    const dots = ov.querySelector('#pinDots');
+    const err = ov.querySelector('#pinError');
+    let pin = '';
+    let busy = false;
+    const cleanup = () => {
+      document.removeEventListener('keydown', onKey, true);
+      ov.remove();
+    };
+    const draw = () => {
+      dots.querySelectorAll('i').forEach((d, i) => d.classList.toggle('on', i < pin.length));
+    };
+    const fail = (message) => {
+      err.textContent = message || errorText;
+      pin = '';
+      draw();
+      card.classList.remove('shake');
+      void card.offsetWidth;
+      card.classList.add('shake');
+      busy = false;
+    };
+    const submit = async () => {
+      if (busy || pin.length !== length) return;
+      busy = true;
+      err.textContent = '';
+      try {
+        const result = onSubmit ? await onSubmit(pin) : pin;
+        cleanup();
+        resolve(result ?? pin);
+      } catch (e) {
+        fail(e?.message || errorText);
+      }
+    };
+    const press = (key) => {
+      if (busy) return;
+      err.textContent = '';
+      if (key === 'back') { pin = pin.slice(0, -1); draw(); return; }
+      if (!/^\d$/.test(String(key)) || pin.length >= length) return;
+      pin += String(key);
+      draw();
+      if (pin.length === length) setTimeout(submit, 90);
+    };
+    const cancel = () => { cleanup(); resolve(null); };
+    function onKey(e) {
+      if (!ov.isConnected) return;
+      if (/^\d$/.test(e.key)) { e.preventDefault(); press(e.key); }
+      else if (e.key === 'Backspace' || e.key === 'Delete') { e.preventDefault(); press('back'); }
+      else if (e.key === 'Escape') { e.preventDefault(); cancel(); }
+      else if (e.key === 'Enter') { e.preventDefault(); submit(); }
+    }
+    ov.querySelector('#pinCancel').onclick = cancel;
+    ov.querySelectorAll('[data-pin-key]').forEach(b => b.onclick = () => press(b.dataset.pinKey));
+    document.addEventListener('keydown', onKey, true);
+    setTimeout(() => ov.querySelector('[data-pin-key="1"]')?.focus(), 30);
+  });
+}
+
+function injectPinCodeCss() {
+  if (document.getElementById('pinCodeCss')) return;
+  const s = document.createElement('style');
+  s.id = 'pinCodeCss';
+  s.textContent = `
+  .pin-code-overlay{z-index:620;background:rgba(10,18,28,.58);backdrop-filter:blur(7px)}
+  .pin-card{position:relative;width:min(360px,calc(100vw - 32px));border-radius:28px;background:rgba(255,255,255,.96);border:1px solid rgba(148,163,184,.35);box-shadow:0 28px 90px rgba(15,23,42,.28);padding:22px 20px 20px;color:#0f172a;text-align:center}
+  .pin-cancel{position:absolute;top:14px;left:15px;background:transparent;border:0;color:#0ea5c2;font-size:13px;font-weight:750;padding:7px 8px;border-radius:10px}
+  .pin-cancel:hover{background:rgba(14,165,194,.08)}
+  .pin-title{font-size:17px;font-weight:850;line-height:1.25;margin:14px 36px 4px}
+  .pin-sub{font-size:12px;color:#64748b;font-weight:650;line-height:1.45;margin:0 auto;max-width:270px}
+  .pin-role{display:inline-flex;margin-top:8px;border-radius:999px;background:#eef6fa;color:#0a8aa6;padding:5px 10px;font-size:10.5px;font-weight:850;text-transform:uppercase;letter-spacing:.35px}
+  .pin-dots{display:flex;align-items:center;justify-content:center;gap:14px;height:24px;margin:18px 0 8px}
+  .pin-dots i{width:13px;height:13px;border-radius:999px;border:1.8px solid #94a3b8;background:transparent;transition:.12s}
+  .pin-dots i.on{background:#0ea5c2;border-color:#0ea5c2;box-shadow:0 0 0 5px rgba(14,165,194,.10)}
+  .pin-error{min-height:17px;font-size:11px;font-weight:750;color:#ef4444;margin-bottom:6px}
+  .pin-pad{display:grid;grid-template-columns:repeat(3,74px);justify-content:center;gap:10px 14px;margin-top:4px}
+  .pin-key{width:74px;height:58px;border-radius:999px;border:1px solid rgba(148,163,184,.28);background:#f8fafc;color:#0f172a;font-family:var(--mono,monospace);font-size:24px;font-weight:800;box-shadow:0 1px 0 rgba(15,23,42,.05);transition:.1s}
+  .pin-key:hover,.pin-key:focus-visible{border-color:#0ea5c2;background:#eefbff;outline:none}
+  .pin-key:active{transform:scale(.96);background:#dff6fd}
+  .pin-back{font-size:21px;color:#475569;background:transparent;border-color:transparent;box-shadow:none}
+  .pin-card.shake{animation:pinShake .36s}
+  @keyframes pinShake{0%,100%{transform:translateX(0)}20%{transform:translateX(-9px)}40%{transform:translateX(8px)}60%{transform:translateX(-6px)}80%{transform:translateX(5px)}}
+  @media(max-width:420px){.pin-card{border-radius:26px;padding:20px 14px}.pin-pad{grid-template-columns:repeat(3,68px);gap:9px 12px}.pin-key{width:68px;height:54px}}`;
+  document.head.appendChild(s);
+}
+
 // Block the page with a PIN login until a valid session exists. Returns the user.
-export async function requireLogin() {
+export async function requireLogin(opts = {}) {
+  const { branchLocked = false } = opts;
+  try { await syncBranches(); } catch {}
   if (getToken()) {
     if (isDemoToken()) {
       const user = getUser();
@@ -111,6 +282,7 @@ export async function requireLogin() {
     }
     try {
       const me = await api('/me');
+      ensureBranchForUser(me);
       localStorage.setItem('auth_user', JSON.stringify(me));
       localStorage.setItem('auth_perms', JSON.stringify(me.perms || []));
       const userLang = me.lang || 'vi';
@@ -125,67 +297,73 @@ export async function requireLogin() {
   }
   return new Promise(async (resolve) => {
     let demoMode = false;
-    let users = [];
-    try {
-      const rows = await api('/users');
-      users = Array.isArray(rows) ? rows : [];
-    } catch {
+    let branches = getBranches();
+    try { branches = await syncBranches(); } catch {}
+    const loadLoginUsers = async () => {
+      try {
+        const rows = await api('/users');
+        const list = Array.isArray(rows) ? rows : [];
+        if (list.length) { demoMode = false; return list; }
+      } catch {}
       demoMode = true;
-      users = DEMO_LOGIN_USERS;
-    }
-    if (!users.length) {
-      demoMode = true;
-      users = DEMO_LOGIN_USERS;
-    }
+      return DEMO_LOGIN_USERS;
+    };
+    let users = await loadLoginUsers();
     const ov = document.createElement('div');
     ov.id = 'loginGate';
+    const activeBranch = selectedBranch();
+    const activeBranchName = activeBranch.name || activeBranch.code || activeBranch.id || 'Dan D Pak Sala';
+    const branchOptions = branches.length
+      ? branches.map(b => `<option value="${esc(b.id)}" ${b.id === getBranchId() ? 'selected' : ''}>${esc(b.name || b.code || b.id)}</option>`).join('')
+      : `<option value="${DEFAULT_BRANCH}">Dan D Pak Sala</option>`;
+    const branchBlock = branchLocked
+      ? `<div class="lg-branch lg-branch-locked"><span>Chi nhánh đăng nhập</span><b>${esc(activeBranchName)}</b><small>Đổi chi nhánh ở màn hình chọn module trước khi đăng nhập.</small></div>`
+      : `<label class="lg-branch"><span>Cửa hàng / chi nhánh</span><select id="loginBranch">${branchOptions}</select></label>`;
+    const usersHtml = () => users.map(u => `<button class="lg-user" data-u="${esc(u.username)}"><span class="lg-av">${esc((u.name||'?')[0])}</span><span><b>${esc(u.name)}</b><small>${esc(ROLE_LABEL[u.role] || u.role)}</small></span></button>`).join('');
     ov.innerHTML = `
       <div class="lg-card">
         <div class="lg-logo"><img class="lg-brand-logo" src="/assets/DanOnLogo.png" alt="DanDPak"><div class="lg-sub">Đăng nhập nhân viên</div></div>
-        <div class="lg-users">${users.map(u => `<button class="lg-user" data-u="${u.username}"><span class="lg-av">${(u.name||'?')[0]}</span><span><b>${u.name}</b><small>${ROLE_LABEL[u.role] || u.role}</small></span></button>`).join('')}</div>
-        <div class="lg-pin" id="lgPin">
-          <button class="lg-back" id="lgBack">← Chọn lại</button>
-          <div class="lg-who" id="lgWho"></div>
-          <div class="lg-dots" id="lgDots"></div>
-          <div class="lg-pad">${[1,2,3,4,5,6,7,8,9,'',0,'⌫'].map(k => k === '' ? '<span></span>' : `<button class="lg-key" data-k="${k}">${k}</button>`).join('')}</div>
-        </div>
+        ${branchBlock}
+        <div class="lg-users">${usersHtml()}</div>
         <div class="lg-hint">PIN demo — Chủ quán:1234 · Quản lý:2222 · Thu ngân:1111 · Bếp:3333 · Kho:4444</div>
       </div>`;
     document.body.appendChild(ov);
     injectLoginCss();
-    let pickedUser = null, pin = '';
-    const pinPanel = ov.querySelector('#lgPin'), dots = ov.querySelector('#lgDots'), who = ov.querySelector('#lgWho');
-    const pinLength = 4;
-    const drawDots = () => dots.innerHTML = Array.from({length:pinLength},(_,i) => `<i class="${i < pin.length ? 'on' : ''}"></i>`).join('');
-    ov.querySelectorAll('.lg-user').forEach(b => b.onclick = () => {
-      pickedUser = b.dataset.u; pin = ''; drawDots();
-      who.textContent = b.querySelector('b').textContent;
-      ov.classList.add('show-pin');
-    });
-    ov.querySelector('#lgBack').onclick = () => { ov.classList.remove('show-pin'); pin = ''; };
-    ov.querySelectorAll('.lg-key').forEach(k => k.onclick = async () => {
-      const v = k.dataset.k;
-      if (v === '⌫') { pin = pin.slice(0, -1); drawDots(); return; }
-      if (pin.length >= pinLength) return;
-      pin += v; drawDots();
-      if (pin.length === pinLength) {
-        try {
-          const r = demoMode ? demoLogin(pickedUser, pin) : await api('/login', { method: 'POST', body: { username: pickedUser, pin } });
-          localStorage.setItem('auth_token', r.token); localStorage.setItem('auth_user', JSON.stringify(r.user));
-          localStorage.setItem('auth_perms', JSON.stringify(r.perms || []));
-          const userLang = r.user.lang || 'vi';
-          const currentPreferred = localStorage.getItem('preferred_lang') || 'vi';
-          localStorage.setItem('preferred_lang', userLang);
-          ov.remove();
-          if (userLang !== currentPreferred) {
-            location.reload();
-          } else {
-            resolve(r.user);
-          }
-        } catch (e) {
-          pinPanel.classList.add('shake'); setTimeout(() => pinPanel.classList.remove('shake'), 400);
-          pin = ''; drawDots();
-        }
+    const usersBox = ov.querySelector('.lg-users');
+    const branchSel = ov.querySelector('#loginBranch');
+    if (branchSel) {
+      branchSel.onchange = async () => {
+        setBranchId(branchSel.value);
+        usersBox.innerHTML = '<div class="lg-loading">Äang táº£i nhÃ¢n viÃªn...</div>';
+        users = await loadLoginUsers();
+        usersBox.innerHTML = usersHtml();
+      };
+    }
+    ov.addEventListener('click', async (e) => {
+      const b = e.target.closest?.('.lg-user');
+      if (!b || !ov.contains(b)) return;
+      const pickedUser = b.dataset.u;
+      const name = b.querySelector('b')?.textContent || pickedUser;
+      const role = b.querySelector('small')?.textContent || '';
+      const r = await requestPinCode({
+        title: 'Nhập mã PIN',
+        subtitle: `Đăng nhập ${name}`,
+        roleLabel: role,
+        cancelText: 'Chọn lại',
+        onSubmit: (pin) => demoMode ? demoLogin(pickedUser, pin) : api('/login', { method: 'POST', body: { username: pickedUser, pin, branch_id: getBranchId() } }),
+      });
+      if (!r) return;
+      ensureBranchForUser(r.user);
+      localStorage.setItem('auth_token', r.token); localStorage.setItem('auth_user', JSON.stringify(r.user));
+      localStorage.setItem('auth_perms', JSON.stringify(r.perms || []));
+      const userLang = r.user.lang || 'vi';
+      const currentPreferred = localStorage.getItem('preferred_lang') || 'vi';
+      localStorage.setItem('preferred_lang', userLang);
+      ov.remove();
+      if (userLang !== currentPreferred) {
+        location.reload();
+      } else {
+        resolve(r.user);
       }
     });
   });
@@ -200,31 +378,25 @@ function injectLoginCss() {
   .lg-logo{display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:7px;margin:0 auto 22px}
   .lg-brand-logo{width:min(218px,62vw);height:88px;object-fit:contain;display:block;filter:drop-shadow(0 8px 14px rgba(15,23,42,.08))}
   .lg-sub{font-size:13px;color:var(--muted);font-weight:700}
+  .lg-branch{display:flex;flex-direction:column;gap:6px;margin:-6px 0 14px}
+  .lg-branch span{font-size:10.5px;font-weight:850;text-transform:uppercase;color:var(--faint);letter-spacing:.45px}
+  .lg-branch select{width:100%;height:42px;border-radius:12px;font-weight:800;background:#fff}
+  .lg-branch-locked{border:1px solid var(--border2);background:var(--surface2);border-radius:14px;padding:10px 12px;margin:-6px 0 14px}
+  .lg-branch-locked b{font-size:14px;color:var(--text);font-weight:850}
+  .lg-branch-locked small{font-size:11px;color:var(--muted);font-weight:650;line-height:1.35}
   .lg-users{display:flex;flex-direction:column;gap:8px}
   .lg-user{display:flex;align-items:center;gap:12px;padding:11px 14px;border-radius:12px;background:var(--surface2);border:1px solid var(--border2);color:var(--text);text-align:left}
   .lg-user:hover{border-color:var(--brand)}
   .lg-av{width:34px;height:34px;border-radius:50%;background:var(--brand-dim);color:var(--brand);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:15px}
   .lg-user b{font-size:13.5px}.lg-user small{display:block;color:var(--muted);font-size:11px}
-  .lg-pin{display:none}
-  #loginGate.show-pin .lg-users{display:none}
-  #loginGate.show-pin .lg-pin{display:block}
-  .lg-back{background:none;color:var(--muted);font-size:12px;font-weight:600;margin-bottom:8px}
-  .lg-who{text-align:center;font-weight:700;font-size:15px;margin-bottom:12px}
-  .lg-dots{display:flex;gap:12px;justify-content:center;margin-bottom:18px}
-  .lg-dots i{width:13px;height:13px;border-radius:50%;border:2px solid var(--border2)}
-  .lg-dots i.on{background:var(--brand);border-color:var(--brand)}
-  .lg-pad{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
-  .lg-key{padding:15px;border-radius:12px;background:var(--surface2);border:1px solid var(--border2);color:var(--text);font-size:19px;font-weight:700;font-family:var(--mono)}
-  .lg-key:hover{border-color:var(--brand);color:var(--brand)}
-  .lg-pin.shake{animation:lgshake .4s}
-  @keyframes lgshake{0%,100%{transform:translateX(0)}25%{transform:translateX(-8px)}75%{transform:translateX(8px)}}
+  .lg-loading{font-size:12px;color:var(--muted);font-weight:750;text-align:center;padding:16px 8px;background:var(--surface2);border:1px dashed var(--border2);border-radius:12px}
   .lg-hint{margin-top:18px;font-size:10.5px;color:var(--faint);text-align:center;line-height:1.5}`;
   document.head.appendChild(s);
 }
 
 // Socket.IO is served by the server at /socket.io/socket.io.js
 export function connect(device, handlers = {}) {
-  const s = connectRealtime(device, BRANCH, handlers, setOnline);
+  const s = connectRealtime(device, getBranchId(), handlers, setOnline);
   startPingMonitor();
   return s;
 }
@@ -247,7 +419,7 @@ function startPingMonitor() {
   const run = async () => {
     const start = performance.now();
     try {
-      await apiRequest('/ping?ts=' + Date.now(), { cache: 'no-store', token: getToken() || '' });
+      await apiRequest('/ping?ts=' + Date.now(), { cache: 'no-store', token: getToken() || '', headers: { 'x-branch-id': getBranchId() } });
       setOnline(true, Math.max(1, Math.round(performance.now() - start)));
     } catch {
       setOnline(false);
@@ -331,6 +503,7 @@ export function describeAudit(action, detailRaw) {
     'invoice.issue': () => `Phát hành hóa đơn điện tử ${d.invoice_no || ''}`,
     'invoice.cancel': () => `Hủy hóa đơn ${d.invoice_no || ''}${d.reason ? ` (${d.reason})` : ''}`,
     'print.reprint': () => 'In lại phiếu',
+    'warehouse.config.reauth': () => `Xác nhận PIN để ${d.action === 'create' ? 'tạo kho mới' : 'cấu hình kho'}`,
     'warehouse.create': () => `Tạo kho: ${d.name || ''}`,
     'warehouse.update': () => `Cập nhật kho: ${d.name || ''}`,
     'sku.create': () => 'Tạo sản phẩm bán lẻ',
@@ -354,31 +527,18 @@ export function describeAudit(action, detailRaw) {
 let _activeTopbar = null;
 export function topbar(active) {
   _activeTopbar = active;
-  const activeKey = active === 'printers' ? 'printing' : active;
-  const devs = TOPBAR_MODULES
-    .map(k => MODULES.find(m => m.key === k))
-    .filter(Boolean)
-    .filter(m => canOpenModule(m) || activeKey === m.key);
-
-  const branchLabel = getLang() === 'en' ? 'Branch: Dan D Pak Sala · Live' : 'Chi nhánh: Dan D Pak Sala · Trực tiếp';
-
-  const menuLabel = getLang() === 'en' ? 'Menu' : 'Menu';
+  const br = selectedBranch();
+  const branchName = esc(br.name || br.code || br.id);
+  const branchLabel = getLang() === 'en' ? `Branch: ${branchName} · Live` : `Chi nhánh: ${branchName} · Trực tiếp`;
+  const homeTitle = getLang() === 'en' ? 'Back to Launcher' : 'Quay lại Launcher (chọn module khác)';
+  // Module navigation lives on the Launcher (home). The topbar only carries
+  // identity (logo + branch), live clock and the current user / logout.
   return `<header class="topbar">
-    <div class="logo brand-mark" ondblclick="location.href = '/'" style="cursor:pointer" title="${getLang() === 'en' ? 'Double-click to return to Launcher' : 'Nhấp đúp để quay lại Launcher'}"><img src="/assets/DanOnLogo.png" alt="DanDPak"><small>${branchLabel}</small></div>
-    <button class="topnav-toggle" id="topnavToggle" type="button" aria-label="${menuLabel}" aria-expanded="false"><span class="bars"></span></button>
-    <div class="topnav-panel">
-      <nav class="devtabs">${devs.map(m => {
-        let label = m.label;
-        if (getLang() === 'en') {
-          label = TRANSLATIONS[label] || label;
-        }
-        return `<a class="devtab ${m.key === activeKey ? 'active' : ''}" href="${m.href}">${m.icon} ${label.replace(' Self-Order','').replace('FnB ','')}</a>`;
-      }).join('')}</nav>
-      <div class="topright">
-        <span class="clock" id="clock"></span>
-        <span class="onlinedot"><i></i><span>Online</span></span>
-        <span id="userchip"></span>
-      </div>
+    <div class="logo brand-mark" onclick="location.href = '/'" style="cursor:pointer" title="${homeTitle}"><img src="/assets/DanOnLogo.png" alt="DanDPak"><small>${branchLabel}</small></div>
+    <div class="topright">
+      <span class="clock" id="clock"></span>
+      <span class="onlinedot"><i></i><span>Online</span></span>
+      <span id="userchip"></span>
     </div>
   </header>`;
 }
@@ -397,21 +557,8 @@ export function renderUserChip() {
   document.getElementById('logoutBtn').onclick = () => logout();
 }
 
-// Global click event: hamburger menu toggle + language switches
+// Global click event: language switches
 document.addEventListener('click', (e) => {
-  // Responsive topbar hamburger (iPad/tablet): toggle the dropdown panel
-  const toggle = e.target.closest && e.target.closest('#topnavToggle');
-  const tb = document.querySelector('.topbar');
-  if (toggle && tb) {
-    const open = tb.classList.toggle('open');
-    toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
-    return;
-  }
-  // Click outside the open panel → close it (links inside navigate away on their own)
-  if (tb && tb.classList.contains('open') && !(e.target.closest && e.target.closest('.topnav-panel'))) {
-    tb.classList.remove('open');
-    const t = document.getElementById('topnavToggle'); if (t) t.setAttribute('aria-expanded', 'false');
-  }
   if (e.target && e.target.id === 'langViBtn') {
     setLang('vi');
   }
@@ -420,4 +567,36 @@ document.addEventListener('click', (e) => {
   }
 });
 
+function installUiHardening() {
+  if (window.__danDpakUiHardening) return;
+  window.__danDpakUiHardening = true;
+  const editableSelector = 'input,textarea,select,[contenteditable="true"],.allow-select';
+  const isEditable = (target) => !!target?.closest?.(editableSelector);
+  const stop = (e) => {
+    if (isEditable(e.target)) return;
+    e.preventDefault();
+    e.stopPropagation();
+  };
+  document.addEventListener('contextmenu', stop, true);
+  document.addEventListener('selectstart', stop, true);
+  document.addEventListener('dragstart', stop, true);
+  document.addEventListener('copy', stop, true);
+  document.addEventListener('cut', stop, true);
+  document.addEventListener('keydown', (e) => {
+    const key = String(e.key || '').toLowerCase();
+    const ctrl = e.ctrlKey || e.metaKey;
+    const devCombo =
+      e.key === 'F12' ||
+      (ctrl && e.shiftKey && ['i', 'j', 'c', 'k'].includes(key)) ||
+      (e.metaKey && e.altKey && ['i', 'j', 'c'].includes(key)) ||
+      (ctrl && ['u', 's'].includes(key));
+    if (devCombo) {
+      e.preventDefault();
+      e.stopPropagation();
+      return false;
+    }
+  }, true);
+}
+
+installUiHardening();
 initI18n();

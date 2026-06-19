@@ -1,8 +1,12 @@
 import { db, now, audit } from '../db.js';
 
 const DEFAULTS = {
-  ipad_staff_pin: '000000',
+  ipad_staff_pin: '0000',
 };
+function storedFourDigitPin(value, fallback = DEFAULTS.ipad_staff_pin) {
+  const digits = String(value || '').replace(/\D/g, '');
+  return digits.length >= 4 ? digits.slice(0, 4) : fallback;
+}
 const INTEGRATIONS_KEY = 'integrations_config';
 const PRINT_CONFIG_KEY = 'print_config';
 const OPERATIONS_CONFIG_KEY = 'operations_config';
@@ -448,6 +452,7 @@ function sanitizeOperationsConfig(raw = {}) {
 export function getSettings(branch_id = 'br1') {
   const rows = db.prepare(`SELECT key,value FROM app_settings WHERE branch_id=?`).all(branch_id);
   const out = { ...DEFAULTS, ...Object.fromEntries(rows.map(r => [r.key, r.value])) };
+  out.ipad_staff_pin = storedFourDigitPin(out.ipad_staff_pin);
   out.print_config = getPrintConfig(branch_id);
   out.operations_config = getOperationsConfig(branch_id);
   return out;
@@ -458,7 +463,7 @@ export function updateSettings(body = {}, branch_id = 'br1') {
   const next = {};
   if (body.ipad_staff_pin !== undefined) {
     const pin = String(body.ipad_staff_pin || '').trim();
-    if (!/^\d{4,8}$/.test(pin)) throw new Error('Mật khẩu iPad phải từ 4 đến 8 chữ số');
+    if (!/^\d{4}$/.test(pin)) throw new Error('Mật khẩu iPad phải đúng 4 chữ số');
     next.ipad_staff_pin = pin;
   }
   if (body.print_config !== undefined) {

@@ -75,7 +75,7 @@ export function createOrUpdateOrder({ branch_id = 'br1', table_id, channel = 'di
     const qty = Math.max(1, parseInt(line.qty) || 1);
     const id = uid('oi_');
     if (line.sku_id) {
-      const sku = db.prepare(`SELECT * FROM skus WHERE id=? AND active=1`).get(line.sku_id);
+      const sku = db.prepare(`SELECT * FROM skus WHERE id=? AND branch_id=? AND active=1`).get(line.sku_id, branch_id);
       if (!sku) throw new Error('SKU không tồn tại: ' + line.sku_id);
       if (sku.stock < qty) throw new Error(`Hết hàng: ${sku.name} (còn ${sku.stock})`);
       const lotId = line.lot_id || null;
@@ -418,15 +418,15 @@ export function createTable({ branch_id = 'br1', zone, code, seats = 4 }) {
   db.prepare(`INSERT INTO tables (id, branch_id, zone, code, seats, status) VALUES (?, ?, ?, ?, ?, 'free')`)
     .run(id, branch_id, cleanZone, cleanCode, parseInt(seats) || 4);
 
-  audit('table.create', { id, zone: cleanZone, code: cleanCode, seats });
+  audit('table.create', { id, zone: cleanZone, code: cleanCode, seats }, branch_id);
   const state = getTableState(id);
   emit('table:updated', state, branch_id);
   emit('stats:dirty', {}, branch_id);
   return state;
 }
 
-export function updateTable(id, { zone, code, seats }) {
-  const table = db.prepare(`SELECT * FROM tables WHERE id=?`).get(id);
+export function updateTable(id, { zone, code, seats }, branch_id = 'br1') {
+  const table = db.prepare(`SELECT * FROM tables WHERE id=? AND branch_id=?`).get(id, branch_id);
   if (!table) throw new Error('Bàn không tồn tại');
 
   const cleanZone = zone !== undefined ? String(zone).trim() : table.zone;
@@ -436,22 +436,22 @@ export function updateTable(id, { zone, code, seats }) {
   if (!cleanZone || !cleanCode) throw new Error('Thiếu khu vực hoặc số bàn');
 
   if (cleanCode !== table.code) {
-    const existing = db.prepare(`SELECT 1 FROM tables WHERE branch_id=? AND code=? AND id!=?`).get(table.branch_id, cleanCode, id);
+    const existing = db.prepare(`SELECT 1 FROM tables WHERE branch_id=? AND code=? AND id!=?`).get(branch_id, cleanCode, id);
     if (existing) throw new Error(`Số bàn "${cleanCode}" đã tồn tại`);
   }
 
   db.prepare(`UPDATE tables SET zone=?, code=?, seats=? WHERE id=?`)
     .run(cleanZone, cleanCode, numSeats, id);
 
-  audit('table.update', { id, zone: cleanZone, code: cleanCode, seats: numSeats });
+  audit('table.update', { id, zone: cleanZone, code: cleanCode, seats: numSeats }, branch_id);
   const state = getTableState(id);
-  emit('table:updated', state, table.branch_id);
-  emit('stats:dirty', {}, table.branch_id);
+  emit('table:updated', state, branch_id);
+  emit('stats:dirty', {}, branch_id);
   return state;
 }
 
-export function deleteTable(id) {
-  const table = db.prepare(`SELECT * FROM tables WHERE id=?`).get(id);
+export function deleteTable(id, branch_id = 'br1') {
+  const table = db.prepare(`SELECT * FROM tables WHERE id=? AND branch_id=?`).get(id, branch_id);
   if (!table) throw new Error('Bàn không tồn tại');
 
   if (table.status !== 'free') {
@@ -465,8 +465,8 @@ export function deleteTable(id) {
 
   db.prepare(`DELETE FROM tables WHERE id=?`).run(id);
 
-  audit('table.delete', { id, zone: table.zone, code: table.code });
-  emit('table:updated', { id, deleted: true }, table.branch_id);
-  emit('stats:dirty', {}, table.branch_id);
+  audit('table.delete', { id, zone: table.zone, code: table.code }, branch_id);
+  emit('table:updated', { id, deleted: true }, branch_id);
+  emit('stats:dirty', {}, branch_id);
   return { id, success: true };
 }

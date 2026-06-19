@@ -15,8 +15,8 @@
       sessionStorage.setItem('settingsActiveTab', tab);
     }
     
-    // Redirect to the admin dashboard
-    window.location.replace('/admin');
+    // Keep old direct file links working; the real Settings module is /settings.
+    window.location.replace('/settings' + (tab ? `?tab=${encodeURIComponent(tab)}` : ''));
   </script>
 </head>
 <body>

@@ -7,10 +7,10 @@
 <script src="/runtime-config.js"></script>
 <script src="/socket.io/socket.io.js"></script>
 <style>
-.rtwrap{display:grid;grid-template-columns:minmax(0,1fr) 420px;gap:16px;height:calc(100vh - 120px)}
+.rtwrap{display:grid;grid-template-columns:minmax(0,1fr) minmax(340px,380px);gap:12px;height:calc(100vh - 120px)}
 @media(max-width:980px){.rtwrap{grid-template-columns:1fr;height:auto}}
 .rtleft{display:flex;flex-direction:column;min-height:0;min-width:0;order:1}
-.scanbox{display:grid;grid-template-columns:minmax(260px,680px) 86px auto;gap:9px;margin-bottom:13px;align-items:center}
+.scanbox{display:grid;grid-template-columns:minmax(260px,520px) auto max-content;gap:8px;margin-bottom:10px;align-items:center;justify-content:start}
 .scanbox input{flex:1;background:var(--surface);border:1px solid var(--border2);border-radius:10px;color:var(--text);padding:12px 15px;font-family:var(--mono);font-size:15px}
 .scanbox input:focus{outline:none;border-color:var(--brand);box-shadow:0 0 0 3px var(--brand-dim)}
 .rtmain{display:flex;flex-direction:column;flex:1;min-height:0}
@@ -27,15 +27,16 @@
 .gridwrap{display:flex;flex-direction:column;min-height:0;flex:1}
 .rtcount{font-size:11.5px;color:var(--muted);font-weight:600;margin-bottom:8px}
 /* POS product tile — touch friendly */
-.rtgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(176px,1fr));gap:12px;overflow-y:auto;align-content:start;padding:0 4px 4px 0;flex:1;min-height:0}
-.rtitem{background:var(--surface);border:1px solid var(--border);border-radius:14px;cursor:pointer;transition:.12s;position:relative;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 1px 2px rgba(20,33,47,.04);min-height:232px}
+.rtgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(154px,1fr));gap:10px;overflow-y:auto;align-content:start;padding:0 4px 4px 0;flex:1;min-height:0}
+.rtitem{background:var(--surface);border:1px solid var(--border);border-radius:12px;cursor:pointer;transition:.12s;position:relative;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 1px 2px rgba(20,33,47,.04);min-height:206px}
 .rtitem:hover{border-color:var(--brand);box-shadow:0 6px 18px rgba(8,145,178,.14)}
 .rtitem:active{transform:scale(.97)}
-.rtitem .photo{height:142px;width:100%;overflow:hidden;background:#fff;display:flex;align-items:center;justify-content:center;border-bottom:1px solid var(--border)}
-.rtitem .photo img{width:100%;height:100%;object-fit:contain;display:block;padding:8px}
-.rtitem .em{aspect-ratio:1/1;display:flex;align-items:center;justify-content:center;font-size:40px;background:var(--surface2)}
-.rtitem .body{padding:9px 11px 11px;display:flex;flex-direction:column;gap:3px;flex:1}
-.rtitem .nm{font-weight:700;font-size:12.5px;line-height:1.28;color:var(--text);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;min-height:32px}
+.rtitem .photo,.rtitem .em{height:122px;width:100%;overflow:hidden;background:#fff;display:flex;align-items:center;justify-content:center;border-bottom:1px solid var(--border);flex:0 0 auto}
+.rtitem .photo img{width:100%;height:100%;object-fit:contain;display:block;padding:7px}
+.rtitem .photo.no-photo,.rtitem .em{font-size:36px;background:linear-gradient(180deg,#fff,var(--surface2));color:var(--faint)}
+.rtitem .photo.no-photo span{opacity:.7}
+.rtitem .body{padding:8px 10px 10px;display:flex;flex-direction:column;gap:2px;flex:1;background:var(--surface)}
+.rtitem .nm{font-weight:750;font-size:12px;line-height:1.26;color:var(--text);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;min-height:31px}
 .rtitem .pr{font-family:var(--mono);color:var(--brand);font-size:14px;font-weight:800;margin-top:auto}
 .rtitem .stk{font-size:10.5px;color:var(--muted);font-weight:600}
 .rtitem.low .stk{color:var(--doing)}
@@ -55,10 +56,14 @@
 .rtitem .bc{display:none}
 .rtitem.noimg .photo img{display:none}
 .rtitem.noimg .photo::after{content:"📦";font-size:38px;opacity:.5}
-.cartpane{background:var(--surface);border:1px solid var(--border);border-radius:14px;display:flex;flex-direction:column;min-height:0;overflow:hidden;order:2}
+.cartpane{background:var(--surface);border:1px solid var(--border);border-radius:12px;display:flex;flex-direction:column;min-height:0;overflow:hidden;order:2}
 .rtwrap > .cartpane + .rtleft + .cartpane{display:none}
 .cartpane .bh{padding:13px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:9px;font-weight:700}
 .cartitems{flex:1;overflow-y:auto;padding:10px 12px;display:flex;flex-direction:column;gap:8px;min-height:120px}
+.cart-empty{margin:auto;min-height:240px;width:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;color:var(--faint);gap:12px;padding:24px 16px}
+.cart-empty img{width:min(210px,68%);max-height:86px;object-fit:contain;opacity:.13;filter:grayscale(1)}
+.cart-empty .hint-pill{border:1px dashed var(--border2);background:var(--surface2);border-radius:999px;padding:8px 12px;font-size:12px;font-weight:750;color:var(--muted)}
+.cart-empty small{font-size:11px;line-height:1.45;color:var(--faint)}
 .cline{background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:9px 11px}
 .cline .r1{display:flex;justify-content:space-between;gap:8px;font-weight:600;font-size:12.5px}
 .cline .r1 .name{min-width:0;line-height:1.25}.cline .r1 .p{font-family:var(--mono);color:var(--brand);white-space:nowrap}
@@ -326,6 +331,54 @@
   min-height: 0;
   height: auto !important;
 }
+@media(max-width:1180px), (max-height:820px){
+  .view{padding:9px 10px!important}
+  .viewhead{margin-bottom:8px}
+  .viewhead .sub{max-width:430px}
+  .tab-bar{margin-bottom:8px;padding:5px 7px;border-radius:10px;gap:6px}
+  .tab-item{padding:6px 10px;font-size:12px;gap:7px;max-width:170px}
+  .tab-item span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .add-tab-btn{width:30px;height:30px;flex:0 0 30px}
+  .rtwrap{grid-template-columns:minmax(0,1fr) minmax(300px,34vw);gap:10px}
+  .scanbox{grid-template-columns:minmax(190px,1fr) 68px auto;gap:7px;margin-bottom:8px}
+  .scanbox input{height:38px;padding:8px 11px;font-size:12.5px}
+  .stocktoggle{min-height:38px;padding:7px 9px;font-size:11px;border-radius:9px}
+  .sw{width:31px;height:18px}.sw::after{width:12px;height:12px}.sw.on::after{left:15px}
+  .rtcount{font-size:10.5px;margin-bottom:5px}
+  .rtgrid{grid-template-columns:repeat(auto-fill,minmax(132px,1fr));gap:8px;padding-right:2px}
+  .rtitem{min-height:172px;border-radius:10px}
+  .rtitem .photo,.rtitem .em{height:94px}
+  .rtitem .photo img{padding:5px}
+  .rtitem .photo.no-photo,.rtitem .em{font-size:30px}
+  .rtitem .body{padding:7px 8px 8px;gap:2px}
+  .rtitem .nm{font-size:11px;line-height:1.22;min-height:27px;-webkit-line-clamp:2}
+  .rtitem .pr{font-size:12px}
+  .rtitem .stk{font-size:9.5px}
+  .rtitem .promo{top:5px;right:5px;padding:2px 6px;font-size:8.8px;max-width:calc(100% - 10px)}
+  .rtitem .oosbadge{top:5px;left:5px;padding:2px 6px;font-size:9px}
+  .cartpane{border-radius:10px}
+  .cartpane .bh{padding:9px 11px;font-size:12.5px}
+  .cartitems{padding:7px;gap:6px;min-height:70px}
+  .cline{padding:7px 8px;border-radius:8px}
+  .cline .r1{font-size:11.5px}
+  .cline .r2{gap:6px;margin-top:6px}
+  .qbtn{width:28px;height:28px}
+  .lotrow{gap:5px;margin-top:5px}
+  .lotrow select{padding:6px 8px;font-size:11px}
+  .cartfoot{padding:9px 11px}
+  .cart-empty{min-height:200px;padding:18px 12px;gap:10px}
+  .cart-empty img{width:min(170px,66%);max-height:70px}
+  .cart-empty .hint-pill{font-size:11px;padding:7px 10px}
+  .brow{font-size:11.5px}
+  .brow.tt{font-size:15px}
+  .custline{padding:7px 9px;margin:4px 0 7px;font-size:11.5px}
+}
+@media(max-width:900px){
+  .rtwrap{grid-template-columns:1fr;height:auto;overflow:auto}
+  .cartpane{order:3;min-height:360px}
+  .scanbox{grid-template-columns:1fr auto}
+  .scanbox .stocktoggle{grid-column:1/-1;width:max-content}
+}
 </style></head>
 <body>
 <div id="top"></div>
@@ -344,7 +397,13 @@
   <div class="rtwrap">
     <div class="cartpane">
       <div class="bh">🧾 Giỏ hàng <span class="chip c-muted" id="cnt">0</span></div>
-      <div class="cartitems" id="cart"><div class="empty" style="margin:auto">Quét/chạm sản phẩm để bắt đầu</div></div>
+      <div class="cartitems" id="cart">
+        <div class="cart-empty">
+          <img src="/assets/DanOnLogo.png" alt="Dan D Pak">
+          <div class="hint-pill">Quét/chạm sản phẩm để bắt đầu</div>
+          <small>Giỏ hàng đang trống</small>
+        </div>
+      </div>
       <div class="cartfoot" id="foot"></div>
     </div>
     <div class="rtleft">
@@ -402,6 +461,7 @@ function renameTabs() {
   tabs.forEach((t, index) => {
     t.name = `Hóa đơn ${String(index + 1).padStart(2, '0')}`;
   });
+  tabCounter = Math.max(tabs.length, ...tabs.map(t=>Number(t.id)||0));
   saveStateToStorage();
 }
 
@@ -448,6 +508,7 @@ function loadStateFromStorage() {
 function renderTabs() {
   const container = document.getElementById('tabBar');
   if (!container) return;
+  renameTabs();
   container.innerHTML = `
     ${tabs.map(t => {
       const isActive = t.id === activeTabId;
@@ -483,8 +544,8 @@ function switchTab(id) {
 }
 
 function addTab() {
-  tabCounter++;
-  const newId = tabCounter;
+  const newId = Math.max(0, ...tabs.map(t=>Number(t.id)||0)) + 1;
+  tabCounter = newId;
   tabs.push({
     id: newId,
     name: '',
@@ -598,7 +659,7 @@ async function ensureRetailShiftOpen(){
 async function loadData(){
   operationsCfg=await api('/operations/config').catch(()=>operationsCfg);
   const [skuRows, lotRows, activeRows] = await Promise.all([
-    api('/skus'),
+    api('/skus?channel=retail'),
     api('/warehouse/lots?item_type=sku'),
     api('/vouchers/active'),
   ]);
@@ -661,7 +722,7 @@ function renderGrid(){
     const out=s.stock<=0;
     const media=s.image
       ? `<div class="photo"><img src="${esc(s.image)}" alt="" loading="lazy" onerror="this.closest('.rtitem').classList.add('noimg')"></div>`
-      : `<div class="em">${s.emoji||'📦'}</div>`;
+      : `<div class="photo no-photo"><span>${s.emoji||'📦'}</span></div>`;
     const hasPromo=true; // tất cả SP đang chạy "mua 5 tặng 1 cùng loại"
     return `<div class="rtitem ${out?'out':''} ${(s.low&&!out)?'low':''}" data-id="${s.id}">
       ${out?'<span class="oosbadge">Hết hàng</span>':''}
@@ -841,7 +902,11 @@ function renderCart(){
   const el=document.getElementById('cart');
   const foot=document.getElementById('foot');
   if(!cart.length){
-    el.innerHTML='<div class="empty" style="margin:auto">Quét/chạm sản phẩm để bắt đầu</div>';
+    el.innerHTML=`<div class="cart-empty">
+      <img src="/assets/DanOnLogo.png" alt="Dan D Pak">
+      <div class="hint-pill">Quét/chạm sản phẩm để bắt đầu</div>
+      <small>Giỏ hàng đang trống</small>
+    </div>`;
     foot.innerHTML='';
     document.getElementById('cnt').textContent='0';
     saveStateToStorage();
@@ -930,7 +995,7 @@ function availableFor(c){ const l=c.lot_id?lots.find(x=>x.id===c.lot_id && x.ite
 async function doScan(){
   const code=scan.value.trim(); if(!code)return;
   try{
-    const s=await api('/skus/barcode/'+encodeURIComponent(code));
+    const s=await api('/skus/barcode/'+encodeURIComponent(code)+'?channel=retail');
     const fresh=skus.find(x=>x.id===s.id)||s;
     if(fresh.stock<=0)return toast('Hết hàng',true);
     addToCart(fresh); scan.value='';
@@ -1266,6 +1331,14 @@ async function openPay(){
           const nextActiveTab = tabs[idx + 1] || tabs[idx - 1];
           switchTab(nextActiveTab.id);
           tabs = tabs.filter(t => t.id !== currentId);
+          renameTabs();
+          const activeTab = tabs.find(t => t.id === activeTabId) || tabs[0];
+          activeTabId = activeTab.id;
+          cart = activeTab.cart || [];
+          selectedCustomer = activeTab.selectedCustomer || null;
+          activePromo = activeTab.activePromo || null;
+          renderCustBtn();
+          renderCart();
         } else {
           cart = [];
           selectedCustomer = null;
@@ -1277,8 +1350,9 @@ async function openPay(){
             activeTab.activePromo = null;
           }
           renderCustBtn();
+          renameTabs();
+          renderCart();
         }
-        saveStateToStorage();
         ov.remove(); await loadData(); showReceipt(receipt); toast('✅ Bán thành công'); scan.focus();
       }catch(e){toast(e.message,true);}
     };

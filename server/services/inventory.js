@@ -1,9 +1,11 @@
 // Inventory Core: two warehouse domains (kitchen + retail), lot/expiry
 // tracking, FEFO issues, stocktake sessions, and legacy summary stock support.
-import { db, uid, now, audit } from '../db.js';
+import { db, uid, now, audit, defaultWarehouseId } from '../db.js';
 import { emit } from '../realtime.js';
 
 const DEFAULT_WAREHOUSE = { inventory: 'wh_kitchen', sku: 'wh_retail' };
+const fallbackWarehouse = (branch_id, stockType) => defaultWarehouseId(branch_id, stockType) || DEFAULT_WAREHOUSE[stockType];
+const SALES_CHANNELS = new Set(['ipad', 'pos', 'retail', 'online', 'grabmerchant', 'shopeefood', 'befood', 'grabmart', 'website']);
 
 const asBool = (v) => v ? 1 : 0;
 const textOr = (v, fallback) => (v !== undefined && v !== null && String(v).trim() !== '') ? String(v).trim() : fallback;
@@ -32,6 +34,32 @@ function normalizeUnits(units) {
   return units.map(u => ({ name: String(u.name || '').trim(), factor: Number(u.factor) || 0 }))
     .filter(u => u.name && u.factor > 0);
 }
+function parseSalesChannels(row) {
+  try {
+    const parsed = JSON.parse(row?.sales_channels_json || '[]');
+    return Array.isArray(parsed) ? parsed.filter(c => SALES_CHANNELS.has(c)) : [];
+  } catch {
+    return [];
+  }
+}
+function normalizeSalesChannels(channels, type = 'retail') {
+  if (!Array.isArray(channels)) return type === 'kitchen' ? ['ipad', 'pos'] : ['retail'];
+  return [...new Set(channels.map(c => String(c || '').trim()).filter(c => SALES_CHANNELS.has(c)))];
+}
+function withWarehouseMeta(row) {
+  return {
+    ...row,
+    active: !!row.active,
+    sales_channels: parseSalesChannels(row),
+  };
+}
+function warehouseIdsForChannel(branch_id, channel, type = null) {
+  const key = String(channel || '').trim();
+  if (!SALES_CHANNELS.has(key)) return null;
+  return listWarehouses(branch_id)
+    .filter(w => (!type || w.type === type) && parseSalesChannels(w).includes(key))
+    .map(w => w.id);
+}
 // How many base units in 1 of `uom` (the entered unit name).
 function unitFactor(item, uom) {
   if (!uom || uom === item.unit) return 1;
@@ -42,23 +70,27 @@ function unitFactor(item, uom) {
 export function listWarehouses(branch_id = 'br1', filters = {}) {
   const includeInactive = filters.all === '1' || filters.all === 1 || filters.include_inactive === '1' || filters.include_inactive === 1;
   const rows = db.prepare(`SELECT * FROM warehouses WHERE branch_id=? ORDER BY sort,name`).all(branch_id);
-  return includeInactive ? rows : rows.filter(w => w.active);
+  const mapped = rows.map(withWarehouseMeta);
+  return includeInactive ? mapped : mapped.filter(w => w.active);
 }
 
 export function createWarehouse(body, branch_id = 'br1') {
   const name = textOr(body.name, '');
   if (!name) throw new Error('Thiếu tên kho');
   const type = body.type === 'kitchen' ? 'kitchen' : 'retail';
+  const salesChannels = normalizeSalesChannels(body.sales_channels || body.salesChannels, type);
   const code = normalizeWarehouseCode(body.code || name);
-  const id = body.id || `wh_${code.toLowerCase()}`;
+  const branchPrefix = branch_id === 'br1' ? '' : `${String(branch_id).replace(/[^a-zA-Z0-9_]/g, '_').toLowerCase()}_`;
+  const id = body.id || `${branchPrefix}wh_${code.toLowerCase()}`;
+  const active = body.active !== undefined ? (body.active ? 1 : 0) : 1;
   const sort = intOr(body.sort, db.prepare(`SELECT COALESCE(MAX(sort),0)+1 n FROM warehouses WHERE branch_id=?`).get(branch_id).n);
-  const dup = db.prepare(`SELECT id FROM warehouses WHERE branch_id=? AND (id=? OR code=?)`).get(branch_id, id, code);
+  const dup = db.prepare(`SELECT id FROM warehouses WHERE id=? OR (branch_id=? AND code=?)`).get(id, branch_id, code);
   if (dup) throw new Error('Mã kho đã tồn tại');
-  db.prepare(`INSERT INTO warehouses (id,branch_id,code,name,type,active,sort) VALUES (?,?,?,?,?,1,?)`)
-    .run(id, branch_id, code, name, type, sort);
-  audit('warehouse.create', { id, code, name, type }, branch_id);
+  db.prepare(`INSERT INTO warehouses (id,branch_id,code,name,type,active,sort,sales_channels_json) VALUES (?,?,?,?,?,?,?,?)`)
+    .run(id, branch_id, code, name, type, active, sort, JSON.stringify(salesChannels));
+  audit('warehouse.create', { id, code, name, type, active, sales_channels: salesChannels }, branch_id);
   emit('inventory:updated', { warehouse: id }, branch_id);
-  return db.prepare(`SELECT * FROM warehouses WHERE id=?`).get(id);
+  return withWarehouseMeta(db.prepare(`SELECT * FROM warehouses WHERE id=?`).get(id));
 }
 
 export function updateWarehouse(id, body, branch_id = 'br1') {
@@ -69,38 +101,48 @@ export function updateWarehouse(id, body, branch_id = 'br1') {
   const type = body.type !== undefined ? (body.type === 'kitchen' ? 'kitchen' : 'retail') : cur.type;
   const active = body.active !== undefined ? (body.active ? 1 : 0) : cur.active;
   const sort = intOr(body.sort, cur.sort || 0);
+  const salesChannels = body.sales_channels !== undefined || body.salesChannels !== undefined
+    ? normalizeSalesChannels(body.sales_channels || body.salesChannels || [], type)
+    : parseSalesChannels(cur);
   const dup = db.prepare(`SELECT id FROM warehouses WHERE branch_id=? AND code=? AND id!=?`).get(branch_id, code, id);
   if (dup) throw new Error('Mã kho đã tồn tại');
-  db.prepare(`UPDATE warehouses SET code=?, name=?, type=?, active=?, sort=? WHERE id=? AND branch_id=?`)
-    .run(code, name, type, active, sort, id, branch_id);
-  audit('warehouse.update', { id, code, name, type, active }, branch_id);
+  db.prepare(`UPDATE warehouses SET code=?, name=?, type=?, active=?, sort=?, sales_channels_json=? WHERE id=? AND branch_id=?`)
+    .run(code, name, type, active, sort, JSON.stringify(salesChannels), id, branch_id);
+  audit('warehouse.update', { id, code, name, type, active, sales_channels: salesChannels }, branch_id);
   emit('inventory:updated', { warehouse: id }, branch_id);
-  return db.prepare(`SELECT * FROM warehouses WHERE id=?`).get(id);
+  return withWarehouseMeta(db.prepare(`SELECT * FROM warehouses WHERE id=?`).get(id));
 }
 
 export function listInventory(branch_id = 'br1', filters = {}) {
   const rows = db.prepare(`SELECT * FROM inventory_items WHERE branch_id=? AND active=1 ORDER BY item_type,name`).all(branch_id);
   return rows
     .filter(i => !filters.item_type || i.item_type === filters.item_type)
-    .filter(i => !filters.warehouse_id || (i.warehouse_id || DEFAULT_WAREHOUSE.inventory) === filters.warehouse_id)
+    .filter(i => !filters.warehouse_id || (i.warehouse_id || fallbackWarehouse(branch_id, 'inventory')) === filters.warehouse_id)
     .map(i => enrichStockRow('inventory', i, filters.warehouse_id));
 }
 
 export function listSkus(branch_id = 'br1', filters = {}) {
+  const channelWarehouseIds = filters.channel ? warehouseIdsForChannel(branch_id, filters.channel, 'retail') : null;
   const rows = db.prepare(`SELECT * FROM skus WHERE branch_id=? AND active=1 ORDER BY name`).all(branch_id);
   return rows
-    .filter(s => !filters.warehouse_id || (s.warehouse_id || DEFAULT_WAREHOUSE.sku) === filters.warehouse_id)
+    .filter(s => !filters.warehouse_id || (s.warehouse_id || fallbackWarehouse(branch_id, 'sku')) === filters.warehouse_id)
+    .filter(s => !channelWarehouseIds || channelWarehouseIds.includes(s.warehouse_id || fallbackWarehouse(branch_id, 'sku')))
     .map(s => enrichStockRow('sku', s, filters.warehouse_id));
 }
 
-export function findSkuByBarcode(barcode, branch_id = 'br1') {
-  return db.prepare(`SELECT * FROM skus WHERE branch_id=? AND barcode=? AND active=1`).get(branch_id, barcode);
+export function findSkuByBarcode(barcode, branch_id = 'br1', filters = {}) {
+  const channelWarehouseIds = filters.channel ? warehouseIdsForChannel(branch_id, filters.channel, 'retail') : null;
+  const rows = db.prepare(`SELECT * FROM skus WHERE branch_id=? AND barcode=? AND active=1 ORDER BY name`).all(branch_id, barcode);
+  const row = rows
+    .filter(s => !filters.warehouse_id || (s.warehouse_id || fallbackWarehouse(branch_id, 'sku')) === filters.warehouse_id)
+    .find(s => !channelWarehouseIds || channelWarehouseIds.includes(s.warehouse_id || fallbackWarehouse(branch_id, 'sku')));
+  return row ? enrichStockRow('sku', row, filters.warehouse_id) : null;
 }
 
 export function createInventoryItem(body, branch_id = 'br1') {
   if (!body.name) throw new Error('Thiếu tên mặt hàng');
   const id = body.id || uid('i_');
-  const warehouse_id = body.warehouse_id || DEFAULT_WAREHOUSE.inventory;
+  const warehouse_id = body.warehouse_id || fallbackWarehouse(branch_id, 'inventory');
   const item_type = ['ingredient', 'supply'].includes(body.item_type) ? body.item_type : 'ingredient';
   db.prepare(`INSERT INTO inventory_items
     (id,branch_id,name,unit,stock,min_stock,warehouse_id,item_type,barcode,category,cost,track_lot,expiry_required,active,note,units_json)
@@ -120,7 +162,7 @@ export function createInventoryItem(body, branch_id = 'br1') {
   });
   audit('inventory.item.create', { id, name: body.name, item_type }, branch_id);
   emit('inventory:updated', { ids: [id] }, branch_id);
-  return getItem('inventory', id);
+  return getItem('inventory', id, branch_id);
 }
 
 export function updateInventoryItem(id, body, branch_id = 'br1') {
@@ -136,7 +178,7 @@ export function updateInventoryItem(id, body, branch_id = 'br1') {
     textOr(body.name, cur.name),
     textOr(body.unit, cur.unit),
     numberOr(body.min_stock, cur.min_stock),
-    textOr(body.warehouse_id, cur.warehouse_id || DEFAULT_WAREHOUSE.inventory),
+    textOr(body.warehouse_id, cur.warehouse_id || fallbackWarehouse(branch_id, 'inventory')),
     item_type,
     nullableText(body.barcode, cur.barcode),
     nullableText(body.category, cur.category),
@@ -150,7 +192,7 @@ export function updateInventoryItem(id, body, branch_id = 'br1') {
     branch_id);
   audit('inventory.item.update', { id, name: body.name || cur.name }, branch_id);
   emit('inventory:updated', { ids: [id] }, branch_id);
-  return getItem('inventory', id);
+  return getItem('inventory', id, branch_id);
 }
 
 export function deleteInventoryItem(id, branch_id = 'br1') {
@@ -166,7 +208,7 @@ export function deleteInventoryItem(id, branch_id = 'br1') {
 export function createSku(body, branch_id = 'br1') {
   if (!body.name) throw new Error('Thiếu tên SKU');
   const id = body.id || uid('s_');
-  const warehouse_id = body.warehouse_id || DEFAULT_WAREHOUSE.sku;
+  const warehouse_id = body.warehouse_id || fallbackWarehouse(branch_id, 'sku');
   db.prepare(`INSERT INTO skus
     (id,branch_id,barcode,name,emoji,image,price,cost,stock,min_stock,unit,warehouse_id,category,supplier,source_url,track_lot,expiry_required,active,units_json)
     VALUES (?,?,?,?,?,?,?,?,0,?,?,?,?,?,?,?,?,1,?)`).run(
@@ -186,7 +228,7 @@ export function createSku(body, branch_id = 'br1') {
   });
   audit('sku.create', { id, name: body.name }, branch_id);
   emit('inventory:updated', { ids: [id] }, branch_id);
-  return getItem('sku', id);
+  return getItem('sku', id, branch_id);
 }
 
 export function deleteSku(id, branch_id = 'br1') {
@@ -214,7 +256,7 @@ export function updateSku(id, body, branch_id = 'br1') {
     intOr(body.cost, cur.cost || 0),
     numberOr(body.min_stock, cur.min_stock),
     textOr(body.unit, cur.unit || 'cái'),
-    textOr(body.warehouse_id, cur.warehouse_id || DEFAULT_WAREHOUSE.sku),
+    textOr(body.warehouse_id, cur.warehouse_id || fallbackWarehouse(branch_id, 'sku')),
     nullableText(body.category, cur.category),
     nullableText(body.supplier, cur.supplier),
     nullableText(body.source_url, cur.source_url),
@@ -226,21 +268,21 @@ export function updateSku(id, body, branch_id = 'br1') {
     branch_id);
   audit('sku.update', { id, name: body.name || cur.name }, branch_id);
   emit('inventory:updated', { ids: [id] }, branch_id);
-  return getItem('sku', id);
+  return getItem('sku', id, branch_id);
 }
 
 export function receiveStock(inventory_item_id, qty, branch_id = 'br1', options = {}) {
   receiveGeneric('inventory', inventory_item_id, qty, branch_id, options);
   checkAlerts(branch_id, [{ stockType: 'inventory', id: inventory_item_id }]);
   emit('inventory:updated', { ids: [inventory_item_id] }, branch_id);
-  return getItem('inventory', inventory_item_id);
+  return getItem('inventory', inventory_item_id, branch_id);
 }
 
 export function receiveSku(sku_id, qty, branch_id = 'br1', options = {}) {
   receiveGeneric('sku', sku_id, qty, branch_id, options);
   checkAlerts(branch_id, [{ stockType: 'sku', id: sku_id }]);
   emit('inventory:updated', { ids: [sku_id] }, branch_id);
-  return getItem('sku', sku_id);
+  return getItem('sku', sku_id, branch_id);
 }
 
 export function issueStock(stockType, item_id, qty, branch_id = 'br1', options = {}) {
@@ -281,7 +323,7 @@ export function transferStock(body, branch_id = 'br1') {
   const from = body.from_warehouse_id;
   const to = body.to_warehouse_id;
   if (!item_id || !from || !to || from === to) throw new Error('Phiếu chuyển kho thiếu thông tin');
-  const item = getItem(stockType, item_id);
+  const item = getItem(stockType, item_id, branch_id);
   if (!item) throw new Error('Mặt hàng không tồn tại');
   const qty = qtyNum(body.qty) * unitFactor(item, body.uom);
 
@@ -470,10 +512,10 @@ export function deductForOrder(order, branch_id = 'br1') {
 }
 
 function receiveGeneric(stockType, item_id, qtyRaw, branch_id, options = {}) {
-  const item = getItem(stockType, item_id);
+  const item = getItem(stockType, item_id, branch_id);
   if (!item) throw new Error('Mặt hàng không tồn tại');
   const qty = qtyNum(qtyRaw) * unitFactor(item, options.uom);
-  const warehouse_id = options.warehouse_id || item.warehouse_id || DEFAULT_WAREHOUSE[stockType];
+  const warehouse_id = options.warehouse_id || item.warehouse_id || fallbackWarehouse(branch_id, stockType);
   if (item.expiry_required && !options.expiry_date) throw new Error(`${item.name} bắt buộc nhập hạn sử dụng`);
   const doc = options.doc_id ? { id: options.doc_id } : createDocument(branch_id, {
     type: options.movementType || 'receipt',
@@ -507,10 +549,10 @@ function receiveGeneric(stockType, item_id, qtyRaw, branch_id, options = {}) {
 }
 
 function issueGeneric(stockType, item_id, qtyRaw, branch_id, options = {}) {
-  const item = getItem(stockType, item_id);
+  const item = getItem(stockType, item_id, branch_id);
   if (!item) throw new Error('Mặt hàng không tồn tại');
   const qty = qtyNum(qtyRaw) * unitFactor(item, options.uom);
-  const warehouse_id = options.warehouse_id || item.warehouse_id || DEFAULT_WAREHOUSE[stockType];
+  const warehouse_id = options.warehouse_id || item.warehouse_id || fallbackWarehouse(branch_id, stockType);
   const available = currentStock(stockType, item_id, warehouse_id, options.lot_id || null);
   if (available + 0.000001 < qty) throw new Error(`Không đủ tồn: ${item.name} (còn ${roundQty(available)} ${item.unit})`);
   const doc = options.doc_id ? { id: options.doc_id } : createDocument(branch_id, {
@@ -536,17 +578,17 @@ function issueGeneric(stockType, item_id, qtyRaw, branch_id, options = {}) {
 function setStockLevel(stockType, item_id, newStockRaw, branch_id, options = {}) {
   const newStock = parseFloat(newStockRaw);
   if (!Number.isFinite(newStock) || newStock < 0) throw new Error('Tồn kiểm không hợp lệ');
-  const item = getItem(stockType, item_id);
+  const item = getItem(stockType, item_id, branch_id);
   if (!item) throw new Error('Mặt hàng không tồn tại');
-  const warehouse_id = options.warehouse_id || item.warehouse_id || DEFAULT_WAREHOUSE[stockType];
+  const warehouse_id = options.warehouse_id || item.warehouse_id || fallbackWarehouse(branch_id, stockType);
   const cur = currentStock(stockType, item_id, warehouse_id);
   const delta = newStock - cur;
-  if (Math.abs(delta) < 0.000001) return getItem(stockType, item_id);
+  if (Math.abs(delta) < 0.000001) return getItem(stockType, item_id, branch_id);
   if (delta > 0) receiveGeneric(stockType, item_id, delta, branch_id, { ...options, warehouse_id, movementType: 'stocktake', reason: options.reason || 'manual_count' });
   else issueGeneric(stockType, item_id, Math.abs(delta), branch_id, { ...options, warehouse_id, movementType: 'stocktake', reason: options.reason || 'manual_count' });
   checkAlerts(branch_id, [{ stockType, id: item_id }]);
   emit('inventory:updated', { ids: [item_id] }, branch_id);
-  return getItem(stockType, item_id);
+  return getItem(stockType, item_id, branch_id);
 }
 
 function consumeLots(stockType, item_id, warehouse_id, qty, lot_id = null) {
@@ -641,7 +683,7 @@ function currentStock(stockType, item_id, warehouse_id, lot_id = null) {
 }
 
 function enrichStockRow(stockType, row, warehouseFilter = null) {
-  const warehouse_id = row.warehouse_id || DEFAULT_WAREHOUSE[stockType];
+  const warehouse_id = row.warehouse_id || fallbackWarehouse(row.branch_id || 'br1', stockType);
   const stock = warehouseFilter ? currentStock(stockType, row.id, warehouseFilter) : row.stock;
   return {
     ...row,
@@ -656,9 +698,15 @@ function enrichStockRow(stockType, row, warehouseFilter = null) {
   };
 }
 
-function getItem(stockType, id) {
-  if (stockType === 'sku') return db.prepare(`SELECT *, 'sku' AS stock_type FROM skus WHERE id=?`).get(id);
-  return db.prepare(`SELECT *, 'inventory' AS stock_type FROM inventory_items WHERE id=?`).get(id);
+function getItem(stockType, id, branch_id = null) {
+  if (stockType === 'sku') {
+    return branch_id
+      ? db.prepare(`SELECT *, 'sku' AS stock_type FROM skus WHERE id=? AND branch_id=?`).get(id, branch_id)
+      : db.prepare(`SELECT *, 'sku' AS stock_type FROM skus WHERE id=?`).get(id);
+  }
+  return branch_id
+    ? db.prepare(`SELECT *, 'inventory' AS stock_type FROM inventory_items WHERE id=? AND branch_id=?`).get(id, branch_id)
+    : db.prepare(`SELECT *, 'inventory' AS stock_type FROM inventory_items WHERE id=?`).get(id);
 }
 
 function cleanupStockMaster(stockType, id, branch_id) {
