@@ -8,6 +8,7 @@ import { db, migrate, purgeOldAudit } from './db.js';
 import { initRealtime } from './realtime.js';
 import { api } from './api.js';
 import { startSyncEngine } from './services/sync.js';
+import { ensureStorageDirectories } from './services/enterpriseStorage.js';
 import { env } from './config/env.js';
 import { createCorsMiddleware } from './config/cors.js';
 import { runtimeSnapshot } from './config/runtime.js';
@@ -21,10 +22,12 @@ const PORT = env.PORT;
 globalThis.__DANDPAK_STARTED_AT = new Date().toISOString();
 
 migrate();
-// Auto-seed on first run if catalog is empty.
+ensureStorageDirectories();
+// Auto-seed on first run if no users AND no menu (chỉ chạy trong môi trường dev/test).
 const hasMenu = db.prepare(`SELECT COUNT(*) n FROM menu_items`).get().n;
-if (!hasMenu) {
-  logger.warn('empty catalog detected; running demo seed');
+const hasUsers = db.prepare(`SELECT COUNT(*) n FROM users`).get().n;
+if (!hasMenu && !hasUsers && !env.isProduction) {
+  logger.warn('empty database detected; running initial seed (dev only)');
   await import('./seed.js');
 }
 
