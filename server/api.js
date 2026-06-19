@@ -640,3 +640,13 @@ api.get('/audit', guard('audit.view'), wrap((req) => Reports.recentAudit(branch(
 api.get('/archive/status', guard('reports'), wrap(() => Archive.storageStatus()));
 api.get('/archive/reports/latest', guard('reports'), wrap((req) => Archive.latestDashboardReport(branch(req))));
 api.get('/archive/:kind/:id', guard('reports'), wrap((req) => Archive.readArchivedEntity(req.params.kind, req.params.id, branch(req))));
+
+// --- Config backup / restore (owner only) ---
+api.get('/config/export', guardAny('settings.manage'), wrap(async () => {
+  const { exportConfig } = await import('./services/configBackup.js');
+  return exportConfig();
+}));
+api.post('/config/import', guardAny('settings.manage'), wrap(async (req) => {
+  const { importConfig } = await import('./services/configBackup.js');
+  return importConfig(req.body);
+}));

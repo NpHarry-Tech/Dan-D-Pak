@@ -10,6 +10,8 @@ const DEFAULTS = {
   CORS_ORIGIN: '',
   LOG_LEVEL: 'info',
   BACKUP_RETENTION_DAYS: 14,
+  DISABLE_DEMO_SEED: false,
+  CONFIG_SEED_URL: '',
 };
 
 function clean(value) {
@@ -44,6 +46,8 @@ export function loadEnv(source = process.env) {
     CORS_ORIGIN: clean(source.CORS_ORIGIN) || DEFAULTS.CORS_ORIGIN,
     LOG_LEVEL: clean(source.LOG_LEVEL) || DEFAULTS.LOG_LEVEL,
     BACKUP_RETENTION_DAYS: asInt(source.BACKUP_RETENTION_DAYS, DEFAULTS.BACKUP_RETENTION_DAYS),
+    DISABLE_DEMO_SEED: source.DISABLE_DEMO_SEED === 'true' || source.DISABLE_DEMO_SEED === '1',
+    CONFIG_SEED_URL: clean(source.CONFIG_SEED_URL) || DEFAULTS.CONFIG_SEED_URL,
   };
 
   env.CORS_ORIGINS = asList(env.CORS_ORIGIN);
