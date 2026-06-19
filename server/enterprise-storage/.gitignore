@@ -1,0 +1,7 @@
+# User data is sensitive - don't commit personal preferences
+users/*/
+!users/.gitkeep
+
+# Branch configs may contain API keys - review before committing
+branches/*/
+!branches/.gitkeep

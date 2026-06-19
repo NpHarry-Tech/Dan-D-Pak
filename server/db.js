@@ -604,6 +604,30 @@ export function migrate() {
   db.exec(`CREATE INDEX IF NOT EXISTS idx_cash_drawer_reimburses ON cash_drawer_entries(reimburses_entry_id);`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_cash_drawer_alloc_expense ON cash_drawer_reimbursement_allocations(expense_id);`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_cash_drawer_alloc_reimbursement ON cash_drawer_reimbursement_allocations(reimbursement_id);`);
+
+  // Enterprise storage: system-wide + branch + user scoped key-value store.
+  db.exec(`
+  CREATE TABLE IF NOT EXISTS enterprise_storage (
+    scope      TEXT NOT NULL,
+    scope_id   TEXT NOT NULL DEFAULT '',
+    key        TEXT NOT NULL,
+    value      TEXT,
+    updated_at TEXT,
+    updated_by TEXT,
+    PRIMARY KEY (scope, scope_id, key)
+  );
+  CREATE INDEX IF NOT EXISTS idx_es_scope ON enterprise_storage(scope, scope_id);
+
+  CREATE TABLE IF NOT EXISTS user_preferences (
+    user_id    TEXT NOT NULL,
+    key        TEXT NOT NULL,
+    value      TEXT,
+    updated_at TEXT,
+    PRIMARY KEY (user_id, key)
+  );
+  CREATE INDEX IF NOT EXISTS idx_up_user ON user_preferences(user_id);
+  `);
+
   ensurePermanentStorage();
   bootstrapBranchDefaults();
   for (const b of db.prepare(`SELECT id FROM branches WHERE active=1 ORDER BY sort,name`).all()) {
