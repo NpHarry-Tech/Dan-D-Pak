@@ -428,7 +428,7 @@ export function customerQrPay(order_id, { method = 'qrcode', reference = '' } = 
 // bank_transactions (unique provider+external_id).
 // ===========================================================================
 
-const AUTO_PAY_METHOD = { sepay: 'bank_transfer', casso: 'bank_transfer', payos: 'qrcode' };
+const AUTO_PAY_METHOD = { sepay: 'bank_transfer', casso: 'bank_transfer', payos: 'qrcode', vietqr: 'qrcode' };
 
 // payOS orderCode phải là số nguyên dương, duy nhất cho mỗi link.
 function payosOrderCode() {
@@ -552,6 +552,32 @@ export function handleCassoWebhook(body = {}, headers = {}, branch_id = 'br1') {
     }));
   }
   return { ok: true, processed: results.length, results };
+}
+
+// --- VietQR transaction-sync (callback đối soát của chính VietQR API) -------
+// Nhiều gói VietQR (api.vietqr.org) tự POST giao dịch về URL đăng ký khi khách
+// trả tiền. transType 'C' = tiền vào. Xác thực bằng Basic Auth = username/password
+// VietQR đã cấu hình (nếu VietQR gửi kèm).
+export function handleVietqrWebhook(body = {}, headers = {}, branch_id = 'br1') {
+  const cfg = getIntegrations(branch_id).channels?.vietqr || {};
+  if (!cfg.enabled) return { ok: true, status: 'disabled' };
+  const auth = headerVal(headers, 'authorization');
+  if (cleanText(cfg.username) && cleanText(cfg.password) && /^basic\s+/i.test(auth)) {
+    let decoded = '';
+    try { decoded = Buffer.from(auth.replace(/^basic\s+/i, '').trim(), 'base64').toString('utf8'); } catch { decoded = ''; }
+    if (decoded !== `${cleanText(cfg.username)}:${cleanText(cfg.password)}`) { const e = new Error('Sai Basic Auth VietQR'); e.status = 401; throw e; }
+  }
+  const transType = String(body?.transType || body?.transtype || body?.type || '').toUpperCase();
+  if (transType && transType !== 'C') return { ok: true, status: 'ignored', reason: 'not_credit' };
+  const acc = String(body?.bankAccount || body?.accountNumber || body?.account || '');
+  if (cleanText(cfg.bankAccount) && acc && acc !== cleanText(cfg.bankAccount)) return { ok: true, status: 'ignored', reason: 'account_mismatch' };
+  return processIncomingCredit('vietqr', {
+    externalId: String(body?.transactionid || body?.transactionId || body?.referenceNumber || body?.referencenumber || body?.ftCode || body?.transactionRefId || ''),
+    amount: body?.amount ?? body?.transferAmount ?? body?.transAmount,
+    content: body?.content || body?.description || body?.addInfo || '',
+    accountNumber: acc,
+    raw: body,
+  });
 }
 
 // --- Đường A: payOS -------------------------------------------------------

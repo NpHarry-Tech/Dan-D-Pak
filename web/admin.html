@@ -2934,8 +2934,8 @@ async function openSettings(initialTab){
     {key:'misa',icon:'🧾',logo:'/assets/MISA.jpg',name:'MISA',desc:'Xuất hóa đơn điện tử, đồng bộ khách hàng và trạng thái hóa đơn.',type:'misa'},
     {key:'payos',icon:'💳',logo:'/assets/payoslogo.png',name:'payOS',desc:'Cổng thanh toán QR/thẻ payOS — tạo link thanh toán và nhận webhook xác nhận đã thanh toán.',type:'payos',channel:'payos'},
     {key:'vietqr',icon:'🇻🇳',logo:'/assets/vietqr.png',name:'VietQR API',desc:'Sinh mã QR thanh toán động cho từng bill iPad/POS và sẵn sàng đối soát khi VietQR callback.',type:'vietqr',channel:'vietqr'},
-    {key:'sepay',icon:'🏦',name:'SePay — tự đối soát chuyển khoản',desc:'Đường B: đọc biến động số dư ngân hàng, khi khách chuyển khoản/quét VietQR đúng nội dung bill thì tự đóng bill. Rẻ nhất cho chuyển khoản.',type:'bank_webhook',channel:'sepay'},
-    {key:'casso',icon:'🏦',name:'Casso — tự đối soát chuyển khoản',desc:'Đường B (phương án thay thế SePay): đọc giao dịch ngân hàng và bắn webhook xác nhận tiền về theo nội dung bill.',type:'bank_webhook',channel:'casso'},
+    {key:'sepay',icon:'🏦',logo:'/assets/sepay.webp',name:'SePay — tự đối soát chuyển khoản',desc:'Đường B: đọc biến động số dư ngân hàng, khi khách chuyển khoản/quét VietQR đúng nội dung bill thì tự đóng bill. Rẻ nhất cho chuyển khoản.',type:'bank_webhook',channel:'sepay'},
+    {key:'casso',icon:'🏦',logo:'/assets/Casso.png',name:'Casso — tự đối soát chuyển khoản',desc:'Đường B (phương án thay thế SePay): đọc giao dịch ngân hàng và bắn webhook xác nhận tiền về theo nội dung bill.',type:'bank_webhook',channel:'casso'},
     {key:'grabmerchant',icon:'🟢',logo:'/assets/grabmerchantlogo.webp',name:'GrabMerchant / GrabFood',desc:'Nhận đơn, đồng bộ menu, trạng thái món và tồn khả dụng cho kênh Grab.',type:'delivery',channel:'grabmerchant'},
     {key:'shopeefood',icon:'🟠',logo:'/assets/shopeefoodlogo.png',name:'Shopee Food',desc:'Nhận đơn Shopee Food, quản lý xác nhận đơn và đồng bộ món bán online.',type:'delivery',channel:'shopeefood'},
     {key:'befood',icon:'🟡',logo:'/assets/befoodlogo.png',name:'Be / beFood',desc:'Chuẩn bị cấu hình merchant, store và webhook cho đơn từ Be.',type:'delivery',channel:'befood'},
@@ -2989,6 +2989,7 @@ async function openSettings(initialTab){
           <li>Nếu credential chưa đủ hoặc API lỗi, hệ thống vẫn dùng QR public từ thông tin ngân hàng để không đứng bill.</li>
         </ul>
       </div>
+      <div class="webhook-box"><code>${esc(location.origin)}/api/vietqr/webhook</code><button class="btn sm" data-copy-hook="${esc(location.origin)}/api/vietqr/webhook">Copy</button><div class="mini" style="grid-column:1/-1">🔔 <b>Tự đóng bill bằng chính VietQR:</b> nếu gói VietQR của bạn có tính năng <b>đồng bộ giao dịch / callback</b>, dán URL này vào mục đăng ký callback của VietQR. Khi khách trả tiền, VietQR gọi về đây → hệ thống tự đóng đúng bill (khớp theo nội dung <b>DANBILL+mã bill</b>). Khi đó không cần SePay. VietQR thường gửi kèm Basic Auth = chính username/password ở trên.</div></div>
       <label>Ghi chú nội bộ</label><textarea rows="2" data-integ="${def.key}" data-field="note">${integVal(c,'note')}</textarea>
       <div class="integration-actions"><button class="btn sm" data-test-integ="${def.key}">Kiểm tra cấu hình</button></div>
     </div>`;
