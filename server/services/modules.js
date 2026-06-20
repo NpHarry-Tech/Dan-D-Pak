@@ -12,14 +12,14 @@ export const MODULE_GROUPS = [
 ];
 
 export const MODULES = [
-  { key: 'ipad', label: 'iPad Self-Order', icon: '📱', group: 'sales', href: '/ipad', perm: 'module.ipad', status: 'active', depends: ['pos'], description: 'Khách tự gọi món, gửi bếp, gọi nhân viên và yêu cầu thanh toán.' },
+  { key: 'ipad', label: 'iPad Self-Order', icon: '📱', group: 'sales', href: '/ipad?pick=1', perm: 'module.ipad', status: 'active', depends: ['pos'], description: 'Khách tự gọi món, gửi bếp, gọi nhân viên và yêu cầu thanh toán.' },
   { key: 'pos', label: 'FnB POS', icon: '💳', group: 'sales', href: '/pos', perm: 'module.pos', status: 'active', depends: ['inventory'], description: 'Bàn, order, discount, thanh toán, receipt và realtime với bếp.' },
-  { key: 'retail', label: 'BCM Retail POS', icon: '🛒', group: 'sales', href: '/retail', perm: 'module.retail', status: 'active', depends: ['inventory'], description: 'Bán hàng retail, barcode, lot/date, voucher và đổi trả.' },
+  { key: 'retail', label: 'Retail POS', icon: '🛒', group: 'sales', href: '/retail', perm: 'module.retail', status: 'active', depends: ['inventory'], description: 'Bán hàng retail, barcode, lot/date, voucher và đổi trả.' },
   { key: 'kds', label: 'KDS', icon: '👨‍🍳', group: 'sales', href: '/kds', perm: 'module.kds', status: 'active', depends: ['pos'], description: 'Màn hình bếp/bar, SLA và trạng thái chế biến realtime.' },
   { key: 'online', label: 'Kênh online', icon: '🌐', group: 'sales', href: '/online', perm: 'module.online', status: 'active', depends: ['pos'], description: 'Nhận đơn GrabFood/ShopeeFood/Website qua webhook và điều phối fulfillment.' },
   { key: 'warehouse', label: 'Kho', icon: '📦', group: 'supply', href: '/warehouse', perm: 'module.warehouse', status: 'active', depends: ['inventory'], description: 'Kho BCM, showroom, kho bếp, nhập/xuất, kiểm kho, lot/date.' },
   { key: 'inventory', label: 'Tồn kho', icon: '🏷️', group: 'supply', href: '/warehouse', perm: 'module.inventory', status: 'active', depends: [], description: 'SKU, nguyên liệu, đơn vị tính, lot/serial, min stock và valuation nền.' },
-  { key: 'admin', label: 'Quản lý', icon: '📊', group: 'essentials', href: '/admin', perm: null, status: 'active', depends: ['pos', 'retail', 'warehouse'], description: 'Dashboard, báo cáo nhanh, thực đơn, vận hành và cài đặt trong ngày.' },
+  { key: 'admin', label: 'Quản lý', icon: '📊', group: 'essentials', href: '/admin?view=dashboard', perm: null, status: 'active', depends: ['pos', 'retail', 'warehouse'], description: 'Dashboard, báo cáo nhanh, thực đơn, vận hành và cài đặt trong ngày.' },
   { key: 'settings', label: 'Cài đặt', icon: '⚙️', group: 'settings', href: '/settings', perm: null, status: 'active', depends: [], description: 'Người dùng, phân quyền, module, cấu hình chung và nhật ký hoạt động.' },
   { key: 'printing', label: 'In ấn', icon: '🖨️', group: 'settings', href: '/printers', perm: 'module.printing', status: 'active', depends: ['pos'], description: 'Job in bếp/bar/bill, in lại, cấu hình bill và tem nhãn.' },
 
@@ -39,7 +39,6 @@ export const MODULES = [
   { key: 'payment', label: 'Thanh toán online', icon: '💱', group: 'finance', href: '', perm: 'module.payment', status: 'planned', depends: ['invoice'], description: 'Provider, QR, terminal, settlement và đối soát.' },
 
   { key: 'contacts', label: 'Liên hệ', icon: '👥', group: 'essentials', href: '/contacts', perm: 'module.contacts', status: 'active', depends: [], description: 'Khách hàng & nhà cung cấp dùng chung một danh bạ: SĐT, MST, địa chỉ, người liên hệ.' },
-  { key: 'reports', label: 'Báo cáo', icon: '📈', group: 'essentials', href: '/admin', perm: 'module.reports', status: 'active', depends: [], description: 'Pivot/list/chart dashboard, filter/group/search và KPI vận hành.' },
   { key: 'import_export', label: 'Nhập/xuất dữ liệu', icon: '↕️', group: 'essentials', href: '', perm: 'module.import_export', status: 'planned', depends: [], description: 'Import, export, template, audit import và mapping dữ liệu.' },
 
   { key: 'project', label: 'Dự án', icon: '📌', group: 'productivity', href: '', perm: 'module.project', status: 'planned', depends: ['contacts'], description: 'Task, stage, kanban, milestone, timesheet và profitability.' },
@@ -65,12 +64,10 @@ export function listModules(perms = []) {
   const set = new Set(perms || []);
   const all = set.has('*');
   const hasSettings = [...set].some(p => p === 'settings.manage' || p.startsWith('settings.') || p === 'warehouse.manage');
-  const hasReports = set.has('reports') || [...set].some(p => p.startsWith('report.'));
   return MODULES.map(m => ({
     ...m,
     visible: all
       || (m.key === 'settings' ? hasSettings : false)
-      || (m.key === 'reports' ? hasReports || set.has(m.perm) : false)
       || (m.key !== 'settings' && (!m.perm || set.has(m.perm))),
   }));
 }

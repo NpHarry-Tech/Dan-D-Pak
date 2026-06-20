@@ -33,7 +33,7 @@ bootstrapWarehouseDefaults(BR);
 
 // ---- Users / roles (PIN login) ----
 const users = [
-  { id: 'u_owner', username: 'owner', name: 'Chủ quán', pin: '1234', role: 'owner' },
+  { id: 'u_admin', username: 'admin', name: 'Admin', pin: '1234', role: 'owner' },
   { id: 'u_mgr', username: 'manager', name: 'Quản lý', pin: '2222', role: 'manager' },
   { id: 'u_cashier', username: 'cashier', name: 'Thu ngân Lan', pin: '1111', role: 'cashier' },
   { id: 'u_kitchen', username: 'kitchen', name: 'Bếp trưởng', pin: '3333', role: 'kitchen' },

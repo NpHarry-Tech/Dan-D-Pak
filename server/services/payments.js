@@ -11,8 +11,59 @@ import { archiveOrder, archivePayment } from './archive.js';
 const METHODS = ['cash', 'card', 'qr', 'voucher', 'bank_transfer', 'internet_banking', 'qrcode', 'momo', 'zalopay', 'visa', 'pos_card', 'online'];
 const CUSTOMER_QR_METHODS = ['qr', 'qrcode', 'internet_banking', 'momo', 'zalopay'];
 
+function cleanText(value, max = 200) {
+  return String(value || '').trim().slice(0, max);
+}
+
+function normalizeInvoiceCustomer(input) {
+  if (!input || typeof input !== 'object' || !input.invoice_request) return null;
+  const tax_code = cleanText(input.tax_code, 16).replace(/\D/g, '');
+  const company = cleanText(input.company, 180);
+  const name = cleanText(input.name, 140) || company;
+  const email = cleanText(input.email, 120);
+  const phone = cleanText(input.phone, 40);
+  if (!/^\d{10}(\d{3})?$/.test(tax_code)) throw new Error('MST công ty phải gồm 10 hoặc 13 chữ số');
+  if (!name) throw new Error('Thiếu tên khách hàng xuất hóa đơn');
+  if (!email) throw new Error('Thiếu email nhận hóa đơn');
+  if (!phone) throw new Error('Thiếu số điện thoại nhận hóa đơn');
+  return {
+    invoice_request: true,
+    invoice_type: 'company',
+    invoice_customer_name: name,
+    invoice_company: company,
+    tax_code,
+    company,
+    name,
+    address: cleanText(input.address, 260),
+    email,
+    phone,
+    note: cleanText(input.note, 280),
+    requested_at: now(),
+  };
+}
+
+function mergeInvoiceCustomer(customer, invoiceCustomer) {
+  const base = customer && typeof customer === 'object' ? customer : {};
+  if (!invoiceCustomer) return Object.keys(base).length ? base : null;
+  return {
+    ...base,
+    name: invoiceCustomer.name || invoiceCustomer.company || base.name || '',
+    phone: invoiceCustomer.phone || base.phone || '',
+    email: invoiceCustomer.email || base.email || '',
+    tax_code: invoiceCustomer.tax_code,
+    company: invoiceCustomer.company || invoiceCustomer.name || base.company || '',
+    address: invoiceCustomer.address || base.address || '',
+    invoice_request: true,
+    invoice_type: 'company',
+    invoice_customer_name: invoiceCustomer.invoice_customer_name,
+    invoice_company: invoiceCustomer.invoice_company,
+    invoice_note: invoiceCustomer.note || '',
+    invoice_requested_at: invoiceCustomer.requested_at,
+  };
+}
+
 // lines: [{method, amount, reference}]
-export function payOrder(order_id, lines, { discount, cashier, customer } = {}, branch_id = 'br1') {
+export function payOrder(order_id, lines, { discount, cashier, customer, invoice_customer } = {}, branch_id = 'br1') {
   const order = getOrder(order_id);
   if (!order) throw new Error('Order không tồn tại');
   if (order.status !== 'open') throw new Error('Order đã đóng');
@@ -20,8 +71,15 @@ export function payOrder(order_id, lines, { discount, cashier, customer } = {}, 
   if (typeof discount === 'number') {
     db.prepare(`UPDATE orders SET discount=?, total=MAX(0,subtotal-?) WHERE id=?`).run(discount, discount, order_id);
   }
-  if (customer && typeof customer === 'object') {
-    db.prepare(`UPDATE orders SET customer_json=? WHERE id=?`).run(JSON.stringify(customer), order_id);
+  const invoiceCustomer = normalizeInvoiceCustomer(invoice_customer);
+  const customerSnapshot = mergeInvoiceCustomer(customer, invoiceCustomer);
+  if (customerSnapshot) {
+    if (invoiceCustomer) {
+      db.prepare(`UPDATE orders SET customer_json=?, invoice_choice='requested' WHERE id=?`).run(JSON.stringify(customerSnapshot), order_id);
+      audit('invoice.company_requested', { order: order_id, tax_code: invoiceCustomer.tax_code, email: invoiceCustomer.email, phone: invoiceCustomer.phone }, branch_id, cashier || 'system');
+    } else {
+      db.prepare(`UPDATE orders SET customer_json=? WHERE id=?`).run(JSON.stringify(customerSnapshot), order_id);
+    }
   }
   const fresh = getOrder(order_id);
   const pending = fresh.items.filter(i => i.status === 'pending_confirm');
@@ -111,6 +169,8 @@ function buildReceipt(order_id, payment_id, lines, paid, { cashier = '' } = {}) 
     },
     voucher_id: order.voucher_id, voucher_code: order.voucher_code,
     customer: (() => { try { return order.customer_json ? JSON.parse(order.customer_json) : null; } catch { return null; } })(),
+    invoice_choice: order.invoice_choice || '',
+    invoice_id: order.invoice_id || null,
     lines, paid, change, paid_at: order.paid_at, number: order.bill_no || order_id.slice(-6).toUpperCase(),
     bill_no: order.bill_no || order_id.slice(-6).toUpperCase(),
     cashier,

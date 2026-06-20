@@ -32,7 +32,7 @@ export async function loadCustomers() {
 /**
  * Mở modal chọn / tạo khách hàng.
  *
- * @param {object|null} current  - Khách đang chọn (hoặc null = khách lẻ)
+ * @param {object|null} current  - Khách đang chọn (hoặc null = khách không xuất hóa đơn)
  * @param {Function}    onPicked - Callback(customer|null) khi xác nhận
  * @param {object}      opts
  *   @param {string}    [opts.title]   - Tiêu đề modal
@@ -94,7 +94,7 @@ export function openCustomerPicker(current, onPicked, opts = {}) {
       <div class="sub">${esc(opts.subtitle || 'Chọn khách đã lưu hoặc tạo mới. Khách có ưu đãi sẽ tự áp giảm giá vào đơn.')}</div>
       <div style="display:flex;gap:8px;align-items:center;margin:6px 0 4px">
         <input id="cSearch" value="${esc(search)}" placeholder="Tìm theo tên / SĐT / MST" style="flex:1">
-        <button class="btn" id="cWalkin">Khách lẻ (bỏ chọn)</button>
+        <button class="btn" id="cWalkin">Khách không xuất hóa đơn (bỏ chọn)</button>
         <button class="btn primary" id="cNew">＋ Khách mới</button>
       </div>
       <div class="custlist">${list.length ? list.map(c => `

@@ -79,12 +79,24 @@
 .auditrow .atext{font-size:13px;color:var(--text);font-weight:650;line-height:1.4}
 .auditrow .ameta{font-size:11px;color:var(--muted);line-height:1.45;margin-top:2px}
 .auditrow .actor{display:inline-flex;align-items:center;gap:5px;margin-left:6px;padding:1px 7px;border-radius:99px;background:var(--surface2);color:var(--muted);font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.3px}
-/* Cài đặt quản lý: phóng to full màn, chia 2 cột trái/phải */
+/* Cài đặt quản lý: trang full nằm dưới topbar (giống các tab khác) */
+body.settings-shell > .view { display: none; }
+.overlay.settings-overlay {
+  position: static;
+  flex: 1 1 auto;
+  min-height: 0;
+  z-index: auto;
+  background: var(--bg);
+  backdrop-filter: none;
+  padding: 0;
+}
 .settings-modal {
   max-width: none;
-  width: 96vw;
-  height: 94vh;
-  max-height: 94vh;
+  width: 100%;
+  height: 100%;
+  max-height: 100%;
+  border-radius: 0;
+  border: 0;
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -263,7 +275,7 @@
 @media(max-width:980px){.warehouse-settings-grid{grid-template-columns:1fr}.wh-settings-row{grid-template-columns:1fr auto}.wh-settings-row .btn{grid-column:1/-1}}
 /* Danh mục in: mỗi dòng là 1 lưới cố định, mọi ô cao bằng nhau và thẳng hàng đáy. */
 .printer-grid{display:flex;flex-direction:column;gap:10px;margin-bottom:14px}
-.printer-row{display:grid;grid-template-columns:minmax(92px,.8fr) minmax(190px,1.7fr) minmax(120px,1fr) minmax(128px,1.05fr) minmax(112px,.9fr) 126px 126px 86px;gap:12px;align-items:end;background:var(--surface2);border:1px solid var(--border);border-radius:11px;padding:14px}
+.printer-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(118px,1fr));gap:12px;align-items:end;background:var(--surface2);border:1px solid var(--border);border-radius:11px;padding:14px}
 .printer-row .pr-field{display:flex;flex-direction:column;gap:6px;min-width:0}
 .printer-row .pr-field>label{font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);font-weight:800}
 .printer-row .pr-field input,.printer-row .pr-field select{height:40px;width:100%;box-sizing:border-box;margin:0}
@@ -445,11 +457,11 @@
 /* Settings modal: tablet/portrait layout tuned for the iPad simulator. */
 @media (max-width: 980px), (orientation: portrait) {
   .settings-modal {
-    width: calc(100vw - 24px);
-    height: calc(100dvh - 24px);
-    max-height: calc(100dvh - 24px);
+    width: 100%;
+    height: 100%;
+    max-height: 100%;
     padding: 14px;
-    border-radius: 14px;
+    border-radius: 0;
   }
   .settings-header {
     margin-bottom: 10px;
@@ -961,12 +973,6 @@
 <body>
 <div id="top"></div>
 <div class="view">
-  <div class="viewhead">
-    <h1>📊 Quản lý</h1>
-    <div class="sub">District 1 - HCMC · realtime sales, menu, inventory</div>
-    <div class="right"><button class="btn sm" id="reportsBtn" title="Báo cáo">📄 Báo cáo</button><span class="onlinedot"><i></i><span>Online</span></span></div>
-  </div>
-
   <div class="cards" id="kpis"></div>
   <div class="dash-window" id="dashWindow"></div>
 
@@ -1004,9 +1010,15 @@
 </div>
 
 <script type="module">
-import { api, apiUrl, connect, money, toast, esc, startClock, topbar, requireLogin, renderUserChip, hasPerm, getPerms, getLang, getToken, requestPinCode } from '/shared/client.js';
+import { api, apiUrl, connect, money, toast, esc, startClock, topbar, requireLogin, renderUserChip, hasPerm, getPerms, getLang, setLang, getToken, requestPinCode } from '/shared/client.js';
 const isSettingsRoute = window.location.pathname.replace(/\/+$/, '') === '/settings';
-document.getElementById('top').innerHTML = topbar(isSettingsRoute ? 'settings' : 'admin');
+document.getElementById('top').innerHTML = isSettingsRoute
+  ? topbar('settings')
+  : topbar('admin', {
+      title: '📊 Quản lý',
+      sub: 'District 1 - HCMC · realtime sales, menu, inventory',
+      actions: `<button class="btn sm" id="reportsBtn" title="Báo cáo">📄 Báo cáo</button>`,
+    });
 const bootUrlParams = new URLSearchParams(window.location.search);
 const bootViewParam = isSettingsRoute ? 'settings' : bootUrlParams.get('view');
 const bootTabParam = bootUrlParams.get('tab');
@@ -1366,7 +1378,7 @@ function parseAuditDetail(r){
 function auditMessage(r){
   const d=parseAuditDetail(r), a=r.action;
   const wh=id=>({wh_retail:'Kho BCM',wh_showroom_bcm:'Showroom BCM',wh_kitchen:'Kho bếp'}[id]||id||'kho');
-  const role=v=>({owner:'Chủ quán',manager:'Quản lý',cashier:'Thu ngân',kitchen:'Bếp',warehouse:'Thủ kho'}[v]||v||'nhân viên');
+  const role=v=>({owner:'Admin',manager:'Quản lý',cashier:'Thu ngân',kitchen:'Bếp',warehouse:'Thủ kho'}[v]||v||'nhân viên');
   const status=v=>({new:'mới',accepted:'đã nhận',preparing:'đang làm',ready:'đã xong',served:'đã phục vụ',cancelled:'đã hủy'}[v]||v||'không rõ');
   const list=(arr,limit=5)=>Array.isArray(arr)&&arr.length?arr.slice(0,limit).join(', ')+(arr.length>limit?` và ${arr.length-limit} mục khác`:''):'';
   const fallback=()=>d.raw||Object.entries(d).map(([k,v])=>`${k}: ${Array.isArray(v)?list(v):v}`).join('; ');
@@ -1501,7 +1513,7 @@ function invoiceRow(i){
   const contact=[c.phone,c.email].filter(Boolean).map(esc).join(' · ');
   return `<tr>
     <td style="font-family:var(--mono);font-size:11px">${esc(i.invoice_no)}</td>
-    <td>${esc(c.name||c.company||'Khách lẻ')} ${i.status==='cancelled'?'<span class="chip c-late">Hủy</span>':''} ${self?'<span class="chip c-done">Khách tự xuất</span>':''}${c.tax_code?`<br><small style="font-family:var(--mono);color:var(--faint)">MST: ${esc(c.tax_code)}</small>`:''}</td>
+    <td>${esc(c.name||c.company||'Khách không xuất hóa đơn')} ${i.status==='cancelled'?'<span class="chip c-late">Hủy</span>':''} ${self?'<span class="chip c-done">Khách tự xuất</span>':''}${c.tax_code?`<br><small style="font-family:var(--mono);color:var(--faint)">MST: ${esc(c.tax_code)}</small>`:''}</td>
     <td><small style="color:var(--muted)">${contact||'—'}</small></td>
     <td style="font-family:var(--mono);color:var(--brand)">${money(i.total)}</td>
     <td style="font-family:var(--mono);font-size:10px;color:var(--faint)">${esc(i.lookup_code)}</td>
@@ -1592,8 +1604,8 @@ const btnManageCats = document.getElementById('manageCats');
 if (btnManageCats) btnManageCats.onclick=openCategoryManager;
 const btnAddItem = document.getElementById('addItem');
 if (btnAddItem) btnAddItem.onclick=()=>{ if(!menu.categories?.length) return toast('Hãy tạo danh mục trước (🗂️ Danh mục)',true); openItemForm(null); };
-document.getElementById('reportsBtn').onclick=openReportsCenter;
-if(!canOpenReports()) document.getElementById('reportsBtn').style.display='none';
+const _reportsBtn=document.getElementById('reportsBtn');
+if(_reportsBtn){ _reportsBtn.onclick=openReportsCenter; if(!canOpenReports()) _reportsBtn.style.display='none'; }
 
 function reportDateValue(d){
   const x=d instanceof Date?new Date(d):new Date(d||Date.now());
@@ -2013,7 +2025,41 @@ async function openSettings(initialTab){
     return toast('Bạn không có quyền mở Cài đặt', true);
   }
   sessionStorage.setItem('adminActiveView', 'settings');
-  const ov=document.createElement('div'); ov.className='overlay show'; document.body.appendChild(ov);
+  document.body.classList.add('settings-shell');
+  const ov=document.createElement('div'); ov.className='overlay show settings-overlay'; document.body.appendChild(ov);
+  function closeSettings(){
+    clearSettingsTimers();
+    sessionStorage.removeItem('adminActiveView');
+    sessionStorage.removeItem('settingsActiveTab');
+    document.body.classList.remove('settings-shell');
+    if (settingsShellOnly) { location.href = '/'; return; }
+    ov.remove();
+    document.getElementById('top').innerHTML = topbar('admin');
+    renderUserChip();
+  }
+  // Settings shares the unified app-header: its title, language toggle and close
+  // live in the topbar instead of a second bar stacked under it.
+  function renderSettingsTopbar(){
+    const en = getLang()==='en';
+    const actions = `
+      <div class="tb-lang" role="group" aria-label="${en?'Language':'Ngôn ngữ'}">
+        <button type="button" id="langViBtn" class="${en?'':'on'}">VI</button>
+        <button type="button" id="langEnBtn" class="${en?'on':''}">EN</button>
+      </div>
+      <button type="button" class="tb-iconbtn" id="settingsTopClose" title="${en?'Close':'Đóng'}" aria-label="${en?'Close':'Đóng'}">✕</button>`;
+    document.getElementById('top').innerHTML = topbar('settings', {
+      title: en ? '⚙ Management settings' : '⚙ Cài đặt quản lý',
+      sub: en ? 'Staff, permissions, sync, e-invoice & print configuration in one place.' : 'Nhân viên, phân quyền, đồng bộ, hóa đơn và cấu hình in — gom về một nơi.',
+      actions
+    });
+    renderUserChip();
+    startClock();
+    const vi=document.getElementById('langViBtn'), enb=document.getElementById('langEnBtn');
+    if(vi) vi.onclick=()=>setLang('vi');
+    if(enb) enb.onclick=()=>setLang('en');
+    const x=document.getElementById('settingsTopClose');
+    if(x) x.onclick=closeSettings;
+  }
   let tab=initialTab || sessionStorage.getItem('settingsActiveTab') || 'users', users=[], branches=[], branchEditingId=null, permData=null, editingUser=null, printMode=sessionStorage.getItem('settingsPrintMode')||'bill', selectedRolePermTab='manager';
   let settingsWarehouses=[], warehouseEditingId=null;
   if (tab) sessionStorage.setItem('settingsActiveTab', tab);
@@ -2068,7 +2114,7 @@ async function openSettings(initialTab){
     if(bookHotspotId) sessionStorage.setItem('settingsBookHotspotId',bookHotspotId);
     else sessionStorage.removeItem('settingsBookHotspotId');
   }
-  const roles=[['owner','Chủ quán'],['manager','Quản lý'],['cashier','Thu ngân'],['kitchen','Bếp'],['warehouse','Thủ kho']];
+  const roles=[['owner','Admin'],['manager','Quản lý'],['cashier','Thu ngân'],['kitchen','Bếp'],['warehouse','Thủ kho']];
   const roleName=k=>roles.find(r=>r[0]===k)?.[1]||k;
   const branchName=id=>branches.find(b=>b.id===id)?.name||id||'Chi nhánh';
   const branchBadges=(ids=[])=>{
@@ -2079,7 +2125,7 @@ async function openSettings(initialTab){
   const warehouseSalesChannels=[
     ['ipad','iPad self-order'],
     ['pos','POS nhà hàng'],
-    ['retail','BCM Retail POS'],
+    ['retail','Retail POS'],
     ['online','Kênh online chung'],
     ['grabmerchant','GrabFood / GrabMerchant'],
     ['shopeefood','ShopeeFood'],
@@ -2109,12 +2155,12 @@ async function openSettings(initialTab){
     labels:{paper:'50x30',widthMm:50,heightMm:30,printerName:'Máy in tem ly',copies:'1',printScale:100,autoPrint:'1',templateKind:'cup'},
     bill:{storeName:'CÔNG TY TNHH DỊCH VỤ TIẾP THỊ BCM',storeSubtitle:'(Hệ thống Phân phối F&B & Retail BCM)',address:'00.08 Tháp A1 - Khu chung cư phức hợp lô M1-M2 (Sarimi), Số 74 Nguyễn Cơ Thạch, Phường An Lợi Đông, Thành phố Thủ Đức, Thành phố Hồ Chí Minh, Việt Nam',taxCode:'0316756674',phone:'0938525659',email:'customerservice@bcm-vn.com',paper:'K80',widthMm:72,heightMm:210,printerName:'Máy in Bill',copies:'1',printScale:100,footer:'CẢM ƠN QUÝ KHÁCH - HẸN GẶP LẠI TẠI BCM!',showQr:'1',showTax:'1',taxIncludedText:'Giá đã bao gồm thuế GTGT theo quy định',unitPriceMode:'vat_included',autoPrint:'1'},
     printers:[
-      {id:'kitchen',name:'',systemName:'',label:'Phiếu bếp',type:'Phiếu bếp',output:'kitchen_ticket',location:'Bếp',active:true,auto:true},
-      {id:'bar',name:'',systemName:'',label:'Phiếu bar',type:'Phiếu bar',output:'kitchen_ticket',location:'Bar',active:true,auto:true},
-      {id:'bill',name:'',systemName:'',label:'Hóa đơn',type:'Hóa đơn',output:'receipt',location:'Thu ngân',active:true,auto:true},
-      {id:'label',name:'',systemName:'',label:'Tem nhãn',type:'Tem nhãn',output:'cup_label',location:'Quầy tem',active:true,auto:false},
-      {id:'runner',name:'',systemName:'',label:'Phiếu chạy món',type:'Phiếu chạy món',output:'runner',location:'Runner',active:true,auto:false},
-      {id:'report',name:'',systemName:'',label:'Báo cáo A4',type:'Báo cáo A4',output:'report',location:'Văn phòng',active:true,auto:false},
+      {id:'kitchen',name:'',systemName:'',label:'Phiếu bếp',type:'Phiếu bếp',output:'kitchen_ticket',location:'Bếp',active:true,auto:true,connection:'browser',ip:'',port:9100,cashDrawer:false,openDrawerOnPrint:false},
+      {id:'bar',name:'',systemName:'',label:'Phiếu bar',type:'Phiếu bar',output:'kitchen_ticket',location:'Bar',active:true,auto:true,connection:'browser',ip:'',port:9100,cashDrawer:false,openDrawerOnPrint:false},
+      {id:'bill',name:'',systemName:'',label:'Hóa đơn',type:'Hóa đơn',output:'receipt',location:'Thu ngân',active:true,auto:true,connection:'browser',ip:'',port:9100,cashDrawer:true,openDrawerOnPrint:true},
+      {id:'label',name:'',systemName:'',label:'Tem nhãn',type:'Tem nhãn',output:'cup_label',location:'Quầy tem',active:true,auto:false,connection:'browser',ip:'',port:9100,cashDrawer:false,openDrawerOnPrint:false},
+      {id:'runner',name:'',systemName:'',label:'Phiếu chạy món',type:'Phiếu chạy món',output:'runner',location:'Runner',active:true,auto:false,connection:'browser',ip:'',port:9100,cashDrawer:false,openDrawerOnPrint:false},
+      {id:'report',name:'',systemName:'',label:'Báo cáo A4',type:'Báo cáo A4',output:'report',location:'Văn phòng',active:true,auto:false,connection:'system',ip:'',port:9100,cashDrawer:false,openDrawerOnPrint:false},
     ],
   };
   const cfgKey=k=>`pos_erp_${k}_settings`;
@@ -2152,6 +2198,11 @@ async function openSettings(initialTab){
         location:p.location||'',
         active:p.active!==false,
         auto:!!p.auto,
+        connection:['lan','system','browser'].includes(String(p.connection||'').toLowerCase())?String(p.connection).toLowerCase():(p.ip?'lan':(p.systemName||p.name?'system':'browser')),
+        ip:p.ip||p.host||'',
+        port:Math.max(1,Math.min(65535,parseInt(p.port)||9100)),
+        cashDrawer:!!(p.cashDrawer||p.drawer),
+        openDrawerOnPrint:!!p.openDrawerOnPrint,
       })):configDefaults.printers.map(p=>({...p})),
       templates:{label:templates.label||input.label_template||null,bill:templates.bill||input.bill_template||null},
     };
@@ -2221,16 +2272,16 @@ async function openSettings(initialTab){
   function requestManagerOwnerPin(message){
     return requestPinCode({
       title:'Xác nhận bảo mật',
-      subtitle:message||'Nhập PIN 4 số của Manager hoặc Owner để tiếp tục.',
-      roleLabel:'Manager / Owner',
+      subtitle:message||'Nhập PIN 4 số của Manager hoặc Admin để tiếp tục.',
+      roleLabel:'Manager / Admin',
       cancelText:'Hủy',
     });
   }
   function requestWarehouseConfigPin(message){
     return requestPinCode({
       title:'Xác nhận cấu hình kho',
-      subtitle:message||'Nhập PIN 4 số của Thủ kho, Manager hoặc Owner để tiếp tục.',
-      roleLabel:'Thủ kho / Manager / Owner',
+      subtitle:message||'Nhập PIN 4 số của Thủ kho, Manager hoặc Admin để tiếp tục.',
+      roleLabel:'Thủ kho / Manager / Admin',
       cancelText:'Hủy',
     });
   }
@@ -2304,18 +2355,12 @@ async function openSettings(initialTab){
         editingUser = null;
         selectedRolePermTab = 'manager';
       }
+      renderSettingsTopbar();
       draw();
     }catch(e){
+      renderSettingsTopbar();
       ov.innerHTML=`<div class="modal" style="max-width:460px"><h2>⚙ Cài đặt</h2><div class="empty">Tài khoản này chưa có quyền mở Cài đặt.<br>${esc(e.message)}</div><div class="mfoot"><button class="btn primary" id="closeSet">Đóng</button></div></div>`;
-      ov.querySelector('#closeSet').onclick=()=>{
-        sessionStorage.removeItem('adminActiveView');
-        sessionStorage.removeItem('settingsActiveTab');
-        if (settingsShellOnly) {
-          location.href = '/';
-          return;
-        }
-        ov.remove();
-      };
+      ov.querySelector('#closeSet').onclick=closeSettings;
     }
   }
   function draw(){
@@ -2347,17 +2392,6 @@ async function openSettings(initialTab){
     const modal = ov.querySelector('.settings-modal');
     if (!modal) {
       ov.innerHTML=`<div class="modal settings-modal">
-        <button class="modal-x" id="settingsCloseX" title="Đóng" aria-label="Đóng">✕</button>
-        <div class="settings-header" style="display:flex;justify-content:space-between;align-items:center;padding-right:16px">
-          <div>
-            <h2>⚙ Cài đặt quản lý</h2>
-            <div class="sub" style="color:var(--muted);font-size:12.5px;margin-top:4px">Nhân viên, phân quyền, đồng bộ, hóa đơn và cấu hình in được gom ở đây.</div>
-          </div>
-          <div class="lang-selector" style="display:inline-flex;gap:4px;font-size:12px;font-weight:600;cursor:pointer;background:var(--surface2);border:1px solid var(--border2);border-radius:99px;padding:4px 10px;user-select:none;margin-right:48px">
-            <span id="langViBtn" style="${getLang() === 'vi' ? 'color:var(--brand);text-decoration:underline;' : 'color:var(--muted);'}">VI</span> |
-            <span id="langEnBtn" style="${getLang() === 'en' ? 'color:var(--brand);text-decoration:underline;' : 'color:var(--muted);'}">EN</span>
-          </div>
-        </div>
         <div class="settings-tab-dropdown" id="settingsTabDrop">
           <button class="settings-tab-trigger" id="settingsTabDropBtn" type="button" aria-haspopup="true" aria-expanded="false">
             <b id="settingsTabDropLabel">${activeTabLabel}</b>
@@ -2376,39 +2410,7 @@ async function openSettings(initialTab){
         </div>
       </div>`;
       
-      const closeSettings = () => {
-        clearSettingsTimers();
-        sessionStorage.removeItem('adminActiveView');
-        sessionStorage.removeItem('settingsActiveTab');
-        if (settingsShellOnly) {
-          location.href = '/';
-          return;
-        }
-        ov.remove();
-      };
       ov.querySelector('#settingsClose').onclick=closeSettings;
-      ov.querySelector('#settingsCloseX').onclick=closeSettings;
-      
-      const viBtn = ov.querySelector('#langViBtn');
-      const enBtn = ov.querySelector('#langEnBtn');
-      if (viBtn && enBtn) {
-        viBtn.onclick = () => {
-          setLang('vi');
-          viBtn.style.color = 'var(--brand)';
-          viBtn.style.textDecoration = 'underline';
-          enBtn.style.color = 'var(--muted)';
-          enBtn.style.textDecoration = 'none';
-          draw();
-        };
-        enBtn.onclick = () => {
-          setLang('en');
-          enBtn.style.color = 'var(--brand)';
-          enBtn.style.textDecoration = 'underline';
-          viBtn.style.color = 'var(--muted)';
-          viBtn.style.textDecoration = 'none';
-          draw();
-        };
-      }
     } else {
       const sidebar = modal.querySelector('.settings-sidebar');
       if (sidebar) {
@@ -2426,14 +2428,6 @@ async function openSettings(initialTab){
       if (dropMenu) dropMenu.innerHTML = settingsTabMenuHtml();
       const drop = modal.querySelector('#settingsTabDrop');
       if (drop) drop.classList.remove('open');
-      const viBtn = modal.querySelector('#langViBtn');
-      const enBtn = modal.querySelector('#langEnBtn');
-      if (viBtn && enBtn) {
-        viBtn.style.color = getLang() === 'vi' ? 'var(--brand)' : 'var(--muted)';
-        viBtn.style.textDecoration = getLang() === 'vi' ? 'underline' : 'none';
-        enBtn.style.color = getLang() === 'en' ? 'var(--brand)' : 'var(--muted)';
-        enBtn.style.textDecoration = getLang() === 'en' ? 'underline' : 'none';
-      }
     }
 
     const drop = ov.querySelector('#settingsTabDrop');
@@ -2749,14 +2743,14 @@ async function openSettings(initialTab){
         <div><label style="display:block;font-size:12px;font-weight:600;margin-bottom:4px">Trạng thái</label><select id="setActive" style="width:100%"><option value="1" ${u.active!==false?'selected':''}>Đang hoạt động</option><option value="0" ${u.active===false?'selected':''}>Tắt tài khoản</option></select></div>
         <div><label style="display:block;font-size:12px;font-weight:600;margin-bottom:4px">Ngôn ngữ hiển thị</label><select id="setLang" style="width:100%"><option value="vi" ${u.lang!=='en'?'selected':''}>Tiếng Việt</option><option value="en" ${u.lang==='en'?'selected':''}>Tiếng Anh</option></select></div>
         <div><label style="display:block;font-size:12px;font-weight:600;margin-bottom:4px">Chi nhánh chính</label><select id="setBranch" style="width:100%">${branches.map(b=>`<option value="${esc(b.id)}" ${(u.branch_id||branches[0]?.id)===b.id?'selected':''}>${esc(b.name||b.code||b.id)}</option>`).join('')}</select></div>
-        <div style="grid-column:1/-1"><label style="display:block;font-size:12px;font-weight:600;margin-bottom:6px">Phạm vi truy cập chi nhánh</label><div class="permgrid">${branches.map(b=>`<label class="permitem"><input type="checkbox" data-user-branch="${esc(b.id)}" ${((u.branch_ids||[u.branch_id||branches[0]?.id]).includes(b.id)||u.role==='owner')?'checked':''} ${u.role==='owner'?'disabled':''}><span>${esc(b.name||b.code||b.id)}</span></label>`).join('')}</div><div class="mini" style="margin-top:6px">Manager được tick nhiều chi nhánh sẽ hoạt động như quản lý khu vực. Owner luôn thấy tất cả.</div></div>
+        <div style="grid-column:1/-1"><label style="display:block;font-size:12px;font-weight:600;margin-bottom:6px">Phạm vi truy cập chi nhánh</label><div class="permgrid">${branches.map(b=>`<label class="permitem"><input type="checkbox" data-user-branch="${esc(b.id)}" ${((u.branch_ids||[u.branch_id||branches[0]?.id]).includes(b.id)||u.role==='owner')?'checked':''} ${u.role==='owner'?'disabled':''}><span>${esc(b.name||b.code||b.id)}</span></label>`).join('')}</div><div class="mini" style="margin-top:6px">Manager được tick nhiều chi nhánh sẽ hoạt động như quản lý khu vực. Admin luôn thấy tất cả.</div></div>
       </div>
       <div class="setting-card" style="margin-top:12px;border:1px solid var(--border);padding:14px;border-radius:10px;background:var(--surface2)">
         <h4 style="margin:0 0 6px;font-size:13px;font-weight:700">Quyền riêng của nhân viên</h4>
         <div class="mini" style="margin-bottom:10px;color:var(--muted)">Hệ thống tự động áp dụng bộ quyền theo Vai trò. Bạn có thể tick/untick ở đây để tùy chỉnh riêng cho nhân viên này.</div>
         <div id="userPermGrid">${renderPermGridColumns(selectedRole, selectedPerms, 'data-user-perm')}</div>
         <div style="display:flex;gap:8px;align-items:center;justify-content:space-between;margin-top:14px;flex-wrap:wrap">
-          <span class="mini" id="userPermHint" style="font-weight:600;color:var(--brand)">${selectedRole==='owner'?'Chủ quán luôn toàn quyền.':(editingUser && editingUser.id?permDeltaText(u):'Đang dùng quyền mặc định của Vai trò.')}</span>
+          <span class="mini" id="userPermHint" style="font-weight:600;color:var(--brand)">${selectedRole==='owner'?'Admin luôn toàn quyền.':(editingUser && editingUser.id?permDeltaText(u):'Đang dùng quyền mặc định của Vai trò.')}</span>
           <span style="display:flex;gap:7px;flex-wrap:wrap">
             <button class="btn sm" id="allUserPerms" type="button" ${selectedRole==='owner'?'disabled':''}>Chọn tất cả</button>
             <button class="btn sm" id="noneUserPerms" type="button" ${selectedRole==='owner'?'disabled':''}>Bỏ tất cả</button>
@@ -3073,7 +3067,7 @@ async function openSettings(initialTab){
         <label class="permitem"><input id="opRequireShift" type="checkbox" ${s.requireOpenShift!==false?'checked':''}><span>Bắt buộc mở ca trước khi thanh toán</span></label>
         <div class="setting-form" style="margin-top:10px">
           <div><label>Tiền két gốc / mặc định</label><input id="opDefaultDrawerCash" type="number" min="0" step="1000" value="${Number(s.defaultDrawerCash)||0}"></div>
-          <div><label>Ghi nhớ</label><div class="mini" style="padding:10px 0">Nếu mở ca mà không kiểm đếm, hệ thống tự lấy tiền ca trước; nếu chưa có ca trước thì dùng số này. Khi đổi tiền két gốc, cần nhập lại PIN Manager/Owner.</div></div>
+          <div><label>Ghi nhớ</label><div class="mini" style="padding:10px 0">Nếu mở ca mà không kiểm đếm, hệ thống tự lấy tiền ca trước; nếu chưa có ca trước thì dùng số này. Khi đổi tiền két gốc, cần nhập lại PIN Manager/Admin.</div></div>
         </div>
         <label>Tên ca hiển thị khi kết ca</label>
         <div id="opShiftLabels">${(s.labels||[]).map((x,i)=>`<div class="shift-label-row" data-op-shift="${i}"><input data-sh-key value="${esc(x.key)}"><input data-sh-label value="${esc(x.label)}"><label class="permitem" style="margin:0"><input type="checkbox" data-sh-enabled ${x.enabled!==false?'checked':''}><span>Bật</span></label></div>`).join('')}</div>
@@ -3226,7 +3220,7 @@ async function openSettings(initialTab){
         };
         if(sortText) body.sort=parseInt(sortText)||0;
         if(!body.name) return toast('Nhập tên kho', true);
-        const pin=await requestWarehouseConfigPin(warehouseEditingId?'Nhập PIN 4 số của Thủ kho, Manager hoặc Owner để lưu cấu hình kho.':'Nhập PIN 4 số của Thủ kho, Manager hoặc Owner để tạo kho mới.');
+        const pin=await requestWarehouseConfigPin(warehouseEditingId?'Nhập PIN 4 số của Thủ kho, Manager hoặc Admin để lưu cấu hình kho.':'Nhập PIN 4 số của Thủ kho, Manager hoặc Admin để tạo kho mới.');
         if(!pin) return toast('Đã hủy lưu cấu hình kho', true);
         body.security_pin=pin;
         saveBtn.disabled=true;
@@ -3445,18 +3439,24 @@ async function openSettings(initialTab){
     const rows=readPrinterCfg();
     const routes=[['kitchen','Bếp'],['bar','Bar'],['bill','Hóa đơn'],['label','Tem'],['runner','Chạy món'],['report','Báo cáo']];
     const outputs=[['kitchen_ticket','Phiếu bếp/bar'],['receipt','Hóa đơn'],['cup_label','Tem ly'],['product_label','Tem sản phẩm'],['runner','Phiếu chạy món'],['report','Báo cáo'],['custom','Khác']];
+    const connections=[['browser','Trình duyệt'],['lan','LAN/IP'],['system','Máy in hệ điều hành']];
     return `<div class="panel" style="margin:0">
       <h3>Danh mục in</h3>
       <div class="mini" style="margin-bottom:10px">Chọn đúng tên máy in thật từ hệ điều hành, đặt nhãn hiển thị và tuyến nhận job in.</div>
       <datalist id="systemPrinterOptions">${systemPrinters.map(p=>`<option value="${esc(p.name)}">${esc([p.isDefault?'Default':'',p.driver,p.port].filter(Boolean).join(' · '))}</option>`).join('')}</datalist>
       <div id="printerCfgRows" class="printer-grid">${rows.map((p,i)=>`<div class="printer-row" data-print-row="${i}">
         <div class="pr-field"><label>Tuyến</label><input data-pr-id list="printerRouteOptions" value="${esc(p.id||'')}"></div>
-        <div class="pr-field"><label>Máy in thật</label><input data-pr-system list="systemPrinterOptions" value="${esc(p.systemName||p.name||'')}" placeholder="Chọn tên driver máy in"></div>
+        <div class="pr-field"><label>Kết nối</label><select data-pr-connection>${connections.map(([v,n])=>`<option value="${v}" ${(p.connection||'browser')===v?'selected':''}>${n}</option>`).join('')}</select></div>
+        <div class="pr-field"><label>Máy in hệ điều hành</label><input data-pr-system list="systemPrinterOptions" value="${esc(p.systemName||p.name||'')}" placeholder="VD: EPSON TM-T82"></div>
+        <div class="pr-field"><label>IP máy in LAN</label><input data-pr-ip value="${esc(p.ip||'')}" placeholder="192.168.1.50"></div>
+        <div class="pr-field"><label>Port</label><input data-pr-port type="number" min="1" max="65535" value="${esc(p.port||9100)}"></div>
         <div class="pr-field"><label>Nhãn sau tên</label><input data-pr-label value="${esc(p.label||p.type||'')}"></div>
         <div class="pr-field"><label>Loại nội dung</label><select data-pr-output>${outputs.map(([v,n])=>`<option value="${v}" ${(p.output||inferPrinterOutput(p))===v?'selected':''}>${n}</option>`).join('')}</select></div>
         <div class="pr-field"><label>Vị trí</label><input data-pr-location value="${esc(p.location||'')}"></div>
         <label class="pr-check"><input type="checkbox" data-pr-active ${p.active?'checked':''}><span>Đang sử dụng</span></label>
         <label class="pr-check"><input type="checkbox" data-pr-auto ${p.auto?'checked':''}><span>Tự động in</span></label>
+        <label class="pr-check"><input type="checkbox" data-pr-drawer ${p.cashDrawer?'checked':''}><span>Có két</span></label>
+        <label class="pr-check"><input type="checkbox" data-pr-open-drawer ${p.openDrawerOnPrint?'checked':''}><span>Mở két khi in</span></label>
         <button class="btn sm danger pr-del" data-del-printer="${i}" type="button">Xóa dòng</button>
       </div>`).join('')}</div>
       <datalist id="printerRouteOptions">${routes.map(([v,n])=>`<option value="${v}">${n}</option>`).join('')}</datalist>
@@ -3803,7 +3803,7 @@ async function openSettings(initialTab){
   }
   function printSample(kind){
     const bill=readCfg('bill');
-    if(kind==='bill') return {storeName:bill.storeName||'CÔNG TY TNHH DỊCH VỤ TIẾP THỊ BCM',storeSubtitle:bill.storeSubtitle||'(Hệ thống Phân phối F&B & Retail BCM)',address:bill.address||'00.08 Tháp A1 - Khu chung cư phức hợp lô M1-M2 (Sarimi), Số 74 Nguyễn Cơ Thạch, Phường An Lợi Đông, Thành phố Thủ Đức, Thành phố Hồ Chí Minh, Việt Nam',sellerTaxCode:bill.taxCode||'0316756674',phone:bill.phone||'0938525659',email:bill.email||'customerservice@bcm-vn.com',invoiceSeries:'C26TMB',taxInvoiceNo:'00000001',billNo:'Dan1506260001',date:'15/06/2026',timeOnly:'15:30',orderNo:'Dan1506260001',table:'A03',cashier:'Nguyễn Phúc Huy',customerName:'Khách lẻ',customerTaxCode:'',items:'[DANH MỤC F&B - NHÀ HÀNG / ĐỒ UỐNG]\n01   Combo Lẩu nấm Hải sản   1   450,000       450,000\n02   Trà thạch đào Size L     2    45,000        90,000\n\n[DANH MỤC RETAIL - SẢN PHẨM TIÊU DÙNG]\n03   Cà phê hạt BCM 250g      2   120,000       240,000\n04   Bánh quy bơ hộp thiếc    1   180,000       180,000',subtotal:'960,000',taxableAmount:'960,000',vatRate:'8',vatAmount:'76,800',grandTotal:'1,036,800',discount:'0',total:'1,036,800',totalWords:'Một triệu không trăm ba mươi sáu nghìn tám trăm đồng chẵn',taxNote:bill.taxIncludedText||'Giá đã bao gồm thuế GTGT theo quy định',method:'Chuyển khoản / Tiền mặt',paymentStatus:'Đã thanh toán',taxAuthorityCode:'00F83A7B-2C9D-4E1A-8B6C-5D4E3F2A1B0C',footer:bill.footer||'CẢM ƠN QUÝ KHÁCH - HẸN GẶP LẠI TẠI BCM!'};
+    if(kind==='bill') return {storeName:bill.storeName||'CÔNG TY TNHH DỊCH VỤ TIẾP THỊ BCM',storeSubtitle:bill.storeSubtitle||'(Hệ thống Phân phối F&B & Retail BCM)',address:bill.address||'00.08 Tháp A1 - Khu chung cư phức hợp lô M1-M2 (Sarimi), Số 74 Nguyễn Cơ Thạch, Phường An Lợi Đông, Thành phố Thủ Đức, Thành phố Hồ Chí Minh, Việt Nam',sellerTaxCode:bill.taxCode||'0316756674',phone:bill.phone||'0938525659',email:bill.email||'customerservice@bcm-vn.com',invoiceSeries:'C26TMB',taxInvoiceNo:'00000001',billNo:'Dan1506260001',date:'15/06/2026',timeOnly:'15:30',orderNo:'Dan1506260001',table:'A03',cashier:'Nguyễn Phúc Huy',customerName:'Khách không xuất hóa đơn',customerTaxCode:'',items:'[DANH MỤC F&B - NHÀ HÀNG / ĐỒ UỐNG]\n01   Combo Lẩu nấm Hải sản   1   450,000       450,000\n02   Trà thạch đào Size L     2    45,000        90,000\n\n[DANH MỤC RETAIL - SẢN PHẨM TIÊU DÙNG]\n03   Cà phê hạt BCM 250g      2   120,000       240,000\n04   Bánh quy bơ hộp thiếc    1   180,000       180,000',subtotal:'960,000',taxableAmount:'960,000',vatRate:'8',vatAmount:'76,800',grandTotal:'1,036,800',discount:'0',total:'1,036,800',totalWords:'Một triệu không trăm ba mươi sáu nghìn tám trăm đồng chẵn',taxNote:bill.taxIncludedText||'Giá đã bao gồm thuế GTGT theo quy định',method:'Chuyển khoản / Tiền mặt',paymentStatus:'Đã thanh toán',taxAuthorityCode:'00F83A7B-2C9D-4E1A-8B6C-5D4E3F2A1B0C',footer:bill.footer||'CẢM ƠN QUÝ KHÁCH - HẸN GẶP LẠI TẠI BCM!'};
     return {itemName:'Trà đào cam sả',options:'Size L · Trân châu trắng · Kem cheese',note:'Ít đá, 50% đường',orderNo:'#A05-028',table:'Mang đi',qty:'1',channel:'Take away',customer:'Anh Minh',phone:'0901 234 567',time:'15:42'};
   }
   function printText(v,kind='label'){ const s=printSample(kind); return String(v||'').replace(/\{(\w+)\}/g,(_,k)=>s[k]??`{${k}}`); }
@@ -4631,7 +4631,7 @@ async function openSettings(initialTab){
         const role = roleSel ? roleSel.value : 'cashier';
         const hint = ov.querySelector('#userPermHint');
         if(!hint) return;
-        if(role==='owner'){ hint.textContent='Chủ quán luôn toàn quyền.'; return; }
+        if(role==='owner'){ hint.textContent='Admin luôn toàn quyền.'; return; }
         const base=rolePerms(role);
         const selected=new Set([...ov.querySelectorAll('[data-user-perm]:checked')].map(x=>x.value));
         const allow=[...selected].filter(p=>!base.has(p)).length;
@@ -4845,7 +4845,7 @@ async function openSettings(initialTab){
       if(operationsCfg.shifts.defaultDrawerCash!==originalDrawerCash){
         securityPin=await requestManagerOwnerPin(`Đổi tiền két gốc từ ${money(originalDrawerCash)} sang ${money(operationsCfg.shifts.defaultDrawerCash)}.`);
         if(securityPin===null) return;
-        if(!securityPin){toast('Cần nhập PIN Manager hoặc Owner để đổi tiền két gốc',true);return;}
+        if(!securityPin){toast('Cần nhập PIN Manager hoặc Admin để đổi tiền két gốc',true);return;}
       }
       try{ await saveOperationsCfg(false,securityPin); toast('Đã lưu cấu hình thanh toán & ca'); }
       catch(e){toast(e.message,true);}
@@ -5623,12 +5623,17 @@ async function openSettings(initialTab){
       id:(row.querySelector('[data-pr-id]').value||`printer_${idx+1}`).trim(),
       name:(row.querySelector('[data-pr-system]').value||'').trim(),
       systemName:(row.querySelector('[data-pr-system]').value||'').trim(),
+      connection:row.querySelector('[data-pr-connection]')?.value||'browser',
+      ip:(row.querySelector('[data-pr-ip]')?.value||'').trim(),
+      port:Math.max(1,Math.min(65535,parseInt(row.querySelector('[data-pr-port]')?.value)||9100)),
       label:(row.querySelector('[data-pr-label]').value||`Printer ${idx+1}`).trim(),
       type:(row.querySelector('[data-pr-label]').value||`Printer ${idx+1}`).trim(),
       output:row.querySelector('[data-pr-output]').value,
       location:(row.querySelector('[data-pr-location]').value||'').trim(),
       active:row.querySelector('[data-pr-active]').checked,
       auto:row.querySelector('[data-pr-auto]').checked,
+      cashDrawer:!!row.querySelector('[data-pr-drawer]')?.checked,
+      openDrawerOnPrint:!!row.querySelector('[data-pr-open-drawer]')?.checked,
     }));
   }
   function savePrinterRows(rows=collectPrinterRows()){
@@ -5655,7 +5660,7 @@ async function openSettings(initialTab){
     ov.querySelector('#savePrinterRows').onclick=async()=>{try{savePrinterRows();await savePrintCfg(false);toast('Đã lưu danh mục in');draw();}catch(e){toast(e.message,true);}};
     ov.querySelector('#addPrinterRow').onclick=()=>{
       const rows=collectPrinterRows();
-      rows.push({id:`printer_${rows.length+1}`,name:'',systemName:'',label:'Nhãn in',type:'Nhãn in',output:'custom',location:'',active:true,auto:false});
+      rows.push({id:`printer_${rows.length+1}`,name:'',systemName:'',connection:'browser',ip:'',port:9100,label:'Nhãn in',type:'Nhãn in',output:'custom',location:'',active:true,auto:false,cashDrawer:false,openDrawerOnPrint:false});
       savePrinterRows(rows); draw();
     };
     ov.querySelectorAll('[data-del-printer]').forEach(b=>b.onclick=()=>{

@@ -44,13 +44,6 @@
 <body>
 <div id="top"></div>
 <div class="view">
-  <div class="viewhead">
-    <h1>👥 Liên hệ</h1>
-    <div class="sub">Khách hàng &amp; nhà cung cấp dùng chung một danh bạ — dùng lại cho POS, mua hàng, kho và công nợ</div>
-    <div class="right">
-      <button class="btn primary" id="addBtn">+ Thêm liên hệ</button>
-    </div>
-  </div>
   <div class="ctoolbar">
     <div class="seg" id="seg">
       <button data-t="all" class="on">Tất cả <span class="n" id="n-all">0</span></button>
@@ -132,7 +125,11 @@
 
 <script type="module">
 import { api, connect, toast, esc, money, startClock, topbar, requireModuleAccess, renderUserChip } from '/shared/client.js';
-document.getElementById('top').innerHTML = topbar('contacts');
+document.getElementById('top').innerHTML = topbar('contacts', {
+  title: '👥 Liên hệ',
+  sub: 'Khách hàng &amp; nhà cung cấp dùng chung một danh bạ — dùng lại cho POS, mua hàng, kho và công nợ',
+  actions: `<button class="btn primary" id="addBtn">+ Thêm liên hệ</button>`,
+});
 await requireModuleAccess('contacts'); renderUserChip();
 
 let type = 'all', q = '', rows = [], editing = null;

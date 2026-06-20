@@ -59,11 +59,6 @@
 <body>
 <div id="top"></div>
 <div class="view">
-  <div class="viewhead">
-    <h1>🌐 Online Channels</h1>
-    <div class="sub">Nhận đơn GrabFood / ShopeeFood / Website qua webhook · điều phối fulfillment</div>
-    <div class="right"><span class="chip c-muted" id="cnt">0 đơn</span></div>
-  </div>
   <div class="onwrap">
     <div class="ocol" id="orders"></div>
     <div class="odetail" id="orderDetail"></div>
@@ -84,7 +79,11 @@
 
 <script type="module">
 import { api, connect, money, toast, esc, startClock, topbar, requireModuleAccess, renderUserChip } from '/shared/client.js';
-document.getElementById('top').innerHTML = topbar('online');
+document.getElementById('top').innerHTML = topbar('online', {
+  title: '🌐 Online Channels',
+  sub: 'Nhận đơn GrabFood / ShopeeFood / Website qua webhook · điều phối fulfillment',
+  actions: `<span class="chip c-muted" id="cnt">0 đơn</span>`,
+});
 await requireModuleAccess('online'); renderUserChip();
 
 const FLOW=['received','confirmed','preparing','ready','completed'];

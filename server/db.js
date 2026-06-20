@@ -580,6 +580,13 @@ export function migrate() {
   addColumnIfMissing('orders', 'voucher_id', 'TEXT');
   addColumnIfMissing('orders', 'voucher_code', 'TEXT');
   addColumnIfMissing('payments', 'shift_id', 'TEXT');
+  addColumnIfMissing('print_jobs', 'attempts', 'INTEGER NOT NULL DEFAULT 0');
+  addColumnIfMissing('print_jobs', 'last_attempt_at', 'TEXT');
+  addColumnIfMissing('print_jobs', 'error', 'TEXT');
+  addColumnIfMissing('print_jobs', 'transport', 'TEXT');
+  addColumnIfMissing('print_jobs', 'target', 'TEXT');
+  addColumnIfMissing('print_jobs', 'reprint_of', 'TEXT');
+  addColumnIfMissing('print_jobs', 'printed_by', 'TEXT');
   addColumnIfMissing('order_items', 'table_path', 'TEXT');
   addColumnIfMissing('order_items', 'kds_dismissed', 'INTEGER DEFAULT 0');
   addColumnIfMissing('users', 'lang', 'TEXT');

@@ -1,368 +1,330 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="vi"><head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Printer Monitor — POS/ERP</title>
+<title>In ấn — POS/ERP</title>
 <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/shared/app.css">
 <script src="/runtime-config.js"></script>
 <script src="/socket.io/socket.io.js"></script>
 <style>
-.pgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(228px,1fr));gap:16px}
-.paper .runner-tbl{text-align:center;font-weight:800;margin:2px 0 4px}
-.paper .runner-tbl .big-tbl{display:block;font-size:30px;line-height:1.05;letter-spacing:1px}
-.paper .runner-name{font-size:16px;font-weight:800;text-align:center;margin:4px 0}
-.printer{background:var(--surface);border:1px solid var(--border);border-radius:14px;display:flex;flex-direction:column;min-height:420px}
-.printer .ph{padding:12px 15px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:9px;font-weight:700}
-.printer .ph .st{margin-left:auto;font-size:11px;font-weight:600}
-.tray{flex:1;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:14px;background:repeating-linear-gradient(180deg,transparent,transparent 26px,rgba(255,255,255,.015) 26px,rgba(255,255,255,.015) 27px)}
-.paper{background:#fdfdf8;color:#1a1a1a;font-family:var(--mono);font-size:11.5px;border-radius:4px;padding:14px 14px;box-shadow:0 6px 20px rgba(0,0,0,.4);animation:slideIn .35s ease}
-@keyframes slideIn{from{transform:translateY(-14px);opacity:0}to{transform:none;opacity:1}}
-.paper.printed{opacity:.6}
-.paper .c{text-align:center}.paper h4{font-size:13px;margin:1px 0}
-.paper hr{border:none;border-top:1px dashed #999;margin:6px 0}
-.paper .li{display:flex;justify-content:space-between;gap:8px;padding:1px 0}
-.paper .big{font-size:14px;font-weight:700}
-.paper .note{color:#b35; font-size:11px}
-.paper .qr{width:58px;height:58px;margin:6px auto 2px;background:repeating-conic-gradient(#111 0 25%,#fdfdf8 0 50%) 0 0/11px 11px;border:3px solid #111}
-.paper .receipt-canvas-live{position:relative;width:100%;background:#fdfdf8;color:#111;aspect-ratio:var(--receipt-ratio,72/180);min-height:280px}
-.paper .label-canvas-live{position:relative;width:100%;background:#fff;color:#111;aspect-ratio:var(--label-ratio,50/30);min-height:120px;border:1px dashed #bbb}
-.paper .tpl-el{position:absolute;white-space:pre-wrap;overflow:hidden;line-height:1.12;box-sizing:border-box}
-.paper .tpl-img img{width:100%;height:100%;object-fit:contain}
-.paper .tpl-line{border-top:1px dashed #777;height:0!important}
-.paper .tpl-qr{display:flex;align-items:center;justify-content:center}
-.paper .tpl-qr .qr{width:min(100%,64px);height:auto;aspect-ratio:1;margin:0}
-.paper .pact{display:flex;gap:7px;margin-top:9px}
-.paper .pact button{flex:1;font-size:11px;padding:5px;border-radius:6px;border:1px solid #ccc;background:#eee;color:#333;font-weight:600;font-family:var(--font)}
-.pempty{color:var(--faint);text-align:center;padding:40px 10px;font-size:12.5px}
-.dotled{width:8px;height:8px;border-radius:50%;background:var(--done);box-shadow:0 0 7px var(--done)}
+body{overflow:hidden}
+.print-page{height:calc(100dvh - var(--topbar-h,70px));display:grid;grid-template-rows:auto auto 1fr;gap:12px;padding:14px 16px;box-sizing:border-box;min-height:0}
+.print-head{display:flex;align-items:center;gap:12px;min-width:0}
+.print-title h1{font-size:20px;margin:0;font-weight:850}
+.print-title .sub{font-size:12px;color:var(--muted);margin-top:2px}
+.print-actions{margin-left:auto;display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end}
+.metric-row{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+.metric{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:10px 12px;min-width:0}
+.metric .k{font-size:10px;text-transform:uppercase;letter-spacing:.4px;color:var(--faint);font-weight:850}.metric .v{font-size:18px;font-weight:850;margin-top:3px}
+.printer-devices{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px}
+.device{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:11px 12px;min-width:0;display:flex;flex-direction:column;gap:8px}
+.device-top{display:flex;align-items:flex-start;gap:8px}.device-ic{font-size:20px}.device-name{font-weight:850;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.device-meta{font-size:11px;color:var(--muted);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.device-actions{display:flex;gap:6px;flex-wrap:wrap}.device-actions .btn{height:28px;padding:0 9px;font-size:11px}
+.status{display:inline-flex;align-items:center;gap:5px;border-radius:999px;padding:3px 8px;font-size:10.5px;font-weight:850;border:1px solid var(--border2);white-space:nowrap}.status i{width:7px;height:7px;border-radius:50%;background:currentColor}
+.s-ready{color:var(--done);background:var(--done-bg)}.s-queued{color:var(--brand);background:var(--brand-dim)}.s-failed{color:var(--late);background:var(--late-bg)}.s-disabled{color:var(--muted);background:var(--surface2)}.s-printing{color:#b7791f;background:#fff7e6}
+.history{background:var(--surface);border:1px solid var(--border);border-radius:8px;display:grid;grid-template-rows:auto 1fr;min-height:0;overflow:hidden}
+.history-tools{display:flex;align-items:center;gap:8px;padding:10px;border-bottom:1px solid var(--border);flex-wrap:wrap}.history-tools input{min-width:260px;flex:1;height:34px}.history-tools select{height:34px;min-width:130px}
+.table-wrap{overflow:auto;min-height:0}
+.jobs{width:100%;border-collapse:separate;border-spacing:0}.jobs th{position:sticky;top:0;background:var(--surface);z-index:1;color:var(--faint);font-size:10px;text-transform:uppercase;letter-spacing:.45px;text-align:left;padding:10px;border-bottom:1px solid var(--border)}
+.jobs td{padding:10px;border-bottom:1px solid var(--border);font-size:12px;vertical-align:middle}.jobs tr{cursor:pointer}.jobs tr:hover td{background:var(--surface2)}
+.job-main{font-weight:850;color:var(--text);max-width:460px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.job-sub{font-size:11px;color:var(--muted);margin-top:2px;max-width:460px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mono{font-family:var(--mono)}
+.drawer{position:fixed;inset:0;background:rgba(15,23,42,.52);z-index:300;display:none;align-items:center;justify-content:flex-end;padding:14px}.drawer.show{display:flex}
+.detail{width:min(620px,100%);height:min(760px,100%);background:var(--surface);border:1px solid var(--border);border-radius:10px;display:grid;grid-template-rows:auto auto 1fr auto;box-shadow:0 24px 70px rgba(15,23,42,.28);overflow:hidden}
+.detail-head{display:flex;align-items:flex-start;gap:10px;padding:14px;border-bottom:1px solid var(--border)}.detail-head h2{font-size:16px;margin:0;font-weight:850}.detail-head .sub{font-size:11.5px;color:var(--muted);margin-top:2px}.detail-head .x{margin-left:auto}
+.detail-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;padding:12px;border-bottom:1px solid var(--border);background:var(--surface2)}
+.detail-box{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:8px}.detail-box .k{font-size:10px;color:var(--faint);text-transform:uppercase;font-weight:850}.detail-box .v{font-size:12px;font-weight:750;margin-top:2px;word-break:break-word}
+.preview{margin:0;padding:14px;overflow:auto;background:#fffdf5;color:#161616;font:12px/1.38 var(--mono);white-space:pre-wrap}
+.detail-actions{display:flex;gap:8px;justify-content:flex-end;align-items:center;padding:12px;border-top:1px solid var(--border);flex-wrap:wrap}
+.empty-print{padding:30px;text-align:center;color:var(--muted);font-size:12px}
+@media(max-width:900px){body{overflow:auto}.print-page{height:auto;min-height:calc(100dvh - var(--topbar-h,70px));grid-template-rows:auto auto auto 1fr}.metric-row{grid-template-columns:repeat(2,1fr)}.jobs th:nth-child(4),.jobs td:nth-child(4){display:none}.history-tools input{min-width:180px}.drawer{justify-content:center}.detail{height:min(720px,96dvh)}}
+@media(max-width:560px){.print-page{padding:10px}.print-head{align-items:flex-start}.print-actions{width:100%;justify-content:flex-start;margin-left:0}.metric-row{grid-template-columns:1fr 1fr}.printer-devices{grid-template-columns:1fr}.jobs th:nth-child(5),.jobs td:nth-child(5){display:none}.detail-grid{grid-template-columns:1fr}}
 </style></head>
 <body>
 <div id="top"></div>
-<div class="view">
-  <div class="viewhead">
-    <h1>🖨️ Printer Monitor</h1>
-    <div class="sub">Máy in ảo — phiếu bếp/bar tự in khi gửi món, receipt tự in khi thanh toán</div>
-    <div class="right"><label style="font-size:12px;color:var(--muted)"><input type="checkbox" id="autoP" checked> Tự động in (auto-print)</label></div>
+<main class="print-page">
+
+  <section class="metric-row" id="metrics"></section>
+  <section class="printer-devices" id="devices"></section>
+
+  <section class="history">
+    <div class="history-tools">
+      <input id="searchBox" placeholder="Tìm bàn, mã job, món, hóa đơn, phiếu kho...">
+      <select id="printerFilter"></select>
+      <select id="statusFilter">
+        <option value="">Tất cả trạng thái</option>
+        <option value="queued">Chờ in</option>
+        <option value="printing">Đang in</option>
+        <option value="printed">Đã in</option>
+        <option value="failed">Lỗi</option>
+      </select>
+      <select id="typeFilter"></select>
+    </div>
+    <div class="table-wrap">
+      <table class="jobs">
+        <thead><tr><th>Thời gian</th><th>Nội dung</th><th>Máy in</th><th>Bàn/Ref</th><th>Trạng thái</th></tr></thead>
+        <tbody id="jobRows"></tbody>
+      </table>
+    </div>
+  </section>
+</main>
+
+<div class="drawer" id="detailDrawer">
+  <div class="detail">
+    <div class="detail-head">
+      <div>
+        <h2 id="detailTitle">Chi tiết job in</h2>
+        <div class="sub" id="detailSub"></div>
+      </div>
+      <button class="btn sm x" id="detailClose">Đóng</button>
+    </div>
+    <div class="detail-grid" id="detailMeta"></div>
+    <pre class="preview allow-select" id="detailPreview">Đang tải...</pre>
+    <div class="detail-actions">
+      <button class="btn" id="markPrintedBtn">Đánh dấu đã in</button>
+      <button class="btn" id="sendPrinterBtn">Gửi máy in thật</button>
+      <button class="btn primary" id="reprintPreviewBtn">In lại</button>
+    </div>
   </div>
-  <div class="pgrid" id="printerGrid"></div>
 </div>
 
 <script type="module">
-import { api, connect, money, toast, esc, startClock, topbar, requireModuleAccess, renderUserChip } from '/shared/client.js';
-document.getElementById('top').innerHTML = topbar('printers');
-await requireModuleAccess('printing'); renderUserChip();
+import { api, connect, esc, toast, topbar, startClock, requireModuleAccess, renderUserChip } from '/shared/client.js';
 
-let jobs = [], printConfig = {};
-const FALLBACK_PRINTERS = [
-  { id:'kitchen', systemName:'', name:'', label:'Phiếu bếp', type:'Phiếu bếp', output:'kitchen_ticket', active:true, auto:true },
-  { id:'bar', systemName:'', name:'', label:'Phiếu bar', type:'Phiếu bar', output:'kitchen_ticket', active:true, auto:true },
-  { id:'bill', systemName:'', name:'', label:'Hóa đơn', type:'Hóa đơn', output:'receipt', active:true, auto:true },
-  { id:'label', systemName:'', name:'', label:'Tem nhãn', type:'Tem nhãn', output:'cup_label', active:true, auto:false },
-  { id:'runner', systemName:'', name:'', label:'Phiếu chạy món', type:'Phiếu chạy món', output:'runner', active:true, auto:false },
-];
-const cfgKey=k=>`pos_erp_${k}_settings`;
-function readLocalCfg(k){ try{return JSON.parse(localStorage.getItem(cfgKey(k))||'null');}catch{return null;} }
-function hasLocalPrintCfg(){ return ['einvoice','labels','bill','printers','label_template','cup_label_template','bill_template'].some(k=>localStorage.getItem(cfgKey(k))); }
-function isLegacyBillTemplate(tpl){
-  return tpl?.standard==='bcm_fiscal_receipt' && (Number(tpl.version||0)<3 || Number(tpl.heightMm||0)>260);
-}
-function mergePrintConfig(remote={}){
-  const r=remote||{};
-  if(r.updated_at||!hasLocalPrintCfg()) return r;
-  const localBillTemplate=readLocalCfg('bill_template');
-  const local={
-    einvoice:readLocalCfg('einvoice')||{},
-    labels:readLocalCfg('labels')||{},
-    bill:readLocalCfg('bill')||{},
-    printers:readLocalCfg('printers')||r.printers,
-    templates:{label:readLocalCfg('cup_label_template')||readLocalCfg('label_template')||r.templates?.label,bill:isLegacyBillTemplate(localBillTemplate)?r.templates?.bill:(localBillTemplate||r.templates?.bill)},
-  };
-  return {...r,einvoice:{...(r.einvoice||{}),...local.einvoice},labels:{...(r.labels||{}),...local.labels},bill:{...(r.bill||{}),...local.bill},printers:local.printers||r.printers,templates:{...(r.templates||{}),...local.templates}};
-}
-connect('printers', {
-  'print:new': (j) => { jobs.unshift(j); render(); if(document.getElementById('autoP').checked && shouldAutoPrintJob(j)) setTimeout(()=>doPrint(j.id), 600); },
-  'print:done': () => { load(); },
+document.getElementById('top').innerHTML = topbar('printers', {
+  title: '🖨️ In ấn & thiết bị',
+  sub: 'Máy in thật, két tiền, lịch sử in và in lại có kiểm tra trước.',
+  actions: `<button class="btn sm" id="openDrawerBtn">Mở két</button>
+      <a class="btn sm" href="/settings?tab=printers">Cấu hình máy in</a>
+      <button class="btn sm primary" id="refreshBtn">Tải lại</button>`,
 });
+await requireModuleAccess('printing');
+renderUserChip();
+
+const STATUS = {
+  queued:['Chờ in','s-queued'],
+  printing:['Đang in','s-printing'],
+  printed:['Đã in','s-ready'],
+  failed:['Lỗi','s-failed'],
+};
+const TYPE = {
+  kitchen_ticket:'Lên món / Phiếu bếp',
+  receipt:'Hóa đơn / Tạm tính',
+  cup_label:'Tem ly',
+  product_label:'Tem sản phẩm',
+  runner:'Phiếu chạy món',
+  test:'In thử',
+  cash_drawer:'Mở két tiền',
+  inventory_document:'Phiếu kho',
+  purchase:'Phiếu mua hàng',
+  refund:'Hoàn / trả hàng',
+};
+
+let printers = [];
+let jobs = [];
+let currentJob = null;
+let currentText = '';
+
+const q = (id) => document.getElementById(id);
+const fmtTime = (v) => v ? new Date(v).toLocaleString('vi-VN',{hour:'2-digit',minute:'2-digit',day:'2-digit',month:'2-digit'}) : '-';
+const statusPill = (s) => { const [t,c]=STATUS[s]||[s||'Không rõ','s-disabled']; return `<span class="status ${c}"><i></i>${esc(t)}</span>`; };
+const printerName = (id) => printers.find(p=>p.id===id)?.label || printers.find(p=>p.id===id)?.name || id || '-';
+const targetLabel = (p) => p.connection==='lan' ? `${p.ip||'chưa có IP'}:${p.port||9100}` : (p.connection==='system' ? (p.systemName||p.name||'chưa chọn driver') : 'Trình duyệt');
+const deviceIcon = (p) => /bill|receipt|hóa|hoa/i.test(`${p.id} ${p.output} ${p.label}`) ? '🧾' : /label|tem/i.test(`${p.output} ${p.label}`) ? '🏷️' : /runner|chạy/i.test(`${p.output} ${p.label}`) ? '🍽️' : /bar/i.test(`${p.id} ${p.label}`) ? '🍹' : '🔥';
+
+function searchable(j){
+  return [
+    j.id,j.printer,j.type,j.title,j.status,j.error,
+    j.meta?.action,j.meta?.table,j.meta?.ref,j.meta?.item_preview,
+    JSON.stringify(j.payload||{}),
+  ].join(' ').toLowerCase();
+}
 
 async function load(){
-  const out = await Promise.all([api('/print/jobs'), api('/print/config').catch(()=>printConfig||{})]);
-  jobs = out[0]; printConfig = mergePrintConfig(out[1]);
-  render();
+  const [p, js] = await Promise.all([
+    api('/print/printers').catch(()=>[]),
+    api('/print/jobs?limit=200').catch(()=>[]),
+  ]);
+  printers = Array.isArray(p) ? p : [];
+  jobs = Array.isArray(js) ? js : [];
+  draw();
 }
-function configuredPrinters(){
-  const rows = Array.isArray(printConfig.printers) && printConfig.printers.length ? printConfig.printers : FALLBACK_PRINTERS;
-  const out = rows.map((p,i)=>({ ...(FALLBACK_PRINTERS.find(x=>x.id===p.id)||{}), ...p, id:p.id||`printer_${i+1}` }));
-  const ids = new Set(out.map(p=>p.id));
-  for (const j of jobs) {
-    if (!ids.has(j.printer)) {
-      ids.add(j.printer);
-      out.push({ id:j.printer, name:j.printer, systemName:j.printer, label:j.type||'Job in', type:j.type||'Job in', output:j.type||'custom', active:true, auto:false });
-    }
-  }
-  return out;
-}
-function printerIcon(p){
-  const raw = `${p.id} ${p.output} ${p.label||p.type}`.toLowerCase();
-  if(raw.includes('bar')) return '🍹';
-  if(raw.includes('bill') || raw.includes('receipt') || raw.includes('hóa đơn')) return '🧾';
-  if(raw.includes('label') || raw.includes('tem')) return '🏷️';
-  if(raw.includes('runner') || raw.includes('chạy')) return '🍽️';
-  return '🔥';
-}
-function emptyText(p){ return /label|tem/i.test(`${p.output} ${p.label||p.type}`) ? 'Chưa có tem' : 'Chưa có phiếu'; }
-function shouldAutoPrintJob(j){
-  const p = configuredPrinters().find(x => x.id === j.printer);
-  return !p || (p.active !== false && p.auto !== false);
-}
-function renderPrinterShell(rows){
-  const grid=document.getElementById('printerGrid');
-  const hash=rows.map(p=>[p.id,p.systemName||p.name,p.label||p.type,p.active,p.auto].join(':')).join('|');
-  if(grid.dataset.hash===hash) return;
-  grid.dataset.hash=hash;
-  grid.innerHTML=rows.map(p=>{
-    const name=p.systemName||p.name||p.id||'Máy in';
-    const label=p.label||p.type||'In';
-    const st=p.active===false?'Tạm tắt':'Sẵn sàng';
-    const color=p.active===false?'var(--warn)':'var(--done)';
-    return `<div class="printer" data-printer-card="${esc(p.id)}"><div class="ph">${printerIcon(p)} ${esc(name)} <span style="font-size:11px;color:var(--muted);background:var(--surface3);padding:2px 6px;border-radius:5px">${esc(label)}</span><span class="dotled" style="background:${color};box-shadow:0 0 7px ${color}"></span><span class="st" style="color:${color}">${esc(st)}</span></div><div class="tray" id="tray-${esc(p.id)}"><div class="pempty">${emptyText(p)}</div></div></div>`;
-  }).join('');
-}
-function render(){
-  const rows=configuredPrinters();
-  renderPrinterShell(rows);
-  for(const p of rows){
-    const list = jobs.filter(j => j.printer === p.id).slice(0, 12);
-    const el = document.getElementById('tray-'+p.id);
-    if(el) el.innerHTML = list.length ? list.map(paper).join('') : `<div class="pempty">${emptyText(p)}</div>`;
-  }
-  document.querySelectorAll('[data-print]').forEach(b=>b.onclick=()=>doPrint(b.dataset.print));
-  document.querySelectorAll('[data-reprint]').forEach(b=>b.onclick=()=>reprint(b.dataset.reprint));
-}
-function paper(j){
-  const body = j.type==='receipt' ? receiptBody(j.payload) : j.type==='cup_label' ? labelBody(j.payload) : j.type==='runner' ? runnerBody(j.payload) : ticketBody(j.payload);
-  const acts = j.status==='queued'
-    ? `<div class="pact"><button data-print="${j.id}">🖨️ In</button></div>`
-    : `<div class="pact"><button data-reprint="${j.id}">In lại</button></div>`;
-  return `<div class="paper ${j.status==='printed'?'printed':''}">${body}${acts}</div>`;
-}
-function ticketBody(p){
-  return `<div class="c"><h4>=== ${esc(p.station||'KITCHEN')} ===</h4></div><hr>
-    <div class="li"><span>Bàn: <b>${esc(p.table||'—')}</b></span><span>#${esc(p.order_no||'')}</span></div>
-    <div class="li"><span>${esc(p.time||'')}</span></div><hr>
-    ${(p.items||[]).map(i=>`<div class="big">${i.qty}× ${esc(i.name)}</div>
-      ${(i.mods&&i.mods.length)?`<div class="note">+ ${esc(i.mods.join(', '))}</div>`:''}
-      ${i.note?`<div class="note">📝 ${esc(i.note)}</div>`:''}`).join('<hr style="border-top-style:dotted">')}`;
-}
-function activePrintConfig(r){ return r?.print_config || printConfig || {}; }
-function activeBillCfg(r){ return activePrintConfig(r).bill || {}; }
-function activeBillTemplate(r){ return activePrintConfig(r).templates?.bill || null; }
-function activeLabelTemplate(r){ return activePrintConfig(r).templates?.label || null; }
-function methodLabel(m){return {cash:'Tien mat',card:'May POS',qr:'QR',qrcode:'QR Code',voucher:'Voucher',bank_transfer:'Chuyen khoan',internet_banking:'Internet Banking',momo:'MoMo Pay',zalopay:'ZaloPay',visa:'Visa',pos_card:'May POS',online:'Online'}[m]||m;}
-function replaceVars(text, vars){ return String(text||'').replace(/\{(\w+)\}/g,(_,k)=>vars[k]??`{${k}}`); }
-function vndPlain(n){ return Math.round(Number(n)||0).toLocaleString('en-US'); }
-function pad2(n){ return String(n).padStart(2,'0'); }
-function receiptDate(d){ return `${pad2(d.getDate())}/${pad2(d.getMonth()+1)}/${d.getFullYear()}`; }
-function receiptTime(d){ return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`; }
-function internalBillNo(r,d){
-  if(r.bill_no && /^Dan\d{10}$/i.test(r.bill_no)) return r.bill_no;
-  const seed=String(r.order_id||r.number||'1');
-  let n=0; for(const ch of seed) n=(n*31+ch.charCodeAt(0))%10000;
-  return `Dan${pad2(d.getDate())}${pad2(d.getMonth()+1)}${String(d.getFullYear()).slice(-2)}${String(n||1).padStart(4,'0')}`;
-}
-function numberToVietnamese(n){
-  n=Math.round(Number(n)||0);
-  if(n===0) return 'Khong dong';
-  const digit=['khong','mot','hai','ba','bon','nam','sau','bay','tam','chin'], unit=['','nghin','trieu','ty'];
-  function triad(num, full=false){
-    const tr=Math.floor(num/100), ch=Math.floor((num%100)/10), dv=num%10, out=[];
-    if(tr>0||full) out.push(digit[tr]+' tram');
-    if(ch>1){ out.push(digit[ch]+' muoi'); if(dv===1) out.push('mot'); else if(dv===5) out.push('lam'); else if(dv) out.push(digit[dv]); }
-    else if(ch===1){ out.push('muoi'); if(dv===5) out.push('lam'); else if(dv) out.push(digit[dv]); }
-    else if(dv){ if(tr>0||full) out.push('le'); out.push(digit[dv]); }
-    return out.join(' ');
-  }
-  const parts=[]; let x=n, idx=0;
-  while(x>0){ const g=x%1000; if(g) parts.unshift(`${triad(g, parts.length>0)} ${unit[idx]}`.trim()); x=Math.floor(x/1000); idx++; }
-  const s=parts.join(' ').replace(/\s+/g,' ').trim();
-  return s.charAt(0).toUpperCase()+s.slice(1)+' dong chan';
-}
-function lineCategory(i){ return i.station==='retail'||i.sku_id ? 'retail' : 'fnb'; }
-function itemLineAmount(i,rate,priceIncludesVat){
-  const gross=(Number(i.unit_price)||0)*(Number(i.qty)||1);
-  return priceIncludesVat ? Math.round(gross/(1+rate/100)) : gross;
-}
-function formatReceiptItemRow(idx,i,rate,priceIncludesVat){
-  const name=String(i.name||'').replace(/\s+/g,' ').slice(0,24).padEnd(24,' ');
-  const qty=String(i.qty||1).padStart(2,' ');
-  const unit=Math.round(itemLineAmount({...i,qty:1},rate,priceIncludesVat));
-  const amount=itemLineAmount(i,rate,priceIncludesVat);
-  return `${String(idx).padStart(2,'0')}   ${name} ${qty} ${vndPlain(unit).padStart(9,' ')} ${vndPlain(amount).padStart(12,' ')}`;
-}
-function receiptItemsText(r){
-  const tax=r.tax||{}, rate=Number(tax.vat_rate||8)||0, inc=tax.price_includes_vat!==false;
-  const groups={fnb:[],retail:[]};
-  (r.items||[]).forEach(i=>groups[lineCategory(i)].push(i));
-  const rows=[]; let idx=1;
-  if(groups.fnb.length){ rows.push('[DANH MUC F&B - NHA HANG / DO UONG]'); groups.fnb.forEach(i=>rows.push(formatReceiptItemRow(idx++,i,rate,inc))); }
-  if(groups.retail.length){ if(rows.length) rows.push(''); rows.push('[DANH MUC RETAIL - SAN PHAM TIEU DUNG]'); groups.retail.forEach(i=>rows.push(formatReceiptItemRow(idx++,i,rate,inc))); }
-  return rows.join('\n');
-}
-function receiptVars(r){
-  const cfg=activeBillCfg(r), lines=r.lines||[];
-  const tax=r.tax||{};
-  const taxNote=cfg.taxIncludedText || (tax.price_includes_vat!==false ? `Gia da bao gom thue GTGT ${tax.vat_rate||''}% theo quy dinh` : `Chua bao gom thue GTGT ${tax.vat_rate||''}%`);
-  return {
-    storeName:cfg.storeName||r.branch||'POS/ERP',
-    address:cfg.address||'',
-    phone:cfg.phone||'',
-    orderNo:`#${r.number||''}`,
-    table:r.table_code||'-',
-    cashier:'',
-    time:new Date(r.paid_at||Date.now()).toLocaleString('vi-VN'),
-    items:receiptItemsText(r),
-    subtotal:money(r.subtotal||0),
-    discount:money(r.discount||0),
-    total:money(r.total||0),
-    taxNote,
-    method:lines.map(l=>`${methodLabel(l.method)} ${money(l.amount)}`).join('\n')||'-',
-    footer:cfg.footer||'Cam on quy khach',
-  };
-}
-function receiptVarsBcm(r){
-  const cfg=activeBillCfg(r), ein=activePrintConfig(r).einvoice || {};
-  const lines=r.lines||[], tax=r.tax||{};
-  const rate=Number(tax.vat_rate||ein.defaultVatRate||8)||0;
-  const priceIncludesVat=tax.price_includes_vat!==false;
-  const gross=Number(r.total||0);
-  const taxable=priceIncludesVat ? Math.round(gross/(1+rate/100)) : Number(r.subtotal||gross);
-  const vat=priceIncludesVat ? gross-taxable : Math.round(taxable*rate/100);
-  const grand=priceIncludesVat ? gross : taxable+vat-(Number(r.discount)||0);
-  const d=new Date(r.paid_at||Date.now());
-  const billNo=internalBillNo(r,d);
-  const taxNote=cfg.taxIncludedText || (priceIncludesVat ? `Gia da bao gom thue GTGT ${rate}% theo quy dinh` : `Chua bao gom thue GTGT ${rate}%`);
-  return {
-    storeName:cfg.storeName||r.branch||'POS/ERP',
-    storeSubtitle:cfg.storeSubtitle||'(He thong Phan phoi F&B & Retail BCM)',
-    address:cfg.address||'',
-    sellerTaxCode:tax.seller_tax_code||ein.taxCode||cfg.taxCode||'',
-    phone:cfg.phone||'',
-    email:cfg.email||ein.email||'',
-    invoiceSeries:tax.invoice_series||ein.series||'C26TMB',
-    taxInvoiceNo:r.tax_invoice_no||r.invoice?.invoice_no||'00000001',
-    billNo,
-    orderNo:billNo,
-    table:r.table_code||'Tai quay',
-    cashier:r.cashier||'',
-    date:receiptDate(d),
-    time:receiptDate(d)+' '+receiptTime(d),
-    timeOnly:receiptTime(d),
-    customerName:r.customer?.name||'Khach le',
-    customerTaxCode:r.customer?.tax_code||'',
-    items:receiptItemsText(r),
-    subtotal:vndPlain(r.subtotal||0),
-    taxableAmount:vndPlain(taxable),
-    vatRate:String(rate),
-    vatAmount:vndPlain(vat),
-    discount:vndPlain(r.discount||0),
-    total:vndPlain(r.total||0),
-    grandTotal:vndPlain(grand),
-    totalWords:numberToVietnamese(grand),
-    taxNote,
-    method:lines.length?lines.map(l=>methodLabel(l.method)).join(' / '):'-',
-    paymentStatus:'Da thanh toan',
-    taxAuthorityCode:r.tax_authority_code||r.invoice?.lookup_code||'00F83A7B-2C9D-4E1A-8B6C-5D4E3F2A1B0C',
-    footer:cfg.footer||'Cam on quy khach',
-  };
-}
-function templateReceiptBody(r){
-  const tpl=activeBillTemplate(r);
-  if(!tpl?.elements?.length) return '';
-  const vars=receiptVarsBcm(r);
-  const w=Number(tpl.widthMm)||72, h=Number(tpl.heightMm)||180;
-  const els=tpl.elements.map((el,i)=>{
-    const pos=`left:${Number(el.x)||0}%;top:${Number(el.y)||0}%;width:${Number(el.w)||20}%;height:${el.type==='line'?0:(Number(el.h)||8)}%;z-index:${i+1}`;
-    if(el.type==='image') return `<div class="tpl-el tpl-img" style="${pos}">${el.src?`<img src="${esc(el.src)}">`:''}</div>`;
-    if(el.type==='line') return `<div class="tpl-el tpl-line" style="${pos}"></div>`;
-    if(el.type==='qr') return `<div class="tpl-el tpl-qr" style="${pos}"><div class="qr"></div></div>`;
-    const align=el.align==='center'?'center':el.align==='right'?'right':el.align==='justify'?'justify':'left';
-    const justify=align==='center'?'center':align==='right'?'flex-end':'flex-start';
-    const decoration=[el.underline?'underline':'',el.strike?'line-through':''].filter(Boolean).join(' ')||'none';
-    const block=el.id==='bill_body';
-    return `<div class="tpl-el" style="${pos};font-size:${Math.max(7,(Number(el.fontSize)||5)*1.55)}px;font-weight:${el.bold?800:500};font-style:${el.italic?'italic':'normal'};text-decoration:${decoration};text-align:${align};display:${block?'block':'flex'};align-items:${block?'flex-start':'center'};justify-content:${justify};padding:${block?'7px 8px':'0'}">${esc(replaceVars(el.text,vars))}</div>`;
-  }).join('');
-  const cfg=activeBillCfg(r);
-  const hasTaxNote=tpl.elements.some(el=>String(el.text||'').includes('{taxNote}'));
-  const taxFallback=cfg.showTax!=='0' && !hasTaxNote ? `<div class="c" style="font-size:9px;color:#666">${esc(vars.taxNote||'')}</div>` : '';
-  return `<div class="receipt-canvas-live" style="--receipt-ratio:${w}/${h}">${els}</div>${taxFallback}${cfg.showQr!=='0'?`<div class="qr"></div><div class="c" style="font-size:9px">Quet QR tra cuu hoa don</div>`:''}`;
-}
-function basicReceiptBody(r){
-  const cfg=activeBillCfg(r);
-  const tax=r.tax||{};
-  const taxNote=cfg.taxIncludedText || (tax.price_includes_vat!==false ? `Gia da bao gom thue GTGT ${tax.vat_rate||''}% theo quy dinh` : `Chua bao gom thue GTGT ${tax.vat_rate||''}%`);
-  return `<div class="c"><h4>${esc(cfg.storeName||r.branch||'POS/ERP')}</h4>${cfg.address?`<div>${esc(cfg.address)}</div>`:''}<div>HOA DON #${esc(r.number||'')}</div>${r.table_code?`<div>Ban ${esc(r.table_code)}</div>`:''}</div><hr>
-    ${(r.items||[]).map(i=>`<div class="li"><span>${i.qty}x ${esc(i.name)}</span><span>${money((i.unit_price||0)*(i.qty||1))}</span></div>`).join('')}<hr>
-    <div class="li big"><span>TONG</span><span>${money(r.total)}</span></div>
-    ${cfg.showTax!=='0'?`<div class="c" style="font-size:9px;color:#666">${esc(taxNote)}</div>`:''}
-    ${(r.lines||[]).map(l=>`<div class="li"><span>${esc(methodLabel(l.method))}</span><span>${money(l.amount)}</span></div>`).join('')}
-    ${cfg.showQr!=='0'?`<div class="qr"></div><div class="c" style="font-size:9px">Quet QR tra cuu hoa don</div>`:''}<div class="c" style="font-size:9px">${esc(cfg.footer||'Cam on quy khach')}</div>`;
-}
-function receiptBody(r){
-  return templateReceiptBody(r) || basicReceiptBody(r);
-  return `<div class="c"><h4>${esc(r.branch||'POS/ERP')}</h4><div>HÓA ĐƠN #${esc(r.number||'')}</div>${r.table_code?`<div>Bàn ${esc(r.table_code)}</div>`:''}</div><hr>
-    ${(r.items||[]).map(i=>`<div class="li"><span>${i.qty}× ${esc(i.name)}</span><span>${money(i.unit_price*i.qty)}</span></div>`).join('')}<hr>
-    <div class="li big"><span>TỔNG</span><span>${money(r.total)}</span></div>
-    ${(r.lines||[]).map(l=>`<div class="li"><span>${esc(l.method)}</span><span>${money(l.amount)}</span></div>`).join('')}
-    <div class="qr"></div><div class="c" style="font-size:9px">Cảm ơn quý khách</div>`;
-}
-function labelVars(p){
-  return {
-    itemName:p.itemName||p.name||'',
-    options:p.options||'',
-    note:p.note||'',
-    orderNo:p.order_no||'',
-    table:p.table||'',
-    qty:p.qty||1,
-    channel:p.channel||'',
-    customer:p.customer||'',
-    phone:p.phone||'',
-    time:p.time||'',
-  };
-}
-function templateLabelBody(p){
-  const tpl=activeLabelTemplate(p);
-  if(!tpl?.elements?.length) return '';
-  const vars=labelVars(p);
-  const w=Number(tpl.widthMm)||50, h=Number(tpl.heightMm)||30;
-  const els=tpl.elements.map((el,i)=>{
-    const pos=`left:${Number(el.x)||0}%;top:${Number(el.y)||0}%;width:${Number(el.w)||20}%;height:${el.type==='line'?0:(Number(el.h)||8)}%;z-index:${i+1}`;
-    if(el.type==='image') return `<div class="tpl-el tpl-img" style="${pos}">${el.src?`<img src="${esc(el.src)}">`:''}</div>`;
-    if(el.type==='line') return `<div class="tpl-el tpl-line" style="${pos}"></div>`;
-    const align=el.align==='center'?'center':el.align==='right'?'right':'left';
-    const justify=align==='center'?'center':align==='right'?'flex-end':'flex-start';
-    const decoration=[el.underline?'underline':'',el.strike?'line-through':''].filter(Boolean).join(' ')||'none';
-    return `<div class="tpl-el" style="${pos};font-size:${Math.max(7,(Number(el.fontSize)||5)*1.8)}px;font-weight:${el.bold?800:500};font-style:${el.italic?'italic':'normal'};text-decoration:${decoration};text-align:${align};display:flex;align-items:center;justify-content:${justify}">${esc(replaceVars(el.text,vars))}</div>`;
-  }).join('');
-  return `<div class="label-canvas-live" style="--label-ratio:${w}/${h}">${els}</div>`;
-}
-function basicLabelBody(p){
-  return `<div class="c"><h4>TEM LY</h4><div>${esc(p.order_no||'')}</div></div><hr>
-    <div class="big">${esc(p.itemName||'')}</div>
-    ${p.options?`<div class="note">+ ${esc(p.options)}</div>`:''}
-    ${p.note?`<div class="note">📝 ${esc(p.note)}</div>`:''}
-    <hr><div class="li" style="font-size:10px"><span>${esc(p.channel||'')}</span><span>${esc(p.table||'')}</span><span>${esc(p.time||'')}</span></div>`;
-}
-function labelBody(p){ return templateLabelBody(p) || basicLabelBody(p); }
-function runnerBody(p){
-  return `<div class="runner-tbl"><span style="font-size:10px">CHẠY MÓN · BÀN</span><span class="big-tbl">${esc(p.table||'—')}</span></div><hr>
-    <div class="runner-name">${esc(p.name||'')}</div>
-    ${p.seq?`<div class="c" style="font-size:10px;color:#555">phần ${esc(p.seq)}</div>`:''}
-    ${(p.mods&&p.mods.length)?`<div class="note c">+ ${esc(p.mods.join(', '))}</div>`:''}
-    ${p.note?`<div class="note c">📝 ${esc(p.note)}</div>`:''}
-    <hr><div class="li" style="font-size:10px"><span>#${esc(p.order_no||'')}</span><span>${esc(p.station||'')}</span><span>${esc(p.time||'')}</span></div>`;
-}
-async function doPrint(id){ try{ await api('/print/jobs/'+id+'/printed',{method:'POST'}); }catch(e){toast(e.message,true);} }
-async function reprint(id){ try{ await api('/print/jobs/'+id+'/reprint',{method:'POST'}); toast('Đã in lại'); }catch(e){toast(e.message,true);} }
 
-startClock(); load();
+function draw(){
+  drawMetrics();
+  drawDevices();
+  drawFilters();
+  drawRows();
+}
+
+function drawMetrics(){
+  const ready = printers.filter(p=>p.status==='ready').length;
+  const queued = jobs.filter(j=>j.status==='queued'||j.status==='printing').length;
+  const failed = jobs.filter(j=>j.status==='failed').length;
+  const printed = jobs.filter(j=>j.status==='printed').length;
+  q('metrics').innerHTML = [
+    ['Máy in sẵn sàng', `${ready}/${printers.length}`],
+    ['Đang chờ xử lý', queued],
+    ['Job lỗi', failed],
+    ['Đã in gần đây', printed],
+  ].map(([k,v])=>`<div class="metric"><div class="k">${esc(k)}</div><div class="v">${esc(v)}</div></div>`).join('');
+}
+
+function drawDevices(){
+  q('devices').innerHTML = printers.length ? printers.map(p=>{
+    const cls = p.status==='ready' ? 's-ready' : p.status==='disabled' ? 's-disabled' : 's-failed';
+    const label = p.status==='ready' ? 'Sẵn sàng' : p.status==='disabled' ? 'Tạm tắt' : p.status==='not_configured' ? 'Chưa cấu hình' : 'Cần kiểm tra';
+    return `<article class="device">
+      <div class="device-top">
+        <div class="device-ic">${deviceIcon(p)}</div>
+        <div style="min-width:0;flex:1">
+          <div class="device-name">${esc(p.label||p.name||p.id)}</div>
+          <div class="device-meta">${esc(p.location||'-')} · ${esc(p.connection||'browser')} · ${esc(targetLabel(p))}</div>
+        </div>
+        <span class="status ${cls}"><i></i>${esc(label)}</span>
+      </div>
+      <div class="device-actions">
+        <button class="btn sm" data-test-printer="${esc(p.id)}">In thử</button>
+        ${p.cashDrawer?`<button class="btn sm" data-open-drawer="${esc(p.id)}">Mở két</button>`:''}
+      </div>
+    </article>`;
+  }).join('') : '<div class="empty-print">Chưa có danh mục máy in. Vào Cấu hình máy in để thêm tuyến in.</div>';
+  q('devices').querySelectorAll('[data-test-printer]').forEach(b=>b.onclick=()=>testPrinter(b.dataset.testPrinter));
+  q('devices').querySelectorAll('[data-open-drawer]').forEach(b=>b.onclick=()=>openDrawer(b.dataset.openDrawer));
+}
+
+function drawFilters(){
+  const curP=q('printerFilter').value, curT=q('typeFilter').value;
+  q('printerFilter').innerHTML = `<option value="">Tất cả máy in</option>${printers.map(p=>`<option value="${esc(p.id)}">${esc(p.label||p.id)}</option>`).join('')}`;
+  q('typeFilter').innerHTML = `<option value="">Tất cả nội dung</option>${[...new Set(jobs.map(j=>j.type))].map(t=>`<option value="${esc(t)}">${esc(TYPE[t]||t)}</option>`).join('')}`;
+  q('printerFilter').value = curP;
+  q('typeFilter').value = curT;
+}
+
+function filteredJobs(){
+  const s = q('searchBox').value.trim().toLowerCase();
+  const pr = q('printerFilter').value;
+  const st = q('statusFilter').value;
+  const ty = q('typeFilter').value;
+  return jobs.filter(j =>
+    (!s || searchable(j).includes(s)) &&
+    (!pr || j.printer===pr) &&
+    (!st || j.status===st) &&
+    (!ty || j.type===ty)
+  );
+}
+
+function drawRows(){
+  const list = filteredJobs();
+  q('jobRows').innerHTML = list.length ? list.map(j=>{
+    const m=j.meta||{};
+    return `<tr data-job="${esc(j.id)}">
+      <td class="mono">${esc(fmtTime(j.created_at))}</td>
+      <td><div class="job-main">${esc(m.action||TYPE[j.type]||j.type)} · ${esc(j.title||'')}</div><div class="job-sub">${esc(m.item_preview||'')} ${j.error?`· Lỗi: ${j.error}`:''}</div></td>
+      <td>${esc(printerName(j.printer))}<div class="job-sub">${esc(j.transport||'')} ${j.target?`· ${j.target}`:''}</div></td>
+      <td><span class="mono">${esc(m.table||'-')}</span><div class="job-sub">${esc(m.ref||j.id)}</div></td>
+      <td>${statusPill(j.status)}</td>
+    </tr>`;
+  }).join('') : '<tr><td colspan="5"><div class="empty-print">Không có job in phù hợp.</div></td></tr>';
+  q('jobRows').querySelectorAll('[data-job]').forEach(tr=>tr.onclick=()=>openDetail(tr.dataset.job));
+}
+
+async function openDetail(id){
+  currentJob = await api('/print/jobs/'+encodeURIComponent(id));
+  const text = await api('/print/jobs/'+encodeURIComponent(id)+'/text').catch(()=>({text:''}));
+  currentText = text.text || '';
+  q('detailTitle').textContent = currentJob.meta?.action || TYPE[currentJob.type] || 'Chi tiết job in';
+  q('detailSub').textContent = `${currentJob.title || ''} · #${currentJob.id}`;
+  q('detailMeta').innerHTML = [
+    ['Trạng thái', STATUS[currentJob.status]?.[0] || currentJob.status],
+    ['Máy in', printerName(currentJob.printer)],
+    ['Bàn / Ref', [currentJob.meta?.table,currentJob.meta?.ref].filter(Boolean).join(' · ') || '-'],
+    ['Thời gian', fmtTime(currentJob.created_at)],
+    ['Transport', currentJob.transport || printers.find(p=>p.id===currentJob.printer)?.connection || 'browser'],
+    ['Lỗi cuối', currentJob.error || '-'],
+  ].map(([k,v])=>`<div class="detail-box"><div class="k">${esc(k)}</div><div class="v">${esc(v)}</div></div>`).join('');
+  q('detailPreview').textContent = currentText || 'Không có nội dung preview.';
+  q('detailDrawer').classList.add('show');
+}
+
+function closeDetail(){ q('detailDrawer').classList.remove('show'); currentJob=null; currentText=''; }
+
+async function sendCurrentToPrinter(){
+  if(!currentJob) return;
+  try{
+    const out = await api('/print/jobs/'+currentJob.id+'/print',{method:'POST'});
+    toast('Đã gửi máy in thật');
+    await load();
+    await openDetail(out.id || currentJob.id);
+  }catch(e){ toast(e.message,true); await load(); }
+}
+
+async function markCurrentPrinted(){
+  if(!currentJob) return;
+  try{ await api('/print/jobs/'+currentJob.id+'/printed',{method:'POST'}); toast('Đã đánh dấu đã in'); closeDetail(); await load(); }
+  catch(e){ toast(e.message,true); }
+}
+
+async function reprintPreview(){
+  if(!currentJob) return;
+  try{
+    const j = await api('/print/jobs/'+currentJob.id+'/reprint',{method:'POST'});
+    const out = await api('/print/jobs/'+j.id+'/text');
+    openPrintWindow(j, out.text || currentText);
+    closeDetail();
+    await load();
+  }catch(e){ toast(e.message,true); }
+}
+
+function openPrintWindow(job, text){
+  const w = window.open('', '_blank', 'width=430,height=760');
+  if(!w){ toast('Trình duyệt đã chặn cửa sổ in', true); return; }
+  const safe = esc(text || '');
+  w.document.write(`<!doctype html><html><head><title>In lại ${esc(job.id)}</title><style>
+    @page{size:80mm auto;margin:4mm}
+    body{margin:0;background:#f4f4f4;font-family:Arial,sans-serif}
+    .bar{position:sticky;top:0;background:#fff;border-bottom:1px solid #ddd;padding:8px;display:flex;gap:8px;justify-content:flex-end}
+    button{height:32px;border:1px solid #bbb;border-radius:6px;background:#fff;font-weight:700}
+    pre{width:72mm;min-height:120mm;margin:12px auto;background:#fff;color:#111;padding:8px;font:12px/1.35 "JetBrains Mono",Consolas,monospace;white-space:pre-wrap;box-shadow:0 8px 24px rgba(0,0,0,.16)}
+    @media print{body{background:#fff}.bar{display:none}pre{box-shadow:none;margin:0;width:auto}}
+  </style></head><body><div class="bar"><button onclick="window.print()">In</button><button onclick="window.close()">Đóng</button></div><pre>${safe}</pre><script>
+    window.onafterprint=function(){try{window.opener.postMessage({type:'dandpak:printed',id:${JSON.stringify(job.id)}},'*')}catch(e){}};
+    setTimeout(function(){window.focus();window.print();},250);
+  <\/script></body></html>`);
+  w.document.close();
+}
+
+async function testPrinter(id){
+  try{ await api('/print/printers/'+encodeURIComponent(id)+'/test',{method:'POST'}); toast('Đã gửi job in thử'); await load(); }
+  catch(e){ toast(e.message,true); await load(); }
+}
+
+async function openDrawer(printer=''){
+  try{ await api('/print/cash-drawer/open',{method:'POST',body:{printer}}); toast('Đã gửi lệnh mở két'); await load(); }
+  catch(e){ toast(e.message,true); }
+}
+
+connect('printers', {
+  'print:new': () => load(),
+  'print:done': () => load(),
+  'print:failed': () => load(),
+});
+
+q('refreshBtn').onclick = () => load();
+q('openDrawerBtn').onclick = () => openDrawer('');
+q('detailClose').onclick = closeDetail;
+q('detailDrawer').onclick = (e) => { if(e.target.id==='detailDrawer') closeDetail(); };
+q('sendPrinterBtn').onclick = sendCurrentToPrinter;
+q('markPrintedBtn').onclick = markCurrentPrinted;
+q('reprintPreviewBtn').onclick = reprintPreview;
+['searchBox','printerFilter','statusFilter','typeFilter'].forEach(id => q(id).oninput = drawRows);
+window.addEventListener('message', async (e) => {
+  if(e.data?.type === 'dandpak:printed' && e.data.id){
+    try{ await api('/print/jobs/'+e.data.id+'/printed',{method:'POST'}); await load(); }catch{}
+  }
+});
+
+startClock();
+await load();
 </script>
 </body></html>

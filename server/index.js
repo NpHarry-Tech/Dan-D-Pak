@@ -9,6 +9,7 @@ import { initRealtime } from './realtime.js';
 import { api } from './api.js';
 import { startSyncEngine } from './services/sync.js';
 import { ensureStorageDirectories } from './services/enterpriseStorage.js';
+import { bootstrapDefaultAdmin } from './services/bootstrapAdmin.js';
 import { env } from './config/env.js';
 import { createCorsMiddleware } from './config/cors.js';
 import { runtimeSnapshot } from './config/runtime.js';
@@ -30,6 +31,8 @@ if (!hasMenu && !hasUsers && !env.isProduction) {
   logger.warn('empty database detected; running initial seed (dev only)');
   await import('./seed.js');
 }
+const adminBootstrap = bootstrapDefaultAdmin();
+if (adminBootstrap.created) logger.warn('default admin account created', { username: adminBootstrap.username });
 
 const app = express();
 app.disable('x-powered-by');

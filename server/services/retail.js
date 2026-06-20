@@ -19,7 +19,7 @@ function snapshotCustomer(c) {
 }
 
 // lines (cart): [{sku_id, qty, lot_id}]; payments: [{method, amount, reference}]
-export function checkout({ items, payments, voucher_id = null, customer = null, customer_id = null, manual_discount = 0, branch_id = 'br1', cashier = '' }) {
+export function checkout({ items, payments, voucher_id = null, customer = null, customer_id = null, invoice_customer = null, manual_discount = 0, branch_id = 'br1', cashier = '' }) {
   if (!items?.length) throw new Error('Giỏ hàng trống');
   const lines = normalizeCheckoutItems(items, branch_id);
 
@@ -50,7 +50,7 @@ export function checkout({ items, payments, voucher_id = null, customer = null, 
   db.prepare(`UPDATE orders SET voucher_id=?, voucher_code=? WHERE id=?`)
     .run(discountPlan.orderVoucher?.id || null, discountPlan.orderVoucher?.code || null, order.id);
   const snap = snapshotCustomer(cust);
-  const receipt = payOrder(order.id, Array.isArray(payments) ? payments : [], { discount: discountPlan.discount, cashier, customer: snap }, branch_id);
+  const receipt = payOrder(order.id, Array.isArray(payments) ? payments : [], { discount: discountPlan.discount, cashier, customer: snap, invoice_customer }, branch_id);
   if (cust?.id) recordPurchase(cust.id, receipt.total, branch_id, order.id);
   receipt.discount_breakdown = {
     product_promos: discountPlan.lineDiscount,
@@ -60,7 +60,7 @@ export function checkout({ items, payments, voucher_id = null, customer = null, 
   };
   receipt.voucher = discountPlan.orderVoucher;
   receipt.promotions = discountPlan.appliedSkuPromos;
-  receipt.customer = snap;
+  if (!receipt.customer && snap) receipt.customer = snap;
   return receipt;
 }
 

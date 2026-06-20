@@ -52,7 +52,7 @@ export const ALL_PERMS = PERMISSIONS.map(p => p.key);
 
 // Display roles with plain-language names.
 export const ROLES = [
-  { key: 'owner', label: 'Chủ quán', note: 'Toàn quyền, không thể chỉnh.' },
+  { key: 'owner', label: 'Admin', note: 'Toàn quyền hệ thống, không thể chỉnh.' },
   { key: 'manager', label: 'Quản lý', note: 'Quản lý vận hành cửa hàng.' },
   { key: 'cashier', label: 'Thu ngân', note: 'Bán hàng và thu tiền.' },
   { key: 'kitchen', label: 'Bếp', note: 'Chế biến món.' },
@@ -201,7 +201,7 @@ export function permMatrix() {
   }));
 }
 export function setRolePerms(role, perms, branch_id = 'br1') {
-  if (role === 'owner') throw new Error('Vai trò Chủ quán luôn toàn quyền, không thể chỉnh');
+  if (role === 'owner') throw new Error('Vai trò Admin luôn toàn quyền, không thể chỉnh');
   if (!ROLES.some(r => r.key === role)) throw new Error('Vai trò không hợp lệ');
   const valid = (Array.isArray(perms) ? perms : []).filter(p => ALL_PERMS.includes(p));
   db.prepare(`DELETE FROM role_perms WHERE role=?`).run(role);
@@ -385,7 +385,7 @@ export function updateUser(id, body, branch_id = 'br1') {
   if (body.pin) { if (!/^\d{4}$/.test(String(body.pin))) throw new Error('Mã PIN phải đúng 4 chữ số'); pin = String(body.pin); }
   const active = body.active !== undefined ? (body.active ? 1 : 0) : cur.active;
   if (cur.role === 'owner' && role !== 'owner' && db.prepare(`SELECT COUNT(*) n FROM users WHERE role='owner' AND active=1`).get().n <= 1)
-    throw new Error('Phải còn ít nhất một Chủ quán');
+    throw new Error('Phải còn ít nhất một Admin');
   const access = normalizeBranchAccess(body, role, homeBranch);
   db.prepare(`UPDATE users SET name=?, role=?, pin=?, active=?, lang=?, branch_id=?, branch_access_json=? WHERE id=?`).run(name, role, pin, active, lang, homeBranch, JSON.stringify(access), id);
   if (Array.isArray(body.perms)) setUserPerms(id, body.perms, homeBranch);
@@ -414,7 +414,7 @@ export function deleteUser(id, branch_id = 'br1') {
   const cur = db.prepare(`SELECT * FROM users WHERE id=?`).get(id);
   if (!cur) throw new Error('Người dùng không tồn tại');
   if (cur.role === 'owner' && db.prepare(`SELECT COUNT(*) n FROM users WHERE role='owner'`).get().n <= 1)
-    throw new Error('Không thể xóa Chủ quán cuối cùng');
+    throw new Error('Không thể xóa Admin cuối cùng');
   db.prepare(`DELETE FROM auth_sessions WHERE user_id=?`).run(id);
   db.prepare(`DELETE FROM user_perms WHERE user_id=?`).run(id);
   db.prepare(`DELETE FROM users WHERE id=?`).run(id);
@@ -466,4 +466,3 @@ export function attachUser() {
 export function actorName(req) {
   return req?.user?.name || req?.user?.username || 'system';
 }
-

@@ -39,11 +39,6 @@
 <body>
 <div id="top"></div>
 <div class="view">
-  <div class="viewhead">
-    <h1>💸 Chi phí</h1>
-    <div class="sub">Sổ chi phí theo danh mục · chi từ tiền két (trừ ca) hoặc kế toán chi trực tiếp</div>
-    <div class="right"><button class="btn" id="reportBtn">📊 Báo cáo</button><button class="btn primary" id="addBtn">+ Ghi chi phí</button></div>
-  </div>
   <div class="cards" id="cards"></div>
   <div class="catbars" id="catbars" style="display:none"></div>
   <div class="etoolbar">
@@ -123,7 +118,11 @@
 
 <script type="module">
 import { api, connect, money, toast, esc, startClock, topbar, requireModuleAccess, renderUserChip, apiUrl, getToken, getBranchId } from '/shared/client.js';
-document.getElementById('top').innerHTML = topbar('expenses');
+document.getElementById('top').innerHTML = topbar('expenses', {
+  title: '💸 Chi phí',
+  sub: 'Sổ chi phí theo danh mục · chi từ tiền két (trừ ca) hoặc kế toán chi trực tiếp',
+  actions: `<button class="btn" id="reportBtn">📊 Báo cáo</button><button class="btn primary" id="addBtn">+ Ghi chi phí</button>`,
+});
 await requireModuleAccess('expenses'); renderUserChip();
 
 const $ = id => document.getElementById(id);

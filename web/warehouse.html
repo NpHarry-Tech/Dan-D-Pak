@@ -88,13 +88,6 @@
 <body>
 <div id="top"></div>
 <div class="view">
-  <div class="viewhead">
-    <h1>📦 Warehouse / Kho</h1>
-    <div class="sub">Nhập hàng · xuất hàng · lot/HSD · kiểm kho · tách kho bếp và kho retail</div>
-    <div class="right">
-      <span id="alertChip"></span>
-    </div>
-  </div>
   <div class="whbar" id="warehouses"></div>
   <div class="subtabs" id="subtabs"></div>
   <div id="panel"></div>
@@ -102,7 +95,11 @@
 
 <script type="module">
 import { api, connect, money, toast, esc, startClock, topbar, requireModuleAccess, renderUserChip } from '/shared/client.js';
-document.getElementById('top').innerHTML = topbar('warehouse');
+document.getElementById('top').innerHTML = topbar('warehouse', {
+  title: '📦 Warehouse / Kho',
+  sub: 'Nhập hàng · xuất hàng · lot/HSD · kiểm kho · tách kho bếp và kho retail',
+  actions: `<span id="alertChip"></span>`,
+});
 await requireModuleAccess('warehouse'); renderUserChip();
 
 const TABS = [

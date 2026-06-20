@@ -65,12 +65,12 @@ const DEFAULT_PRINT_CONFIG = {
     autoPrint: '1',
   },
   printers: [
-    { id: 'kitchen', name: '', systemName: '', label: 'Phiếu bếp', type: 'Phiếu bếp', output: 'kitchen_ticket', location: 'Bếp', active: true, auto: true },
-    { id: 'bar', name: '', systemName: '', label: 'Phiếu bar', type: 'Phiếu bar', output: 'kitchen_ticket', location: 'Bar', active: true, auto: true },
-    { id: 'bill', name: '', systemName: '', label: 'Hóa đơn', type: 'Hóa đơn', output: 'receipt', location: 'Thu ngân', active: true, auto: true },
-    { id: 'label', name: '', systemName: '', label: 'Tem nhãn', type: 'Tem nhãn', output: 'cup_label', location: 'Quầy tem', active: true, auto: false },
-    { id: 'runner', name: '', systemName: '', label: 'Phiếu chạy món', type: 'Phiếu chạy món', output: 'runner', location: 'Runner', active: true, auto: false },
-    { id: 'report', name: '', systemName: '', label: 'Báo cáo A4', type: 'Báo cáo A4', output: 'report', location: 'Văn phòng', active: true, auto: false },
+    { id: 'kitchen', name: '', systemName: '', label: 'Phiếu bếp', type: 'Phiếu bếp', output: 'kitchen_ticket', location: 'Bếp', active: true, auto: true, connection: 'browser', ip: '', port: 9100, cashDrawer: false, openDrawerOnPrint: false },
+    { id: 'bar', name: '', systemName: '', label: 'Phiếu bar', type: 'Phiếu bar', output: 'kitchen_ticket', location: 'Bar', active: true, auto: true, connection: 'browser', ip: '', port: 9100, cashDrawer: false, openDrawerOnPrint: false },
+    { id: 'bill', name: '', systemName: '', label: 'Hóa đơn', type: 'Hóa đơn', output: 'receipt', location: 'Thu ngân', active: true, auto: true, connection: 'browser', ip: '', port: 9100, cashDrawer: true, openDrawerOnPrint: true },
+    { id: 'label', name: '', systemName: '', label: 'Tem nhãn', type: 'Tem nhãn', output: 'cup_label', location: 'Quầy tem', active: true, auto: false, connection: 'browser', ip: '', port: 9100, cashDrawer: false, openDrawerOnPrint: false },
+    { id: 'runner', name: '', systemName: '', label: 'Phiếu chạy món', type: 'Phiếu chạy món', output: 'runner', location: 'Runner', active: true, auto: false, connection: 'browser', ip: '', port: 9100, cashDrawer: false, openDrawerOnPrint: false },
+    { id: 'report', name: '', systemName: '', label: 'Báo cáo A4', type: 'Báo cáo A4', output: 'report', location: 'Văn phòng', active: true, auto: false, connection: 'system', ip: '', port: 9100, cashDrawer: false, openDrawerOnPrint: false },
   ],
   templates: {
     label: null,
@@ -374,6 +374,13 @@ function inferPrinterOutput(p = {}) {
   if (raw.includes('report') || raw.includes('báo cáo') || raw.includes('bao cao')) return 'report';
   return 'kitchen_ticket';
 }
+function inferPrinterConnection(p = {}) {
+  const raw = String(p.connection || p.transport || '').toLowerCase();
+  if (['lan', 'system', 'browser'].includes(raw)) return raw;
+  if (str(p.ip || p.host || '', 80)) return 'lan';
+  if (str(p.systemName || p.name || '', 200)) return 'system';
+  return 'browser';
+}
 function sanitizePrintConfig(raw = {}) {
   const input = plainObject(raw);
   const bill = migrateBcmBillDefaults(mergePlain(DEFAULT_PRINT_CONFIG.bill, input.bill));
@@ -394,6 +401,11 @@ function sanitizePrintConfig(raw = {}) {
       location: str(p?.location || '', 120),
       active: bool(p?.active, true),
       auto: bool(p?.auto, false),
+      connection: inferPrinterConnection(p),
+      ip: str(p?.ip || p?.host || '', 80),
+      port: Math.max(1, Math.min(65535, parseInt(p?.port) || 9100)),
+      cashDrawer: bool(p?.cashDrawer || p?.drawer, false),
+      openDrawerOnPrint: bool(p?.openDrawerOnPrint, false),
     })),
     templates: {
       label: sanitizePrintTemplate(input.templates?.label || input.label_template),
