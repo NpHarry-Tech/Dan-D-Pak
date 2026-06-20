@@ -72,6 +72,14 @@ function normalizeQrImage(value) {
   return '';
 }
 
+// payOS / VietQR API trả về chuỗi QR EMV (không phải ảnh). Render thành ảnh QR
+// quét được (chuỗi EMV chuẩn napas/VietQR nên app ngân hàng quét bình thường).
+function emvQrImage(value) {
+  const raw = String(value || '').trim();
+  if (raw.length < 20 || /^(data:image\/|https?:\/\/)/i.test(raw)) return '';
+  return `https://api.qrserver.com/v1/create-qr-code/?size=360x360&margin=12&data=${encodeURIComponent(raw)}`;
+}
+
 async function fetchJson(url, options = {}) {
   if (typeof fetch !== 'function') throw new Error('Runtime Node hiện tại chưa hỗ trợ fetch để gọi VietQR API.');
   const controller = new AbortController();
@@ -337,7 +345,7 @@ async function buildPaymentQr({ amount, reference, orderId, method = 'qrcode', o
       });
       // Map orderCode -> bill để webhook payOS đối chiếu nhanh (ngoài việc khớp theo nội dung).
       recordBankTx({ provider: 'payos', externalId: `link:${orderCode}`, branch_id, amount, content: reference, reference, order_id: orderRefId, status: 'pending', raw: { orderCode } });
-      const imageUrl = normalizeQrImage(link?.qrCode) || fallbackImageUrl;
+      const imageUrl = normalizeQrImage(link?.qrCode) || emvQrImage(link?.qrCode) || fallbackImageUrl;
       return {
         ...base,
         provider: 'payos',
@@ -392,7 +400,7 @@ async function buildPaymentQr({ amount, reference, orderId, method = 'qrcode', o
   try {
     const response = await generateViaVietQrApi(vietqr, payload);
     const data = response?.data || response || {};
-    const imageUrl = normalizeQrImage(data.qrImage || data.image || data.qr || data.qrCode) || fallbackImageUrl;
+    const imageUrl = normalizeQrImage(data.qrImage || data.image || data.qr || data.qrCode) || emvQrImage(data.qrCode || data.qr_code) || fallbackImageUrl;
     return {
       ...base,
       provider: 'vietqr_api',
