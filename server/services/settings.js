@@ -10,6 +10,7 @@ function storedFourDigitPin(value, fallback = DEFAULTS.ipad_staff_pin) {
 const INTEGRATIONS_KEY = 'integrations_config';
 const PRINT_CONFIG_KEY = 'print_config';
 const OPERATIONS_CONFIG_KEY = 'operations_config';
+const NOTIFICATION_SOUND_KEY = 'notification_sound_config';
 const DEFAULT_PRINT_CONFIG = {
   version: 1,
   einvoice: {
@@ -497,6 +498,7 @@ export function getSettings(branch_id = 'br1') {
   out.ipad_staff_pin = storedFourDigitPin(out.ipad_staff_pin);
   out.print_config = getPrintConfig(branch_id);
   out.operations_config = getOperationsConfig(branch_id);
+  out.notification_sound_config = getNotificationSoundConfig(branch_id);
   return out;
 }
 
@@ -513,6 +515,9 @@ export function updateSettings(body = {}, branch_id = 'br1') {
   }
   if (body.operations_config !== undefined) {
     next.operations_config = sanitizeOperationsConfig({ ...body.operations_config, updated_at: now() });
+  }
+  if (body.notification_sound_config !== undefined) {
+    next.notification_sound_config = body.notification_sound_config;
   }
   const ins = db.prepare(`INSERT OR REPLACE INTO app_settings (branch_id,key,value,updated_at) VALUES (?,?,?,?)`);
   for (const [key, value] of Object.entries(next)) {
@@ -573,6 +578,19 @@ export function getOperationsConfig(branch_id = 'br1') {
   if (!row?.value) return sanitizeOperationsConfig(DEFAULT_OPERATIONS_CONFIG);
   try { return sanitizeOperationsConfig(JSON.parse(row.value)); }
   catch { return sanitizeOperationsConfig(DEFAULT_OPERATIONS_CONFIG); }
+}
+
+export function getNotificationSoundConfig(branch_id = 'br1') {
+  const row = db.prepare(`SELECT value FROM app_settings WHERE branch_id=? AND key=?`).get(branch_id, NOTIFICATION_SOUND_KEY);
+  if (!row?.value) return null;
+  try { return JSON.parse(row.value); } catch { return null; }
+}
+
+export function updateNotificationSoundConfig(body = {}, branch_id = 'br1') {
+  db.prepare(`INSERT OR REPLACE INTO app_settings (branch_id,key,value,updated_at) VALUES (?,?,?,?)`)
+    .run(branch_id, NOTIFICATION_SOUND_KEY, JSON.stringify(body), now());
+  audit('settings.update', { keys: [NOTIFICATION_SOUND_KEY] }, branch_id);
+  return body;
 }
 
 export function updateIntegrations(body = {}, branch_id = 'br1') {

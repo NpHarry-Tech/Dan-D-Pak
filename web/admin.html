@@ -2088,6 +2088,8 @@ async function openSettings(initialTab){
   let integrationsCfg=null;
   let printCfg=null;
   let operationsCfg=null;
+  let notificationSoundCfg=null;
+  let soundCatalog=null;
   let selectedIntegration=sessionStorage.getItem('settingsIntegration')||'misa';
   let systemPrinters=[];
   let settingsTimers=[];
@@ -2342,6 +2344,14 @@ async function openSettings(initialTab){
       if (!branches.length) branches = [{ id:'br1', name:'Dan D Pak Sala', code:'SALA', active:true, sort:1 }];
       printCfg=mergePrintCfg(appSettings.print_config);
       operationsCfg=mergeOperationsCfg(appSettings.operations_config);
+      if(appSettings.notification_sound_config) notificationSoundCfg=appSettings.notification_sound_config;
+      if(!notificationSoundCfg){
+        const cached=localStorage.getItem('notification_sound_config');
+        if(cached) try{notificationSoundCfg=JSON.parse(cached);}catch{}
+      }
+      if(!soundCatalog){
+        try{const r=await fetch('/assets/sounds/notifications/catalog.json');soundCatalog=await r.json();}catch{soundCatalog={sounds:[],categories:[]};}
+      }
       if(!appSettings.print_config?.updated_at && hasLocalPrintCfg()) savePrintCfg(false).catch(()=>{});
 
       const availableTabs = [
@@ -2405,6 +2415,7 @@ async function openSettings(initialTab){
       { key: 'bookmenu', label: '📖 Menu quyển', perm: 'settings.bookmenu' },
       { key: 'tables', label: '🪑 Cấu hình bàn &amp; Sơ đồ', perm: 'settings.tables' },
       { key: 'printers', label: '🖨️ Danh mục in', perm: 'settings.printers' },
+      { key: 'notification_sound', label: '🔔 Âm thanh thông báo', perm: 'settings.notification_sound' },
       { key: 'audit', label: '📝 Nhật ký hoạt động', perm: 'settings.audit' },
       { key: 'backup', label: '💾 Sao lưu & Phục hồi', perm: 'settings.manage' }
     ];
@@ -2514,6 +2525,7 @@ async function openSettings(initialTab){
       bookmenu:bookMenuHtml,
       tables:tablesHtml,
       printers:printersHtml,
+      notification_sound:notificationSoundHtml,
       audit:auditHtml,
     }[tab]||usersHtml)();
   }
@@ -2533,6 +2545,7 @@ async function openSettings(initialTab){
     if(tab==='bookmenu') return bindBookMenuSettings();
     if(tab==='tables') return bindTablesTab();
     if(tab==='printers') return bindPrinters();
+    if(tab==='notification_sound') return bindNotificationSounds();
     if(tab==='audit') return bindSettingsAudit();
     if(tab==='backup') return bindBackup();
   }
@@ -3380,6 +3393,76 @@ async function openSettings(initialTab){
       <h3>Hóa đơn điện tử (MISA) <button class="btn sm" id="settingsInvRefresh" style="margin-left:auto">↻ Tải lại</button></h3>
       <table><thead><tr><th>Số HĐ</th><th>Khách / MST</th><th>Liên hệ</th><th>Tiền</th><th>Tra cứu</th></tr></thead><tbody id="settingsInvList"><tr><td colspan="5" class="empty">Đang tải...</td></tr></tbody></table>
     </div>`;
+  }
+  function notificationSoundHtml(){
+    const DEFAULT_EVENTS={
+      online_order:{label:'Đơn hàng online mới',default:'Doorbell'},
+      table_order:{label:'Khách tự gọi món (iPad)',default:'Information_Bell'},
+      staff_call:{label:'Khách gọi nhân viên',default:'Alarmed'},
+      payment:{label:'Thanh toán thành công',default:'Glass'},
+    };
+    const cfg=notificationSoundCfg||{enabled:true,volume:0.7,events:Object.fromEntries(Object.entries(DEFAULT_EVENTS).map(([k,v])=>[k,{enabled:true,sound:v.default}]))};
+    const cats=(soundCatalog?.categories||[]);
+    const sounds=(soundCatalog?.sounds||[]);
+    function soundOptions(selected){
+      if(!sounds.length) return `<option value="${esc(selected)}">${esc(selected)}</option>`;
+      let html='';
+      for(const cat of cats){
+        const group=sounds.filter(s=>s.category===cat.id);
+        if(!group.length) continue;
+        html+=`<optgroup label="${esc(cat.name)}">`;
+        for(const s of group) html+=`<option value="${esc(s.id)}" ${s.id===selected?'selected':''}>${esc(s.name)}</option>`;
+        html+=`</optgroup>`;
+      }
+      return html;
+    }
+    const evRows=Object.entries(DEFAULT_EVENTS).map(([k,meta])=>{
+      const ev=cfg.events?.[k]||{enabled:true,sound:meta.default};
+      return `<div class="snd-event-row" data-ev="${k}">
+        <label class="togglerow" style="border:0;padding:6px 0">
+          <span class="sw ${ev.enabled?'on':''}" data-snd-toggle="${k}"></span>
+          <span style="font-size:13px;font-weight:700">${esc(meta.label)}</span>
+        </label>
+        <div class="snd-pick" style="${ev.enabled?'':'opacity:.4;pointer-events:none'}">
+          <select class="snd-select" data-snd-sel="${k}" style="flex:1;background:var(--bg);border:1px solid var(--border);border-radius:9px;color:var(--text);padding:8px 10px;font-size:12.5px">${soundOptions(ev.sound||meta.default)}</select>
+          <button class="btn sm" data-snd-preview="${k}" title="Thử nghe" style="flex-shrink:0">▶ Thử</button>
+        </div>
+      </div>`;
+    }).join('');
+    return `<div class="panel" style="margin:0">
+      <h3>🔔 Âm thanh thông báo</h3>
+      <div class="mini" style="margin-bottom:16px">Cấu hình âm thanh phát khi có thông báo từ khách. Có <b>${sounds.length}</b> âm thanh được lưu trữ sẵn — chọn và thử nghe ngay.</div>
+      <div class="setting-card" style="margin-bottom:14px">
+        <label class="togglerow" style="border:0;padding:0">
+          <span class="sw ${cfg.enabled?'on':''}" id="sndMasterToggle"></span>
+          <div>
+            <div style="font-size:13px;font-weight:700">Bật âm thanh thông báo</div>
+            <div class="mini">Tắt để tắt toàn bộ âm thanh hệ thống</div>
+          </div>
+        </label>
+      </div>
+      <div class="setting-card" id="sndEventSection" style="${cfg.enabled?'':'opacity:.5;pointer-events:none'}">
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">
+          <div style="flex:1">
+            <b style="font-size:13px">Âm lượng</b>
+            <div class="mini">Áp dụng chung cho tất cả âm thanh</div>
+          </div>
+          <div style="display:flex;align-items:center;gap:9px">
+            <span id="sndVolLabel" style="font-family:var(--mono);font-size:13px;font-weight:700;color:var(--brand);min-width:38px;text-align:right">${Math.round((cfg.volume??0.7)*100)}%</span>
+            <input type="range" id="sndVolume" min="0" max="100" value="${Math.round((cfg.volume??0.7)*100)}" style="width:140px;accent-color:var(--brand)">
+          </div>
+        </div>
+        <div style="border-top:1px dashed var(--border);padding-top:12px">
+          <div class="mini" style="margin-bottom:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--faint)">Âm thanh theo sự kiện</div>
+          <div id="sndEvents" style="display:flex;flex-direction:column;gap:10px">${evRows}</div>
+        </div>
+      </div>
+      <div style="margin-top:18px"><button class="btn primary" id="saveSoundCfg">Lưu cấu hình âm thanh</button></div>
+    </div>
+    <style>
+    .snd-pick{display:flex;gap:8px;align-items:center;margin-top:6px;margin-left:56px}
+    .snd-event-row{padding:6px 0;border-bottom:1px dashed var(--border)}.snd-event-row:last-child{border:none}
+    </style>`;
   }
   function auditHtml(){
     return `<div class="panel" style="margin:0">
@@ -5153,6 +5236,63 @@ async function openSettings(initialTab){
   function bindSettingsInvoices(){
     loadSettingsInvoices();
     ov.querySelector('#settingsInvRefresh').onclick=loadSettingsInvoices;
+  }
+  function bindNotificationSounds(){
+    const DEFAULT_EVENTS={
+      online_order:{label:'Đơn hàng online mới',default:'Doorbell'},
+      table_order:{label:'Khách tự gọi món (iPad)',default:'Information_Bell'},
+      staff_call:{label:'Khách gọi nhân viên',default:'Alarmed'},
+      payment:{label:'Thanh toán thành công',default:'Glass'},
+    };
+    function readCfg(){
+      const enabled=ov.querySelector('#sndMasterToggle')?.classList.contains('on');
+      const vol=parseInt(ov.querySelector('#sndVolume')?.value||70)/100;
+      const events={};
+      for(const k of Object.keys(DEFAULT_EVENTS)){
+        const toggle=ov.querySelector(`[data-snd-toggle="${k}"]`);
+        const sel=ov.querySelector(`[data-snd-sel="${k}"]`);
+        events[k]={enabled:toggle?.classList.contains('on'),sound:sel?.value||DEFAULT_EVENTS[k].default};
+      }
+      return {enabled,volume:vol,events};
+    }
+    const masterToggle=ov.querySelector('#sndMasterToggle');
+    if(masterToggle) masterToggle.onclick=()=>{
+      masterToggle.classList.toggle('on');
+      const sec=ov.querySelector('#sndEventSection');
+      if(sec) sec.style.cssText=masterToggle.classList.contains('on')?'':'opacity:.5;pointer-events:none';
+    };
+    const volRange=ov.querySelector('#sndVolume');
+    const volLabel=ov.querySelector('#sndVolLabel');
+    if(volRange&&volLabel){
+      volRange.oninput=()=>{volLabel.textContent=volRange.value+'%';};
+    }
+    for(const k of Object.keys(DEFAULT_EVENTS)){
+      const toggle=ov.querySelector(`[data-snd-toggle="${k}"]`);
+      if(toggle) toggle.onclick=()=>{
+        toggle.classList.toggle('on');
+        const pick=toggle.closest('.snd-event-row')?.querySelector('.snd-pick');
+        if(pick) pick.style.cssText=toggle.classList.contains('on')?'':'opacity:.4;pointer-events:none';
+      };
+      const previewBtn=ov.querySelector(`[data-snd-preview="${k}"]`);
+      if(previewBtn) previewBtn.onclick=async()=>{
+        const soundId=ov.querySelector(`[data-snd-sel="${k}"]`)?.value;
+        if(!soundId) return;
+        const vol=parseInt(ov.querySelector('#sndVolume')?.value||70)/100;
+        const audio=new Audio(`/assets/sounds/notifications/${soundId}.ogg`);
+        audio.volume=Math.max(0,Math.min(1,vol));
+        try{await audio.play();}catch(e){toast('Trình duyệt chặn âm thanh — click vào trang trước',true);}
+      };
+    }
+    const saveBtn=ov.querySelector('#saveSoundCfg');
+    if(saveBtn) saveBtn.onclick=async()=>{
+      const cfg=readCfg();
+      notificationSoundCfg=cfg;
+      localStorage.setItem('notification_sound_config',JSON.stringify(cfg));
+      try{
+        await api('/settings/app',{method:'POST',body:{notification_sound_config:cfg}});
+        toast('Đã lưu cấu hình âm thanh thông báo');
+      }catch(e){toast(e.message,true);}
+    };
   }
   function bindSettingsAudit(){
     loadSettingsAudit();

@@ -137,8 +137,8 @@ api.post('/settings/users/:id/permissions', guardAny('settings.users', 'settings
 api.get('/settings/branches', guardAny('settings.branches'), wrap(() => Branches.listBranches({ all: true })));
 api.post('/settings/branches', guardAny('settings.branches'), wrap((req) => Branches.createBranch(req.body, actor(req))));
 api.post('/settings/branches/:id/update', guardAny('settings.branches'), wrap((req) => Branches.updateBranch(req.params.id, req.body, actor(req))));
-api.get('/settings/app', guardAny('settings.sync', 'settings.operations', 'settings.einvoice', 'settings.print', 'settings.printers', 'settings.devices', 'settings.invoices'), wrap((req) => AppSettings.getSettings(branch(req))));
-api.post('/settings/app', guardAny('settings.sync', 'settings.operations', 'settings.einvoice', 'settings.print', 'settings.printers', 'settings.devices', 'settings.invoices'), wrap((req) => {
+api.get('/settings/app', guardAny('settings.sync', 'settings.operations', 'settings.einvoice', 'settings.print', 'settings.printers', 'settings.devices', 'settings.invoices', 'settings.notification_sound'), wrap((req) => AppSettings.getSettings(branch(req))));
+api.post('/settings/app', guardAny('settings.sync', 'settings.operations', 'settings.einvoice', 'settings.print', 'settings.printers', 'settings.devices', 'settings.invoices', 'settings.notification_sound'), wrap((req) => {
   const branch_id = branch(req);
   const shifts = req.body?.operations_config?.shifts;
   if (shifts && Object.prototype.hasOwnProperty.call(shifts, 'defaultDrawerCash')) {
