@@ -62,9 +62,22 @@
       gap: 8px
     }
 
+    .ipad-brand-lock {
+      width: 150px;
+      min-height: 48px;
+      display: inline-flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 1px;
+      flex: 0 0 auto;
+      text-align: center;
+      user-select: none
+    }
+
     .staff-logo {
       width: 88px;
-      height: 42px;
+      height: 34px;
       background: url('/assets/logo.png') center/98px 98px no-repeat;
       border: 0;
       display: inline-flex;
@@ -77,32 +90,7 @@
       flex: 0 0 auto
     }
 
-    .ipad-home-logo {
-      width: 150px;
-      min-height: 50px;
-      border: 0;
-      display: inline-flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      gap: 1px;
-      color: var(--muted);
-      cursor: pointer;
-      user-select: none;
-      flex: 0 0 auto;
-      text-align: center
-    }
-
-    .ipad-home-logo::before {
-      content: "";
-      width: 126px;
-      height: 38px;
-      background: url('/assets/DanOnLogo.png') center/contain no-repeat;
-      display: block;
-      filter: drop-shadow(0 5px 8px rgba(15, 23, 42, .06))
-    }
-
-    .ipad-home-logo small {
+    .ipad-brand-lock small {
       display: block;
       max-width: 150px;
       font-size: 9.5px;
@@ -114,7 +102,7 @@
       text-overflow: ellipsis
     }
 
-    .ipad-home-logo:hover {
+    .ipad-brand-lock:hover {
       opacity: .86
     }
 
@@ -141,7 +129,43 @@
       grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
       gap: 12px;
       padding: 24px;
-      overflow-y: auto
+      overflow-y: auto;
+      align-content: start;
+      align-items: start
+    }
+
+    .table-gate {
+      flex: 1;
+      min-height: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 28px;
+      text-align: center;
+      color: var(--muted)
+    }
+
+    .table-gate-card {
+      width: min(420px, 92vw);
+      border: 1px dashed var(--border2);
+      border-radius: 18px;
+      background: var(--surface2);
+      padding: 28px 24px
+    }
+
+    .table-gate-card img {
+      width: 86px;
+      height: 54px;
+      object-fit: contain;
+      display: block;
+      margin: 0 auto 12px
+    }
+
+    .table-gate-card b {
+      display: block;
+      color: var(--text);
+      font-size: 16px;
+      margin-bottom: 6px
     }
 
     .tablepick .tp {
@@ -151,7 +175,8 @@
       padding: 18px 10px;
       text-align: center;
       cursor: pointer;
-      transition: .12s
+      transition: .12s;
+      align-self: start
     }
 
     .tablepick .tp:hover {
@@ -417,9 +442,26 @@
       z-index: 1
     }
 
+    .cart-empty {
+      flex-direction: column;
+      gap: 16px
+    }
+
+    .cart-empty img {
+      width: min(62%, 220px);
+      opacity: .16;
+      object-fit: contain;
+      pointer-events: none
+    }
+
     .cart-empty span {
       display: block;
       line-height: 1.45
+    }
+
+    /* Giỏ rỗng đã có logo riêng trong empty-state — tắt watermark nền để khỏi đè nhau */
+    .cartpane.is-empty::before {
+      display: none
     }
 
     .cline {
@@ -2019,17 +2061,12 @@
         background-size: 88px 88px
       }
 
-      .ipad-home-logo {
+      .ipad-brand-lock {
         width: 126px;
         min-height: 42px
       }
 
-      .ipad-home-logo::before {
-        width: 104px;
-        height: 30px
-      }
-
-      .ipad-home-logo small {
+      .ipad-brand-lock small {
         max-width: 126px;
         font-size: 8.5px
       }
@@ -2177,7 +2214,7 @@
   </div>
 
   <script type="module">
-    import { api, connect, money, toast, esc, startClock, getLang, setLang, requestPinCode, selectedBranch } from '/shared/client.js';
+    import { api, connect, money, toast, esc, startClock, getLang, setLang, requestPinCode, selectedBranch, topbar, renderUserChip } from '/shared/client.js';
 
     let MENU = { categories: [], items: [] };
     let tableId = localStorage.getItem('ipad_table') || null;
@@ -2188,6 +2225,16 @@
     let operationsConfig = null;
     const frame = document.getElementById('frame');
     let staffTapCount = 0, staffTapTimer = null;
+    let tablePickUnlocked = false;
+    const params = new URLSearchParams(location.search);
+    if (params.get('pick') === '1') {
+      localStorage.removeItem('ipad_table');
+      localStorage.removeItem('ipad_tablecode');
+      tableId = null;
+      tableCode = null;
+      tablePickUnlocked = true;
+      history.replaceState(null, '', '/ipad');
+    }
     let BOOK = {
       id: 'book_default',
       title: 'Menu Bon Appetit Dan',
@@ -2200,11 +2247,11 @@
     const portraitMq = window.matchMedia('(orientation: portrait)');
     portraitMq.addEventListener?.('change', () => render());
 
-    function ipadHomeBrand() {
+    function ipadStaffBrand() {
       const br = selectedBranch();
       const name = br.name || br.code || br.id || 'Dan D Pak';
       const label = getLang() === 'en' ? `Branch: ${name} · Live` : `Chi nhánh: ${name} · Trực tiếp`;
-      return `<a class="ipad-home-logo" href="/" aria-label="Về màn hình chính" title="Về màn hình chính"><small>${esc(label)}</small></a>`;
+      return `<div class="ipad-brand-lock"><button class="staff-logo" id="staffUnlock" type="button" aria-label="Mở chọn bàn nhân viên" title="Chạm 3 lần để chọn bàn"></button><small>${esc(label)}</small></div>`;
     }
 
     function showFatal(msg) { if (frame) frame.innerHTML = `<div style="padding:30px;color:var(--late);font-family:var(--mono);font-size:13px;line-height:1.7">⚠ Lỗi iPad:<br>${msg}<br><br><button class="btn" onclick="location.reload()">Tải lại</button></div>`; }
@@ -2280,7 +2327,7 @@
     }
 
     function render() {
-      if (!tableId) { renderTablePick(); return; }
+      if (!tableId) { tablePickUnlocked ? renderTablePick() : renderTableGate(); return; }
       if (portraitMq.matches) { renderBook(); return; }
       renderLandscape();
     }
@@ -2292,13 +2339,13 @@
       const showCartHint = !cart.length && activeSentCount === 0;
       frame.innerHTML = `
   <div class="ipad-top">
-    ${ipadHomeBrand()}
-    <span class="tbl" id="staffUnlock" title="Chạm 3 lần để chọn lại bàn">Bàn ${esc(tableCode)}</span>
+    ${ipadStaffBrand()}
+    <span class="tbl">Bàn ${esc(tableCode)}</span>
     <div class="sub" style="color:var(--muted);font-size:12px">Tự chọn món · chờ nhân viên xác nhận</div>
     <div class="right">
       <span class="onlinedot"><i></i><span>Online</span></span>
       <div class="lang-selector" style="display:inline-flex;gap:4px;margin-right:10px;font-size:12px;font-weight:600;cursor:pointer;background:var(--surface2);border:1px solid var(--border2);border-radius:99px;padding:4px 10px;user-select:none;">
-        <span id="langViBtn" style="${getLang() === 'vi' ? 'color:var(--primary);text-decoration:underline;' : 'color:var(--muted);'}">VI</span> | 
+        <span id="langViBtn" style="${getLang() === 'vi' ? 'color:var(--primary);text-decoration:underline;' : 'color:var(--muted);'}">VI</span> |
         <span id="langEnBtn" style="${getLang() === 'en' ? 'color:var(--primary);text-decoration:underline;' : 'color:var(--muted);'}">EN</span>
       </div>
       <button class="btn sm" id="callBtn">🔔 Gọi nhân viên</button>
@@ -2313,7 +2360,7 @@
       <h3>🛒 Giỏ hàng <span class="chip c-muted">${cart.reduce((s, c) => s + c.qty, 0)} món</span></h3>
       <div class="cartscroll">
         ${cart.length ? `<div class="cartitems">${cart.map(renderCart).join('')}</div>` : ''}
-        ${showCartHint ? '<div class="cart-empty"><span>Chọn món trên màn hình</span></div>' : ''}
+        ${showCartHint ? '<div class="cart-empty"><img src="/assets/DanOnLogo.png" alt=""><span>Chọn món trên màn hình</span></div>' : ''}
         ${renderSent()}
       </div>
       <div class="cartfoot">
@@ -2335,13 +2382,13 @@
       const activeSentCount = (sentOrder?.items || []).filter(i => i.status !== 'cancelled').length;
       frame.innerHTML = `
   <div class="ipad-top">
-    ${ipadHomeBrand()}
-    <span class="tbl" id="staffUnlock" title="Chạm 3 lần để chọn lại bàn">Bàn ${esc(tableCode)}</span>
+    ${ipadStaffBrand()}
+    <span class="tbl">Bàn ${esc(tableCode)}</span>
     <div class="sub" style="color:var(--muted);font-size:12px">Vuốt để lật menu</div>
     <div class="right">
       <span class="onlinedot"><i></i><span>Online</span></span>
       <div class="lang-selector" style="display:inline-flex;gap:4px;margin-right:10px;font-size:12px;font-weight:600;cursor:pointer;background:var(--surface2);border:1px solid var(--border2);border-radius:99px;padding:4px 10px;user-select:none;">
-        <span id="langViBtn" style="${getLang() === 'vi' ? 'color:var(--primary);text-decoration:underline;' : 'color:var(--muted);'}">VI</span> | 
+        <span id="langViBtn" style="${getLang() === 'vi' ? 'color:var(--primary);text-decoration:underline;' : 'color:var(--muted);'}">VI</span> |
         <span id="langEnBtn" style="${getLang() === 'en' ? 'color:var(--primary);text-decoration:underline;' : 'color:var(--muted);'}">EN</span>
       </div>
       <button class="btn sm" id="callBtn">🔔 Gọi nhân viên</button>
@@ -2464,17 +2511,37 @@
     }
     function stationLabel(s) { return { kitchen: 'Bếp', bar: 'Bar', salad: 'Salad', beverage: 'Beverage' }[s] || s; }
 
-    function renderTablePick() {
-      frame.innerHTML = `<div class="ipad-top">${ipadHomeBrand()}<span class="tbl">📱 Chọn bàn</span>
-    <div class="sub" style="color:var(--muted);font-size:12px">Thiết bị này sẽ gắn cố định với bàn đã chọn</div>
+    function renderTableGate() {
+      frame.innerHTML = `<div class="ipad-top">${ipadStaffBrand()}<span class="tbl">Chưa chọn bàn</span>
+    <div class="sub" style="color:var(--muted);font-size:12px">Chạm logo 3 lần để nhân viên mở chọn bàn</div>
     <div class="right">
       <span class="onlinedot"><i></i><span>Online</span></span>
       <div class="lang-selector" style="display:inline-flex;gap:4px;margin-right:10px;font-size:12px;font-weight:600;cursor:pointer;background:var(--surface2);border:1px solid var(--border2);border-radius:99px;padding:4px 10px;user-select:none;">
-        <span id="langViBtn" style="${getLang() === 'vi' ? 'color:var(--primary);text-decoration:underline;' : 'color:var(--muted);'}">VI</span> | 
+        <span id="langViBtn" style="${getLang() === 'vi' ? 'color:var(--primary);text-decoration:underline;' : 'color:var(--muted);'}">VI</span><span>|</span>
         <span id="langEnBtn" style="${getLang() === 'en' ? 'color:var(--primary);text-decoration:underline;' : 'color:var(--muted);'}">EN</span>
       </div>
     </div></div>
+    <div class="table-gate"><div class="table-gate-card">
+      <img src="/assets/logo.png" alt="Dan D Pak">
+      <b>Thiết bị chưa gắn bàn</b>
+      <span>Nhân viên chạm logo trên góc trái 3 lần, nhập PIN 4 số rồi chọn bàn cho iPad này.</span>
+    </div></div>`;
+      bindStaffUnlock();
+      startClock();
+    }
+
+    function renderTablePick() {
+      frame.innerHTML = `${topbar('ipad', {
+        title: '📱 Chọn bàn',
+        sub: 'Thiết bị này sẽ gắn cố định với bàn đã chọn',
+        actions: `<div class="lang-selector" style="display:inline-flex;gap:4px;font-size:12px;font-weight:600;cursor:pointer;background:var(--surface2);border:1px solid var(--border2);border-radius:99px;padding:4px 10px;user-select:none;">
+          <span id="langViBtn" style="${getLang() === 'vi' ? 'color:var(--primary);text-decoration:underline;' : 'color:var(--muted);'}">VI</span><span>|</span>
+          <span id="langEnBtn" style="${getLang() === 'en' ? 'color:var(--primary);text-decoration:underline;' : 'color:var(--muted);'}">EN</span>
+        </div>`,
+      })}
     <div class="tablepick" id="tp"><div class="empty">Đang tải bàn…</div></div>`;
+      renderUserChip();
+      startClock();
       api('/tables').then(tables => {
         document.getElementById('tp').innerHTML = tables.map(t => `
       <div class="tp ${t.status !== 'free' ? 'busy' : ''}" data-t="${t.id}" data-code="${t.code}">
@@ -2483,6 +2550,7 @@
       </div>`).join('');
         document.querySelectorAll('#tp .tp').forEach(el => el.onclick = () => {
           tableId = el.dataset.t; tableCode = el.dataset.code;
+          tablePickUnlocked = false;
           localStorage.setItem('ipad_table', tableId); localStorage.setItem('ipad_tablecode', tableCode);
           refreshOrder().then(render);
         });
@@ -2504,8 +2572,11 @@
       const sb = document.getElementById('sendBtn'); if (sb) sb.onclick = sendOrder;
       document.getElementById('callBtn').onclick = callStaff;
       const pb2 = document.getElementById('payBtn2'); if (pb2) pb2.onclick = requestPay;
-      const su = document.getElementById('staffUnlock'); if (su) su.onclick = staffUnlockTap;
+      bindStaffUnlock();
       startClock();
+    }
+    function bindStaffUnlock() {
+      const su = document.getElementById('staffUnlock'); if (su) su.onclick = staffUnlockTap;
     }
     function bindBook() {
       const prev = document.getElementById('bookPrev');
@@ -2632,6 +2703,7 @@
       });
       if (!ok) return;
       localStorage.removeItem('ipad_table'); localStorage.removeItem('ipad_tablecode');
+      tablePickUnlocked = true;
       tableId = null; tableCode = null; cart = []; sentOrder = null; render();
     }
 

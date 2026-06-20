@@ -1,43 +1,411 @@
-// Print Service: queues print jobs (kitchen tickets, receipts, labels) and
-// streams them to the Printer Monitor (/printers). Printers carry no logic —
-// they just receive jobs, exactly per spec section 25.
+// Print service: queues jobs, sends real ESC/POS LAN or OS-printer jobs,
+// records errors, and keeps a full print history for monitor/reprint.
+import { execFile } from 'node:child_process';
+import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import net from 'node:net';
+import { promisify } from 'node:util';
 import { db, uid, now, audit } from '../db.js';
 import { emit } from '../realtime.js';
 import { getPrintConfig } from './settings.js';
+import { listSystemPrinters } from './system.js';
 
+const execFileAsync = promisify(execFile);
 const STATION_PRINTER = { kitchen: 'kitchen', salad: 'kitchen', bar: 'bar', beverage: 'bar' };
+const ESC_INIT = Buffer.from([0x1b, 0x40]);
+const ESC_CUT = Buffer.from([0x1d, 0x56, 0x42, 0x00]);
+const ESC_DRAWER = Buffer.from([0x1b, 0x70, 0x00, 0x19, 0xfa]);
 
-export function createJob({ printer, type, title, payload, branch_id = 'br1' }) {
-  const id = uid('pj_');
-  db.prepare(`INSERT INTO print_jobs (id,branch_id,printer,type,title,payload_json,status,created_at) VALUES (?,?,?,?,?,?,'queued',?)`)
-    .run(id, branch_id, printer, type, title || '', JSON.stringify(payload || {}), now());
-  const job = getJob(id);
-  emit('print:new', job, branch_id);
-  return job;
+const TYPE_LABEL = {
+  kitchen_ticket: 'Lên món / Phiếu bếp',
+  receipt: 'Hóa đơn / Tạm tính',
+  cup_label: 'Tem ly',
+  product_label: 'Tem sản phẩm',
+  runner: 'Phiếu chạy món',
+  test: 'In thử',
+  cash_drawer: 'Mở két tiền',
+  inventory_document: 'Phiếu kho',
+  purchase: 'Phiếu mua hàng',
+  refund: 'Hoàn / trả hàng',
+};
+
+function parsePayload(raw) {
+  try { return JSON.parse(raw || '{}') || {}; } catch { return {}; }
+}
+
+function printerRows(branch_id = 'br1') {
+  const cfg = getPrintConfig(branch_id);
+  return Array.isArray(cfg.printers) ? cfg.printers : [];
+}
+
+function printerById(printer, branch_id = 'br1') {
+  return printerRows(branch_id).find(p => p.id === printer) || null;
+}
+
+function printerTarget(p = {}) {
+  if (p.connection === 'lan') return `${p.ip || ''}:${p.port || 9100}`;
+  if (p.connection === 'system') return p.systemName || p.name || '';
+  return 'browser';
+}
+
+function money(n) {
+  return `${Math.round(Number(n) || 0).toLocaleString('vi-VN')}đ`;
+}
+
+function ascii(s) {
+  return String(s ?? '')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd').replace(/Đ/g, 'D')
+    .replace(/[^\x09\x0a\x0d\x20-\x7e]/g, '');
+}
+
+function center(text, width = 42) {
+  const s = ascii(text).slice(0, width);
+  const pad = Math.max(0, Math.floor((width - s.length) / 2));
+  return ' '.repeat(pad) + s;
+}
+
+function line(ch = '-', width = 42) {
+  return ch.repeat(width);
+}
+
+function wrap(text, width = 42) {
+  const words = ascii(text).replace(/\s+/g, ' ').trim().split(' ').filter(Boolean);
+  const rows = [];
+  let cur = '';
+  for (const w of words) {
+    if (!cur) cur = w;
+    else if ((cur + ' ' + w).length <= width) cur += ' ' + w;
+    else { rows.push(cur); cur = w; }
+  }
+  if (cur) rows.push(cur);
+  return rows.length ? rows : [''];
+}
+
+function itemMods(i = {}) {
+  if (Array.isArray(i.mods)) return i.mods;
+  try { return JSON.parse(i.mods_json || '[]').map(m => m.name || m); } catch { return []; }
+}
+
+function renderTicket(p = {}) {
+  const rows = [
+    center(`=== ${p.station || 'KITCHEN'} ===`),
+    line(),
+    `Ban: ${p.table || '-'}                              #${p.order_no || ''}`.slice(0, 42),
+    `Gio: ${p.time || new Date().toLocaleTimeString('vi-VN')}`,
+    line(),
+  ];
+  for (const i of p.items || []) {
+    rows.push(...wrap(`${i.qty || 1}x ${i.name || ''}`, 42));
+    const mods = itemMods(i);
+    if (mods.length) rows.push(...wrap(`+ ${mods.join(', ')}`, 42).map(x => '  ' + x));
+    if (i.note) rows.push(...wrap(`NOTE: ${i.note}`, 42).map(x => '  ' + x));
+    rows.push(line('.', 42));
+  }
+  return rows.join('\n');
+}
+
+function renderRunner(p = {}) {
+  return [
+    center('CHAY MON - BAN'),
+    center(p.table || '-', 20),
+    line(),
+    ...wrap(p.name || '', 42),
+    p.seq ? center(`phan ${p.seq}`) : '',
+    ...(Array.isArray(p.mods) && p.mods.length ? wrap(`+ ${p.mods.join(', ')}`) : []),
+    ...(p.note ? wrap(`NOTE: ${p.note}`) : []),
+    line(),
+    `#${p.order_no || ''} ${p.station || ''} ${p.time || ''}`.trim(),
+  ].filter(Boolean).join('\n');
+}
+
+function renderLabel(p = {}) {
+  return [
+    center('TEM'),
+    line(),
+    ...wrap(p.itemName || p.name || '', 42),
+    p.options ? `+ ${ascii(p.options)}` : '',
+    p.note ? `NOTE: ${ascii(p.note)}` : '',
+    line(),
+    `${p.order_no || ''} ${p.table || ''} ${p.time || ''}`.trim(),
+  ].filter(Boolean).join('\n');
+}
+
+function methodLabel(m) {
+  return { cash: 'Tien mat', card: 'May POS', qrcode: 'QR', qr: 'QR', voucher: 'Voucher', internet_banking: 'Internet Banking', momo: 'MoMo', zalopay: 'ZaloPay', visa: 'Visa' }[m] || m || '-';
+}
+
+function renderReceipt(p = {}) {
+  const cfg = p.print_config?.bill || {};
+  const rows = [
+    center(cfg.storeName || p.branch || 'DAN D PAK'),
+    cfg.address ? center(cfg.address) : '',
+    line(),
+    center(`HOA DON #${p.number || ''}`),
+    p.table_code ? center(`Ban ${p.table_code}`) : '',
+    line(),
+  ].filter(Boolean);
+  for (const i of p.items || []) {
+    const qty = Number(i.qty) || 1;
+    const price = Number(i.unit_price) || 0;
+    rows.push(...wrap(`${qty}x ${i.name || ''}`, 30));
+    rows.push(`${money(price)} x ${qty}`.padEnd(24) + money(price * qty).padStart(18));
+  }
+  rows.push(line());
+  rows.push('TONG'.padEnd(24) + money(p.total || 0).padStart(18));
+  if (Array.isArray(p.lines) && p.lines.length) {
+    for (const l of p.lines) rows.push(`${methodLabel(l.method)}`.padEnd(24) + money(l.amount).padStart(18));
+  }
+  rows.push(line());
+  rows.push(center(cfg.footer || 'Cam on quy khach'));
+  return rows.join('\n');
+}
+
+function renderGeneric(job) {
+  const p = job.payload || {};
+  return [
+    center(TYPE_LABEL[job.type] || job.type || 'JOB IN'),
+    line(),
+    job.title || '',
+    p.table ? `Ban: ${p.table}` : '',
+    p.ref ? `Ma: ${p.ref}` : '',
+    p.note ? `Ghi chu: ${p.note}` : '',
+    line(),
+    JSON.stringify(p, null, 2).slice(0, 1200),
+  ].filter(Boolean).join('\n');
+}
+
+export function renderJobText(job) {
+  const p = job.payload || {};
+  if (job.type === 'kitchen_ticket') return renderTicket(p);
+  if (job.type === 'runner') return renderRunner(p);
+  if (job.type === 'receipt') return renderReceipt(p);
+  if (job.type === 'cup_label' || job.type === 'product_label') return renderLabel(p);
+  if (job.type === 'test') return renderGeneric(job);
+  return renderGeneric(job);
+}
+
+function escposBuffer(text, { cut = true, drawer = false } = {}) {
+  return Buffer.concat([
+    ESC_INIT,
+    Buffer.from(ascii(text) + '\n\n', 'utf8'),
+    drawer ? ESC_DRAWER : Buffer.alloc(0),
+    cut ? ESC_CUT : Buffer.alloc(0),
+  ]);
+}
+
+function writeLan(host, port, buffer, timeoutMs = 4500) {
+  return new Promise((resolve, reject) => {
+    const socket = net.createConnection({ host, port: Number(port) || 9100 });
+    let done = false;
+    const finish = (err) => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      socket.destroy();
+      err ? reject(err) : resolve();
+    };
+    const timer = setTimeout(() => finish(new Error(`Không kết nối được máy in LAN ${host}:${port}`)), timeoutMs);
+    socket.on('connect', () => socket.write(buffer, (err) => err ? finish(err) : socket.end()));
+    socket.on('close', () => finish());
+    socket.on('error', finish);
+  });
+}
+
+async function writeSystemPrinter(name, text) {
+  const dir = mkdtempSync(join(tmpdir(), 'dandpak-print-'));
+  const file = join(dir, 'job.txt');
+  writeFileSync(file, ascii(text) + '\n', 'utf8');
+  try {
+    if (process.platform === 'win32') {
+      await execFileAsync('powershell.exe', [
+        '-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command',
+        `Get-Content -Raw -LiteralPath ${JSON.stringify(file)} | Out-Printer -Name ${JSON.stringify(name)}`,
+      ], { timeout: 12000, windowsHide: true });
+    } else {
+      await execFileAsync('lp', ['-d', name, file], { timeout: 12000 });
+    }
+  } finally {
+    try { rmSync(dir, { recursive: true, force: true }); } catch {}
+  }
+}
+
+function patchJob(id, fields = {}) {
+  const keys = Object.keys(fields);
+  if (!keys.length) return getJob(id);
+  const sets = keys.map(k => `${k}=?`).join(',');
+  db.prepare(`UPDATE print_jobs SET ${sets} WHERE id=?`).run(...keys.map(k => fields[k]), id);
+  return getJob(id);
+}
+
+function publicJob(j) {
+  if (!j) return null;
+  const payload = j.payload || parsePayload(j.payload_json);
+  const meta = jobMeta({ ...j, payload });
+  return { ...j, payload, meta };
 }
 
 export function getJob(id) {
-  const j = db.prepare(`SELECT * FROM print_jobs WHERE id=?`).get(id);
-  if (j) j.payload = JSON.parse(j.payload_json || '{}');
-  return j;
+  return publicJob(db.prepare(`SELECT * FROM print_jobs WHERE id=?`).get(id));
 }
 
-export function listJobs(branch_id = 'br1', limit = 50) {
-  return db.prepare(`SELECT * FROM print_jobs WHERE branch_id=? ORDER BY created_at DESC LIMIT ?`).all(branch_id, limit)
-    .map(j => ({ ...j, payload: JSON.parse(j.payload_json || '{}') }));
+export function getJobForBranch(id, branch_id = 'br1') {
+  const job = getJob(id);
+  if (!job) return null;
+  if (job.branch_id !== branch_id) throw new Error('Print job không thuộc chi nhánh hiện tại');
+  return job;
 }
 
-export function markPrinted(id, branch_id = 'br1') {
-  db.prepare(`UPDATE print_jobs SET status='printed', printed_at=? WHERE id=?`).run(now(), id);
-  emit('print:done', { id }, branch_id);
-  return getJob(id);
+export function createJob({ printer, type, title, payload, branch_id = 'br1', reprint_of = null }) {
+  const id = uid('pj_');
+  db.prepare(`
+    INSERT INTO print_jobs (id,branch_id,printer,type,title,payload_json,status,created_at,reprint_of,attempts)
+    VALUES (?,?,?,?,?,?,'queued',?,?,0)
+  `).run(id, branch_id, printer, type, title || '', JSON.stringify(payload || {}), now(), reprint_of);
+  const job = getJob(id);
+  emit('print:new', job, branch_id);
+  const p = printerById(printer, branch_id);
+  if (p?.active !== false && p?.auto && p?.connection && p.connection !== 'browser') {
+    setTimeout(() => dispatchJob(id, branch_id).catch(() => {}), 25);
+  }
+  return job;
+}
+
+export function listJobs(branch_id = 'br1', query = {}) {
+  const limit = Math.max(1, Math.min(300, parseInt(query.limit || query) || 120));
+  return db.prepare(`SELECT * FROM print_jobs WHERE branch_id=? ORDER BY created_at DESC LIMIT ?`).all(branch_id, limit).map(publicJob);
+}
+
+export async function listPrinters(branch_id = 'br1') {
+  const configured = printerRows(branch_id);
+  const system = await listSystemPrinters().catch(() => []);
+  const systemMap = new Map(system.map(p => [String(p.name || '').toLowerCase(), p]));
+  return configured.map(p => {
+    const match = systemMap.get(String(p.systemName || p.name || '').toLowerCase());
+    const target = printerTarget(p);
+    const hasTarget = p.connection === 'lan' ? !!p.ip : (p.connection === 'system' ? !!(p.systemName || p.name) : true);
+    return {
+      ...p,
+      target,
+      online: p.active !== false && hasTarget && (p.connection !== 'system' || !match || match.online !== false),
+      system: match || null,
+      status: p.active === false ? 'disabled' : (!hasTarget ? 'not_configured' : (match?.online === false ? 'offline' : 'ready')),
+    };
+  });
+}
+
+export function jobMeta(job) {
+  const p = job.payload || {};
+  const items = Array.isArray(p.items) ? p.items : [];
+  const first = items[0] || {};
+  const table = p.table || p.table_code || p.tableCode || '';
+  const ref = p.order_no || p.number || p.order_id || p.ref || '';
+  return {
+    action: TYPE_LABEL[job.type] || job.type || 'Job in',
+    table,
+    ref,
+    station: p.station || job.printer || '',
+    item_count: items.length || (p.itemName || p.name ? 1 : 0),
+    item_preview: items.length ? `${first.qty || 1}x ${first.name || ''}` : (p.itemName || p.name || job.title || ''),
+    amount: p.total || p.amount || null,
+  };
+}
+
+export async function dispatchJob(id, branch_id = 'br1', { force = false } = {}) {
+  let job = getJob(id);
+  if (!job) throw new Error('Print job không tồn tại');
+  if (job.branch_id !== branch_id) throw new Error('Print job không thuộc chi nhánh hiện tại');
+  if (!force && job.status === 'printed') return job;
+  const printer = printerById(job.printer, branch_id);
+  if (!printer) throw new Error(`Chưa cấu hình tuyến máy in ${job.printer}`);
+  if (printer.active === false) throw new Error(`Tuyến máy in ${printer.label || printer.id} đang tắt`);
+  const connection = printer.connection || 'browser';
+  const target = printerTarget(printer);
+  const text = renderJobText(job);
+  patchJob(id, {
+    status: 'printing',
+    attempts: Number(job.attempts || 0) + 1,
+    last_attempt_at: now(),
+    error: null,
+    transport: connection,
+    target,
+  });
+  try {
+    if (connection === 'lan') {
+      if (!printer.ip) throw new Error('Thiếu IP máy in LAN');
+      await writeLan(printer.ip, printer.port || 9100, escposBuffer(text, { drawer: printer.openDrawerOnPrint && job.type === 'receipt' }));
+    } else if (connection === 'system') {
+      const name = printer.systemName || printer.name;
+      if (!name) throw new Error('Thiếu tên máy in hệ điều hành');
+      await writeSystemPrinter(name, text);
+    } else {
+      throw new Error('Tuyến này đang để chế độ Trình duyệt, cần mở chi tiết để in bằng hộp thoại hệ thống');
+    }
+    job = patchJob(id, { status: 'printed', printed_at: now(), printed_by: 'server', error: null });
+    emit('print:done', job, branch_id);
+    audit('print.printed', { job: id, printer: job.printer, type: job.type, transport: connection, target }, branch_id);
+    return job;
+  } catch (e) {
+    job = patchJob(id, { status: 'failed', error: e.message || String(e) });
+    emit('print:failed', job, branch_id);
+    audit('print.failed', { job: id, printer: job.printer, type: job.type, error: job.error }, branch_id);
+    throw e;
+  }
+}
+
+export function markPrinted(id, branch_id = 'br1', actor = 'manual') {
+  const existing = getJob(id);
+  if (!existing) throw new Error('Print job không tồn tại');
+  if (existing.branch_id !== branch_id) throw new Error('Print job không thuộc chi nhánh hiện tại');
+  const job = patchJob(id, { status: 'printed', printed_at: now(), printed_by: actor, error: null });
+  emit('print:done', job, branch_id);
+  audit('print.mark_printed', { job: id, printer: job?.printer, type: job?.type }, branch_id, actor);
+  return job;
 }
 
 export function reprint(id, branch_id = 'br1') {
   const j = getJob(id);
   if (!j) throw new Error('Print job không tồn tại');
+  if (j.branch_id !== branch_id) throw new Error('Print job không thuộc chi nhánh hiện tại');
   audit('print.reprint', { job: id }, branch_id);
-  return createJob({ printer: j.printer, type: j.type, title: '(IN LẠI) ' + j.title, payload: j.payload, branch_id });
+  return createJob({ printer: j.printer, type: j.type, title: '(IN LẠI) ' + (j.title || ''), payload: j.payload, branch_id, reprint_of: id });
+}
+
+export async function testPrinter(printerId, branch_id = 'br1') {
+  const p = printerById(printerId, branch_id);
+  if (!p) throw new Error('Máy in chưa được cấu hình');
+  const job = createJob({
+    printer: printerId,
+    type: 'test',
+    title: `In thử ${p.label || p.id}`,
+    payload: {
+      ref: uid('test_'),
+      note: `Test ${p.label || p.id} ${new Date().toLocaleString('vi-VN')}`,
+      printer: p,
+    },
+    branch_id,
+  });
+  return dispatchJob(job.id, branch_id, { force: true });
+}
+
+export async function openCashDrawer(branch_id = 'br1', printerId = '') {
+  const rows = printerRows(branch_id);
+  const p = rows.find(x => x.id === printerId) || rows.find(x => x.cashDrawer) || rows.find(x => x.id === 'bill');
+  if (!p) throw new Error('Chưa cấu hình máy in/két tiền');
+  if (p.connection !== 'lan') throw new Error('Mở két tự động cần máy in bill kết nối LAN/IP ESC/POS');
+  if (!p.ip) throw new Error('Thiếu IP máy in bill nối két tiền');
+  await writeLan(p.ip, p.port || 9100, Buffer.concat([ESC_INIT, ESC_DRAWER]), 4500);
+  const job = createJob({
+    printer: p.id,
+    type: 'cash_drawer',
+    title: 'Mở két tiền',
+    payload: { ref: uid('drawer_'), note: 'Mở két thủ công từ Printer Monitor' },
+    branch_id,
+  });
+  markPrinted(job.id, branch_id, 'server');
+  audit('cash_drawer.open_printer', { printer: p.id, target: printerTarget(p) }, branch_id);
+  return { ok: true, printer: p.id, target: printerTarget(p), job: getJob(job.id) };
 }
 
 // ---- Hooks used by order/payment flows ----
@@ -56,7 +424,7 @@ export function printKitchenTickets(order, items, branch_id = 'br1') {
         station: printer.toUpperCase(), order_no: order.id.slice(-5).toUpperCase(),
         table: order.table_code || (order.online_channel ? 'ONLINE' : '—'),
         time: new Date().toLocaleTimeString('vi-VN'),
-        items: list.map(i => ({ qty: i.qty, name: i.name, note: i.note, mods: JSON.parse(i.mods_json || '[]').map(m => m.name) })),
+        items: list.map(i => ({ qty: i.qty, name: i.name, note: i.note, mods: itemMods(i) })),
       }, branch_id,
     });
   }
@@ -72,12 +440,6 @@ export function printReceipt(receipt, branch_id = 'br1') {
   });
 }
 
-function parseMods(item) {
-  if (Array.isArray(item?.mods)) return item.mods;
-  try { return JSON.parse(item?.mods_json || '[]'); }
-  catch { return []; }
-}
-
 function shouldPrintCupLabels(order, cfg) {
   if (!cfg?.labels || cfg.labels.autoPrint === '0' || cfg.labels.autoPrint === false) return false;
   return ['takeaway', 'delivery'].includes(order?.channel) || !!order?.online_channel;
@@ -89,7 +451,7 @@ export function printCupLabels(order, items = [], branch_id = 'br1') {
   const printable = items.filter(i => i && i.station !== 'retail' && i.status !== 'cancelled');
   for (const item of printable) {
     const copies = Math.min(Math.max(1, parseInt(item.qty) || 1), 30);
-    const mods = parseMods(item).map(m => m.name || m).filter(Boolean);
+    const mods = itemMods(item).map(m => m.name || m).filter(Boolean);
     for (let i = 0; i < copies; i++) {
       createJob({
         printer: 'label',
@@ -115,13 +477,11 @@ export function printCupLabels(order, items = [], branch_id = 'br1') {
   }
 }
 
-// Food-runner / expediter slip: one small slip PER dish when it is ready, with a
-// big table number so the runner can clip it onto the plate. Not a cup/label sticker.
 export function printRunnerSlip(item, order, branch_id = 'br1') {
-  if (!item || item.station === 'retail') return; // retail isn't plated/run to tables
+  if (!item || item.station === 'retail') return;
   const table = order?.table_code || (order?.online_channel ? 'ONLINE' : '—');
-  const copies = Math.min(Math.max(1, parseInt(item.qty) || 1), 30); // one slip per plate
-  const mods = JSON.parse(item.mods_json || '[]').map(m => m.name);
+  const copies = Math.min(Math.max(1, parseInt(item.qty) || 1), 30);
+  const mods = itemMods(item).map(m => m.name || m);
   for (let i = 0; i < copies; i++) {
     createJob({
       printer: 'runner', type: 'runner',

@@ -38,7 +38,7 @@
 .billpane .bh b{font-size:15px}
 .billitems{flex:1;overflow-y:auto;padding:10px 12px;display:flex;flex-direction:column;gap:7px;min-height:120px}
 .bill-empty{margin:auto;min-height:260px;width:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;color:var(--faint);gap:12px;padding:26px 16px}
-.bill-empty img{width:min(210px,68%);max-height:86px;object-fit:contain;opacity:.13;filter:grayscale(1)}
+.bill-empty img{width:min(210px,68%);max-height:86px;object-fit:contain;opacity:.9}
 .bill-empty .hint-pill{border:1px dashed var(--border2);background:var(--surface2);border-radius:999px;padding:8px 12px;font-size:12px;font-weight:750;color:var(--muted)}
 .bill-empty small{font-size:11px;line-height:1.45;color:var(--faint)}
 .bitem{background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:9px 11px}
@@ -81,6 +81,9 @@
 .receipt-canvas-live .tpl-line{border-top:1px dashed #777;height:0!important}
 .receipt-canvas-live .tpl-qr{display:flex;align-items:center;justify-content:center}
 .receipt-canvas-live .tpl-qr .qr{width:min(100%,84px);height:auto;aspect-ratio:1;margin:0}
+.receipt-printbar{display:grid;grid-template-columns:auto 78px 1fr;gap:8px;align-items:center;width:100%;margin-right:auto;font-size:12px;color:var(--muted)}
+.receipt-printbar input{height:32px;text-align:center;font-weight:800}
+.receipt-printbar .btn{height:32px}
 .pendingbell{position:relative;min-width:42px}
 .pendingbell.hot{border-color:rgba(255,107,107,.55);color:var(--late);background:var(--late-bg);animation:bellPulse 1.4s infinite}
 .pendingbell .n{position:absolute;top:-7px;right:-7px;min-width:19px;height:19px;border-radius:99px;background:var(--late);color:#fff;font-size:10px;font-weight:900;display:flex;align-items:center;justify-content:center;padding:0 5px}
@@ -204,16 +207,6 @@
 <body>
 <div id="top"></div>
 <div class="view" style="overflow:hidden">
-  <div class="viewhead">
-    <h1>💳 POS Cashier</h1>
-    <div class="sub" id="callsHint"></div>
-    <div class="right">
-      <button class="btn sm pendingbell" id="pendingBell" title="Món khách vừa gọi">🔔<span class="n" id="pendingBadge" style="display:none">0</span></button>
-      <button class="btn sm shiftbtn closed" id="shiftBtn" title="Mở / kết ca">Ca: chưa mở</button>
-      <span id="histMount"></span>
-      <span class="chip c-muted" id="openCount">0 bàn mở</span>
-    </div>
-  </div>
   <div class="poswrap">
     <div class="posleft" id="floor"></div>
     <div class="billpane" id="bill">
@@ -230,7 +223,15 @@
 import { api, connect, money, toast, esc, startClock, topbar, requireModuleAccess, renderUserChip, getUser, requestPinCode } from '/shared/client.js';
 import { mountOrderHistory } from '/shared/orderHistory.js';
 import { perkTag, perkAmount, openCustomerPicker } from '/shared/customer.js';
-document.getElementById('top').innerHTML = topbar('pos');
+import { createCompanyInvoiceDraft, companyInvoiceHtml, bindCompanyInvoiceBox, companyInvoicePayload, invoiceReceiptCustomerName, invoiceReceiptTaxCode } from '/shared/invoiceRequest.js';
+document.getElementById('top').innerHTML = topbar('pos', {
+  title: '💳 POS Cashier',
+  sub: `<span id="callsHint"></span>`,
+  actions: `<button class="btn sm pendingbell" id="pendingBell" title="Món khách vừa gọi">🔔<span class="n" id="pendingBadge" style="display:none">0</span></button>
+      <button class="btn sm shiftbtn closed" id="shiftBtn" title="Mở / kết ca">Ca: chưa mở</button>
+      <span id="histMount"></span>
+      <span class="chip c-muted" id="openCount">0 bàn mở</span>`,
+});
 await requireModuleAccess('pos'); renderUserChip();
 mountOrderHistory('#histMount');  // xem lại đơn cũ + in lại hóa đơn
 
@@ -415,6 +416,12 @@ function enabledMethods(){
 }
 function payMethod(key){ return (operationsConfig?.payment?.methods||fallbackOperations().payment.methods).find(m=>m.key===key) || {key,label:key,kind:'other'}; }
 function methodIcon(m){ return ({cash:'💵',internet_banking:'🏦',qrcode:'📱',qr:'📱',card:'💳',visa:'💳',momo:'🟣',zalopay:'🔵',voucher:'🎟️',pos_card:'💳'}[m.key||m]||'•'); }
+const NO_INVOICE_CUSTOMER='Khách không xuất hóa đơn';
+function customerDisplay(c){ return c ? `${c.name}${perkTag(c)}` : NO_INVOICE_CUSTOMER; }
+function customerActionLabel(c){ return c ? 'Đổi khách' : 'Chọn khách'; }
+function customerLineHtml(c,id='custBtn'){
+  return `<div class="custline"><span>👤 <b>${esc(customerDisplay(c))}</b></span><button class="btn sm" id="${id}">${customerActionLabel(c)}</button></div>`;
+}
 function makePaymentRef(method,o){
   const prefix=(operationsConfig?.payment?.transferPrefix||'DANBILL').replace(/\s+/g,'').toUpperCase();
   const n=o?.bill_no||(o?.id||'ORDER').slice(-6).toUpperCase();
@@ -704,7 +711,7 @@ function renderBill(table,o){
     </div>
     <div class="billitems">${items.map(bitem).join('')}</div>
     <div class="billfoot">
-      ${(()=>{const c=orderCust[o.id];return `<div class="custline"><span>👤 <b>${c?esc(c.name)+esc(perkTag(c)):'Khách lẻ'}</b></span><button class="btn sm" id="custBtn">${c?'Đổi khách':'Chọn khách'}</button></div>`;})()}
+      ${customerLineHtml(orderCust[o.id]||null,'custBtn')}
       <div class="brow"><span>Tạm tính</span><span>${money(o.subtotal)}</span></div>
       ${buy5get1AmountForOrder(o)?`<div class="brow"><span>🎁 Retail mua 5 tặng 1 (gợi ý)</span><span style="color:var(--doing)">-${money(buy5get1AmountForOrder(o))}</span></div>`:''}
       ${o.discount?`<div class="brow"><span>Giảm giá</span><span style="color:var(--late)">-${money(o.discount)}</span></div>`:''}
@@ -834,7 +841,7 @@ function bindBillButtons(table,o){
     }
     renderBill(table,o);
   });
-  document.getElementById('printBtn').onclick=()=>showReceipt(buildPreview(table,o));
+  document.getElementById('printBtn').onclick=()=>showReceipt(buildPreview(table,o),{autoPrint:true});
 
   const sendBtn = document.getElementById('sendBtn');
   if (sendBtn) {
@@ -1118,7 +1125,7 @@ function openPayLegacy(o, opts={}){
     if(paid()<o.total) return toast('Chưa đủ tiền',true);
     try{
       const receipt=await api('/orders/'+o.id+'/pay',{method:'POST',body:{lines,discount:o.discount}});
-      ov.remove(); toast('✅ Thanh toán thành công'); showReceipt(receipt);
+      ov.remove(); toast('✅ Thanh toán thành công'); showReceipt(receipt,{autoPrint:true});
       if(opts.afterPaid) opts.afterPaid();
       else{
         sel=null; order=null;
@@ -1141,6 +1148,7 @@ async function openPay(o, opts={}){
   let curMethod=(methods.find(m=>m.key==='cash')||methods[0]).key;
   let disc=Math.max(0,o.discount||0);
   let customer=orderCust[o.id]||null;
+  const invoiceDraft=createCompanyInvoiceDraft();
   const ov=document.createElement('div'); ov.className='overlay show'; document.body.appendChild(ov);
   const total=()=>Math.max(0,(o.subtotal||0)-disc);
   const paid=()=>lines.reduce((s,l)=>s+l.amount,0);
@@ -1150,7 +1158,8 @@ async function openPay(o, opts={}){
     o.discount=disc; o.total=total(); orderCust[o.id]=customer||undefined;
     const perk=customer?perkAmount(customer,o.subtotal||0):0;
     ov.innerHTML=`<div class="modal pay-modal"><h2>Thanh toán bill #${esc(o.bill_no||o.id.slice(-6).toUpperCase())}</h2>
-      <div class="custline"><span>👤 <b>${customer?esc(customer.name)+esc(perkTag(customer)):'Khách lẻ'}</b></span><button class="btn sm" id="payCust">${customer?'Đổi khách':'Chọn khách'}</button></div>
+      ${customerLineHtml(customer,'payCust')}
+      ${companyInvoiceHtml(invoiceDraft,{id:'posInvoice'})}
       <div class="brow"><span>Tạm tính</span><span>${money(o.subtotal||0)}</span></div>
       ${disc?`<div class="brow"><span>${orderPromo[o.id]?orderPromo[o.id].icon+' '+esc(orderPromo[o.id].name):'Giảm giá'}</span><span style="color:var(--late)">-${money(disc)}</span></div>`:''}
       <div style="margin:4px 0 10px"><button class="btn sm" id="promoPickBtn" style="width:100%;justify-content:center">${disc?'🔄 Đổi khuyến mãi':'🎁 Chọn khuyến mãi'}</button></div>
@@ -1177,6 +1186,7 @@ async function openPay(o, opts={}){
         helper.innerHTML=`<div class="pay-helper"><b>${esc(operationsConfig?.payment?.posTerminalName||'Máy POS')}</b><div class="mini">Nhập approval code nếu máy POS trả về mã. Mã gợi ý: <span class="pay-ref">${esc(ref)}</span></div></div>`;
       }else helper.innerHTML='';
     }
+    bindCompanyInvoiceBox(ov, invoiceDraft, { id:'posInvoice', onRedraw:renderModal });
     function draw(){
       ov.querySelector('#lines').innerHTML=lines.length?lines.map((l,i)=>`<div class="payline">${methodLabel(l.method)} ${l.reference?`<span style="color:var(--faint)">· ${esc(l.reference)}</span>`:''}<b>${money(l.amount)}</b><button class="x" data-i="${i}">×</button></div>`).join(''):'<div class="empty" style="padding:9px">Chưa có dòng thanh toán</div>';
       ov.querySelectorAll('.payline .x').forEach(b=>b.onclick=()=>{lines.splice(+b.dataset.i,1);amtEl.value=remaining();draw();drawHelper();});
@@ -1203,9 +1213,12 @@ async function openPay(o, opts={}){
     ov.querySelector('#confirm').onclick=async()=>{
       if(!lines.length){const amt=parseInt(amtEl.value)||0; if(amt>0)lines.push({method:curMethod,amount:amt,reference:refEl.value.trim()||makePaymentRef(curMethod,o)});}
       if(paid()<total()) return toast('Chưa đủ tiền',true);
+      let invoice_customer=null;
+      try{ invoice_customer=companyInvoicePayload(invoiceDraft); }
+      catch(e){ return toast(e.message,true); }
       try{
-        const receipt=await api('/orders/'+o.id+'/pay',{method:'POST',body:{lines,discount:disc,customer:customer||null}});
-        delete orderCust[o.id]; delete orderPromo[o.id]; ov.remove(); toast('✅ Thanh toán thành công'); showReceipt(receipt); refreshShift();
+        const receipt=await api('/orders/'+o.id+'/pay',{method:'POST',body:{lines,discount:disc,customer:customer||null,invoice_customer}});
+        delete orderCust[o.id]; delete orderPromo[o.id]; ov.remove(); toast('✅ Thanh toán thành công'); showReceipt(receipt,{autoPrint:true}); refreshShift();
         if(opts.afterPaid) opts.afterPaid();
         else{ sel=null; order=null; document.getElementById('bill').innerHTML=billEmptyHtml(); refreshFloor(); }
       }catch(e){toast(e.message,true);}
@@ -1316,8 +1329,8 @@ function receiptVarsBcm(r){
     date:receiptDate(d),
     time:receiptDate(d)+' '+receiptTime(d),
     timeOnly:receiptTime(d),
-    customerName:r.customer?.name||'Khách lẻ',
-    customerTaxCode:r.customer?.tax_code||'',
+    customerName:invoiceReceiptCustomerName(r.customer, NO_INVOICE_CUSTOMER),
+    customerTaxCode:invoiceReceiptTaxCode(r.customer, ''),
     items:receiptItemsText(r),
     subtotal:vndPlain(r.subtotal||0),
     taxableAmount:vndPlain(taxable),
@@ -1379,12 +1392,51 @@ function renderBasicReceipt(r){
 }
 function receiptContent(r){ return renderTemplateReceipt(r) || renderBasicReceipt(r); }
 
+const RECEIPT_COPIES_KEY=cfgKey('receipt_copies');
+function readReceiptCopies(){
+  const n=parseInt(localStorage.getItem(RECEIPT_COPIES_KEY)||activeBillCfg().copies||'1');
+  return Math.max(1,Math.min(9,n||1));
+}
+function saveReceiptCopies(v){
+  const n=Math.max(1,Math.min(9,parseInt(v)||1));
+  localStorage.setItem(RECEIPT_COPIES_KEY,String(n));
+  return n;
+}
+function receiptPaperWidth(r){
+  const cfg=activeBillCfg(r), tpl=activeBillTemplate(r);
+  return Math.max(50,Math.min(90,Number(tpl?.widthMm||cfg.widthMm||72)||72));
+}
+function receiptPrintDoc(r,copies){
+  const width=receiptPaperWidth(r);
+  const body=Array.from({length:copies},()=>`<section class="receipt-copy">${receiptContent(r)}</section>`).join('');
+  return `<!doctype html><html><head><meta charset="utf-8"><title>Print ${esc(r.number||r.bill_no||'receipt')}</title>
+  <style>
+    @page{size:${width}mm auto;margin:0}
+    html,body{margin:0;padding:0;background:#fff;color:#111}
+    body{font-family:"JetBrains Mono",Consolas,monospace;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+    .receipt-copy{width:${width}mm;margin:0 auto;break-after:page;page-break-after:always}
+    .receipt-copy:last-child{break-after:auto;page-break-after:auto}
+    .receipt{box-shadow:none!important;border-radius:0!important;max-width:none!important;margin:0 auto!important;background:#fdfdf8;color:#111;font-family:"JetBrains Mono",Consolas,monospace;font-size:12px;padding:18px 16px}
+    .receipt .c{text-align:center}.receipt h4{font-size:14px}.receipt hr{border:none;border-top:1px dashed #999;margin:8px 0}.receipt .li{display:flex;justify-content:space-between;gap:8px;padding:1.5px 0}.receipt .tt{font-weight:700;font-size:13.5px}.receipt .qr{width:74px;height:74px;margin:8px auto 2px;background:repeating-conic-gradient(#111 0 25%,#fdfdf8 0 50%) 0 0/14px 14px;border:4px solid #111}
+    .receipt.template{padding:0;overflow:hidden}.receipt-canvas-live{position:relative;width:100%;background:#fdfdf8;color:#111;aspect-ratio:var(--receipt-ratio,72/180);min-height:360px}.receipt-canvas-live .tpl-el{position:absolute;white-space:pre-wrap;overflow:hidden;line-height:1.14;box-sizing:border-box}.receipt-canvas-live .tpl-img img{width:100%;height:100%;object-fit:contain}.receipt-canvas-live .tpl-line{border-top:1px dashed #777;height:0!important}.receipt-canvas-live .tpl-qr{display:flex;align-items:center;justify-content:center}.receipt-canvas-live .tpl-qr .qr{width:min(100%,84px);height:auto;aspect-ratio:1;margin:0}
+  </style></head><body>${body}</body></html>`;
+}
+function printReceiptNow(r,copies=readReceiptCopies()){
+  const n=saveReceiptCopies(copies);
+  const frame=document.createElement('iframe');
+  frame.style.position='fixed'; frame.style.right='0'; frame.style.bottom='0'; frame.style.width='1px'; frame.style.height='1px'; frame.style.border='0'; frame.style.opacity='0';
+  document.body.appendChild(frame);
+  const doc=frame.contentDocument||frame.contentWindow.document;
+  doc.open(); doc.write(receiptPrintDoc(r,n)); doc.close();
+  setTimeout(()=>{ try{ frame.contentWindow.focus(); frame.contentWindow.print(); } finally { setTimeout(()=>frame.remove(),1800); } },350);
+}
+
 function buildPreview(table,o){
   return {branch:activeBillCfg().storeName||'District 1 - HCMC',table_code:table.code,number:o.bill_no||o.id.slice(-6).toUpperCase(),bill_no:o.bill_no||o.id.slice(-6).toUpperCase(),
     items:o.items.filter(i=>i.status!=='cancelled'),subtotal:o.subtotal,discount:o.discount,total:o.total,
-    lines:[],paid:0,change:0,preview:true,print_config:printConfig};
+    lines:[],paid:0,change:0,preview:true,customer:orderCust[o.id]||null,print_config:printConfig};
 }
-function showReceipt(r){
+function showReceipt(r, opts={}){
   const ov=document.createElement('div'); ov.className='overlay show';
   ov.innerHTML=`<div class="modal" style="max-width:380px">
     ${receiptContent(r)}
@@ -1405,11 +1457,18 @@ function showReceipt(r){
     </div>
     </div>
     <div class="mfoot">
+      <div class="receipt-printbar"><span>Số bản</span><input id="receiptCopies" type="number" inputmode="numeric" min="1" max="9" value="${readReceiptCopies()}"><button class="btn" id="receiptPrintBtn">In</button></div>
       ${(!r.preview&&r.order_id)?`<button class="btn" id="invBtn">🧾 Xuất hóa đơn VAT</button>`:''}
       <button class="btn primary" onclick="this.closest('.overlay').remove()">Đóng</button>
     </div>
   </div>`;
   document.body.appendChild(ov);
+  const copiesEl=ov.querySelector('#receiptCopies');
+  const doPrint=()=>printReceiptNow(r,copiesEl?.value||readReceiptCopies());
+  copiesEl.oninput=()=>saveReceiptCopies(copiesEl.value);
+  copiesEl.onchange=()=>saveReceiptCopies(copiesEl.value);
+  ov.querySelector('#receiptPrintBtn').onclick=doPrint;
+  if(opts.autoPrint) setTimeout(doPrint,220);
   const ib=ov.querySelector('#invBtn'); if(ib) ib.onclick=()=>{ ov.remove(); openInvoiceForm(r.order_id); };
 }
 function methodLabel(m){

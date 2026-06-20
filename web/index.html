@@ -32,18 +32,16 @@ body{height:auto;min-height:100vh;min-height:100dvh;overflow:auto;display:flex;f
   <div class="brand"><img src="/assets/logo.png" alt="Dan — Góc Bếp Bon Appétit" onerror="this.style.display='none'"></div>
   <div id="branchPicker"></div>
   <div class="grid" id="appGrid">
-    <a class="dev" href="/ipad"><div class="ic">📱</div><h2>Customer iPad</h2><p>Khách tự chọn món, topping, ghi chú, gửi bếp, gọi nhân viên, yêu cầu thanh toán.</p><div class="go">Mở thiết bị →</div></a>
+    <a class="dev" href="/ipad?pick=1"><div class="ic">📱</div><h2>Customer iPad</h2><p>Khách tự chọn món, topping, ghi chú, gửi bếp, gọi nhân viên, yêu cầu thanh toán.</p><div class="go">Mở thiết bị →</div></a>
     <a class="dev" href="/pos"><div class="ic">💳</div><h2>POS Cashier</h2><p>Sơ đồ bàn, mở bill, theo dõi món, discount, thanh toán nhiều phương thức, in receipt.</p><div class="go">Mở thiết bị →</div></a>
-    <a class="dev" href="/retail"><div class="ic">🛒</div><h2>BCM Retail POS</h2><p>Quét mã vạch / chạm SKU, chọn lot/date trong giỏ, voucher và thanh toán retail.</p><div class="go">Mở thiết bị →</div></a>
+    <a class="dev" href="/retail"><div class="ic">🛒</div><h2>Retail POS</h2><p>Quét mã vạch / chạm SKU, chọn lot/date trong giỏ, voucher và thanh toán retail.</p><div class="go">Mở thiết bị →</div></a>
     <a class="dev" href="/kds"><div class="ic">👨‍🍳</div><h2>KDS Bếp / Bar</h2><p>Màn hình station nhận món realtime, food timing/SLA, Accept → Preparing → Ready.</p><div class="go">Mở thiết bị →</div></a>
     <a class="dev" href="/warehouse"><div class="ic">📦</div><h2>Warehouse / Kho</h2><p>Nhập hàng, kiểm kho (chênh lệch), lịch sử xuất/nhập, cảnh báo tồn dưới mức tối thiểu.</p><div class="go">Mở thiết bị →</div></a>
     <a class="dev" href="/online"><div class="ic">🌐</div><h2>Online Channels</h2><p>Nhận đơn GrabFood/ShopeeFood/Website qua webhook, điều phối fulfillment, simulator đẩy đơn thử.</p><div class="go">Mở thiết bị →</div></a>
     <a class="dev" href="/printers"><div class="ic">🖨️</div><h2>Printer Monitor</h2><p>Máy in ảo bếp/bar/bill — tự in phiếu khi gửi món & receipt khi thanh toán, in lại.</p><div class="go">Mở thiết bị →</div></a>
     <a class="dev" href="/admin"><div class="ic">📊</div><h2>Quản lý</h2><p>Doanh thu realtime, biểu đồ, top món, tồn kho, thực đơn, hóa đơn MISA, cloud sync/offline.</p><div class="go">Mở thiết bị →</div></a>
   </div>
-  <p class="foot">Mẹo: mở các tab cạnh nhau → order ở iPad sẽ hiện ngay ở KDS, POS và Quản lý nhờ WebSocket.<br>
-  📲 Muốn xem trong khung iPad mô phỏng? Mở <a href="/sim" style="color:var(--brand);font-weight:700">iPad Simulator →</a><br>
-  🔐 Trang nhân viên (POS/Retail/Kho/Quản lý/Online) yêu cầu đăng nhập PIN 4 số — Chủ quán <b>1234</b> · Quản lý <b>2222</b> · Thu ngân <b>1111</b> · Bếp <b>3333</b> · Kho <b>4444</b></p>
+  <p class="foot">Mẹo: mở các tab cạnh nhau → order ở iPad sẽ hiện ngay ở KDS, POS và Quản lý nhờ WebSocket.</p>
 </div>
 <script type="module">
 import { api, requireLogin, esc, syncBranches, getBranches, selectedBranch, setBranchId, getUser, logout } from '/shared/client.js';
@@ -85,7 +83,8 @@ try{
   const active=modules.filter(m=>m.status==='active');
   const planned=modules.filter(m=>m.status!=='active');
   const byGroup=Object.fromEntries(groups.map(g=>[g.key,g]));
-  const card=m=>`<a class="dev ${m.status!=='active'?'disabled':''}" href="${m.status==='active'&&m.href?m.href:'#'}" ${m.status!=='active'?'onclick="return false"':''}>
+  const moduleHref=m=>m.key==='ipad'?'/ipad?pick=1':(m.href||'#');
+  const card=m=>`<a class="dev ${m.status!=='active'?'disabled':''}" href="${m.status==='active'&&m.href?moduleHref(m):'#'}" ${m.status!=='active'?'onclick="return false"':''}>
     <div class="ic">${esc(m.icon||'•')}</div>
     <h2>${esc(m.label)}</h2>
     <p>${esc(m.description||'')}</p>

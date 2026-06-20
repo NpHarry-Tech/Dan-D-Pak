@@ -32,7 +32,7 @@ const BASE_TRANSLATIONS = {
   // POS Cashier Screen
   "bàn mở": "open tables",
   "Món khách vừa gọi": "Customer Call / Cart",
-  "Khách lẻ": "Walk-in Customer",
+  "Khách không xuất hóa đơn": "No invoice customer",
   "Chọn khách": "Select Customer",
   "Thêm món FnB": "Add F&B Item",
   "Thêm retail": "Add Retail SKU",
@@ -364,7 +364,7 @@ const EXTRA_TRANSLATIONS = {
   "Chọn một bàn để xem bill": "Select a table to view the bill",
   "Bàn chưa có order.": "This table has no order.",
   "Khách order từ iPad sẽ hiện ở đây.": "Guest orders from iPad will appear here.",
-  "Khách lẻ": "Walk-in Customer",
+  "Khách không xuất hóa đơn": "No invoice customer",
   "Đổi khách": "Change Customer",
   "Chọn khách": "Select Customer",
   "Chọn khuyến mãi": "Select Promotion",

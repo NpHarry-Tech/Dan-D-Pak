@@ -1,6 +1,6 @@
 # Device Workflows
 
-Last updated: 2026-06-18
+Last updated: 2026-06-19
 
 ## iPad
 
@@ -54,7 +54,9 @@ Last updated: 2026-06-18
 ## Printers
 
 - Entry file: `web/printers.html`
-- Main APIs: `/api/print/config`, `/api/print/jobs`, `/api/print/jobs/:id/printed`, `/api/print/jobs/:id/reprint`
-- Realtime: `print:new`, `print:done`
-- Protected data: receipt/invoice payloads may include payment/customer/order data
-- Failure states: printer unavailable, duplicate print, missing template
+- Main APIs: `/api/print/printers`, `/api/print/jobs`, `/api/print/jobs/:id`, `/api/print/jobs/:id/text`, `/api/print/jobs/:id/print`, `/api/print/jobs/:id/printed`, `/api/print/jobs/:id/reprint`, `/api/print/printers/:id/test`, `/api/print/cash-drawer/open`
+- Realtime: `print:new`, `print:done`, `print:failed`
+- Protected data: receipt/invoice payloads may include payment, customer, order, table, refund, purchase, and inventory document data
+- Hardware model: browser printing opens the system print dialog; LAN/IP printing sends ESC/POS to the printer IP/port from the local store server; OS printing uses the backend machine's installed printer driver; cash drawer opens through the bill printer ESC/POS pulse
+- Failure states: printer unavailable, wrong LAN IP/port, OS driver missing, cash drawer not connected to bill printer, duplicate print, missing template, user lacks printer permission, job belongs to another branch
+- Production note: a cloud backend cannot directly reach private store LAN devices. Hardware printing and drawer control require a store-local server/agent on the same network as the printers, POS terminals, KDS screens, and warehouse devices.

@@ -56,7 +56,7 @@ export const setLang = async (l) => {
   const lang = setLocalLang(l);
   const user = getUser();
   const token = getToken();
-  if (user?.id && token && !token.startsWith('demo_')) {
+  if (user?.id && token) {
     try {
       const updated = await api('/me/lang', { method: 'POST', body: { lang } });
       localStorage.setItem('auth_user', JSON.stringify({ ...user, ...updated, lang }));
@@ -68,17 +68,11 @@ export const setLang = async (l) => {
 };
 
 export async function api(path, opts = {}) {
-  try {
-    return await apiRequest(path, {
-      ...opts,
-      token: getToken() || '',
-      headers: { ...(opts.headers || {}), 'x-branch-id': getBranchId() },
-    });
-  } catch (e) {
-    const demo = demoApiFallback(path);
-    if (demo !== undefined) return demo;
-    throw e;
-  }
+  return apiRequest(path, {
+    ...opts,
+    token: getToken() || '',
+    headers: { ...(opts.headers || {}), 'x-branch-id': getBranchId() },
+  });
 }
 
 // ---- Auth ----
@@ -114,39 +108,8 @@ export async function logout() {
 }
 
 const ROLE_LABEL = getLang() === 'en' ?
-  { owner: 'Owner', manager: 'Manager', cashier: 'Cashier', kitchen: 'Kitchen', warehouse: 'Warehouse Keeper' } :
-  { owner: 'Chủ quán', manager: 'Quản lý', cashier: 'Thu ngân', kitchen: 'Bếp', warehouse: 'Thủ kho' };
-const DEMO_LOGIN_USERS = [
-  { id:'demo_owner', username:'owner', name:'Chủ quán', role:'owner', pin:'1234' },
-  { id:'demo_manager', username:'manager', name:'Quản lý', role:'manager', pin:'2222' },
-  { id:'demo_cashier', username:'cashier', name:'Thu ngân', role:'cashier', pin:'1111' },
-  { id:'demo_kitchen', username:'kitchen', name:'Bếp', role:'kitchen', pin:'3333' },
-  { id:'demo_warehouse', username:'warehouse', name:'Thủ kho', role:'warehouse', pin:'4444' },
-];
-const DEMO_PERMS = {
-  owner: ['*'],
-  manager: ['menu.manage','inventory.adjust','warehouse.manage','refund','void','discount','reports','invoice','online','sell','pay','audit.view','settings.manage','module.ipad','module.pos','module.retail','module.kds','module.online','module.warehouse','module.inventory','module.printing','module.crm','module.sales','module.purchase','module.accounting','module.invoice','module.expense','module.website','module.payment','module.contacts','module.reports','module.import_export','module.calendar','module.discuss','module.documents','module.knowledge','module.project'],
-  cashier: ['sell','pay','discount','invoice','module.pos','module.retail','module.invoice'],
-  kitchen: ['module.kds'],
-  warehouse: ['inventory.adjust','warehouse.manage','module.warehouse','module.inventory'],
-};
-const isDemoToken = () => (getToken() || '').startsWith('demo_');
-function demoLogin(username, pin) {
-  const u = DEMO_LOGIN_USERS.find(x => x.username === String(username || '').toLowerCase());
-  if (!u || u.pin !== String(pin)) throw new Error('Sai tài khoản hoặc mã PIN');
-  const user = { id:u.id, username:u.username, name:u.name, role:u.role };
-  return { token:'demo_' + u.username + '_' + Date.now(), user, perms:DEMO_PERMS[u.role] || [] };
-}
-function demoApiFallback(path) {
-  if (path === '/me' && isDemoToken()) {
-    const user = getUser();
-    return user ? { ...user, perms:DEMO_PERMS[user.role] || [] } : undefined;
-  }
-  if (path === '/modules' && isDemoToken()) {
-    return { groups: MODULE_GROUPS, modules: MODULES.filter(m => canOpenModule(m)) };
-  }
-  return undefined;
-}
+  { owner: 'Admin', manager: 'Manager', cashier: 'Cashier', kitchen: 'Kitchen', warehouse: 'Warehouse Keeper' } :
+  { owner: 'Admin', manager: 'Quản lý', cashier: 'Thu ngân', kitchen: 'Bếp', warehouse: 'Thủ kho' };
 
 export function requestPinCode(opts = {}) {
   const {
@@ -267,19 +230,6 @@ export async function requireLogin(opts = {}) {
   const { branchLocked = false } = opts;
   try { await syncBranches(); } catch {}
   if (getToken()) {
-    if (isDemoToken()) {
-      const user = getUser();
-      if (user) {
-        localStorage.setItem('auth_perms', JSON.stringify(DEMO_PERMS[user.role] || []));
-        const userLang = user.lang || 'vi';
-        const currentPreferred = localStorage.getItem('preferred_lang') || 'vi';
-        localStorage.setItem('preferred_lang', userLang);
-        if (userLang !== currentPreferred) {
-          location.reload();
-        }
-        return user;
-      }
-    }
     try {
       const me = await api('/me');
       ensureBranchForUser(me);
@@ -288,44 +238,37 @@ export async function requireLogin(opts = {}) {
       const userLang = me.lang || 'vi';
       const currentPreferred = localStorage.getItem('preferred_lang') || 'vi';
       localStorage.setItem('preferred_lang', userLang);
-      if (userLang !== currentPreferred) {
-        location.reload();
-      }
+      if (userLang !== currentPreferred) location.reload();
       return me;
     }
     catch { localStorage.removeItem('auth_token'); localStorage.removeItem('auth_user'); }
   }
   return new Promise(async (resolve) => {
-    let demoMode = false;
     let branches = getBranches();
     try { branches = await syncBranches(); } catch {}
-    const loadLoginUsers = async () => {
-      try {
-        const rows = await api('/users');
-        const list = Array.isArray(rows) ? rows : [];
-        if (list.length) { demoMode = false; return list; }
-      } catch {}
-      demoMode = true;
-      return DEMO_LOGIN_USERS;
-    };
-    let users = await loadLoginUsers();
+    let users = [];
+    try {
+      const rows = await api('/users');
+      users = Array.isArray(rows) ? rows : [];
+    } catch {}
     const ov = document.createElement('div');
     ov.id = 'loginGate';
     const activeBranch = selectedBranch();
-    const activeBranchName = activeBranch.name || activeBranch.code || activeBranch.id || 'Dan D Pak Sala';
+    const activeBranchName = activeBranch.name || activeBranch.code || activeBranch.id || 'Dan D Pak';
     const branchOptions = branches.length
       ? branches.map(b => `<option value="${esc(b.id)}" ${b.id === getBranchId() ? 'selected' : ''}>${esc(b.name || b.code || b.id)}</option>`).join('')
-      : `<option value="${DEFAULT_BRANCH}">Dan D Pak Sala</option>`;
+      : `<option value="${DEFAULT_BRANCH}">Dan D Pak</option>`;
     const branchBlock = branchLocked
       ? `<div class="lg-branch lg-branch-locked"><span>Chi nhánh đăng nhập</span><b>${esc(activeBranchName)}</b><small>Đổi chi nhánh ở màn hình chọn module trước khi đăng nhập.</small></div>`
       : `<label class="lg-branch"><span>Cửa hàng / chi nhánh</span><select id="loginBranch">${branchOptions}</select></label>`;
-    const usersHtml = () => users.map(u => `<button class="lg-user" data-u="${esc(u.username)}"><span class="lg-av">${esc((u.name||'?')[0])}</span><span><b>${esc(u.name)}</b><small>${esc(ROLE_LABEL[u.role] || u.role)}</small></span></button>`).join('');
+    const usersHtml = () => users.length
+      ? users.map(u => `<button class="lg-user" data-u="${esc(u.username)}"><span class="lg-av">${esc((u.name || '?')[0])}</span><span><b>${esc(u.name)}</b><small>${esc(ROLE_LABEL[u.role] || u.role)}</small></span></button>`).join('')
+      : `<div class="lg-loading">Chưa có tài khoản nhân viên. Liên hệ quản trị viên hệ thống.</div>`;
     ov.innerHTML = `
       <div class="lg-card">
         <div class="lg-logo"><img class="lg-brand-logo" src="/assets/DanOnLogo.png" alt="DanDPak"><div class="lg-sub">Đăng nhập nhân viên</div></div>
         ${branchBlock}
         <div class="lg-users">${usersHtml()}</div>
-        <div class="lg-hint">PIN demo — Chủ quán:1234 · Quản lý:2222 · Thu ngân:1111 · Bếp:3333 · Kho:4444</div>
       </div>`;
     document.body.appendChild(ov);
     injectLoginCss();
@@ -334,8 +277,11 @@ export async function requireLogin(opts = {}) {
     if (branchSel) {
       branchSel.onchange = async () => {
         setBranchId(branchSel.value);
-        usersBox.innerHTML = '<div class="lg-loading">Äang táº£i nhÃ¢n viÃªn...</div>';
-        users = await loadLoginUsers();
+        usersBox.innerHTML = '<div class="lg-loading">Đang tải nhân viên...</div>';
+        try {
+          const rows = await api('/users');
+          users = Array.isArray(rows) ? rows : [];
+        } catch { users = []; }
         usersBox.innerHTML = usersHtml();
       };
     }
@@ -350,21 +296,19 @@ export async function requireLogin(opts = {}) {
         subtitle: `Đăng nhập ${name}`,
         roleLabel: role,
         cancelText: 'Chọn lại',
-        onSubmit: (pin) => demoMode ? demoLogin(pickedUser, pin) : api('/login', { method: 'POST', body: { username: pickedUser, pin, branch_id: getBranchId() } }),
+        onSubmit: (pin) => api('/login', { method: 'POST', body: { username: pickedUser, pin, branch_id: getBranchId() } }),
       });
       if (!r) return;
       ensureBranchForUser(r.user);
-      localStorage.setItem('auth_token', r.token); localStorage.setItem('auth_user', JSON.stringify(r.user));
+      localStorage.setItem('auth_token', r.token);
+      localStorage.setItem('auth_user', JSON.stringify(r.user));
       localStorage.setItem('auth_perms', JSON.stringify(r.perms || []));
       const userLang = r.user.lang || 'vi';
       const currentPreferred = localStorage.getItem('preferred_lang') || 'vi';
       localStorage.setItem('preferred_lang', userLang);
       ov.remove();
-      if (userLang !== currentPreferred) {
-        location.reload();
-      } else {
-        resolve(r.user);
-      }
+      if (userLang !== currentPreferred) location.reload();
+      else resolve(r.user);
     });
   });
 }
@@ -373,7 +317,7 @@ function injectLoginCss() {
   if (document.getElementById('lgCss')) return;
   const s = document.createElement('style'); s.id = 'lgCss';
   s.textContent = `
-  #loginGate{position:fixed;inset:0;z-index:500;background:radial-gradient(circle at 50% 25%,#ffffff,#edf3f8);display:flex;align-items:center;justify-content:center;padding:20px}
+  #loginGate{position:fixed;inset:0;z-index:500;background:radial-gradient(circle at 50% 45%,#ffffff,#edf3f8);display:flex;align-items:center;justify-content:center;min-height:100vh;min-height:100dvh;padding:20px;box-sizing:border-box}
   .lg-card{background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:26px;width:100%;max-width:420px;box-shadow:0 24px 70px rgba(15,23,42,.16)}
   .lg-logo{display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:7px;margin:0 auto 22px}
   .lg-brand-logo{width:min(218px,62vw);height:88px;object-fit:contain;display:block;filter:drop-shadow(0 8px 14px rgba(15,23,42,.08))}
@@ -381,7 +325,7 @@ function injectLoginCss() {
   .lg-branch{display:flex;flex-direction:column;gap:6px;margin:-6px 0 14px}
   .lg-branch span{font-size:10.5px;font-weight:850;text-transform:uppercase;color:var(--faint);letter-spacing:.45px}
   .lg-branch select{width:100%;height:42px;border-radius:12px;font-weight:800;background:#fff}
-  .lg-branch-locked{border:1px solid var(--border2);background:var(--surface2);border-radius:14px;padding:10px 12px;margin:-6px 0 14px}
+  .lg-branch-locked{border:1px solid var(--border2);background:var(--surface2);border-radius:14px;padding:10px 12px;margin:-6px 0 14px;text-align:center}
   .lg-branch-locked b{font-size:14px;color:var(--text);font-weight:850}
   .lg-branch-locked small{font-size:11px;color:var(--muted);font-weight:650;line-height:1.35}
   .lg-users{display:flex;flex-direction:column;gap:8px}
@@ -457,7 +401,7 @@ export function startClock(sel = '#clock') {
 export const esc = (s) => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
 // Turn a raw audit record (action + detail) into a plain Vietnamese sentence.
-const _ROLE_VN = { owner: 'Chủ quán', manager: 'Quản lý', cashier: 'Thu ngân', kitchen: 'Bếp', warehouse: 'Thủ kho' };
+const _ROLE_VN = { owner: 'Admin', manager: 'Quản lý', cashier: 'Thu ngân', kitchen: 'Bếp', warehouse: 'Thủ kho' };
 const _CHAN_VN = { grabfood: 'GrabFood', shopeefood: 'ShopeeFood', website: 'Website' };
 const _ST_VN = { received: 'đã nhận', confirmed: 'đã xác nhận', preparing: 'đang chế biến', ready: 'sẵn sàng', completed: 'hoàn tất', accepted: 'đã nhận', served: 'đã phục vụ', cancelled: 'đã hủy', new: 'mới' };
 export function describeAudit(action, detailRaw) {
@@ -524,18 +468,27 @@ export function describeAudit(action, detailRaw) {
 }
 
 // Standard topbar (device nav) injected into every device page.
+// Single unified app-header shared by every module/tab:
+//   [ brand + branch ] · [ page title + subtitle ] · [ actions · clock · online · user ]
+// Pass opts = { title, sub, actions } to give a page its contextual heading.
 let _activeTopbar = null;
-export function topbar(active) {
+let _activeTopbarOpts = {};
+export function topbar(active, opts = {}) {
   _activeTopbar = active;
+  _activeTopbarOpts = opts;
+  const { title = '', sub = '', actions = '' } = opts;
   const br = selectedBranch();
   const branchName = esc(br.name || br.code || br.id);
-  const branchLabel = getLang() === 'en' ? `Branch: ${branchName} · Live` : `Chi nhánh: ${branchName} · Trực tiếp`;
+  const liveLabel = getLang() === 'en' ? 'Live' : 'Trực tiếp';
   const homeTitle = getLang() === 'en' ? 'Back to Launcher' : 'Quay lại Launcher (chọn module khác)';
-  // Module navigation lives on the Launcher (home). The topbar only carries
-  // identity (logo + branch), live clock and the current user / logout.
   return `<header class="topbar">
-    <div class="logo brand-mark" onclick="location.href = '/'" style="cursor:pointer" title="${homeTitle}"><img src="/assets/DanOnLogo.png" alt="DanDPak"><small>${branchLabel}</small></div>
-    <div class="topright">
+    <div class="tb-brand" onclick="location.href = '/'" title="${homeTitle}">
+      <img class="tb-logo" src="/assets/DanOnLogo.png" alt="DanDPak">
+      <span class="tb-branch"><b>${branchName}</b><small><i class="tb-live"></i>${liveLabel}</small></span>
+    </div>
+    ${title ? `<div class="tb-heading"><h1>${title}</h1>${sub ? `<p>${sub}</p>` : ''}</div>` : ''}
+    <div class="tb-right">
+      ${actions ? `<div class="tb-actions">${actions}</div>` : ''}
       <span class="clock" id="clock"></span>
       <span class="onlinedot"><i></i><span>Online</span></span>
       <span id="userchip"></span>
@@ -544,11 +497,11 @@ export function topbar(active) {
 }
 
 const ROLE_LABEL2 = getLang() === 'en' ?
-  { owner: 'Owner', manager: 'Manager', cashier: 'Cashier', kitchen: 'Kitchen', warehouse: 'Warehouse Keeper' } :
-  { owner: 'Chủ quán', manager: 'Quản lý', cashier: 'Thu ngân', kitchen: 'Bếp', warehouse: 'Thủ kho' };
+  { owner: 'Admin', manager: 'Manager', cashier: 'Cashier', kitchen: 'Kitchen', warehouse: 'Warehouse Keeper' } :
+  { owner: 'Admin', manager: 'Quản lý', cashier: 'Thu ngân', kitchen: 'Bếp', warehouse: 'Thủ kho' };
 export function renderUserChip() {
   if (_activeTopbar && document.getElementById('top')) {
-    document.getElementById('top').innerHTML = topbar(_activeTopbar);
+    document.getElementById('top').innerHTML = topbar(_activeTopbar, _activeTopbarOpts);
   }
   const el = document.getElementById('userchip'); const u = getUser(); if (!el || !u) return;
   el.innerHTML = `<span style="display:inline-flex;align-items:center;gap:7px;background:var(--surface2);border:1px solid var(--border2);border-radius:99px;padding:4px 6px 4px 11px;font-size:12px;font-weight:600">

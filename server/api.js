@@ -27,6 +27,7 @@ import * as CashDrawer from './services/cashDrawer.js';
 import * as Branches from './services/branches.js';
 import * as Purchase from './services/purchase.js';
 import * as Expenses from './services/expenses.js';
+import * as ES from './services/enterpriseStorage.js';
 import { emit, getActiveConnections } from './realtime.js';
 import { errorPayload } from './core/errors.js';
 import { notImplemented } from './core/http.js';
@@ -50,7 +51,7 @@ const visibleBranch = (req) => req.user ? branch(req) : publicBranch(req);
 function scopedUserBody(req) {
   const body = { ...(req.body || {}) };
   if (req.user?.role === 'owner') return body;
-  if (body.role === 'owner') throw new Error('Chỉ Chủ quán mới được tạo hoặc cấp vai trò Owner.');
+  if (body.role === 'owner') throw new Error('Chỉ Admin mới được tạo hoặc cấp vai trò Admin.');
   const allowed = new Set(Auth.userBranchIds(req.user));
   const requested = Array.isArray(body.branch_access || body.branch_ids || body.branchAccess)
     ? (body.branch_access || body.branch_ids || body.branchAccess)
@@ -146,7 +147,7 @@ api.post('/settings/app', guardAny('settings.sync', 'settings.operations', 'sett
     if (next !== current) {
       const pin = req.body.security_pin || req.body.manager_pin || req.body.owner_pin || req.body.password;
       const approvedBy = Auth.verifyManagerOwnerPin(pin, branch_id);
-      if (!approvedBy) throw new Error('Cần nhập lại mật khẩu/PIN của Manager hoặc Owner để đổi tiền két gốc.');
+      if (!approvedBy) throw new Error('Cần nhập lại mật khẩu/PIN của Manager hoặc Admin để đổi tiền két gốc.');
       audit('settings.drawer_cash.reauth', { from: current, to: next, approved_by: approvedBy.username }, branch_id, approvedBy.username);
       delete req.body.security_pin;
       delete req.body.manager_pin;
@@ -385,11 +386,11 @@ api.post('/orders/items/:id/cancel', wrap((req) => {
 
   if (item.status !== 'pending_confirm') {
     const pin = req.body.pin;
-    if (!pin) throw new Error('Yêu cầu nhập mã PIN Quản lý/Chủ quán để hủy món đã gửi.');
+    if (!pin) throw new Error('Yêu cầu nhập mã PIN Quản lý/Admin để hủy món đã gửi.');
     const users = db.prepare(`SELECT * FROM users WHERE pin=? AND active=1 AND role IN ('owner','manager')`).all(String(pin));
     const user = users.find(u => Auth.canAccessBranch(u, branch_id));
     if (!user) {
-      throw new Error('Mã PIN không đúng hoặc không có quyền Quản lý/Chủ quán.');
+      throw new Error('Mã PIN không đúng hoặc không có quyền Quản lý/Admin.');
     }
   }
   const res = Orders.cancelItem(itemId, req.body.reason || 'Nhân viên hủy', branch_id, actor(req));
@@ -429,7 +430,7 @@ api.post('/orders/:id/customer-invoice', wrap((req) => Invoices.customerRequest(
 api.get('/public/tax-lookup/:mst', wrap(async (req) => { const r = await Customers.lookupTaxCode(req.params.mst); const { existed, ...pub } = r; return pub; }));
 api.post('/orders/:id/pay', guard('pay'), wrap((req) => {
   const branch_id = branch(req);
-  const receipt = Pay.payOrder(req.params.id, req.body.lines, { discount: req.body.discount, customer: req.body.customer || null, cashier: req.user?.name || req.user?.username || '' }, branch_id);
+  const receipt = Pay.payOrder(req.params.id, req.body.lines, { discount: req.body.discount, customer: req.body.customer || null, invoice_customer: req.body.invoice_customer || null, cashier: req.user?.name || req.user?.username || '' }, branch_id);
   if (req.body.customer?.id) Customers.recordPurchase(req.body.customer.id, receipt.total, branch_id, req.params.id);
   return receipt;
 }));
@@ -460,7 +461,7 @@ function verifyWarehouseConfigAccess(req) {
   const branch_id = branch(req);
   const pin = req.body.security_pin || req.body.warehouse_pin || req.body.manager_pin || req.body.owner_pin || req.body.password;
   const approvedBy = Auth.verifyWarehouseConfigPin(pin, branch_id);
-  if (!approvedBy) throw new Error('Cần nhập mật khẩu/PIN của Thủ kho, Manager hoặc Owner để tạo/cấu hình kho.');
+  if (!approvedBy) throw new Error('Cần nhập mật khẩu/PIN của Thủ kho, Manager hoặc Admin để tạo/cấu hình kho.');
   delete req.body.security_pin;
   delete req.body.warehouse_pin;
   delete req.body.manager_pin;
@@ -566,11 +567,18 @@ api.get('/online/channels', wrap((req) => Online.listChannels(visibleBranch(req)
 api.post('/online/orders/:id/status', guard('online'), wrap((req) => Online.setStatus(req.params.id, req.body.status, branch(req))));
 
 // --- Printing ---
-api.get('/print/config', wrap((req) => AppSettings.getPrintConfig(visibleBranch(req))));
-api.get('/print/jobs', wrap((req) => Print.listJobs(visibleBranch(req))));
-api.post('/print/reprint', wrap(() => notImplemented('Generic print reprint endpoint is planned. Current app uses /api/print/jobs/:id/reprint.')));
-api.post('/print/jobs/:id/printed', wrap((req) => Print.markPrinted(req.params.id, visibleBranch(req))));
-api.post('/print/jobs/:id/reprint', wrap((req) => Print.reprint(req.params.id, visibleBranch(req))));
+const printGuard = guardAny('module.printing', 'settings.printers', 'settings.print', 'pay');
+api.get('/print/config', printGuard, wrap((req) => AppSettings.getPrintConfig(branch(req))));
+api.get('/print/printers', printGuard, wrap((req) => Print.listPrinters(branch(req))));
+api.post('/print/printers/:id/test', printGuard, wrap((req) => Print.testPrinter(req.params.id, branch(req))));
+api.post('/print/cash-drawer/open', printGuard, wrap((req) => Print.openCashDrawer(branch(req), req.body.printer || req.body.printer_id || '')));
+api.get('/print/jobs', printGuard, wrap((req) => Print.listJobs(branch(req), req.query)));
+api.get('/print/jobs/:id', printGuard, wrap((req) => Print.getJobForBranch(req.params.id, branch(req))));
+api.get('/print/jobs/:id/text', printGuard, wrap((req) => ({ text: Print.renderJobText(Print.getJobForBranch(req.params.id, branch(req)) || {}) })));
+api.post('/print/reprint', printGuard, wrap(() => notImplemented('Generic print reprint endpoint is planned. Current app uses /api/print/jobs/:id/reprint.')));
+api.post('/print/jobs/:id/print', printGuard, wrap((req) => Print.dispatchJob(req.params.id, branch(req), { force: true })));
+api.post('/print/jobs/:id/printed', printGuard, wrap((req) => Print.markPrinted(req.params.id, branch(req), actor(req))));
+api.post('/print/jobs/:id/reprint', printGuard, wrap((req) => Print.reprint(req.params.id, branch(req))));
 
 // --- MISA e-invoice ---
 api.post('/invoices/issue', guard('invoice'), wrap((req) => Invoices.issue(req.body.order_id, req.body.customer, branch(req))));

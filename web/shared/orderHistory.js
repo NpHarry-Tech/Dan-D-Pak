@@ -249,7 +249,7 @@ function receiptVarsBcm(r) {
     date: receiptDate(d),
     time: receiptDate(d) + ' ' + receiptTime(d),
     timeOnly: receiptTime(d),
-    customerName: r.customer?.name || 'Khách lẻ',
+    customerName: r.customer?.name || 'Khách không xuất hóa đơn',
     customerTaxCode: r.customer?.tax_code || '',
     items: receiptItemsText(r),
     subtotal: vndPlain(r.subtotal || r.goods_amount || 0),

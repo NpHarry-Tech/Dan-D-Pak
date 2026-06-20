@@ -12,9 +12,9 @@ export const MODULE_GROUPS = [
 ];
 
 export const MODULES = [
-  { key: 'ipad', label: 'iPad Self-Order', icon: '📱', group: 'sales', href: '/ipad', perm: 'module.ipad', status: 'active' },
+  { key: 'ipad', label: 'iPad Self-Order', icon: '📱', group: 'sales', href: '/ipad?pick=1', perm: 'module.ipad', status: 'active' },
   { key: 'pos', label: 'FnB POS', icon: '💳', group: 'sales', href: '/pos', perm: 'module.pos', status: 'active' },
-  { key: 'retail', label: 'BCM Retail POS', icon: '🛒', group: 'sales', href: '/retail', perm: 'module.retail', status: 'active' },
+  { key: 'retail', label: 'Retail POS', icon: '🛒', group: 'sales', href: '/retail', perm: 'module.retail', status: 'active' },
   { key: 'kds', label: 'KDS', icon: '👨‍🍳', group: 'sales', href: '/kds', perm: 'module.kds', status: 'active' },
   { key: 'online', label: 'Kênh online', icon: '🌐', group: 'sales', href: '/online', perm: 'module.online', status: 'active' },
   { key: 'warehouse', label: 'Kho', icon: '📦', group: 'supply', href: '/warehouse', perm: 'module.warehouse', status: 'active' },

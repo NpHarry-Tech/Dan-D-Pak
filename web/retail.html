@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="vi"><head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>BCM Retail POS</title>
+<title>Retail POS</title>
 <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/shared/app.css">
 <script src="/runtime-config.js"></script>
@@ -61,7 +61,7 @@
 .cartpane .bh{padding:13px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:9px;font-weight:700}
 .cartitems{flex:1;overflow-y:auto;padding:10px 12px;display:flex;flex-direction:column;gap:8px;min-height:120px}
 .cart-empty{margin:auto;min-height:240px;width:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;color:var(--faint);gap:12px;padding:24px 16px}
-.cart-empty img{width:min(210px,68%);max-height:86px;object-fit:contain;opacity:.13;filter:grayscale(1)}
+.cart-empty img{width:min(210px,68%);max-height:86px;object-fit:contain;opacity:.9}
 .cart-empty .hint-pill{border:1px dashed var(--border2);background:var(--surface2);border-radius:999px;padding:8px 12px;font-size:12px;font-weight:750;color:var(--muted)}
 .cart-empty small{font-size:11px;line-height:1.45;color:var(--faint)}
 .cline{background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:9px 11px}
@@ -103,6 +103,9 @@
 .receipt-canvas-live .tpl-line{border-top:1px dashed #777;height:0!important}
 .receipt-canvas-live .tpl-qr{display:flex;align-items:center;justify-content:center}
 .receipt-canvas-live .tpl-qr .qr{width:min(100%,84px);height:auto;aspect-ratio:1;margin:0}
+.receipt-printbar{display:grid;grid-template-columns:auto 78px 1fr;gap:8px;align-items:center;width:100%;margin-right:auto;font-size:12px;color:var(--muted)}
+.receipt-printbar input{height:32px;text-align:center;font-weight:800}
+.receipt-printbar .btn{height:32px}
 .salerow,.voucherrow{display:flex;align-items:center;gap:8px;font-size:12px;padding:8px 2px;border-bottom:1px dashed var(--border)}
 .salerow:last-child,.voucherrow:last-child{border:none}.salerow b,.voucherrow b{font-family:var(--mono)}
 .voucherrow{align-items:flex-start}.voucherrow .meta{color:var(--muted);font-size:11px;line-height:1.45}
@@ -383,16 +386,6 @@
 <body>
 <div id="top"></div>
 <div class="view" style="overflow:hidden">
-  <div class="viewhead">
-    <h1>🛒 BCM Retail POS</h1>
-    <div class="sub">Quét mã vạch hoặc chạm sản phẩm · chọn lot/date trong giỏ · voucher retail</div>
-    <div class="right">
-      <span id="shiftMount"></span>
-      <span id="histMount"></span>
-      <button class="btn sm" id="custBtn">👤 Khách lẻ</button>
-      <button class="btn sm" id="voucherBtn">🎁 Voucher</button>
-    </div>
-  </div>
   <div class="tab-bar" id="tabBar"></div>
   <div class="rtwrap">
     <div class="cartpane">
@@ -427,7 +420,15 @@ import { api, connect, money, toast, esc, startClock, topbar, requireModuleAcces
 import { mountShift } from '/shared/shift.js';
 import { mountOrderHistory } from '/shared/orderHistory.js';
 import { perkTag, perkAmount, openCustomerPicker, loadCustomers } from '/shared/customer.js';
-document.getElementById('top').innerHTML = topbar('retail');
+import { createCompanyInvoiceDraft, companyInvoiceHtml, bindCompanyInvoiceBox, companyInvoicePayload, invoiceReceiptCustomerName, invoiceReceiptTaxCode } from '/shared/invoiceRequest.js';
+document.getElementById('top').innerHTML = topbar('retail', {
+  title: '🛒 Retail POS',
+  sub: 'Quét mã vạch hoặc chạm sản phẩm · chọn lot/date trong giỏ · voucher retail',
+  actions: `<span id="shiftMount"></span>
+      <span id="histMount"></span>
+      <button class="btn sm" id="custBtn">👤 Khách không xuất hóa đơn</button>
+      <button class="btn sm" id="voucherBtn">🎁 Voucher</button>`,
+});
 await requireModuleAccess('retail'); renderUserChip();
 
 let skus=[], lots=[], activeVouchers=[], allVouchers=[], cart=[], editingVoucher=null, operationsCfg=null, shiftCtl=null;
@@ -683,7 +684,7 @@ async function loadCustomersAndRefresh(){
 }
 function renderCustBtn(){
   const b=document.getElementById('custBtn'); if(!b) return;
-  b.textContent = selectedCustomer ? `👤 ${selectedCustomer.name}${perkTag(selectedCustomer)}` : '👤 Khách lẻ';
+  b.textContent = `👤 ${customerDisplay(selectedCustomer)}`;
   b.classList.toggle('primary', !!selectedCustomer);
 }
 
@@ -1112,6 +1113,7 @@ function dynamicQrUrl(amount, ref){
 async function openPay(){
   if(!(await ensureRetailShiftOpen())) return;
   let voucherId='', lines=[], curMethod='cash', manualVal=0, manualType='amount';
+  const invoiceDraft=createCompanyInvoiceDraft();
   const methods=enabledRetailMethods();
   if(!methods.some(m=>m.key===curMethod)) curMethod=methods[0]?.key||'cash';
   const ov=document.createElement('div'); ov.className='overlay show'; document.body.appendChild(ov);
@@ -1134,10 +1136,8 @@ async function openPay(){
     const change = Math.max(0,paid-total);
 
     ov.innerHTML=`<div class="modal pay-modal"><h2>Thanh toán retail ${activeTab?`#${activeTab.name}`:''}</h2>
-      <div class="custline">
-        <span>👤 <b>${selectedCustomer?esc(selectedCustomer.name)+esc(perkTag(selectedCustomer)):'Khách lẻ'}</b></span>
-        <button class="btn sm" id="payPickCust">${selectedCustomer?'Đổi khách':'Chọn khách'}</button>
-      </div>
+      ${customerLineHtml(selectedCustomer,'payPickCust')}
+      ${companyInvoiceHtml(invoiceDraft,{id:'retailInvoice'})}
       <div class="brow"><span>Tạm tính</span><span>${money(totals.subtotal)}</span></div>
       
       ${(totals.productDiscount||totals.customerPerk)?`<div class="brow warn"><span>${activePromo?activePromo.icon+' '+esc(activePromo.name):'🎁 Khuyến mãi'}</span><span>-${money(totals.productDiscount+totals.customerPerk)}</span></div>`:''}
@@ -1228,6 +1228,8 @@ async function openPay(){
       }else helper.innerHTML='';
     }
 
+    bindCompanyInvoiceBox(ov, invoiceDraft, { id:'retailInvoice', onRedraw:draw });
+
     ov.querySelector('#payPickCust').onclick=()=>{
       openCustomerPicker(selectedCustomer, c=>{
         selectedCustomer = c || null;
@@ -1316,6 +1318,9 @@ async function openPay(){
         if(amt>0) lines.push({method:curMethod,amount:amt,reference:refEl.value.trim()||makePaymentRef(curMethod, activeTab)});
       }
       if(lines.reduce((s,l)=>s+l.amount,0)<totals.total) return toast('Chưa đủ tiền',true);
+      let invoice_customer=null;
+      try{ invoice_customer=companyInvoicePayload(invoiceDraft); }
+      catch(e){ return toast(e.message,true); }
       try{
         const receipt=await api('/retail/checkout',{method:'POST',body:{
           items:cart.map(c=>({sku_id:c.sku.id,qty:c.qty,lot_id:c.lot_id||null})),
@@ -1323,6 +1328,7 @@ async function openPay(){
           payments:lines,
           customer:selectedCustomer||null,
           customer_id:selectedCustomer?.id||null,
+          invoice_customer,
           manual_discount:totals.manual||0,
         }});
         const currentId = activeTabId;
@@ -1353,7 +1359,7 @@ async function openPay(){
           renameTabs();
           renderCart();
         }
-        ov.remove(); await loadData(); showReceipt(receipt); toast('✅ Bán thành công'); scan.focus();
+        ov.remove(); await loadData(); showReceipt(receipt,{autoPrint:true}); toast('✅ Bán thành công'); scan.focus();
       }catch(e){toast(e.message,true);}
     };
 
@@ -1376,6 +1382,12 @@ function enabledRetailMethods(){
   return (Array.isArray(rows)&&rows.length?rows:fallback).filter(m=>m.enabled!==false);
 }
 function methodIcon(m){ return ({cash:'💵',internet_banking:'🏦',qrcode:'📱',qr:'📱',card:'💳',visa:'💳',momo:'🟣',zalopay:'🔵',voucher:'🎟️'}[m.key||m]||'•'); }
+const NO_INVOICE_CUSTOMER='Khách không xuất hóa đơn';
+function customerDisplay(c){ return c ? `${c.name}${perkTag(c)}` : NO_INVOICE_CUSTOMER; }
+function customerActionLabel(c){ return c ? 'Đổi khách' : 'Chọn khách'; }
+function customerLineHtml(c,id='payPickCust'){
+  return `<div class="custline"><span>👤 <b>${esc(customerDisplay(c))}</b></span><button class="btn sm" id="${id}">${customerActionLabel(c)}</button></div>`;
+}
 
 let printConfig = {};
 const cfgKey=k=>`pos_erp_${k}_settings`;
@@ -1480,8 +1492,8 @@ function receiptVarsBcm(r){
     date:receiptDate(d),
     time:receiptDate(d)+' '+receiptTime(d),
     timeOnly:receiptTime(d),
-    customerName:r.customer?.name||selectedCustomer?.name||'Khách lẻ',
-    customerTaxCode:r.customer?.tax_code||selectedCustomer?.tax_code||'',
+    customerName:invoiceReceiptCustomerName(r.customer||selectedCustomer, NO_INVOICE_CUSTOMER),
+    customerTaxCode:invoiceReceiptTaxCode(r.customer||selectedCustomer, ''),
     items:receiptItemsText(r),
     subtotal:vndPlain(r.subtotal||0),
     taxableAmount:vndPlain(taxable),
@@ -1543,7 +1555,46 @@ function renderBasicReceipt(r){
 }
 function receiptContent(r){ return renderTemplateReceipt(r) || renderBasicReceipt(r); }
 
-function showReceipt(r){
+const RECEIPT_COPIES_KEY=cfgKey('receipt_copies');
+function readReceiptCopies(){
+  const n=parseInt(localStorage.getItem(RECEIPT_COPIES_KEY)||activeBillCfg().copies||'1');
+  return Math.max(1,Math.min(9,n||1));
+}
+function saveReceiptCopies(v){
+  const n=Math.max(1,Math.min(9,parseInt(v)||1));
+  localStorage.setItem(RECEIPT_COPIES_KEY,String(n));
+  return n;
+}
+function receiptPaperWidth(r){
+  const cfg=activeBillCfg(r), tpl=activeBillTemplate(r);
+  return Math.max(50,Math.min(90,Number(tpl?.widthMm||cfg.widthMm||72)||72));
+}
+function receiptPrintDoc(r,copies){
+  const width=receiptPaperWidth(r);
+  const body=Array.from({length:copies},()=>`<section class="receipt-copy">${receiptContent(r)}</section>`).join('');
+  return `<!doctype html><html><head><meta charset="utf-8"><title>Print ${esc(r.number||r.bill_no||'receipt')}</title>
+  <style>
+    @page{size:${width}mm auto;margin:0}
+    html,body{margin:0;padding:0;background:#fff;color:#111}
+    body{font-family:"JetBrains Mono",Consolas,monospace;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+    .receipt-copy{width:${width}mm;margin:0 auto;break-after:page;page-break-after:always}
+    .receipt-copy:last-child{break-after:auto;page-break-after:auto}
+    .receipt{box-shadow:none!important;border-radius:0!important;max-width:none!important;margin:0 auto!important;background:#fdfdf8;color:#111;font-family:"JetBrains Mono",Consolas,monospace;font-size:12px;padding:18px 16px}
+    .receipt .c{text-align:center}.receipt h4{font-size:14px}.receipt hr{border:none;border-top:1px dashed #999;margin:8px 0}.receipt .li{display:flex;justify-content:space-between;gap:8px;padding:1.5px 0}.receipt .tt{font-weight:700;font-size:13.5px}.receipt .qr{width:74px;height:74px;margin:8px auto 2px;background:repeating-conic-gradient(#111 0 25%,#fdfdf8 0 50%) 0 0/14px 14px;border:4px solid #111}
+    .receipt.template{padding:0;overflow:hidden}.receipt-canvas-live{position:relative;width:100%;background:#fdfdf8;color:#111;aspect-ratio:var(--receipt-ratio,72/180);min-height:360px}.receipt-canvas-live .tpl-el{position:absolute;white-space:pre-wrap;overflow:hidden;line-height:1.14;box-sizing:border-box}.receipt-canvas-live .tpl-img img{width:100%;height:100%;object-fit:contain}.receipt-canvas-live .tpl-line{border-top:1px dashed #777;height:0!important}.receipt-canvas-live .tpl-qr{display:flex;align-items:center;justify-content:center}.receipt-canvas-live .tpl-qr .qr{width:min(100%,84px);height:auto;aspect-ratio:1;margin:0}
+  </style></head><body>${body}</body></html>`;
+}
+function printReceiptNow(r,copies=readReceiptCopies()){
+  const n=saveReceiptCopies(copies);
+  const frame=document.createElement('iframe');
+  frame.style.position='fixed'; frame.style.right='0'; frame.style.bottom='0'; frame.style.width='1px'; frame.style.height='1px'; frame.style.border='0'; frame.style.opacity='0';
+  document.body.appendChild(frame);
+  const doc=frame.contentDocument||frame.contentWindow.document;
+  doc.open(); doc.write(receiptPrintDoc(r,n)); doc.close();
+  setTimeout(()=>{ try{ frame.contentWindow.focus(); frame.contentWindow.print(); } finally { setTimeout(()=>frame.remove(),1800); } },350);
+}
+
+function showReceipt(r, opts={}){
   const ov=document.createElement('div'); ov.className='overlay show';
   ov.innerHTML=`<div class="modal" style="max-width:380px">
     ${receiptContent(r)}
@@ -1563,11 +1614,18 @@ function showReceipt(r){
     </div>
     </div>
     <div class="mfoot">
+      <div class="receipt-printbar"><span>Số bản</span><input id="receiptCopies" type="number" inputmode="numeric" min="1" max="9" value="${readReceiptCopies()}"><button class="btn" id="receiptPrintBtn">In</button></div>
       ${(!r.preview&&r.id)?`<button class="btn" id="invBtn">🧾 Xuất hóa đơn VAT</button>`:''}
       <button class="btn primary" onclick="this.closest('.overlay').remove()">Đóng</button>
     </div>
   </div>`;
   document.body.appendChild(ov);
+  const copiesEl=ov.querySelector('#receiptCopies');
+  const doPrint=()=>printReceiptNow(r,copiesEl?.value||readReceiptCopies());
+  copiesEl.oninput=()=>saveReceiptCopies(copiesEl.value);
+  copiesEl.onchange=()=>saveReceiptCopies(copiesEl.value);
+  ov.querySelector('#receiptPrintBtn').onclick=doPrint;
+  if(opts.autoPrint) setTimeout(doPrint,220);
   const ib=ov.querySelector('#invBtn'); if(ib) ib.onclick=()=>{ ov.remove(); openInvoiceForm(r.id); };
 }
 

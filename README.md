@@ -99,7 +99,7 @@ See [docs/MODULE_MAP.md](docs/MODULE_MAP.md).
 - Retail: barcode/SKU checkout and refund
 - Warehouse: receive, issue, transfer, stocktake, lots/expiry
 - Admin: dashboard, menu, users, permissions, reports, settings, integrations
-- Printers: print queue and reprint monitor
+- Printers: connected device status, print history, reprint review, LAN/OS printer dispatch, and cash drawer control
 
 See [docs/DEVICE_WORKFLOWS.md](docs/DEVICE_WORKFLOWS.md) and [docs/WORKFLOWS.md](docs/WORKFLOWS.md).
 
@@ -137,8 +137,19 @@ Open:
 - `http://localhost:3000/admin`
 - `http://localhost:3000/retail`
 - `http://localhost:3000/warehouse`
+- `http://localhost:3000/printers`
 
-Demo PINs remain documented for local/demo use: owner `1234`, manager `2222`, cashier `1111`, kitchen `3333`, warehouse `4444`.
+Demo PINs remain documented for local/demo use: admin `1234`, manager `2222`, cashier `1111`, kitchen `3333`, warehouse `4444`.
+
+## Store Hardware Runtime
+
+Real receipt printers, kitchen/bar printers, cash drawers, POS stations, KDS screens, and warehouse devices must talk to a store-local backend running on the same LAN when hardware commands are needed.
+
+- LAN/IP printers use the printer's local IP and ESC/POS port, usually `9100`.
+- OS printers use the printer driver installed on the device running the backend.
+- Browser printers open the system print dialog from the web page for review/reprint.
+- Cash drawers usually connect to the bill printer and open through an ESC/POS drawer pulse.
+- Cloud hosting such as Render cannot directly reach private LAN addresses like `192.168.x.x`; for production stores, keep a local store server/agent online and let cloud sync handle cross-store data.
 
 ## Deployment Workflows
 

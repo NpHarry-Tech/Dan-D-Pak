@@ -42,16 +42,15 @@
 <body>
 <div id="top"></div>
 <div class="view">
-  <div class="viewhead">
-    <h1>👨‍🍳 Kitchen Display System</h1>
-    <div class="right" id="stations"></div>
-  </div>
   <div class="kdsgrid" id="grid"></div>
 </div>
 
 <script type="module">
 import { api, connect, toast, esc, startClock, topbar, requireModuleAccess, renderUserChip } from '/shared/client.js';
-document.getElementById('top').innerHTML = topbar('kds');
+document.getElementById('top').innerHTML = topbar('kds', {
+  title: '👨‍🍳 Kitchen Display System',
+  actions: `<div id="stations" style="display:inline-flex;gap:8px;flex-wrap:wrap;align-items:center"></div>`,
+});
 await requireModuleAccess('kds'); renderUserChip();
 
 const STATIONS=[['all','🍽️ Tất cả'],['kitchen','🔥 Bếp'],['bar','🍹 Bar'],['salad','🥗 Salad/Lạnh'],['beverage','🥤 Beverage']];

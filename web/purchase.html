@@ -60,11 +60,6 @@
 <body>
 <div id="top"></div>
 <div class="view">
-  <div class="viewhead">
-    <h1>📥 Mua hàng</h1>
-    <div class="sub">Đơn mua hàng → nhận vào kho (dùng luồng nhập kho sẵn có) → theo dõi công nợ nhà cung cấp</div>
-    <div class="right"><button class="btn" id="reportBtn">📊 Báo cáo</button><button class="btn primary" id="addBtn">+ Tạo đơn mua</button></div>
-  </div>
   <div id="debt"></div>
   <div class="ptoolbar">
     <div class="seg" id="seg">
@@ -150,7 +145,11 @@
 
 <script type="module">
 import { api, connect, money, toast, esc, startClock, topbar, requireModuleAccess, renderUserChip, apiUrl, getToken, getBranchId } from '/shared/client.js';
-document.getElementById('top').innerHTML = topbar('purchase');
+document.getElementById('top').innerHTML = topbar('purchase', {
+  title: '📥 Mua hàng',
+  sub: 'Đơn mua hàng → nhận vào kho (dùng luồng nhập kho sẵn có) → theo dõi công nợ nhà cung cấp',
+  actions: `<button class="btn" id="reportBtn">📊 Báo cáo</button><button class="btn primary" id="addBtn">+ Tạo đơn mua</button>`,
+});
 await requireModuleAccess('purchase'); renderUserChip();
 
 const $ = id => document.getElementById(id);

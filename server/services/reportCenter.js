@@ -353,7 +353,7 @@ function buildReceivables(branch_id, query) {
   ], rows.map(r => ({
     ...r,
     bill: r.bill_no || String(r.id).slice(-6).toUpperCase(),
-    customer_name: r.customer.name || r.customer.company || 'Khách lẻ',
+    customer_name: r.customer.name || r.customer.company || 'Khách không xuất hóa đơn',
     channel_label: channelLabel(r.channel),
     total_fmt: money(r.total),
   }))));

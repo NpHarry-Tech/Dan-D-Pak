@@ -124,3 +124,54 @@ This restructuring pass adds docs, config/adapters, frontend API/realtime seams,
 - Files changed: `web/shared/app.css`, `web/shared/client.js`, `web/sim.html`, `docs/CHANGELOG_WORKFLOW.md`.
 - Protected domains touched: frontend interaction hardening only; real data protection remains enforced by authenticated, permission-gated APIs.
 - Manual tests: run client syntax checks, parse key HTML module scripts, and verify `/`, `/admin`, `/ipad`, `/sim`, `/retail`, `/pos`, `/warehouse`, and `/settings` return 200 locally.
+
+## 2026-06-19 Printer Hardware Runtime
+
+- Summary: Rebuilt Printer Monitor around connected printer status, branch-scoped print history, detail-first reprint review, LAN/IP ESC/POS dispatch, OS printer dispatch, test print, and cash drawer open control.
+- Files changed: `server/db.js`, `server/api.js`, `server/services/printing.js`, `server/services/settings.js`, `web/admin.html`, `web/printers.html`, `README.md`, `docs/API_CONTRACT.md`, `docs/DEVICE_WORKFLOWS.md`, `docs/CHANGELOG_WORKFLOW.md`.
+- Protected domains touched: print jobs, receipt/order/payment payloads in print history, branch-scoped printer configuration, cash drawer hardware control.
+- Database impact: adds print job audit columns for attempts, last attempt, error, transport, target, reprint source, and printed-by metadata.
+- API contract impact: adds guarded print device/test/detail/text/dispatch/cash-drawer endpoints and scopes print job reads/mutations to the active branch.
+- Realtime event impact: Printer Monitor listens to `print:new`, `print:done`, and `print:failed`.
+- Deployment impact: backend restart required for SQLite migration and new printer routes. Real LAN printers/cash drawers require a store-local server or agent on the same network; cloud-only Render cannot directly reach private printer IP addresses.
+- Manual tests: run backend syntax/import checks, parse Printer Monitor inline module, verify `/printers` route, verify guarded print routes return JSON, and manually test LAN/IP printer plus cash drawer on store network.
+- Rollback plan: revert `server/services/printing.js`, print API route changes, print job column migration additions, and `web/printers.html`; existing queued print jobs remain in SQLite.
+- Warnings: browser DevTools can still inspect frontend assets by nature of the web; sensitive print data protection must rely on authenticated, permission-gated, branch-scoped APIs.
+
+## 2026-06-19 POS/Retail Receipt Print Dialog
+
+- Summary: Retail checkout and FnB POS payment/temporary bill now open the browser/system print dialog instead of only showing a receipt preview, with a remembered per-device receipt copy count.
+- Files changed: `web/retail.html`, `web/pos.html`, `docs/CHANGELOG_WORKFLOW.md`.
+- Protected domains touched: UI printing behavior only; orders, payments, inventory, and print job records are unchanged.
+- Deployment impact: frontend refresh required. Browser print uses the device's installed printer selection; LAN/IP backend printer dispatch remains configured through Settings and Printer Monitor.
+- Manual tests: parse Retail/POS inline modules, verify `/retail` and `/pos` return 200 locally, and manually complete a checkout/payment to confirm the system print dialog opens.
+
+## 2026-06-19 Receipt Customer Wording
+
+- Summary: Changed the no-customer/no-tax-invoice fallback wording to `Khách không xuất hóa đơn` across receipt rendering, bill template preview, order history reprint, customer picker, and report fallback display.
+- Files changed: `web/admin.html`, `web/retail.html`, `web/pos.html`, `web/shared/orderHistory.js`, `web/shared/customer.js`, `web/shared/i18n.js`, `server/services/reportCenter.js`, `docs/CHANGELOG_WORKFLOW.md`.
+- Protected domains touched: display text only; historical orders, payments, customers, invoices, and archived payment files are unchanged.
+- Manual tests: parse Admin/Retail/POS inline modules and search active code paths for remaining old no-customer wording.
+
+## 2026-06-19 POS/Retail Customer Box Sync
+
+- Summary: Synced the customer selection display between Retail POS and FnB POS by using matching customer fallback text, action labels, payment-modal customer rows, and receipt/template customer variables.
+- Files changed: `web/retail.html`, `web/pos.html`, `docs/CHANGELOG_WORKFLOW.md`.
+- Protected domains touched: UI and receipt-rendering text only; customer, order, payment, and invoice records are unchanged.
+- Manual tests: parse Retail/POS inline modules and verify `/retail` plus `/pos` return 200 locally.
+
+## 2026-06-19 POS/Retail Company Invoice Request
+
+- Summary: Added a synced `Xuất hóa đơn công ty` block to Retail POS and FnB POS payment modals with MST lookup, invoice name/company/address/email/phone/note fields, and renamed the visible retail module label to `Retail POS`.
+- Files changed: `server/api.js`, `server/services/payments.js`, `server/services/retail.js`, `server/services/modules.js`, `web/shared/invoiceRequest.js`, `web/shared/app.css`, `web/shared/modules.js`, `web/index.html`, `web/admin.html`, `web/retail.html`, `web/pos.html`, `docs/API_CONTRACT.md`, `docs/CHANGELOG_WORKFLOW.md`.
+- Protected domains touched: order payment payloads, order customer snapshot metadata, invoice request status, audit log, and receipt/template customer display.
+- API contract impact: `POST /api/orders/:id/pay` and `POST /api/retail/checkout` accept optional `invoice_customer`; valid requests set `orders.invoice_choice` to `requested` and store company invoice data in `orders.customer_json`.
+- Deployment impact: backend restart required for the new payment payload handling; frontend refresh required for the shared invoice UI.
+- Manual tests: run backend syntax checks, parse Retail/POS inline modules plus the new shared invoice module, verify `/retail` and `/pos` return 200 locally.
+
+## 2026-06-20 iPad Kiosk Table Unlock Topbar
+
+- Summary: Restored the customer iPad topbar to use `/assets/logo.png` as the hidden staff unlock target, moved the 3-tap PIN flow from the table label to the logo, gated table selection behind the staff PIN when the iPad has no assigned table, and made the staff table-pick screen use the standard app topbar so staff can return to the launcher/tools.
+- Files changed: `web/ipad.html`, `web/index.html`, `web/shared/modules.js`, `server/services/modules.js`, `docs/CHANGELOG_WORKFLOW.md`.
+- Protected domains touched: iPad device table assignment UI only; order, payment, menu, and stored table records are unchanged.
+- Manual tests: parse iPad inline module, verify `/ipad` returns 200 locally, verify launcher iPad links use `/ipad?pick=1`, and confirm the table label is display-only while the logo opens PIN after 3 taps; on the unlocked table-pick screen the standard topbar logo exits to the launcher.
