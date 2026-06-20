@@ -301,11 +301,32 @@ body.settings-shell > .view { display: none; }
 .integration-ic{width:38px;height:38px;border-radius:10px;background:#fff;border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:19px;flex:0 0 auto;overflow:hidden;padding:4px}
 .integration-ic img{width:100%;height:100%;object-fit:contain;display:block}
 .integration-head b{font-size:14px}.integration-head .mini{margin-top:2px}
+.qr-provider-pick{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:8px;margin:4px 0}
+.qrp{display:flex;flex-direction:column;gap:3px;align-items:flex-start;text-align:left;padding:10px 12px;border:1px solid var(--border2);border-radius:10px;background:var(--surface);cursor:pointer;transition:.12s}
+.qrp:hover{border-color:var(--brand)}
+.qrp b{font-size:13px;color:var(--text)}
+.qrp small{font-size:10.5px;color:var(--muted);line-height:1.35}
+.qrp.on{border-color:var(--brand);background:var(--brand-dim);box-shadow:0 0 0 1px var(--brand) inset}
 .payos-endpoints{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:9px 11px;margin-top:2px}
 .payos-endpoints code{font-family:var(--mono);font-size:11px;color:var(--brand);word-break:break-all}
 .integration-actions{display:flex;gap:7px;flex-wrap:wrap;margin-top:auto}
 .webhook-box{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center;background:var(--surface);border:1px dashed var(--border2);border-radius:9px;padding:8px 10px}
 .webhook-box code{font-family:var(--mono);font-size:11px;color:var(--muted);word-break:break-all}
+.integration-list .integration-tab{min-height:62px;box-sizing:border-box;grid-template-columns:40px minmax(0,1fr);padding:9px 10px}
+.integration-tab>.integration-ic{width:40px;height:40px;border-radius:9px;padding:5px}
+.integration-tab>span:last-child{min-width:0;display:flex;flex-direction:column;justify-content:center}
+.integration-tab b{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;line-height:1.18;min-height:14px}
+.integration-tab small{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.integration-card .setting-form{align-items:end}
+.integration-card .setting-form>div{min-width:0;display:flex;flex-direction:column;justify-content:flex-end}
+.integration-card .setting-form label:not(.permitem){display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;min-height:30px;line-height:1.15;overflow:hidden;margin-bottom:5px}
+.integration-card input,.integration-card select{height:40px;box-sizing:border-box}
+.integration-card textarea{box-sizing:border-box}
+.integration-card .permitem{min-width:0}
+.integration-head{min-height:42px;align-items:center}
+.integration-head>div:nth-child(2){min-width:0}
+.integration-head b{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.integration-head .mini{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;line-height:1.35;min-height:30px}
 .permgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:8px}.permitem{display:flex;align-items:flex-start;gap:8px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:8px;font-size:12px;color:var(--text)}
 .bookmenu-grid{display:grid;grid-template-columns:300px minmax(360px,1fr) 330px;gap:12px;align-items:start}
 .bookmenu-preview{position:relative;width:100%;max-width:420px;margin:0 auto;background:#fff;border:1px solid var(--border);border-radius:10px;overflow:hidden;box-shadow:0 12px 30px rgba(18,31,45,.12);cursor:crosshair}
@@ -3150,9 +3171,9 @@ async function openSettings(initialTab){
     const kinds=[['cash','Tiền mặt'],['qr','QR / chuyển khoản'],['pos','Máy POS / thẻ'],['wallet','Ví điện tử'],['voucher','Voucher'],['other','Khác']];
     const qrProvider=(p.qrProvider||'vietqr_public').toLowerCase();
     const qrProviders=[
-      ['vietqr_public','VietQR public - dùng thông tin ngân hàng'],
-      ['vietqr_api','VietQR API - sinh QR động theo bill'],
-      ['payos','payOS - cổng QR/thẻ (tự xác nhận qua webhook)'],
+      ['vietqr_public','VietQR (miễn phí)','QR tĩnh từ số tài khoản — không phí, không cần tài khoản VietQR.'],
+      ['vietqr_api','VietQR API','QR động do VietQR ký — cần username/password ở tab Liên kết.'],
+      ['payos','payOS','Cổng QR/thẻ payOS — cần Client ID / API Key / Checksum ở tab Liên kết.'],
     ];
     return `<div class="panel" style="margin:0">
       <h3>Thanh toán, QR và ca làm việc</h3>
@@ -3161,7 +3182,11 @@ async function openSettings(initialTab){
         <div><label>Mã ngân hàng VietQR</label><input id="opBankCode" value="${esc(p.bankCode||'')}" placeholder="VCB, ACB, TCB..."></div>
         <div><label>Số tài khoản</label><input id="opBankAccount" value="${esc(p.bankAccount||'')}"></div>
         <div><label>Tên chủ tài khoản</label><input id="opAccountName" value="${esc(p.accountName||'')}"></div>
-        <div><label>Nguồn tạo QR tự động</label><select id="opQrProvider">${qrProviders.map(([v,n])=>`<option value="${v}" ${qrProvider===v||(qrProvider==='vietqr'&&v==='vietqr_public')?'selected':''}>${n}</option>`).join('')}</select><div class="mini">iPad Self-Order sẽ dùng nguồn này để tạo QR riêng cho từng bill.</div></div>
+        <div style="grid-column:1/-1"><label>Nguồn tạo QR tự động (áp dụng cho iPad · POS · Retail)</label>
+          <input type="hidden" id="opQrProvider" value="${esc(qrProvider==='vietqr'?'vietqr_public':qrProvider)}">
+          <div class="qr-provider-pick" id="qrProviderPick">${qrProviders.map(([v,n,d])=>`<button type="button" class="qrp ${qrProvider===v||(qrProvider==='vietqr'&&v==='vietqr_public')?'on':''}" data-qrp="${v}"><b>${esc(n)}</b><small>${esc(d)}</small></button>`).join('')}</div>
+          <div class="mini">Đổi ở đây thì QR ở mọi màn (iPad / POS / Retail) tự đổi theo — không cần sửa gì thêm.</div>
+        </div>
         <div><label>Tiền tố nội dung chuyển khoản</label><input id="opTransferPrefix" value="${esc(p.transferPrefix||'DANBILL')}"></div>
         <div><label>Tên máy POS</label><input id="opPosTerminal" value="${esc(p.posTerminalName||'POS May 1')}"></div>
       </div>
@@ -4974,6 +4999,12 @@ async function openSettings(initialTab){
     };
   }
   function bindOperations(){
+    const qpick=ov.querySelector('#qrProviderPick');
+    if(qpick) qpick.querySelectorAll('[data-qrp]').forEach(b=>b.onclick=()=>{
+      qpick.querySelectorAll('.qrp').forEach(x=>x.classList.remove('on'));
+      b.classList.add('on');
+      const hid=ov.querySelector('#opQrProvider'); if(hid) hid.value=b.dataset.qrp;
+    });
     const add=ov.querySelector('#opAddShift');
     if(add) add.onclick=()=>{
       operationsCfg=mergeOperationsCfg(operationsCfg);

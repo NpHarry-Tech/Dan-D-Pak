@@ -428,6 +428,8 @@ api.get('/payments', guard('reports'), wrap(() => notImplemented('Payment list e
 api.post('/orders/:id/request-payment', wrap((req) => { Pay.requestPayment(req.body.table_id, visibleBranch(req)); return { ok: true }; }));
 api.post('/tables/:id/request-payment', wrap((req) => { Pay.requestPayment(req.params.id, visibleBranch(req)); return { ok: true }; }));
 api.post('/orders/:id/payment-qr', wrap((req) => Pay.generateCustomerPaymentQr(req.params.id, req.body || {}, visibleBranch(req))));
+// QR độc lập (Retail: chưa có order khi hiển thị QR) — vẫn theo qrProvider trong Settings.
+api.post('/payment-qr', wrap((req) => Pay.buildStandalonePaymentQr(req.body || {}, visibleBranch(req))));
 api.post('/orders/:id/customer-qr-pay', wrap((req) => Pay.customerQrPay(req.params.id, req.body || {}, visibleBranch(req))));
 // Khách tự phục vụ (iPad) chọn xuất / không xuất hóa đơn VAT sau khi thanh toán — route mở, không cần đăng nhập.
 api.post('/orders/:id/customer-invoice', wrap((req) => Invoices.customerRequest(req.params.id, req.body || {}, visibleBranch(req))));

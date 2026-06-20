@@ -224,18 +224,25 @@
 }
 .pay-qr {
   display: grid;
-  grid-template-columns: 112px 1fr;
-  gap: 11px;
-  align-items: center;
+  grid-template-columns: 220px 1fr;
+  gap: 18px;
+  align-items: start;
 }
 .pay-qr img {
-  width: 112px;
-  height: 112px;
+  width: 220px;
+  height: 220px;
   object-fit: contain;
   background: #fff;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 10px;
+  padding: 6px;
 }
+.pay-qr-info { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.pay-qr-prov { font-weight: 800; font-size: 13px; color: var(--brand); display: flex; align-items: center; gap: 6px; }
+.pay-bankrow { display: flex; justify-content: space-between; gap: 12px; font-size: 12.5px; border-bottom: 1px dashed var(--border); padding-bottom: 5px; }
+.pay-bankrow span { color: var(--muted); white-space: nowrap; }
+.pay-bankrow b { text-align: right; word-break: break-all; }
+.pay-bankrow b.amt { color: var(--brand); font-size: 15px; }
 .pay-ref {
   font-family: var(--mono);
   font-size: 11px;
@@ -1180,13 +1187,13 @@ async function openPay(){
           <label>Số tiền</label>
           <input type="number" id="payAmt" value="${remain}" placeholder="0">
           <input type="text" id="ref" placeholder="Mã tham chiếu / approval code">
-          <div id="payHelper"></div>
           <div class="pay-actions">
             <button class="btn sm" id="addPay">+ Thêm dòng</button>
             <button class="btn primary sm" id="fillPay">Đủ tiền</button>
           </div>
         </div>
       </div>
+      <div id="payHelper"></div>
 
       <label style="margin-top: 12px; display: block;">Các dòng thanh toán</label>
       <div id="lines" class="pay-lines" style="margin-top: 6px;">
@@ -1209,20 +1216,45 @@ async function openPay(){
 
   function bindModal(totals, remain, change) {
     const remainEl=ov.querySelector('.remain'), amtEl=ov.querySelector('#payAmt'), refEl=ov.querySelector('#ref'), helper=ov.querySelector('#payHelper');
+    let qrSeq=0;
     
     const setDefaultRef=()=>{
       const ref=makePaymentRef(curMethod, activeTab);
       if(ref && !refEl.value.trim()) refEl.value=ref;
     };
 
+    function renderQrCard(data, amt, ref){
+      const p=operationsCfg?.payment||{};
+      const img=data?.imageUrl||'';
+      const prov=data?.providerLabel||'VietQR';
+      const warn=data?.warning?`<div class="mini" style="color:var(--late)">⚠ ${esc(data.warning)}</div>`:'';
+      const link=data?.qrLink?`<a class="mini" href="${esc(data.qrLink)}" target="_blank" rel="noopener" style="color:var(--brand)">Mở link thanh toán ↗</a>`:'';
+      helper.innerHTML=`<div class="pay-helper"><div class="pay-qr">
+        ${img?`<img src="${esc(img)}" alt="QR">`:'<div class="empty">Chưa cấu hình ngân hàng/QR trong Setting</div>'}
+        <div class="pay-qr-info">
+          <div class="pay-qr-prov">📱 ${esc(prov)}</div>
+          <div class="pay-bankrow"><span>Ngân hàng</span><b>${esc(data?.bankName||p.bankName||p.bankCode||'—')}</b></div>
+          <div class="pay-bankrow"><span>Số tài khoản</span><b>${esc(data?.bankAccount||p.bankAccount||'—')}</b></div>
+          <div class="pay-bankrow"><span>Chủ tài khoản</span><b>${esc(data?.userBankName||p.accountName||'—')}</b></div>
+          <div class="pay-bankrow"><span>Số tiền</span><b class="amt">${money(amt)}</b></div>
+          <div class="pay-bankrow"><span>Nội dung CK</span><b>${esc(data?.reference||ref)}</b></div>
+          <div class="mini">Khách quét QR (hoặc chuyển khoản đúng nội dung) — hệ thống tự đối soát.</div>
+          ${link}${warn}
+        </div>
+      </div></div>`;
+    }
     function drawHelper(){
       const m=payMethod(curMethod);
       const amt=parseInt(amtEl.value)||remain||totals.total;
       const ref=refEl.value.trim()||makePaymentRef(curMethod, activeTab);
       const isQr=['qr','wallet'].includes(m.kind)||['internet_banking','qrcode','qr','momo','zalopay'].includes(m.key);
       if(isQr){
-        const img=dynamicQrUrl(amt,ref);
-        helper.innerHTML=`<div class="pay-helper"><div class="pay-qr">${img?`<img src="${esc(img)}" alt="QR">`:'<div class="empty">Chưa cấu hình ngân hàng/QR trong Setting</div>'}<div><b>${esc(m.label)}</b><div class="mini">QR tự tạo đúng số tiền ${money(amt)}. Khách chuyển khoản xong nhân viên đối soát mã tham chiếu.</div><div class="pay-ref">${esc(ref)}</div></div></div></div>`;
+        const seq=++qrSeq;
+        // Hiện QR fallback ngay (không trống), rồi nâng cấp bằng QR theo provider từ server.
+        renderQrCard({imageUrl:dynamicQrUrl(amt,ref), reference:ref, providerLabel:'Đang tạo QR…'}, amt, ref);
+        api('/payment-qr',{method:'POST',body:{amount:amt,reference:ref,method:m.key}})
+          .then(data=>{ if(seq===qrSeq) renderQrCard(data, amt, ref); })
+          .catch(()=>{});
       }else if(['pos','card'].includes(m.kind)||['card','visa','pos_card'].includes(m.key)){
         helper.innerHTML=`<div class="pay-helper"><b>${esc(operationsCfg?.payment?.posTerminalName||'Máy POS')}</b><div class="mini">Nhập approval code nếu máy POS trả về mã. Mã gợi ý: <span class="pay-ref">${esc(ref)}</span></div></div>`;
       }else helper.innerHTML='';

@@ -262,14 +262,30 @@ export function requestPayment(table_id, branch_id = 'br1') {
 }
 
 export async function generateCustomerPaymentQr(order_id, { method = 'qrcode' } = {}, branch_id = 'br1') {
-  const chosen = CUSTOMER_QR_METHODS.includes(method) ? method : 'qrcode';
   const order = getOrder(order_id);
   if (!order) throw new Error('Order khong ton tai');
   if (order.branch_id && branch_id && order.branch_id !== branch_id) throw new Error('Order khong thuoc chi nhanh hien tai');
   if (order.status !== 'open') throw new Error('Order da dong');
   const pending = order.items.filter(i => i.status === 'pending_confirm');
   if (pending.length) throw new Error(`Con ${pending.length} dong mon dang cho nhan vien xac nhan`);
+  const opsW = getOperationsConfig(branch_id);
+  const amountW = Math.max(0, parseInt(order.total) || 0);
+  if (!amountW) throw new Error('Bill hien tai khong co so tien can thanh toan.');
+  return buildPaymentQr({ amount: amountW, reference: paymentReferenceForOrder(order, opsW), orderId: vietQrOrderId(order), method, orderRefId: order.id, branch_id });
+}
 
+// Retail/standalone: chưa tạo order khi hiển thị QR → client gửi amount + reference.
+export async function buildStandalonePaymentQr({ amount, reference, method = 'qrcode' } = {}, branch_id = 'br1') {
+  const amt = Math.max(0, parseInt(amount) || 0);
+  if (!amt) throw new Error('Thieu so tien tao QR');
+  const ref = vietQrSafe(reference || '', 23) || `DANBILL${vietQrSafe(String(Date.now()), 13)}`;
+  return buildPaymentQr({ amount: amt, reference: ref, orderId: ref, method, orderRefId: null, branch_id });
+}
+
+// Lõi dùng chung cho iPad/POS/Retail: chọn nguồn QR theo Settings → Thanh toán (qrProvider:
+// vietqr_public | vietqr_api | payos) và trả về QR + thông tin nhận tiền thật.
+async function buildPaymentQr({ amount, reference, orderId, method = 'qrcode', orderRefId = null, branch_id = 'br1' }) {
+  const chosen = CUSTOMER_QR_METHODS.includes(method) ? method : 'qrcode';
   const ops = getOperationsConfig(branch_id);
   const methodCfg = (ops.payment?.methods || []).find(m => m.key === chosen);
   if (methodCfg && methodCfg.enabled === false) throw new Error('Phuong thuc thanh toan nay dang tat trong Cai dat');
@@ -277,23 +293,13 @@ export async function generateCustomerPaymentQr(order_id, { method = 'qrcode' } 
   const integrations = getIntegrations(branch_id);
   const vietqr = integrations.channels?.vietqr || {};
   const provider = String(ops.payment?.qrProvider || 'vietqr_public').toLowerCase();
-  const amount = Math.max(0, parseInt(order.total) || 0);
-  if (!amount) throw new Error('Bill hien tai khong co so tien can thanh toan.');
 
   const bankCode = cleanText(vietqr.bankCode || ops.payment?.bankCode, 40).toUpperCase();
   const bankAccount = cleanText(vietqr.bankAccount || ops.payment?.bankAccount, 80);
   const userBankName = stripVietnamese(cleanText(vietqr.userBankName || ops.payment?.accountName, 160)).toUpperCase();
   if (!bankCode || !bankAccount || !userBankName) throw new Error('Chua cau hinh day du ngan hang nhan QR trong Settings.');
 
-  const reference = paymentReferenceForOrder(order, ops);
-  const orderId = vietQrOrderId(order);
-  const fallbackImageUrl = publicVietQrImage({
-    bankCode,
-    bankAccount,
-    accountName: userBankName,
-    amount,
-    reference,
-  });
+  const fallbackImageUrl = publicVietQrImage({ bankCode, bankAccount, accountName: userBankName, amount, reference });
   const base = {
     ok: true,
     amount,
@@ -301,6 +307,8 @@ export async function generateCustomerPaymentQr(order_id, { method = 'qrcode' } 
     reference,
     orderId,
     bankCode,
+    bankName: cleanText(ops.payment?.bankName, 80) || bankCode,
+    bankAccount,
     bankAccountMasked: maskAccount(bankAccount),
     userBankName,
     imageUrl: fallbackImageUrl,
@@ -319,7 +327,7 @@ export async function generateCustomerPaymentQr(order_id, { method = 'qrcode' } 
       };
     }
     try {
-      const orderCode = payosOrderCode(order);
+      const orderCode = payosOrderCode();
       const link = await createPayosPaymentLink(payos, {
         orderCode,
         amount,
@@ -328,7 +336,7 @@ export async function generateCustomerPaymentQr(order_id, { method = 'qrcode' } 
         cancelUrl: cleanText(payos.cancelUrl, 220),
       });
       // Map orderCode -> bill để webhook payOS đối chiếu nhanh (ngoài việc khớp theo nội dung).
-      recordBankTx({ provider: 'payos', externalId: `link:${orderCode}`, branch_id, amount, content: reference, reference, order_id: order.id, status: 'pending', raw: { orderCode } });
+      recordBankTx({ provider: 'payos', externalId: `link:${orderCode}`, branch_id, amount, content: reference, reference, order_id: orderRefId, status: 'pending', raw: { orderCode } });
       const imageUrl = normalizeQrImage(link?.qrCode) || fallbackImageUrl;
       return {
         ...base,
