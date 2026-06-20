@@ -633,6 +633,26 @@ export function migrate() {
     PRIMARY KEY (user_id, key)
   );
   CREATE INDEX IF NOT EXISTS idx_up_user ON user_preferences(user_id);
+
+  -- Auto-confirm thanh toán: mọi giao dịch tiền-về từ webhook ngân hàng/cổng
+  -- (SePay, Casso, payOS) được ghi lại đây để (1) chống xử lý trùng, (2) đối soát.
+  CREATE TABLE IF NOT EXISTS bank_transactions (
+    id             TEXT PRIMARY KEY,
+    provider       TEXT NOT NULL,            -- sepay | casso | payos
+    external_id    TEXT,                     -- mã giao dịch của nhà cung cấp (idempotency)
+    branch_id      TEXT,
+    amount         INTEGER NOT NULL DEFAULT 0,
+    content        TEXT,                     -- nội dung chuyển khoản / mô tả
+    account_number TEXT,
+    reference      TEXT,                     -- mã đối soát đã khớp (DANBILL...)
+    order_id       TEXT,                     -- bill đã khớp (null nếu chưa khớp)
+    status         TEXT NOT NULL DEFAULT 'received', -- received|paid|unmatched|underpaid|error|duplicate
+    raw_json       TEXT,
+    created_at     TEXT NOT NULL
+  );
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_bank_tx_provider_ext ON bank_transactions(provider, external_id);
+  CREATE INDEX IF NOT EXISTS idx_bank_tx_order ON bank_transactions(order_id);
+  CREATE INDEX IF NOT EXISTS idx_bank_tx_time ON bank_transactions(branch_id, created_at);
   `);
 
   ensurePermanentStorage();

@@ -179,7 +179,11 @@ api.post('/settings/integrations/:channel/test', guardAny('settings.integrations
         : 'Thiếu Client ID / API Key / Checksum Key (lấy ở payOS Dashboard → Cài đặt → Thông tin xác thực).',
     };
   }
+  if (channel === 'sepay' || channel === 'casso') {
+    return { channel, ...Pay.testBankWebhook(channel, cfg, `${base}/api/${channel}/webhook`) };
+  }
   // Delivery / website channels: orders arrive at our webhook → Kênh online module.
+  if (channel === 'vietqr') return { channel, ...(await Pay.testVietQrConnection(cfg)) };
   const webhookUrl = `${base}/api/online/webhook`;
   if (!cfg.enabled) return { channel, ok: false, mode: 'disabled', message: 'Kênh đang tắt. Bật để xuất hiện trong module Kênh online.', webhookUrl };
   const haveCreds = !!(cfg.clientId && cfg.clientSecret) || !!cfg.apiKey;
@@ -423,6 +427,7 @@ api.post('/payments', guard('pay'), wrap(() => notImplemented('Generic payment c
 api.get('/payments', guard('reports'), wrap(() => notImplemented('Payment list endpoint is planned. Current reports are available through dashboard/report center endpoints.')));
 api.post('/orders/:id/request-payment', wrap((req) => { Pay.requestPayment(req.body.table_id, visibleBranch(req)); return { ok: true }; }));
 api.post('/tables/:id/request-payment', wrap((req) => { Pay.requestPayment(req.params.id, visibleBranch(req)); return { ok: true }; }));
+api.post('/orders/:id/payment-qr', wrap((req) => Pay.generateCustomerPaymentQr(req.params.id, req.body || {}, visibleBranch(req))));
 api.post('/orders/:id/customer-qr-pay', wrap((req) => Pay.customerQrPay(req.params.id, req.body || {}, visibleBranch(req))));
 // Khách tự phục vụ (iPad) chọn xuất / không xuất hóa đơn VAT sau khi thanh toán — route mở, không cần đăng nhập.
 api.post('/orders/:id/customer-invoice', wrap((req) => Invoices.customerRequest(req.params.id, req.body || {}, visibleBranch(req))));
@@ -434,6 +439,12 @@ api.post('/orders/:id/pay', guard('pay'), wrap((req) => {
   if (req.body.customer?.id) Customers.recordPurchase(req.body.customer.id, receipt.total, branch_id, req.params.id);
   return receipt;
 }));
+// --- Auto-confirm thanh toán: webhook công khai (xác thực bằng key/chữ ký của nhà cung cấp) ---
+// Cấu hình kênh đọc ở chi nhánh chính (br1); khớp bill quét xuyên chi nhánh theo nội dung CK.
+api.post('/sepay/webhook', wrap((req) => Pay.handleSepayWebhook(req.body || {}, req.headers, 'br1')));
+api.post('/casso/webhook', wrap((req) => Pay.handleCassoWebhook(req.body || {}, req.headers, 'br1')));
+api.post('/payos/webhook', wrap((req) => Pay.handlePayosWebhook(req.body || {}, req.headers, 'br1')));
+api.get('/payments/bank-transactions', guardAny('reports', 'pay', 'settings.integrations'), wrap((req) => Pay.listBankTransactions(branch(req), req.query)));
 api.get('/shifts/current', guard('pay'), wrap((req) => Shifts.currentShift(branch(req))));
 api.post('/shifts/open', guard('pay'), wrap((req) => Shifts.openShift(req.body, req.user, branch(req))));
 api.post('/shifts/close', guard('pay'), wrap((req) => Shifts.closeShift(req.body, req.user, branch(req))));

@@ -2249,7 +2249,7 @@ async function openSettings(initialTab){
   }
   function defaultOperationsCfg(){
     return {
-      payment:{bankName:'Vietcombank',bankCode:'VCB',bankAccount:'0123456789',accountName:'DAN D PAK',transferPrefix:'DANBILL',posTerminalName:'POS May 1',methods:[
+      payment:{bankName:'Vietcombank',bankCode:'VCB',bankAccount:'0123456789',accountName:'DAN D PAK',qrProvider:'vietqr_public',transferPrefix:'DANBILL',posTerminalName:'POS May 1',methods:[
         {key:'cash',label:'Tiền mặt',enabled:true,kind:'cash'},
         {key:'internet_banking',label:'Internet Banking',enabled:true,kind:'qr'},
         {key:'qrcode',label:'QR Code',enabled:true,kind:'qr'},
@@ -2931,8 +2931,11 @@ async function openSettings(initialTab){
     </div>`;
   }
   const integrationDefs=[
-    {key:'misa',icon:'🧾',name:'MISA',desc:'Xuất hóa đơn điện tử, đồng bộ khách hàng và trạng thái hóa đơn.',type:'misa'},
+    {key:'misa',icon:'🧾',logo:'/assets/MISA.jpg',name:'MISA',desc:'Xuất hóa đơn điện tử, đồng bộ khách hàng và trạng thái hóa đơn.',type:'misa'},
     {key:'payos',icon:'💳',logo:'/assets/payoslogo.png',name:'payOS',desc:'Cổng thanh toán QR/thẻ payOS — tạo link thanh toán và nhận webhook xác nhận đã thanh toán.',type:'payos',channel:'payos'},
+    {key:'vietqr',icon:'🇻🇳',logo:'/assets/vietqr.png',name:'VietQR API',desc:'Sinh mã QR thanh toán động cho từng bill iPad/POS và sẵn sàng đối soát khi VietQR callback.',type:'vietqr',channel:'vietqr'},
+    {key:'sepay',icon:'🏦',name:'SePay — tự đối soát chuyển khoản',desc:'Đường B: đọc biến động số dư ngân hàng, khi khách chuyển khoản/quét VietQR đúng nội dung bill thì tự đóng bill. Rẻ nhất cho chuyển khoản.',type:'bank_webhook',channel:'sepay'},
+    {key:'casso',icon:'🏦',name:'Casso — tự đối soát chuyển khoản',desc:'Đường B (phương án thay thế SePay): đọc giao dịch ngân hàng và bắn webhook xác nhận tiền về theo nội dung bill.',type:'bank_webhook',channel:'casso'},
     {key:'grabmerchant',icon:'🟢',logo:'/assets/grabmerchantlogo.webp',name:'GrabMerchant / GrabFood',desc:'Nhận đơn, đồng bộ menu, trạng thái món và tồn khả dụng cho kênh Grab.',type:'delivery',channel:'grabmerchant'},
     {key:'shopeefood',icon:'🟠',logo:'/assets/shopeefoodlogo.png',name:'Shopee Food',desc:'Nhận đơn Shopee Food, quản lý xác nhận đơn và đồng bộ món bán online.',type:'delivery',channel:'shopeefood'},
     {key:'befood',icon:'🟡',logo:'/assets/befoodlogo.png',name:'Be / beFood',desc:'Chuẩn bị cấu hình merchant, store và webhook cho đơn từ Be.',type:'delivery',channel:'befood'},
@@ -2941,6 +2944,7 @@ async function openSettings(initialTab){
   ];
   const integrationIcon=def=>def.logo?`<img src="${def.logo}" alt="${esc(def.name)}" onerror="this.replaceWith(document.createTextNode('${def.icon||'🔌'}'))">`:def.icon;
   const payosWebhookUrl=()=>`${location.origin}/api/payos/webhook`;
+  const vietQrBaseUrl=c=>(c?.apiBase||'').trim() || (c?.environment==='production'?'https://api.vietqr.org/vqr/api':'https://dev.vietqr.org/vqr/api');
   const integBool=(c,k,def=false)=>c?.[k]===true||c?.[k]==='1'||(c?.[k]===undefined&&def);
   const integVal=(c,k)=>esc(c?.[k]??'');
   const webhookUrl=()=>`${location.origin}/api/online/webhook`;
@@ -2959,6 +2963,36 @@ async function openSettings(initialTab){
     const c=integrationsCfg?.channels?.[def.key]||{};
     const on=integBool(c,'enabled');
     const status=on?'<span class="chip c-done">Đang bật</span>':'<span class="chip c-muted">Đang tắt</span>';
+    if(def.type==='vietqr'){
+      const base=esc(vietQrBaseUrl(c));
+      return `<div class="integration-card ${on?'on':''}" data-integ-card="${def.key}">
+      <div class="integration-head"><div class="integration-ic">${integrationIcon(def)}</div><div style="min-width:0;flex:1"><b>${esc(def.name)}</b><div class="mini">${esc(def.desc)}</div></div>${status}</div>
+      <div class="setting-form">
+        <label class="permitem"><input type="checkbox" data-integ="${def.key}" data-field="enabled" ${on?'checked':''}><span>Bật VietQR API để sinh QR động theo từng bill</span></label>
+        <div><label>Môi trường</label><select data-integ="${def.key}" data-field="environment"><option value="sandbox" ${c.environment!=='production'?'selected':''}>Sandbox / thử nghiệm</option><option value="production" ${c.environment==='production'?'selected':''}>Production / chạy thật</option></select></div>
+        <div><label>Username VietQR</label><input data-integ="${def.key}" data-field="username" value="${integVal(c,'username')}" placeholder="Tài khoản VietQR cấp"></div>
+        <div><label>Password / Basic Auth</label><input type="password" data-integ="${def.key}" data-field="password" value="${integVal(c,'password')}"></div>
+        <div><label>Mã ngân hàng</label><input data-integ="${def.key}" data-field="bankCode" value="${integVal(c,'bankCode')}" placeholder="MB, VCB, ACB..."></div>
+        <div><label>Số tài khoản nhận tiền</label><input data-integ="${def.key}" data-field="bankAccount" value="${integVal(c,'bankAccount')}"></div>
+        <div><label>Tên chủ tài khoản không dấu</label><input data-integ="${def.key}" data-field="userBankName" value="${integVal(c,'userBankName')}" placeholder="DAN D PAK"></div>
+        <div><label>Terminal code</label><input data-integ="${def.key}" data-field="terminalCode" value="${integVal(c,'terminalCode')}" placeholder="Không bắt buộc"></div>
+        <div><label>Sub terminal code</label><input data-integ="${def.key}" data-field="subTerminalCode" value="${integVal(c,'subTerminalCode')}" placeholder="Không bắt buộc"></div>
+        <div><label>Service code</label><input data-integ="${def.key}" data-field="serviceCode" value="${integVal(c,'serviceCode')}" placeholder="Không bắt buộc"></div>
+        <div style="grid-column:1/-1"><label>API base URL</label><input data-integ="${def.key}" data-field="apiBase" value="${base}"></div>
+      </div>
+      <div class="payos-endpoints">
+        <div class="mini" style="font-weight:700;margin-bottom:5px">📌 Luồng VietQR API đang dùng</div>
+        <ul class="mini" style="margin:0;padding-left:17px;line-height:1.75">
+          <li>Lấy token: <b>POST</b> <code>${base}/token_generate</code></li>
+          <li>Tạo QR động: <b>POST</b> <code>${base}/qr/generate-customer</code></li>
+          <li>iPad sẽ gửi order hiện tại lên backend, backend tạo <code>content/orderId</code> riêng cho bill rồi trả QR về màn khách.</li>
+          <li>Nếu credential chưa đủ hoặc API lỗi, hệ thống vẫn dùng QR public từ thông tin ngân hàng để không đứng bill.</li>
+        </ul>
+      </div>
+      <label>Ghi chú nội bộ</label><textarea rows="2" data-integ="${def.key}" data-field="note">${integVal(c,'note')}</textarea>
+      <div class="integration-actions"><button class="btn sm" data-test-integ="${def.key}">Kiểm tra cấu hình</button></div>
+    </div>`;
+    }
     if(def.type==='payos'){
       const base=integVal(c,'apiBase')||'https://api-merchant.payos.vn';
       const origin=esc(location.origin);
@@ -2984,6 +3018,34 @@ async function openSettings(initialTab){
           <li>Đăng ký webhook: <b>POST</b> <code>${esc(base)}/confirm-webhook</code></li>
           <li>Header bắt buộc mọi request: <code>x-client-id</code> + <code>x-api-key</code></li>
           <li>Xác thực dữ liệu webhook: ký <b>HMAC-SHA256</b> bằng <b>Checksum Key</b> rồi so với field <code>signature</code></li>
+        </ul>
+      </div>
+      <label>Ghi chú nội bộ</label><textarea rows="2" data-integ="${def.key}" data-field="note">${integVal(c,'note')}</textarea>
+      <div class="integration-actions"><button class="btn sm" data-test-integ="${def.key}">Kiểm tra cấu hình</button></div>
+    </div>`;
+    }
+    if(def.type==='bank_webhook'){
+      const isSepay=def.key==='sepay';
+      const hookUrl=`${location.origin}/api/${def.channel}/webhook`;
+      return `<div class="integration-card ${on?'on':''}" data-integ-card="${def.key}">
+      <div class="integration-head"><div class="integration-ic">${integrationIcon(def)}</div><div style="min-width:0;flex:1"><b>${esc(def.name)}</b><div class="mini">${esc(def.desc)}</div></div>${status}</div>
+      <div class="webhook-box"><code>${esc(hookUrl)}</code><button class="btn sm" data-copy-hook="${esc(hookUrl)}">Copy</button><div class="mini" style="grid-column:1/-1">Dán URL này vào ${isSepay?'<b>SePay → Tích hợp → Cấu hình Webhooks</b>':'<b>Casso → Cấu hình Webhook</b>'}. ${isSepay?'SePay gửi kèm header <b>Authorization: Apikey &lt;API Key&gt;</b>.':'Casso gửi kèm header <b>secure-token</b> = secret bên dưới.'} Khi tiền về khớp nội dung <b>DANBILL+mã bill</b> và đủ tiền, hệ thống tự đóng bill + in hoá đơn.</div></div>
+      <div class="setting-form">
+        <label class="permitem"><input type="checkbox" data-integ="${def.key}" data-field="enabled" ${on?'checked':''}><span>Bật tự đối soát chuyển khoản (${esc(isSepay?'SePay':'Casso')})</span></label>
+        <div><label>Môi trường</label><select data-integ="${def.key}" data-field="environment"><option value="production" ${c.environment!=='sandbox'?'selected':''}>Production / chạy thật</option><option value="sandbox" ${c.environment==='sandbox'?'selected':''}>Sandbox / thử nghiệm</option></select></div>
+        ${isSepay
+          ? `<div><label>API Key (Authorization: Apikey)</label><input type="password" data-integ="${def.key}" data-field="apiKey" value="${integVal(c,'apiKey')}" placeholder="SePay → API Access"></div>`
+          : `<div><label>Secure token (header secure-token)</label><input type="password" data-integ="${def.key}" data-field="webhookSecret" value="${integVal(c,'webhookSecret')}"></div>`}
+        <div><label>Số tài khoản nhận (để trống = nhận hết)</label><input data-integ="${def.key}" data-field="accountNumber" value="${integVal(c,'accountNumber')}" placeholder="Lọc đúng TK nhận tiền"></div>
+        ${isSepay?`<div><label>Mã ngân hàng</label><input data-integ="${def.key}" data-field="bankCode" value="${integVal(c,'bankCode')}" placeholder="VCB, MB, ACB..."></div>`:''}
+      </div>
+      <div class="payos-endpoints">
+        <div class="mini" style="font-weight:700;margin-bottom:5px">📌 Cách hoạt động (Đường B — tự đối soát)</div>
+        <ul class="mini" style="margin:0;padding-left:17px;line-height:1.75">
+          <li>Khách quét QR VietQR và chuyển khoản kèm nội dung <b>DANBILL+mã bill</b> (sinh tự động trên màn thanh toán).</li>
+          <li>${esc(isSepay?'SePay':'Casso')} phát hiện tiền về tài khoản → gọi Webhook URL ở trên.</li>
+          <li>Hệ thống khớp đúng bill theo nội dung; đủ tiền thì <b>tự đóng bill, in hoá đơn, đẩy realtime</b> cho POS/iPad.</li>
+          <li>Giao dịch không khớp / chưa đủ tiền được ghi vào nhật ký để đối soát thủ công.</li>
         </ul>
       </div>
       <label>Ghi chú nội bộ</label><textarea rows="2" data-integ="${def.key}" data-field="note">${integVal(c,'note')}</textarea>
@@ -3085,6 +3147,12 @@ async function openSettings(initialTab){
     const p=operationsCfg.payment||{}, s=operationsCfg.shifts||{};
     const methods=p.methods||[];
     const kinds=[['cash','Tiền mặt'],['qr','QR / chuyển khoản'],['pos','Máy POS / thẻ'],['wallet','Ví điện tử'],['voucher','Voucher'],['other','Khác']];
+    const qrProvider=(p.qrProvider||'vietqr_public').toLowerCase();
+    const qrProviders=[
+      ['vietqr_public','VietQR public - dùng thông tin ngân hàng'],
+      ['vietqr_api','VietQR API - sinh QR động theo bill'],
+      ['payos','payOS - link thanh toán (chờ adapter)'],
+    ];
     return `<div class="panel" style="margin:0">
       <h3>Thanh toán, QR và ca làm việc</h3>
       <div class="setting-form">
@@ -3092,6 +3160,7 @@ async function openSettings(initialTab){
         <div><label>Mã ngân hàng VietQR</label><input id="opBankCode" value="${esc(p.bankCode||'')}" placeholder="VCB, ACB, TCB..."></div>
         <div><label>Số tài khoản</label><input id="opBankAccount" value="${esc(p.bankAccount||'')}"></div>
         <div><label>Tên chủ tài khoản</label><input id="opAccountName" value="${esc(p.accountName||'')}"></div>
+        <div><label>Nguồn tạo QR tự động</label><select id="opQrProvider">${qrProviders.map(([v,n])=>`<option value="${v}" ${qrProvider===v||(qrProvider==='vietqr'&&v==='vietqr_public')?'selected':''}>${n}</option>`).join('')}</select><div class="mini">iPad Self-Order sẽ dùng nguồn này để tạo QR riêng cho từng bill.</div></div>
         <div><label>Tiền tố nội dung chuyển khoản</label><input id="opTransferPrefix" value="${esc(p.transferPrefix||'DANBILL')}"></div>
         <div><label>Tên máy POS</label><input id="opPosTerminal" value="${esc(p.posTerminalName||'POS May 1')}"></div>
       </div>
@@ -4921,6 +4990,7 @@ async function openSettings(initialTab){
         bankCode:ov.querySelector('#opBankCode').value.trim().toUpperCase(),
         bankAccount:ov.querySelector('#opBankAccount').value.trim(),
         accountName:ov.querySelector('#opAccountName').value.trim(),
+        qrProvider:ov.querySelector('#opQrProvider')?.value||'vietqr_public',
         transferPrefix:ov.querySelector('#opTransferPrefix').value.trim()||'DANBILL',
         posTerminalName:ov.querySelector('#opPosTerminal').value.trim()||'POS May 1',
         methods:[...ov.querySelectorAll('[data-op-method]')].map((row,i)=>({
@@ -4981,9 +5051,18 @@ async function openSettings(initialTab){
       return miss.length?`MISA còn thiếu: ${miss.join(', ')}.`:'';
     }
     if(def.type==='website') return '';
+    if(def.type==='vietqr'){
+      const miss=['bankCode','bankAccount','userBankName','username','password'].filter(k=>!String(c[k]||'').trim());
+      return miss.length?`VietQR còn thiếu: ${miss.join(', ')}.`:'';
+    }
     if(def.type==='payos'){
       const miss=['clientId','apiKey','checksumKey'].filter(k=>!String(c[k]||'').trim());
       return miss.length?`payOS còn thiếu: ${miss.join(', ')}.`:'';
+    }
+    if(def.type==='bank_webhook'){
+      const need=def.key==='sepay'?['apiKey']:['webhookSecret'];
+      const miss=need.filter(k=>!String(c[k]||'').trim());
+      return miss.length?`${def.name} còn thiếu: ${miss.join(', ')}.`:'';
     }
     const miss=['merchantId','storeId','clientId'].filter(k=>!String(c[k]||'').trim());
     return miss.length?`${def.name} còn thiếu: ${miss.join(', ')}.`:'';
@@ -5018,6 +5097,11 @@ async function openSettings(initialTab){
     ov.querySelectorAll('[data-copy-payos]').forEach(btn=>btn.onclick=async()=>{
       try{if(!navigator.clipboard?.writeText) throw new Error('clipboard unavailable'); await navigator.clipboard.writeText(payosWebhookUrl());toast('Đã copy webhook payOS');}
       catch{toast(payosWebhookUrl());}
+    });
+    ov.querySelectorAll('[data-copy-hook]').forEach(btn=>btn.onclick=async()=>{
+      const url=btn.dataset.copyHook||'';
+      try{if(!navigator.clipboard?.writeText) throw new Error('clipboard unavailable'); await navigator.clipboard.writeText(url);toast('Đã copy webhook URL');}
+      catch{toast(url);}
     });
     ov.querySelectorAll('[data-test-integ]').forEach(btn=>btn.onclick=async()=>{
       const def=integrationDefs.find(x=>x.key===btn.dataset.testInteg);

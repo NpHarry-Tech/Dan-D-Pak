@@ -177,6 +177,36 @@ const DEFAULT_INTEGRATIONS = {
       cancelUrl: '',
       note: '',
     },
+    vietqr: {
+      enabled: false,
+      environment: 'sandbox',
+      username: '',
+      password: '',
+      apiBase: '',
+      bankCode: '',
+      bankAccount: '',
+      userBankName: '',
+      terminalCode: '',
+      subTerminalCode: '',
+      serviceCode: '',
+      note: '',
+    },
+    // Đường B: dịch vụ đọc biến động số dư ngân hàng → webhook tự đóng bill.
+    sepay: {
+      enabled: false,
+      environment: 'production',
+      apiKey: '',          // SePay gửi header "Authorization: Apikey <apiKey>"
+      accountNumber: '',   // số tài khoản nhận (lọc đúng tài khoản, để trống = nhận hết)
+      bankCode: '',
+      note: '',
+    },
+    casso: {
+      enabled: false,
+      environment: 'production',
+      webhookSecret: '',   // Casso gửi header "secure-token: <webhookSecret>"
+      accountNumber: '',
+      note: '',
+    },
     grabmerchant: {
       enabled: false,
       environment: 'sandbox',
@@ -264,7 +294,7 @@ const DEFAULT_OPERATIONS_CONFIG = {
     bankCode: 'VCB',
     bankAccount: '0123456789',
     accountName: 'DAN D PAK',
-    qrProvider: 'vietqr',
+    qrProvider: 'vietqr_public',
     transferPrefix: 'DANBILL',
     posTerminalName: 'POS May 1',
     methods: [

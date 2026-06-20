@@ -175,3 +175,12 @@ This restructuring pass adds docs, config/adapters, frontend API/realtime seams,
 - Files changed: `web/ipad.html`, `web/index.html`, `web/shared/modules.js`, `server/services/modules.js`, `docs/CHANGELOG_WORKFLOW.md`.
 - Protected domains touched: iPad device table assignment UI only; order, payment, menu, and stored table records are unchanged.
 - Manual tests: parse iPad inline module, verify `/ipad` returns 200 locally, verify launcher iPad links use `/ipad?pick=1`, and confirm the table label is display-only while the logo opens PIN after 3 taps; on the unlocked table-pick screen the standard topbar logo exits to the launcher.
+
+## 2026-06-20 VietQR Payment QR Integration
+
+- Summary: Added a VietQR API integration card in Settings, added a payment QR provider selector, and added `POST /api/orders/:id/payment-qr` so iPad Self-Order can request a unique QR payload for each open bill before customer confirmation.
+- Files changed: `server/api.js`, `server/services/payments.js`, `server/services/settings.js`, `web/admin.html`, `web/ipad.html`, `docs/API_CONTRACT.md`, `docs/CHANGELOG_WORKFLOW.md`.
+- Protected domains touched: payment configuration and open-order QR metadata generation; orders are not marked paid until the existing customer QR confirmation endpoint runs.
+- API contract impact: new branch-scoped QR generation endpoint returns VietQR API metadata or a public VietQR image fallback with a warning when API credentials are incomplete/unavailable.
+- Deployment impact: backend restart required for the new route and payment service helpers; frontend refresh required for Settings and iPad.
+- Manual tests: run backend syntax checks, parse Admin/iPad inline modules, verify `/settings`, `/ipad`, and the new QR route return JSON locally.

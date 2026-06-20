@@ -2274,7 +2274,7 @@
       catch {
         operationsConfig = {
           payment: {
-            bankCode: 'VCB', bankAccount: '0123456789', accountName: 'DAN D PAK', transferPrefix: 'DANBILL', methods: [
+            qrProvider: 'vietqr_public', bankCode: 'VCB', bankAccount: '0123456789', accountName: 'DAN D PAK', transferPrefix: 'DANBILL', methods: [
               { key: 'qrcode', label: 'QR Code', enabled: true, kind: 'qr' },
               { key: 'internet_banking', label: 'Internet Banking', enabled: true, kind: 'qr' },
               { key: 'cash', label: 'Tiền mặt', enabled: true, kind: 'cash' },
@@ -2847,6 +2847,22 @@
       if (!bank || !account) return '';
       return `https://img.vietqr.io/image/${encodeURIComponent(bank)}-${encodeURIComponent(account)}-compact2.png?amount=${encodeURIComponent(amount)}&addInfo=${encodeURIComponent(ref)}&accountName=${encodeURIComponent(name)}`;
     }
+    async function buildPaymentQr(method) {
+      const fallbackRef = paymentRef(method);
+      const fallbackImage = dynamicQrUrl(sentOrder?.total || 0, fallbackRef);
+      if (!sentOrder?.id) return { imageUrl: fallbackImage, reference: fallbackRef, providerLabel: 'VietQR' };
+      try {
+        const qr = await api('/orders/' + sentOrder.id + '/payment-qr', { method: 'POST', body: { method } });
+        return {
+          ...qr,
+          imageUrl: qr.imageUrl || qr.fallbackImageUrl || fallbackImage,
+          reference: qr.reference || fallbackRef,
+          providerLabel: qr.providerLabel || 'VietQR',
+        };
+      } catch (e) {
+        return { imageUrl: fallbackImage, reference: fallbackRef, providerLabel: 'VietQR', warning: e.message };
+      }
+    }
     async function requestPay() {
       try { await loadOperations(); await refreshOrder(); }
       catch (e) { return toast(e.message, true); }
@@ -2856,10 +2872,11 @@
       const cash = enabledPayment(['cash']);
       const card = enabledPayment(['card', 'visa', 'pos_card']);
       let mode = qr ? 'qr' : cash ? 'cash' : 'card';
+      let qrPayment = qr ? await buildPaymentQr(qr.key || 'qrcode') : null;
       const ov = document.createElement('div'); ov.className = 'overlay show ipad-overlay';
       function body() {
-        const ref = paymentRef(qr?.key || 'qrcode');
-        const qrSrc = dynamicQrUrl(sentOrder.total, ref);
+        const ref = qrPayment?.reference || paymentRef(qr?.key || 'qrcode');
+        const qrSrc = qrPayment?.imageUrl || dynamicQrUrl(sentOrder.total, ref);
         return `<div class="modal pay-customer-modal checkout-modal">
       <div class="checkout-head">
         <div class="checkout-title">
@@ -2884,8 +2901,9 @@
           <div class="customer-qr">
             ${qrSrc ? `<img src="${esc(qrSrc)}" alt="QR thanh toán">` : '<div class="empty">Chưa cấu hình ngân hàng trong Setting</div>'}
             <div>
-              <div class="checkout-panel-title"><span class="ico">📱</span><span>${esc(qr?.label || 'QR thanh toán')}</span></div>
+              <div class="checkout-panel-title"><span class="ico">📱</span><span>${esc(qrPayment?.providerLabel || qr?.label || 'QR thanh toán')}</span></div>
               <div class="hint">Quét mã đúng số tiền, sau đó bấm xác nhận để hoàn tất.</div>
+              ${qrPayment?.warning ? `<div class="hint" style="color:var(--danger);margin-top:6px">${esc(qrPayment.warning)}</div>` : ''}
               <div class="amount">${money(sentOrder.total)}</div>
               <div class="checkout-label" style="margin-bottom:5px">Nội dung chuyển khoản</div>
               <div class="ref">${esc(ref)}</div>
@@ -2906,7 +2924,7 @@
           try {
             if (mode === 'qr') {
               const paidId = sentOrder.id, paidTotal = sentOrder.total;
-              await api('/orders/' + paidId + '/customer-qr-pay', { method: 'POST', body: { method: qr?.key || 'qrcode', reference: paymentRef(qr?.key || 'qrcode') } });
+              await api('/orders/' + paidId + '/customer-qr-pay', { method: 'POST', body: { method: qr?.key || 'qrcode', reference: qrPayment?.reference || paymentRef(qr?.key || 'qrcode') } });
               sentOrder = null; cart = [];
               showThanks(paidId, paidTotal);
             } else {

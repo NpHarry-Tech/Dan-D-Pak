@@ -1,6 +1,6 @@
 # API Contract
 
-Last updated: 2026-06-19
+Last updated: 2026-06-20
 
 ## Response Shape
 
@@ -39,6 +39,7 @@ Planned endpoints that are not implemented should return:
 | `PATCH /api/orders/:id` | Planned; current app uses action-specific POST routes |
 | `POST /api/payments` | Planned; current app uses `POST /api/orders/:id/pay` |
 | `GET /api/payments` | Planned/report-derived |
+| `POST /api/orders/:id/payment-qr` | Implemented; creates a branch-scoped QR payload for the open order |
 | `GET /api/kds/tickets` | Planned; current app uses `GET /api/kds/:station` |
 | `PATCH /api/kds/tickets/:id` | Planned; current app uses `POST /api/orders/items/:id/status` |
 | `GET /api/inventory` | Implemented |
@@ -68,6 +69,25 @@ Planned endpoints that are not implemented should return:
 | `POST /api/print/jobs/:id/reprint` | Create a linked reprint job from an existing job |
 
 All print endpoints require a logged-in user with `module.printing`, printer settings, print settings, payment, or settings management permission. Job reads and mutations are scoped to the active branch.
+
+## Current Customer QR Payload
+
+`POST /api/orders/:id/payment-qr` returns the QR metadata used by iPad Self-Order before a customer confirms payment.
+
+```json
+{
+  "ok": true,
+  "provider": "vietqr_api",
+  "providerLabel": "VietQR API",
+  "amount": 180000,
+  "reference": "DANBILL000123",
+  "orderId": "000123",
+  "imageUrl": "https://...",
+  "fallbackImageUrl": "https://img.vietqr.io/image/..."
+}
+```
+
+If VietQR API credentials are incomplete or unavailable, the route returns a public VietQR image fallback plus a warning instead of closing the bill.
 
 ## Current Payment Invoice Request Payload
 
