@@ -3003,7 +3003,7 @@ async function openSettings(initialTab){
       <div class="setting-form">
         <label class="permitem"><input type="checkbox" data-integ="${def.key}" data-field="enabled" ${on?'checked':''}><span>Bật cổng thanh toán payOS</span></label>
         <div><label>Môi trường</label><select data-integ="${def.key}" data-field="environment"><option value="sandbox" ${c.environment!=='production'?'selected':''}>Sandbox / thử nghiệm</option><option value="production" ${c.environment==='production'?'selected':''}>Production / chạy thật</option></select></div>
-        <div><label>Client ID (x-client-id)</label><input data-integ="${def.key}" data-field="clientId" value="${integVal(c,'clientId')}" placeholder="payOS Dashboard → Cài đặt → Thông tin xác thực"></div>
+        <div><label>Client ID (x-client-id)</label><input data-integ="${def.key}" data-field="clientId" value="${integVal(c,'clientId')}" autocomplete="off" autocorrect="off" spellcheck="false" placeholder="VD: 272a2678-6845-47f5-90cb-7057cec5f8ce"></div>
         <div><label>API Key (x-api-key)</label><input type="password" data-integ="${def.key}" data-field="apiKey" value="${integVal(c,'apiKey')}"></div>
         <div><label>Checksum Key (ký &amp; xác thực webhook)</label><input type="password" data-integ="${def.key}" data-field="checksumKey" value="${integVal(c,'checksumKey')}"></div>
         <div><label>API base URL</label><input data-integ="${def.key}" data-field="apiBase" value="${esc(base)}"></div>
@@ -3152,7 +3152,7 @@ async function openSettings(initialTab){
     const qrProviders=[
       ['vietqr_public','VietQR public - dùng thông tin ngân hàng'],
       ['vietqr_api','VietQR API - sinh QR động theo bill'],
-      ['payos','payOS - link thanh toán (chờ adapter)'],
+      ['payos','payOS - cổng QR/thẻ (tự xác nhận qua webhook)'],
     ];
     return `<div class="panel" style="margin:0">
       <h3>Thanh toán, QR và ca làm việc</h3>
