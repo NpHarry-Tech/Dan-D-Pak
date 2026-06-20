@@ -22,8 +22,11 @@ server/store.db-shm
 server/store.db-wal
 server/db.sqlite
 *.db
+*.db-shm
+*.db-wal
 *.sqlite
 *.sqlite3
+tmp_*
 uploads/
 storage/private/
 *.dump
