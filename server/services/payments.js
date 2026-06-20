@@ -647,6 +647,27 @@ export async function createPayosPaymentLink(cfg = {}, { orderCode, amount, desc
   return res?.data || res;
 }
 
+// Hỏi trạng thái 1 đơn payOS (chiều ĐI RA → chạy được cả ở localhost, không cần webhook).
+// Dùng cho auto-detect: màn thanh toán poll endpoint này tới khi status='PAID'.
+export async function getPayosPaymentStatus(orderCode, branch_id = 'br1') {
+  const cfg = getIntegrations(branch_id).channels?.payos || {};
+  if (!cfg.enabled || !cleanText(cfg.clientId) || !cleanText(cfg.apiKey)) {
+    return { ok: false, status: 'not_configured', paid: false };
+  }
+  const base = (cleanText(cfg.apiBase, 220) || 'https://api-merchant.payos.vn').replace(/\/+$/, '');
+  try {
+    const res = await fetchJson(`${base}/v2/payment-requests/${encodeURIComponent(orderCode)}`, {
+      method: 'GET',
+      headers: { 'x-client-id': cleanText(cfg.clientId), 'x-api-key': cleanText(cfg.apiKey) },
+    });
+    const d = res?.data || res || {};
+    const status = String(d.status || '').toUpperCase();
+    return { ok: true, status, paid: status === 'PAID', amountPaid: parseInt(d.amountPaid) || 0, orderCode: d.orderCode || orderCode };
+  } catch (e) {
+    return { ok: false, status: 'error', paid: false, message: String(e.message || '').slice(0, 160) };
+  }
+}
+
 // Đối soát: danh sách giao dịch webhook gần đây (cho UI + audit).
 export function listBankTransactions(branch_id = 'br1', { limit = 50 } = {}) {
   const rows = db.prepare(`SELECT id,provider,external_id,amount,content,reference,order_id,status,created_at

@@ -398,6 +398,24 @@ export function startClock(sel = '#clock') {
   tick(); setInterval(tick, 1000);
 }
 
+// Auto-detect thanh toán payOS: hỏi ngược payOS "đơn này trả chưa?" (chiều RA → chạy
+// được cả ở localhost, không cần webhook). Gọi onPaid() khi PAID. Trả về hàm stop().
+export function pollPayosPaid(orderCode, { onPaid, intervalMs = 4000, timeoutMs = 600000 } = {}) {
+  if (!orderCode) return () => {};
+  let stopped = false;
+  const start = Date.now();
+  const tick = async () => {
+    if (stopped) return;
+    try {
+      const r = await api('/payos/payment-status/' + encodeURIComponent(orderCode));
+      if (r && r.paid) { stopped = true; try { onPaid && onPaid(r); } catch {} return; }
+    } catch {}
+    if (!stopped && Date.now() - start < timeoutMs) setTimeout(tick, intervalMs);
+  };
+  setTimeout(tick, intervalMs);
+  return () => { stopped = true; };
+}
+
 export const esc = (s) => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
 // Turn a raw audit record (action + detail) into a plain Vietnamese sentence.

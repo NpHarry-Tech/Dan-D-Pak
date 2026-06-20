@@ -220,7 +220,7 @@
 </div>
 
 <script type="module">
-import { api, connect, money, toast, esc, startClock, topbar, requireModuleAccess, renderUserChip, getUser, requestPinCode } from '/shared/client.js';
+import { api, connect, money, toast, esc, startClock, topbar, requireModuleAccess, renderUserChip, getUser, requestPinCode, pollPayosPaid } from '/shared/client.js';
 import { playNotificationSound, applyConfig } from '/js/core/notificationSound.js';
 import { mountOrderHistory } from '/shared/orderHistory.js';
 import { perkTag, perkAmount, openCustomerPicker } from '/shared/customer.js';
@@ -1152,6 +1152,8 @@ async function openPay(o, opts={}){
   let curMethod=(methods.find(m=>m.key==='cash')||methods[0]).key;
   let disc=Math.max(0,o.discount||0);
   let customer=orderCust[o.id]||null;
+  let paidViaPayos=false, payosPollStop=null;
+  const stopPayosPoll=()=>{ if(payosPollStop){ payosPollStop(); payosPollStop=null; } };
   const invoiceDraft=createCompanyInvoiceDraft();
   const ov=document.createElement('div'); ov.className='overlay show'; document.body.appendChild(ov);
   const total=()=>Math.max(0,(o.subtotal||0)-disc);
@@ -1202,14 +1204,36 @@ async function openPay(o, opts={}){
         </div>
       </div></div>`;
     }
+    function renderPaidCard(){
+      helper.innerHTML=`<div class="pay-helper" style="border-style:solid;border-color:var(--done);background:var(--done-bg)">
+        <div style="display:flex;align-items:center;gap:14px">
+          <div style="font-size:36px;line-height:1">✅</div>
+          <div><b style="color:var(--done);font-size:15px">Khách đã thanh toán qua payOS</b>
+          <div class="mini">Tiền đã về tài khoản. Bấm <b>Xác nhận thanh toán</b> để hoàn tất và in hoá đơn.</div></div>
+        </div></div>`;
+    }
     function drawHelper(){
+      stopPayosPoll();
       const m=payMethod(curMethod), amt=parseInt(amtEl.value)||remaining()||total(), ref=refEl.value.trim()||makePaymentRef(curMethod,o);
       const isQr=['qr','wallet'].includes(m.kind)||['internet_banking','qrcode','qr','momo','zalopay'].includes(m.key);
+      if(paidViaPayos && isQr){ renderPaidCard(); return; }
       if(isQr){
         const seq=++qrSeq;
         renderQrCard({imageUrl:dynamicQrUrl(amt,ref), reference:ref, providerLabel:'Đang tạo QR…'}, amt, ref);
         api('/orders/'+o.id+'/payment-qr',{method:'POST',body:{method:m.key}})
-          .then(data=>{ if(seq===qrSeq) renderQrCard(data, parseInt(data.amount)||amt, data.reference||ref); })
+          .then(data=>{
+            if(seq!==qrSeq) return;
+            renderQrCard(data, parseInt(data.amount)||amt, data.reference||ref);
+            if(data.provider==='payos' && data.orderCode){
+              stopPayosPoll();
+              payosPollStop=pollPayosPaid(data.orderCode,{ onPaid:()=>{
+                paidViaPayos=true; stopPayosPoll();
+                if(remaining()>0) lines.push({method:m.key,amount:remaining(),reference:data.reference||ref});
+                toast('✅ Khách đã thanh toán qua payOS');
+                renderPaidCard(); draw();
+              }});
+            }
+          })
           .catch(()=>{});
       }else if(['pos','card'].includes(m.kind)||['card','visa','pos_card'].includes(m.key)){
         helper.innerHTML=`<div class="pay-helper"><b>${esc(operationsConfig?.payment?.posTerminalName||'Máy POS')}</b><div class="mini">Nhập approval code nếu máy POS trả về mã. Mã gợi ý: <span class="pay-ref">${esc(ref)}</span></div></div>`;
@@ -1238,8 +1262,9 @@ async function openPay(o, opts={}){
     amtEl.value=total(); setDefaultRef(); drawHelper(); draw();
     amtEl.oninput=drawHelper; refEl.oninput=drawHelper;
     ov.querySelector('#addLine').onclick=()=>{ const amt=parseInt(amtEl.value)||0; if(amt<=0)return toast('Nhập số tiền',true); lines.push({method:curMethod,amount:amt,reference:refEl.value.trim()||makePaymentRef(curMethod,o)}); amtEl.value=remaining();refEl.value='';setDefaultRef();draw();drawHelper(); };
-    ov.querySelector('#cancel').onclick=()=>ov.remove();
+    ov.querySelector('#cancel').onclick=()=>{ stopPayosPoll(); ov.remove(); };
     ov.querySelector('#confirm').onclick=async()=>{
+      stopPayosPoll();
       if(!lines.length){const amt=parseInt(amtEl.value)||0; if(amt>0)lines.push({method:curMethod,amount:amt,reference:refEl.value.trim()||makePaymentRef(curMethod,o)});}
       if(paid()<total()) return toast('Chưa đủ tiền',true);
       let invoice_customer=null;

@@ -448,6 +448,8 @@ api.post('/sepay/webhook', wrap((req) => Pay.handleSepayWebhook(req.body || {}, 
 api.post('/casso/webhook', wrap((req) => Pay.handleCassoWebhook(req.body || {}, req.headers, 'br1')));
 api.post('/payos/webhook', wrap((req) => Pay.handlePayosWebhook(req.body || {}, req.headers, 'br1')));
 api.get('/payments/bank-transactions', guardAny('reports', 'pay', 'settings.integrations'), wrap((req) => Pay.listBankTransactions(branch(req), req.query)));
+// Auto-detect payOS: hỏi trạng thái đơn (poll) — chạy được cả ở localhost.
+api.get('/payos/payment-status/:orderCode', wrap((req) => Pay.getPayosPaymentStatus(req.params.orderCode, visibleBranch(req))));
 api.get('/shifts/current', guard('pay'), wrap((req) => Shifts.currentShift(branch(req))));
 api.post('/shifts/open', guard('pay'), wrap((req) => Shifts.openShift(req.body, req.user, branch(req))));
 api.post('/shifts/close', guard('pay'), wrap((req) => Shifts.closeShift(req.body, req.user, branch(req))));
