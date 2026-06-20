@@ -79,6 +79,7 @@
 
 <script type="module">
 import { api, connect, money, toast, esc, startClock, topbar, requireModuleAccess, renderUserChip } from '/shared/client.js';
+import { playNotificationSound, applyConfig, getConfig } from '/js/core/notificationSound.js';
 document.getElementById('top').innerHTML = topbar('online', {
   title: '🌐 Online Channels',
   sub: 'Nhận đơn GrabFood / ShopeeFood / Website qua webhook · điều phối fulfillment',
@@ -91,8 +92,12 @@ const FLOW_LABEL={received:'Đã nhận',confirmed:'Xác nhận',preparing:'Đan
 const DETAIL_STATUS={received:'Đã nhận',confirmed:'Đã xác nhận',preparing:'Đang chuẩn bị',ready:'Sẵn sàng giao',completed:'Đã giao'};
 let orders=[], channels={}, menu=[], basket=[], channel='grabfood', selectedOrderId=null;
 
+// Load sound config from server settings
+api('/settings/app').then(s => { if(s?.notification_sound_config) applyConfig(s.notification_sound_config); }).catch(()=>{});
+
 connect('online', {
-  'online:new':()=>load(), 'online:updated':()=>load(),
+  'online:new':()=>{ playNotificationSound('online_order'); load(); },
+  'online:updated':()=>load(),
 });
 
 async function load(){

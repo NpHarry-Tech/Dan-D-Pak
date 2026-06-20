@@ -46,6 +46,7 @@ export const PERMISSIONS = [
   { key: 'settings.tables', label: 'Cài đặt — Cấu hình sơ đồ bàn' },
   { key: 'settings.printers', label: 'Cài đặt — Quản lý danh mục máy in' },
   { key: 'settings.audit', label: 'Cài đặt — Nhật ký hoạt động quản lý' },
+  { key: 'settings.notification_sound', label: 'Cài đặt — Âm thanh thông báo' },
   ...MODULE_PERMISSIONS,
 ];
 export const ALL_PERMS = PERMISSIONS.map(p => p.key);

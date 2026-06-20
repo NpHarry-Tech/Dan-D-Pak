@@ -221,6 +221,7 @@
 
 <script type="module">
 import { api, connect, money, toast, esc, startClock, topbar, requireModuleAccess, renderUserChip, getUser, requestPinCode } from '/shared/client.js';
+import { playNotificationSound, applyConfig } from '/js/core/notificationSound.js';
 import { mountOrderHistory } from '/shared/orderHistory.js';
 import { perkTag, perkAmount, openCustomerPicker } from '/shared/customer.js';
 import { createCompanyInvoiceDraft, companyInvoiceHtml, bindCompanyInvoiceBox, companyInvoicePayload, invoiceReceiptCustomerName, invoiceReceiptTaxCode } from '/shared/invoiceRequest.js';
@@ -334,13 +335,16 @@ function openOrderPromoPicker(o, customer, currentDisc, onPicked){
   ov2.onclick=e=>{ if(e.target===ov2) ov2.remove(); };
 }
 
+// Load sound config from server settings
+api('/settings/app').then(s => { if(s?.notification_sound_config) applyConfig(s.notification_sound_config); }).catch(()=>{});
+
 connect('pos', {
   'order:new':(p)=>{ refreshPending(); refreshFloor(); if(sel&&p.order?.table_id===sel) loadBill(sel); },
-  'order:pending':()=>{ refreshPending(); refreshFloor(); if(sel) loadBill(sel); },
+  'order:pending':()=>{ playNotificationSound('table_order'); refreshPending(); refreshFloor(); if(sel) loadBill(sel); },
   'order:updated':(p)=>{ refreshPending(); refreshFloor(); if(sel&&p?.table_id===sel) loadBill(sel); },
   'order:item':(p)=>{ refreshPending(); if(sel&&p.order_id===order?.id) loadBill(sel); },
   'table:updated':()=>{ refreshFloor(); },
-  'staff:call':()=>{ refreshCalls(); },
+  'staff:call':()=>{ playNotificationSound('staff_call'); refreshCalls(); },
   'payment:done':()=>{ refreshFloor(); refreshShift(); },
   'shift:updated':()=>{ refreshShift(); },
 });
