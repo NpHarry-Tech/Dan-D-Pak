@@ -20,20 +20,23 @@ export function bootstrapDefaultAdmin() {
   const legacyOwner = db.prepare(`SELECT id FROM users WHERE username='owner' AND role='owner'`).get();
 
   if (hasAdmin) {
+    // Only ensure the account stays active with owner role and full branch access.
+    // Never overwrite PIN, name, lang, or branch_id — those are user-configurable.
     db.prepare(`
       UPDATE users
-      SET name=?, pin=?, role='owner', active=1, branch_id=?, lang=?, branch_access_json='["*"]'
+      SET role='owner', active=1, branch_access_json='["*"]'
       WHERE username=?
-    `).run(ADMIN_USER.name, ADMIN_USER.pin, ADMIN_USER.branch_id, ADMIN_USER.lang, ADMIN_USER.username);
+    `).run(ADMIN_USER.username);
     return { created: false, username: ADMIN_USER.username };
   }
 
   if (legacyOwner) {
+    // Rename legacy 'owner' username to 'admin' but keep their PIN and other settings.
     db.prepare(`
       UPDATE users
-      SET username=?, name=?, pin=?, role='owner', active=1, branch_id=?, lang=?, branch_access_json='["*"]'
+      SET username=?, role='owner', active=1, branch_access_json='["*"]'
       WHERE id=?
-    `).run(ADMIN_USER.username, ADMIN_USER.name, ADMIN_USER.pin, ADMIN_USER.branch_id, ADMIN_USER.lang, legacyOwner.id);
+    `).run(ADMIN_USER.username, legacyOwner.id);
     return { created: false, renamed: true, username: ADMIN_USER.username };
   }
 
