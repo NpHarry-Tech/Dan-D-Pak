@@ -175,7 +175,7 @@ api.post('/settings/integrations/:channel/test', guardAny('settings.integrations
     return {
       channel, ok, mode: ok ? 'ready' : 'partial', webhookUrl: payosWebhook,
       message: ok
-        ? 'Đã đủ Client ID / API Key / Checksum Key. Dán Webhook URL ở trên vào payOS Dashboard. Khi backend payOS bật, hệ thống sẽ tạo link thanh toán và nhận xác nhận tại URL này.'
+        ? 'Đã đủ Client ID / API Key / Checksum Key. Dán Webhook URL ở trên vào payOS Dashboard → Cấu hình Webhook. Hệ thống đã sẵn sàng tạo link/QR payOS cho từng bill và tự đóng bill khi nhận webhook xác nhận (xác thực HMAC bằng Checksum Key).'
         : 'Thiếu Client ID / API Key / Checksum Key (lấy ở payOS Dashboard → Cài đặt → Thông tin xác thực).',
     };
   }
