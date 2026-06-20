@@ -12,6 +12,11 @@ const DEFAULTS = {
   BACKUP_RETENTION_DAYS: 14,
   DISABLE_DEMO_SEED: false,
   CONFIG_SEED_URL: '',
+  // Path to a JSON file where config (users, settings, menu…) is auto-saved after every
+  // change and auto-restored on startup when the DB is empty.  Set this to a path on a
+  // persistent volume (e.g. /app/server-data/config-backup.json on Render paid disk)
+  // so that data survives redeploys.
+  CONFIG_BACKUP_PATH: '',
 };
 
 function clean(value) {
@@ -48,6 +53,7 @@ export function loadEnv(source = process.env) {
     BACKUP_RETENTION_DAYS: asInt(source.BACKUP_RETENTION_DAYS, DEFAULTS.BACKUP_RETENTION_DAYS),
     DISABLE_DEMO_SEED: source.DISABLE_DEMO_SEED === 'true' || source.DISABLE_DEMO_SEED === '1',
     CONFIG_SEED_URL: clean(source.CONFIG_SEED_URL) || DEFAULTS.CONFIG_SEED_URL,
+    CONFIG_BACKUP_PATH: clean(source.CONFIG_BACKUP_PATH) || DEFAULTS.CONFIG_BACKUP_PATH,
   };
 
   env.CORS_ORIGINS = asList(env.CORS_ORIGIN);

@@ -3,6 +3,7 @@
 // force staff to log in again.
 import { db, uid, now, audit } from '../db.js';
 import { archiveStaff } from './archive.js';
+import { saveConfigBackup } from './configBackup.js';
 import { MODULE_PERMISSIONS } from './modules.js';
 import { REPORTS } from './reportCenter.js';
 
@@ -373,6 +374,7 @@ export function createUser(body, branch_id = 'br1') {
   const row = db.prepare(`SELECT * FROM users WHERE id=?`).get(id);
   const out = { ...publicUser(row), active: !!row.active, lang: row.lang || 'vi', ...userPermDetails(row) };
   archiveStaff(out);
+  saveConfigBackup();
   return out;
 }
 export function updateUser(id, body, branch_id = 'br1') {
@@ -397,6 +399,7 @@ export function updateUser(id, body, branch_id = 'br1') {
   const row = db.prepare(`SELECT * FROM users WHERE id=?`).get(id);
   const out = { ...publicUser(row), active: !!row.active, lang: row.lang || 'vi', ...userPermDetails(row) };
   archiveStaff(out);
+  saveConfigBackup();
   return out;
 }
 
@@ -420,6 +423,7 @@ export function deleteUser(id, branch_id = 'br1') {
   db.prepare(`DELETE FROM user_perms WHERE user_id=?`).run(id);
   db.prepare(`DELETE FROM users WHERE id=?`).run(id);
   audit('user.delete', { username: cur.username }, branch_id);
+  saveConfigBackup();
   return { ok: true };
 }
 

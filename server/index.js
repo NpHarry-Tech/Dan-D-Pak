@@ -10,6 +10,7 @@ import { api } from './api.js';
 import { startSyncEngine } from './services/sync.js';
 import { ensureStorageDirectories } from './services/enterpriseStorage.js';
 import { bootstrapDefaultAdmin } from './services/bootstrapAdmin.js';
+import { restoreConfigBackupIfNeeded } from './services/configBackup.js';
 import { env } from './config/env.js';
 import { createCorsMiddleware } from './config/cors.js';
 import { runtimeSnapshot } from './config/runtime.js';
@@ -23,6 +24,15 @@ const PORT = env.PORT;
 globalThis.__DANDPAK_STARTED_AT = new Date().toISOString();
 
 migrate();
+
+// Restore config from local backup file first (before seed logic), so user accounts and
+// settings created in the UI survive a redeploy that wiped the SQLite file.
+// Only active when CONFIG_BACKUP_PATH env var points to a persistent-disk path.
+const backupRestore = restoreConfigBackupIfNeeded();
+if (backupRestore?.ok) {
+  logger.info('config restored from local backup file', backupRestore.counts);
+}
+
 // Auto-seed on first run only if the database is empty and not suppressed.
 const hasMenu = db.prepare(`SELECT COUNT(*) n FROM menu_items`).get().n;
 const hasBranch = db.prepare(`SELECT COUNT(*) n FROM branches`).get().n;

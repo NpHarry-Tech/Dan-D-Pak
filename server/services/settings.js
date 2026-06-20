@@ -1,4 +1,5 @@
 import { db, now, audit } from '../db.js';
+import { saveConfigBackup } from './configBackup.js';
 
 const DEFAULTS = {
   ipad_staff_pin: '0000',
@@ -524,6 +525,7 @@ export function updateSettings(body = {}, branch_id = 'br1') {
     ins.run(branch_id, key, typeof value === 'object' ? JSON.stringify(value) : value, now());
   }
   audit('settings.update', { keys: Object.keys(next) }, branch_id);
+  saveConfigBackup();
   return { ...current, ...next };
 }
 
@@ -599,5 +601,6 @@ export function updateIntegrations(body = {}, branch_id = 'br1') {
     .run(branch_id, INTEGRATIONS_KEY, JSON.stringify(clean), now());
   const enabled = Object.entries(clean.channels).filter(([, c]) => c.enabled).map(([k]) => k);
   audit('settings.update', { keys: [INTEGRATIONS_KEY], enabled_integrations: enabled }, branch_id);
+  saveConfigBackup();
   return clean;
 }
