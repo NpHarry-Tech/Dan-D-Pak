@@ -23,13 +23,27 @@ const PORT = env.PORT;
 globalThis.__DANDPAK_STARTED_AT = new Date().toISOString();
 
 migrate();
-ensureStorageDirectories();
-// Auto-seed on first run if no users AND no menu (chỉ chạy trong môi trường dev/test).
+// Auto-seed on first run only if the database is empty and not suppressed.
 const hasMenu = db.prepare(`SELECT COUNT(*) n FROM menu_items`).get().n;
-const hasUsers = db.prepare(`SELECT COUNT(*) n FROM users`).get().n;
-if (!hasMenu && !hasUsers && !env.isProduction) {
-  logger.warn('empty database detected; running initial seed (dev only)');
-  await import('./seed.js');
+const hasBranch = db.prepare(`SELECT COUNT(*) n FROM branches`).get().n;
+const isEmpty = !hasMenu && !hasBranch;
+if (isEmpty) {
+  if (env.CONFIG_SEED_URL) {
+    try {
+      logger.info(`empty database detected; restoring config from CONFIG_SEED_URL`);
+      const { fetchAndRestoreConfig } = await import('./services/configBackup.js');
+      const result = await fetchAndRestoreConfig(env.CONFIG_SEED_URL);
+      logger.info('config restored from URL', result.counts);
+    } catch (err) {
+      logger.warn(`failed to restore config from URL: ${err.message}; falling back to demo seed`);
+      await import('./seed.js');
+    }
+  } else if (env.DISABLE_DEMO_SEED) {
+    logger.warn('empty database detected; DISABLE_DEMO_SEED=true — skipping demo seed');
+  } else {
+    logger.warn('empty catalog detected; running demo seed');
+    await import('./seed.js');
+  }
 }
 const adminBootstrap = bootstrapDefaultAdmin();
 if (adminBootstrap.created) logger.warn('default admin account created', { username: adminBootstrap.username });

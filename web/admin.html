@@ -2339,7 +2339,8 @@ async function openSettings(initialTab){
         { key: 'bookmenu', label: '📖 Menu quyển', perm: 'settings.bookmenu' },
         { key: 'tables', label: '🪑 Cấu hình bàn &amp; Sơ đồ', perm: 'settings.tables' },
         { key: 'printers', label: '🖨️ Danh mục in', perm: 'settings.printers' },
-        { key: 'audit', label: '📝 Nhật ký hoạt động', perm: 'settings.audit' }
+        { key: 'audit', label: '📝 Nhật ký hoạt động', perm: 'settings.audit' },
+        { key: 'backup', label: '💾 Sao lưu & Phục hồi', perm: 'settings.manage' }
       ];
       const allowed = availableTabs.filter(t => t.key === 'users' ? (hasPerm('settings.users') || hasPerm('settings.perms') || hasPerm('settings.manage')) : (hasPerm(t.perm) || hasPerm('settings.manage')));
       if (allowed.length === 0) {
@@ -2383,7 +2384,8 @@ async function openSettings(initialTab){
       { key: 'bookmenu', label: '📖 Menu quyển', perm: 'settings.bookmenu' },
       { key: 'tables', label: '🪑 Cấu hình bàn &amp; Sơ đồ', perm: 'settings.tables' },
       { key: 'printers', label: '🖨️ Danh mục in', perm: 'settings.printers' },
-      { key: 'audit', label: '📝 Nhật ký hoạt động', perm: 'settings.audit' }
+      { key: 'audit', label: '📝 Nhật ký hoạt động', perm: 'settings.audit' },
+      { key: 'backup', label: '💾 Sao lưu & Phục hồi', perm: 'settings.manage' }
     ];
     const allowedTabs = availableTabs.filter(t => t.key === 'users' ? (hasPerm('settings.users') || hasPerm('settings.perms') || hasPerm('settings.manage')) : (hasPerm(t.perm) || hasPerm('settings.manage')));
     const activeTabLabel = allowedTabs.find(t => t.key === tab)?.label || allowedTabs[0]?.label || 'Cài đặt';
@@ -2478,6 +2480,7 @@ async function openSettings(initialTab){
       users:usersHtml,
       branches:branchesHtml,
       sync:syncHtml,
+      backup:backupHtml,
       integrations:integrationsHtml,
       connections:connectionsHtml,
       operations:operationsHtml,
@@ -2510,6 +2513,7 @@ async function openSettings(initialTab){
     if(tab==='tables') return bindTablesTab();
     if(tab==='printers') return bindPrinters();
     if(tab==='audit') return bindSettingsAudit();
+    if(tab==='backup') return bindBackup();
   }
   function connectionsHtml() {
     return `<div class="panel" style="margin:0">
@@ -2888,6 +2892,42 @@ async function openSettings(initialTab){
       </div>
       <h3 style="margin-top:12px">Sự kiện đồng bộ gần đây</h3>
       <div id="settingsSyncEvents"><div class="empty">Đang tải...</div></div>
+    </div>`;
+  }
+  function backupHtml(){
+    return `<div class="panel" style="margin:0">
+      <h3>💾 Sao lưu &amp; Phục hồi cấu hình</h3>
+      <div class="mini" style="margin-bottom:16px">Sao lưu toàn bộ cấu hình (nhân viên, chi nhánh, menu, kho, cài đặt) thành file JSON. Dùng để phục hồi khi server khởi động lại hoặc chuyển sang máy chủ khác.</div>
+
+      <div class="setting-card" style="margin-bottom:16px">
+        <h4>📤 Xuất cấu hình</h4>
+        <div class="mini" style="margin-bottom:12px">Tải file JSON chứa toàn bộ nhân viên, chi nhánh, menu, kho và cài đặt hệ thống. Lưu file này ở nơi an toàn để dùng khi cần phục hồi.</div>
+        <button class="btn primary" id="btnExportConfig">⬇️ Tải xuống file cấu hình (.json)</button>
+        <div id="exportStatus" style="margin-top:8px"></div>
+      </div>
+
+      <div class="setting-card">
+        <h4>📥 Nhập &amp; Phục hồi cấu hình</h4>
+        <div class="mini" style="margin-bottom:8px;color:var(--warn)">⚠️ Thao tác này sẽ <b>xóa toàn bộ dữ liệu cấu hình hiện tại</b> (nhân viên, menu, cài đặt...) và thay bằng nội dung từ file backup. Dữ liệu vận hành (đơn hàng, thanh toán, ca làm) <b>không bị ảnh hưởng</b>.</div>
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+          <label class="btn" style="cursor:pointer">📂 Chọn file backup <input type="file" id="importFileInput" accept=".json" style="display:none"></label>
+          <button class="btn danger" id="btnImportConfig" disabled>↩️ Phục hồi từ file</button>
+        </div>
+        <div id="importFileName" class="mini" style="margin-top:6px;color:var(--muted)">Chưa chọn file</div>
+        <div id="importStatus" style="margin-top:8px"></div>
+      </div>
+
+      <div class="setting-card" style="margin-top:16px">
+        <h4>ℹ️ Hướng dẫn giữ cấu hình trên Render</h4>
+        <div class="mini">Nếu app đang chạy trên <b>Render.com</b> và cấu hình bị mất sau mỗi lần restart, hãy làm theo các bước sau:</div>
+        <ol class="mini" style="margin:8px 0 0 16px;line-height:1.8">
+          <li>Xuất file cấu hình bằng nút "Tải xuống" ở trên</li>
+          <li>Host file JSON này lên <b>GitHub Gist</b> (gist.github.com) hoặc bất kỳ URL công khai nào</li>
+          <li>Trong Render Dashboard → Environment Variables, thêm: <code>CONFIG_SEED_URL=&lt;URL file JSON&gt;</code></li>
+          <li>Từ nay mỗi khi server restart, hệ thống sẽ tự phục hồi từ URL này thay vì load dữ liệu mẫu</li>
+        </ol>
+        <div class="mini" style="margin-top:8px">Hoặc thêm <b>Persistent Disk</b> trong Render Dashboard với <code>SQLITE_PATH=/data/store.db</code> để database không bao giờ bị xóa.</div>
+      </div>
     </div>`;
   }
   const integrationDefs=[
@@ -4801,6 +4841,66 @@ async function openSettings(initialTab){
         renderSettingsSync(await api('/sync/offline',{method:'POST',body:{offline:nextOffline}}));
         toast(nextOffline?'Đã giả lập mất internet':'Đã khôi phục internet');
       }catch(e){toast(e.message,true);}
+    };
+  }
+  function bindBackup(){
+    const btnExport=ov.querySelector('#btnExportConfig');
+    const exportStatus=ov.querySelector('#exportStatus');
+    const fileInput=ov.querySelector('#importFileInput');
+    const btnImport=ov.querySelector('#btnImportConfig');
+    const importFileName=ov.querySelector('#importFileName');
+    const importStatus=ov.querySelector('#importStatus');
+    let importData=null;
+
+    btnExport.onclick=async()=>{
+      try{
+        btnExport.disabled=true;
+        exportStatus.textContent='Đang xuất...';
+        const data=await api('/config/export');
+        const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
+        const url=URL.createObjectURL(blob);
+        const a=document.createElement('a');
+        const date=new Date().toISOString().slice(0,10);
+        a.href=url; a.download=`dandpak-config-${date}.json`; a.click();
+        URL.revokeObjectURL(url);
+        exportStatus.innerHTML='<span style="color:var(--done)">✓ Đã tải xuống thành công</span>';
+      }catch(e){
+        exportStatus.innerHTML=`<span style="color:var(--danger)">Lỗi: ${esc(e.message)}</span>`;
+      } finally{ btnExport.disabled=false; }
+    };
+
+    fileInput.onchange=()=>{
+      const file=fileInput.files[0];
+      if(!file){ importData=null; btnImport.disabled=true; importFileName.textContent='Chưa chọn file'; return; }
+      importFileName.textContent=file.name;
+      const reader=new FileReader();
+      reader.onload=e=>{
+        try{
+          importData=JSON.parse(e.target.result);
+          if(!importData._version) throw new Error('File không đúng định dạng backup');
+          btnImport.disabled=false;
+          importStatus.innerHTML='<span style="color:var(--done)">✓ File hợp lệ — nhấn "Phục hồi từ file" để xác nhận</span>';
+        }catch(err){
+          importData=null; btnImport.disabled=true;
+          importStatus.innerHTML=`<span style="color:var(--danger)">File không hợp lệ: ${esc(err.message)}</span>`;
+        }
+      };
+      reader.readAsText(file);
+    };
+
+    btnImport.onclick=async()=>{
+      if(!importData){ toast('Chưa chọn file backup',true); return; }
+      if(!confirm('Xác nhận phục hồi cấu hình? Toàn bộ nhân viên, menu, chi nhánh và cài đặt hiện tại sẽ bị thay thế.')) return;
+      try{
+        btnImport.disabled=true;
+        importStatus.textContent='Đang phục hồi...';
+        const result=await api('/config/import',{method:'POST',body:importData});
+        importStatus.innerHTML='<span style="color:var(--done)">✓ Phục hồi thành công. Trang sẽ tải lại sau 2 giây...</span>';
+        setTimeout(()=>location.reload(),2000);
+      }catch(e){
+        importStatus.innerHTML=`<span style="color:var(--danger)">Lỗi phục hồi: ${esc(e.message)}</span>`;
+        btnImport.disabled=false;
+      }
     };
   }
   function bindOperations(){

@@ -649,58 +649,12 @@ api.get('/archive/status', guard('reports'), wrap(() => Archive.storageStatus())
 api.get('/archive/reports/latest', guard('reports'), wrap((req) => Archive.latestDashboardReport(branch(req))));
 api.get('/archive/:kind/:id', guard('reports'), wrap((req) => Archive.readArchivedEntity(req.params.kind, req.params.id, branch(req))));
 
-// --- Enterprise Storage ---
-// Phân tầng: system (toàn hệ thống) | branch (chi nhánh) | user (cá nhân)
-
-// System scope — chỉ owner mới được ghi
-api.get('/storage/system', guard(), wrap((req) => {
-  if (req.user.role !== 'owner' && !Auth.canUser(req.user, 'settings.manage')) {
-    const e = new Error('Chỉ Admin mới xem được cấu hình hệ thống'); e.status = 403; throw e;
-  }
-  return ES.getScopeSnapshot('system', '');
+// --- Config backup / restore (owner only) ---
+api.get('/config/export', guardAny('settings.manage'), wrap(async () => {
+  const { exportConfig } = await import('./services/configBackup.js');
+  return exportConfig();
 }));
-api.get('/storage/system/:key', guard(), wrap((req) => {
-  if (req.user.role !== 'owner' && !Auth.canUser(req.user, 'settings.manage')) {
-    const e = new Error('Không đủ quyền'); e.status = 403; throw e;
-  }
-  const val = ES.getStorageValue('system', '', req.params.key);
-  return { key: req.params.key, value: val };
-}));
-api.put('/storage/system/:key', guard(), wrap((req) => {
-  if (req.user.role !== 'owner') { const e = new Error('Chỉ Admin mới được cập nhật cấu hình hệ thống'); e.status = 403; throw e; }
-  return ES.setStorageValue('system', '', req.params.key, req.body.value, req.user.username);
-}));
-api.delete('/storage/system/:key', guard(), wrap((req) => {
-  if (req.user.role !== 'owner') { const e = new Error('Chỉ Admin mới được xóa cấu hình hệ thống'); e.status = 403; throw e; }
-  return ES.deleteStorageValue('system', '', req.params.key);
-}));
-
-// Branch scope — manager+ có thể ghi theo chi nhánh của mình
-api.get('/storage/branch', guard(), wrap((req) => ES.getScopeSnapshot('branch', branch(req))));
-api.get('/storage/branch/:key', guard(), wrap((req) => {
-  const val = ES.getStorageValue('branch', branch(req), req.params.key);
-  return { key: req.params.key, value: val };
-}));
-api.put('/storage/branch/:key', guardAny('settings.manage'), wrap((req) => {
-  return ES.setStorageValue('branch', branch(req), req.params.key, req.body.value, req.user.username);
-}));
-api.delete('/storage/branch/:key', guardAny('settings.manage'), wrap((req) => {
-  return ES.deleteStorageValue('branch', branch(req), req.params.key);
-}));
-
-// User preferences — mỗi user chỉ đọc/ghi settings của chính mình
-api.get('/storage/user/preferences', guard(), wrap((req) => ES.getAllUserPrefs(req.user.id)));
-api.get('/storage/user/preferences/:key', guard(), wrap((req) => {
-  const val = ES.getUserPref(req.user.id, req.params.key);
-  return { key: req.params.key, value: val };
-}));
-api.put('/storage/user/preferences/:key', guard(), wrap((req) => ES.setUserPref(req.user.id, req.params.key, req.body.value)));
-api.post('/storage/user/preferences', guard(), wrap((req) => ES.setManyUserPrefs(req.user.id, req.body)));
-api.delete('/storage/user/preferences/:key', guard(), wrap((req) => ES.deleteUserPref(req.user.id, req.params.key)));
-
-// Admin: đọc preferences của user khác (owner/manager)
-api.get('/storage/user/:userId/preferences', guardAny('settings.users', 'settings.manage'), wrap((req) => ES.getAllUserPrefs(req.params.userId)));
-api.get('/storage/user/:userId/preferences/:key', guardAny('settings.users', 'settings.manage'), wrap((req) => {
-  const val = ES.getUserPref(req.params.userId, req.params.key);
-  return { key: req.params.key, value: val };
+api.post('/config/import', guardAny('settings.manage'), wrap(async (req) => {
+  const { importConfig } = await import('./services/configBackup.js');
+  return importConfig(req.body);
 }));
