@@ -2188,7 +2188,7 @@ async function openSettings(initialTab){
       einvoice:{...configDefaults.einvoice,...(input.einvoice||{})},
       labels:{...configDefaults.labels,...(input.labels||{})},
       bill:{...configDefaults.bill,...(input.bill||{})},
-      printers:Array.isArray(input.printers)&&input.printers.length?input.printers.map((p,i)=>({
+      printers:Array.isArray(input.printers)?input.printers.map((p,i)=>({
         id:p.id||`printer_${i+1}`,
         name:p.name||p.systemName||'',
         systemName:p.systemName||p.name||'',
@@ -2245,7 +2245,7 @@ async function openSettings(initialTab){
   }
   function readPrinterCfg(){
     if(!printCfg) printCfg=mergePrintCfg(null);
-    return Array.isArray(printCfg.printers)&&printCfg.printers.length?printCfg.printers.map(x=>({...x})):configDefaults.printers.map(x=>({...x}));
+    return Array.isArray(printCfg.printers)?printCfg.printers.map(x=>({...x})):configDefaults.printers.map(x=>({...x}));
   }
   function defaultOperationsCfg(){
     return {
