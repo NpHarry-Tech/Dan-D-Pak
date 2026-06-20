@@ -51,8 +51,138 @@ Each workflow row includes actors/devices, preconditions, steps, success state, 
 | VPS deploy | DevOps | Server, DNS, env ready | Pull, compose up, healthcheck | HTTPS app online | Env missing, DB unavailable | All protected data | Deploy; `/health` | Follow VPS docs; updated 2026-06-18 |
 | Rollback | DevOps | Previous release/backup exists | Revert image/commit and restore if needed | Prior version healthy | Data/schema mismatch | All protected data | Deploy/DB | Rollback app before DB restore unless schema requires; updated 2026-06-18 |
 
+## System & Architecture Workflows (VPS + Company Server)
+
+These cover the two-zone architecture. Each lists actor/device, preconditions,
+steps, success, failure cases, tables touched, audit, realtime, print, and
+sync/offline behavior. See [DATA_OWNERSHIP.md](DATA_OWNERSHIP.md).
+
+### 1. App access (public VPS)
+Actor: any user/browser. Pre: VPS online. Steps: open public VPS domain → VPS
+serves `web/` shell → frontend calls same-origin `/api` → VPS proxies to company
+server if online. Success: app loads, API reaches company server. Failure: VPS down
+(no app), company server down (offline/temporary state shown). Tables: none on VPS.
+Audit: gateway access logs (non-sensitive). Sync: falls back to buffer if upstream
+offline.
+
+### 2. Local LAN
+Actor: POS/iPad/KDS. Pre: company server reachable on LAN (`pos.local`/LAN IP). Steps:
+device connects directly to company server, no VPS. Success: full operation, all
+data in PostgreSQL. Failure: LAN/server down → device offline queue. Tables: all
+business tables. Audit: normal. Sync: not required when on LAN.
+
+### 3. Remote access
+Actor: owner/admin off-site. Pre: VPS + VPN/tunnel up. Steps: admin hits VPS → VPS
+routes API/WebSocket through VPN to company server. Success: remote operation.
+Failure: tunnel down → offline state. Security: tunnel only; no direct DB exposure.
+
+### 4. Company server online order
+Actor: iPad/POS. Pre: company server online. Steps: create order → company backend
+writes to PostgreSQL → KDS ticket created → POS/admin dashboards update realtime →
+print job created if required. Success: order persisted + routed. Tables: orders,
+order_items, order_status_history, kitchen_tickets, print_jobs. Audit: order events.
+Realtime: `order:new`, `kds:refresh`. Print: kitchen/bill. Sync: none (online).
+
+### 5. Company server offline (VPS buffer)
+Actor: any write path via VPS. Pre: VPS up, company server unreachable. Steps: VPS
+enters temporary buffer mode → event encrypted + stored (`VPS_PENDING`) → UI shows
+waiting-for-sync, **no fake official success**. Tables (VPS): temporary_events.
+Sync: reconciled on recovery. Security: payload encrypted on VPS.
+
+### 6. Recovery sync
+Actor: sync worker. Pre: company server back online. Steps: pull pending VPS events
+→ validate payload_hash/signature → check event_id idempotency → write to PostgreSQL
+→ ACK → VPS deletes synced data. Success: pending count → 0. Failure: conflict →
+CONFLICT for admin review. Tables: sync_events, processed_event_ids, sync_conflicts.
+Audit: sync conflicts.
+
+### 7. Order cancellation
+Actor: staff/POS/admin. Pre: order/item cancellable. Steps: cancel with **required
+reason** → status history row → audit log → kitchen notified → payment/inventory
+impact handled. Tables: orders, order_status_history, audit_logs. Realtime:
+`order:updated`, `kds:refresh`. Non-destructive: order never deleted.
+
+### 8. Payment
+Actor: cashier/POS. Pre: open bill, pay permission. Steps: cash/card/bank/split →
+payment lines recorded → status history recorded → official only after approval →
+audit log. Tables: payments, payment_lines, payment_status_history. Offline: pending
+until synced/approved — see [PAYMENT_OFFLINE_POLICY.md](PAYMENT_OFFLINE_POLICY.md).
+
+### 9. Cash in/out
+Actor: staff/manager. Pre: shift open. Steps: open drawer → opening cash recorded →
+cash in/out with **required reason** → manager approval if needed → shift report
+updated → audit log. Tables: cash_drawers, cash_shifts, cash_in_out, cash_count_logs.
+See [CASH_IN_OUT_WORKFLOW.md](CASH_IN_OUT_WORKFLOW.md).
+
+### 10. Bank account linking
+Actor: admin. Steps: link bank/provider → credentials/tokens **encrypted** → no
+plaintext secret in DB/logs → account number masked in UI → audit log. Tables:
+bank_accounts, payment_provider_tokens, bank_config_history. See
+[BANK_ACCOUNT_LINKING.md](BANK_ACCOUNT_LINKING.md).
+
+### 11. App-web linking
+Actor: user/admin. Steps: scan QR or enter pairing code → device/app/web session
+linked → token created → approval if needed → session audited → revocation
+supported. Tables: device_pairing_requests, app_web_links, app_web_link_tokens. See
+[APP_WEB_LINKING.md](APP_WEB_LINKING.md).
+
+### 12. Print
+Actor: system/staff. Steps: kitchen/bill/label print → attempt logged → on failure
+retry → reprint logged (who/why/when). Tables: print_jobs, print_attempts,
+reprint_logs. Every print/reprint logged. See [PRINT_WORKFLOW.md](PRINT_WORKFLOW.md).
+
+### 13. Price update
+Actor: admin. Steps: change price → **new price version created** → old orders keep
+old price snapshot → audit log. Tables: price_versions, price_change_logs,
+audit_logs. Non-destructive: no recalculation of closed orders.
+
+### 14. Restaurant setting update
+Actor: admin. Steps: change config → **setting version created** → devices receive
+realtime update → audit log. Tables: restaurant_setting_versions, config_change_logs.
+Realtime: settings broadcast.
+
+### 15. Inventory in
+Actor: warehouse. Steps: purchase/goods receipt → inventory movement created →
+supplier + cost recorded → stock updated **by ledger** → audit log. Tables:
+purchase_orders, goods_receipts, inventory_movements, inventory_cost_layers. See
+[INVENTORY_WORKFLOW.md](INVENTORY_WORKFLOW.md).
+
+### 16. Inventory out
+Actor: system/warehouse. Steps: sale/recipe consumption/waste/transfer → movement
+created → ledger updated → **no direct destructive quantity edit**. Tables:
+inventory_movements, inventory_movement_items.
+
+### 17. Stocktake
+Actor: warehouse. Steps: open session → count items → compute differences →
+adjustment movements created → close session → audit log. Tables: stocktake_sessions,
+stocktake_items, inventory_movements (STOCKTAKE_ADJUSTMENT).
+
+### 18. Customer
+Actor: staff/admin. Steps: create/update customer → privacy-sensitive data protected
+→ activity linked to orders → audit log. Tables: customers, customer_activity_logs.
+
+### 19. Report
+Actor: admin. Steps: realtime dashboard shows live numbers → official report closes
+after shift/day close → report snapshot stored → corrections audited. Tables:
+report_snapshots, shift_reports. Official reports use closed shifts/day locks.
+
+### 20. Backup/restore
+Actor: DevOps. Steps: encrypted DB backup → restore test → restore audit log. Tables:
+all (DB-level). See [BACKUP_RESTORE.md](BACKUP_RESTORE.md).
+
+### 21. Power outage
+Actor: system. Steps: company server offline → VPS buffer active → local devices may
+queue if powered → on return, sync begins → conflict handling if needed. See
+[POWER_OUTAGE_RUNBOOK.md](POWER_OUTAGE_RUNBOOK.md).
+
+### 22. Conflict
+Actor: sync worker + admin. Steps: duplicate/conflicting offline data detected → mark
+CONFLICT → admin review required → resolution audited. Tables: sync_conflicts,
+audit_logs. No silent overwrite.
+
 ## Required Follow-Up Tests
 
 - Add automated smoke tests for `/health`, `/api/ping`, API 404 JSON, and core order/payment/KDS flows.
 - Add migration dry-run tests before PostgreSQL cutover.
 - Add device pairing tests when device registry endpoints are implemented.
+- Add sync-back idempotency tests (duplicate `event_id` must not double-write).

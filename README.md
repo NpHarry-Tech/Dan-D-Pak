@@ -4,6 +4,48 @@ Dan-D-Pak is a POS/ERP system for FnB, retail, iPad self-order, cashier POS, KDS
 
 This repository is a real business system. Orders, invoices, customers, reports, payments, inventory, devices, and audit logs are protected assets.
 
+## Deployment Zones (read this first)
+
+Dan-D-Pak runs in two zones with a hard boundary. See
+[docs/DATA_OWNERSHIP.md](docs/DATA_OWNERSHIP.md).
+
+### Public VPS zone (gateway, NOT source of truth)
+
+The VPS is public-facing. It may serve the public web shell (`web/`), terminate
+HTTPS, reverse-proxy `/api` and WebSocket to the company server, expose health and
+version info, and hold a **temporary encrypted event buffer (1–7 days, default 7)**
+while the company server is offline. The VPS must **never** be the source of truth
+and must never permanently store real orders, customers, staff, payments, invoices,
+inventory, reports, bank credentials, audit logs, or private settings. PostgreSQL is
+never exposed on the VPS. See [docs/VPS_GATEWAY.md](docs/VPS_GATEWAY.md) and
+[docs/VPS_TEMPORARY_BUFFER.md](docs/VPS_TEMPORARY_BUFFER.md).
+
+### Private company server zone (the source of truth)
+
+The company server owns all real business data: backend API, PostgreSQL production
+database, realtime, auth, users/staff/customers, settings, menu/pricing history,
+orders, payments, cashbook, bank linking, app-web linking, KDS, inventory ledger,
+purchase, invoices, print logs, integrations, reports, audit logs, sync worker, and
+backups. It accepts traffic only from LAN devices, the VPS VPN/tunnel IP, and
+approved admin access. See [docs/COMPANY_DATA_SERVER.md](docs/COMPANY_DATA_SERVER.md).
+
+When the company server is unreachable, write events are buffered (VPS) or queued
+(device) as **pending** — never reported as official success — and reconciled on
+recovery via idempotent **sync back**. See
+[docs/OFFLINE_FIRST_ARCHITECTURE.md](docs/OFFLINE_FIRST_ARCHITECTURE.md) and
+[docs/SYNC_BACK_TO_COMPANY_SERVER.md](docs/SYNC_BACK_TO_COMPANY_SERVER.md).
+
+### Folder mapping
+
+The current `web/` folder is the **public-web** zone and `server/` is the
+**company-server** zone. A full rename of a live system is risky, so the names are
+kept and mapped in [docs/REPO_STRUCTURE.md](docs/REPO_STRUCTURE.md).
+
+The company database is the **permanent memory** of the restaurant — it stores the
+history of important changes, not only the latest state. See
+[docs/COMPANY_DATABASE_MEMORY.md](docs/COMPANY_DATABASE_MEMORY.md) and
+[docs/DATABASE_SCHEMA.md](docs/DATABASE_SCHEMA.md).
+
 ## Stack Truth
 
 Temporary demo stack:
@@ -194,6 +236,25 @@ See [docs/KNOWN_CASES.md](docs/KNOWN_CASES.md).
 - Do not delete protected files.
 - Document every data-impacting change.
 - If a change touches orders, payments, invoices, inventory, reports, customers, users, permissions, devices, or audit logs, update safety docs and changelog notes.
+
+## Documentation Index
+
+Architecture & zones:
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), [docs/REPO_STRUCTURE.md](docs/REPO_STRUCTURE.md), [docs/DATA_OWNERSHIP.md](docs/DATA_OWNERSHIP.md)
+- [docs/VPS_GATEWAY.md](docs/VPS_GATEWAY.md), [docs/COMPANY_DATA_SERVER.md](docs/COMPANY_DATA_SERVER.md), [docs/SECURITY_BOUNDARIES.md](docs/SECURITY_BOUNDARIES.md)
+
+Database memory & schema:
+- [docs/COMPANY_DATABASE_MEMORY.md](docs/COMPANY_DATABASE_MEMORY.md), [docs/DATABASE_SCHEMA.md](docs/DATABASE_SCHEMA.md), [docs/AUDIT_LOGGING.md](docs/AUDIT_LOGGING.md)
+- Planned PostgreSQL DDL: [server/db/schema/](server/db/schema/README.md)
+
+Offline, sync & resilience:
+- [docs/OFFLINE_FIRST_ARCHITECTURE.md](docs/OFFLINE_FIRST_ARCHITECTURE.md), [docs/VPS_TEMPORARY_BUFFER.md](docs/VPS_TEMPORARY_BUFFER.md), [docs/SYNC_BACK_TO_COMPANY_SERVER.md](docs/SYNC_BACK_TO_COMPANY_SERVER.md)
+- [docs/POWER_OUTAGE_RUNBOOK.md](docs/POWER_OUTAGE_RUNBOOK.md), [docs/FAILOVER_RUNBOOK.md](docs/FAILOVER_RUNBOOK.md), [docs/BACKUP_RESTORE.md](docs/BACKUP_RESTORE.md)
+
+Domain workflows:
+- [docs/WORKFLOWS.md](docs/WORKFLOWS.md), [docs/DEVICE_WORKFLOWS.md](docs/DEVICE_WORKFLOWS.md)
+- [docs/PAYMENT_OFFLINE_POLICY.md](docs/PAYMENT_OFFLINE_POLICY.md), [docs/BANK_ACCOUNT_LINKING.md](docs/BANK_ACCOUNT_LINKING.md), [docs/APP_WEB_LINKING.md](docs/APP_WEB_LINKING.md)
+- [docs/PRINT_WORKFLOW.md](docs/PRINT_WORKFLOW.md), [docs/INVENTORY_WORKFLOW.md](docs/INVENTORY_WORKFLOW.md), [docs/CASH_IN_OUT_WORKFLOW.md](docs/CASH_IN_OUT_WORKFLOW.md)
 
 ## Changelog Workflow
 
