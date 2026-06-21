@@ -9,7 +9,7 @@ import { getActiveShift } from './shifts.js';
 import { archiveOrder } from './archive.js';
 
 // Số Bill nội bộ: Dan{ddMMyy}{seq} — seq là số thứ tự đơn trong NGÀY (reset mỗi
-// ngày vận hành: ca sáng → ca tối đều trong 1 ngày dương lịch). VD Dan1506260001.
+// ngày vận hành: ca sáng → ca tối đều trong 1 ngày dương lịch). VD Dan210626001.
 function nextBillNo(branch_id = 'br1') {
   const d = new Date();
   const pad = (x) => String(x).padStart(2, '0');
@@ -18,7 +18,7 @@ function nextBillNo(branch_id = 'br1') {
   const end = new Date(d); end.setHours(24, 0, 0, 0);
   const n = db.prepare(`SELECT COUNT(*) c FROM orders WHERE branch_id=? AND bill_no IS NOT NULL AND created_at>=? AND created_at<?`)
     .get(branch_id, start.toISOString(), end.toISOString()).c + 1;
-  return `Dan${ddMMyy}${String(n).padStart(4, '0')}`;
+  return `Dan${ddMMyy}${String(n).padStart(3, '0')}`;
 }
 
 export function getOpenOrderForTable(table_id, branch_id = 'br1') {

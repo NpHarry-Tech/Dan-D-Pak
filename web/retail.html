@@ -1480,10 +1480,10 @@ function pad2(n){ return String(n).padStart(2,'0'); }
 function receiptDate(d){ return `${pad2(d.getDate())}/${pad2(d.getMonth()+1)}/${d.getFullYear()}`; }
 function receiptTime(d){ return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`; }
 function internalBillNo(r,d){
-  if(r.bill_no && /^Dan\d{10}$/i.test(r.bill_no)) return r.bill_no;
+  if(r.bill_no && /^Dan\d{7,}$/i.test(r.bill_no)) return r.bill_no;
   const seed=String(r.order_id||r.number||'1');
-  let n=0; for(const ch of seed) n=(n*31+ch.charCodeAt(0))%10000;
-  return `Dan${pad2(d.getDate())}${pad2(d.getMonth()+1)}${String(d.getFullYear()).slice(-2)}${String(n||1).padStart(4,'0')}`;
+  let n=0; for(const ch of seed) n=(n*31+ch.charCodeAt(0))%1000;
+  return `Dan${pad2(d.getDate())}${pad2(d.getMonth()+1)}${String(d.getFullYear()).slice(-2)}${String(n||1).padStart(3,'0')}`;
 }
 function numberToVietnamese(n){
   n=Math.round(Number(n)||0);

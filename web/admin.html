@@ -4024,13 +4024,13 @@ async function openSettings(initialTab){
     const bill=readCfg('bill');
     if(kind==='bill'){
       const sampleReceipt={
-        bill_no:'I00579', number:'I00579', table_code:'TẦNG TRỆT', channel:'dine_in',
+        bill_no:'Dan210626001', number:'Dan210626001', table_code:'TẦNG TRỆT', channel:'dine_in',
         created_at:'2026-06-21T07:43:00', paid_at:'2026-06-21T07:43:00',
         cashier:'Cherry', total:30000, paid:30000, change:0,
         items:[{name:'Cà Phê - Vn Black Coffee',qty:1,unit_price:30000}],
         lines:[{method:'bank_transfer',amount:30000}],
       };
-      return {storeName:bill.storeName||'Dan',phone:bill.phone||'0938 525 659 - 0282 2533 607',billNo:'I00579',cashier:'Cherry',...danBillVars(sampleReceipt,bill)};
+      return {storeName:bill.storeName||'Dan',phone:bill.phone||'0938 525 659 - 0282 2533 607',billNo:'Dan210626001',cashier:'Cherry',...danBillVars(sampleReceipt,bill)};
     }
     return {itemName:'Trà đào cam sả',options:'Size L · Trân châu trắng · Kem cheese',note:'Ít đá, 50% đường',orderNo:'#A05-028',table:'Mang đi',qty:'1',channel:'Take away',customer:'Anh Minh',phone:'0901 234 567',time:'15:42'};
   }
