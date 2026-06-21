@@ -82,6 +82,10 @@ export function danBillVars(r = {}, cfg = {}) {
   const linesPaid = lines.reduce((s, l) => s + (Number(l.amount) || 0), 0);
   const paid = Number(r.paid ?? (linesPaid || total)) || 0;
   const change = Number(r.change ?? Math.max(0, paid - total)) || 0;
+  // The QR note is only meaningful when a QR is actually rendered. The web
+  // renderers draw the QR block when showQr is on and this is not a preview,
+  // so blank the note otherwise (it would instruct scanning an absent QR).
+  const showQr = cfg.showQr !== '0' && !r.preview;
   return {
     storeNameC: danCenter(storeName),
     storeSubtitleC: danCenter(storeSubtitle),
@@ -99,7 +103,7 @@ export function danBillVars(r = {}, cfg = {}) {
     taxNoteC: danCenter(taxNote),
     footerBrandC: danCenter(`${storeSubtitle} ${storeName}`.trim()),
     footerC: danCenter(footer),
-    qrNote,
-    qrNoteC: danWrap(qrNote).map(l => danCenter(l)).join('\n'),
+    qrNote: showQr ? qrNote : '',
+    qrNoteC: showQr ? danWrap(qrNote).map(l => danCenter(l)).join('\n') : '',
   };
 }

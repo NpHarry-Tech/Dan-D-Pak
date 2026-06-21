@@ -197,7 +197,9 @@ function renderReceipt(p = {}) {
   if (cfg.taxIncludedText) rows.push(center(cfg.taxIncludedText, DAN_W));
   rows.push(center(`${cfg.storeSubtitle || ''} ${storeName}`.trim(), DAN_W));
   rows.push(center(cfg.footer || 'Xin cam on va hen gap lai', DAN_W));
-  if (cfg.qrNote) { rows.push(''); rows.push(...wrap(cfg.qrNote, DAN_W).map(l => center(l, DAN_W))); }
+  // No QR note here: this ESC/POS path prints plain text only and never emits a
+  // scannable QR, so we must not tell the customer to scan one. The QR note is
+  // shown by the web/preview renderers where a QR block is actually drawn.
   return rows.join('\n');
 }
 
