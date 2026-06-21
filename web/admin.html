@@ -1032,6 +1032,7 @@ body.settings-shell > .view { display: none; }
 
 <script type="module">
 import { api, apiUrl, connect, money, toast, esc, startClock, topbar, requireLogin, renderUserChip, hasPerm, getPerms, getLang, setLang, getToken, requestPinCode } from '/shared/client.js';
+import { danBillVars } from '/shared/danBill.js';
 const isSettingsRoute = window.location.pathname.replace(/\/+$/, '') === '/settings';
 document.getElementById('top').innerHTML = isSettingsRoute
   ? topbar('settings')
@@ -2176,7 +2177,7 @@ async function openSettings(initialTab){
   const configDefaults={
     einvoice:{provider:'MISA',taxCode:'0312345678',company:'District 1 - HCMC',address:'HCMC',series:'1C26TAA',template:'1/001',environment:'demo',autoIssue:'0',invoiceMode:'cash_register',legalBasis:'ND70-2025_TT32-2025',issueTiming:'at_payment',priceIncludesVat:'1',defaultVatRate:'8',standardVatRate:'10',vatReductionValidFrom:'2025-07-01',vatReductionValidTo:'2026-12-31',itemNamePolicy:'exact_menu_sku',unitPolicy:'required'},
     labels:{paper:'50x30',widthMm:50,heightMm:30,printerName:'Máy in tem ly',copies:'1',printScale:100,autoPrint:'1',templateKind:'cup'},
-    bill:{storeName:'CÔNG TY TNHH DỊCH VỤ TIẾP THỊ BCM',storeSubtitle:'(Hệ thống Phân phối F&B & Retail BCM)',address:'00.08 Tháp A1 - Khu chung cư phức hợp lô M1-M2 (Sarimi), Số 74 Nguyễn Cơ Thạch, Phường An Lợi Đông, Thành phố Thủ Đức, Thành phố Hồ Chí Minh, Việt Nam',taxCode:'0316756674',phone:'0938525659',email:'customerservice@bcm-vn.com',paper:'K80',widthMm:72,heightMm:210,printerName:'Máy in Bill',copies:'1',printScale:100,footer:'CẢM ƠN QUÝ KHÁCH - HẸN GẶP LẠI TẠI BCM!',showQr:'1',showTax:'1',taxIncludedText:'Giá đã bao gồm thuế GTGT theo quy định',unitPriceMode:'vat_included',autoPrint:'1'},
+    bill:{storeName:'Dan',storeSubtitle:'Bon Appétit',address:'Đường D9, KDT Sala, Phường An Khánh, Thành phố Hồ Chí Minh',taxCode:'',phone:'0938 525 659 - 0282 2533 607',email:'',paper:'K80',widthMm:72,heightMm:210,printerName:'Máy in Bill',copies:'1',printScale:100,footer:'Xin cảm ơn và hẹn gặp lại',showQr:'1',showTax:'1',taxIncludedText:'Đơn giá đã bao gồm VAT',qrNote:'Scan the QR code to let us know how you enjoyed meals with us',unitPriceMode:'vat_included',autoPrint:'1'},
     printers:[
       {id:'kitchen',name:'',systemName:'',label:'Phiếu bếp',type:'Phiếu bếp',output:'kitchen_ticket',location:'Bếp',active:true,auto:true,connection:'browser',ip:'',port:9100,cashDrawer:false,openDrawerOnPrint:false},
       {id:'bar',name:'',systemName:'',label:'Phiếu bar',type:'Phiếu bar',output:'kitchen_ticket',location:'Bar',active:true,auto:true,connection:'browser',ip:'',port:9100,cashDrawer:false,openDrawerOnPrint:false},
@@ -4016,12 +4017,21 @@ async function openSettings(initialTab){
   }
   function printFields(kind){
     return kind==='bill'
-      ? [['storeName','Tên công ty'],['storeSubtitle','Dòng mô tả'],['address','Địa chỉ'],['sellerTaxCode','MST người bán'],['phone','SĐT'],['email','Email'],['invoiceSeries','Ký hiệu HĐ'],['taxInvoiceNo','Số HĐ thuế'],['billNo','Số bill nội bộ'],['date','Ngày lập'],['timeOnly','Giờ lập'],['table','Bàn/quầy'],['cashier','Thu ngân'],['customerName','Khách hàng'],['customerTaxCode','MST khách'],['items','Danh sách món'],['taxableAmount','Cộng tiền hàng'],['vatRate','Thuế suất'],['vatAmount','Tiền thuế'],['grandTotal','Tổng thanh toán'],['totalWords','Tiền bằng chữ'],['method','Thanh toán'],['paymentStatus','Trạng thái'],['taxAuthorityCode','Mã CQT'],['footer','Lời cảm ơn']]
+      ? [['storeNameC','Tên quán'],['storeSubtitleC','Dòng mô tả'],['addressBlock','Địa chỉ'],['phone','SĐT'],['billNo','Số hóa đơn'],['place','Bàn/khu vực'],['cashier','Thu ngân'],['timeIn','Giờ vào'],['timeOut','Giờ ra'],['items','Danh sách món'],['totalLine','Tổng tiền'],['paymentLines','Hình thức TT'],['paidLine','Tiền khách đưa'],['changeLine','Tiền trả khách'],['taxNoteC','Ghi chú thuế'],['footerBrandC','Tên thương hiệu'],['footerC','Lời cảm ơn'],['qrNoteC','Ghi chú QR']]
       : [['itemName','Tên món'],['options','Topping/tuỳ chọn'],['note','Ghi chú'],['orderNo','Mã đơn'],['table','Bàn'],['qty','Số lượng'],['channel','Kênh'],['customer','Khách'],['phone','SĐT'],['time','Giờ in']];
   }
   function printSample(kind){
     const bill=readCfg('bill');
-    if(kind==='bill') return {storeName:bill.storeName||'CÔNG TY TNHH DỊCH VỤ TIẾP THỊ BCM',storeSubtitle:bill.storeSubtitle||'(Hệ thống Phân phối F&B & Retail BCM)',address:bill.address||'00.08 Tháp A1 - Khu chung cư phức hợp lô M1-M2 (Sarimi), Số 74 Nguyễn Cơ Thạch, Phường An Lợi Đông, Thành phố Thủ Đức, Thành phố Hồ Chí Minh, Việt Nam',sellerTaxCode:bill.taxCode||'0316756674',phone:bill.phone||'0938525659',email:bill.email||'customerservice@bcm-vn.com',invoiceSeries:'C26TMB',taxInvoiceNo:'00000001',billNo:'Dan1506260001',date:'15/06/2026',timeOnly:'15:30',orderNo:'Dan1506260001',table:'A03',cashier:'Nguyễn Phúc Huy',customerName:'Khách không xuất hóa đơn',customerTaxCode:'',items:'[DANH MỤC F&B - NHÀ HÀNG / ĐỒ UỐNG]\n01   Combo Lẩu nấm Hải sản   1   450,000       450,000\n02   Trà thạch đào Size L     2    45,000        90,000\n\n[DANH MỤC RETAIL - SẢN PHẨM TIÊU DÙNG]\n03   Cà phê hạt BCM 250g      2   120,000       240,000\n04   Bánh quy bơ hộp thiếc    1   180,000       180,000',subtotal:'960,000',taxableAmount:'960,000',vatRate:'8',vatAmount:'76,800',grandTotal:'1,036,800',discount:'0',total:'1,036,800',totalWords:'Một triệu không trăm ba mươi sáu nghìn tám trăm đồng chẵn',taxNote:bill.taxIncludedText||'Giá đã bao gồm thuế GTGT theo quy định',method:'Chuyển khoản / Tiền mặt',paymentStatus:'Đã thanh toán',taxAuthorityCode:'00F83A7B-2C9D-4E1A-8B6C-5D4E3F2A1B0C',footer:bill.footer||'CẢM ƠN QUÝ KHÁCH - HẸN GẶP LẠI TẠI BCM!'};
+    if(kind==='bill'){
+      const sampleReceipt={
+        bill_no:'I00579', number:'I00579', table_code:'TẦNG TRỆT', channel:'dine_in',
+        created_at:'2026-06-21T07:43:00', paid_at:'2026-06-21T07:43:00',
+        cashier:'Cherry', total:30000, paid:30000, change:0,
+        items:[{name:'Cà Phê - Vn Black Coffee',qty:1,unit_price:30000}],
+        lines:[{method:'bank_transfer',amount:30000}],
+      };
+      return {storeName:bill.storeName||'Dan',phone:bill.phone||'0938 525 659 - 0282 2533 607',billNo:'I00579',cashier:'Cherry',...danBillVars(sampleReceipt,bill)};
+    }
     return {itemName:'Trà đào cam sả',options:'Size L · Trân châu trắng · Kem cheese',note:'Ít đá, 50% đường',orderNo:'#A05-028',table:'Mang đi',qty:'1',channel:'Take away',customer:'Anh Minh',phone:'0901 234 567',time:'15:42'};
   }
   function printText(v,kind='label'){ const s=printSample(kind); return String(v||'').replace(/\{(\w+)\}/g,(_,k)=>s[k]??`{${k}}`); }
@@ -4039,66 +4049,50 @@ async function openSettings(initialTab){
     ]};
   }
   function defaultBillText(){
+    const rule='-'.repeat(42);
+    const ctr=(s)=>{ s=String(s||''); return s.length>=42?s:' '.repeat(Math.floor((42-s.length)/2))+s; };
+    const header='Tên món'.padEnd(17)+' '+'SL'.padStart(2)+' '+'Đ.Giá'.padStart(9)+' '+'T.Tiền'.padStart(10);
     return [
-      '==================================================',
-      '        {storeName}',
-      '     {storeSubtitle}',
-      'Địa chỉ: {address}',
-      'Mã số thuế: {sellerTaxCode}',
-      'Số điện thoại: {phone}',
-      'Email: {email}',
-      '==================================================',
+      '{storeNameC}',
+      '{storeSubtitleC}',
       '',
-      '                HÓA ĐƠN BÁN HÀNG',
-      '          (Khởi tạo từ máy tính tiền)',
+      '{addressBlock}',
+      'Tel: {phone}',
+      rule,
+      ctr('HÓA ĐƠN THANH TOÁN'),
       '',
-      'Ký hiệu HĐ: {invoiceSeries}      Số HĐ (Thuế): {taxInvoiceNo}',
-      'Số Bill (Nội bộ): {billNo}',
-      'Ngày lập: {date}       Giờ lập: {timeOnly}',
-      'Thu ngân: {cashier}    Quầy/Bàn: {table}',
-      '',
-      'Khách hàng: {customerName}',
-      'Mã số thuế: {customerTaxCode}',
-      '--------------------------------------------------',
-      'STT  Tên mặt hàng/Dịch vụ   SL   Đơn giá    Thành tiền',
-      '--------------------------------------------------',
+      'Số Hóa Đơn: {billNo}  {place}',
+      'Thu ngân: {cashier}',
+      'Ngày/Giờ vào: {timeIn}',
+      'Ngày/Giờ ra: {timeOut}',
+      rule,
+      header,
       '{items}',
-      '--------------------------------------------------',
-      'Cộng tiền hàng:                       {taxableAmount} VNĐ',
-      'Thuế suất GTGT ({vatRate}%):          {vatAmount} VNĐ',
-      '--------------------------------------------------',
-      'TỔNG TIỀN THANH TOÁN:                 {grandTotal} VNĐ',
-      '--------------------------------------------------',
-      'Số tiền bằng chữ: {totalWords}.',
+      rule,
+      '{totalLine}',
+      '{paymentLines}',
+      '{paidLine}',
+      '{changeLine}',
       '',
-      'Hình thức thanh toán: {method}',
-      'Trạng thái: {paymentStatus}',
+      '{taxNoteC}',
+      '{footerBrandC}',
+      '{footerC}',
       '',
-      '--------------------------------------------------',
-      'MÃ CỦA CƠ QUAN THUẾ:',
-      '{taxAuthorityCode}',
-      '',
-      '(Quý khách có thể tra cứu hóa đơn này tại website:',
-      'https://gdt.gov.vn bằng mã số thuế người bán',
-      'và mã cơ quan thuế ở trên)',
-      '',
-      '==================================================',
-      ' HÓA ĐƠN ĐIỆN TỬ KHỞI TẠO TỪ MÁY TÍNH TIỀN',
-      '      {footer}',
+      '{qrNoteC}',
     ].join('\n');
   }
   function defaultBillTemplate(c=readCfg('bill')){
     const [w0,h0]=printPaperSize('bill',c.paper||'K80');
     const w=numOr(c.widthMm,w0,40,90), h=numOr(Number(c.heightMm)>260?210:c.heightMm,210,120,260);
-    return {kind:'bill',version:3,standard:'bcm_fiscal_receipt',paper:c.paper||'K80',widthMm:w,heightMm:h,printerName:c.printerName||'Máy in Bill',copies:c.copies||'1',printScale:numOr(c.printScale,100,50,200),selectedId:'bill_body',elements:[
-      {id:'bill_body',type:'text',x:4,y:3,w:92,h:94,text:defaultBillText(),fontSize:3.8,bold:false,align:'left'},
+    return {kind:'bill',version:4,standard:'dan_payment_receipt',paper:c.paper||'K80',widthMm:w,heightMm:h,printerName:c.printerName||'Máy in Bill',copies:c.copies||'1',printScale:numOr(c.printScale,100,50,200),selectedId:'bill_body',elements:[
+      {id:'bill_body',type:'text',x:4,y:3,w:92,h:94,text:defaultBillText(),fontSize:3.6,bold:false,align:'left',mono:true},
     ]};
   }
   function normalizePrintTemplate(tpl,kind,c){
     const def=kind==='bill'?defaultBillTemplate(c):defaultLabelTemplate(c);
     if(!tpl || tpl.kind!==def.kind) tpl=def;
     if(kind==='bill'){
-      const legacyBcm=tpl.standard==='bcm_fiscal_receipt' && (Number(tpl.version||0)<3 || Number(tpl.heightMm||0)>260 || (tpl.elements||[]).some(el=>String(el.text||'').includes('HOA DON BAN HANG')));
+      const legacyBcm=tpl.standard!=='dan_payment_receipt' || Number(tpl.version||0)<4;
       if(legacyBcm) tpl=def;
     }
     const out={...def,...tpl};
@@ -4363,7 +4357,7 @@ async function openSettings(initialTab){
     if(!root) return;
     let cfg=readCfg('bill');
     let tpl=readBillTemplate(cfg);
-    tpl.kind='bill'; tpl.version=3; tpl.standard='bcm_fiscal_receipt';
+    tpl.kind='bill'; tpl.version=4; tpl.standard='dan_payment_receipt';
     let selectedId=tpl.selectedId||tpl.elements[0]?.id||null;
     let saveTimer=null, pendingImagePoint=null, lastToolDrag=0, imageReplaceId=null;
     const canvas=root.querySelector('#billdCanvas');

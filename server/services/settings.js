@@ -46,22 +46,23 @@ const DEFAULT_PRINT_CONFIG = {
     templateKind: 'cup',
   },
   bill: {
-    storeName: 'CÔNG TY TNHH DỊCH VỤ TIẾP THỊ BCM',
-    storeSubtitle: '(Hệ thống Phân phối F&B & Retail BCM)',
-    address: '00.08 Tháp A1 - Khu chung cư phức hợp lô M1-M2 (Sarimi), Số 74 Nguyễn Cơ Thạch, Phường An Lợi Đông, Thành phố Thủ Đức, Thành phố Hồ Chí Minh, Việt Nam',
-    taxCode: '0316756674',
-    phone: '0938525659',
-    email: 'customerservice@bcm-vn.com',
+    storeName: 'Dan',
+    storeSubtitle: 'Bon Appétit',
+    address: 'Đường D9, KDT Sala, Phường An Khánh, Thành phố Hồ Chí Minh',
+    taxCode: '',
+    phone: '0938 525 659 - 0282 2533 607',
+    email: '',
     paper: 'K80',
     widthMm: 72,
     heightMm: 210,
     printerName: 'Máy in Bill',
     copies: '1',
     printScale: 100,
-    footer: 'CẢM ƠN QUÝ KHÁCH - HẸN GẶP LẠI TẠI BCM!',
+    footer: 'Xin cảm ơn và hẹn gặp lại',
     showQr: '1',
     showTax: '1',
-    taxIncludedText: 'Giá đã bao gồm thuế GTGT theo quy định',
+    taxIncludedText: 'Đơn giá đã bao gồm VAT',
+    qrNote: 'Scan the QR code to let us know how you enjoyed meals with us',
     unitPriceMode: 'vat_included',
     autoPrint: '1',
   },
@@ -79,64 +80,61 @@ const DEFAULT_PRINT_CONFIG = {
   },
 };
 
-function defaultBcmBillText() {
+// Dan payment-receipt column grid (monospace, 42 cols):
+// name(17) · SL(2) · Đ.Giá(9) · T.Tiền(10), single-space separators.
+const DAN_BILL_COLS = { width: 42, nameW: 17, qtyW: 2, priceW: 9, amountW: 10 };
+function danItemsHeader() {
+  const { nameW, qtyW, priceW, amountW } = DAN_BILL_COLS;
+  return 'Tên món'.padEnd(nameW) + ' ' + 'SL'.padStart(qtyW) + ' ' + 'Đ.Giá'.padStart(priceW) + ' ' + 'T.Tiền'.padStart(amountW);
+}
+function danCenter(text, width = DAN_BILL_COLS.width) {
+  const s = String(text || '');
+  if (s.length >= width) return s;
+  return ' '.repeat(Math.floor((width - s.length) / 2)) + s;
+}
+function danBillRule() { return '-'.repeat(DAN_BILL_COLS.width); }
+
+// Default "HÓA ĐƠN THANH TOÁN" payment receipt for Dan / Bon Appétit.
+// Variables are filled per-device by each receipt renderer (web + thermal).
+function defaultDanBillText() {
   return [
-    '==================================================',
-    '        {storeName}',
-    '     {storeSubtitle}',
-    'Địa chỉ: {address}',
-    'Mã số thuế: {sellerTaxCode}',
-    'Số điện thoại: {phone}',
-    'Email: {email}',
-    '==================================================',
+    '{storeNameC}',
+    '{storeSubtitleC}',
     '',
-    '                HÓA ĐƠN BÁN HÀNG',
-    '          (Khởi tạo từ máy tính tiền)',
+    '{addressBlock}',
+    'Tel: {phone}',
+    danBillRule(),
+    danCenter('HÓA ĐƠN THANH TOÁN'),
     '',
-    'Ký hiệu HĐ: {invoiceSeries}      Số HĐ (Thuế): {taxInvoiceNo}',
-    'Số Bill (Nội bộ): {billNo}',
-    'Ngày lập: {date}       Giờ lập: {timeOnly}',
-    'Thu ngân: {cashier}    Quầy/Bàn: {table}',
-    '',
-    'Khách hàng: {customerName}',
-    'Mã số thuế: {customerTaxCode}',
-    '--------------------------------------------------',
-    'STT  Tên mặt hàng/Dịch vụ   SL   Đơn giá    Thành tiền',
-    '--------------------------------------------------',
+    'Số Hóa Đơn: {billNo}  {place}',
+    'Thu ngân: {cashier}',
+    'Ngày/Giờ vào: {timeIn}',
+    'Ngày/Giờ ra: {timeOut}',
+    danBillRule(),
+    danItemsHeader(),
     '{items}',
-    '--------------------------------------------------',
-    'Cộng tiền hàng:                       {taxableAmount} VNĐ',
-    'Thuế suất GTGT ({vatRate}%):          {vatAmount} VNĐ',
-    '--------------------------------------------------',
-    'TỔNG TIỀN THANH TOÁN:                 {grandTotal} VNĐ',
-    '--------------------------------------------------',
-    'Số tiền bằng chữ: {totalWords}.',
+    danBillRule(),
+    '{totalLine}',
+    '{paymentLines}',
+    '{paidLine}',
+    '{changeLine}',
     '',
-    'Hình thức thanh toán: {method}',
-    'Trạng thái: {paymentStatus}',
+    '{taxNoteC}',
+    '{footerBrandC}',
+    '{footerC}',
     '',
-    '--------------------------------------------------',
-    'MÃ CỦA CƠ QUAN THUẾ:',
-    '{taxAuthorityCode}',
-    '',
-    '(Quý khách có thể tra cứu hóa đơn này tại website:',
-    'https://gdt.gov.vn bằng mã số thuế người bán',
-    'và mã cơ quan thuế ở trên)',
-    '',
-    '==================================================',
-    ' HÓA ĐƠN ĐIỆN TỬ KHỞI TẠO TỪ MÁY TÍNH TIỀN',
-    '      {footer}',
+    '{qrNoteC}',
   ].join('\n');
 }
 
-function defaultBcmBillTemplate(bill = DEFAULT_PRINT_CONFIG.bill) {
+function defaultDanBillTemplate(bill = DEFAULT_PRINT_CONFIG.bill) {
   const widthMm = Number(bill.widthMm) || 72;
   const requestedHeight = Number(bill.heightMm) || DEFAULT_PRINT_CONFIG.bill.heightMm;
   const heightMm = requestedHeight > 260 ? DEFAULT_PRINT_CONFIG.bill.heightMm : requestedHeight;
   return {
     kind: 'bill',
-    version: 3,
-    standard: 'bcm_fiscal_receipt',
+    version: 4,
+    standard: 'dan_payment_receipt',
     paper: bill.paper || 'K80',
     widthMm,
     heightMm,
@@ -145,7 +143,7 @@ function defaultBcmBillTemplate(bill = DEFAULT_PRINT_CONFIG.bill) {
     printScale: Number(bill.printScale) || 100,
     selectedId: 'bill_body',
     elements: [
-      { id: 'bill_body', type: 'text', x: 4, y: 3, w: 92, h: 94, text: defaultBcmBillText(), fontSize: 3.8, bold: false, align: 'left' },
+      { id: 'bill_body', type: 'text', x: 4, y: 3, w: 92, h: 94, text: defaultDanBillText(), fontSize: 3.6, bold: false, align: 'left', mono: true },
     ],
   };
 }
@@ -364,19 +362,27 @@ function mergePlain(def, input = {}) {
   return { ...def, ...plainObject(input) };
 }
 function migrateBcmBillDefaults(bill = {}) {
-  const legacyName = !bill.storeName || ['District 1 - HCMC', 'CONG TY TNHH DICH VU TIEP THI BCM'].includes(String(bill.storeName));
-  const legacyAddress = !bill.address || String(bill.address).startsWith('Branch:') || String(bill.address).includes('00.08 Thap A1');
-  const legacyFooter = !bill.footer || String(bill.footer).includes('CAM ON QUY KHACH') || String(bill.footer).includes('Cam on quy khach');
+  const D = DEFAULT_PRINT_CONFIG.bill;
+  const legacyNames = ['District 1 - HCMC', 'CONG TY TNHH DICH VU TIEP THI BCM', 'CÔNG TY TNHH DỊCH VỤ TIẾP THỊ BCM'];
+  const legacyName = !bill.storeName || legacyNames.includes(String(bill.storeName).trim());
+  const legacyAddress = !bill.address || String(bill.address).startsWith('Branch:') || String(bill.address).includes('00.08 Th') || String(bill.address).includes('Sarimi');
+  const legacySubtitle = !bill.storeSubtitle || /He thong|Hệ thống|BCM/i.test(String(bill.storeSubtitle));
+  const legacyPhone = !bill.phone || String(bill.phone).replace(/\D/g, '') === '0938525659';
+  const legacyEmail = !bill.email || /bcm-vn\.com/i.test(String(bill.email));
+  const legacyFooter = !bill.footer || /BCM|CAM ON QUY KHACH|Cảm ơn quý khách/i.test(String(bill.footer));
+  const legacyTaxNote = !bill.taxIncludedText || /GTGT/i.test(String(bill.taxIncludedText));
   return {
     ...bill,
-    storeName: legacyName ? DEFAULT_PRINT_CONFIG.bill.storeName : bill.storeName,
-    storeSubtitle: !bill.storeSubtitle || String(bill.storeSubtitle).includes('He thong') ? DEFAULT_PRINT_CONFIG.bill.storeSubtitle : bill.storeSubtitle,
-    address: legacyAddress ? DEFAULT_PRINT_CONFIG.bill.address : bill.address,
-    taxCode: bill.taxCode || DEFAULT_PRINT_CONFIG.bill.taxCode,
-    phone: bill.phone || DEFAULT_PRINT_CONFIG.bill.phone,
-    email: bill.email || DEFAULT_PRINT_CONFIG.bill.email,
-    heightMm: Number(bill.heightMm) > 260 ? DEFAULT_PRINT_CONFIG.bill.heightMm : (Number(bill.heightMm) || DEFAULT_PRINT_CONFIG.bill.heightMm),
-    footer: legacyFooter ? DEFAULT_PRINT_CONFIG.bill.footer : bill.footer,
+    storeName: legacyName ? D.storeName : bill.storeName,
+    storeSubtitle: legacySubtitle ? D.storeSubtitle : bill.storeSubtitle,
+    address: legacyAddress ? D.address : bill.address,
+    taxCode: bill.taxCode === undefined ? D.taxCode : bill.taxCode,
+    phone: legacyPhone ? D.phone : bill.phone,
+    email: legacyEmail ? D.email : bill.email,
+    heightMm: Number(bill.heightMm) > 260 ? D.heightMm : (Number(bill.heightMm) || D.heightMm),
+    footer: legacyFooter ? D.footer : bill.footer,
+    taxIncludedText: legacyTaxNote ? D.taxIncludedText : bill.taxIncludedText,
+    qrNote: bill.qrNote || D.qrNote,
   };
 }
 function sanitizePrintTemplate(tpl) {
@@ -388,13 +394,11 @@ function sanitizePrintTemplate(tpl) {
 }
 function sanitizeBillTemplate(tpl, bill) {
   const clean = sanitizePrintTemplate(tpl);
-  if (!clean || clean.kind !== 'bill' || Number(clean.version || 0) < 3) return defaultBcmBillTemplate(bill);
-  const legacyBcm = clean.standard === 'bcm_fiscal_receipt'
-    && (
-      Number(clean.heightMm || 0) > 260
-      || clean.elements.some(el => String(el.text || '').includes('HOA DON BAN HANG'))
-    );
-  if (legacyBcm) return defaultBcmBillTemplate(bill);
+  // Anything that is not an up-to-date Dan payment receipt (e.g. the old BCM
+  // fiscal template) is replaced with the Dan "HÓA ĐƠN THANH TOÁN" default.
+  if (!clean || clean.kind !== 'bill' || clean.standard !== 'dan_payment_receipt' || Number(clean.version || 0) < 4) {
+    return defaultDanBillTemplate(bill);
+  }
   return clean;
 }
 function inferPrinterOutput(p = {}) {
