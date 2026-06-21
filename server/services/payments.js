@@ -723,7 +723,7 @@ function buildReceipt(order_id, payment_id, lines, paid, { cashier = '' } = {}) 
     customer: (() => { try { return order.customer_json ? JSON.parse(order.customer_json) : null; } catch { return null; } })(),
     invoice_choice: order.invoice_choice || '',
     invoice_id: order.invoice_id || null,
-    lines, paid, change, paid_at: order.paid_at, number: order.bill_no || order_id.slice(-6).toUpperCase(),
+    lines, paid, change, paid_at: order.paid_at, created_at: order.created_at, number: order.bill_no || order_id.slice(-6).toUpperCase(),
     bill_no: order.bill_no || order_id.slice(-6).toUpperCase(),
     cashier,
   };

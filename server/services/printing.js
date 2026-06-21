@@ -136,29 +136,70 @@ function methodLabel(m) {
   return { cash: 'Tien mat', card: 'May POS', qrcode: 'QR', qr: 'QR', voucher: 'Voucher', internet_banking: 'Internet Banking', momo: 'MoMo', zalopay: 'ZaloPay', visa: 'Visa' }[m] || m || '-';
 }
 
+// ---- Dan "HÓA ĐƠN THANH TOÁN" thermal receipt (42-col, ESC/POS ASCII) ----
+const DAN_W = 42, DAN_NAME = 17, DAN_QTY = 2, DAN_PRICE = 9, DAN_AMT = 10;
+function danMoney(n) { return (Math.round(Number(n) || 0)).toLocaleString('en-US').replace(/,/g, ' '); }
+function danMethod(m) {
+  return { cash: 'TIEN MAT', card: 'THE', visa: 'THE', qrcode: 'TRANSFER', qr: 'TRANSFER', bank_transfer: 'TRANSFER', internet_banking: 'TRANSFER', momo: 'MOMO', zalopay: 'ZALOPAY', voucher: 'VOUCHER' }[m] || (m ? String(m).toUpperCase() : 'TIEN MAT');
+}
+function rightPad(s, w = DAN_W) { s = ascii(s); return s.length >= w ? s : ' '.repeat(w - s.length) + s; }
+function labelValue(label, value, w = DAN_W) {
+  label = ascii(label); value = ascii(value);
+  const gap = Math.max(1, w - label.length - value.length);
+  return label + ' '.repeat(gap) + value;
+}
+function danDateTime(iso) {
+  const d = iso ? new Date(iso) : new Date();
+  const p = (n) => String(n).padStart(2, '0');
+  return `${p(d.getDate())}.${p(d.getMonth() + 1)}.${d.getFullYear()} ${p(d.getHours())}.${p(d.getMinutes())}`;
+}
+function danItemRow(i = {}) {
+  const qty = Number(i.qty) || 1;
+  const price = Number(i.unit_price ?? i.price) || 0;
+  const nameLines = wrap(i.name || '', DAN_NAME);
+  const head = nameLines[0].padEnd(DAN_NAME)
+    + ' ' + String(qty).padStart(DAN_QTY)
+    + ' ' + danMoney(price).padStart(DAN_PRICE)
+    + ' ' + danMoney(price * qty).padStart(DAN_AMT);
+  return [head, ...nameLines.slice(1)].join('\n');
+}
+
 function renderReceipt(p = {}) {
   const cfg = p.print_config?.bill || {};
+  const storeName = cfg.storeName || p.branch || 'Dan';
+  const place = p.table_code ? `Ban ${p.table_code}` : 'Mang ve';
+  const lines = Array.isArray(p.lines) ? p.lines : [];
+  const paid = Number(p.paid ?? p.total) || 0;
+  const change = Number(p.change ?? Math.max(0, paid - (Number(p.total) || 0))) || 0;
   const rows = [
-    center(cfg.storeName || p.branch || 'DAN D PAK'),
-    cfg.address ? center(cfg.address) : '',
-    line(),
-    center(`HOA DON #${p.number || ''}`),
-    p.table_code ? center(`Ban ${p.table_code}`) : '',
-    line(),
-  ].filter(Boolean);
-  for (const i of p.items || []) {
-    const qty = Number(i.qty) || 1;
-    const price = Number(i.unit_price) || 0;
-    rows.push(...wrap(`${qty}x ${i.name || ''}`, 30));
-    rows.push(`${money(price)} x ${qty}`.padEnd(24) + money(price * qty).padStart(18));
-  }
-  rows.push(line());
-  rows.push('TONG'.padEnd(24) + money(p.total || 0).padStart(18));
-  if (Array.isArray(p.lines) && p.lines.length) {
-    for (const l of p.lines) rows.push(`${methodLabel(l.method)}`.padEnd(24) + money(l.amount).padStart(18));
-  }
-  rows.push(line());
-  rows.push(center(cfg.footer || 'Cam on quy khach'));
+    center(storeName, DAN_W),
+    cfg.storeSubtitle ? center(cfg.storeSubtitle, DAN_W) : '',
+    '',
+    ...(cfg.address ? wrap(cfg.address, DAN_W) : []),
+    cfg.phone ? `Tel: ${ascii(cfg.phone)}` : '',
+    line('-', DAN_W),
+    center('HOA DON THANH TOAN', DAN_W),
+    '',
+    `So Hoa Don: ${ascii(p.number || '')}  ${place}`,
+    `Thu ngan: ${ascii(p.cashier || '')}`,
+    `Ngay/Gio vao: ${danDateTime(p.created_at || p.paid_at)}`,
+    `Ngay/Gio ra: ${danDateTime(p.paid_at || p.created_at)}`,
+    line('-', DAN_W),
+    'Ten mon'.padEnd(DAN_NAME) + ' ' + 'SL'.padStart(DAN_QTY) + ' ' + 'D.Gia'.padStart(DAN_PRICE) + ' ' + 'T.Tien'.padStart(DAN_AMT),
+  ];
+  for (const i of p.items || []) rows.push(danItemRow(i));
+  rows.push(line('-', DAN_W));
+  rows.push(labelValue('TONG TIEN:', danMoney(p.total || 0), DAN_W));
+  for (const l of lines) rows.push(rightPad(`${danMethod(l.method)}(VND) - ${danMoney(l.amount)}`, DAN_W));
+  rows.push(labelValue('Tien khach dua:', danMoney(paid), DAN_W));
+  rows.push(labelValue('Tien tra khach:', danMoney(change), DAN_W));
+  rows.push('');
+  if (cfg.taxIncludedText) rows.push(center(cfg.taxIncludedText, DAN_W));
+  rows.push(center(`${cfg.storeSubtitle || ''} ${storeName}`.trim(), DAN_W));
+  rows.push(center(cfg.footer || 'Xin cam on va hen gap lai', DAN_W));
+  // No QR note here: this ESC/POS path prints plain text only and never emits a
+  // scannable QR, so we must not tell the customer to scan one. The QR note is
+  // shown by the web/preview renderers where a QR block is actually drawn.
   return rows.join('\n');
 }
 

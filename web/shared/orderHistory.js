@@ -2,6 +2,7 @@
 // Lists past paid/void orders, shows a full receipt, and supports reprint —
 // like KiotViet "Lịch sử bán hàng" / Odoo Orders.
 import { api, money, esc, toast, getUser } from './client.js';
+import { danBillVars } from './danBill.js';
 
 const CHANNELS = [
   { v: '', label: 'Tất cả kênh' },
@@ -150,7 +151,9 @@ const cfgKey = k => `pos_erp_${k}_settings`;
 function readLocalCfg(k) { try { return JSON.parse(localStorage.getItem(cfgKey(k)) || 'null'); } catch { return null; } }
 function hasLocalPrintCfg() { return ['einvoice', 'labels', 'bill', 'printers', 'label_template', 'cup_label_template', 'bill_template'].some(k => localStorage.getItem(cfgKey(k))); }
 function isLegacyBillTemplate(tpl) {
-  return tpl?.standard === 'bcm_fiscal_receipt' && (Number(tpl.version || 0) < 3 || Number(tpl.heightMm || 0) > 260);
+  // Anything that is not an up-to-date Dan payment receipt is treated as stale
+  // so the device falls back to the current server template.
+  return !!tpl && (tpl.standard !== 'dan_payment_receipt' || Number(tpl.version || 0) < 4);
 }
 function mergePrintConfig(remote = {}) {
   const r = remote || {};
@@ -177,10 +180,10 @@ function pad2(n) { return String(n).padStart(2, '0'); }
 function receiptDate(d) { return `${pad2(d.getDate())}/${pad2(d.getMonth() + 1)}/${d.getFullYear()}`; }
 function receiptTime(d) { return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`; }
 function internalBillNo(r, d) {
-  if (r.bill_no && /^Dan\d{10}$/i.test(r.bill_no)) return r.bill_no;
+  if (r.bill_no && /^Dan\d{7,}$/i.test(r.bill_no)) return r.bill_no;
   const seed = String(r.order_id || r.number || '1');
-  let n = 0; for (const ch of seed) n = (n * 31 + ch.charCodeAt(0)) % 10000;
-  return `Dan${pad2(d.getDate())}${pad2(d.getMonth() + 1)}${String(d.getFullYear()).slice(-2)}${String(n || 1).padStart(4, '0')}`;
+  let n = 0; for (const ch of seed) n = (n * 31 + ch.charCodeAt(0)) % 1000;
+  return `Dan${pad2(d.getDate())}${pad2(d.getMonth() + 1)}${String(d.getFullYear()).slice(-2)}${String(n || 1).padStart(3, '0')}`;
 }
 function numberToVietnamese(n) {
   n = Math.round(Number(n) || 0);
@@ -264,7 +267,8 @@ function receiptVarsBcm(r) {
     method: lines.length ? lines.map(l => METHOD_VN[l.method] || l.method).join(' / ') : (r.preview ? 'Chưa thanh toán' : '-'),
     paymentStatus: r.preview ? 'Chưa thanh toán' : 'Đã thanh toán',
     taxAuthorityCode: r.tax_authority_code || r.invoice?.lookup_code || '00F83A7B-2C9D-4E1A-8B6C-5D4E3F2A1B0C',
-    footer: cfg.footer || 'Cảm ơn quý khách!',
+    footer: cfg.footer || 'Xin cảm ơn và hẹn gặp lại',
+    ...danBillVars(r, cfg),
   };
 }
 function renderTemplateReceipt(r) {
@@ -281,7 +285,8 @@ function renderTemplateReceipt(r) {
     const justify = align === 'center' ? 'center' : align === 'right' ? 'flex-end' : 'flex-start';
     const decoration = [el.underline ? 'underline' : '', el.strike ? 'line-through' : ''].filter(Boolean).join(' ') || 'none';
     const block = el.id === 'bill_body';
-    return `<div class="tpl-el" style="${pos};font-size:${Math.max(8, (Number(el.fontSize) || 5) * 1.95)}px;font-weight:${el.bold ? 800 : 500};font-style:${el.italic ? 'italic' : 'normal'};text-decoration:${decoration};text-align:${align};display:${block ? 'block' : 'flex'};align-items:${block ? 'flex-start' : 'center'};justify-content:${justify};padding:${block ? '8px 10px' : '0'}">${esc(replaceVars(el.text, vars))}</div>`;
+    const mono = block || el.mono ? `;font-family:'Courier New',ui-monospace,monospace` : '';
+    return `<div class="tpl-el" style="${pos};font-size:${Math.max(8, (Number(el.fontSize) || 5) * 1.95)}px;font-weight:${el.bold ? 800 : 500};font-style:${el.italic ? 'italic' : 'normal'};text-decoration:${decoration};text-align:${align};display:${block ? 'block' : 'flex'};align-items:${block ? 'flex-start' : 'center'};justify-content:${justify};padding:${block ? '8px 10px' : '0'}${mono}">${esc(replaceVars(el.text, vars))}</div>`;
   }).join('');
   const cfg = activeBillCfg(r);
   const hasTaxNote = tpl.elements.some(el => String(el.text || '').includes('{taxNote}'));
