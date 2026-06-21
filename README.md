@@ -30,7 +30,7 @@ backups. It accepts traffic only from LAN devices, the VPS VPN/tunnel IP, and
 approved admin access. See [docs/COMPANY_DATA_SERVER.md](docs/COMPANY_DATA_SERVER.md).
 
 When the company server is unreachable, write events are buffered (VPS) or queued
-(device) as **pending** — never reported as official success — and reconciled on
+(device) as **pending**, never reported as official success and reconciled on
 recovery via idempotent **sync back**. See
 [docs/OFFLINE_FIRST_ARCHITECTURE.md](docs/OFFLINE_FIRST_ARCHITECTURE.md) and
 [docs/SYNC_BACK_TO_COMPANY_SERVER.md](docs/SYNC_BACK_TO_COMPANY_SERVER.md).
@@ -41,7 +41,7 @@ The current `web/` folder is the **public-web** zone and `server/` is the
 **company-server** zone. A full rename of a live system is risky, so the names are
 kept and mapped in [docs/REPO_STRUCTURE.md](docs/REPO_STRUCTURE.md).
 
-The company database is the **permanent memory** of the restaurant — it stores the
+The company database is the **permanent memory** of the restaurant it stores the
 history of important changes, not only the latest state. See
 [docs/COMPANY_DATABASE_MEMORY.md](docs/COMPANY_DATABASE_MEMORY.md) and
 [docs/DATABASE_SCHEMA.md](docs/DATABASE_SCHEMA.md).
