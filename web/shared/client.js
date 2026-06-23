@@ -269,6 +269,7 @@ function openLoginWizard({ mode = 'gate' } = {}) {
       const originBranch = getBranchId();
       let selBranch = originBranch;
       let users = [];
+      let mutated = false;   // switch mode: đã commit đổi chi nhánh (xoá token cũ) chưa?
 
       // Smart: gate hiện bước chi nhánh chỉ khi >1; switch luôn có bước chi nhánh.
       const hasBranchStep = mode === 'switch' ? branches.length >= 1 : branches.length > 1;
@@ -313,7 +314,9 @@ function openLoginWizard({ mode = 'gate' } = {}) {
         </div>`;
       document.body.appendChild(ov);
 
-      const close = (val) => { ov.remove(); resolve(val); };
+      // Nếu đã commit đổi chi nhánh (token cũ bị xoá) mà người dùng huỷ giữa chừng,
+      // reload để app về trạng thái sạch (sẽ hiện lại wizard cho chi nhánh mới).
+      const close = (val) => { ov.remove(); if (val == null && mutated) { location.reload(); return; } resolve(val); };
       const setSub = () => { const s = ov.querySelector('#lgSub'); if (s) s.textContent = step === 'branch' ? 'Chọn chi nhánh' : 'Đăng nhập nhân viên'; };
       const setBack = () => { const b = ov.querySelector('#lgBack'); if (b) b.style.visibility = (step === 'user' && hasBranchStep) ? 'visible' : 'hidden'; };
       const fit = () => { const vp = ov.querySelector('#lgVp'); const pane = ov.querySelector(`.lg-pane[data-step="${step}"]`); if (vp && pane) vp.style.height = pane.offsetHeight + 'px'; };
@@ -323,7 +326,7 @@ function openLoginWizard({ mode = 'gate' } = {}) {
       const refreshUserPane = () => { const p = ov.querySelector('#lgUserPane'); if (p) p.innerHTML = userPaneHtml(); };
 
       const pickBranch = async (id) => {
-        if (mode === 'switch' && id === originBranch) { close(null); return; }    // chọn lại chính nó: đóng, không đổi
+        if (mode === 'switch' && !mutated && id === originBranch) { close(null); return; }  // chưa đổi gì, chọn lại chính nó: đóng
         if (mode === 'switch' && id !== originBranch) {
           const ok = await requestPinCode({
             title: 'PIN Quản lý / Admin',
@@ -334,6 +337,7 @@ function openLoginWizard({ mode = 'gate' } = {}) {
             onSubmit: (pin) => api('/auth/verify-branch-switch', { method: 'POST', body: { branch_id: id, pin } }),
           });
           if (!ok) return;                                                         // hủy / sai PIN → ở lại bước chi nhánh
+          mutated = true;
           localStorage.removeItem('auth_token'); localStorage.removeItem('auth_user'); localStorage.removeItem('auth_perms');
         }
         selBranch = id;
@@ -391,7 +395,7 @@ function injectLoginCss() {
   s.textContent = `
   #loginGate{position:fixed;inset:0;z-index:500;background:radial-gradient(circle at 50% 45%,#ffffff,#edf3f8);display:flex;align-items:center;justify-content:center;min-height:100vh;min-height:100dvh;padding:20px;box-sizing:border-box}
   .lg-card{background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:26px;width:100%;max-width:420px;box-shadow:0 24px 70px rgba(15,23,42,.16)}
-  .lg-logo{display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:7px;margin:0 auto 22px}
+  .lg-logo{display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:7px;margin:0;flex:1;min-width:0}
   .lg-brand-logo{width:min(218px,62vw);height:88px;object-fit:contain;display:block;filter:drop-shadow(0 8px 14px rgba(15,23,42,.08))}
   .lg-sub{font-size:13px;color:var(--muted);font-weight:700}
   .lg-branch{display:flex;flex-direction:column;gap:6px;margin:-6px 0 14px}
@@ -406,7 +410,29 @@ function injectLoginCss() {
   .lg-av{width:34px;height:34px;border-radius:50%;background:var(--brand-dim);color:var(--brand);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:15px}
   .lg-user b{font-size:13.5px}.lg-user small{display:block;color:var(--muted);font-size:11px}
   .lg-loading{font-size:12px;color:var(--muted);font-weight:750;text-align:center;padding:16px 8px;background:var(--surface2);border:1px dashed var(--border2);border-radius:12px}
-  .lg-hint{margin-top:18px;font-size:10.5px;color:var(--faint);text-align:center;line-height:1.5}`;
+  .lg-hint{margin-top:18px;font-size:10.5px;color:var(--faint);text-align:center;line-height:1.5}
+  /* Wizard từng bước: header (back/logo/hủy) + viewport trượt ngang */
+  .lg-head{display:flex;align-items:center;gap:8px;margin-bottom:18px}
+  .lg-back{flex:0 0 auto;width:34px;height:34px;border-radius:10px;border:1px solid var(--border2);background:var(--surface2);color:var(--muted);font-size:22px;font-weight:800;line-height:1;display:flex;align-items:center;justify-content:center;padding:0 0 3px}
+  .lg-back:hover{border-color:var(--brand);color:var(--brand)}
+  .lg-x{flex:0 0 auto;height:34px;padding:0 12px;border-radius:10px;border:1px solid var(--border2);background:transparent;color:var(--muted);font-size:12px;font-weight:800}
+  .lg-x:hover{border-color:var(--late);color:var(--late);background:var(--late-bg)}
+  .lg-x-spacer{flex:0 0 auto;width:34px}
+  .lg-viewport{overflow:hidden;transition:height .24s ease}
+  .lg-track{display:flex;align-items:flex-start;transition:transform .24s ease;will-change:transform}
+  .lg-pane{flex:0 0 100%;min-width:100%;box-sizing:border-box;padding:1px}
+  .lg-branch-list{display:flex;flex-direction:column;gap:8px}
+  .lg-branch-row{display:flex;align-items:center;gap:12px;padding:12px 14px;border-radius:13px;background:var(--surface2);border:1px solid var(--border2);color:var(--text);text-align:left;transition:.13s;width:100%}
+  .lg-branch-row:hover{border-color:var(--brand);transform:translateY(-1px)}
+  .lg-branch-row.sel{border-color:var(--brand);background:var(--brand-dim)}
+  .lg-branch-ic{font-size:20px;width:24px;text-align:center;flex:0 0 auto}
+  .lg-branch-meta{flex:1;min-width:0}
+  .lg-branch-meta b{display:block;font-size:13.5px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .lg-branch-meta small{display:block;color:var(--muted);font-size:11px}
+  .lg-branch-chev{flex:0 0 auto;color:var(--brand);font-weight:900;font-size:15px}
+  .lg-branch-chip{display:flex;align-items:baseline;gap:8px;margin:-2px 2px 12px;padding:8px 12px;border-radius:11px;background:var(--surface2);border:1px solid var(--border2)}
+  .lg-branch-chip span{font-size:10px;font-weight:850;text-transform:uppercase;color:var(--faint);letter-spacing:.4px}
+  .lg-branch-chip b{font-size:13px;font-weight:850;color:var(--text)}`;
   document.head.appendChild(s);
 }
 

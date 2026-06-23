@@ -1449,7 +1449,7 @@ function renderTemplateReceipt(r){
     if(el.type==='image') return el.src?`<div class="rc-img" style="text-align:${align}"><img src="${esc(el.src)}" style="width:${Math.max(20,Math.min(100,Number(el.w)||60))}%"></div>`:'';
     if(el.type==='qr') return `<div class="rc-qr">${qrBoxHtml(el,vars,360)}</div>`;
     const txt=String(el.text||'');
-    if(isItemsHeaderText(txt)) return '';
+    if(isItemsHeaderText(txt) && !txt.includes('{items}')) return '';
     const decoration=[el.underline?'underline':'',el.strike?'line-through':''].filter(Boolean).join(' ')||'none';
 
     const block=el.id==='bill_body';
