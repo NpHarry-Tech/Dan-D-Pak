@@ -1503,7 +1503,7 @@ async function openPay(){
           renameTabs();
           renderCart();
         }
-        ov.remove(); await loadData(); showReceipt(receipt,{autoPrint:true}); toast('✅ Bán thành công'); scan.focus();
+        ov.remove(); await loadData(); autoPrintReceipt(receipt); toast('✅ Bán thành công — đang in receipt'); scan.focus();
       }catch(e){toast(e.message,true);}
     };
 
@@ -1661,7 +1661,7 @@ function receiptVarsBcm(r){
   const d=new Date(r.paid_at||Date.now());
   const billNo=internalBillNo(r,d);
   const taxNote=cfg.taxIncludedText || (priceIncludesVat ? `Giá đã bao gồm thuế GTGT ${rate}% theo quy định` : `Chưa bao gồm thuế GTGT ${rate}%`);
-  return {
+  const res = {
     storeName:cfg.storeName||r.branch||'District 1 - HCMC',
     storeSubtitle:cfg.storeSubtitle||'(Hệ thống Phân phối F&B & Retail BCM)',
     address:cfg.address||'',
@@ -1696,6 +1696,10 @@ function receiptVarsBcm(r){
 footer:cfg.footer||'Xin cảm ơn và hẹn gặp lại',
     ...danBillVars(r, cfg),
   };
+  for(const k of ['storeNameC','storeSubtitleC','taxNoteC','footerBrandC','footerC','qrNoteC']){
+    if(res[k]) res[k]=String(res[k]).trim();
+  }
+  return res;
 }
 function receiptTextLines(text, charsPerLine){
   return String(text||'').split('\n').reduce((sum,line)=>sum+Math.max(1,Math.ceil(line.length/Math.max(8,charsPerLine))),0);
@@ -1788,7 +1792,7 @@ function receiptContent(r){ return renderTemplateReceipt(r) || renderBasicReceip
 
 const RECEIPT_COPIES_KEY=cfgKey('receipt_copies');
 function readReceiptCopies(){
-  const n=parseInt(localStorage.getItem(RECEIPT_COPIES_KEY)||activeBillCfg().copies||'1');
+  const n=parseInt(localStorage.getItem(RECEIPT_COPIES_KEY)||activeBillCfg().copies||'2');
   return Math.max(1,Math.min(9,n||1));
 }
 function saveReceiptCopies(v){
@@ -1860,6 +1864,13 @@ async function printReceiptNow(r,copies=readReceiptCopies()){
     if(i<n-1) await new Promise(res=>setTimeout(res,350));
   }
 }
+// Tự in receipt sau khi thanh toán — chạy NGẦM trong iframe ẩn, KHÔNG mở popup receipt.
+// Số bản theo cấu hình bill (mặc định 2). Sẽ không hiện hộp thoại in của trình duyệt
+// nếu mở trình duyệt ở chế độ --kiosk-printing với máy in receipt là máy in mặc định.
+function autoPrintReceipt(r){
+  const copies=Math.max(1,Math.min(9,parseInt(activeBillCfg(r).copies)||2));
+  return printReceiptNow(r,copies).catch(()=>{});
+}
 
 function showReceipt(r, opts={}){
   const ov=document.createElement('div'); ov.className='overlay show';
@@ -1892,7 +1903,14 @@ function showReceipt(r, opts={}){
   copiesEl.oninput=()=>saveReceiptCopies(copiesEl.value);
   copiesEl.onchange=()=>saveReceiptCopies(copiesEl.value);
   ov.querySelector('#receiptPrintBtn').onclick=doPrint;
-  if(opts.autoPrint) setTimeout(doPrint,220);
+  if(opts.autoPrint){
+    // Tự in khi thanh toán: số bản lấy theo cấu hình bill (mặc định 2 bản), không phụ
+    // thuộc ô nhập thủ công. Để KHÔNG hiện hộp thoại in, mở trình duyệt ở chế độ
+    // --kiosk-printing và đặt máy in receipt làm máy in mặc định của Windows.
+    const autoCopies=Math.max(1,Math.min(9,parseInt(activeBillCfg(r).copies)||2));
+    if(copiesEl) copiesEl.value=autoCopies;
+    setTimeout(()=>printReceiptNow(r,autoCopies),220);
+  }
   const ib=ov.querySelector('#invBtn'); if(ib) ib.onclick=()=>{ ov.remove(); openInvoiceForm(r.id); };
 }
 

@@ -236,7 +236,7 @@ function receiptVarsBcm(r) {
   const d = new Date(r.paid_at || r.created_at || Date.now());
   const billNo = r.bill_no || r.number || '';
   const taxNote = cfg.taxIncludedText || (priceIncludesVat ? `Giá đã bao gồm thuế GTGT ${rate}% theo quy định` : `Chưa bao gồm thuế GTGT ${rate}%`);
-  return {
+  const res = {
     storeName: cfg.storeName || r.branch || r.company?.name || 'District 1 - HCMC',
     storeSubtitle: cfg.storeSubtitle || '(Hệ thống Phân phối F&B & Retail BCM)',
     address: cfg.address || r.company?.address || '',
@@ -270,6 +270,10 @@ function receiptVarsBcm(r) {
     footer: cfg.footer || 'Xin cảm ơn và hẹn gặp lại',
     ...danBillVars(r, cfg),
   };
+  for(const k of ['storeNameC','storeSubtitleC','taxNoteC','footerBrandC','footerC','qrNoteC']){
+    if(res[k]) res[k]=String(res[k]).trim();
+  }
+  return res;
 }
 function renderTemplateReceipt(r) {
   const tpl = activeBillTemplate(r);
