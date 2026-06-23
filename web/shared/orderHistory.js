@@ -153,7 +153,7 @@ function hasLocalPrintCfg() { return ['einvoice', 'labels', 'bill', 'printers', 
 function isLegacyBillTemplate(tpl) {
   // Anything that is not an up-to-date Dan payment receipt is treated as stale
   // so the device falls back to the current server template.
-  return !!tpl && (tpl.standard !== 'dan_payment_receipt' || Number(tpl.version || 0) < 4);
+  return !!tpl && (tpl.standard !== 'dan_payment_receipt' || Number(tpl.version || 0) < 5);
 }
 function mergePrintConfig(remote = {}) {
   const r = remote || {};

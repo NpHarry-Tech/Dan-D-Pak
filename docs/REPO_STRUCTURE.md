@@ -12,7 +12,7 @@ documented here. Renames will happen incrementally and safely.
 | Target zone | Target folder | Current folder | Status |
 | --- | --- | --- | --- |
 | Public web (served by VPS) | `public-web/` | `web/` | Keep current name; same role |
-| VPS gateway (proxy/buffer/relay) | `vps-gateway/` | `deploy/vps/` + planned `vps-gateway/` | Deploy scaffold exists; relay/buffer planned |
+| VPS gateway (proxy/buffer/relay) | `vps-gateway/` | `deploy/vps/` + `vps-gateway/` | Deploy scaffold + buffer schema exist; relay workers planned |
 | Private company server (source of truth) | `company-server/` | `server/` | Keep current name; same role |
 | Deploy definitions | `deploy/` | `deploy/` | Exists (`deploy/vps`) |
 | Documentation | `docs/` | `docs/` | Exists |
@@ -47,6 +47,9 @@ Dan-D-Pak/
 
   deploy/
     vps/                       VPS Docker/Caddy/scripts scaffold (gateway zone)
+
+  vps-gateway/                 target gateway-only proxy/buffer/relay scaffold
+    temp-buffer/schema.sql     planned encrypted temporary event buffer DDL
 
   docs/                        architecture, workflows, data-ownership, runbooks
 ```

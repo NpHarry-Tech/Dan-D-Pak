@@ -93,7 +93,8 @@ function sanitizeConfig(cfg = {}) {
   const books = (Array.isArray(cfg.books) ? cfg.books : []).map(sanitizeBook).filter(b => b.pages.length);
   const fallback = books.length ? books : defaultConfig().books;
   const active = fallback.some(b => b.id === cfg.activeBookId) ? cfg.activeBookId : fallback[0].id;
-  return { activeBookId: active, books: fallback };
+  // enabled: bật/tắt nhanh việc dùng menu quyển tương tác trên iPad. Mặc định bật.
+  return { enabled: cfg.enabled !== false, activeBookId: active, books: fallback };
 }
 
 function readConfig(branch_id = 'br1') {
@@ -117,7 +118,7 @@ export function getBookConfig(branch_id = 'br1') {
 export function getPublicBookConfig(branch_id = 'br1') {
   const cfg = readConfig(branch_id);
   const book = cfg.books.find(b => b.id === cfg.activeBookId) || cfg.books[0];
-  return { activeBookId: book?.id || null, book };
+  return { enabled: cfg.enabled !== false, activeBookId: book?.id || null, book };
 }
 
 export function saveBookConfig(body = {}, branch_id = 'br1') {

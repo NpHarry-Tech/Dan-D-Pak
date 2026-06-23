@@ -102,7 +102,7 @@ export function createOrUpdateOrder({ branch_id = 'br1', table_id, channel = 'di
   const full = getOrder(order.id);
   archiveOrder(full);
   const printable = created.filter(i => i.status === 'new' && i.station !== 'retail');
-  if (printable.length) printKitchenTickets(full, printable, branch_id);
+  if (printable.length) printKitchenTickets(full, printable, branch_id, actor);
   printCupLabels(full, created, branch_id);
   emit('order:new', { order: full, newItems: created, isNew, pendingConfirm: needsStaffConfirm }, branch_id);
   if (needsStaffConfirm) emit('order:pending', { order: full, newItems: created }, branch_id);
@@ -174,7 +174,7 @@ export function confirmPendingItems(order_id, item_ids = [], branch_id = 'br1', 
   archiveOrder(full);
   const confirmed = db.prepare(`SELECT * FROM order_items WHERE id IN (${pending.map(() => '?').join(',')}) ORDER BY created_at`).all(...pending.map(i => i.id));
   const kitchenItems = confirmed.filter(i => i.status === 'new' && i.station !== 'retail');
-  if (kitchenItems.length) printKitchenTickets(full, kitchenItems, branch_id);
+  if (kitchenItems.length) printKitchenTickets(full, kitchenItems, branch_id, actor);
   printCupLabels(full, confirmed, branch_id);
   emit('order:updated', full, branch_id);
   emit('order:pending', { order: full, confirmed: pending.map(i => i.id) }, branch_id);

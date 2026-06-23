@@ -227,9 +227,10 @@ function injectPinCodeCss() {
 
 // Block the page with a PIN login until a valid session exists. Returns the user.
 export async function requireLogin(opts = {}) {
-  const { branchLocked = false } = opts;
+  const { mode = 'gate' } = opts;
   try { await syncBranches(); } catch {}
-  if (getToken()) {
+  // Gate: đã có phiên hợp lệ thì vào thẳng, không hiện wizard.
+  if (mode === 'gate' && getToken()) {
     try {
       const me = await api('/me');
       ensureBranchForUser(me);
@@ -243,73 +244,144 @@ export async function requireLogin(opts = {}) {
     }
     catch { localStorage.removeItem('auth_token'); localStorage.removeItem('auth_user'); }
   }
-  return new Promise(async (resolve) => {
-    let branches = getBranches();
-    try { branches = await syncBranches(); } catch {}
-    let users = [];
-    try {
-      const rows = await api('/users');
-      users = Array.isArray(rows) ? rows : [];
-    } catch {}
-    const ov = document.createElement('div');
-    ov.id = 'loginGate';
-    const activeBranch = selectedBranch();
-    const activeBranchName = activeBranch.name || activeBranch.code || activeBranch.id || 'Dan D Pak';
-    const branchOptions = branches.length
-      ? branches.map(b => `<option value="${esc(b.id)}" ${b.id === getBranchId() ? 'selected' : ''}>${esc(b.name || b.code || b.id)}</option>`).join('')
-      : `<option value="${DEFAULT_BRANCH}">Dan D Pak</option>`;
-    const branchBlock = branchLocked
-      ? `<div class="lg-branch lg-branch-locked"><span>Chi nhánh đăng nhập</span><b>${esc(activeBranchName)}</b><small>Đổi chi nhánh ở màn hình chọn module trước khi đăng nhập.</small></div>`
-      : `<label class="lg-branch"><span>Cửa hàng / chi nhánh</span><select id="loginBranch">${branchOptions}</select></label>`;
-    const usersHtml = () => users.length
-      ? users.map(u => `<button class="lg-user" data-u="${esc(u.username)}"><span class="lg-av">${esc((u.name || '?')[0])}</span><span><b>${esc(u.name)}</b><small>${esc(ROLE_LABEL[u.role] || u.role)}</small></span></button>`).join('')
-      : `<div class="lg-loading">Chưa có tài khoản nhân viên. Liên hệ quản trị viên hệ thống.</div>`;
-    ov.innerHTML = `
-      <div class="lg-card">
-        <div class="lg-logo"><img class="lg-brand-logo" src="/assets/DanOnLogo.png" alt="DanDPak"><div class="lg-sub">Đăng nhập nhân viên</div></div>
-        ${branchBlock}
-        <div class="lg-users">${usersHtml()}</div>
-      </div>`;
-    document.body.appendChild(ov);
-    injectLoginCss();
-    const usersBox = ov.querySelector('.lg-users');
-    const branchSel = ov.querySelector('#loginBranch');
-    if (branchSel) {
-      branchSel.onchange = async () => {
-        setBranchId(branchSel.value);
-        usersBox.innerHTML = '<div class="lg-loading">Đang tải nhân viên...</div>';
-        try {
-          const rows = await api('/users');
-          users = Array.isArray(rows) ? rows : [];
-        } catch { users = []; }
-        usersBox.innerHTML = usersHtml();
+  return openLoginWizard({ mode });
+}
+
+// Mở wizard "Đổi chi nhánh" từ màn hình chọn module (đang đăng nhập).
+// Đổi sang chi nhánh KHÁC cần PIN Quản lý/Admin; reload khi đổi xong.
+export async function changeBranchFlow() {
+  const result = await openLoginWizard({ mode: 'switch' });
+  if (result) location.reload();
+  return result;
+}
+
+// Wizard đăng nhập từng bước: Chi nhánh → Nhân viên → (PIN qua requestPinCode).
+// mode 'gate'  : chặn trang tới khi đăng nhập (bước chi nhánh chỉ hiện khi >1 chi nhánh).
+// mode 'switch': mở từ trạng thái đã đăng nhập để đổi chi nhánh (luôn bắt đầu ở bước chi nhánh,
+//                cho phép Hủy; chọn chi nhánh khác cần PIN Quản lý).
+function openLoginWizard({ mode = 'gate' } = {}) {
+  injectLoginCss();
+  return new Promise((resolve) => {
+    (async () => {
+      let branches = getBranches();
+      try { branches = await syncBranches(); } catch {}
+      if (!branches.length) branches = [{ id: getBranchId(), name: 'Dan D Pak', code: getBranchId() }];
+      const originBranch = getBranchId();
+      let selBranch = originBranch;
+      let users = [];
+
+      // Smart: gate hiện bước chi nhánh chỉ khi >1; switch luôn có bước chi nhánh.
+      const hasBranchStep = mode === 'switch' ? branches.length >= 1 : branches.length > 1;
+      const paneList = hasBranchStep ? ['branch', 'user'] : ['user'];
+      let step = hasBranchStep ? 'branch' : 'user';
+
+      const branchName = (id) => { const b = branches.find(x => x.id === id); return b ? (b.name || b.code || b.id) : id; };
+      const loadUsers = async () => {
+        try { const rows = await api('/users'); users = Array.isArray(rows) ? rows : []; }
+        catch { users = []; }
       };
-    }
-    ov.addEventListener('click', async (e) => {
-      const b = e.target.closest?.('.lg-user');
-      if (!b || !ov.contains(b)) return;
-      const pickedUser = b.dataset.u;
-      const name = b.querySelector('b')?.textContent || pickedUser;
-      const role = b.querySelector('small')?.textContent || '';
-      const r = await requestPinCode({
-        title: 'Nhập mã PIN',
-        subtitle: `Đăng nhập ${name}`,
-        roleLabel: role,
-        cancelText: 'Chọn lại',
-        onSubmit: (pin) => api('/login', { method: 'POST', body: { username: pickedUser, pin, branch_id: getBranchId() } }),
+      await loadUsers();
+
+      const branchRowsHtml = () => branches.map(b => {
+        const id = b.id, isCur = id === originBranch, isSel = id === selBranch;
+        return `<button type="button" class="lg-branch-row${isSel ? ' sel' : ''}" data-b="${esc(id)}">
+          <span class="lg-branch-ic">${isCur ? '📍' : '🏬'}</span>
+          <span class="lg-branch-meta"><b>${esc(b.name || b.code || id)}</b><small>${isCur ? 'Chi nhánh hiện tại' : esc(b.code || id)}</small></span>
+          <span class="lg-branch-chev">${isSel ? '✓' : '›'}</span>
+        </button>`;
+      }).join('');
+      const usersHtml = () => users.length
+        ? users.map(u => `<button class="lg-user" data-u="${esc(u.username)}"><span class="lg-av">${esc((u.name || '?')[0])}</span><span><b>${esc(u.name)}</b><small>${esc(ROLE_LABEL[u.role] || u.role)}</small></span></button>`).join('')
+        : `<div class="lg-loading">Chưa có tài khoản nhân viên ở chi nhánh này.</div>`;
+      const userPaneHtml = () => `${hasBranchStep ? `<div class="lg-branch-chip"><span>Chi nhánh</span><b>${esc(branchName(selBranch))}</b></div>` : ''}<div class="lg-users">${usersHtml()}</div>`;
+
+      const ov = document.createElement('div');
+      ov.id = 'loginGate';
+      ov.innerHTML = `
+        <div class="lg-card">
+          <div class="lg-head">
+            <button class="lg-back" type="button" id="lgBack" aria-label="Quay lại">‹</button>
+            <div class="lg-logo"><img class="lg-brand-logo" src="/assets/DanOnLogo.png" alt="DanDPak"><div class="lg-sub" id="lgSub"></div></div>
+            ${mode === 'switch' ? `<button class="lg-x" type="button" id="lgCancel">Hủy</button>` : `<span class="lg-x-spacer"></span>`}
+          </div>
+          <div class="lg-viewport" id="lgVp">
+            <div class="lg-track" id="lgTrack">
+              ${hasBranchStep ? `<div class="lg-pane" data-step="branch"><div class="lg-branch-list" id="lgBranchList">${branchRowsHtml()}</div></div>` : ''}
+              <div class="lg-pane" data-step="user"><div id="lgUserPane">${userPaneHtml()}</div></div>
+            </div>
+          </div>
+        </div>`;
+      document.body.appendChild(ov);
+
+      const close = (val) => { ov.remove(); resolve(val); };
+      const setSub = () => { const s = ov.querySelector('#lgSub'); if (s) s.textContent = step === 'branch' ? 'Chọn chi nhánh' : 'Đăng nhập nhân viên'; };
+      const setBack = () => { const b = ov.querySelector('#lgBack'); if (b) b.style.visibility = (step === 'user' && hasBranchStep) ? 'visible' : 'hidden'; };
+      const fit = () => { const vp = ov.querySelector('#lgVp'); const pane = ov.querySelector(`.lg-pane[data-step="${step}"]`); if (vp && pane) vp.style.height = pane.offsetHeight + 'px'; };
+      const slide = () => { const tr = ov.querySelector('#lgTrack'); if (tr) tr.style.transform = `translateX(-${paneList.indexOf(step) * 100}%)`; };
+      const goStep = (name) => { step = name; setSub(); setBack(); slide(); fit(); };
+      const refreshBranchList = () => { const l = ov.querySelector('#lgBranchList'); if (l) l.innerHTML = branchRowsHtml(); };
+      const refreshUserPane = () => { const p = ov.querySelector('#lgUserPane'); if (p) p.innerHTML = userPaneHtml(); };
+
+      const pickBranch = async (id) => {
+        if (mode === 'switch' && id === originBranch) { close(null); return; }    // chọn lại chính nó: đóng, không đổi
+        if (mode === 'switch' && id !== originBranch) {
+          const ok = await requestPinCode({
+            title: 'PIN Quản lý / Admin',
+            subtitle: `Mở chi nhánh "${branchName(id)}"`,
+            roleLabel: 'Cần quyền Quản lý',
+            cancelText: 'Hủy',
+            errorText: 'PIN không đúng hoặc không đủ quyền',
+            onSubmit: (pin) => api('/auth/verify-branch-switch', { method: 'POST', body: { branch_id: id, pin } }),
+          });
+          if (!ok) return;                                                         // hủy / sai PIN → ở lại bước chi nhánh
+          localStorage.removeItem('auth_token'); localStorage.removeItem('auth_user'); localStorage.removeItem('auth_perms');
+        }
+        selBranch = id;
+        setBranchId(id);
+        refreshBranchList();
+        await loadUsers();
+        refreshUserPane();
+        goStep('user');
+      };
+
+      const pickUser = async (username, name, role) => {
+        const r = await requestPinCode({
+          title: 'Nhập mã PIN',
+          subtitle: `Đăng nhập ${name}`,
+          roleLabel: role,
+          cancelText: 'Chọn lại',
+          onSubmit: (pin) => api('/login', { method: 'POST', body: { username, pin, branch_id: getBranchId() } }),
+        });
+        if (!r) return;                                                            // "Chọn lại" → ở lại danh sách nhân viên
+        ensureBranchForUser(r.user);
+        localStorage.setItem('auth_token', r.token);
+        localStorage.setItem('auth_user', JSON.stringify(r.user));
+        localStorage.setItem('auth_perms', JSON.stringify(r.perms || []));
+        const userLang = r.user.lang || 'vi';
+        const currentPreferred = localStorage.getItem('preferred_lang') || 'vi';
+        localStorage.setItem('preferred_lang', userLang);
+        ov.remove();
+        if (mode === 'gate' && userLang !== currentPreferred) location.reload();
+        else resolve(r.user);
+      };
+
+      ov.addEventListener('click', async (e) => {
+        const branchBtn = e.target.closest?.('.lg-branch-row');
+        if (branchBtn && ov.contains(branchBtn)) { await pickBranch(branchBtn.dataset.b); return; }
+        const userBtn = e.target.closest?.('.lg-user');
+        if (userBtn && ov.contains(userBtn)) {
+          const name = userBtn.querySelector('b')?.textContent || userBtn.dataset.u;
+          const role = userBtn.querySelector('small')?.textContent || '';
+          await pickUser(userBtn.dataset.u, name, role);
+          return;
+        }
+        if (e.target.closest?.('#lgBack')) { goStep('branch'); return; }
+        if (e.target.closest?.('#lgCancel')) { close(null); return; }
       });
-      if (!r) return;
-      ensureBranchForUser(r.user);
-      localStorage.setItem('auth_token', r.token);
-      localStorage.setItem('auth_user', JSON.stringify(r.user));
-      localStorage.setItem('auth_perms', JSON.stringify(r.perms || []));
-      const userLang = r.user.lang || 'vi';
-      const currentPreferred = localStorage.getItem('preferred_lang') || 'vi';
-      localStorage.setItem('preferred_lang', userLang);
-      ov.remove();
-      if (userLang !== currentPreferred) location.reload();
-      else resolve(r.user);
-    });
+
+      setSub(); setBack(); slide();
+      requestAnimationFrame(fit);   // đo chiều cao sau khi layout xong
+    })();
   });
 }
 
@@ -571,3 +643,321 @@ function installUiHardening() {
 
 installUiHardening();
 initI18n();
+
+export async function openCameraScanner(callback) {
+  injectScannerCss();
+  await loadHtml5Qrcode().catch(e => {
+    toast('Không thể tải thư viện quét mã vạch', true);
+    throw e;
+  });
+
+  const ov = document.createElement('div');
+  ov.className = 'scanner-overlay';
+  ov.innerHTML = `
+    <div class="scanner-modal">
+      <div class="scanner-header">
+        <button class="scanner-close" id="scannerCloseBtn">Đóng</button>
+        <div class="scanner-title">Quét mã vạch</div>
+        <button class="scanner-flash" id="scannerFlashBtn" style="display:none">🔦</button>
+      </div>
+      <div class="scanner-viewport">
+        <div id="scanner-reader" style="width: 100%; height: 100%;"></div>
+        <div class="scanner-overlay-box">
+          <div class="corner top-left"></div>
+          <div class="corner top-right"></div>
+          <div class="corner bottom-left"></div>
+          <div class="corner bottom-right"></div>
+          <div class="scanner-laser"></div>
+        </div>
+      </div>
+      <div class="scanner-footer">
+        <span class="barcode-icon">║▌║█║▌│</span>
+        <span>Đặt mã vạch vào trong khung để quét</span>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(ov);
+
+  const playBeep = () => {
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(880, ctx.currentTime);
+      gain.gain.setValueAtTime(0, ctx.currentTime);
+      gain.gain.linearRampToValueAtTime(0.3, ctx.currentTime + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.15);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.16);
+    } catch (e) {}
+  };
+
+  const html5QrCode = new window.Html5Qrcode("scanner-reader");
+  const formats = window.Html5QrcodeSupportedFormats ? [
+    window.Html5QrcodeSupportedFormats.EAN_13,
+    window.Html5QrcodeSupportedFormats.EAN_8,
+    window.Html5QrcodeSupportedFormats.CODE_128,
+    window.Html5QrcodeSupportedFormats.CODE_39,
+    window.Html5QrcodeSupportedFormats.UPC_A,
+    window.Html5QrcodeSupportedFormats.UPC_E,
+    window.Html5QrcodeSupportedFormats.QR_CODE
+  ] : undefined;
+
+  const stopScanner = async () => {
+    if (html5QrCode.isScanning) {
+      await html5QrCode.stop().catch(() => {});
+    }
+    ov.remove();
+  };
+
+  ov.querySelector('#scannerCloseBtn').onclick = stopScanner;
+
+  const startWithConfig = (cameraConfig, scanConfig) => {
+    return html5QrCode.start(
+      cameraConfig,
+      scanConfig,
+      (decodedText) => {
+        playBeep();
+        stopScanner().then(() => {
+          if (callback) callback(decodedText);
+        });
+      },
+      () => {}
+    );
+  };
+
+  const initializeTorch = () => {
+    try {
+      const capabilities = typeof html5QrCode.getRunningTrackCameraCapabilities === 'function'
+        ? html5QrCode.getRunningTrackCameraCapabilities()
+        : null;
+      if (capabilities && typeof capabilities.torchFeature === 'function' && capabilities.torchFeature().isSupported()) {
+        const torch = capabilities.torchFeature();
+        const flashBtn = ov.querySelector('#scannerFlashBtn');
+        if (flashBtn) {
+          flashBtn.style.display = 'flex';
+          flashBtn.onclick = async () => {
+            try {
+              const nextVal = !torch.value();
+              await torch.apply(nextVal);
+              flashBtn.classList.toggle('active', nextVal);
+            } catch (ex) {}
+          };
+        }
+      }
+    } catch (e) {
+      console.warn("Torch feature not supported or failed to initialize:", e);
+    }
+  };
+
+  startWithConfig(
+    { facingMode: "environment" },
+    {
+      fps: 60,
+      formatsToSupport: formats,
+      videoConstraints: {
+        width: { ideal: 1920 },
+        height: { ideal: 1080 },
+        frameRate: { ideal: 60 },
+        facingMode: "environment"
+      },
+      experimentalFeatures: {
+        useBarCodeDetectorIfSupported: true
+      }
+    }
+  ).then(() => {
+    initializeTorch();
+  }).catch(err => {
+    console.warn("Failed to start with Full HD 60FPS constraints, falling back to default...", err);
+    startWithConfig(
+      { facingMode: "environment" },
+      {
+        fps: 60,
+        formatsToSupport: formats,
+        experimentalFeatures: {
+          useBarCodeDetectorIfSupported: true
+        }
+      }
+    ).then(() => {
+      initializeTorch();
+    }).catch(err2 => {
+      const errMsg = err2 ? (err2.message || String(err2)) : "Unknown error";
+      toast('Không thể mở camera: ' + errMsg, true);
+      ov.remove();
+    });
+  });
+}
+
+function loadHtml5Qrcode() {
+  return new Promise((resolve, reject) => {
+    if (window.Html5Qrcode) {
+      resolve();
+      return;
+    }
+    const script = document.createElement('script');
+    script.src = 'https://unpkg.com/html5-qrcode';
+    script.onload = resolve;
+    script.onerror = reject;
+    document.head.appendChild(script);
+  });
+}
+
+function injectScannerCss() {
+  if (document.getElementById('scannerCss')) return;
+  const s = document.createElement('style');
+  s.id = 'scannerCss';
+  s.textContent = `
+  .scanner-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 9999;
+    background: #000;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+  }
+  .scanner-modal {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    background: #121212;
+    color: #ffffff;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  .scanner-header {
+    height: 56px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 16px;
+    border-bottom: 1px solid rgba(255,255,255,0.1);
+    background: #1a1a1a;
+    position: relative;
+  }
+  .scanner-close {
+    background: transparent;
+    border: none;
+    color: #0ea5c2;
+    font-size: 16px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .scanner-title {
+    font-size: 17px;
+    font-weight: 700;
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+  }
+  .scanner-flash {
+    background: rgba(255,255,255,0.1);
+    border: none;
+    color: #fff;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    font-size: 16px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .scanner-flash.active {
+    background: #eab308;
+    color: #000;
+  }
+  .scanner-viewport {
+    flex: 1;
+    position: relative;
+    background: #000;
+    overflow: hidden;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+  }
+  .scanner-overlay-box {
+    position: absolute;
+    width: 280px;
+    height: 200px;
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.5);
+    box-sizing: border-box;
+    pointer-events: none;
+    z-index: 10;
+  }
+  .scanner-overlay-box .corner {
+    position: absolute;
+    width: 24px;
+    height: 24px;
+    border: 4px solid #0ea5c2;
+  }
+  .scanner-overlay-box .top-left {
+    top: -4px;
+    left: -4px;
+    border-right: none;
+    border-bottom: none;
+  }
+  .scanner-overlay-box .top-right {
+    top: -4px;
+    right: -4px;
+    border-left: none;
+    border-bottom: none;
+  }
+  .scanner-overlay-box .bottom-left {
+    bottom: -4px;
+    left: -4px;
+    border-right: none;
+    border-top: none;
+  }
+  .scanner-overlay-box .bottom-right {
+    bottom: -4px;
+    right: -4px;
+    border-left: none;
+    border-top: none;
+  }
+  .scanner-laser {
+    position: absolute;
+    left: 4%;
+    width: 92%;
+    height: 2px;
+    background-color: #ef4444;
+    box-shadow: 0 0 8px #ef4444;
+    top: 0;
+    animation: scanning 2s linear infinite;
+  }
+  @keyframes scanning {
+    0% { top: 0%; }
+    50% { top: 100%; }
+    100% { top: 0%; }
+  }
+  .scanner-footer {
+    padding: 20px 16px;
+    text-align: center;
+    background: #1a1a1a;
+    font-size: 14px;
+    color: rgba(255,255,255,0.7);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    border-top: 1px solid rgba(255,255,255,0.1);
+  }
+  .barcode-icon {
+    font-size: 24px;
+    letter-spacing: -2px;
+    color: #fff;
+    opacity: 0.8;
+  }
+  #scanner-reader video {
+    width: 100% !important;
+    height: 100% !important;
+    object-fit: cover !important;
+  }
+  `;
+  document.head.appendChild(s);
+}

@@ -129,12 +129,13 @@ function buildLines(rawLines = []) {
 // Create or update a DRAFT purchase order. Confirmed/received POs are locked.
 export function savePurchaseOrder(body = {}, branch_id = 'br1', user = {}) {
   const supplier = resolveSupplier(str(body.supplier_id, 80), branch_id);
+  const supplierName = supplier.name || str(body.supplier_name_manual, 200) || 'Không có NCC';
   const lines = buildLines(body.lines);
   if (!lines.length) throw new Error('Cần ít nhất một dòng hàng');
   const subtotal = lines.reduce((s, l) => s + l.line_total, 0);
   const fields = {
     supplier_id: supplier.id,
-    supplier_name: supplier.name,
+    supplier_name: supplierName,
     warehouse_id: str(body.warehouse_id, 80) || null,
     order_date: str(body.order_date, 30) || now(),
     expected_date: str(body.expected_date, 30) || null,
@@ -176,7 +177,6 @@ export function confirmPurchaseOrder(id, branch_id = 'br1', user = {}) {
   const po = db.prepare(`SELECT * FROM purchase_orders WHERE id=? AND branch_id=?`).get(id, branch_id);
   if (!po) throw new Error('Đơn mua không tồn tại');
   if (po.status !== 'draft') throw new Error('Chỉ xác nhận được đơn ở trạng thái nháp');
-  if (!po.supplier_id) throw new Error('Cần chọn nhà cung cấp trước khi xác nhận');
   db.prepare(`UPDATE purchase_orders SET status='confirmed', updated_at=? WHERE id=?`).run(now(), id);
   audit('purchase.confirm', { id, code: po.code }, branch_id, user?.username || user?.name);
   emit('purchase:updated', { id }, branch_id);

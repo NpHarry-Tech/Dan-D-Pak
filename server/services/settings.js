@@ -15,11 +15,11 @@ const DEFAULT_PRINT_CONFIG = {
   version: 1,
   einvoice: {
     provider: 'MISA',
-    taxCode: '0316756674',
-    company: 'CÔNG TY TNHH DỊCH VỤ TIẾP THỊ BCM',
-    address: '00.08 Tháp A1 - Khu chung cư phức hợp lô M1-M2 (Sarimi), Số 74 Nguyễn Cơ Thạch, Phường An Lợi Đông, TP. Thủ Đức, TP. Hồ Chí Minh',
-    phone: '0938525659',
-    email: 'customerservice@bcm-vn.com',
+    taxCode: '',
+    company: 'DAN D PAK SALA',
+    address: 'Sala, TP.HCM',
+    phone: '',
+    email: '',
     series: 'C26TMB',
     template: '1/001',
     environment: 'demo',
@@ -45,6 +45,13 @@ const DEFAULT_PRINT_CONFIG = {
     autoPrint: '1',
     templateKind: 'cup',
   },
+kitchen: {
+    paper: 'K80',
+    widthMm: 72,
+    splitPerItem: '1',
+    perUnit: '1',
+    showStaff: '1',
+  },
   bill: {
     storeName: 'Dan',
     storeSubtitle: 'Bon Appétit',
@@ -54,12 +61,15 @@ const DEFAULT_PRINT_CONFIG = {
     email: '',
     paper: 'K80',
     widthMm: 72,
-    heightMm: 210,
+    heightMm: 320,
     printerName: 'Máy in Bill',
     copies: '1',
     printScale: 100,
     footer: 'Xin cảm ơn và hẹn gặp lại',
     showQr: '1',
+    qrMode: 'lookup',
+    qrText: '{invoiceLookupUrl}',
+    qrCaption: 'Quét QR tra cứu hóa đơn',
     showTax: '1',
     taxIncludedText: 'Đơn giá đã bao gồm VAT',
     qrNote: 'Scan the QR code to let us know how you enjoyed meals with us',
@@ -130,10 +140,10 @@ function defaultDanBillText() {
 function defaultDanBillTemplate(bill = DEFAULT_PRINT_CONFIG.bill) {
   const widthMm = Number(bill.widthMm) || 72;
   const requestedHeight = Number(bill.heightMm) || DEFAULT_PRINT_CONFIG.bill.heightMm;
-  const heightMm = requestedHeight > 260 ? DEFAULT_PRINT_CONFIG.bill.heightMm : requestedHeight;
+  const heightMm = requestedHeight >= 300 && requestedHeight <= 500 ? requestedHeight : DEFAULT_PRINT_CONFIG.bill.heightMm;
   return {
     kind: 'bill',
-    version: 4,
+    version: 5,
     standard: 'dan_payment_receipt',
     paper: bill.paper || 'K80',
     widthMm,
@@ -141,9 +151,20 @@ function defaultDanBillTemplate(bill = DEFAULT_PRINT_CONFIG.bill) {
     printerName: bill.printerName || 'Máy in Bill',
     copies: bill.copies || '1',
     printScale: Number(bill.printScale) || 100,
-    selectedId: 'bill_body',
+    selectedId: 'bill_header',
     elements: [
-      { id: 'bill_body', type: 'text', x: 4, y: 3, w: 92, h: 94, text: defaultDanBillText(), fontSize: 3.6, bold: false, align: 'left', mono: true },
+      { id: 'bill_logo', type: 'image', x: 38, y: 3, w: 24, h: 8, src: '', originalSrc: '', imgMode: 'threshold', threshold: 150, contrast: 1 },
+      { id: 'bill_header', type: 'text', x: 4, y: 12, w: 92, h: 14, text: '{storeNameC}\n{storeSubtitleC}\n{addressBlock}\nTel: {phone}', fontSize: 3.5, bold: false, align: 'center' },
+      { id: 'line_1', type: 'line', x: 4, y: 27, w: 92, h: 0.5 },
+      { id: 'bill_title', type: 'text', x: 4, y: 29, w: 92, h: 4, text: 'HÓA ĐƠN THANH TOÁN', fontSize: 4.5, bold: true, align: 'center' },
+      { id: 'bill_info', type: 'text', x: 4, y: 34, w: 92, h: 10, text: 'Số Hóa Đơn: {billNo}  {place}\nThu ngân: {cashier}\nNgày/Giờ vào: {timeIn}\nNgày/Giờ ra: {timeOut}', fontSize: 3.5, bold: false, align: 'left' },
+      { id: 'line_2', type: 'line', x: 4, y: 45, w: 92, h: 0.5 },
+      { id: 'bill_items', type: 'text', x: 4, y: 47, w: 92, h: 12, text: 'Tên món             SL     Đ.Giá     T.Tiền\n{items}', fontSize: 3.5, bold: false, align: 'left' },
+      { id: 'line_3', type: 'line', x: 4, y: 60, w: 92, h: 0.5 },
+      { id: 'bill_totals', type: 'text', x: 4, y: 62, w: 92, h: 14, text: '{totalLine}\n{paymentLines}\n{paidLine}\n{changeLine}', fontSize: 3.6, bold: false, align: 'left' },
+      { id: 'line_4', type: 'line', x: 4, y: 77, w: 92, h: 0.5 },
+      { id: 'bill_footer', type: 'text', x: 4, y: 79, w: 92, h: 10, text: '{taxNoteC}\n{footerBrandC}\n{footerC}', fontSize: 3.5, bold: false, align: 'center' },
+      { id: 'bill_qr', type: 'qr', x: 35, y: 90, w: 30, h: 8, qrMode: 'lookup', qrText: '{invoiceLookupUrl}', qrCaption: 'Quét QR tra cứu hóa đơn', qrShowCaption: true }
     ],
   };
 }
@@ -296,6 +317,9 @@ const DEFAULT_OPERATIONS_CONFIG = {
     qrProvider: 'vietqr_public',
     transferPrefix: 'DANBILL',
     posTerminalName: 'POS May 1',
+    // Máy POS thẻ (VCB SmartPOS...). mode: auto = native bridge gọi app ngân hàng trên máy;
+    // manual = thu ngân tự quẹt rồi nhập approval code (luôn chạy được); mock = demo; off = tắt.
+    cardTerminal: { mode: 'auto', provider: 'vcb', terminalName: 'VCB SmartPOS', autoPrint: true },
     methods: [
       { key: 'cash', label: 'Tien mat', enabled: true, kind: 'cash' },
       { key: 'internet_banking', label: 'Internet Banking', enabled: true, kind: 'qr' },
@@ -367,7 +391,7 @@ function migrateBcmBillDefaults(bill = {}) {
   const legacyName = !bill.storeName || legacyNames.includes(String(bill.storeName).trim());
   const legacyAddress = !bill.address || String(bill.address).startsWith('Branch:') || String(bill.address).includes('00.08 Th') || String(bill.address).includes('Sarimi');
   const legacySubtitle = !bill.storeSubtitle || /He thong|Hệ thống|BCM/i.test(String(bill.storeSubtitle));
-  const legacyPhone = !bill.phone || String(bill.phone).replace(/\D/g, '') === '0938525659';
+  const legacyPhone = !bill.phone || String(bill.phone).replace(/D/g, '') === '0938525659';
   const legacyEmail = !bill.email || /bcm-vn\.com/i.test(String(bill.email));
   const legacyFooter = !bill.footer || /BCM|CAM ON QUY KHACH|Cảm ơn quý khách/i.test(String(bill.footer));
   const legacyTaxNote = !bill.taxIncludedText || /GTGT/i.test(String(bill.taxIncludedText));
@@ -396,7 +420,7 @@ function sanitizeBillTemplate(tpl, bill) {
   const clean = sanitizePrintTemplate(tpl);
   // Anything that is not an up-to-date Dan payment receipt (e.g. the old BCM
   // fiscal template) is replaced with the Dan "HÓA ĐƠN THANH TOÁN" default.
-  if (!clean || clean.kind !== 'bill' || clean.standard !== 'dan_payment_receipt' || Number(clean.version || 0) < 4) {
+  if (!clean || clean.kind !== 'bill' || clean.standard !== 'dan_payment_receipt' || Number(clean.version || 0) < 5) {
     return defaultDanBillTemplate(bill);
   }
   return clean;
@@ -425,6 +449,7 @@ function sanitizePrintConfig(raw = {}) {
     updated_at: input.updated_at || null,
     einvoice: mergePlain(DEFAULT_PRINT_CONFIG.einvoice, input.einvoice),
     labels: mergePlain(DEFAULT_PRINT_CONFIG.labels, input.labels),
+    kitchen: mergePlain(DEFAULT_PRINT_CONFIG.kitchen, input.kitchen),
     bill,
     printers: printers.map((p, i) => ({
       id: str(p?.id || `printer_${i + 1}`, 80) || `printer_${i + 1}`,
@@ -446,6 +471,18 @@ function sanitizePrintConfig(raw = {}) {
       label: sanitizePrintTemplate(input.templates?.label || input.label_template),
       bill: sanitizeBillTemplate(input.templates?.bill || input.bill_template, bill),
     },
+  };
+}
+
+function sanitizeCardTerminal(c) {
+  const def = DEFAULT_OPERATIONS_CONFIG.payment.cardTerminal;
+  const src = c && typeof c === 'object' ? c : {};
+  const mode = ['auto', 'manual', 'mock', 'off'].includes(src.mode) ? src.mode : def.mode;
+  return {
+    mode,
+    provider: str(src.provider || def.provider, 40).toLowerCase(),
+    terminalName: str(src.terminalName || def.terminalName, 120),
+    autoPrint: bool(src.autoPrint, def.autoPrint !== false),
   };
 }
 
@@ -479,6 +516,7 @@ function sanitizeOperationsConfig(raw = {}) {
       qrProvider: str(payment.qrProvider || DEFAULT_OPERATIONS_CONFIG.payment.qrProvider, 40),
       transferPrefix: str(payment.transferPrefix || DEFAULT_OPERATIONS_CONFIG.payment.transferPrefix, 40).replace(/\s+/g, '').toUpperCase(),
       posTerminalName: str(payment.posTerminalName || DEFAULT_OPERATIONS_CONFIG.payment.posTerminalName, 120),
+      cardTerminal: sanitizeCardTerminal(payment.cardTerminal),
       methods: rawMethods.map(sanitizePaymentMethod),
       customNotes: Array.isArray(payment.customNotes) ? payment.customNotes.map(x => str(x, 160)).filter(Boolean) : [],
     },

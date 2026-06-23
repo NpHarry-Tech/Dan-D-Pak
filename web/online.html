@@ -7,9 +7,8 @@
 <script src="/runtime-config.js"></script>
 <script src="/socket.io/socket.io.js"></script>
 <style>
-.onwrap{display:grid;grid-template-columns:minmax(320px,430px) minmax(420px,1fr) 360px;gap:16px;align-items:start}
-@media(max-width:1280px){.onwrap{grid-template-columns:minmax(300px,390px) 1fr}.simcol{grid-column:1/-1}}
-@media(max-width:880px){.onwrap{grid-template-columns:1fr}.simcol{grid-column:auto}}
+.onwrap{display:grid;grid-template-columns:minmax(320px,430px) 1fr;gap:16px;align-items:start}
+@media(max-width:880px){.onwrap{grid-template-columns:1fr}}
 .ocol{display:flex;flex-direction:column;gap:12px}
 .ocard{background:var(--surface);border:1px solid var(--border);border-radius:13px;overflow:hidden}
 .ocard.order-card{cursor:pointer;transition:.14s}
@@ -26,14 +25,6 @@
 .step.done{background:var(--done-bg);color:var(--done);border-color:rgba(63,224,143,.4)}
 .step.cur{background:var(--brand-dim);color:var(--brand);border-color:var(--brand)}
 .step.next{cursor:pointer}.step.next:hover{border-color:var(--brand);color:var(--brand)}
-.simitem{display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px dashed var(--border);font-size:12.5px}
-.simitem .add{margin-left:auto;width:26px;height:26px;border-radius:7px;background:var(--surface3);color:var(--text);font-weight:700}
-.simitem .add:hover{background:var(--brand);color:#06222b}
-.basket{background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:10px;margin:10px 0;font-size:12.5px}
-.bk{display:flex;justify-content:space-between;padding:3px 0}
-.seg{display:flex;gap:6px;margin-bottom:10px}
-.seg button{flex:1;padding:9px;border-radius:9px;background:var(--surface2);border:1px solid var(--border2);color:var(--muted);font-weight:700;font-size:12px}
-.seg button.on{background:var(--brand-dim);border-color:var(--brand);color:var(--brand)}
 .permitem{display:flex;align-items:flex-start;gap:8px;background:var(--surface2);border:1px solid var(--border);border-radius:9px;padding:8px 10px;font-size:12px;color:var(--text)}
 .permitem input{margin-top:2px}
 .odetail{background:var(--surface);border:1px solid var(--border);border-radius:16px;overflow:hidden;min-height:520px}
@@ -62,18 +53,6 @@
   <div class="onwrap">
     <div class="ocol" id="orders"></div>
     <div class="odetail" id="orderDetail"></div>
-    <div class="ocard simcol">
-      <div class="oh"><b>🧪 Webhook Simulator</b></div>
-      <div class="ob">
-        <div class="sub" style="font-size:11.5px;color:var(--muted);margin-bottom:9px">Giả lập kênh online đẩy đơn vào (giống Grab/Shopee gọi API webhook thật).</div>
-        <div class="seg" id="chSeg"></div>
-        <input type="text" id="cust" placeholder="Tên khách (tuỳ chọn)" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:9px;color:var(--text);padding:9px 11px;font-size:13px;margin-bottom:10px">
-        <label class="permitem" style="margin:0 0 10px"><input type="checkbox" id="noUtensils"><span>Khách không cần dụng cụ ăn uống nhựa</span></label>
-        <div style="max-height:230px;overflow-y:auto" id="simMenu"></div>
-        <div class="basket" id="basket"><div class="empty" style="padding:8px">Thêm món để tạo đơn</div></div>
-        <button class="btn primary" id="send" style="width:100%;padding:11px">📨 Gửi đơn online</button>
-      </div>
-    </div>
   </div>
 </div>
 
@@ -90,7 +69,7 @@ await requireModuleAccess('online'); renderUserChip();
 const FLOW=['received','confirmed','preparing','ready','completed'];
 const FLOW_LABEL={received:'Đã nhận',confirmed:'Xác nhận',preparing:'Đang làm',ready:'Sẵn sàng',completed:'Hoàn tất'};
 const DETAIL_STATUS={received:'Đã nhận',confirmed:'Đã xác nhận',preparing:'Đang chuẩn bị',ready:'Sẵn sàng giao',completed:'Đã giao'};
-let orders=[], channels={}, menu=[], basket=[], channel='grabfood', selectedOrderId=null;
+let orders=[], selectedOrderId=null;
 
 // Load sound config from server settings
 api('/settings/app').then(s => { if(s?.notification_sound_config) applyConfig(s.notification_sound_config); }).catch(()=>{});
@@ -104,7 +83,7 @@ async function load(){
   orders=await api('/online/orders');
   if(!orders.some(o=>o.id===selectedOrderId)) selectedOrderId=(orders.find(o=>o.online_status==='completed')||orders[0]||{}).id||null;
   document.getElementById('cnt').textContent=orders.length+' đơn';
-  document.getElementById('orders').innerHTML = orders.length?orders.map(card).join(''):'<div class="empty">Chưa có đơn online. Dùng Simulator bên phải để tạo thử.</div>';
+  document.getElementById('orders').innerHTML = orders.length?orders.map(card).join(''):'<div class="empty">Chưa có đơn online nào.</div>';
   document.getElementById('orderDetail').innerHTML = detail(orders.find(o=>o.id===selectedOrderId));
   bindFlow();
 }
@@ -184,37 +163,6 @@ function detail(o){
     <div class="incident"><span>Báo cáo sự cố</span><span>›</span></div>`;
 }
 
-// simulator
-async function initSim(){
-  channels=await api('/online/channels');
-  const keys=Object.keys(channels);
-  channel=keys.includes(channel)?channel:(keys[0]||'');
-  document.getElementById('send').disabled=!keys.length;
-  document.getElementById('chSeg').innerHTML=Object.entries(channels).map(([k,n])=>`<button data-c="${k}" class="${k===channel?'on':''}">${esc(n)}</button>`).join('');
-  if(!keys.length) document.getElementById('chSeg').innerHTML='<div class="empty" style="width:100%;padding:8px">Chưa bật kênh online nào trong Setting.</div>';
-  document.querySelectorAll('#chSeg button').forEach(b=>b.onclick=()=>{channel=b.dataset.c;document.querySelectorAll('#chSeg button').forEach(x=>x.classList.toggle('on',x.dataset.c===channel));});
-  const m=await api('/menu'); menu=m.items;
-  document.getElementById('simMenu').innerHTML=menu.map(i=>`<div class="simitem"><span>${i.emoji||''} ${esc(i.name)}</span><span style="color:var(--brand);font-family:var(--mono);font-size:11px">${money(i.price)}</span><button class="add" data-m="${i.id}">+</button></div>`).join('');
-  document.querySelectorAll('#simMenu .add').forEach(b=>b.onclick=()=>{addBasket(b.dataset.m);});
-}
-function addBasket(id){ const it=menu.find(x=>x.id===id); const l=basket.find(b=>b.id===id); if(l)l.qty++; else basket.push({id,name:it.name,price:it.price,qty:1}); renderBasket(); }
-function renderBasket(){
-  const el=document.getElementById('basket');
-  if(!basket.length){ el.innerHTML='<div class="empty" style="padding:8px">Thêm món để tạo đơn</div>'; return; }
-  const tot=basket.reduce((s,b)=>s+b.price*b.qty,0);
-  el.innerHTML=basket.map((b,i)=>`<div class="bk"><span>${b.qty}× ${esc(b.name)}</span><span style="font-family:var(--mono)">${money(b.price*b.qty)} <button data-rm="${i}" style="background:none;color:var(--faint)">✕</button></span></div>`).join('')
-    +`<div class="bk" style="border-top:1px dashed var(--border);margin-top:5px;padding-top:6px;font-weight:800"><span>Tổng</span><span style="font-family:var(--mono);color:var(--brand)">${money(tot)}</span></div>`;
-  el.querySelectorAll('[data-rm]').forEach(b=>b.onclick=()=>{basket.splice(+b.dataset.rm,1);renderBasket();});
-}
-document.getElementById('send').onclick=async()=>{
-  if(!basket.length) return toast('Thêm món trước',true);
-  if(!channel) return toast('Chưa có kênh online được kết nối trong Setting',true);
-  try{
-    await api('/online/webhook',{method:'POST',body:{channel,customer:{name:document.getElementById('cust').value.trim(),noUtensils:document.getElementById('noUtensils')?.checked},items:basket.map(b=>({menu_item_id:b.id,qty:b.qty}))}});
-    basket=[]; renderBasket(); document.getElementById('cust').value=''; if(document.getElementById('noUtensils')) document.getElementById('noUtensils').checked=false; toast('📨 Đã đẩy đơn online vào hệ thống');
-  }catch(e){toast(e.message,true);}
-};
-
-startClock(); load(); initSim();
+startClock(); load();
 </script>
 </body></html>

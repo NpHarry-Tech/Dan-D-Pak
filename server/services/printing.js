@@ -60,17 +60,17 @@ function ascii(s) {
     .replace(/[^\x09\x0a\x0d\x20-\x7e]/g, '');
 }
 
-function center(text, width = 42) {
+function center(text, width = 40) {
   const s = ascii(text).slice(0, width);
   const pad = Math.max(0, Math.floor((width - s.length) / 2));
   return ' '.repeat(pad) + s;
 }
 
-function line(ch = '-', width = 42) {
+function line(ch = '-', width = 40) {
   return ch.repeat(width);
 }
 
-function wrap(text, width = 42) {
+function wrap(text, width = 40) {
   const words = ascii(text).replace(/\s+/g, ' ').trim().split(' ').filter(Boolean);
   const rows = [];
   let cur = '';
@@ -88,20 +88,35 @@ function itemMods(i = {}) {
   try { return JSON.parse(i.mods_json || '[]').map(m => m.name || m); } catch { return []; }
 }
 
+// Tem bếp dạng bill (khổ K80, 42 ký tự). Bố cục: Khu vực / Bàn / Giờ + Ngày /
+// Nhân viên / Số thứ tự (= 3 số cuối Số Bill) / Tên món. Khi tách từng món thì
+// payload chứa 1 món (p.name); chế độ gộp cũ vẫn render được qua p.items[].
 function renderTicket(p = {}) {
+  const W = 40;
   const rows = [
-    center(`=== ${p.station || 'KITCHEN'} ===`),
+    '',
+    center((p.zone || p.station || 'KHU VUC').toUpperCase()),
+    center(p.table ? `BAN ${p.table}` : '-'),
     line(),
-    `Ban: ${p.table || '-'}                              #${p.order_no || ''}`.slice(0, 42),
-    `Gio: ${p.time || new Date().toLocaleTimeString('vi-VN')}`,
-    line(),
+    center(`Gio: ${p.time || ''}    Ngay: ${p.date || ''}`.trim()),
+    center(`Nhan vien: ${p.staff || '-'}`),
+    center(`So thu tu: ${p.seq || ''}`),
   ];
-  for (const i of p.items || []) {
-    rows.push(...wrap(`${i.qty || 1}x ${i.name || ''}`, 42));
-    const mods = itemMods(i);
-    if (mods.length) rows.push(...wrap(`+ ${mods.join(', ')}`, 42).map(x => '  ' + x));
-    if (i.note) rows.push(...wrap(`NOTE: ${i.note}`, 42).map(x => '  ' + x));
-    rows.push(line('.', 42));
+  if (p.copy) rows.push(center(`(${p.copy})`));
+  rows.push(line(), 'Ten mon');
+  if (Array.isArray(p.items) && p.items.length) {
+    for (const i of p.items) {
+      rows.push(...wrap(`${i.qty || 1}x ${(i.name || '').toUpperCase()}`, W));
+      const mods = itemMods(i);
+      if (mods.length) rows.push(...wrap(`+ ${mods.join(', ')}`, W).map(x => '  ' + x));
+      if (i.note) rows.push(...wrap(`Ghi chu: ${i.note}`, W).map(x => '  ' + x));
+      rows.push(line('.', W));
+    }
+  } else {
+    rows.push(...wrap((p.name || '').toUpperCase(), W));
+    const mods = itemMods(p);
+    if (mods.length) rows.push(...wrap(`+ ${mods.join(', ')}`, W).map(x => '  ' + x));
+    if (p.note) rows.push(...wrap(`Ghi chu: ${p.note}`, W).map(x => '  ' + x));
   }
   return rows.join('\n');
 }
@@ -111,7 +126,7 @@ function renderRunner(p = {}) {
     center('CHAY MON - BAN'),
     center(p.table || '-', 20),
     line(),
-    ...wrap(p.name || '', 42),
+    ...wrap(p.name || '', 40),
     p.seq ? center(`phan ${p.seq}`) : '',
     ...(Array.isArray(p.mods) && p.mods.length ? wrap(`+ ${p.mods.join(', ')}`) : []),
     ...(p.note ? wrap(`NOTE: ${p.note}`) : []),
@@ -124,7 +139,7 @@ function renderLabel(p = {}) {
   return [
     center('TEM'),
     line(),
-    ...wrap(p.itemName || p.name || '', 42),
+    ...wrap(p.itemName || p.name || '', 40),
     p.options ? `+ ${ascii(p.options)}` : '',
     p.note ? `NOTE: ${ascii(p.note)}` : '',
     line(),
@@ -156,50 +171,63 @@ function danDateTime(iso) {
 function danItemRow(i = {}) {
   const qty = Number(i.qty) || 1;
   const price = Number(i.unit_price ?? i.price) || 0;
-  const nameLines = wrap(i.name || '', DAN_NAME);
-  const head = nameLines[0].padEnd(DAN_NAME)
+  // Two rows per item (mirrors web/shared/danBill.js): full name on top, then
+  // the figures below aligned under the SL / Đ.Giá / T.Tiền columns.
+  const nameLines = wrap(i.name || '', DAN_W);
+  const figures = ' '.repeat(DAN_NAME)
     + ' ' + String(qty).padStart(DAN_QTY)
     + ' ' + danMoney(price).padStart(DAN_PRICE)
     + ' ' + danMoney(price * qty).padStart(DAN_AMT);
-  return [head, ...nameLines.slice(1)].join('\n');
+  return [...nameLines, figures].join('\n');
 }
 
 function renderReceipt(p = {}) {
   const cfg = p.print_config?.bill || {};
-  const storeName = cfg.storeName || p.branch || 'Dan';
-  const place = p.table_code ? `Ban ${p.table_code}` : 'Mang ve';
-  const lines = Array.isArray(p.lines) ? p.lines : [];
-  const paid = Number(p.paid ?? p.total) || 0;
-  const change = Number(p.change ?? Math.max(0, paid - (Number(p.total) || 0))) || 0;
-  const rows = [
-    center(storeName, DAN_W),
-    cfg.storeSubtitle ? center(cfg.storeSubtitle, DAN_W) : '',
-    '',
-    ...(cfg.address ? wrap(cfg.address, DAN_W) : []),
-    cfg.phone ? `Tel: ${ascii(cfg.phone)}` : '',
-    line('-', DAN_W),
-    center('HOA DON THANH TOAN', DAN_W),
-    '',
-    `So Hoa Don: ${ascii(p.number || '')}  ${place}`,
-    `Thu ngan: ${ascii(p.cashier || '')}`,
-    `Ngay/Gio vao: ${danDateTime(p.created_at || p.paid_at)}`,
-    `Ngay/Gio ra: ${danDateTime(p.paid_at || p.created_at)}`,
-    line('-', DAN_W),
-    'Ten mon'.padEnd(DAN_NAME) + ' ' + 'SL'.padStart(DAN_QTY) + ' ' + 'D.Gia'.padStart(DAN_PRICE) + ' ' + 'T.Tien'.padStart(DAN_AMT),
-  ];
-  for (const i of p.items || []) rows.push(danItemRow(i));
-  rows.push(line('-', DAN_W));
-  rows.push(labelValue('TONG TIEN:', danMoney(p.total || 0), DAN_W));
-  for (const l of lines) rows.push(rightPad(`${danMethod(l.method)}(VND) - ${danMoney(l.amount)}`, DAN_W));
-  rows.push(labelValue('Tien khach dua:', danMoney(paid), DAN_W));
-  rows.push(labelValue('Tien tra khach:', danMoney(change), DAN_W));
-  rows.push('');
-  if (cfg.taxIncludedText) rows.push(center(cfg.taxIncludedText, DAN_W));
-  rows.push(center(`${cfg.storeSubtitle || ''} ${storeName}`.trim(), DAN_W));
-  rows.push(center(cfg.footer || 'Xin cam on va hen gap lai', DAN_W));
-  // No QR note here: this ESC/POS path prints plain text only and never emits a
-  // scannable QR, so we must not tell the customer to scan one. The QR note is
-  // shown by the web/preview renderers where a QR block is actually drawn.
+  const rows = [];
+  
+  if (cfg.storeName || p.branch || 'DAN D PAK') {
+    const wrapped = wrap(cfg.storeName || p.branch || 'DAN D PAK', 40);
+    for (const lineText of wrapped) {
+      rows.push(center(lineText, 40));
+    }
+  }
+  
+  if (cfg.address) {
+    const wrapped = wrap(cfg.address, 40);
+    for (const lineText of wrapped) {
+      rows.push(center(lineText, 40));
+    }
+  }
+  
+  rows.push(line());
+  rows.push(center(`HOA DON #${p.number || ''}`, 40));
+  if (p.table_code) {
+    rows.push(center(`Ban ${p.table_code}`, 40));
+  }
+  rows.push(line());
+  
+  for (const i of p.items || []) {
+    const qty = Number(i.qty) || 1;
+    const price = Number(i.unit_price) || 0;
+    rows.push(...wrap(`${qty}x ${i.name || ''}`, 30));
+    rows.push(`${money(price)} x ${qty}`.padEnd(22) + money(price * qty).padStart(18));
+  }
+  
+  rows.push(line());
+  rows.push('TONG'.padEnd(22) + money(p.total || 0).padStart(18));
+  if (Array.isArray(p.lines) && p.lines.length) {
+    for (const l of p.lines) {
+      rows.push(`${methodLabel(l.method)}`.padEnd(22) + money(l.amount).padStart(18));
+    }
+  }
+  rows.push(line());
+  
+  const footerText = cfg.footer || 'Cam on quy khach';
+  const wrappedFooter = wrap(footerText, 40);
+  for (const lineText of wrappedFooter) {
+    rows.push(center(lineText, 40));
+  }
+  
   return rows.join('\n');
 }
 
@@ -234,6 +262,38 @@ function escposBuffer(text, { cut = true, drawer = false } = {}) {
     drawer ? ESC_DRAWER : Buffer.alloc(0),
     cut ? ESC_CUT : Buffer.alloc(0),
   ]);
+}
+
+// Real reachability probe: opens a TCP socket to the printer (RAW/JetDirect
+// port 9100 by default) and reports whether it actually answers. Cached briefly
+// so the live status panel polling every few seconds doesn't hammer the network.
+const lanProbeCache = new Map(); // "ip:port" -> { at, reachable }
+const LAN_PROBE_TTL = 8000;
+
+function probeLan(host, port, timeoutMs = 1200) {
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = (reachable) => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      try { socket.destroy(); } catch {}
+      resolve(reachable);
+    };
+    const timer = setTimeout(() => finish(false), timeoutMs);
+    const socket = net.createConnection({ host, port: Number(port) || 9100 });
+    socket.on('connect', () => finish(true));
+    socket.on('error', () => finish(false));
+  });
+}
+
+async function probeLanCached(host, port, force = false) {
+  const key = `${host}:${Number(port) || 9100}`;
+  const cached = lanProbeCache.get(key);
+  if (!force && cached && Date.now() - cached.at < LAN_PROBE_TTL) return cached.reachable;
+  const reachable = await probeLan(host, port);
+  lanProbeCache.set(key, { at: Date.now(), reachable });
+  return reachable;
 }
 
 function writeLan(host, port, buffer, timeoutMs = 4500) {
@@ -318,22 +378,52 @@ export function listJobs(branch_id = 'br1', query = {}) {
   return db.prepare(`SELECT * FROM print_jobs WHERE branch_id=? ORDER BY created_at DESC LIMIT ?`).all(branch_id, limit).map(publicJob);
 }
 
-export async function listPrinters(branch_id = 'br1') {
+export async function listPrinters(branch_id = 'br1', { force = false } = {}) {
   const configured = printerRows(branch_id);
-  const system = await listSystemPrinters().catch(() => []);
+  const system = await listSystemPrinters({ force }).catch(() => []);
   const systemMap = new Map(system.map(p => [String(p.name || '').toLowerCase(), p]));
-  return configured.map(p => {
+  return Promise.all(configured.map(async p => {
+    const connection = p.connection || 'browser';
     const match = systemMap.get(String(p.systemName || p.name || '').toLowerCase());
     const target = printerTarget(p);
-    const hasTarget = p.connection === 'lan' ? !!p.ip : (p.connection === 'system' ? !!(p.systemName || p.name) : true);
-    return {
-      ...p,
-      target,
-      online: p.active !== false && hasTarget && (p.connection !== 'system' || !match || match.online !== false),
-      system: match || null,
-      status: p.active === false ? 'disabled' : (!hasTarget ? 'not_configured' : (match?.online === false ? 'offline' : 'ready')),
-    };
-  });
+
+    // status: machine-readable (kept backward compatible with Printer Monitor).
+    // state: pill colour for the live panel. statusText: human label, real-data.
+    let status = 'ready', state = 'ok', statusText = '';
+    let online = false;
+
+    if (p.active === false) {
+      status = 'disabled'; state = 'warn'; statusText = 'Tạm tắt'; online = false;
+    } else if (connection === 'lan') {
+      if (!p.ip) {
+        status = 'not_configured'; state = 'bad'; statusText = 'Chưa nhập IP máy in LAN'; online = false;
+      } else {
+        const reachable = await probeLanCached(p.ip, p.port, force);
+        online = reachable;
+        status = reachable ? 'ready' : 'offline';
+        state = reachable ? 'ok' : 'bad';
+        statusText = reachable
+          ? `Đã kết nối · ${p.ip}:${p.port || 9100}`
+          : `Không phản hồi · ${p.ip}:${p.port || 9100}`;
+      }
+    } else if (connection === 'system') {
+      const name = p.systemName || p.name || '';
+      if (!name) {
+        status = 'not_configured'; state = 'bad'; statusText = 'Chưa chọn máy in trên máy chủ'; online = false;
+      } else if (!match) {
+        status = 'offline'; state = 'bad'; statusText = `Không thấy "${name}" trên máy chủ`; online = false;
+      } else if (match.online === false) {
+        status = 'offline'; state = 'bad'; statusText = `Máy in tắt / ngoại tuyến · ${name}`; online = false;
+      } else {
+        status = 'ready'; state = 'ok'; statusText = `Đã kết nối · ${name}`; online = true;
+      }
+    } else {
+      // browser: printing happens through the operator's print dialog.
+      status = 'ready'; state = 'ok'; statusText = 'In qua trình duyệt'; online = true;
+    }
+
+    return { ...p, connection, target, online, status, state, statusText, system: match || null };
+  }));
 }
 
 export function jobMeta(job) {
@@ -450,35 +540,76 @@ export async function openCashDrawer(branch_id = 'br1', printerId = '') {
 }
 
 // ---- Hooks used by order/payment flows ----
-export function printKitchenTickets(order, items, branch_id = 'br1') {
-  const byPrinter = {};
-  for (const it of items) {
-    if (it.station === 'retail') continue;
-    const p = STATION_PRINTER[it.station] || 'kitchen';
-    (byPrinter[p] ||= []).push(it);
+export function printKitchenTickets(order, items, branch_id = 'br1', staff = '') {
+  const kitchenItems = items.filter(it => it && it.station !== 'retail');
+  if (!kitchenItems.length) return;
+
+  const k = getPrintConfig(branch_id).kitchen || {};
+  const split = k.splitPerItem !== '0' && k.splitPerItem !== false;
+  const perUnit = k.perUnit !== '0' && k.perUnit !== false;
+  const showStaff = k.showStaff !== '0' && k.showStaff !== false;
+
+  const now = new Date();
+  const base = {
+    zone: order.zone || '',
+    table: order.table_code || (order.online_channel ? 'ONLINE' : '—'),
+    staff: showStaff ? (staff || '') : '',
+    // Số thứ tự = 3 số cuối của Số Bill (Dan{ddMMyy}{seq}). VD Dan2106260001 -> 001.
+    seq: String(order.bill_no || order.online_ref || order.id || '').slice(-3),
+    time: now.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
+    date: now.toLocaleDateString('vi-VN'),
+  };
+
+  // Chế độ gộp cũ: 1 phiếu / trạm in.
+  if (!split) {
+    const byPrinter = {};
+    for (const it of kitchenItems) {
+      const p = STATION_PRINTER[it.station] || 'kitchen';
+      (byPrinter[p] ||= []).push(it);
+    }
+    for (const [printer, list] of Object.entries(byPrinter)) {
+      createJob({
+        printer, type: 'kitchen_ticket',
+        title: `Bàn ${base.table} · #${base.seq}`,
+        payload: {
+          ...base, station: printer.toUpperCase(),
+          items: list.map(i => ({ qty: i.qty, name: i.name, note: i.note, mods: itemMods(i) })),
+        }, branch_id,
+      });
+    }
+    return;
   }
-  for (const [printer, list] of Object.entries(byPrinter)) {
-    createJob({
-      printer, type: 'kitchen_ticket',
-      title: `Bàn ${order.table_code || order.online_ref || '—'} · #${order.id.slice(-5).toUpperCase()}`,
-      payload: {
-        station: printer.toUpperCase(), order_no: order.id.slice(-5).toUpperCase(),
-        table: order.table_code || (order.online_channel ? 'ONLINE' : '—'),
-        time: new Date().toLocaleTimeString('vi-VN'),
-        items: list.map(i => ({ qty: i.qty, name: i.name, note: i.note, mods: itemMods(i) })),
-      }, branch_id,
-    });
+
+  // Tách từng món: mỗi món (mỗi phần nếu perUnit) ra 1 tem riêng.
+  for (const it of kitchenItems) {
+    const printer = STATION_PRINTER[it.station] || 'kitchen';
+    const copies = perUnit ? Math.min(Math.max(1, parseInt(it.qty) || 1), 30) : 1;
+    for (let i = 0; i < copies; i++) {
+      createJob({
+        printer, type: 'kitchen_ticket',
+        title: `Bàn ${base.table} · ${it.name}`,
+        payload: {
+          ...base, station: printer.toUpperCase(),
+          name: it.name, qty: it.qty, mods: itemMods(it), note: it.note || '',
+          copy: copies > 1 ? `${i + 1}/${copies}` : '',
+        }, branch_id,
+      });
+    }
   }
 }
 
 export function printReceipt(receipt, branch_id = 'br1') {
-  createJob({
-    printer: 'bill',
-    type: 'receipt',
-    title: `Receipt #${receipt.number}`,
-    payload: { ...receipt, print_config: receipt.print_config || getPrintConfig(branch_id) },
-    branch_id,
-  });
+  const cfg = receipt.print_config || getPrintConfig(branch_id);
+  const copies = Math.max(1, Math.min(9, parseInt(receipt.print_copies || cfg?.bill?.copies || 1) || 1));
+  for (let i = 0; i < copies; i++) {
+    createJob({
+      printer: 'bill',
+      type: 'receipt',
+      title: `Receipt #${receipt.number}${copies > 1 ? ` (${i + 1}/${copies})` : ''}`,
+      payload: { ...receipt, print_config: cfg, copy_index: i + 1, copy_total: copies },
+      branch_id,
+    });
+  }
 }
 
 function shouldPrintCupLabels(order, cfg) {

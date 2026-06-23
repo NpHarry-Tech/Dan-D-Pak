@@ -17,8 +17,8 @@ export const MODULES = [
   { key: 'retail', label: 'Retail POS', icon: '🛒', group: 'sales', href: '/retail', perm: 'module.retail', status: 'active', depends: ['inventory'], description: 'Bán hàng retail, barcode, lot/date, voucher và đổi trả.' },
   { key: 'kds', label: 'KDS', icon: '👨‍🍳', group: 'sales', href: '/kds', perm: 'module.kds', status: 'active', depends: ['pos'], description: 'Màn hình bếp/bar, SLA và trạng thái chế biến realtime.' },
   { key: 'online', label: 'Kênh online', icon: '🌐', group: 'sales', href: '/online', perm: 'module.online', status: 'active', depends: ['pos'], description: 'Nhận đơn GrabFood/ShopeeFood/Website qua webhook và điều phối fulfillment.' },
-  { key: 'warehouse', label: 'Kho', icon: '📦', group: 'supply', href: '/warehouse', perm: 'module.warehouse', status: 'active', depends: ['inventory'], description: 'Kho BCM, showroom, kho bếp, nhập/xuất, kiểm kho, lot/date.' },
-  { key: 'inventory', label: 'Tồn kho', icon: '🏷️', group: 'supply', href: '/warehouse', perm: 'module.inventory', status: 'active', depends: [], description: 'SKU, nguyên liệu, đơn vị tính, lot/serial, min stock và valuation nền.' },
+  { key: 'warehouse', label: 'Quản lý kho', icon: '📦', group: 'supply', href: '/warehouse', perm: 'module.warehouse', status: 'active', depends: ['inventory'], description: 'Kho BCM/showroom/bếp · SKU & nguyên liệu · nhập/xuất · kiểm kho · lot/date · min stock · valuation.' },
+  { key: 'inventory', label: 'Tồn kho', icon: '🏷️', group: 'supply', href: '/warehouse', perm: 'module.inventory', status: 'core', depends: [], description: 'SKU, nguyên liệu, đơn vị tính, lot/serial, min stock và valuation nền.' },
   { key: 'admin', label: 'Quản lý', icon: '📊', group: 'essentials', href: '/admin?view=dashboard', perm: null, status: 'active', depends: ['pos', 'retail', 'warehouse'], description: 'Dashboard, báo cáo nhanh, thực đơn, vận hành và cài đặt trong ngày.' },
   { key: 'settings', label: 'Cài đặt', icon: '⚙️', group: 'settings', href: '/settings', perm: null, status: 'active', depends: [], description: 'Người dùng, phân quyền, module, cấu hình chung và nhật ký hoạt động.' },
   { key: 'printing', label: 'In ấn', icon: '🖨️', group: 'settings', href: '/printers', perm: 'module.printing', status: 'active', depends: ['pos'], description: 'Job in bếp/bar/bill, in lại, cấu hình bill và tem nhãn.' },
@@ -34,7 +34,7 @@ export const MODULES = [
   { key: 'fleet', label: 'Đội xe', icon: '🚚', group: 'supply', href: '', perm: 'module.fleet', status: 'planned', depends: [], description: 'Phương tiện, tài xế, chi phí, lịch bảo trì và giao nhận.' },
 
   { key: 'accounting', label: 'Kế toán', icon: '📚', group: 'finance', href: '', perm: 'module.accounting', status: 'planned', depends: ['invoice'], description: 'Sổ cái, hệ tài khoản, thuế, journal, reconciliation và báo cáo tài chính.' },
-  { key: 'invoice', label: 'Hóa đơn', icon: '🧾', group: 'finance', href: '/settings?tab=invoices', perm: 'module.invoice', status: 'active', depends: ['accounting'], description: 'Hóa đơn điện tử, trạng thái phát hành, tra cứu, hủy và cấu hình HĐĐT.' },
+  { key: 'invoice', label: 'Hóa đơn', icon: '🧾', group: 'finance', href: '/invoices', perm: 'module.invoice', status: 'active', depends: ['accounting'], description: 'Hóa đơn điện tử, trạng thái phát hành, tra cứu, hủy và cấu hình HĐĐT.' },
   { key: 'expenses', label: 'Chi phí', icon: '💸', group: 'finance', href: '/expenses', perm: 'module.expenses', status: 'active', depends: ['contacts'], description: 'Sổ chi phí theo danh mục: chi từ tiền két hoặc kế toán chi trực tiếp, đối chiếu quỹ.' },
   { key: 'payment', label: 'Thanh toán online', icon: '💱', group: 'finance', href: '', perm: 'module.payment', status: 'planned', depends: ['invoice'], description: 'Provider, QR, terminal, settlement và đối soát.' },
 
@@ -44,14 +44,14 @@ export const MODULES = [
   { key: 'project', label: 'Dự án', icon: '📌', group: 'productivity', href: '', perm: 'module.project', status: 'planned', depends: ['contacts'], description: 'Task, stage, kanban, milestone, timesheet và profitability.' },
   { key: 'calendar', label: 'Lịch', icon: '📅', group: 'productivity', href: '', perm: 'module.calendar', status: 'planned', depends: [], description: 'Lịch hẹn, đồng bộ Google/Outlook và booking.' },
   { key: 'discuss', label: 'Thảo luận', icon: '💬', group: 'productivity', href: '', perm: 'module.discuss', status: 'planned', depends: [], description: 'Channel, chatter, canned response, activity và thông báo.' },
-  { key: 'documents', label: 'Tài liệu', icon: '🗂️', group: 'productivity', href: '', perm: 'module.documents', status: 'planned', depends: [], description: 'Quản lý file, workspace, quyền tài liệu và OCR/digitization.' },
+  // "Tài liệu" đã gộp vào module "Cơ sở dữ liệu" (sub-tab). Giữ route /documents cho iframe nhúng.
   { key: 'knowledge', label: 'Kiến thức', icon: '📖', group: 'productivity', href: '', perm: 'module.knowledge', status: 'planned', depends: [], description: 'Wiki nội bộ, template, link dữ liệu và cộng tác.' },
   { key: 'todo', label: 'Việc cần làm', icon: '✅', group: 'productivity', href: '', perm: 'module.todo', status: 'planned', depends: [], description: 'Checklist cá nhân, assignment và activity follow-up.' },
 
   { key: 'studio', label: 'Studio', icon: '🧩', group: 'studio', href: '', perm: 'module.studio', status: 'planned', depends: ['settings'], description: 'Model, field, view, automation, approval rule, report PDF và export customization.' },
   { key: 'automation', label: 'Tự động hóa', icon: '⚡', group: 'studio', href: '', perm: 'module.automation', status: 'planned', depends: ['studio'], description: 'Server action, webhook, scheduled action, trigger và approval flow.' },
 
-  { key: 'database', label: 'Quản lý cơ sở dữ liệu', icon: '🛢️', group: 'developer', href: '', perm: 'module.database', status: 'planned', depends: ['settings'], description: 'Backup, restore, duplicate/staging, upgrade, migration và health check.' },
+  { key: 'database', label: 'Cơ sở dữ liệu & Tài liệu', icon: '🛢️', group: 'developer', href: '/database', perm: 'module.database', status: 'active', depends: ['settings'], description: 'Sao lưu, phục hồi, staging, dọn dẹp giao dịch, kiểm tra sức khỏe CSDL — kèm tài liệu hướng dẫn & sơ đồ hệ thống.' },
   { key: 'developer', label: 'Developer', icon: '🛠️', group: 'developer', href: '', perm: 'module.developer', status: 'planned', depends: ['settings'], description: 'Debug mode, technical menu, model metadata, API và tutorial nội bộ.' },
 ];
 

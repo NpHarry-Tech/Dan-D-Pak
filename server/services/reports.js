@@ -126,12 +126,68 @@ export function revenueTrends(branch_id = 'br1') {
 }
 
 // before: con trỏ phân trang — chỉ lấy các dòng cũ hơn mốc thời gian này (để "Xem thêm").
-export function recentAudit(branch_id = 'br1', limit = 30, before = null) {
-  const lim = Math.min(Math.max(parseInt(limit) || 30, 1), 200);
-  if (before) {
-    return db.prepare(`SELECT action,detail,actor,created_at FROM audit_log
-      WHERE branch_id=? AND created_at < ? ORDER BY created_at DESC LIMIT ?`).all(branch_id, before, lim);
+// from / to: khoảng thời gian cụ thể (ISO, nửa mở [from, to)) do client tính theo
+//   múi giờ trình duyệt — dùng cho bộ lọc Ngày/Tuần/Tháng/Quý/Năm cụ thể. Khi có
+//   from/to thì `period` (mốc tương đối) không cần thiết nữa.
+export function recentAudit(branch_id = 'br1', limit = 30, before = null, period = null, search = '', from = null, to = null) {
+  const lim = Math.min(Math.max(parseInt(limit) || 30, 1), 1000);
+  let timeCutoff = null;
+  const now = new Date();
+
+  if (period === 'day') {
+    const d = new Date(now);
+    d.setHours(0, 0, 0, 0);
+    timeCutoff = d.toISOString();
+  } else if (period === 'week') {
+    const d = new Date(now);
+    const day = d.getDay();
+    const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+    const monday = new Date(d.setDate(diff));
+    monday.setHours(0, 0, 0, 0);
+    timeCutoff = monday.toISOString();
+  } else if (period === 'month') {
+    const d = new Date(now.getFullYear(), now.getMonth(), 1);
+    timeCutoff = d.toISOString();
+  } else if (period === 'quarter') {
+    const currentQuarter = Math.floor(now.getMonth() / 3);
+    const d = new Date(now.getFullYear(), currentQuarter * 3, 1);
+    timeCutoff = d.toISOString();
+  } else if (period === 'year') {
+    const d = new Date(now.getFullYear(), 0, 1);
+    timeCutoff = d.toISOString();
   }
-  return db.prepare(`SELECT action,detail,actor,created_at FROM audit_log
-    WHERE branch_id=? ORDER BY created_at DESC LIMIT ?`).all(branch_id, lim);
+
+  let query = `SELECT action,detail,actor,created_at FROM audit_log WHERE branch_id=?`;
+  const params = [branch_id];
+
+  if (timeCutoff) {
+    query += ` AND created_at >= ?`;
+    params.push(timeCutoff);
+  }
+
+  // Bounded specific period [from, to): từ client (đúng múi giờ trình duyệt).
+  if (from) {
+    query += ` AND created_at >= ?`;
+    params.push(String(from));
+  }
+  if (to) {
+    query += ` AND created_at < ?`;
+    params.push(String(to));
+  }
+
+  if (before) {
+    query += ` AND created_at < ?`;
+    params.push(before);
+  }
+
+  if (search && String(search).trim()) {
+    query += ` AND (actor LIKE ? OR action LIKE ? OR detail LIKE ?)`;
+    const s = `%${String(search).trim()}%`;
+    params.push(s, s, s);
+  }
+
+  query += ` ORDER BY created_at DESC LIMIT ?`;
+  params.push(lim);
+
+  return db.prepare(query).all(...params);
 }

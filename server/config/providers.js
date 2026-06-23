@@ -1,10 +1,10 @@
 import { publicEnvSnapshot } from './env.js';
 
 export const PROVIDERS = Object.freeze({
-  database: ['sqlite', 'supabase', 'postgres'],
-  realtime: ['supabase', 'websocket', 'socketio'],
+  database: ['sqlite', 'postgres'],
+  realtime: ['websocket', 'socketio'],
   storage: ['local', 's3'],
-  deploymentTarget: ['local', 'vercel-render-supabase', 'vps'],
+  deploymentTarget: ['local', 'vps'],
 });
 
 export function providerSummary() {

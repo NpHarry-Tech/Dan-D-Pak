@@ -1,7 +1,7 @@
 // Permanent archive snapshots for business-critical records.
 // SQLite remains the primary operational store; this writes durable JSON/NDJSON
 // copies into separate folders so records can still be inspected/exported fast.
-import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs';
+import { closeSync, existsSync, fsyncSync, mkdirSync, openSync, readdirSync, readFileSync, renameSync, statSync, writeFileSync, writeSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -152,18 +152,65 @@ export function archiveDashboardReport(report = {}, branch_id = 'br1') {
 }
 
 export function appendAuditArchive(entry = {}) {
+  let fd;
   try {
     ensurePermanentStorage();
     const branch = safePart(entry.branch_id || 'br1');
     const day = isoDate(entry.created_at);
     const file = join(PERMANENT_ROOT, 'audit', branch, `${day}.ndjson`);
     ensureDir(dirname(file));
-    appendFileSync(file, JSON.stringify({ archived_at: new Date().toISOString(), ...entry }) + '\n', 'utf8');
+    const line = JSON.stringify({ archived_at: new Date().toISOString(), ...entry }) + '\n';
+    // Append + fsync so a power loss / hard reset can't drop the tail that would
+    // otherwise sit unflushed in the OS write buffer (the "log đệm"). This NDJSON
+    // is the durable footprint of record; SQLite is the fast queryable copy.
+    fd = openSync(file, 'a');
+    writeSync(fd, line, null, 'utf8');
+    fsyncSync(fd);
     return file;
   } catch (e) {
     console.warn('[archive] audit archive failed:', e.message);
     return null;
+  } finally {
+    if (fd !== undefined) { try { closeSync(fd); } catch { /* already closed */ } }
   }
+}
+
+// Read footprint entries archived in the last `days` days (today inclusive),
+// across all branches. Pure fs read (no SQLite) so db.js can call it to self-heal
+// audit_log after a crash where WAL+synchronous=NORMAL lost its most-recent rows
+// but the fsync'd NDJSON kept them. Returns raw entry objects.
+export function readRecentAuditArchive(days = 2) {
+  const out = [];
+  try {
+    const auditRoot = join(PERMANENT_ROOT, 'audit');
+    if (!existsSync(auditRoot)) return out;
+    const wantDays = new Set();
+    for (let i = 0; i < Math.max(1, days); i++) {
+      const d = new Date(Date.now() - i * 86400000);
+      if (!Number.isNaN(d.getTime())) wantDays.add(d.toISOString().slice(0, 10));
+    }
+    for (const branch of readdirSync(auditRoot)) {
+      const branchDir = join(auditRoot, branch);
+      let files = [];
+      try { files = readdirSync(branchDir); } catch { continue; }
+      for (const name of files) {
+        if (!name.endsWith('.ndjson') || !wantDays.has(name.slice(0, 10))) continue;
+        let text = '';
+        try { text = readFileSync(join(branchDir, name), 'utf8'); } catch { continue; }
+        for (const line of text.split('\n')) {
+          const s = line.trim();
+          if (!s) continue;
+          try {
+            const e = JSON.parse(s);
+            if (e && e.id && e.action && e.created_at) out.push(e);
+          } catch { /* skip a torn/partial trailing line */ }
+        }
+      }
+    }
+  } catch (e) {
+    console.warn('[archive] read recent audit failed:', e.message);
+  }
+  return out;
 }
 
 export function readArchivedEntity(kind, id, branch_id = 'br1') {
@@ -181,18 +228,32 @@ export function latestDashboardReport(branch_id = 'br1') {
 
 export function storageStatus() {
   ensurePermanentStorage();
-  const countFiles = (dir) => {
+  // Chỉ đếm thư mục con (branch) và lấy số file by-id — không đệ quy toàn bộ cây
+  // (tránh block event loop khi có hàng ngàn file sau vài tháng vận hành)
+  const countTopLevel = (dir) => {
     if (!existsSync(dir)) return 0;
-    let n = 0;
-    for (const name of readdirSync(dir)) {
-      const p = join(dir, name);
-      const st = statSync(p);
-      n += st.isDirectory() ? countFiles(p) : 1;
-    }
-    return n;
+    try {
+      let n = 0;
+      for (const name of readdirSync(dir)) {
+        const p = join(dir, name);
+        const st = statSync(p);
+        if (st.isDirectory()) {
+          // Chỉ đếm 1 cấp con (by-id) — đủ để hiển thị trên UI mà không block
+          const byId = join(p, 'by-id');
+          if (existsSync(byId)) {
+            n += readdirSync(byId).length;
+          } else {
+            n += readdirSync(p).filter(f => !statSync(join(p, f)).isDirectory()).length;
+          }
+        } else {
+          n += 1;
+        }
+      }
+      return n;
+    } catch { return 0; }
   };
   return {
     root: PERMANENT_ROOT,
-    folders: FOLDERS.map(folder => ({ folder, files: countFiles(join(PERMANENT_ROOT, folder)) })),
+    folders: FOLDERS.map(folder => ({ folder, files: countTopLevel(join(PERMANENT_ROOT, folder)) })),
   };
 }

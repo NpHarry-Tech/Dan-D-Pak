@@ -30,14 +30,17 @@ body{overflow:hidden}
 .job-main{font-weight:850;color:var(--text);max-width:460px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.job-sub{font-size:11px;color:var(--muted);margin-top:2px;max-width:460px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .mono{font-family:var(--mono)}
 .drawer{position:fixed;inset:0;background:rgba(15,23,42,.52);z-index:300;display:none;align-items:center;justify-content:flex-end;padding:14px}.drawer.show{display:flex}
-.detail{width:min(620px,100%);height:min(760px,100%);background:var(--surface);border:1px solid var(--border);border-radius:10px;display:grid;grid-template-rows:auto auto 1fr auto;box-shadow:0 24px 70px rgba(15,23,42,.28);overflow:hidden}
+.detail{width:min(940px,95%);height:min(680px,92dvh);background:var(--surface);border:1px solid var(--border);border-radius:10px;display:grid;grid-template-rows:auto 1fr auto;box-shadow:0 24px 70px rgba(15,23,42,.28);overflow:hidden}
 .detail-head{display:flex;align-items:flex-start;gap:10px;padding:14px;border-bottom:1px solid var(--border)}.detail-head h2{font-size:16px;margin:0;font-weight:850}.detail-head .sub{font-size:11.5px;color:var(--muted);margin-top:2px}.detail-head .x{margin-left:auto}
-.detail-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;padding:12px;border-bottom:1px solid var(--border);background:var(--surface2)}
-.detail-box{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:8px}.detail-box .k{font-size:10px;color:var(--faint);text-transform:uppercase;font-weight:850}.detail-box .v{font-size:12px;font-weight:750;margin-top:2px;word-break:break-word}
+.detail-body{display:grid;grid-template-columns:320px 1fr;gap:16px;padding:14px;min-height:0;overflow:hidden;background:var(--surface)}
+.detail-pane{display:flex;flex-direction:column;min-height:0;overflow:hidden}
+.detail-pane.scroll{overflow-y:auto;padding-right:4px}
+.detail-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;background:transparent}
+.detail-box{background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:8px}.detail-box .k{font-size:10px;color:var(--faint);text-transform:uppercase;font-weight:850}.detail-box .v{font-size:12px;font-weight:750;margin-top:2px;word-break:break-word}
 .preview{margin:0;padding:14px;overflow:auto;background:#fffdf5;color:#161616;font:12px/1.38 var(--mono);white-space:pre-wrap}
 .detail-actions{display:flex;gap:8px;justify-content:flex-end;align-items:center;padding:12px;border-top:1px solid var(--border);flex-wrap:wrap}
 .empty-print{padding:30px;text-align:center;color:var(--muted);font-size:12px}
-@media(max-width:900px){body{overflow:auto}.print-page{height:auto;min-height:calc(100dvh - var(--topbar-h,70px));grid-template-rows:auto auto auto 1fr}.metric-row{grid-template-columns:repeat(2,1fr)}.jobs th:nth-child(4),.jobs td:nth-child(4){display:none}.history-tools input{min-width:180px}.drawer{justify-content:center}.detail{height:min(720px,96dvh)}}
+@media(max-width:900px){body{overflow:auto}.print-page{height:auto;min-height:calc(100dvh - var(--topbar-h,70px));grid-template-rows:auto auto auto 1fr}.metric-row{grid-template-columns:repeat(2,1fr)}.jobs th:nth-child(4),.jobs td:nth-child(4){display:none}.history-tools input{min-width:180px}.drawer{justify-content:center}.detail{height:min(720px,96dvh);width:min(620px,95%);grid-template-rows:auto 1fr auto}.detail-body{grid-template-columns:1fr;grid-template-rows:1fr 1fr;overflow-y:auto;gap:12px}.detail-pane{overflow:visible}}
 @media(max-width:560px){.print-page{padding:10px}.print-head{align-items:flex-start}.print-actions{width:100%;justify-content:flex-start;margin-left:0}.metric-row{grid-template-columns:1fr 1fr}.printer-devices{grid-template-columns:1fr}.jobs th:nth-child(5),.jobs td:nth-child(5){display:none}.detail-grid{grid-template-columns:1fr}}
 </style></head>
 <body>
@@ -78,8 +81,19 @@ body{overflow:hidden}
       </div>
       <button class="btn sm x" id="detailClose">Đóng</button>
     </div>
-    <div class="detail-grid" id="detailMeta"></div>
-    <pre class="preview allow-select" id="detailPreview">Đang tải...</pre>
+    
+    <div class="detail-body">
+      <div class="detail-pane">
+        <div style="font-size:10px;color:var(--faint);text-transform:uppercase;font-weight:850;margin-bottom:6px">Mẫu in (Preview)</div>
+        <pre class="preview allow-select" id="detailPreview" style="flex:1;border:1px solid var(--border);border-radius:8px">Đang tải...</pre>
+      </div>
+      
+      <div class="detail-pane scroll">
+        <div style="font-size:10px;color:var(--faint);text-transform:uppercase;font-weight:850;margin-bottom:6px">Thông tin chi tiết</div>
+        <div class="detail-grid" id="detailMeta"></div>
+      </div>
+    </div>
+
     <div class="detail-actions">
       <button class="btn" id="markPrintedBtn">Đánh dấu đã in</button>
       <button class="btn" id="sendPrinterBtn">Gửi máy in thật</button>
@@ -95,7 +109,7 @@ document.getElementById('top').innerHTML = topbar('printers', {
   title: '🖨️ In ấn & thiết bị',
   sub: 'Máy in thật, két tiền, lịch sử in và in lại có kiểm tra trước.',
   actions: `<button class="btn sm" id="openDrawerBtn">Mở két</button>
-      <a class="btn sm" href="/settings?tab=printers">Cấu hình máy in</a>
+      <a class="btn sm" href="/settings?tab=connections">Cấu hình máy in</a>
       <button class="btn sm primary" id="refreshBtn">Tải lại</button>`,
 });
 await requireModuleAccess('printing');
@@ -131,6 +145,62 @@ const statusPill = (s) => { const [t,c]=STATUS[s]||[s||'Không rõ','s-disabled'
 const printerName = (id) => printers.find(p=>p.id===id)?.label || printers.find(p=>p.id===id)?.name || id || '-';
 const targetLabel = (p) => p.connection==='lan' ? `${p.ip||'chưa có IP'}:${p.port||9100}` : (p.connection==='system' ? (p.systemName||p.name||'chưa chọn driver') : 'Trình duyệt');
 const deviceIcon = (p) => /bill|receipt|hóa|hoa/i.test(`${p.id} ${p.output} ${p.label}`) ? '🧾' : /label|tem/i.test(`${p.output} ${p.label}`) ? '🏷️' : /runner|chạy/i.test(`${p.output} ${p.label}`) ? '🍽️' : /bar/i.test(`${p.id} ${p.label}`) ? '🍹' : '🔥';
+
+function explainPrintError(err) {
+  if (!err) return '';
+  const e = String(err).toLowerCase();
+  
+  if (e.includes('invalidprinterexception') || e.includes('settings to access printer') || e.includes('out-printer')) {
+    const match = err.match(/printer\s+['"]([^'"]+)['"]/i) || err.match(/Out-Printer\s+-Name\s+["']([^"']+)["']/i);
+    const printerName = match ? match[1] : '';
+    return `<div style="font-weight: 700; color: var(--late)">Máy in không tồn tại trên máy tính Server</div>
+      <div style="margin-top: 6px; font-size: 12px; line-height: 1.5; color: var(--text)">
+        Hệ thống không tìm thấy máy in có tên chính xác là <b>"${esc(printerName || 'Máy in')}"</b> trong cài đặt Windows của Server.
+        <br><br>
+        <b>Cách khắc phục nhanh:</b>
+        <br>1. Vào phần <b>Cài đặt máy in</b> hoặc <b>Cài đặt -> Máy in</b> trong Dashboard.
+        <br>2. Chọn đúng tên máy in thật được liệt kê ở cột <b>Máy in hệ điều hành (OS)</b> (hoặc gõ chính xác từng ký tự tên máy in hiển thị trong Windows Control Panel / Devices and Printers).
+        <br>3. Kiểm tra xem máy in đã bật nguồn và cắm cáp kết nối USB/LAN vào máy tính Server chưa.
+      </div>`;
+  }
+  
+  if (e.includes('không kết nối được máy in lan') || e.includes('etimedout') || e.includes('ehostunreach') || e.includes('timeout')) {
+    return `<div style="font-weight: 700; color: var(--late)">Lỗi kết nối mạng LAN tới máy in</div>
+      <div style="margin-top: 6px; font-size: 12px; line-height: 1.5; color: var(--text)">
+        Máy chủ không thể gửi lệnh in tới địa chỉ IP của máy in bếp/bar.
+        <br><br>
+        <b>Cách khắc phục nhanh:</b>
+        <br>1. Kiểm tra xem dây mạng LAN đã cắm chắc chắn từ máy in vào Router/Switch mạng chưa (đèn cổng LAN phía sau máy in phải nhấp nháy).
+        <br>2. Đảm bảo iPad/máy POS này và máy in đang dùng chung một mạng nội bộ (cùng Router/WiFi).
+        <br>3. IP máy in có thể đã thay đổi. Hãy in phiếu kiểm tra (Self-Test) bằng cách tắt nguồn máy in, giữ nút <b>FEED</b> rồi bật nguồn lại. Xem IP ghi trên phiếu và cập nhật lại vào ô <b>IP máy in (LAN)</b> trong phần cài đặt.
+      </div>`;
+  }
+  
+  if (e.includes('thiếu ip')) {
+    return `<div style="font-weight: 700; color: var(--late)">Thiếu địa chỉ IP máy in</div>
+      <div style="margin-top: 6px; font-size: 12px; line-height: 1.5; color: var(--text)">
+        Máy in này đang cấu hình kết nối LAN nhưng chưa có địa chỉ IP.
+        <br><br>
+        <b>Cách khắc phục nhanh:</b> Vào Cài đặt máy in và nhập IP của máy in (ví dụ: 192.168.1.50).
+      </div>`;
+  }
+
+  if (e.includes('thiếu tên máy in')) {
+    return `<div style="font-weight: 700; color: var(--late)">Chưa chọn máy in hệ điều hành</div>
+      <div style="margin-top: 6px; font-size: 12px; line-height: 1.5; color: var(--text)">
+        Chưa chọn tên máy in trong hệ điều hành Windows/macOS.
+        <br><br>
+        <b>Cách khắc phục nhanh:</b> Vào Cài đặt máy in, chọn đúng tên thiết bị từ danh sách hệ điều hành hiển thị.
+      </div>`;
+  }
+
+  return `<div style="font-weight: 700; color: var(--late)">Lỗi hệ thống in ấn</div>
+    <div style="margin-top: 6px; font-size: 12px; line-height: 1.5; color: var(--text)">
+      Gặp lỗi khi xử lý lệnh in: <i>"${esc(err)}"</i>.
+      <br><br>
+      <b>Cách khắc phục nhanh:</b> Hãy kiểm tra xem máy in có bị kẹt giấy, hết giấy, tắt nguồn hoặc bị lỏng dây cáp không.
+    </div>`;
+}
 
 function searchable(j){
   return [
@@ -235,14 +305,33 @@ async function openDetail(id){
   currentText = text.text || '';
   q('detailTitle').textContent = currentJob.meta?.action || TYPE[currentJob.type] || 'Chi tiết job in';
   q('detailSub').textContent = `${currentJob.title || ''} · #${currentJob.id}`;
-  q('detailMeta').innerHTML = [
+  
+  const metaItems = [
     ['Trạng thái', STATUS[currentJob.status]?.[0] || currentJob.status],
     ['Máy in', printerName(currentJob.printer)],
     ['Bàn / Ref', [currentJob.meta?.table,currentJob.meta?.ref].filter(Boolean).join(' · ') || '-'],
     ['Thời gian', fmtTime(currentJob.created_at)],
     ['Transport', currentJob.transport || printers.find(p=>p.id===currentJob.printer)?.connection || 'browser'],
-    ['Lỗi cuối', currentJob.error || '-'],
-  ].map(([k,v])=>`<div class="detail-box"><div class="k">${esc(k)}</div><div class="v">${esc(v)}</div></div>`).join('');
+  ].map(([k,v])=>`<div class="detail-box"><div class="k">${esc(k)}</div><div class="v">${esc(v)}</div></div>`);
+
+  if (currentJob.error) {
+    metaItems.push(`<div class="detail-box" style="grid-column: 1 / -1; border: 1px solid var(--border)">
+      <div class="k">LỖI CUỐI (RAW LOG)</div>
+      <div class="v" style="max-height: 75px; overflow-y: auto; font-family: var(--mono); font-size: 10px; line-height: 1.35; white-space: pre-wrap; word-break: break-all; margin-top: 4px; color: var(--muted)">${esc(currentJob.error)}</div>
+    </div>`);
+    
+    const explanation = explainPrintError(currentJob.error);
+    if (explanation) {
+      metaItems.push(`<div class="detail-box" style="grid-column: 1 / -1; border: 1px solid var(--late); background: var(--late-bg); padding: 12px; border-radius: 8px; margin-top: 4px">
+        <div class="k" style="color: var(--late); margin-bottom: 6px; font-weight: 850; font-size: 11px">💡 GIẢI THÍCH LỖI & HƯỚNG DẪN XỬ LÝ</div>
+        <div class="v" style="font-size: 12px; font-weight: normal; line-height: 1.45; color: var(--text); max-height: 125px; overflow-y: auto">${explanation}</div>
+      </div>`);
+    }
+  } else {
+    metaItems.push(`<div class="detail-box"><div class="k">Lỗi cuối</div><div class="v">-</div></div>`);
+  }
+
+  q('detailMeta').innerHTML = metaItems.join('');
   q('detailPreview').textContent = currentText || 'Không có nội dung preview.';
   q('detailDrawer').classList.add('show');
 }

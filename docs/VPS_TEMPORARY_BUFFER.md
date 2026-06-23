@@ -11,6 +11,8 @@ While the company server is unreachable, the VPS holds write events in a
 - `temporary_event_attempts`
 - `temporary_event_cleanup_logs`
 
+Planned DDL: `vps-gateway/temp-buffer/schema.sql`.
+
 ## Event record fields
 
 Every buffered event has:

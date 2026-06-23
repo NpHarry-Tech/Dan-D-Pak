@@ -5,7 +5,7 @@ import { emit } from '../realtime.js';
 import { archiveCustomer } from './archive.js';
 
 const PERKS = ['none', 'pct', 'amount', 'free'];
-const PARTNER_TYPES = ['customer', 'supplier', 'both'];
+const PARTNER_TYPES = ['customer', 'supplier', 'both', 'staff'];
 
 function normalizeRow(r) {
   if (!r) return null;
@@ -16,6 +16,7 @@ function normalizeRow(r) {
     partner_type,
     is_customer: partner_type === 'customer' || partner_type === 'both',
     is_supplier: partner_type === 'supplier' || partner_type === 'both',
+    is_staff: partner_type === 'staff',
     active: r.active === undefined || r.active === null ? 1 : (parseInt(r.active) ? 1 : 0),
     perk_value: parseInt(r.perk_value) || 0,
     total_orders: parseInt(r.total_orders) || 0,
@@ -41,7 +42,8 @@ function matchesTerm(c, term) {
 export function listCustomers(branch_id = 'br1', q = '') {
   const rows = db.prepare(`SELECT * FROM customers WHERE branch_id=? AND active!=0 ORDER BY updated_at DESC, created_at DESC`).all(branch_id);
   const term = String(q || '').trim().toLowerCase();
-  const out = rows.map(normalizeRow).filter(c => c.is_customer);
+  // Khách hàng + nhân viên (CBNV) đều chọn được ở POS để áp ưu đãi mặc định. NCC thì không.
+  const out = rows.map(normalizeRow).filter(c => c.is_customer || c.is_staff);
   return out.filter(c => matchesTerm(c, term)).slice(0, 200);
 }
 
@@ -53,6 +55,7 @@ export function listPartners(branch_id = 'br1', { type = 'all', q = '', includeI
   if (!includeInactive) out = out.filter(c => c.active !== 0);
   if (type === 'customer') out = out.filter(c => c.is_customer);
   else if (type === 'supplier') out = out.filter(c => c.is_supplier);
+  else if (type === 'staff') out = out.filter(c => c.is_staff);
   return out.filter(c => matchesTerm(c, term)).slice(0, 500);
 }
 
@@ -62,6 +65,7 @@ export function partnerCounts(branch_id = 'br1') {
     all: all.length,
     customer: all.filter(c => c.is_customer).length,
     supplier: all.filter(c => c.is_supplier).length,
+    staff: all.filter(c => c.is_staff).length,
   };
 }
 

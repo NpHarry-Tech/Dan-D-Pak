@@ -5,13 +5,22 @@ import { DatabaseSync } from 'node:sqlite';
 import { fileURLToPath } from 'node:url';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { mkdirSync } from 'node:fs';
-import { appendAuditArchive, ensurePermanentStorage } from './services/archive.js';
+import { appendAuditArchive, ensurePermanentStorage, readRecentAuditArchive } from './services/archive.js';
 import { env } from './config/env.js';
+import crypto from 'node:crypto';
+import zlib from 'node:zlib';
+
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, '..');
 
 function resolveDbPath() {
+  if (env.DATABASE_URL && env.DATABASE_PROVIDER === 'sqlite') {
+    if (env.DATABASE_URL.startsWith('sqlite://')) {
+      const path = env.DATABASE_URL.replace('sqlite://', '');
+      return isAbsolute(path) ? path : resolve(ROOT, path);
+    }
+  }
   if (!env.SQLITE_PATH) return join(__dirname, 'store.db');
   return isAbsolute(env.SQLITE_PATH) ? env.SQLITE_PATH : resolve(ROOT, env.SQLITE_PATH);
 }
@@ -23,6 +32,12 @@ export const db = new DatabaseSync(DB_PATH);
 
 db.exec('PRAGMA journal_mode = WAL;');
 db.exec('PRAGMA foreign_keys = ON;');
+db.exec('PRAGMA busy_timeout = 5000;');        // Retry 5 giây trước khi báo lỗi locked — quan trọng khi 50 thiết bị cùng ghi
+db.exec('PRAGMA synchronous = NORMAL;');       // Nhanh hơn FULL, vẫn an toàn với WAL
+db.exec('PRAGMA cache_size = -65536;');        // 64 MB page cache trong RAM
+db.exec('PRAGMA temp_store = MEMORY;');        // Bảng tạm trong RAM
+db.exec('PRAGMA mmap_size = 134217728;');      // 128 MB memory-mapped I/O
+db.exec('PRAGMA wal_autocheckpoint = 1000;');  // Checkpoint mỗi 1000 pages (~4 MB)
 
 export function migrate() {
   db.exec(`
@@ -580,6 +595,15 @@ export function migrate() {
   addColumnIfMissing('orders', 'voucher_id', 'TEXT');
   addColumnIfMissing('orders', 'voucher_code', 'TEXT');
   addColumnIfMissing('payments', 'shift_id', 'TEXT');
+  // Thanh toán thẻ qua máy POS (VCB SmartPOS...): lưu mã giao dịch để ĐỐI SOÁT
+  // với sao kê acquirer. mode = auto (native bridge) | manual (thu ngân nhập tay) | mock.
+  addColumnIfMissing('payment_lines', 'card_txn_id', 'TEXT');   // mã giao dịch của máy/acquirer
+  addColumnIfMissing('payment_lines', 'card_rrn', 'TEXT');      // Retrieval Reference Number
+  addColumnIfMissing('payment_lines', 'card_approval', 'TEXT'); // approval / auth code
+  addColumnIfMissing('payment_lines', 'card_mask', 'TEXT');     // 4 số cuối thẻ đã che
+  addColumnIfMissing('payment_lines', 'card_scheme', 'TEXT');   // VISA | MASTERCARD | NAPAS...
+  addColumnIfMissing('payment_lines', 'card_terminal', 'TEXT'); // TID / tên máy
+  addColumnIfMissing('payment_lines', 'card_mode', 'TEXT');     // auto | manual | mock
   addColumnIfMissing('print_jobs', 'attempts', 'INTEGER NOT NULL DEFAULT 0');
   addColumnIfMissing('print_jobs', 'last_attempt_at', 'TEXT');
   addColumnIfMissing('print_jobs', 'error', 'TEXT');
@@ -611,6 +635,26 @@ export function migrate() {
   db.exec(`CREATE INDEX IF NOT EXISTS idx_cash_drawer_reimburses ON cash_drawer_entries(reimburses_entry_id);`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_cash_drawer_alloc_expense ON cash_drawer_reimbursement_allocations(expense_id);`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_cash_drawer_alloc_reimbursement ON cash_drawer_reimbursement_allocations(reimbursement_id);`);
+
+  // ── Performance indexes — tránh full-table-scan trên các bảng hot ───────────
+  // orders: tìm kiếm theo trạng thái, thời gian, chi nhánh (KDS, báo cáo, sync)
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_orders_status_created ON orders(status, created_at DESC);`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_orders_branch_status ON orders(branch_id, status);`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_orders_branch_created ON orders(branch_id, created_at DESC);`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_orders_branch_paid ON orders(branch_id, status, paid_at DESC);`);
+  // order_items: KDS gọi mỗi vài giây; pending_confirm polling
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_order_items_order ON order_items(order_id, created_at);`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_order_items_status ON order_items(status, created_at);`);
+  // stock_movements: báo cáo kho lọc theo chi nhánh + thời gian
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_stock_movements_branch_created ON stock_movements(branch_id, created_at DESC);`);
+  // stock_lots: FEFO (First Expire First Out) consumption
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_stock_lots_fefo ON stock_lots(warehouse_id, item_type, item_id, qty_on_hand, expiry_date ASC);`);
+  // audit_log: sync engine query mỗi 6 giây
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_audit_branch_created ON audit_log(branch_id, created_at DESC);`);
+  // shifts: báo cáo, dashboard
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_shifts_branch_opened ON shifts(branch_id, opened_at DESC, status);`);
+  // cash_drawer_entries: báo cáo két, ca
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_cash_drawer_branch_occurred ON cash_drawer_entries(branch_id, occurred_at DESC);`);
 
   // Enterprise storage: system-wide + branch + user scoped key-value store.
   db.exec(`
@@ -655,6 +699,32 @@ export function migrate() {
   CREATE INDEX IF NOT EXISTS idx_bank_tx_time ON bank_transactions(branch_id, created_at);
   `);
 
+  // ── Document Management System (DMS) ────────────────────────────────────────
+  db.exec(`
+  CREATE TABLE IF NOT EXISTS document_files (
+    id              TEXT PRIMARY KEY,
+    branch_id       TEXT NOT NULL,
+    name            TEXT NOT NULL,
+    original_name   TEXT NOT NULL,
+    stored_name     TEXT NOT NULL,
+    mime_type       TEXT,
+    file_size       INTEGER NOT NULL DEFAULT 0,
+    category        TEXT NOT NULL DEFAULT 'other',
+    source          TEXT NOT NULL DEFAULT 'manual',
+    related_id      TEXT,
+    related_type    TEXT,
+    tags_json       TEXT NOT NULL DEFAULT '[]',
+    description     TEXT,
+    uploaded_by     TEXT NOT NULL,
+    uploaded_by_name TEXT,
+    is_archived     INTEGER NOT NULL DEFAULT 0,
+    created_at      TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_docfiles_branch   ON document_files(branch_id, created_at);
+  CREATE INDEX IF NOT EXISTS idx_docfiles_category ON document_files(branch_id, category, created_at);
+  CREATE INDEX IF NOT EXISTS idx_docfiles_source   ON document_files(branch_id, source, created_at);
+  `);
+
   ensurePermanentStorage();
   bootstrapBranchDefaults();
   for (const b of db.prepare(`SELECT id FROM branches WHERE active=1 ORDER BY sort,name`).all()) {
@@ -675,9 +745,18 @@ export function audit(action, detail, branch_id = 'br1', actor = 'system') {
   const id = uid('a_');
   const created_at = now();
   const cleanDetail = typeof detail === 'string' ? detail : JSON.stringify(detail);
-  db.prepare(`INSERT INTO audit_log (id,branch_id,actor,action,detail,created_at) VALUES (?,?,?,?,?,?)`)
-    .run(id, branch_id, actor, action, cleanDetail, created_at);
-  appendAuditArchive({ id, branch_id, actor, action, detail: cleanDetail, created_at });
+  const entry = { id, branch_id, actor, action, detail: cleanDetail, created_at };
+  // Durable archive FIRST (fsync'd NDJSON): if the SQLite write below fails — or a
+  // crash hits right after — the footprint line is already safely on disk.
+  appendAuditArchive(entry);
+  // Logging must never break the business operation that triggered it: swallow
+  // SQLite errors (the NDJSON archive above still has the entry for recovery).
+  try {
+    db.prepare(`INSERT INTO audit_log (id,branch_id,actor,action,detail,created_at) VALUES (?,?,?,?,?,?)`)
+      .run(id, branch_id, actor, action, cleanDetail, created_at);
+  } catch (e) {
+    console.warn('[audit] sqlite write failed (kept in NDJSON archive):', e.message);
+  }
 }
 
 export function defaultWarehouseIds(branch_id = 'br1') {
@@ -709,12 +788,94 @@ export function bootstrapBranchDefaults() {
   db.prepare(`UPDATE users SET branch_access_json='["*"]' WHERE role='owner' AND (branch_access_json IS NULL OR branch_access_json='' OR branch_access_json='[]')`).run();
 }
 
+// Self-heal after a crash: replay the fsync'd NDJSON footprint archive back into
+// audit_log. With WAL+synchronous=NORMAL, a power loss can roll back SQLite's most
+// recent commits, but the archive (written + fsync'd before each SQLite insert)
+// still has them. INSERT OR IGNORE on the primary key makes this idempotent, so it
+// only restores rows that are genuinely missing. Returns how many were restored.
+export function reconcileAuditFromArchive(days = 2) {
+  let restored = 0;
+  try {
+    const entries = readRecentAuditArchive(days);
+    if (!entries.length) return 0;
+    const stmt = db.prepare(`INSERT OR IGNORE INTO audit_log (id,branch_id,actor,action,detail,created_at) VALUES (?,?,?,?,?,?)`);
+    for (const e of entries) {
+      const detail = typeof e.detail === 'string' ? e.detail : JSON.stringify(e.detail ?? null);
+      const r = stmt.run(e.id, e.branch_id ?? 'br1', e.actor ?? 'system', e.action, detail, e.created_at);
+      if (r.changes > 0) restored++;
+    }
+  } catch (e) {
+    console.warn('[audit] reconcile from archive failed:', e.message);
+  }
+  return restored;
+}
+
+const ALGORITHM = 'aes-256-ctr';
+const SECRET_KEY = crypto.scryptSync('dandpak-audit-log-key-secret-12345', 'salt', 32);
+
+export function encryptCompress(text) {
+  try {
+    const compressed = zlib.gzipSync(Buffer.from(text, 'utf8'));
+    const iv = crypto.randomBytes(16);
+    const cipher = crypto.createCipheriv(ALGORITHM, SECRET_KEY, iv);
+    const encrypted = Buffer.concat([cipher.update(compressed), cipher.final()]);
+    return '__ENC__:' + iv.toString('hex') + ':' + encrypted.toString('hex');
+  } catch (e) {
+    console.error('[audit] compression/encryption failed:', e.message);
+    return text;
+  }
+}
+
+export function decryptDecompress(encText) {
+  if (!encText || !encText.startsWith('__ENC__:')) return encText;
+  try {
+    const parts = encText.split(':');
+    if (parts.length !== 3) return encText;
+    const iv = Buffer.from(parts[1], 'hex');
+    const encrypted = Buffer.from(parts[2], 'hex');
+    const decipher = crypto.createDecipheriv(ALGORITHM, SECRET_KEY, iv);
+    const decrypted = Buffer.concat([decipher.update(encrypted), decipher.final()]);
+    return zlib.gunzipSync(decrypted).toString('utf8');
+  } catch (e) {
+    console.error('[audit] decryption/decompression failed:', e.message);
+    return encText;
+  }
+}
+
+export function compactOldAuditLogs(daysLimit = 90) {
+  const cutoff = new Date(Date.now() - daysLimit * 24 * 60 * 60 * 1000).toISOString();
+  try {
+    const rows = db.prepare(`SELECT id, detail FROM audit_log WHERE created_at < ? AND detail NOT LIKE '__ENC__:%'`).all(cutoff);
+    if (!rows.length) return 0;
+    
+    const stmt = db.prepare(`UPDATE audit_log SET detail = ? WHERE id = ?`);
+    let count = 0;
+    db.exec('BEGIN TRANSACTION;');
+    try {
+      for (const r of rows) {
+        const enc = encryptCompress(r.detail);
+        stmt.run(enc, r.id);
+        count++;
+      }
+      db.exec('COMMIT;');
+    } catch (err) {
+      db.exec('ROLLBACK;');
+      throw err;
+    }
+    return count;
+  } catch (e) {
+    console.error('[audit] compact old logs failed:', e.message);
+    return 0;
+  }
+}
+
 // Giữ nhật ký hoạt động trong `days` ngày gần nhất (cửa sổ trượt). Sang ngày thứ 8
 // các dòng của ngày đầu tiên đã quá 7 ngày nên bị xóa. Trả về số dòng đã xóa.
 export function purgeOldAudit(days = 7) {
   const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
   return db.prepare(`DELETE FROM audit_log WHERE created_at < ?`).run(cutoff).changes;
 }
+
 
 export function bootstrapWarehouseDefaults(branch_id = 'br1') {
   const ids = defaultWarehouseIds(branch_id);

@@ -1,0 +1,492 @@
+<!DOCTYPE html>
+<html lang="vi"><head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Tài liệu Kiến trúc — POS/ERP</title>
+<link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/shared/app.css">
+<script src="/runtime-config.js"></script>
+<script src="/socket.io/socket.io.js"></script>
+<style>
+body.embed #top{display:none}
+body.embed .view{padding:14px 16px}
+/* ── Search bar ── */
+.doc-search-wrap {
+  position: relative;
+  max-width: 420px;
+  flex: 1;
+  min-width: 200px;
+}
+.doc-search-wrap input {
+  width: 100%;
+  padding-left: 36px;
+  font-size: 13.5px;
+}
+.doc-search-wrap::before {
+  content: '🔍';
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 13px;
+  opacity: .5;
+  pointer-events: none;
+}
+
+/* ── Doc card grid ── */
+.doc-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 16px;
+  margin-top: 20px;
+}
+.doc-card {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 20px;
+  cursor: pointer;
+  transition: transform 0.18s, box-shadow 0.18s, border-color 0.18s;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  text-align: left;
+  position: relative;
+  overflow: hidden;
+}
+.doc-card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 3px;
+  background: var(--brand);
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform 0.2s;
+}
+.doc-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 12px 32px rgba(0,0,0,0.15);
+  border-color: var(--brand);
+}
+.doc-card:hover::before {
+  transform: scaleX(1);
+}
+.doc-card-icon {
+  font-size: 32px;
+  line-height: 1;
+}
+.doc-card-title {
+  font-size: 14.5px;
+  font-weight: 700;
+  color: var(--text);
+  line-height: 1.3;
+}
+.doc-card-file {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--faint);
+  background: var(--surface3);
+  padding: 3px 8px;
+  border-radius: 5px;
+  border: 1px solid var(--border);
+  align-self: flex-start;
+}
+.doc-card-desc {
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.5;
+  flex: 1;
+}
+.doc-card-tag {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--muted);
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+  margin-top: 4px;
+}
+.doc-card-tag .chip {
+  font-size: 10px;
+  padding: 2px 8px;
+  border-radius: 99px;
+  background: var(--brand-dim);
+  color: var(--brand);
+  font-weight: 700;
+}
+.doc-empty {
+  grid-column: 1 / -1;
+  text-align: center;
+  padding: 60px 20px;
+  color: var(--muted);
+  font-size: 15px;
+}
+
+/* ── Apple Reader Modal ── */
+.reader-modal-bg {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.6);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  z-index: 2000;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 20px;
+  overflow-y: auto;
+}
+.reader-modal-bg.open {
+  display: flex;
+}
+.reader-modal {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  width: 100%;
+  max-width: 780px;
+  min-height: 200px;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 32px 80px rgba(0,0,0,0.3);
+  margin: auto;
+  animation: readerSlideIn 0.25s ease;
+}
+@keyframes readerSlideIn {
+  from { opacity: 0; transform: translateY(24px) scale(0.98); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+.reader-topbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  background: var(--surface);
+  border-radius: 18px 18px 0 0;
+  z-index: 1;
+}
+.reader-title {
+  flex: 1;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.reader-file-badge {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--muted);
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  padding: 3px 10px;
+  border-radius: 5px;
+}
+.reader-close-btn {
+  background: var(--surface3);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 6px 14px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+  flex-shrink: 0;
+}
+.reader-close-btn:hover { background: var(--surface2); }
+.reader-body {
+  padding: 28px 36px 40px;
+  font-size: 14px;
+  color: var(--text);
+  line-height: 1.75;
+  overflow-x: hidden;
+}
+@media(max-width: 640px) {
+  .reader-body { padding: 20px 18px 32px; }
+  .reader-topbar { flex-wrap: wrap; }
+}
+/* Doc content styles inside reader */
+.reader-body h1 { margin: 0 0 20px; font-size: 24px; font-weight: 800; border-bottom: 2px solid var(--border); padding-bottom: 10px; }
+.reader-body h2 { margin: 32px 0 16px; font-size: 19px; font-weight: 700; border-bottom: 1px solid var(--border); padding-bottom: 6px; }
+.reader-body h3 { margin: 26px 0 12px; font-size: 16.5px; font-weight: 700; }
+.reader-body h4 { margin: 20px 0 10px; font-size: 14.5px; font-weight: 700; }
+.reader-body p  { margin: 12px 0; }
+.reader-body ul, .reader-body ol { margin: 12px 0; padding-left: 22px; }
+.reader-body li { margin: 5px 0; }
+.reader-body a  { color: var(--brand); text-decoration: underline; }
+.reader-body pre { background: var(--surface2); border: 1px solid var(--border); border-radius: 10px; padding: 16px; overflow-x: auto; font-family: var(--mono); font-size: 13px; line-height: 1.5; margin: 16px 0; }
+.reader-body code:not(pre code) { background: var(--surface2); border: 1px solid var(--border); padding: 1px 6px; border-radius: 5px; font-family: var(--mono); font-size: 12.5px; color: var(--brand); }
+.reader-body blockquote { border-left: 4px solid var(--brand); padding: 6px 14px; margin: 14px 0; background: var(--surface2); border-radius: 0 8px 8px 0; color: var(--muted); }
+.reader-body hr { border: 0; border-top: 1px solid var(--border); margin: 28px 0; }
+.reader-body table { border-collapse: collapse; width: 100%; margin: 16px 0; border-radius: 10px; overflow: hidden; }
+.reader-body th { background: var(--surface2); font-size: 11.5px; font-weight: 800; text-transform: uppercase; letter-spacing: .4px; color: var(--faint); padding: 10px 14px; border-bottom: 1px solid var(--border); text-align: left; }
+.reader-body td { padding: 10px 14px; border-bottom: 1px solid var(--border); font-size: 13px; }
+.reader-body tr:last-child td { border-bottom: 0; }
+/* Alert boxes */
+.reader-alert { border-radius: 8px; padding: 12px 16px; margin: 16px 0; }
+.reader-alert-label { font-size: 11.5px; font-weight: 800; text-transform: uppercase; letter-spacing: .5px; margin-bottom: 4px; }
+.reader-alert.note { background: rgba(99,102,241,0.08); border-left: 4px solid var(--brand); }
+.reader-alert.note .reader-alert-label { color: var(--brand); }
+.reader-alert.warning { background: rgba(239,68,68,0.07); border-left: 4px solid var(--danger); }
+.reader-alert.warning .reader-alert-label { color: var(--danger); }
+.reader-alert.tip { background: rgba(34,197,94,0.07); border-left: 4px solid var(--done); }
+.reader-alert.tip .reader-alert-label { color: var(--done); }
+.reader-alert.caution { background: rgba(245,158,11,0.08); border-left: 4px solid #f59e0b; }
+.reader-alert.caution .reader-alert-label { color: #b45309; }
+.reader-alert.important { background: rgba(139,92,246,0.07); border-left: 4px solid #8b5cf6; }
+.reader-alert.important .reader-alert-label { color: #7c3aed; }
+</style>
+</head>
+<body>
+<div id="top"></div>
+<div class="view">
+  <!-- Toolbar -->
+  <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:4px">
+    <div class="doc-search-wrap">
+      <input type="search" id="docSearch" placeholder="Tìm kiếm tài liệu...">
+    </div>
+  </div>
+
+  <!-- Doc grid -->
+  <div class="doc-grid" id="docGrid">
+    <div class="doc-empty">Đang tải danh sách tài liệu...</div>
+  </div>
+</div>
+
+<!-- Apple Reader Modal -->
+<div class="reader-modal-bg" id="readerBg">
+  <div class="reader-modal">
+    <div class="reader-topbar">
+      <div class="reader-title" id="readerTitle">Đang tải...</div>
+      <div class="reader-file-badge" id="readerFileBadge"></div>
+      <button class="reader-close-btn" id="readerCloseBtn">✕ Đóng</button>
+    </div>
+    <div class="reader-body" id="readerBody">
+      <p style="color:var(--muted);text-align:center;padding:40px 0">Đang tải tài liệu từ máy chủ...</p>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+import { api, toast, esc, startClock, topbar, requireModuleAccess, renderUserChip } from '/shared/client.js';
+
+// Khi được nhúng (iframe) trong trang "Cơ sở dữ liệu" thì ẩn topbar riêng.
+const EMBED = new URLSearchParams(location.search).has('embed');
+if (EMBED) {
+  document.body.classList.add('embed');
+} else {
+  document.getElementById('top').innerHTML = topbar('documents', {
+    title: '🗂️ Tài liệu Kiến trúc',
+    sub: 'Hướng dẫn kỹ thuật, sơ đồ dữ liệu, kiến trúc hệ thống và tài liệu vận hành của Dan D Pak POS/ERP.',
+  });
+}
+
+await requireModuleAccess('documents');
+if (!EMBED) renderUserChip();
+
+const $ = id => document.getElementById(id);
+const docGrid = $('docGrid');
+const docSearch = $('docSearch');
+const readerBg = $('readerBg');
+const readerTitle = $('readerTitle');
+const readerFileBadge = $('readerFileBadge');
+const readerBody = $('readerBody');
+const readerCloseBtn = $('readerCloseBtn');
+
+let allDocs = [];
+let searchQ = '';
+
+// ── Markdown parser ──────────────────────────────────────────────────────────
+function parseMarkdown(raw) {
+  if (!raw) return '';
+
+  // First escape HTML (security)
+  let md = raw
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+
+  // ─ Extract and protect fenced code blocks ─
+  const codeBlocks = [];
+  md = md.replace(/```([^\n]*)\n([\s\S]*?)```/gm, (_, lang, code) => {
+    const id = `\x01CODE${codeBlocks.length}\x01`;
+    codeBlocks.push(`<pre><code class="lang-${lang.trim()}">${code}</code></pre>`);
+    return id;
+  });
+
+  // ─ GitHub Alerts ─ (> [!NOTE] …)
+  md = md.replace(/^&gt;\s*\[!(NOTE|IMPORTANT|WARNING|TIP|CAUTION)\]\n((?:&gt;[^\n]*\n?)*)/gm, (_, type, body) => {
+    const t = type.toLowerCase();
+    const inner = body.replace(/^&gt;\s?/gm, '').trim();
+    return `<div class="reader-alert ${t}"><div class="reader-alert-label">${type}</div><div>${inner}</div></div>\n`;
+  });
+
+  // ─ Horizontal rules ─
+  md = md.replace(/^---+$/gm, '<hr>');
+
+  // ─ Headings ─
+  md = md.replace(/^######\s+(.*)$/gm, '<h6>$1</h6>');
+  md = md.replace(/^#####\s+(.*)$/gm,  '<h5>$1</h5>');
+  md = md.replace(/^####\s+(.*)$/gm,   '<h4>$1</h4>');
+  md = md.replace(/^###\s+(.*)$/gm,    '<h3>$1</h3>');
+  md = md.replace(/^##\s+(.*)$/gm,     '<h2>$1</h2>');
+  md = md.replace(/^#\s+(.*)$/gm,      '<h1>$1</h1>');
+
+  // ─ Blockquotes ─
+  md = md.replace(/^&gt;\s*(.*)$/gm, '<blockquote>$1</blockquote>');
+
+  // ─ Bold, italic, inline code ─
+  const inlines = [];
+  md = md.replace(/`([^`\n]+)`/g, (_, c) => {
+    const id = `\x01INLINE${inlines.length}\x01`;
+    inlines.push(`<code>${c}</code>`);
+    return id;
+  });
+  md = md.replace(/\*\*\*([^*]+)\*\*\*/g, '<strong><em>$1</em></strong>');
+  md = md.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+  md = md.replace(/\*([^*\n]+)\*/g, '<em>$1</em>');
+  md = md.replace(/~~([^~]+)~~/g, '<del>$1</del>');
+
+  // ─ Links & images ─
+  md = md.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img src="$2" alt="$1" style="max-width:100%;border-radius:8px;margin:8px 0">');
+  md = md.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+
+  // ─ Unordered lists ─
+  md = md.replace(/((?:^[*-]\s+.+\n?)+)/gm, block => {
+    const items = block.trim().split('\n').map(l => `<li>${l.replace(/^[*-]\s+/, '').trim()}</li>`).join('');
+    return `<ul>${items}</ul>\n`;
+  });
+
+  // ─ Ordered lists ─
+  md = md.replace(/((?:^\d+\.\s+.+\n?)+)/gm, block => {
+    const items = block.trim().split('\n').map(l => `<li>${l.replace(/^\d+\.\s+/, '').trim()}</li>`).join('');
+    return `<ol>${items}</ol>\n`;
+  });
+
+  // ─ Paragraphs ─
+  md = md.split(/\n{2,}/).map(chunk => {
+    chunk = chunk.trim();
+    if (!chunk) return '';
+    if (/^<(h[1-6]|ul|ol|pre|blockquote|div|hr|table)/.test(chunk)) return chunk;
+    return `<p>${chunk.replace(/\n/g, '<br>')}</p>`;
+  }).join('\n');
+
+  // ─ Restore inlines & code blocks ─
+  inlines.forEach((c, i) => { md = md.replace(`\x01INLINE${i}\x01`, c); });
+  codeBlocks.forEach((c, i) => { md = md.replace(`\x01CODE${i}\x01`, c); });
+
+  return md;
+}
+
+// ── Icon map per file ──────────────────────────────────────────────────────
+const ICON_MAP = {
+  'README.md': '📖',
+  'ARCHITECTURE.md': '🏛️',
+  'API.md': '🔌',
+  'DEPLOYMENT.md': '🚀',
+  'DATABASE.md': '🛢️',
+  'SYNC.md': '🔄',
+  'SECURITY.md': '🔐',
+  'MODULES.md': '🧩',
+};
+function docIcon(file) {
+  return ICON_MAP[file.toUpperCase().split('/').pop()] || '📄';
+}
+
+function tagLabel(file) {
+  if (file.endsWith('.md')) return 'Markdown';
+  if (file.endsWith('.txt')) return 'Text';
+  return 'Doc';
+}
+
+// ── Render doc cards ──────────────────────────────────────────────────────
+function renderDocs(docs) {
+  if (!docs.length) {
+    docGrid.innerHTML = `<div class="doc-empty">😔 Không tìm thấy tài liệu nào phù hợp</div>`;
+    return;
+  }
+  docGrid.innerHTML = docs.map(d => `
+    <button class="doc-card" data-file="${esc(d.file)}" type="button">
+      <div class="doc-card-icon">${docIcon(d.file)}</div>
+      <div class="doc-card-title">${esc(d.title)}</div>
+      <div class="doc-card-desc">${esc(d.description || 'Tài liệu kỹ thuật hệ thống Dan D Pak POS/ERP.')}</div>
+      <div class="doc-card-file">${esc(d.file)}</div>
+      <div class="doc-card-tag">
+        <span class="chip">${tagLabel(d.file)}</span>
+        <span>${esc(d.group || 'General')}</span>
+      </div>
+    </button>
+  `).join('');
+  docGrid.querySelectorAll('.doc-card').forEach(btn => {
+    btn.onclick = () => openReader(btn.dataset.file);
+  });
+}
+
+// ── Load docs ─────────────────────────────────────────────────────────────
+async function loadDocs() {
+  try {
+    const docs = await api('/database/docs');
+    allDocs = docs;
+    applySearch();
+  } catch(e) {
+    docGrid.innerHTML = `<div class="doc-empty" style="color:var(--danger)">❌ ${esc(e.message)}</div>`;
+  }
+}
+
+function applySearch() {
+  const q = searchQ.toLowerCase();
+  const filtered = q
+    ? allDocs.filter(d => d.title.toLowerCase().includes(q) || d.file.toLowerCase().includes(q) || (d.description || '').toLowerCase().includes(q))
+    : allDocs;
+  renderDocs(filtered);
+}
+
+docSearch.oninput = () => { searchQ = docSearch.value.trim(); applySearch(); };
+
+// ── Open Reader ──────────────────────────────────────────────────────────
+async function openReader(file) {
+  readerTitle.textContent = 'Đang tải...';
+  readerFileBadge.textContent = file;
+  readerBody.innerHTML = `<p style="color:var(--muted);text-align:center;padding:40px 0">Đang tải tài liệu...</p>`;
+  readerBg.classList.add('open');
+  document.body.style.overflow = 'hidden';
+
+  try {
+    const res = await api(`/database/docs/${encodeURIComponent(file)}`);
+    const title = allDocs.find(d => d.file === file)?.title || file;
+    readerTitle.textContent = title;
+    readerBody.innerHTML = parseMarkdown(res.content);
+  } catch(e) {
+    readerBody.innerHTML = `<div style="color:var(--danger);text-align:center;padding:40px 0">
+      <div style="font-size:36px;margin-bottom:16px">❌</div>
+      <h3>Không thể tải tài liệu</h3>
+      <p>${esc(e.message)}</p>
+    </div>`;
+  }
+}
+
+function closeReader() {
+  readerBg.classList.remove('open');
+  document.body.style.overflow = '';
+}
+
+readerCloseBtn.onclick = closeReader;
+readerBg.onclick = e => { if (e.target === readerBg) closeReader(); };
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && readerBg.classList.contains('open')) closeReader(); });
+
+// Deep link: /documents?open=README.md
+const urlParams = new URLSearchParams(location.search);
+const autoOpen = urlParams.get('open');
+
+startClock();
+await loadDocs();
+if (autoOpen) openReader(autoOpen);
+</script>
+</body>
+</html>

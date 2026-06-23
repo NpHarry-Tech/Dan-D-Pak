@@ -357,7 +357,7 @@ const cfgKey=k=>`pos_erp_${k}_settings`;
 function readLocalCfg(k){ try{return JSON.parse(localStorage.getItem(cfgKey(k))||'null');}catch{return null;} }
 function hasLocalPrintCfg(){ return ['einvoice','labels','bill','printers','label_template','cup_label_template','bill_template'].some(k=>localStorage.getItem(cfgKey(k))); }
 function isLegacyBillTemplate(tpl){
-  return !!tpl && (tpl.standard!=='dan_payment_receipt' || Number(tpl.version||0)<4);
+  return !!tpl && (tpl.standard!=='dan_payment_receipt' || Number(tpl.version||0)<5);
 }
 function mergePrintConfig(remote={}){
   const r=remote||{};
@@ -1403,27 +1403,73 @@ function receiptVarsBcm(r){
     ...danBillVars(r, cfg),
   };
 }
+function qrImageUrl(value,size=180){
+  const data=String(value||'').trim().slice(0,1200);
+  return data?`https://api.qrserver.com/v1/create-qr-code/?size=${size}x${size}&margin=8&data=${encodeURIComponent(data)}`:'';
+}
+function qrTextForElement(el={},vars={}){
+  const byMode={
+    lookup:'{invoiceLookupUrl}',
+    tax:'{taxAuthorityCode}',
+    summary:'Bill: {billNo}\nNgày: {date} {timeOnly}\nTổng tiền: {grandTotal} VND\nThanh toán: {method}',
+    payment_note:'Thanh toán bill {billNo}\nSố tiền: {grandTotal} VND\nNội dung CK: {billNo}',
+    custom:'{billNo}',
+  };
+  return replaceVars(el.qrText||el.text||byMode[el.qrMode||'lookup']||byMode.lookup,vars).slice(0,1200);
+}
+function qrBoxHtml(el={},vars={},size=180){
+  const src=qrImageUrl(qrTextForElement(el,vars),size);
+  const caption=el.qrShowCaption===false?'':(el.qrCaption||'Quét QR tra cứu hóa đơn');
+  return `<div class="qr">${src?`<img src="${esc(src)}" alt="QR">`:''}</div>${caption?`<div class="c" style="font-size:10px">${esc(caption)}</div>`:''}`;
+}
+function isItemsHeaderText(t){
+  const s=String(t||'').toLowerCase();
+  return /t[êe]n\s*m[óo]n/.test(s) && /(sl|s\.l)/.test(s) && /(gi[áa]|ti[ềe]n)/.test(s);
+}
+function receiptItemsTableHtml(r){
+  const body = (r.items||[]).map(i => {
+    const mods = (i.mods||[]).map(m => m.label||m.name).filter(Boolean).join(', ');
+    return `<tr class="rc-nrow"><td class="rc-nm" colspan="3">${esc(i.name||'')}${mods?`<div class="rc-mod">+ ${esc(mods)}</div>`:''}</td></tr>`
+         + `<tr class="rc-frow"><td class="rc-pr">${vndPlain(i.unit_price || 0)}</td><td class="rc-qty">${i.qty||1}</td><td class="rc-amt">${vndPlain((i.unit_price || 0) * (i.qty || 1))}</td></tr>`;
+  }).join('');
+  return `<table class="rc-items"><thead><tr><td class="rc-nm">Tên món</td><td class="rc-qty">SL</td><td class="rc-amt">Thành tiền</td></tr></thead><tbody>${body}</tbody></table>`;
+}
 function renderTemplateReceipt(r){
   const tpl=activeBillTemplate(r);
   if(!tpl?.elements?.length) return '';
   const vars=receiptVarsBcm(r);
-  const w=Number(tpl.widthMm)||72, h=Number(tpl.heightMm)||180;
-  const els=tpl.elements.map((el,i)=>{
-    const pos=`left:${Number(el.x)||0}%;top:${Number(el.y)||0}%;width:${Number(el.w)||20}%;height:${el.type==='line'?0:(Number(el.h)||8)}%;z-index:${i+1}`;
-    if(el.type==='image') return `<div class="tpl-el tpl-img" style="${pos}">${el.src?`<img src="${esc(el.src)}">`:''}</div>`;
-    if(el.type==='line') return `<div class="tpl-el tpl-line" style="${pos}"></div>`;
-    if(el.type==='qr') return `<div class="tpl-el tpl-qr" style="${pos}"><div class="qr"></div></div>`;
+  const w=Number(tpl.widthMm)||72;
+  const displayWidth=w<=58?280:360;
+  // In dạng DÒNG CHẢY dọc (theo vị trí trên→dưới) để bill TỰ CO GIÃN theo số món:
+  // ít món không thừa khoảng trắng, nhiều món không bị chèn/đè.
+  const ordered=[...tpl.elements].sort((a,b)=>(Number(a.y)||0)-(Number(b.y)||0)||(Number(a.x)||0)-(Number(b.x)||0));
+  const blocks=ordered.map((el)=>{
     const align=el.align==='center'?'center':el.align==='right'?'right':el.align==='justify'?'justify':'left';
-    const justify=align==='center'?'center':align==='right'?'flex-end':'flex-start';
+    if(el.type==='line') return `<div class="rc-line"></div>`;
+    if(el.type==='image') return el.src?`<div class="rc-img" style="text-align:${align}"><img src="${esc(el.src)}" style="width:${Math.max(20,Math.min(100,Number(el.w)||60))}%"></div>`:'';
+    if(el.type==='qr') return `<div class="rc-qr">${qrBoxHtml(el,vars,360)}</div>`;
+    const txt=String(el.text||'');
+    if(isItemsHeaderText(txt)) return '';
     const decoration=[el.underline?'underline':'',el.strike?'line-through':''].filter(Boolean).join(' ')||'none';
+
     const block=el.id==='bill_body';
     const mono=block||el.mono?`;font-family:'Courier New',ui-monospace,monospace`:'';
-    return `<div class="tpl-el" style="${pos};font-size:${Math.max(8,(Number(el.fontSize)||5)*1.95)}px;font-weight:${el.bold?800:500};font-style:${el.italic?'italic':'normal'};text-decoration:${decoration};text-align:${align};display:${block?'block':'flex'};align-items:${block?'flex-start':'center'};justify-content:${justify};padding:${block?'8px 10px':'0'}${mono}">${esc(replaceVars(el.text,vars))}</div>`;
+    const style=`font-size:${Math.max(8,(Number(el.fontSize)||5)*1.95)}px;font-weight:${el.bold?800:500};font-style:${el.italic?'italic':'normal'};text-decoration:${decoration};text-align:${align}${mono}`;
+    if(!block && /\{items\}/.test(txt)){
+      const [before, ...rest] = txt.split('{items}');
+      const after = rest.join('{items}');
+      return `${before.trim() ? `<div class="rc-text" style="${style}">${esc(replaceVars(before, vars))}</div>` : ''}${receiptItemsTableHtml(r)}${after.trim() ? `<div class="rc-text" style="${style}">${esc(replaceVars(after, vars))}</div>` : ''}`;
+    }
+    return `<div class="rc-text" style="${style}">${esc(replaceVars(txt,vars))}</div>`;
   }).join('');
   const cfg=activeBillCfg(r);
   const hasTaxNote=tpl.elements.some(el=>String(el.text||'').includes('{taxNote}'));
-  const taxFallback=cfg.showTax!=='0' && !hasTaxNote ? `<div class="c" style="padding:0 16px 8px;font-size:10px;color:#666">${esc(vars.taxNote||'')}</div>` : '';
-  return `<div class="receipt template" style="max-width:${w<=58?270:340}px"><div class="receipt-canvas-live" style="--receipt-ratio:${w}/${h}">${els}</div>${taxFallback}${cfg.showQr!=='0'&&!r.preview?`<div style="padding:0 16px 14px"><div class="qr"></div><div class="c" style="font-size:10px">Quet QR tra cuu hoa don</div></div>`:''}</div>`;
+  const taxFallback=cfg.showTax!=='0' && !hasTaxNote ? `<div class="rc-text" style="text-align:center;font-size:10px;color:#555">${esc(vars.taxNote||'')}</div>` : '';
+  const hasItems=tpl.elements.some(el=>/\{items\}/.test(String(el.text||'')));
+  const itemsFallback=hasItems?'':receiptItemsTableHtml(r);
+  const hasQr=tpl.elements.some(el=>el.type==='qr');
+  const qrFallback=cfg.showQr!=='0'&&!r.preview&&!hasQr?`<div class="rc-qr">${qrBoxHtml({qrMode:cfg.qrMode||'lookup',qrText:cfg.qrText||'{invoiceLookupUrl}',qrCaption:cfg.qrCaption||'Quét QR tra cứu hóa đơn'},vars,360)}</div>`:'';
+  return `<div class="receipt rc-flow" style="max-width:${displayWidth}px;margin:0 auto">${itemsFallback}${blocks}${taxFallback}${qrFallback}</div>`;
 }
 function renderBasicReceipt(r){
   const cfg=activeBillCfg(r);
@@ -1469,13 +1515,38 @@ function receiptPrintDoc(r,copies){
   return `<!doctype html><html><head><meta charset="utf-8"><title>Print ${esc(r.number||r.bill_no||'receipt')}</title>
   <style>
     @page{size:${width}mm auto;margin:0}
-    html,body{margin:0;padding:0;background:#fff;color:#111}
-    body{font-family:"JetBrains Mono",Consolas,monospace;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+    html,body{margin:0;padding:0;background:#ffffff;color:#000000}
+    body{font-family:"Courier New",ui-monospace,monospace;-webkit-print-color-adjust:exact;print-color-adjust:exact;-webkit-font-smoothing:none;-moz-osx-font-smoothing:grayscale;image-rendering:pixelated}
     .receipt-copy{width:${width}mm;margin:0 auto;break-after:page;page-break-after:always}
     .receipt-copy:last-child{break-after:auto;page-break-after:auto}
-    .receipt{box-shadow:none!important;border-radius:0!important;max-width:none!important;margin:0 auto!important;background:#fdfdf8;color:#111;font-family:"JetBrains Mono",Consolas,monospace;font-size:12px;padding:18px 16px}
-    .receipt .c{text-align:center}.receipt h4{font-size:14px}.receipt hr{border:none;border-top:1px dashed #999;margin:8px 0}.receipt .li{display:flex;justify-content:space-between;gap:8px;padding:1.5px 0}.receipt .tt{font-weight:700;font-size:13.5px}.receipt .qr{width:74px;height:74px;margin:8px auto 2px;background:repeating-conic-gradient(#111 0 25%,#fdfdf8 0 50%) 0 0/14px 14px;border:4px solid #111}
-    .receipt.template{padding:0;overflow:hidden}.receipt-canvas-live{position:relative;width:100%;background:#fdfdf8;color:#111;aspect-ratio:var(--receipt-ratio,72/180);min-height:360px}.receipt-canvas-live .tpl-el{position:absolute;white-space:pre-wrap;overflow:hidden;line-height:1.14;box-sizing:border-box}.receipt-canvas-live .tpl-img img{width:100%;height:100%;object-fit:contain}.receipt-canvas-live .tpl-line{border-top:1px dashed #777;height:0!important}.receipt-canvas-live .tpl-qr{display:flex;align-items:center;justify-content:center}.receipt-canvas-live .tpl-qr .qr{width:min(100%,84px);height:auto;aspect-ratio:1;margin:0}
+    
+    /* Basic and Modular receipt print style */
+    .receipt{box-shadow:none!important;border-radius:0!important;max-width:none!important;margin:0 auto!important;background:#ffffff!important;color:#000000!important;font-family:"Courier New",ui-monospace,monospace;font-size:12px;padding:10px 8px}
+    .receipt .c{text-align:center}.receipt h4{font-size:14px;margin:4px 0}
+    .receipt hr{border:none;border-top:1px dashed #000000!important;margin:8px 0}
+    .receipt .li{display:flex;justify-content:space-between;gap:8px;padding:2px 0}
+    .receipt .tt{font-weight:700;font-size:13.5px}
+    .receipt .qr{width:94px;height:94px;margin:8px auto 2px;background:#ffffff!important;border:1px solid #000000!important;padding:4px}
+    .receipt .qr img{width:100%;height:100%;image-rendering:pixelated}
+    
+    /* Flow elements styling */
+    .rc-flow{display:block;width:100%}
+    .rc-text{word-wrap:break-word;white-space:pre-wrap;margin:3px 0;line-height:1.2;color:#000000!important}
+    .rc-line{border-top:1px dashed #000000!important;height:0;margin:6px 0}
+    .rc-img{margin:4px 0}
+    .rc-img img{display:inline-block;max-width:100%;height:auto;filter:grayscale(1) contrast(1.5)}
+    .rc-qr{text-align:center;margin:6px auto;color:#000000!important}
+    
+    /* Items table styling */
+    .rc-items{width:100%;border-collapse:collapse;margin:6px 0;font-size:11.5px;color:#000000!important;font-family:"Courier New",ui-monospace,monospace}
+    .rc-items thead{border-bottom:1px dashed #000000!important;font-weight:700}
+    .rc-items td{padding:3px 2px;vertical-align:top;color:#000000!important}
+    .rc-items .rc-nm{text-align:left}
+    .rc-items .rc-qty{text-align:center;width:40px}
+    .rc-items .rc-amt{text-align:right;width:85px}
+    .rc-items .rc-pr{text-align:left}
+    .rc-items .rc-mod{font-size:10px;padding-left:8px}
+    .rc-items tr.rc-frow td{border-bottom:1px dotted #000000!important;padding-bottom:5px}
   </style></head><body>${body}</body></html>`;
 }
 function printReceiptNow(r,copies=readReceiptCopies()){

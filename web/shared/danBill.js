@@ -58,12 +58,14 @@ export function danDateTime(iso) {
 export function danItemRow(i = {}) {
   const qty = Number(i.qty) || 1;
   const price = Number(i.unit_price ?? i.price) || 0;
-  const nameLines = danWrap(i.name || '', COL.nameW);
-  const head = nameLines[0].padEnd(COL.nameW)
+  // Two rows per item: full name on its own line(s) up top (wraps to full
+  // width), then the figures below aligned under the SL / Đ.Giá / T.Tiền header.
+  const nameLines = danWrap(i.name || '', DAN_BILL_WIDTH);
+  const figures = ' '.repeat(COL.nameW)
     + ' ' + String(qty).padStart(COL.qtyW)
     + ' ' + vndSpace(price).padStart(COL.priceW)
     + ' ' + vndSpace(price * qty).padStart(COL.amountW);
-  return [head, ...nameLines.slice(1)].join('\n');
+  return [...nameLines, figures].join('\n');
 }
 export function danItemsText(r = {}) {
   return (r.items || []).map(danItemRow).join('\n');

@@ -81,15 +81,25 @@
     <div class="sub">Chọn nhà cung cấp và thêm hàng cần mua. Lưu nháp rồi xác nhận khi chốt đơn.</div>
     <div class="row2">
       <div>
-        <label>Nhà cung cấp <span style="color:var(--late)">*</span></label>
+        <label>Nhà cung cấp <span style="color:var(--muted);font-weight:400;font-size:11px">(tuỳ chọn)</span></label>
         <select id="f_supplier"></select>
       </div>
       <div>
-        <label>Kho nhận hàng</label>
-        <select id="f_warehouse"></select>
+        <label>Tên nơi mua <span style="color:var(--muted);font-weight:400;font-size:11px">(nếu mua chợ / không có NCC)</span></label>
+        <input type="text" id="f_supplier_name" placeholder="VD: Chợ Bình Điền, cửa hàng ABC…">
       </div>
     </div>
-    <div class="row2">
+    <div class="row2" style="margin-top:10px">
+      <div><label>Kho nhận hàng</label><select id="f_warehouse"></select></div>
+      <div style="display:flex;flex-direction:column;justify-content:flex-end">
+        <div class="hint" style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:8px 11px;margin-top:6px">
+          💡 Chọn NCC từ danh sách <b>hoặc</b> nhập tên nơi mua bên trên — không cần điền cả hai.
+          <a href="/contacts?type=supplier" style="color:var(--brand);font-weight:600;margin-left:4px">+ Thêm NCC mới →</a>
+        </div>
+      </div>
+    </div>
+
+    <div class="row2" style="margin-top:4px">
       <div><label>Ngày đặt</label><input type="date" id="f_order_date"></div>
       <div><label>Dự kiến nhận</label><input type="date" id="f_expected_date"></div>
     </div>
@@ -148,7 +158,7 @@ import { api, connect, money, toast, esc, startClock, topbar, requireModuleAcces
 document.getElementById('top').innerHTML = topbar('purchase', {
   title: '📥 Mua hàng',
   sub: 'Đơn mua hàng → nhận vào kho (dùng luồng nhập kho sẵn có) → theo dõi công nợ nhà cung cấp',
-  actions: `<button class="btn" id="reportBtn">📊 Báo cáo</button><button class="btn primary" id="addBtn">+ Tạo đơn mua</button>`,
+  actions: `<a class="btn" href="/contacts?type=supplier" id="contactsBtn">👥 Thêm NCC</a><button class="btn" id="reportBtn">📊 Báo cáo</button><button class="btn primary" id="addBtn">+ Tạo đơn mua</button>`,
 });
 await requireModuleAccess('purchase'); renderUserChip();
 
@@ -217,7 +227,8 @@ function openForm(po){
   editingId = po?.id || null;
   lines = po ? po.lines.map(l => ({ item_type: l.item_type, item_id: l.item_id, name: l.name, unit: l.unit, qty: l.qty, unit_cost: l.unit_cost })) : [];
   $('fTitle').textContent = po ? `Sửa đơn ${po.code}` : 'Tạo đơn mua';
-  fillSelect($('f_supplier'), suppliers.map(s => ({ value: s.id, label: (s.company ? s.company + ' · ' : '') + s.name })), po?.supplier_id || '', 'Chọn nhà cung cấp');
+  fillSelect($('f_supplier'), suppliers.map(s => ({ value: s.id, label: (s.company ? s.company + ' · ' : '') + s.name })), po?.supplier_id || '', '— Không chọn NCC (mua chợ) —');
+  $('f_supplier_name').value = po?.supplier_name_manual || '';
   fillSelect($('f_warehouse'), warehouses.map(w => ({ value: w.id, label: w.name })), po?.warehouse_id || (warehouses[0]?.id || ''), warehouses.length ? '' : 'Chưa có kho');
   fillSelect($('addItem'), catalog.map(c => ({ value: catalogKey(c), label: `${c.name}${c.unit ? ' (' + c.unit + ')' : ''}` })), '', 'Chọn mặt hàng…');
   $('f_order_date').value = (po?.order_date || '').slice(0, 10) || today();
@@ -256,10 +267,12 @@ $('addLine').onclick = () => {
   renderLines();
 };
 async function saveForm(){
-  if (!$('f_supplier').value) return toast('Chọn nhà cung cấp', true);
+  if (!$('f_supplier').value && !$('f_supplier_name').value.trim()) return toast('Chọn NCC từ danh sách hoặc nhập tên nơi mua', true);
   if (!lines.length) return toast('Thêm ít nhất một dòng hàng', true);
   const body = {
-    id: editingId, supplier_id: $('f_supplier').value, warehouse_id: $('f_warehouse').value,
+    id: editingId, supplier_id: $('f_supplier').value || null,
+    supplier_name_manual: $('f_supplier').value ? '' : $('f_supplier_name').value.trim(),
+    warehouse_id: $('f_warehouse').value,
     order_date: $('f_order_date').value, expected_date: $('f_expected_date').value,
     note: $('f_note').value.trim(), lines,
   };
@@ -379,7 +392,7 @@ async function act(url, body, okMsg, closeAfter){
 // ---------- bind ----------
 $('seg').querySelectorAll('button').forEach(b => b.onclick = () => { status = b.dataset.s; $('seg').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); load(); });
 let qTimer; $('q').oninput = e => { clearTimeout(qTimer); qTimer = setTimeout(() => { q = e.target.value.trim(); load(); }, 250); };
-$('addBtn').onclick = () => { if (!suppliers.length) return toast('Chưa có nhà cung cấp. Vào Liên hệ thêm NCC trước.', true); openForm(null); };
+$('addBtn').onclick = () => openForm(null);
 $('fCancel').onclick = () => $('formOv').classList.remove('show');
 $('fSave').onclick = saveForm;
 [$('formOv'), $('detailOv'), $('repOv')].forEach(ov => ov.onclick = e => { if (e.target === ov) ov.classList.remove('show'); });

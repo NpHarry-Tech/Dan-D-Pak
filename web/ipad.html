@@ -2243,6 +2243,7 @@
       pages: Array.from({ length: 28 }, (_, i) => ({ id: `p_${i + 1}`, src: `/assets/menu-book/${String(i + 1).padStart(2, '0')}.webp`, label: `Trang ${i + 1}` })),
       hotspots: [],
     };
+    let BOOK_ENABLED = true; // quản lý bật/tắt menu quyển từ trang Cài đặt
     let bookPage = 0, bookAnimating = false, audioCtx = null;
     const portraitMq = window.matchMedia('(orientation: portrait)');
     portraitMq.addEventListener?.('change', () => render());
@@ -2287,6 +2288,7 @@
     async function loadBookManifest() {
       try {
         const payload = await api('/book-menu');
+        BOOK_ENABLED = payload?.enabled !== false;
         if (payload?.book?.pages?.length) BOOK = normalizeBook(payload.book);
       } catch { }
     }
@@ -2328,7 +2330,7 @@
 
     function render() {
       if (!tableId) { tablePickUnlocked ? renderTablePick() : renderTableGate(); return; }
-      if (portraitMq.matches) { renderBook(); return; }
+      if (portraitMq.matches && BOOK_ENABLED) { renderBook(); return; }
       renderLandscape();
     }
 

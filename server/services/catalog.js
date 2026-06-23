@@ -1,5 +1,26 @@
 import { db, audit } from '../db.js';
 
+// ---------- Simple in-memory cache ----------
+// Menu và print config là dữ liệu đọc nhiều nhưng thay đổi ít.
+// Với 50 thiết bị cùng gọi mỗi vài giây, cache 10s giảm 90% DB queries.
+const _cache = new Map(); // key -> { value, expiresAt }
+const MENU_TTL     = 10_000; // 10 giây
+const SETTINGS_TTL = 15_000; // 15 giây
+
+function cacheGet(key) {
+  const e = _cache.get(key);
+  if (e && e.expiresAt > Date.now()) return e.value;
+  _cache.delete(key);
+  return undefined;
+}
+function cacheSet(key, value, ttl) {
+  _cache.set(key, { value, expiresAt: Date.now() + ttl });
+  return value;
+}
+export function cacheBust(prefix) {
+  for (const k of _cache.keys()) if (k.startsWith(prefix)) _cache.delete(k);
+}
+
 export function safeJson(raw, fallback) {
   if (raw === undefined || raw === null || raw === '') return fallback;
   if (typeof raw !== 'string') return raw;
@@ -7,11 +28,14 @@ export function safeJson(raw, fallback) {
 }
 
 export function listMenu({ forCustomer = false, includeDeleted = false } = {}) {
+  const cacheKey = `menu:${forCustomer ? 'pub' : 'adm'}:${includeDeleted ? 'all' : 'live'}`;
+  const cached = cacheGet(cacheKey);
+  if (cached) return cached;
   const categories = db.prepare(`SELECT * FROM categories ORDER BY sort`).all();
   const rows = db.prepare(`SELECT * FROM menu_items ORDER BY sort`).all()
     .filter(r => includeDeleted || !r.deleted_at)
     .filter(r => !forCustomer || !r.hidden);
-  return { categories, items: rows.map(r => normalizeMenuItem(r, { forCustomer, includeRecipe: !forCustomer })) };
+  return cacheSet(cacheKey, { categories, items: rows.map(r => normalizeMenuItem(r, { forCustomer, includeRecipe: !forCustomer })) }, MENU_TTL);
 }
 
 export function getMenuItem(id, opts = {}) {
@@ -193,6 +217,7 @@ export function createCategory(body, branch_id = 'br1') {
   const id = 'c_' + Math.random().toString(36).slice(2, 8);
   const sort = (db.prepare(`SELECT COALESCE(MAX(sort),0)+1 n FROM categories`).get().n) || 1;
   db.prepare(`INSERT INTO categories (id,name,icon,sort) VALUES (?,?,?,?)`).run(id, name, body.icon || '🍽️', sort);
+  cacheBust('menu:');
   audit('category.create', { id, name }, branch_id);
   return db.prepare(`SELECT * FROM categories WHERE id=?`).get(id);
 }
@@ -201,6 +226,7 @@ export function updateCategory(id, body, branch_id = 'br1') {
   if (!cur) throw new Error('Danh mục không tồn tại');
   db.prepare(`UPDATE categories SET name=?, icon=? WHERE id=?`).run(
     String(body.name || '').trim() || cur.name, body.icon || cur.icon, id);
+  cacheBust('menu:');
   audit('category.update', { id }, branch_id);
   return db.prepare(`SELECT * FROM categories WHERE id=?`).get(id);
 }
@@ -210,6 +236,7 @@ export function deleteCategory(id, branch_id = 'br1') {
   const used = db.prepare(`SELECT COUNT(*) n FROM menu_items WHERE category_id=? AND deleted_at IS NULL`).get(id).n;
   if (used) throw new Error(`Không thể xóa: còn ${used} món trong danh mục này. Hãy chuyển/xóa món trước.`);
   db.prepare(`DELETE FROM categories WHERE id=?`).run(id);
+  cacheBust('menu:');
   audit('category.delete', { id, name: cur.name }, branch_id);
   return { ok: true };
 }
@@ -218,6 +245,7 @@ export function hideMenuItem(id, hidden = true, branch_id = 'br1') {
   const row = db.prepare(`SELECT * FROM menu_items WHERE id=?`).get(id);
   if (!row) throw new Error('Món không tồn tại');
   db.prepare(`UPDATE menu_items SET hidden=? WHERE id=?`).run(hidden ? 1 : 0, id);
+  cacheBust('menu:');
   audit(hidden ? 'menu.hide' : 'menu.unhide', { id, name: row.name }, branch_id);
   return getMenuItem(id);
 }

@@ -50,6 +50,13 @@ function dateOnly(d) {
   const x = new Date(d);
   return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}`;
 }
+function dateTime(d) {
+  if (!d) return '';
+  const x = new Date(d);
+  if (isNaN(x)) return String(d);
+  const p = n => String(n).padStart(2, '0');
+  return `${p(x.getDate())}/${p(x.getMonth() + 1)}/${x.getFullYear()} ${p(x.getHours())}:${p(x.getMinutes())}`;
+}
 function dayStart(s) {
   if (!s) return null;
   return new Date(String(s) + 'T00:00:00').toISOString();
@@ -84,7 +91,11 @@ function channelLabel(v) {
   return { dine_in: 'Tại bàn', retail: 'Retail', online: 'Online', takeaway: 'Mang đi' }[v] || v || '';
 }
 function methodLabel(v) {
-  return { cash: 'Tiền mặt', card: 'Thẻ/POS', qr: 'QR', qrcode: 'QR Code', bank_transfer: 'Chuyển khoản', voucher: 'Voucher', momo: 'MoMo', zalopay: 'ZaloPay', visa: 'Visa' }[v] || v || '';
+  return {
+    cash: 'Tiền mặt', card: 'Thẻ / POS', pos: 'Máy POS', qr: 'QR', qrcode: 'QR Code',
+    bank_transfer: 'Chuyển khoản', internet_banking: 'Internet Banking', transfer: 'Chuyển khoản',
+    wallet: 'Ví điện tử', voucher: 'Voucher', momo: 'MoMo', zalopay: 'ZaloPay', visa: 'Visa', other: 'Khác',
+  }[v] || v || '';
 }
 function movementLabel(v) {
   return {
@@ -181,18 +192,56 @@ function buildSales(type, branch_id, query) {
     { key: 'qty_fmt', label: 'SL', align: 'right' },
     { key: 'amount_fmt', label: 'Doanh thu', align: 'right' },
   ], [...byProduct.values()].sort((a, b) => b.amount - a.amount).map(r => ({ ...r, qty_fmt: qty(r.qty), amount_fmt: money(r.amount) }))));
+
+  // Phương thức thanh toán theo từng bill (gộp từ payment_lines của các đơn trong kỳ).
+  const billIds = [...bills];
+  const payLines = billIds.length
+    ? db.prepare(`SELECT p.order_id, pl.method, pl.amount
+        FROM payments p JOIN payment_lines pl ON pl.payment_id=p.id
+        WHERE p.order_id IN (${billIds.map(() => '?').join(',')})`).all(...billIds)
+    : [];
+  const methodsByOrder = new Map(); // order_id -> Map(method -> amount)
+  const byMethod = new Map();        // method -> { bills:Set, amount }
+  for (const l of payLines) {
+    if (!methodsByOrder.has(l.order_id)) methodsByOrder.set(l.order_id, new Map());
+    const om = methodsByOrder.get(l.order_id);
+    om.set(l.method, (om.get(l.method) || 0) + (Number(l.amount) || 0));
+    const bm = byMethod.get(l.method) || { method: l.method, bills: new Set(), amount: 0 };
+    bm.bills.add(l.order_id); bm.amount += Number(l.amount) || 0;
+    byMethod.set(l.method, bm);
+  }
+  const orderMethodLabel = oid => {
+    const om = methodsByOrder.get(oid);
+    if (!om || !om.size) return '—';
+    return [...om.keys()].map(methodLabel).join(' + ');
+  };
+  if (byMethod.size) {
+    report.sections.push(section('Tổng hợp theo phương thức thanh toán', [
+      { key: 'method_label', label: 'Phương thức' },
+      { key: 'bills_fmt', label: 'Số bill', align: 'right' },
+      { key: 'amount_fmt', label: 'Số tiền', align: 'right' },
+    ], [...byMethod.values()].sort((a, b) => b.amount - a.amount).map(m => ({
+      method_label: methodLabel(m.method),
+      bills_fmt: m.bills.size,
+      amount_fmt: money(m.amount),
+    }))));
+  }
+
   report.sections.push(section('Chi tiết giao dịch', [
-    { key: 'paid_at', label: 'Ngày giờ' },
+    { key: 'time_fmt', label: 'Thời gian mua' },
     { key: 'bill', label: 'Bill' },
     { key: 'channel_label', label: 'Kênh' },
+    { key: 'method_label', label: 'Thanh toán' },
     { key: 'item_name', label: 'Sản phẩm / món' },
     { key: 'qty_fmt', label: 'SL', align: 'right' },
     { key: 'price_fmt', label: 'Đơn giá', align: 'right' },
     { key: 'amount_fmt', label: 'Thành tiền', align: 'right' },
   ], rows.map(r => ({
     ...r,
+    time_fmt: dateTime(r.paid_at),
     bill: r.bill_no || String(r.order_id).slice(-6).toUpperCase(),
     channel_label: r.online_channel || channelLabel(r.channel),
+    method_label: orderMethodLabel(r.order_id),
     qty_fmt: qty(r.qty),
     price_fmt: money(r.unit_price),
     amount_fmt: money(r.amount),

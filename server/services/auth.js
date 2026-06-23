@@ -1,4 +1,4 @@
-﻿// Authentication & role-based permissions. PIN login (typical for POS).
+// Authentication & role-based permissions. PIN login (typical for POS).
 // Tokens are persisted in SQLite so refreshes and local server restarts do not
 // force staff to log in again.
 import { db, uid, now, audit } from '../db.js';
@@ -7,6 +7,17 @@ import { MODULE_PERMISSIONS } from './modules.js';
 import { REPORTS } from './reportCenter.js';
 
 const sessions = new Map(); // token -> { user, at }
+
+// Tự dọn các session quá hạn trong Map — tránh memory leak khi thiết bị tắt mà không logout.
+const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 ngày
+function cleanupSessionMap() {
+  const cutoff = Date.now() - SESSION_TTL_MS;
+  for (const [token, entry] of sessions) {
+    const entryMs = new Date(entry.at).getTime();
+    if (Number.isNaN(entryMs) || entryMs < cutoff) sessions.delete(token);
+  }
+}
+setInterval(cleanupSessionMap, 6 * 60 * 60 * 1000).unref(); // chạy 6 tiếng/lần, không block shutdown
 
 const REPORT_PERMISSIONS = REPORTS.map(r => ({
   key: `report.${r.key}`,

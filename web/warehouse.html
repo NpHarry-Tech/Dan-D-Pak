@@ -47,14 +47,14 @@
 .stock-quick .stat b{font-family:var(--mono);color:var(--text)}
 .stock-quick .warn b{color:var(--late)}
 .stock-quick .ok b{color:var(--done)}
-.stock-toolbar{display:grid;grid-template-columns:minmax(280px,1fr) minmax(170px,220px) auto;gap:8px;align-items:center;margin:12px 16px 10px}
+.stock-toolbar{display:grid;grid-template-columns:minmax(280px,1fr) auto minmax(170px,220px) auto;gap:8px;align-items:center;margin:12px 16px 10px}
 .stock-toolbar input,.stock-toolbar select{background:var(--bg);border:1px solid var(--border2);border-radius:9px;color:var(--text);padding:10px 12px;font-size:13px;font-family:var(--font)}
 .stock-toolbar input:focus,.stock-toolbar select:focus{outline:none;border-color:var(--brand)}
 .stock-summary{font-size:11.5px;color:var(--muted);font-weight:700;margin:0 16px 8px}
 .stock-table-wrap{overflow:auto;border-top:1px solid var(--border)}
 .stock-actions{display:flex;gap:5px;flex-wrap:wrap;justify-content:flex-end;min-width:190px}
 .stock-empty{padding:34px 12px!important}
-@media(max-width:720px){.stock-toolbar{grid-template-columns:1fr}}
+@media(max-width:720px){.stock-toolbar{grid-template-columns:1fr auto 1fr auto}}
 @media(max-width:1180px), (max-height:820px){
   .view{padding:9px 10px}
   .viewhead{margin-bottom:8px}
@@ -70,7 +70,7 @@
   .subtabs{gap:5px;margin-bottom:9px;overflow-x:auto;flex-wrap:nowrap}
   .subtab{padding:7px 9px;font-size:11px;white-space:nowrap}
   .tools{gap:6px;margin-bottom:8px}
-  .stock-toolbar{grid-template-columns:minmax(220px,1fr) 150px auto;gap:6px;margin:8px 12px}
+  .stock-toolbar{grid-template-columns:minmax(220px,1fr) auto 150px auto;gap:6px;margin:8px 12px}
   .stock-toolbar input,.stock-toolbar select{padding:8px 9px;font-size:12px}
   .stock-summary{margin:0 12px 7px}
   .skucell{min-width:180px;gap:7px}
@@ -94,7 +94,7 @@
 </div>
 
 <script type="module">
-import { api, connect, money, toast, esc, startClock, topbar, requireModuleAccess, renderUserChip } from '/shared/client.js';
+import { api, connect, money, toast, esc, startClock, topbar, requireModuleAccess, renderUserChip, openCameraScanner } from '/shared/client.js';
 document.getElementById('top').innerHTML = topbar('warehouse', {
   title: '📦 Warehouse / Kho',
   sub: 'Nhập hàng · xuất hàng · lot/HSD · kiểm kho · tách kho bếp và kho retail',
@@ -175,6 +175,7 @@ function renderStock(){
     </div>
     <div class="stock-toolbar">
       <input id="stockSearch" value="${esc(stockQuery)}" placeholder="Tìm tên, mã vạch, SKU, nhóm, loại, nhà cung cấp, tồn kho...">
+      <button class="btn" id="stockCameraScanBtn" type="button" title="Quét mã vạch bằng camera" style="font-size:16px;white-space:nowrap;padding:0 12px">📷 Quét</button>
       <select id="stockFilter">
         <option value="all" ${stockFilter==='all'?'selected':''}>Tất cả hàng</option>
         <option value="low" ${stockFilter==='low'?'selected':''}>Sắp hết / dưới tối thiểu</option>
@@ -197,6 +198,14 @@ function renderStock(){
     renderStock();
   });
   document.getElementById('stockSearch').oninput=(e)=>{stockQuery=e.target.value;drawStockRows();};
+  document.getElementById('stockCameraScanBtn').onclick=()=>{
+    openCameraScanner((code)=>{
+      const input = document.getElementById('stockSearch');
+      input.value = code;
+      stockQuery = code;
+      drawStockRows();
+    });
+  };
   document.getElementById('stockFilter').onchange=(e)=>{stockFilter=e.target.value;renderStock();};
   document.getElementById('stockClear').onclick=()=>{stockQuery='';stockFilter='all';renderStock();};
   drawStockRows();
@@ -297,6 +306,7 @@ function renderCount(){
     <div class="hint" style="margin-bottom:11px">Quy trình: <b>thêm/quét hàng</b> → <b>đếm thực tế</b> → <b>đối soát chênh lệch</b> → <b>Hoàn thành</b> để cân bằng kho & tạo phiếu điều chỉnh.</div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
       <input id="ckScan" placeholder="Quét mã vạch (đếm +1) hoặc gõ tên để thêm mặt hàng…" autocomplete="off" style="flex:1;min-width:240px;background:var(--bg);border:1px solid var(--border2);border-radius:9px;padding:11px 13px;font-size:13px;font-family:var(--mono)">
+      <button class="btn" id="ckCameraScanBtn" type="button" style="font-size:16px;white-space:nowrap;padding:0 12px" title="Quét bằng camera">📷 Quét</button>
       <button class="btn" id="ckAddAll">Kiểm toàn bộ (${stock.length})</button>
       <button class="btn danger" id="ckClear">Xóa phiếu</button>
     </div>
@@ -311,6 +321,11 @@ function renderCount(){
   const scan=document.getElementById('ckScan');
   scan.oninput=()=>renderCkSuggest(scan.value.trim());
   scan.onkeydown=(e)=>{ if(e.key==='Enter'){ e.preventDefault(); onCkEnter(scan.value.trim()); } };
+  document.getElementById('ckCameraScanBtn').onclick=()=>{
+    openCameraScanner((code)=>{
+      onCkEnter(code);
+    });
+  };
   document.getElementById('ckAddAll').onclick=()=>{ stock.forEach(s=>pushSheet(s)); drawSheet(); };
   document.getElementById('ckClear').onclick=()=>{ if(countSheet.length&&!confirm('Xóa toàn bộ phiếu kiểm đang làm?'))return; countSheet=[]; drawSheet(); };
   document.getElementById('ckApply').onclick=applyCount;

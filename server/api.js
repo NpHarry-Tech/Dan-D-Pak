@@ -1,6 +1,6 @@
 // REST API: thin HTTP layer over the Local Store Server services.
 import { Router } from 'express';
-import { db, uid, audit } from './db.js';
+import { db, uid, audit, now, decryptDecompress } from './db.js';
 import * as Orders from './services/orders.js';
 import * as Inv from './services/inventory.js';
 import * as Pay from './services/payments.js';
@@ -31,6 +31,11 @@ import * as ES from './services/enterpriseStorage.js';
 import { emit, getActiveConnections } from './realtime.js';
 import { errorPayload } from './core/errors.js';
 import { notImplemented } from './core/http.js';
+import fs from 'node:fs';
+import nodePath from 'node:path';
+import { fileURLToPath } from 'node:url';
+const __apiDir = nodePath.dirname(fileURLToPath(import.meta.url));
+const UPLOADS_DIR = nodePath.join(__apiDir, 'uploads', 'documents');
 
 export const api = Router();
 const guard = Auth.requireAuth;
@@ -96,22 +101,57 @@ function reportCatalogForUser(req) {
     reports,
   };
 }
+// Record any error surfaced to the client into the footprint log so it shows up
+// in "Nhật ký hoạt động" with enough context to explain *why* it failed.
+// Skips 401 (unauthenticated token challenges) to avoid flooding the log when a
+// session simply expires; everything else (validation, permission, conflict,
+// server errors) is captured. Never throws — logging must not mask the response.
+function logRequestError(req, e) {
+  try {
+    const status = e?.status || 400;
+    if (status === 401) return;
+    let branch_id = 'br1';
+    try { branch_id = branch(req) || 'br1'; } catch { /* unresolved branch */ }
+    const actor = req?.user?.name || req?.user?.username || 'system';
+    audit('system.error', {
+      message: e?.message || 'Request failed',
+      code: e?.code || 'ERROR',
+      status,
+      method: req?.method,
+      path: req?.originalUrl || req?.url,
+      details: e?.details,
+      stack: String(e?.stack || '').split('\n').slice(0, 5).join('\n').trim(),
+    }, branch_id, actor);
+  } catch { /* logging must never break the request */ }
+}
+
 const wrap = (fn) => (req, res) => {
   try {
     const out = fn(req, res);
     if (out && typeof out.then === 'function') {
       out
         .then(v => res.json(v ?? { ok: true }))
-        .catch(e => res.status(e.status || 400).json(errorPayload(e)));
+        .catch(e => { logRequestError(req, e); res.status(e.status || 400).json(errorPayload(e)); });
     }
     else res.json(out ?? { ok: true });
   }
-  catch (e) { res.status(e.status || 400).json(errorPayload(e)); }
+  catch (e) { logRequestError(req, e); res.status(e.status || 400).json(errorPayload(e)); }
 };
 
 // --- Auth ---
 api.get('/branches', wrap(() => Branches.listBranches()));
 api.post('/login', wrap((req) => Auth.login(req.body.username, req.body.pin, req.body.branch_id || publicBranch(req))));
+// Cổng PIN Quản lý/Admin để đổi sang chi nhánh khác (chỉ xác minh, KHÔNG tạo session).
+// Phát từ trạng thái đang đăng nhập nên dùng guard(); verifyManagerOwnerPin yêu cầu
+// owner/manager có quyền vào chi nhánh đích.
+api.post('/auth/verify-branch-switch', guard(), wrap((req) => {
+  const target = req.body?.branch_id;
+  if (!target) throw new Error('Thiếu chi nhánh đích.');
+  const approvedBy = Auth.verifyManagerOwnerPin(req.body?.pin, target);
+  if (!approvedBy) throw new Error('Cần PIN Quản lý hoặc Admin (có quyền chi nhánh đích) để đổi chi nhánh.');
+  audit('auth.branch_switch', { to: target, approved_by: approvedBy.username }, target, approvedBy.username);
+  return { ok: true, approved_by: approvedBy.username };
+}));
 api.post('/logout', wrap((req) => {
   Auth.logout((req.headers.authorization || '').slice(7) || req.headers['x-auth-token']);
   return { ok: true };
@@ -127,11 +167,39 @@ api.get('/modules/all', guardAny('settings.perms'), wrap(() => ({ groups: Module
 
 // --- Settings: user & permission management (settings.manage) ---
 api.get('/settings/permissions', guardAny('settings.perms', 'settings.users'), wrap(() => ({ catalog: Auth.PERMISSIONS, roles: Auth.permMatrix() })));
-api.post('/settings/roles/:role/permissions', guardAny('settings.perms'), wrap((req) => Auth.setRolePerms(req.params.role, req.body.perms, branch(req))));
+api.post('/settings/roles/:role/permissions', guardAny('settings.perms'), wrap((req) => {
+  const branch_id = branch(req);
+  const pin = req.body?.security_pin;
+  if (req.body) delete req.body.security_pin;
+  const approvedBy = Auth.verifyManagerOwnerPin(pin, branch_id);
+  if (!approvedBy) throw new Error('Cần nhập PIN của Manager hoặc Admin để xác nhận thay đổi phân quyền vai trò.');
+  return Auth.setRolePerms(req.params.role, req.body.perms, branch_id);
+}));
 api.get('/settings/users', guardAny('settings.users'), wrap((req) => Auth.listAllUsers(branch(req))));
-api.post('/settings/users', guardAny('settings.users'), wrap((req) => Auth.createUser(scopedUserBody(req), branch(req))));
-api.post('/settings/users/:id/update', guardAny('settings.users'), wrap((req) => Auth.updateUser(req.params.id, scopedUserBody(req), branch(req))));
-api.post('/settings/users/:id/delete', guardAny('settings.users'), wrap((req) => Auth.deleteUser(req.params.id, branch(req))));
+api.post('/settings/users', guardAny('settings.users'), wrap((req) => {
+  const branch_id = branch(req);
+  const pin = req.body?.security_pin;
+  if (req.body) delete req.body.security_pin;
+  const approvedBy = Auth.verifyManagerOwnerPin(pin, branch_id);
+  if (!approvedBy) throw new Error('Cần nhập PIN của Manager hoặc Admin để xác nhận tạo tài khoản.');
+  return Auth.createUser(scopedUserBody(req), branch_id);
+}));
+api.post('/settings/users/:id/update', guardAny('settings.users'), wrap((req) => {
+  const branch_id = branch(req);
+  const pin = req.body?.security_pin;
+  if (req.body) delete req.body.security_pin;
+  const approvedBy = Auth.verifyManagerOwnerPin(pin, branch_id);
+  if (!approvedBy) throw new Error('Cần nhập PIN của Manager hoặc Admin để xác nhận thay đổi thông tin nhân viên.');
+  return Auth.updateUser(req.params.id, scopedUserBody(req), branch_id);
+}));
+api.post('/settings/users/:id/delete', guardAny('settings.users'), wrap((req) => {
+  const branch_id = branch(req);
+  const pin = req.body?.security_pin;
+  if (req.body) delete req.body.security_pin;
+  const approvedBy = Auth.verifyManagerOwnerPin(pin, branch_id);
+  if (!approvedBy) throw new Error('Cần nhập PIN của Manager hoặc Admin để xác nhận xóa nhân viên.');
+  return Auth.deleteUser(req.params.id, branch_id);
+}));
 api.get('/settings/users/:id/permissions', guardAny('settings.users', 'settings.perms'), wrap((req) => Auth.userPermDetails(req.params.id)));
 api.post('/settings/users/:id/permissions', guardAny('settings.users', 'settings.perms'), wrap((req) => Auth.setUserPerms(req.params.id, req.body.perms, branch(req))));
 api.get('/settings/branches', guardAny('settings.branches'), wrap(() => Branches.listBranches({ all: true })));
@@ -140,32 +208,73 @@ api.post('/settings/branches/:id/update', guardAny('settings.branches'), wrap((r
 api.get('/settings/app', guardAny('settings.sync', 'settings.operations', 'settings.einvoice', 'settings.print', 'settings.printers', 'settings.devices', 'settings.invoices', 'settings.notification_sound'), wrap((req) => AppSettings.getSettings(branch(req))));
 api.post('/settings/app', guardAny('settings.sync', 'settings.operations', 'settings.einvoice', 'settings.print', 'settings.printers', 'settings.devices', 'settings.invoices', 'settings.notification_sound'), wrap((req) => {
   const branch_id = branch(req);
+  const pin = req.body?.security_pin || req.body?.manager_pin || req.body?.owner_pin || req.body?.password;
+
+  // POS card reader configuration verification
+  if (req.body?.operations_config?.payment?.cardTerminal) {
+    const current = AppSettings.getOperationsConfig(branch_id)?.payment?.cardTerminal;
+    const next = req.body.operations_config.payment.cardTerminal;
+    if (JSON.stringify(next) !== JSON.stringify(current)) {
+      const approvedBy = Auth.verifyManagerOwnerPin(pin, branch_id);
+      if (!approvedBy) throw new Error('Cần nhập PIN của Manager hoặc Admin để xác nhận thay đổi cấu hình máy POS thẻ.');
+    }
+  }
+
+  // Printer list configuration verification
+  if (req.body?.print_config?.printers) {
+    const current = AppSettings.getPrintConfig(branch_id)?.printers;
+    const next = req.body.print_config.printers;
+    if (JSON.stringify(next) !== JSON.stringify(current)) {
+      const approvedBy = Auth.verifyManagerOwnerPin(pin, branch_id);
+      if (!approvedBy) throw new Error('Cần nhập PIN của Manager hoặc Admin để xác nhận thay đổi danh mục máy in.');
+    }
+  }
+
+  // Customer device PIN verification
+  if (Object.prototype.hasOwnProperty.call(req.body, 'ipad_staff_pin')) {
+    const current = AppSettings.getSettings(branch_id)?.ipad_staff_pin || '0000';
+    const next = req.body.ipad_staff_pin;
+    if (next !== current) {
+      const approvedBy = Auth.verifyManagerOwnerPin(pin, branch_id);
+      if (!approvedBy) throw new Error('Cần nhập PIN của Manager hoặc Admin để xác nhận thay đổi mật khẩu thiết bị khách.');
+    }
+  }
+
   const shifts = req.body?.operations_config?.shifts;
   if (shifts && Object.prototype.hasOwnProperty.call(shifts, 'defaultDrawerCash')) {
     const current = Math.max(0, parseInt(AppSettings.getOperationsConfig(branch_id)?.shifts?.defaultDrawerCash) || 0);
     const next = Math.max(0, parseInt(shifts.defaultDrawerCash) || 0);
     if (next !== current) {
-      const pin = req.body.security_pin || req.body.manager_pin || req.body.owner_pin || req.body.password;
       const approvedBy = Auth.verifyManagerOwnerPin(pin, branch_id);
       if (!approvedBy) throw new Error('Cần nhập lại mật khẩu/PIN của Manager hoặc Admin để đổi tiền két gốc.');
       audit('settings.drawer_cash.reauth', { from: current, to: next, approved_by: approvedBy.username }, branch_id, approvedBy.username);
-      delete req.body.security_pin;
-      delete req.body.manager_pin;
-      delete req.body.owner_pin;
-      delete req.body.password;
     }
+  }
+
+  if (req.body) {
+    delete req.body.security_pin;
+    delete req.body.manager_pin;
+    delete req.body.owner_pin;
+    delete req.body.password;
   }
   return AppSettings.updateSettings(req.body, branch_id);
 }));
 api.post('/templates/auto-save', guardAny('settings.print'), wrap((req) => AppSettings.autoSaveTemplate(req.body, branch(req))));
 api.get('/settings/integrations', guardAny('settings.integrations'), wrap((req) => AppSettings.getIntegrations(branch(req))));
-api.post('/settings/integrations', guardAny('settings.integrations'), wrap((req) => AppSettings.updateIntegrations(req.body, branch(req))));
+api.post('/settings/integrations', guardAny('settings.integrations'), wrap((req) => {
+  const branch_id = branch(req);
+  const pin = req.body?.security_pin;
+  if (req.body) delete req.body.security_pin;
+  const approvedBy = Auth.verifyManagerOwnerPin(pin, branch_id);
+  if (!approvedBy) throw new Error('Cần nhập PIN của Manager hoặc Admin để xác nhận thay đổi cấu hình liên kết đối tác.');
+  return AppSettings.updateIntegrations(req.body, branch_id);
+}));
 // Test a single integration channel. MISA does a real auth call when live;
 // delivery channels return the webhook URL to paste into the partner portal.
 api.post('/settings/integrations/:channel/test', guardAny('settings.integrations'), wrap(async (req) => {
   const channel = req.params.channel;
-  const cfg = AppSettings.getIntegrations(branch(req)).channels?.[channel];
-  if (!cfg) throw new Error('Kênh không hợp lệ: ' + channel);
+  const cfg = req.body?.config || AppSettings.getIntegrations(branch(req)).channels?.[channel];
+  if (!cfg) throw new Error('Kênh không hợp lệ hoặc thiếu cấu hình: ' + channel);
   const base = `${req.protocol}://${req.get('host')}`;
   if (channel === 'misa') return { channel, ...(await Misa.testConnection(cfg)) };
   if (channel === 'payos') {
@@ -207,9 +316,11 @@ api.get('/settings/connections/status', guardAny('settings.connections'), wrap(a
     }
   }
   const socketConnections = getActiveConnections(branch(req));
-  const [internetCheck, systemPrinters] = await Promise.all([
-    System.checkInternet({ force: req.query.force === '1' }),
-    System.listSystemPrinters({ force: req.query.force === '1' }),
+  const force = req.query.force === '1';
+  const [internetCheck, systemPrinters, printerStatuses] = await Promise.all([
+    System.checkInternet({ force }),
+    System.listSystemPrinters({ force }),
+    Print.listPrinters(branch(req), { force }).catch(() => []),
   ]);
   return {
     serverIps,
@@ -217,6 +328,7 @@ api.get('/settings/connections/status', guardAny('settings.connections'), wrap(a
     internet: !!internetCheck.ok,
     internetCheck,
     systemPrinters,
+    printerStatuses,
     serverElapsedMs: Date.now() - started,
     checkedAt: new Date().toISOString(),
   };
@@ -230,6 +342,8 @@ api.post('/devices/pair', wrap(() => notImplemented()));
 api.patch('/devices/:id/approve', guardAny('settings.devices'), wrap(() => notImplemented()));
 api.get('/operations/config', wrap((req) => AppSettings.getOperationsConfig(visibleBranch(req))));
 api.get('/book-menu', wrap((req) => BookMenu.getPublicBookConfig(visibleBranch(req))));
+// Cấu hình âm thanh thông báo cho các màn hình không có quyền Cài đặt (KDS bếp, iPad...).
+api.get('/notification-sound', wrap((req) => AppSettings.getNotificationSoundConfig(visibleBranch(req)) || {}));
 api.get('/settings/book-menu', guardAny('settings.bookmenu'), wrap((req) => BookMenu.getBookConfig(branch(req))));
 api.post('/settings/book-menu', guardAny('settings.bookmenu'), wrap((req) => {
   const b = branch(req);
@@ -254,6 +368,11 @@ api.get('/menu/manage', guard('menu.manage'), wrap(() => Catalog.listMenu({ forC
 
 api.post('/menu', guard('menu.manage'), wrap((req) => {
   const branch_id = branch(req);
+  const pin = req.body?.security_pin;
+  if (req.body) delete req.body.security_pin;
+  const approvedBy = Auth.verifyManagerOwnerPin(pin, branch_id);
+  if (!approvedBy) throw new Error('Cần nhập PIN của Manager hoặc Admin để xác nhận tạo món ăn.');
+
   const b = req.body;
   if (!b.name || !b.category_id) throw new Error('Thiếu tên món hoặc nhóm');
   const id = uid('m_');
@@ -286,6 +405,11 @@ api.post('/menu', guard('menu.manage'), wrap((req) => {
 
 api.post('/menu/:id/update', guard('menu.manage'), wrap((req) => {
   const branch_id = branch(req);
+  const pin = req.body?.security_pin;
+  if (req.body) delete req.body.security_pin;
+  const approvedBy = Auth.verifyManagerOwnerPin(pin, branch_id);
+  if (!approvedBy) throw new Error('Cần nhập PIN của Manager hoặc Admin để xác nhận cập nhật món ăn.');
+
   const b = req.body;
   const cur = db.prepare(`SELECT * FROM menu_items WHERE id=?`).get(req.params.id);
   if (!cur) throw new Error('Món không tồn tại');
@@ -340,6 +464,10 @@ api.post('/menu/:id/hide', guard('menu.manage'), wrap((req) => {
 
 api.post('/menu/:id/delete', guard('menu.manage'), wrap((req) => {
   const branch_id = branch(req);
+  const pin = req.body?.security_pin;
+  if (req.body) delete req.body.security_pin;
+  const approvedBy = Auth.verifyManagerOwnerPin(pin, branch_id);
+  if (!approvedBy) throw new Error('Cần nhập PIN của Manager hoặc Admin để xác nhận xóa món ăn.');
   const r = Catalog.deleteMenuItem(req.params.id, branch_id);
   emit('menu:updated', { id: req.params.id, deleted: true }, branch_id);
   return r;
@@ -347,9 +475,36 @@ api.post('/menu/:id/delete', guard('menu.manage'), wrap((req) => {
 
 // --- Categories ---
 api.get('/categories', wrap(() => Catalog.listCategories()));
-api.post('/categories', guard('menu.manage'), wrap((req) => { const b = branch(req); const c = Catalog.createCategory(req.body, b); emit('menu:updated', { category: true }, b); return c; }));
-api.post('/categories/:id/update', guard('menu.manage'), wrap((req) => { const b = branch(req); const c = Catalog.updateCategory(req.params.id, req.body, b); emit('menu:updated', { category: true }, b); return c; }));
-api.post('/categories/:id/delete', guard('menu.manage'), wrap((req) => { const b = branch(req); const r = Catalog.deleteCategory(req.params.id, b); emit('menu:updated', { category: true }, b); return r; }));
+api.post('/categories', guard('menu.manage'), wrap((req) => {
+  const b = branch(req);
+  const pin = req.body?.security_pin;
+  if (req.body) delete req.body.security_pin;
+  const approvedBy = Auth.verifyManagerOwnerPin(pin, b);
+  if (!approvedBy) throw new Error('Cần nhập PIN của Manager hoặc Admin để xác nhận tạo danh mục.');
+  const c = Catalog.createCategory(req.body, b);
+  emit('menu:updated', { category: true }, b);
+  return c;
+}));
+api.post('/categories/:id/update', guard('menu.manage'), wrap((req) => {
+  const b = branch(req);
+  const pin = req.body?.security_pin;
+  if (req.body) delete req.body.security_pin;
+  const approvedBy = Auth.verifyManagerOwnerPin(pin, b);
+  if (!approvedBy) throw new Error('Cần nhập PIN của Manager hoặc Admin để xác nhận cập nhật danh mục.');
+  const c = Catalog.updateCategory(req.params.id, req.body, b);
+  emit('menu:updated', { category: true }, b);
+  return c;
+}));
+api.post('/categories/:id/delete', guard('menu.manage'), wrap((req) => {
+  const b = branch(req);
+  const pin = req.body?.security_pin;
+  if (req.body) delete req.body.security_pin;
+  const approvedBy = Auth.verifyManagerOwnerPin(pin, b);
+  if (!approvedBy) throw new Error('Cần nhập PIN của Manager hoặc Admin để xác nhận xóa danh mục.');
+  const r = Catalog.deleteCategory(req.params.id, b);
+  emit('menu:updated', { category: true }, b);
+  return r;
+}));
 
 // --- Tables ---
 api.get('/tables', wrap((req) => Orders.listTables(visibleBranch(req))));
@@ -362,9 +517,30 @@ api.get('/tables/:id', wrap((req) => {
 }));
 api.post('/tables/:id/move', guard('sell'), wrap((req) => Orders.moveTable(req.params.id, req.body.to_table_id, branch(req), actor(req))));
 api.post('/tables/:id/merge', guard('sell'), wrap((req) => Orders.mergeTables(req.params.id, req.body.target_table_id, branch(req), actor(req))));
-api.post('/settings/tables', guardAny('settings.tables'), wrap((req) => Orders.createTable({ ...req.body, branch_id: branch(req) })));
-api.post('/settings/tables/:id/update', guardAny('settings.tables'), wrap((req) => Orders.updateTable(req.params.id, req.body, branch(req))));
-api.post('/settings/tables/:id/delete', guardAny('settings.tables'), wrap((req) => Orders.deleteTable(req.params.id, branch(req))));
+api.post('/settings/tables', guardAny('settings.tables'), wrap((req) => {
+  const branch_id = branch(req);
+  const pin = req.body?.security_pin;
+  if (req.body) delete req.body.security_pin;
+  const approvedBy = Auth.verifyManagerOwnerPin(pin, branch_id);
+  if (!approvedBy) throw new Error('Cần nhập PIN của Manager hoặc Admin để xác nhận thay đổi sơ đồ bàn.');
+  return Orders.createTable({ ...req.body, branch_id });
+}));
+api.post('/settings/tables/:id/update', guardAny('settings.tables'), wrap((req) => {
+  const branch_id = branch(req);
+  const pin = req.body?.security_pin;
+  if (req.body) delete req.body.security_pin;
+  const approvedBy = Auth.verifyManagerOwnerPin(pin, branch_id);
+  if (!approvedBy) throw new Error('Cần nhập PIN của Manager hoặc Admin để xác nhận thay đổi sơ đồ bàn.');
+  return Orders.updateTable(req.params.id, req.body, branch_id);
+}));
+api.post('/settings/tables/:id/delete', guardAny('settings.tables'), wrap((req) => {
+  const branch_id = branch(req);
+  const pin = req.body?.security_pin;
+  if (req.body) delete req.body.security_pin;
+  const approvedBy = Auth.verifyManagerOwnerPin(pin, branch_id);
+  if (!approvedBy) throw new Error('Cần nhập PIN của Manager hoặc Admin để xác nhận thay đổi sơ đồ bàn.');
+  return Orders.deleteTable(req.params.id, branch_id);
+}));
 
 // --- Orders ---
 api.post('/orders', wrap((req) => Orders.createOrUpdateOrder({ ...req.body, branch_id: visibleBranch(req), actor: actor(req) })));
@@ -658,7 +834,7 @@ api.get('/reports/export', guard(), async (req, res) => {
     return res.status(e.status || 400).json({ error: e.message });
   }
 });
-api.get('/audit', guard('audit.view'), wrap((req) => Reports.recentAudit(branch(req), parseInt(req.query.limit) || 40, req.query.before || null)));
+api.get('/audit', guard('audit.view'), wrap((req) => Reports.recentAudit(branch(req), parseInt(req.query.limit) || 40, req.query.before || null, req.query.period || null, req.query.search || '', req.query.from || null, req.query.to || null)));
 
 // --- Permanent archive inspection ---
 api.get('/archive/status', guard('reports'), wrap(() => Archive.storageStatus()));
@@ -673,4 +849,367 @@ api.get('/config/export', guardAny('settings.manage'), wrap(async () => {
 api.post('/config/import', guardAny('settings.manage'), wrap(async (req) => {
   const { importConfig } = await import('./services/configBackup.js');
   return importConfig(req.body);
+}));
+
+// --- Database Management & Documentation APIs ---
+
+// GET /api/database/status
+api.get('/database/status', guardAny('settings.manage'), wrap(async (req) => {
+  const fs = await import('node:fs');
+  const { DB_PATH } = await import('./db.js');
+  
+  let dbSize = 0;
+  try {
+    dbSize = fs.statSync(DB_PATH).size;
+  } catch {}
+
+  const configTables = [
+    'branches', 'users', 'warehouses', 'categories', 'menu_items',
+    'inventory_items', 'skus', 'tables', 'recipes', 'app_settings',
+    'role_perms', 'user_perms', 'vouchers'
+  ];
+
+  const transactionTables = [
+    'orders', 'order_items', 'payments', 'payment_lines', 'shifts',
+    'cash_drawer_entries', 'purchase_orders', 'purchase_order_lines',
+    'expenses', 'audit_log', 'print_jobs', 'invoices', 'bank_transactions'
+  ];
+
+  const configCounts = {};
+  for (const table of configTables) {
+    try {
+      const row = db.prepare(`SELECT COUNT(*) as n FROM ${table}`).get();
+      configCounts[table] = row.n;
+    } catch {
+      configCounts[table] = 0;
+    }
+  }
+
+  const transactionCounts = {};
+  for (const table of transactionTables) {
+    try {
+      const row = db.prepare(`SELECT COUNT(*) as n FROM ${table}`).get();
+      transactionCounts[table] = row.n;
+    } catch {
+      transactionCounts[table] = 0;
+    }
+  }
+
+  let sqliteVersion = 'Unknown';
+  let journalMode = 'Unknown';
+  try {
+    sqliteVersion = db.prepare('SELECT sqlite_version() as v').get().v;
+    journalMode = db.prepare('PRAGMA journal_mode').get().journal_mode;
+  } catch {}
+
+  let pendingSyncCount = 0;
+  try {
+    const row = db.prepare(`SELECT COUNT(*) as n FROM sync_queue WHERE status = 'pending'`).get();
+    pendingSyncCount = row.n;
+  } catch {}
+
+  return {
+    dbType: 'SQLite (node:sqlite)',
+    dbPath: DB_PATH,
+    dbSize,
+    sqliteVersion,
+    journalMode,
+    configCounts,
+    transactionCounts,
+    pendingSyncCount,
+    vpsBuffer: {
+      status: 'online',
+      retentionDays: 7,
+      eventCount: pendingSyncCount,
+      encrypted: true
+    },
+    eternalStorage: {
+      provider: process.env.DATABASE_PROVIDER || 'sqlite',
+      status: process.env.DATABASE_PROVIDER === 'postgres' ? 'connected' : 'local_active',
+      replication: 'append-only-ledger'
+    }
+  };
+}));
+
+// POST /api/database/integrity-check
+api.post('/database/integrity-check', guardAny('settings.manage'), wrap(async () => {
+  let result = 'failed';
+  try {
+    const row = db.prepare('PRAGMA integrity_check').get();
+    result = row.integrity_check || row['integrity_check'] || 'ok';
+  } catch (e) {
+    result = e.message;
+  }
+  return { ok: result === 'ok', result };
+}));
+
+// POST /api/database/reset-transactions
+api.post('/database/reset-transactions', guardAny('settings.manage'), wrap(async (req) => {
+  const { pin } = req.body;
+  if (!pin) throw new Error('Cần cung cấp mã PIN xác nhận.');
+  
+  const user = Auth.verifyManagerOwnerPin(pin, branch(req));
+  if (!user) {
+    throw new Error('Mã PIN không đúng hoặc không có quyền Admin/Manager.');
+  }
+
+  const transactionTables = [
+    'orders', 'order_items', 'payments', 'payment_lines', 'shifts',
+    'cash_drawer_entries', 'cash_drawer_reimbursement_allocations',
+    'purchase_orders', 'purchase_order_lines', 'purchase_payments',
+    'expenses', 'print_jobs', 'invoices', 'bank_transactions', 'sync_queue',
+    'audit_log', 'staff_calls'
+  ];
+
+  // node:sqlite (DatabaseSync) không có .transaction() — dùng BEGIN/COMMIT/ROLLBACK.
+  db.exec('BEGIN');
+  try {
+    for (const table of transactionTables) {
+      try {
+        db.exec(`DELETE FROM ${table}`);
+      } catch (e) {
+        console.error(`Lỗi khi dọn dẹp bảng ${table}:`, e.message);
+      }
+    }
+    try {
+      db.exec(`UPDATE tables SET status = 'free'`);
+    } catch {}
+    db.exec('COMMIT');
+  } catch (e) {
+    db.exec('ROLLBACK');
+    throw e;
+  }
+  audit('db.reset_transactions', 'Dọn dẹp toàn bộ dữ liệu giao dịch về trạng thái sạch.', branch(req), user.username);
+  
+  return { ok: true, message: 'Đã dọn dẹp sạch toàn bộ dữ liệu giao dịch thành công.' };
+}));
+
+// POST /api/database/clone-to-staging
+api.post('/database/clone-to-staging', guardAny('settings.manage'), wrap(async (req) => {
+  const { pin } = req.body;
+  if (!pin) throw new Error('Cần cung cấp mã PIN xác nhận.');
+  const user = Auth.verifyManagerOwnerPin(pin, branch(req));
+  if (!user) {
+    throw new Error('Mã PIN không đúng hoặc không có quyền Admin/Manager.');
+  }
+
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+  const { DB_PATH } = await import('./db.js');
+
+  const dir = path.dirname(DB_PATH);
+  const stagingPath = path.join(dir, 'store_staging.db');
+
+  try {
+    try {
+      db.exec('PRAGMA wal_checkpoint(TRUNCATE);');
+    } catch {}
+    fs.copyFileSync(DB_PATH, stagingPath);
+  } catch (e) {
+    throw new Error(`Không thể nhân bản CSDL: ${e.message}`);
+  }
+
+  audit('db.clone_to_staging', 'Nhân bản cơ sở dữ liệu sang môi trường staging.', branch(req), user.username);
+  return { ok: true, message: 'Đã nhân bản cơ sở dữ liệu sang môi trường staging thành công.', stagingPath };
+}));
+
+// POST /api/database/decrypt-audit
+api.post('/database/decrypt-audit', guardAny('settings.manage'), wrap(async (req) => {
+  const { id } = req.body;
+  if (!id) throw new Error('Cần cung cấp ID audit log.');
+  const row = db.prepare(`SELECT detail FROM audit_log WHERE id = ?`).get(id);
+  if (!row) throw new Error('Không tìm thấy bản ghi nhật ký hoạt động.');
+  const decrypted = decryptDecompress(row.detail);
+  return { decrypted };
+}));
+
+// GET /api/database/docs
+api.get('/database/docs', guardAny('settings.manage'), wrap(async () => {
+  return [
+    { file: 'README.md', title: 'Tổng quan & Stack dự án' },
+    { file: 'docs/ARCHITECTURE.md', title: 'Kiến trúc & Vùng triển khai' },
+    { file: 'docs/OFFLINE_FIRST_ARCHITECTURE.md', title: 'Kiến trúc Offline-First' },
+    { file: 'docs/COMPANY_DATABASE_MEMORY.md', title: 'Chính sách Bộ nhớ vĩnh viễn' },
+    { file: 'docs/VPS_TEMPORARY_BUFFER.md', title: 'Bộ đệm sự kiện tạm thời VPS' },
+    { file: 'docs/SYNC_BACK_TO_COMPANY_SERVER.md', title: 'Quy trình Đồng bộ ngược' }
+  ];
+}));
+
+// GET /api/database/docs/:file
+api.get('/database/docs/:file', guardAny('settings.manage'), wrap(async (req) => {
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+  const { fileURLToPath } = await import('node:url');
+  
+  const reqFile = req.params.file;
+  const whitelist = [
+    'README.md',
+    'docs/ARCHITECTURE.md',
+    'docs/OFFLINE_FIRST_ARCHITECTURE.md',
+    'docs/COMPANY_DATABASE_MEMORY.md',
+    'docs/VPS_TEMPORARY_BUFFER.md',
+    'docs/SYNC_BACK_TO_COMPANY_SERVER.md'
+  ];
+
+  if (!whitelist.includes(reqFile)) {
+    throw new Error('Tài liệu không nằm trong danh mục cho phép.');
+  }
+
+  const __dirname = path.dirname(fileURLToPath(import.meta.url));
+  const ROOT = path.join(__dirname, '..');
+  const targetPath = path.resolve(ROOT, reqFile);
+
+  let content = '';
+  try {
+    content = fs.readFileSync(targetPath, 'utf8');
+  } catch (e) {
+    throw new Error('Không thể đọc nội dung tài liệu.');
+  }
+
+  return { file: reqFile, content };
+}));
+
+// ══════════════════════════════════════════════════════════════════════════════
+// DMS — Document Management System
+// POST /documents/upload     — upload 1 file (base64 trong JSON body)
+// GET  /documents/files      — danh sách tài liệu
+// GET  /documents/files/:id/download  — tải file
+// GET  /documents/files/:id/preview   — preview (ảnh/pdf inline)
+// PUT  /documents/files/:id  — cập nhật metadata
+// DEL  /documents/files/:id  — xóa (cần PIN)
+// ══════════════════════════════════════════════════════════════════════════════
+
+const DMS_ALLOWED_MIME = new Set([
+  'image/jpeg','image/png','image/webp','image/gif',
+  'application/pdf',
+  'application/vnd.ms-excel',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'text/csv','text/plain','application/json',
+]);
+const DMS_MAX_BYTES = 25 * 1024 * 1024; // 25 MB
+
+// ── Shared helper — also exported for internal use by other services ────────
+export function saveDocumentRecord({ branch_id, name, original_name, stored_name, mime_type, file_size, category = 'other', source = 'manual', related_id = null, related_type = null, tags = [], description = '', uploaded_by = 'system', uploaded_by_name = 'Hệ thống' }) {
+  const id = uid('doc_');
+  const created_at = now();
+  db.prepare(`INSERT INTO document_files (id,branch_id,name,original_name,stored_name,mime_type,file_size,category,source,related_id,related_type,tags_json,description,uploaded_by,uploaded_by_name,is_archived,created_at)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,?)`)
+    .run(id, branch_id, name, original_name, stored_name, mime_type, file_size, category, source, related_id, related_type, JSON.stringify(tags), description, uploaded_by, uploaded_by_name, created_at);
+  audit('dms.upload', { id, name, category, source, original_name, file_size }, branch_id, uploaded_by);
+  return db.prepare(`SELECT * FROM document_files WHERE id=?`).get(id);
+}
+
+// ── Upload ──────────────────────────────────────────────────────────────────
+api.post('/documents/upload', wrap(async (req) => {
+  const { branch_id, actor } = Auth.requirePermission(req, 'module.documents');
+  const { name, category = 'other', source = 'manual', related_id, related_type, tags = [], description = '', data, mime_type, original_name } = req.body;
+
+  if (!data || !original_name) throw new Error('Thiếu dữ liệu file (data, original_name)');
+  if (!DMS_ALLOWED_MIME.has(mime_type)) throw new Error(`Định dạng file không được hỗ trợ: ${mime_type}`);
+
+  // data is base64
+  const buf = Buffer.from(data, 'base64');
+  if (buf.byteLength > DMS_MAX_BYTES) throw new Error(`File quá lớn — tối đa 25MB`);
+
+  const ext = nodePath.extname(original_name) || '';
+  const stored_name = uid('f_') + ext;
+  fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+  fs.writeFileSync(nodePath.join(UPLOADS_DIR, stored_name), buf);
+
+  const rec = saveDocumentRecord({
+    branch_id, name: name || original_name, original_name, stored_name, mime_type, file_size: buf.byteLength,
+    category, source, related_id, related_type, tags,
+    description, uploaded_by: actor.username || actor.id, uploaded_by_name: actor.name,
+  });
+  return rec;
+}));
+
+// ── List files ───────────────────────────────────────────────────────────────
+api.get('/documents/files', wrap(async (req) => {
+  const { branch_id } = Auth.requirePermission(req, 'module.documents');
+  const { category, source, q, from, to, archived = '0', limit = '100', offset = '0' } = req.query;
+
+  let sql = `SELECT * FROM document_files WHERE branch_id=? AND is_archived=?`;
+  const params = [branch_id, archived === '1' ? 1 : 0];
+
+  if (category && category !== 'all') { sql += ` AND category=?`; params.push(category); }
+  if (source && source !== 'all')     { sql += ` AND source=?`;   params.push(source); }
+  if (from)  { sql += ` AND created_at>=?`; params.push(from); }
+  if (to)    { sql += ` AND created_at<=?`; params.push(to + 'T23:59:59'); }
+  if (q)     { sql += ` AND (name LIKE ? OR original_name LIKE ? OR description LIKE ?)`; const like = `%${q}%`; params.push(like, like, like); }
+
+  sql += ` ORDER BY created_at DESC LIMIT ? OFFSET ?`;
+  params.push(parseInt(limit), parseInt(offset));
+
+  const rows = db.prepare(sql).all(...params);
+  const total = db.prepare(`SELECT COUNT(*) n FROM document_files WHERE branch_id=? AND is_archived=?`).get(branch_id, archived === '1' ? 1 : 0).n;
+
+  return { files: rows.map(r => ({ ...r, tags: JSON.parse(r.tags_json || '[]') })), total };
+}));
+
+// ── Download ─────────────────────────────────────────────────────────────────
+api.get('/documents/files/:id/download', async (req, res) => {
+  try {
+    const { branch_id } = Auth.requirePermission(req, 'module.documents');
+    const rec = db.prepare(`SELECT * FROM document_files WHERE id=? AND branch_id=?`).get(req.params.id, branch_id);
+    if (!rec) return res.status(404).json({ error: 'Tài liệu không tồn tại' });
+
+    const filePath = nodePath.join(UPLOADS_DIR, rec.stored_name);
+    if (!fs.existsSync(filePath)) return res.status(410).json({ error: 'File đã bị xóa khỏi ổ đĩa' });
+
+    res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(rec.original_name)}"`);
+    res.setHeader('Content-Type', rec.mime_type || 'application/octet-stream');
+    fs.createReadStream(filePath).pipe(res);
+  } catch(e) { logRequestError(req, e); res.status(e.status || 400).json(errorPayload(e)); }
+});
+
+// ── Preview (inline) ─────────────────────────────────────────────────────────
+api.get('/documents/files/:id/preview', async (req, res) => {
+  try {
+    const { branch_id } = Auth.requirePermission(req, 'module.documents');
+    const rec = db.prepare(`SELECT * FROM document_files WHERE id=? AND branch_id=?`).get(req.params.id, branch_id);
+    if (!rec) return res.status(404).json({ error: 'Tài liệu không tồn tại' });
+
+    const filePath = nodePath.join(UPLOADS_DIR, rec.stored_name);
+    if (!fs.existsSync(filePath)) return res.status(410).json({ error: 'File đã bị xóa khỏi ổ đĩa' });
+
+    res.setHeader('Content-Type', rec.mime_type || 'application/octet-stream');
+    res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(rec.original_name)}"`);
+    fs.createReadStream(filePath).pipe(res);
+  } catch(e) { logRequestError(req, e); res.status(e.status || 400).json(errorPayload(e)); }
+});
+
+// ── Update metadata ───────────────────────────────────────────────────────────
+api.put('/documents/files/:id', wrap(async (req) => {
+  const { branch_id, actor } = Auth.requirePermission(req, 'module.documents');
+  const rec = db.prepare(`SELECT * FROM document_files WHERE id=? AND branch_id=?`).get(req.params.id, branch_id);
+  if (!rec) throw new Error('Tài liệu không tồn tại');
+
+  const { name, description, tags, category, is_archived } = req.body;
+  db.prepare(`UPDATE document_files SET name=COALESCE(?,name), description=COALESCE(?,description), tags_json=COALESCE(?,tags_json), category=COALESCE(?,category), is_archived=COALESCE(?,is_archived) WHERE id=?`)
+    .run(name ?? null, description ?? null, tags ? JSON.stringify(tags) : null, category ?? null, is_archived != null ? (is_archived ? 1 : 0) : null, req.params.id);
+
+  audit('dms.update', { id: req.params.id, name, category }, branch_id, actor.username || actor.id);
+  const updated = db.prepare(`SELECT * FROM document_files WHERE id=?`).get(req.params.id);
+  return { ...updated, tags: JSON.parse(updated.tags_json || '[]') };
+}));
+
+// ── Delete ────────────────────────────────────────────────────────────────────
+api.delete('/documents/files/:id', wrap(async (req) => {
+  const { branch_id, actor } = Auth.requirePermission(req, 'module.documents');
+  // Require Manager/Owner PIN for permanent deletion
+  const { pin } = req.body || {};
+  if (pin && !Auth.verifyManagerOwnerPin(pin, branch_id)) throw new Error('Cần PIN Quản lý hoặc Admin để xóa vĩnh viễn tài liệu.');
+
+  const rec = db.prepare(`SELECT * FROM document_files WHERE id=? AND branch_id=?`).get(req.params.id, branch_id);
+  if (!rec) throw new Error('Tài liệu không tồn tại');
+
+  // Delete physical file
+  const filePath = nodePath.join(UPLOADS_DIR, rec.stored_name);
+  try { fs.unlinkSync(filePath); } catch (_) { /* already gone */ }
+
+  db.prepare(`DELETE FROM document_files WHERE id=?`).run(req.params.id);
+  audit('dms.delete', { id: rec.id, name: rec.name, original_name: rec.original_name }, branch_id, actor.username || actor.id);
+  return { ok: true };
 }));

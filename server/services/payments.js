@@ -16,6 +16,22 @@ function cleanText(value, max = 200) {
   return String(value || '').trim().slice(0, max);
 }
 
+// Chuẩn hoá metadata giao dịch thẻ (máy POS trả về) để lưu phục vụ đối soát.
+const CARD_MODES = ['auto', 'manual', 'mock'];
+function sanitizeCardMeta(card) {
+  const c = card && typeof card === 'object' ? card : {};
+  const mode = CARD_MODES.includes(c.mode) ? c.mode : null;
+  return {
+    txnId: c.txnId ? cleanText(c.txnId, 64) : null,
+    rrn: c.rrn ? cleanText(c.rrn, 32) : null,
+    approval: c.approval ? cleanText(c.approval, 32) : null,
+    mask: c.mask ? cleanText(c.mask, 32) : null,
+    scheme: c.scheme ? cleanText(c.scheme, 32) : null,
+    terminal: c.terminal ? cleanText(c.terminal, 64) : null,
+    mode,
+  };
+}
+
 function stripVietnamese(value = '') {
   return String(value || '')
     .normalize('NFD')
@@ -235,8 +251,12 @@ export function payOrder(order_id, lines, { discount, cashier, customer, invoice
 
   const pid = uid('pay_');
   db.prepare(`INSERT INTO payments (id,order_id,shift_id,total,created_at) VALUES (?,?,?,?,?)`).run(pid, order_id, shift?.id || null, fresh.total, now());
-  const insLine = db.prepare(`INSERT INTO payment_lines (id,payment_id,method,amount,reference) VALUES (?,?,?,?,?)`);
-  for (const l of lines) insLine.run(uid('pl_'), pid, l.method, parseInt(l.amount) || 0, l.reference || null);
+  const insLine = db.prepare(`INSERT INTO payment_lines (id,payment_id,method,amount,reference,card_txn_id,card_rrn,card_approval,card_mask,card_scheme,card_terminal,card_mode) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`);
+  for (const l of lines) {
+    const c = sanitizeCardMeta(l.card);
+    insLine.run(uid('pl_'), pid, l.method, parseInt(l.amount) || 0, l.reference || null,
+      c.txnId, c.rrn, c.approval, c.mask, c.scheme, c.terminal, c.mode);
+  }
 
   db.prepare(`UPDATE orders SET status='paid', paid_at=? WHERE id=?`).run(now(), order_id);
   // Mark all remaining active items served on close
@@ -467,16 +487,22 @@ function recordBankTx({ provider, externalId, branch_id, amount, content, accoun
 }
 
 // Tìm bill đang mở mà mã đối soát (DANBILL...) xuất hiện trong nội dung chuyển khoản.
+// FIX: Thay vì N+1 query (load 500 orders rồi getOrder() mỗi cái), query trực tiếp bill_no.
 function findOpenOrderByContent(content) {
   const needle = vietQrSafe(content, 250);
   if (!needle) return null;
-  const rows = db.prepare(`SELECT id, branch_id FROM orders WHERE status='open' ORDER BY created_at DESC LIMIT 500`).all();
+  // Lấy bill_no của tất cả đơn đang mở (chỉ 2 cột, không load items)
+  const rows = db.prepare(`SELECT id, branch_id, bill_no, voucher_code FROM orders WHERE status='open' ORDER BY created_at DESC LIMIT 500`).all();
   for (const row of rows) {
-    const order = getOrder(row.id);
-    if (!order) continue;
-    const ops = getOperationsConfig(order.branch_id || 'br1');
-    const ref = paymentReferenceForOrder(order, ops);
-    if (ref && needle.includes(ref)) return order;
+    // Tính reference từ bill_no thay vì load toàn bộ order + items
+    const ops = getOperationsConfig(row.branch_id || 'br1');
+    const prefix = vietQrSafe(ops.payment?.transferPrefix || 'DANBILL', 8) || 'DANBILL';
+    const code = vietQrSafe(row.bill_no || row.id || '', Math.max(1, 23 - prefix.length));
+    const ref = `${prefix}${code}`.slice(0, 23);
+    if (ref && needle.includes(ref)) {
+      // Chỉ gọi getOrder() khi đã khớp — thay vì 500 lần
+      return getOrder(row.id);
+    }
   }
   return null;
 }

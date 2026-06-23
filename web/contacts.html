@@ -29,6 +29,7 @@
 .tb-customer{background:var(--brand-dim);color:var(--brand)}
 .tb-supplier{background:#f59e0b22;color:#b45309}
 .tb-both{background:#8b5cf622;color:#7c3aed}
+.tb-staff{background:#10b98122;color:#047857}
 .tb-off{background:var(--surface3);color:var(--faint)}
 .modal .row2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 .modal .row2 > div{min-width:0}
@@ -49,6 +50,7 @@
       <button data-t="all" class="on">Tất cả <span class="n" id="n-all">0</span></button>
       <button data-t="customer">Khách hàng <span class="n" id="n-customer">0</span></button>
       <button data-t="supplier">Nhà cung cấp <span class="n" id="n-supplier">0</span></button>
+      <button data-t="staff">Nhân viên <span class="n" id="n-staff">0</span></button>
     </div>
     <div class="csearch"><input type="search" id="q" placeholder="Tìm theo tên, SĐT, MST, công ty…"></div>
   </div>
@@ -65,6 +67,7 @@
       <button data-pt="customer" class="on">🛍️ Khách hàng</button>
       <button data-pt="supplier">🏭 Nhà cung cấp</button>
       <button data-pt="both">🔁 Cả hai</button>
+      <button data-pt="staff">🧑‍💼 Nhân viên</button>
     </div>
 
     <label>Tên <span style="color:var(--late)">*</span></label>
@@ -94,7 +97,7 @@
     <input type="text" id="f_address" placeholder="Địa chỉ giao / nhận hàng">
 
     <div id="perkWrap">
-      <label>Ưu đãi mặc định cho khách</label>
+      <label id="perkLabel">Ưu đãi mặc định cho khách</label>
       <div class="row2">
         <div>
           <select id="f_perk_type">
@@ -134,7 +137,7 @@ await requireModuleAccess('contacts'); renderUserChip();
 
 let type = 'all', q = '', rows = [], editing = null;
 const $ = id => document.getElementById(id);
-const TYPE_LABEL = { customer: 'Khách hàng', supplier: 'Nhà cung cấp', both: 'Cả hai' };
+const TYPE_LABEL = { customer: 'Khách hàng', supplier: 'Nhà cung cấp', both: 'Cả hai', staff: 'Nhân viên' };
 
 connect('contacts', { 'customers:updated': () => load() });
 
@@ -145,6 +148,7 @@ async function load(){
     $('n-all').textContent = counts.all;
     $('n-customer').textContent = counts.customer;
     $('n-supplier').textContent = counts.supplier;
+    $('n-staff').textContent = counts.staff ?? 0;
     render();
   } catch(e){ $('list').innerHTML = `<div class="empty">${esc(e.message)}</div>`; }
 }
@@ -182,15 +186,17 @@ function setPartnerType(pt){
   $('ptSeg').querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.pt === pt));
   const isSupplier = pt === 'supplier' || pt === 'both';
   const isCustomer = pt === 'customer' || pt === 'both';
+  const isStaff = pt === 'staff';
   $('contactPersonWrap').style.display = isSupplier ? 'block' : 'none';
-  $('perkWrap').style.display = isCustomer ? 'block' : 'none';
+  $('perkWrap').style.display = (isCustomer || isStaff) ? 'block' : 'none';
+  $('perkLabel').textContent = isStaff ? 'Ưu đãi mặc định cho nhân viên' : 'Ưu đãi mặc định cho khách';
 }
 function currentPartnerType(){ return $('ptSeg').querySelector('button.on')?.dataset.pt || 'customer'; }
 
 function openForm(c){
   editing = c;
   $('mTitle').textContent = c ? 'Sửa liên hệ' : 'Thêm liên hệ';
-  $('mSub').textContent = c ? esc(c.name) : 'Khách hàng hoặc nhà cung cấp';
+  $('mSub').textContent = c ? esc(c.name) : 'Khách hàng, nhà cung cấp hoặc nhân viên';
   setPartnerType(c?.partner_type || 'customer');
   $('f_name').value = c?.name || '';
   $('f_company').value = c?.company || '';

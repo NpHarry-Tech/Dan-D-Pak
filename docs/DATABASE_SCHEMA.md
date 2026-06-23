@@ -15,6 +15,7 @@ It is **append-only / history-aware** by design — see
   expenses, bank_transactions).
 - **Planned**: the full group list below, applied **additively** (new tables /
   new history tables). Planned PostgreSQL DDL lives in `server/db/schema/*.sql`.
+  VPS-only temporary buffer DDL lives in `vps-gateway/temp-buffer/schema.sql`.
 - No destructive migration. New history/ledger tables are added alongside existing
   tables; renames are mapped, not dropped.
 
@@ -115,5 +116,11 @@ config_change_logs, error_logs
 
 - Migrations are **additive**: `CREATE TABLE IF NOT EXISTS`, `ADD COLUMN`, new
   history tables. No `DROP`/`TRUNCATE` of business tables.
-- See `server/db/schema/` for planned DDL and `server/migrations/` for the
-  migration runner plan.
+- `server/db/schema/0001_planned_company_server.sql` adds history/versioning,
+  devices/app-web linking, bank/payment config history, KDS timing, printing,
+  sync, and expanded audit tables.
+- `server/db/schema/0002_planned_company_memory_tables.sql` adds the broader
+  canonical company-memory table groups A-O from this document.
+- `vps-gateway/temp-buffer/schema.sql` is separate on purpose: it is the public
+  VPS temporary encrypted relay schema, not the company source-of-truth schema.
+- See `server/migrations/` for the future reviewed migration runner plan.

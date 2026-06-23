@@ -47,6 +47,7 @@
 
 <script type="module">
 import { api, connect, toast, esc, startClock, topbar, requireModuleAccess, renderUserChip } from '/shared/client.js';
+import { playNotificationSound, applyConfig } from '/js/core/notificationSound.js';
 document.getElementById('top').innerHTML = topbar('kds', {
   title: '👨‍🍳 Kitchen Display System',
   actions: `<div id="stations" style="display:inline-flex;gap:8px;flex-wrap:wrap;align-items:center"></div>`,
@@ -58,8 +59,13 @@ let station = localStorage.getItem('kds_station') || 'all';
 let allTickets = [];  // every active ticket across stations (for live badge counts)
 
 connect('kds', {
-  'order:new': load, 'kds:refresh': load, 'order:item': load,
+  'order:new': ()=>{ playNotificationSound('kds_new_order'); load(); },
+  'kds:refresh': load, 'order:item': load,
 });
+
+// Đồng bộ cấu hình âm thanh từ trang Cài đặt (bật/tắt, âm lượng, chọn âm KDS).
+// Dùng endpoint công khai vì tài khoản bếp thường không có quyền Cài đặt.
+api('/notification-sound').then(cfg => { if(cfg && cfg.events) applyConfig(cfg); }).catch(()=>{});
 
 async function load(){ allTickets = await api('/kds/all'); render(); }
 
