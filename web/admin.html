@@ -4475,7 +4475,7 @@ async function openSettings(initialTab){
   }
   function printFields(kind){
     return kind==='bill'
-      ? [['storeNameC','Tên quán'],['storeSubtitleC','Dòng mô tả'],['addressBlock','Địa chỉ'],['phone','SĐT'],['billNo','Số hóa đơn'],['place','Bàn/khu vực'],['cashier','Thu ngân'],['timeIn','Giờ vào'],['timeOut','Giờ ra'],['items','Danh sách món'],['totalLine','Tổng tiền'],['paymentLines','Hình thức TT'],['paidLine','Tiền khách đưa'],['changeLine','Tiền trả khách'],['taxNoteC','Ghi chú thuế'],['footerBrandC','Tên thương hiệu'],['footerC','Lời cảm ơn'],['qrNoteC','Ghi chú QR']]
+      ? [['storeNameC','Tên quán'],['storeSubtitleC','Dòng mô tả'],['addressBlock','Địa chỉ'],['phone','SĐT'],['billNo','Số hóa đơn'],['customerName','Tên khách hàng'],['customerInfoBlock','Thông tin KH / Hóa đơn'],['place','Bàn/khu vực'],['cashier','Thu ngân'],['timeIn','Giờ vào'],['timeOut','Giờ ra'],['items','Danh sách món'],['totalLine','Tổng tiền'],['paymentLines','Hình thức TT'],['paidLine','Tiền khách đưa'],['changeLine','Tiền trả khách'],['taxNoteC','Ghi chú thuế'],['footerBrandC','Tên thương hiệu'],['footerC','Lời cảm ơn'],['qrNoteC','Ghi chú QR']]
       : [['itemName','Tên món'],['options','Topping/tuỳ chọn'],['note','Ghi chú'],['orderNo','Mã đơn'],['table','Bàn'],['qty','Số lượng'],['channel','Kênh'],['customer','Khách'],['phone','SĐT'],['time','Giờ in']];
   }
   function printSample(kind){
@@ -4486,6 +4486,7 @@ async function openSettings(initialTab){
         bill_no:'Dan210626001', number:'Dan210626001', table_code:'TẦNG TRỆT', channel:'dine_in',
         created_at:'2026-06-21T07:43:00', paid_at:'2026-06-21T07:43:00',
         cashier:'Cherry', total:30000, paid:30000, change:0,
+        customer:{name:'Anh Minh'},
         items:[{name:'Cà Phê - Vn Black Coffee',qty:1,unit_price:30000}],
         lines:[{method:'bank_transfer',amount:30000}],
       };

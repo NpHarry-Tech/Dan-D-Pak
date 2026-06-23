@@ -88,7 +88,27 @@ export function danBillVars(r = {}, cfg = {}) {
   // renderers draw the QR block when showQr is on and this is not a preview,
   // so blank the note otherwise (it would instruct scanning an absent QR).
   const showQr = cfg.showQr !== '0' && !r.preview;
+  const customer = r.customer || {};
+  const isInvoice = !!(customer.tax_code || customer.invoice_request);
+  let customerInfoBlock = '';
+  if (isInvoice) {
+    const linesArr = [];
+    if (customer.name) linesArr.push(`Khách hàng: ${customer.name}`);
+    if (customer.company) linesArr.push(`Công ty: ${customer.company}`);
+    if (customer.tax_code) linesArr.push(`MST: ${customer.tax_code}`);
+    if (customer.address) linesArr.push(`Địa chỉ: ${customer.address}`);
+    if (customer.email) linesArr.push(`Email: ${customer.email}`);
+    if (customer.phone) linesArr.push(`SĐT: ${customer.phone}`);
+    customerInfoBlock = linesArr.join('\n');
+  } else {
+    const linesArr = [`Khách hàng: ${customer.name || 'Khách không xuất hóa đơn'}`];
+    if (customer.phone) linesArr.push(`SĐT: ${customer.phone}`);
+    customerInfoBlock = linesArr.join('\n');
+  }
+
   return {
+    customerName: customer.name || 'Khách không xuất hóa đơn',
+    customerInfoBlock,
     storeNameC: danCenter(storeName),
     storeSubtitleC: danCenter(storeSubtitle),
     addressBlock: danWrap(cfg.address || r.company?.address || '').join('\n'),
