@@ -49,12 +49,14 @@ export function listOrderHistory(branch_id = 'br1', { limit = 60, q = '', channe
   const methodStmt = db.prepare(`SELECT pl.method, SUM(pl.amount) amount
     FROM payment_lines pl JOIN payments p ON p.id=pl.payment_id WHERE p.order_id=? GROUP BY pl.method`);
   const itemCountStmt = db.prepare(`SELECT COALESCE(SUM(qty),0) n FROM order_items WHERE order_id=? AND status!='cancelled'`);
+  const shiftStmt = db.prepare(`SELECT s.status FROM payments p JOIN shifts s ON s.id=p.shift_id WHERE p.order_id=? ORDER BY p.created_at DESC LIMIT 1`);
 
   let rows = db.prepare(sql).all(...params).map(o => ({
     ...o,
     number: o.bill_no || o.id.slice(-6).toUpperCase(),
     methods: methodStmt.all(o.id),
     item_count: itemCountStmt.get(o.id).n,
+    locked: shiftStmt.get(o.id)?.status === 'closed',   // ca đã kết → khóa thay đổi sau bán
     channel_label: o.online_channel ? ({ grabfood: 'GrabFood', shopeefood: 'ShopeeFood', website: 'Website' }[o.online_channel] || o.online_channel)
       : (o.channel === 'retail' ? 'Bán lẻ' : o.table_code ? 'Bàn ' + o.table_code : 'Tại quầy'),
   }));
@@ -65,6 +67,16 @@ export function listOrderHistory(branch_id = 'br1', { limit = 60, q = '', channe
       || (o.online_ref || '').toLowerCase().includes(s) || (o.invoice_no || '').toLowerCase().includes(s));
   }
   return rows;
+}
+
+// Trạng thái ca của bill theo payment mới nhất: 'open' | 'closed' | null (chưa có payment/ca).
+// Dùng cho cổng khóa thay đổi sau bán: ca 'closed' → cần PIN Quản lý mới sửa được.
+export function billShiftStatus(order_id, branch_id = 'br1') {
+  const row = db.prepare(`SELECT s.status FROM payments p
+    JOIN shifts s ON s.id=p.shift_id
+    JOIN orders o ON o.id=p.order_id
+    WHERE p.order_id=? AND o.branch_id=? ORDER BY p.created_at DESC LIMIT 1`).get(order_id, branch_id);
+  return row?.status || null;
 }
 
 export function orderReceipt(order_id, branch_id = 'br1') {
@@ -89,8 +101,8 @@ export function orderReceipt(order_id, branch_id = 'br1') {
   const lines = db.prepare(`SELECT pl.method, pl.amount, pl.reference FROM payment_lines pl
     JOIN payments p ON p.id=pl.payment_id WHERE p.order_id=? ORDER BY pl.rowid`).all(order_id);
 
-  // Thu ngân: lấy theo ca làm việc của lần thanh toán (nếu có).
-  const cashierRow = db.prepare(`SELECT s.user_name FROM payments p
+  // Thu ngân + trạng thái ca: lấy theo ca làm việc của lần thanh toán (nếu có).
+  const cashierRow = db.prepare(`SELECT s.user_name, s.status AS shift_status FROM payments p
     JOIN shifts s ON s.id=p.shift_id WHERE p.order_id=? ORDER BY p.created_at DESC LIMIT 1`).get(order_id);
 
   const inv = o.invoice_id ? db.prepare(`SELECT invoice_no,lookup_code,issued_at,customer_json FROM invoices WHERE id=?`).get(o.invoice_id) : null;
@@ -112,6 +124,8 @@ export function orderReceipt(order_id, branch_id = 'br1') {
     company,
     customer: { name: customer.name || customer.company || '', tax_code: customer.tax_code || '', address: customer.address || '', email: customer.email || '' },
     cashier: cashierRow?.user_name || '',
+    shift_status: cashierRow?.shift_status || null,
+    locked: cashierRow?.shift_status === 'closed',   // ca đã kết → khóa thay đổi sau bán
     table_code: table?.code, channel: o.channel, online_channel: o.online_channel, online_ref: o.online_ref,
     status: o.status,
     items,

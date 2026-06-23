@@ -18,6 +18,7 @@ function normalizeRow(r) {
     is_supplier: partner_type === 'supplier' || partner_type === 'both',
     is_staff: partner_type === 'staff',
     active: r.active === undefined || r.active === null ? 1 : (parseInt(r.active) ? 1 : 0),
+    auto_invoice: r.auto_invoice === undefined || r.auto_invoice === null ? 0 : (parseInt(r.auto_invoice) ? 1 : 0),
     perk_value: parseInt(r.perk_value) || 0,
     total_orders: parseInt(r.total_orders) || 0,
     total_spent: parseInt(r.total_spent) || 0,
@@ -97,6 +98,7 @@ export function upsertCustomer(body = {}, branch_id = 'br1') {
   if (perk_type === 'none') perk_value = 0;
   const partner_type = pickPartnerType(body.partner_type);
   const active = body.active === undefined ? 1 : (parseInt(body.active) ? 1 : 0);
+  const auto_invoice = body.auto_invoice === undefined ? 0 : (parseInt(body.auto_invoice) ? 1 : 0);
   const fields = {
     name,
     phone: str(body.phone, 40),
@@ -113,11 +115,12 @@ export function upsertCustomer(body = {}, branch_id = 'br1') {
     partner_type,
     contact_person: str(body.contact_person, 200),
     active,
+    auto_invoice,
   };
   const existing = body.id ? db.prepare(`SELECT * FROM customers WHERE id=? AND branch_id=?`).get(body.id, branch_id) : null;
   if (existing) {
-    db.prepare(`UPDATE customers SET name=?,phone=?,email=?,tax_code=?,company=?,address=?,birthday=?,preferences=?,allergies=?,perk_type=?,perk_value=?,note=?,partner_type=?,contact_person=?,active=?,updated_at=? WHERE id=? AND branch_id=?`)
-      .run(fields.name, fields.phone, fields.email, fields.tax_code, fields.company, fields.address, fields.birthday, fields.preferences, fields.allergies, fields.perk_type, fields.perk_value, fields.note, fields.partner_type, fields.contact_person, fields.active, now(), existing.id, branch_id);
+    db.prepare(`UPDATE customers SET name=?,phone=?,email=?,tax_code=?,company=?,address=?,birthday=?,preferences=?,allergies=?,perk_type=?,perk_value=?,note=?,partner_type=?,contact_person=?,active=?,auto_invoice=?,updated_at=? WHERE id=? AND branch_id=?`)
+      .run(fields.name, fields.phone, fields.email, fields.tax_code, fields.company, fields.address, fields.birthday, fields.preferences, fields.allergies, fields.perk_type, fields.perk_value, fields.note, fields.partner_type, fields.contact_person, fields.active, fields.auto_invoice, now(), existing.id, branch_id);
     audit('customer.update', { id: existing.id, name: fields.name, partner_type: fields.partner_type }, branch_id);
     emit('customers:updated', { id: existing.id }, branch_id);
     const out = getCustomer(existing.id, branch_id);
@@ -125,9 +128,9 @@ export function upsertCustomer(body = {}, branch_id = 'br1') {
     return out;
   }
   const id = uid('cus_');
-  db.prepare(`INSERT INTO customers (id,branch_id,name,phone,email,tax_code,company,address,birthday,preferences,allergies,perk_type,perk_value,note,partner_type,contact_person,active,total_orders,total_spent,created_at,updated_at)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,0,?,?)`)
-    .run(id, branch_id, fields.name, fields.phone, fields.email, fields.tax_code, fields.company, fields.address, fields.birthday, fields.preferences, fields.allergies, fields.perk_type, fields.perk_value, fields.note, fields.partner_type, fields.contact_person, fields.active, now(), now());
+  db.prepare(`INSERT INTO customers (id,branch_id,name,phone,email,tax_code,company,address,birthday,preferences,allergies,perk_type,perk_value,note,partner_type,contact_person,active,auto_invoice,total_orders,total_spent,created_at,updated_at)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,0,?,?)`)
+    .run(id, branch_id, fields.name, fields.phone, fields.email, fields.tax_code, fields.company, fields.address, fields.birthday, fields.preferences, fields.allergies, fields.perk_type, fields.perk_value, fields.note, fields.partner_type, fields.contact_person, fields.active, fields.auto_invoice, now(), now());
   audit('customer.create', { id, name: fields.name, partner_type: fields.partner_type }, branch_id);
   emit('customers:updated', { id, created: true }, branch_id);
   const out = getCustomer(id, branch_id);

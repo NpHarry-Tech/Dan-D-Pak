@@ -138,6 +138,23 @@ const wrap = (fn) => (req, res) => {
   catch (e) { logRequestError(req, e); res.status(e.status || 400).json(errorPayload(e)); }
 };
 
+// Cổng khóa bill theo ca cho các thao tác THAY ĐỔI SAU BÁN (đổi trả, xuất/hủy HĐĐT…).
+// Ca của bill còn mở → cho qua (quyền thường đã đủ). Ca đã KẾT CA → bắt buộc PIN
+// Quản lý/Admin (verifyManagerOwnerPin). Trả về người duyệt (nếu có) để ghi nhật ký.
+function assertBillEditable(order_id, req, action = '') {
+  const branch_id = branch(req);
+  if (History.billShiftStatus(order_id, branch_id) !== 'closed') return null;
+  const pin = req.body?.security_pin;
+  const approver = Auth.verifyManagerOwnerPin(pin, branch_id);
+  if (!approver) {
+    const e = new Error('Bill đã KẾT CA — cần PIN Quản lý/Admin để thay đổi.');
+    e.code = 'SHIFT_LOCKED'; e.status = 423;
+    throw e;
+  }
+  audit('bill.locked_edit', { action, order_id, approved_by: approver.username }, branch_id, approver.username);
+  return approver;
+}
+
 // --- Auth ---
 api.get('/branches', wrap(() => Branches.listBranches()));
 api.post('/login', wrap((req) => Auth.login(req.body.username, req.body.pin, req.body.branch_id || publicBranch(req))));
@@ -608,7 +625,11 @@ api.post('/orders/:id/payment-qr', wrap((req) => Pay.generateCustomerPaymentQr(r
 api.post('/payment-qr', wrap((req) => Pay.buildStandalonePaymentQr(req.body || {}, visibleBranch(req))));
 api.post('/orders/:id/customer-qr-pay', wrap((req) => Pay.customerQrPay(req.params.id, req.body || {}, visibleBranch(req))));
 // Khách tự phục vụ (iPad) chọn xuất / không xuất hóa đơn VAT sau khi thanh toán — route mở, không cần đăng nhập.
-api.post('/orders/:id/customer-invoice', wrap((req) => Invoices.customerRequest(req.params.id, req.body || {}, visibleBranch(req))));
+api.post('/orders/:id/customer-invoice', wrap((req) => {
+  assertBillEditable(req.params.id, req, 'customer_invoice');
+  if (req.body) delete req.body.security_pin;
+  return Invoices.customerRequest(req.params.id, req.body || {}, visibleBranch(req));
+}));
 // Tra cứu MST công khai cho màn khách (iPad không đăng nhập) — chỉ trả thông tin doanh nghiệp công khai, không lộ khách local.
 api.get('/public/tax-lookup/:mst', wrap(async (req) => { const r = await Customers.lookupTaxCode(req.params.mst); const { existed, ...pub } = r; return pub; }));
 api.post('/orders/:id/pay', guard('pay'), wrap((req) => {
@@ -733,7 +754,10 @@ api.post('/expenses', guard('module.expenses'), wrap((req) => Expenses.createExp
 api.post('/expenses/:id', guard('module.expenses'), wrap((req) => Expenses.updateExpense(req.params.id, req.body, branch(req), req.user)));
 api.post('/expenses/:id/delete', guard('module.expenses'), wrap((req) => Expenses.deleteExpense(req.params.id, branch(req), req.user)));
 api.get('/retail/sales', wrap((req) => Retail.listRetailSales(visibleBranch(req))));
-api.post('/retail/:id/refund', guard('refund'), wrap((req) => Retail.refund(req.params.id, req.body.reason, branch(req))));
+api.post('/retail/:id/refund', guard('refund'), wrap((req) => {
+  assertBillEditable(req.params.id, req, 'refund');
+  return Retail.refund(req.params.id, req.body.reason, branch(req));
+}));
 
 // --- Warehouse documents / lots / counts ---
 api.get('/movements', wrap((req) => Inv.listMovements(visibleBranch(req), parseInt(req.query.limit) || 80)));
@@ -773,10 +797,17 @@ api.post('/print/jobs/:id/printed', printGuard, wrap((req) => Print.markPrinted(
 api.post('/print/jobs/:id/reprint', printGuard, wrap((req) => Print.reprint(req.params.id, branch(req))));
 
 // --- MISA e-invoice ---
-api.post('/invoices/issue', guard('invoice'), wrap((req) => Invoices.issue(req.body.order_id, req.body.customer, branch(req))));
+api.post('/invoices/issue', guard('invoice'), wrap((req) => {
+  assertBillEditable(req.body.order_id, req, 'invoice_issue');
+  return Invoices.issue(req.body.order_id, req.body.customer, branch(req));
+}));
 api.get('/invoices', wrap((req) => Invoices.list(visibleBranch(req))));
 api.get('/invoices/order/:id', wrap((req) => Invoices.byOrder(req.params.id)));
-api.post('/invoices/:id/cancel', guard('invoice'), wrap((req) => Invoices.cancel(req.params.id, req.body.reason, branch(req))));
+api.post('/invoices/:id/cancel', guard('invoice'), wrap((req) => {
+  const ord = db.prepare(`SELECT id FROM orders WHERE invoice_id=? AND branch_id=?`).get(req.params.id, branch(req));
+  if (ord) assertBillEditable(ord.id, req, 'invoice_cancel');
+  return Invoices.cancel(req.params.id, req.body.reason, branch(req));
+}));
 
 // --- Cloud Sync / Offline ---
 api.get('/sync/status', wrap((req) => Sync.status(visibleBranch(req))));

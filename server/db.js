@@ -302,6 +302,7 @@ export function migrate() {
     address TEXT,
     perk_type TEXT NOT NULL DEFAULT 'none',
     perk_value INTEGER NOT NULL DEFAULT 0,
+    auto_invoice INTEGER NOT NULL DEFAULT 0,
     note TEXT,
     total_orders INTEGER NOT NULL DEFAULT 0,
     total_spent INTEGER NOT NULL DEFAULT 0,
@@ -623,6 +624,7 @@ export function migrate() {
   addColumnIfMissing('customers', 'partner_type', `TEXT NOT NULL DEFAULT 'customer'`); // customer | supplier | both
   addColumnIfMissing('customers', 'contact_person', 'TEXT'); // người liên hệ (chủ yếu cho NCC)
   addColumnIfMissing('customers', 'active', 'INTEGER NOT NULL DEFAULT 1');
+  addColumnIfMissing('customers', 'auto_invoice', 'INTEGER NOT NULL DEFAULT 0');
   // Purchase payments: support paying a supplier straight from the cash drawer.
   addColumnIfMissing('purchase_payments', 'source', `TEXT NOT NULL DEFAULT 'direct'`); // drawer | direct
   addColumnIfMissing('purchase_payments', 'drawer_entry_id', 'TEXT');

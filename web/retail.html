@@ -1209,6 +1209,15 @@ async function openPay(){
   let paidViaPayos=false, payosPollStop=null;
   const stopPayosPoll=()=>{ if(payosPollStop){ payosPollStop(); payosPollStop=null; } };
   const invoiceDraft=createCompanyInvoiceDraft();
+  if (selectedCustomer && selectedCustomer.auto_invoice) {
+    invoiceDraft.enabled = true;
+    invoiceDraft.tax_code = selectedCustomer.tax_code || '';
+    invoiceDraft.company = selectedCustomer.company || '';
+    invoiceDraft.name = selectedCustomer.name || '';
+    invoiceDraft.address = selectedCustomer.address || '';
+    invoiceDraft.email = selectedCustomer.email || '';
+    invoiceDraft.phone = selectedCustomer.phone || '';
+  }
   const methods=enabledRetailMethods();
   if(!methods.some(m=>m.key===curMethod)) curMethod=methods[0]?.key||'cash';
   const ov=document.createElement('div'); ov.className='overlay show'; document.body.appendChild(ov);
@@ -1381,6 +1390,17 @@ async function openPay(){
           const promos = buildPromoList();
           const custPromo = promos.find(p => p.key === 'customer_perk');
           if(custPromo) activePromo = custPromo;
+        }
+        if(selectedCustomer && selectedCustomer.auto_invoice){
+          invoiceDraft.enabled = true;
+          invoiceDraft.tax_code = selectedCustomer.tax_code || '';
+          invoiceDraft.company = selectedCustomer.company || '';
+          invoiceDraft.name = selectedCustomer.name || '';
+          invoiceDraft.address = selectedCustomer.address || '';
+          invoiceDraft.email = selectedCustomer.email || '';
+          invoiceDraft.phone = selectedCustomer.phone || '';
+        } else {
+          invoiceDraft.enabled = false;
         }
         renderCustBtn(); renderCart(); draw();
       });

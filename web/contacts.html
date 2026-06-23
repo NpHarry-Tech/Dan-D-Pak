@@ -118,6 +118,10 @@
       <input type="checkbox" id="f_active" checked style="width:auto"> Đang sử dụng (bỏ chọn để lưu trữ)
     </label>
 
+    <label id="autoInvoiceLabel" style="display:flex;align-items:center;gap:9px;text-transform:none;letter-spacing:0;font-size:13px;color:var(--text);margin-top:10px;cursor:pointer">
+      <input type="checkbox" id="f_auto_invoice" style="width:auto"> Tự động chọn xuất hóa đơn VAT khi thanh toán
+    </label>
+
     <div class="acts">
       <button class="btn danger" id="delBtn" style="display:none">Xóa</button>
       <button class="btn" id="cancelBtn">Hủy</button>
@@ -190,6 +194,7 @@ function setPartnerType(pt){
   $('contactPersonWrap').style.display = isSupplier ? 'block' : 'none';
   $('perkWrap').style.display = (isCustomer || isStaff) ? 'block' : 'none';
   $('perkLabel').textContent = isStaff ? 'Ưu đãi mặc định cho nhân viên' : 'Ưu đãi mặc định cho khách';
+  $('autoInvoiceLabel').style.display = isCustomer ? 'flex' : 'none';
 }
 function currentPartnerType(){ return $('ptSeg').querySelector('button.on')?.dataset.pt || 'customer'; }
 
@@ -209,6 +214,7 @@ function openForm(c){
   $('f_perk_value').value = c?.perk_value || '';
   $('f_note').value = c?.note || '';
   $('f_active').checked = c ? !!c.active : true;
+  $('f_auto_invoice').checked = c ? !!c.auto_invoice : false;
   $('taxHint').style.display = 'none';
   $('delBtn').style.display = c ? 'block' : 'none';
   $('ov').classList.add('show');
@@ -234,6 +240,7 @@ async function save(){
     perk_value: parseInt($('f_perk_value').value) || 0,
     note: $('f_note').value.trim(),
     active: $('f_active').checked ? 1 : 0,
+    auto_invoice: $('f_auto_invoice').checked ? 1 : 0,
   };
   try {
     await api('/partners', { method: 'POST', body });

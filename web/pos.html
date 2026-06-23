@@ -1156,6 +1156,15 @@ async function openPay(o, opts={}){
   let paidViaPayos=false, payosPollStop=null;
   const stopPayosPoll=()=>{ if(payosPollStop){ payosPollStop(); payosPollStop=null; } };
   const invoiceDraft=createCompanyInvoiceDraft();
+  if (customer && customer.auto_invoice) {
+    invoiceDraft.enabled = true;
+    invoiceDraft.tax_code = customer.tax_code || '';
+    invoiceDraft.company = customer.company || '';
+    invoiceDraft.name = customer.name || '';
+    invoiceDraft.address = customer.address || '';
+    invoiceDraft.email = customer.email || '';
+    invoiceDraft.phone = customer.phone || '';
+  }
   const ov=document.createElement('div'); ov.className='overlay show'; document.body.appendChild(ov);
   const total=()=>Math.max(0,(o.subtotal||0)-disc);
   const paid=()=>lines.reduce((s,l)=>s+l.amount,0);
@@ -1255,6 +1264,17 @@ async function openPay(o, opts={}){
       if(customer && customer.perk_type && customer.perk_type!=='none'){
         const pa = perkAmount(customer, o.subtotal||0);
         if(pa>0){ orderPromo[o.id]={key:'customer_perk',icon:'👤',name:`Ưu đãi khách — ${customer.name}`,amount:pa}; setDisc(pa); return; }
+      }
+      if(customer && customer.auto_invoice){
+        invoiceDraft.enabled = true;
+        invoiceDraft.tax_code = customer.tax_code || '';
+        invoiceDraft.company = customer.company || '';
+        invoiceDraft.name = customer.name || '';
+        invoiceDraft.address = customer.address || '';
+        invoiceDraft.email = customer.email || '';
+        invoiceDraft.phone = customer.phone || '';
+      } else {
+        invoiceDraft.enabled = false;
       }
       renderModal();
     });
