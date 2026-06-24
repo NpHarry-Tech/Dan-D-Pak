@@ -9,6 +9,7 @@ export const BRANCH = DEFAULT_BRANCH;
 export const apiUrl = buildApiUrl;
 const BRANCH_KEY = 'active_branch_id';
 const BRANCH_CACHE_KEY = 'branches_cache';
+const BRANCH_ESTABLISHED_KEY = 'branch_established';   // thiết bị đã được gán/chốt chi nhánh chưa
 
 export function getBranchId() {
   return localStorage.getItem(BRANCH_KEY) || DEFAULT_BRANCH;
@@ -23,7 +24,7 @@ export function selectedBranch() {
   return branchesForCurrentUser().find(b => b.id === id) || getBranches().find(b => b.id === id) || { id, name: id === DEFAULT_BRANCH ? 'Dan D Pak Sala' : id, code: id };
 }
 
-function branchesForCurrentUser() {
+export function branchesForCurrentUser() {
   const branches = getBranches();
   const user = getUser();
   if (!user) return branches;
@@ -234,6 +235,7 @@ export async function requireLogin(opts = {}) {
     try {
       const me = await api('/me');
       ensureBranchForUser(me);
+      localStorage.setItem(BRANCH_ESTABLISHED_KEY, '1');   // có phiên hợp lệ → thiết bị đã chốt chi nhánh
       localStorage.setItem('auth_user', JSON.stringify(me));
       localStorage.setItem('auth_perms', JSON.stringify(me.perms || []));
       const userLang = me.lang || 'vi';
@@ -247,41 +249,47 @@ export async function requireLogin(opts = {}) {
   return openLoginWizard({ mode });
 }
 
-// Mở wizard "Đổi chi nhánh" từ màn hình chọn module (đang đăng nhập).
-// Đổi sang chi nhánh KHÁC cần PIN Quản lý/Admin; reload khi đổi xong.
+// Mở "Đổi chi nhánh" từ màn hình chọn module (đang đăng nhập). Chỉ hiển thị các chi
+// nhánh user được cấp quyền; chọn chi nhánh khác = đổi TỨC THÌ, GIỮ phiên đăng nhập
+// (không cần đăng nhập lại — server resolveBranch đã cho phép theo quyền). Reload khi đổi.
 export async function changeBranchFlow() {
   const result = await openLoginWizard({ mode: 'switch' });
   if (result) location.reload();
   return result;
 }
 
-// Wizard đăng nhập từng bước: Chi nhánh → Nhân viên → (PIN qua requestPinCode).
-// mode 'gate'  : chặn trang tới khi đăng nhập (bước chi nhánh chỉ hiện khi >1 chi nhánh).
-// mode 'switch': mở từ trạng thái đã đăng nhập để đổi chi nhánh (luôn bắt đầu ở bước chi nhánh,
-//                cho phép Hủy; chọn chi nhánh khác cần PIN Quản lý).
+// Wizard: mode 'gate' = cổng đăng nhập (Chi nhánh → Nhân viên → PIN); 'switch' = chọn nhanh
+// chi nhánh để đổi tức thì (chỉ bước chi nhánh, không đăng nhập lại).
 function openLoginWizard({ mode = 'gate' } = {}) {
   injectLoginCss();
   return new Promise((resolve) => {
     (async () => {
-      let branches = getBranches();
-      try { branches = await syncBranches(); } catch {}
+      const isSwitch = mode === 'switch';
+      try { await syncBranches(); } catch {}
+      // switch: chỉ các chi nhánh user được cấp quyền. gate: toàn bộ (để thiết bị mới chọn lần đầu).
+      let branches = isSwitch ? branchesForCurrentUser() : getBranches();
       if (!branches.length) branches = [{ id: getBranchId(), name: 'Dan D Pak', code: getBranchId() }];
       const originBranch = getBranchId();
       let selBranch = originBranch;
       let users = [];
-      let mutated = false;   // switch mode: đã commit đổi chi nhánh (xoá token cũ) chưa?
 
-      // Smart: gate hiện bước chi nhánh chỉ khi >1; switch luôn có bước chi nhánh.
-      const hasBranchStep = mode === 'switch' ? branches.length >= 1 : branches.length > 1;
-      const paneList = hasBranchStep ? ['branch', 'user'] : ['user'];
-      let step = hasBranchStep ? 'branch' : 'user';
+      // Thiết bị đã "chốt" chi nhánh chưa. Nếu rồi → sau khi đăng xuất KHÔNG hỏi lại chi nhánh,
+      // vào thẳng đăng nhập nhân viên của chi nhánh hiện tại. Bước chi nhánh chỉ hiện khi:
+      //  - switch (chủ động đổi), hoặc
+      //  - gate & thiết bị CHƯA chốt chi nhánh & hệ thống có >1 chi nhánh (lần đầu cài đặt).
+      const established = localStorage.getItem(BRANCH_ESTABLISHED_KEY) === '1';
+      const showBranchPane = isSwitch || (!established && branches.length > 1);
+      const showUserPane = !isSwitch;
+      const hasBranchStep = showBranchPane;
+      const paneList = [...(showBranchPane ? ['branch'] : []), ...(showUserPane ? ['user'] : [])];
+      let step = paneList[0];
 
       const branchName = (id) => { const b = branches.find(x => x.id === id); return b ? (b.name || b.code || b.id) : id; };
       const loadUsers = async () => {
         try { const rows = await api('/users'); users = Array.isArray(rows) ? rows : []; }
         catch { users = []; }
       };
-      await loadUsers();
+      if (showUserPane) await loadUsers();
 
       const branchRowsHtml = () => branches.map(b => {
         const id = b.id, isCur = id === originBranch, isSel = id === selBranch;
@@ -307,16 +315,14 @@ function openLoginWizard({ mode = 'gate' } = {}) {
           </div>
           <div class="lg-viewport" id="lgVp">
             <div class="lg-track" id="lgTrack">
-              ${hasBranchStep ? `<div class="lg-pane" data-step="branch"><div class="lg-branch-list" id="lgBranchList">${branchRowsHtml()}</div></div>` : ''}
-              <div class="lg-pane" data-step="user"><div id="lgUserPane">${userPaneHtml()}</div></div>
+              ${showBranchPane ? `<div class="lg-pane" data-step="branch"><div class="lg-branch-list" id="lgBranchList">${branchRowsHtml()}</div></div>` : ''}
+              ${showUserPane ? `<div class="lg-pane" data-step="user"><div id="lgUserPane">${userPaneHtml()}</div></div>` : ''}
             </div>
           </div>
         </div>`;
       document.body.appendChild(ov);
 
-      // Nếu đã commit đổi chi nhánh (token cũ bị xoá) mà người dùng huỷ giữa chừng,
-      // reload để app về trạng thái sạch (sẽ hiện lại wizard cho chi nhánh mới).
-      const close = (val) => { ov.remove(); if (val == null && mutated) { location.reload(); return; } resolve(val); };
+      const close = (val) => { ov.remove(); resolve(val); };
       const setSub = () => { const s = ov.querySelector('#lgSub'); if (s) s.textContent = step === 'branch' ? 'Chọn chi nhánh' : 'Đăng nhập nhân viên'; };
       const setBack = () => { const b = ov.querySelector('#lgBack'); if (b) b.style.visibility = (step === 'user' && hasBranchStep) ? 'visible' : 'hidden'; };
       const fit = () => { const vp = ov.querySelector('#lgVp'); const pane = ov.querySelector(`.lg-pane[data-step="${step}"]`); if (vp && pane) vp.style.height = pane.offsetHeight + 'px'; };
@@ -326,22 +332,19 @@ function openLoginWizard({ mode = 'gate' } = {}) {
       const refreshUserPane = () => { const p = ov.querySelector('#lgUserPane'); if (p) p.innerHTML = userPaneHtml(); };
 
       const pickBranch = async (id) => {
-        if (mode === 'switch' && !mutated && id === originBranch) { close(null); return; }  // chưa đổi gì, chọn lại chính nó: đóng
-        if (mode === 'switch' && id !== originBranch) {
-          const ok = await requestPinCode({
-            title: 'PIN Quản lý / Admin',
-            subtitle: `Mở chi nhánh "${branchName(id)}"`,
-            roleLabel: 'Cần quyền Quản lý',
-            cancelText: 'Hủy',
-            errorText: 'PIN không đúng hoặc không đủ quyền',
-            onSubmit: (pin) => api('/auth/verify-branch-switch', { method: 'POST', body: { branch_id: id, pin } }),
-          });
-          if (!ok) return;                                                         // hủy / sai PIN → ở lại bước chi nhánh
-          mutated = true;
-          localStorage.removeItem('auth_token'); localStorage.removeItem('auth_user'); localStorage.removeItem('auth_perms');
+        if (isSwitch) {
+          if (id === originBranch) { close(null); return; }   // chọn lại chính nó: đóng, không đổi
+          // User đã đăng nhập & được cấp quyền các chi nhánh này → đổi TỨC THÌ, GIỮ phiên đăng nhập
+          // (server resolveBranch cho phép theo quyền). Không cần đăng nhập lại, không cần PIN.
+          setBranchId(id);
+          localStorage.setItem(BRANCH_ESTABLISHED_KEY, '1');
+          close({ switched: id });
+          return;
         }
+        // gate: chọn chi nhánh cho thiết bị (lần đầu) → nạp nhân viên → bước đăng nhập.
         selBranch = id;
         setBranchId(id);
+        localStorage.setItem(BRANCH_ESTABLISHED_KEY, '1');
         refreshBranchList();
         await loadUsers();
         refreshUserPane();
@@ -361,6 +364,7 @@ function openLoginWizard({ mode = 'gate' } = {}) {
         localStorage.setItem('auth_token', r.token);
         localStorage.setItem('auth_user', JSON.stringify(r.user));
         localStorage.setItem('auth_perms', JSON.stringify(r.perms || []));
+        localStorage.setItem(BRANCH_ESTABLISHED_KEY, '1');   // đăng nhập thành công → thiết bị chốt chi nhánh
         const userLang = r.user.lang || 'vi';
         const currentPreferred = localStorage.getItem('preferred_lang') || 'vi';
         localStorage.setItem('preferred_lang', userLang);

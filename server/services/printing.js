@@ -200,7 +200,11 @@ function renderReceipt(p = {}) {
   }
   
   rows.push(line());
-  rows.push(center(`HOA DON #${p.number || ''}`, 40));
+  if (p.preview) {
+    rows.push(center('HOA DON TAM TINH', 40));
+  } else {
+    rows.push(center(`HOA DON #${p.number || ''}`, 40));
+  }
   if (p.table_code) {
     rows.push(center(`Ban ${p.table_code}`, 40));
   }

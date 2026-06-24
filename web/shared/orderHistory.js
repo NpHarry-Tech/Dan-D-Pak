@@ -1,7 +1,7 @@
 // Shared order/invoice history (Lịch sử bán hàng) — used by POS & Retail.
 // Lists past paid/void orders, shows a full receipt, and supports reprint —
 // like KiotViet "Lịch sử bán hàng" / Odoo Orders.
-import { api, money, esc, toast, getUser } from './client.js';
+import { api, money, esc, toast, getUser, requestPinCode, hasPerm } from './client.js';
 import { danBillVars } from './danBill.js';
 
 const CHANNELS = [
@@ -63,10 +63,11 @@ async function load() {
     const methods = (o.methods || []).map(m => METHOD_VN[m.method] || m.method).join(', ');
     const voidBadge = o.status === 'void' ? '<span class="oh-badge void">Đã hủy</span>' : '';
     const invBadge = o.invoice_no ? `<span class="oh-badge inv">HĐ ${esc(o.invoice_no)}</span>` : '';
+    const lockBadge = o.locked ? '<span class="oh-badge lock">🔒 Đã kết ca</span>' : '';
     return `<div class="oh-row" data-id="${esc(o.id)}">
       <div class="oh-r1"><b>#${esc(o.number)}</b><span class="oh-tot">${money(o.total)}</span></div>
       <div class="oh-r2"><span>${esc(o.channel_label || '')}</span><span class="oh-time">${fmtTime(o.paid_at || o.created_at)}</span></div>
-      <div class="oh-r3"><span>${o.item_count || 0} món · ${esc(methods || '—')}</span><span>${voidBadge}${invBadge}</span></div>
+      <div class="oh-r3"><span>${o.item_count || 0} món · ${esc(methods || '—')}</span><span>${lockBadge}${voidBadge}${invBadge}</span></div>
     </div>`;
   }).join('');
   listEl.querySelectorAll('.oh-row').forEach(r => r.onclick = () => {
@@ -87,20 +88,40 @@ async function showDetail(id) {
     r = receipt;
   } catch (e) { detailEl.innerHTML = `<div class="oh-empty">Lỗi: ${esc(e.message)}</div>`; return; }
   const canRefund = opts.allowRefund && r.status === 'paid' && r.channel === 'retail';
-  detailEl.innerHTML = receiptHtml(r) + `
+  const canIssue = r.status === 'paid' && !r.invoice && hasPerm('invoice');
+  const lockBar = r.locked ? `<div class="oh-locked">🔒 Bill đã KẾT CA — mọi thay đổi cần PIN Quản lý/Admin xác nhận.</div>` : '';
+  detailEl.innerHTML = receiptHtml(r) + lockBar + `
     <div class="oh-actions">
       <button class="btn primary" id="ohPrint">🖨️ In lại hóa đơn</button>
       ${r.invoice ? `<a class="btn" href="${esc(r.invoice.lookup_url)}" target="_blank">🔎 Tra cứu HĐĐT</a>` : ''}
+      ${canIssue ? `<button class="btn" id="ohIssueInv">🧾 Xuất hóa đơn VAT</button>` : ''}
       ${canRefund ? `<button class="btn danger" id="ohRefund">↩ Đổi trả / Hoàn hàng</button>` : ''}
     </div>
-    <div id="ohRefundForm"></div>`;
+    <div id="ohActionForm"></div>`;
   detailEl.querySelector('#ohPrint').onclick = () => printReceipt(r);
   const rfBtn = detailEl.querySelector('#ohRefund');
   if (rfBtn) rfBtn.onclick = () => showRefundForm(r);
+  const invBtn = detailEl.querySelector('#ohIssueInv');
+  if (invBtn) invBtn.onclick = () => showInvoiceForm(r);
+}
+
+// Bill đã KẾT CA (r.locked) → bắt nhập PIN Quản lý/Admin trước khi thực hiện; ca còn mở
+// thì chạy thẳng. doCall(security_pin|null) phải trả về Promise của lời gọi API.
+// Trả về kết quả API, hoặc null nếu người dùng huỷ nhập PIN.
+async function withManagerPin(r, doCall) {
+  if (!r.locked) return doCall(null);
+  return requestPinCode({
+    title: 'PIN Quản lý / Admin',
+    subtitle: 'Bill đã KẾT CA — xác nhận để thay đổi',
+    roleLabel: 'Cần quyền Quản lý',
+    cancelText: 'Hủy',
+    errorText: 'PIN không đúng hoặc không đủ quyền',
+    onSubmit: (pin) => doCall(pin),   // ném lỗi → numpad shake & giữ mở để nhập lại
+  });
 }
 
 function showRefundForm(r) {
-  const box = detailEl.querySelector('#ohRefundForm');
+  const box = detailEl.querySelector('#ohActionForm');
   if (!box) return;
   box.innerHTML = `<div class="oh-refund">
     <label>Lý do đổi trả / hoàn hàng</label>
@@ -113,14 +134,57 @@ function showRefundForm(r) {
   box.querySelector('#ohRfCancel').onclick = () => { box.innerHTML = ''; };
   box.querySelector('#ohRfOk').onclick = async () => {
     const reason = (box.querySelector('#ohRfReason').value || '').trim() || 'Khách trả hàng';
-    const btn = box.querySelector('#ohRfOk'); btn.disabled = true; btn.textContent = 'Đang hoàn…';
+    const btn = box.querySelector('#ohRfOk'); const reset = () => { btn.disabled = false; btn.textContent = 'Xác nhận hoàn ' + money(r.total); };
+    btn.disabled = true; btn.textContent = 'Đang hoàn…';
     try {
-      const res = await api(`/retail/${r.order_id}/refund`, { method: 'POST', body: { reason } });
+      const res = await withManagerPin(r, (pin) => api(`/retail/${r.order_id}/refund`, { method: 'POST', body: { reason, ...(pin ? { security_pin: pin } : {}) } }));
+      if (!res) { reset(); return; }   // huỷ nhập PIN
       toast('Đã hoàn ' + money(res.refunded ?? r.total));
       if (opts.onAfterChange) opts.onAfterChange();
       await load();              // refresh list (order now shows as "Đã hủy")
       await showDetail(r.order_id);
-    } catch (e) { toast(e.message, true); btn.disabled = false; btn.textContent = 'Xác nhận hoàn ' + money(r.total); }
+    } catch (e) { toast(e.message, true); reset(); }
+  };
+}
+
+// Xuất hóa đơn VAT cho bill đã thanh toán ngay từ Lịch sử (đúng ý "bấm vô từng bill chọn
+// xuất hóa đơn"). Bill đã kết ca → cần PIN Quản lý (withManagerPin).
+function showInvoiceForm(r) {
+  const box = detailEl.querySelector('#ohActionForm');
+  if (!box) return;
+  const c = r.customer || {};
+  box.innerHTML = `<div class="oh-invoice">
+    <label>Tên người mua / công ty</label>
+    <input id="ohInvName" placeholder="Tên cá nhân hoặc công ty" value="${esc(c.name || '')}">
+    <label>Mã số thuế</label>
+    <input id="ohInvTax" placeholder="MST (nếu xuất cho công ty)" value="${esc(c.tax_code || '')}">
+    <label>Địa chỉ</label>
+    <input id="ohInvAddr" placeholder="Địa chỉ trên hóa đơn" value="${esc(c.address || '')}">
+    <label>Email nhận hóa đơn</label>
+    <input id="ohInvEmail" placeholder="email@congty.vn" value="${esc(c.email || '')}">
+    <div class="oh-rf-act">
+      <button class="btn" id="ohInvCancel">Hủy</button>
+      <button class="btn primary" id="ohInvOk">🧾 Xuất hóa đơn VAT</button>
+    </div>
+  </div>`;
+  box.querySelector('#ohInvCancel').onclick = () => { box.innerHTML = ''; };
+  box.querySelector('#ohInvOk').onclick = async () => {
+    const customer = {
+      name: (box.querySelector('#ohInvName').value || '').trim(),
+      tax_code: (box.querySelector('#ohInvTax').value || '').trim(),
+      address: (box.querySelector('#ohInvAddr').value || '').trim(),
+      email: (box.querySelector('#ohInvEmail').value || '').trim(),
+    };
+    const btn = box.querySelector('#ohInvOk'); const reset = () => { btn.disabled = false; btn.textContent = '🧾 Xuất hóa đơn VAT'; };
+    btn.disabled = true; btn.textContent = 'Đang xuất…';
+    try {
+      const res = await withManagerPin(r, (pin) => api('/invoices/issue', { method: 'POST', body: { order_id: r.order_id, customer, ...(pin ? { security_pin: pin } : {}) } }));
+      if (!res) { reset(); return; }   // huỷ nhập PIN
+      toast('Đã xuất hóa đơn VAT' + (res.invoice_no ? ' ' + res.invoice_no : ''));
+      if (opts.onAfterChange) opts.onAfterChange();
+      await load();
+      await showDetail(r.order_id);
+    } catch (e) { toast(e.message, true); reset(); }
   };
 }
 const fmtDate = (iso) => { try { return new Date(iso).toLocaleDateString('vi-VN'); } catch { return ''; } };
@@ -174,7 +238,14 @@ function activePrintConfig(r) { return r?.print_config || printConfig || {}; }
 function activeBillCfg(r) { return activePrintConfig(r).bill || {}; }
 function activeBillTemplate(r) { return activePrintConfig(r).templates?.bill || null; }
 
-function replaceVars(text, vars) { return String(text || '').replace(/\{(\w+)\}/g, (_, k) => vars[k] ?? `{${k}}`); }
+function replaceVars(text, vars) {
+  let s = String(text || '');
+  if (vars && vars.preview) {
+    s = s.replace(/HÓA ĐƠN THANH TOÁN/g, 'HÓA ĐƠN TẠM TÍNH');
+    s = s.replace(/HOA DON THANH TOAN/g, 'HOA DON TAM TINH');
+  }
+  return s.replace(/\{(\w+)\}/g, (_, k) => vars[k] ?? `{${k}}`);
+}
 function vndPlain(n) { return Math.round(Number(n) || 0).toLocaleString('en-US'); }
 function pad2(n) { return String(n).padStart(2, '0'); }
 function receiptDate(d) { return `${pad2(d.getDate())}/${pad2(d.getMonth() + 1)}/${d.getFullYear()}`; }
@@ -234,9 +305,10 @@ function receiptVarsBcm(r) {
   const vat = priceIncludesVat ? gross - taxable : Math.round(taxable * rate / 100);
   const grand = priceIncludesVat ? gross : taxable + vat - (Number(r.discount) || 0);
   const d = new Date(r.paid_at || r.created_at || Date.now());
-  const billNo = r.bill_no || r.number || '';
+  const billNo = r.preview ? '' : (r.bill_no || r.number || '');
   const taxNote = cfg.taxIncludedText || (priceIncludesVat ? `Giá đã bao gồm thuế GTGT ${rate}% theo quy định` : `Chưa bao gồm thuế GTGT ${rate}%`);
   const res = {
+    preview: !!r.preview,
     storeName: cfg.storeName || r.branch || r.company?.name || 'District 1 - HCMC',
     storeSubtitle: cfg.storeSubtitle || '(Hệ thống Phân phối F&B & Retail BCM)',
     address: cfg.address || r.company?.address || '',
@@ -506,6 +578,12 @@ function injectCss() {
   .oh-badge{display:inline-block;font-size:10px;padding:1px 7px;border-radius:99px;margin-left:4px}
   .oh-badge.inv{background:var(--brand-dim);color:var(--brand)}
   .oh-badge.void{background:rgba(239,68,68,.15);color:#ef4444}
+  .oh-badge.lock{background:rgba(245,158,11,.16);color:#b45309;font-weight:800}
+  .oh-locked{margin-top:12px;display:flex;align-items:center;gap:8px;background:rgba(245,158,11,.10);border:1px solid rgba(245,158,11,.4);color:#b45309;border-radius:11px;padding:10px 12px;font-size:12px;font-weight:700;line-height:1.4}
+  .oh-invoice{margin-top:12px;background:var(--surface2);border:1px solid var(--border2);border-radius:11px;padding:12px}
+  .oh-invoice label{font-size:11px;color:var(--muted);display:block;margin:8px 0 5px}
+  .oh-invoice label:first-child{margin-top:0}
+  .oh-invoice input{width:100%;padding:9px 11px;border-radius:9px;background:var(--surface);border:1px solid var(--border2);color:var(--text);font-size:13px;box-sizing:border-box}
   .oh-right{overflow-y:auto;padding:16px;display:flex;flex-direction:column}
   .oh-empty{color:var(--muted);text-align:center;padding:40px 16px;font-size:13px;margin:auto}
   .oh-receipt{background:var(--surface2);border:1px dashed var(--border2);border-radius:12px;padding:16px}

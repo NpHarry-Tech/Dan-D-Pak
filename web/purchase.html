@@ -35,7 +35,12 @@
 .modal .row2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 .modal .row3{display:grid;grid-template-columns:1fr 90px 110px 34px;gap:8px;align-items:center}
 .linehead{display:grid;grid-template-columns:1fr 90px 110px 34px;gap:8px;font-size:10.5px;font-weight:800;text-transform:uppercase;color:var(--faint);letter-spacing:.4px;margin:14px 0 6px}
-.lineadd{display:grid;grid-template-columns:1fr 80px 110px auto;gap:8px;align-items:end;margin-top:8px;padding-top:12px;border-top:1px dashed var(--border)}
+.lineadd{margin-top:8px;padding-top:12px;border-top:1px dashed var(--border)}
+.lineadd .la-item input{width:100%;box-sizing:border-box}
+.lineadd .la-hint{font-size:11px;color:var(--muted);margin-top:5px;line-height:1.45}
+.lineadd .la-row{display:grid;grid-template-columns:1fr 1fr auto;gap:8px;align-items:end;margin-top:10px}
+.lineadd .la-row .btn{height:38px;white-space:nowrap}
+.lrow .nm .adhoc-tag{display:inline-block;margin-left:6px;padding:1px 6px;border-radius:99px;background:var(--surface3);color:var(--muted);font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.3px;vertical-align:middle}
 .llist{display:flex;flex-direction:column;gap:7px}
 .lrow{display:grid;grid-template-columns:1fr 90px 110px 34px;gap:8px;align-items:center;font-size:13px}
 .lrow .nm{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -55,7 +60,7 @@
 .acts{display:flex;gap:9px;margin-top:18px;flex-wrap:wrap}
 .acts .btn{flex:1;min-width:110px;padding:11px}
 .hint{font-size:11.5px;color:var(--muted);margin-top:6px}
-@media(max-width:640px){.modal .row2,.modal .row3,.linehead,.lineadd,.lrow{grid-template-columns:1fr}}
+@media(max-width:640px){.modal .row2,.modal .row3,.linehead,.lrow,.lineadd .la-row{grid-template-columns:1fr}}
 </style></head>
 <body>
 <div id="top"></div>
@@ -107,10 +112,18 @@
     <div class="linehead"><span>Mặt hàng</span><span>SL</span><span>Đơn giá</span><span></span></div>
     <div class="llist" id="lineList"></div>
     <div class="lineadd">
-      <div><label style="margin-top:0">Thêm hàng</label><select id="addItem"></select></div>
-      <div><label style="margin-top:0">SL</label><input type="number" id="addQty" min="0" step="0.01" value="1"></div>
-      <div><label style="margin-top:0">Đơn giá</label><input type="number" id="addCost" min="0" step="100"></div>
-      <button class="btn" id="addLine" type="button">+ Thêm</button>
+      <div class="la-item">
+        <label style="margin-top:0">Thêm hàng</label>
+        <input id="addItem" list="addItemList" placeholder="Chọn mặt hàng trong kho hoặc gõ tên hàng ngoài kho…" autocomplete="off">
+        <datalist id="addItemList"></datalist>
+        <div class="la-hint">💡 Mua đồ lặt vặt không có trong kho? Cứ gõ tên rồi bấm “+ Thêm” — không cần tạo mặt hàng kho.</div>
+      </div>
+      <div class="la-row">
+        <div><label style="margin-top:0">SL</label><input type="number" id="addQty" min="0" step="0.01" value="1"></div>
+        <div><label style="margin-top:0">Đơn giá</label><input type="number" id="addCost" min="0" step="100"></div>
+        <button class="btn primary" id="addLine" type="button">+ Thêm</button>
+      </div>
+      <div id="priceHint" class="la-hint" style="color:var(--brand);font-weight:600"></div>
     </div>
 
     <div class="tot"><span>Tổng tiền hàng</span><span class="v" id="f_total">0₫</span></div>
@@ -165,6 +178,7 @@ await requireModuleAccess('purchase'); renderUserChip();
 const $ = id => document.getElementById(id);
 let status = '', q = '', orders = [], summary = { suppliers: [], total_due: 0 };
 let suppliers = [], warehouses = [], catalog = [], lines = [], editingId = null, detailPO = null;
+let lastPrices = {};   // { "<tên hàng thường>": { unit_cost, date, supplier_name } } — giá nhập lần trước theo NCC đang chọn
 const ST_LABEL = { draft: 'Nháp', confirmed: 'Đã xác nhận', received: 'Đã nhận', cancelled: 'Đã hủy' };
 const today = () => new Date().toISOString().slice(0, 10);
 
@@ -229,8 +243,11 @@ function openForm(po){
   $('fTitle').textContent = po ? `Sửa đơn ${po.code}` : 'Tạo đơn mua';
   fillSelect($('f_supplier'), suppliers.map(s => ({ value: s.id, label: (s.company ? s.company + ' · ' : '') + s.name })), po?.supplier_id || '', '— Không chọn NCC (mua chợ) —');
   $('f_supplier_name').value = po?.supplier_name_manual || '';
+  $('priceHint').innerHTML = '';
+  loadLastPrices();   // nạp giá nhập lần trước theo NCC đang chọn (để tự đề xuất giá)
   fillSelect($('f_warehouse'), warehouses.map(w => ({ value: w.id, label: w.name })), po?.warehouse_id || (warehouses[0]?.id || ''), warehouses.length ? '' : 'Chưa có kho');
-  fillSelect($('addItem'), catalog.map(c => ({ value: catalogKey(c), label: `${c.name}${c.unit ? ' (' + c.unit + ')' : ''}` })), '', 'Chọn mặt hàng…');
+  $('addItemList').innerHTML = catalog.map(c => `<option value="${esc(c.name)}"${c.unit ? ` label="${esc(c.unit)}"` : ''}></option>`).join('');
+  $('addItem').value = '';
   $('f_order_date').value = (po?.order_date || '').slice(0, 10) || today();
   $('f_expected_date').value = (po?.expected_date || '').slice(0, 10) || '';
   $('f_note').value = po?.note || '';
@@ -241,7 +258,7 @@ function openForm(po){
 function renderLines(){
   $('lineList').innerHTML = lines.length ? lines.map((l, i) => `
     <div class="lrow">
-      <span class="nm" title="${esc(l.name)}">${esc(l.name)}</span>
+      <span class="nm" title="${esc(l.name)}">${esc(l.name)}${l.item_type === 'adhoc' ? '<span class="adhoc-tag">ngoài kho</span>' : ''}</span>
       <span class="ct">${(+l.qty).toLocaleString('vi-VN')}${l.unit ? ' ' + esc(l.unit) : ''}</span>
       <span class="ct">${money(Math.round(l.qty * l.unit_cost))}</span>
       <button class="rm" data-i="${i}" type="button">✕</button>
@@ -250,20 +267,59 @@ function renderLines(){
   const total = lines.reduce((s, l) => s + Math.round(l.qty * l.unit_cost), 0);
   $('f_total').textContent = money(total);
 }
-$('addItem').onchange = () => {
-  const c = catalog.find(x => catalogKey(x) === $('addItem').value);
-  if (c && !$('addCost').value) $('addCost').value = c.cost || '';
+// Khớp theo TÊN (không phân biệt hoa thường) để hỗ trợ cả chọn từ gợi ý lẫn gõ tự do.
+function matchCatalog(name){ const k = String(name||'').trim().toLowerCase(); return catalog.find(x => (x.name||'').toLowerCase() === k) || null; }
+
+// ---- Tự đối chiếu & đề xuất giá theo giá nhập lần trước (cùng NCC) ----
+async function loadLastPrices(){
+  const sid = $('f_supplier').value, sname = $('f_supplier_name').value.trim();
+  if (!sid && !sname){ lastPrices = {}; refreshPriceHint(); return; }
+  try { lastPrices = await api(`/purchase/last-prices?supplier_id=${encodeURIComponent(sid)}&supplier_name=${encodeURIComponent(sname)}`) || {}; }
+  catch { lastPrices = {}; }
+  refreshPriceHint();
+}
+function lastPriceFor(name){ return lastPrices[String(name||'').trim().toLowerCase()] || null; }
+function refreshPriceHint(){
+  const el = $('priceHint'); if (!el) return;
+  const last = lastPriceFor($('addItem').value);
+  if (!last || !last.unit_cost){ el.innerHTML = ''; return; }
+  const cur = Number($('addCost').value) || 0;
+  const d = cur > 0 ? cur - last.unit_cost : 0;
+  const cmp = d ? ` · bạn nhập <b>${money(cur)}</b> (chênh ${d > 0 ? '+' : '−'}${money(Math.abs(d))})` : '';
+  const dt = last.date ? ` · ${last.date.split('-').reverse().join('/')}` : '';
+  el.innerHTML = `🔁 Giá nhập lần trước${last.supplier_name ? ` từ ${esc(last.supplier_name)}` : ''}: <b>${money(last.unit_cost)}</b>${dt}${cmp}`;
+}
+$('f_supplier').onchange = () => loadLastPrices();
+let supTimer; $('f_supplier_name').oninput = () => { clearTimeout(supTimer); supTimer = setTimeout(loadLastPrices, 350); };
+$('addCost').oninput = () => refreshPriceHint();
+
+$('addItem').oninput = () => {
+  const raw = $('addItem').value;
+  const c = matchCatalog(raw);
+  const last = lastPriceFor(raw);
+  // Tự đề xuất: ưu tiên GIÁ NHẬP LẦN TRƯỚC (cùng NCC) → rồi giá vốn trong kho. Chỉ điền khi ô đang trống.
+  if (!$('addCost').value) $('addCost').value = (last?.unit_cost) || (c?.cost) || '';
+  refreshPriceHint();
 };
 $('addLine').onclick = () => {
-  const c = catalog.find(x => catalogKey(x) === $('addItem').value);
-  if (!c) return toast('Chọn mặt hàng', true);
+  const raw = $('addItem').value.trim();
+  if (!raw) return toast('Chọn hoặc gõ tên mặt hàng', true);
   const qty = Number($('addQty').value) || 0;
   if (qty <= 0) return toast('Số lượng phải > 0', true);
-  const exist = lines.find(l => l.item_type === c.item_type && l.item_id === c.item_id);
   const unit_cost = Number($('addCost').value) || 0;
-  if (exist){ exist.qty += qty; exist.unit_cost = unit_cost; }
-  else lines.push({ item_type: c.item_type, item_id: c.item_id, name: c.name, unit: c.unit, qty, unit_cost });
+  const c = matchCatalog(raw);
+  if (c) {
+    const exist = lines.find(l => l.item_type === c.item_type && l.item_id === c.item_id);
+    if (exist){ exist.qty += qty; exist.unit_cost = unit_cost; }
+    else lines.push({ item_type: c.item_type, item_id: c.item_id, name: c.name, unit: c.unit, qty, unit_cost });
+  } else {
+    // Hàng ngoài kho (mua lẻ) — không cần tạo mặt hàng kho. Gộp theo tên nếu đã có.
+    const exist = lines.find(l => l.item_type === 'adhoc' && (l.name||'').toLowerCase() === raw.toLowerCase());
+    if (exist){ exist.qty += qty; exist.unit_cost = unit_cost; }
+    else lines.push({ item_type: 'adhoc', item_id: '', name: raw, unit: '', qty, unit_cost });
+  }
   $('addItem').value = ''; $('addQty').value = '1'; $('addCost').value = '';
+  $('priceHint').innerHTML = '';
   renderLines();
 };
 async function saveForm(){

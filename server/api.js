@@ -737,6 +737,8 @@ api.post('/partners/:id/delete', guard('module.contacts'), wrap((req) => Custome
 
 // --- Purchase (Mua hàng): PO lifecycle + nhận hàng vào kho + công nợ NCC ---
 api.get('/purchase', guard('module.purchase'), wrap((req) => Purchase.listPurchaseOrders(branch(req), req.query)));
+// Đặt TRƯỚC '/purchase/:id' để không bị bắt nhầm là id.
+api.get('/purchase/last-prices', guard('module.purchase'), wrap((req) => Purchase.lastPurchasePrices(branch(req), { supplier_id: req.query.supplier_id || '', supplier_name: req.query.supplier_name || '' })));
 api.get('/purchase/:id', guard('module.purchase'), wrap((req) => Purchase.getPurchaseOrder(req.params.id, branch(req))));
 api.post('/purchase', guard('module.purchase'), wrap((req) => Purchase.savePurchaseOrder(req.body, branch(req), req.user)));
 api.post('/purchase/:id/confirm', guard('module.purchase'), wrap((req) => Purchase.confirmPurchaseOrder(req.params.id, branch(req), req.user)));

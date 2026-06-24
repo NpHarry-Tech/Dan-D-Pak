@@ -12,7 +12,8 @@ const STATUSES = ['draft', 'confirmed', 'received', 'cancelled'];
 function intval(v) { return Math.round(Number(v) || 0); }
 function qtyNum(v) { return Math.max(0, Number(v) || 0); }
 function str(v, max = 400) { return String(v ?? '').trim().slice(0, max); }
-function itemType(v) { return v === 'sku' ? 'sku' : 'inventory'; }
+// 'adhoc' = hàng ngoài kho (mua lẻ thông thường, không gắn với inventory/SKU).
+function itemType(v) { return v === 'sku' ? 'sku' : (v === 'adhoc' ? 'adhoc' : 'inventory'); }
 
 function nextCode(branch_id) {
   const d = new Date();
@@ -94,6 +95,33 @@ export function supplierDebtSummary(branch_id = 'br1') {
   return { suppliers, total_due: suppliers.reduce((s, x) => s + x.due, 0) };
 }
 
+// Giá nhập GẦN NHẤT (>0) của từng mặt hàng từ MỘT nhà cung cấp — để tự đề xuất & đối chiếu
+// giá khi tạo đơn mua. Khớp theo TÊN (chuẩn hoá thường) nên dùng được cho cả hàng kho lẫn
+// hàng ngoài kho. Cần supplier_id (NCC trong danh bạ) HOẶC supplier_name (mua chợ).
+// Trả về map: { "<tên thường>": { unit_cost, date, supplier_name } }.
+export function lastPurchasePrices(branch_id = 'br1', { supplier_id = '', supplier_name = '' } = {}) {
+  const params = [branch_id];
+  let supWhere = '';
+  if (str(supplier_id, 80)) { supWhere = ' AND po.supplier_id = ?'; params.push(str(supplier_id, 80)); }
+  else if (str(supplier_name, 200)) { supWhere = ' AND LOWER(po.supplier_name) = LOWER(?)'; params.push(str(supplier_name, 200)); }
+  else return {};   // chưa chọn NCC thì không có gì để đối chiếu
+  const rows = db.prepare(`
+    SELECT pol.name, pol.unit_cost, po.order_date, po.created_at, po.supplier_name
+    FROM purchase_order_lines pol
+    JOIN purchase_orders po ON po.id = pol.po_id
+    WHERE po.branch_id=? AND po.status!='cancelled'${supWhere}
+    ORDER BY COALESCE(po.order_date, po.created_at) DESC, po.created_at DESC`).all(...params);
+  const byName = {};
+  for (const r of rows) {
+    const cost = Number(r.unit_cost) || 0;
+    const key = str(r.name, 200).toLowerCase();
+    if (cost > 0 && key && !byName[key]) {
+      byName[key] = { unit_cost: cost, date: (r.order_date || r.created_at || '').slice(0, 10), supplier_name: r.supplier_name || '' };
+    }
+  }
+  return byName;
+}
+
 export function getPurchaseOrder(id, branch_id = 'br1') {
   return decoratePO(db.prepare(`SELECT * FROM purchase_orders WHERE id=? AND branch_id=?`).get(id, branch_id));
 }
@@ -109,14 +137,22 @@ function resolveSupplier(supplier_id, branch_id) {
 function buildLines(rawLines = []) {
   const lines = [];
   for (const r of rawLines) {
-    const item_id = str(r.item_id, 80);
     const qty = qtyNum(r.qty);
-    if (!item_id || qty <= 0) continue;
+    if (qty <= 0) continue;
+    const type = itemType(r.item_type);
+    const name = str(r.name, 200);
+    let item_id = str(r.item_id, 80);
+    if (type === 'adhoc') {
+      if (!name) continue;                       // hàng ngoài kho: bắt buộc có tên
+      if (!item_id) item_id = uid('adhoc_');      // id tổng hợp để lưu (không trỏ vào kho)
+    } else if (!item_id) {
+      continue;                                   // hàng trong kho: bắt buộc có item_id
+    }
     const unit_cost = Number(r.unit_cost) || 0;
     lines.push({
-      item_type: itemType(r.item_type),
+      item_type: type,
       item_id,
-      name: str(r.name, 200),
+      name,
       unit: str(r.unit, 40),
       qty,
       unit_cost,
@@ -213,7 +249,9 @@ export function receivePurchaseOrder(id, body = {}, branch_id = 'br1', user = {}
       lot_no: str(r.lot_no, 80) || undefined,
       expiry_date: str(r.expiry_date, 30) || undefined,
     };
-    if (line.item_type === 'sku') receiveSku(line.item_id, recvQty, branch_id, opts);
+    // Hàng ngoài kho (adhoc): chỉ ghi nhận đã nhận, KHÔNG nhập vào kho (không có item kho).
+    if (line.item_type === 'adhoc') { /* no stock movement */ }
+    else if (line.item_type === 'sku') receiveSku(line.item_id, recvQty, branch_id, opts);
     else receiveStock(line.item_id, recvQty, branch_id, opts);
     db.prepare(`UPDATE purchase_order_lines SET received_qty=received_qty+? WHERE id=?`).run(recvQty, line.id);
     touched.push({ line_id: line.id, name: line.name, qty: recvQty });

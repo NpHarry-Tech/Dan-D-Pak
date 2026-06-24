@@ -28,39 +28,62 @@ body{height:auto;min-height:100vh;min-height:100dvh;overflow:auto;display:flex;f
 .launcher-logout:hover{border-color:var(--late);color:var(--late);background:var(--late-bg)}
 .foot{text-align:center;color:var(--faint);font-size:11.5px;margin-top:26px}
 @media(max-width:560px){body{padding:18px}.branch-picker{margin-top:-18px;gap:7px;flex-wrap:wrap}.branch-picker select{height:32px;max-width:calc(100vw - 108px)}.launcher-logout{height:32px}}
+.skeleton-card{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:22px;display:flex;flex-direction:column}
+.skeleton{animation:shimmer 1.3s ease infinite !important}
 </style></head>
 <body>
 <div class="hub">
   <div class="brand"><img src="/assets/logo.png" alt="Dan — Góc Bếp Bon Appétit" onerror="this.style.display='none'"></div>
-  <div id="branchPicker"></div>
+  <div id="branchPicker">
+    <div class="branch-picker">
+      <div class="skeleton" style="width:240px;height:30px;border-radius:9px"></div>
+    </div>
+  </div>
   <div class="grid" id="appGrid">
-    <a class="dev" href="/ipad?pick=1"><div class="ic">📱</div><h2>Customer iPad</h2><p>Khách tự chọn món, topping, ghi chú, gửi bếp, gọi nhân viên, yêu cầu thanh toán.</p><div class="go">Mở thiết bị →</div></a>
-    <a class="dev" href="/pos"><div class="ic">💳</div><h2>POS Cashier</h2><p>Sơ đồ bàn, mở bill, theo dõi món, discount, thanh toán nhiều phương thức, in receipt.</p><div class="go">Mở thiết bị →</div></a>
-    <a class="dev" href="/retail"><div class="ic">🛒</div><h2>Retail POS</h2><p>Quét mã vạch / chạm SKU, chọn lot/date trong giỏ, voucher và thanh toán retail.</p><div class="go">Mở thiết bị →</div></a>
-    <a class="dev" href="/kds"><div class="ic">👨‍🍳</div><h2>KDS Bếp / Bar</h2><p>Màn hình station nhận món realtime, food timing/SLA, Accept → Preparing → Ready.</p><div class="go">Mở thiết bị →</div></a>
-    <a class="dev" href="/warehouse"><div class="ic">📦</div><h2>Warehouse / Kho</h2><p>Nhập hàng, kiểm kho (chênh lệch), lịch sử xuất/nhập, cảnh báo tồn dưới mức tối thiểu.</p><div class="go">Mở thiết bị →</div></a>
-    <a class="dev" href="/online"><div class="ic">🌐</div><h2>Online Channels</h2><p>Nhận đơn GrabFood/ShopeeFood/Website qua webhook, điều phối fulfillment, simulator đẩy đơn thử.</p><div class="go">Mở thiết bị →</div></a>
-    <a class="dev" href="/printers"><div class="ic">🖨️</div><h2>Printer Monitor</h2><p>Máy in ảo bếp/bar/bill — tự in phiếu khi gửi món & receipt khi thanh toán, in lại.</p><div class="go">Mở thiết bị →</div></a>
-    <a class="dev" href="/admin"><div class="ic">📊</div><h2>Quản lý</h2><p>Doanh thu realtime, biểu đồ, top món, tồn kho, thực đơn, hóa đơn MISA, cloud sync/offline.</p><div class="go">Mở thiết bị →</div></a>
+    <div class="skeleton-card">
+      <div class="skeleton" style="width:42px;height:42px;border-radius:50%"></div>
+      <div class="skeleton" style="width:60%;height:20px;margin-top:12px"></div>
+      <div class="skeleton" style="width:90%;height:14px;margin-top:8px"></div>
+      <div class="skeleton" style="width:70%;height:14px;margin-top:4px"></div>
+    </div>
+    <div class="skeleton-card">
+      <div class="skeleton" style="width:42px;height:42px;border-radius:50%"></div>
+      <div class="skeleton" style="width:60%;height:20px;margin-top:12px"></div>
+      <div class="skeleton" style="width:90%;height:14px;margin-top:8px"></div>
+      <div class="skeleton" style="width:70%;height:14px;margin-top:4px"></div>
+    </div>
+    <div class="skeleton-card">
+      <div class="skeleton" style="width:42px;height:42px;border-radius:50%"></div>
+      <div class="skeleton" style="width:60%;height:20px;margin-top:12px"></div>
+      <div class="skeleton" style="width:90%;height:14px;margin-top:8px"></div>
+      <div class="skeleton" style="width:70%;height:14px;margin-top:4px"></div>
+    </div>
+    <div class="skeleton-card">
+      <div class="skeleton" style="width:42px;height:42px;border-radius:50%"></div>
+      <div class="skeleton" style="width:60%;height:20px;margin-top:12px"></div>
+      <div class="skeleton" style="width:90%;height:14px;margin-top:8px"></div>
+      <div class="skeleton" style="width:70%;height:14px;margin-top:4px"></div>
+    </div>
   </div>
   <p class="foot">Mẹo: mở các tab cạnh nhau → order ở iPad sẽ hiện ngay ở KDS, POS và Quản lý nhờ WebSocket.</p>
 </div>
 <script type="module">
-import { api, requireLogin, changeBranchFlow, esc, syncBranches, getBranches, selectedBranch, getUser, logout } from '/shared/client.js';
+import { api, requireLogin, changeBranchFlow, esc, syncBranches, branchesForCurrentUser, selectedBranch, getUser, logout } from '/shared/client.js';
 
 async function renderBranchPicker(){
   try { await syncBranches(); } catch {}
-  const branches = getBranches();
   const host = document.getElementById('branchPicker');
   if (!host) return;
   const current = selectedBranch();
   const user = getUser();
-  const multi = branches.length > 1;
   const name = current.name || current.code || current.id;
+  // Nút "Đổi chi nhánh" chỉ hiện cho người được cấp quyền truy cập NHIỀU chi nhánh
+  // (Admin có toàn bộ; Quản lý được cấp nhiều chi nhánh). Nhân viên 1 chi nhánh không thấy.
+  const canSwitch = branchesForCurrentUser().length > 1;
   host.innerHTML = `<div class="branch-picker">
     <span>Chi nhánh</span>
     <b class="branch-name" title="${esc(name)}">${esc(name)}</b>
-    ${multi ? `<button class="branch-switch" id="branchSwitch" type="button">⇄ Đổi chi nhánh</button>` : ''}
+    ${canSwitch ? `<button class="branch-switch" id="branchSwitch" type="button">⇄ Đổi chi nhánh</button>` : ''}
     ${user ? `<button class="launcher-logout" id="launcherLogout" type="button" title="Đăng xuất ${esc(user.name||user.username||'')}">Đăng xuất</button>` : ''}
   </div>`;
   const switchBtn = host.querySelector('#branchSwitch');
@@ -72,7 +95,6 @@ async function renderBranchPicker(){
 await requireLogin();
 await renderBranchPicker();
 const grid=document.getElementById('appGrid');
-grid.innerHTML='<div class="empty">Đang tải ứng dụng...</div>';
 try{
   const {groups,modules}=await api('/modules');
   const active=modules.filter(m=>m.status==='active');
@@ -83,7 +105,7 @@ try{
     <div class="ic">${esc(m.icon||'•')}</div>
     <h2>${esc(m.label)}</h2>
     <p>${esc(m.description||'')}</p>
-    <div class="go">${m.status==='active'?'Mở module →':'Đang nằm trong roadmap'}</div>
+    ${m.status!=='active'?'<div class="go">Đang nằm trong roadmap</div>':''}
   </a>`;
   grid.innerHTML=[
     ...groups.map(g=>{

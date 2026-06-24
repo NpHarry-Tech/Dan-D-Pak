@@ -1579,7 +1579,14 @@ function activePrintConfig(r){ return r?.print_config || printConfig || {}; }
 function activeBillCfg(r){ return activePrintConfig(r).bill || {}; }
 function activeBillTemplate(r){ return activePrintConfig(r).templates?.bill || null; }
 
-function replaceVars(text, vars){ return String(text||'').replace(/\{(\w+)\}/g,(_,k)=>vars[k]??`{${k}}`); }
+function replaceVars(text, vars){
+  let s = String(text||'');
+  if (vars && vars.preview) {
+    s = s.replace(/HÓA ĐƠN THANH TOÁN/g, 'HÓA ĐƠN TẠM TÍNH');
+    s = s.replace(/HOA DON THANH TOAN/g, 'HOA DON TAM TINH');
+  }
+  return s.replace(/\{(\w+)\}/g,(_,k)=>vars[k]??`{${k}}`);
+}
 function qrImageUrl(value,size=180){
   const data=String(value||'').trim().slice(0,1200);
   return data?`https://api.qrserver.com/v1/create-qr-code/?size=${size}x${size}&margin=8&data=${encodeURIComponent(data)}`:'';
@@ -1679,9 +1686,10 @@ function receiptVarsBcm(r){
   const vat=priceIncludesVat ? gross-taxable : Math.round(taxable*rate/100);
   const grand=priceIncludesVat ? gross : taxable+vat-(Number(r.discount)||0);
   const d=new Date(r.paid_at||Date.now());
-  const billNo=internalBillNo(r,d);
+  const billNo=r.preview ? '' : internalBillNo(r,d);
   const taxNote=cfg.taxIncludedText || (priceIncludesVat ? `Giá đã bao gồm thuế GTGT ${rate}% theo quy định` : `Chưa bao gồm thuế GTGT ${rate}%`);
   const res = {
+    preview: !!r.preview,
     storeName:cfg.storeName||r.branch||'District 1 - HCMC',
     storeSubtitle:cfg.storeSubtitle||'(Hệ thống Phân phối F&B & Retail BCM)',
     address:cfg.address||'',

@@ -115,7 +115,7 @@
     <textarea id="f_note" rows="2" placeholder="Ghi chú nội bộ"></textarea>
 
     <label style="display:flex;align-items:center;gap:9px;text-transform:none;letter-spacing:0;font-size:13px;color:var(--text);margin-top:14px;cursor:pointer">
-      <input type="checkbox" id="f_active" checked style="width:auto"> Đang sử dụng (bỏ chọn để lưu trữ)
+      <input type="checkbox" id="f_active" checked style="width:auto"> Active — đang hoạt động (bỏ chọn = Inactive, lưu trữ — không xóa)
     </label>
 
     <label id="autoInvoiceLabel" style="display:flex;align-items:center;gap:9px;text-transform:none;letter-spacing:0;font-size:13px;color:var(--text);margin-top:10px;cursor:pointer">
@@ -158,7 +158,7 @@ async function load(){
 }
 
 function typeBadge(c){
-  if (!c.active) return `<span class="tbadge tb-off">Lưu trữ</span>`;
+  if (!c.active) return `<span class="tbadge tb-off">Inactive</span>`;
   return `<span class="tbadge tb-${c.partner_type}">${TYPE_LABEL[c.partner_type]||c.partner_type}</span>`;
 }
 

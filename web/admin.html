@@ -2482,12 +2482,9 @@ async function openSettings(initialTab){
           </div>
           <div class="settings-main">
             <div id="settingsBody">${settingsContentHtml()}</div>
-            <div class="mfoot"><button class="btn primary" id="settingsClose">Đóng</button></div>
           </div>
         </div>
       </div>`;
-      
-      ov.querySelector('#settingsClose').onclick=closeSettings;
     } else {
       const sidebar = modal.querySelector('.settings-sidebar');
       if (sidebar) {

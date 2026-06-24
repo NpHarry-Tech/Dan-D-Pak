@@ -9,6 +9,15 @@ export async function apiRequest(path, opts = {}) {
     ...(opts.headers || {}),
   };
 
+  const timeoutMs = opts.timeout !== undefined ? opts.timeout : 10000;
+  let controller;
+  let timeoutId;
+  
+  if (timeoutMs > 0) {
+    controller = new AbortController();
+    timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  }
+
   let res;
   try {
     res = await fetch(apiUrl(path), {
@@ -16,9 +25,15 @@ export async function apiRequest(path, opts = {}) {
       headers,
       body: opts.body ? JSON.stringify(opts.body) : undefined,
       cache: opts.cache,
+      signal: controller ? controller.signal : undefined,
     });
   } catch (error) {
+    if (error.name === 'AbortError') {
+      throw new BackendOfflineError('Yêu cầu kết nối máy chủ quá hạn (Timeout)');
+    }
     throw new BackendOfflineError(error.message);
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
   }
 
   const text = await res.text();

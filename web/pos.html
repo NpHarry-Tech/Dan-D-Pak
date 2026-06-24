@@ -1130,7 +1130,7 @@ function openPayLegacy(o, opts={}){
     if(paid()<o.total) return toast('Chưa đủ tiền',true);
     try{
       const receipt=await api('/orders/'+o.id+'/pay',{method:'POST',body:{lines,discount:o.discount}});
-      ov.remove(); toast('✅ Thanh toán thành công'); showReceipt(receipt,{autoPrint:true});
+      ov.remove(); toast('✅ Thanh toán thành công'); autoPrintReceipt(receipt);
       if(opts.afterPaid) opts.afterPaid();
       else{
         sel=null; order=null;
@@ -1293,7 +1293,7 @@ async function openPay(o, opts={}){
       catch(e){ return toast(e.message,true); }
       try{
         const receipt=await api('/orders/'+o.id+'/pay',{method:'POST',body:{lines,discount:disc,customer:customer||null,invoice_customer}});
-        delete orderCust[o.id]; delete orderPromo[o.id]; ov.remove(); toast('✅ Thanh toán thành công'); showReceipt(receipt,{autoPrint:true}); refreshShift();
+        delete orderCust[o.id]; delete orderPromo[o.id]; ov.remove(); toast('✅ Thanh toán thành công'); autoPrintReceipt(receipt); refreshShift();
         if(opts.afterPaid) opts.afterPaid();
         else{ sel=null; order=null; document.getElementById('bill').innerHTML=billEmptyHtml(); refreshFloor(); }
       }catch(e){toast(e.message,true);}
@@ -1305,7 +1305,14 @@ async function openPay(o, opts={}){
 function activePrintConfig(r){ return r?.print_config || printConfig || {}; }
 function activeBillCfg(r){ return activePrintConfig(r).bill || {}; }
 function activeBillTemplate(r){ return activePrintConfig(r).templates?.bill || null; }
-function replaceVars(text, vars){ return String(text||'').replace(/\{(\w+)\}/g,(_,k)=>vars[k]??`{${k}}`); }
+function replaceVars(text, vars){
+  let s = String(text||'');
+  if (vars && vars.preview) {
+    s = s.replace(/HÓA ĐƠN THANH TOÁN/g, 'HÓA ĐƠN TẠM TÍNH');
+    s = s.replace(/HOA DON THANH TOAN/g, 'HOA DON TAM TINH');
+  }
+  return s.replace(/\{(\w+)\}/g,(_,k)=>vars[k]??`{${k}}`);
+}
 function vndPlain(n){ return Math.round(Number(n)||0).toLocaleString('en-US'); }
 function pad2(n){ return String(n).padStart(2,'0'); }
 function receiptDate(d){ return `${pad2(d.getDate())}/${pad2(d.getMonth()+1)}/${d.getFullYear()}`; }
@@ -1386,9 +1393,10 @@ function receiptVarsBcm(r){
   const vat=priceIncludesVat ? gross-taxable : Math.round(taxable*rate/100);
   const grand=priceIncludesVat ? gross : taxable+vat-(Number(r.discount)||0);
   const d=new Date(r.paid_at||Date.now());
-  const billNo=internalBillNo(r,d);
+  const billNo=r.preview ? '' : internalBillNo(r,d);
   const taxNote=cfg.taxIncludedText || (priceIncludesVat ? `Giá đã bao gồm thuế GTGT ${rate}% theo quy định` : `Chưa bao gồm thuế GTGT ${rate}%`);
   const res = {
+    preview: !!r.preview,
     storeName:cfg.storeName||r.branch||'POS/ERP',
     storeSubtitle:cfg.storeSubtitle||'(Hệ thống Phân phối F&B & Retail BCM)',
     address:cfg.address||'',
@@ -1521,7 +1529,7 @@ function receiptContent(r){ return renderTemplateReceipt(r) || renderBasicReceip
 
 const RECEIPT_COPIES_KEY=cfgKey('receipt_copies');
 function readReceiptCopies(){
-  const n=parseInt(localStorage.getItem(RECEIPT_COPIES_KEY)||activeBillCfg().copies||'1');
+  const n=parseInt(localStorage.getItem(RECEIPT_COPIES_KEY)||activeBillCfg().copies||'2');
   return Math.max(1,Math.min(9,n||1));
 }
 function saveReceiptCopies(v){
@@ -1581,6 +1589,13 @@ function printReceiptNow(r,copies=readReceiptCopies()){
   const doc=frame.contentDocument||frame.contentWindow.document;
   doc.open(); doc.write(receiptPrintDoc(r,n)); doc.close();
   setTimeout(()=>{ try{ frame.contentWindow.focus(); frame.contentWindow.print(); } finally { setTimeout(()=>frame.remove(),1800); } },350);
+}
+// Tự in receipt sau khi thanh toán — chạy NGẦM trong iframe ẩn, KHÔNG mở popup receipt.
+// Số bản theo cấu hình bill (mặc định 2). Để in im lặng (không hộp thoại) cần mở trình
+// duyệt ở chế độ --kiosk-printing với máy in receipt là máy in mặc định.
+function autoPrintReceipt(r){
+  try{ printReceiptNow(r, Math.max(1,Math.min(9,parseInt(activeBillCfg(r).copies)||2))); }
+  catch(e){ console.warn('autoPrint failed', e); }
 }
 
 function buildPreview(table,o){

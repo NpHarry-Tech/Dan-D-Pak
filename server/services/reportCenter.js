@@ -22,6 +22,7 @@ export const REPORTS = [
   { key: 'sales_overview', group: 'sales', label: 'Báo cáo bán hàng', description: 'Doanh thu, mặt hàng, hóa đơn, kênh bán hàng và phương thức thanh toán.' },
   { key: 'sales_online', group: 'sales', label: 'Bán hàng Online', description: 'GrabFood/ShopeeFood/Website và trạng thái fulfillment.' },
   { key: 'purchase_orders', group: 'purchase', label: 'Báo cáo mua hàng', description: 'Đơn mua theo kỳ/NCC, đã nhận, đã trả và công nợ phải trả.' },
+  { key: 'purchase_price_analysis', group: 'purchase', label: 'Biến động & So sánh giá nhập', description: 'Biến động giá nhập theo thời gian, so sánh giá giữa các nhà cung cấp, và chi phí mua hàng từ két.' },
   { key: 'expenses', group: 'expense', label: 'Báo cáo chi phí', description: 'Chi phí theo danh mục, nguồn tiền (két/trực tiếp) và kỳ.' },
   { key: 'purchase', group: 'inventory', label: 'Báo cáo nhập hàng', description: 'Phiếu nhập, supplier, lot, hạn dùng, giá vốn.' },
   { key: 'issue', group: 'inventory', label: 'Báo cáo xuất hàng', description: 'Xuất kho, bán hàng, recipe, chuyển kho, kiểm kho.' },
@@ -56,6 +57,15 @@ function dateTime(d) {
   if (isNaN(x)) return String(d);
   const p = n => String(n).padStart(2, '0');
   return `${p(x.getDate())}/${p(x.getMonth() + 1)}/${x.getFullYear()} ${p(x.getHours())}:${p(x.getMinutes())}`;
+}
+function dMy(d) {
+  if (!d) return '';
+  const parts = String(d).slice(0, 10).split('-');
+  if (parts.length === 3) return `${parts[2]}/${parts[1]}/${parts[0]}`;
+  const x = new Date(d);
+  if (isNaN(x.getTime())) return String(d);
+  const p = n => String(n).padStart(2, '0');
+  return `${p(x.getDate())}/${p(x.getMonth() + 1)}/${x.getFullYear()}`;
 }
 function dayStart(s) {
   if (!s) return null;
@@ -487,6 +497,178 @@ function buildPurchaseOrders(branch_id, query) {
   }))));
   return report;
 }
+function buildPurchasePriceAnalysis(branch_id, query) {
+  const report = reportShell('purchase_price_analysis', query);
+  const range = rangeFromQuery(query);
+
+  const poRows = db.prepare(`
+    SELECT pol.name AS item_name, pol.unit, pol.qty, pol.unit_cost, po.supplier_name, po.order_date AS date, 'Đơn mua' AS source
+    FROM purchase_order_lines pol
+    JOIN purchase_orders po ON po.id = pol.po_id
+    WHERE po.branch_id=? AND po.status!='cancelled' AND po.order_date>=? AND po.order_date<=?
+  `).all(branch_id, range.fromDate, range.toDate);
+
+  const idocRows = db.prepare(`
+    SELECT COALESCE(i.name, s.name, idl.item_id) AS item_name, COALESCE(i.unit, s.unit, '') AS unit,
+      ABS(idl.qty) AS qty, idl.unit_cost, idoc.supplier AS supplier_name,
+      SUBSTR(idoc.created_at, 1, 10) AS date, 'Nhập kho' AS source
+    FROM inventory_document_lines idl
+    JOIN inventory_documents idoc ON idoc.id = idl.document_id
+    LEFT JOIN inventory_items i ON i.id = idl.item_id AND idl.item_type = 'inventory'
+    LEFT JOIN skus s ON s.id = idl.item_id AND idl.item_type = 'sku'
+    WHERE idoc.branch_id=? AND idoc.type IN ('receipt', 'opening')
+      AND idoc.created_at>=? AND idoc.created_at<=?
+      AND (idoc.ref IS NULL OR idoc.ref NOT LIKE 'PO-%')
+  `).all(branch_id, range.from, range.to);
+
+  const purchaseRecords = [...poRows, ...idocRows];
+
+  const posExpenses = db.prepare(`
+    SELECT occurred_at, counterparty AS supplier_name, product, reason, amount, actor_name
+    FROM cash_drawer_entries
+    WHERE branch_id=? AND kind='expense' AND occurred_at>=? AND occurred_at<=?
+      AND (product IS NULL OR product != 'Trả nhà cung cấp')
+      AND (reason IS NULL OR reason NOT LIKE 'Trả NCC%')
+    ORDER BY occurred_at DESC
+  `).all(branch_id, range.from, range.to);
+
+  const byItem = new Map();
+  for (const r of purchaseRecords) {
+    if (!r.item_name || !r.unit_cost) continue;
+    const key = r.item_name.trim();
+    if (!byItem.has(key)) {
+      byItem.set(key, {
+        name: key,
+        unit: r.unit || '',
+        prices: [],
+        records: [],
+      });
+    }
+    byItem.get(key).records.push(r);
+    byItem.get(key).prices.push(Number(r.unit_cost) || 0);
+  }
+
+  const itemSummaryRows = [];
+  const comparisonRows = [];
+
+  for (const [name, data] of byItem.entries()) {
+    data.records.sort((a, b) => a.date.localeCompare(b.date));
+    const oldestRecord = data.records[0];
+    const latestRecord = data.records[data.records.length - 1];
+
+    const oldestPrice = oldestRecord.unit_cost;
+    const latestPrice = latestRecord.unit_cost;
+
+    const minPrice = Math.min(...data.prices);
+    const maxPrice = Math.max(...data.prices);
+    const avgPrice = data.prices.reduce((s, p) => s + p, 0) / data.prices.length;
+
+    let fluctuationText = '—';
+    if (oldestPrice > 0 && latestPrice !== oldestPrice) {
+      const pct = ((latestPrice - oldestPrice) / oldestPrice) * 100;
+      fluctuationText = `${pct >= 0 ? '+' : ''}${pct.toFixed(1)}%`;
+    }
+
+    itemSummaryRows.push({
+      item_name: name,
+      unit: data.unit,
+      latest_price_fmt: money(latestPrice),
+      latest_info: `${latestRecord.supplier_name || 'Mua lẻ'} (${dMy(latestRecord.date)})`,
+      price_range: `${money(minPrice)} - ${money(maxPrice)}`,
+      avg_price_fmt: money(avgPrice),
+      fluctuation: fluctuationText,
+      _avg: avgPrice
+    });
+
+    const bySupplier = new Map();
+    for (const r of data.records) {
+      const sup = r.supplier_name || 'Mua lẻ';
+      bySupplier.set(sup, r);
+    }
+
+    if (bySupplier.size > 1) {
+      for (const [sup, r] of bySupplier.entries()) {
+        comparisonRows.push({
+          item_name: name,
+          supplier_name: sup,
+          price_fmt: money(r.unit_cost),
+          date_fmt: dMy(r.date),
+        });
+      }
+    }
+  }
+
+  itemSummaryRows.sort((a, b) => b._avg - a._avg);
+  comparisonRows.sort((a, b) => a.item_name.localeCompare(b.item_name));
+
+  const historyRows = purchaseRecords
+    .map(r => ({
+      date_fmt: dMy(r.date),
+      item_name: r.item_name,
+      supplier_name: r.supplier_name || 'Mua lẻ',
+      qty_fmt: qty(r.qty) + (r.unit ? ' ' + r.unit : ''),
+      price_fmt: money(r.unit_cost),
+      source: r.source,
+      _date: r.date
+    }))
+    .sort((a, b) => b._date.localeCompare(a._date));
+
+  const totalPurchaseValue = purchaseRecords.reduce((s, r) => s + (r.qty * r.unit_cost), 0);
+  const posExpensesValue = posExpenses.reduce((s, r) => s + (r.amount), 0);
+
+  report.summary = [
+    { label: 'Tổng chi nhập hàng', value: money(totalPurchaseValue) },
+    { label: 'Số mặt hàng nhập', value: byItem.size },
+    { label: 'Số lần nhập hàng', value: purchaseRecords.length },
+    { label: 'Chi két POS', value: money(posExpensesValue) },
+  ];
+
+  report.sections.push(section('Biến động giá nhập theo mặt hàng', [
+    { key: 'item_name', label: 'Mặt hàng' },
+    { key: 'unit', label: 'ĐVT' },
+    { key: 'latest_price_fmt', label: 'Giá gần nhất', align: 'right' },
+    { key: 'latest_info', label: 'NCC & Ngày nhập gần nhất' },
+    { key: 'price_range', label: 'Khoảng giá (Min - Max)', align: 'right' },
+    { key: 'avg_price_fmt', label: 'Giá trung bình', align: 'right' },
+    { key: 'fluctuation', label: 'Biến động (%)', align: 'right' },
+  ], itemSummaryRows));
+
+  if (comparisonRows.length > 0) {
+    report.sections.push(section('So sánh giá giữa các nhà cung cấp', [
+      { key: 'item_name', label: 'Mặt hàng' },
+      { key: 'supplier_name', label: 'Nhà cung cấp' },
+      { key: 'price_fmt', label: 'Giá nhập gần nhất', align: 'right' },
+      { key: 'date_fmt', label: 'Ngày nhập gần nhất' },
+    ], comparisonRows));
+  }
+
+  report.sections.push(section('Lịch sử biến động chi tiết', [
+    { key: 'date_fmt', label: 'Ngày nhập' },
+    { key: 'item_name', label: 'Mặt hàng' },
+    { key: 'supplier_name', label: 'Nhà cung cấp' },
+    { key: 'qty_fmt', label: 'Số lượng', align: 'right' },
+    { key: 'price_fmt', label: 'Đơn giá', align: 'right' },
+    { key: 'source', label: 'Nguồn' },
+  ], historyRows));
+
+  report.sections.push(section('Chi phí mua hàng/nhập hàng từ két POS (POS Expenses)', [
+    { key: 'occurred_at_fmt', label: 'Ngày giờ chi' },
+    { key: 'supplier_name', label: 'NCC / Bên nhận' },
+    { key: 'product', label: 'Sản phẩm / Khoản chi' },
+    { key: 'reason', label: 'Lý do chi' },
+    { key: 'amount_fmt', label: 'Số tiền', align: 'right' },
+    { key: 'actor_name', label: 'Nhân viên thực hiện' },
+  ], posExpenses.map(e => ({
+    occurred_at_fmt: dateTime(e.occurred_at),
+    supplier_name: e.supplier_name || 'Mua lẻ',
+    product: e.product || '—',
+    reason: e.reason || '—',
+    amount_fmt: money(e.amount),
+    actor_name: e.actor_name || '—',
+  }))));
+
+  return report;
+}
 function buildExpenses(branch_id, query) {
   const report = reportShell('expenses', query);
   const range = rangeFromQuery(query);
@@ -704,6 +886,7 @@ export function buildReport(type = 'sales_overview', branch_id = 'br1', query = 
   if (['sales_fnb', 'sales_retail', 'sales_by_product'].includes(type)) type = 'sales_overview';
   if (['sales_overview', 'sales_online'].includes(type)) return buildSales(type, branch_id, query);
   if (type === 'purchase_orders') return buildPurchaseOrders(branch_id, query);
+  if (type === 'purchase_price_analysis') return buildPurchasePriceAnalysis(branch_id, query);
   if (type === 'expenses') return buildExpenses(branch_id, query);
   if (type === 'purchase') return buildMovements(type, branch_id, query);
   if (type === 'issue') return buildMovements(type, branch_id, query);
