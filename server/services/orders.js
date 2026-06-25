@@ -10,15 +10,48 @@ import { archiveOrder } from './archive.js';
 
 // Số Bill nội bộ: Dan{ddMMyy}{seq} — seq là số thứ tự đơn trong NGÀY (reset mỗi
 // ngày vận hành: ca sáng → ca tối đều trong 1 ngày dương lịch). VD Dan210626001.
-function nextBillNo(branch_id = 'br1') {
+function todayDdMMyy() {
   const d = new Date();
   const pad = (x) => String(x).padStart(2, '0');
-  const ddMMyy = pad(d.getDate()) + pad(d.getMonth() + 1) + String(d.getFullYear()).slice(-2);
+  return pad(d.getDate()) + pad(d.getMonth() + 1) + String(d.getFullYear()).slice(-2);
+}
+function billNoForSeq(seq) {
+  return `Dan${todayDdMMyy()}${String(seq).padStart(3, '0')}`;
+}
+// seq kế tiếp = MAX(seq đã có TRONG NGÀY) + 1. Tách đúng phần seq SAU tiền tố ngày
+// (Dan{ddMMyy}) — KHÔNG dùng \d+$ vì sẽ nuốt luôn 6 chữ số ngày. Dùng MAX (không COUNT)
+// để chịu được khoảng trống do xóa, và để retry-chống-trùng tăng dần khi đụng UNIQUE.
+function nextBillSeq(branch_id = 'br1') {
+  const ddMMyy = todayDdMMyy();
+  const d = new Date();
   const start = new Date(d); start.setHours(0, 0, 0, 0);
   const end = new Date(d); end.setHours(24, 0, 0, 0);
-  const n = db.prepare(`SELECT COUNT(*) c FROM orders WHERE branch_id=? AND bill_no IS NOT NULL AND created_at>=? AND created_at<?`)
-    .get(branch_id, start.toISOString(), end.toISOString()).c + 1;
-  return `Dan${ddMMyy}${String(n).padStart(3, '0')}`;
+  const rows = db.prepare(`SELECT bill_no FROM orders WHERE branch_id=? AND bill_no LIKE ? AND created_at>=? AND created_at<?`)
+    .all(branch_id, `Dan${ddMMyy}%`, start.toISOString(), end.toISOString());
+  const re = new RegExp(`^Dan${ddMMyy}(\\d+)$`);
+  let max = 0;
+  for (const r of rows) {
+    const m = re.exec(r.bill_no || '');
+    if (m) { const n = parseInt(m[1], 10); if (n > max) max = n; }
+  }
+  return max + 1;
+}
+// Tạo 1 order mở với bill_no duy nhất. Chịu được race/đa-server: nếu chỉ mục UNIQUE
+// (branch_id,bill_no) bị đụng (server khác vừa chèn cùng seq), tăng seq và thử lại.
+function insertOpenOrder({ branch_id = 'br1', table_id = null, channel = 'dine_in' }) {
+  const id = uid('o_');
+  let seq = nextBillSeq(branch_id);
+  const ins = db.prepare(`INSERT INTO orders (id,branch_id,table_id,channel,status,bill_no,created_at) VALUES (?,?,?,?,'open',?,?)`);
+  for (let attempt = 0; ; attempt++) {
+    try {
+      ins.run(id, branch_id, table_id, channel, billNoForSeq(seq), now());
+      break;
+    } catch (e) {
+      if (attempt < 10 && /unique|constraint/i.test(String(e?.message))) { seq++; continue; }
+      throw e;
+    }
+  }
+  return db.prepare(`SELECT * FROM orders WHERE id=?`).get(id);
 }
 
 export function getOpenOrderForTable(table_id, branch_id = 'br1') {
@@ -52,63 +85,82 @@ function requireOpenShiftForSales(branch_id = 'br1') {
 }
 
 // items: [{menu_item_id, qty, note, mods:[{group,name,price}]}] or [{sku_id, qty}]
-export function createOrUpdateOrder({ branch_id = 'br1', table_id, channel = 'dine_in', source = 'staff_pos', require_confirm = false, items, actor = 'system' }) {
+export function createOrUpdateOrder(options) {
+  const { branch_id = 'br1', table_id, channel = 'dine_in', source = 'staff_pos', require_confirm = false, items, actor = 'system', skipTransaction = false } = options;
   if (!items?.length) throw new Error('Order trống');
   requireOpenShiftForSales(branch_id);
-  const needsStaffConfirm = source === 'customer_ipad' || require_confirm === true || (source === 'staff_pos' && !!table_id);
 
-  let order = table_id ? getOpenOrderForTable(table_id, branch_id) : null;
-  const isNew = !order;
-  if (isNew) {
-    const id = uid('o_');
-    db.prepare(`INSERT INTO orders (id,branch_id,table_id,channel,status,bill_no,created_at) VALUES (?,?,?,?,'open',?,?)`)
-      .run(id, branch_id, table_id || null, channel, nextBillNo(branch_id), now());
-    order = db.prepare(`SELECT * FROM orders WHERE id=?`).get(id);
+  let inTx = false;
+  if (!skipTransaction) {
+    db.prepare('BEGIN IMMEDIATE').run();
+    inTx = true;
   }
 
-  const insItem = db.prepare(`INSERT INTO order_items
-    (id,order_id,menu_item_id,sku_id,name,emoji,qty,unit_price,station,sla_minutes,note,mods_json,status,lot_id,promo_json,created_at)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
+  try {
+    const needsStaffConfirm = source === 'customer_ipad' || require_confirm === true || (source === 'staff_pos' && !!table_id);
 
-  const created = [];
-  for (const line of items) {
-    const qty = Math.max(1, parseInt(line.qty) || 1);
-    const id = uid('oi_');
-    if (line.sku_id) {
-      const sku = db.prepare(`SELECT * FROM skus WHERE id=? AND branch_id=? AND active=1`).get(line.sku_id, branch_id);
-      if (!sku) throw new Error('SKU không tồn tại: ' + line.sku_id);
-      if (sku.stock < qty) throw new Error(`Hết hàng: ${sku.name} (còn ${sku.stock})`);
-      const lotId = line.lot_id || null;
-      validateSkuLot(sku, qty, lotId, branch_id);
-      insItem.run(id, order.id, null, sku.id, sku.name, sku.emoji, qty, sku.price, 'retail', 0, null, '[]',
-        needsStaffConfirm ? 'pending_confirm' : 'served', lotId, line.promo ? JSON.stringify(line.promo) : null, now());
-    } else {
-      const mi = getMenuItemForOrder(line.menu_item_id);
-      const mods = Array.isArray(line.mods) ? line.mods : [];
-      const modSum = mods.reduce((s, m) => s + (m.price || 0), 0);
-      insItem.run(id, order.id, mi.id, null, mi.name, mi.emoji, qty, mi.price + modSum, mi.station, mi.sla_minutes,
-        line.note || null, JSON.stringify(mods), needsStaffConfirm ? 'pending_confirm' : 'new', null, null, now());
+    let order = table_id ? getOpenOrderForTable(table_id, branch_id) : null;
+    const isNew = !order;
+    if (isNew) {
+      order = insertOpenOrder({ branch_id, table_id: table_id || null, channel });
     }
-    created.push(db.prepare(`SELECT * FROM order_items WHERE id=?`).get(id));
-  }
 
-  recomputeTotals(order.id);
-  if (table_id) {
-    db.prepare(`UPDATE tables SET status='busy' WHERE id=?`).run(table_id);
-    emit('table:updated', getTableState(table_id), branch_id);
-  }
-  audit(needsStaffConfirm ? 'order.pending' : 'order.send', { order: order.id, items: created.length, source }, branch_id, actor);
+    const insItem = db.prepare(`INSERT INTO order_items
+      (id,order_id,menu_item_id,sku_id,name,emoji,qty,unit_price,station,sla_minutes,note,mods_json,status,lot_id,promo_json,created_at)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
 
-  const full = getOrder(order.id);
-  archiveOrder(full);
-  const printable = created.filter(i => i.status === 'new' && i.station !== 'retail');
-  if (printable.length) printKitchenTickets(full, printable, branch_id, actor);
-  printCupLabels(full, created, branch_id);
-  emit('order:new', { order: full, newItems: created, isNew, pendingConfirm: needsStaffConfirm }, branch_id);
-  if (needsStaffConfirm) emit('order:pending', { order: full, newItems: created }, branch_id);
-  if (printable.length) emit('kds:refresh', { station: 'all' }, branch_id);
-  emit('stats:dirty', {}, branch_id);
-  return full;
+    const created = [];
+    for (const line of items) {
+      const qty = Math.max(1, parseInt(line.qty) || 1);
+      const id = uid('oi_');
+      if (line.sku_id) {
+        const sku = db.prepare(`SELECT * FROM skus WHERE id=? AND branch_id=? AND active=1`).get(line.sku_id, branch_id);
+        if (!sku) throw new Error('SKU không tồn tại: ' + line.sku_id);
+        if (sku.stock < qty) throw new Error(`Hết hàng: ${sku.name} (còn ${sku.stock})`);
+        const lotId = line.lot_id || null;
+        validateSkuLot(sku, qty, lotId, branch_id);
+        insItem.run(id, order.id, null, sku.id, sku.name, sku.emoji, qty, sku.price, 'retail', 0, null, '[]',
+          needsStaffConfirm ? 'pending_confirm' : 'served', lotId, line.promo ? JSON.stringify(line.promo) : null, now());
+      } else {
+        const mi = getMenuItemForOrder(line.menu_item_id);
+        const mods = Array.isArray(line.mods) ? line.mods : [];
+        // BẢO MẬT: giá modifier do client gửi — chỉ cho phép CỘNG THÊM (>=0), không
+        // bao giờ trừ. Nếu không, khách tự gửi mod giá âm để hạ đơn giá về 0/âm.
+        const modSum = mods.reduce((s, m) => s + Math.max(0, parseInt(m?.price) || 0), 0);
+        const unitPrice = Math.max(0, (parseInt(mi.price) || 0) + modSum);
+        insItem.run(id, order.id, mi.id, null, mi.name, mi.emoji, qty, unitPrice, mi.station, mi.sla_minutes,
+          line.note || null, JSON.stringify(mods), needsStaffConfirm ? 'pending_confirm' : 'new', null, null, now());
+      }
+      created.push(db.prepare(`SELECT * FROM order_items WHERE id=?`).get(id));
+    }
+
+    recomputeTotals(order.id);
+    if (table_id) {
+      db.prepare(`UPDATE tables SET status='busy' WHERE id=?`).run(table_id);
+      emit('table:updated', getTableState(table_id), branch_id);
+    }
+    audit(needsStaffConfirm ? 'order.pending' : 'order.send', { order: order.id, items: created.length, source }, branch_id, actor);
+
+    const full = getOrder(order.id);
+    archiveOrder(full);
+    const printable = created.filter(i => i.status === 'new' && i.station !== 'retail');
+    if (printable.length) printKitchenTickets(full, printable, branch_id, actor);
+    printCupLabels(full, created, branch_id);
+    emit('order:new', { order: full, newItems: created, isNew, pendingConfirm: needsStaffConfirm }, branch_id);
+    if (needsStaffConfirm) emit('order:pending', { order: full, newItems: created }, branch_id);
+    if (printable.length) emit('kds:refresh', { station: 'all' }, branch_id);
+    emit('stats:dirty', {}, branch_id);
+
+    if (inTx) {
+      db.prepare('COMMIT').run();
+    }
+    return full;
+  } catch (err) {
+    if (inTx) {
+      db.prepare('ROLLBACK').run();
+    }
+    throw err;
+  }
 }
 
 export function getOrder(order_id) {
@@ -116,7 +168,22 @@ export function getOrder(order_id) {
   const order = db.prepare(`SELECT * FROM orders WHERE id=?`).get(order_id);
   if (!order) return null;
   order.items = db.prepare(`SELECT * FROM order_items WHERE order_id=? ORDER BY created_at`).all(order_id)
-    .map(it => ({ ...it, mods: parseJson(it.mods_json, []), promo: parseJson(it.promo_json, null) }));
+    .map(it => {
+      let image = null;
+      if (it.menu_item_id) {
+        const mi = db.prepare(`SELECT image FROM menu_items WHERE id=?`).get(it.menu_item_id);
+        image = mi?.image || null;
+      } else if (it.sku_id) {
+        const sku = db.prepare(`SELECT image FROM skus WHERE id=?`).get(it.sku_id);
+        image = sku?.image || null;
+      }
+      return {
+        ...it,
+        image,
+        mods: parseJson(it.mods_json, []),
+        promo: parseJson(it.promo_json, null)
+      };
+    });
   if (order.table_id) {
     const t = db.prepare(`SELECT code,zone FROM tables WHERE id=?`).get(order.table_id);
     order.table_code = t?.code;
@@ -288,9 +355,7 @@ export function splitOrderItems(order_id, item_ids = [], branch_id = 'br1', acto
   const selected = ids.filter(id => active.includes(id));
   if (!selected.length) throw new Error('Không tìm thấy dòng hợp lệ để tách');
   if (selected.length >= active.length) throw new Error('Không cần tách nếu chọn toàn bộ bill');
-  const newId = uid('o_');
-  db.prepare(`INSERT INTO orders (id,branch_id,table_id,channel,status,bill_no,created_at) VALUES (?,?,?,?,'open',?,?)`)
-    .run(newId, branch_id, order.table_id || null, order.channel || 'dine_in', nextBillNo(branch_id), now());
+  const newId = insertOpenOrder({ branch_id, table_id: order.table_id || null, channel: order.channel || 'dine_in' }).id;
   const upd = db.prepare(`UPDATE order_items SET order_id=? WHERE id=? AND order_id=?`);
   for (const id of selected) upd.run(newId, id, order_id);
   recomputeTotals(order_id);

@@ -1,168 +1,947 @@
 <!DOCTYPE html>
-<html lang="vi"><head>
-<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Online Channels — POS/ERP</title>
-<link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/shared/app.css">
-<script src="/runtime-config.js"></script>
-<script src="/socket.io/socket.io.js"></script>
-<style>
-.onwrap{display:grid;grid-template-columns:minmax(320px,430px) 1fr;gap:16px;align-items:start}
-@media(max-width:880px){.onwrap{grid-template-columns:1fr}}
-.ocol{display:flex;flex-direction:column;gap:12px}
-.ocard{background:var(--surface);border:1px solid var(--border);border-radius:13px;overflow:hidden}
-.ocard.order-card{cursor:pointer;transition:.14s}
-.ocard.order-card:hover,.ocard.order-card.sel{border-color:var(--brand);box-shadow:0 10px 24px rgba(8,145,178,.12);transform:translateY(-1px)}
-.ocard .oh{padding:11px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:9px}
-.chbadge{font-size:11px;font-weight:800;padding:3px 9px;border-radius:7px;letter-spacing:.3px}
-.ch-grabfood,.ch-grabmerchant{background:#00b14f22;color:#10b981}.ch-shopeefood{background:#ee4d2d22;color:#ef6b4b}.ch-befood{background:#2563eb18;color:#2563eb}.ch-grabmart{background:#00b14f18;color:#059669}.ch-website{background:var(--brand-dim);color:var(--brand)}
-.ocard .ref{font-family:var(--mono);font-size:12px;color:var(--muted)}
-.ocard .amt{margin-left:auto;font-family:var(--mono);color:var(--brand);font-weight:700}
-.ob{padding:11px 14px}
-.oitem{font-size:12.5px;color:var(--muted);padding:2px 0}.oitem b{color:var(--text)}
-.flow{display:flex;gap:6px;flex-wrap:wrap;padding:11px 14px;border-top:1px solid var(--border)}
-.step{font-size:11px;font-weight:700;padding:5px 10px;border-radius:7px;background:var(--surface2);border:1px solid var(--border2);color:var(--muted)}
-.step.done{background:var(--done-bg);color:var(--done);border-color:rgba(63,224,143,.4)}
-.step.cur{background:var(--brand-dim);color:var(--brand);border-color:var(--brand)}
-.step.next{cursor:pointer}.step.next:hover{border-color:var(--brand);color:var(--brand)}
-.permitem{display:flex;align-items:flex-start;gap:8px;background:var(--surface2);border:1px solid var(--border);border-radius:9px;padding:8px 10px;font-size:12px;color:var(--text)}
-.permitem input{margin-top:2px}
-.odetail{background:var(--surface);border:1px solid var(--border);border-radius:16px;overflow:hidden;min-height:520px}
-.odetail-top{padding:18px 20px;border-bottom:1px solid var(--border);display:flex;align-items:flex-start;gap:12px}
-.odetail-top h2{font-size:22px;line-height:1.15;margin-bottom:5px}
-.odetail-top .back{font-size:22px;color:var(--muted)}
-.odetail-actions{margin-left:auto;display:flex;gap:9px;color:var(--muted);font-size:18px}
-.delivery-ok{display:flex;gap:10px;align-items:flex-start;background:#edf9f3;border-bottom:1px solid #d9efe3;color:#375a4a;padding:13px 20px;font-size:13px}
-.delivery-ok b{display:block;color:#1f3a2f}
-.odsec{padding:14px 20px;border-bottom:1px solid var(--border)}
-.kv{display:grid;grid-template-columns:120px 1fr;gap:12px;color:var(--muted);font-size:13px}
-.kv b{color:var(--text);font-weight:700}
-.copy{border:0;background:var(--surface2);border-radius:7px;padding:3px 6px;color:var(--muted)}
-.info-strip{padding:11px 20px;background:#eef8fb;border-bottom:1px solid #d7edf5;color:#53677b;font-size:13px;display:flex;gap:8px}
-.lineitem{display:grid;grid-template-columns:1fr auto;gap:14px;padding:11px 0;border-bottom:1px solid var(--border);font-size:14px}
-.lineitem:last-child{border-bottom:0}
-.lineitem .name{font-weight:700}.lineitem .subline{color:var(--muted);font-size:12.5px;margin-top:4px}.lineitem .price{font-family:var(--mono);font-weight:700}
-.promo{color:#229653}.promo .price{color:#229653}
-.totals .row{display:grid;grid-template-columns:1fr auto;gap:14px;padding:8px 0;color:var(--muted)}
-.totals .row strong{font-size:20px;color:var(--text)}.totals .row .amt{font-family:var(--mono);font-weight:800;color:var(--text)}
-.incident{padding:15px 20px;display:flex;justify-content:space-between;align-items:center;font-weight:700;color:var(--muted)}
-</style></head>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Kênh Online — POS/ERP</title>
+  <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/shared/app.css">
+  <script src="/runtime-config.js"></script>
+  <script src="/socket.io/socket.io.js"></script>
+  <style>
+    :root {
+      --bg-light: #f4f6f8;
+      --border-color: #e2e8f0;
+      --text-main: #1e293b;
+      --text-muted: #64748b;
+      --primary-blue: #0088ff;
+      --primary-blue-hover: #0077ee;
+      --badge-yellow-bg: #fffbeb;
+      --badge-yellow-text: #b45309;
+      --badge-blue-bg: #eff6ff;
+      --badge-blue-text: #1d4ed8;
+      --badge-green-bg: #f0fdf4;
+      --badge-green-text: #15803d;
+      --badge-gray-bg: #f1f5f9;
+      --badge-gray-text: #475569;
+    }
+
+    body {
+      font-family: 'Be Vietnam Pro', sans-serif;
+      background-color: var(--bg-light);
+      color: var(--text-main);
+      margin: 0;
+      overflow: hidden;
+    }
+
+    .onwrap {
+      display: grid;
+      grid-template-columns: 350px 1fr 360px;
+      height: calc(100vh - 64px);
+      background-color: var(--border-color);
+      gap: 1px;
+    }
+
+    @media (max-width: 1200px) {
+      .onwrap {
+        grid-template-columns: 320px 1fr;
+      }
+      .right-panel {
+        display: none; /* Collapses customer panel on smaller viewports */
+      }
+    }
+
+    /* Left Panel: Search & List */
+    .left-panel {
+      background: #ffffff;
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+      overflow: hidden;
+    }
+
+    .search-section {
+      padding: 16px;
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .search-title-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .search-title {
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--text-main);
+    }
+
+    .search-box {
+      position: relative;
+    }
+
+    .search-box input {
+      width: 100%;
+      padding: 10px 12px 10px 36px;
+      border: 1px solid #cbd5e1;
+      border-radius: 8px;
+      font-size: 13px;
+      box-sizing: border-box;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+
+    .search-box input:focus {
+      border-color: var(--primary-blue);
+    }
+
+    .search-box::before {
+      content: "🔍";
+      position: absolute;
+      left: 12px;
+      top: 50%;
+      transform: translateY(-50%);
+      font-size: 14px;
+      color: var(--text-muted);
+    }
+
+    .filter-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    .filter-row select {
+      padding: 8px;
+      border: 1px solid #cbd5e1;
+      border-radius: 6px;
+      font-size: 12px;
+      outline: none;
+      background: #fff;
+    }
+
+    .order-list-container {
+      flex: 1;
+      overflow-y: auto;
+    }
+
+    .date-group-header {
+      background: #f8fafc;
+      padding: 8px 16px;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      border-bottom: 1px solid var(--border-color);
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+
+    .order-item-card {
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--border-color);
+      cursor: pointer;
+      transition: background 0.1s;
+    }
+
+    .order-item-card:hover {
+      background: #f8fafc;
+    }
+
+    .order-item-card.active {
+      background: #eff6ff;
+      border-left: 4px solid var(--primary-blue);
+      padding-left: 12px;
+    }
+
+    .card-row-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 6px;
+    }
+
+    .card-time {
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+
+    .card-badges {
+      display: flex;
+      gap: 4px;
+    }
+
+    .status-badge {
+      font-size: 10px;
+      font-weight: 600;
+      padding: 2px 6px;
+      border-radius: 4px;
+    }
+
+    .badge-yellow { background: var(--badge-yellow-bg); color: var(--badge-yellow-text); }
+    .badge-blue { background: var(--badge-blue-bg); color: var(--badge-blue-text); }
+    .badge-green { background: var(--badge-green-bg); color: var(--badge-green-text); }
+    .badge-gray { background: var(--badge-gray-bg); color: var(--badge-gray-text); }
+
+    .card-row-mid {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 4px;
+    }
+
+    .card-id {
+      font-weight: 700;
+      font-size: 13px;
+      color: #0f172a;
+    }
+
+    .card-customer {
+      font-size: 13px;
+      color: var(--text-main);
+    }
+
+    .card-row-bottom {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .card-channel {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .card-amount {
+      font-weight: 700;
+      font-family: var(--mono);
+      font-size: 13px;
+      color: var(--primary-blue);
+    }
+
+    /* Middle Panel: Detail View */
+    .middle-panel {
+      background: #ffffff;
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+      overflow: hidden;
+    }
+
+    .detail-header {
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: #ffffff;
+    }
+
+    .detail-title-block {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .detail-title {
+      font-size: 18px;
+      font-weight: 700;
+      margin: 0;
+    }
+
+    .detail-actions-block {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .btn-action {
+      background: var(--primary-blue);
+      color: white;
+      border: none;
+      padding: 8px 14px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+
+    .btn-action:hover {
+      background: var(--primary-blue-hover);
+    }
+
+    .btn-secondary {
+      background: #f1f5f9;
+      color: #334155;
+    }
+
+    .btn-secondary:hover {
+      background: #e2e8f0;
+    }
+
+    .btn-print {
+      background: none;
+      border: 1px solid #cbd5e1;
+      padding: 6px 10px;
+      border-radius: 6px;
+      font-size: 14px;
+      cursor: pointer;
+    }
+
+    .btn-print:hover {
+      background: #f8fafc;
+    }
+
+    .merchant-info-strip {
+      background: #f8fafc;
+      padding: 12px 20px;
+      border-bottom: 1px solid var(--border-color);
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      font-size: 12.5px;
+    }
+
+    .info-item span {
+      color: var(--text-muted);
+    }
+
+    .info-item strong {
+      color: var(--text-main);
+    }
+
+    .items-table-container {
+      flex: 1;
+      overflow-y: auto;
+      padding: 20px;
+    }
+
+    .items-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13.5px;
+    }
+
+    .items-table th {
+      text-align: left;
+      padding: 10px 12px;
+      border-bottom: 2px solid var(--border-color);
+      color: var(--text-muted);
+      font-weight: 600;
+      font-size: 12px;
+    }
+
+    .items-table td {
+      padding: 12px;
+      border-bottom: 1px solid var(--border-color);
+      vertical-align: middle;
+    }
+
+    .product-cell {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .product-img {
+      width: 48px;
+      height: 48px;
+      border-radius: 6px;
+      object-fit: cover;
+      background: #f1f5f9;
+      border: 1px solid #e2e8f0;
+    }
+
+    .product-details {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .product-name {
+      font-weight: 600;
+      color: #0f172a;
+    }
+
+    .product-variant {
+      font-size: 11px;
+      color: var(--text-muted);
+      margin-top: 2px;
+    }
+
+    .mono-text {
+      font-family: var(--mono);
+      font-weight: 600;
+    }
+
+    /* Right Panel: Customer & Summary */
+    .right-panel {
+      background: #ffffff;
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+      box-sizing: border-box;
+    }
+
+    .right-panel-scrollable {
+      flex: 1;
+      overflow-y: auto;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    .section-card {
+      background: #ffffff;
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 16px;
+    }
+
+    .section-card-title {
+      font-size: 13px;
+      font-weight: 700;
+      color: #0f172a;
+      margin: 0 0 12px 0;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .edit-icon {
+      cursor: pointer;
+      color: var(--text-muted);
+      font-size: 14px;
+    }
+
+    .customer-info-block {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      font-size: 13px;
+    }
+
+    .cust-name {
+      font-weight: 600;
+      color: var(--primary-blue);
+      font-size: 14px;
+    }
+
+    .cust-meta {
+      color: var(--text-muted);
+    }
+
+    .attr-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      font-size: 12.5px;
+    }
+
+    .attr-item {
+      display: flex;
+      justify-content: space-between;
+    }
+
+    .attr-label {
+      color: var(--text-muted);
+    }
+
+    .attr-value {
+      font-weight: 500;
+      color: var(--text-main);
+      text-align: right;
+    }
+
+    .notes-box {
+      font-size: 12.5px;
+      color: var(--text-muted);
+      line-height: 1.4;
+      white-space: pre-wrap;
+    }
+
+    /* Summary Block */
+    .summary-footer {
+      border-top: 1px solid var(--border-color);
+      background: #f8fafc;
+      padding: 16px 20px;
+    }
+
+    .summary-row {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 8px;
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+
+    .summary-row.total {
+      margin-top: 12px;
+      border-top: 1px dashed var(--border-color);
+      padding-top: 12px;
+      font-size: 16px;
+      font-weight: 800;
+      color: #0f172a;
+    }
+
+  </style>
+</head>
 <body>
-<div id="top"></div>
-<div class="view">
-  <div class="onwrap">
-    <div class="ocol" id="orders"></div>
-    <div class="odetail" id="orderDetail"></div>
+  <div id="top"></div>
+  <div class="view">
+    <div class="onwrap">
+      
+      <!-- Left Panel: Search & List -->
+      <div class="left-panel">
+        <div class="search-section">
+          <div class="search-title-row">
+            <span class="search-title">Tra cứu đơn hàng</span>
+          </div>
+          
+          <div class="search-box">
+            <input type="text" id="searchInput" placeholder="Mã đơn hàng, SĐT, Tên, Email">
+          </div>
+          
+          <div class="filter-row">
+            <select id="channelFilter">
+              <option value="">Tất cả kênh</option>
+              <option value="website">Website / Haravan</option>
+              <option value="grabfood">GrabFood</option>
+              <option value="shopeefood">ShopeeFood</option>
+            </select>
+            <select id="statusFilter">
+              <option value="">Tất cả trạng thái</option>
+              <option value="unpaid">Chưa thanh toán</option>
+              <option value="paid">Đã thanh toán</option>
+              <option value="unshipped">Chưa giao hàng</option>
+              <option value="shipped">Đã giao hàng</option>
+            </select>
+          </div>
+        </div>
+        
+        <div class="order-list-container" id="orderList">
+          <!-- Dynamically loaded list of orders -->
+        </div>
+      </div>
+      
+      <!-- Middle Panel: Detail View -->
+      <div class="middle-panel" id="detailPanel">
+        <!-- Rendered dynamically -->
+      </div>
+      
+      <!-- Right Panel: Customer & Summary -->
+      <div class="right-panel" id="rightPanel">
+        <!-- Rendered dynamically -->
+      </div>
+
+    </div>
   </div>
-</div>
 
-<script type="module">
-import { api, connect, money, toast, esc, startClock, topbar, requireModuleAccess, renderUserChip } from '/shared/client.js';
-import { playNotificationSound, applyConfig, getConfig } from '/js/core/notificationSound.js';
-document.getElementById('top').innerHTML = topbar('online', {
-  title: '🌐 Online Channels',
-  sub: 'Nhận đơn GrabFood / ShopeeFood / Website qua webhook · điều phối fulfillment',
-  actions: `<span class="chip c-muted" id="cnt">0 đơn</span>`,
-});
-await requireModuleAccess('online'); renderUserChip();
+  <script type="module">
+    import { api, connect, money, toast, esc, startClock, topbar, requireModuleAccess, renderUserChip } from '/shared/client.js';
+    import { playNotificationSound, applyConfig, getConfig } from '/js/core/notificationSound.js';
 
-const FLOW=['received','confirmed','preparing','ready','completed'];
-const FLOW_LABEL={received:'Đã nhận',confirmed:'Xác nhận',preparing:'Đang làm',ready:'Sẵn sàng',completed:'Hoàn tất'};
-const DETAIL_STATUS={received:'Đã nhận',confirmed:'Đã xác nhận',preparing:'Đang chuẩn bị',ready:'Sẵn sàng giao',completed:'Đã giao'};
-let orders=[], selectedOrderId=null;
+    document.getElementById('top').innerHTML = topbar('online', {
+      title: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>Online Channels',
+      sub: 'Quản lý đơn hàng GrabFood / ShopeeFood / Haravan & Webhook',
+      actions: `<span class="chip c-muted" id="cnt">0 đơn</span>`,
+    });
 
-// Load sound config from server settings
-api('/settings/app').then(s => { if(s?.notification_sound_config) applyConfig(s.notification_sound_config); }).catch(()=>{});
+    await requireModuleAccess('online');
+    renderUserChip();
 
-connect('online', {
-  'online:new':()=>{ playNotificationSound('online_order'); load(); },
-  'online:updated':()=>load(),
-});
+    let orders = [];
+    let selectedOrderId = null;
 
-async function load(){
-  orders=await api('/online/orders');
-  if(!orders.some(o=>o.id===selectedOrderId)) selectedOrderId=(orders.find(o=>o.online_status==='completed')||orders[0]||{}).id||null;
-  document.getElementById('cnt').textContent=orders.length+' đơn';
-  document.getElementById('orders').innerHTML = orders.length?orders.map(card).join(''):'<div class="empty">Chưa có đơn online nào.</div>';
-  document.getElementById('orderDetail').innerHTML = detail(orders.find(o=>o.id===selectedOrderId));
-  bindFlow();
-}
-function card(o){
-  const ch=o.online_channel||'website';
-  const idx=FLOW.indexOf(o.online_status||'received');
-  return `<div class="ocard order-card ${o.id===selectedOrderId?'sel':''}" data-open-order="${o.id}">
-    <div class="oh">
-      <span class="chbadge ch-${ch}">${esc(o.channel_name||ch)}</span>
-      <span class="ref">${esc(o.online_ref||'')}</span>
-      ${o.customer?.name?`<span style="font-size:12px;color:var(--muted)">· ${esc(o.customer.name)}</span>`:''}
-      <span class="amt">${money(o.total)}</span>
-    </div>
-    <div class="ob">${o.items.filter(i=>i.status!=='cancelled').map(i=>`<div class="oitem"><b>${i.qty}×</b> ${esc(i.name)}</div>`).join('')}</div>
-    <div class="flow">${FLOW.map((s,si)=>{
-      const cls = si<idx?'done':si===idx?'cur':si===idx+1?'next':'';
-      return `<span class="step ${cls}" ${cls==='next'?`data-id="${o.id}" data-s="${s}"`:''}>${si<idx?'✓ ':''}${FLOW_LABEL[s]}</span>`;
-    }).join('')}</div>
-  </div>`;
-}
-function bindFlow(){
-  document.querySelectorAll('[data-open-order]').forEach(c=>c.onclick=()=>{selectedOrderId=c.dataset.openOrder;load();});
-  document.querySelectorAll('.step.next').forEach(b=>b.onclick=async(e)=>{
-    e.stopPropagation();
-    try{ await api('/online/orders/'+b.dataset.id+'/status',{method:'POST',body:{status:b.dataset.s}}); }catch(e){toast(e.message,true);}
-  });
-  document.querySelectorAll('[data-copy]').forEach(b=>b.onclick=e=>{e.stopPropagation();navigator.clipboard?.writeText(b.dataset.copy);toast('Đã copy mã đơn');});
-}
-function fmtDate(v){
-  const d=v?new Date(v):new Date();
-  if(Number.isNaN(+d)) return '';
-  return d.toLocaleString('vi-VN',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
-}
-function orderActiveItems(o){ return (o?.items||[]).filter(i=>i.status!=='cancelled'); }
-function itemMods(i){
-  if(Array.isArray(i.mods)) return i.mods.map(m=>m.name||m).filter(Boolean);
-  try{return JSON.parse(i.mods_json||'[]').map(m=>m.name||m).filter(Boolean);}catch{return [];}
-}
-function channelOrderCode(o){
-  const ref=(o?.online_ref||o?.id||'').replace(/[^a-z0-9]/gi,'').toUpperCase();
-  return ref ? `A-${ref.slice(-12)}` : '-';
-}
-function detail(o){
-  if(!o) return '<div class="empty" style="min-height:520px;justify-content:center">Chọn một đơn online để xem chi tiết</div>';
-  const items=orderActiveItems(o);
-  const subtotal=items.reduce((s,i)=>s+(Number(i.unit_price)||0)*(Number(i.qty)||1),0);
-  const discount=Math.max(0, Number(o.discount)||Math.max(0, subtotal-Number(o.total||0)));
-  const total=Number(o.total)||Math.max(0, subtotal-discount);
-  const paidAt=(o.payments||[])[0]?.created_at || o.paid_at || o.created_at;
-  const noTools=o.customer?.noUtensils || o.customer?.no_utensils || o.customer?.noPlastic;
-  const customerName=o.customer?.name ? esc(o.customer.name) : '***';
-  return `
-    <div class="odetail-top">
-      <span class="back">←</span>
-      <div><h2>${esc(DETAIL_STATUS[o.online_status]||'Đơn online')}</h2><div class="sub">${fmtDate(o.created_at)}</div></div>
-      <div class="odetail-actions"><span>🖨️</span><span>☎️</span><span>⋯</span></div>
-    </div>
-    ${o.online_status==='completed'?`<div class="delivery-ok"><span>✅</span><div><b>Đơn hàng được làm xong đúng giờ</b><span>Tiếp tục phát huy bạn nhé!</span></div></div>`:''}
-    <div class="odsec kv"><span>Mã đặt hàng</span><b>${esc(channelOrderCode(o))} <button class="copy" data-copy="${esc(channelOrderCode(o))}">⧉</button></b></div>
-    <div class="odsec"><b>${items.length} món cho ${customerName}</b> <span class="chip c-muted">Khách hàng mới</span></div>
-    ${noTools?`<div class="info-strip"><span>⛔</span><span>Không cần dụng cụ ăn uống nhựa</span></div>`:''}
-    <div class="odsec">
-      ${items.map(i=>{
-        const mods=itemMods(i);
-        return `<div class="lineitem">
-          <div><div class="name">${i.qty} × ${esc(i.name)}</div>${mods.length?`<div class="subline">Combo ăn kèm<br>${esc(mods.join(' + '))}</div>`:''}${i.note?`<div class="subline">Ghi chú: ${esc(i.note)}</div>`:''}</div>
-          <div class="price">${money((Number(i.unit_price)||0)*(Number(i.qty)||1))}</div>
-        </div>`;
-      }).join('')}
-    </div>
-    <div class="odsec totals">
-      <div class="row"><span>Tổng (tạm tính)<br><small>Bao gồm thuế GTGT theo cấu hình</small></span><span class="amt">${money(subtotal)}</span></div>
-      ${discount?`<div class="row promo"><span>Giảm giá<br><small>${esc(o.voucher_code||'Voucher / khuyến mãi')}</small></span><span class="amt">-${money(discount)}</span></div>`:''}
-      <div class="row"><strong>Tổng cộng</strong><strong class="amt">${money(total)}</strong></div>
-      <div class="row"><span>Thanh toán</span><span class="amt">${esc((o.payments||[])[0]?.reference||o.online_ref||'Online')} · ${fmtDate(paidAt)}</span></div>
-    </div>
-    <div class="incident"><span>Báo cáo sự cố</span><span>›</span></div>`;
-}
+    // Load sound config from server settings
+    api('/settings/app').then(s => { 
+      if(s?.notification_sound_config) applyConfig(s.notification_sound_config); 
+    }).catch(()=>{});
 
-startClock(); load();
-</script>
-</body></html>
+    connect('online', {
+      'online:new': (order) => { 
+        playNotificationSound('online_order'); 
+        toast('Có đơn hàng online mới: ' + (order.online_ref || order.id));
+        load(); 
+      },
+      'online:updated': () => load(),
+    });
+
+    async function load() {
+      try {
+        orders = await api('/online/orders');
+        document.getElementById('cnt').textContent = orders.length + ' đơn';
+        
+        if (orders.length && !selectedOrderId) {
+          selectedOrderId = orders[0].id;
+        }
+        
+        renderList();
+        renderDetail();
+      } catch (err) {
+        toast(err.message, true);
+      }
+    }
+
+    // Filter and group orders by day
+    function renderList() {
+      const q = document.getElementById('searchInput').value.toLowerCase().trim();
+      const chan = document.getElementById('channelFilter').value;
+      const stat = document.getElementById('statusFilter').value;
+
+      const filtered = orders.filter(o => {
+        if (chan && o.online_channel !== chan) return false;
+        if (stat) {
+          if (stat === 'unpaid' && o.status === 'paid') return false;
+          if (stat === 'paid' && o.status !== 'paid') return false;
+          if (stat === 'unshipped' && o.online_status === 'completed') return false;
+          if (stat === 'shipped' && o.online_status !== 'completed') return false;
+        }
+
+        if (q) {
+          const code = (o.online_ref || o.id || '').toLowerCase();
+          const name = (o.customer?.name || '').toLowerCase();
+          const phone = (o.customer?.phone || '').toLowerCase();
+          const email = (o.customer?.email || '').toLowerCase();
+          const billNo = (o.bill_no || '').toLowerCase();
+          return code.includes(q) || name.includes(q) || phone.includes(q) || email.includes(q) || billNo.includes(q);
+        }
+        return true;
+      });
+
+      // Group by date formatted as: "Thứ ba - 02/06/2026"
+      const groups = {};
+      filtered.forEach(o => {
+        const dateStr = formatDateGroup(o.created_at);
+        if (!groups[dateStr]) groups[dateStr] = [];
+        groups[dateStr].push(o);
+      });
+
+      const listEl = document.getElementById('orderList');
+      if (!filtered.length) {
+        listEl.innerHTML = '<div class="empty" style="padding:40px; text-align:center; color:var(--text-muted);">Không tìm thấy đơn hàng nào.</div>';
+        return;
+      }
+
+      let html = '';
+      for (const [dateLabel, groupOrders] of Object.entries(groups)) {
+        html += `<div class="date-group-header">${esc(dateLabel)}</div>`;
+        groupOrders.forEach(o => {
+          const isSelected = o.id === selectedOrderId;
+          const timeStr = formatCardTime(o.created_at);
+          
+          // Badges
+          const payBadge = o.status === 'paid' 
+            ? '<span class="status-badge badge-green">Đã thanh toán</span>' 
+            : '<span class="status-badge badge-yellow">Chờ xử lý</span>';
+          
+          const shipBadge = o.online_status === 'completed'
+            ? '<span class="status-badge badge-green">Đã giao hàng</span>'
+            : '<span class="status-badge badge-yellow">Chưa giao hàng</span>';
+            
+          const chName = o.online_channel === 'grabfood' ? 'GrabFood' : o.online_channel === 'shopeefood' ? 'ShopeeFood' : 'Web';
+          const chIcon = o.online_channel === 'grabfood' ? '🟢' : o.online_channel === 'shopeefood' ? '🔴' : '🌐';
+
+          html += `
+            <div class="order-item-card ${isSelected ? 'active' : ''}" data-id="${o.id}">
+              <div class="card-row-top">
+                <span class="card-time">${esc(timeStr)}</span>
+                <div class="card-badges">${payBadge}${shipBadge}</div>
+              </div>
+              <div class="card-row-mid">
+                <span class="card-id">#${esc(o.online_ref || o.id.slice(-6).toUpperCase())}</span>
+                <span class="card-customer">${esc(o.customer?.name || 'Khách hàng')}</span>
+              </div>
+              <div class="card-row-bottom">
+                <span class="card-channel">${chIcon} ${chName}</span>
+                <span class="card-amount">${money(o.total)}</span>
+              </div>
+            </div>
+          `;
+        });
+      }
+      listEl.innerHTML = html;
+
+      // Bind click events
+      listEl.querySelectorAll('.order-item-card').forEach(card => {
+        card.onclick = () => {
+          selectedOrderId = card.dataset.id;
+          renderList();
+          renderDetail();
+        };
+      });
+    }
+
+    function renderDetail() {
+      const o = orders.find(x => x.id === selectedOrderId);
+      const detailEl = document.getElementById('detailPanel');
+      const rightEl = document.getElementById('rightPanel');
+
+      if (!o) {
+        detailEl.innerHTML = '<div class="empty" style="padding:80px; text-align:center; color:var(--text-muted);">Chọn một đơn hàng để xem chi tiết.</div>';
+        rightEl.innerHTML = '';
+        return;
+      }
+
+      // 1. Middle Pane details
+      const payBadge = o.status === 'paid' 
+        ? '<span class="status-badge badge-green">Đã thanh toán</span>' 
+        : '<span class="status-badge badge-yellow">Chờ xử lý</span>';
+      
+      const shipBadge = o.online_status === 'completed'
+        ? '<span class="status-badge badge-green">Đã giao hàng</span>'
+        : '<span class="status-badge badge-yellow">Chưa giao hàng</span>';
+
+      const showConfirmPaymentBtn = o.status !== 'paid';
+      const showConfirmDeliveryBtn = o.online_status !== 'completed';
+      const showReturnBtn = o.status !== 'void';
+
+      detailEl.innerHTML = `
+        <div class="detail-header">
+          <div class="detail-title-block">
+            <h2 class="detail-title">Đơn #${esc(o.online_ref || o.id.slice(-6).toUpperCase())}</h2>
+            ${payBadge}
+            ${shipBadge}
+          </div>
+          <div class="detail-actions-block">
+            <button class="btn-print" id="printReceiptBtn">🖨️</button>
+            ${showConfirmPaymentBtn ? `<button class="btn-action" id="confirmPaymentBtn">Xác nhận thanh toán</button>` : ''}
+            ${showConfirmDeliveryBtn ? `<button class="btn-action" id="confirmDeliveryBtn">Xác nhận giao hàng</button>` : ''}
+            ${showReturnBtn ? `<button class="btn-action btn-secondary" id="returnOrderBtn">Đổi trả</button>` : ''}
+          </div>
+        </div>
+        
+        <div class="merchant-info-strip">
+          <div class="info-item">
+            <span>Người bán:</span> <strong>--</strong>
+          </div>
+          <div class="info-item">
+            <span>Kho bán:</span> <strong>CÔNG TY TNHH DỊCH VỤ TIẾP THỊ BCM</strong>
+          </div>
+        </div>
+        
+        <div class="items-table-container">
+          <table class="items-table">
+            <thead>
+              <tr>
+                <th>Sản phẩm</th>
+                <th style="text-align: right; width: 100px;">Đơn giá</th>
+                <th style="text-align: center; width: 80px;">Số lượng</th>
+                <th style="text-align: right; width: 120px;">Thành tiền</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${(o.items || []).map(i => {
+                const imgUrl = i.image || '/assets/logo.png';
+                return `
+                  <tr>
+                    <td>
+                      <div class="product-cell">
+                        <img class="product-img" src="${imgUrl}" alt="${esc(i.name)}">
+                        <div class="product-details">
+                          <span class="product-name">${esc(i.name)}</span>
+                          <span class="product-variant">Default Title</span>
+                        </div>
+                      </div>
+                    </td>
+                    <td style="text-align: right;" class="mono-text">${money(i.unit_price)}</td>
+                    <td style="text-align: center;">x ${i.qty}</td>
+                    <td style="text-align: right;" class="mono-text">${money(i.unit_price * i.qty)}</td>
+                  </tr>
+                `;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>
+      `;
+
+      // 2. Right Pane details
+      const c = o.customer || {};
+      const subtotal = (o.items || []).reduce((s, i) => s + i.unit_price * i.qty, 0);
+      const shipping_fee = c.shipping_fee || 0;
+      const discount = c.discount || o.discount || 0;
+      const vat = c.vat || 0;
+      const total = o.total;
+
+      rightEl.innerHTML = `
+        <div class="right-panel-scrollable">
+          
+          <!-- Customer block -->
+          <div class="section-card">
+            <h4 class="section-card-title">Khách hàng</h4>
+            <div class="customer-info-block">
+              <span class="cust-name">${esc(c.name || 'Khách vãng lai')}</span>
+              <span class="cust-meta">${esc(c.phone || 'Không có')}</span>
+              <span class="cust-meta">${esc(c.email || 'Không có')}</span>
+              <div style="margin-top: 8px;">
+                <span class="status-badge badge-gray">Không có nợ</span>
+              </div>
+            </div>
+          </div>
+          
+          <!-- Properties block -->
+          <div class="section-card">
+            <h4 class="section-card-title">Thuộc tính (6)</h4>
+            <div class="attr-list">
+              <div class="attr-item">
+                <span class="attr-label">Thời gian giao hàng:</span>
+                <span class="attr-value">${esc(c.delivery_time || 'Không có')}</span>
+              </div>
+              <div class="attr-item">
+                <span class="attr-label">Xuất hóa đơn:</span>
+                <span class="attr-value">${c.company ? 'có' : 'không'}</span>
+              </div>
+              ${c.company ? `
+                <div class="attr-item">
+                  <span class="attr-label">Tên công ty:</span>
+                  <span class="attr-value" title="${esc(c.company)}">${esc(c.company)}</span>
+                </div>
+              ` : ''}
+              <div class="attr-item">
+                <span class="attr-label">Địa chỉ giao hàng:</span>
+                <span class="attr-value" style="max-width: 180px; word-break: break-word;">${esc(c.address || 'Không có')}</span>
+              </div>
+            </div>
+          </div>
+          
+          <!-- Notes block -->
+          <div class="section-card">
+            <h4 class="section-card-title">
+              <span>Ghi chú đơn hàng</span>
+              <span class="edit-icon">✏️</span>
+            </h4>
+            <div class="notes-box">${esc(c.note || 'Không có')}</div>
+          </div>
+
+        </div>
+        
+        <!-- Summary block -->
+        <div class="summary-footer">
+          <div class="summary-row">
+            <span>Tổng tiền hàng (${(o.items || []).length} sản phẩm)</span>
+            <span class="mono-text">${money(subtotal)}</span>
+          </div>
+          <div class="summary-row">
+            <span>Phí vận chuyển</span>
+            <span class="mono-text">${money(shipping_fee)}</span>
+          </div>
+          <div class="summary-row">
+            <span>Giảm giá đơn hàng</span>
+            <span class="mono-text">-${money(discount)}</span>
+          </div>
+          <div class="summary-row">
+            <span>VAT</span>
+            <span class="mono-text">${money(vat)}</span>
+          </div>
+          <div class="summary-row total">
+            <span>Tổng cộng</span>
+            <span class="mono-text" style="color:var(--primary-blue); font-size:18px;">${money(total)}</span>
+          </div>
+        </div>
+      `;
+
+      // Bind detail action buttons
+      if (showConfirmPaymentBtn) {
+        document.getElementById('confirmPaymentBtn').onclick = async () => {
+          try {
+            await api(`/online/orders/${o.id}/confirm-payment`, { method: 'POST' });
+            toast('Đã xác nhận thanh toán đơn hàng');
+            load();
+          } catch (err) {
+            toast(err.message, true);
+          }
+        };
+      }
+
+      if (showConfirmDeliveryBtn) {
+        document.getElementById('confirmDeliveryBtn').onclick = async () => {
+          try {
+            await api(`/online/orders/${o.id}/confirm-delivery`, { method: 'POST' });
+            toast('Đã xác nhận giao hàng');
+            load();
+          } catch (err) {
+            toast(err.message, true);
+          }
+        };
+      }
+
+      if (showReturnBtn) {
+        document.getElementById('returnOrderBtn').onclick = async () => {
+          if (!confirm('Bạn có chắc chắn muốn hủy/đổi trả đơn hàng này?')) return;
+          try {
+            await api(`/online/orders/${o.id}/return`, { method: 'POST' });
+            toast('Đã xử lý đổi trả/hủy đơn hàng');
+            load();
+          } catch (err) {
+            toast(err.message, true);
+          }
+        };
+      }
+
+      document.getElementById('printReceiptBtn').onclick = () => {
+        window.print();
+      };
+    }
+
+    // Helper functions
+    function formatDateGroup(isoStr) {
+      const d = new Date(isoStr);
+      const days = ['Chủ nhật', 'Thứ hai', 'Thứ ba', 'Thứ tư', 'Thứ năm', 'Thứ sáu', 'Thứ bảy'];
+      const dayName = days[d.getDay()];
+      const pad = (n) => String(n).padStart(2, '0');
+      return `${dayName} - ${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}`;
+    }
+
+    function formatCardTime(isoStr) {
+      const d = new Date(isoStr);
+      const pad = (n) => String(n).padStart(2, '0');
+      return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+    }
+
+    // Search and filter listeners
+    document.getElementById('searchInput').oninput = () => renderList();
+    document.getElementById('channelFilter').onchange = () => renderList();
+    document.getElementById('statusFilter').onchange = () => renderList();
+
+    // Floating Simulator trigger logic
+    const simBtn = document.getElementById('simulateBtn');
+    const simMenu = document.getElementById('simulateMenu');
+    
+    simBtn.onclick = (e) => {
+      e.stopPropagation();
+      simMenu.classList.toggle('show');
+    };
+
+    document.onclick = () => {
+      simMenu.classList.remove('show');
+    };
+
+    simMenu.querySelectorAll('.simulator-option').forEach(opt => {
+      opt.onclick = async (e) => {
+        e.stopPropagation();
+        simMenu.classList.remove('show');
+        const type = opt.dataset.simType;
+        try {
+          const res = await api('/online/simulate', { method: 'POST', body: { type } });
+          toast(`Đã gửi webhook giả lập đơn ${type.toUpperCase()}: ${res.online_ref}`);
+          load();
+        } catch (err) {
+          toast('Lỗi giả lập: ' + err.message, true);
+        }
+      };
+    });
+
+    startClock();
+    load();
+  </script>
+</body>
+</html>

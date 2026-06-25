@@ -4,7 +4,7 @@
 import { DatabaseSync } from 'node:sqlite';
 import { fileURLToPath } from 'node:url';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, existsSync, readdirSync, statSync, rmSync } from 'node:fs';
 import { appendAuditArchive, ensurePermanentStorage, readRecentAuditArchive } from './services/archive.js';
 import { env } from './config/env.js';
 import crypto from 'node:crypto';
@@ -39,7 +39,15 @@ db.exec('PRAGMA temp_store = MEMORY;');        // Bảng tạm trong RAM
 db.exec('PRAGMA mmap_size = 134217728;');      // 128 MB memory-mapped I/O
 db.exec('PRAGMA wal_autocheckpoint = 1000;');  // Checkpoint mỗi 1000 pages (~4 MB)
 
-export function migrate() {
+const globalDb = db;
+export function migrate(targetDb = globalDb) {
+  const isMaster = (targetDb === globalDb);
+  const db = targetDb;
+  function addColumnIfMissing(table, col, type) {
+    const cols = db.prepare(`PRAGMA table_info(${table})`).all();
+    if (!cols.some(c => c.name === col)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${type};`);
+  }
+
   db.exec(`
   CREATE TABLE IF NOT EXISTS branches (
     id TEXT PRIMARY KEY,
@@ -644,6 +652,7 @@ export function migrate() {
   db.exec(`CREATE INDEX IF NOT EXISTS idx_orders_branch_status ON orders(branch_id, status);`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_orders_branch_created ON orders(branch_id, created_at DESC);`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_orders_branch_paid ON orders(branch_id, status, paid_at DESC);`);
+  db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_bill_no ON orders(branch_id, bill_no) WHERE bill_no IS NOT NULL;`);
   // order_items: KDS gọi mỗi vài giây; pending_confirm polling
   db.exec(`CREATE INDEX IF NOT EXISTS idx_order_items_order ON order_items(order_id, created_at);`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_order_items_status ON order_items(status, created_at);`);
@@ -727,17 +736,124 @@ export function migrate() {
   CREATE INDEX IF NOT EXISTS idx_docfiles_source   ON document_files(branch_id, source, created_at);
   `);
 
-  ensurePermanentStorage();
-  bootstrapBranchDefaults();
-  for (const b of db.prepare(`SELECT id FROM branches WHERE active=1 ORDER BY sort,name`).all()) {
-    bootstrapWarehouseDefaults(b.id);
-    bootstrapTableDefaults(b.id);
+  if (isMaster) {
+    initSyncTriggers(db);
+    ensurePermanentStorage();
+    bootstrapBranchDefaults();
+    for (const b of db.prepare(`SELECT id FROM branches WHERE active=1 ORDER BY sort,name`).all()) {
+      bootstrapWarehouseDefaults(b.id);
+      bootstrapTableDefaults(b.id);
+    }
   }
 }
 
-function addColumnIfMissing(table, col, type) {
-  const cols = db.prepare(`PRAGMA table_info(${table})`).all();
-  if (!cols.some(c => c.name === col)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${type};`);
+function initSyncTriggers(targetDb) {
+  const tables = [
+    { name: 'branches', key: 'id' },
+    { name: 'tables', key: 'id' },
+    { name: 'users', key: 'id' },
+    { name: 'categories', key: 'id' },
+    { name: 'menu_items', key: 'id' },
+    { name: 'recipes', composite: ['menu_item_id', 'inventory_item_id'] },
+    { name: 'inventory_items', key: 'id' },
+    { name: 'skus', key: 'id' },
+    { name: 'stock_lots', key: 'id' },
+    { name: 'stock_movements', key: 'id' },
+    { name: 'warehouses', key: 'id' },
+    { name: 'stocktake_sessions', key: 'id' },
+    { name: 'stocktake_lines', key: 'id' },
+    { name: 'inventory_documents', key: 'id' },
+    { name: 'inventory_document_lines', key: 'id' },
+    { name: 'vouchers', key: 'id' },
+    { name: 'customers', key: 'id' },
+    { name: 'payments', key: 'id', hasBranch: false, orderRef: 'order_id' },
+    { name: 'payment_lines', key: 'id', hasBranch: false, paymentRef: 'payment_id' },
+    { name: 'orders', key: 'id' },
+    { name: 'order_items', key: 'id', hasBranch: false, orderRef: 'order_id' },
+    { name: 'staff_calls', key: 'id' },
+    { name: 'invoices', key: 'id' },
+    { name: 'audit_log', key: 'id' },
+    { name: 'app_settings', composite: ['branch_id', 'key'] },
+    { name: 'shifts', key: 'id' },
+    { name: 'cash_drawer_entries', key: 'id' },
+    { name: 'cash_drawer_reimbursement_allocations', key: 'id' },
+    { name: 'purchase_orders', key: 'id' },
+    { name: 'purchase_order_lines', key: 'id', hasBranch: false, poRef: 'po_id' },
+    { name: 'purchase_payments', key: 'id' },
+    { name: 'expense_categories', key: 'id' },
+    { name: 'expenses', key: 'id' },
+    { name: 'enterprise_storage', composite: ['scope', 'scope_id', 'key'] },
+    { name: 'user_preferences', composite: ['user_id', 'key'], hasBranch: false },
+    { name: 'bank_transactions', key: 'id' },
+    { name: 'print_jobs', key: 'id' },
+    { name: 'document_files', key: 'id' }
+  ];
+
+  for (const t of tables) {
+    const isAudit = t.name === 'audit_log';
+    
+    let hasBranchCol = false;
+    try {
+      const cols = targetDb.prepare(`PRAGMA table_info(${t.name})`).all();
+      hasBranchCol = cols.some(c => c.name === 'branch_id');
+    } catch {}
+
+    let branchSql = 'COALESCE(NEW.branch_id, \'br1\')';
+    if (t.name === 'branches') {
+      branchSql = 'NEW.id';
+    } else if (t.hasBranch === false || !hasBranchCol) {
+      if (t.orderRef) {
+        branchSql = `COALESCE((SELECT branch_id FROM orders WHERE id = NEW.${t.orderRef}), 'br1')`;
+      } else if (t.paymentRef) {
+        branchSql = `COALESCE((SELECT branch_id FROM orders WHERE id = (SELECT order_id FROM payments WHERE id = NEW.${t.paymentRef})), 'br1')`;
+      } else if (t.poRef) {
+        branchSql = `COALESCE((SELECT branch_id FROM purchase_orders WHERE id = NEW.${t.poRef}), 'br1')`;
+      } else {
+        branchSql = `'br1'`;
+      }
+    }
+
+    let refSql = '';
+    if (t.key) {
+      refSql = `NEW.${t.key}`;
+    } else if (t.composite) {
+      refSql = t.composite.map(c => `NEW.${c}`).join(` || ':' || `);
+    }
+
+    targetDb.exec(`DROP TRIGGER IF EXISTS trg_sync_ins_${t.name};`);
+    targetDb.exec(`
+      CREATE TRIGGER IF NOT EXISTS trg_sync_ins_${t.name} AFTER INSERT ON ${t.name}
+      BEGIN
+        INSERT OR IGNORE INTO sync_queue (id, branch_id, kind, ref, status, created_at)
+        VALUES (
+          'sq_' || hex(randomblob(8)) || strftime('%s', 'now'),
+          ${branchSql},
+          '${t.name}',
+          ${refSql},
+          'pending',
+          datetime('now')
+        );
+      END;
+    `);
+
+    if (!isAudit) {
+      targetDb.exec(`DROP TRIGGER IF EXISTS trg_sync_upd_${t.name};`);
+      targetDb.exec(`
+        CREATE TRIGGER IF NOT EXISTS trg_sync_upd_${t.name} AFTER UPDATE ON ${t.name}
+        BEGIN
+          INSERT OR IGNORE INTO sync_queue (id, branch_id, kind, ref, status, created_at)
+          VALUES (
+            'sq_' || hex(randomblob(8)) || strftime('%s', 'now'),
+            ${branchSql},
+            '${t.name}',
+            ${refSql},
+            'pending',
+            datetime('now')
+          );
+        END;
+      `);
+    }
+  }
 }
 
 export const now = () => new Date().toISOString();
@@ -813,7 +929,13 @@ export function reconcileAuditFromArchive(days = 2) {
 }
 
 const ALGORITHM = 'aes-256-ctr';
-const SECRET_KEY = crypto.scryptSync('dandpak-audit-log-key-secret-12345', 'salt', 32);
+// Khóa mã hóa chi tiết audit khi nén/lưu trữ. Ưu tiên biến môi trường AUDIT_LOG_KEY
+// để không hardcode bí mật trong source. Lưu ý: nếu đặt key MỚI sau khi đã có bản ghi
+// mã hóa bằng key cũ thì các bản cũ đó sẽ không giải mã được — nên đặt key ngay từ đầu
+// (compaction chỉ mã hóa bản ghi > 90 ngày, hệ thống mới thường chưa có).
+const SECRET_KEY = crypto.scryptSync(
+  process.env.AUDIT_LOG_KEY || process.env.SESSION_SECRET || 'dandpak-audit-log-key-secret-12345',
+  'salt', 32);
 
 export function encryptCompress(text) {
   try {
@@ -876,6 +998,41 @@ export function compactOldAuditLogs(daysLimit = 90) {
 export function purgeOldAudit(days = 7) {
   const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
   return db.prepare(`DELETE FROM audit_log WHERE created_at < ?`).run(cutoff).changes;
+}
+
+// Sao lưu THẬT cơ sở dữ liệu: VACUUM INTO tạo một bản sao nhất quán (đã gộp WAL)
+// vào thư mục backups/. Đây là bản sao có thể copy ra ổ ngoài/VPS. Giữ `retentionDays`.
+export function backupDatabase(retentionDays = 14) {
+  try {
+    const dir = join(ROOT, 'backups');
+    mkdirSync(dir, { recursive: true });
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    const dest = join(dir, `store-${stamp}.db`);
+    if (!existsSync(dest)) db.exec(`VACUUM INTO '${dest.replace(/'/g, "''")}'`);
+    // Dọn bản sao quá hạn
+    const cutoff = Date.now() - Math.max(1, retentionDays) * 24 * 60 * 60 * 1000;
+    let pruned = 0;
+    for (const f of readdirSync(dir)) {
+      if (!/^store-.*\.db$/.test(f)) continue;
+      const full = join(dir, f);
+      try { if (statSync(full).mtimeMs < cutoff) { rmSync(full, { force: true }); pruned++; } } catch { /* ignore */ }
+    }
+    return { ok: true, path: dest, bytes: existsSync(dest) ? statSync(dest).size : 0, pruned };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+}
+
+// Liệt kê các bản sao lưu hiện có (cho /database/status báo cáo TRUNG THỰC).
+export function listBackups() {
+  try {
+    const dir = join(ROOT, 'backups');
+    if (!existsSync(dir)) return [];
+    return readdirSync(dir)
+      .filter(f => /^store-.*\.db$/.test(f))
+      .map(f => { const s = statSync(join(dir, f)); return { file: f, bytes: s.size, mtime: new Date(s.mtimeMs).toISOString() }; })
+      .sort((a, b) => b.mtime.localeCompare(a.mtime));
+  } catch { return []; }
 }
 
 

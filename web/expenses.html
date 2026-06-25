@@ -119,7 +119,7 @@
 <script type="module">
 import { api, connect, money, toast, esc, startClock, topbar, requireModuleAccess, renderUserChip, apiUrl, getToken, getBranchId } from '/shared/client.js';
 document.getElementById('top').innerHTML = topbar('expenses', {
-  title: '💸 Chi phí',
+  title: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12V7H5a2 2 0 0 1 0-4h14v4"/><path d="M3 5v14a2 2 0 0 0 2 2h16v-5"/><path d="M18 12a2 2 0 0 0 0 4h4v-4z"/></svg>Chi phí',
   sub: 'Sổ chi phí theo danh mục · chi từ tiền két (trừ ca) hoặc kế toán chi trực tiếp',
   actions: `<button class="btn" id="reportBtn">📊 Báo cáo</button><button class="btn primary" id="addBtn">+ Ghi chi phí</button>`,
 });

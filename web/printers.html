@@ -106,7 +106,7 @@ body{overflow:hidden}
 import { api, connect, esc, toast, topbar, startClock, requireModuleAccess, renderUserChip } from '/shared/client.js';
 
 document.getElementById('top').innerHTML = topbar('printers', {
-  title: '🖨️ In ấn & thiết bị',
+  title: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>In ấn & thiết bị',
   sub: 'Máy in thật, két tiền, lịch sử in và in lại có kiểm tra trước.',
   actions: `<button class="btn sm" id="openDrawerBtn">Mở két</button>
       <a class="btn sm" href="/settings?tab=connections">Cấu hình máy in</a>

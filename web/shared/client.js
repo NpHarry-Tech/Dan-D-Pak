@@ -442,7 +442,7 @@ function injectLoginCss() {
 
 // Socket.IO is served by the server at /socket.io/socket.io.js
 export function connect(device, handlers = {}) {
-  const s = connectRealtime(device, getBranchId(), handlers, setOnline);
+  const s = connectRealtime(device, getBranchId(), handlers, setOnline, getToken() || '');
   startPingMonitor();
   return s;
 }

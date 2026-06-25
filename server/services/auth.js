@@ -5,8 +5,27 @@ import { db, uid, now, audit } from '../db.js';
 import { archiveStaff } from './archive.js';
 import { MODULE_PERMISSIONS } from './modules.js';
 import { REPORTS } from './reportCenter.js';
+import { hashPin, verifyPin, newToken } from './pin.js';
 
 const sessions = new Map(); // token -> { user, at }
+
+// Chống dò PIN: khóa đăng nhập tạm thời sau nhiều lần sai liên tiếp (theo username).
+const loginFails = new Map(); // username -> { count, until }
+const LOGIN_MAX_FAILS = 5;
+const LOGIN_LOCK_MS = 5 * 60 * 1000; // khóa 5 phút sau khi vượt ngưỡng
+function loginLockState(uname) {
+  const e = loginFails.get(uname);
+  if (!e) return null;
+  if (e.until && e.until <= Date.now()) { loginFails.delete(uname); return null; }
+  return e;
+}
+function registerLoginFail(uname, branch_id, ip = '') {
+  const e = loginFails.get(uname) || { count: 0, until: 0 };
+  e.count += 1;
+  if (e.count >= LOGIN_MAX_FAILS) e.until = Date.now() + LOGIN_LOCK_MS;
+  loginFails.set(uname, e);
+  audit('auth.login.failed', { user: uname, attempts: e.count, locked: !!e.until, ip }, branch_id, uname || 'unknown');
+}
 
 // Tự dọn các session quá hạn trong Map — tránh memory leak khi thiết bị tắt mà không logout.
 const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 ngày
@@ -282,32 +301,45 @@ function normalizeBranchAccess(body = {}, role = 'cashier', homeBranch = 'br1') 
   return clean.length ? clean : [homeBranch];
 }
 
-export function login(username, pin, branch_id = 'br1') {
-  const u = db.prepare(`SELECT * FROM users WHERE username=? AND active=1`).get(String(username || '').toLowerCase());
-  if (!u || u.pin !== String(pin)) throw new Error('Sai tài khoản hoặc mã PIN');
+export function login(username, pin, branch_id = 'br1', meta = {}) {
+  const ip = String(meta?.ip || '').slice(0, 64);
+  const uname = String(username || '').toLowerCase();
+  const lock = loginLockState(uname);
+  if (lock && lock.until && lock.until > Date.now()) {
+    const mins = Math.max(1, Math.ceil((lock.until - Date.now()) / 60000));
+    audit('auth.login.locked', { user: uname, ip }, branchExists(branch_id) ? branch_id : 'br1', uname || 'unknown');
+    throw new Error(`Đăng nhập tạm khóa do nhập sai nhiều lần. Thử lại sau ~${mins} phút.`);
+  }
+  const u = db.prepare(`SELECT * FROM users WHERE username=? AND active=1`).get(uname);
+  if (!u || !verifyPin(pin, u.pin)) {
+    registerLoginFail(uname, branchExists(branch_id) ? branch_id : 'br1', ip);
+    throw new Error('Sai tài khoản hoặc mã PIN');
+  }
+  loginFails.delete(uname);
   const selectedBranch = branchExists(branch_id) ? branch_id : (u.branch_id || 'br1');
   if (!canAccessBranch(u, selectedBranch)) throw new Error('Tài khoản này chưa được cấp quyền vào chi nhánh đã chọn.');
-  const token = uid('tk_');
+  const token = newToken();
   const user = publicUser(u);
   const ts = now();
   sessions.set(token, { user, at: ts });
   db.prepare(`INSERT INTO auth_sessions (token,user_id,branch_id,created_at,last_seen_at) VALUES (?,?,?,?,?)`)
     .run(token, u.id, selectedBranch, ts, ts);
-  audit('auth.login', { user: u.username, role: u.role }, selectedBranch, u.username);
+  audit('auth.login', { user: u.username, role: u.role, ip }, selectedBranch, u.username);
   return { token, user, perms: effectivePermsForUser(u) };
 }
 
 export function verifyManagerOwnerPin(pin, branch_id = 'br1') {
   const clean = String(pin || '').trim();
   if (!clean) return null;
+  // PIN nay duoc bam (scrypt) nen khong the tra theo `WHERE pin=?`: nap ung vien
+  // theo vai tro roi so khop bang verifyPin (so luong owner/manager nho).
   const rows = db.prepare(`
     SELECT * FROM users
     WHERE active=1
-      AND pin=?
       AND role IN ('owner','manager')
     ORDER BY CASE role WHEN 'owner' THEN 0 ELSE 1 END, name
-    LIMIT 20`).all(clean);
-  const row = rows.find(u => canAccessBranch(u, branch_id));
+    LIMIT 200`).all();
+  const row = rows.find(u => verifyPin(clean, u.pin) && canAccessBranch(u, branch_id));
   return row ? publicUser(row) : null;
 }
 
@@ -317,11 +349,10 @@ export function verifyWarehouseConfigPin(pin, branch_id = 'br1') {
   const rows = db.prepare(`
     SELECT * FROM users
     WHERE active=1
-      AND pin=?
       AND role IN ('owner','manager','warehouse')
     ORDER BY CASE role WHEN 'owner' THEN 0 WHEN 'manager' THEN 1 ELSE 2 END, name
-    LIMIT 20`).all(clean);
-  const row = rows.find(u => canAccessBranch(u, branch_id));
+    LIMIT 200`).all();
+  const row = rows.find(u => verifyPin(clean, u.pin) && canAccessBranch(u, branch_id));
   return row ? publicUser(row) : null;
 }
 
@@ -378,7 +409,7 @@ export function createUser(body, branch_id = 'br1') {
   const id = uid('u_');
   const access = normalizeBranchAccess(body, body.role, homeBranch);
   db.prepare(`INSERT INTO users (id,branch_id,username,name,pin,role,active,lang,branch_access_json) VALUES (?,?,?,?,?,?,1,?,?)`)
-    .run(id, homeBranch, username, name, pin, body.role, lang, JSON.stringify(access));
+    .run(id, homeBranch, username, name, hashPin(pin), body.role, lang, JSON.stringify(access));
   if (Array.isArray(body.perms)) setUserPerms(id, body.perms, homeBranch);
   audit('user.create', { username, role: body.role, branch_id: homeBranch, branch_access: access }, homeBranch);
   const row = db.prepare(`SELECT * FROM users WHERE id=?`).get(id);
@@ -394,7 +425,7 @@ export function updateUser(id, body, branch_id = 'br1') {
   const lang = body.lang !== undefined ? String(body.lang).trim() || cur.lang || 'vi' : cur.lang || 'vi';
   const homeBranch = body.branch_id !== undefined && branchExists(body.branch_id) ? String(body.branch_id) : (cur.branch_id || branch_id);
   let pin = cur.pin;
-  if (body.pin) { if (!/^\d{4}$/.test(String(body.pin))) throw new Error('Mã PIN phải đúng 4 chữ số'); pin = String(body.pin); }
+  if (body.pin) { if (!/^\d{4}$/.test(String(body.pin))) throw new Error('Mã PIN phải đúng 4 chữ số'); pin = hashPin(String(body.pin)); }
   const active = body.active !== undefined ? (body.active ? 1 : 0) : cur.active;
   if (cur.role === 'owner' && role !== 'owner' && db.prepare(`SELECT COUNT(*) n FROM users WHERE role='owner' AND active=1`).get().n <= 1)
     throw new Error('Phải còn ít nhất một Admin');
@@ -465,6 +496,16 @@ export function requireAuth(perm) {
   };
 }
 
+// Imperative permission check for handlers that need branch + actor in one call
+// (dùng trong các route DMS). Ném lỗi có status để wrap() trả đúng mã HTTP.
+export function requirePermission(req, perm) {
+  const user = req.user || userFor(tokenFromReq(req));
+  if (!user) { const e = new Error('Cần đăng nhập'); e.status = 401; throw e; }
+  if (perm && !canUser(user, perm)) { const e = new Error(`Không đủ quyền (${perm})`); e.status = 403; throw e; }
+  req.user = user;
+  return { branch_id: resolveBranch(req), actor: user, user };
+}
+
 // Optional auth: attach req.user when a valid token is present, but never block.
 // Lets unguarded routes (POS/iPad) record who acted in the activity log.
 export function attachUser() {
@@ -478,3 +519,4 @@ export function attachUser() {
 export function actorName(req) {
   return req?.user?.name || req?.user?.username || 'system';
 }
+

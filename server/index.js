@@ -5,12 +5,13 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { existsSync, mkdirSync } from 'node:fs';
 import zlib from 'node:zlib';
-import { db, migrate, purgeOldAudit, reconcileAuditFromArchive, compactOldAuditLogs } from './db.js';
+import { db, migrate, purgeOldAudit, reconcileAuditFromArchive, compactOldAuditLogs, backupDatabase } from './db.js';
 import { initRealtime } from './realtime.js';
 import { api } from './api.js';
 import { startSyncEngine } from './services/sync.js';
 import { ensureStorageDirectories } from './services/enterpriseStorage.js';
 import { bootstrapDefaultAdmin } from './services/bootstrapAdmin.js';
+import { migratePlaintextPins } from './services/pin.js';
 import { env } from './config/env.js';
 import { createCorsMiddleware } from './config/cors.js';
 import { runtimeSnapshot } from './config/runtime.js';
@@ -78,14 +79,32 @@ if (isEmpty) {
     await import('./seed.js');
   }
 }
+// Băm mọi PIN còn ở dạng plaintext (DB cũ / sau seed demo) trước khi bootstrap admin.
+try {
+  const migratedPins = migratePlaintextPins(db);
+  if (migratedPins > 0) logger.warn('hashed legacy plaintext PINs', { count: migratedPins });
+} catch (err) {
+  logger.warn('PIN migration skipped', { message: err.message });
+}
 const adminBootstrap = bootstrapDefaultAdmin();
 if (adminBootstrap.created) logger.warn('default admin account created', { username: adminBootstrap.username });
+if (adminBootstrap.pinReset) logger.warn('admin PIN reset via DANDPAK_ADMIN_RESET_PIN env (remove the env var after this run)', { username: adminBootstrap.username });
 
 const app = express();
 app.disable('x-powered-by');
+// Security headers (tương đương helmet, không cần thêm thư viện). Không đặt CSP
+// vì app dùng nhiều inline module/handler — sẽ bổ sung CSP riêng sau nếu cần.
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+  res.setHeader('Referrer-Policy', 'no-referrer');
+  res.setHeader('X-DNS-Prefetch-Control', 'off');
+  res.setHeader('Permissions-Policy', 'geolocation=(), microphone=(), camera=()');
+  next();
+});
 app.use(createCorsMiddleware(env));
 app.use(compressionMiddleware);              // gzip trước mọi API response
-app.use(express.json({ limit: '8mb' })); // room for base64 image uploads
+app.use(express.json({ limit: '35mb' })); // DMS cho phép file 25MB → base64 phình ~33MB
 
 app.get('/health', (req, res) => {
   const mem = process.memoryUsage();
@@ -118,6 +137,14 @@ app.use((req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
 app.use(express.static(WEB, { etag: false, lastModified: false }));
 app.get('/', (req, res) => res.sendFile(join(WEB, 'index.html')));
 app.get('/settings', (req, res) => res.sendFile(join(WEB, 'admin.html')));
+// Haravan-style settings sub-routes (/settings/staff, /settings/location, ...) all serve the admin shell.
+app.get('/settings/:tab', (req, res) => res.sendFile(join(WEB, 'admin.html')));
+// Report center lives in the admin shell; /reports/<type> deep-links a specific report.
+app.get('/reports', (req, res) => res.sendFile(join(WEB, 'admin.html')));
+app.get('/reports/:type', (req, res) => res.sendFile(join(WEB, 'admin.html')));
+// Module sub-tabs deep-linked Haravan-style (/contacts/customers, /database/logs, ...).
+app.get('/contacts/:tab', (req, res) => res.sendFile(join(WEB, 'contacts.html')));
+app.get('/database/:tab', (req, res) => res.sendFile(join(WEB, 'database.html')));
 for (const v of ['ipad', 'pos', 'kds', 'admin', 'retail', 'warehouse', 'sim', 'printers', 'online', 'contacts', 'purchase', 'expenses', 'invoices', 'database', 'documents']) {
   app.get('/' + v, (req, res) => res.sendFile(join(WEB, v + '.html')));
 }
@@ -139,6 +166,17 @@ function purgeAudit() {
 }
 purgeAudit();
 setInterval(purgeAudit, 24 * 60 * 60 * 1000).unref();
+
+// Sao lưu local định kỳ: snapshot store.db ra backups/ để có thể copy ra ổ ngoài/VPS.
+function runBackup() {
+  try {
+    const r = backupDatabase(env.BACKUP_RETENTION_DAYS);
+    if (r.ok) logger.info('database backup written', { path: r.path, bytes: r.bytes, pruned: r.pruned });
+    else logger.warn('database backup failed', { error: r.error });
+  } catch (e) { logger.warn('database backup threw', { message: e.message }); }
+}
+runBackup();
+setInterval(runBackup, 24 * 60 * 60 * 1000).unref();
 
 server.listen(PORT, () => {
   logger.info('POS/ERP server started', {

@@ -7,28 +7,63 @@
 <script src="/runtime-config.js"></script>
 <script src="/socket.io/socket.io.js"></script>
 <style>
-.dbsubtabs{display:flex;gap:4px;background:var(--surface2);border:1px solid var(--border2);border-radius:12px;padding:4px;margin:14px 20px 0;max-width:420px}
-.dbsubtabs button{flex:1;padding:9px 14px;border-radius:9px;border:0;background:transparent;color:var(--muted);font-weight:700;font-size:13px;cursor:pointer;transition:.12s}
-.dbsubtabs button.on{background:var(--surface);color:var(--brand);box-shadow:0 1px 3px rgba(15,23,42,.1)}
+/* Settings-style shell: left sidebar menu + right content cards (Haravan look) */
+.db-shell{flex:1;display:flex;gap:22px;min-height:0;overflow:hidden;padding:18px 20px}
+.db-sidebar{width:248px;flex:0 0 auto;align-self:stretch;background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:9px;display:flex;flex-direction:column;gap:2px;overflow-y:auto;box-shadow:0 1px 3px rgba(20,33,47,.04)}
+.db-sidebar button{display:flex;align-items:center;gap:11px;width:100%;padding:10px 12px;border-radius:11px;background:transparent;border:0;font-size:13px;font-weight:600;color:var(--text);text-align:left;cursor:pointer;transition:background .14s ease,color .14s ease}
+.db-sidebar button svg{width:19px;height:19px;flex:0 0 auto;color:var(--muted);transition:color .14s ease}
+.db-sidebar button span{flex:1 1 auto;min-width:0}
+.db-sidebar button:hover{background:var(--surface2)}
+.db-sidebar button.on{background:var(--brand-dim);color:var(--brand);font-weight:700}
+.db-sidebar button.on svg{color:var(--brand)}
+.db-main{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;min-height:0}
+.db-page-head{flex:0 0 auto;padding-bottom:15px;margin-bottom:16px;border-bottom:1px solid var(--border)}
+.db-page-head h2{margin:0;font-size:19px;font-weight:800;letter-spacing:-.2px;color:var(--text)}
+.db-page-head p{margin:5px 0 0;font-size:13px;color:var(--muted);line-height:1.45}
+.db-body{flex:1 1 auto;overflow-y:auto;min-height:0}
+@media(max-width:900px){
+  .db-shell{flex-direction:column;overflow-y:auto;gap:14px}
+  .db-sidebar{width:auto;flex-direction:row;flex-wrap:wrap;align-self:stretch}
+  .db-sidebar button{width:auto}
+  .db-body{overflow:visible;min-height:0}
+}
 .adgrid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
-  gap: 20px;
+  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+  gap: 18px;
   margin-top: 20px;
 }
 .setting-card {
-  background: var(--surface2);
+  background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 12px;
-  padding: 24px;
+  border-radius: 16px;
+  padding: 22px;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  transition: transform 0.2s, box-shadow 0.2s;
+  box-shadow: 0 1px 3px rgba(20,33,47,.04);
+  transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
 }
 .setting-card:hover {
-  transform: translateY(-3px);
-  box-shadow: 0 10px 30px rgba(0,0,0,0.15);
+  transform: translateY(-2px);
+  border-color: var(--border2);
+  box-shadow: 0 8px 24px rgba(20,33,47,.08);
+}
+.card-icon {
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+  border-radius: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  color: var(--muted);
+}
+.card-icon svg {
+  width: 18px;
+  height: 18px;
 }
 .card-header {
   margin-bottom: 16px;
@@ -39,7 +74,7 @@
   font-weight: 700;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
 }
 .card-desc {
   font-size: 12px;
@@ -95,21 +130,24 @@
 </head>
 <body>
 <div id="top"></div>
-<div class="dbsubtabs" id="dbSubtabs" style="max-width:550px">
-  <button type="button" data-sub="db" class="on">🛢️ Cơ sở dữ liệu</button>
-  <button type="button" data-sub="audit">👣 Nhật ký hoạt động</button>
-  <button type="button" data-sub="docs">🗂️ Tài liệu</button>
-</div>
-<div class="view" id="dbPane">
-  <div class="mini" style="margin-bottom:20px;color:var(--muted)">
-    Hệ thống lưu trữ dữ liệu của Dan D Pak sử dụng cơ chế offline-first đồng bộ thời gian thực giữa Local Store Server và VPS Cloud, kết hợp với PostgreSQL làm Eternal Ledger để lưu trữ lịch sử giao dịch vĩnh viễn.
-  </div>
-
+<div class="db-shell">
+  <aside class="db-sidebar" id="dbSubtabs">
+    <button type="button" data-sub="db" class="on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14a9 3 0 0 0 18 0V5"/><path d="M3 12a9 3 0 0 0 18 0"/></svg><span>Cơ sở dữ liệu</span></button>
+    <button type="button" data-sub="audit"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg><span>Nhật ký hoạt động</span></button>
+    <button type="button" data-sub="docs"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg><span>Tài liệu</span></button>
+  </aside>
+  <div class="db-main">
+    <div class="db-page-head">
+      <h2 id="dbPageTitle">Cơ sở dữ liệu</h2>
+      <p id="dbPageDesc">Theo dõi động cơ dữ liệu local, sao lưu cấu hình và thống kê hệ thống.</p>
+    </div>
+    <div class="db-body">
+<div id="dbPane">
   <div class="adgrid">
     <!-- Card 1: Local SQLite Engine -->
     <div class="setting-card">
       <div class="card-header">
-        <h4 class="card-title">🛢️ Động cơ CSDL Local</h4>
+        <h4 class="card-title"><span class="card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14a9 3 0 0 0 18 0V5"/><path d="M3 12a9 3 0 0 0 18 0"/></svg></span> Động cơ CSDL Local</h4>
         <div class="card-desc">Quản lý và kiểm tra sức khỏe cơ sở dữ liệu SQLite tại cửa hàng</div>
       </div>
       <div style="margin-bottom: 20px;">
@@ -127,7 +165,7 @@
     <!-- Card 2: Replication & Sync Status -->
     <div class="setting-card">
       <div class="card-header">
-        <h4 class="card-title">☁️ VPS Buffer &amp; Eternal Storage</h4>
+        <h4 class="card-title"><span class="card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M17.5 19a4.5 4.5 0 0 0 0-9 6 6 0 0 0-11.5-1.5A4.5 4.5 0 0 0 6.5 19z"/></svg></span> VPS Buffer &amp; Eternal Storage</h4>
         <div class="card-desc">Đồng bộ đám mây và lưu trữ hóa đơn, ca làm vĩnh viễn phục vụ quyết toán thuế</div>
       </div>
       <div style="margin-bottom: 20px;">
@@ -144,7 +182,7 @@
     <!-- Card 3: Export & Import Config -->
     <div class="setting-card">
       <div class="card-header">
-        <h4 class="card-title">📥 Sao lưu &amp; Phục hồi cấu hình</h4>
+        <h4 class="card-title"><span class="card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></span> Sao lưu &amp; Phục hồi cấu hình</h4>
         <div class="card-desc">Sao lưu/phục hồi danh mục, nhân sự, menu, cài đặt (không bao gồm dữ liệu giao dịch đơn hàng)</div>
       </div>
       <div style="display:flex;flex-direction:column;gap:12px;margin-bottom:12px">
@@ -166,7 +204,7 @@
     <!-- Card 4: Staging & Transaction reset -->
     <div class="setting-card">
       <div class="card-header">
-        <h4 class="card-title">🧪 Môi trường Staging &amp; Reset giao dịch</h4>
+        <h4 class="card-title"><span class="card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3h6"/><path d="M10 3v6l-5.5 9.5A2 2 0 0 0 6.2 21h11.6a2 2 0 0 0 1.7-3.5L14 9V3"/><path d="M7 14h10"/></svg></span> Môi trường Staging &amp; Reset giao dịch</h4>
         <div class="card-desc">Tạo môi trường thử nghiệm hoặc dọn dẹp các đơn hàng chạy thử trước khi khai trương</div>
       </div>
       <div style="display:flex;flex-direction:column;gap:12px;">
@@ -181,7 +219,7 @@
     <!-- Card 5: Statistics -->
     <div class="setting-card">
       <div class="card-header">
-        <h4 class="card-title">📊 Thống kê Cơ sở dữ liệu</h4>
+        <h4 class="card-title"><span class="card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg></span> Thống kê Cơ sở dữ liệu</h4>
         <div class="card-desc">Số lượng bảng ghi hiện tại trong hệ thống CSDL local</div>
       </div>
       <div style="display:flex;flex-direction:column;gap:4px;">
@@ -194,13 +232,13 @@
     </div>
   </div>
 </div>
-<div class="view" id="auditPane" style="display:none">
+<div id="auditPane" style="display:none">
   <div class="mini" style="margin-bottom:20px;color:var(--muted)">
     Nhật ký hoạt động hệ thống — lưu trữ trong cơ sở dữ liệu SQLite local (tối đa 3 năm). Bao gồm cả lỗi phát sinh khi thao tác; bấm vào một dòng lỗi <span style="color:var(--danger);font-weight:700">⚠</span> để xem nguyên nhân chi tiết.
   </div>
 
   <!-- Audit Toolbar -->
-  <div style="display:flex; flex-wrap:wrap; gap:12px; align-items:flex-start; background:var(--surface2); border:1px solid var(--border); padding:16px; border-radius:12px; margin-bottom:20px;">
+  <div style="display:flex; flex-wrap:wrap; gap:12px; align-items:flex-start; background:var(--surface); border:1px solid var(--border); padding:16px; border-radius:16px; margin-bottom:18px; box-shadow:0 1px 3px rgba(20,33,47,.04);">
     <!-- Filter Period: chọn độ chi tiết + điều hướng tới một kỳ cụ thể -->
     <div style="display:flex; flex-direction:column; gap:6px;">
       <label style="font-size:11px; font-weight:700; color:var(--muted); text-transform:uppercase">Thời gian</label>
@@ -239,7 +277,7 @@
   </div>
 
   <!-- Audit List -->
-  <div style="background:var(--surface2); border:1px solid var(--border); border-radius:12px; padding:20px; min-height:300px;">
+  <div style="background:var(--surface); border:1px solid var(--border); border-radius:16px; padding:20px; min-height:300px; box-shadow:0 1px 3px rgba(20,33,47,.04);">
     <div id="auditList" style="display:flex; flex-direction:column;">
       <div class="empty">Đang tải...</div>
     </div>
@@ -248,15 +286,18 @@
     </div>
   </div>
 </div>
-<div id="docsPane" style="display:none">
-  <iframe id="docsFrame" title="Tài liệu" style="width:100%;height:calc(100dvh - var(--topbar-h,70px) - 52px);border:0;display:block"></iframe>
+<div id="docsPane" style="display:none;height:100%">
+  <iframe id="docsFrame" title="Tài liệu" style="width:100%;height:100%;min-height:480px;border:0;display:block;border-radius:14px"></iframe>
 </div>
+    </div><!-- /db-body -->
+  </div><!-- /db-main -->
+</div><!-- /db-shell -->
 
 <script type="module">
 import { api, connect, toast, esc, money, startClock, topbar, requireModuleAccess, renderUserChip } from '/shared/client.js';
 
 document.getElementById('top').innerHTML = topbar('database', {
-  title: '🛢️ Quản lý Cơ sở dữ liệu',
+  title: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14a9 3 0 0 0 18 0V5"/><path d="M3 12a9 3 0 0 0 18 0"/></svg>Quản lý Cơ sở dữ liệu',
   sub: 'Theo dõi động cơ dữ liệu local, sao lưu cấu hình, thiết lập môi trường staging và dọn dẹp dữ liệu giao dịch.',
 });
 
@@ -885,9 +926,29 @@ function auditRowHtml(r){
   const auditPane = document.getElementById('auditPane');
   const frame = document.getElementById('docsFrame');
   if (!tabs) return;
-  const wantDocs = new URLSearchParams(location.search).get('tab') === 'docs';
-  const wantAudit = new URLSearchParams(location.search).get('tab') === 'audit';
-  const show = (sub) => {
+  // Haravan-style sub-tab routing: /database (db), /database/logs (audit), /database/documents (docs).
+  const SLUG_TO_SUB = { logs: 'audit', documents: 'docs' };
+  const SUB_TO_SLUG = { audit: 'logs', docs: 'documents' };
+  const subFromPath = () => {
+    const slug = location.pathname.replace(/\/+$/, '').split('/')[2] || '';
+    if (SLUG_TO_SUB[slug]) return SLUG_TO_SUB[slug];
+    const qp = new URLSearchParams(location.search).get('tab');
+    return (qp === 'docs' || qp === 'audit') ? qp : 'db';
+  };
+  const syncUrl = (sub, replace) => {
+    const slug = SUB_TO_SLUG[sub] || '';
+    const path = '/database' + (slug ? '/' + slug : '');
+    if (location.pathname.replace(/\/+$/, '') === path) return;
+    history[replace ? 'replaceState' : 'pushState']({ dbSub: sub }, '', path);
+  };
+  const HEAD = {
+    db: { title: 'Cơ sở dữ liệu', desc: 'Theo dõi động cơ dữ liệu local, sao lưu cấu hình và thống kê hệ thống.' },
+    audit: { title: 'Nhật ký hoạt động', desc: 'Lịch sử thao tác hệ thống — lưu trong SQLite local, tối đa 3 năm.' },
+    docs: { title: 'Tài liệu', desc: 'Tài liệu hướng dẫn và mô tả hệ thống.' },
+  };
+  const pageTitle = document.getElementById('dbPageTitle');
+  const pageDesc = document.getElementById('dbPageDesc');
+  const show = (sub, push = true) => {
     tabs.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.sub === sub));
     const docs = sub === 'docs';
     const audit = sub === 'audit';
@@ -900,9 +961,16 @@ function auditRowHtml(r){
         loadAuditLogs();
       }
     }
+    const h = HEAD[sub] || HEAD.db;
+    if (pageTitle) pageTitle.textContent = h.title;
+    if (pageDesc) pageDesc.textContent = h.desc;
+    if (push) syncUrl(sub, false);
   };
   tabs.querySelectorAll('button').forEach(b => b.onclick = () => show(b.dataset.sub));
-  show(wantDocs ? 'docs' : (wantAudit ? 'audit' : 'db'));
+  window.addEventListener('popstate', () => show(subFromPath(), false));
+  const initial = subFromPath();
+  show(initial, false);
+  syncUrl(initial, true);
 })();
 
 startClock();
