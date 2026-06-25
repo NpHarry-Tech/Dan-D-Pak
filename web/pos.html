@@ -227,7 +227,7 @@ import { perkTag, perkAmount, openCustomerPicker } from '/shared/customer.js';
 import { createCompanyInvoiceDraft, companyInvoiceHtml, bindCompanyInvoiceBox, companyInvoicePayload, invoiceReceiptCustomerName, invoiceReceiptTaxCode } from '/shared/invoiceRequest.js';
 import { danBillVars } from '/shared/danBill.js';
 document.getElementById('top').innerHTML = topbar('pos', {
-  title: '💳 POS Cashier',
+  title: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>POS Cashier',
   sub: `<span id="callsHint"></span>`,
   actions: `<button class="btn sm pendingbell" id="pendingBell" title="Món khách vừa gọi">🔔<span class="n" id="pendingBadge" style="display:none">0</span></button>
       <button class="btn sm shiftbtn closed" id="shiftBtn" title="Mở / kết ca">Ca: chưa mở</button>

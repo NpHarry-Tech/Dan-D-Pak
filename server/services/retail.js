@@ -21,47 +21,56 @@ function snapshotCustomer(c) {
 // lines (cart): [{sku_id, qty, lot_id}]; payments: [{method, amount, reference}]
 export function checkout({ items, payments, voucher_id = null, customer = null, customer_id = null, invoice_customer = null, manual_discount = 0, branch_id = 'br1', cashier = '' }) {
   if (!items?.length) throw new Error('Giỏ hàng trống');
-  const lines = normalizeCheckoutItems(items, branch_id);
 
-  // Resolve customer: saved (authoritative perk from DB) or ad-hoc walk-in object.
-  let cust = null;
-  if (customer_id) cust = getCustomer(customer_id, branch_id);
-  else if (customer?.id) cust = getCustomer(customer.id, branch_id) || customer;
-  else if (customer && (customer.name || customer.tax_code)) cust = customer;
+  db.prepare('BEGIN IMMEDIATE').run();
+  try {
+    const lines = normalizeCheckoutItems(items, branch_id);
 
-  // First pass (promos + order voucher) to know the base the perk/manual applies on.
-  const pre = calculateRetailDiscount(lines, voucher_id, branch_id);
-  const baseForExtra = Math.max(0, pre.subtotal - pre.lineDiscount - pre.orderDiscount);
-  const customerPerk = cust ? perkDiscount(cust, baseForExtra) : 0;
-  const manual = Math.max(0, Math.round(Number(manual_discount) || 0));
-  const extraDiscount = customerPerk + manual;
+    // Resolve customer: saved (authoritative perk from DB) or ad-hoc walk-in object.
+    let cust = null;
+    if (customer_id) cust = getCustomer(customer_id, branch_id);
+    else if (customer?.id) cust = getCustomer(customer.id, branch_id) || customer;
+    else if (customer && (customer.name || customer.tax_code)) cust = customer;
 
-  const discountPlan = calculateRetailDiscount(lines, voucher_id, branch_id, { extraDiscount });
-  const orderItems = lines.map((line, idx) => {
-    const promo = discountPlan.appliedSkuPromos.find(p => p.line_index === idx);
-    return {
-      sku_id: line.sku_id,
-      qty: line.qty,
-      lot_id: line.lot_id || null,
-      promo: promo ? { voucher_id: promo.voucher_id, code: promo.code, name: promo.name, amount: promo.amount } : null,
+    // First pass (promos + order voucher) to know the base the perk/manual applies on.
+    const pre = calculateRetailDiscount(lines, voucher_id, branch_id);
+    const baseForExtra = Math.max(0, pre.subtotal - pre.lineDiscount - pre.orderDiscount);
+    const customerPerk = cust ? perkDiscount(cust, baseForExtra) : 0;
+    const manual = Math.max(0, Math.round(Number(manual_discount) || 0));
+    const extraDiscount = customerPerk + manual;
+
+    const discountPlan = calculateRetailDiscount(lines, voucher_id, branch_id, { extraDiscount });
+    const orderItems = lines.map((line, idx) => {
+      const promo = discountPlan.appliedSkuPromos.find(p => p.line_index === idx);
+      return {
+        sku_id: line.sku_id,
+        qty: line.qty,
+        lot_id: line.lot_id || null,
+        promo: promo ? { voucher_id: promo.voucher_id, code: promo.code, name: promo.name, amount: promo.amount } : null,
+      };
+    });
+    const order = createOrUpdateOrder({ branch_id, table_id: null, channel: 'retail', items: orderItems, actor: cashier || 'system', skipTransaction: true });
+    db.prepare(`UPDATE orders SET voucher_id=?, voucher_code=? WHERE id=?`)
+      .run(discountPlan.orderVoucher?.id || null, discountPlan.orderVoucher?.code || null, order.id);
+    const snap = snapshotCustomer(cust);
+    const receipt = payOrder(order.id, Array.isArray(payments) ? payments : [], { discount: discountPlan.discount, cashier, customer: snap, invoice_customer, skipTransaction: true }, branch_id);
+    if (cust?.id) recordPurchase(cust.id, receipt.total, branch_id, order.id);
+    receipt.discount_breakdown = {
+      product_promos: discountPlan.lineDiscount,
+      voucher: discountPlan.orderDiscount,
+      customer_perk: customerPerk,
+      manual,
     };
-  });
-  const order = createOrUpdateOrder({ branch_id, table_id: null, channel: 'retail', items: orderItems, actor: cashier || 'system' });
-  db.prepare(`UPDATE orders SET voucher_id=?, voucher_code=? WHERE id=?`)
-    .run(discountPlan.orderVoucher?.id || null, discountPlan.orderVoucher?.code || null, order.id);
-  const snap = snapshotCustomer(cust);
-  const receipt = payOrder(order.id, Array.isArray(payments) ? payments : [], { discount: discountPlan.discount, cashier, customer: snap, invoice_customer }, branch_id);
-  if (cust?.id) recordPurchase(cust.id, receipt.total, branch_id, order.id);
-  receipt.discount_breakdown = {
-    product_promos: discountPlan.lineDiscount,
-    voucher: discountPlan.orderDiscount,
-    customer_perk: customerPerk,
-    manual,
-  };
-  receipt.voucher = discountPlan.orderVoucher;
-  receipt.promotions = discountPlan.appliedSkuPromos;
-  if (!receipt.customer && snap) receipt.customer = snap;
-  return receipt;
+    receipt.voucher = discountPlan.orderVoucher;
+    receipt.promotions = discountPlan.appliedSkuPromos;
+    if (!receipt.customer && snap) receipt.customer = snap;
+
+    db.prepare('COMMIT').run();
+    return receipt;
+  } catch (err) {
+    db.prepare('ROLLBACK').run();
+    throw err;
+  }
 }
 
 export function listRetailSales(branch_id = 'br1', limit = 40) {

@@ -1,6 +1,6 @@
 // REST API: thin HTTP layer over the Local Store Server services.
 import { Router } from 'express';
-import { db, uid, audit, now, decryptDecompress } from './db.js';
+import { db, uid, audit, now, decryptDecompress, listBackups } from './db.js';
 import * as Orders from './services/orders.js';
 import * as Inv from './services/inventory.js';
 import * as Pay from './services/payments.js';
@@ -156,8 +156,13 @@ function assertBillEditable(order_id, req, action = '') {
 }
 
 // --- Auth ---
+// IP thiết bị cho nhật ký bảo mật (ưu tiên X-Forwarded-For khi sau reverse proxy).
+function clientIp(req) {
+  const xff = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim();
+  return (xff || req.socket?.remoteAddress || '').replace('::ffff:', '');
+}
 api.get('/branches', wrap(() => Branches.listBranches()));
-api.post('/login', wrap((req) => Auth.login(req.body.username, req.body.pin, req.body.branch_id || publicBranch(req))));
+api.post('/login', wrap((req) => Auth.login(req.body.username, req.body.pin, req.body.branch_id || publicBranch(req), { ip: clientIp(req) })));
 // Cổng PIN Quản lý/Admin để đổi sang chi nhánh khác (chỉ xác minh, KHÔNG tạo session).
 // Phát từ trạng thái đang đăng nhập nên dùng guard(); verifyManagerOwnerPin yêu cầu
 // owner/manager có quyền vào chi nhánh đích.
@@ -455,19 +460,27 @@ api.post('/menu/:id/update', guard('menu.manage'), wrap((req) => {
   return Catalog.getMenuItem(req.params.id, { includeRecipe: true });
 }));
 
-api.post('/menu/:id/availability', wrap((req) => {
-  const branch_id = visibleBranch(req);
+api.post('/menu/:id/availability', guard('menu.manage'), wrap((req) => {
+  const branch_id = branch(req);
   const { available } = req.body;
   db.prepare(`UPDATE menu_items SET available=? WHERE id=?`).run(available ? 1 : 0, req.params.id);
   const item = Catalog.getMenuItem(req.params.id);
+  audit('menu.availability', { id: item.id, available: !!item.available }, branch_id, actor(req));
   emit('menu:updated', { id: item.id, available: !!item.available, name: item.name }, branch_id);
   return { id: item.id, available: !!item.available };
 }));
 
-api.post('/menu/:id/price', wrap((req) => {
-  const branch_id = visibleBranch(req);
+api.post('/menu/:id/price', guard('menu.manage'), wrap((req) => {
+  const branch_id = branch(req);
+  const pin = req.body?.security_pin;
+  if (req.body) delete req.body.security_pin;
+  if (!Auth.verifyManagerOwnerPin(pin, branch_id)) throw new Error('Cần nhập PIN của Manager hoặc Admin để xác nhận đổi giá món.');
   const price = parseInt(req.body.price);
+  if (!Number.isFinite(price) || price < 0) throw new Error('Giá không hợp lệ');
+  const cur = db.prepare(`SELECT price FROM menu_items WHERE id=?`).get(req.params.id);
+  if (!cur) throw new Error('Món không tồn tại');
   db.prepare(`UPDATE menu_items SET price=? WHERE id=?`).run(price, req.params.id);
+  audit('menu.price', { id: req.params.id, from: cur.price, to: price }, branch_id, actor(req));
   emit('menu:updated', { id: req.params.id, price }, branch_id);
   return { id: req.params.id, price };
 }));
@@ -570,7 +583,15 @@ api.patch('/orders/:id', guard('sell'), wrap(() => notImplemented('Generic order
 api.post('/orders/:id/confirm', guard('sell'), wrap((req) => Orders.confirmPendingItems(req.params.id, req.body.item_ids, branch(req), actor(req))));
 api.post('/orders/:id/reject', guard('sell'), wrap((req) => Orders.rejectPendingItems(req.params.id, req.body.item_ids, req.body.reason, branch(req), actor(req))));
 api.post('/orders/:id/split', guard('pay'), wrap((req) => Orders.splitOrderItems(req.params.id, req.body.item_ids, branch(req), actor(req))));
-api.post('/orders/items/:id/status', wrap((req) => Orders.setItemStatus(req.params.id, req.body.status, visibleBranch(req), actor(req))));
+api.post('/orders/items/:id/status', wrap((req) => {
+  // Route mở cho KDS chuyển trạng thái (nhận/làm/xong/giao). HỦY món phải đi qua
+  // /orders/items/:id/cancel (có cổng PIN Quản lý) — chặn ở đây để không lách quyền.
+  if (String(req.body.status) === 'cancelled') {
+    const e = new Error('Hủy món phải dùng chức năng Hủy (cần PIN Quản lý/Admin).');
+    e.status = 403; throw e;
+  }
+  return Orders.setItemStatus(req.params.id, req.body.status, visibleBranch(req), actor(req));
+}));
 api.post('/orders/items/:id/cancel', wrap((req) => {
   const branch_id = visibleBranch(req);
   const itemId = req.params.id;
@@ -584,9 +605,7 @@ api.post('/orders/items/:id/cancel', wrap((req) => {
   if (item.status !== 'pending_confirm') {
     const pin = req.body.pin;
     if (!pin) throw new Error('Yêu cầu nhập mã PIN Quản lý/Admin để hủy món đã gửi.');
-    const users = db.prepare(`SELECT * FROM users WHERE pin=? AND active=1 AND role IN ('owner','manager')`).all(String(pin));
-    const user = users.find(u => Auth.canAccessBranch(u, branch_id));
-    if (!user) {
+    if (!Auth.verifyManagerOwnerPin(String(pin), branch_id)) {
       throw new Error('Mã PIN không đúng hoặc không có quyền Quản lý/Admin.');
     }
   }
@@ -634,7 +653,18 @@ api.post('/orders/:id/customer-invoice', wrap((req) => {
 api.get('/public/tax-lookup/:mst', wrap(async (req) => { const r = await Customers.lookupTaxCode(req.params.mst); const { existed, ...pub } = r; return pub; }));
 api.post('/orders/:id/pay', guard('pay'), wrap((req) => {
   const branch_id = branch(req);
-  const receipt = Pay.payOrder(req.params.id, req.body.lines, { discount: req.body.discount, customer: req.body.customer || null, invoice_customer: req.body.invoice_customer || null, cashier: req.user?.name || req.user?.username || '' }, branch_id);
+  // Giảm giá khi thanh toán cần quyền 'discount' (owner luôn được). Chặn thu ngân
+  // không có quyền tự ý set discount để hạ tổng bill về 0.
+  let discount = req.body.discount;
+  if (typeof discount === 'number' && discount > 0) {
+    if (!(req.user?.role === 'owner' || Auth.canUser(req.user, 'discount'))) {
+      const e = new Error('Bạn không có quyền áp giảm giá khi thanh toán.');
+      e.status = 403; throw e;
+    }
+  } else {
+    discount = undefined; // bỏ qua discount âm / không hợp lệ
+  }
+  const receipt = Pay.payOrder(req.params.id, req.body.lines, { discount, customer: req.body.customer || null, invoice_customer: req.body.invoice_customer || null, cashier: req.user?.name || req.user?.username || '' }, branch_id);
   if (req.body.customer?.id) Customers.recordPurchase(req.body.customer.id, receipt.total, branch_id, req.params.id);
   return receipt;
 }));
@@ -779,10 +809,14 @@ api.get('/warehouse/documents', wrap((req) => Inv.listDocuments(visibleBranch(re
 api.get('/warehouse/documents/:id', wrap((req) => Inv.getDocument(req.params.id, visibleBranch(req))));
 
 // --- Online channels ---
-api.post('/online/webhook', wrap((req) => Online.receive(req.body, visibleBranch(req))));
+api.post('/online/webhook', wrap((req) => Online.receive(req.body, visibleBranch(req), req.headers)));
 api.get('/online/orders', wrap((req) => Online.listOnline(visibleBranch(req))));
 api.get('/online/channels', wrap((req) => Online.listChannels(visibleBranch(req))));
 api.post('/online/orders/:id/status', guard('online'), wrap((req) => Online.setStatus(req.params.id, req.body.status, branch(req))));
+api.post('/online/orders/:id/confirm-payment', guard('online'), wrap((req) => Online.confirmPayment(req.params.id, branch(req))));
+api.post('/online/orders/:id/confirm-delivery', guard('online'), wrap((req) => Online.confirmDelivery(req.params.id, branch(req))));
+api.post('/online/orders/:id/return', guard('online'), wrap((req) => Online.returnOrder(req.params.id, branch(req))));
+
 
 // --- Printing ---
 const printGuard = guardAny('module.printing', 'settings.printers', 'settings.print', 'pay');
@@ -950,17 +984,24 @@ api.get('/database/status', guardAny('settings.manage'), wrap(async (req) => {
     configCounts,
     transactionCounts,
     pendingSyncCount,
-    vpsBuffer: {
-      status: 'online',
-      retentionDays: 7,
-      eventCount: pendingSyncCount,
-      encrypted: true
+    // Báo cáo TRUNG THỰC: trạng thái sao lưu/đồng bộ phản ánh đúng thực tế hệ thống.
+    backups: (() => {
+      const list = listBackups();
+      return {
+        provider: 'local-snapshot',
+        retentionDays: parseInt(process.env.BACKUP_RETENTION_DAYS) || 14,
+        count: list.length,
+        latest: list[0] || null,
+        dir: 'backups/',
+      };
+    })(),
+    cloudSync: {
+      mode: process.env.DATABASE_PROVIDER === 'postgres' ? 'postgres' : 'local-only',
+      offsiteReplication: false,
+      pending: pendingSyncCount,
+      note: 'Đẩy đồng bộ ngoại vi CHƯA bật. An toàn dữ liệu dựa vào sao lưu local định kỳ (backups/) + nhật ký NDJSON fsync. Hãy copy thư mục backups/ ra ổ ngoài/VPS định kỳ.',
     },
-    eternalStorage: {
-      provider: process.env.DATABASE_PROVIDER || 'sqlite',
-      status: process.env.DATABASE_PROVIDER === 'postgres' ? 'connected' : 'local_active',
-      replication: 'append-only-ledger'
-    }
+    auditArchive: { durable: true, format: 'ndjson-fsync' },
   };
 }));
 

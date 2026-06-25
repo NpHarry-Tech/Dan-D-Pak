@@ -80,8 +80,9 @@
 .auditrow .ameta{font-size:11px;color:var(--muted);line-height:1.45;margin-top:2px}
 .auditrow .actor{display:inline-flex;align-items:center;gap:5px;margin-left:6px;padding:1px 7px;border-radius:99px;background:var(--surface2);color:var(--muted);font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.3px}
 /* Cài đặt quản lý: trang full nằm dưới topbar (giống các tab khác) */
-body.settings-shell > .view { display: none; }
-.overlay.settings-overlay {
+body.settings-shell > .view, body.reports-shell > .view { display: none; }
+.overlay.settings-overlay,
+body.reports-shell > .overlay.show {
   position: static;
   flex: 1 1 auto;
   min-height: 0;
@@ -89,6 +90,14 @@ body.settings-shell > .view { display: none; }
   background: var(--bg);
   backdrop-filter: none;
   padding: 0;
+}
+body.reports-shell > .overlay.show > .report-modal {
+  width: 100%;
+  height: 100%;
+  max-height: 100%;
+  border-radius: 0;
+  border: 0;
+  padding: 18px 20px;
 }
 .settings-modal {
   max-width: none;
@@ -112,17 +121,22 @@ body.settings-shell > .view { display: none; }
   flex: 1 1 auto;
   display: flex;
   min-height: 0;
-  gap: 20px;
+  gap: 22px;
 }
 .settings-sidebar {
-  width: 200px;
+  width: 248px;
   flex: 0 0 auto;
-  border-right: 1px solid var(--border);
-  padding-right: 14px;
+  align-self: flex-start;
+  max-height: 100%;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 9px;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 2px;
   overflow-y: auto;
+  box-shadow: 0 1px 3px rgba(20,33,47,.04);
 }
 .settings-sidebar::-webkit-scrollbar {
   width: 5px;
@@ -153,27 +167,62 @@ body.settings-shell > .view { display: none; }
 .settings-tab {
   display: flex;
   align-items: center;
+  gap: 11px;
   width: 100%;
-  padding: 10px 14px;
-  border-radius: 8px;
-  background: var(--surface2);
-  border: 1px solid var(--border);
-  font-size: 12.5px;
-  font-weight: 700;
-  color: var(--muted);
+  padding: 10px 12px;
+  border-radius: 11px;
+  background: transparent;
+  border: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
   text-align: left;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: background 0.14s ease, color 0.14s ease;
+}
+.settings-tab svg {
+  width: 19px;
+  height: 19px;
+  flex: 0 0 auto;
+  color: var(--muted);
+  transition: color 0.14s ease;
+}
+.settings-tab span {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 .settings-tab:hover {
-  background: var(--surface3);
-  color: var(--text);
-  border-color: var(--border2);
+  background: var(--surface2);
 }
 .settings-tab.on {
   background: var(--brand-dim);
-  border-color: var(--brand);
   color: var(--brand);
+  font-weight: 700;
+}
+.settings-tab.on svg {
+  color: var(--brand);
+}
+.settings-page-head {
+  flex: 0 0 auto;
+  padding-bottom: 15px;
+  margin-bottom: 16px;
+  border-bottom: 1px solid var(--border);
+}
+.settings-page-head h2 {
+  margin: 0;
+  font-size: 19px;
+  font-weight: 800;
+  letter-spacing: -.2px;
+  color: var(--text);
+}
+.settings-page-head p {
+  margin: 5px 0 0;
+  font-size: 13px;
+  color: var(--muted);
+  line-height: 1.45;
+}
+.settings-overlay .sw.on {
+  background: var(--brand);
 }
 .settings-tab-dropdown {
   display: none;
@@ -543,6 +592,16 @@ body.settings-shell > .view { display: none; }
   .settings-main {
     min-width: 0;
   }
+  .settings-page-head {
+    padding-bottom: 10px;
+    margin-bottom: 12px;
+  }
+  .settings-page-head h2 {
+    font-size: 16px;
+  }
+  .settings-page-head p {
+    font-size: 11.5px;
+  }
   .settings-main>#settingsBody {
     padding-right: 0;
     overflow-x: hidden;
@@ -684,8 +743,11 @@ body.settings-shell > .view { display: none; }
 .report-sidebar {
   min-height: 0;
   overflow: auto;
-  border-right: 1px solid var(--border);
-  padding-right: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 9px;
+  box-shadow: 0 1px 3px rgba(20,33,47,.04);
 }
 .report-main {
   min-height: 0;
@@ -694,30 +756,37 @@ body.settings-shell > .view { display: none; }
   gap: 12px;
 }
 .report-group-title {
-  margin: 12px 0 7px;
+  margin: 12px 4px 5px;
   color: var(--muted);
   font-size: 10.5px;
   font-weight: 800;
   text-transform: uppercase;
   letter-spacing: .45px;
 }
+.report-group-title:first-child {
+  margin-top: 4px;
+}
 .report-item {
   width: 100%;
   display: grid;
   grid-template-columns: 1fr;
-  gap: 3px;
+  gap: 2px;
   text-align: left;
-  border: 1px solid var(--border);
-  background: var(--surface2);
-  border-radius: 8px;
-  padding: 10px 11px;
-  margin-bottom: 7px;
+  border: 0;
+  background: transparent;
+  border-radius: 11px;
+  padding: 9px 11px;
+  margin-bottom: 2px;
   color: var(--text);
   cursor: pointer;
+  transition: background .14s ease, color .14s ease;
+}
+.report-item:hover {
+  background: var(--surface2);
 }
 .report-item b {
   font-size: 12.5px;
-  font-weight: 600;
+  font-weight: 650;
 }
 .report-item small {
   color: var(--muted);
@@ -725,9 +794,15 @@ body.settings-shell > .view { display: none; }
   line-height: 1.35;
 }
 .report-item.on {
-  border-color: var(--brand);
   background: var(--brand-dim);
   color: var(--brand);
+}
+.report-item.on b {
+  font-weight: 750;
+}
+.report-item.on small {
+  color: var(--brand);
+  opacity: .75;
 }
 .report-toolbar {
   display: grid;
@@ -735,9 +810,10 @@ body.settings-shell > .view { display: none; }
   gap: 10px;
   align-items: end;
   border: 1px solid var(--border);
-  border-radius: 10px;
-  background: var(--surface2);
-  padding: 12px;
+  border-radius: 14px;
+  background: var(--surface);
+  padding: 14px;
+  box-shadow: 0 1px 3px rgba(20,33,47,.04);
 }
 .report-toolbar label {
   display: flex;
@@ -762,10 +838,11 @@ body.settings-shell > .view { display: none; }
   min-height: 0;
   overflow: auto;
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: 14px;
   background: #fff;
   color: #172033;
   padding: 18px;
+  box-shadow: 0 1px 3px rgba(20,33,47,.04);
 }
 .report-doc-head {
   display: flex;
@@ -792,8 +869,9 @@ body.settings-shell > .view { display: none; }
 }
 .report-sum {
   border: 1px solid #d9dee7;
-  border-radius: 8px;
-  padding: 9px 10px;
+  border-left: 3px solid var(--brand);
+  border-radius: 10px;
+  padding: 10px 12px;
   background: #f8fafc;
   color: #667085;
   font-size: 11px;
@@ -1007,18 +1085,74 @@ body.settings-shell > .view { display: none; }
 }
 </style></head>
 <body>
+<script>
+  (function() {
+    const path = window.location.pathname.replace(/\/+$/, '');
+    const isSettings = path === '/settings' || path.startsWith('/settings/');
+    const isReports = path === '/reports' || path.startsWith('/reports/');
+    const params = new URLSearchParams(window.location.search);
+    const view = isSettings ? 'settings' : params.get('view');
+    const isRepView = isReports || params.get('view') === 'reports' || sessionStorage.getItem('adminActiveView') === 'reports';
+    if (isSettings || view === 'settings') {
+      document.body.classList.add('settings-shell');
+    }
+    if (isRepView) {
+      document.body.classList.add('reports-shell');
+    }
+  })();
+</script>
 <div id="top"></div>
 <div class="view">
-  <div class="cards" id="kpis"></div>
-  <div class="dash-window" id="dashWindow"></div>
+  <div class="cards" id="kpis">
+    <div class="card"><span class="skeleton" style="display:block;width:55%;height:10px"></span><span class="skeleton" style="display:block;width:80%;height:22px;margin-top:9px"></span></div>
+    <div class="card"><span class="skeleton" style="display:block;width:55%;height:10px"></span><span class="skeleton" style="display:block;width:80%;height:22px;margin-top:9px"></span></div>
+    <div class="card"><span class="skeleton" style="display:block;width:55%;height:10px"></span><span class="skeleton" style="display:block;width:80%;height:22px;margin-top:9px"></span></div>
+    <div class="card"><span class="skeleton" style="display:block;width:55%;height:10px"></span><span class="skeleton" style="display:block;width:80%;height:22px;margin-top:9px"></span></div>
+    <div class="card"><span class="skeleton" style="display:block;width:55%;height:10px"></span><span class="skeleton" style="display:block;width:80%;height:22px;margin-top:9px"></span></div>
+  </div>
+  <div class="dash-window" id="dashWindow"><span class="skeleton" style="display:inline-block;width:120px;height:12px"></span></div>
 
   <!-- TOP: top-selling items -->
   <div class="panel topitems"><h3>🔥 Top món bán chạy hôm nay</h3>
-    <table><thead><tr><th>Món</th><th>SL</th><th>Doanh thu</th></tr></thead><tbody id="topItems"></tbody></table></div>
+    <table><thead><tr><th>Món</th><th>SL</th><th>Doanh thu</th></tr></thead>
+      <tbody id="topItems">
+        <tr>
+          <td><span class="skeleton" style="display:block;width:60%;height:12px"></span></td>
+          <td><span class="skeleton" style="display:block;width:30%;height:12px"></span></td>
+          <td><span class="skeleton" style="display:block;width:40%;height:12px"></span></td>
+        </tr>
+        <tr>
+          <td><span class="skeleton" style="display:block;width:75%;height:12px"></span></td>
+          <td><span class="skeleton" style="display:block;width:25%;height:12px"></span></td>
+          <td><span class="skeleton" style="display:block;width:50%;height:12px"></span></td>
+        </tr>
+        <tr>
+          <td><span class="skeleton" style="display:block;width:50%;height:12px"></span></td>
+          <td><span class="skeleton" style="display:block;width:35%;height:12px"></span></td>
+          <td><span class="skeleton" style="display:block;width:30%;height:12px"></span></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
 
   <!-- MIDDLE: revenue charts -->
   <div class="adgrid">
-    <div class="panel"><h3>Doanh thu theo giờ</h3><div class="hbar" id="hourChart"></div></div>
+    <div class="panel"><h3>Doanh thu theo giờ</h3>
+      <div class="hbar" id="hourChart" style="align-items: flex-end; gap: 8px;">
+        <div class="skeleton" style="flex:1;height:20%;border-radius:4px 4px 0 0"></div>
+        <div class="skeleton" style="flex:1;height:40%;border-radius:4px 4px 0 0"></div>
+        <div class="skeleton" style="flex:1;height:30%;border-radius:4px 4px 0 0"></div>
+        <div class="skeleton" style="flex:1;height:65%;border-radius:4px 4px 0 0"></div>
+        <div class="skeleton" style="flex:1;height:80%;border-radius:4px 4px 0 0"></div>
+        <div class="skeleton" style="flex:1;height:55%;border-radius:4px 4px 0 0"></div>
+        <div class="skeleton" style="flex:1;height:35%;border-radius:4px 4px 0 0"></div>
+        <div class="skeleton" style="flex:1;height:50%;border-radius:4px 4px 0 0"></div>
+        <div class="skeleton" style="flex:1;height:70%;border-radius:4px 4px 0 0"></div>
+        <div class="skeleton" style="flex:1;height:90%;border-radius:4px 4px 0 0"></div>
+        <div class="skeleton" style="flex:1;height:60%;border-radius:4px 4px 0 0"></div>
+        <div class="skeleton" style="flex:1;height:25%;border-radius:4px 4px 0 0"></div>
+      </div>
+    </div>
     <div class="panel">
       <div class="trendhead"><h3>Doanh thu theo thời gian</h3>
         <div class="seg" id="trendSeg">
@@ -1030,29 +1164,86 @@ body.settings-shell > .view { display: none; }
         </div>
       </div>
       <div class="trendsummary" id="trendSummary"></div>
-      <div class="hbar" id="trendChart"><div class="chart-empty">Đang tải…</div></div>
+      <div class="hbar" id="trendChart" style="align-items: flex-end; gap: 8px;">
+        <div class="skeleton" style="flex:1;height:30%;border-radius:4px 4px 0 0"></div>
+        <div class="skeleton" style="flex:1;height:50%;border-radius:4px 4px 0 0"></div>
+        <div class="skeleton" style="flex:1;height:70%;border-radius:4px 4px 0 0"></div>
+        <div class="skeleton" style="flex:1;height:40%;border-radius:4px 4px 0 0"></div>
+        <div class="skeleton" style="flex:1;height:85%;border-radius:4px 4px 0 0"></div>
+        <div class="skeleton" style="flex:1;height:60%;border-radius:4px 4px 0 0"></div>
+        <div class="skeleton" style="flex:1;height:45%;border-radius:4px 4px 0 0"></div>
+      </div>
     </div>
   </div>
 
   <!-- BOTTOM: payment methods + station load -->
   <div class="adgrid">
-    <div class="panel"><h3>Phương thức thanh toán <span id="payTimeRef" style="font-size:12px;font-weight:normal;color:var(--muted);margin-left:6px"></span></h3><div id="payChart"><div class="empty">Chưa có dữ liệu</div></div>
-      <h3 style="margin-top:16px">Doanh thu theo kênh <span id="chanTimeRef" style="font-size:12px;font-weight:normal;color:var(--muted);margin-left:6px"></span></h3><div id="chanChart"></div></div>
-    <div class="panel"><h3>Tải các station</h3><div id="stationLoad"></div></div>
+    <div class="panel">
+      <h3>Phương thức thanh toán <span id="payTimeRef" style="font-size:12px;font-weight:normal;color:var(--muted);margin-left:6px"></span></h3>
+      <div id="payChart" style="display:flex;flex-direction:column;gap:12px">
+        <div>
+          <div class="skeleton" style="width:30%;height:10px;margin-bottom:6px"></div>
+          <div class="skeleton" style="width:100%;height:12px;border-radius:6px"></div>
+        </div>
+        <div>
+          <div class="skeleton" style="width:25%;height:10px;margin-bottom:6px"></div>
+          <div class="skeleton" style="width:80%;height:12px;border-radius:6px"></div>
+        </div>
+        <div>
+          <div class="skeleton" style="width:35%;height:10px;margin-bottom:6px"></div>
+          <div class="skeleton" style="width:50%;height:12px;border-radius:6px"></div>
+        </div>
+      </div>
+      <h3 style="margin-top:16px">Doanh thu theo kênh <span id="chanTimeRef" style="font-size:12px;font-weight:normal;color:var(--muted);margin-left:6px"></span></h3>
+      <div id="chanChart" style="display:flex;flex-direction:column;gap:12px;margin-top:10px">
+        <div>
+          <div class="skeleton" style="width:40%;height:10px;margin-bottom:6px"></div>
+          <div class="skeleton" style="width:90%;height:12px;border-radius:6px"></div>
+        </div>
+        <div>
+          <div class="skeleton" style="width:20%;height:10px;margin-bottom:6px"></div>
+          <div class="skeleton" style="width:60%;height:12px;border-radius:6px"></div>
+        </div>
+      </div>
+    </div>
+    <div class="panel">
+      <h3>Tải các station</h3>
+      <div id="stationLoad" style="display:flex;flex-direction:column;gap:12px">
+        <div>
+          <div class="skeleton" style="width:45%;height:10px;margin-bottom:6px"></div>
+          <div class="skeleton" style="width:100%;height:12px;border-radius:6px"></div>
+        </div>
+        <div>
+          <div class="skeleton" style="width:30%;height:10px;margin-bottom:6px"></div>
+          <div class="skeleton" style="width:70%;height:12px;border-radius:6px"></div>
+        </div>
+      </div>
+    </div>
   </div>
-
-
-
 </div>
 
 <script type="module">
 import { api, apiUrl, connect, money, toast, esc, startClock, topbar, requireLogin, renderUserChip, hasPerm, getPerms, getLang, setLang, getToken, requestPinCode } from '/shared/client.js';
 import { danBillVars } from '/shared/danBill.js';
-const isSettingsRoute = window.location.pathname.replace(/\/+$/, '') === '/settings';
+const settingsPath = window.location.pathname.replace(/\/+$/, '');
+const isSettingsRoute = settingsPath === '/settings' || settingsPath.startsWith('/settings/');
+// Sub-route slugs (Haravan-style /settings/<slug>) ↔ internal tab keys.
+const SETTINGS_SLUG_TO_KEY = { staff:'users', location:'branches', integrations:'integrations', connections:'connections', finance:'operations', warehouse:'warehouse', print:'print', devices:'devices', menu:'menu', tables:'tables', sounds:'notification_sound' };
+const SETTINGS_KEY_TO_SLUG = Object.fromEntries(Object.entries(SETTINGS_SLUG_TO_KEY).map(([s, k]) => [k, s]));
+const bootPathSlug = isSettingsRoute ? (settingsPath.split('/')[2] || '') : '';
+const bootSlugKey = SETTINGS_SLUG_TO_KEY[bootPathSlug] || null;
+// Report center sub-routes: slug = report key with underscores → dashes (/reports/sales-overview).
+const isReportsRoute = settingsPath === '/reports' || settingsPath.startsWith('/reports/');
+const reportKeyToSlug = key => String(key || '').replace(/_/g, '-');
+const reportSlugToKey = slug => String(slug || '').replace(/-/g, '_');
+const bootReportSlug = isReportsRoute ? (settingsPath.split('/')[2] || '') : '';
+const bootReportKey = isReportsRoute && bootReportSlug ? reportSlugToKey(bootReportSlug) : null;
 document.getElementById('top').innerHTML = isSettingsRoute
   ? topbar('settings')
+  : isReportsRoute
+  ? topbar('reports')
   : topbar('admin', {
-      title: '📊 Quản lý',
+      title: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>Quản lý',
       sub: 'District 1 - HCMC · realtime sales, menu, inventory',
       actions: `<button class="btn sm" id="reportsBtn" title="Báo cáo">📄 Báo cáo</button>`,
     });
@@ -1061,14 +1252,24 @@ const bootViewParam = isSettingsRoute ? 'settings' : bootUrlParams.get('view');
 const bootTabParam = bootUrlParams.get('tab');
 if (bootViewParam) {
   sessionStorage.setItem('adminActiveView', bootViewParam);
-  if (bootTabParam) sessionStorage.setItem('settingsActiveTab', bootTabParam);
+  if (bootSlugKey) sessionStorage.setItem('settingsActiveTab', bootSlugKey);
+  else if (bootTabParam) sessionStorage.setItem('settingsActiveTab', bootTabParam);
   else sessionStorage.removeItem('settingsActiveTab');
 }
 const settingsShellPerms = ['settings.users','settings.perms','settings.branches','settings.sync','settings.integrations','settings.connections','settings.operations','settings.invoices','settings.einvoice','settings.print','settings.devices','settings.menu','settings.bookmenu','settings.tables','settings.printers','settings.audit','warehouse.manage'];
 const wantsSettingsShell = isSettingsRoute || bootViewParam === 'settings';
+if (wantsSettingsShell) {
+  document.body.classList.add('settings-shell');
+}
+const wantsReportsShell = isReportsRoute || bootViewParam === 'reports' || sessionStorage.getItem('adminActiveView') === 'reports';
+if (wantsReportsShell) {
+  document.body.classList.add('reports-shell');
+}
+const reportsShellOnly = isReportsRoute;
 const canOpenSettingsShell = () => hasPerm('settings.manage') || settingsShellPerms.some(p => hasPerm(p));
 await requireLogin();
 if (wantsSettingsShell && !canOpenSettingsShell()) {
+  document.body.classList.remove('settings-shell');
   document.body.innerHTML = `<div class="view"><div class="panel" style="max-width:520px;margin:60px auto;text-align:center">
     <h3>Không có quyền truy cập</h3>
     <div class="empty">Tài khoản này chưa có quyền mở Cài đặt.</div>
@@ -1653,7 +1854,7 @@ if (btnManageCats) btnManageCats.onclick=openCategoryManager;
 const btnAddItem = document.getElementById('addItem');
 if (btnAddItem) btnAddItem.onclick=()=>{ if(!menu.categories?.length) return toast('Hãy tạo danh mục trước (🗂️ Danh mục)',true); openItemForm(null); };
 const _reportsBtn=document.getElementById('reportsBtn');
-if(_reportsBtn){ _reportsBtn.onclick=openReportsCenter; if(!canOpenReports()) _reportsBtn.style.display='none'; }
+if(_reportsBtn){ _reportsBtn.onclick=()=>{ location.href='/reports'; }; if(!canOpenReports()) _reportsBtn.style.display='none'; }
 
 function reportDateValue(d){
   const x=d instanceof Date?new Date(d):new Date(d||Date.now());
@@ -1675,6 +1876,32 @@ function reportRowsHtml(section){
     <tbody>${rows.length?rows.map(r=>`<tr>${cols.map(c=>`<td class="${c.align==='right'?'r':''}">${esc(r[c.key]??'')}</td>`).join('')}</tr>`).join(''):`<tr><td colspan="${cols.length||1}" style="text-align:center;color:#98a2b3">Không có dữ liệu</td></tr>`}</tbody>
   </table></div></div>`;
 }
+function reportPreviewSkeleton() {
+  return `<div class="report-doc-head">
+    <div>
+      <div class="skeleton" style="width: 220px; height: 18px; margin-bottom: 8px;"></div>
+      <div class="skeleton" style="width: 320px; height: 10px;"></div>
+    </div>
+    <div style="text-align: right">
+      <div class="skeleton" style="width: 100px; height: 10px; margin-bottom: 6px; margin-left: auto;"></div>
+      <div class="skeleton" style="width: 140px; height: 10px; margin-left: auto;"></div>
+    </div>
+  </div>
+  <div class="report-summary">
+    <div class="report-sum"><span class="skeleton" style="display:block;width:80px;height:10px;margin-bottom:6px"></span><span class="skeleton" style="display:block;width:50px;height:14px"></span></div>
+    <div class="report-sum"><span class="skeleton" style="display:block;width:80px;height:10px;margin-bottom:6px"></span><span class="skeleton" style="display:block;width:50px;height:14px"></span></div>
+    <div class="report-sum"><span class="skeleton" style="display:block;width:80px;height:10px;margin-bottom:6px"></span><span class="skeleton" style="display:block;width:50px;height:14px"></span></div>
+  </div>
+  <div class="report-section" style="margin-top: 24px;">
+    <div class="skeleton" style="width: 160px; height: 14px; margin-bottom: 12px;"></div>
+    <div style="display:flex; flex-direction:column; gap: 8px;">
+      <div class="skeleton" style="width: 100%; height: 32px; border-radius: 6px;"></div>
+      <div class="skeleton" style="width: 100%; height: 24px; border-radius: 6px;"></div>
+      <div class="skeleton" style="width: 100%; height: 24px; border-radius: 6px;"></div>
+      <div class="skeleton" style="width: 100%; height: 24px; border-radius: 6px;"></div>
+    </div>
+  </div>`;
+}
 function reportPreviewHtml(report){
   if(!report) return '<div class="report-empty">Chọn báo cáo để xem trước</div>';
   return `<div class="report-doc-head">
@@ -1684,11 +1911,14 @@ function reportPreviewHtml(report){
   <div class="report-summary">${(report.summary||[]).map(s=>`<div class="report-sum">${esc(s.label)}<b>${esc(s.value)}</b></div>`).join('')}</div>
   ${(report.sections||[]).map(reportRowsHtml).join('')||'<div class="report-empty">Không có dữ liệu trong kỳ này</div>'}`;
 }
-async function openReportsCenter(){
+async function openReportsCenter(initialReportKey){
   if(!canOpenReports()){
     sessionStorage.removeItem('adminActiveView');
+    document.body.classList.remove('reports-shell');
+    if (reportsShellOnly) { location.href = '/'; return; }
     return toast('Bạn không có quyền xem báo cáo',true);
   }
+  document.body.classList.add('reports-shell');
   sessionStorage.setItem('adminActiveView','reports');
   const ov=document.createElement('div'); ov.className='overlay show'; document.body.appendChild(ov);
   const initial=reportPeriodRange('day');
@@ -1700,7 +1930,7 @@ async function openReportsCenter(){
     report:null,
     error:'',
     loading:true,
-    selected:sessionStorage.getItem('adminReportType')||'sales_overview',
+    selected:initialReportKey||sessionStorage.getItem('adminReportType')||'sales_overview',
     filters:{
       period:savedFilters.period||'day',
       from:savedFilters.from||initial.from,
@@ -1722,6 +1952,27 @@ async function openReportsCenter(){
   function persistReportState(){
     sessionStorage.setItem('adminReportType',state.selected);
     sessionStorage.setItem('adminReportFilters',JSON.stringify(state.filters));
+  }
+  // Reflect the active report in the URL (/reports/<slug>) when opened as a route.
+  function syncReportsUrl(replace){
+    if(!isReportsRoute || !state.selected) return;
+    const path='/reports/'+reportKeyToSlug(state.selected);
+    if(window.location.pathname.replace(/\/+$/,'')===path) return;
+    window.history[replace?'replaceState':'pushState']({reportType:state.selected},'',path);
+  }
+  if(isReportsRoute){
+    window.addEventListener('popstate',()=>{
+      const slug=window.location.pathname.replace(/\/+$/,'').split('/')[2]||'';
+      const key=reportSlugToKey(slug);
+      const reports=state.catalog?.reports||[];
+      if(key && key!==state.selected && reports.some(r=>r.key===key)){
+        rememberReportScroll();
+        state.selected=key;
+        persistReportState();
+        draw();
+        loadPreview();
+      }
+    });
   }
   function query(format){
     const p=new URLSearchParams({type:state.selected,period:state.filters.period,from:state.filters.from,to:state.filters.to});
@@ -1751,7 +2002,7 @@ async function openReportsCenter(){
       return;
     }
     if (previewEl) {
-      previewEl.innerHTML = '<div class="report-empty">Đang dựng báo cáo...</div>';
+      previewEl.innerHTML = reportPreviewSkeleton();
     }
     state.error = '';
     syncReportSelection();
@@ -1870,7 +2121,7 @@ async function openReportsCenter(){
               <button class="btn sm primary" id="reportPrint" type="button" ${noReports?'disabled':''}>In A4</button>
             </div>
           </div>
-          <div class="report-preview">${state.loading?'<div class="report-empty">Đang dựng báo cáo...</div>':state.error?`<div class="report-empty">${esc(state.error)}</div>`:reportPreviewHtml(state.report)}</div>
+          <div class="report-preview">${state.loading?reportPreviewSkeleton():state.error?`<div class="report-empty">${esc(state.error)}</div>`:reportPreviewHtml(state.report)}</div>
         </div>
       </div>
     </div>`;
@@ -1884,6 +2135,8 @@ async function openReportsCenter(){
     const closeReports=()=>{
       rememberReportScroll();
       sessionStorage.removeItem('adminActiveView');
+      document.body.classList.remove('reports-shell');
+      if (reportsShellOnly) { location.href = '/'; return; }
       ov.remove();
     };
     ov.querySelector('#reportCloseX').onclick=closeReports;
@@ -1902,6 +2155,7 @@ async function openReportsCenter(){
       if(rDrop) rDrop.classList.remove('open');
       if(rDropBtn) rDropBtn.setAttribute('aria-expanded','false');
       persistReportState();
+      syncReportsUrl(false);
       loadPreview();
     });
     ov.querySelectorAll('[data-report-filter]').forEach(el=>el.onchange=()=>{
@@ -2062,6 +2316,7 @@ async function openReportsCenter(){
   draw();
   try{
     await loadCatalog();
+    syncReportsUrl(true);
     draw();
   }
   catch(e){ state.error=e.message||'Không tải được danh mục báo cáo'; state.loading=false; draw(); return; }
@@ -2095,7 +2350,7 @@ async function openSettings(initialTab){
         <button type="button" id="langEnBtn" class="${en?'on':''}">EN</button>
       </div>`;
     document.getElementById('top').innerHTML = topbar('settings', {
-      title: en ? '⚙ Management settings' : '⚙ Cài đặt quản lý',
+      title: (en ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>Management settings' : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>Cài đặt quản lý'),
       sub: en ? 'Staff, permissions, sync, e-invoice & print configuration in one place.' : 'Nhân viên, phân quyền, đồng bộ, hóa đơn và cấu hình in — gom về một nơi.',
       actions
     });
@@ -2128,6 +2383,74 @@ async function openSettings(initialTab){
   let settingsTimers=[];
   let skipNextSettingsScrollRemember=false;
   const clearSettingsTimers=()=>{ settingsTimers.forEach(id=>clearInterval(id)); settingsTimers=[]; };
+  // ---- Settings navigation: single source of truth for tabs (icon + title + subtitle + slug) ----
+  const SET_ICONS = {
+    users:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>',
+    branches:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l1.5-5h15L21 9"/><path d="M4 9v11h16V9"/><path d="M9 20v-6h6v6"/></svg>',
+    integrations:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M7 3v6"/><path d="M17 3v6"/><path d="M6 9h12v3a6 6 0 0 1-12 0z"/><path d="M12 18v3"/></svg>',
+    connections:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.55a11 11 0 0 1 14 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><path d="M12 20h.01"/></svg>',
+    operations:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1z"/><path d="M8 7h8"/><path d="M8 11h8"/><path d="M8 15h5"/></svg>',
+    warehouse:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>',
+    print:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>',
+    devices:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="2" width="16" height="20" rx="2.5"/><path d="M12 18h.01"/></svg>',
+    menu:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>',
+    tables:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>',
+    notification_sound:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>',
+  };
+  const SETTINGS_TABS = [
+    { key:'users', title:'Nhân sự &amp; Phân quyền', desc:'Quản lý tài khoản, vai trò và quyền truy cập của nhân viên.', perm:'settings.users' },
+    { key:'branches', title:'Chi nhánh &amp; phân vùng', desc:'Thiết lập chi nhánh, kho và phân vùng bán hàng.', perm:'settings.branches' },
+    { key:'integrations', title:'Liên kết', desc:'Kết nối hóa đơn điện tử, kế toán và các nền tảng bán hàng.', perm:'settings.integrations' },
+    { key:'connections', title:'Kết nối', desc:'Trạng thái thiết bị, máy in và đồng bộ dữ liệu lên cloud.', perm:'settings.connections' },
+    { key:'operations', title:'Tài chính &amp; Hóa đơn', desc:'Cấu hình ca, thanh toán, hóa đơn và hóa đơn điện tử.', perm:'settings.operations' },
+    { key:'warehouse', title:'Kho &amp; kênh bán', desc:'Quản lý kho hàng và liên kết với các kênh bán hàng.', perm:'warehouse.manage' },
+    { key:'print', title:'Bill &amp; Tem nhãn', desc:'Thiết kế mẫu in hóa đơn và tem nhãn sản phẩm.', perm:'settings.print' },
+    { key:'devices', title:'Thiết bị khách', desc:'Cấu hình màn hình self-order và thiết bị cho khách hàng.', perm:'settings.devices' },
+    { key:'menu', title:'Menu', desc:'Quản lý danh mục, món ăn và menu quyển.', perm:'settings.menu' },
+    { key:'tables', title:'Cấu hình bàn &amp; Sơ đồ', desc:'Thiết lập bàn, khu vực và sơ đồ phòng bán.', perm:'settings.tables' },
+    { key:'notification_sound', title:'Âm thanh thông báo', desc:'Tùy chỉnh âm thanh thông báo cho đơn hàng và sự kiện.', perm:'settings.notification_sound' },
+  ];
+  const tabIsAllowed = t => {
+    if (t.key === 'users') return hasPerm('settings.users') || hasPerm('settings.perms') || hasPerm('settings.manage');
+    if (t.key === 'connections') return hasPerm('settings.connections') || hasPerm('settings.sync') || hasPerm('settings.manage');
+    if (t.key === 'operations') return hasPerm('settings.operations') || hasPerm('settings.invoices') || hasPerm('settings.einvoice') || hasPerm('settings.manage');
+    return hasPerm(t.perm) || hasPerm('settings.manage');
+  };
+  const tabMeta = key => SETTINGS_TABS.find(t => t.key === key) || SETTINGS_TABS[0];
+  // Keep the browser URL in sync with the active tab (/settings/<slug>) when opened as a route.
+  function syncSettingsUrl(replace){
+    if (!isSettingsRoute) return;
+    const slug = SETTINGS_KEY_TO_SLUG[tab];
+    if (!slug) return;
+    const path = '/settings/' + slug;
+    if (window.location.pathname.replace(/\/+$/, '') === path) return;
+    window.history[replace ? 'replaceState' : 'pushState']({ settingsTab: tab }, '', path);
+  }
+  function applyTabSelection(newTab){
+    tab = newTab;
+    sessionStorage.setItem('settingsActiveTab', tab);
+    const drop = ov.querySelector('#settingsTabDrop');
+    const dropBtn = ov.querySelector('#settingsTabDropBtn');
+    if (drop) drop.classList.remove('open');
+    if (dropBtn) dropBtn.setAttribute('aria-expanded', 'false');
+    if (tab === 'users') {
+      if (users && users.length) { editingUser = users[0]; selectedRolePermTab = null; }
+      else { editingUser = null; selectedRolePermTab = 'manager'; }
+    } else {
+      editingUser = null;
+    }
+    draw();
+  }
+  window.addEventListener('popstate', () => {
+    if (!isSettingsRoute) return;
+    const slug = window.location.pathname.replace(/\/+$/, '').split('/')[2] || '';
+    const key = SETTINGS_SLUG_TO_KEY[slug];
+    if (key && key !== tab && SETTINGS_TABS.some(t => t.key === key && tabIsAllowed(t))) {
+      rememberSettingsScroll();
+      skipNextSettingsScrollRemember = true;
+      applyTabSelection(key);
+    }
+  });
   const settingsScrollTargets=[
     ['sidebar','.settings-sidebar','global'],
     ['body','#settingsBody','tab'],
@@ -2389,30 +2712,7 @@ async function openSettings(initialTab){
       }
       if(!appSettings.print_config?.updated_at && hasLocalPrintCfg()) savePrintCfg(false).catch(()=>{});
 
-      const availableTabs = [
-        { key: 'users', label: '👥 Nhân sự & Phân quyền', perm: 'settings.users' },
-        { key: 'branches', label: '🏬 Chi nhánh &amp; phân vùng', perm: 'settings.branches' },
-        { key: 'integrations', label: '🔌 Liên kết', perm: 'settings.integrations' },
-        { key: 'connections', label: '📡 Kết nối', perm: 'settings.connections' },
-        { key: 'operations', label: '💰 Tài chính &amp; Hóa đơn', perm: 'settings.operations' },
-        { key: 'warehouse', label: '📦 Kho &amp; kênh bán', perm: 'warehouse.manage' },
-        { key: 'print', label: '🏷️ Bill &amp; Tem nhãn', perm: 'settings.print' },
-        { key: 'devices', label: '📱 Thiết bị khách', perm: 'settings.devices' },
-        { key: 'menu', label: '🍔 Menu', perm: 'settings.menu' },
-        { key: 'tables', label: '🪑 Cấu hình bàn &amp; Sơ đồ', perm: 'settings.tables' },
-      ];
-      const allowed = availableTabs.filter(t => {
-        if (t.key === 'users') {
-          return hasPerm('settings.users') || hasPerm('settings.perms') || hasPerm('settings.manage');
-        }
-        if (t.key === 'connections') {
-          return hasPerm('settings.connections') || hasPerm('settings.sync') || hasPerm('settings.manage');
-        }
-        if (t.key === 'operations') {
-          return hasPerm('settings.operations') || hasPerm('settings.invoices') || hasPerm('settings.einvoice') || hasPerm('settings.manage');
-        }
-        return hasPerm(t.perm) || hasPerm('settings.manage');
-      });
+      const allowed = SETTINGS_TABS.filter(tabIsAllowed);
       if (allowed.length === 0) {
         throw new Error('Bạn không có quyền truy cập bất kỳ mục cài đặt nào.');
       }
@@ -2428,6 +2728,7 @@ async function openSettings(initialTab){
       }
       renderSettingsTopbar();
       draw();
+      syncSettingsUrl(true);
     }catch(e){
       renderSettingsTopbar();
       ov.innerHTML=`<div class="modal" style="max-width:460px"><h2>⚙ Cài đặt</h2><div class="empty">Tài khoản này chưa có quyền mở Cài đặt.<br>${esc(e.message)}</div><div class="mfoot"><button class="btn primary" id="closeSet">Đóng</button></div></div>`;
@@ -2438,34 +2739,11 @@ async function openSettings(initialTab){
     if(skipNextSettingsScrollRemember) skipNextSettingsScrollRemember=false;
     else rememberSettingsScroll();
     clearSettingsTimers();
-    const availableTabs = [
-      { key: 'users', label: '👥 Nhân sự & Phân quyền', perm: 'settings.users' },
-      { key: 'branches', label: '🏬 Chi nhánh &amp; phân vùng', perm: 'settings.branches' },
-      { key: 'integrations', label: '🔌 Liên kết', perm: 'settings.integrations' },
-      { key: 'connections', label: '📡 Kết nối', perm: 'settings.connections' },
-      { key: 'operations', label: '💰 Tài chính &amp; Hóa đơn', perm: 'settings.operations' },
-      { key: 'warehouse', label: '📦 Kho &amp; kênh bán', perm: 'warehouse.manage' },
-      { key: 'print', label: '🏷️ Bill &amp; Tem nhãn', perm: 'settings.print' },
-      { key: 'devices', label: '📱 Thiết bị khách', perm: 'settings.devices' },
-      { key: 'menu', label: '🍔 Menu', perm: 'settings.menu' },
-      { key: 'tables', label: '🪑 Cấu hình bàn &amp; Sơ đồ', perm: 'settings.tables' },
-      { key: 'notification_sound', label: '🔔 Âm thanh thông báo', perm: 'settings.notification_sound' },
-    ];
-    const allowedTabs = availableTabs.filter(t => {
-      if (t.key === 'users') {
-        return hasPerm('settings.users') || hasPerm('settings.perms') || hasPerm('settings.manage');
-      }
-      if (t.key === 'connections') {
-        return hasPerm('settings.connections') || hasPerm('settings.sync') || hasPerm('settings.manage');
-      }
-      if (t.key === 'operations') {
-        return hasPerm('settings.operations') || hasPerm('settings.invoices') || hasPerm('settings.einvoice') || hasPerm('settings.manage');
-      }
-      return hasPerm(t.perm) || hasPerm('settings.manage');
-    });
-    const activeTabLabel = allowedTabs.find(t => t.key === tab)?.label || allowedTabs[0]?.label || 'Cài đặt';
-    const settingsTabMenuHtml = () => allowedTabs.map(t => `<button type="button" class="settings-tab-menu-item ${tab===t.key?'on':''}" data-tab="${t.key}">${t.label}</button>`).join('');
-    
+    const allowedTabs = SETTINGS_TABS.filter(tabIsAllowed);
+    const activeMeta = allowedTabs.find(t => t.key === tab) || allowedTabs[0] || tabMeta(tab);
+    const activeTabLabel = activeMeta?.title || 'Cài đặt';
+    const settingsTabMenuHtml = () => allowedTabs.map(t => `<button type="button" class="settings-tab-menu-item ${tab===t.key?'on':''}" data-tab="${t.key}">${t.title}</button>`).join('');
+
     const modal = ov.querySelector('.settings-modal');
     if (!modal) {
       ov.innerHTML=`<div class="modal settings-modal">
@@ -2478,9 +2756,13 @@ async function openSettings(initialTab){
         </div>
         <div class="settings-layout">
           <div class="settings-sidebar">
-            ${allowedTabs.map(t => `<button class="settings-tab ${tab===t.key?'on':''}" data-tab="${t.key}">${t.label}</button>`).join('')}
+            ${allowedTabs.map(t => `<button class="settings-tab ${tab===t.key?'on':''}" data-tab="${t.key}">${SET_ICONS[t.key]||''}<span>${t.title}</span></button>`).join('')}
           </div>
           <div class="settings-main">
+            <div class="settings-page-head">
+              <h2 id="settingsPageTitle">${activeMeta?.title||'Cài đặt'}</h2>
+              <p id="settingsPageDesc">${activeMeta?.desc||''}</p>
+            </div>
             <div id="settingsBody">${settingsContentHtml()}</div>
           </div>
         </div>
@@ -2492,6 +2774,10 @@ async function openSettings(initialTab){
           b.classList.toggle('on', b.dataset.tab === tab);
         });
       }
+      const pageTitle = modal.querySelector('#settingsPageTitle');
+      if (pageTitle) pageTitle.innerHTML = activeMeta?.title || 'Cài đặt';
+      const pageDesc = modal.querySelector('#settingsPageDesc');
+      if (pageDesc) pageDesc.innerHTML = activeMeta?.desc || '';
       const body = modal.querySelector('#settingsBody');
       if (body) {
         body.innerHTML = settingsContentHtml();
@@ -2523,26 +2809,16 @@ async function openSettings(initialTab){
     }
 
     ov.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{
+      const newTab = b.dataset.tab;
+      const dd = ov.querySelector('#settingsTabDrop');
+      const ddBtn = ov.querySelector('#settingsTabDropBtn');
+      if (dd) dd.classList.remove('open');
+      if (ddBtn) ddBtn.setAttribute('aria-expanded', 'false');
+      if (newTab === tab) return;
       rememberSettingsScroll();
-      tab=b.dataset.tab;
       skipNextSettingsScrollRemember=true;
-      sessionStorage.setItem('settingsActiveTab', tab);
-      const drop = ov.querySelector('#settingsTabDrop');
-      const dropBtn = ov.querySelector('#settingsTabDropBtn');
-      if (drop) drop.classList.remove('open');
-      if (dropBtn) dropBtn.setAttribute('aria-expanded', 'false');
-      if (tab === 'users') {
-        if (users && users.length) {
-          editingUser = users[0];
-          selectedRolePermTab = null;
-        } else {
-          editingUser = null;
-          selectedRolePermTab = 'manager';
-        }
-      } else {
-        editingUser = null;
-      }
-      draw();
+      applyTabSelection(newTab);
+      syncSettingsUrl(false);
     });
     bindActiveTab();
     restoreSettingsScroll();
@@ -3289,7 +3565,6 @@ async function openSettings(initialTab){
       <div class="integration-head"><div class="integration-ic">${integrationIcon(def)}</div><div style="min-width:0;flex:1"><b>${esc(def.name)}</b><div class="mini">${esc(def.desc)}</div></div>${status}</div>
       <div class="setting-form">
         <label class="permitem"><input type="checkbox" data-integ="${def.key}" data-field="enabled" ${on?'checked':''}><span>Bật VietQR API để sinh QR động theo từng bill</span></label>
-        <div><label>Môi trường</label><select data-integ="${def.key}" data-field="environment"><option value="sandbox" ${c.environment!=='production'?'selected':''}>Sandbox / thử nghiệm</option><option value="production" ${c.environment==='production'?'selected':''}>Production / chạy thật</option></select></div>
         <div><label>Username VietQR</label><input data-integ="${def.key}" data-field="username" value="${integVal(c,'username')}" placeholder="Tài khoản VietQR cấp"></div>
         <div><label>Password / Basic Auth</label><input type="password" data-integ="${def.key}" data-field="password" value="${integVal(c,'password')}"></div>
         <div><label>Mã ngân hàng</label><input data-integ="${def.key}" data-field="bankCode" value="${integVal(c,'bankCode')}" placeholder="MB, VCB, ACB..."></div>
@@ -3322,7 +3597,6 @@ async function openSettings(initialTab){
       <div class="webhook-box"><code>${esc(payosWebhookUrl())}</code><button class="btn sm" data-copy-payos="1">Copy</button><div class="mini" style="grid-column:1/-1">Dán URL này vào payOS Dashboard → <b>Kênh thanh toán → Cấu hình Webhook</b>. payOS sẽ gọi về đây khi khách thanh toán xong (backend nhận tại endpoint này — soạn sẵn để nối sau).</div></div>
       <div class="setting-form">
         <label class="permitem"><input type="checkbox" data-integ="${def.key}" data-field="enabled" ${on?'checked':''}><span>Bật cổng thanh toán payOS</span></label>
-        <div><label>Môi trường</label><select data-integ="${def.key}" data-field="environment"><option value="sandbox" ${c.environment!=='production'?'selected':''}>Sandbox / thử nghiệm</option><option value="production" ${c.environment==='production'?'selected':''}>Production / chạy thật</option></select></div>
         <div><label>Client ID (x-client-id)</label><input data-integ="${def.key}" data-field="clientId" value="${integVal(c,'clientId')}" autocomplete="off" autocorrect="off" spellcheck="false" placeholder="VD: 272a2678-6845-47f5-90cb-7057cec5f8ce"></div>
         <div><label>API Key (x-api-key)</label><input type="password" data-integ="${def.key}" data-field="apiKey" value="${integVal(c,'apiKey')}"></div>
         <div><label>Checksum Key (ký &amp; xác thực webhook)</label><input type="password" data-integ="${def.key}" data-field="checksumKey" value="${integVal(c,'checksumKey')}"></div>
@@ -3353,7 +3627,6 @@ async function openSettings(initialTab){
       <div class="webhook-box"><code>${esc(hookUrl)}</code><button class="btn sm" data-copy-hook="${esc(hookUrl)}">Copy</button><div class="mini" style="grid-column:1/-1">Dán URL này vào ${isSepay?'<b>SePay → Tích hợp → Cấu hình Webhooks</b>':'<b>Casso → Cấu hình Webhook</b>'}. ${isSepay?'SePay gửi kèm header <b>Authorization: Apikey &lt;API Key&gt;</b>.':'Casso gửi kèm header <b>secure-token</b> = secret bên dưới.'} Khi tiền về khớp nội dung <b>DANBILL+mã bill</b> và đủ tiền, hệ thống tự đóng bill + in hoá đơn.</div></div>
       <div class="setting-form">
         <label class="permitem"><input type="checkbox" data-integ="${def.key}" data-field="enabled" ${on?'checked':''}><span>Bật tự đối soát chuyển khoản (${esc(isSepay?'SePay':'Casso')})</span></label>
-        <div><label>Môi trường</label><select data-integ="${def.key}" data-field="environment"><option value="production" ${c.environment!=='sandbox'?'selected':''}>Production / chạy thật</option><option value="sandbox" ${c.environment==='sandbox'?'selected':''}>Sandbox / thử nghiệm</option></select></div>
         ${isSepay
           ? `<div><label>API Key (Authorization: Apikey)</label><input type="password" data-integ="${def.key}" data-field="apiKey" value="${integVal(c,'apiKey')}" placeholder="SePay → API Access"></div>`
           : `<div><label>Secure token (header secure-token)</label><input type="password" data-integ="${def.key}" data-field="webhookSecret" value="${integVal(c,'webhookSecret')}"></div>`}
@@ -3377,7 +3650,6 @@ async function openSettings(initialTab){
       <div class="integration-head"><div class="integration-ic">${integrationIcon(def)}</div><div style="min-width:0;flex:1"><b>${esc(def.name)}</b><div class="mini">${esc(def.desc)}</div></div>${status}</div>
       <div class="setting-form">
         <label class="permitem"><input type="checkbox" data-integ="${def.key}" data-field="enabled" ${on?'checked':''}><span>Bật kết nối MISA</span></label>
-        <div><label>Môi trường</label><select data-integ="${def.key}" data-field="environment"><option value="sandbox" ${c.environment!=='production'?'selected':''}>Sandbox / thử nghiệm</option><option value="production" ${c.environment==='production'?'selected':''}>Production / chạy thật</option></select></div>
         <div><label>API base URL</label><input data-integ="${def.key}" data-field="apiBase" value="${integVal(c,'apiBase')}" placeholder="https://..."></div>
         <div><label>Mã số thuế</label><input data-integ="${def.key}" data-field="taxCode" value="${integVal(c,'taxCode')}"></div>
         <div><label>Tên công ty</label><input data-integ="${def.key}" data-field="companyName" value="${integVal(c,'companyName')}"></div>
@@ -3397,7 +3669,6 @@ async function openSettings(initialTab){
       <div class="webhook-box"><code>${esc(webhookUrl())}</code><button class="btn sm" data-copy-webhook="${def.key}">Copy</button><div class="mini" style="grid-column:1/-1">Webhook nhận JSON có field <b>channel="website"</b>. Tắt kết nối này thì simulator/kênh Website sẽ không gửi đơn được.</div></div>
       <div class="setting-form">
         <label class="permitem"><input type="checkbox" data-integ="${def.key}" data-field="enabled" ${on?'checked':''}><span>Bật Website / QR order</span></label>
-        <div><label>Môi trường</label><select data-integ="${def.key}" data-field="environment"><option value="sandbox" ${c.environment!=='production'?'selected':''}>Sandbox / thử nghiệm</option><option value="production" ${c.environment==='production'?'selected':''}>Production / chạy thật</option></select></div>
         <div><label>Public URL</label><input data-integ="${def.key}" data-field="publicUrl" value="${integVal(c,'publicUrl')}" placeholder="https://order.dandpak.vn"></div>
         <div><label>API key</label><input data-integ="${def.key}" data-field="apiKey" value="${integVal(c,'apiKey')}"></div>
         <div><label>Webhook secret</label><input type="password" data-integ="${def.key}" data-field="webhookSecret" value="${integVal(c,'webhookSecret')}"></div>
@@ -3414,7 +3685,6 @@ async function openSettings(initialTab){
       <div class="webhook-box"><code>${esc(webhookUrl())}</code><button class="btn sm" data-copy-webhook="${def.key}">Copy</button><div class="mini" style="grid-column:1/-1">Webhook hiện tại nhận JSON có field <b>channel="${esc(def.channel)}"</b>. Sau này khi có API chính thức, adapter của từng bên sẽ đọc cùng cấu hình này.</div></div>
       <div class="setting-form">
         <label class="permitem"><input type="checkbox" data-integ="${def.key}" data-field="enabled" ${on?'checked':''}><span>Bật kết nối ${esc(def.name)}</span></label>
-        <div><label>Môi trường</label><select data-integ="${def.key}" data-field="environment"><option value="sandbox" ${c.environment!=='production'?'selected':''}>Sandbox / thử nghiệm</option><option value="production" ${c.environment==='production'?'selected':''}>Production / chạy thật</option></select></div>
         <div><label>Merchant ID</label><input data-integ="${def.key}" data-field="merchantId" value="${integVal(c,'merchantId')}"></div>
         <div><label>Store ID</label><input data-integ="${def.key}" data-field="storeId" value="${integVal(c,'storeId')}"></div>
         <div><label>Client ID</label><input data-integ="${def.key}" data-field="clientId" value="${integVal(c,'clientId')}"></div>
@@ -7066,17 +7336,17 @@ if (viewParam && !isSettingsRoute) {
 }
 
 startClock();
-if (!settingsShellOnly) {
+if (!settingsShellOnly && !reportsShellOnly) {
   loadDash();
   loadTrends();
   loadMenu();
 }
 if (wantsSettingsShell) {
-  openSettings(tabParam || sessionStorage.getItem('settingsActiveTab'));
-} else if (sessionStorage.getItem('adminActiveView') === 'reports') {
-  openReportsCenter();
+  openSettings(bootSlugKey || tabParam || sessionStorage.getItem('settingsActiveTab'));
+} else if (isReportsRoute || sessionStorage.getItem('adminActiveView') === 'reports') {
+  openReportsCenter(bootReportKey);
 }
-if (!settingsShellOnly) {
+if (!settingsShellOnly && !reportsShellOnly) {
   setInterval(loadDash, 15000);
   setInterval(loadTrends, 60000);
 }

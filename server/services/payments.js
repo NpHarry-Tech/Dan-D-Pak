@@ -219,69 +219,92 @@ function mergeInvoiceCustomer(customer, invoiceCustomer) {
 }
 
 // lines: [{method, amount, reference}]
-export function payOrder(order_id, lines, { discount, cashier, customer, invoice_customer } = {}, branch_id = 'br1') {
-  const order = getOrder(order_id);
-  if (!order) throw new Error('Order không tồn tại');
-  if (order.status !== 'open') throw new Error('Order đã đóng');
+export function payOrder(order_id, lines, options = {}, branch_id = 'br1') {
+  const { discount, cashier, customer, invoice_customer, skipTransaction = false } = options;
 
-  if (typeof discount === 'number') {
-    db.prepare(`UPDATE orders SET discount=?, total=MAX(0,subtotal-?) WHERE id=?`).run(discount, discount, order_id);
+  let inTx = false;
+  if (!skipTransaction) {
+    db.prepare('BEGIN IMMEDIATE').run();
+    inTx = true;
   }
-  const invoiceCustomer = normalizeInvoiceCustomer(invoice_customer);
-  const customerSnapshot = mergeInvoiceCustomer(customer, invoiceCustomer);
-  if (customerSnapshot) {
-    if (invoiceCustomer) {
-      db.prepare(`UPDATE orders SET customer_json=?, invoice_choice='requested' WHERE id=?`).run(JSON.stringify(customerSnapshot), order_id);
-      audit('invoice.company_requested', { order: order_id, tax_code: invoiceCustomer.tax_code, email: invoiceCustomer.email, phone: invoiceCustomer.phone }, branch_id, cashier || 'system');
-    } else {
-      db.prepare(`UPDATE orders SET customer_json=? WHERE id=?`).run(JSON.stringify(customerSnapshot), order_id);
+
+  try {
+    const order = getOrder(order_id);
+    if (!order) throw new Error('Order không tồn tại');
+    if (order.status !== 'open') throw new Error('Order đã đóng');
+
+    if (typeof discount === 'number') {
+      db.prepare(`UPDATE orders SET discount=?, total=MAX(0,subtotal-?) WHERE id=?`).run(discount, discount, order_id);
     }
+    const invoiceCustomer = normalizeInvoiceCustomer(invoice_customer);
+    const customerSnapshot = mergeInvoiceCustomer(customer, invoiceCustomer);
+    if (customerSnapshot) {
+      if (invoiceCustomer) {
+        db.prepare(`UPDATE orders SET customer_json=?, invoice_choice='requested' WHERE id=?`).run(JSON.stringify(customerSnapshot), order_id);
+        audit('invoice.company_requested', { order: order_id, tax_code: invoiceCustomer.tax_code, email: invoiceCustomer.email, phone: invoiceCustomer.phone }, branch_id, cashier || 'system');
+      } else {
+        db.prepare(`UPDATE orders SET customer_json=? WHERE id=?`).run(JSON.stringify(customerSnapshot), order_id);
+      }
+    }
+    const fresh = getOrder(order_id);
+    const pending = fresh.items.filter(i => i.status === 'pending_confirm');
+    if (pending.length) throw new Error(`Còn ${pending.length} dòng món đang chờ nhân viên xác nhận`);
+
+    const ops = getOperationsConfig(branch_id);
+    const shift = getActiveShift(branch_id);
+    if (ops.shifts.requireOpenShift !== false && !shift) throw new Error('Can mo ca lam viec truoc khi thanh toan.');
+
+    const paid = lines.reduce((s, l) => s + (parseInt(l.amount) || 0), 0);
+    if (paid < fresh.total) throw new Error(`Chưa đủ tiền: cần ${fresh.total}, nhận ${paid}`);
+    for (const l of lines) if (!METHODS.includes(l.method)) throw new Error('Phương thức không hợp lệ: ' + l.method);
+
+    const pid = uid('pay_');
+    db.prepare(`INSERT INTO payments (id,order_id,shift_id,total,created_at) VALUES (?,?,?,?,?)`).run(pid, order_id, shift?.id || null, fresh.total, now());
+    const insLine = db.prepare(`INSERT INTO payment_lines (id,payment_id,method,amount,reference,card_txn_id,card_rrn,card_approval,card_mask,card_scheme,card_terminal,card_mode) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`);
+    for (const l of lines) {
+      const c = sanitizeCardMeta(l.card);
+      insLine.run(uid('pl_'), pid, l.method, parseInt(l.amount) || 0, l.reference || null,
+        c.txnId, c.rrn, c.approval, c.mask, c.scheme, c.terminal, c.mode);
+    }
+
+    const upd = db.prepare(`UPDATE orders SET status='paid', paid_at=? WHERE id=? AND status='open'`).run(now(), order_id);
+    if (upd.changes === 0) {
+      throw new Error('Hóa đơn đã được thanh toán hoặc không còn ở trạng thái mở.');
+    }
+
+    // Mark all remaining active items served on close
+    db.prepare(`UPDATE order_items SET status='served', served_at=? WHERE order_id=? AND status NOT IN ('served','cancelled')`)
+      .run(now(), order_id);
+
+    deductForOrder(fresh, branch_id);
+
+    if (order.table_id) {
+      const stillOpen = db.prepare(`SELECT 1 FROM orders WHERE table_id=? AND branch_id=? AND status='open' LIMIT 1`)
+        .get(order.table_id, branch_id);
+      db.prepare(`UPDATE tables SET status=? WHERE id=?`).run(stillOpen ? 'busy' : 'free', order.table_id);
+      resolveStaffCall(order.table_id, branch_id);
+      emit('table:updated', getTableState(order.table_id), branch_id);
+    }
+    audit('payment.done', { order: order_id, total: fresh.total, lines: lines.length, shift_id: shift?.id || null }, branch_id);
+    const receipt = buildReceipt(order_id, pid, lines, paid, { cashier });
+    receipt.print_config = getPrintConfig(branch_id);
+    receipt.branch_id = branch_id;
+    archiveOrder(getOrder(order_id));
+    archivePayment(receipt);
+    printReceipt(receipt, branch_id);
+    emit('payment:done', { order_id, receipt }, branch_id);
+    emit('stats:dirty', {}, branch_id);
+
+    if (inTx) {
+      db.prepare('COMMIT').run();
+    }
+    return receipt;
+  } catch (err) {
+    if (inTx) {
+      db.prepare('ROLLBACK').run();
+    }
+    throw err;
   }
-  const fresh = getOrder(order_id);
-  const pending = fresh.items.filter(i => i.status === 'pending_confirm');
-  if (pending.length) throw new Error(`Còn ${pending.length} dòng món đang chờ nhân viên xác nhận`);
-
-  const ops = getOperationsConfig(branch_id);
-  const shift = getActiveShift(branch_id);
-  if (ops.shifts.requireOpenShift !== false && !shift) throw new Error('Can mo ca lam viec truoc khi thanh toan.');
-
-  const paid = lines.reduce((s, l) => s + (parseInt(l.amount) || 0), 0);
-  if (paid < fresh.total) throw new Error(`Chưa đủ tiền: cần ${fresh.total}, nhận ${paid}`);
-  for (const l of lines) if (!METHODS.includes(l.method)) throw new Error('Phương thức không hợp lệ: ' + l.method);
-
-  const pid = uid('pay_');
-  db.prepare(`INSERT INTO payments (id,order_id,shift_id,total,created_at) VALUES (?,?,?,?,?)`).run(pid, order_id, shift?.id || null, fresh.total, now());
-  const insLine = db.prepare(`INSERT INTO payment_lines (id,payment_id,method,amount,reference,card_txn_id,card_rrn,card_approval,card_mask,card_scheme,card_terminal,card_mode) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`);
-  for (const l of lines) {
-    const c = sanitizeCardMeta(l.card);
-    insLine.run(uid('pl_'), pid, l.method, parseInt(l.amount) || 0, l.reference || null,
-      c.txnId, c.rrn, c.approval, c.mask, c.scheme, c.terminal, c.mode);
-  }
-
-  db.prepare(`UPDATE orders SET status='paid', paid_at=? WHERE id=?`).run(now(), order_id);
-  // Mark all remaining active items served on close
-  db.prepare(`UPDATE order_items SET status='served', served_at=? WHERE order_id=? AND status NOT IN ('served','cancelled')`)
-    .run(now(), order_id);
-
-  deductForOrder(fresh, branch_id);
-
-  if (order.table_id) {
-    const stillOpen = db.prepare(`SELECT 1 FROM orders WHERE table_id=? AND branch_id=? AND status='open' LIMIT 1`)
-      .get(order.table_id, branch_id);
-    db.prepare(`UPDATE tables SET status=? WHERE id=?`).run(stillOpen ? 'busy' : 'free', order.table_id);
-    resolveStaffCall(order.table_id, branch_id);
-    emit('table:updated', getTableState(order.table_id), branch_id);
-  }
-  audit('payment.done', { order: order_id, total: fresh.total, lines: lines.length, shift_id: shift?.id || null }, branch_id);
-  const receipt = buildReceipt(order_id, pid, lines, paid, { cashier });
-  receipt.print_config = getPrintConfig(branch_id);
-  receipt.branch_id = branch_id;
-  archiveOrder(getOrder(order_id));
-  archivePayment(receipt);
-  printReceipt(receipt, branch_id);
-  emit('payment:done', { order_id, receipt }, branch_id);
-  emit('stats:dirty', {}, branch_id);
-  return receipt;
 }
 
 export function requestPayment(table_id, branch_id = 'br1') {
@@ -452,7 +475,25 @@ export function customerQrPay(order_id, { method = 'qrcode', reference = '' } = 
   const cfg = (ops.payment?.methods || []).find(m => m.key === chosen);
   if (cfg && cfg.enabled === false) throw new Error('Phuong thuc thanh toan nay dang tat trong Cai dat');
   const ref = String(reference || paymentReferenceForOrder(order, ops)).slice(0, 120);
-  return payOrder(order_id, [{ method: chosen, amount: order.total, reference: ref }], { cashier: 'Khach tu thanh toan QR' }, branch_id);
+
+  // BẢO MẬT: KHÔNG đóng bill chỉ vì khách bấm "đã chuyển khoản" — đó là tiền chưa
+  // được xác minh, ai cũng có thể gọi endpoint này để đóng bill miễn phí. Mặc định,
+  // thao tác này chỉ TẠO YÊU CẦU để thu ngân xác nhận (hoặc để webhook ngân hàng
+  // SePay/payOS tự đóng khi tiền thật về). Cửa hàng chấp nhận rủi ro có thể bật
+  // operations_config.payment.allowCustomerSelfConfirm = true để giữ hành vi cũ.
+  const allowSelfConfirm = ops.payment?.allowCustomerSelfConfirm === true;
+  if (!allowSelfConfirm) {
+    if (order.table_id) {
+      db.prepare(`UPDATE tables SET status='paying' WHERE id=? AND status!='free'`).run(order.table_id);
+      emit('table:updated', getTableState(order.table_id), branch_id);
+    }
+    audit('payment.customer_claimed', { order: order_id, method: chosen, reference: ref, amount: order.total }, branch_id, 'Khach bao da CK');
+    emit('payment:customer_claimed', { order_id, table_id: order.table_id || null, table_code: order.table_code || null, amount: order.total, method: chosen, reference: ref }, branch_id);
+    return { ok: true, status: 'awaiting_staff', order_id, amount: order.total, reference: ref,
+      message: 'Đã ghi nhận. Thu ngân sẽ xác nhận thanh toán trong giây lát.' };
+  }
+  const receipt = payOrder(order_id, [{ method: chosen, amount: order.total, reference: ref }], { cashier: 'Khach tu thanh toan QR' }, branch_id);
+  return { ...receipt, status: 'paid' };
 }
 
 // ===========================================================================
@@ -553,7 +594,7 @@ export function handleSepayWebhook(body = {}, headers = {}, branch_id = 'br1') {
   if (!cfg.enabled) return { ok: true, status: 'disabled' };
   if (cleanText(cfg.apiKey)) {
     const provided = headerVal(headers, 'authorization').replace(/^apikey\s+/i, '').trim();
-    if (provided !== cleanText(cfg.apiKey)) { const e = new Error('Sai API key SePay'); e.status = 401; throw e; }
+    if (provided !== cleanText(cfg.apiKey)) { audit('payment.webhook.rejected', { provider: 'sepay', reason: 'bad_api_key' }, branch_id, 'webhook:sepay'); const e = new Error('Sai API key SePay'); e.status = 401; throw e; }
   }
   const transferType = String(body?.transferType || body?.transfer_type || '').toLowerCase();
   if (transferType && transferType !== 'in') return { ok: true, status: 'ignored', reason: 'not_credit' };
@@ -576,7 +617,7 @@ export function handleCassoWebhook(body = {}, headers = {}, branch_id = 'br1') {
   if (!cfg.enabled) return { ok: true, status: 'disabled' };
   if (cleanText(cfg.webhookSecret)) {
     const token = headerVal(headers, 'secure-token') || headerVal(headers, 'x-casso-signature');
-    if (token !== cleanText(cfg.webhookSecret)) { const e = new Error('Sai secure-token Casso'); e.status = 401; throw e; }
+    if (token !== cleanText(cfg.webhookSecret)) { audit('payment.webhook.rejected', { provider: 'casso', reason: 'bad_secure_token' }, branch_id, 'webhook:casso'); const e = new Error('Sai secure-token Casso'); e.status = 401; throw e; }
   }
   const list = Array.isArray(body?.data) ? body.data : (Array.isArray(body) ? body : []);
   const results = [];
@@ -607,7 +648,7 @@ export function handleVietqrWebhook(body = {}, headers = {}, branch_id = 'br1') 
   if (cleanText(cfg.username) && cleanText(cfg.password) && /^basic\s+/i.test(auth)) {
     let decoded = '';
     try { decoded = Buffer.from(auth.replace(/^basic\s+/i, '').trim(), 'base64').toString('utf8'); } catch { decoded = ''; }
-    if (decoded !== `${cleanText(cfg.username)}:${cleanText(cfg.password)}`) { const e = new Error('Sai Basic Auth VietQR'); e.status = 401; throw e; }
+    if (decoded !== `${cleanText(cfg.username)}:${cleanText(cfg.password)}`) { audit('payment.webhook.rejected', { provider: 'vietqr', reason: 'bad_basic_auth' }, branch_id, 'webhook:vietqr'); const e = new Error('Sai Basic Auth VietQR'); e.status = 401; throw e; }
   }
   const transType = String(body?.transType || body?.transtype || body?.type || '').toUpperCase();
   if (transType && transType !== 'C') return { ok: true, status: 'ignored', reason: 'not_credit' };
@@ -644,7 +685,7 @@ export function handlePayosWebhook(body = {}, headers = {}, branch_id = 'br1') {
   // payOS gửi ping xác thực khi đăng ký webhook (data rỗng) — cứ ACK 200.
   if (!body || !body.data || (typeof body.data === 'object' && !Object.keys(body.data).length)) return { ok: true, status: 'ack' };
   if (!cleanText(cfg.checksumKey)) { const e = new Error('payOS chua cau hinh Checksum Key'); e.status = 400; throw e; }
-  if (!payosVerifySignature(body, cleanText(cfg.checksumKey))) { const e = new Error('Sai chu ky payOS'); e.status = 401; throw e; }
+  if (!payosVerifySignature(body, cleanText(cfg.checksumKey))) { audit('payment.webhook.rejected', { provider: 'payos', reason: 'bad_signature' }, branch_id, 'webhook:payos'); const e = new Error('Sai chu ky payOS'); e.status = 401; throw e; }
   const d = body.data || {};
   const success = body.success === true || String(body.code) === '00' || String(d.code) === '00';
   if (!success) return { ok: true, status: 'ignored', reason: 'not_successful' };

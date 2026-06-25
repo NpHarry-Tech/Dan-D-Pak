@@ -352,7 +352,7 @@ function str(v, max = 800) {
   return String(v ?? '').trim().slice(0, max);
 }
 function pickEnv(v) {
-  return ['sandbox', 'production'].includes(v) ? v : 'sandbox';
+  return 'production';
 }
 function pickOrderMode(v) {
   return ['manual_confirm', 'auto_confirm'].includes(v) ? v : 'manual_confirm';

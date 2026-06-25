@@ -133,7 +133,7 @@
 <script type="module">
 import { api, connect, toast, esc, money, startClock, topbar, requireModuleAccess, renderUserChip } from '/shared/client.js';
 document.getElementById('top').innerHTML = topbar('contacts', {
-  title: '👥 Liên hệ',
+  title: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>Liên hệ',
   sub: 'Khách hàng &amp; nhà cung cấp dùng chung một danh bạ — dùng lại cho POS, mua hàng, kho và công nợ',
   actions: `<button class="btn primary" id="addBtn">+ Thêm liên hệ</button>`,
 });
@@ -142,6 +142,22 @@ await requireModuleAccess('contacts'); renderUserChip();
 let type = 'all', q = '', rows = [], editing = null;
 const $ = id => document.getElementById(id);
 const TYPE_LABEL = { customer: 'Khách hàng', supplier: 'Nhà cung cấp', both: 'Cả hai', staff: 'Nhân viên' };
+// Haravan-style sub-tab routing: /contacts (all), /contacts/customers, /contacts/suppliers, /contacts/staff.
+const CONTACT_SLUG_TO_TYPE = { customers: 'customer', suppliers: 'supplier', staff: 'staff' };
+const CONTACT_TYPE_TO_SLUG = { customer: 'customers', supplier: 'suppliers', staff: 'staff' };
+const contactTypeFromPath = () => CONTACT_SLUG_TO_TYPE[location.pathname.replace(/\/+$/, '').split('/')[2] || ''] || 'all';
+function syncContactsUrl(replace){
+  const slug = CONTACT_TYPE_TO_SLUG[type] || '';
+  const path = '/contacts' + (slug ? '/' + slug : '');
+  if (location.pathname.replace(/\/+$/, '') === path) return;
+  history[replace ? 'replaceState' : 'pushState']({ contactType: type }, '', path);
+}
+function applyContactType(t, { push = true } = {}){
+  type = t;
+  $('seg').querySelectorAll('button').forEach(x => x.classList.toggle('on', x.dataset.t === type));
+  if (push) syncContactsUrl(false);
+  load();
+}
 
 connect('contacts', { 'customers:updated': () => load() });
 
@@ -274,10 +290,10 @@ async function lookupTax(){
 }
 
 // ---- bind ----
-$('seg').querySelectorAll('button').forEach(b => b.onclick = () => {
-  type = b.dataset.t;
-  $('seg').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b));
-  load();
+$('seg').querySelectorAll('button').forEach(b => b.onclick = () => applyContactType(b.dataset.t));
+window.addEventListener('popstate', () => {
+  const t = contactTypeFromPath();
+  if (t !== type) applyContactType(t, { push: false });
 });
 $('ptSeg').querySelectorAll('button').forEach(b => b.onclick = () => setPartnerType(b.dataset.pt));
 let qTimer;
@@ -290,6 +306,10 @@ $('taxBtn').onclick = lookupTax;
 $('ov').onclick = e => { if (e.target === $('ov')) closeForm(); };
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && $('ov').classList.contains('show')) closeForm(); });
 
-startClock(); load();
+startClock();
+type = contactTypeFromPath();
+$('seg').querySelectorAll('button').forEach(x => x.classList.toggle('on', x.dataset.t === type));
+syncContactsUrl(true);
+load();
 </script>
 </body></html>

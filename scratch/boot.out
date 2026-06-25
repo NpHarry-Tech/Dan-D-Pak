@@ -1,0 +1,4 @@
+{"time":"2026-06-24T18:20:46.489Z","level":"info","message":"POS/ERP server started","meta":{"port":3987,"localUrl":"http://localhost:3987","webRoot":"C:\\Users\\PC\\Desktop\\Dan D Pak\\web","runtime":{"nodeEnv":"development","deploymentTarget":"local","providers":{"database":"sqlite","realtime":"socketio","storage":"local"},"corsConfigured":false,"backupRetentionDays":14,"warnings":[],"providerIssues":[],"startedAt":"2026-06-24T18:20:46.238Z"}}}
+{"time":"2026-06-24T18:20:46.946Z","level":"info","message":"http request","meta":{"method":"POST","url":"/api/login","status":200,"ms":68}}
+{"time":"2026-06-24T18:20:46.973Z","level":"info","message":"http request","meta":{"method":"POST","url":"/api/menu/x/price","status":401,"ms":2}}
+{"time":"2026-06-24T18:20:47.011Z","level":"info","message":"http request","meta":{"method":"GET","url":"/api/database/docs","status":401,"ms":3}}

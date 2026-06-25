@@ -2534,7 +2534,7 @@
 
     function renderTablePick() {
       frame.innerHTML = `${topbar('ipad', {
-        title: '📱 Chọn bàn',
+        title: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>Chọn bàn',
         sub: 'Thiết bị này sẽ gắn cố định với bàn đã chọn',
         actions: `<div class="lang-selector" style="display:inline-flex;gap:4px;font-size:12px;font-weight:600;cursor:pointer;background:var(--surface2);border:1px solid var(--border2);border-radius:99px;padding:4px 10px;user-select:none;">
           <span id="langViBtn" style="${getLang() === 'vi' ? 'color:var(--primary);text-decoration:underline;' : 'color:var(--muted);'}">VI</span><span>|</span>
@@ -2926,9 +2926,16 @@
           try {
             if (mode === 'qr') {
               const paidId = sentOrder.id, paidTotal = sentOrder.total;
-              await api('/orders/' + paidId + '/customer-qr-pay', { method: 'POST', body: { method: qr?.key || 'qrcode', reference: qrPayment?.reference || paymentRef(qr?.key || 'qrcode') } });
+              const res = await api('/orders/' + paidId + '/customer-qr-pay', { method: 'POST', body: { method: qr?.key || 'qrcode', reference: qrPayment?.reference || paymentRef(qr?.key || 'qrcode') } });
               sentOrder = null; cart = [];
-              showThanks(paidId, paidTotal);
+              if (res && res.status === 'awaiting_staff') {
+                // Thanh toán chưa được xác minh tự động — chờ thu ngân/đối soát ngân hàng xác nhận.
+                ov.remove();
+                toast('✅ Đã ghi nhận. Thu ngân sẽ xác nhận thanh toán trong giây lát.');
+                render();
+              } else {
+                showThanks(paidId, paidTotal);
+              }
             } else {
               await api('/tables/' + tableId + '/request-payment', { method: 'POST' });
               ov.remove(); toast('💳 Đã báo thu ngân tới thanh toán');

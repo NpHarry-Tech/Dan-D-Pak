@@ -16,8 +16,8 @@
 // Accepts a Markdown pipe-table OR comma/semicolon/tab CSV, and auto-repairs
 // mojibake (UTF-8 that got decoded as Latin-1, e.g. "HÃ ng hÃ³a" -> "Hàng hóa").
 
-import { readFileSync, existsSync } from 'node:fs';
-import { resolve, dirname } from 'node:path';
+import { readFileSync, existsSync, readdirSync, writeFileSync, mkdirSync } from 'node:fs';
+import { resolve, dirname, join, extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { inflateRawSync } from 'node:zlib';
 import { db, migrate, now, audit } from '../db.js';
@@ -28,6 +28,47 @@ const WAREHOUSE_ID = 'wh_retail';
 
 const args = process.argv.slice(2);
 const COMMIT = args.includes('--commit');
+
+function findLocalImage(skuId) {
+  const destDir = resolve(__dirname, '..', '..', 'web', 'assets', 'product-images');
+  if (!existsSync(destDir)) return null;
+  try {
+    const files = readdirSync(destDir);
+    const match = files.find(f => f.startsWith(skuId + '.'));
+    return match ? `/assets/product-images/${match}` : null;
+  } catch {
+    return null;
+  }
+}
+
+async function downloadProductImage(skuId, url) {
+  if (!url || !url.startsWith('http')) return url || null;
+  const local = findLocalImage(skuId);
+  if (local) return local;
+
+  const destDir = resolve(__dirname, '..', '..', 'web', 'assets', 'product-images');
+  try {
+    const res = await fetch(url);
+    if (!res.ok) return url;
+    const contentType = res.headers.get('content-type') || '';
+    let ext = extname(new URL(url).pathname);
+    if (!ext) {
+      if (contentType.includes('png')) ext = '.png';
+      else if (contentType.includes('webp')) ext = '.webp';
+      else if (contentType.includes('gif')) ext = '.gif';
+      else ext = '.jpg';
+    }
+    const filename = `${skuId}${ext}`;
+    const destPath = join(destDir, filename);
+    const arrayBuffer = await res.arrayBuffer();
+    mkdirSync(destDir, { recursive: true });
+    writeFileSync(destPath, Buffer.from(arrayBuffer));
+    return `/assets/product-images/${filename}`;
+  } catch (err) {
+    console.warn(`⚠️  Không tải được ảnh cho ${skuId}: ${err.message}`);
+    return url;
+  }
+}
 function defaultFile() {
   const dir = (f) => resolve(__dirname, 'data', f);
   for (const f of ['kiotviet-products.xlsx', 'kiotviet-products.md', 'kiotviet-products.csv']) {
@@ -269,7 +310,7 @@ function skuIdFor(code, used) {
 }
 
 // ---- main --------------------------------------------------------------------
-function run() {
+async function run() {
   if (!existsSync(FILE)) {
     console.error(`\n❌ Không tìm thấy file export: ${FILE}\n`);
     console.error(`   Lưu file export vào server/scripts/data/kiotviet-products.{xlsx|md|csv}`);
@@ -328,6 +369,17 @@ function run() {
     console.log(`\n🔍 DRY-RUN — chưa ghi gì vào database.`);
     console.log(`   Chạy lại với --commit để nhập thật.\n`);
     return;
+  }
+
+  console.log(`\n📥 Đang kiểm tra và tải hình ảnh sản phẩm về thư mục local...`);
+  for (let i = 0; i < records.length; i++) {
+    const s = records[i];
+    if (s.image && s.image.startsWith('http')) {
+      s.image = await downloadProductImage(s.id, s.image);
+    } else {
+      const local = findLocalImage(s.id);
+      if (local) s.image = local;
+    }
   }
 
   // Positional params + explicit transaction (node:sqlite has no .transaction()).

@@ -3,6 +3,7 @@
 import { Server } from 'socket.io';
 import { env } from './config/env.js';
 import { audit } from './db.js';
+import { userFor, canAccessBranch } from './services/auth.js';
 
 let io = null;
 
@@ -24,20 +25,74 @@ function logDeviceConnect(branch, device, ip) {
   try { audit('device.connect', { device, ip, connectedAt: new Date().toISOString() }, branch); } catch {}
 }
 
+const presenceTimers = new Map(); // branch -> timeout
+
+function emitPresenceThrottled(branch) {
+  if (presenceTimers.has(branch)) return;
+  
+  const timer = setTimeout(() => {
+    presenceTimers.delete(branch);
+    emitPresence(branch);
+  }, 2000);
+  
+  presenceTimers.set(branch, timer);
+}
+
 export function initRealtime(httpServer) {
   const corsOrigin = env.CORS_ORIGINS.length ? env.CORS_ORIGINS : (env.isProduction ? [] : '*');
   io = new Server(httpServer, { cors: { origin: corsOrigin, credentials: true } });
 
-  io.on('connection', (socket) => {
-    const branch = socket.handshake.query.branch || 'br1';
-    const device = socket.handshake.query.device || 'unknown';
-    socket.join('branch:' + branch);
-    socket.data.branch = branch;
-    socket.data.device = device;
-    logDeviceConnect(branch, device, cleanIp(socket.handshake.address));
-    emitPresence(branch);
+  // Middleware xác thực kết nối Socket.IO
+  io.use((socket, next) => {
+    try {
+      const device = socket.handshake.auth?.device || socket.handshake.query?.device || 'unknown';
+      // iPad là thiết bị công cộng đặt tại bàn, không cần xác thực token nhân viên
+      if (device === 'ipad') {
+        return next();
+      }
 
-    socket.on('disconnect', () => emitPresence(branch));
+      const token = socket.handshake.auth?.token || socket.handshake.query?.token;
+      if (!token) {
+        return next(new Error('Xác thực thất bại: Thiếu token truy cập.'));
+      }
+
+      const user = userFor(token);
+      if (!user) {
+        return next(new Error('Xác thực thất bại: Phiên làm việc không hợp lệ hoặc đã hết hạn.'));
+      }
+
+      const branch = socket.handshake.auth?.branch || socket.handshake.query?.branch || 'br1';
+      if (!canAccessBranch(user, branch)) {
+        return next(new Error('Xác thực thất bại: Không có quyền truy cập chi nhánh này.'));
+      }
+
+      socket.data.user = user;
+      next();
+    } catch (err) {
+      next(new Error('Xác thực lỗi: ' + err.message));
+    }
+  });
+
+  io.on('connection', (socket) => {
+    try {
+      const branch = socket.handshake.auth?.branch || socket.handshake.query?.branch || 'br1';
+      const device = socket.handshake.auth?.device || socket.handshake.query?.device || 'unknown';
+      socket.join('branch:' + branch);
+      socket.data.branch = branch;
+      socket.data.device = device;
+      logDeviceConnect(branch, device, cleanIp(socket.handshake.address));
+      emitPresenceThrottled(branch);
+
+      socket.on('disconnect', () => {
+        try {
+          emitPresenceThrottled(branch);
+        } catch (err) {
+          console.warn('[Socket.IO] disconnect presence error:', err.message);
+        }
+      });
+    } catch (err) {
+      console.warn('[Socket.IO] connection error:', err.message);
+    }
   });
 
   return io;
@@ -45,32 +100,45 @@ export function initRealtime(httpServer) {
 
 // Broadcast an event to everyone in a branch.
 export function emit(event, payload, branch = 'br1') {
-  if (io) io.to('branch:' + branch).emit(event, payload);
+  try {
+    if (io) io.to('branch:' + branch).emit(event, payload);
+  } catch (err) {
+    console.warn('[Socket.IO] broadcast emit error:', err.message);
+  }
 }
 
 function emitPresence(branch) {
-  if (!io) return;
-  const room = io.sockets.adapter.rooms.get('branch:' + branch);
-  const sockets = room ? [...room].map(id => io.sockets.sockets.get(id)) : [];
-  const devices = {};
-  for (const s of sockets) {
-    const d = s?.data?.device || 'unknown';
-    devices[d] = (devices[d] || 0) + 1;
+  try {
+    if (!io) return;
+    const room = io.sockets.adapter.rooms.get('branch:' + branch);
+    const sockets = room ? [...room].map(id => io.sockets.sockets.get(id)) : [];
+    const devices = {};
+    for (const s of sockets) {
+      const d = s?.data?.device || 'unknown';
+      devices[d] = (devices[d] || 0) + 1;
+    }
+    io.to('branch:' + branch).emit('presence', { count: sockets.length, devices });
+  } catch (err) {
+    console.warn('[Socket.IO] emitPresence error:', err.message);
   }
-  io.to('branch:' + branch).emit('presence', { count: sockets.length, devices });
 }
 
 export function getActiveConnections(branch = 'br1') {
-  if (!io) return [];
-  const room = io.sockets.adapter.rooms.get('branch:' + branch);
-  if (!room) return [];
-  return [...room].map(id => {
-    const s = io.sockets.sockets.get(id);
-    return {
-      id: s.id,
-      device: s.data.device || 'unknown',
-      ip: s.handshake.address,
-      connectedAt: s.handshake.issued || Date.now()
-    };
-  });
+  try {
+    if (!io) return [];
+    const room = io.sockets.adapter.rooms.get('branch:' + branch);
+    if (!room) return [];
+    return [...room].map(id => {
+      const s = io.sockets.sockets.get(id);
+      return {
+        id: s.id,
+        device: s?.data?.device || 'unknown',
+        ip: s?.handshake?.address || '',
+        connectedAt: s?.handshake?.issued || Date.now()
+      };
+    });
+  } catch (err) {
+    console.warn('[Socket.IO] getActiveConnections error:', err.message);
+    return [];
+  }
 }
