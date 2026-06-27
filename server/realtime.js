@@ -63,7 +63,7 @@ export function initRealtime(httpServer) {
 
       const branch = socket.handshake.auth?.branch || socket.handshake.query?.branch || 'br1';
       if (!canAccessBranch(user, branch)) {
-        return next(new Error('Xác thực thất bại: Không có quyền truy cập chi nhánh này.'));
+        return next(new Error('Xác thực thất bại: Không có quyền truy cập cơ sở này.'));
       }
 
       socket.data.user = user;

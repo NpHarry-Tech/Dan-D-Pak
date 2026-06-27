@@ -2399,7 +2399,7 @@ async function openSettings(initialTab){
   };
   const SETTINGS_TABS = [
     { key:'users', title:'Nhân sự &amp; Phân quyền', desc:'Quản lý tài khoản, vai trò và quyền truy cập của nhân viên.', perm:'settings.users' },
-    { key:'branches', title:'Chi nhánh &amp; phân vùng', desc:'Thiết lập chi nhánh, kho và phân vùng bán hàng.', perm:'settings.branches' },
+    { key:'branches', title:'Cơ sở &amp; phân vùng', desc:'Thiết lập cơ sở, kho và phân vùng bán hàng.', perm:'settings.branches' },
     { key:'integrations', title:'Liên kết', desc:'Kết nối hóa đơn điện tử, kế toán và các nền tảng bán hàng.', perm:'settings.integrations' },
     { key:'connections', title:'Kết nối', desc:'Trạng thái thiết bị, máy in và đồng bộ dữ liệu lên cloud.', perm:'settings.connections' },
     { key:'operations', title:'Tài chính &amp; Hóa đơn', desc:'Cấu hình ca, thanh toán, hóa đơn và hóa đơn điện tử.', perm:'settings.operations' },
@@ -2494,10 +2494,10 @@ async function openSettings(initialTab){
   }
   const roles=[['owner','Admin'],['manager','Quản lý'],['cashier','Thu ngân'],['kitchen','Bếp'],['warehouse','Thủ kho']];
   const roleName=k=>roles.find(r=>r[0]===k)?.[1]||k;
-  const branchName=id=>branches.find(b=>b.id===id)?.name||id||'Chi nhánh';
+  const branchName=id=>branches.find(b=>b.id===id)?.name||id||'Cơ sở';
   const branchBadges=(ids=[])=>{
     const list=Array.isArray(ids)?ids:[];
-    if(list.includes('*')) return '<span class="chip c-done">Tất cả chi nhánh</span>';
+    if(list.includes('*')) return '<span class="chip c-done">Tất cả cơ sở</span>';
     return (list.length?list:[branches[0]?.id].filter(Boolean)).map(id=>`<span class="chip c-muted">${esc(branchName(id))}</span>`).join('');
   };
   const warehouseSalesChannels=[
@@ -3230,8 +3230,8 @@ async function openSettings(initialTab){
         <div><label style="display:block;font-size:12px;font-weight:600;margin-bottom:4px">Vai trò mặc định</label><select id="setRole" style="width:100%">${roles.map(([k,n])=>`<option value="${k}" ${selectedRole===k?'selected':''}>${n}</option>`).join('')}</select></div>
         <div><label style="display:block;font-size:12px;font-weight:600;margin-bottom:4px">Trạng thái</label><select id="setActive" style="width:100%"><option value="1" ${u.active!==false?'selected':''}>Đang hoạt động</option><option value="0" ${u.active===false?'selected':''}>Tắt tài khoản</option></select></div>
         <div><label style="display:block;font-size:12px;font-weight:600;margin-bottom:4px">Ngôn ngữ hiển thị</label><select id="setLang" style="width:100%"><option value="vi" ${u.lang!=='en'?'selected':''}>Tiếng Việt</option><option value="en" ${u.lang==='en'?'selected':''}>Tiếng Anh</option></select></div>
-        <div><label style="display:block;font-size:12px;font-weight:600;margin-bottom:4px">Chi nhánh chính</label><select id="setBranch" style="width:100%">${branches.map(b=>`<option value="${esc(b.id)}" ${(u.branch_id||branches[0]?.id)===b.id?'selected':''}>${esc(b.name||b.code||b.id)}</option>`).join('')}</select></div>
-        <div style="grid-column:1/-1"><label style="display:block;font-size:12px;font-weight:600;margin-bottom:6px">Phạm vi truy cập chi nhánh</label><div class="permgrid">${branches.map(b=>`<label class="permitem"><input type="checkbox" data-user-branch="${esc(b.id)}" ${((u.branch_ids||[u.branch_id||branches[0]?.id]).includes(b.id)||u.role==='owner')?'checked':''} ${u.role==='owner'?'disabled':''}><span>${esc(b.name||b.code||b.id)}</span></label>`).join('')}</div><div class="mini" style="margin-top:6px">Manager được tick nhiều chi nhánh sẽ hoạt động như quản lý khu vực. Admin luôn thấy tất cả.</div></div>
+        <div><label style="display:block;font-size:12px;font-weight:600;margin-bottom:4px">Cơ sở chính</label><select id="setBranch" style="width:100%">${branches.map(b=>`<option value="${esc(b.id)}" ${(u.branch_id||branches[0]?.id)===b.id?'selected':''}>${esc(b.name||b.code||b.id)}</option>`).join('')}</select></div>
+        <div style="grid-column:1/-1"><label style="display:block;font-size:12px;font-weight:600;margin-bottom:6px">Phạm vi truy cập cơ sở</label><div class="permgrid">${branches.map(b=>`<label class="permitem"><input type="checkbox" data-user-branch="${esc(b.id)}" ${((u.branch_ids||[u.branch_id||branches[0]?.id]).includes(b.id)||u.role==='owner')?'checked':''} ${u.role==='owner'?'disabled':''}><span>${esc(b.name||b.code||b.id)}</span></label>`).join('')}</div><div class="mini" style="margin-top:6px">Manager được tick nhiều cơ sở sẽ hoạt động như quản lý khu vực. Admin luôn thấy tất cả.</div></div>
       </div>
       <div class="setting-card" style="margin-top:12px;border:1px solid var(--border);padding:14px;border-radius:10px;background:var(--surface2)">
         <h4 style="margin:0 0 6px;font-size:13px;font-weight:700">Quyền riêng của nhân viên</h4>
@@ -3265,20 +3265,20 @@ async function openSettings(initialTab){
     return `<div class="staff-mgmt-layout">
       <div class="staff-mgmt-list-pane">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-          <h3 style="margin:0;font-size:14px;color:var(--text);font-weight:800">Chi nhánh / cửa hàng</h3>
+          <h3 style="margin:0;font-size:14px;color:var(--text);font-weight:800">Cơ sở / cửa hàng</h3>
           <button class="btn sm primary" id="branchNew" type="button">＋ Tạo mới</button>
         </div>
-        <div class="mini" style="margin-bottom:10px">Mỗi chi nhánh có kho, tồn, bàn, ca, báo cáo và cấu hình bán hàng riêng. Menu/SKU danh mục có thể dùng chung, nhưng tồn kho luôn tách theo chi nhánh.</div>
-        <div class="staff-list-container">${rows || '<div class="empty">Chưa có chi nhánh</div>'}</div>
+        <div class="mini" style="margin-bottom:10px">Mỗi cơ sở có kho, tồn, bàn, ca, báo cáo và cấu hình bán hàng riêng. Menu/SKU danh mục có thể dùng chung, nhưng tồn kho luôn tách theo cơ sở.</div>
+        <div class="staff-list-container">${rows || '<div class="empty">Chưa có cơ sở</div>'}</div>
       </div>
       <div class="staff-mgmt-details-pane">
-        <h3 style="margin:0 0 16px">${isNew?'Tạo chi nhánh mới':'Cấu hình chi nhánh'}</h3>
+        <h3 style="margin:0 0 16px">${isNew?'Tạo cơ sở mới':'Cấu hình cơ sở'}</h3>
         <div class="setting-card" style="margin-bottom:14px">
-          <div class="mini">Gợi ý mô hình 2 cửa hàng: tạo từng chi nhánh, vào tab Nhân sự cấp quyền manager khu vực vào nhiều chi nhánh, sau đó nhân viên chọn chi nhánh ở màn hình launcher trước khi đăng nhập.</div>
+          <div class="mini">Gợi ý mô hình 2 cửa hàng: tạo từng cơ sở, vào tab Nhân sự cấp quyền manager khu vực vào nhiều cơ sở, sau đó nhân viên chọn cơ sở ở màn hình launcher trước khi đăng nhập.</div>
         </div>
         <div class="formgrid" style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
-          <div><label style="display:block;font-size:12px;font-weight:700;margin-bottom:4px">Tên chi nhánh</label><input id="branchName" value="${esc(isNew?'':editing.name||'')}" placeholder="VD: Dan D Pak Quận 1" style="width:100%"></div>
-          <div><label style="display:block;font-size:12px;font-weight:700;margin-bottom:4px">Mã chi nhánh</label><input id="branchCode" value="${esc(isNew?'':editing.code||editing.id||'')}" placeholder="VD: Q1 / SALA / SALA2" style="width:100%"></div>
+          <div><label style="display:block;font-size:12px;font-weight:700;margin-bottom:4px">Tên cơ sở</label><input id="branchName" value="${esc(isNew?'':editing.name||'')}" placeholder="VD: Dan D Pak Quận 1" style="width:100%"></div>
+          <div><label style="display:block;font-size:12px;font-weight:700;margin-bottom:4px">Mã cơ sở</label><input id="branchCode" value="${esc(isNew?'':editing.code||editing.id||'')}" placeholder="VD: Q1 / SALA / SALA2" style="width:100%"></div>
           <div><label style="display:block;font-size:12px;font-weight:700;margin-bottom:4px">Số điện thoại</label><input id="branchPhone" value="${esc(isNew?'':editing.phone||'')}" placeholder="Hotline cửa hàng" style="width:100%"></div>
           <div><label style="display:block;font-size:12px;font-weight:700;margin-bottom:4px">Thứ tự hiển thị</label><input id="branchSort" type="number" value="${esc(isNew?branches.length+1:(editing.sort??branches.length+1))}" style="width:100%"></div>
           <div style="grid-column:1/-1"><label style="display:block;font-size:12px;font-weight:700;margin-bottom:4px">Địa chỉ</label><input id="branchAddress" value="${esc(isNew?'':editing.address||'')}" placeholder="Địa chỉ đầy đủ để in bill / báo cáo" style="width:100%"></div>
@@ -3287,7 +3287,7 @@ async function openSettings(initialTab){
         </div>
         <div class="mfoot" style="margin-top:16px">
           <button class="btn" id="branchReset" type="button">${isNew?'Làm mới':'Bỏ sửa'}</button>
-          <button class="btn primary" id="branchSave" type="button">${isNew?'Tạo chi nhánh':'Lưu chi nhánh'}</button>
+          <button class="btn primary" id="branchSave" type="button">${isNew?'Tạo cơ sở':'Lưu cơ sở'}</button>
         </div>
       </div>
     </div>`;
@@ -3310,7 +3310,7 @@ async function openSettings(initialTab){
         sort:parseInt(ov.querySelector('#branchSort').value)||0,
         active:ov.querySelector('#branchActive').value==='1',
       };
-      if(!body.name) return toast('Nhập tên chi nhánh',true);
+      if(!body.name) return toast('Nhập tên cơ sở',true);
       try{
         const isNew=branchEditingId==='__new__' || !branchEditingId;
         const saved=isNew
@@ -3319,7 +3319,7 @@ async function openSettings(initialTab){
         branches=await api('/settings/branches').catch(()=>branches);
         try{ localStorage.setItem('branches_cache', JSON.stringify(await api('/branches'))); }catch{}
         branchEditingId=saved.id;
-        toast(isNew?'Đã tạo chi nhánh và bootstrap kho/bàn mặc định':'Đã lưu chi nhánh');
+        toast(isNew?'Đã tạo cơ sở và bootstrap kho/bàn mặc định':'Đã lưu cơ sở');
         draw();
       }catch(e){ toast(e.message,true); }
     };
@@ -3428,7 +3428,7 @@ async function openSettings(initialTab){
         </div>
 
         <!-- Card 2: Cloud Sync / Replication status -->
-        <div class="setting-card" style="margin:0; display:flex; flex-direction:column; justify-content:space-between">
+        <div class="setting-card" style="margin:0; display:none; flex-direction:column; justify-content:space-between">
           <div>
             <h4 style="margin:0;display:flex;align-items:center;gap:8px">☁️ VPS Buffer &amp; Eternal Storage</h4>
             <div style="margin-top:12px;display:flex;flex-direction:column;gap:8px" id="dbCloudInfo">
@@ -4160,7 +4160,7 @@ async function openSettings(initialTab){
       <h3>Cấu hình bill</h3>
       <div class="setting-form">
         <div><label>Tên cửa hàng trên bill</label><input data-cfg="storeName" value="${esc(c.storeName||'')}"></div>
-        <div><label>Địa chỉ / chi nhánh</label><input data-cfg="address" value="${esc(c.address||'')}"></div>
+        <div><label>Địa chỉ / cơ sở</label><input data-cfg="address" value="${esc(c.address||'')}"></div>
         <div><label>Số điện thoại</label><input data-cfg="phone" value="${esc(c.phone||'')}"></div>
         <div><label>Khổ giấy</label><select data-cfg="paper"><option value="K80" ${c.paper==='K80'?'selected':''}>K80</option><option value="K58" ${c.paper==='K58'?'selected':''}>K58</option></select></div>
         <div><label>Lời cảm ơn cuối bill</label><input data-cfg="footer" value="${esc(c.footer||'')}"></div>

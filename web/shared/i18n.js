@@ -310,7 +310,7 @@ const EXTRA_TRANSLATIONS = {
   "Về màn hình ứng dụng": "Back to App Launcher",
   "Đăng xuất": "Logout",
   "Nhấp đúp để quay lại Launcher": "Double-click to return to Launcher",
-  "Chi nhánh: Dan D Pak Sala · Trực tiếp": "Branch: Dan D Pak Sala · Live",
+  "Cơ sở: Dan D Pak Sala · Trực tiếp": "Location: Dan D Pak Sala · Live",
 
   // Launcher and navigation
   "Tính năng thiết yếu": "Essentials",

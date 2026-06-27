@@ -77,13 +77,13 @@ async function renderBranchPicker(){
   const current = selectedBranch();
   const user = getUser();
   const name = current.name || current.code || current.id;
-  // Nút "Đổi chi nhánh" chỉ hiện cho người được cấp quyền truy cập NHIỀU chi nhánh
-  // (Admin có toàn bộ; Quản lý được cấp nhiều chi nhánh). Nhân viên 1 chi nhánh không thấy.
+  // Nút "Đổi cơ sở" chỉ hiện cho người được cấp quyền truy cập NHIỀU cơ sở
+  // (Admin có toàn bộ; Quản lý được cấp nhiều cơ sở). Nhân viên 1 cơ sở không thấy.
   const canSwitch = branchesForCurrentUser().length > 1;
   host.innerHTML = `<div class="branch-picker">
-    <span>Chi nhánh</span>
+    <span>Cơ sở</span>
     <b class="branch-name" title="${esc(name)}">${esc(name)}</b>
-    ${canSwitch ? `<button class="branch-switch" id="branchSwitch" type="button">⇄ Đổi chi nhánh</button>` : ''}
+    ${canSwitch ? `<button class="branch-switch" id="branchSwitch" type="button">⇄ Đổi cơ sở</button>` : ''}
     ${user ? `<button class="launcher-logout" id="launcherLogout" type="button" title="Đăng xuất ${esc(user.name||user.username||'')}">Đăng xuất</button>` : ''}
   </div>`;
   const switchBtn = host.querySelector('#branchSwitch');

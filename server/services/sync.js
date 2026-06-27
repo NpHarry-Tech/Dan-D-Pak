@@ -161,7 +161,7 @@ export function setOffline(offline, branch_id = 'br1') {
 
 // Push pending changes to cloud. No-op (throws) while offline.
 export function syncNow(branch_id = 'br1') {
-  if (state.offline) throw new Error('Đang offline — chi nhánh sẽ sync bù khi có mạng lại');
+  if (state.offline) throw new Error('Đang offline — cơ sở sẽ sync bù khi có mạng lại');
   
   let totalSynced = 0;
   let count = 0;

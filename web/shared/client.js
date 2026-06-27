@@ -69,11 +69,20 @@ export const setLang = async (l) => {
 };
 
 export async function api(path, opts = {}) {
-  return apiRequest(path, {
-    ...opts,
-    token: getToken() || '',
-    headers: { ...(opts.headers || {}), 'x-branch-id': getBranchId() },
-  });
+  try {
+    return await apiRequest(path, {
+      ...opts,
+      token: getToken() || '',
+      headers: { ...(opts.headers || {}), 'x-branch-id': getBranchId() },
+    });
+  } catch (err) {
+    if (err && err.status === 401 && path !== '/login') {
+      localStorage.removeItem('auth_token');
+      localStorage.removeItem('auth_user');
+      location.reload();
+    }
+    throw err;
+  }
 }
 
 // ---- Auth ----
@@ -243,14 +252,21 @@ export async function requireLogin(opts = {}) {
       localStorage.setItem('preferred_lang', userLang);
       if (userLang !== currentPreferred) location.reload();
       return me;
+    } catch (err) {
+      if (err && (err.status === 401 || err.status === 403)) {
+        localStorage.removeItem('auth_token');
+        localStorage.removeItem('auth_user');
+      } else {
+        const cachedUser = getUser();
+        if (cachedUser) return cachedUser;
+      }
     }
-    catch { localStorage.removeItem('auth_token'); localStorage.removeItem('auth_user'); }
   }
   return openLoginWizard({ mode });
 }
 
-// Mở "Đổi chi nhánh" từ màn hình chọn module (đang đăng nhập). Chỉ hiển thị các chi
-// nhánh user được cấp quyền; chọn chi nhánh khác = đổi TỨC THÌ, GIỮ phiên đăng nhập
+// Mở "Đổi cơ sở" từ màn hình chọn module (đang đăng nhập). Chỉ hiển thị các cơ
+// sở user được cấp quyền; chọn cơ sở khác = đổi TỨC THÌ, GIỮ phiên đăng nhập
 // (không cần đăng nhập lại — server resolveBranch đã cho phép theo quyền). Reload khi đổi.
 export async function changeBranchFlow() {
   const result = await openLoginWizard({ mode: 'switch' });
@@ -258,8 +274,8 @@ export async function changeBranchFlow() {
   return result;
 }
 
-// Wizard: mode 'gate' = cổng đăng nhập (Chi nhánh → Nhân viên → PIN); 'switch' = chọn nhanh
-// chi nhánh để đổi tức thì (chỉ bước chi nhánh, không đăng nhập lại).
+// Wizard: mode 'gate' = cổng đăng nhập (Cơ sở → Nhân viên → PIN); 'switch' = chọn nhanh
+// cơ sở để đổi tức thì (chỉ bước cơ sở, không đăng nhập lại).
 function openLoginWizard({ mode = 'gate' } = {}) {
   injectLoginCss();
   return new Promise((resolve) => {
@@ -278,11 +294,11 @@ function openLoginWizard({ mode = 'gate' } = {}) {
       //  - switch (chủ động đổi), hoặc
       //  - gate & thiết bị CHƯA chốt chi nhánh & hệ thống có >1 chi nhánh (lần đầu cài đặt).
       const established = localStorage.getItem(BRANCH_ESTABLISHED_KEY) === '1';
-      const showBranchPane = isSwitch || (!established && branches.length > 1);
+      const showBranchPane = true;
       const showUserPane = !isSwitch;
       const hasBranchStep = showBranchPane;
       const paneList = [...(showBranchPane ? ['branch'] : []), ...(showUserPane ? ['user'] : [])];
-      let step = paneList[0];
+      let step = (established && !isSwitch) ? 'user' : 'branch';
 
       const branchName = (id) => { const b = branches.find(x => x.id === id); return b ? (b.name || b.code || b.id) : id; };
       const loadUsers = async () => {
@@ -295,14 +311,14 @@ function openLoginWizard({ mode = 'gate' } = {}) {
         const id = b.id, isCur = id === originBranch, isSel = id === selBranch;
         return `<button type="button" class="lg-branch-row${isSel ? ' sel' : ''}" data-b="${esc(id)}">
           <span class="lg-branch-ic">${isCur ? '📍' : '🏬'}</span>
-          <span class="lg-branch-meta"><b>${esc(b.name || b.code || id)}</b><small>${isCur ? 'Chi nhánh hiện tại' : esc(b.code || id)}</small></span>
+          <span class="lg-branch-meta"><b>${esc(b.name || b.code || id)}</b><small>${isCur ? 'Cơ sở hiện tại' : esc(b.code || id)}</small></span>
           <span class="lg-branch-chev">${isSel ? '✓' : '›'}</span>
         </button>`;
       }).join('');
       const usersHtml = () => users.length
         ? users.map(u => `<button class="lg-user" data-u="${esc(u.username)}"><span class="lg-av">${esc((u.name || '?')[0])}</span><span><b>${esc(u.name)}</b><small>${esc(ROLE_LABEL[u.role] || u.role)}</small></span></button>`).join('')
-        : `<div class="lg-loading">Chưa có tài khoản nhân viên ở chi nhánh này.</div>`;
-      const userPaneHtml = () => `${hasBranchStep ? `<div class="lg-branch-chip"><span>Chi nhánh</span><b>${esc(branchName(selBranch))}</b></div>` : ''}<div class="lg-users">${usersHtml()}</div>`;
+        : `<div class="lg-loading">Chưa có tài khoản nhân viên ở cơ sở này.</div>`;
+      const userPaneHtml = () => `<div class="lg-users">${usersHtml()}</div>`;
 
       const ov = document.createElement('div');
       ov.id = 'loginGate';
@@ -323,7 +339,7 @@ function openLoginWizard({ mode = 'gate' } = {}) {
       document.body.appendChild(ov);
 
       const close = (val) => { ov.remove(); resolve(val); };
-      const setSub = () => { const s = ov.querySelector('#lgSub'); if (s) s.textContent = step === 'branch' ? 'Chọn chi nhánh' : 'Đăng nhập nhân viên'; };
+      const setSub = () => { const s = ov.querySelector('#lgSub'); if (s) s.textContent = step === 'branch' ? 'Chọn cơ sở' : 'Đăng nhập nhân viên'; };
       const setBack = () => { const b = ov.querySelector('#lgBack'); if (b) b.style.visibility = (step === 'user' && hasBranchStep) ? 'visible' : 'hidden'; };
       const fit = () => { const vp = ov.querySelector('#lgVp'); const pane = ov.querySelector(`.lg-pane[data-step="${step}"]`); if (vp && pane) vp.style.height = pane.offsetHeight + 'px'; };
       const slide = () => { const tr = ov.querySelector('#lgTrack'); if (tr) tr.style.transform = `translateX(-${paneList.indexOf(step) * 100}%)`; };

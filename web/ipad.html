@@ -2251,7 +2251,7 @@
     function ipadStaffBrand() {
       const br = selectedBranch();
       const name = br.name || br.code || br.id || 'Dan D Pak';
-      const label = getLang() === 'en' ? `Branch: ${name} · Live` : `Chi nhánh: ${name} · Trực tiếp`;
+      const label = getLang() === 'en' ? `Branch: ${name} · Live` : `Cơ sở: ${name} · Trực tiếp`;
       return `<div class="ipad-brand-lock"><button class="staff-logo" id="staffUnlock" type="button" aria-label="Mở chọn bàn nhân viên" title="Chạm 3 lần để chọn bàn"></button><small>${esc(label)}</small></div>`;
     }
 

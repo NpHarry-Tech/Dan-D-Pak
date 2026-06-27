@@ -62,7 +62,7 @@ export const PERMISSIONS = [
   { key: 'settings.manage', label: 'Quản lý người dùng và phân quyền' },
   { key: 'settings.users', label: 'Cài đặt — Quản lý nhân viên' },
   { key: 'settings.perms', label: 'Cài đặt — Quản lý quyền và vai trò' },
-  { key: 'settings.branches', label: 'Cài đặt — Quản lý chi nhánh & phân vùng' },
+  { key: 'settings.branches', label: 'Cài đặt — Quản lý cơ sở & phân vùng' },
   { key: 'settings.sync', label: 'Cài đặt — Cloud Sync & Đồng bộ ngoại tuyến' },
   { key: 'settings.integrations', label: 'Cài đặt — Liên kết dịch vụ (MISA, PayOS...)' },
   { key: 'settings.connections', label: 'Cài đặt — Kết nối hệ thống (Mạng, máy in, POS...)' },
@@ -289,7 +289,7 @@ export function resolveBranch(req) {
   if (canAccessBranch(req.user, requested)) return requested;
   const fallback = req.user.branch_id || userBranchIds(req.user)[0] || 'br1';
   if (canAccessBranch(req.user, fallback)) return fallback;
-  throw new Error('Tài khoản này không có quyền truy cập chi nhánh đã chọn.');
+  throw new Error('Tài khoản này không có quyền truy cập cơ sở đã chọn.');
 }
 
 function normalizeBranchAccess(body = {}, role = 'cashier', homeBranch = 'br1') {
@@ -317,7 +317,7 @@ export function login(username, pin, branch_id = 'br1', meta = {}) {
   }
   loginFails.delete(uname);
   const selectedBranch = branchExists(branch_id) ? branch_id : (u.branch_id || 'br1');
-  if (!canAccessBranch(u, selectedBranch)) throw new Error('Tài khoản này chưa được cấp quyền vào chi nhánh đã chọn.');
+  if (!canAccessBranch(u, selectedBranch)) throw new Error('Tài khoản này chưa được cấp quyền vào cơ sở đã chọn.');
   const token = newToken();
   const user = publicUser(u);
   const ts = now();

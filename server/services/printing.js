@@ -358,7 +358,7 @@ export function getJob(id) {
 export function getJobForBranch(id, branch_id = 'br1') {
   const job = getJob(id);
   if (!job) return null;
-  if (job.branch_id !== branch_id) throw new Error('Print job không thuộc chi nhánh hiện tại');
+  if (job.branch_id !== branch_id) throw new Error('Print job không thuộc cơ sở hiện tại');
   return job;
 }
 
@@ -450,7 +450,7 @@ export function jobMeta(job) {
 export async function dispatchJob(id, branch_id = 'br1', { force = false } = {}) {
   let job = getJob(id);
   if (!job) throw new Error('Print job không tồn tại');
-  if (job.branch_id !== branch_id) throw new Error('Print job không thuộc chi nhánh hiện tại');
+  if (job.branch_id !== branch_id) throw new Error('Print job không thuộc cơ sở hiện tại');
   if (!force && job.status === 'printed') return job;
   const printer = printerById(job.printer, branch_id);
   if (!printer) throw new Error(`Chưa cấu hình tuyến máy in ${job.printer}`);
@@ -492,7 +492,7 @@ export async function dispatchJob(id, branch_id = 'br1', { force = false } = {})
 export function markPrinted(id, branch_id = 'br1', actor = 'manual') {
   const existing = getJob(id);
   if (!existing) throw new Error('Print job không tồn tại');
-  if (existing.branch_id !== branch_id) throw new Error('Print job không thuộc chi nhánh hiện tại');
+  if (existing.branch_id !== branch_id) throw new Error('Print job không thuộc cơ sở hiện tại');
   const job = patchJob(id, { status: 'printed', printed_at: now(), printed_by: actor, error: null });
   emit('print:done', job, branch_id);
   audit('print.mark_printed', { job: id, printer: job?.printer, type: job?.type }, branch_id, actor);
@@ -502,7 +502,7 @@ export function markPrinted(id, branch_id = 'br1', actor = 'manual') {
 export function reprint(id, branch_id = 'br1') {
   const j = getJob(id);
   if (!j) throw new Error('Print job không tồn tại');
-  if (j.branch_id !== branch_id) throw new Error('Print job không thuộc chi nhánh hiện tại');
+  if (j.branch_id !== branch_id) throw new Error('Print job không thuộc cơ sở hiện tại');
   audit('print.reprint', { job: id }, branch_id);
   return createJob({ printer: j.printer, type: j.type, title: '(IN LẠI) ' + (j.title || ''), payload: j.payload, branch_id, reprint_of: id });
 }

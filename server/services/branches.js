@@ -28,12 +28,12 @@ export function getBranch(id) {
 
 export function createBranch(body = {}, actor = 'system') {
   const name = String(body.name || '').trim();
-  if (!name) throw new Error('Thiếu tên chi nhánh');
+  if (!name) throw new Error('Thiếu tên cơ sở');
   const code = normalizeCode(body.code || name);
-  if (!code) throw new Error('Thiếu mã chi nhánh');
+  if (!code) throw new Error('Thiếu mã cơ sở');
   const id = body.id || branchIdFromCode(code);
   if (db.prepare(`SELECT 1 FROM branches WHERE id=? OR UPPER(code)=UPPER(?)`).get(id, code)) {
-    throw new Error('Mã chi nhánh đã tồn tại');
+    throw new Error('Mã cơ sở đã tồn tại');
   }
   const sort = Number.isFinite(Number(body.sort))
     ? Number(body.sort)
@@ -48,11 +48,11 @@ export function createBranch(body = {}, actor = 'system') {
 
 export function updateBranch(id, body = {}, actor = 'system') {
   const cur = getBranch(id);
-  if (!cur) throw new Error('Chi nhánh không tồn tại');
+  if (!cur) throw new Error('Cơ sở không tồn tại');
   const name = body.name !== undefined ? String(body.name || '').trim() || cur.name : cur.name;
   const code = body.code !== undefined ? normalizeCode(body.code || cur.code || name) : (cur.code || normalizeCode(name));
   const dup = db.prepare(`SELECT id FROM branches WHERE UPPER(code)=UPPER(?) AND id!=?`).get(code, id);
-  if (dup) throw new Error('Mã chi nhánh đã tồn tại');
+  if (dup) throw new Error('Mã cơ sở đã tồn tại');
   db.prepare(`UPDATE branches SET name=?, address=?, code=?, phone=?, active=?, sort=?, note=? WHERE id=?`)
     .run(
       name,

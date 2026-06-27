@@ -10,7 +10,6 @@ server/node_modules/
 dist/
 build/
 out/
-.vercel/
 
 *.log
 .DS_Store
