@@ -1,18 +1,18 @@
-# ADR 0001: Current Temporary Stack
+# ADR 0001: Retired Temporary Hosted Stack
 
 Date: 2026-06-18
 
 ## Status
 
-Accepted for short-term demo only.
+Superseded by ADR 0002 and the company-server/VPS deployment path.
 
 ## Decision
 
-The temporary demo stack may use Vercel for static frontend, Render for Node backend, and Supabase for future hosted database/realtime adapters.
+The project should no longer document or depend on the earlier hosted split-demo deployment. The supported paths are local store-server development and the company-server/VPS deployment target.
 
 ## Consequences
 
-- The code must not hard-code Vercel, Render, or Supabase assumptions.
+- The code must not hard-code hosted-demo provider assumptions.
 - Frontend API base URL must be runtime-configurable.
 - Backend secrets must stay backend-only.
-- VPS migration remains the final target.
+- VPS/company-server deployment is the production target.

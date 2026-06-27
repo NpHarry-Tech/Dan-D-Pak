@@ -1,6 +1,6 @@
 # Environment
 
-Last updated: 2026-06-18
+Last updated: 2026-06-27
 
 ## Root/Backend Variables
 
@@ -11,7 +11,7 @@ Last updated: 2026-06-18
 | `APP_URL` | Public app URL |
 | `API_BASE_URL` | Public API base URL where needed |
 | `CORS_ORIGIN` | Comma-separated allowed frontend origins |
-| `DEPLOYMENT_TARGET` | `local`, `vercel-render-supabase`, or `vps` |
+| `DEPLOYMENT_TARGET` | `local` or `vps` |
 | `DATABASE_PROVIDER` | `sqlite`, `supabase`, or `postgres` |
 | `DATABASE_URL` | PostgreSQL/Supabase connection URL when implemented |
 | `SQLITE_PATH` | Future override for SQLite path |

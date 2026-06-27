@@ -1,6 +1,6 @@
 # Architecture
 
-Last updated: 2026-06-20
+Last updated: 2026-06-27
 
 ## Core Decision
 
@@ -44,7 +44,7 @@ Provider seams:
 - Database: `sqlite`, `supabase`, `postgres`
 - Realtime: `socketio`, `websocket`, `supabase`
 - Storage: `local`, `s3`
-- Deployment: `local`, `vercel-render-supabase`, `vps`
+- Deployment: `local`, `vps`
 
 Target request path:
 

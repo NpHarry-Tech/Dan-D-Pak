@@ -1,18 +1,18 @@
 # Known Cases
 
-Last updated: 2026-06-18
+Last updated: 2026-06-27
 
-## Vercel `/admin` Route Returned 404
+## Static `/admin` Route Returned 404
 
 - Cause: static file was `admin.html`, not `/admin` route.
-- Fix: use `/admin.html` or add a Vercel rewrite.
-- Affected files: `web/vercel.json`.
-- Status: documented and rewrite scaffold added.
+- Fix: serve the static route from Express or use `/admin.html` directly.
+- Affected files: `server/index.js`, `web/admin.html`.
+- Status: documented.
 
 ## Admin Page Loaded But API Returned HTTP 404
 
-- Cause: frontend on Vercel had no backend API at the same origin.
-- Fix: deploy backend to Render temporarily and configure frontend `API_BASE_URL`; later use same-origin `/api` on VPS.
+- Cause: frontend and backend were split across different origins.
+- Fix: use same-origin `/api` through the app server or VPS gateway; configure frontend `API_BASE_URL` only when required.
 - Affected files: `web/runtime-config.js`, `web/js/core/apiClient.js`.
 - Status: documented.
 
@@ -22,9 +22,9 @@ Last updated: 2026-06-18
 - Decision: avoid cPanel/Deron domain for temporary demo.
 - Status: documented.
 
-## Temporary Stack Is Not Final Production Stack
+## Hosted Demo Stack Is Not Final Production Stack
 
-- Cause: Vercel/Render/Supabase are temporary demo infrastructure.
+- Cause: the earlier split hosted demo infrastructure is not the production architecture.
 - Fix: create VPS-ready architecture and deployment docs.
 - Status: documented.
 

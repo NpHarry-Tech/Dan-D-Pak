@@ -1,27 +1,22 @@
 # Deployment
 
-Last updated: 2026-06-18
+Last updated: 2026-06-27
 
-## Temporary Demo
+## Supported Targets
 
-Frontend:
+Local/company server:
 
-- Deploy `web/` to Vercel.
-- Add `web/vercel.json` rewrites for static routes like `/admin`.
-- Set `window.APP_CONFIG.API_BASE_URL` through `runtime-config.js` or generated config so the frontend calls the Render backend.
-
-Backend:
-
-- Deploy Node app to Render.
-- Run `npm install` then `npm start`.
+- Run one Node/Express app that serves both `web/` and `/api`.
+- Use same-origin API calls by default; override `API_BASE_URL` only when a gateway/proxy requires it.
+- Run `npm install` then `npm start` for local development.
 - Set `PORT`, `NODE_ENV`, `CORS_ORIGIN`, provider flags, and secrets only in backend environment variables.
 
 Database/realtime:
 
 - Current local code uses SQLite and Socket.IO.
-- Supabase provider integration is scaffolded/planned and must keep service-role keys backend-only.
+- PostgreSQL/WebSocket provider integration is scaffolded/planned and must keep secrets backend-only.
 
-## Final VPS
+## VPS / Company Server
 
 Use `deploy/vps/` and the VPS docs:
 
