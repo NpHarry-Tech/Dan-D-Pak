@@ -3,7 +3,7 @@
 import { Server } from 'socket.io';
 import { env } from './config/env.js';
 import { audit } from './db.js';
-import { userFor, canAccessBranch } from './services/auth.js';
+import { userFor, canAccessBranch, userBranchIds, listBranches } from './services/auth.js';
 
 let io = null;
 
@@ -13,6 +13,39 @@ const recentConnLog = new Map(); // "branch|device|ip" -> lastLoggedMs
 const CONN_LOG_TTL = 10 * 60 * 1000; // 10 phút
 
 const cleanIp = (ip) => String(ip || '').replace('::ffff:', '').trim() || 'không rõ';
+
+const EVENT_DEVICE_TARGETS = {
+  'order:new': ['pos', 'kds', 'admin', 'retail'],
+  'order:pending': ['pos', 'admin', 'retail'],
+  'order:customer_pending': ['ipad', 'pos', 'admin', 'retail'],
+  'order:confirmed': ['ipad', 'pos', 'kds', 'admin', 'retail'],
+  'order:rejected': ['ipad', 'pos', 'admin', 'retail'],
+  'order:updated': ['ipad', 'pos', 'kds', 'admin', 'retail'],
+  'order:item': ['ipad', 'pos', 'kds', 'admin', 'retail'],
+  'kds:refresh': ['kds', 'pos', 'admin'],
+  'table:updated': ['ipad', 'pos', 'admin', 'retail'],
+  'staff:call': ['pos', 'admin'],
+  'payment:done': ['ipad', 'pos', 'admin', 'retail', 'invoice'],
+  'print:new': ['printers', 'pos', 'admin'],
+  'print:queued': ['printers', 'pos', 'admin'],
+  'print:done': ['printers', 'pos', 'admin'],
+  'print:failed': ['printers', 'pos', 'admin'],
+  'inventory:updated': ['warehouse', 'purchase', 'retail', 'admin'],
+  'inventory:alert': ['warehouse', 'purchase', 'retail', 'admin'],
+  'expenses:updated': ['expenses', 'warehouse', 'admin'],
+  'purchase:updated': ['purchase', 'warehouse', 'admin'],
+  'customers:updated': ['contacts', 'admin', 'pos'],
+  'menu:updated': ['ipad', 'pos', 'kds', 'admin', 'retail'],
+  'stats:dirty': ['admin', 'reports', 'pos', 'retail'],
+  'shift:updated': ['pos', 'admin', 'retail'],
+  'sync:status': ['admin', 'reports'],
+};
+
+function deviceRoomsForEvent(event, branch) {
+  const targets = EVENT_DEVICE_TARGETS[event];
+  if (!targets?.length) return null;
+  return targets.map(device => `branch:${branch}:device:${device}`);
+}
 
 function logDeviceConnect(branch, device, ip) {
   const key = `${branch}|${device}|${ip}`;
@@ -39,7 +72,11 @@ function emitPresenceThrottled(branch) {
 }
 
 export function initRealtime(httpServer) {
-  const corsOrigin = env.CORS_ORIGINS.length ? env.CORS_ORIGINS : (env.isProduction ? [] : '*');
+  const corsOrigin = env.CORS_ORIGINS.includes('*')
+    ? true
+    : env.CORS_ORIGINS.length
+      ? env.CORS_ORIGINS
+      : (env.isProduction ? [] : true);
   io = new Server(httpServer, { cors: { origin: corsOrigin, credentials: true } });
 
   // Middleware xác thực kết nối Socket.IO
@@ -75,17 +112,28 @@ export function initRealtime(httpServer) {
 
   io.on('connection', (socket) => {
     try {
-      const branch = socket.handshake.auth?.branch || socket.handshake.query?.branch || 'br1';
+      let branch = socket.handshake.auth?.branch || socket.handshake.query?.branch || 'br1';
       const device = socket.handshake.auth?.device || socket.handshake.query?.device || 'unknown';
-      socket.join('branch:' + branch);
+      // Thiết bị công cộng (ipad) không qua canAccessBranch ở middleware — chặn join chi nhánh
+      // không tồn tại / dò chi nhánh tùy ý. Người dùng đã đăng nhập đã được validate ở io.use.
+      if (!socket.data.user && !listBranches().some(b => b.id === branch)) branch = 'br1';
+      const branchRooms = new Set([branch]);
+      if (socket.data.user && ['admin', 'contacts', 'reports'].includes(device)) {
+        for (const id of userBranchIds(socket.data.user)) branchRooms.add(id);
+      }
+      for (const id of branchRooms) {
+        socket.join('branch:' + id);
+        socket.join(`branch:${id}:device:${device}`);
+      }
       socket.data.branch = branch;
+      socket.data.branchRooms = [...branchRooms];
       socket.data.device = device;
       logDeviceConnect(branch, device, cleanIp(socket.handshake.address));
-      emitPresenceThrottled(branch);
+      for (const id of branchRooms) emitPresenceThrottled(id);
 
       socket.on('disconnect', () => {
         try {
-          emitPresenceThrottled(branch);
+          for (const id of socket.data.branchRooms || [branch]) emitPresenceThrottled(id);
         } catch (err) {
           console.warn('[Socket.IO] disconnect presence error:', err.message);
         }
@@ -101,7 +149,15 @@ export function initRealtime(httpServer) {
 // Broadcast an event to everyone in a branch.
 export function emit(event, payload, branch = 'br1') {
   try {
-    if (io) io.to('branch:' + branch).emit(event, payload);
+    if (!io) return;
+    const deviceRooms = deviceRoomsForEvent(event, branch);
+    if (deviceRooms) {
+      let target = io;
+      for (const room of deviceRooms) target = target.to(room);
+      target.emit(event, payload);
+      return;
+    }
+    io.to('branch:' + branch).emit(event, payload);
   } catch (err) {
     console.warn('[Socket.IO] broadcast emit error:', err.message);
   }

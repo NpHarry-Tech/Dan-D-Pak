@@ -39,20 +39,38 @@ function matchesTerm(c, term) {
     .some(v => String(v || '').toLowerCase().includes(term));
 }
 
+function branchRows(branch_ids = []) {
+  const ids = [...new Set((Array.isArray(branch_ids) ? branch_ids : [branch_ids]).map(String).filter(Boolean))];
+  if (!ids.length) return { ids: [], placeholders: '', names: new Map() };
+  const placeholders = ids.map(() => '?').join(',');
+  const branches = db.prepare(`SELECT id,name,code FROM branches WHERE id IN (${placeholders})`).all(...ids);
+  const names = new Map(branches.map(b => [b.id, b.name || b.code || b.id]));
+  return { ids, placeholders, names };
+}
+
+function withBranchName(row, names) {
+  const out = normalizeRow(row);
+  return out ? { ...out, branch_name: names?.get(out.branch_id) || out.branch_id } : null;
+}
+
 // Sales-side customer picker (POS/retail/invoice). Suppliers never show here.
-export function listCustomers(branch_id = 'br1', q = '') {
-  const rows = db.prepare(`SELECT * FROM customers WHERE branch_id=? AND active!=0 ORDER BY updated_at DESC, created_at DESC`).all(branch_id);
+export function listCustomers(branch_id = 'br1', q = '', options = {}) {
+  const scope = branchRows(options.branch_ids || [branch_id]);
+  if (!scope.ids.length) return [];
+  const rows = db.prepare(`SELECT * FROM customers WHERE branch_id IN (${scope.placeholders}) AND active!=0 ORDER BY updated_at DESC, created_at DESC`).all(...scope.ids);
   const term = String(q || '').trim().toLowerCase();
   // Khách hàng + nhân viên (CBNV) đều chọn được ở POS để áp ưu đãi mặc định. NCC thì không.
-  const out = rows.map(normalizeRow).filter(c => c.is_customer || c.is_staff);
+  const out = rows.map(r => withBranchName(r, scope.names)).filter(c => c.is_customer || c.is_staff);
   return out.filter(c => matchesTerm(c, term)).slice(0, 200);
 }
 
 // Full contacts directory (Liên hệ): customers + suppliers, filterable by type.
-export function listPartners(branch_id = 'br1', { type = 'all', q = '', includeInactive = false } = {}) {
-  const rows = db.prepare(`SELECT * FROM customers WHERE branch_id=? ORDER BY updated_at DESC, created_at DESC`).all(branch_id);
+export function listPartners(branch_id = 'br1', { type = 'all', q = '', includeInactive = false, branch_ids = null } = {}) {
+  const scope = branchRows(branch_ids || [branch_id]);
+  if (!scope.ids.length) return [];
+  const rows = db.prepare(`SELECT * FROM customers WHERE branch_id IN (${scope.placeholders}) ORDER BY updated_at DESC, created_at DESC`).all(...scope.ids);
   const term = String(q || '').trim().toLowerCase();
-  let out = rows.map(normalizeRow);
+  let out = rows.map(r => withBranchName(r, scope.names));
   if (!includeInactive) out = out.filter(c => c.active !== 0);
   if (type === 'customer') out = out.filter(c => c.is_customer);
   else if (type === 'supplier') out = out.filter(c => c.is_supplier);
@@ -60,8 +78,10 @@ export function listPartners(branch_id = 'br1', { type = 'all', q = '', includeI
   return out.filter(c => matchesTerm(c, term)).slice(0, 500);
 }
 
-export function partnerCounts(branch_id = 'br1') {
-  const all = db.prepare(`SELECT * FROM customers WHERE branch_id=? AND active!=0`).all(branch_id).map(normalizeRow);
+export function partnerCounts(branch_id = 'br1', branch_ids = null) {
+  const scope = branchRows(branch_ids || [branch_id]);
+  if (!scope.ids.length) return { all: 0, customer: 0, supplier: 0, staff: 0 };
+  const all = db.prepare(`SELECT * FROM customers WHERE branch_id IN (${scope.placeholders}) AND active!=0`).all(...scope.ids).map(normalizeRow);
   return {
     all: all.length,
     customer: all.filter(c => c.is_customer).length,
@@ -73,6 +93,13 @@ export function partnerCounts(branch_id = 'br1') {
 export function getCustomer(id, branch_id = 'br1') {
   if (!id) return null;
   return normalizeRow(db.prepare(`SELECT * FROM customers WHERE id=? AND branch_id=?`).get(id, branch_id));
+}
+
+export function getCustomerInBranches(id, branch_ids = []) {
+  if (!id) return null;
+  const scope = branchRows(branch_ids);
+  if (!scope.ids.length) return null;
+  return withBranchName(db.prepare(`SELECT * FROM customers WHERE id=? AND branch_id IN (${scope.placeholders})`).get(id, ...scope.ids), scope.names);
 }
 
 export function findByTaxCode(tax_code, branch_id = 'br1') {
@@ -194,10 +221,13 @@ export function perkDiscount(customer, base = 0) {
 
 // Look up company name/address from a Vietnamese tax code via the free VietQR
 // business directory (used to prefill invoice info the first time an MST is typed).
-export async function lookupTaxCode(taxCode) {
+export async function lookupTaxCode(taxCode, branch_ids = null) {
   const tc = String(taxCode || '').replace(/\s+/g, '');
   if (!/^\d{10}(\d{3})?$/.test(tc)) throw new Error('Mã số thuế phải gồm 10 hoặc 13 chữ số');
-  const local = db.prepare(`SELECT * FROM customers WHERE tax_code=?`).get(tc);
+  const scope = branch_ids ? branchRows(branch_ids) : null;
+  const local = scope?.ids?.length
+    ? db.prepare(`SELECT * FROM customers WHERE tax_code=? AND branch_id IN (${scope.placeholders})`).get(tc, ...scope.ids)
+    : db.prepare(`SELECT * FROM customers WHERE tax_code=?`).get(tc);
   try {
     const ctrl = new AbortController();
     const t = setTimeout(() => ctrl.abort(), 8000);

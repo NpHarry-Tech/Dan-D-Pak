@@ -4,15 +4,15 @@
 import { DatabaseSync } from 'node:sqlite';
 import { fileURLToPath } from 'node:url';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
-import { mkdirSync, existsSync, readdirSync, statSync, rmSync } from 'node:fs';
-import { appendAuditArchive, ensurePermanentStorage, readRecentAuditArchive } from './services/archive.js';
+import { mkdirSync, existsSync, readdirSync, statSync, rmSync, copyFileSync, renameSync } from 'node:fs';
+import { ensurePermanentStorage, queueAuditArchive, readRecentAuditArchive } from './services/archive.js';
 import { env } from './config/env.js';
+import { defaultSqlitePath, runtimePaths, ROOT } from './config/paths.js';
 import crypto from 'node:crypto';
 import zlib from 'node:zlib';
 
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const ROOT = join(__dirname, '..');
 
 function resolveDbPath() {
   if (env.DATABASE_URL && env.DATABASE_PROVIDER === 'sqlite') {
@@ -21,12 +21,132 @@ function resolveDbPath() {
       return isAbsolute(path) ? path : resolve(ROOT, path);
     }
   }
-  if (!env.SQLITE_PATH) return join(__dirname, 'store.db');
+  if (!env.SQLITE_PATH) return defaultSqlitePath();
   return isAbsolute(env.SQLITE_PATH) ? env.SQLITE_PATH : resolve(ROOT, env.SQLITE_PATH);
 }
 
 export const DB_PATH = resolveDbPath();
 mkdirSync(dirname(DB_PATH), { recursive: true });
+
+function samePath(a, b) {
+  return resolve(a).toLowerCase() === resolve(b).toLowerCase();
+}
+
+function quoteSqlString(value) {
+  return `'${String(value).replace(/'/g, "''")}'`;
+}
+
+function timestampForFile() {
+  return new Date().toISOString().replace(/[:.]/g, '-');
+}
+
+function sqliteStats(dbPath) {
+  if (!dbPath || !existsSync(dbPath)) return { exists: false, score: 0, counts: {} };
+  let probe;
+  try {
+    probe = new DatabaseSync(dbPath);
+    const tables = new Set(probe.prepare(`
+      SELECT name FROM sqlite_master
+      WHERE type='table' AND name NOT LIKE 'sqlite_%'
+    `).all().map(row => row.name));
+    const count = (table) => tables.has(table) ? Number(probe.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get().n || 0) : 0;
+    const counts = {
+      shifts: count('shifts'),
+      orders: count('orders'),
+      payments: count('payments'),
+      customers: count('customers'),
+      skus: count('skus'),
+      menu_items: count('menu_items'),
+      inventory_items: count('inventory_items'),
+      users: count('users'),
+      branches: count('branches'),
+    };
+    const score =
+      counts.shifts * 100000 +
+      counts.orders * 10000 +
+      counts.payments * 10000 +
+      counts.customers * 100 +
+      counts.skus +
+      counts.menu_items * 10 +
+      counts.inventory_items;
+    return { exists: true, score, counts };
+  } catch (err) {
+    return { exists: true, score: 0, counts: {}, error: err.message };
+  } finally {
+    try { probe?.close(); } catch {}
+  }
+}
+
+function copyDirMissing(sourceDir, targetDir) {
+  if (!sourceDir || !existsSync(sourceDir)) return 0;
+  mkdirSync(targetDir, { recursive: true });
+  let copied = 0;
+  for (const entry of readdirSync(sourceDir, { withFileTypes: true })) {
+    const src = join(sourceDir, entry.name);
+    const dest = join(targetDir, entry.name);
+    if (entry.isDirectory()) copied += copyDirMissing(src, dest);
+    else if (!existsSync(dest)) {
+      mkdirSync(dirname(dest), { recursive: true });
+      copyFileSync(src, dest);
+      copied += 1;
+    }
+  }
+  return copied;
+}
+
+function backupExistingSqlite(dbPath, backupDir) {
+  mkdirSync(backupDir, { recursive: true });
+  for (const suffix of ['', '-wal', '-shm']) {
+    const src = dbPath + suffix;
+    if (!existsSync(src)) continue;
+    copyFileSync(src, join(backupDir, 'legacy-target-' + basenameForBackup(src)));
+    rmSync(src, { force: true });
+  }
+}
+
+function basenameForBackup(file) {
+  return file.split(/[\\/]/).pop();
+}
+
+function copySqliteSnapshot(sourceDb, targetDb, backupRoot) {
+  const tmp = join(dirname(targetDb), `${basenameForBackup(targetDb)}.migrating-${process.pid}-${Date.now()}`);
+  rmSync(tmp, { force: true });
+  const source = new DatabaseSync(sourceDb);
+  try {
+    source.exec('PRAGMA busy_timeout = 10000;');
+    source.exec(`VACUUM INTO ${quoteSqlString(tmp)};`);
+  } finally {
+    source.close();
+  }
+  const backupDir = join(backupRoot, 'migration-backups', timestampForFile());
+  backupExistingSqlite(targetDb, backupDir);
+  renameSync(tmp, targetDb);
+  return backupDir;
+}
+
+function migrateLegacySourceDataIfUseful() {
+  if (!runtimePaths.appDataDir || env.SQLITE_PATH || env.DATABASE_URL) return;
+  const legacyDb = join(runtimePaths.serverRoot, 'store.db');
+  if (samePath(legacyDb, DB_PATH) || !existsSync(legacyDb)) return;
+  const targetStats = sqliteStats(DB_PATH);
+  const sourceStats = sqliteStats(legacyDb);
+  if (sourceStats.score <= targetStats.score) return;
+
+  const backupDir = copySqliteSnapshot(legacyDb, DB_PATH, runtimePaths.appDataDir);
+  copyDirMissing(join(runtimePaths.serverRoot, 'permanent-storage'), runtimePaths.permanentStorage);
+  copyDirMissing(join(runtimePaths.serverRoot, 'enterprise-storage'), runtimePaths.enterpriseStorage);
+  copyDirMissing(join(runtimePaths.serverRoot, 'uploads', 'documents'), runtimePaths.uploads);
+  copyDirMissing(join(ROOT, 'backups'), runtimePaths.backups);
+  console.warn('[data] migrated richer legacy server data into app data', {
+    sourceDb: legacyDb,
+    targetDb: DB_PATH,
+    sourceStats,
+    targetStats,
+    backupDir,
+  });
+}
+
+migrateLegacySourceDataIfUseful();
 
 export const db = new DatabaseSync(DB_PATH);
 
@@ -399,6 +519,30 @@ export function migrate(targetDb = globalDb) {
     created_at TEXT NOT NULL,
     synced_at TEXT
   );
+  DELETE FROM sync_queue
+    WHERE status='pending'
+      AND rowid NOT IN (
+        SELECT MIN(rowid)
+        FROM sync_queue
+        WHERE status='pending'
+        GROUP BY kind, ref
+      );
+  DELETE FROM sync_queue
+    WHERE status!='pending'
+      AND rowid NOT IN (
+        SELECT rowid
+        FROM sync_queue
+        WHERE status!='pending'
+        ORDER BY created_at DESC
+        LIMIT 500
+      );
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_sync_queue_pending_ref
+    ON sync_queue(kind, ref)
+    WHERE status='pending';
+  CREATE INDEX IF NOT EXISTS idx_sync_queue_status_created
+    ON sync_queue(status, created_at);
+  CREATE INDEX IF NOT EXISTS idx_sync_queue_created
+    ON sync_queue(created_at);
 
   CREATE TABLE IF NOT EXISTS audit_log (
     id TEXT PRIMARY KEY,
@@ -864,9 +1008,9 @@ export function audit(action, detail, branch_id = 'br1', actor = 'system') {
   const created_at = now();
   const cleanDetail = typeof detail === 'string' ? detail : JSON.stringify(detail);
   const entry = { id, branch_id, actor, action, detail: cleanDetail, created_at };
-  // Durable archive FIRST (fsync'd NDJSON): if the SQLite write below fails — or a
-  // crash hits right after — the footprint line is already safely on disk.
-  appendAuditArchive(entry);
+  // Keep business requests fast: SQLite is the queryable audit source, while the
+  // NDJSON footprint is fsync'd in small batches by the archive queue.
+  queueAuditArchive(entry);
   // Logging must never break the business operation that triggered it: swallow
   // SQLite errors (the NDJSON archive above still has the entry for recovery).
   try {
@@ -1004,7 +1148,7 @@ export function purgeOldAudit(days = 7) {
 // vào thư mục backups/. Đây là bản sao có thể copy ra ổ ngoài/VPS. Giữ `retentionDays`.
 export function backupDatabase(retentionDays = 14) {
   try {
-    const dir = join(ROOT, 'backups');
+    const dir = runtimePaths.backups;
     mkdirSync(dir, { recursive: true });
     const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
     const dest = join(dir, `store-${stamp}.db`);
@@ -1026,7 +1170,7 @@ export function backupDatabase(retentionDays = 14) {
 // Liệt kê các bản sao lưu hiện có (cho /database/status báo cáo TRUNG THỰC).
 export function listBackups() {
   try {
-    const dir = join(ROOT, 'backups');
+    const dir = runtimePaths.backups;
     if (!existsSync(dir)) return [];
     return readdirSync(dir)
       .filter(f => /^store-.*\.db$/.test(f))

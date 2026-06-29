@@ -43,6 +43,7 @@ const DEFAULT_PRINT_CONFIG = {
     copies: '1',
     printScale: 100,
     autoPrint: '1',
+    autoPrintDineIn: '1',
     templateKind: 'cup',
   },
 kitchen: {
@@ -77,11 +78,11 @@ kitchen: {
     autoPrint: '1',
   },
   printers: [
-    { id: 'kitchen', name: '', systemName: '', label: 'Phiếu bếp', type: 'Phiếu bếp', output: 'kitchen_ticket', location: 'Bếp', active: true, auto: true, connection: 'browser', ip: '', port: 9100, cashDrawer: false, openDrawerOnPrint: false },
-    { id: 'bar', name: '', systemName: '', label: 'Phiếu bar', type: 'Phiếu bar', output: 'kitchen_ticket', location: 'Bar', active: true, auto: true, connection: 'browser', ip: '', port: 9100, cashDrawer: false, openDrawerOnPrint: false },
-    { id: 'bill', name: '', systemName: '', label: 'Hóa đơn', type: 'Hóa đơn', output: 'receipt', location: 'Thu ngân', active: true, auto: true, connection: 'browser', ip: '', port: 9100, cashDrawer: true, openDrawerOnPrint: true },
-    { id: 'label', name: '', systemName: '', label: 'Tem nhãn', type: 'Tem nhãn', output: 'cup_label', location: 'Quầy tem', active: true, auto: false, connection: 'browser', ip: '', port: 9100, cashDrawer: false, openDrawerOnPrint: false },
-    { id: 'runner', name: '', systemName: '', label: 'Phiếu chạy món', type: 'Phiếu chạy món', output: 'runner', location: 'Runner', active: true, auto: false, connection: 'browser', ip: '', port: 9100, cashDrawer: false, openDrawerOnPrint: false },
+    { id: 'kitchen', name: '', systemName: '', label: 'Phiếu bếp', type: 'Phiếu bếp', output: 'kitchen_ticket', location: 'Bếp', active: true, auto: true, connection: 'manual', ip: '', port: 9100, cashDrawer: false, openDrawerOnPrint: false },
+    { id: 'bar', name: '', systemName: '', label: 'Phiếu bar', type: 'Phiếu bar', output: 'kitchen_ticket', location: 'Bar', active: true, auto: true, connection: 'manual', ip: '', port: 9100, cashDrawer: false, openDrawerOnPrint: false },
+    { id: 'bill', name: '', systemName: '', label: 'Hóa đơn', type: 'Hóa đơn', output: 'receipt', location: 'Thu ngân', active: true, auto: true, connection: 'manual', ip: '', port: 9100, cashDrawer: true, openDrawerOnPrint: true },
+    { id: 'label', name: '', systemName: '', label: 'Tem nhãn', type: 'Tem nhãn', output: 'cup_label', location: 'Quầy tem', active: true, auto: false, connection: 'manual', ip: '', port: 9100, cashDrawer: false, openDrawerOnPrint: false },
+    { id: 'runner', name: '', systemName: '', label: 'Phiếu chạy món', type: 'Phiếu chạy món', output: 'runner', location: 'Runner', active: true, auto: false, connection: 'manual', ip: '', port: 9100, cashDrawer: false, openDrawerOnPrint: false },
     { id: 'report', name: '', systemName: '', label: 'Báo cáo A4', type: 'Báo cáo A4', output: 'report', location: 'Văn phòng', active: true, auto: false, connection: 'system', ip: '', port: 9100, cashDrawer: false, openDrawerOnPrint: false },
   ],
   templates: {
@@ -105,7 +106,7 @@ function danCenter(text, width = DAN_BILL_COLS.width) {
 function danBillRule() { return '-'.repeat(DAN_BILL_COLS.width); }
 
 // Default "HÓA ĐƠN THANH TOÁN" payment receipt for Dan / Bon Appétit.
-// Variables are filled per-device by each receipt renderer (web + thermal).
+// Variables are filled per-device by each receipt renderer.
 function defaultDanBillText() {
   return [
     '{storeNameC}',
@@ -436,10 +437,12 @@ function inferPrinterOutput(p = {}) {
 }
 function inferPrinterConnection(p = {}) {
   const raw = String(p.connection || p.transport || '').toLowerCase();
-  if (['lan', 'system', 'browser'].includes(raw)) return raw;
+  if (raw.startsWith('brow')) return 'manual';
+  if (['lan', 'system', 'agent', 'manual'].includes(raw)) return raw;
   if (str(p.ip || p.host || '', 80)) return 'lan';
+  if (str(p.agent || '', 80)) return 'agent';
   if (str(p.systemName || p.name || '', 200)) return 'system';
-  return 'browser';
+  return 'manual';
 }
 function sanitizePrintConfig(raw = {}) {
   const input = plainObject(raw);

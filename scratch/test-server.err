@@ -1,0 +1,44 @@
+(node:17700) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+[data] migrated richer legacy server data into app data {
+  sourceDb: 'C:\\Users\\PC\\Desktop\\Dan D Pak\\server\\store.db',
+  targetDb: 'C:\\Users\\PC\\AppData\\Local\\Temp\\claude\\c--Users-PC-Desktop-Dan-D-Pak\\54a8a3bd-7def-4999-86e5-7fcd605a3c61\\scratchpad\\fleet-test-data\\store.db',
+  sourceStats: {
+    exists: true,
+    score: 2511,
+    counts: {
+      shifts: 0,
+      orders: 0,
+      payments: 0,
+      customers: 5,
+      skus: 1821,
+      menu_items: 19,
+      inventory_items: 0,
+      users: 5,
+      branches: 2
+    }
+  },
+  targetStats: { exists: false, score: 0, counts: {} },
+  backupDir: 'C:\\Users\\PC\\AppData\\Local\\Temp\\claude\\c--Users-PC-Desktop-Dan-D-Pak\\54a8a3bd-7def-4999-86e5-7fcd605a3c61\\scratchpad\\fleet-test-data\\migration-backups\\2026-06-29T02-01-49-320Z'
+}
+{"time":"2026-06-29T02:02:51.498Z","level":"warn","message":"http request","meta":{"method":"POST","url":"/api/orders/o_g6jllsp6lw/confirm","status":200,"ms":1111}}
+{"time":"2026-06-29T02:02:51.530Z","level":"warn","message":"http request","meta":{"method":"POST","url":"/api/orders/o_l4kxmwp6nk/confirm","status":200,"ms":1032}}
+{"time":"2026-06-29T02:02:51.532Z","level":"warn","message":"http request","meta":{"method":"POST","url":"/api/orders/o_x8gi6vp6kf/confirm","status":200,"ms":1253}}
+{"time":"2026-06-29T02:08:12.966Z","level":"warn","message":"http request","meta":{"method":"GET","url":"/api/me","status":401,"ms":0}}
+{"time":"2026-06-29T02:08:14.790Z","level":"warn","message":"http request","meta":{"method":"POST","url":"/api/retail/o_5647qpw6lr/refund","status":400,"ms":2}}
+{"time":"2026-06-29T02:10:30.072Z","level":"warn","message":"http request","meta":{"method":"GET","url":"/api/me","status":401,"ms":0}}
+{"time":"2026-06-29T02:10:31.108Z","level":"warn","message":"http request","meta":{"method":"POST","url":"/api/retail/o_s8lj2fz3sp/refund","status":400,"ms":2}}
+{"time":"2026-06-29T02:11:01.191Z","level":"warn","message":"http request","meta":{"method":"GET","url":"/api/me","status":401,"ms":0}}
+{"time":"2026-06-29T02:11:02.274Z","level":"warn","message":"http request","meta":{"method":"POST","url":"/api/retail/o_2qi6apzru3/refund","status":400,"ms":2}}
+{"time":"2026-06-29T02:13:16.530Z","level":"warn","message":"http request","meta":{"method":"POST","url":"/api/shifts/open","status":400,"ms":2}}
+{"time":"2026-06-29T02:13:22.583Z","level":"warn","message":"http request","meta":{"method":"POST","url":"/api/orders","status":200,"ms":1319}}
+{"time":"2026-06-29T02:13:22.603Z","level":"warn","message":"http request","meta":{"method":"POST","url":"/api/orders","status":200,"ms":1028}}
+{"time":"2026-06-29T02:13:22.605Z","level":"warn","message":"http request","meta":{"method":"POST","url":"/api/orders","status":200,"ms":1218}}
+{"time":"2026-06-29T02:13:23.114Z","level":"warn","message":"http request","meta":{"method":"POST","url":"/api/orders","status":200,"ms":1247}}
+{"time":"2026-06-29T02:13:23.123Z","level":"warn","message":"http request","meta":{"method":"POST","url":"/api/orders","status":200,"ms":1353}}
+{"time":"2026-06-29T02:13:23.125Z","level":"warn","message":"http request","meta":{"method":"POST","url":"/api/orders","status":200,"ms":1641}}
+{"time":"2026-06-29T02:13:24.924Z","level":"warn","message":"http request","meta":{"method":"POST","url":"/api/orders","status":200,"ms":1318}}
+{"time":"2026-06-29T02:13:24.929Z","level":"warn","message":"http request","meta":{"method":"POST","url":"/api/orders","status":200,"ms":1037}}
+{"time":"2026-06-29T02:13:24.934Z","level":"warn","message":"http request","meta":{"method":"POST","url":"/api/orders","status":200,"ms":1125}}
+{"time":"2026-06-29T02:13:24.937Z","level":"warn","message":"http request","meta":{"method":"POST","url":"/api/orders","status":200,"ms":1210}}
+{"time":"2026-06-29T02:13:25.364Z","level":"warn","message":"http request","meta":{"method":"POST","url":"/api/orders","status":200,"ms":1218}}

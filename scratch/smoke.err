@@ -1,0 +1,4 @@
+(node:18124) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+{"time":"2026-06-28T15:55:00.525Z","level":"warn","message":"restored 34 footprint entries from durable archive after unclean shutdown"}
+{"time":"2026-06-28T15:55:00.571Z","level":"warn","message":"default admin account created","meta":{"username":"admin"}}

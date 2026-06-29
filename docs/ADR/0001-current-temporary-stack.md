@@ -13,6 +13,6 @@ The project should no longer document or depend on the earlier hosted split-demo
 ## Consequences
 
 - The code must not hard-code hosted-demo provider assumptions.
-- Frontend API base URL must be runtime-configurable.
+- Client API base URL must be configurable at runtime.
 - Backend secrets must stay backend-only.
 - VPS/company-server deployment is the production target.

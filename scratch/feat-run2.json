@@ -1,0 +1,168 @@
+{
+  "ok": false,
+  "totalSteps": 24,
+  "passed": 23,
+  "failed": 1,
+  "warnings": 1,
+  "realtimeLatencyMs": {
+    "tabletToPosPending": 113,
+    "confirmToKds": 131,
+    "confirmToTablet": 127,
+    "readyToTablet": 42,
+    "inventoryToPhone": 3,
+    "menuToTablet": 36
+  },
+  "knownGaps": [
+    {
+      "name": "Hoàn trả SKU có hạn sử dụng (không chọn lô)",
+      "detail": "HTTP 400 POST /api/retail/o_s8lj2fz3sp/refund: 7Up 330ml bắt buộc nhập hạn sử dụng"
+    }
+  ],
+  "steps": [
+    {
+      "name": "Đăng nhập / phiên làm việc (/me)",
+      "ok": true,
+      "ms": 5,
+      "detail": "user=admin role=owner perms=77"
+    },
+    {
+      "name": "Đăng xuất rồi đăng nhập lại (logout invalidates token)",
+      "ok": true,
+      "ms": 38,
+      "detail": "token revoked after logout ✓"
+    },
+    {
+      "name": "Mở ca (đầu ca) + đếm tiền két đầu ca",
+      "ok": true,
+      "ms": 6,
+      "detail": "mở ca Ca sang, két đầu 5,000,000đ"
+    },
+    {
+      "name": "Tạo bàn (setup vận hành)",
+      "ok": true,
+      "ms": 4,
+      "detail": "bàn A01"
+    },
+    {
+      "name": "FnB: Khách order (tablet) → POS thấy NGAY (order:pending realtime)",
+      "ok": true,
+      "ms": 189,
+      "detail": "order 8rz32c, 2 dòng món, POS thấy sau 113ms"
+    },
+    {
+      "name": "FnB: Xóa/bỏ món đang chờ xác nhận (void pending item)",
+      "ok": true,
+      "ms": 127,
+      "detail": "đã hủy 1 dòng món chờ xác nhận"
+    },
+    {
+      "name": "FnB: Nhân viên confirm → BẾP (KDS) + tablet khách thấy NGAY",
+      "ok": true,
+      "ms": 164,
+      "detail": "bếp +131ms, tablet +127ms, in tem: kitchen_ticket"
+    },
+    {
+      "name": "Bếp: KDS chuyển trạng thái nhận→làm→xong → tablet khách cập nhật",
+      "ok": true,
+      "ms": 150,
+      "detail": "1 món tới 'ready', tablet thấy 'xong' +42ms"
+    },
+    {
+      "name": "FnB: Thanh toán bill (tiền mặt) + payment:done realtime",
+      "ok": true,
+      "ms": 186,
+      "detail": "thu 180.000đ, bill 90626024"
+    },
+    {
+      "name": "Xuất hóa đơn VAT (e-invoice mock) cho bill đã trả",
+      "ok": true,
+      "ms": 38,
+      "detail": "HĐ số 00000002 (provider=local)"
+    },
+    {
+      "name": "Retail: Bán hàng (POS retail có máy scan) + in receipt",
+      "ok": true,
+      "ms": 86,
+      "detail": "bán SKU Bánh cookie hạt điều và , order 0qz3qg"
+    },
+    {
+      "name": "Retail: Hoàn trả hàng (refund) → tồn kho hoàn lại + inventory:updated",
+      "ok": true,
+      "ms": 5,
+      "detail": "hoàn 100.000đ"
+    },
+    {
+      "name": "Hoàn trả SKU có hạn sử dụng (không chọn lô)",
+      "ok": false,
+      "warn": true,
+      "ms": 79,
+      "detail": "HTTP 400 POST /api/retail/o_s8lj2fz3sp/refund: 7Up 330ml bắt buộc nhập hạn sử dụng"
+    },
+    {
+      "name": "Đổi giá món lúc đang vận hành (cần PIN QL) → menu:updated tới tablet+POS",
+      "ok": true,
+      "ms": 39,
+      "detail": "giá → 123.000đ, tablet nhận menu:updated"
+    },
+    {
+      "name": "Tạm hết món / còn món (availability) realtime",
+      "ok": true,
+      "ms": 14,
+      "detail": "toggle hết→còn OK"
+    },
+    {
+      "name": "Chi tiền từ két (chi tiền) + shift:updated realtime",
+      "ok": true,
+      "ms": 7,
+      "detail": "chi 150,000đ, két còn 5.150.000đ"
+    },
+    {
+      "name": "Hoàn chi (reimbursement) liên kết khoản đã chi",
+      "ok": true,
+      "ms": 12,
+      "detail": "hoàn 150,000đ, két còn 5.300.000đ"
+    },
+    {
+      "name": "Ghi chi phí kế toán (chi trực tiếp, không qua két) + expenses:updated",
+      "ok": true,
+      "ms": 4,
+      "detail": "chi phí 250,000đ (Thuê mặt bằng)"
+    },
+    {
+      "name": "Nhập kho thêm hàng (phone văn phòng) + inventory:updated realtime",
+      "ok": true,
+      "ms": 4,
+      "detail": "nhập 10 đv, phone thấy +3ms"
+    },
+    {
+      "name": "Chỉnh sửa cấu hình (settings) có cổng PIN Quản lý",
+      "ok": true,
+      "ms": 841,
+      "detail": "ipad_staff_pin đổi & lưu OK"
+    },
+    {
+      "name": "Xuất báo cáo bán hàng (JSON)",
+      "ok": true,
+      "ms": 8,
+      "detail": "báo cáo \"Báo cáo bán hàng\" OK"
+    },
+    {
+      "name": "Xuất báo cáo ra Excel (.xls) + Word (.doc)",
+      "ok": true,
+      "ms": 5,
+      "detail": "xls 4538B, doc 4538B"
+    },
+    {
+      "name": "Đóng ca (cuối ca) + báo cáo đối soát tiền két",
+      "ok": true,
+      "ms": 7,
+      "detail": "ca đóng, DT ca 300.000đ, dự kiến két 5.300.000đ"
+    },
+    {
+      "name": "Realtime: đổi giá → tablet (đo lại sạch)",
+      "ok": true,
+      "ms": 36,
+      "detail": "menu:updated tới tablet +36ms"
+    }
+  ]
+}

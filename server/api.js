@@ -1,4 +1,4 @@
-// REST API: thin HTTP layer over the Local Store Server services.
+﻿// REST API: thin HTTP layer over the Local Store Server services.
 import { Router } from 'express';
 import { db, uid, audit, now, decryptDecompress, listBackups } from './db.js';
 import * as Orders from './services/orders.js';
@@ -16,7 +16,6 @@ import * as Vouchers from './services/vouchers.js';
 import * as Customers from './services/customers.js';
 import * as Modules from './services/modules.js';
 import * as AppSettings from './services/settings.js';
-import * as BookMenu from './services/bookMenu.js';
 import * as Shifts from './services/shifts.js';
 import * as History from './services/history.js';
 import * as Misa from './services/misa.js';
@@ -31,32 +30,44 @@ import * as ES from './services/enterpriseStorage.js';
 import { emit, getActiveConnections } from './realtime.js';
 import { errorPayload } from './core/errors.js';
 import { notImplemented } from './core/http.js';
+import { runtimePaths } from './config/paths.js';
 import fs from 'node:fs';
 import nodePath from 'node:path';
-import { fileURLToPath } from 'node:url';
-const __apiDir = nodePath.dirname(fileURLToPath(import.meta.url));
-const UPLOADS_DIR = nodePath.join(__apiDir, 'uploads', 'documents');
+const UPLOADS_DIR = runtimePaths.uploads;
 
 export const api = Router();
 const guard = Auth.requireAuth;
 
 const guardAny = (...perms) => (req, res, next) => {
   const user = req.user;
-  if (!user) return res.status(401).json({ error: 'Cần đăng nhập' });
+  if (!user) return res.status(401).json({ error: 'Cáº§n Ä‘Äƒng nháº­p' });
   if (user.role === 'owner') return next();
   const hasAccess = perms.some(p => Auth.canUser(user, p)) || Auth.canUser(user, 'settings.manage');
-  if (!hasAccess) return res.status(403).json({ error: 'Không đủ quyền truy cập các mục này' });
+  if (!hasAccess) return res.status(403).json({ error: 'KhÃ´ng Ä‘á»§ quyá»n truy cáº­p cÃ¡c má»¥c nÃ y' });
   next();
 };
-api.use(Auth.attachUser()); // gắn req.user (nếu có token) cho mọi route, kể cả route không bắt buộc đăng nhập
-const actor = Auth.actorName; // người phụ trách thao tác cho nhật ký hoạt động
+api.use(Auth.attachUser()); // gáº¯n req.user (náº¿u cÃ³ token) cho má»i route, ká»ƒ cáº£ route khÃ´ng báº¯t buá»™c Ä‘Äƒng nháº­p
+const actor = Auth.actorName; // ngÆ°á»i phá»¥ trÃ¡ch thao tÃ¡c cho nháº­t kÃ½ hoáº¡t Ä‘á»™ng
 const branch = (req) => Auth.resolveBranch(req);
 const publicBranch = (req) => Auth.publicBranch(req);
 const visibleBranch = (req) => req.user ? branch(req) : publicBranch(req);
+function requestedBranchIds(req) {
+  const allowed = new Set(Auth.userBranchIds(req.user));
+  const raw = String(req.query.branch_ids || req.query.branches || req.query.branch_id || '').trim();
+  if (!raw || raw === 'all' || raw === '*') return [...allowed];
+  const ids = [...new Set(raw.split(',').map(x => x.trim()).filter(Boolean))];
+  const out = ids.filter(id => allowed.has(id));
+  if (!out.length) {
+    const e = new Error('Khong co quyen xem cac chi nhanh da chon.');
+    e.status = 403;
+    throw e;
+  }
+  return out;
+}
 function scopedUserBody(req) {
   const body = { ...(req.body || {}) };
   if (req.user?.role === 'owner') return body;
-  if (body.role === 'owner') throw new Error('Chỉ Admin mới được tạo hoặc cấp vai trò Admin.');
+  if (body.role === 'owner') throw new Error('Chá»‰ Admin má»›i Ä‘Æ°á»£c táº¡o hoáº·c cáº¥p vai trÃ² Admin.');
   const allowed = new Set(Auth.userBranchIds(req.user));
   const requested = Array.isArray(body.branch_access || body.branch_ids || body.branchAccess)
     ? (body.branch_access || body.branch_ids || body.branchAccess)
@@ -64,6 +75,16 @@ function scopedUserBody(req) {
   body.branch_access = requested.filter(id => allowed.has(String(id)));
   if (!allowed.has(String(body.branch_id || ''))) body.branch_id = branch(req);
   return body;
+}
+function customerWriteBranch(req) {
+  const allowed = Auth.userBranchIds(req.user);
+  if (req.body?.id) {
+    const existing = Customers.getCustomerInBranches(req.body.id, allowed);
+    if (existing) return existing.branch_id;
+  }
+  const requested = String(req.body?.branch_id || '').trim();
+  if (requested && allowed.includes(requested)) return requested;
+  return branch(req);
 }
 function normalizedReportType(type) {
   const raw = String(type || 'sales_overview');
@@ -74,7 +95,7 @@ function reportPerm(type) {
   return `report.${normalizedReportType(type)}`;
 }
 function reportForbidden() {
-  const e = new Error('Không đủ quyền xem báo cáo này.');
+  const e = new Error('KhÃ´ng Ä‘á»§ quyá»n xem bÃ¡o cÃ¡o nÃ y.');
   e.status = 403;
   return e;
 }
@@ -90,6 +111,19 @@ function requireReportCenter(req) {
 function requireReportType(req, type) {
   if (!canViewReport(req, type)) throw reportForbidden();
 }
+function htmlEsc(value) {
+  return String(value ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+}
+function branchAggregateHtml(data = {}) {
+  const rows = data.branches || [];
+  return `<!doctype html><html><head><meta charset="utf-8"><title>Branch Summary</title>
+  <style>body{font-family:Arial,sans-serif;padding:18px;color:#172033}table{border-collapse:collapse;width:100%}th,td{border:1px solid #d9dee7;padding:7px 8px;text-align:left}th{background:#eef2f7}.r{text-align:right}</style></head><body>
+  <h2>Branch Summary</h2>
+  <p>Total branches: ${data.branch_count || rows.length} | Revenue: ${Number(data.totals?.revenue || 0).toLocaleString('vi-VN')}</p>
+  <table><thead><tr><th>Branch</th><th>Code</th><th class="r">Revenue</th><th class="r">Bills</th><th class="r">Open</th><th class="r">Pending</th><th class="r">KDS</th><th class="r">Low stock</th></tr></thead>
+  <tbody>${rows.map(b => `<tr><td>${htmlEsc(b.branch?.name || b.branch_id)}</td><td>${htmlEsc(b.branch?.code || b.branch_id)}</td><td class="r">${Number(b.revenue || 0).toLocaleString('vi-VN')}</td><td class="r">${b.bills || 0}</td><td class="r">${b.openOrders || 0}</td><td class="r">${b.pendingConfirm || 0}</td><td class="r">${b.kdsActive || 0}</td><td class="r">${b.lowStock || 0}</td></tr>`).join('')}</tbody></table>
+  </body></html>`;
+}
 function reportCatalogForUser(req) {
   const catalog = ReportCenter.catalog(branch(req));
   if (req.user?.role === 'owner' || Auth.canUser(req.user, 'reports')) return catalog;
@@ -102,10 +136,10 @@ function reportCatalogForUser(req) {
   };
 }
 // Record any error surfaced to the client into the footprint log so it shows up
-// in "Nhật ký hoạt động" with enough context to explain *why* it failed.
+// in "Nháº­t kÃ½ hoáº¡t Ä‘á»™ng" with enough context to explain *why* it failed.
 // Skips 401 (unauthenticated token challenges) to avoid flooding the log when a
 // session simply expires; everything else (validation, permission, conflict,
-// server errors) is captured. Never throws — logging must not mask the response.
+// server errors) is captured. Never throws â€” logging must not mask the response.
 function logRequestError(req, e) {
   try {
     const status = e?.status || 400;
@@ -138,16 +172,16 @@ const wrap = (fn) => (req, res) => {
   catch (e) { logRequestError(req, e); res.status(e.status || 400).json(errorPayload(e)); }
 };
 
-// Cổng khóa bill theo ca cho các thao tác THAY ĐỔI SAU BÁN (đổi trả, xuất/hủy HĐĐT…).
-// Ca của bill còn mở → cho qua (quyền thường đã đủ). Ca đã KẾT CA → bắt buộc PIN
-// Quản lý/Admin (verifyManagerOwnerPin). Trả về người duyệt (nếu có) để ghi nhật ký.
+// Cá»•ng khÃ³a bill theo ca cho cÃ¡c thao tÃ¡c THAY Äá»”I SAU BÃN (Ä‘á»•i tráº£, xuáº¥t/há»§y HÄÄTâ€¦).
+// Ca cá»§a bill cÃ²n má»Ÿ â†’ cho qua (quyá»n thÆ°á»ng Ä‘Ã£ Ä‘á»§). Ca Ä‘Ã£ Káº¾T CA â†’ báº¯t buá»™c PIN
+// Quáº£n lÃ½/Admin (verifyManagerOwnerPin). Tráº£ vá» ngÆ°á»i duyá»‡t (náº¿u cÃ³) Ä‘á»ƒ ghi nháº­t kÃ½.
 function assertBillEditable(order_id, req, action = '') {
   const branch_id = branch(req);
   if (History.billShiftStatus(order_id, branch_id) !== 'closed') return null;
   const pin = req.body?.security_pin;
   const approver = Auth.verifyManagerOwnerPin(pin, branch_id);
   if (!approver) {
-    const e = new Error('Bill đã KẾT CA — cần PIN Quản lý/Admin để thay đổi.');
+    const e = new Error('Bill Ä‘Ã£ Káº¾T CA â€” cáº§n PIN Quáº£n lÃ½/Admin Ä‘á»ƒ thay Ä‘á»•i.');
     e.code = 'SHIFT_LOCKED'; e.status = 423;
     throw e;
   }
@@ -156,31 +190,86 @@ function assertBillEditable(order_id, req, action = '') {
 }
 
 // --- Auth ---
-// IP thiết bị cho nhật ký bảo mật (ưu tiên X-Forwarded-For khi sau reverse proxy).
+// IP thiáº¿t bá»‹ cho nháº­t kÃ½ báº£o máº­t (Æ°u tiÃªn X-Forwarded-For khi sau reverse proxy).
 function clientIp(req) {
   const xff = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim();
   return (xff || req.socket?.remoteAddress || '').replace('::ffff:', '');
 }
+
+const rateBuckets = new Map();
+function rateLimit({ windowMs = 60000, max = 600, scope = 'api' } = {}) {
+  return (req, res, next) => {
+    const key = `${scope}:${clientIp(req)}`;
+    const nowMs = Date.now();
+    const cur = rateBuckets.get(key);
+    if (!cur || cur.resetAt <= nowMs) {
+      rateBuckets.set(key, { count: 1, resetAt: nowMs + windowMs });
+      return next();
+    }
+    cur.count += 1;
+    if (cur.count > max) {
+      res.setHeader('Retry-After', String(Math.ceil((cur.resetAt - nowMs) / 1000)));
+      return res.status(429).json({ ok: false, code: 'RATE_LIMITED', message: 'Qua nhieu yeu cau. Thu lai sau.' });
+    }
+    return next();
+  };
+}
+setInterval(() => {
+  const nowMs = Date.now();
+  for (const [key, bucket] of rateBuckets) if (bucket.resetAt <= nowMs) rateBuckets.delete(key);
+}, 60000).unref();
+
+const apiWideLimit = rateLimit({ scope: 'api', max: 1800, windowMs: 60000 });
+const loginLimit = rateLimit({ scope: 'login', max: 30, windowMs: 60000 });
+const publicWriteLimit = rateLimit({ scope: 'public-write', max: 180, windowMs: 60000 });
+const inventoryReadGuard = guardAny(
+  'sell',
+  'pay',
+  'menu.manage',
+  'inventory.adjust',
+  'warehouse.manage',
+  'module.inventory',
+  'module.warehouse',
+  'module.retail',
+  'module.purchase',
+  'reports',
+);
+const onlineReadGuard = guardAny('online', 'module.online', 'reports');
+const retailReadGuard = guardAny('module.retail', 'pay', 'refund', 'reports');
+const menuReadGuard = guardAny('sell', 'pay', 'kds', 'menu.manage', 'module.pos', 'module.kds', 'module.retail');
+const floorReadGuard = guardAny('sell', 'pay', 'kds', 'module.pos', 'module.kds');
+const operationsConfigGuard = guardAny('sell', 'pay', 'settings.operations', 'settings.print', 'settings.printers');
+
+function orderPayloadForRequest(req) {
+  const body = { ...(req.body || {}) };
+  if (!req.user) {
+    body.source = 'customer_ipad';
+    body.require_confirm = true;
+  }
+  return { ...body, branch_id: branch(req), actor: actor(req) };
+}
+
+api.use(apiWideLimit);
 api.get('/branches', wrap(() => Branches.listBranches()));
-api.post('/login', wrap((req) => Auth.login(req.body.username, req.body.pin, req.body.branch_id || publicBranch(req), { ip: clientIp(req) })));
-// Cổng PIN Quản lý/Admin để đổi sang chi nhánh khác (chỉ xác minh, KHÔNG tạo session).
-// Phát từ trạng thái đang đăng nhập nên dùng guard(); verifyManagerOwnerPin yêu cầu
-// owner/manager có quyền vào chi nhánh đích.
+api.post('/login', loginLimit, wrap((req) => Auth.login(req.body.username, req.body.pin, req.body.branch_id || publicBranch(req), { ip: clientIp(req) })));
+// Cá»•ng PIN Quáº£n lÃ½/Admin Ä‘á»ƒ Ä‘á»•i sang chi nhÃ¡nh khÃ¡c (chá»‰ xÃ¡c minh, KHÃ”NG táº¡o session).
+// PhÃ¡t tá»« tráº¡ng thÃ¡i Ä‘ang Ä‘Äƒng nháº­p nÃªn dÃ¹ng guard(); verifyManagerOwnerPin yÃªu cáº§u
+// owner/manager cÃ³ quyá»n vÃ o chi nhÃ¡nh Ä‘Ã­ch.
 api.post('/auth/verify-branch-switch', guard(), wrap((req) => {
   const target = req.body?.branch_id;
-  if (!target) throw new Error('Thiếu chi nhánh đích.');
+  if (!target) throw new Error('Thiáº¿u chi nhÃ¡nh Ä‘Ã­ch.');
   const approvedBy = Auth.verifyManagerOwnerPin(req.body?.pin, target);
-  if (!approvedBy) throw new Error('Cần PIN Quản lý hoặc Admin (có quyền chi nhánh đích) để đổi chi nhánh.');
+  if (!approvedBy) throw new Error('Cáº§n PIN Quáº£n lÃ½ hoáº·c Admin (cÃ³ quyá»n chi nhÃ¡nh Ä‘Ã­ch) Ä‘á»ƒ Ä‘á»•i chi nhÃ¡nh.');
   audit('auth.branch_switch', { to: target, approved_by: approvedBy.username }, target, approvedBy.username);
   return { ok: true, approved_by: approvedBy.username };
 }));
-api.post('/logout', wrap((req) => {
+api.post('/logout', guard(), wrap((req) => {
   Auth.logout((req.headers.authorization || '').slice(7) || req.headers['x-auth-token']);
   return { ok: true };
 }));
 api.get('/me', guard(), wrap((req) => ({ ...req.user, perms: Auth.effectivePermsForUser(req.user.id) })));
 api.post('/me/lang', guard(), wrap((req) => Auth.updateOwnLang(req.user.id, req.body.lang, branch(req))));
-api.get('/users', wrap((req) => Auth.listUsers(visibleBranch(req))));
+api.get('/users', guard(), wrap((req) => Auth.listUsers(branch(req), { loginPublic: false })));
 api.get('/ping', wrap(() => ({ ok: true, serverTime: Date.now() })));
 
 // --- ERP module registry ---
@@ -194,7 +283,7 @@ api.post('/settings/roles/:role/permissions', guardAny('settings.perms'), wrap((
   const pin = req.body?.security_pin;
   if (req.body) delete req.body.security_pin;
   const approvedBy = Auth.verifyManagerOwnerPin(pin, branch_id);
-  if (!approvedBy) throw new Error('Cần nhập PIN của Manager hoặc Admin để xác nhận thay đổi phân quyền vai trò.');
+  if (!approvedBy) throw new Error('Cáº§n nháº­p PIN cá»§a Manager hoáº·c Admin Ä‘á»ƒ xÃ¡c nháº­n thay Ä‘á»•i phÃ¢n quyá»n vai trÃ².');
   return Auth.setRolePerms(req.params.role, req.body.perms, branch_id);
 }));
 api.get('/settings/users', guardAny('settings.users'), wrap((req) => Auth.listAllUsers(branch(req))));
@@ -203,7 +292,7 @@ api.post('/settings/users', guardAny('settings.users'), wrap((req) => {
   const pin = req.body?.security_pin;
   if (req.body) delete req.body.security_pin;
   const approvedBy = Auth.verifyManagerOwnerPin(pin, branch_id);
-  if (!approvedBy) throw new Error('Cần nhập PIN của Manager hoặc Admin để xác nhận tạo tài khoản.');
+  if (!approvedBy) throw new Error('Cáº§n nháº­p PIN cá»§a Manager hoáº·c Admin Ä‘á»ƒ xÃ¡c nháº­n táº¡o tÃ i khoáº£n.');
   return Auth.createUser(scopedUserBody(req), branch_id);
 }));
 api.post('/settings/users/:id/update', guardAny('settings.users'), wrap((req) => {
@@ -211,7 +300,7 @@ api.post('/settings/users/:id/update', guardAny('settings.users'), wrap((req) =>
   const pin = req.body?.security_pin;
   if (req.body) delete req.body.security_pin;
   const approvedBy = Auth.verifyManagerOwnerPin(pin, branch_id);
-  if (!approvedBy) throw new Error('Cần nhập PIN của Manager hoặc Admin để xác nhận thay đổi thông tin nhân viên.');
+  if (!approvedBy) throw new Error('Cáº§n nháº­p PIN cá»§a Manager hoáº·c Admin Ä‘á»ƒ xÃ¡c nháº­n thay Ä‘á»•i thÃ´ng tin nhÃ¢n viÃªn.');
   return Auth.updateUser(req.params.id, scopedUserBody(req), branch_id);
 }));
 api.post('/settings/users/:id/delete', guardAny('settings.users'), wrap((req) => {
@@ -219,7 +308,7 @@ api.post('/settings/users/:id/delete', guardAny('settings.users'), wrap((req) =>
   const pin = req.body?.security_pin;
   if (req.body) delete req.body.security_pin;
   const approvedBy = Auth.verifyManagerOwnerPin(pin, branch_id);
-  if (!approvedBy) throw new Error('Cần nhập PIN của Manager hoặc Admin để xác nhận xóa nhân viên.');
+  if (!approvedBy) throw new Error('Cáº§n nháº­p PIN cá»§a Manager hoáº·c Admin Ä‘á»ƒ xÃ¡c nháº­n xÃ³a nhÃ¢n viÃªn.');
   return Auth.deleteUser(req.params.id, branch_id);
 }));
 api.get('/settings/users/:id/permissions', guardAny('settings.users', 'settings.perms'), wrap((req) => Auth.userPermDetails(req.params.id)));
@@ -238,7 +327,7 @@ api.post('/settings/app', guardAny('settings.sync', 'settings.operations', 'sett
     const next = req.body.operations_config.payment.cardTerminal;
     if (JSON.stringify(next) !== JSON.stringify(current)) {
       const approvedBy = Auth.verifyManagerOwnerPin(pin, branch_id);
-      if (!approvedBy) throw new Error('Cần nhập PIN của Manager hoặc Admin để xác nhận thay đổi cấu hình máy POS thẻ.');
+      if (!approvedBy) throw new Error('Cáº§n nháº­p PIN cá»§a Manager hoáº·c Admin Ä‘á»ƒ xÃ¡c nháº­n thay Ä‘á»•i cáº¥u hÃ¬nh mÃ¡y POS tháº».');
     }
   }
 
@@ -248,7 +337,7 @@ api.post('/settings/app', guardAny('settings.sync', 'settings.operations', 'sett
     const next = req.body.print_config.printers;
     if (JSON.stringify(next) !== JSON.stringify(current)) {
       const approvedBy = Auth.verifyManagerOwnerPin(pin, branch_id);
-      if (!approvedBy) throw new Error('Cần nhập PIN của Manager hoặc Admin để xác nhận thay đổi danh mục máy in.');
+      if (!approvedBy) throw new Error('Cáº§n nháº­p PIN cá»§a Manager hoáº·c Admin Ä‘á»ƒ xÃ¡c nháº­n thay Ä‘á»•i danh má»¥c mÃ¡y in.');
     }
   }
 
@@ -258,7 +347,7 @@ api.post('/settings/app', guardAny('settings.sync', 'settings.operations', 'sett
     const next = req.body.ipad_staff_pin;
     if (next !== current) {
       const approvedBy = Auth.verifyManagerOwnerPin(pin, branch_id);
-      if (!approvedBy) throw new Error('Cần nhập PIN của Manager hoặc Admin để xác nhận thay đổi mật khẩu thiết bị khách.');
+      if (!approvedBy) throw new Error('Cáº§n nháº­p PIN cá»§a Manager hoáº·c Admin Ä‘á»ƒ xÃ¡c nháº­n thay Ä‘á»•i máº­t kháº©u thiáº¿t bá»‹ khÃ¡ch.');
     }
   }
 
@@ -268,7 +357,7 @@ api.post('/settings/app', guardAny('settings.sync', 'settings.operations', 'sett
     const next = Math.max(0, parseInt(shifts.defaultDrawerCash) || 0);
     if (next !== current) {
       const approvedBy = Auth.verifyManagerOwnerPin(pin, branch_id);
-      if (!approvedBy) throw new Error('Cần nhập lại mật khẩu/PIN của Manager hoặc Admin để đổi tiền két gốc.');
+      if (!approvedBy) throw new Error('Cáº§n nháº­p láº¡i máº­t kháº©u/PIN cá»§a Manager hoáº·c Admin Ä‘á»ƒ Ä‘á»•i tiá»n kÃ©t gá»‘c.');
       audit('settings.drawer_cash.reauth', { from: current, to: next, approved_by: approvedBy.username }, branch_id, approvedBy.username);
     }
   }
@@ -288,7 +377,7 @@ api.post('/settings/integrations', guardAny('settings.integrations'), wrap((req)
   const pin = req.body?.security_pin;
   if (req.body) delete req.body.security_pin;
   const approvedBy = Auth.verifyManagerOwnerPin(pin, branch_id);
-  if (!approvedBy) throw new Error('Cần nhập PIN của Manager hoặc Admin để xác nhận thay đổi cấu hình liên kết đối tác.');
+  if (!approvedBy) throw new Error('Cáº§n nháº­p PIN cá»§a Manager hoáº·c Admin Ä‘á»ƒ xÃ¡c nháº­n thay Ä‘á»•i cáº¥u hÃ¬nh liÃªn káº¿t Ä‘á»‘i tÃ¡c.');
   return AppSettings.updateIntegrations(req.body, branch_id);
 }));
 // Test a single integration channel. MISA does a real auth call when live;
@@ -296,33 +385,33 @@ api.post('/settings/integrations', guardAny('settings.integrations'), wrap((req)
 api.post('/settings/integrations/:channel/test', guardAny('settings.integrations'), wrap(async (req) => {
   const channel = req.params.channel;
   const cfg = req.body?.config || AppSettings.getIntegrations(branch(req)).channels?.[channel];
-  if (!cfg) throw new Error('Kênh không hợp lệ hoặc thiếu cấu hình: ' + channel);
+  if (!cfg) throw new Error('KÃªnh khÃ´ng há»£p lá»‡ hoáº·c thiáº¿u cáº¥u hÃ¬nh: ' + channel);
   const base = `${req.protocol}://${req.get('host')}`;
   if (channel === 'misa') return { channel, ...(await Misa.testConnection(cfg)) };
   if (channel === 'payos') {
     const payosWebhook = `${base}/api/payos/webhook`;
-    if (!cfg.enabled) return { channel, ok: false, mode: 'disabled', message: 'payOS đang tắt. Bật kết nối trước khi kiểm tra.', webhookUrl: payosWebhook };
+    if (!cfg.enabled) return { channel, ok: false, mode: 'disabled', message: 'payOS Ä‘ang táº¯t. Báº­t káº¿t ná»‘i trÆ°á»›c khi kiá»ƒm tra.', webhookUrl: payosWebhook };
     const ok = !!(cfg.clientId && cfg.apiKey && cfg.checksumKey);
     return {
       channel, ok, mode: ok ? 'ready' : 'partial', webhookUrl: payosWebhook,
       message: ok
-        ? 'Đã đủ Client ID / API Key / Checksum Key. Dán Webhook URL ở trên vào payOS Dashboard → Cấu hình Webhook. Hệ thống đã sẵn sàng tạo link/QR payOS cho từng bill và tự đóng bill khi nhận webhook xác nhận (xác thực HMAC bằng Checksum Key).'
-        : 'Thiếu Client ID / API Key / Checksum Key (lấy ở payOS Dashboard → Cài đặt → Thông tin xác thực).',
+        ? 'ÄÃ£ Ä‘á»§ Client ID / API Key / Checksum Key. DÃ¡n Webhook URL á»Ÿ trÃªn vÃ o payOS Dashboard â†’ Cáº¥u hÃ¬nh Webhook. Há»‡ thá»‘ng Ä‘Ã£ sáºµn sÃ ng táº¡o link/QR payOS cho tá»«ng bill vÃ  tá»± Ä‘Ã³ng bill khi nháº­n webhook xÃ¡c nháº­n (xÃ¡c thá»±c HMAC báº±ng Checksum Key).'
+        : 'Thiáº¿u Client ID / API Key / Checksum Key (láº¥y á»Ÿ payOS Dashboard â†’ CÃ i Ä‘áº·t â†’ ThÃ´ng tin xÃ¡c thá»±c).',
     };
   }
   if (channel === 'sepay' || channel === 'casso') {
     return { channel, ...Pay.testBankWebhook(channel, cfg, `${base}/api/${channel}/webhook`) };
   }
-  // Delivery / website channels: orders arrive at our webhook → Kênh online module.
+  // Delivery / website channels: orders arrive at our webhook â†’ KÃªnh online module.
   if (channel === 'vietqr') return { channel, ...(await Pay.testVietQrConnection(cfg)) };
   const webhookUrl = `${base}/api/online/webhook`;
-  if (!cfg.enabled) return { channel, ok: false, mode: 'disabled', message: 'Kênh đang tắt. Bật để xuất hiện trong module Kênh online.', webhookUrl };
+  if (!cfg.enabled) return { channel, ok: false, mode: 'disabled', message: 'KÃªnh Ä‘ang táº¯t. Báº­t Ä‘á»ƒ xuáº¥t hiá»‡n trong module KÃªnh online.', webhookUrl };
   const haveCreds = !!(cfg.clientId && cfg.clientSecret) || !!cfg.apiKey;
   return {
     channel, ok: true, mode: haveCreds ? 'ready' : 'partial', webhookUrl,
     message: haveCreds
-      ? `Đã bật. Dán Webhook URL này vào cổng đối tác để đẩy đơn về "Kênh online". Đẩy đơn realtime cần đối tác bật API cho cửa hàng (B2B onboarding).`
-      : `Đã bật nhưng chưa có Client ID/Secret. Đơn vẫn nhận được qua Webhook URL, nhưng đồng bộ menu/tồn kho 2 chiều cần khai báo credential từ cổng đối tác.`,
+      ? `ÄÃ£ báº­t. DÃ¡n Webhook URL nÃ y vÃ o cá»•ng Ä‘á»‘i tÃ¡c Ä‘á»ƒ Ä‘áº©y Ä‘Æ¡n vá» "KÃªnh online". Äáº©y Ä‘Æ¡n realtime cáº§n Ä‘á»‘i tÃ¡c báº­t API cho cá»­a hÃ ng (B2B onboarding).`
+      : `ÄÃ£ báº­t nhÆ°ng chÆ°a cÃ³ Client ID/Secret. ÄÆ¡n váº«n nháº­n Ä‘Æ°á»£c qua Webhook URL, nhÆ°ng Ä‘á»“ng bá»™ menu/tá»“n kho 2 chiá»u cáº§n khai bÃ¡o credential tá»« cá»•ng Ä‘á»‘i tÃ¡c.`,
   };
 }));
 api.get('/settings/connections/status', guardAny('settings.connections'), wrap(async (req) => {
@@ -360,32 +449,14 @@ api.get('/settings/system/printers', guardAny('settings.connections', 'settings.
   checkedAt: new Date().toISOString(),
 })));
 api.get('/devices', guardAny('settings.devices', 'settings.connections'), wrap(() => notImplemented('Device registry endpoint is planned but not implemented yet. Current live device visibility is available through /api/settings/connections/status.')));
-api.post('/devices/pair', wrap(() => notImplemented()));
+api.post('/devices/pair', guardAny('settings.devices', 'settings.connections'), wrap(() => notImplemented()));
 api.patch('/devices/:id/approve', guardAny('settings.devices'), wrap(() => notImplemented()));
-api.get('/operations/config', wrap((req) => AppSettings.getOperationsConfig(visibleBranch(req))));
-api.get('/book-menu', wrap((req) => BookMenu.getPublicBookConfig(visibleBranch(req))));
-// Cấu hình âm thanh thông báo cho các màn hình không có quyền Cài đặt (KDS bếp, iPad...).
-api.get('/notification-sound', wrap((req) => AppSettings.getNotificationSoundConfig(visibleBranch(req)) || {}));
-api.get('/settings/book-menu', guardAny('settings.bookmenu'), wrap((req) => BookMenu.getBookConfig(branch(req))));
-api.post('/settings/book-menu', guardAny('settings.bookmenu'), wrap((req) => {
-  const b = branch(req);
-  const out = BookMenu.saveBookConfig(req.body, b);
-  emit('book-menu:updated', { activeBookId: out.activeBookId }, b);
-  return out;
-}));
-api.post('/settings/book-menu/import-pubhtml5', guardAny('settings.bookmenu'), wrap(async (req) => {
-  const b = branch(req);
-  const out = await BookMenu.importPubhtml5(req.body.url, req.body.title, b);
-  emit('book-menu:updated', { activeBookId: out.activeBookId }, b);
-  return out;
-}));
-api.post('/device/ipad/unlock', wrap((req) => {
-  if (!AppSettings.verifyIpadStaffPin(req.body.pin, visibleBranch(req))) throw new Error('Mật khẩu không đúng');
-  return { ok: true };
-}));
+api.get('/operations/config', operationsConfigGuard, wrap((req) => AppSettings.getOperationsConfig(branch(req))));
+// Cáº¥u hÃ¬nh Ã¢m thanh thÃ´ng bÃ¡o cho cÃ¡c mÃ n hÃ¬nh khÃ´ng cÃ³ quyá»n CÃ i Ä‘áº·t (KDS báº¿p, iPad...).
+api.get('/notification-sound', guardAny('sell', 'kds', 'settings.notification_sound'), wrap((req) => AppSettings.getNotificationSoundConfig(branch(req)) || {}));
 
 // --- Catalog / Menu ---
-api.get('/menu', wrap(() => Catalog.listMenu({ forCustomer: true })));
+api.get('/menu', menuReadGuard, wrap(() => Catalog.listMenu({ forCustomer: true })));
 api.get('/menu/manage', guard('menu.manage'), wrap(() => Catalog.listMenu({ forCustomer: false })));
 
 api.post('/menu', guard('menu.manage'), wrap((req) => {
@@ -393,10 +464,10 @@ api.post('/menu', guard('menu.manage'), wrap((req) => {
   const pin = req.body?.security_pin;
   if (req.body) delete req.body.security_pin;
   const approvedBy = Auth.verifyManagerOwnerPin(pin, branch_id);
-  if (!approvedBy) throw new Error('Cần nhập PIN của Manager hoặc Admin để xác nhận tạo món ăn.');
+  if (!approvedBy) throw new Error('Cáº§n nháº­p PIN cá»§a Manager hoáº·c Admin Ä‘á»ƒ xÃ¡c nháº­n táº¡o mÃ³n Äƒn.');
 
   const b = req.body;
-  if (!b.name || !b.category_id) throw new Error('Thiếu tên món hoặc nhóm');
+  if (!b.name || !b.category_id) throw new Error('Thiáº¿u tÃªn mÃ³n hoáº·c nhÃ³m');
   const id = uid('m_');
   const sort = (db.prepare(`SELECT COALESCE(MAX(sort),0)+1 n FROM menu_items`).get().n) || 1;
   db.prepare(`INSERT INTO menu_items
@@ -405,7 +476,7 @@ api.post('/menu', guard('menu.manage'), wrap((req) => {
     id,
     b.category_id,
     b.name,
-    b.emoji || '🍽️',
+    b.emoji || 'ðŸ½ï¸',
     b.image || null,
     b.description || null,
     parseInt(b.price) || 0,
@@ -430,11 +501,11 @@ api.post('/menu/:id/update', guard('menu.manage'), wrap((req) => {
   const pin = req.body?.security_pin;
   if (req.body) delete req.body.security_pin;
   const approvedBy = Auth.verifyManagerOwnerPin(pin, branch_id);
-  if (!approvedBy) throw new Error('Cần nhập PIN của Manager hoặc Admin để xác nhận cập nhật món ăn.');
+  if (!approvedBy) throw new Error('Cáº§n nháº­p PIN cá»§a Manager hoáº·c Admin Ä‘á»ƒ xÃ¡c nháº­n cáº­p nháº­t mÃ³n Äƒn.');
 
   const b = req.body;
   const cur = db.prepare(`SELECT * FROM menu_items WHERE id=?`).get(req.params.id);
-  if (!cur) throw new Error('Món không tồn tại');
+  if (!cur) throw new Error('MÃ³n khÃ´ng tá»“n táº¡i');
   const v = (k, fallback) => (b[k] !== undefined && b[k] !== null && b[k] !== '') ? b[k] : fallback;
   db.prepare(`UPDATE menu_items SET
       name=?, emoji=?, image=?, description=?, price=?, category_id=?, station=?, sla_minutes=?,
@@ -474,11 +545,11 @@ api.post('/menu/:id/price', guard('menu.manage'), wrap((req) => {
   const branch_id = branch(req);
   const pin = req.body?.security_pin;
   if (req.body) delete req.body.security_pin;
-  if (!Auth.verifyManagerOwnerPin(pin, branch_id)) throw new Error('Cần nhập PIN của Manager hoặc Admin để xác nhận đổi giá món.');
+  if (!Auth.verifyManagerOwnerPin(pin, branch_id)) throw new Error('Cáº§n nháº­p PIN cá»§a Manager hoáº·c Admin Ä‘á»ƒ xÃ¡c nháº­n Ä‘á»•i giÃ¡ mÃ³n.');
   const price = parseInt(req.body.price);
-  if (!Number.isFinite(price) || price < 0) throw new Error('Giá không hợp lệ');
+  if (!Number.isFinite(price) || price < 0) throw new Error('GiÃ¡ khÃ´ng há»£p lá»‡');
   const cur = db.prepare(`SELECT price FROM menu_items WHERE id=?`).get(req.params.id);
-  if (!cur) throw new Error('Món không tồn tại');
+  if (!cur) throw new Error('MÃ³n khÃ´ng tá»“n táº¡i');
   db.prepare(`UPDATE menu_items SET price=? WHERE id=?`).run(price, req.params.id);
   audit('menu.price', { id: req.params.id, from: cur.price, to: price }, branch_id, actor(req));
   emit('menu:updated', { id: req.params.id, price }, branch_id);
@@ -497,20 +568,20 @@ api.post('/menu/:id/delete', guard('menu.manage'), wrap((req) => {
   const pin = req.body?.security_pin;
   if (req.body) delete req.body.security_pin;
   const approvedBy = Auth.verifyManagerOwnerPin(pin, branch_id);
-  if (!approvedBy) throw new Error('Cần nhập PIN của Manager hoặc Admin để xác nhận xóa món ăn.');
+  if (!approvedBy) throw new Error('Cáº§n nháº­p PIN cá»§a Manager hoáº·c Admin Ä‘á»ƒ xÃ¡c nháº­n xÃ³a mÃ³n Äƒn.');
   const r = Catalog.deleteMenuItem(req.params.id, branch_id);
   emit('menu:updated', { id: req.params.id, deleted: true }, branch_id);
   return r;
 }));
 
 // --- Categories ---
-api.get('/categories', wrap(() => Catalog.listCategories()));
+api.get('/categories', menuReadGuard, wrap(() => Catalog.listCategories()));
 api.post('/categories', guard('menu.manage'), wrap((req) => {
   const b = branch(req);
   const pin = req.body?.security_pin;
   if (req.body) delete req.body.security_pin;
   const approvedBy = Auth.verifyManagerOwnerPin(pin, b);
-  if (!approvedBy) throw new Error('Cần nhập PIN của Manager hoặc Admin để xác nhận tạo danh mục.');
+  if (!approvedBy) throw new Error('Cáº§n nháº­p PIN cá»§a Manager hoáº·c Admin Ä‘á»ƒ xÃ¡c nháº­n táº¡o danh má»¥c.');
   const c = Catalog.createCategory(req.body, b);
   emit('menu:updated', { category: true }, b);
   return c;
@@ -520,7 +591,7 @@ api.post('/categories/:id/update', guard('menu.manage'), wrap((req) => {
   const pin = req.body?.security_pin;
   if (req.body) delete req.body.security_pin;
   const approvedBy = Auth.verifyManagerOwnerPin(pin, b);
-  if (!approvedBy) throw new Error('Cần nhập PIN của Manager hoặc Admin để xác nhận cập nhật danh mục.');
+  if (!approvedBy) throw new Error('Cáº§n nháº­p PIN cá»§a Manager hoáº·c Admin Ä‘á»ƒ xÃ¡c nháº­n cáº­p nháº­t danh má»¥c.');
   const c = Catalog.updateCategory(req.params.id, req.body, b);
   emit('menu:updated', { category: true }, b);
   return c;
@@ -530,19 +601,20 @@ api.post('/categories/:id/delete', guard('menu.manage'), wrap((req) => {
   const pin = req.body?.security_pin;
   if (req.body) delete req.body.security_pin;
   const approvedBy = Auth.verifyManagerOwnerPin(pin, b);
-  if (!approvedBy) throw new Error('Cần nhập PIN của Manager hoặc Admin để xác nhận xóa danh mục.');
+  if (!approvedBy) throw new Error('Cáº§n nháº­p PIN cá»§a Manager hoáº·c Admin Ä‘á»ƒ xÃ¡c nháº­n xÃ³a danh má»¥c.');
   const r = Catalog.deleteCategory(req.params.id, b);
   emit('menu:updated', { category: true }, b);
   return r;
 }));
 
 // --- Tables ---
-api.get('/tables', wrap((req) => Orders.listTables(visibleBranch(req))));
-api.get('/tables/:id', wrap((req) => {
-  const branch_id = visibleBranch(req);
+api.get('/tables', floorReadGuard, wrap((req) => Orders.listTables(branch(req))));
+api.get('/zones', floorReadGuard, wrap((req) => Orders.listZones(branch(req))));
+api.get('/tables/:id', floorReadGuard, wrap((req) => {
+  const branch_id = branch(req);
   return {
-    table: Orders.getTableState(req.params.id),
-    order: Orders.getOrder(Orders.getOpenOrderForTable(req.params.id, branch_id)?.id),
+    table: Orders.getTableState(req.params.id, branch_id),
+    order: Orders.getOrder(Orders.getOpenOrderForTable(req.params.id, branch_id)?.id, branch_id),
   };
 }));
 api.post('/tables/:id/move', guard('sell'), wrap((req) => Orders.moveTable(req.params.id, req.body.to_table_id, branch(req), actor(req))));
@@ -552,7 +624,7 @@ api.post('/settings/tables', guardAny('settings.tables'), wrap((req) => {
   const pin = req.body?.security_pin;
   if (req.body) delete req.body.security_pin;
   const approvedBy = Auth.verifyManagerOwnerPin(pin, branch_id);
-  if (!approvedBy) throw new Error('Cần nhập PIN của Manager hoặc Admin để xác nhận thay đổi sơ đồ bàn.');
+  if (!approvedBy) throw new Error('Cáº§n nháº­p PIN cá»§a Manager hoáº·c Admin Ä‘á»ƒ xÃ¡c nháº­n thay Ä‘á»•i sÆ¡ Ä‘á»“ bÃ n.');
   return Orders.createTable({ ...req.body, branch_id });
 }));
 api.post('/settings/tables/:id/update', guardAny('settings.tables'), wrap((req) => {
@@ -560,7 +632,7 @@ api.post('/settings/tables/:id/update', guardAny('settings.tables'), wrap((req) 
   const pin = req.body?.security_pin;
   if (req.body) delete req.body.security_pin;
   const approvedBy = Auth.verifyManagerOwnerPin(pin, branch_id);
-  if (!approvedBy) throw new Error('Cần nhập PIN của Manager hoặc Admin để xác nhận thay đổi sơ đồ bàn.');
+  if (!approvedBy) throw new Error('Cáº§n nháº­p PIN cá»§a Manager hoáº·c Admin Ä‘á»ƒ xÃ¡c nháº­n thay Ä‘á»•i sÆ¡ Ä‘á»“ bÃ n.');
   return Orders.updateTable(req.params.id, req.body, branch_id);
 }));
 api.post('/settings/tables/:id/delete', guardAny('settings.tables'), wrap((req) => {
@@ -568,115 +640,115 @@ api.post('/settings/tables/:id/delete', guardAny('settings.tables'), wrap((req) 
   const pin = req.body?.security_pin;
   if (req.body) delete req.body.security_pin;
   const approvedBy = Auth.verifyManagerOwnerPin(pin, branch_id);
-  if (!approvedBy) throw new Error('Cần nhập PIN của Manager hoặc Admin để xác nhận thay đổi sơ đồ bàn.');
+  if (!approvedBy) throw new Error('Cáº§n nháº­p PIN cá»§a Manager hoáº·c Admin Ä‘á»ƒ xÃ¡c nháº­n thay Ä‘á»•i sÆ¡ Ä‘á»“ bÃ n.');
   return Orders.deleteTable(req.params.id, branch_id);
 }));
 
 // --- Orders ---
-api.post('/orders', wrap((req) => Orders.createOrUpdateOrder({ ...req.body, branch_id: visibleBranch(req), actor: actor(req) })));
+api.post('/orders', guard('sell'), wrap((req) => Orders.createOrUpdateOrder(orderPayloadForRequest(req))));
 api.get('/orders', guard('pay'), wrap(() => notImplemented('Order list endpoint is planned. Use /api/orders/history or table-specific order reads in the current app.')));
 api.get('/orders/pending-confirmation', guard('sell'), wrap((req) => Orders.listPendingConfirmations(branch(req))));
 api.get('/orders/history', guard('pay'), wrap((req) => History.listOrderHistory(branch(req), req.query)));
 api.get('/orders/:id/receipt', guard('pay'), wrap((req) => History.orderReceipt(req.params.id, branch(req))));
-api.get('/orders/:id', wrap((req) => Orders.getOrder(req.params.id)));
+api.get('/orders/:id', guardAny('sell', 'pay', 'kds', 'reports'), wrap((req) => Orders.getOrder(req.params.id, branch(req))));
 api.patch('/orders/:id', guard('sell'), wrap(() => notImplemented('Generic order patch is planned. Current app uses action-specific order endpoints.')));
 api.post('/orders/:id/confirm', guard('sell'), wrap((req) => Orders.confirmPendingItems(req.params.id, req.body.item_ids, branch(req), actor(req))));
 api.post('/orders/:id/reject', guard('sell'), wrap((req) => Orders.rejectPendingItems(req.params.id, req.body.item_ids, req.body.reason, branch(req), actor(req))));
 api.post('/orders/:id/split', guard('pay'), wrap((req) => Orders.splitOrderItems(req.params.id, req.body.item_ids, branch(req), actor(req))));
-api.post('/orders/items/:id/status', wrap((req) => {
-  // Route mở cho KDS chuyển trạng thái (nhận/làm/xong/giao). HỦY món phải đi qua
-  // /orders/items/:id/cancel (có cổng PIN Quản lý) — chặn ở đây để không lách quyền.
+api.post('/orders/items/:id/status', guard('kds'), wrap((req) => {
+  // Route má»Ÿ cho KDS chuyá»ƒn tráº¡ng thÃ¡i (nháº­n/lÃ m/xong/giao). Há»¦Y mÃ³n pháº£i Ä‘i qua
+  // /orders/items/:id/cancel (cÃ³ cá»•ng PIN Quáº£n lÃ½) â€” cháº·n á»Ÿ Ä‘Ã¢y Ä‘á»ƒ khÃ´ng lÃ¡ch quyá»n.
   if (String(req.body.status) === 'cancelled') {
-    const e = new Error('Hủy món phải dùng chức năng Hủy (cần PIN Quản lý/Admin).');
+    const e = new Error('Há»§y mÃ³n pháº£i dÃ¹ng chá»©c nÄƒng Há»§y (cáº§n PIN Quáº£n lÃ½/Admin).');
     e.status = 403; throw e;
   }
-  return Orders.setItemStatus(req.params.id, req.body.status, visibleBranch(req), actor(req));
+  return Orders.setItemStatus(req.params.id, req.body.status, branch(req), actor(req));
 }));
-api.post('/orders/items/:id/cancel', wrap((req) => {
-  const branch_id = visibleBranch(req);
+api.post('/orders/items/:id/cancel', guard('sell'), wrap((req) => {
+  const branch_id = branch(req);
   const itemId = req.params.id;
   const item = db.prepare(`SELECT * FROM order_items WHERE id=?`).get(itemId);
-  if (!item) throw new Error('Món không tồn tại');
+  if (!item) throw new Error('MÃ³n khÃ´ng tá»“n táº¡i');
 
   if (item.status === 'preparing' || item.status === 'ready' || item.status === 'served') {
-    throw new Error('Bếp đã chế biến món này, không thể hủy!');
+    throw new Error('Báº¿p Ä‘Ã£ cháº¿ biáº¿n mÃ³n nÃ y, khÃ´ng thá»ƒ há»§y!');
   }
 
   if (item.status !== 'pending_confirm') {
     const pin = req.body.pin;
-    if (!pin) throw new Error('Yêu cầu nhập mã PIN Quản lý/Admin để hủy món đã gửi.');
+    if (!pin) throw new Error('YÃªu cáº§u nháº­p mÃ£ PIN Quáº£n lÃ½/Admin Ä‘á»ƒ há»§y mÃ³n Ä‘Ã£ gá»­i.');
     if (!Auth.verifyManagerOwnerPin(String(pin), branch_id)) {
-      throw new Error('Mã PIN không đúng hoặc không có quyền Quản lý/Admin.');
+      throw new Error('MÃ£ PIN khÃ´ng Ä‘Ãºng hoáº·c khÃ´ng cÃ³ quyá»n Quáº£n lÃ½/Admin.');
     }
   }
-  const res = Orders.cancelItem(itemId, req.body.reason || 'Nhân viên hủy', branch_id, actor(req));
+  const res = Orders.cancelItem(itemId, req.body.reason || 'NhÃ¢n viÃªn há»§y', branch_id, actor(req));
   emit('kds:refresh', { station: item.station }, branch_id);
   return res;
 }));
 
-api.post('/orders/items/:id/kds-dismiss', wrap((req) => {
-  const branch_id = visibleBranch(req);
+api.post('/orders/items/:id/kds-dismiss', guard('kds'), wrap((req) => {
+  const branch_id = branch(req);
   const itemId = req.params.id;
   const item = db.prepare(`SELECT * FROM order_items WHERE id=?`).get(itemId);
-  if (!item) throw new Error('Món không tồn tại');
+  if (!item) throw new Error('MÃ³n khÃ´ng tá»“n táº¡i');
   db.prepare(`UPDATE order_items SET kds_dismissed=1 WHERE id=?`).run(itemId);
   emit('kds:refresh', { station: item.station }, branch_id);
   return { ok: true };
 }));
 
 // --- KDS ---
-api.get('/kds/tickets', wrap(() => notImplemented('Generic KDS tickets endpoint is planned. Current app uses /api/kds/:station.')));
-api.patch('/kds/tickets/:id', wrap(() => notImplemented('Generic KDS ticket patch is planned. Current app uses /api/orders/items/:id/status.')));
-api.get('/kds/:station', wrap((req) => Orders.getStationTickets(req.params.station, visibleBranch(req))));
+api.get('/kds/tickets', guard('kds'), wrap(() => notImplemented('Generic KDS tickets endpoint is planned. Current app uses /api/kds/:station.')));
+api.patch('/kds/tickets/:id', guard('kds'), wrap(() => notImplemented('Generic KDS ticket patch is planned. Current app uses /api/orders/items/:id/status.')));
+api.get('/kds/:station', guard('kds'), wrap((req) => Orders.getStationTickets(req.params.station, branch(req))));
 
 // --- Staff calls ---
-api.post('/calls', wrap((req) => Orders.createStaffCall(req.body.table_id, req.body.reason, visibleBranch(req))));
-api.get('/calls', wrap((req) => Orders.listStaffCalls(visibleBranch(req))));
-api.post('/calls/:table_id/resolve', wrap((req) => { Orders.resolveStaffCall(req.params.table_id, visibleBranch(req)); return { ok: true }; }));
+api.post('/calls', guard('sell'), wrap((req) => Orders.createStaffCall(req.body.table_id, req.body.reason, branch(req))));
+api.get('/calls', guard('sell'), wrap((req) => Orders.listStaffCalls(branch(req))));
+api.post('/calls/:table_id/resolve', guard('sell'), wrap((req) => { Orders.resolveStaffCall(req.params.table_id, branch(req)); return { ok: true }; }));
 
 // --- Payments ---
 api.post('/payments', guard('pay'), wrap(() => notImplemented('Generic payment creation is planned. Current app uses /api/orders/:id/pay.')));
 api.get('/payments', guard('reports'), wrap(() => notImplemented('Payment list endpoint is planned. Current reports are available through dashboard/report center endpoints.')));
-api.post('/orders/:id/request-payment', wrap((req) => { Pay.requestPayment(req.body.table_id, visibleBranch(req)); return { ok: true }; }));
-api.post('/tables/:id/request-payment', wrap((req) => { Pay.requestPayment(req.params.id, visibleBranch(req)); return { ok: true }; }));
-api.post('/orders/:id/payment-qr', wrap((req) => Pay.generateCustomerPaymentQr(req.params.id, req.body || {}, visibleBranch(req))));
-// QR độc lập (Retail: chưa có order khi hiển thị QR) — vẫn theo qrProvider trong Settings.
-api.post('/payment-qr', wrap((req) => Pay.buildStandalonePaymentQr(req.body || {}, visibleBranch(req))));
-api.post('/orders/:id/customer-qr-pay', wrap((req) => Pay.customerQrPay(req.params.id, req.body || {}, visibleBranch(req))));
-// Khách tự phục vụ (iPad) chọn xuất / không xuất hóa đơn VAT sau khi thanh toán — route mở, không cần đăng nhập.
-api.post('/orders/:id/customer-invoice', wrap((req) => {
+api.post('/orders/:id/request-payment', guard('pay'), wrap((req) => { Pay.requestPayment(req.body.table_id, branch(req)); return { ok: true }; }));
+api.post('/tables/:id/request-payment', guard('pay'), wrap((req) => { Pay.requestPayment(req.params.id, branch(req)); return { ok: true }; }));
+api.post('/orders/:id/payment-qr', guard('pay'), wrap((req) => Pay.generateCustomerPaymentQr(req.params.id, req.body || {}, branch(req))));
+// QR Ä‘á»™c láº­p (Retail: chÆ°a cÃ³ order khi hiá»ƒn thá»‹ QR) â€” váº«n theo qrProvider trong Settings.
+api.post('/payment-qr', guard('pay'), wrap((req) => Pay.buildStandalonePaymentQr(req.body || {}, branch(req))));
+api.post('/orders/:id/customer-qr-pay', guard('pay'), wrap((req) => Pay.customerQrPay(req.params.id, req.body || {}, branch(req))));
+// Staff cashier invoice request update after payment.
+api.post('/orders/:id/customer-invoice', guard('pay'), wrap((req) => {
   assertBillEditable(req.params.id, req, 'customer_invoice');
   if (req.body) delete req.body.security_pin;
-  return Invoices.customerRequest(req.params.id, req.body || {}, visibleBranch(req));
+  return Invoices.customerRequest(req.params.id, req.body || {}, branch(req));
 }));
-// Tra cứu MST công khai cho màn khách (iPad không đăng nhập) — chỉ trả thông tin doanh nghiệp công khai, không lộ khách local.
+// Tra cá»©u MST cÃ´ng khai cho mÃ n khÃ¡ch (iPad khÃ´ng Ä‘Äƒng nháº­p) â€” chá»‰ tráº£ thÃ´ng tin doanh nghiá»‡p cÃ´ng khai, khÃ´ng lá»™ khÃ¡ch local.
 api.get('/public/tax-lookup/:mst', wrap(async (req) => { const r = await Customers.lookupTaxCode(req.params.mst); const { existed, ...pub } = r; return pub; }));
 api.post('/orders/:id/pay', guard('pay'), wrap((req) => {
   const branch_id = branch(req);
-  // Giảm giá khi thanh toán cần quyền 'discount' (owner luôn được). Chặn thu ngân
-  // không có quyền tự ý set discount để hạ tổng bill về 0.
+  // Giáº£m giÃ¡ khi thanh toÃ¡n cáº§n quyá»n 'discount' (owner luÃ´n Ä‘Æ°á»£c). Cháº·n thu ngÃ¢n
+  // khÃ´ng cÃ³ quyá»n tá»± Ã½ set discount Ä‘á»ƒ háº¡ tá»•ng bill vá» 0.
   let discount = req.body.discount;
   if (typeof discount === 'number' && discount > 0) {
     if (!(req.user?.role === 'owner' || Auth.canUser(req.user, 'discount'))) {
-      const e = new Error('Bạn không có quyền áp giảm giá khi thanh toán.');
+      const e = new Error('Báº¡n khÃ´ng cÃ³ quyá»n Ã¡p giáº£m giÃ¡ khi thanh toÃ¡n.');
       e.status = 403; throw e;
     }
   } else {
-    discount = undefined; // bỏ qua discount âm / không hợp lệ
+    discount = undefined; // bá» qua discount Ã¢m / khÃ´ng há»£p lá»‡
   }
   const receipt = Pay.payOrder(req.params.id, req.body.lines, { discount, customer: req.body.customer || null, invoice_customer: req.body.invoice_customer || null, cashier: req.user?.name || req.user?.username || '' }, branch_id);
   if (req.body.customer?.id) Customers.recordPurchase(req.body.customer.id, receipt.total, branch_id, req.params.id);
   return receipt;
 }));
-// --- Auto-confirm thanh toán: webhook công khai (xác thực bằng key/chữ ký của nhà cung cấp) ---
-// Cấu hình kênh đọc ở chi nhánh chính (br1); khớp bill quét xuyên chi nhánh theo nội dung CK.
-api.post('/vietqr/webhook', wrap((req) => Pay.handleVietqrWebhook(req.body || {}, req.headers, 'br1')));
-api.post('/sepay/webhook', wrap((req) => Pay.handleSepayWebhook(req.body || {}, req.headers, 'br1')));
-api.post('/casso/webhook', wrap((req) => Pay.handleCassoWebhook(req.body || {}, req.headers, 'br1')));
-api.post('/payos/webhook', wrap((req) => Pay.handlePayosWebhook(req.body || {}, req.headers, 'br1')));
-api.get('/payments/bank-transactions', guardAny('reports', 'pay', 'settings.integrations'), wrap((req) => Pay.listBankTransactions(branch(req), req.query)));
-// Auto-detect payOS: hỏi trạng thái đơn (poll) — chạy được cả ở localhost.
-api.get('/payos/payment-status/:orderCode', wrap((req) => Pay.getPayosPaymentStatus(req.params.orderCode, visibleBranch(req))));
+// --- Auto-confirm thanh toÃ¡n: webhook cÃ´ng khai (xÃ¡c thá»±c báº±ng key/chá»¯ kÃ½ cá»§a nhÃ  cung cáº¥p) ---
+// Cáº¥u hÃ¬nh kÃªnh Ä‘á»c á»Ÿ chi nhÃ¡nh chÃ­nh (br1); khá»›p bill quÃ©t xuyÃªn chi nhÃ¡nh theo ná»™i dung CK.
+api.post('/vietqr/webhook', publicWriteLimit, wrap((req) => Pay.handleVietqrWebhook(req.body || {}, req.headers, 'br1')));
+api.post('/sepay/webhook', publicWriteLimit, wrap((req) => Pay.handleSepayWebhook(req.body || {}, req.headers, 'br1')));
+api.post('/casso/webhook', publicWriteLimit, wrap((req) => Pay.handleCassoWebhook(req.body || {}, req.headers, 'br1')));
+api.post('/payos/webhook', publicWriteLimit, wrap((req) => Pay.handlePayosWebhook(req.body || {}, req.headers, 'br1')));
+api.get('/payments/bank-transactions', guardAny('reports', 'settings.integrations'), wrap((req) => Pay.listBankTransactions(branch(req), req.query)));
+// Auto-detect payOS: há»i tráº¡ng thÃ¡i Ä‘Æ¡n (poll) â€” cháº¡y Ä‘Æ°á»£c cáº£ á»Ÿ localhost.
+api.get('/payos/payment-status/:orderCode', guard('pay'), wrap((req) => Pay.getPayosPaymentStatus(req.params.orderCode, branch(req))));
 api.get('/shifts/current', guard('pay'), wrap((req) => Shifts.currentShift(branch(req))));
 api.post('/shifts/open', guard('pay'), wrap((req) => Shifts.openShift(req.body, req.user, branch(req))));
 api.post('/shifts/close', guard('pay'), wrap((req) => Shifts.closeShift(req.body, req.user, branch(req))));
@@ -699,12 +771,12 @@ api.post('/cash-drawer/reimbursement', guard('pay'), wrap((req) => {
 }));
 
 // --- Inventory / Warehouse ---
-api.get('/warehouses', wrap((req) => Inv.listWarehouses(visibleBranch(req), req.query)));
+api.get('/warehouses', inventoryReadGuard, wrap((req) => Inv.listWarehouses(branch(req), req.query)));
 function verifyWarehouseConfigAccess(req) {
   const branch_id = branch(req);
   const pin = req.body.security_pin || req.body.warehouse_pin || req.body.manager_pin || req.body.owner_pin || req.body.password;
   const approvedBy = Auth.verifyWarehouseConfigPin(pin, branch_id);
-  if (!approvedBy) throw new Error('Cần nhập mật khẩu/PIN của Thủ kho, Manager hoặc Admin để tạo/cấu hình kho.');
+  if (!approvedBy) throw new Error('Cáº§n nháº­p máº­t kháº©u/PIN cá»§a Thá»§ kho, Manager hoáº·c Admin Ä‘á»ƒ táº¡o/cáº¥u hÃ¬nh kho.');
   delete req.body.security_pin;
   delete req.body.warehouse_pin;
   delete req.body.manager_pin;
@@ -722,52 +794,60 @@ api.post('/warehouses/:id/update', guard('warehouse.manage'), wrap((req) => {
   audit('warehouse.config.reauth', { action: 'update', warehouse_id: req.params.id, approved_by: approvedBy.username }, branch_id, approvedBy.username);
   return Inv.updateWarehouse(req.params.id, req.body, branch_id);
 }));
-api.get('/inventory', wrap((req) => Inv.listInventory(visibleBranch(req), req.query)));
+api.get('/inventory', inventoryReadGuard, wrap((req) => Inv.listInventory(branch(req), req.query)));
 api.post('/inventory', guard('inventory.adjust'), wrap((req) => Inv.createInventoryItem(req.body, branch(req))));
 api.post('/inventory/movements', guard('inventory.adjust'), wrap(() => notImplemented('Generic inventory movement endpoint is planned. Current app uses warehouse receive/issue/transfer/stocktake endpoints.')));
 api.post('/inventory/:id/update', guard('inventory.adjust'), wrap((req) => Inv.updateInventoryItem(req.params.id, req.body, branch(req))));
 api.post('/inventory/:id/delete', guard('inventory.adjust'), wrap((req) => Inv.deleteInventoryItem(req.params.id, branch(req))));
-api.post('/inventory/:id/receive', wrap((req) => Inv.receiveStock(req.params.id, parseFloat(req.body.qty), visibleBranch(req), req.body)));
+api.post('/inventory/:id/receive', guard('inventory.adjust'), wrap((req) => Inv.receiveStock(req.params.id, parseFloat(req.body.qty), branch(req), req.body)));
 api.post('/inventory/:id/adjust', guard('inventory.adjust'), wrap((req) => Inv.adjustStock(req.params.id, parseFloat(req.body.stock), branch(req), req.body)));
 
 // --- Retail / SKU ---
-api.get('/skus', wrap((req) => Inv.listSkus(visibleBranch(req), req.query)));
+api.get('/skus', inventoryReadGuard, wrap((req) => Inv.listSkus(branch(req), req.query)));
 api.post('/skus', guard('inventory.adjust'), wrap((req) => Inv.createSku(req.body, branch(req))));
 api.post('/skus/:id/update', guard('inventory.adjust'), wrap((req) => Inv.updateSku(req.params.id, req.body, branch(req))));
 api.post('/skus/:id/delete', guard('inventory.adjust'), wrap((req) => Inv.deleteSku(req.params.id, branch(req))));
-api.get('/skus/barcode/:code', wrap((req) => {
-  const s = Inv.findSkuByBarcode(req.params.code, visibleBranch(req), req.query);
-  if (!s) throw new Error('Không tìm thấy mã vạch ' + req.params.code);
+api.get('/skus/barcode/:code', inventoryReadGuard, wrap((req) => {
+  const s = Inv.findSkuByBarcode(req.params.code, branch(req), req.query);
+  if (!s) throw new Error('KhÃ´ng tÃ¬m tháº¥y mÃ£ váº¡ch ' + req.params.code);
   return s;
 }));
-api.post('/skus/:id/receive', wrap((req) => Inv.receiveSku(req.params.id, parseFloat(req.body.qty), visibleBranch(req), req.body)));
+api.post('/skus/:id/receive', guard('inventory.adjust'), wrap((req) => Inv.receiveSku(req.params.id, parseFloat(req.body.qty), branch(req), req.body)));
 api.post('/skus/:id/adjust', guard('inventory.adjust'), wrap((req) => Inv.adjustSku(req.params.id, parseFloat(req.body.stock), branch(req), req.body)));
 api.get('/vouchers', guard('discount'), wrap((req) => Vouchers.listVouchers(branch(req))));
-api.get('/vouchers/active', wrap((req) => Vouchers.listActiveVouchers(visibleBranch(req))));
+api.get('/vouchers/active', guardAny('discount', 'sell', 'pay'), wrap((req) => Vouchers.listActiveVouchers(branch(req))));
 api.post('/vouchers', guard('discount'), wrap((req) => Vouchers.createVoucher(req.body, branch(req))));
 api.post('/vouchers/:id/update', guard('discount'), wrap((req) => Vouchers.updateVoucher(req.params.id, req.body, branch(req))));
 api.post('/vouchers/:id/toggle', guard('discount'), wrap((req) => Vouchers.toggleVoucher(req.params.id, req.body.active, branch(req))));
 api.post('/retail/checkout', guard('pay'), wrap((req) => Retail.checkout({ ...req.body, branch_id: branch(req), cashier: req.user?.name || req.user?.username || '' })));
 
 // --- Customers (directory + perks + tax-code lookup) ---
-api.get('/customers', guard(), wrap((req) => Customers.listCustomers(branch(req), req.query.q || '')));
-api.get('/customers/:id', guard(), wrap((req) => Customers.getCustomer(req.params.id, branch(req))));
-api.post('/customers', guard(), wrap((req) => Customers.upsertCustomer(req.body, branch(req))));
-api.post('/customers/:id/delete', guard('settings.manage'), wrap((req) => Customers.deleteCustomer(req.params.id, branch(req))));
-api.get('/customers/lookup/tax/:mst', guard(), wrap((req) => Customers.lookupTaxCode(req.params.mst)));
+api.get('/customers', guard(), wrap((req) => Customers.listCustomers(branch(req), req.query.q || '', { branch_ids: requestedBranchIds(req) })));
+api.get('/customers/:id', guard(), wrap((req) => Customers.getCustomerInBranches(req.params.id, Auth.userBranchIds(req.user))));
+api.post('/customers', guard(), wrap((req) => Customers.upsertCustomer(req.body, customerWriteBranch(req))));
+api.post('/customers/:id/delete', guard('settings.manage'), wrap((req) => {
+  const existing = Customers.getCustomerInBranches(req.params.id, Auth.userBranchIds(req.user));
+  if (!existing) throw new Error('Khach hang khong ton tai trong pham vi duoc cap.');
+  return Customers.deleteCustomer(req.params.id, existing.branch_id);
+}));
+api.get('/customers/lookup/tax/:mst', guard(), wrap((req) => Customers.lookupTaxCode(req.params.mst, Auth.userBranchIds(req.user))));
 
-// --- Contacts / Partners (Liên hệ: khách hàng + nhà cung cấp dùng chung 1 danh bạ) ---
+// --- Contacts / Partners (LiÃªn há»‡: khÃ¡ch hÃ ng + nhÃ  cung cáº¥p dÃ¹ng chung 1 danh báº¡) ---
 api.get('/partners', guard('module.contacts'), wrap((req) => ({
-  partners: Customers.listPartners(branch(req), { type: req.query.type || 'all', q: req.query.q || '' }),
-  counts: Customers.partnerCounts(branch(req)),
+  partners: Customers.listPartners(branch(req), { type: req.query.type || 'all', q: req.query.q || '', branch_ids: requestedBranchIds(req) }),
+  counts: Customers.partnerCounts(branch(req), requestedBranchIds(req)),
 })));
-api.get('/partners/:id', guard('module.contacts'), wrap((req) => Customers.getCustomer(req.params.id, branch(req))));
-api.post('/partners', guard('module.contacts'), wrap((req) => Customers.upsertCustomer(req.body, branch(req))));
-api.post('/partners/:id/delete', guard('module.contacts'), wrap((req) => Customers.deleteCustomer(req.params.id, branch(req))));
+api.get('/partners/:id', guard('module.contacts'), wrap((req) => Customers.getCustomerInBranches(req.params.id, Auth.userBranchIds(req.user))));
+api.post('/partners', guard('module.contacts'), wrap((req) => Customers.upsertCustomer(req.body, customerWriteBranch(req))));
+api.post('/partners/:id/delete', guard('module.contacts'), wrap((req) => {
+  const existing = Customers.getCustomerInBranches(req.params.id, Auth.userBranchIds(req.user));
+  if (!existing) throw new Error('Lien he khong ton tai trong pham vi duoc cap.');
+  return Customers.deleteCustomer(req.params.id, existing.branch_id);
+}));
 
-// --- Purchase (Mua hàng): PO lifecycle + nhận hàng vào kho + công nợ NCC ---
+// --- Purchase (Mua hÃ ng): PO lifecycle + nháº­n hÃ ng vÃ o kho + cÃ´ng ná»£ NCC ---
 api.get('/purchase', guard('module.purchase'), wrap((req) => Purchase.listPurchaseOrders(branch(req), req.query)));
-// Đặt TRƯỚC '/purchase/:id' để không bị bắt nhầm là id.
+// Äáº·t TRÆ¯á»šC '/purchase/:id' Ä‘á»ƒ khÃ´ng bá»‹ báº¯t nháº§m lÃ  id.
 api.get('/purchase/last-prices', guard('module.purchase'), wrap((req) => Purchase.lastPurchasePrices(branch(req), { supplier_id: req.query.supplier_id || '', supplier_name: req.query.supplier_name || '' })));
 api.get('/purchase/:id', guard('module.purchase'), wrap((req) => Purchase.getPurchaseOrder(req.params.id, branch(req))));
 api.post('/purchase', guard('module.purchase'), wrap((req) => Purchase.savePurchaseOrder(req.body, branch(req), req.user)));
@@ -777,7 +857,7 @@ api.post('/purchase/:id/pay', guard('module.purchase'), wrap((req) => Purchase.r
 api.post('/purchase/:id/cancel', guard('module.purchase'), wrap((req) => Purchase.cancelPurchaseOrder(req.params.id, branch(req), req.user)));
 api.post('/purchase/:id/delete', guard('module.purchase'), wrap((req) => Purchase.deletePurchaseOrder(req.params.id, branch(req), req.user)));
 
-// --- Expenses (Chi phí): sổ chi phí, liên kết két (drawer) hoặc kế toán chi trực tiếp ---
+// --- Expenses (Chi phÃ­): sá»• chi phÃ­, liÃªn káº¿t kÃ©t (drawer) hoáº·c káº¿ toÃ¡n chi trá»±c tiáº¿p ---
 api.get('/expenses', guard('module.expenses'), wrap((req) => Expenses.listExpenses(branch(req), req.query)));
 api.get('/expenses/categories', guard('module.expenses'), wrap((req) => Expenses.listCategories(branch(req))));
 api.post('/expenses/categories', guard('module.expenses'), wrap((req) => Expenses.upsertCategory(req.body, branch(req))));
@@ -785,15 +865,15 @@ api.post('/expenses/categories/:id/delete', guard('module.expenses'), wrap((req)
 api.post('/expenses', guard('module.expenses'), wrap((req) => Expenses.createExpense(req.body, branch(req), req.user)));
 api.post('/expenses/:id', guard('module.expenses'), wrap((req) => Expenses.updateExpense(req.params.id, req.body, branch(req), req.user)));
 api.post('/expenses/:id/delete', guard('module.expenses'), wrap((req) => Expenses.deleteExpense(req.params.id, branch(req), req.user)));
-api.get('/retail/sales', wrap((req) => Retail.listRetailSales(visibleBranch(req))));
+api.get('/retail/sales', retailReadGuard, wrap((req) => Retail.listRetailSales(branch(req))));
 api.post('/retail/:id/refund', guard('refund'), wrap((req) => {
   assertBillEditable(req.params.id, req, 'refund');
   return Retail.refund(req.params.id, req.body.reason, branch(req));
 }));
 
 // --- Warehouse documents / lots / counts ---
-api.get('/movements', wrap((req) => Inv.listMovements(visibleBranch(req), parseInt(req.query.limit) || 80)));
-api.get('/warehouse/lots', wrap((req) => Inv.listLots(visibleBranch(req), req.query)));
+api.get('/movements', inventoryReadGuard, wrap((req) => Inv.listMovements(branch(req), parseInt(req.query.limit) || 80)));
+api.get('/warehouse/lots', inventoryReadGuard, wrap((req) => Inv.listLots(branch(req), req.query)));
 api.post('/warehouse/receive', guard('inventory.adjust'), wrap((req) => {
   const branch_id = branch(req);
   const stockType = req.body.stock_type || req.body.item_type;
@@ -805,13 +885,13 @@ api.post('/warehouse/issue', guard('inventory.adjust'), wrap((req) => Inv.issueS
 api.post('/warehouse/transfer', guard('inventory.adjust'), wrap((req) => Inv.transferStock(req.body, branch(req))));
 api.post('/warehouse/stocktake', guard('inventory.adjust'), wrap((req) => Inv.applyStocktake(req.body, branch(req))));
 api.get('/warehouse/stocktakes', guard('inventory.adjust'), wrap((req) => Inv.listStocktakes(branch(req))));
-api.get('/warehouse/documents', wrap((req) => Inv.listDocuments(visibleBranch(req), req.query)));
-api.get('/warehouse/documents/:id', wrap((req) => Inv.getDocument(req.params.id, visibleBranch(req))));
+api.get('/warehouse/documents', inventoryReadGuard, wrap((req) => Inv.listDocuments(branch(req), req.query)));
+api.get('/warehouse/documents/:id', inventoryReadGuard, wrap((req) => Inv.getDocument(req.params.id, branch(req))));
 
 // --- Online channels ---
-api.post('/online/webhook', wrap((req) => Online.receive(req.body, visibleBranch(req), req.headers)));
-api.get('/online/orders', wrap((req) => Online.listOnline(visibleBranch(req))));
-api.get('/online/channels', wrap((req) => Online.listChannels(visibleBranch(req))));
+api.post('/online/webhook', publicWriteLimit, wrap((req) => Online.receive(req.body, visibleBranch(req), req.headers)));
+api.get('/online/orders', onlineReadGuard, wrap((req) => Online.listOnline(branch(req))));
+api.get('/online/channels', onlineReadGuard, wrap((req) => Online.listChannels(branch(req))));
 api.post('/online/orders/:id/status', guard('online'), wrap((req) => Online.setStatus(req.params.id, req.body.status, branch(req))));
 api.post('/online/orders/:id/confirm-payment', guard('online'), wrap((req) => Online.confirmPayment(req.params.id, branch(req))));
 api.post('/online/orders/:id/confirm-delivery', guard('online'), wrap((req) => Online.confirmDelivery(req.params.id, branch(req))));
@@ -826,33 +906,55 @@ api.post('/print/printers/:id/test', printGuard, wrap((req) => Print.testPrinter
 api.post('/print/cash-drawer/open', printGuard, wrap((req) => Print.openCashDrawer(branch(req), req.body.printer || req.body.printer_id || '')));
 api.get('/print/jobs', printGuard, wrap((req) => Print.listJobs(branch(req), req.query)));
 api.get('/print/jobs/:id', printGuard, wrap((req) => Print.getJobForBranch(req.params.id, branch(req))));
-api.get('/print/jobs/:id/text', printGuard, wrap((req) => ({ text: Print.renderJobText(Print.getJobForBranch(req.params.id, branch(req)) || {}) })));
+api.get('/print/jobs/:id/text', printGuard, wrap((req) => ({ text: Print.renderJobText(Print.getJobForBranchFull(req.params.id, branch(req)) || {}) })));
 api.post('/print/reprint', printGuard, wrap(() => notImplemented('Generic print reprint endpoint is planned. Current app uses /api/print/jobs/:id/reprint.')));
 api.post('/print/jobs/:id/print', printGuard, wrap((req) => Print.dispatchJob(req.params.id, branch(req), { force: true })));
 api.post('/print/jobs/:id/printed', printGuard, wrap((req) => Print.markPrinted(req.params.id, branch(req), actor(req))));
 api.post('/print/jobs/:id/reprint', printGuard, wrap((req) => Print.reprint(req.params.id, branch(req))));
 
 // --- MISA e-invoice ---
-api.post('/invoices/issue', guard('invoice'), wrap((req) => {
+const invoiceGuard = guardAny('invoice', 'module.invoice', 'settings.invoices');
+api.post('/invoices/issue', invoiceGuard, wrap((req) => {
   assertBillEditable(req.body.order_id, req, 'invoice_issue');
   return Invoices.issue(req.body.order_id, req.body.customer, branch(req));
 }));
-api.get('/invoices', wrap((req) => Invoices.list(visibleBranch(req))));
-api.get('/invoices/order/:id', wrap((req) => Invoices.byOrder(req.params.id)));
-api.post('/invoices/:id/cancel', guard('invoice'), wrap((req) => {
+api.get('/invoices', invoiceGuard, wrap((req) => Invoices.list(branch(req))));
+api.get('/invoices/order/:id', invoiceGuard, wrap((req) => Invoices.byOrder(req.params.id)));
+api.post('/invoices/:id/cancel', invoiceGuard, wrap((req) => {
   const ord = db.prepare(`SELECT id FROM orders WHERE invoice_id=? AND branch_id=?`).get(req.params.id, branch(req));
   if (ord) assertBillEditable(ord.id, req, 'invoice_cancel');
   return Invoices.cancel(req.params.id, req.body.reason, branch(req));
 }));
 
 // --- Cloud Sync / Offline ---
-api.get('/sync/status', wrap((req) => Sync.status(visibleBranch(req))));
+api.get('/sync/status', guardAny('settings.sync', 'reports'), wrap((req) => Sync.status(branch(req))));
 api.post('/sync/offline', guard('reports'), wrap((req) => Sync.setOffline(req.body.offline, branch(req))));
 api.post('/sync/now', guard('reports'), wrap((req) => Sync.syncNow(branch(req))));
 
 // --- Reports ---
-api.get('/dashboard', wrap((req) => Reports.dashboard(visibleBranch(req))));
-api.get('/dashboard/trends', wrap((req) => Reports.revenueTrends(visibleBranch(req))));
+api.get('/dashboard', guard('reports'), wrap((req) => Reports.dashboard(branch(req))));
+api.get('/dashboard/trends', guard('reports'), wrap((req) => Reports.revenueTrends(branch(req))));
+api.get('/dashboard/branches', guard('reports'), wrap((req) => Reports.branchSummaries(requestedBranchIds(req))));
+api.get('/dashboard/aggregate', guard('reports'), wrap((req) => Reports.dashboardAggregate(requestedBranchIds(req))));
+api.get('/reports/branches', guard('reports'), wrap((req) => Reports.dashboardAggregate(requestedBranchIds(req))));
+api.get('/reports/branches/export', guard('reports'), async (req, res) => {
+  try {
+    const data = Reports.dashboardAggregate(requestedBranchIds(req));
+    const format = String(req.query.format || 'html').toLowerCase();
+    if (format === 'json') return res.json(data);
+    const html = branchAggregateHtml(data);
+    if (format === 'xls' || format === 'xlsx' || format === 'sheet') {
+      res.setHeader('Content-Type', 'application/vnd.ms-excel; charset=utf-8');
+      res.setHeader('Content-Disposition', 'attachment; filename="branch-summary.xls"');
+      return res.send(html);
+    }
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.setHeader('Content-Disposition', 'inline; filename="branch-summary.html"');
+    return res.send(html);
+  } catch (e) {
+    return res.status(e.status || 400).json({ error: e.message });
+  }
+});
 api.get('/reports/sales', guard('reports'), wrap(() => notImplemented('Sales report endpoint is planned. Current app uses /api/reports/preview?type=sales_overview.')));
 api.get('/reports/inventory', guard('reports'), wrap(() => notImplemented('Inventory report endpoint is planned. Current app uses /api/reports/preview with inventory report types.')));
 api.get('/reports/payments', guard('reports'), wrap(() => notImplemented('Payments report endpoint is planned. Current app uses dashboard/report center endpoints.')));
@@ -896,7 +998,7 @@ api.get('/reports/export', guard(), async (req, res) => {
       res.setHeader('Content-Disposition', `attachment; filename="${file}"`);
       return res.send(await ReportCenter.renderReportPdf(report));
     }
-    return res.status(400).json({ error: 'Định dạng báo cáo không hợp lệ' });
+    return res.status(400).json({ error: 'Äá»‹nh dáº¡ng bÃ¡o cÃ¡o khÃ´ng há»£p lá»‡' });
   } catch (e) {
     return res.status(e.status || 400).json({ error: e.message });
   }
@@ -984,7 +1086,7 @@ api.get('/database/status', guardAny('settings.manage'), wrap(async (req) => {
     configCounts,
     transactionCounts,
     pendingSyncCount,
-    // Báo cáo TRUNG THỰC: trạng thái sao lưu/đồng bộ phản ánh đúng thực tế hệ thống.
+    // BÃ¡o cÃ¡o TRUNG THá»°C: tráº¡ng thÃ¡i sao lÆ°u/Ä‘á»“ng bá»™ pháº£n Ã¡nh Ä‘Ãºng thá»±c táº¿ há»‡ thá»‘ng.
     backups: (() => {
       const list = listBackups();
       return {
@@ -999,7 +1101,7 @@ api.get('/database/status', guardAny('settings.manage'), wrap(async (req) => {
       mode: process.env.DATABASE_PROVIDER === 'postgres' ? 'postgres' : 'local-only',
       offsiteReplication: false,
       pending: pendingSyncCount,
-      note: 'Đẩy đồng bộ ngoại vi CHƯA bật. An toàn dữ liệu dựa vào sao lưu local định kỳ (backups/) + nhật ký NDJSON fsync. Hãy copy thư mục backups/ ra ổ ngoài/VPS định kỳ.',
+      note: 'Äáº©y Ä‘á»“ng bá»™ ngoáº¡i vi CHÆ¯A báº­t. An toÃ n dá»¯ liá»‡u dá»±a vÃ o sao lÆ°u local Ä‘á»‹nh ká»³ (backups/) + nháº­t kÃ½ NDJSON fsync. HÃ£y copy thÆ° má»¥c backups/ ra á»• ngoÃ i/VPS Ä‘á»‹nh ká»³.',
     },
     auditArchive: { durable: true, format: 'ndjson-fsync' },
   };
@@ -1020,11 +1122,11 @@ api.post('/database/integrity-check', guardAny('settings.manage'), wrap(async ()
 // POST /api/database/reset-transactions
 api.post('/database/reset-transactions', guardAny('settings.manage'), wrap(async (req) => {
   const { pin } = req.body;
-  if (!pin) throw new Error('Cần cung cấp mã PIN xác nhận.');
+  if (!pin) throw new Error('Cáº§n cung cáº¥p mÃ£ PIN xÃ¡c nháº­n.');
   
   const user = Auth.verifyManagerOwnerPin(pin, branch(req));
   if (!user) {
-    throw new Error('Mã PIN không đúng hoặc không có quyền Admin/Manager.');
+    throw new Error('MÃ£ PIN khÃ´ng Ä‘Ãºng hoáº·c khÃ´ng cÃ³ quyá»n Admin/Manager.');
   }
 
   const transactionTables = [
@@ -1035,14 +1137,14 @@ api.post('/database/reset-transactions', guardAny('settings.manage'), wrap(async
     'audit_log', 'staff_calls'
   ];
 
-  // node:sqlite (DatabaseSync) không có .transaction() — dùng BEGIN/COMMIT/ROLLBACK.
+  // node:sqlite (DatabaseSync) khÃ´ng cÃ³ .transaction() â€” dÃ¹ng BEGIN/COMMIT/ROLLBACK.
   db.exec('BEGIN');
   try {
     for (const table of transactionTables) {
       try {
         db.exec(`DELETE FROM ${table}`);
       } catch (e) {
-        console.error(`Lỗi khi dọn dẹp bảng ${table}:`, e.message);
+        console.error(`Lá»—i khi dá»n dáº¹p báº£ng ${table}:`, e.message);
       }
     }
     try {
@@ -1053,18 +1155,18 @@ api.post('/database/reset-transactions', guardAny('settings.manage'), wrap(async
     db.exec('ROLLBACK');
     throw e;
   }
-  audit('db.reset_transactions', 'Dọn dẹp toàn bộ dữ liệu giao dịch về trạng thái sạch.', branch(req), user.username);
+  audit('db.reset_transactions', 'Dá»n dáº¹p toÃ n bá»™ dá»¯ liá»‡u giao dá»‹ch vá» tráº¡ng thÃ¡i sáº¡ch.', branch(req), user.username);
   
-  return { ok: true, message: 'Đã dọn dẹp sạch toàn bộ dữ liệu giao dịch thành công.' };
+  return { ok: true, message: 'ÄÃ£ dá»n dáº¹p sáº¡ch toÃ n bá»™ dá»¯ liá»‡u giao dá»‹ch thÃ nh cÃ´ng.' };
 }));
 
 // POST /api/database/clone-to-staging
 api.post('/database/clone-to-staging', guardAny('settings.manage'), wrap(async (req) => {
   const { pin } = req.body;
-  if (!pin) throw new Error('Cần cung cấp mã PIN xác nhận.');
+  if (!pin) throw new Error('Cáº§n cung cáº¥p mÃ£ PIN xÃ¡c nháº­n.');
   const user = Auth.verifyManagerOwnerPin(pin, branch(req));
   if (!user) {
-    throw new Error('Mã PIN không đúng hoặc không có quyền Admin/Manager.');
+    throw new Error('MÃ£ PIN khÃ´ng Ä‘Ãºng hoáº·c khÃ´ng cÃ³ quyá»n Admin/Manager.');
   }
 
   const fs = await import('node:fs');
@@ -1080,19 +1182,19 @@ api.post('/database/clone-to-staging', guardAny('settings.manage'), wrap(async (
     } catch {}
     fs.copyFileSync(DB_PATH, stagingPath);
   } catch (e) {
-    throw new Error(`Không thể nhân bản CSDL: ${e.message}`);
+    throw new Error(`KhÃ´ng thá»ƒ nhÃ¢n báº£n CSDL: ${e.message}`);
   }
 
-  audit('db.clone_to_staging', 'Nhân bản cơ sở dữ liệu sang môi trường staging.', branch(req), user.username);
-  return { ok: true, message: 'Đã nhân bản cơ sở dữ liệu sang môi trường staging thành công.', stagingPath };
+  audit('db.clone_to_staging', 'NhÃ¢n báº£n cÆ¡ sá»Ÿ dá»¯ liá»‡u sang mÃ´i trÆ°á»ng staging.', branch(req), user.username);
+  return { ok: true, message: 'ÄÃ£ nhÃ¢n báº£n cÆ¡ sá»Ÿ dá»¯ liá»‡u sang mÃ´i trÆ°á»ng staging thÃ nh cÃ´ng.', stagingPath };
 }));
 
 // POST /api/database/decrypt-audit
 api.post('/database/decrypt-audit', guardAny('settings.manage'), wrap(async (req) => {
   const { id } = req.body;
-  if (!id) throw new Error('Cần cung cấp ID audit log.');
+  if (!id) throw new Error('Cáº§n cung cáº¥p ID audit log.');
   const row = db.prepare(`SELECT detail FROM audit_log WHERE id = ?`).get(id);
-  if (!row) throw new Error('Không tìm thấy bản ghi nhật ký hoạt động.');
+  if (!row) throw new Error('KhÃ´ng tÃ¬m tháº¥y báº£n ghi nháº­t kÃ½ hoáº¡t Ä‘á»™ng.');
   const decrypted = decryptDecompress(row.detail);
   return { decrypted };
 }));
@@ -1100,12 +1202,12 @@ api.post('/database/decrypt-audit', guardAny('settings.manage'), wrap(async (req
 // GET /api/database/docs
 api.get('/database/docs', guardAny('settings.manage'), wrap(async () => {
   return [
-    { file: 'README.md', title: 'Tổng quan & Stack dự án' },
-    { file: 'docs/ARCHITECTURE.md', title: 'Kiến trúc & Vùng triển khai' },
-    { file: 'docs/OFFLINE_FIRST_ARCHITECTURE.md', title: 'Kiến trúc Offline-First' },
-    { file: 'docs/COMPANY_DATABASE_MEMORY.md', title: 'Chính sách Bộ nhớ vĩnh viễn' },
-    { file: 'docs/VPS_TEMPORARY_BUFFER.md', title: 'Bộ đệm sự kiện tạm thời VPS' },
-    { file: 'docs/SYNC_BACK_TO_COMPANY_SERVER.md', title: 'Quy trình Đồng bộ ngược' }
+    { file: 'README.md', title: 'Tá»•ng quan & Stack dá»± Ã¡n' },
+    { file: 'docs/ARCHITECTURE.md', title: 'Kiáº¿n trÃºc & VÃ¹ng triá»ƒn khai' },
+    { file: 'docs/OFFLINE_FIRST_ARCHITECTURE.md', title: 'Kiáº¿n trÃºc Offline-First' },
+    { file: 'docs/COMPANY_DATABASE_MEMORY.md', title: 'ChÃ­nh sÃ¡ch Bá»™ nhá»› vÄ©nh viá»…n' },
+    { file: 'docs/VPS_TEMPORARY_BUFFER.md', title: 'Bá»™ Ä‘á»‡m sá»± kiá»‡n táº¡m thá»i VPS' },
+    { file: 'docs/SYNC_BACK_TO_COMPANY_SERVER.md', title: 'Quy trÃ¬nh Äá»“ng bá»™ ngÆ°á»£c' }
   ];
 }));
 
@@ -1126,7 +1228,7 @@ api.get('/database/docs/:file', guardAny('settings.manage'), wrap(async (req) =>
   ];
 
   if (!whitelist.includes(reqFile)) {
-    throw new Error('Tài liệu không nằm trong danh mục cho phép.');
+    throw new Error('TÃ i liá»‡u khÃ´ng náº±m trong danh má»¥c cho phÃ©p.');
   }
 
   const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -1137,21 +1239,21 @@ api.get('/database/docs/:file', guardAny('settings.manage'), wrap(async (req) =>
   try {
     content = fs.readFileSync(targetPath, 'utf8');
   } catch (e) {
-    throw new Error('Không thể đọc nội dung tài liệu.');
+    throw new Error('KhÃ´ng thá»ƒ Ä‘á»c ná»™i dung tÃ i liá»‡u.');
   }
 
   return { file: reqFile, content };
 }));
 
-// ══════════════════════════════════════════════════════════════════════════════
-// DMS — Document Management System
-// POST /documents/upload     — upload 1 file (base64 trong JSON body)
-// GET  /documents/files      — danh sách tài liệu
-// GET  /documents/files/:id/download  — tải file
-// GET  /documents/files/:id/preview   — preview (ảnh/pdf inline)
-// PUT  /documents/files/:id  — cập nhật metadata
-// DEL  /documents/files/:id  — xóa (cần PIN)
-// ══════════════════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// DMS â€” Document Management System
+// POST /documents/upload     â€” upload 1 file (base64 trong JSON body)
+// GET  /documents/files      â€” danh sÃ¡ch tÃ i liá»‡u
+// GET  /documents/files/:id/download  â€” táº£i file
+// GET  /documents/files/:id/preview   â€” preview (áº£nh/pdf inline)
+// PUT  /documents/files/:id  â€” cáº­p nháº­t metadata
+// DEL  /documents/files/:id  â€” xÃ³a (cáº§n PIN)
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 const DMS_ALLOWED_MIME = new Set([
   'image/jpeg','image/png','image/webp','image/gif',
@@ -1162,9 +1264,36 @@ const DMS_ALLOWED_MIME = new Set([
   'text/csv','text/plain','application/json',
 ]);
 const DMS_MAX_BYTES = 25 * 1024 * 1024; // 25 MB
+const DMS_SAFE_EXT = new Set(['.jpg', '.jpeg', '.png', '.webp', '.gif', '.pdf', '.xls', '.xlsx', '.docx', '.csv', '.txt', '.json']);
 
-// ── Shared helper — also exported for internal use by other services ────────
-export function saveDocumentRecord({ branch_id, name, original_name, stored_name, mime_type, file_size, category = 'other', source = 'manual', related_id = null, related_type = null, tags = [], description = '', uploaded_by = 'system', uploaded_by_name = 'Hệ thống' }) {
+function dmsFilePath(storedName) {
+  const clean = nodePath.basename(String(storedName || ''));
+  if (!clean || clean !== storedName || clean.includes('..')) {
+    const e = new Error('TÃƒÂªn file lÃ†Â°u trÃ¡Â»Â¯ khÃƒÂ´ng hÃ¡Â»Â£p lÃ¡Â»â€¡.');
+    e.status = 400;
+    throw e;
+  }
+  const root = nodePath.resolve(UPLOADS_DIR);
+  const target = nodePath.resolve(root, clean);
+  if (target !== root && !target.startsWith(root + nodePath.sep)) {
+    const e = new Error('Ã„ÂÃ†Â°Ã¡Â»Âng dÃ¡ÂºÂ«n file khÃƒÂ´ng hÃ¡Â»Â£p lÃ¡Â»â€¡.');
+    e.status = 400;
+    throw e;
+  }
+  return target;
+}
+
+function safeOriginalName(value) {
+  return nodePath.basename(String(value || 'document').replace(/[\r\n]/g, ' ')).slice(0, 180) || 'document';
+}
+
+function safeDmsExt(originalName) {
+  const ext = nodePath.extname(safeOriginalName(originalName)).toLowerCase();
+  return DMS_SAFE_EXT.has(ext) ? ext : '';
+}
+
+// â”€â”€ Shared helper â€” also exported for internal use by other services â”€â”€â”€â”€â”€â”€â”€â”€
+export function saveDocumentRecord({ branch_id, name, original_name, stored_name, mime_type, file_size, category = 'other', source = 'manual', related_id = null, related_type = null, tags = [], description = '', uploaded_by = 'system', uploaded_by_name = 'Há»‡ thá»‘ng' }) {
   const id = uid('doc_');
   const created_at = now();
   db.prepare(`INSERT INTO document_files (id,branch_id,name,original_name,stored_name,mime_type,file_size,category,source,related_id,related_type,tags_json,description,uploaded_by,uploaded_by_name,is_archived,created_at)
@@ -1174,35 +1303,51 @@ export function saveDocumentRecord({ branch_id, name, original_name, stored_name
   return db.prepare(`SELECT * FROM document_files WHERE id=?`).get(id);
 }
 
-// ── Upload ──────────────────────────────────────────────────────────────────
+// â”€â”€ Upload â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 api.post('/documents/upload', wrap(async (req) => {
-  const { branch_id, actor } = Auth.requirePermission(req, 'module.documents');
+  const { branch_id, actor } = Auth.requirePermission(req, 'module.database');
   const { name, category = 'other', source = 'manual', related_id, related_type, tags = [], description = '', data, mime_type, original_name } = req.body;
 
-  if (!data || !original_name) throw new Error('Thiếu dữ liệu file (data, original_name)');
-  if (!DMS_ALLOWED_MIME.has(mime_type)) throw new Error(`Định dạng file không được hỗ trợ: ${mime_type}`);
+  if (!data || !original_name) throw new Error('Thiáº¿u dá»¯ liá»‡u file (data, original_name)');
+  if (!DMS_ALLOWED_MIME.has(mime_type)) throw new Error(`Äá»‹nh dáº¡ng file khÃ´ng Ä‘Æ°á»£c há»— trá»£: ${mime_type}`);
+
+  if (!/^[A-Za-z0-9+/=\r\n]+$/.test(String(data))) throw new Error('Du lieu file base64 khong hop le');
 
   // data is base64
   const buf = Buffer.from(data, 'base64');
-  if (buf.byteLength > DMS_MAX_BYTES) throw new Error(`File quá lớn — tối đa 25MB`);
+  if (!buf.byteLength) throw new Error('File rong hoac du lieu base64 khong hop le');
+  if (buf.byteLength > DMS_MAX_BYTES) throw new Error(`File quÃ¡ lá»›n â€” tá»‘i Ä‘a 25MB`);
 
-  const ext = nodePath.extname(original_name) || '';
-  const stored_name = uid('f_') + ext;
+  const originalName = safeOriginalName(original_name);
+  const stored_name = uid('f_') + safeDmsExt(originalName);
   fs.mkdirSync(UPLOADS_DIR, { recursive: true });
-  fs.writeFileSync(nodePath.join(UPLOADS_DIR, stored_name), buf);
+  fs.writeFileSync(dmsFilePath(stored_name), buf, { flag: 'wx' });
 
   const rec = saveDocumentRecord({
-    branch_id, name: name || original_name, original_name, stored_name, mime_type, file_size: buf.byteLength,
-    category, source, related_id, related_type, tags,
-    description, uploaded_by: actor.username || actor.id, uploaded_by_name: actor.name,
+    branch_id,
+    name: String(name || originalName).slice(0, 180),
+    original_name: originalName,
+    stored_name,
+    mime_type,
+    file_size: buf.byteLength,
+    category: String(category || 'other').slice(0, 60),
+    source: String(source || 'manual').slice(0, 60),
+    related_id,
+    related_type,
+    tags: Array.isArray(tags) ? tags.slice(0, 30) : [],
+    description: String(description || '').slice(0, 2000),
+    uploaded_by: actor.username || actor.id,
+    uploaded_by_name: actor.name,
   });
   return rec;
 }));
 
-// ── List files ───────────────────────────────────────────────────────────────
+// â”€â”€ List files â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 api.get('/documents/files', wrap(async (req) => {
-  const { branch_id } = Auth.requirePermission(req, 'module.documents');
+  const { branch_id } = Auth.requirePermission(req, 'module.database');
   const { category, source, q, from, to, archived = '0', limit = '100', offset = '0' } = req.query;
+  const safeLimit = Math.min(250, Math.max(1, parseInt(limit, 10) || 100));
+  const safeOffset = Math.max(0, parseInt(offset, 10) || 0);
 
   let sql = `SELECT * FROM document_files WHERE branch_id=? AND is_archived=?`;
   const params = [branch_id, archived === '1' ? 1 : 0];
@@ -1214,7 +1359,7 @@ api.get('/documents/files', wrap(async (req) => {
   if (q)     { sql += ` AND (name LIKE ? OR original_name LIKE ? OR description LIKE ?)`; const like = `%${q}%`; params.push(like, like, like); }
 
   sql += ` ORDER BY created_at DESC LIMIT ? OFFSET ?`;
-  params.push(parseInt(limit), parseInt(offset));
+  params.push(safeLimit, safeOffset);
 
   const rows = db.prepare(sql).all(...params);
   const total = db.prepare(`SELECT COUNT(*) n FROM document_files WHERE branch_id=? AND is_archived=?`).get(branch_id, archived === '1' ? 1 : 0).n;
@@ -1222,43 +1367,45 @@ api.get('/documents/files', wrap(async (req) => {
   return { files: rows.map(r => ({ ...r, tags: JSON.parse(r.tags_json || '[]') })), total };
 }));
 
-// ── Download ─────────────────────────────────────────────────────────────────
+// â”€â”€ Download â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 api.get('/documents/files/:id/download', async (req, res) => {
   try {
-    const { branch_id } = Auth.requirePermission(req, 'module.documents');
+    const { branch_id } = Auth.requirePermission(req, 'module.database');
     const rec = db.prepare(`SELECT * FROM document_files WHERE id=? AND branch_id=?`).get(req.params.id, branch_id);
-    if (!rec) return res.status(404).json({ error: 'Tài liệu không tồn tại' });
+    if (!rec) return res.status(404).json({ error: 'TÃ i liá»‡u khÃ´ng tá»“n táº¡i' });
 
-    const filePath = nodePath.join(UPLOADS_DIR, rec.stored_name);
-    if (!fs.existsSync(filePath)) return res.status(410).json({ error: 'File đã bị xóa khỏi ổ đĩa' });
+    const filePath = dmsFilePath(rec.stored_name);
+    if (!fs.existsSync(filePath)) return res.status(410).json({ error: 'File Ä‘Ã£ bá»‹ xÃ³a khá»i á»• Ä‘Ä©a' });
 
-    res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(rec.original_name)}"`);
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(safeOriginalName(rec.original_name))}`);
     res.setHeader('Content-Type', rec.mime_type || 'application/octet-stream');
     fs.createReadStream(filePath).pipe(res);
   } catch(e) { logRequestError(req, e); res.status(e.status || 400).json(errorPayload(e)); }
 });
 
-// ── Preview (inline) ─────────────────────────────────────────────────────────
+// â”€â”€ Preview (inline) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 api.get('/documents/files/:id/preview', async (req, res) => {
   try {
-    const { branch_id } = Auth.requirePermission(req, 'module.documents');
+    const { branch_id } = Auth.requirePermission(req, 'module.database');
     const rec = db.prepare(`SELECT * FROM document_files WHERE id=? AND branch_id=?`).get(req.params.id, branch_id);
-    if (!rec) return res.status(404).json({ error: 'Tài liệu không tồn tại' });
+    if (!rec) return res.status(404).json({ error: 'TÃ i liá»‡u khÃ´ng tá»“n táº¡i' });
 
-    const filePath = nodePath.join(UPLOADS_DIR, rec.stored_name);
-    if (!fs.existsSync(filePath)) return res.status(410).json({ error: 'File đã bị xóa khỏi ổ đĩa' });
+    const filePath = dmsFilePath(rec.stored_name);
+    if (!fs.existsSync(filePath)) return res.status(410).json({ error: 'File Ä‘Ã£ bá»‹ xÃ³a khá»i á»• Ä‘Ä©a' });
 
+    res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Content-Type', rec.mime_type || 'application/octet-stream');
-    res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(rec.original_name)}"`);
+    res.setHeader('Content-Disposition', `inline; filename*=UTF-8''${encodeURIComponent(safeOriginalName(rec.original_name))}`);
     fs.createReadStream(filePath).pipe(res);
   } catch(e) { logRequestError(req, e); res.status(e.status || 400).json(errorPayload(e)); }
 });
 
-// ── Update metadata ───────────────────────────────────────────────────────────
+// â”€â”€ Update metadata â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 api.put('/documents/files/:id', wrap(async (req) => {
-  const { branch_id, actor } = Auth.requirePermission(req, 'module.documents');
+  const { branch_id, actor } = Auth.requirePermission(req, 'module.database');
   const rec = db.prepare(`SELECT * FROM document_files WHERE id=? AND branch_id=?`).get(req.params.id, branch_id);
-  if (!rec) throw new Error('Tài liệu không tồn tại');
+  if (!rec) throw new Error('TÃ i liá»‡u khÃ´ng tá»“n táº¡i');
 
   const { name, description, tags, category, is_archived } = req.body;
   db.prepare(`UPDATE document_files SET name=COALESCE(?,name), description=COALESCE(?,description), tags_json=COALESCE(?,tags_json), category=COALESCE(?,category), is_archived=COALESCE(?,is_archived) WHERE id=?`)
@@ -1269,18 +1416,19 @@ api.put('/documents/files/:id', wrap(async (req) => {
   return { ...updated, tags: JSON.parse(updated.tags_json || '[]') };
 }));
 
-// ── Delete ────────────────────────────────────────────────────────────────────
+// â”€â”€ Delete â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 api.delete('/documents/files/:id', wrap(async (req) => {
-  const { branch_id, actor } = Auth.requirePermission(req, 'module.documents');
+  const { branch_id, actor } = Auth.requirePermission(req, 'module.database');
   // Require Manager/Owner PIN for permanent deletion
   const { pin } = req.body || {};
-  if (pin && !Auth.verifyManagerOwnerPin(pin, branch_id)) throw new Error('Cần PIN Quản lý hoặc Admin để xóa vĩnh viễn tài liệu.');
+  if (!pin) throw new Error('Can PIN Quan ly hoac Admin de xoa vinh vien tai lieu.');
+  if (pin && !Auth.verifyManagerOwnerPin(pin, branch_id)) throw new Error('Cáº§n PIN Quáº£n lÃ½ hoáº·c Admin Ä‘á»ƒ xÃ³a vÄ©nh viá»…n tÃ i liá»‡u.');
 
   const rec = db.prepare(`SELECT * FROM document_files WHERE id=? AND branch_id=?`).get(req.params.id, branch_id);
-  if (!rec) throw new Error('Tài liệu không tồn tại');
+  if (!rec) throw new Error('TÃ i liá»‡u khÃ´ng tá»“n táº¡i');
 
   // Delete physical file
-  const filePath = nodePath.join(UPLOADS_DIR, rec.stored_name);
+  const filePath = dmsFilePath(rec.stored_name);
   try { fs.unlinkSync(filePath); } catch (_) { /* already gone */ }
 
   db.prepare(`DELETE FROM document_files WHERE id=?`).run(req.params.id);

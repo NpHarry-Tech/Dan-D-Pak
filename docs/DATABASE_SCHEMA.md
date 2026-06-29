@@ -31,10 +31,10 @@ user_sessions, login_events, pin_credentials, password_reset_events, access_toke
 device_sessions
 > Never store plaintext password/PIN. Hash both. Audit login + permission changes.
 
-## C. Devices / App-Web linking
+## C. Devices / App linking
 devices, device_pairing_requests, device_authorizations, device_heartbeats,
-device_roles, device_route_assignments, app_web_links, app_web_link_tokens,
-app_web_sessions, client_installations
+device_roles, device_route_assignments, device_app_links, device_app_link_tokens,
+device_app_sessions, client_installations
 
 ## D. Customers
 customers, customer_contacts, customer_addresses, customer_notes,
@@ -51,7 +51,7 @@ vouchers, voucher_redemptions, menu_availability_logs
 orders, order_items, order_item_modifiers, order_status_history,
 order_item_status_history, order_notes, order_discounts, order_tax_lines,
 order_service_charge_lines, order_source_links, order_audit_events
-> Order source: ipad_self_order, cashier_pos, web_order, grab, shopeefood,
+> Order source: ipad_self_order, cashier_pos, online_order, grab, shopeefood,
 > manual_admin, temporary_vps_buffer, offline_device_queue.
 
 ## G. KDS / Kitchen / Bar / Salad
@@ -117,7 +117,7 @@ config_change_logs, error_logs
 - Migrations are **additive**: `CREATE TABLE IF NOT EXISTS`, `ADD COLUMN`, new
   history tables. No `DROP`/`TRUNCATE` of business tables.
 - `server/db/schema/0001_planned_company_server.sql` adds history/versioning,
-  devices/app-web linking, bank/payment config history, KDS timing, printing,
+  device/app linking, bank/payment config history, KDS timing, printing,
   sync, and expanded audit tables.
 - `server/db/schema/0002_planned_company_memory_tables.sql` adds the broader
   canonical company-memory table groups A-O from this document.

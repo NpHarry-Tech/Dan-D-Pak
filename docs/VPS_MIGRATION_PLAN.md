@@ -13,7 +13,7 @@ Last updated: 2026-06-18
 
 - Deploy current Node app behind Caddy.
 - Keep current SQLite mode until Postgres adapter is implemented.
-- Verify health, API, static frontend, and Socket.IO.
+- Verify health, API, native-app connectivity, and Socket.IO.
 
 ## Phase 2: PostgreSQL Schema
 

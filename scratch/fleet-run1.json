@@ -1,0 +1,111 @@
+{
+  "ok": false,
+  "elapsedMs": 19788,
+  "fleet": {
+    "pos": 2,
+    "customerTablets": 55,
+    "officePhones": 20,
+    "kds": 1,
+    "printerMonitor": 1,
+    "customerOrders": 20,
+    "retailCheckouts": 2,
+    "officeOps": 6,
+    "socketsConnected": 79
+  },
+  "latencyMs": {
+    "tabletToPosPending": {
+      "count": 20,
+      "p50": 3682,
+      "p95": 4968,
+      "max": 4970
+    },
+    "tabletToHttp": {
+      "count": 20,
+      "p50": 2237,
+      "p95": 3036,
+      "max": 3039
+    },
+    "posConfirmRoundtrip": {
+      "count": 20,
+      "p50": 1581,
+      "p95": 2610,
+      "max": 2611
+    },
+    "confirmToKds": {
+      "count": 20,
+      "p50": 709,
+      "p95": 1045,
+      "max": 1093
+    },
+    "confirmToCustomerTablet": {
+      "count": 20,
+      "p50": 322,
+      "p95": 667,
+      "max": 667
+    },
+    "kdsReadyToCustomerTablet": {
+      "count": 20,
+      "p50": 37,
+      "p95": 684,
+      "max": 717
+    },
+    "inventoryToPhones": {
+      "count": 6,
+      "p50": 578,
+      "p95": 776,
+      "max": 776
+    },
+    "expenseToPhones": {
+      "count": 6,
+      "p50": 577,
+      "p95": 831,
+      "max": 831
+    }
+  },
+  "eventTotals": {
+    "order:new": 126,
+    "order:pending": 80,
+    "order:customer_pending": 1140,
+    "order:confirmed": 1160,
+    "order:rejected": 0,
+    "order:updated": 1160,
+    "order:item": 3480,
+    "kds:refresh": 240,
+    "table:updated": 1140,
+    "staff:call": 0,
+    "payment:done": 114,
+    "print:new": 246,
+    "print:queued": 246,
+    "inventory:updated": 160,
+    "inventory:alert": 0,
+    "expenses:updated": 120,
+    "shift:updated": 0,
+    "presence": 79
+  },
+  "printCounts": {
+    "cup_label": 40,
+    "receipt": 2,
+    "kitchen_ticket": 20,
+    "runner": 20
+  },
+  "progress": {
+    "createdOrders": 20,
+    "pendingSeen": 20,
+    "confirmPosted": 20,
+    "kdsSeen": 20,
+    "readyEchoedToKds": 20,
+    "readySeenOnTablet": 20,
+    "inventoryEventsSeen": 6,
+    "expenseEventsSeen": 6
+  },
+  "persistedReadback": 10,
+  "printJobsStored": 82,
+  "pendingConfirmationsLeft": 0,
+  "failures": [
+    "tabletToPosPending p95 4968ms > 1000ms",
+    "tabletToHttp p95 3036ms > 1000ms",
+    "posConfirmRoundtrip p95 2610ms > 1000ms",
+    "confirmToKds p95 1045ms > 1000ms"
+  ],
+  "httpErrors": []
+}

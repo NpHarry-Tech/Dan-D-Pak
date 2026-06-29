@@ -1,9 +1,7 @@
 // Local Store Server — entry point. Express REST + Socket.IO realtime + static client.
 import express from 'express';
 import { createServer } from 'node:http';
-import { fileURLToPath } from 'node:url';
-import { dirname, join } from 'node:path';
-import { existsSync, mkdirSync } from 'node:fs';
+import { mkdirSync } from 'node:fs';
 import zlib from 'node:zlib';
 import { db, migrate, purgeOldAudit, reconcileAuditFromArchive, compactOldAuditLogs, backupDatabase } from './db.js';
 import { initRealtime } from './realtime.js';
@@ -13,6 +11,7 @@ import { ensureStorageDirectories } from './services/enterpriseStorage.js';
 import { bootstrapDefaultAdmin } from './services/bootstrapAdmin.js';
 import { migratePlaintextPins } from './services/pin.js';
 import { env } from './config/env.js';
+import { runtimePaths } from './config/paths.js';
 import { createCorsMiddleware } from './config/cors.js';
 import { runtimeSnapshot } from './config/runtime.js';
 import { apiNotFound, errorHandler } from './core/http.js';
@@ -41,10 +40,8 @@ function compressionMiddleware(req, res, next) {
   next();
 }
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const WEB = join(__dirname, '..', 'web');
 const PORT = env.PORT;
-export const UPLOADS_DIR = join(__dirname, 'uploads', 'documents');
+export const UPLOADS_DIR = runtimePaths.uploads;
 mkdirSync(UPLOADS_DIR, { recursive: true });
 globalThis.__DANDPAK_STARTED_AT = new Date().toISOString();
 
@@ -99,7 +96,19 @@ app.use((req, res, next) => {
   res.setHeader('X-Frame-Options', 'SAMEORIGIN');
   res.setHeader('Referrer-Policy', 'no-referrer');
   res.setHeader('X-DNS-Prefetch-Control', 'off');
-  res.setHeader('Permissions-Policy', 'geolocation=(), microphone=(), camera=()');
+  res.setHeader('Permissions-Policy', 'geolocation=(), microphone=(), camera=(self)');
+  res.setHeader('Content-Security-Policy', [
+    "default-src 'self'",
+    "base-uri 'self'",
+    "object-src 'none'",
+    "frame-ancestors 'self'",
+    "img-src 'self' data: blob:",
+    "font-src 'self' https://fonts.gstatic.com",
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+    "script-src 'self' 'unsafe-inline' https://unpkg.com",
+    "connect-src 'self' http: https: ws: wss:",
+    "media-src 'self' data: blob:",
+  ].join('; '));
   next();
 });
 app.use(createCorsMiddleware(env));
@@ -132,22 +141,17 @@ app.get('/health', (req, res) => {
 
 app.use('/api', requestLogger, api);
 app.use('/api', apiNotFound);
-// During active development, always serve fresh HTML/CSS/JS (no stale browser cache).
-app.use((req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
-app.use(express.static(WEB, { etag: false, lastModified: false }));
-app.get('/', (req, res) => res.sendFile(join(WEB, 'index.html')));
-app.get('/settings', (req, res) => res.sendFile(join(WEB, 'admin.html')));
-// Haravan-style settings sub-routes (/settings/staff, /settings/location, ...) all serve the admin shell.
-app.get('/settings/:tab', (req, res) => res.sendFile(join(WEB, 'admin.html')));
-// Report center lives in the admin shell; /reports/<type> deep-links a specific report.
-app.get('/reports', (req, res) => res.sendFile(join(WEB, 'admin.html')));
-app.get('/reports/:type', (req, res) => res.sendFile(join(WEB, 'admin.html')));
-// Module sub-tabs deep-linked Haravan-style (/contacts/customers, /database/logs, ...).
-app.get('/contacts/:tab', (req, res) => res.sendFile(join(WEB, 'contacts.html')));
-app.get('/database/:tab', (req, res) => res.sendFile(join(WEB, 'database.html')));
-for (const v of ['ipad', 'pos', 'kds', 'admin', 'retail', 'warehouse', 'sim', 'printers', 'online', 'contacts', 'purchase', 'expenses', 'invoices', 'database', 'documents']) {
-  app.get('/' + v, (req, res) => res.sendFile(join(WEB, v + '.html')));
-}
+app.get('/', (_req, res) => res.json({
+  ok: true,
+  service: 'dan-d-pak-pos-erp',
+  api: '/api',
+  health: '/health',
+}));
+app.use((req, res) => res.status(404).json({
+  ok: false,
+  code: 'NOT_FOUND',
+  message: `Route not found: ${req.method} ${req.originalUrl}`,
+}));
 app.use(errorHandler);
 
 const server = createServer(app);
@@ -182,10 +186,8 @@ server.listen(PORT, () => {
   logger.info('POS/ERP server started', {
     port: PORT,
     localUrl: `http://localhost:${PORT}`,
-    webRoot: WEB,
     runtime: runtimeSnapshot(),
   });
-  if (!existsSync(WEB)) logger.warn('web folder missing', { webRoot: WEB });
 });
 
 function shutdown(signal) {

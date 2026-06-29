@@ -16,8 +16,8 @@ server, which is the source of truth. See `docs/DATABASE_SCHEMA.md` and
 
 ## Files
 
-- `0001_planned_company_server.sql` - history/versioning, device and app-web
-  linking, bank/payment config history, KDS timing, print/reprint logs,
+- `0001_planned_company_server.sql` - history/versioning, device/app linking,
+  bank/payment config history, KDS timing, print/reprint logs,
   company-side sync, and expanded audit tables.
 - `0002_planned_company_memory_tables.sql` - broader canonical PostgreSQL table
   groups A-O: organization, auth, devices, customers, menu/pricing, orders, KDS,

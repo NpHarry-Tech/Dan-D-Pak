@@ -454,7 +454,7 @@ export function listMovements(branch_id = 'br1', limit = 80) {
     ORDER BY m.created_at DESC LIMIT ?`).all(branch_id, limit);
 }
 
-// ---- Warehouse documents (electronic goods-receipt / goods-issue slips) ----
+// ---- Warehouse documents (digital goods-receipt / goods-issue slips) ----
 export function listDocuments(branch_id = 'br1', filters = {}) {
   const rows = db.prepare(`
     SELECT d.*, w.name AS warehouse_name, tw.name AS to_warehouse_name,

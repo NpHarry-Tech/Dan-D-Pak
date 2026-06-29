@@ -1,0 +1,25 @@
+[feat +94ms] connected 6/6 sockets
+[feat +502ms] PASS  Đăng nhập / phiên làm việc (/me)  (5ms) — user=admin role=owner perms=77
+[feat +541ms] PASS  Đăng xuất rồi đăng nhập lại (logout invalidates token)  (38ms) — token revoked after logout ✓
+[feat +547ms] PASS  Mở ca (đầu ca) + đếm tiền két đầu ca  (6ms) — mở ca Ca sang, két đầu 5,000,000đ
+[feat +551ms] PASS  Tạo bàn (setup vận hành)  (4ms) — bàn A01
+[feat +739ms] PASS  FnB: Khách order (tablet) → POS thấy NGAY (order:pending realtime)  (189ms) — order 8rz32c, 2 dòng món, POS thấy sau 113ms
+[feat +868ms] PASS  FnB: Xóa/bỏ món đang chờ xác nhận (void pending item)  (127ms) — đã hủy 1 dòng món chờ xác nhận
+[feat +1032ms] PASS  FnB: Nhân viên confirm → BẾP (KDS) + tablet khách thấy NGAY  (164ms) — bếp +131ms, tablet +127ms, in tem: kitchen_ticket
+[feat +1182ms] PASS  Bếp: KDS chuyển trạng thái nhận→làm→xong → tablet khách cập nhật  (150ms) — 1 món tới 'ready', tablet thấy 'xong' +42ms
+[feat +1368ms] PASS  FnB: Thanh toán bill (tiền mặt) + payment:done realtime  (186ms) — thu 180.000đ, bill 90626024
+[feat +1406ms] PASS  Xuất hóa đơn VAT (e-invoice mock) cho bill đã trả  (38ms) — HĐ số 00000002 (provider=local)
+[feat +1492ms] PASS  Retail: Bán hàng (POS retail có máy scan) + in receipt  (86ms) — bán SKU Bánh cookie hạt điều và , order 0qz3qg
+[feat +1498ms] PASS  Retail: Hoàn trả hàng (refund) → tồn kho hoàn lại + inventory:updated  (5ms) — hoàn 100.000đ
+[feat +1577ms] WARN  expiry-SKU refund — HTTP 400 POST /api/retail/o_s8lj2fz3sp/refund: 7Up 330ml bắt buộc nhập hạn sử dụng
+[feat +1616ms] PASS  Đổi giá món lúc đang vận hành (cần PIN QL) → menu:updated tới tablet+POS  (39ms) — giá → 123.000đ, tablet nhận menu:updated
+[feat +1630ms] PASS  Tạm hết món / còn món (availability) realtime  (14ms) — toggle hết→còn OK
+[feat +1638ms] PASS  Chi tiền từ két (chi tiền) + shift:updated realtime  (7ms) — chi 150,000đ, két còn 5.150.000đ
+[feat +1650ms] PASS  Hoàn chi (reimbursement) liên kết khoản đã chi  (12ms) — hoàn 150,000đ, két còn 5.300.000đ
+[feat +1653ms] PASS  Ghi chi phí kế toán (chi trực tiếp, không qua két) + expenses:updated  (4ms) — chi phí 250,000đ (Thuê mặt bằng)
+[feat +1658ms] PASS  Nhập kho thêm hàng (phone văn phòng) + inventory:updated realtime  (4ms) — nhập 10 đv, phone thấy +3ms
+[feat +2498ms] PASS  Chỉnh sửa cấu hình (settings) có cổng PIN Quản lý  (841ms) — ipad_staff_pin đổi & lưu OK
+[feat +2506ms] PASS  Xuất báo cáo bán hàng (JSON)  (8ms) — báo cáo "Báo cáo bán hàng" OK
+[feat +2512ms] PASS  Xuất báo cáo ra Excel (.xls) + Word (.doc)  (5ms) — xls 4538B, doc 4538B
+[feat +2518ms] PASS  Đóng ca (cuối ca) + báo cáo đối soát tiền két  (7ms) — ca đóng, DT ca 300.000đ, dự kiến két 5.300.000đ
+[feat +2554ms] PASS  Realtime: đổi giá → tablet (đo lại sạch)  (36ms) — menu:updated tới tablet +36ms

@@ -45,8 +45,8 @@ invoice history, payment history, payment lines, refund history, void history, c
 in, cash out, opening cash, shift open/close, drawer counts.
 
 ### Banking & integrations
-bank accounts (masked), payment terminal config, QR/bank transfer config, app-web
-linking, integration connections, API credential **metadata** (never raw secrets),
+bank accounts (masked), payment terminal config, QR/bank transfer config,
+device/app linking, integration connections, API credential **metadata** (never raw secrets),
 token rotation history.
 
 ### People & devices
@@ -94,7 +94,7 @@ The company database must be able to reconstruct these business facts later:
   failed logins, PIN credential rotations, sessions, device sessions, and device
   pairing/authorization history.
 - Integrations, integration connections, mapping rules, webhook logs, sync jobs,
-  app-web links, app-web sessions, client installations, and device heartbeats.
+  device/app links, device sessions, client installations, and device heartbeats.
 - Official report snapshots, dashboard snapshots, daily sales/payment/inventory
   summaries, KDS timing summaries, shift reports, backups, restore actions,
   sync events, processed event ids, sync batches, acknowledgements, conflicts,

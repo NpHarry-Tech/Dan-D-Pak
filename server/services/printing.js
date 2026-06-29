@@ -34,6 +34,28 @@ function parsePayload(raw) {
   try { return JSON.parse(raw || '{}') || {}; } catch { return {}; }
 }
 
+function compactPrintConfig(cfg = {}, kind = '') {
+  if (!cfg || typeof cfg !== 'object') return null;
+  const out = {};
+  if (kind === 'receipt' || kind === 'bill') out.bill = { ...(cfg.bill || {}) };
+  if (kind === 'label' || kind === 'cup_label' || kind === 'product_label') out.labels = { ...(cfg.labels || {}) };
+  if (kind === 'kitchen_ticket') out.kitchen = { ...(cfg.kitchen || {}) };
+  return Object.keys(out).length ? out : null;
+}
+
+function compactPayload(payload = {}, type = '') {
+  if (!payload || typeof payload !== 'object') return payload;
+  const out = { ...payload };
+  if (out.print_config) {
+    out.print_config = compactPrintConfig(
+      out.print_config,
+      type === 'receipt' ? 'receipt' : type === 'cup_label' || type === 'product_label' ? 'label' : type
+    );
+    if (!out.print_config) delete out.print_config;
+  }
+  return out;
+}
+
 function printerRows(branch_id = 'br1') {
   const cfg = getPrintConfig(branch_id);
   return Array.isArray(cfg.printers) ? cfg.printers : [];
@@ -45,8 +67,9 @@ function printerById(printer, branch_id = 'br1') {
 
 function printerTarget(p = {}) {
   if (p.connection === 'lan') return `${p.ip || ''}:${p.port || 9100}`;
+  if (p.connection === 'agent') return `agent:${p.systemName || p.name || ''}`;
   if (p.connection === 'system') return p.systemName || p.name || '';
-  return 'browser';
+  return 'manual';
 }
 
 function money(n) {
@@ -171,7 +194,7 @@ function danDateTime(iso) {
 function danItemRow(i = {}) {
   const qty = Number(i.qty) || 1;
   const price = Number(i.unit_price ?? i.price) || 0;
-  // Two rows per item (mirrors web/shared/danBill.js): full name on top, then
+  // Two rows per item: full name on top, then
   // the figures below aligned under the SL / Đ.Giá / T.Tiền columns.
   const nameLines = wrap(i.name || '', DAN_W);
   const figures = ' '.repeat(DAN_NAME)
@@ -318,21 +341,66 @@ function writeLan(host, port, buffer, timeoutMs = 4500) {
   });
 }
 
+function psLiteral(value) {
+  return `'${String(value ?? '').replace(/'/g, "''")}'`;
+}
+
 async function writeSystemPrinter(name, text) {
   const dir = mkdtempSync(join(tmpdir(), 'dandpak-print-'));
   const file = join(dir, 'job.txt');
   writeFileSync(file, ascii(text) + '\n', 'utf8');
   try {
     if (process.platform === 'win32') {
+      const command = `Get-Content -Raw -LiteralPath ${psLiteral(file)} | Out-Printer -Name ${psLiteral(name)}`;
       await execFileAsync('powershell.exe', [
-        '-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command',
-        `Get-Content -Raw -LiteralPath ${JSON.stringify(file)} | Out-Printer -Name ${JSON.stringify(name)}`,
+        '-NoProfile', '-ExecutionPolicy', 'Bypass', '-EncodedCommand',
+        Buffer.from(command, 'utf16le').toString('base64'),
       ], { timeout: 12000, windowsHide: true });
     } else {
       await execFileAsync('lp', ['-d', name, file], { timeout: 12000 });
     }
   } finally {
     try { rmSync(dir, { recursive: true, force: true }); } catch {}
+  }
+}
+
+// ---- Hardware Agent (C++) transport: USB / locally-attached printers ----
+// LAN printers stay on the direct TCP path above; this talks to the local
+// dandpak-hw-agent.exe over loopback HTTP so USB printers get real ESC/POS bytes.
+const AGENT_URL = (process.env.HW_AGENT_URL || 'http://127.0.0.1:39041').replace(/\/+$/, '');
+const AGENT_TOKEN = process.env.HW_AGENT_TOKEN || '';
+const agentProbe = { at: 0, ok: false };
+
+async function probeAgentCached(force = false) {
+  if (!force && Date.now() - agentProbe.at < LAN_PROBE_TTL) return agentProbe.ok;
+  try {
+    const res = await fetch(`${AGENT_URL}/health`, { cache: 'no-store', signal: AbortSignal.timeout(1200) });
+    agentProbe.ok = res.ok;
+  } catch {
+    agentProbe.ok = false;
+  }
+  agentProbe.at = Date.now();
+  return agentProbe.ok;
+}
+
+async function writeAgent(printer, buffer, route = 'print') {
+  const name = printer.systemName || printer.name || '';
+  if (!name) throw new Error('Tuyến Agent cần tên máy in Windows (systemName)');
+  const body = route === 'drawer' ? { printer: name } : { printer: name, dataBase64: buffer.toString('base64') };
+  let res;
+  try {
+    res = await fetch(`${AGENT_URL}/${route}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-HW-Token': AGENT_TOKEN },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(8000),
+    });
+  } catch (e) {
+    throw new Error(`Không kết nối được Hardware Agent (${AGENT_URL}). Agent đã chạy chưa? ${e.message}`);
+  }
+  if (!res.ok) {
+    const t = await res.text().catch(() => '');
+    throw new Error(`Hardware Agent báo lỗi: HTTP ${res.status} ${t.slice(0, 160)}`);
   }
 }
 
@@ -348,14 +416,27 @@ function publicJob(j) {
   if (!j) return null;
   const payload = j.payload || parsePayload(j.payload_json);
   const meta = jobMeta({ ...j, payload });
-  return { ...j, payload, meta };
+  return { ...j, payload: compactPayload(payload, j.type), meta };
+}
+
+function fullJob(j) {
+  if (!j) return null;
+  const payload = j.payload || parsePayload(j.payload_json);
+  return { ...j, payload, meta: jobMeta({ ...j, payload }) };
 }
 
 export function getJob(id) {
-  return publicJob(db.prepare(`SELECT * FROM print_jobs WHERE id=?`).get(id));
+  return fullJob(db.prepare(`SELECT * FROM print_jobs WHERE id=?`).get(id));
 }
 
 export function getJobForBranch(id, branch_id = 'br1') {
+  const job = publicJob(db.prepare(`SELECT * FROM print_jobs WHERE id=?`).get(id));
+  if (!job) return null;
+  if (job.branch_id !== branch_id) throw new Error('Print job không thuộc chi nhánh hiện tại');
+  return job;
+}
+
+export function getJobForBranchFull(id, branch_id = 'br1') {
   const job = getJob(id);
   if (!job) return null;
   if (job.branch_id !== branch_id) throw new Error('Print job không thuộc chi nhánh hiện tại');
@@ -367,11 +448,12 @@ export function createJob({ printer, type, title, payload, branch_id = 'br1', re
   db.prepare(`
     INSERT INTO print_jobs (id,branch_id,printer,type,title,payload_json,status,created_at,reprint_of,attempts)
     VALUES (?,?,?,?,?,?,'queued',?,?,0)
-  `).run(id, branch_id, printer, type, title || '', JSON.stringify(payload || {}), now(), reprint_of);
-  const job = getJob(id);
+  `).run(id, branch_id, printer, type, title || '', JSON.stringify(compactPayload(payload || {}, type)), now(), reprint_of);
+  const job = getJobForBranch(id, branch_id);
   emit('print:new', job, branch_id);
+  emit('print:queued', { job, branch_id }, branch_id);
   const p = printerById(printer, branch_id);
-  if (p?.active !== false && p?.auto && p?.connection && p.connection !== 'browser') {
+  if (p?.active !== false && p?.auto && ['lan', 'agent', 'system'].includes(p.connection)) {
     setTimeout(() => dispatchJob(id, branch_id).catch(() => {}), 25);
   }
   return job;
@@ -387,7 +469,7 @@ export async function listPrinters(branch_id = 'br1', { force = false } = {}) {
   const system = await listSystemPrinters({ force }).catch(() => []);
   const systemMap = new Map(system.map(p => [String(p.name || '').toLowerCase(), p]));
   return Promise.all(configured.map(async p => {
-    const connection = p.connection || 'browser';
+    const connection = ['lan', 'agent', 'system', 'manual'].includes(p.connection) ? p.connection : 'manual';
     const match = systemMap.get(String(p.systemName || p.name || '').toLowerCase());
     const target = printerTarget(p);
 
@@ -410,6 +492,17 @@ export async function listPrinters(branch_id = 'br1', { force = false } = {}) {
           ? `Đã kết nối · ${p.ip}:${p.port || 9100}`
           : `Không phản hồi · ${p.ip}:${p.port || 9100}`;
       }
+    } else if (connection === 'agent') {
+      const name = p.systemName || p.name || '';
+      if (!name) {
+        status = 'not_configured'; state = 'bad'; statusText = 'Chưa chọn máy in USB cho tuyến Agent'; online = false;
+      } else {
+        const up = await probeAgentCached(force);
+        online = up;
+        status = up ? 'ready' : 'offline';
+        state = up ? 'ok' : 'bad';
+        statusText = up ? `Hardware Agent · ${name}` : 'Hardware Agent chưa chạy (mở dandpak-hw-agent.exe)';
+      }
     } else if (connection === 'system') {
       const name = p.systemName || p.name || '';
       if (!name) {
@@ -422,8 +515,7 @@ export async function listPrinters(branch_id = 'br1', { force = false } = {}) {
         status = 'ready'; state = 'ok'; statusText = `Đã kết nối · ${name}`; online = true;
       }
     } else {
-      // browser: printing happens through the operator's print dialog.
-      status = 'ready'; state = 'ok'; statusText = 'In qua trình duyệt'; online = true;
+      status = 'ready'; state = 'ok'; statusText = 'Chờ thao tác in thủ công'; online = true;
     }
 
     return { ...p, connection, target, online, status, state, statusText, system: match || null };
@@ -455,7 +547,7 @@ export async function dispatchJob(id, branch_id = 'br1', { force = false } = {})
   const printer = printerById(job.printer, branch_id);
   if (!printer) throw new Error(`Chưa cấu hình tuyến máy in ${job.printer}`);
   if (printer.active === false) throw new Error(`Tuyến máy in ${printer.label || printer.id} đang tắt`);
-  const connection = printer.connection || 'browser';
+  const connection = ['lan', 'agent', 'system', 'manual'].includes(printer.connection) ? printer.connection : 'manual';
   const target = printerTarget(printer);
   const text = renderJobText(job);
   patchJob(id, {
@@ -470,20 +562,22 @@ export async function dispatchJob(id, branch_id = 'br1', { force = false } = {})
     if (connection === 'lan') {
       if (!printer.ip) throw new Error('Thiếu IP máy in LAN');
       await writeLan(printer.ip, printer.port || 9100, escposBuffer(text, { drawer: printer.openDrawerOnPrint && job.type === 'receipt' }));
+    } else if (connection === 'agent') {
+      await writeAgent(printer, escposBuffer(text, { drawer: printer.openDrawerOnPrint && job.type === 'receipt' }));
     } else if (connection === 'system') {
       const name = printer.systemName || printer.name;
       if (!name) throw new Error('Thiếu tên máy in hệ điều hành');
       await writeSystemPrinter(name, text);
     } else {
-      throw new Error('Tuyến này đang để chế độ Trình duyệt, cần mở chi tiết để in bằng hộp thoại hệ thống');
+      throw new Error('Tuyến này đang để chế độ in thủ công, cần xác nhận từ màn hình vận hành');
     }
     job = patchJob(id, { status: 'printed', printed_at: now(), printed_by: 'server', error: null });
-    emit('print:done', job, branch_id);
+    emit('print:done', getJobForBranch(id, branch_id), branch_id);
     audit('print.printed', { job: id, printer: job.printer, type: job.type, transport: connection, target }, branch_id);
     return job;
   } catch (e) {
     job = patchJob(id, { status: 'failed', error: e.message || String(e) });
-    emit('print:failed', job, branch_id);
+    emit('print:failed', getJobForBranch(id, branch_id), branch_id);
     audit('print.failed', { job: id, printer: job.printer, type: job.type, error: job.error }, branch_id);
     throw e;
   }
@@ -494,7 +588,7 @@ export function markPrinted(id, branch_id = 'br1', actor = 'manual') {
   if (!existing) throw new Error('Print job không tồn tại');
   if (existing.branch_id !== branch_id) throw new Error('Print job không thuộc chi nhánh hiện tại');
   const job = patchJob(id, { status: 'printed', printed_at: now(), printed_by: actor, error: null });
-  emit('print:done', job, branch_id);
+  emit('print:done', getJobForBranch(id, branch_id), branch_id);
   audit('print.mark_printed', { job: id, printer: job?.printer, type: job?.type }, branch_id, actor);
   return job;
 }
@@ -528,9 +622,14 @@ export async function openCashDrawer(branch_id = 'br1', printerId = '') {
   const rows = printerRows(branch_id);
   const p = rows.find(x => x.id === printerId) || rows.find(x => x.cashDrawer) || rows.find(x => x.id === 'bill');
   if (!p) throw new Error('Chưa cấu hình máy in/két tiền');
-  if (p.connection !== 'lan') throw new Error('Mở két tự động cần máy in bill kết nối LAN/IP ESC/POS');
-  if (!p.ip) throw new Error('Thiếu IP máy in bill nối két tiền');
-  await writeLan(p.ip, p.port || 9100, Buffer.concat([ESC_INIT, ESC_DRAWER]), 4500);
+  if (p.connection === 'agent') {
+    await writeAgent(p, null, 'drawer');
+  } else if (p.connection === 'lan') {
+    if (!p.ip) throw new Error('Thiếu IP máy in bill nối két tiền');
+    await writeLan(p.ip, p.port || 9100, Buffer.concat([ESC_INIT, ESC_DRAWER]), 4500);
+  } else {
+    throw new Error('Mở két tự động cần máy in bill kết nối LAN/IP ESC/POS hoặc tuyến Agent (USB)');
+  }
   const job = createJob({
     printer: p.id,
     type: 'cash_drawer',
@@ -618,7 +717,8 @@ export function printReceipt(receipt, branch_id = 'br1') {
 
 function shouldPrintCupLabels(order, cfg) {
   if (!cfg?.labels || cfg.labels.autoPrint === '0' || cfg.labels.autoPrint === false) return false;
-  return ['takeaway', 'delivery'].includes(order?.channel) || !!order?.online_channel;
+  if (['takeaway', 'delivery'].includes(order?.channel) || !!order?.online_channel) return true;
+  return order?.channel === 'dine_in' && cfg.labels.autoPrintDineIn !== '0' && cfg.labels.autoPrintDineIn !== false;
 }
 
 export function printCupLabels(order, items = [], branch_id = 'br1') {

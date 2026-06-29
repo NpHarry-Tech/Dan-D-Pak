@@ -1,40 +1,33 @@
 # Environment
 
-Last updated: 2026-06-27
+Last updated: 2026-06-29
 
-## Root/Backend Variables
+## Backend Variables
 
 | Variable | Purpose |
 | --- | --- |
 | `NODE_ENV` | `development` or `production` |
 | `PORT` | Backend listen port |
-| `APP_URL` | Public app URL |
+| `APP_URL` | Public app URL when used by callbacks or docs |
 | `API_BASE_URL` | Public API base URL where needed |
-| `CORS_ORIGIN` | Comma-separated allowed frontend origins |
-| `DEPLOYMENT_TARGET` | `local` or `vps` |
+| `CORS_ORIGIN` | Comma-separated allowed native-shell or trusted tool origins |
+| `DEPLOYMENT_TARGET` | `local`, `tablet`, or `vps` |
 | `DATABASE_PROVIDER` | `sqlite`, `supabase`, or `postgres` |
 | `DATABASE_URL` | PostgreSQL/Supabase connection URL when implemented |
-| `SQLITE_PATH` | Future override for SQLite path |
+| `SQLITE_PATH` | SQLite path override |
 | `SUPABASE_URL` | Temporary Supabase URL |
-| `SUPABASE_ANON_KEY` | Public Supabase anon key, frontend-safe only if used |
+| `SUPABASE_ANON_KEY` | Supabase anon key if used |
 | `SUPABASE_SERVICE_ROLE_KEY` | Backend-only secret |
 | `REALTIME_PROVIDER` | `socketio`, `websocket`, or `supabase` |
 | `STORAGE_PROVIDER` | `local` or `s3` |
 | `STORAGE_PATH` | Local storage path |
-| `JWT_SECRET` | Future auth signing secret |
-| `SESSION_SECRET` | Future session secret |
+| `JWT_SECRET` | Auth signing secret |
+| `SESSION_SECRET` | Session secret |
 | `LOG_LEVEL` | `debug`, `info`, `warn`, `error` |
 | `BACKUP_RETENTION_DAYS` | Backup retention policy |
 
-## Frontend Runtime Config
+## Secret Rules
 
-`web/runtime-config.js` defines `window.APP_CONFIG`.
-
-Important values:
-
-- `API_BASE_URL`
-- `REALTIME_URL`
-- `DEPLOYMENT_TARGET`
-- `DEMO_MODE`
-
-Never put service-role keys or backend secrets in frontend config.
+- Never commit `.env`, database files, service-role keys, or signing secrets.
+- Native clients receive only connection targets and user-scoped tokens.
+- Backend provider secrets stay in server environment variables.

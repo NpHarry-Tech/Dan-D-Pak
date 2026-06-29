@@ -1,4 +1,4 @@
-// Online Channel integration: receive orders from GrabFood / ShopeeFood / Website
+﻿// Online Channel integration: receive orders from GrabFood / ShopeeFood / Website
 // via webhook, map to internal items, route to KDS (FnB) or packing (retail),
 // and track fulfillment status. Orders are treated as prepaid (channel revenue).
 import { db, uid, now, audit } from '../db.js';
@@ -50,17 +50,18 @@ function headerVal(headers = {}, name) {
   return '';
 }
 
-// Xác thực webhook đối tác online. Nếu kênh đã cấu hình webhookSecret thì BẮT BUỘC
-// request mang đúng secret (header x-webhook-secret / secure-token / Bearer/Apikey).
-// Chưa cấu hình secret → vẫn nhận (để không phá kết nối đang chạy) nhưng GHI AUDIT
-// cảnh báo để vận hành biết kênh đang nhận đơn không xác thực.
+// Online partner webhook auth is fail-closed.
+// Enabled channels must configure webhookSecret and every request must send it
+// through x-webhook-secret, secure-token, Bearer, or Apikey.
 function assertWebhookSecret(channel, headers = {}, branch_id = 'br1') {
   const integKey = CHANNEL_INTEGRATION[channel] || channel;
   const cfg = getIntegrations(branch_id).channels?.[integKey] || {};
   const secret = String(cfg.webhookSecret || '').trim();
   if (!secret) {
-    audit('online.webhook.unverified', { channel, reason: 'no_secret_configured' }, branch_id, `webhook:${channel}`);
-    return;
+    audit('online.webhook.rejected', { channel, reason: 'no_secret_configured' }, branch_id, `webhook:${channel}`);
+    const e = new Error('Kenh online dang bat nhung chua cau hinh webhook secret.');
+    e.status = 401;
+    throw e;
   }
   const provided = (headerVal(headers, 'x-webhook-secret')
     || headerVal(headers, 'secure-token')
@@ -102,9 +103,9 @@ function resolveItemMapping(line, branch_id) {
     if (mi) return { menu_item_id: mi.id, qty };
   }
 
-  // KHÔNG fallback về "SKU/món đầu tiên": làm vậy sẽ trừ nhầm kho một sản phẩm bất kỳ
-  // và ghi doanh thu ảo khi đối tác gửi dòng hàng lạ. Từ chối để đối soát thủ công.
-  const e = new Error(`Không khớp được sản phẩm online: "${name || line.sku || line.barcode || '?'}". Đơn bị từ chối để tránh trừ nhầm kho — hãy ánh xạ sản phẩm trong Cài đặt.`);
+  // KHÃ”NG fallback vá» "SKU/mÃ³n Ä‘áº§u tiÃªn": lÃ m váº­y sáº½ trá»« nháº§m kho má»™t sáº£n pháº©m báº¥t ká»³
+  // vÃ  ghi doanh thu áº£o khi Ä‘á»‘i tÃ¡c gá»­i dÃ²ng hÃ ng láº¡. Tá»« chá»‘i Ä‘á»ƒ Ä‘á»‘i soÃ¡t thá»§ cÃ´ng.
+  const e = new Error(`KhÃ´ng khá»›p Ä‘Æ°á»£c sáº£n pháº©m online: "${name || line.sku || line.barcode || '?'}". ÄÆ¡n bá»‹ tá»« chá»‘i Ä‘á»ƒ trÃ¡nh trá»« nháº§m kho â€” hÃ£y Ã¡nh xáº¡ sáº£n pháº©m trong CÃ i Ä‘áº·t.`);
   e.code = 'ONLINE_ITEM_UNMAPPED';
   throw e;
 }
@@ -121,7 +122,7 @@ export function normalizeWebhookPayload(payload) {
     const shipping = payload.shipping_address || {};
     const name = customer.first_name || customer.last_name
       ? `${customer.first_name || ''} ${customer.last_name || ''}`.trim()
-      : 'Khách hàng Haravan';
+      : 'KhÃ¡ch hÃ ng Haravan';
     
     const items = payload.line_items.map(li => ({
       sku: li.sku,
@@ -148,7 +149,7 @@ export function normalizeWebhookPayload(payload) {
         shipping_fee,
         discount,
         vat,
-        delivery_time: payload.shipping_lines?.[0]?.title || 'Giao hàng tiêu chuẩn',
+        delivery_time: payload.shipping_lines?.[0]?.title || 'Giao hÃ ng tiÃªu chuáº©n',
         note: payload.note || ''
       },
       items
@@ -174,7 +175,7 @@ export function normalizeWebhookPayload(payload) {
       channel: 'grabfood',
       ref: payload.orderID || payload.shortOrderNumber,
       customer: {
-        name: customer.name || 'Khách hàng GrabFood',
+        name: customer.name || 'KhÃ¡ch hÃ ng GrabFood',
         phone: customer.phone || '',
         email: customer.email || '',
         address: payload.deliveryAddress || '',
@@ -207,7 +208,7 @@ export function normalizeWebhookPayload(payload) {
       channel: 'shopeefood',
       ref: payload.order_id,
       customer: {
-        name: customer.name || 'Khách hàng ShopeeFood',
+        name: customer.name || 'KhÃ¡ch hÃ ng ShopeeFood',
         phone: customer.phone || '',
         email: customer.email || '',
         address: payload.delivery_address || '',
@@ -231,17 +232,17 @@ export function normalizeWebhookPayload(payload) {
     };
   }
 
-  throw new Error('Payload webhook không hợp lệ hoặc cấu trúc không được hỗ trợ.');
+  throw new Error('Payload webhook khÃ´ng há»£p lá»‡ hoáº·c cáº¥u trÃºc khÃ´ng Ä‘Æ°á»£c há»— trá»£.');
 }
 
 // payload: { channel, ref?, customer?, items:[{menu_item_id|sku_id, name, qty, price, note}] }
 export function receive(payload, branch_id = 'br1', headers = {}) {
-  // Xác thực + chuẩn hoá NGOÀI transaction để audit từ chối không bị rollback theo.
+  // XÃ¡c thá»±c + chuáº©n hoÃ¡ NGOÃ€I transaction Ä‘á»ƒ audit tá»« chá»‘i khÃ´ng bá»‹ rollback theo.
   const norm = normalizeWebhookPayload(payload);
   const channel = norm.channel;
   assertChannelEnabled(channel, branch_id);
   assertWebhookSecret(channel, headers, branch_id);
-  if (!norm.items?.length) throw new Error('Đơn online rỗng');
+  if (!norm.items?.length) throw new Error('ÄÆ¡n online rá»—ng');
 
   db.prepare('BEGIN IMMEDIATE').run();
   try {
@@ -249,7 +250,7 @@ export function receive(payload, branch_id = 'br1', headers = {}) {
       const mapped = resolveItemMapping(line, branch_id);
       return {
         ...mapped,
-        originalName: line.name || 'Sản phẩm online',
+        originalName: line.name || 'Sáº£n pháº©m online',
         originalPrice: Number(line.price || line.unit_price || 0),
         originalNote: line.note || '',
       };
@@ -317,7 +318,7 @@ export function listOnline(branch_id = 'br1', limit = 40) {
 }
 
 export function setStatus(order_id, status, branch_id = 'br1') {
-  if (!FLOW.includes(status)) throw new Error('Trạng thái online không hợp lệ');
+  if (!FLOW.includes(status)) throw new Error('Tráº¡ng thÃ¡i online khÃ´ng há»£p lá»‡');
   db.prepare(`UPDATE orders SET online_status=? WHERE id=?`).run(status, order_id);
   audit('online.status', { order: order_id, status }, branch_id);
   const full = listOne(order_id);

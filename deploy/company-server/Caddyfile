@@ -1,8 +1,8 @@
 :80 {
-    # Chuyển tiếp toàn bộ các yêu cầu HTTP thường và API đến container app
+    # Proxy backend API and realtime traffic to the app container.
     reverse_proxy /api/* app:3000
     reverse_proxy /socket.io/* app:3000
 
-    # Chuyển tiếp các yêu cầu giao diện hoặc healthcheck khác
+    # Proxy health and root service descriptor.
     reverse_proxy * app:3000
 }

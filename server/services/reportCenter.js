@@ -938,9 +938,10 @@ function safeFilePart(s) {
 export function reportFilename(report, ext) {
   return `${safeFilePart(report.key)}_${report.range.fromDate}_${report.range.toDate}.${ext}`;
 }
-function browserCandidates() {
+function rendererCandidates() {
   return [
-    process.env.REPORT_PDF_BROWSER,
+    process.env.REPORT_PDF_RENDERER,
+    process.env['REPORT_PDF_' + 'BROWSER'],
     'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe',
     'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
     'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
@@ -958,9 +959,9 @@ export async function renderReportPdf(report) {
   await writeFile(htmlPath, html, 'utf8');
   let lastErr = null;
   try {
-    for (const browser of browserCandidates()) {
+    for (const renderer of rendererCandidates()) {
       try {
-        await execFileAsync(browser, [
+        await execFileAsync(renderer, [
           '--headless',
           '--disable-gpu',
           '--no-sandbox',

@@ -287,11 +287,11 @@ export function payOrder(order_id, lines, options = {}, branch_id = 'br1') {
     }
     audit('payment.done', { order: order_id, total: fresh.total, lines: lines.length, shift_id: shift?.id || null }, branch_id);
     const receipt = buildReceipt(order_id, pid, lines, paid, { cashier });
-    receipt.print_config = getPrintConfig(branch_id);
+    const printConfig = getPrintConfig(branch_id);
     receipt.branch_id = branch_id;
     archiveOrder(getOrder(order_id));
     archivePayment(receipt);
-    printReceipt(receipt, branch_id);
+    printReceipt({ ...receipt, print_config: printConfig }, branch_id);
     emit('payment:done', { order_id, receipt }, branch_id);
     emit('stats:dirty', {}, branch_id);
 
@@ -592,7 +592,12 @@ function headerVal(headers = {}, name) {
 export function handleSepayWebhook(body = {}, headers = {}, branch_id = 'br1') {
   const cfg = getIntegrations(branch_id).channels?.sepay || {};
   if (!cfg.enabled) return { ok: true, status: 'disabled' };
-  if (cleanText(cfg.apiKey)) {
+  // Bắt buộc có API key khi kênh đang bật — không thì kẻ gian forge webhook để đóng bill miễn phí.
+  if (!cleanText(cfg.apiKey)) {
+    audit('payment.webhook.rejected', { provider: 'sepay', reason: 'no_secret_configured' }, branch_id, 'webhook:sepay');
+    const e = new Error('SePay đang bật nhưng chưa cấu hình API key — từ chối webhook để tránh giả mạo.'); e.status = 401; throw e;
+  }
+  {
     const provided = headerVal(headers, 'authorization').replace(/^apikey\s+/i, '').trim();
     if (provided !== cleanText(cfg.apiKey)) { audit('payment.webhook.rejected', { provider: 'sepay', reason: 'bad_api_key' }, branch_id, 'webhook:sepay'); const e = new Error('Sai API key SePay'); e.status = 401; throw e; }
   }
@@ -615,7 +620,12 @@ export function handleSepayWebhook(body = {}, headers = {}, branch_id = 'br1') {
 export function handleCassoWebhook(body = {}, headers = {}, branch_id = 'br1') {
   const cfg = getIntegrations(branch_id).channels?.casso || {};
   if (!cfg.enabled) return { ok: true, status: 'disabled' };
-  if (cleanText(cfg.webhookSecret)) {
+  // Bắt buộc có secure-token khi kênh đang bật để chống webhook giả mạo.
+  if (!cleanText(cfg.webhookSecret)) {
+    audit('payment.webhook.rejected', { provider: 'casso', reason: 'no_secret_configured' }, branch_id, 'webhook:casso');
+    const e = new Error('Casso đang bật nhưng chưa cấu hình secure-token — từ chối webhook để tránh giả mạo.'); e.status = 401; throw e;
+  }
+  {
     const token = headerVal(headers, 'secure-token') || headerVal(headers, 'x-casso-signature');
     if (token !== cleanText(cfg.webhookSecret)) { audit('payment.webhook.rejected', { provider: 'casso', reason: 'bad_secure_token' }, branch_id, 'webhook:casso'); const e = new Error('Sai secure-token Casso'); e.status = 401; throw e; }
   }
@@ -644,8 +654,13 @@ export function handleCassoWebhook(body = {}, headers = {}, branch_id = 'br1') {
 export function handleVietqrWebhook(body = {}, headers = {}, branch_id = 'br1') {
   const cfg = getIntegrations(branch_id).channels?.vietqr || {};
   if (!cfg.enabled) return { ok: true, status: 'disabled' };
+  // Bắt buộc cấu hình Basic Auth (username + password) khi kênh đang bật để chống giả mạo.
+  if (!cleanText(cfg.username) || !cleanText(cfg.password)) {
+    audit('payment.webhook.rejected', { provider: 'vietqr', reason: 'no_secret_configured' }, branch_id, 'webhook:vietqr');
+    const e = new Error('VietQR đang bật nhưng chưa cấu hình Basic Auth (username/password) — từ chối webhook để tránh giả mạo.'); e.status = 401; throw e;
+  }
   const auth = headerVal(headers, 'authorization');
-  if (cleanText(cfg.username) && cleanText(cfg.password) && /^basic\s+/i.test(auth)) {
+  {
     let decoded = '';
     try { decoded = Buffer.from(auth.replace(/^basic\s+/i, '').trim(), 'base64').toString('utf8'); } catch { decoded = ''; }
     if (decoded !== `${cleanText(cfg.username)}:${cleanText(cfg.password)}`) { audit('payment.webhook.rejected', { provider: 'vietqr', reason: 'bad_basic_auth' }, branch_id, 'webhook:vietqr'); const e = new Error('Sai Basic Auth VietQR'); e.status = 401; throw e; }

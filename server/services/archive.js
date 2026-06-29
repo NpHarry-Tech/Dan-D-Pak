@@ -2,11 +2,11 @@
 // SQLite remains the primary operational store; this writes durable JSON/NDJSON
 // copies into separate folders so records can still be inspected/exported fast.
 import { closeSync, existsSync, fsyncSync, mkdirSync, openSync, readdirSync, readFileSync, renameSync, statSync, writeFileSync, writeSync } from 'node:fs';
+import { open as openFile, rename as renameAsync, writeFile as writeFileAsync } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { runtimePaths } from '../config/paths.js';
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-export const PERMANENT_ROOT = join(__dirname, '..', 'permanent-storage');
+export const PERMANENT_ROOT = runtimePaths.permanentStorage;
 
 const ENTITY_KINDS = new Set(['customers', 'orders', 'invoices', 'payments', 'staff', 'cash-drawer']);
 const FOLDERS = ['customers', 'orders', 'invoices', 'payments', 'reports', 'audit', 'staff', 'cash-drawer'];
@@ -49,6 +49,68 @@ function writeJsonAtomic(file, value) {
   renameSync(tmp, file);
 }
 
+async function writeJsonAtomicAsync(file, value) {
+  ensureDir(dirname(file));
+  const tmp = file + '.tmp';
+  await writeFileAsync(tmp, JSON.stringify(value, null, 2), 'utf8');
+  await renameAsync(tmp, file);
+}
+
+const entityArchiveQueue = new Map();
+let entityArchiveFlushTimer = null;
+let entityArchiveFlushing = false;
+const ENTITY_ARCHIVE_BATCH = Math.max(1, parseInt(process.env.ENTITY_ARCHIVE_BATCH || '80', 10) || 80);
+const ENTITY_ARCHIVE_FLUSH_MS = Math.max(25, parseInt(process.env.ENTITY_ARCHIVE_FLUSH_MS || '250', 10) || 250);
+
+async function flushEntityArchiveQueue() {
+  if (entityArchiveFlushing) return;
+  entityArchiveFlushing = true;
+  try {
+    while (entityArchiveQueue.size) {
+      const batch = [...entityArchiveQueue.entries()].slice(0, ENTITY_ARCHIVE_BATCH);
+      for (const [file] of batch) entityArchiveQueue.delete(file);
+      await Promise.all(batch.map(([file, value]) => writeJsonAtomicAsync(file, value)));
+    }
+  } catch (e) {
+    console.warn('[archive] async entity archive failed:', e.message);
+  } finally {
+    entityArchiveFlushing = false;
+    if (entityArchiveQueue.size && !entityArchiveFlushTimer) {
+      entityArchiveFlushTimer = setTimeout(() => {
+        entityArchiveFlushTimer = null;
+        void flushEntityArchiveQueue();
+      }, ENTITY_ARCHIVE_FLUSH_MS);
+      entityArchiveFlushTimer.unref?.();
+    }
+  }
+}
+
+function queueJsonAtomic(file, value) {
+  entityArchiveQueue.set(file, value);
+  if (entityArchiveQueue.size >= ENTITY_ARCHIVE_BATCH) {
+    if (entityArchiveFlushTimer) {
+      clearTimeout(entityArchiveFlushTimer);
+      entityArchiveFlushTimer = null;
+    }
+    void flushEntityArchiveQueue();
+    return;
+  }
+  if (!entityArchiveFlushTimer) {
+    entityArchiveFlushTimer = setTimeout(() => {
+      entityArchiveFlushTimer = null;
+      void flushEntityArchiveQueue();
+    }, ENTITY_ARCHIVE_FLUSH_MS);
+    entityArchiveFlushTimer.unref?.();
+  }
+}
+
+function flushEntityArchiveQueueSync() {
+  for (const [file, value] of entityArchiveQueue.entries()) {
+    writeJsonAtomic(file, value);
+  }
+  entityArchiveQueue.clear();
+}
+
 export function ensurePermanentStorage() {
   ensureDir(PERMANENT_ROOT);
   for (const folder of FOLDERS) ensureDir(join(PERMANENT_ROOT, folder));
@@ -70,8 +132,8 @@ export function archiveEntity(kind, entity = {}, opts = {}) {
     };
     const byId = join(PERMANENT_ROOT, kind, branch, 'by-id', `${id}.json`);
     const byDate = join(PERMANENT_ROOT, kind, branch, 'by-date', isoDate(ts), `${id}.json`);
-    writeJsonAtomic(byId, payload);
-    writeJsonAtomic(byDate, payload);
+    queueJsonAtomic(byId, payload);
+    queueJsonAtomic(byDate, payload);
     return { byId, byDate };
   } catch (e) {
     console.warn('[archive] entity archive failed:', e.message);
@@ -174,6 +236,87 @@ export function appendAuditArchive(entry = {}) {
     if (fd !== undefined) { try { closeSync(fd); } catch { /* already closed */ } }
   }
 }
+
+const auditArchiveQueue = [];
+let auditArchiveFlushTimer = null;
+let auditArchiveFlushing = false;
+const AUDIT_ARCHIVE_BATCH = Math.max(1, parseInt(process.env.AUDIT_ARCHIVE_BATCH || '80', 10) || 80);
+const AUDIT_ARCHIVE_FLUSH_MS = Math.max(25, parseInt(process.env.AUDIT_ARCHIVE_FLUSH_MS || '250', 10) || 250);
+
+function auditArchiveTarget(entry = {}) {
+  const branch = safePart(entry.branch_id || 'br1');
+  const day = isoDate(entry.created_at);
+  return join(PERMANENT_ROOT, 'audit', branch, `${day}.ndjson`);
+}
+
+async function appendAuditArchiveBatch(entries = []) {
+  const byFile = new Map();
+  for (const entry of entries) {
+    const file = auditArchiveTarget(entry);
+    const line = JSON.stringify({ archived_at: new Date().toISOString(), ...entry }) + '\n';
+    byFile.set(file, (byFile.get(file) || '') + line);
+  }
+  for (const [file, text] of byFile) {
+    ensureDir(dirname(file));
+    const fh = await openFile(file, 'a');
+    try {
+      await fh.writeFile(text, 'utf8');
+      await fh.sync();
+    } finally {
+      await fh.close().catch(() => {});
+    }
+  }
+}
+
+async function flushAuditArchiveQueue() {
+  if (auditArchiveFlushing) return;
+  auditArchiveFlushing = true;
+  try {
+    while (auditArchiveQueue.length) {
+      const batch = auditArchiveQueue.splice(0, AUDIT_ARCHIVE_BATCH);
+      await appendAuditArchiveBatch(batch);
+    }
+  } catch (e) {
+    console.warn('[archive] async audit archive failed:', e.message);
+  } finally {
+    auditArchiveFlushing = false;
+    if (auditArchiveQueue.length && !auditArchiveFlushTimer) {
+      auditArchiveFlushTimer = setTimeout(() => {
+        auditArchiveFlushTimer = null;
+        void flushAuditArchiveQueue();
+      }, AUDIT_ARCHIVE_FLUSH_MS);
+      auditArchiveFlushTimer.unref?.();
+    }
+  }
+}
+
+export function queueAuditArchive(entry = {}) {
+  auditArchiveQueue.push(entry);
+  if (auditArchiveQueue.length >= AUDIT_ARCHIVE_BATCH) {
+    if (auditArchiveFlushTimer) {
+      clearTimeout(auditArchiveFlushTimer);
+      auditArchiveFlushTimer = null;
+    }
+    void flushAuditArchiveQueue();
+    return;
+  }
+  if (!auditArchiveFlushTimer) {
+    auditArchiveFlushTimer = setTimeout(() => {
+      auditArchiveFlushTimer = null;
+      void flushAuditArchiveQueue();
+    }, AUDIT_ARCHIVE_FLUSH_MS);
+    auditArchiveFlushTimer.unref?.();
+  }
+}
+
+function flushAuditArchiveQueueSync() {
+  while (auditArchiveQueue.length) {
+    appendAuditArchive(auditArchiveQueue.shift());
+  }
+}
+
+process.once('exit', flushAuditArchiveQueueSync);
+process.once('exit', flushEntityArchiveQueueSync);
 
 // Read footprint entries archived in the last `days` days (today inclusive),
 // across all branches. Pure fs read (no SQLite) so db.js can call it to self-heal

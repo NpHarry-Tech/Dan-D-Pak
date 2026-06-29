@@ -65,7 +65,7 @@ Planned endpoints that are not implemented should return:
 | `GET /api/print/jobs/:id` | Branch-scoped print job detail |
 | `GET /api/print/jobs/:id/text` | Render the printable text preview for review/reprint |
 | `POST /api/print/jobs/:id/print` | Force-dispatch a job to LAN/IP or OS printer transport |
-| `POST /api/print/jobs/:id/printed` | Mark a browser/system-reviewed job as printed |
+| `POST /api/print/jobs/:id/printed` | Mark a manual/system-reviewed job as printed |
 | `POST /api/print/jobs/:id/reprint` | Create a linked reprint job from an existing job |
 
 All print endpoints require a logged-in user with `module.printing`, printer settings, print settings, payment, or settings management permission. Job reads and mutations are scoped to the active branch.

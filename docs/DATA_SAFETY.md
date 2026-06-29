@@ -27,7 +27,7 @@ Orders, order items, kitchen tickets, payments, payment lines, refunds, voids, i
 - Never overwrite protected files without backup.
 - Never reset database tables without warning and approval.
 - Never replace real data with mock/demo data.
-- Never expose service-role keys in frontend code.
+- Never expose service-role keys in client code.
 - Never commit local database files or `.env` files.
 - If protected files are tracked, remove them from git index only and keep them on disk.
 - Any change touching protected data logic must be documented in README and `docs/CHANGELOG_WORKFLOW.md`.

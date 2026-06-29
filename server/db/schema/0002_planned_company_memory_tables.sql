@@ -273,7 +273,7 @@ CREATE TABLE IF NOT EXISTS access_tokens (
 );
 
 -- ===========================================================================
--- C. Devices / App-Web linking
+-- C. Devices / App linking
 -- ===========================================================================
 CREATE TABLE IF NOT EXISTS device_authorizations (
   id TEXT PRIMARY KEY,
@@ -302,7 +302,7 @@ CREATE TABLE IF NOT EXISTS device_route_assignments (
   revoked_at TIMESTAMPTZ
 );
 
-CREATE TABLE IF NOT EXISTS app_web_sessions (
+CREATE TABLE IF NOT EXISTS device_app_sessions (
   id TEXT PRIMARY KEY,
   link_id TEXT NOT NULL,
   device_id TEXT,

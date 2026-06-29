@@ -28,7 +28,7 @@ Last updated: 2026-06-18
 6. Edit domain, passwords, secrets, CORS origin, and provider values.
 7. Run `./scripts/deploy.sh`.
 8. Open `https://your-domain/health`.
-9. Test frontend pages, API, and realtime devices.
+9. Test native apps, API, and realtime devices.
 
 ## Logs And Restart
 

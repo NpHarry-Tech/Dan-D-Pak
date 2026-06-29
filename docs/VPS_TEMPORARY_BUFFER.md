@@ -60,4 +60,4 @@ device write (company server offline)
 ```
 
 See [SYNC_BACK_TO_COMPANY_SERVER.md](SYNC_BACK_TO_COMPANY_SERVER.md) and
-[VPS_GATEWAY.md](VPS_GATEWAY.md).
+[DATA_OWNERSHIP.md](DATA_OWNERSHIP.md).

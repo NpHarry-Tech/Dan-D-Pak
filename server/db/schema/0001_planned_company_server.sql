@@ -34,7 +34,7 @@ CREATE TABLE IF NOT EXISTS table_layout_versions (
 );
 
 -- ===========================================================================
--- C. Devices / App-Web linking
+-- C. Devices / App linking
 -- ===========================================================================
 CREATE TABLE IF NOT EXISTS devices (
   id              TEXT PRIMARY KEY,
@@ -66,7 +66,7 @@ CREATE TABLE IF NOT EXISTS device_heartbeats (
 CREATE INDEX IF NOT EXISTS idx_device_heartbeats_device
   ON device_heartbeats (device_id, seen_at DESC);
 
-CREATE TABLE IF NOT EXISTS app_web_links (
+CREATE TABLE IF NOT EXISTS device_app_links (
   id              TEXT PRIMARY KEY,
   device_id       TEXT,
   branch_id       TEXT,
@@ -75,7 +75,7 @@ CREATE TABLE IF NOT EXISTS app_web_links (
   revoked_at      TIMESTAMPTZ
 );
 
-CREATE TABLE IF NOT EXISTS app_web_link_tokens (
+CREATE TABLE IF NOT EXISTS device_app_link_tokens (
   id              TEXT PRIMARY KEY,
   link_id         TEXT NOT NULL,
   token_hash      TEXT NOT NULL,        -- store hash/opaque, never raw token

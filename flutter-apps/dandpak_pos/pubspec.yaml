@@ -1,0 +1,22 @@
+name: dandpak_pos
+description: "Dan D Pak POS Core — Flutter Desktop Application."
+publish_to: 'none'
+version: 0.1.0
+
+environment:
+  sdk: '>=3.3.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  dandpak_core:
+    path: ../dandpak_core
+  provider: ^6.1.2
+  shared_preferences: ^2.2.2
+  intl: ^0.19.0
+
+dev_dependencies:
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true

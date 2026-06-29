@@ -74,6 +74,65 @@ export function dashboard(branch_id = 'br1') {
   return report;
 }
 
+export function branchSummaries(branch_ids = []) {
+  const ids = [...new Set((Array.isArray(branch_ids) ? branch_ids : [branch_ids]).map(String).filter(Boolean))];
+  if (!ids.length) return [];
+  return ids.map((branch_id) => {
+    const br = db.prepare(`SELECT id,name,code,address,phone,active FROM branches WHERE id=?`).get(branch_id);
+    if (!br || br.active === 0) return null;
+    const window = businessWindow(branch_id);
+    const paid = db.prepare(`SELECT total,channel FROM orders WHERE branch_id=? AND status='paid' AND paid_at>=? AND paid_at<=?`)
+      .all(branch_id, window.start, window.end);
+    const revenue = paid.reduce((s, o) => s + (Number(o.total) || 0), 0);
+    const bills = paid.length;
+    const openOrders = db.prepare(`SELECT COUNT(*) n FROM orders WHERE branch_id=? AND status='open'`).get(branch_id).n;
+    const pendingConfirm = db.prepare(`
+      SELECT COUNT(*) n FROM order_items oi
+      JOIN orders o ON o.id=oi.order_id
+      WHERE o.branch_id=? AND o.status='open' AND oi.status='pending_confirm'`).get(branch_id).n;
+    const kdsActive = db.prepare(`
+      SELECT COUNT(*) n FROM order_items oi
+      JOIN orders o ON o.id=oi.order_id
+      WHERE o.branch_id=? AND oi.status IN ('new','accepted','preparing','ready') AND oi.station!='retail'`).get(branch_id).n;
+    const lowStock = db.prepare(`
+      SELECT (
+        (SELECT COUNT(*) FROM inventory_items WHERE branch_id=? AND active=1 AND stock<=min_stock) +
+        (SELECT COUNT(*) FROM skus WHERE branch_id=? AND active=1 AND stock<=min_stock)
+      ) n`).get(branch_id, branch_id).n;
+    const byChannel = {};
+    for (const o of paid) byChannel[o.channel || 'unknown'] = (byChannel[o.channel || 'unknown'] || 0) + (Number(o.total) || 0);
+    return {
+      branch_id,
+      branch: { id: br.id, name: br.name, code: br.code, address: br.address, phone: br.phone },
+      revenue,
+      bills,
+      avg: bills ? Math.round(revenue / bills) : 0,
+      openOrders,
+      pendingConfirm,
+      kdsActive,
+      lowStock,
+      byChannel,
+      window,
+    };
+  }).filter(Boolean);
+}
+
+export function dashboardAggregate(branch_ids = []) {
+  const branches = branchSummaries(branch_ids);
+  const totals = branches.reduce((acc, b) => {
+    acc.revenue += b.revenue;
+    acc.bills += b.bills;
+    acc.openOrders += b.openOrders;
+    acc.pendingConfirm += b.pendingConfirm;
+    acc.kdsActive += b.kdsActive;
+    acc.lowStock += b.lowStock;
+    for (const [k, v] of Object.entries(b.byChannel || {})) acc.byChannel[k] = (acc.byChannel[k] || 0) + v;
+    return acc;
+  }, { revenue: 0, bills: 0, openOrders: 0, pendingConfirm: 0, kdsActive: 0, lowStock: 0, byChannel: {} });
+  totals.avg = totals.bills ? Math.round(totals.revenue / totals.bills) : 0;
+  return { totals, branches, branch_count: branches.length };
+}
+
 // Revenue trends across calendar periods (day / week / month / quarter / year),
 // bucketed in server local time so labels match the dashboard clock.
 export function revenueTrends(branch_id = 'br1') {
