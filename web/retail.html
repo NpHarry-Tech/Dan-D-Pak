@@ -787,7 +787,7 @@ function renderGrid(){
     const promo=bestSkuVoucher(s.id, s.price, 1);
     const out=s.stock<=0;
     const media=s.image
-      ? `<div class="photo"><img src="${esc(s.image)}" alt="" loading="lazy" onerror="this.closest('.rtitem').classList.add('noimg')"></div>`
+      ? `<div class="photo"><img src="${esc(s.image)}" alt="" loading="lazy" onerror="if(!this.dataset.fallback && '${esc(s.source_url||'')}'.startsWith('http')){this.dataset.fallback='1';this.src='${esc(s.source_url||'')}';}else{this.closest('.rtitem').classList.add('noimg');}"></div>`
       : `<div class="photo no-photo"><span>${s.emoji||'📦'}</span></div>`;
     const customPromo=activeVouchers.find(v=>v.scope==='sku' && v.sku_id===s.id && v.type==='buy_x_get_1');
     const x = customPromo ? customPromo.value : 5;

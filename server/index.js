@@ -3,7 +3,7 @@ import express from 'express';
 import { createServer } from 'node:http';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { existsSync, mkdirSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import zlib from 'node:zlib';
 import { db, migrate, reconcileAuditFromArchive, compactAuditToMonthly, purgeAuditBeyondRetention, backupDatabase } from './db.js';
 import { initRealtime } from './realtime.js';
@@ -72,6 +72,17 @@ if (isEmpty) {
       logger.info('config restored from URL', result.counts);
     } catch (err) {
       logger.warn(`failed to restore config from URL: ${err.message}; falling back to demo seed`);
+      await import('./seed.js');
+    }
+  } else if (existsSync(join(ROOT, 'server/config-seed.json'))) {
+    try {
+      logger.info(`empty database detected; restoring config from local server/config-seed.json`);
+      const { importConfig } = await import('./services/configBackup.js');
+      const snapshot = JSON.parse(readFileSync(join(ROOT, 'server/config-seed.json'), 'utf8'));
+      const result = importConfig(snapshot);
+      logger.info('config restored from local file', result.counts);
+    } catch (err) {
+      logger.warn(`failed to restore config from local file: ${err.message}; falling back to demo seed`);
       await import('./seed.js');
     }
   } else if (env.DISABLE_DEMO_SEED) {

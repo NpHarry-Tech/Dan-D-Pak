@@ -15,6 +15,8 @@ import datetime
 sys.stdout.reconfigure(encoding='utf-8')
 
 EXCEL_PATH = r'E:\Trash\DanhSachSanPham_KV05072026-040421-815.xlsx'
+if not os.path.exists(EXCEL_PATH):
+    EXCEL_PATH = 'server/scripts/DanhSachSanPham_KV05072026-040421-815.xlsx'
 IMAGE_LIST_PATH = 'server/scripts/image_list.json'
 CRAWLED_LIST_PATH = 'server/scripts/danon_crawled_images.json'
 DB_PATH = 'server/store.db'
@@ -259,7 +261,7 @@ def resolve_and_save_image(sku_id, name, kiotviet_url):
             ext = get_extension(url)
             dest = os.path.join(DEST_IMAGE_DIR, f"{sku_id}{ext}")
             if download_image(url, dest):
-                return f"/assets/product-images/{sku_id}{ext}"
+                return f"/assets/product-images/{sku_id}{ext}", url
                 
     # 2. Try Local Match
     local_match = find_local_match(name)
@@ -267,7 +269,7 @@ def resolve_and_save_image(sku_id, name, kiotviet_url):
         ext = get_extension(local_match['full_path'])
         dest = os.path.join(DEST_IMAGE_DIR, f"{sku_id}{ext}")
         if copy_image(local_match['full_path'], dest):
-            return f"/assets/product-images/{sku_id}{ext}"
+            return f"/assets/product-images/{sku_id}{ext}", None
             
     # 3. Try Crawled Match
     crawled_match = find_crawled_match(name)
@@ -275,9 +277,9 @@ def resolve_and_save_image(sku_id, name, kiotviet_url):
         ext = get_extension(crawled_match['img_url'])
         dest = os.path.join(DEST_IMAGE_DIR, f"{sku_id}{ext}")
         if download_image(crawled_match['img_url'], dest):
-            return f"/assets/product-images/{sku_id}{ext}"
+            return f"/assets/product-images/{sku_id}{ext}", crawled_match['img_url']
             
-    return None
+    return None, None
 
 used_ids = set()
 def get_sku_id(code):
@@ -382,7 +384,7 @@ for idx, row in df.iterrows():
     kiotviet_img = row.get('Hình ảnh (url1,url2...)', None)
     
     # Resolve Image
-    resolved_image = resolve_and_save_image(sku_id, name, kiotviet_img)
+    resolved_image, remote_url = resolve_and_save_image(sku_id, name, kiotviet_img)
     
     # Process Lots if tracked
     final_stock = 0.0
@@ -440,7 +442,7 @@ for idx, row in df.iterrows():
     # Insert SKU
     cursor.execute(sku_insert, (
         sku_id, 'br1', barcode, name, '🛍️', resolved_image, price_after, 0, final_stock, min_stock, unit,
-        'wh_retail', category, brand, 'https://www.danonfoods.com', track_lot, track_lot, active,
+        'wh_retail', category, brand, remote_url if remote_url else 'https://www.danonfoods.com', track_lot, track_lot, active,
         code, price_pre, vat_val, brand, group if not pd.isna(group) else None, weight, sellable, now_iso
     ))
     

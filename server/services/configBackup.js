@@ -16,6 +16,7 @@ const CONFIG_TABLES = [
   'role_perms',
   'user_perms',
   'vouchers',
+  'stock_lots',
 ];
 
 export function exportConfig() {
