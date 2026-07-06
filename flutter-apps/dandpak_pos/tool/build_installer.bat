@@ -12,9 +12,11 @@ set "ISCC="
 for %%P in (
   "%ProgramFiles(x86)%\Inno Setup 6\ISCC.exe"
   "%ProgramFiles%\Inno Setup 6\ISCC.exe"
+  "D:\Antigravity\resources\app\node_modules\innosetup\bin\ISCC.exe"
 ) do (
   if exist "%%~P" set "ISCC=%%~P"
 )
+
 
 if not defined ISCC (
   for /f "tokens=*" %%i in ('where ISCC.exe 2^>nul') do (
