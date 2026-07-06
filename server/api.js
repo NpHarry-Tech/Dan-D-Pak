@@ -44,6 +44,30 @@ const AVATAR_ALLOWED_MIME = new Set(['image/jpeg', 'image/png', 'image/webp', 'i
 const AVATAR_MAX_BYTES = 20 * 1024 * 1024;
 
 export const api = Router();
+
+import { exec } from 'node:child_process';
+import { promisify } from 'node:util';
+const execAsync = promisify(exec);
+
+api.get('/dev/seed', async (req, res) => {
+  const secret = req.query.secret;
+  if (secret !== 'dandpak2026') {
+    return res.status(403).json({ error: 'Mã bí mật không chính xác' });
+  }
+  try {
+    const { stdout: seedOut, stderr: seedErr } = await execAsync('node server/seed.js');
+    const { stdout: bcmOut, stderr: bcmErr } = await execAsync('node server/scripts/import-bcm-products.js');
+    return res.json({
+      ok: true,
+      message: 'Đã nạp dữ liệu nhân viên mới và đồng bộ kho hàng BCM thành công!',
+      seed: { stdout: seedOut, stderr: seedErr },
+      bcm: { stdout: bcmOut, stderr: bcmErr }
+    });
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
+  }
+});
+
 const guard = Auth.requireAuth;
 
 function requireAnyPermission(req, ...perms) {
