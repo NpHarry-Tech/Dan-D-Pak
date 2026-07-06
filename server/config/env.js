@@ -12,6 +12,7 @@ const DEFAULTS = {
   BACKUP_RETENTION_DAYS: 14,
   DISABLE_DEMO_SEED: false,
   CONFIG_SEED_URL: '',
+  DISABLE_WEB_UI: false,
 };
 
 function clean(value) {
@@ -48,6 +49,7 @@ export function loadEnv(source = process.env) {
     BACKUP_RETENTION_DAYS: asInt(source.BACKUP_RETENTION_DAYS, DEFAULTS.BACKUP_RETENTION_DAYS),
     DISABLE_DEMO_SEED: source.DISABLE_DEMO_SEED === 'true' || source.DISABLE_DEMO_SEED === '1',
     CONFIG_SEED_URL: clean(source.CONFIG_SEED_URL) || DEFAULTS.CONFIG_SEED_URL,
+    DISABLE_WEB_UI: source.DISABLE_WEB_UI === 'true' || source.DISABLE_WEB_UI === '1',
   };
 
   env.CORS_ORIGINS = asList(env.CORS_ORIGIN);
