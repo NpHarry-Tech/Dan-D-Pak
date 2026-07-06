@@ -54,4 +54,8 @@ build/
 web/assets/product-images/*
 !web/assets/product-images/.gitkeep
 
+# Generated menu images
+server/uploads/menu/*
+!server/uploads/menu/.gitkeep
+
 

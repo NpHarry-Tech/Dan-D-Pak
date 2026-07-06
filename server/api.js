@@ -57,11 +57,13 @@ api.get('/dev/seed', async (req, res) => {
   try {
     const { stdout: seedOut, stderr: seedErr } = await execAsync('node server/seed.js');
     const { stdout: bcmOut, stderr: bcmErr } = await execAsync('python server/scripts/import_kiotviet_excel.py');
+    const { stdout: menuOut, stderr: menuErr } = await execAsync('python server/scripts/import_lounge_menu.py');
     return res.json({
       ok: true,
-      message: 'Đã nạp dữ liệu nhân viên mới và đồng bộ kho hàng BCM thành công từ KiotViet Excel!',
+      message: 'Đã nạp dữ liệu nhân viên mới, đồng bộ kho hàng BCM từ KiotViet Excel và import Lounge Menu thành công!',
       seed: { stdout: seedOut, stderr: seedErr },
-      bcm: { stdout: bcmOut, stderr: bcmErr }
+      bcm: { stdout: bcmOut, stderr: bcmErr },
+      menu: { stdout: menuOut, stderr: menuErr }
     });
   } catch (error) {
     return res.status(500).json({ error: error.message });
