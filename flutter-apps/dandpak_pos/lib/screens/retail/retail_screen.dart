@@ -988,10 +988,9 @@ class _RetailScreenState extends State<RetailScreen> {
           child: _loading && _skus.isEmpty
               ? const Center(child: CircularProgressIndicator())
               : _error != null && _skus.isEmpty
-                  ? Padding(
-                      padding: const EdgeInsets.all(40),
-                      child: InlineMessage('Không tải được sản phẩm ($_error)',
-                          error: true, onRetry: _load),
+                  ? const Center(
+                      child: Text('Chưa có sản phẩm',
+                          style: TextStyle(color: DanColors.faint)),
                     )
                   : list.isEmpty
                       ? const Center(
