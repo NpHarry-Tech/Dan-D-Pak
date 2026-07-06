@@ -2945,9 +2945,9 @@ class _MenuPickerDialogState extends State<_MenuPickerDialog> {
       final itemsData = result['items'] as List? ?? [];
       final total = result['total'] as int? ?? 0;
 
-      final items = await Isolate.run(() => itemsData
+      final items = itemsData
           .map((e) => MenuItem.fromJson(Map<String, dynamic>.from(e)))
-          .toList());
+          .toList();
 
       if (!mounted) return;
       setState(() {

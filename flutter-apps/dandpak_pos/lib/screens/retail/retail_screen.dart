@@ -120,10 +120,10 @@ class _RetailScreenState extends State<RetailScreen> {
       final itemsData = result['items'] as List? ?? [];
       final total = result['total'] as int? ?? 0;
 
-      final skus = await Isolate.run(() => itemsData
+      final skus = itemsData
           .whereType<Map>()
           .map((e) => Sku.fromJson(Map<String, dynamic>.from(e)))
-          .toList());
+          .toList();
 
       if (!mounted) return;
       setState(() {
@@ -199,22 +199,22 @@ class _RetailScreenState extends State<RetailScreen> {
       final customerRows = results[4] as List;
       final shift = results[5] as Map<String, dynamic>?;
       if (!mounted) return;
-      final parsedSkus = await Isolate.run(() => skuRows
+      final parsedSkus = skuRows
           .whereType<Map>()
           .map((e) => Sku.fromJson(Map<String, dynamic>.from(e)))
-          .toList());
-      final parsedLots = await Isolate.run(() => lotRows
+          .toList();
+      final parsedLots = lotRows
           .whereType<Map>()
           .map((e) => StockLot.fromJson(Map<String, dynamic>.from(e)))
-          .toList());
-      final parsedVouchers = await Isolate.run(() => activeRows
+          .toList();
+      final parsedVouchers = activeRows
           .whereType<Map>()
           .map((e) => RetailVoucher.fromJson(Map<String, dynamic>.from(e)))
-          .toList());
-      final parsedCustomers = await Isolate.run(() => customerRows
+          .toList();
+      final parsedCustomers = customerRows
           .whereType<Map>()
           .map((e) => RetailCustomer.fromJson(Map<String, dynamic>.from(e)))
-          .toList());
+          .toList();
       if (!mounted) return;
       setState(() {
         _operationsConfig = operations;
@@ -262,22 +262,22 @@ class _RetailScreenState extends State<RetailScreen> {
     final skuRows = skuPageResult['items'] as List? ?? [];
     final skuTotal = skuPageResult['total'] as int? ?? 0;
 
-    final parsedSkus = await Isolate.run(() => skuRows
+    final parsedSkus = skuRows
         .whereType<Map>()
         .map((e) => Sku.fromJson(Map<String, dynamic>.from(e)))
-        .toList());
-    final parsedLots = await Isolate.run(() => (results[1] as List)
+        .toList();
+    final parsedLots = (results[1] as List)
         .whereType<Map>()
         .map((e) => StockLot.fromJson(Map<String, dynamic>.from(e)))
-        .toList());
-    final parsedVouchers = await Isolate.run(() => (results[2] as List)
+        .toList();
+    final parsedVouchers = (results[2] as List)
         .whereType<Map>()
         .map((e) => RetailVoucher.fromJson(Map<String, dynamic>.from(e)))
-        .toList());
-    final parsedCustomers = await Isolate.run(() => (results[3] as List)
+        .toList();
+    final parsedCustomers = (results[3] as List)
         .whereType<Map>()
         .map((e) => RetailCustomer.fromJson(Map<String, dynamic>.from(e)))
-        .toList());
+        .toList();
     if (!mounted) return;
     setState(() {
       _skus = parsedSkus;

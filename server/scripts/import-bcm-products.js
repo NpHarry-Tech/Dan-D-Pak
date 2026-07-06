@@ -70,13 +70,15 @@ function upsertSku(product, variant) {
     INSERT INTO skus
       (id,branch_id,barcode,name,emoji,image,price,cost,stock,min_stock,unit,warehouse_id,category,supplier,source_url,track_lot,expiry_required,active,units_json)
     VALUES
-      (?,?,?,?,?,?,?,?,0,0,?,?,?,?,?,1,0,1,'[]')
+      (?,?,?,?,?,?,?,?,200,10,?,?,?,?,?,1,0,1,'[]')
     ON CONFLICT(id) DO UPDATE SET
       barcode=excluded.barcode,
       name=excluded.name,
       emoji=excluded.emoji,
       image=excluded.image,
       price=excluded.price,
+      stock=excluded.stock,
+      min_stock=excluded.min_stock,
       unit=excluded.unit,
       warehouse_id=excluded.warehouse_id,
       category=excluded.category,
@@ -112,8 +114,25 @@ async function main() {
       imported++;
     }
   }
+
+  // Create opening lots for the imported BCM products so stock levels are fully integrated
+  const countLots = db.prepare(`SELECT COUNT(*) n FROM stock_lots WHERE branch_id=? AND item_type='sku' AND item_id=?`);
+  const insLot = db.prepare(`INSERT OR IGNORE INTO stock_lots
+    (id,branch_id,warehouse_id,item_type,item_id,lot_no,received_at,qty_on_hand,unit_cost,supplier,status,created_at)
+    VALUES (?,?,?,?,?,?,?,?,?,?,'active',?)`);
+
+  let lotCount = 0;
+  const importedSkus = db.prepare(`SELECT id, warehouse_id, stock, cost FROM skus WHERE branch_id=? AND stock>0`).all(BRANCH_ID);
+  for (const s of importedSkus) {
+    if (countLots.get(BRANCH_ID, s.id).n) continue;
+    const lotId = 'lot_' + Math.random().toString(36).slice(2, 8) + Date.now().toString(36).slice(-4);
+    insLot.run(lotId, BRANCH_ID, s.warehouse_id || WAREHOUSE_ID, 'sku', s.id, 'OPENING', now(), s.stock, s.cost || 0, 'opening', now());
+    lotCount++;
+  }
+
   audit('bcm.import', { products: products.length, skus: imported, source: COLLECTION, at: now() }, BRANCH_ID);
   console.log(`Imported ${imported} BCM SKUs from ${products.length} products into Kho BCM (${WAREHOUSE_ID}).`);
+  console.log(`Created ${lotCount} opening stock lots for imported SKUs.`);
 }
 
 main().catch(err => {

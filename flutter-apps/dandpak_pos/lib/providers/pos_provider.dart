@@ -186,10 +186,10 @@ class PosProvider extends ChangeNotifier {
 
     try {
       final catsData = await apiService.getCategories();
-      _categories = await Isolate.run(() => catsData.map((c) => Category.fromJson(c)).toList());
+      _categories = catsData.map((c) => Category.fromJson(c)).toList();
 
       final menuData = await apiService.getMenu();
-      _menuItems = await Isolate.run(() => menuData.map((m) => MenuItem.fromJson(m)).toList());
+      _menuItems = menuData.map((m) => MenuItem.fromJson(m)).toList();
 
       _isLoadingMenu = false;
       notifyListeners();
