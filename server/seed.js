@@ -34,10 +34,11 @@ bootstrapWarehouseDefaults(BR);
 // ---- Users / roles (PIN login) ----
 const users = [
   { id: 'u_admin', username: 'admin', name: 'Admin', pin: '1234', role: 'owner' },
-  { id: 'u_mgr', username: 'manager', name: 'Quản lý', pin: '2222', role: 'manager' },
-  { id: 'u_cashier', username: 'cashier', name: 'Thu ngân Lan', pin: '1111', role: 'cashier' },
-  { id: 'u_kitchen', username: 'kitchen', name: 'Bếp trưởng', pin: '3333', role: 'kitchen' },
-  { id: 'u_wh', username: 'warehouse', name: 'Thủ kho', pin: '4444', role: 'warehouse' },
+  { id: 'u_tan', username: 'tanbv', name: 'Bùi Văn Tân', pin: '1111', role: 'owner' },
+  { id: 'u_vinh', username: 'vinhlq', name: 'Lê Quốc Vinh', pin: '2222', role: 'manager' },
+  { id: 'u_phat', username: 'phatnt', name: 'Nguyễn Tấn Phát', pin: '3333', role: 'cashier' },
+  { id: 'u_kitchen', username: 'kitchen', name: 'Bếp trưởng', pin: '4444', role: 'kitchen' },
+  { id: 'u_wh', username: 'warehouse', name: 'Thủ kho', pin: '5555', role: 'warehouse' },
 ];
 const insUser = db.prepare(`INSERT INTO users (id,branch_id,username,name,pin,role,active) VALUES (?,?,?,?,?,?,1)`);
 users.forEach(u => insUser.run(u.id, BR, u.username, u.name, u.pin, u.role));
