@@ -19,10 +19,6 @@ function requestedAdminResetPin() {
   return /^\d{4}$/.test(v) ? v : null;
 }
 
-function productionRequiresExplicitInitialPin(resetPin) {
-  return process.env.NODE_ENV === 'production' && !resetPin;
-}
-
 export function bootstrapDefaultAdmin() {
   db.prepare(`INSERT OR IGNORE INTO branches (id,name,address,code,active,sort) VALUES (?,?,?,?,1,?)`)
     .run('br1', 'Dan D Pak Sala', 'Sala, TP.HCM', 'SALA', 1);
@@ -63,10 +59,6 @@ export function bootstrapDefaultAdmin() {
 
   if (totalUsers > 0 && activeOwners > 0) {
     return { created: false, skipped: true };
-  }
-
-  if (productionRequiresExplicitInitialPin(resetPin)) {
-    throw new Error('Refusing to create default admin/1234 in production. Set DANDPAK_ADMIN_RESET_PIN=<4 digits> for the first startup, then remove it.');
   }
 
   db.prepare(`

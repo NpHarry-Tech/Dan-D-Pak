@@ -234,30 +234,32 @@ class _BackOfficeShellState extends State<BackOfficeShell> {
                   ),
                 ),
                 Expanded(
-                  child: ListView.builder(
-                    padding: const EdgeInsets.symmetric(horizontal: 10),
-                    itemCount: modules.length,
-                    itemBuilder: (context, index) {
-                      final item = modules[index];
-                      final activeItem = index == _selected;
-                      return Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 3),
-                        child: ListTile(
-                          selected: activeItem,
-                          selectedTileColor: const Color(0xFF2F7D6B).withOpacity(0.14),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                          leading: Icon(item.icon, color: activeItem ? const Color(0xFF49D3A4) : Colors.white54),
-                          title: Text(
-                            item.label,
-                            style: TextStyle(
-                              fontWeight: FontWeight.w700,
-                              color: activeItem ? Colors.white : Colors.white70,
+                  child: RepaintBoundary(
+                    child: ListView.builder(
+                      padding: const EdgeInsets.symmetric(horizontal: 10),
+                      itemCount: modules.length,
+                      itemBuilder: (context, index) {
+                        final item = modules[index];
+                        final activeItem = index == _selected;
+                        return Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 3),
+                          child: ListTile(
+                            selected: activeItem,
+                            selectedTileColor: const Color(0xFF2F7D6B).withOpacity(0.14),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                            leading: Icon(item.icon, color: activeItem ? const Color(0xFF49D3A4) : Colors.white54),
+                            title: Text(
+                              item.label,
+                              style: TextStyle(
+                                fontWeight: FontWeight.w700,
+                                color: activeItem ? Colors.white : Colors.white70,
+                              ),
                             ),
+                            onTap: () => setState(() => _selected = index),
                           ),
-                          onTap: () => setState(() => _selected = index),
-                        ),
-                      );
-                    },
+                        );
+                      },
+                    ),
                   ),
                 ),
                 Padding(
@@ -285,37 +287,39 @@ class _BackOfficeShellState extends State<BackOfficeShell> {
             ),
           ),
           Expanded(
-            child: Column(
-              children: [
-                Container(
-                  height: 68,
-                  padding: const EdgeInsets.symmetric(horizontal: 22),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF111821),
-                    border: Border(bottom: BorderSide(color: Colors.white.withOpacity(0.06))),
+            child: RepaintBoundary(
+              child: Column(
+                children: [
+                  Container(
+                    height: 68,
+                    padding: const EdgeInsets.symmetric(horizontal: 22),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF111821),
+                      border: Border(bottom: BorderSide(color: Colors.white.withOpacity(0.06))),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(active.icon, color: const Color(0xFF49D3A4)),
+                        const SizedBox(width: 12),
+                        Text(active.label, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800)),
+                        const Spacer(),
+                        IconButton.filledTonal(
+                          tooltip: 'Refresh',
+                          onPressed: () => setState(() => _refresh++),
+                          icon: const Icon(Icons.refresh),
+                        ),
+                      ],
+                    ),
                   ),
-                  child: Row(
-                    children: [
-                      Icon(active.icon, color: const Color(0xFF49D3A4)),
-                      const SizedBox(width: 12),
-                      Text(active.label, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800)),
-                      const Spacer(),
-                      IconButton.filledTonal(
-                        tooltip: 'Refresh',
-                        onPressed: () => setState(() => _refresh++),
-                        icon: const Icon(Icons.refresh),
-                      ),
-                    ],
+                  Expanded(
+                    child: ModulePage(
+                      key: ValueKey('${active.id}-$_refresh-${client.branchId}'),
+                      spec: active,
+                      client: client,
+                    ),
                   ),
-                ),
-                Expanded(
-                  child: ModulePage(
-                    key: ValueKey('${active.id}-$_refresh-${client.branchId}'),
-                    spec: active,
-                    client: client,
-                  ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ],

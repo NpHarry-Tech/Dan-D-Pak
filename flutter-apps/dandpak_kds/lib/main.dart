@@ -250,41 +250,45 @@ class _KdsScreenState extends State<KdsScreen> {
       ),
       body: Column(
         children: [
-          SizedBox(
-            height: 52,
-            child: ListView(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 10),
-              children: _stations.map((st) {
-                final active = st == _station;
-                final count = st == 'all' ? _items.length : _items.where((it) => it['station'] == st).length;
-                return Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
-                  child: ChoiceChip(
-                    label: Text('${_stationLabel(st)} ($count)'),
-                    selected: active,
-                    onSelected: (_) => setState(() => _station = st),
-                  ),
-                );
-              }).toList(),
+          RepaintBoundary(
+            child: SizedBox(
+              height: 52,
+              child: ListView(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.symmetric(horizontal: 10),
+                children: _stations.map((st) {
+                  final active = st == _station;
+                  final count = st == 'all' ? _items.length : _items.where((it) => it['station'] == st).length;
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+                    child: ChoiceChip(
+                      label: Text('${_stationLabel(st)} ($count)'),
+                      selected: active,
+                      onSelected: (_) => setState(() => _station = st),
+                    ),
+                  );
+                }).toList(),
+              ),
             ),
           ),
           if (_error != null)
             Padding(padding: const EdgeInsets.all(8), child: Text(_error!, style: const TextStyle(color: Color(0xFFFF7A7A)))),
           Expanded(
-            child: visible.isEmpty
-                ? const Center(child: Text('Không có món nào đang chờ', style: TextStyle(color: Colors.white38, fontSize: 16)))
-                : GridView.builder(
-                    padding: const EdgeInsets.all(12),
-                    gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-                      maxCrossAxisExtent: 280,
-                      mainAxisExtent: 184,
-                      crossAxisSpacing: 12,
-                      mainAxisSpacing: 12,
+            child: RepaintBoundary(
+              child: visible.isEmpty
+                  ? const Center(child: Text('Không có món nào đang chờ', style: TextStyle(color: Colors.white38, fontSize: 16)))
+                  : GridView.builder(
+                      padding: const EdgeInsets.all(12),
+                      gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+                        maxCrossAxisExtent: 280,
+                        mainAxisExtent: 184,
+                        crossAxisSpacing: 12,
+                        mainAxisSpacing: 12,
+                      ),
+                      itemCount: visible.length,
+                      itemBuilder: (_, i) => _TicketCard(item: visible[i], onStatus: _setStatus),
                     ),
-                    itemCount: visible.length,
-                    itemBuilder: (_, i) => _TicketCard(item: visible[i], onStatus: _setStatus),
-                  ),
+            ),
           ),
         ],
       ),

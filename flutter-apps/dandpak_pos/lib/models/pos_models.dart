@@ -6,29 +6,44 @@ double _doubleValue(dynamic value) {
 class Branch {
   final String id;
   final String name;
+  final String code;
   final String address;
 
-  Branch({required this.id, required this.name, required this.address});
+  Branch({
+    required this.id,
+    required this.name,
+    required this.code,
+    required this.address,
+  });
 
   factory Branch.fromJson(Map<String, dynamic> json) {
     return Branch(
       id: json['id'] ?? '',
       name: json['name'] ?? '',
+      code: json['code'] ?? '',
       address: json['address'] ?? '',
     );
   }
 }
 
 class User {
+  final String id;
+  final String name;
   final String username;
   final String role;
   final String branchId;
+  final List<String> branchIds;
+  final List<String> branchAccess;
   final List<String> permissions;
 
   User({
+    required this.id,
+    required this.name,
     required this.username,
     required this.role,
     required this.branchId,
+    required this.branchIds,
+    required this.branchAccess,
     required this.permissions,
   });
 
@@ -38,10 +53,23 @@ class User {
     if (perms is List) {
       parsedPerms = perms.map((p) => p.toString()).toList();
     }
+    final branchIdsRaw = json['branch_ids'];
+    final branchAccessRaw = json['branch_access'];
     return User(
+      id: json['id']?.toString() ?? json['username']?.toString() ?? '',
+      name: json['name']?.toString() ?? json['username']?.toString() ?? '',
       username: json['username'] ?? '',
       role: json['role'] ?? '',
       branchId: json['branch_id'] ?? '',
+      branchIds: branchIdsRaw is List
+          ? branchIdsRaw.map((b) => b.toString()).toList()
+          : <String>[
+              if ((json['branch_id'] ?? '').toString().isNotEmpty)
+                json['branch_id'].toString()
+            ],
+      branchAccess: branchAccessRaw is List
+          ? branchAccessRaw.map((b) => b.toString()).toList()
+          : <String>[],
       permissions: parsedPerms,
     );
   }
@@ -69,6 +97,7 @@ class TableModel {
   final String status; // 'empty', 'occupied', 'checking_out', 'dirty'
   final String? activeOrderId;
   final double? activeOrderTotal;
+  final String callReason;
 
   TableModel({
     required this.id,
@@ -78,6 +107,7 @@ class TableModel {
     required this.status,
     this.activeOrderId,
     this.activeOrderTotal,
+    this.callReason = '',
   });
 
   static double? _money(dynamic value) {
@@ -87,14 +117,22 @@ class TableModel {
   }
 
   factory TableModel.fromJson(Map<String, dynamic> json) {
+    final activeOrderId =
+        json['active_order_id'] ?? json['current_order_id'] ?? json['order_id'];
+    final amount = activeOrderId == null
+        ? null
+        : _money(json['active_order_total'] ??
+            json['current_total'] ??
+            json['amount']);
     return TableModel(
       id: json['id'] ?? '',
       code: json['code'] ?? '',
       name: json['name'] ?? '',
       zoneId: json['zone_id'] ?? json['zone'] ?? '',
       status: json['status'] ?? 'empty',
-      activeOrderId: json['active_order_id'] ?? json['current_order_id'] ?? json['order_id'],
-      activeOrderTotal: _money(json['active_order_total'] ?? json['current_total'] ?? json['amount']),
+      activeOrderId: activeOrderId,
+      activeOrderTotal: amount != null && amount > 0 ? amount : null,
+      callReason: json['call']?.toString() ?? '',
     );
   }
 }
@@ -127,9 +165,9 @@ class Modifier {
   }
 
   Map<String, dynamic> toJson() => {
-    'name': name,
-    'price': price,
-  };
+        'name': name,
+        'price': price,
+      };
 }
 
 class MenuItem {
@@ -174,15 +212,26 @@ class CartItem {
   int qty;
   final List<Modifier> selectedModifiers;
   String notes;
+  final String orderItemId;
+  final String status;
+  final String station;
+  final double? unitPriceOverride;
 
   CartItem({
     required this.item,
     this.qty = 1,
     required this.selectedModifiers,
     this.notes = '',
+    this.orderItemId = '',
+    this.status = '',
+    this.station = '',
+    this.unitPriceOverride,
   });
 
+  bool get persisted => orderItemId.isNotEmpty;
+
   double get unitPrice {
+    if (unitPriceOverride != null) return unitPriceOverride!;
     double total = item.price;
     for (var m in selectedModifiers) {
       total += m.price;
@@ -193,15 +242,15 @@ class CartItem {
   double get totalPrice => unitPrice * qty;
 
   Map<String, dynamic> toJson() => {
-    'id': item.id,
-    'sku': item.code,
-    'name': item.name,
-    'qty': qty,
-    'unit_price': item.price,
-    'line_total': totalPrice,
-    'notes': notes,
-    'mods': selectedModifiers.map((m) => m.toJson()).toList(),
-  };
+        'id': item.id,
+        'sku': item.code,
+        'name': item.name,
+        'qty': qty,
+        'unit_price': item.price,
+        'line_total': totalPrice,
+        'notes': notes,
+        'mods': selectedModifiers.map((m) => m.toJson()).toList(),
+      };
 }
 
 class Shift {
@@ -228,11 +277,14 @@ class Shift {
     return Shift(
       id: json['id'] ?? '',
       cashier: json['cashier'] ?? json['user_name'] ?? '',
-      openingBalance: _doubleValue(json['opening_cash'] ?? json['opening_balance']),
+      openingBalance:
+          _doubleValue(json['opening_cash'] ?? json['opening_balance']),
       openedAt: json['opened_at'] ?? '',
       closedAt: json['closed_at'],
-      closingBalance: _doubleValue(json['closing_cash'] ?? json['closing_balance']),
-      expectedBalance: _doubleValue(json['expected_cash'] ?? json['expected_balance']),
+      closingBalance:
+          _doubleValue(json['closing_cash'] ?? json['closing_balance']),
+      expectedBalance:
+          _doubleValue(json['expected_cash'] ?? json['expected_balance']),
     );
   }
 }

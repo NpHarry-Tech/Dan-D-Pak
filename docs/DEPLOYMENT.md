@@ -1,37 +1,34 @@
 # Deployment
 
-Last updated: 2026-06-29
+Last updated: 2026-06-27
 
 ## Supported Targets
 
 Local/company server:
 
-- Run one Node/Express backend that exposes `/api`, `/socket.io`, `/health`, and
-  a JSON service descriptor at `/`.
-- Run `npm install` then `npm start` for local backend development.
-- Set `PORT`, `NODE_ENV`, `CORS_ORIGIN`, provider flags, and secrets only in
-  backend environment variables.
-- Point Flutter apps at the backend base URL.
+- Run one Node/Express app that serves both `web/` and `/api`.
+- Use same-origin API calls by default; override `API_BASE_URL` only when a gateway/proxy requires it.
+- Run `npm install` then `npm start` for local development.
+- Set `PORT`, `NODE_ENV`, `CORS_ORIGIN`, provider flags, and secrets only in backend environment variables.
 
 Database/realtime:
 
 - Current local code uses SQLite and Socket.IO.
-- PostgreSQL/WebSocket provider integration is scaffolded/planned and must keep
-  secrets backend-only.
+- PostgreSQL/WebSocket provider integration is scaffolded/planned and must keep secrets backend-only.
 
-## Company Server
+## VPS / Company Server
 
-Use `deploy/company-server/` for Docker/Caddy deployment:
+Use `deploy/vps/` and the VPS docs:
 
-- `docker-compose.yml` builds the backend container.
-- `Caddyfile` reverse-proxies API, realtime, health, and service descriptor
-  traffic to the backend.
-- `scripts/backup-db.sh` and `scripts/restore-db.sh` handle SQLite backups.
+- [VPS deployment](VPS_DEPLOYMENT.md)
+- [VPS migration plan](VPS_MIGRATION_PLAN.md)
+- [VPS security checklist](VPS_SECURITY_CHECKLIST.md)
+- [VPS backup/restore](VPS_BACKUP_RESTORE.md)
 
 ## Deployment Safety
 
 - Do not deploy with committed `.env` or DB files.
 - Verify `GET /health`.
 - Verify API errors return JSON.
-- Verify realtime from Flutter POS, Tablet, KDS, and Backoffice.
+- Verify realtime across iPad/POS/KDS.
 - Verify backup before migration.

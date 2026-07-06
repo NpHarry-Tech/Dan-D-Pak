@@ -1,11 +1,15 @@
 // lib/screens/ordering_module/order_screen.dart
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../../models/cart.dart';
 import '../../models/tablet_models.dart';
 import '../../providers/app_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/ordering_provider.dart';
 import '../../services/api_service.dart';
+import '../../services/socket_service.dart';
 import 'modifier_dialog.dart';
 import 'payment_dialog.dart';
 
@@ -23,11 +27,56 @@ class _OrderScreenState extends State<OrderScreen> {
   List<TableModel> _tables = [];
   bool _loading = false;
   String? _error;
+  SocketService? _socket;
+  bool _wasConnected = true;
+  Timer? _refreshDebounce;
+
+  // Gộp các event dồn dập (1 order = nhiều event) thành 1 lần tải lại.
+  void _scheduleReload() {
+    _refreshDebounce?.cancel();
+    _refreshDebounce = Timer(const Duration(milliseconds: 400), () {
+      if (mounted) _loadMenuAndTables();
+    });
+  }
 
   @override
   void initState() {
     super.initState();
     _loadMenuAndTables();
+    // Đồng bộ realtime: POS sửa/tắt món hoặc bàn đổi trạng thái → iPad tự
+    // tải lại; reconnect sau rớt mạng → tải lại toàn bộ (event offline đã mất).
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final appProv = Provider.of<AppProvider>(context, listen: false);
+      final authProv = Provider.of<AuthProvider>(context, listen: false);
+      _socket = SocketService(
+        url: appProv.serverUrl,
+        token: authProv.token ?? '',
+        branchId: appProv.activeBranch?.id ?? 'br1',
+      );
+      _socket!.connect(
+        device: 'ipad',
+        onConnectionChanged: (connected) {
+          if (connected && !_wasConnected && mounted) _scheduleReload();
+          _wasConnected = connected;
+        },
+        onEvent: (event, payload) {
+          if (!mounted) return;
+          if (event == 'menu:updated' ||
+              event == 'settings:updated' ||
+              event == 'table:updated') {
+            _scheduleReload();
+          }
+        },
+      );
+    });
+  }
+
+  @override
+  void dispose() {
+    _refreshDebounce?.cancel();
+    _socket?.dispose();
+    super.dispose();
   }
 
   Future<void> _loadMenuAndTables() async {
@@ -204,31 +253,33 @@ class _OrderScreenState extends State<OrderScreen> {
                   child: Column(
                     children: [
                       // Category Tabs
-                      Container(
-                        height: 54,
-                        color: const Color(0xFF161C23),
-                        child: ListView.builder(
-                          scrollDirection: Axis.horizontal,
-                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                          itemCount: cats.length,
-                          itemBuilder: (context, index) {
-                            final cat = cats[index];
-                            final active = cat == orderProv.selectedCategory;
-                            return Padding(
-                              padding: const EdgeInsets.only(right: 8),
-                              child: ChoiceChip(
-                                label: Text(cat == 'all' ? 'Tất cả' : cat),
-                                selected: active,
-                                selectedColor: const Color(0xFF2F7D6B),
-                                checkmarkColor: Colors.white,
-                                labelStyle: TextStyle(
-                                  color: active ? Colors.white : Colors.white70,
-                                  fontWeight: FontWeight.bold,
+                      RepaintBoundary(
+                        child: Container(
+                          height: 54,
+                          color: const Color(0xFF161C23),
+                          child: ListView.builder(
+                            scrollDirection: Axis.horizontal,
+                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                            itemCount: cats.length,
+                            itemBuilder: (context, index) {
+                              final cat = cats[index];
+                              final active = cat == orderProv.selectedCategory;
+                              return Padding(
+                                padding: const EdgeInsets.only(right: 8),
+                                child: ChoiceChip(
+                                  label: Text(cat == 'all' ? 'Tất cả' : cat),
+                                  selected: active,
+                                  selectedColor: const Color(0xFF2F7D6B),
+                                  checkmarkColor: Colors.white,
+                                  labelStyle: TextStyle(
+                                    color: active ? Colors.white : Colors.white70,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                  onSelected: (_) => orderProv.selectCategory(cat),
                                 ),
-                                onSelected: (_) => orderProv.selectCategory(cat),
-                              ),
-                            );
-                          },
+                              );
+                            },
+                          ),
                         ),
                       ),
                       if (_error != null)
@@ -240,22 +291,24 @@ class _OrderScreenState extends State<OrderScreen> {
                         ),
                       // Menu Grid
                       Expanded(
-                        child: filteredItems.isEmpty
-                            ? const Center(child: Text('Không tìm thấy món ăn nào', style: TextStyle(color: Colors.white30)))
-                            : GridView.builder(
-                                padding: const EdgeInsets.all(14),
-                                gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-                                  maxCrossAxisExtent: 200,
-                                  childAspectRatio: 0.8,
-                                  crossAxisSpacing: 12,
-                                  mainAxisSpacing: 12,
+                        child: RepaintBoundary(
+                          child: filteredItems.isEmpty
+                              ? const Center(child: Text('Không tìm thấy món ăn nào', style: TextStyle(color: Colors.white30)))
+                              : GridView.builder(
+                                  padding: const EdgeInsets.all(14),
+                                  gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+                                    maxCrossAxisExtent: 200,
+                                    childAspectRatio: 0.8,
+                                    crossAxisSpacing: 12,
+                                    mainAxisSpacing: 12,
+                                  ),
+                                  itemCount: filteredItems.length,
+                                  itemBuilder: (context, index) {
+                                    final item = filteredItems[index];
+                                    return _buildMenuItemCard(item);
+                                  },
                                 ),
-                                itemCount: filteredItems.length,
-                                itemBuilder: (context, index) {
-                                  final item = filteredItems[index];
-                                  return _buildMenuItemCard(item);
-                                },
-                              ),
+                        ),
                       ),
                     ],
                   ),
@@ -264,8 +317,9 @@ class _OrderScreenState extends State<OrderScreen> {
                 VerticalDivider(color: Colors.white.withOpacity(0.05), width: 1),
                 Expanded(
                   flex: 3,
-                  child: Container(
-                    color: const Color(0xFF161C23),
+                  child: RepaintBoundary(
+                    child: Container(
+                      color: const Color(0xFF161C23),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
@@ -324,7 +378,7 @@ class _OrderScreenState extends State<OrderScreen> {
                                   const Text('Tổng hóa đơn:', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: Colors.white70)),
                                   Text(
                                     'đ${orderProv.cartTotal}',
-                                    style: const TextStyle(fontSize: 22, fontWeight: FontWeight.extrabold, color: Color(0xFF2F7D6B)),
+                                    style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: Color(0xFF2F7D6B)),
                                   ),
                                 ],
                               ),
@@ -363,7 +417,8 @@ class _OrderScreenState extends State<OrderScreen> {
                     ),
                   ),
                 ),
-              ],
+              ),
+            ],
             ),
     );
   }

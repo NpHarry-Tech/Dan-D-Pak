@@ -24,7 +24,7 @@ Every print and reprint is logged. Printing never loses its audit trail.
 ## Workflow
 
 1. An action (order sent, bill closed, label requested) creates a `print_job`.
-2. The job is dispatched to a printer (LAN/IP ESC-POS, OS printer, agent, or manual
+2. The job is dispatched to a printer (LAN/IP ESC-POS, OS printer, or browser
    dialog).
 3. Each dispatch attempt writes a `print_attempts` row (success/failure + reason).
 4. On failure the job can be retried; failures are visible in the UI.

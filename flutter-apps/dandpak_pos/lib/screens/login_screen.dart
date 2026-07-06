@@ -74,7 +74,6 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
-    final theme = Theme.of(context);
 
     return Scaffold(
       backgroundColor: const Color(0xFF141923),

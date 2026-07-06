@@ -1,17 +1,19 @@
 // Local Store Server — entry point. Express REST + Socket.IO realtime + static client.
 import express from 'express';
 import { createServer } from 'node:http';
-import { mkdirSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
+import { existsSync, mkdirSync } from 'node:fs';
 import zlib from 'node:zlib';
-import { db, migrate, purgeOldAudit, reconcileAuditFromArchive, compactOldAuditLogs, backupDatabase } from './db.js';
+import { db, migrate, reconcileAuditFromArchive, compactAuditToMonthly, purgeAuditBeyondRetention, backupDatabase } from './db.js';
 import { initRealtime } from './realtime.js';
 import { api } from './api.js';
 import { startSyncEngine } from './services/sync.js';
+import { processInvoiceQueue } from './services/einvoice.js';
 import { ensureStorageDirectories } from './services/enterpriseStorage.js';
 import { bootstrapDefaultAdmin } from './services/bootstrapAdmin.js';
 import { migratePlaintextPins } from './services/pin.js';
 import { env } from './config/env.js';
-import { runtimePaths } from './config/paths.js';
 import { createCorsMiddleware } from './config/cors.js';
 import { runtimeSnapshot } from './config/runtime.js';
 import { apiNotFound, errorHandler } from './core/http.js';
@@ -40,8 +42,11 @@ function compressionMiddleware(req, res, next) {
   next();
 }
 
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const WEB = join(__dirname, '..', 'web');
+const ENGINE_ASSETS = join(__dirname, 'assets');
 const PORT = env.PORT;
-export const UPLOADS_DIR = runtimePaths.uploads;
+export const UPLOADS_DIR = join(__dirname, 'uploads', 'documents');
 mkdirSync(UPLOADS_DIR, { recursive: true });
 globalThis.__DANDPAK_STARTED_AT = new Date().toISOString();
 
@@ -96,19 +101,7 @@ app.use((req, res, next) => {
   res.setHeader('X-Frame-Options', 'SAMEORIGIN');
   res.setHeader('Referrer-Policy', 'no-referrer');
   res.setHeader('X-DNS-Prefetch-Control', 'off');
-  res.setHeader('Permissions-Policy', 'geolocation=(), microphone=(), camera=(self)');
-  res.setHeader('Content-Security-Policy', [
-    "default-src 'self'",
-    "base-uri 'self'",
-    "object-src 'none'",
-    "frame-ancestors 'self'",
-    "img-src 'self' data: blob:",
-    "font-src 'self' https://fonts.gstatic.com",
-    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-    "script-src 'self' 'unsafe-inline' https://unpkg.com",
-    "connect-src 'self' http: https: ws: wss:",
-    "media-src 'self' data: blob:",
-  ].join('; '));
+  res.setHeader('Permissions-Policy', 'geolocation=(), microphone=(), camera=()');
   next();
 });
 app.use(createCorsMiddleware(env));
@@ -141,35 +134,45 @@ app.get('/health', (req, res) => {
 
 app.use('/api', requestLogger, api);
 app.use('/api', apiNotFound);
-app.get('/', (_req, res) => res.json({
-  ok: true,
-  service: 'dan-d-pak-pos-erp',
-  api: '/api',
-  health: '/health',
-}));
-app.use((req, res) => res.status(404).json({
-  ok: false,
-  code: 'NOT_FOUND',
-  message: `Route not found: ${req.method} ${req.originalUrl}`,
-}));
+// During active development, always serve fresh HTML/CSS/JS (no stale browser cache).
+app.use((req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
+app.use('/uploads', express.static(join(__dirname, 'uploads'), { etag: false, lastModified: false }));
+app.use('/assets', express.static(ENGINE_ASSETS, { etag: false, lastModified: false }));
+app.use(express.static(WEB, { etag: false, lastModified: false }));
+app.get('/', (req, res) => res.sendFile(join(WEB, 'index.html')));
+app.get('/settings', (req, res) => res.sendFile(join(WEB, 'admin.html')));
+// Haravan-style settings sub-routes (/settings/staff, /settings/location, ...) all serve the admin shell.
+app.get('/settings/:tab', (req, res) => res.sendFile(join(WEB, 'admin.html')));
+// Report center lives in the admin shell; /reports/<type> deep-links a specific report.
+app.get('/reports', (req, res) => res.sendFile(join(WEB, 'admin.html')));
+app.get('/reports/:type', (req, res) => res.sendFile(join(WEB, 'admin.html')));
+// Module sub-tabs deep-linked Haravan-style (/contacts/customers, /database/logs, ...).
+app.get('/contacts/:tab', (req, res) => res.sendFile(join(WEB, 'contacts.html')));
+app.get('/database/:tab', (req, res) => res.sendFile(join(WEB, 'database.html')));
+for (const v of ['ipad', 'pos', 'kds', 'admin', 'retail', 'warehouse', 'sim', 'printers', 'online', 'contacts', 'purchase', 'expenses', 'invoices', 'database', 'documents']) {
+  app.get('/' + v, (req, res) => res.sendFile(join(WEB, v + '.html')));
+}
 app.use(errorHandler);
 
 const server = createServer(app);
 initRealtime(server);
 startSyncEngine();
 
-// Nhật ký hoạt động lưu trữ lâu dài trong cơ sở dữ liệu (tối đa 3 năm)
-const AUDIT_RETENTION_DAYS = 1095;
-function purgeAudit() {
+// Vòng đời nhật ký hoạt động (giữ tối đa 3 năm / 36 tháng):
+//  • Hot: các tháng gần nhất (3 tháng) nằm trong SQLite → tra cứu tức thì.
+//  • Cold: tháng cũ hơn được gom thành 1 file .ndjson.gz/tháng → store.db gọn.
+//  • Mở lại tháng cũ → rehydrate về SQLite, giữ "nóng" 7 ngày rồi tự nén lại.
+//  • Tới tháng thứ 37 thì xóa tháng thứ 1 (cả file nén lẫn dòng SQLite).
+function maintainAudit() {
   try {
-    const compacted = compactOldAuditLogs(90);
-    if (compacted) logger.info('old audit logs compacted/encrypted', { compacted });
-    const removed = purgeOldAudit(AUDIT_RETENTION_DAYS);
-    if (removed) logger.warn('old audit rows purged from live SQLite window', { removed, retentionDays: AUDIT_RETENTION_DAYS });
-  } catch (e) { logger.warn('audit purge/compaction failed', { message: e.message }); }
+    const c = compactAuditToMonthly(3);
+    if (c.archivedMonths || c.removedRows) logger.info('audit compacted to monthly archives', c);
+    const p = purgeAuditBeyondRetention(36);
+    if (p.removedFiles || p.removedRows) logger.warn('audit beyond 36-month retention purged', p);
+  } catch (e) { logger.warn('audit maintenance failed', { message: e.message }); }
 }
-purgeAudit();
-setInterval(purgeAudit, 24 * 60 * 60 * 1000).unref();
+maintainAudit();
+setInterval(maintainAudit, 24 * 60 * 60 * 1000).unref();
 
 // Sao lưu local định kỳ: snapshot store.db ra backups/ để có thể copy ra ổ ngoài/VPS.
 function runBackup() {
@@ -182,12 +185,23 @@ function runBackup() {
 runBackup();
 setInterval(runBackup, 24 * 60 * 60 * 1000).unref();
 
+// E-invoice queue processor worker: runs every 10 seconds to issue and retry invoices
+function runInvoiceWorker() {
+  processInvoiceQueue().catch(err => {
+    logger.error('Invoice worker error', { message: err.message, stack: err.stack });
+  });
+}
+runInvoiceWorker();
+setInterval(runInvoiceWorker, 10000).unref();
+
 server.listen(PORT, () => {
   logger.info('POS/ERP server started', {
     port: PORT,
     localUrl: `http://localhost:${PORT}`,
+    webRoot: WEB,
     runtime: runtimeSnapshot(),
   });
+  if (!existsSync(WEB)) logger.warn('web folder missing', { webRoot: WEB });
 });
 
 function shutdown(signal) {

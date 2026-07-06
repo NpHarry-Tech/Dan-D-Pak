@@ -51,7 +51,7 @@ class DandpakTabletApp extends StatelessWidget {
           ),
           iconTheme: IconThemeData(color: Colors.white),
         ),
-        cardTheme: const CardTheme(
+        cardTheme: const CardThemeData(
           color: Color(0xFF1C2430),
           elevation: 4,
         ),

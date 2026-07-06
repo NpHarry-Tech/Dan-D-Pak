@@ -3,11 +3,12 @@
 // Dữ liệu được lưu trong SQLite (đọc nhanh) và file backup (audit trail).
 
 import { db, now } from '../db.js';
-import { mkdirSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
-import { runtimePaths } from '../config/paths.js';
+import { mkdirSync, writeFileSync, existsSync, readFileSync } from 'node:fs';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const STORAGE_ROOT = runtimePaths.enterpriseStorage;
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const STORAGE_ROOT = join(__dirname, '..', 'enterprise-storage');
 
 // ── Scopes ──────────────────────────────────────────────────────────────────
 // 'system'  → toàn hệ thống (scope_id = '')
@@ -32,16 +33,11 @@ function safeKey(key) {
   return k;
 }
 
-function safePathPart(value, fallback = 'default') {
-  const clean = String(value || fallback).trim().replace(/[^a-zA-Z0-9._-]/g, '_');
-  return clean || fallback;
-}
-
 // ── Backup file helpers ──────────────────────────────────────────────────────
 function backupDir(scope, scopeId) {
   if (scope === 'system') return join(STORAGE_ROOT, 'system');
-  if (scope === 'branch') return join(STORAGE_ROOT, 'branches', safePathPart(scopeId));
-  return join(STORAGE_ROOT, 'users', safePathPart(scopeId));
+  if (scope === 'branch') return join(STORAGE_ROOT, 'branches', scopeId);
+  return join(STORAGE_ROOT, 'users', scopeId);
 }
 
 function writeBackup(scope, scopeId, key, value) {

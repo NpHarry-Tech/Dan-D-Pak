@@ -178,27 +178,29 @@ class _KdsScreenState extends State<KdsScreen> {
       body: Column(
         children: [
           // Station Selection Row
-          Container(
-            height: 58,
-            color: const Color(0xFF161C23),
-            child: ListView(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-              children: _stations.map((st) {
-                final active = st == _activeStation;
-                final count = st == 'all' ? _items.length : _items.where((it) => it['station']?.toString() == st).length;
-                return Padding(
-                  padding: const EdgeInsets.only(right: 8),
-                  child: FilterChip(
-                    label: Text('${_stationLabel(st)} ($count)', style: TextStyle(fontWeight: FontWeight.bold, color: active ? Colors.white : Colors.white70)),
-                    selected: active,
-                    selectedColor: const Color(0xFF2F7D6B),
-                    checkmarkColor: Colors.white,
-                    backgroundColor: const Color(0xFF1E2630),
-                    onSelected: (_) => setState(() => _activeStation = st),
-                  ),
-                );
-              }).toList(),
+          RepaintBoundary(
+            child: Container(
+              height: 58,
+              color: const Color(0xFF161C23),
+              child: ListView(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                children: _stations.map((st) {
+                  final active = st == _activeStation;
+                  final count = st == 'all' ? _items.length : _items.where((it) => it['station']?.toString() == st).length;
+                  return Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: FilterChip(
+                      label: Text('${_stationLabel(st)} ($count)', style: TextStyle(fontWeight: FontWeight.bold, color: active ? Colors.white : Colors.white70)),
+                      selected: active,
+                      selectedColor: const Color(0xFF2F7D6B),
+                      checkmarkColor: Colors.white,
+                      backgroundColor: const Color(0xFF1E2630),
+                      onSelected: (_) => setState(() => _activeStation = st),
+                    ),
+                  );
+                }).toList(),
+              ),
             ),
           ),
           if (_error != null)
@@ -222,22 +224,24 @@ class _KdsScreenState extends State<KdsScreen> {
                           style: TextStyle(color: Colors.white30, fontSize: 16, fontWeight: FontWeight.w600),
                         ),
                       )
-                    : GridView.builder(
-                        padding: const EdgeInsets.all(16),
-                        gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-                          maxCrossAxisExtent: 320,
-                          mainAxisExtent: 220,
-                          crossAxisSpacing: 14,
-                          mainAxisSpacing: 14,
+                    : RepaintBoundary(
+                        child: GridView.builder(
+                          padding: const EdgeInsets.all(16),
+                          gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+                            maxCrossAxisExtent: 320,
+                            mainAxisExtent: 220,
+                            crossAxisSpacing: 14,
+                            mainAxisSpacing: 14,
+                          ),
+                          itemCount: filtered.length,
+                          itemBuilder: (context, index) {
+                            return TicketCard(
+                              key: ValueKey(filtered[index]['id'].toString()),
+                              item: filtered[index],
+                              onStatusChanged: _changeStatus,
+                            );
+                          },
                         ),
-                        itemCount: filtered.length,
-                        itemBuilder: (context, index) {
-                          return TicketCard(
-                            key: ValueKey(filtered[index]['id'].toString()),
-                            item: filtered[index],
-                            onStatusChanged: _changeStatus,
-                          );
-                        },
                       ),
           ),
         ],

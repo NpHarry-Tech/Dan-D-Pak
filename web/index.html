@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="vi"><head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>POS/ERP System — Device Launcher</title>
+<link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/shared/app.css">
+<script src="/runtime-config.js"></script>
+<style>
+body{height:auto;min-height:100vh;min-height:100dvh;overflow:auto;display:flex;flex-direction:column;padding:30px;box-sizing:border-box}
+.hub{max-width:920px;margin:auto;width:100%}
+.brand{text-align:center;margin:0 0 30px}
+.brand img{max-width:520px;max-height:280px;width:auto;height:auto;object-fit:contain}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:16px}
+.dev{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);padding:22px;transition:.15s;display:block}
+.dev:hover{border-color:var(--brand);transform:translateY(-3px)}
+.dev.disabled{opacity:.58;cursor:not-allowed}
+.dev.disabled:hover{border-color:var(--border);transform:none}
+.dev .ic{font-size:38px}
+.dev h2{font-size:16px;font-weight:800;margin:12px 0 5px}
+.dev p{color:var(--muted);font-size:12.5px;line-height:1.5;overflow-wrap:break-word;word-break:break-word}
+.dev .go{margin-top:14px;color:var(--brand);font-weight:700;font-size:12.5px}
+.branch-picker{display:flex;align-items:center;justify-content:center;gap:8px;margin:-24px auto 28px;color:var(--muted);font-size:12px;font-weight:750}
+.branch-picker span{font-size:11px;font-weight:850;text-transform:uppercase;color:var(--faint);letter-spacing:.35px;white-space:nowrap}
+.branch-picker .branch-name{height:30px;display:inline-flex;align-items:center;max-width:240px;border-radius:9px;padding:0 12px;background:var(--surface2);border:1px solid var(--border2);font-size:12.5px;font-weight:850;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.branch-picker .branch-switch{height:30px;border-radius:9px;padding:0 11px;background:var(--brand-dim);border:1px solid transparent;color:var(--brand);font-size:11.5px;font-weight:850;cursor:pointer;white-space:nowrap}
+.branch-picker .branch-switch:hover{border-color:var(--brand)}
+.launcher-logout{height:30px;border-radius:9px;padding:0 9px;background:transparent;border:1px solid var(--border2);color:var(--muted);font-size:11px;font-weight:800}
+.launcher-logout:hover{border-color:var(--late);color:var(--late);background:var(--late-bg)}
+.foot{text-align:center;color:var(--faint);font-size:11.5px;margin-top:26px}
+@media(max-width:560px){body{padding:18px}.branch-picker{margin-top:-18px;gap:7px;flex-wrap:wrap}.branch-picker select{height:32px;max-width:calc(100vw - 108px)}.launcher-logout{height:32px}}
+.skeleton-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);padding:22px;display:flex;flex-direction:column}
+.skeleton{animation:shimmer 1.3s ease infinite !important}
+</style></head>
+<body>
+<div class="hub">
+  <div class="brand"><img src="/assets/logo.png" alt="Dan — Góc Bếp Bon Appétit" onerror="this.style.display='none'"></div>
+  <div id="branchPicker">
+    <div class="branch-picker">
+      <div class="skeleton" style="width:240px;height:30px;border-radius:9px"></div>
+    </div>
+  </div>
+  <div class="grid" id="appGrid">
+    <div class="skeleton-card">
+      <div class="skeleton" style="width:42px;height:42px;border-radius:50%"></div>
+      <div class="skeleton" style="width:60%;height:20px;margin-top:12px"></div>
+      <div class="skeleton" style="width:90%;height:14px;margin-top:8px"></div>
+      <div class="skeleton" style="width:70%;height:14px;margin-top:4px"></div>
+    </div>
+    <div class="skeleton-card">
+      <div class="skeleton" style="width:42px;height:42px;border-radius:50%"></div>
+      <div class="skeleton" style="width:60%;height:20px;margin-top:12px"></div>
+      <div class="skeleton" style="width:90%;height:14px;margin-top:8px"></div>
+      <div class="skeleton" style="width:70%;height:14px;margin-top:4px"></div>
+    </div>
+    <div class="skeleton-card">
+      <div class="skeleton" style="width:42px;height:42px;border-radius:50%"></div>
+      <div class="skeleton" style="width:60%;height:20px;margin-top:12px"></div>
+      <div class="skeleton" style="width:90%;height:14px;margin-top:8px"></div>
+      <div class="skeleton" style="width:70%;height:14px;margin-top:4px"></div>
+    </div>
+    <div class="skeleton-card">
+      <div class="skeleton" style="width:42px;height:42px;border-radius:50%"></div>
+      <div class="skeleton" style="width:60%;height:20px;margin-top:12px"></div>
+      <div class="skeleton" style="width:90%;height:14px;margin-top:8px"></div>
+      <div class="skeleton" style="width:70%;height:14px;margin-top:4px"></div>
+    </div>
+  </div>
+  <p class="foot">Mẹo: các thiết bị cùng đăng nhập một chi nhánh sẽ đồng bộ đơn hàng, kho và trạng thái realtime.</p>
+</div>
+<script type="module">
+import { api, requireLogin, changeBranchFlow, esc, syncBranches, branchesForCurrentUser, selectedBranch, getUser, logout, canOpenModule, canOpenIpadSelfOrder, getAppMode } from '/shared/client.js';
+
+async function renderBranchPicker(){
+  try { await syncBranches(); } catch {}
+  const host = document.getElementById('branchPicker');
+  if (!host) return;
+  const current = selectedBranch();
+  const user = getUser();
+  const name = current.name || current.code || current.id;
+  // Nút "Đổi chi nhánh" chỉ hiện cho người được cấp quyền truy cập NHIỀU chi nhánh
+  // (Admin có toàn bộ; Quản lý được cấp nhiều chi nhánh). Nhân viên 1 chi nhánh không thấy.
+  const canSwitch = branchesForCurrentUser().length > 1;
+  host.innerHTML = `<div class="branch-picker">
+    <span>Chi nhánh</span>
+    <b class="branch-name" title="${esc(name)}">${esc(name)}</b>
+    ${canSwitch ? `<button class="branch-switch" id="branchSwitch" type="button">⇄ Đổi chi nhánh</button>` : ''}
+    ${user ? `<button class="launcher-logout" id="launcherLogout" type="button" title="Đăng xuất ${esc(user.name||user.username||'')}">Đăng xuất</button>` : ''}
+  </div>`;
+  const switchBtn = host.querySelector('#branchSwitch');
+  if (switchBtn) switchBtn.onclick = () => changeBranchFlow();
+  const logoutBtn = host.querySelector('#launcherLogout');
+  if (logoutBtn) logoutBtn.onclick = () => logout();
+}
+
+await requireLogin();
+await renderBranchPicker();
+const grid=document.getElementById('appGrid');
+try{
+  const {groups,modules}=await api('/modules');
+  const available=modules.filter(m=>m.key!=='ipad' || canOpenIpadSelfOrder());
+  const active=available.filter(m=>m.status==='active' && canOpenModule(m));
+  const planned=available.filter(m=>m.status!=='active');
+  const byGroup=Object.fromEntries(groups.map(g=>[g.key,g]));
+  const appMode = getAppMode();
+  const withApp = href => href && href !== '#'
+    ? href + (href.includes('?') ? '&' : '?') + 'app=' + encodeURIComponent(appMode)
+    : href;
+  const moduleHref=m=>m.key==='ipad'?'/ipad?pick=1&app=tablet':withApp(m.href||'#');
+  const card=m=>`<a class="dev ${m.status!=='active'?'disabled':''}" href="${m.status==='active'&&m.href?moduleHref(m):'#'}" ${m.status!=='active'?'onclick="return false"':''}>
+    <div class="ic">${esc(m.icon||'•')}</div>
+    <h2>${esc(m.label)}</h2>
+    <p>${esc(m.description||'')}</p>
+    ${m.status!=='active'?'<div class="go">Đang nằm trong roadmap</div>':''}
+  </a>`;
+  grid.innerHTML=[
+    ...groups.map(g=>{
+      const list=active.filter(m=>m.group===g.key);
+      return list.length?`<div style="grid-column:1/-1;margin-top:4px;color:var(--muted);font-size:12px;font-weight:800;text-transform:uppercase">${esc(g.label)}</div>${list.map(card).join('')}`:'';
+    }),
+    planned.length?`<div style="grid-column:1/-1;margin-top:16px;color:var(--muted);font-size:12px;font-weight:800;text-transform:uppercase">Roadmap theo kiến trúc ERP</div>${planned.map(m=>card({...m,description:(byGroup[m.group]?.label||m.group)+' · '+(m.description||'')})).join('')}`:'',
+  ].join('') || '<div class="empty">Tài khoản này chưa được cấp module nào.</div>';
+}catch(e){
+  grid.innerHTML=`<div class="empty">${esc(e.message)}</div>`;
+}
+</script>
+</body></html>

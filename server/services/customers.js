@@ -3,6 +3,7 @@
 import { db, uid, now, audit } from '../db.js';
 import { emit } from '../realtime.js';
 import { archiveCustomer } from './archive.js';
+import { getLoyaltyConfig } from './settings.js';
 
 const PERKS = ['none', 'pct', 'amount', 'free'];
 const PARTNER_TYPES = ['customer', 'supplier', 'both', 'staff'];
@@ -20,6 +21,8 @@ function normalizeRow(r) {
     active: r.active === undefined || r.active === null ? 1 : (parseInt(r.active) ? 1 : 0),
     auto_invoice: r.auto_invoice === undefined || r.auto_invoice === null ? 0 : (parseInt(r.auto_invoice) ? 1 : 0),
     perk_value: parseInt(r.perk_value) || 0,
+    loyalty_points: parseInt(r.loyalty_points) || 0,
+    loyalty_tier: r.loyalty_tier || '',
     total_orders: parseInt(r.total_orders) || 0,
     total_spent: parseInt(r.total_spent) || 0,
     favorite_items,
@@ -35,42 +38,24 @@ function parseJson(raw, fallback) {
 
 function matchesTerm(c, term) {
   if (!term) return true;
-  return [c.name, c.phone, c.tax_code, c.company, c.email, c.contact_person, c.address, c.preferences, c.allergies, c.profile_summary]
+  return [c.code, c.name, c.phone, c.tax_code, c.company, c.email, c.contact_person, c.address, c.preferences, c.allergies, c.profile_summary]
     .some(v => String(v || '').toLowerCase().includes(term));
 }
 
-function branchRows(branch_ids = []) {
-  const ids = [...new Set((Array.isArray(branch_ids) ? branch_ids : [branch_ids]).map(String).filter(Boolean))];
-  if (!ids.length) return { ids: [], placeholders: '', names: new Map() };
-  const placeholders = ids.map(() => '?').join(',');
-  const branches = db.prepare(`SELECT id,name,code FROM branches WHERE id IN (${placeholders})`).all(...ids);
-  const names = new Map(branches.map(b => [b.id, b.name || b.code || b.id]));
-  return { ids, placeholders, names };
-}
-
-function withBranchName(row, names) {
-  const out = normalizeRow(row);
-  return out ? { ...out, branch_name: names?.get(out.branch_id) || out.branch_id } : null;
-}
-
 // Sales-side customer picker (POS/retail/invoice). Suppliers never show here.
-export function listCustomers(branch_id = 'br1', q = '', options = {}) {
-  const scope = branchRows(options.branch_ids || [branch_id]);
-  if (!scope.ids.length) return [];
-  const rows = db.prepare(`SELECT * FROM customers WHERE branch_id IN (${scope.placeholders}) AND active!=0 ORDER BY updated_at DESC, created_at DESC`).all(...scope.ids);
+export function listCustomers(branch_id = 'br1', q = '') {
+  const rows = db.prepare(`SELECT * FROM customers WHERE branch_id=? AND active!=0 ORDER BY updated_at DESC, created_at DESC`).all(branch_id);
   const term = String(q || '').trim().toLowerCase();
   // Khách hàng + nhân viên (CBNV) đều chọn được ở POS để áp ưu đãi mặc định. NCC thì không.
-  const out = rows.map(r => withBranchName(r, scope.names)).filter(c => c.is_customer || c.is_staff);
+  const out = rows.map(normalizeRow).filter(c => c.is_customer || c.is_staff);
   return out.filter(c => matchesTerm(c, term)).slice(0, 200);
 }
 
 // Full contacts directory (Liên hệ): customers + suppliers, filterable by type.
-export function listPartners(branch_id = 'br1', { type = 'all', q = '', includeInactive = false, branch_ids = null } = {}) {
-  const scope = branchRows(branch_ids || [branch_id]);
-  if (!scope.ids.length) return [];
-  const rows = db.prepare(`SELECT * FROM customers WHERE branch_id IN (${scope.placeholders}) ORDER BY updated_at DESC, created_at DESC`).all(...scope.ids);
+export function listPartners(branch_id = 'br1', { type = 'all', q = '', includeInactive = false } = {}) {
+  const rows = db.prepare(`SELECT * FROM customers WHERE branch_id=? ORDER BY updated_at DESC, created_at DESC`).all(branch_id);
   const term = String(q || '').trim().toLowerCase();
-  let out = rows.map(r => withBranchName(r, scope.names));
+  let out = rows.map(normalizeRow);
   if (!includeInactive) out = out.filter(c => c.active !== 0);
   if (type === 'customer') out = out.filter(c => c.is_customer);
   else if (type === 'supplier') out = out.filter(c => c.is_supplier);
@@ -78,10 +63,8 @@ export function listPartners(branch_id = 'br1', { type = 'all', q = '', includeI
   return out.filter(c => matchesTerm(c, term)).slice(0, 500);
 }
 
-export function partnerCounts(branch_id = 'br1', branch_ids = null) {
-  const scope = branchRows(branch_ids || [branch_id]);
-  if (!scope.ids.length) return { all: 0, customer: 0, supplier: 0, staff: 0 };
-  const all = db.prepare(`SELECT * FROM customers WHERE branch_id IN (${scope.placeholders}) AND active!=0`).all(...scope.ids).map(normalizeRow);
+export function partnerCounts(branch_id = 'br1') {
+  const all = db.prepare(`SELECT * FROM customers WHERE branch_id=? AND active!=0`).all(branch_id).map(normalizeRow);
   return {
     all: all.length,
     customer: all.filter(c => c.is_customer).length,
@@ -95,17 +78,21 @@ export function getCustomer(id, branch_id = 'br1') {
   return normalizeRow(db.prepare(`SELECT * FROM customers WHERE id=? AND branch_id=?`).get(id, branch_id));
 }
 
-export function getCustomerInBranches(id, branch_ids = []) {
-  if (!id) return null;
-  const scope = branchRows(branch_ids);
-  if (!scope.ids.length) return null;
-  return withBranchName(db.prepare(`SELECT * FROM customers WHERE id=? AND branch_id IN (${scope.placeholders})`).get(id, ...scope.ids), scope.names);
-}
-
 export function findByTaxCode(tax_code, branch_id = 'br1') {
   const tc = String(tax_code || '').trim();
   if (!tc) return null;
   return normalizeRow(db.prepare(`SELECT * FROM customers WHERE branch_id=? AND tax_code=?`).get(branch_id, tc));
+}
+
+export function findByPhone(phone, branch_id = 'br1') {
+  const digits = String(phone || '').replace(/\D/g, '');
+  if (!digits) return null;
+  return normalizeRow(db.prepare(`
+    SELECT * FROM customers
+    WHERE branch_id=?
+      AND REPLACE(REPLACE(REPLACE(phone,' ',''),'.',''),'-','') LIKE ?
+    ORDER BY updated_at DESC, created_at DESC
+    LIMIT 1`).get(branch_id, `%${digits.slice(-9)}`));
 }
 
 function pickPerk(v) { return PERKS.includes(v) ? v : 'none'; }
@@ -115,8 +102,74 @@ function birthday(v) {
   return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : '';
 }
 
+function cleanCustomerCode(v) {
+  return str(v, 40).replace(/\s+/g, '').toUpperCase();
+}
+
+function nextCustomerCode(branch_id = 'br1') {
+  const row = db.prepare(`
+    SELECT COALESCE(MAX(CAST(SUBSTR(code, 3) AS INTEGER)), 0) AS n
+    FROM customers
+    WHERE branch_id=? AND code GLOB 'DC[0-9]*'`).get(branch_id);
+  return `DC${String((Number(row?.n) || 0) + 1).padStart(6, '0')}`;
+}
+
+function loyaltyTier(points, cfg) {
+  const tiers = Array.isArray(cfg?.tiers) ? cfg.tiers : [];
+  let picked = null;
+  for (const t of tiers) {
+    if ((parseInt(points) || 0) >= (parseInt(t.fromPoints) || 0)) picked = t;
+  }
+  return picked || tiers[0] || null;
+}
+
+function roundedPoints(value, mode = 'floor') {
+  if (mode === 'ceil') return Math.ceil(value);
+  if (mode === 'round') return Math.round(value);
+  return Math.floor(value);
+}
+
+function birthdayToday(customer) {
+  const b = String(customer?.birthday || '');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(b)) return false;
+  return b.slice(5) === new Date().toISOString().slice(5, 10);
+}
+
+function loyaltyEarn(customer, amount, cfg) {
+  const currentPoints = parseInt(customer?.loyalty_points) || 0;
+  if (!cfg?.enabled) return { points: 0, tier: loyaltyTier(currentPoints, cfg)?.name || '' };
+  if (cfg.phoneRequired && !String(customer?.phone || '').trim()) {
+    return { points: 0, tier: loyaltyTier(currentPoints, cfg)?.name || '' };
+  }
+  const total = Math.max(0, parseInt(amount) || 0);
+  let points = 0;
+  const amountRule = cfg.earn?.amount || {};
+  if (amountRule.enabled && total >= (parseInt(amountRule.minSpend) || 0)) {
+    const unit = Math.max(1, parseInt(amountRule.spend) || 1);
+    points += roundedPoints(total / unit, amountRule.rounding) * (parseInt(amountRule.points) || 0);
+  }
+  const orderRule = cfg.earn?.order || {};
+  if (orderRule.enabled && total >= (parseInt(orderRule.minSpend) || 0)) {
+    points += parseInt(orderRule.points) || 0;
+  }
+  const tier = loyaltyTier(currentPoints, cfg);
+  let multiplier = Number(tier?.earnMultiplier) || 1;
+  if (cfg.earn?.birthday?.enabled && birthdayToday(customer)) {
+    multiplier *= Number(cfg.earn.birthday.multiplier) || 1;
+  }
+  const earned = Math.max(0, Math.floor(points * multiplier));
+  return {
+    points: earned,
+    tier: loyaltyTier(currentPoints + earned, cfg)?.name || tier?.name || '',
+  };
+}
+
 export function upsertCustomer(body = {}, branch_id = 'br1') {
   const name = str(body.name, 200);
+  const existing = body.id ? db.prepare(`SELECT * FROM customers WHERE id=? AND branch_id=?`).get(body.id, branch_id) : null;
+  const code = cleanCustomerCode(body.code) || existing?.code || nextCustomerCode(branch_id);
+  const dup = db.prepare(`SELECT id FROM customers WHERE branch_id=? AND code=? AND id!=?`).get(branch_id, code, existing?.id || '');
+  if (dup) throw new Error('Mã khách hàng đã tồn tại');
   if (!name) throw new Error('Thiếu tên liên hệ');
   const perk_type = pickPerk(body.perk_type);
   let perk_value = Math.max(0, parseInt(body.perk_value) || 0);
@@ -127,12 +180,19 @@ export function upsertCustomer(body = {}, branch_id = 'br1') {
   const active = body.active === undefined ? 1 : (parseInt(body.active) ? 1 : 0);
   const auto_invoice = body.auto_invoice === undefined ? 0 : (parseInt(body.auto_invoice) ? 1 : 0);
   const fields = {
+    code,
     name,
+    avatar: str(body.avatar, 600),
     phone: str(body.phone, 40),
     email: str(body.email, 160),
     tax_code: str(body.tax_code, 40),
     company: str(body.company, 300),
     address: str(body.address, 600),
+    address_detail: str(body.address_detail, 300),
+    address_ward: str(body.address_ward, 120),
+    address_province: str(body.address_province, 120),
+    ward_code: str(body.ward_code, 20),
+    province_code: str(body.province_code, 20),
     birthday: birthday(body.birthday),
     preferences: str(body.preferences, 800),
     allergies: str(body.allergies, 800),
@@ -144,10 +204,9 @@ export function upsertCustomer(body = {}, branch_id = 'br1') {
     active,
     auto_invoice,
   };
-  const existing = body.id ? db.prepare(`SELECT * FROM customers WHERE id=? AND branch_id=?`).get(body.id, branch_id) : null;
   if (existing) {
-    db.prepare(`UPDATE customers SET name=?,phone=?,email=?,tax_code=?,company=?,address=?,birthday=?,preferences=?,allergies=?,perk_type=?,perk_value=?,note=?,partner_type=?,contact_person=?,active=?,auto_invoice=?,updated_at=? WHERE id=? AND branch_id=?`)
-      .run(fields.name, fields.phone, fields.email, fields.tax_code, fields.company, fields.address, fields.birthday, fields.preferences, fields.allergies, fields.perk_type, fields.perk_value, fields.note, fields.partner_type, fields.contact_person, fields.active, fields.auto_invoice, now(), existing.id, branch_id);
+    db.prepare(`UPDATE customers SET code=?,name=?,avatar=?,phone=?,email=?,tax_code=?,company=?,address=?,address_detail=?,address_ward=?,address_province=?,ward_code=?,province_code=?,birthday=?,preferences=?,allergies=?,perk_type=?,perk_value=?,note=?,partner_type=?,contact_person=?,active=?,auto_invoice=?,updated_at=? WHERE id=? AND branch_id=?`)
+      .run(fields.code, fields.name, fields.avatar, fields.phone, fields.email, fields.tax_code, fields.company, fields.address, fields.address_detail, fields.address_ward, fields.address_province, fields.ward_code, fields.province_code, fields.birthday, fields.preferences, fields.allergies, fields.perk_type, fields.perk_value, fields.note, fields.partner_type, fields.contact_person, fields.active, fields.auto_invoice, now(), existing.id, branch_id);
     audit('customer.update', { id: existing.id, name: fields.name, partner_type: fields.partner_type }, branch_id);
     emit('customers:updated', { id: existing.id }, branch_id);
     const out = getCustomer(existing.id, branch_id);
@@ -155,9 +214,9 @@ export function upsertCustomer(body = {}, branch_id = 'br1') {
     return out;
   }
   const id = uid('cus_');
-  db.prepare(`INSERT INTO customers (id,branch_id,name,phone,email,tax_code,company,address,birthday,preferences,allergies,perk_type,perk_value,note,partner_type,contact_person,active,auto_invoice,total_orders,total_spent,created_at,updated_at)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,0,?,?)`)
-    .run(id, branch_id, fields.name, fields.phone, fields.email, fields.tax_code, fields.company, fields.address, fields.birthday, fields.preferences, fields.allergies, fields.perk_type, fields.perk_value, fields.note, fields.partner_type, fields.contact_person, fields.active, fields.auto_invoice, now(), now());
+  db.prepare(`INSERT INTO customers (id,branch_id,code,name,avatar,phone,email,tax_code,company,address,address_detail,address_ward,address_province,ward_code,province_code,birthday,preferences,allergies,perk_type,perk_value,note,partner_type,contact_person,active,auto_invoice,loyalty_points,total_orders,total_spent,created_at,updated_at)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,0,0,?,?)`)
+    .run(id, branch_id, fields.code, fields.name, fields.avatar, fields.phone, fields.email, fields.tax_code, fields.company, fields.address, fields.address_detail, fields.address_ward, fields.address_province, fields.ward_code, fields.province_code, fields.birthday, fields.preferences, fields.allergies, fields.perk_type, fields.perk_value, fields.note, fields.partner_type, fields.contact_person, fields.active, fields.auto_invoice, now(), now());
   audit('customer.create', { id, name: fields.name, partner_type: fields.partner_type }, branch_id);
   emit('customers:updated', { id, created: true }, branch_id);
   const out = getCustomer(id, branch_id);
@@ -175,14 +234,25 @@ export function deleteCustomer(id, branch_id = 'br1') {
   return { ok: true };
 }
 
-// Bump lifetime stats after a paid order (best-effort, never throws into checkout).
-export function recordPurchase(id, amount = 0, branch_id = 'br1', order_id = null) {
+// Bump lifetime stats and loyalty points after a paid order (best-effort).
+export function recordPurchase(customerRef, amount = 0, branch_id = 'br1', order_id = null) {
   try {
-    if (!id) return;
-    db.prepare(`UPDATE customers SET total_orders=total_orders+1, total_spent=total_spent+?, updated_at=? WHERE id=? AND branch_id=?`)
-      .run(Math.max(0, parseInt(amount) || 0), now(), id, branch_id);
-    rebuildCustomerInsights(id, branch_id);
-    const out = getCustomer(id, branch_id);
+    if (!customerRef) return;
+    let customer = typeof customerRef === 'string'
+      ? getCustomer(customerRef, branch_id)
+      : (customerRef.id ? getCustomer(customerRef.id, branch_id) : null);
+    if (!customer && typeof customerRef === 'object' && customerRef.phone) {
+      customer = findByPhone(customerRef.phone, branch_id);
+    }
+    if (!customer?.id) return;
+    const cfg = getLoyaltyConfig(branch_id);
+    const earned = loyaltyEarn(customer, amount, cfg);
+    const nextPoints = (parseInt(customer.loyalty_points) || 0) + earned.points;
+    db.prepare(`UPDATE customers SET total_orders=total_orders+1,total_spent=total_spent+?,loyalty_points=?,loyalty_tier=?,last_visit_at=?,updated_at=? WHERE id=? AND branch_id=?`)
+      .run(Math.max(0, parseInt(amount) || 0), nextPoints, earned.tier || customer.loyalty_tier || '', now(), now(), customer.id, branch_id);
+    rebuildCustomerInsights(customer.id, branch_id);
+    if (earned.points > 0) audit('customer.loyalty_earn', { id: customer.id, points: earned.points, order_id }, branch_id);
+    const out = getCustomer(customer.id, branch_id);
     archiveCustomer({ ...out, last_order_id: order_id || undefined });
   } catch { /* ignore */ }
 }
@@ -221,13 +291,10 @@ export function perkDiscount(customer, base = 0) {
 
 // Look up company name/address from a Vietnamese tax code via the free VietQR
 // business directory (used to prefill invoice info the first time an MST is typed).
-export async function lookupTaxCode(taxCode, branch_ids = null) {
+export async function lookupTaxCode(taxCode) {
   const tc = String(taxCode || '').replace(/\s+/g, '');
   if (!/^\d{10}(\d{3})?$/.test(tc)) throw new Error('Mã số thuế phải gồm 10 hoặc 13 chữ số');
-  const scope = branch_ids ? branchRows(branch_ids) : null;
-  const local = scope?.ids?.length
-    ? db.prepare(`SELECT * FROM customers WHERE tax_code=? AND branch_id IN (${scope.placeholders})`).get(tc, ...scope.ids)
-    : db.prepare(`SELECT * FROM customers WHERE tax_code=?`).get(tc);
+  const local = db.prepare(`SELECT * FROM customers WHERE tax_code=?`).get(tc);
   try {
     const ctrl = new AbortController();
     const t = setTimeout(() => ctrl.abort(), 8000);

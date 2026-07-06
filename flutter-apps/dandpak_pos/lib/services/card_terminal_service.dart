@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
@@ -14,6 +15,8 @@ class CardTerminalService {
     required String billNo,
     required String terminalName,
     required String mode, // 'auto', 'manual', 'mock', 'off'
+    String? ip,
+    int? port,
   }) async {
     if (mode == 'mock') {
       await Future.delayed(const Duration(seconds: 1));
@@ -46,10 +49,82 @@ class CardTerminalService {
           };
         }
       } else {
-        return {
-          'approved': false,
-          'error': 'Chế độ Tự động chỉ hỗ trợ trên thiết bị Android POS (A920). Vui lòng chuyển sang chế độ Thủ công.',
-        };
+        // Desktop PC -> Socket TCP/IP over local LAN / USB Network Tethering
+        final targetIp = (ip == null || ip.trim().isEmpty) ? '127.0.0.1' : ip.trim();
+        final targetPort = port ?? 25000;
+
+        try {
+          final socket = await Socket.connect(targetIp, targetPort, timeout: const Duration(seconds: 10));
+          
+          final requestPayload = jsonEncode({
+            'command': 'sale',
+            'amount': amount.toInt(),
+            'txnRef': reference,
+            'billNo': billNo,
+            'terminalName': terminalName,
+          });
+          
+          socket.write('$requestPayload\n');
+          await socket.flush();
+
+          final completer = Completer<String>();
+          final buffer = StringBuffer();
+          
+          final subscription = socket.listen(
+            (data) {
+              buffer.write(utf8.decode(data));
+              final content = buffer.toString();
+              // Check if json message is completed (contains closing bracket and newline)
+              if (!completer.isCompleted &&
+                  (content.contains('}') || content.contains('\n'))) {
+                completer.complete(content);
+              }
+            },
+            onError: (err) {
+              if (!completer.isCompleted) completer.completeError(err);
+            },
+            onDone: () {
+              if (!completer.isCompleted) {
+                completer.complete(buffer.toString());
+              }
+            },
+            cancelOnError: true,
+          );
+
+          final responseStr = await completer.future.timeout(const Duration(minutes: 3));
+          await subscription.cancel();
+          await socket.close();
+
+          final cleanResponse = responseStr.trim();
+          final Map<String, dynamic> respJson = jsonDecode(cleanResponse);
+
+          final isSuccess = respJson['approved'] == true || 
+                             respJson['responseCode'] == '00' || 
+                             respJson['respCode'] == '00' ||
+                             respJson['status'] == 'success';
+
+          if (isSuccess) {
+            return {
+              'approved': true,
+              'txnId': respJson['txnId'] ?? respJson['transactionId'] ?? 'POS${DateTime.now().millisecondsSinceEpoch}',
+              'rrn': respJson['rrn'] ?? respJson['referenceNo'] ?? '',
+              'approval': respJson['approval'] ?? respJson['approvalCode'] ?? '',
+              'mask': respJson['mask'] ?? respJson['cardNo'] ?? respJson['cardNumber'] ?? '**** **** **** ****',
+              'scheme': respJson['scheme'] ?? respJson['cardType'] ?? 'CARD',
+              'terminal': respJson['terminal'] ?? terminalName,
+            };
+          } else {
+            return {
+              'approved': false,
+              'error': respJson['error'] ?? respJson['message'] ?? respJson['responseMessage'] ?? 'Giao dịch bị từ chối hoặc thất bại.',
+            };
+          }
+        } catch (e) {
+          return {
+            'approved': false,
+            'error': 'Không thể kết nối đến thiết bị POS ($targetIp:$targetPort) qua USB/LAN. Vui lòng bật "Chia sẻ kết nối Internet qua USB" (USB Tethering) trên máy POS, hoặc kiểm tra địa chỉ IP cấu hình. Chi tiết lỗi: $e',
+          };
+        }
       }
     }
 

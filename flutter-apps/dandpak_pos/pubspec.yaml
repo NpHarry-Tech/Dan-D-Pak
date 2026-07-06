@@ -12,11 +12,60 @@ dependencies:
   dandpak_core:
     path: ../dandpak_core
   provider: ^6.1.2
-  shared_preferences: ^2.2.2
   intl: ^0.19.0
+  http: ^1.2.0
+  # Inline audio playback so notification sounds (.ogg) play inside the app
+  # instead of opening the OS browser. libmpv (bundled by the libs package)
+  # decodes Ogg/Vorbis, which Windows Media Foundation cannot.
+  media_kit: ^1.1.10
+  media_kit_libs_windows_audio: ^1.0.9
+  flutter_box_transform: ^0.4.7
+  qr_flutter: ^4.1.0
+  barcode_widget: ^2.0.4
+  # 2nd customer-facing window on monitor 2 (single Flutter window can't show
+  # two different screens at once). Data is pushed to it over the plugin's own
+  # method channel — no server relay needed.
+  desktop_multi_window: ^0.2.0
 
 dev_dependencies:
+  flutter_test:
+    sdk: flutter
   flutter_lints: ^4.0.0
 
 flutter:
   uses-material-design: true
+  # IMPORTANT: only bundle the small UI images the app actually references with
+  # Image.asset. Product images, menu-book pages and notification sounds are
+  # served at runtime by the bundled Node engine (Image.network / media_kit),
+  # so re-bundling them here would add ~140MB to the installer and slow boot.
+  assets:
+    - assets/web/assets/DanOnLogo.png
+    - assets/web/assets/logo.png
+    - assets/web/assets/MISA.jpg
+    - assets/web/assets/payoslogo.png
+    - assets/web/assets/vietqr.png
+    - assets/web/assets/sepay.webp
+    - assets/web/assets/Casso.png
+    - assets/web/assets/grabmerchantlogo.webp
+    - assets/web/assets/grabmartlogo.png
+    - assets/web/assets/shopeefoodlogo.png
+    - assets/web/assets/befoodlogo.png
+    - assets/web/assets/sounds/notifications/catalog.json
+    - assets/data/vn_admin_units_2026.json
+  fonts:
+    - family: Be Vietnam Pro
+      fonts:
+        - asset: assets/fonts/BeVietnamPro-Regular.ttf
+          weight: 400
+        - asset: assets/fonts/BeVietnamPro-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/BeVietnamPro-SemiBold.ttf
+          weight: 600
+        - asset: assets/fonts/BeVietnamPro-Bold.ttf
+          weight: 700
+        - asset: assets/fonts/BeVietnamPro-ExtraBold.ttf
+          weight: 800
+    - family: JetBrains Mono
+      fonts:
+        - asset: assets/fonts/JetBrainsMono-Regular.ttf
+          weight: 400

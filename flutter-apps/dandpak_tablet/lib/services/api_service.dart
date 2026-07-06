@@ -1,3 +1,4 @@
+import 'dart:isolate';
 import 'package:dandpak_core/dandpak_core.dart';
 
 import '../models/tablet_models.dart';
@@ -82,15 +83,17 @@ class ApiService extends DanDpakApiClient {
       }
     }
 
-    return data.map((item) {
-      final map = _jsonMap(item);
-      final categoryId = map['category_id']?.toString();
-      final hasCategory = (map['category'] ?? '').toString().isNotEmpty;
-      if (!hasCategory && categoryId != null) {
-        map['category'] = catNames[categoryId] ?? categoryId;
-      }
-      return MenuItem.fromJson(map);
-    }).toList();
+    return await Isolate.run(() {
+      return data.map((item) {
+        final map = _jsonMap(item);
+        final categoryId = map['category_id']?.toString();
+        final hasCategory = (map['category'] ?? '').toString().isNotEmpty;
+        if (!hasCategory && categoryId != null) {
+          map['category'] = catNames[categoryId] ?? categoryId;
+        }
+        return MenuItem.fromJson(map);
+      }).toList();
+    });
   }
 
   Future<Map<String, dynamic>> createOrder({

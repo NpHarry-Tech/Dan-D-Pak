@@ -3,6 +3,8 @@ import { db, uid, now, audit } from '../db.js';
 import { getOperationsConfig } from './settings.js';
 import { emit } from '../realtime.js';
 import * as CashDrawer from './cashDrawer.js';
+import * as einvoice from './einvoice.js';
+import * as Auth from './auth.js';
 
 function parseJson(raw, fallback) {
   try { return raw ? JSON.parse(raw) : fallback; } catch { return fallback; }
@@ -63,6 +65,27 @@ export function openShift(body = {}, user = {}, branch_id = 'br1') {
 export function closeShift(body = {}, user = {}, branch_id = 'br1') {
   const shift = getActiveShift(branch_id);
   if (!shift) throw new Error('Chua co ca dang mo de ket ca.');
+
+  // E-invoice compliance block check
+  const stats = einvoice.getShiftInvoiceSummary(branch_id, shift.id);
+  if (!stats.can_close) {
+    const overridePin = body.manager_override_pin;
+    let approved = false;
+    if (overridePin) {
+      const approvedBy = Auth.verifyManagerOwnerPin(overridePin, branch_id);
+      if (approvedBy) {
+        approved = true;
+        audit('shift.close_override', { shift: shift.shift_label, user: user.username || '', manager: approvedBy.name || approvedBy.username }, branch_id, user.username || 'system');
+      }
+    }
+    if (!approved) {
+      const err = new Error('Không thể kết ca: Vẫn còn hóa đơn lỗi hoặc chưa xuất (Thiếu: ' + stats.missing_count + ', Lỗi: ' + stats.failed_count + '). Nhập PIN Quản lý để bỏ qua.');
+      err.status = 409;
+      err.code = 'EINVOICE_BLOCK';
+      err.stats = stats;
+      throw err;
+    }
+  }
   const cfg = getOperationsConfig(branch_id);
   const labels = cfg.shifts.labels.filter(x => x.enabled !== false);
   const picked = labels.find(x => x.key === body.shift_key) || labels.find(x => x.key === shift.shift_key) || labels[0] || { key: shift.shift_key, label: shift.shift_label };

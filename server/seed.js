@@ -158,12 +158,12 @@ skus.forEach(s => insSku.run(s.id, BR, s.barcode, s.name, s.emoji, s.price, s.co
 
 // ---- Retail promotions / vouchers ----
 const insVoucher = db.prepare(`INSERT INTO vouchers
-  (id,branch_id,code,name,type,value,scope,sku_id,min_total,active,note,created_at,updated_at)
-  VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`);
+  (id,branch_id,code,name,type,value,scope,sku_id,lot_no,min_total,active,note,created_at,updated_at)
+  VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
 [
   { id: 'v_open10', code: 'OPEN10', name: 'Khai trương -10%', type: 'pct', value: 10, scope: 'order', min_total: 0, note: 'Voucher toàn bill' },
   { id: 'v_choco5', code: 'CHOCO5', name: 'Sô-cô-la giảm 5K', type: 'amount', value: 5000, scope: 'sku', sku_id: 's_choco', min_total: 0, note: 'Promo riêng cho SKU' },
-].forEach(v => insVoucher.run(v.id, BR, v.code, v.name, v.type, v.value, v.scope, v.sku_id || null, v.min_total || 0, 1, v.note || null, new Date().toISOString(), new Date().toISOString()));
+].forEach(v => insVoucher.run(v.id, BR, v.code, v.name, v.type, v.value, v.scope, v.sku_id || null, v.lot_no || null, v.min_total || 0, 1, v.note || null, new Date().toISOString(), new Date().toISOString()));
 
 bootstrapWarehouseDefaults(BR);
 

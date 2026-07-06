@@ -283,7 +283,7 @@ class _InventoryScreenState extends State<InventoryScreen> with SingleTickerProv
                     style: TextStyle(
                       color: titleColor,
                       fontSize: 16,
-                      fontWeight: FontWeight.extrabold,
+                      fontWeight: FontWeight.w800,
                     ),
                   ),
                   Text(

@@ -36,3 +36,18 @@ server/permanent-storage/**
 !server/permanent-storage/README.md
 !server/permanent-storage/**/
 !server/permanent-storage/**/.gitkeep
+
+# Model / Temporary
+artifacts/
+scratch/
+*.exe
+
+# Flutter temp
+**/.dart_tool/
+**/.flutter-plugins
+**/.flutter-plugins-dependencies
+**/pubspec.lock
+build/
+**/build/
+
+

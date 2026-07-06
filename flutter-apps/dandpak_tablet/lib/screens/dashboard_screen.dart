@@ -7,6 +7,7 @@ import 'connection_screen.dart';
 import 'kds_module/kds_screen.dart';
 import 'ordering_module/order_screen.dart';
 import 'inventory_module/inventory_screen.dart';
+import 'self_order_module/self_order_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -111,6 +112,34 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 _sidebarItem(0, 'Gọi món / Order', Icons.restaurant_menu),
                 _sidebarItem(1, 'Màn hình Bếp (KDS)', Icons.kitchen),
                 _sidebarItem(2, 'Quản lý Kho', Icons.inventory_2),
+                // iPad Self-order: giao tablet cho KHÁCH tự gọi món — mở
+                // toàn màn hình màn /ipad web sẵn có (kiosk; nhân viên thoát
+                // bằng 5 chạm góc trên-trái).
+                Padding(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                  child: ListTile(
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8)),
+                    leading: const Icon(Icons.touch_app_outlined,
+                        color: Colors.white60, size: 20),
+                    title: const Text(
+                      'iPad Self-order (Khách)',
+                      style: TextStyle(
+                        color: Colors.white70,
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    onTap: () {
+                      Navigator.of(context).push(MaterialPageRoute(
+                        fullscreenDialog: true,
+                        builder: (_) =>
+                            SelfOrderScreen(serverUrl: appProv.serverUrl),
+                      ));
+                    },
+                  ),
+                ),
                 const Spacer(),
                 // User details
                 Padding(

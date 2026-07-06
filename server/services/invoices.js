@@ -60,9 +60,9 @@ export async function issue(order_id, customer = {}, branch_id = 'br1') {
   return inv;
 }
 
-// Khách tự phục vụ chọn xuất/không xuất hóa đơn VAT sau khi thanh toán QR (iPad).
+// Khách tự phục vụ chọn xuất hóa đơn VAT hoặc bán cho người tiêu dùng sau thanh toán QR (iPad).
 // decision: 'issue' → phát hành hóa đơn theo thông tin khách nhập (MST/SĐT/email);
-//           'decline' → khách không lấy hóa đơn. Cả hai đều lưu orders.invoice_choice + ghi nhật ký để báo cáo.
+//           'decline' → bán cho người tiêu dùng. Cả hai đều lưu orders.invoice_choice + ghi nhật ký để báo cáo.
 export async function customerRequest(order_id, { decision = 'issue', customer = {} } = {}, branch_id = 'br1') {
   const order = getOrder(order_id);
   if (!order) throw new Error('Đơn không tồn tại');

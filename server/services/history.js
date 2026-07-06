@@ -34,6 +34,7 @@ function moneyToWords(n) {
 
 export function listOrderHistory(branch_id = 'br1', { limit = 60, q = '', channel = '', from = '', to = '' } = {}) {
   const params = [branch_id];
+  const search = String(q || '').trim().replace(/^#/, '').toLowerCase();
   let sql = `SELECT o.id, o.bill_no, o.channel, o.status, o.total, o.subtotal, o.discount, o.created_at, o.paid_at,
       o.online_channel, o.online_ref, o.invoice_id, t.code AS table_code, i.invoice_no
     FROM orders o
@@ -43,6 +44,17 @@ export function listOrderHistory(branch_id = 'br1', { limit = 60, q = '', channe
   if (channel) { sql += ' AND o.channel=?'; params.push(channel); }
   if (from) { sql += ' AND COALESCE(o.paid_at,o.created_at) >= ?'; params.push(from); }
   if (to) { sql += ' AND COALESCE(o.paid_at,o.created_at) <= ?'; params.push(to); }
+  if (search) {
+    sql += ` AND (
+      LOWER(COALESCE(o.bill_no,'')) LIKE ?
+      OR LOWER(o.id) LIKE ?
+      OR LOWER(COALESCE(t.code,'')) LIKE ?
+      OR LOWER(COALESCE(o.online_ref,'')) LIKE ?
+      OR LOWER(COALESCE(i.invoice_no,'')) LIKE ?
+    )`;
+    const like = `%${search}%`;
+    params.push(like, like, like, like, like);
+  }
   sql += ' ORDER BY COALESCE(o.paid_at,o.created_at) DESC LIMIT ?';
   params.push(Math.min(parseInt(limit) || 60, 300));
 
@@ -60,12 +72,6 @@ export function listOrderHistory(branch_id = 'br1', { limit = 60, q = '', channe
     channel_label: o.online_channel ? ({ grabfood: 'GrabFood', shopeefood: 'ShopeeFood', website: 'Website' }[o.online_channel] || o.online_channel)
       : (o.channel === 'retail' ? 'Bán lẻ' : o.table_code ? 'Bàn ' + o.table_code : 'Tại quầy'),
   }));
-  if (q) {
-    const s = q.toLowerCase();
-    rows = rows.filter(o => o.number.toLowerCase().includes(s) || (o.bill_no || '').toLowerCase().includes(s)
-      || (o.table_code || '').toLowerCase().includes(s)
-      || (o.online_ref || '').toLowerCase().includes(s) || (o.invoice_no || '').toLowerCase().includes(s));
-  }
   return rows;
 }
 

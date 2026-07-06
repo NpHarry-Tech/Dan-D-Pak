@@ -1,5 +1,8 @@
 import { db, now } from '../db.js';
+import writeExcelFile from 'write-excel-file/node';
+import PDFDocument from 'pdfkit';
 import { execFile } from 'child_process';
+import { existsSync } from 'fs';
 import { promisify } from 'util';
 import { mkdtemp, writeFile, readFile, rm } from 'fs/promises';
 import os from 'os';
@@ -127,6 +130,9 @@ function rowsSum(rows, key) {
 function section(title, columns, rows, totals = null) {
   return { title, columns, rows, totals };
 }
+function stat(label, value, raw = null) {
+  return raw === null ? { label, value } : { label, value, raw };
+}
 function reportShell(type, query) {
   const spec = REPORTS.find(r => r.key === type) || REPORTS[0];
   const range = rangeFromQuery(query);
@@ -145,6 +151,97 @@ function reportShell(type, query) {
     summary: [],
     sections: [],
   };
+}
+function branchRowsFor(ids = []) {
+  const clean = [...new Set(ids.map(id => String(id || '').trim()).filter(Boolean))];
+  if (!clean.length) return [];
+  const rows = db.prepare(`SELECT id,name,code FROM branches WHERE id IN (${clean.map(() => '?').join(',')})`).all(...clean);
+  const map = new Map(rows.map(r => [r.id, { id: r.id, name: r.name || r.code || r.id, code: r.code || r.id }]));
+  return clean.map(id => map.get(id) || { id, name: id, code: id });
+}
+function normalizeScope(scope = 'br1') {
+  if (typeof scope === 'string') {
+    const branches = branchRowsFor([scope]);
+    return { branch_ids: [scope], branches, label: branches[0]?.name || scope };
+  }
+  const ids = Array.isArray(scope) ? scope : (scope.branch_ids || scope.branchIds || []);
+  const branch_ids = [...new Set(ids.map(id => String(id || '').trim()).filter(Boolean))];
+  const provided = Array.isArray(scope.branches) ? scope.branches : [];
+  const providedMap = new Map(provided.map(b => [String(b.id), { id: String(b.id), name: b.name || b.code || b.id, code: b.code || b.id }]));
+  const branches = branch_ids.map(id => providedMap.get(id)).filter(Boolean);
+  const finalBranches = branches.length === branch_ids.length ? branches : branchRowsFor(branch_ids);
+  const label = finalBranches.length > 1
+    ? `${finalBranches.length} chi nhánh`
+    : (finalBranches[0]?.name || branch_ids[0] || 'Chi nhánh');
+  return { branch_ids, branches: finalBranches, label };
+}
+function withScope(report, scope) {
+  report.scope = {
+    branch_ids: scope.branch_ids,
+    branches: scope.branches,
+    label: scope.label,
+  };
+  report.range = { ...report.range, label: `${report.range.label} · ${scope.label}` };
+  return report;
+}
+function combineBranchReports(type, scope, query, reports) {
+  const report = reportShell(type, query);
+  if (reports[0]) {
+    report.title = reports[0].title;
+    report.description = reports[0].description;
+  }
+  const branchById = new Map(scope.branches.map(b => [b.id, b]));
+  const perBranchCols = [{ key: 'branch_name', label: 'Chi nhánh' }];
+  for (const s of reports[0]?.summary || []) {
+    perBranchCols.push({ key: `sum_${perBranchCols.length}`, label: s.label, align: 'right' });
+  }
+  const perBranchRows = reports.map(r => {
+    const b = branchById.get(r.branch_id) || { name: r.branch_id };
+    const row = { branch_id: r.branch_id, branch_name: b.name };
+    r.summary.forEach((s, i) => { row[`sum_${i + 1}`] = s.value; });
+    return row;
+  });
+  const sectionMap = new Map();
+  for (const r of reports) {
+    const branch = branchById.get(r.branch_id) || { id: r.branch_id, name: r.branch_id };
+    for (const sec of r.sections || []) {
+      const key = sec.title;
+      if (!sectionMap.has(key)) {
+        sectionMap.set(key, {
+          title: sec.title,
+          columns: [{ key: 'branch_name', label: 'Chi nhánh' }, ...sec.columns],
+          rows: [],
+        });
+      }
+      const target = sectionMap.get(key);
+      for (const row of sec.rows || []) {
+        target.rows.push({ ...row, _branch_id: branch.id, branch_name: branch.name });
+      }
+    }
+  }
+  const allRows = [...sectionMap.values()].flatMap(sec => sec.rows || []);
+  if (['sales_overview', 'sales_online'].includes(type)) {
+    const detailRows = allRows.filter(r => r.order_id && r.amount !== undefined);
+    const bills = new Set(detailRows.map(r => `${r._branch_id}:${r.order_id}`));
+    const amount = rowsSum(detailRows, 'amount');
+    const quantity = rowsSum(detailRows, 'qty');
+    report.summary = [
+      stat('Doanh thu', money(amount), amount),
+      stat('Số bill', bills.size, bills.size),
+      stat('Số lượng', qty(quantity), quantity),
+      stat('Bình quân/bill', money(bills.size ? amount / bills.size : 0), bills.size ? amount / bills.size : 0),
+    ];
+  } else {
+    report.summary = [
+      stat('Chi nhánh', scope.branches.length, scope.branches.length),
+      stat('Số dòng dữ liệu', allRows.length, allRows.length),
+    ];
+  }
+  report.sections = [
+    section('Tổng hợp theo chi nhánh', perBranchCols, perBranchRows),
+    ...sectionMap.values(),
+  ];
+  return withScope(report, scope);
 }
 function paidOrderWhere(branch_id, range, extra = '') {
   return {
@@ -184,11 +281,13 @@ function buildSales(type, branch_id, query) {
   const kind = type === 'sales_fnb' ? 'all' : type === 'sales_retail' ? 'retail' : type === 'sales_online' ? 'online' : 'all';
   const rows = saleRows(branch_id, query, type === 'sales_by_product' ? 'all' : kind);
   const bills = new Set(rows.map(r => r.order_id));
+  const revenue = rowsSum(rows, 'amount');
+  const quantity = rowsSum(rows, 'qty');
   report.summary = [
-    { label: 'Doanh thu', value: money(rowsSum(rows, 'amount')) },
-    { label: 'Số bill', value: bills.size },
-    { label: 'Số lượng', value: qty(rowsSum(rows, 'qty')) },
-    { label: 'Bình quân/bill', value: money(bills.size ? rowsSum(rows, 'amount') / bills.size : 0) },
+    stat('Doanh thu', money(revenue), revenue),
+    stat('Số bill', bills.size, bills.size),
+    stat('Số lượng', qty(quantity), quantity),
+    stat('Bình quân/bill', money(bills.size ? revenue / bills.size : 0), bills.size ? revenue / bills.size : 0),
   ];
   const byProduct = new Map();
   for (const r of rows) {
@@ -412,7 +511,7 @@ function buildReceivables(branch_id, query) {
   ], rows.map(r => ({
     ...r,
     bill: r.bill_no || String(r.id).slice(-6).toUpperCase(),
-    customer_name: r.customer.name || r.customer.company || 'Khách không xuất hóa đơn',
+    customer_name: r.customer.name || r.customer.company || 'Bán cho người tiêu dùng',
     channel_label: channelLabel(r.channel),
     total_fmt: money(r.total),
   }))));
@@ -882,22 +981,31 @@ export function warehouses(branch_id = 'br1') {
 export function catalog(branch_id = 'br1') {
   return { groups: REPORT_GROUPS, reports: REPORTS, products: products(branch_id), warehouses: warehouses(branch_id) };
 }
-export function buildReport(type = 'sales_overview', branch_id = 'br1', query = {}) {
+function buildSingleReport(type = 'sales_overview', branch_id = 'br1', query = {}) {
   if (['sales_fnb', 'sales_retail', 'sales_by_product'].includes(type)) type = 'sales_overview';
-  if (['sales_overview', 'sales_online'].includes(type)) return buildSales(type, branch_id, query);
-  if (type === 'purchase_orders') return buildPurchaseOrders(branch_id, query);
-  if (type === 'purchase_price_analysis') return buildPurchasePriceAnalysis(branch_id, query);
-  if (type === 'expenses') return buildExpenses(branch_id, query);
-  if (type === 'purchase') return buildMovements(type, branch_id, query);
-  if (type === 'issue') return buildMovements(type, branch_id, query);
-  if (type === 'stock') return buildStock(branch_id, query);
-  if (type === 'stocktake') return buildStocktake(branch_id, query);
-  if (type === 'cash_drawer') return buildCashDrawer(branch_id, query);
-  if (type === 'payables') return buildPayables(branch_id, query);
-  if (type === 'receivables') return buildReceivables(branch_id, query);
-  if (type === 'customers_status') return buildCustomers(branch_id, query);
-  if (type === 'staff') return buildStaff(branch_id, query);
-  return buildSales('sales_overview', branch_id, query);
+  let report;
+  if (['sales_overview', 'sales_online'].includes(type)) report = buildSales(type, branch_id, query);
+  else if (type === 'purchase_orders') report = buildPurchaseOrders(branch_id, query);
+  else if (type === 'purchase_price_analysis') report = buildPurchasePriceAnalysis(branch_id, query);
+  else if (type === 'expenses') report = buildExpenses(branch_id, query);
+  else if (type === 'purchase') report = buildMovements(type, branch_id, query);
+  else if (type === 'issue') report = buildMovements(type, branch_id, query);
+  else if (type === 'stock') report = buildStock(branch_id, query);
+  else if (type === 'stocktake') report = buildStocktake(branch_id, query);
+  else if (type === 'cash_drawer') report = buildCashDrawer(branch_id, query);
+  else if (type === 'payables') report = buildPayables(branch_id, query);
+  else if (type === 'receivables') report = buildReceivables(branch_id, query);
+  else if (type === 'customers_status') report = buildCustomers(branch_id, query);
+  else if (type === 'staff') report = buildStaff(branch_id, query);
+  else report = buildSales('sales_overview', branch_id, query);
+  report.branch_id = branch_id;
+  return report;
+}
+export function buildReport(type = 'sales_overview', scopeInput = 'br1', query = {}) {
+  const scope = normalizeScope(scopeInput);
+  const branchIds = scope.branch_ids.length ? scope.branch_ids : ['br1'];
+  if (branchIds.length === 1) return withScope(buildSingleReport(type, branchIds[0], query), normalizeScope(branchIds[0]));
+  return combineBranchReports(type, scope, query, branchIds.map(id => buildSingleReport(type, id, query)));
 }
 function tableHtml(sec) {
   return `<h2>${esc(sec.title)}</h2><table><thead><tr>${sec.columns.map(c => `<th class="${c.align === 'right' ? 'r' : ''}">${esc(c.label)}</th>`).join('')}</tr></thead><tbody>${sec.rows.length ? sec.rows.map(r => `<tr>${sec.columns.map(c => `<td class="${c.align === 'right' ? 'r' : ''}">${esc(r[c.key] ?? '')}</td>`).join('')}</tr>`).join('') : `<tr><td colspan="${sec.columns.length}" class="empty">Không có dữ liệu</td></tr>`}</tbody></table>`;
@@ -924,9 +1032,131 @@ export function renderReportHtml(report, { mode = 'preview' } = {}) {
     <div class="foot">Dan D Pak POS/ERP · Báo cáo được tạo tự động từ dữ liệu lưu trữ nội bộ.</div>
   </div></body></html>`;
 }
+function sheetName(name, used = new Set()) {
+  const base = String(name || 'Sheet')
+    .replace(/[:\\/?*\[\]]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 28) || 'Sheet';
+  let out = base;
+  let i = 2;
+  while (used.has(out)) out = `${base.slice(0, 25)} ${i++}`;
+  used.add(out);
+  return out;
+}
+export async function renderReportXlsx(report) {
+  const thinBorder = { bottomBorderColor: '#E1E7EF', bottomBorderStyle: 'thin' };
+  const headerStyle = {
+    fontWeight: 'bold',
+    textColor: '#172033',
+    backgroundColor: '#EFF6FF',
+    alignVertical: 'center',
+    wrap: true,
+    ...thinBorder,
+  };
+  const bodyStyle = { alignVertical: 'top', wrap: true, ...thinBorder };
+  const rightBodyStyle = { ...bodyStyle, align: 'right' };
+  const titleStyle = { fontWeight: 'bold', fontSize: 14, textColor: '#172033' };
+  const labelStyle = { fontWeight: 'bold', textColor: '#445065', ...bodyStyle };
+
+  const cellValue = value => {
+    if (value === undefined || value === null) return '';
+    if (typeof value === 'number' && Number.isFinite(value)) return value;
+    if (typeof value === 'boolean' || value instanceof Date) return value;
+    return String(value);
+  };
+  const numericCell = (value, style = {}) => ({
+    value: Number(value),
+    type: Number,
+    format: '#,##0.##',
+    ...style,
+  });
+  const cell = (value, style = {}) => {
+    const out = cellValue(value);
+    if (typeof out === 'number') return numericCell(out, style);
+    return { value: out, ...style };
+  };
+  const rawAliases = {
+    amount_fmt: 'amount',
+    total_fmt: 'total',
+    paid_fmt: 'amount_paid',
+    qty_fmt: 'qty',
+    price_fmt: 'unit_price',
+    unit_cost_fmt: 'unit_cost',
+    cost_fmt: 'cost',
+    stock_fmt: 'stock',
+    min_stock_fmt: 'min_stock',
+    expected_fmt: 'expected_qty',
+    counted_fmt: 'counted_qty',
+    delta_fmt: 'delta_qty',
+    spent_fmt: 'total_spent',
+    revenue_fmt: 'total_revenue',
+    expected_cash_fmt: 'expected_cash',
+    opening_fmt: 'opening_cash',
+    cash_sales_fmt: 'cash_sales',
+    expense_fmt: 'drawer_expenses',
+    reimburse_fmt: 'drawer_reimbursements',
+    before_fmt: 'balance_before',
+    after_fmt: 'balance_after',
+    reimbursed_fmt: 'reimbursed_amount',
+  };
+  const sectionValue = (row, key) => {
+    const rawKey = rawAliases[key] || (key.endsWith('_fmt') ? key.slice(0, -4) : '');
+    if (rawKey && Object.prototype.hasOwnProperty.call(row, rawKey)) {
+      const n = Number(row[rawKey]);
+      if (Number.isFinite(n)) return n;
+    }
+    return row[key];
+  };
+
+  const usedNames = new Set();
+  const sheets = [{
+    sheet: sheetName('Tổng quan', usedNames),
+    data: [
+      [{ value: report.title || 'Report', columnSpan: 2, ...titleStyle }, null],
+      [cell('Báo cáo', labelStyle), cell(report.title, bodyStyle)],
+      [cell('Kỳ báo cáo', labelStyle), cell(report.range?.label || '', bodyStyle)],
+      [cell('Xuất lúc', labelStyle), cell(report.generated_at || '', bodyStyle)],
+      [cell('Chi nhánh', labelStyle), cell(report.scope?.label || '', bodyStyle)],
+      [cell('', bodyStyle), cell('', bodyStyle)],
+      [cell('Chỉ số', headerStyle), cell('Giá trị', headerStyle)],
+      ...(report.summary || []).map(s => [
+        cell(s.label, bodyStyle),
+        s.raw !== undefined && Number.isFinite(Number(s.raw))
+          ? numericCell(s.raw, rightBodyStyle)
+          : cell(s.value, rightBodyStyle),
+      ]),
+    ],
+    columns: [{ width: 28 }, { width: 34 }],
+    stickyRowsCount: 1,
+    showGridLines: false,
+  }];
+
+  for (const sec of report.sections || []) {
+    const cols = sec.columns || [];
+    const rows = sec.rows || [];
+    const header = cols.length
+      ? cols.map(c => cell(c.label, { ...headerStyle, align: c.align === 'right' ? 'right' : 'left' }))
+      : [cell('Dữ liệu', headerStyle)];
+    const dataRows = rows.length
+      ? rows.map(row => cols.map(c => cell(sectionValue(row, c.key), c.align === 'right' ? rightBodyStyle : bodyStyle)))
+      : [[cell('Không có dữ liệu', bodyStyle)]];
+    sheets.push({
+      sheet: sheetName(sec.title, usedNames),
+      data: [header, ...dataRows],
+      columns: cols.length ? cols.map(c => ({ width: c.align === 'right' ? 16 : 24 })) : [{ width: 24 }],
+      stickyRowsCount: 1,
+      showGridLines: false,
+      orientation: cols.length > 5 ? 'landscape' : 'portrait',
+    });
+  }
+  return Buffer.from(await writeExcelFile(sheets, {
+    fontFamily: 'Arial',
+    fontSize: 10,
+  }).toBuffer());
+}
 export function renderReportXls(report) {
-  const html = renderReportHtml(report, { mode: 'xls' });
-  return Buffer.from('\ufeff' + html, 'utf8');
+  return renderReportXlsx(report);
 }
 export function renderReportDoc(report) {
   const html = renderReportHtml(report, { mode: 'doc' });
@@ -938,10 +1168,9 @@ function safeFilePart(s) {
 export function reportFilename(report, ext) {
   return `${safeFilePart(report.key)}_${report.range.fromDate}_${report.range.toDate}.${ext}`;
 }
-function rendererCandidates() {
+function browserCandidates() {
   return [
-    process.env.REPORT_PDF_RENDERER,
-    process.env['REPORT_PDF_' + 'BROWSER'],
+    process.env.REPORT_PDF_BROWSER,
     'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe',
     'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
     'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
@@ -959,9 +1188,9 @@ export async function renderReportPdf(report) {
   await writeFile(htmlPath, html, 'utf8');
   let lastErr = null;
   try {
-    for (const renderer of rendererCandidates()) {
+    for (const browser of browserCandidates()) {
       try {
-        await execFileAsync(renderer, [
+        await execFileAsync(browser, [
           '--headless',
           '--disable-gpu',
           '--no-sandbox',
@@ -976,4 +1205,97 @@ export async function renderReportPdf(report) {
   } finally {
     rm(dir, { recursive: true, force: true }).catch(() => {});
   }
+}
+
+export async function renderReportPdfKit(report) {
+  const doc = new PDFDocument({ size: 'A4', layout: 'landscape', margin: 28, bufferPages: true });
+  const chunks = [];
+  doc.on('data', c => chunks.push(c));
+  const done = new Promise((resolve, reject) => {
+    doc.on('end', () => resolve(Buffer.concat(chunks)));
+    doc.on('error', reject);
+  });
+  const regular = path.resolve(process.cwd(), 'flutter-apps/dandpak_pos/assets/fonts/BeVietnamPro-Regular.ttf');
+  const bold = path.resolve(process.cwd(), 'flutter-apps/dandpak_pos/assets/fonts/BeVietnamPro-Bold.ttf');
+  const hasFont = existsSync(regular) && existsSync(bold);
+  if (hasFont) {
+    doc.registerFont('ReportRegular', regular);
+    doc.registerFont('ReportBold', bold);
+  }
+  const font = (weight = 'regular') => doc.font(hasFont ? (weight === 'bold' ? 'ReportBold' : 'ReportRegular') : (weight === 'bold' ? 'Helvetica-Bold' : 'Helvetica'));
+  const pageWidth = () => doc.page.width - doc.page.margins.left - doc.page.margins.right;
+  const ensure = (height) => {
+    if (doc.y + height > doc.page.height - doc.page.margins.bottom) doc.addPage();
+  };
+
+  font('bold');
+  doc.fontSize(18).fillColor('#172033').text(report.title || 'Báo cáo');
+  font();
+  doc.fontSize(9).fillColor('#667085')
+    .text(`Kỳ báo cáo: ${report.range?.label || ''}`)
+    .text(`Xuất lúc: ${report.generated_at || ''}`);
+  doc.moveDown(.7);
+
+  const gap = 8;
+  const cardWidth = (pageWidth() - gap * 3) / 4;
+  let cardX = doc.page.margins.left;
+  let cardY = doc.y;
+  for (const [i, s] of (report.summary || []).entries()) {
+    if (i > 0 && i % 4 === 0) {
+      cardX = doc.page.margins.left;
+      cardY += 48;
+    }
+    doc.roundedRect(cardX, cardY, cardWidth, 40, 5).strokeColor('#D9DEE7').stroke();
+    font();
+    doc.fontSize(8).fillColor('#667085').text(String(s.label || ''), cardX + 8, cardY + 7, { width: cardWidth - 16 });
+    font('bold');
+    doc.fontSize(11).fillColor('#172033').text(String(s.value ?? ''), cardX + 8, cardY + 22, { width: cardWidth - 16 });
+    cardX += cardWidth + gap;
+  }
+  doc.y = cardY + 54;
+
+  const drawTable = (sec) => {
+    ensure(52);
+    font('bold');
+    doc.fontSize(12).fillColor('#172033').text(sec.title || 'Chi tiết');
+    doc.moveDown(.35);
+    const cols = (sec.columns || []).slice(0, 10);
+    if (!cols.length) return;
+    const rightCount = cols.filter(c => c.align === 'right').length;
+    const baseWidths = cols.map(c => c.align === 'right' ? 70 : Math.max(72, (pageWidth() - 70 * rightCount) / Math.max(1, cols.length - rightCount)));
+    const scale = pageWidth() / baseWidths.reduce((a, b) => a + b, 0);
+    const widths = baseWidths.map(w => w * scale);
+    const drawRow = (values, header = false) => {
+      const startY = doc.y;
+      const heights = values.map((v, i) => doc.heightOfString(String(v ?? ''), { width: widths[i] - 8 }) + 10);
+      const rowHeight = Math.max(header ? 24 : 22, Math.min(58, Math.max(...heights)));
+      ensure(rowHeight + 2);
+      let x = doc.page.margins.left;
+      for (let i = 0; i < cols.length; i++) {
+        doc.rect(x, doc.y, widths[i], rowHeight).fillAndStroke(header ? '#EFF6FF' : '#FFFFFF', '#D9DEE7');
+        font(header ? 'bold' : 'regular');
+        doc.fontSize(header ? 8 : 7.6).fillColor(header ? '#445065' : '#172033')
+          .text(String(values[i] ?? ''), x + 4, doc.y + 5, {
+            width: widths[i] - 8,
+            height: rowHeight - 8,
+            align: cols[i].align === 'right' ? 'right' : 'left',
+          });
+        x += widths[i];
+      }
+      doc.y = startY + rowHeight;
+    };
+    drawRow(cols.map(c => c.label), true);
+    const rows = (sec.rows || []).slice(0, 400);
+    if (!rows.length) drawRow(['Không có dữ liệu']);
+    for (const row of rows) drawRow(cols.map(c => row[c.key] ?? ''));
+    if ((sec.rows || []).length > rows.length) {
+      font();
+      doc.fontSize(8).fillColor('#667085').text(`Còn ${sec.rows.length - rows.length} dòng, vui lòng xem trong Excel/Google Sheet.`);
+    }
+    doc.moveDown(.8);
+  };
+
+  for (const sec of report.sections || []) drawTable(sec);
+  doc.end();
+  return done;
 }

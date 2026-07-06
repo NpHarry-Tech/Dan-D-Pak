@@ -116,7 +116,7 @@ class _TicketCardState extends State<TicketCard> {
             children: [
               Text(
                 'Bàn ${widget.item['table_code'] ?? widget.item['table_id'] ?? '—'}',
-                style: const TextStyle(fontWeight: FontWeight.extrabold, fontSize: 16, color: Colors.white),
+                style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16, color: Colors.white),
               ),
               if (!cancelled)
                 Container(

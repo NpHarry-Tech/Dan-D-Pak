@@ -1,4 +1,4 @@
-﻿// Authentication & role-based permissions. PIN login (typical for POS).
+// Authentication & role-based permissions. PIN login (typical for POS).
 // Tokens are persisted in SQLite so refreshes and local server restarts do not
 // force staff to log in again.
 import { db, uid, now, audit } from '../db.js';
@@ -9,10 +9,10 @@ import { hashPin, verifyPin, newToken } from './pin.js';
 
 const sessions = new Map(); // token -> { user, at }
 
-// Chá»‘ng dÃ² PIN: khÃ³a Ä‘Äƒng nháº­p táº¡m thá»i sau nhiá»u láº§n sai liÃªn tiáº¿p (theo username).
+// Chống dò PIN: khóa đăng nhập tạm thời sau nhiều lần sai liên tiếp (theo username).
 const loginFails = new Map(); // username -> { count, until }
 const LOGIN_MAX_FAILS = 5;
-const LOGIN_LOCK_MS = 5 * 60 * 1000; // khÃ³a 5 phÃºt sau khi vÆ°á»£t ngÆ°á»¡ng
+const LOGIN_LOCK_MS = 5 * 60 * 1000; // khóa 5 phút sau khi vượt ngưỡng
 function loginLockState(uname) {
   const e = loginFails.get(uname);
   if (!e) return null;
@@ -27,8 +27,8 @@ function registerLoginFail(uname, branch_id, ip = '') {
   audit('auth.login.failed', { user: uname, attempts: e.count, locked: !!e.until, ip }, branch_id, uname || 'unknown');
 }
 
-// Tá»± dá»n cÃ¡c session quÃ¡ háº¡n trong Map â€” trÃ¡nh memory leak khi thiáº¿t bá»‹ táº¯t mÃ  khÃ´ng logout.
-const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 ngÃ y
+// Tự dọn các session quá hạn trong Map — tránh memory leak khi thiết bị tắt mà không logout.
+const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 ngày
 function cleanupSessionMap() {
   const cutoff = Date.now() - SESSION_TTL_MS;
   for (const [token, entry] of sessions) {
@@ -36,72 +36,79 @@ function cleanupSessionMap() {
     if (Number.isNaN(entryMs) || entryMs < cutoff) sessions.delete(token);
   }
 }
-setInterval(cleanupSessionMap, 6 * 60 * 60 * 1000).unref(); // cháº¡y 6 tiáº¿ng/láº§n, khÃ´ng block shutdown
+setInterval(cleanupSessionMap, 6 * 60 * 60 * 1000).unref(); // chạy 6 tiếng/lần, không block shutdown
 
 const REPORT_PERMISSIONS = REPORTS.map(r => ({
   key: `report.${r.key}`,
-  label: `BÃ¡o cÃ¡o â€” ${r.label}`,
+  label: `Báo cáo — ${r.label}`,
 }));
 
 // Catalog of every permission with a plain-language label (shown on the settings page).
 export const PERMISSIONS = [
-  { key: 'sell', label: 'BÃ¡n hÃ ng â€” má»Ÿ bÃ n, thÃªm mÃ³n, gá»­i báº¿p' },
-  { key: 'pay', label: 'Thanh toÃ¡n bill' },
-  { key: 'discount', label: 'Ãp giáº£m giÃ¡ vÃ  voucher' },
-  { key: 'refund', label: 'HoÃ n tiá»n vÃ  Ä‘á»•i tráº£' },
-  { key: 'void', label: 'Há»§y bill, há»§y mÃ³n Ä‘Ã£ gá»­i' },
-  { key: 'menu.manage', label: 'Quáº£n lÃ½ thá»±c Ä‘Æ¡n â€” thÃªm, sá»­a, xÃ³a mÃ³n vÃ  danh má»¥c' },
-  { key: 'inventory.adjust', label: 'Äiá»u chá»‰nh tá»“n kho vÃ  kiá»ƒm kho' },
-  { key: 'warehouse.manage', label: 'Quáº£n lÃ½ kho â€” táº¡o kho, nháº­p, xuáº¥t, chuyá»ƒn kho' },
-  { key: 'invoice', label: 'Xuáº¥t hÃ³a Ä‘Æ¡n Ä‘iá»‡n tá»­' },
-  { key: 'online', label: 'Xá»­ lÃ½ Ä‘Æ¡n hÃ ng online' },
-  { key: 'kds', label: 'Sá»­ dá»¥ng mÃ n hÃ¬nh báº¿p' },
-  { key: 'reports', label: 'BÃ¡o cÃ¡o â€” xem toÃ n bá»™ trung tÃ¢m bÃ¡o cÃ¡o' },
+  { key: 'sell', label: 'Bán hàng — mở bàn, thêm món, gửi bếp' },
+  { key: 'pay', label: 'Thanh toán bill' },
+  { key: 'discount', label: 'Áp giảm giá và voucher' },
+  { key: 'refund', label: 'Hoàn tiền và đổi trả' },
+  { key: 'void', label: 'Hủy bill, hủy món đã gửi' },
+  { key: 'menu.manage', label: 'Quản lý thực đơn — thêm, sửa, xóa món và danh mục' },
+  { key: 'inventory.adjust', label: 'Điều chỉnh tồn kho và kiểm kho' },
+  { key: 'warehouse.manage', label: 'Quản lý kho — tạo kho, nhập, xuất, chuyển kho' },
+  { key: 'invoice', label: 'Xuất hóa đơn điện tử' },
+  { key: 'online', label: 'Xử lý đơn hàng online' },
+  { key: 'kds', label: 'Sử dụng màn hình bếp' },
+  { key: 'reports', label: 'Báo cáo — xem toàn bộ trung tâm báo cáo' },
   ...REPORT_PERMISSIONS,
-  { key: 'audit.view', label: 'Xem nháº­t kÃ½ hoáº¡t Ä‘á»™ng' },
-  { key: 'settings.manage', label: 'Quáº£n lÃ½ ngÆ°á»i dÃ¹ng vÃ  phÃ¢n quyá»n' },
-  { key: 'settings.users', label: 'CÃ i Ä‘áº·t â€” Quáº£n lÃ½ nhÃ¢n viÃªn' },
-  { key: 'settings.perms', label: 'CÃ i Ä‘áº·t â€” Quáº£n lÃ½ quyá»n vÃ  vai trÃ²' },
-  { key: 'settings.branches', label: 'CÃ i Ä‘áº·t â€” Quáº£n lÃ½ chi nhÃ¡nh & phÃ¢n vÃ¹ng' },
-  { key: 'settings.sync', label: 'CÃ i Ä‘áº·t â€” Cloud Sync & Äá»“ng bá»™ ngoáº¡i tuyáº¿n' },
-  { key: 'settings.integrations', label: 'CÃ i Ä‘áº·t â€” LiÃªn káº¿t dá»‹ch vá»¥ (MISA, PayOS...)' },
-  { key: 'settings.connections', label: 'CÃ i Ä‘áº·t â€” Káº¿t ná»‘i há»‡ thá»‘ng (Máº¡ng, mÃ¡y in, POS...)' },
-  { key: 'settings.operations', label: 'CÃ i Ä‘áº·t â€” PhÆ°Æ¡ng thá»©c thanh toÃ¡n & Ca lÃ m viá»‡c' },
-  { key: 'settings.invoices', label: 'CÃ i Ä‘áº·t â€” Quáº£n lÃ½ hÃ³a Ä‘Æ¡n Ä‘iá»‡n tá»­' },
-  { key: 'settings.einvoice', label: 'CÃ i Ä‘áº·t â€” Cáº¥u hÃ¬nh hÃ³a Ä‘Æ¡n Ä‘iá»‡n tá»­ MISA' },
-  { key: 'settings.print', label: 'CÃ i Ä‘áº·t â€” Thiáº¿t káº¿ Bill & Tem nhÃ£n' },
-  { key: 'settings.devices', label: 'CÃ i Ä‘áº·t â€” Quáº£n lÃ½ thiáº¿t bá»‹ khÃ¡ch' },
-  { key: 'settings.menu', label: 'CÃ i Ä‘áº·t â€” Cáº¥u hÃ¬nh thá»±c Ä‘Æ¡n FnB' },
-  { key: 'settings.tables', label: 'CÃ i Ä‘áº·t â€” Cáº¥u hÃ¬nh sÆ¡ Ä‘á»“ bÃ n' },
-  { key: 'settings.printers', label: 'CÃ i Ä‘áº·t â€” Quáº£n lÃ½ danh má»¥c mÃ¡y in' },
-  { key: 'settings.audit', label: 'CÃ i Ä‘áº·t â€” Nháº­t kÃ½ hoáº¡t Ä‘á»™ng quáº£n lÃ½' },
-  { key: 'settings.notification_sound', label: 'CÃ i Ä‘áº·t â€” Ã‚m thanh thÃ´ng bÃ¡o' },
+  { key: 'contacts.create', label: 'Danh bạ — tạo mới khách hàng, nhà cung cấp, nhân viên' },
+  { key: 'contacts.edit', label: 'Danh bạ — chỉnh sửa thông tin khách hàng, nhà cung cấp, nhân viên' },
+  { key: 'contacts.delete', label: 'Danh bạ — xóa khách hàng, nhà cung cấp, nhân viên' },
+  { key: 'audit.view', label: 'Xem nhật ký hoạt động' },
+  { key: 'settings.manage', label: 'Quản lý người dùng và phân quyền' },
+  { key: 'settings.users', label: 'Cài đặt — Quản lý nhân viên' },
+  { key: 'settings.perms', label: 'Cài đặt — Quản lý quyền và vai trò' },
+  { key: 'settings.branches', label: 'Cài đặt — Quản lý chi nhánh & phân vùng' },
+  { key: 'settings.sync', label: 'Cài đặt — Cloud Sync & Đồng bộ ngoại tuyến' },
+  { key: 'settings.integrations', label: 'Cài đặt — Liên kết dịch vụ (MISA, PayOS...)' },
+  { key: 'settings.connections', label: 'Cài đặt — Kết nối hệ thống (Mạng, máy in, POS...)' },
+  { key: 'settings.operations', label: 'Cài đặt — Phương thức thanh toán & Ca làm việc' },
+  { key: 'settings.invoices', label: 'Cài đặt — Quản lý hóa đơn điện tử' },
+  { key: 'settings.einvoice', label: 'Cài đặt — Cấu hình hóa đơn điện tử MISA' },
+  { key: 'settings.print', label: 'Cài đặt — Thiết kế Bill & Tem nhãn' },
+  { key: 'settings.devices', label: 'Cài đặt — Quản lý thiết bị khách' },
+  { key: 'settings.menu', label: 'Cài đặt — Cấu hình thực đơn FnB' },
+  { key: 'settings.bookmenu', label: 'Cài đặt — Thiết lập menu quyển' },
+  { key: 'settings.tables', label: 'Cài đặt — Cấu hình sơ đồ bàn' },
+  { key: 'settings.printers', label: 'Cài đặt — Quản lý danh mục máy in' },
+  { key: 'settings.audit', label: 'Cài đặt — Nhật ký hoạt động quản lý' },
+  { key: 'settings.notification_sound', label: 'Cài đặt — Âm thanh thông báo' },
+  { key: 'settings.loyalty', label: 'Cài đặt — Tích điểm & CTKM khách hàng' },
+  { key: 'settings.promotions', label: 'Cài đặt — Khuyến mại / voucher' },
   ...MODULE_PERMISSIONS,
 ];
 export const ALL_PERMS = PERMISSIONS.map(p => p.key);
 
 // Display roles with plain-language names.
 export const ROLES = [
-  { key: 'owner', label: 'Admin', note: 'ToÃ n quyá»n há»‡ thá»‘ng, khÃ´ng thá»ƒ chá»‰nh.' },
-  { key: 'manager', label: 'Quáº£n lÃ½', note: 'Quáº£n lÃ½ váº­n hÃ nh cá»­a hÃ ng.' },
-  { key: 'cashier', label: 'Thu ngÃ¢n', note: 'BÃ¡n hÃ ng vÃ  thu tiá»n.' },
-  { key: 'kitchen', label: 'Báº¿p', note: 'Cháº¿ biáº¿n mÃ³n.' },
-  { key: 'warehouse', label: 'Thá»§ kho', note: 'Quáº£n lÃ½ nháº­p xuáº¥t kho.' },
+  { key: 'owner', label: 'Admin', note: 'Toàn quyền hệ thống, không thể chỉnh.' },
+  { key: 'manager', label: 'Quản lý', note: 'Quản lý vận hành cửa hàng.' },
+  { key: 'cashier', label: 'Thu ngân', note: 'Bán hàng và thu tiền.' },
+  { key: 'kitchen', label: 'Bếp', note: 'Chế biến món.' },
+  { key: 'warehouse', label: 'Thủ kho', note: 'Quản lý nhập xuất kho.' },
 ];
 
 // Built-in defaults used to seed the editable matrix on first run.
 const DEFAULT_ROLE_PERMS = {
   owner: ['*'],
   manager: ['menu.manage', 'inventory.adjust', 'warehouse.manage', 'refund', 'void', 'discount', 'reports', 'invoice', 'online', 'sell', 'pay', 'audit.view', 'settings.manage',
+    'contacts.create', 'contacts.edit', 'contacts.delete', 'settings.loyalty', 'settings.promotions',
     'module.ipad', 'module.pos', 'module.retail', 'module.kds', 'module.online', 'module.warehouse', 'module.inventory', 'module.printing',
-    'module.invoice', 'module.reports', 'module.contacts', 'module.purchase', 'module.expenses', 'module.database'],
+    'module.invoice', 'module.reports', 'module.contacts', 'module.purchase', 'module.expenses', 'module.accounting'],
   cashier: ['sell', 'pay', 'discount', 'invoice', 'module.pos', 'module.retail', 'module.invoice'],
   kitchen: ['kds', 'module.kds'],
   warehouse: ['inventory.adjust', 'warehouse.manage', 'warehouse', 'module.warehouse', 'module.inventory', 'module.purchase'],
 };
 export const ROLE_PERMS = DEFAULT_ROLE_PERMS; // kept for backwards-compat imports
 
-// Editable roleâ†’permission mapping is persisted so admins can change it live.
+// Editable role→permission mapping is persisted so admins can change it live.
 db.exec(`CREATE TABLE IF NOT EXISTS role_perms (role TEXT NOT NULL, perm TEXT NOT NULL, PRIMARY KEY(role,perm));`);
 db.exec(`CREATE TABLE IF NOT EXISTS user_perms (
   user_id TEXT NOT NULL,
@@ -141,6 +148,15 @@ function seedNewSettingsPerms() {
   }
 }
 seedNewSettingsPerms();
+function seedNewContactPerms() {
+  const ins = db.prepare(`INSERT OR IGNORE INTO role_perms (role,perm) VALUES (?,?)`);
+  const roles = db.prepare(`SELECT DISTINCT role FROM role_perms WHERE perm='module.contacts'`).all().map(r => r.role);
+  if (!roles.includes('manager')) roles.push('manager');
+  for (const role of roles) {
+    for (const p of ['contacts.create', 'contacts.edit', 'contacts.delete']) ins.run(role, p);
+  }
+}
+seedNewContactPerms();
 
 let permCache = null;
 function loadPerms() {
@@ -197,12 +213,33 @@ export function userPermDetails(userOrId) {
     customized: !!(allow_perms.length || deny_perms.length),
   };
 }
-export function setUserPerms(user_id, perms, branch_id = 'br1') {
+// The set of permissions an actor is allowed to grant to others: exactly the
+// ones they personally hold (Admin/owner and internal system calls → everything).
+// You can never delegate a permission you don't have.
+export function grantablePermSet(actor) {
+  if (!actor || actor.role === 'owner') return new Set(ALL_PERMS);
+  return new Set(effectivePermsForUser(actor).filter(p => p !== '*'));
+}
+
+export function setUserPerms(user_id, perms, branch_id = 'br1', actor = null) {
   const u = db.prepare(`SELECT * FROM users WHERE id=?`).get(user_id);
-  if (!u) throw new Error('NgÆ°á»i dÃ¹ng khÃ´ng tá»“n táº¡i');
+  if (!u) throw new Error('Người dùng không tồn tại');
+  if (u.role === 'owner') {
+    db.prepare(`DELETE FROM user_perms WHERE user_id=?`).run(user_id);
+    return userPermDetails(u);
+  }
+  // Scoped delegation: the actor may only add/remove permissions they personally
+  // hold. Permissions outside their reach are PRESERVED on the target exactly as
+  // they are — the actor can neither grant them nor strip them (they're hidden).
+  const grantable = grantablePermSet(actor);
+  const existing = new Set(effectivePermsForUser(u).filter(p => p !== '*'));
+  const submitted = new Set((Array.isArray(perms) ? perms : []).filter(p => ALL_PERMS.includes(p)));
+  const wanted = new Set();
+  for (const p of ALL_PERMS) {
+    if (grantable.has(p)) { if (submitted.has(p)) wanted.add(p); }  // actor controls these
+    else if (existing.has(p)) wanted.add(p);                       // preserve — out of reach
+  }
   db.prepare(`DELETE FROM user_perms WHERE user_id=?`).run(user_id);
-  if (u.role === 'owner') return userPermDetails(u);
-  const wanted = new Set((Array.isArray(perms) ? perms : []).filter(p => ALL_PERMS.includes(p)));
   const base = rolePermSet(u.role);
   const ins = db.prepare(`INSERT OR REPLACE INTO user_perms (user_id,perm,mode) VALUES (?,?,?)`);
   let allow = 0, deny = 0;
@@ -212,7 +249,7 @@ export function setUserPerms(user_id, perms, branch_id = 'br1') {
   for (const p of base) {
     if (!wanted.has(p)) { ins.run(user_id, p, 'deny'); deny++; }
   }
-  audit('user.perms.update', { username: u.username, role: u.role, allow, deny, total: wanted.size }, branch_id);
+  audit('user.perms.update', { username: u.username, role: u.role, allow, deny, total: wanted.size, by: actor?.username || 'system' }, branch_id, actor?.username || 'system');
   return userPermDetails(u);
 }
 export function canUser(user, perm) {
@@ -230,15 +267,24 @@ export function permMatrix() {
     locked: r.key === 'owner',
   }));
 }
-export function setRolePerms(role, perms, branch_id = 'br1') {
-  if (role === 'owner') throw new Error('Vai trÃ² Admin luÃ´n toÃ n quyá»n, khÃ´ng thá»ƒ chá»‰nh');
-  if (!ROLES.some(r => r.key === role)) throw new Error('Vai trÃ² khÃ´ng há»£p lá»‡');
-  const valid = (Array.isArray(perms) ? perms : []).filter(p => ALL_PERMS.includes(p));
+export function setRolePerms(role, perms, branch_id = 'br1', actor = null) {
+  if (role === 'owner') throw new Error('Vai trò Admin luôn toàn quyền, không thể chỉnh');
+  if (!ROLES.some(r => r.key === role)) throw new Error('Vai trò không hợp lệ');
+  // Same scoped-delegation rule as users: the actor can only toggle permissions
+  // they hold; ones out of reach stay exactly as the role already had them.
+  const grantable = grantablePermSet(actor);
+  const existing = rolePermSet(role);
+  const submitted = new Set((Array.isArray(perms) ? perms : []).filter(p => ALL_PERMS.includes(p)));
+  const finalPerms = new Set();
+  for (const p of ALL_PERMS) {
+    if (grantable.has(p)) { if (submitted.has(p)) finalPerms.add(p); }
+    else if (existing.has(p)) finalPerms.add(p);
+  }
   db.prepare(`DELETE FROM role_perms WHERE role=?`).run(role);
   const ins = db.prepare(`INSERT OR IGNORE INTO role_perms (role,perm) VALUES (?,?)`);
-  for (const p of valid) ins.run(role, p);
+  for (const p of finalPerms) ins.run(role, p);
   loadPerms();
-  audit('perms.update', { role, count: valid.length }, branch_id);
+  audit('perms.update', { role, count: finalPerms.size, by: actor?.username || 'system' }, branch_id, actor?.username || 'system');
   return permMatrix();
 }
 
@@ -288,7 +334,7 @@ export function resolveBranch(req) {
   if (canAccessBranch(req.user, requested)) return requested;
   const fallback = req.user.branch_id || userBranchIds(req.user)[0] || 'br1';
   if (canAccessBranch(req.user, fallback)) return fallback;
-  throw new Error('TÃ i khoáº£n nÃ y khÃ´ng cÃ³ quyá»n truy cáº­p chi nhÃ¡nh Ä‘Ã£ chá»n.');
+  throw new Error('Tài khoản này không có quyền truy cập chi nhánh đã chọn.');
 }
 
 function normalizeBranchAccess(body = {}, role = 'cashier', homeBranch = 'br1') {
@@ -307,16 +353,16 @@ export function login(username, pin, branch_id = 'br1', meta = {}) {
   if (lock && lock.until && lock.until > Date.now()) {
     const mins = Math.max(1, Math.ceil((lock.until - Date.now()) / 60000));
     audit('auth.login.locked', { user: uname, ip }, branchExists(branch_id) ? branch_id : 'br1', uname || 'unknown');
-    throw new Error(`ÄÄƒng nháº­p táº¡m khÃ³a do nháº­p sai nhiá»u láº§n. Thá»­ láº¡i sau ~${mins} phÃºt.`);
+    throw new Error(`Đăng nhập tạm khóa do nhập sai nhiều lần. Thử lại sau ~${mins} phút.`);
   }
   const u = db.prepare(`SELECT * FROM users WHERE username=? AND active=1`).get(uname);
   if (!u || !verifyPin(pin, u.pin)) {
     registerLoginFail(uname, branchExists(branch_id) ? branch_id : 'br1', ip);
-    throw new Error('Sai tÃ i khoáº£n hoáº·c mÃ£ PIN');
+    throw new Error('Sai tài khoản hoặc mã PIN');
   }
   loginFails.delete(uname);
   const selectedBranch = branchExists(branch_id) ? branch_id : (u.branch_id || 'br1');
-  if (!canAccessBranch(u, selectedBranch)) throw new Error('TÃ i khoáº£n nÃ y chÆ°a Ä‘Æ°á»£c cáº¥p quyá»n vÃ o chi nhÃ¡nh Ä‘Ã£ chá»n.');
+  if (!canAccessBranch(u, selectedBranch)) throw new Error('Tài khoản này chưa được cấp quyền vào chi nhánh đã chọn.');
   const token = newToken();
   const user = publicUser(u);
   const ts = now();
@@ -339,6 +385,26 @@ export function verifyManagerOwnerPin(pin, branch_id = 'br1') {
     ORDER BY CASE role WHEN 'owner' THEN 0 ELSE 1 END, name
     LIMIT 200`).all();
   const row = rows.find(u => verifyPin(clean, u.pin) && canAccessBranch(u, branch_id));
+  return row ? publicUser(row) : null;
+}
+
+// Voucher: nguoi thao tac phai TU nhap PIN cua CHINH MINH — PIN cua nguoi khac
+// (ke ca Manager) bi tu choi. Ngoai le duy nhat: PIN cua Admin/Owner van duyet duoc
+// (Admin ho tro tai quay). Tra ve publicUser cua nguoi duyet, hoac null.
+export function verifySelfOrOwnerPin(pin, currentUserId, branch_id = 'br1') {
+  const clean = String(pin || '').trim();
+  if (!clean) return null;
+  // 1) PIN cua chinh nguoi dang dang nhap
+  if (currentUserId) {
+    const me = db.prepare(`SELECT * FROM users WHERE id=? AND active=1`).get(currentUserId);
+    if (me && verifyPin(clean, me.pin) && canAccessBranch(me, branch_id)) {
+      return publicUser(me);
+    }
+  }
+  // 2) Ngoai le: PIN cua Admin/Owner
+  const owners = db.prepare(`
+    SELECT * FROM users WHERE active=1 AND role='owner' ORDER BY name LIMIT 50`).all();
+  const row = owners.find(u => verifyPin(clean, u.pin) && canAccessBranch(u, branch_id));
   return row ? publicUser(row) : null;
 }
 
@@ -382,18 +448,10 @@ export function userFor(token) {
   return user;
 }
 
-function publicLoginUser(u) {
-  return {
-    id: u.id,
-    name: u.name,
-    username: u.username,
-  };
-}
-
-export function listUsers(branch_id = 'br1', { loginPublic = false } = {}) {
+export function listUsers(branch_id = 'br1') {
   return db.prepare(`SELECT * FROM users WHERE active=1 ORDER BY role,name`).all()
     .filter(u => canAccessBranch(u, branch_id))
-    .map(loginPublic ? publicLoginUser : publicUser);
+    .map(publicUser);
 }
 
 // ---- User management (settings.manage) ----
@@ -403,42 +461,44 @@ export function listAllUsers(branch_id = 'br1') {
     .map(u => ({ ...publicUser(u), active: !!u.active, lang: u.lang || 'vi', ...userPermDetails(u) }));
 }
 function validRole(r) { return ROLES.some(x => x.key === r); }
-export function createUser(body, branch_id = 'br1') {
+export function createUser(body, branch_id = 'br1', actor = null) {
   const username = String(body.username || '').trim().toLowerCase();
   const name = String(body.name || '').trim();
   const pin = String(body.pin || '').trim();
   const lang = String(body.lang || 'vi').trim();
+  const avatar = String(body.avatar || '').trim().slice(0, 600);
   const homeBranch = branchExists(body.branch_id) ? String(body.branch_id) : branch_id;
-  if (!username || !name) throw new Error('Cáº§n nháº­p tÃªn vÃ  tÃªn Ä‘Äƒng nháº­p');
-  if (!/^\d{4}$/.test(pin)) throw new Error('MÃ£ PIN pháº£i Ä‘Ãºng 4 chá»¯ sá»‘');
-  if (!validRole(body.role)) throw new Error('Vai trÃ² khÃ´ng há»£p lá»‡');
-  if (db.prepare(`SELECT 1 FROM users WHERE username=?`).get(username)) throw new Error('TÃªn Ä‘Äƒng nháº­p Ä‘Ã£ tá»“n táº¡i');
+  if (!username || !name) throw new Error('Cần nhập tên và tên đăng nhập');
+  if (!/^\d{4}$/.test(pin)) throw new Error('Mã PIN phải đúng 4 chữ số');
+  if (!validRole(body.role)) throw new Error('Vai trò không hợp lệ');
+  if (db.prepare(`SELECT 1 FROM users WHERE username=?`).get(username)) throw new Error('Tên đăng nhập đã tồn tại');
   const id = uid('u_');
   const access = normalizeBranchAccess(body, body.role, homeBranch);
-  db.prepare(`INSERT INTO users (id,branch_id,username,name,pin,role,active,lang,branch_access_json) VALUES (?,?,?,?,?,?,1,?,?)`)
-    .run(id, homeBranch, username, name, hashPin(pin), body.role, lang, JSON.stringify(access));
-  if (Array.isArray(body.perms)) setUserPerms(id, body.perms, homeBranch);
+  db.prepare(`INSERT INTO users (id,branch_id,username,name,avatar,pin,role,active,lang,branch_access_json) VALUES (?,?,?,?,?,?,?,1,?,?)`)
+    .run(id, homeBranch, username, name, avatar, hashPin(pin), body.role, lang, JSON.stringify(access));
+  if (Array.isArray(body.perms)) setUserPerms(id, body.perms, homeBranch, actor);
   audit('user.create', { username, role: body.role, branch_id: homeBranch, branch_access: access }, homeBranch);
   const row = db.prepare(`SELECT * FROM users WHERE id=?`).get(id);
   const out = { ...publicUser(row), active: !!row.active, lang: row.lang || 'vi', ...userPermDetails(row) };
   archiveStaff(out);
   return out;
 }
-export function updateUser(id, body, branch_id = 'br1') {
+export function updateUser(id, body, branch_id = 'br1', actor = null) {
   const cur = db.prepare(`SELECT * FROM users WHERE id=?`).get(id);
-  if (!cur) throw new Error('NgÆ°á»i dÃ¹ng khÃ´ng tá»“n táº¡i');
+  if (!cur) throw new Error('Người dùng không tồn tại');
   const name = body.name !== undefined ? String(body.name).trim() || cur.name : cur.name;
+  const avatar = body.avatar !== undefined ? String(body.avatar).trim().slice(0, 600) : (cur.avatar || '');
   const role = body.role !== undefined && validRole(body.role) ? body.role : cur.role;
   const lang = body.lang !== undefined ? String(body.lang).trim() || cur.lang || 'vi' : cur.lang || 'vi';
   const homeBranch = body.branch_id !== undefined && branchExists(body.branch_id) ? String(body.branch_id) : (cur.branch_id || branch_id);
   let pin = cur.pin;
-  if (body.pin) { if (!/^\d{4}$/.test(String(body.pin))) throw new Error('MÃ£ PIN pháº£i Ä‘Ãºng 4 chá»¯ sá»‘'); pin = hashPin(String(body.pin)); }
+  if (body.pin) { if (!/^\d{4}$/.test(String(body.pin))) throw new Error('Mã PIN phải đúng 4 chữ số'); pin = hashPin(String(body.pin)); }
   const active = body.active !== undefined ? (body.active ? 1 : 0) : cur.active;
   if (cur.role === 'owner' && role !== 'owner' && db.prepare(`SELECT COUNT(*) n FROM users WHERE role='owner' AND active=1`).get().n <= 1)
-    throw new Error('Pháº£i cÃ²n Ã­t nháº¥t má»™t Admin');
+    throw new Error('Phải còn ít nhất một Admin');
   const access = normalizeBranchAccess(body, role, homeBranch);
-  db.prepare(`UPDATE users SET name=?, role=?, pin=?, active=?, lang=?, branch_id=?, branch_access_json=? WHERE id=?`).run(name, role, pin, active, lang, homeBranch, JSON.stringify(access), id);
-  if (Array.isArray(body.perms)) setUserPerms(id, body.perms, homeBranch);
+  db.prepare(`UPDATE users SET name=?, avatar=?, role=?, pin=?, active=?, lang=?, branch_id=?, branch_access_json=? WHERE id=?`).run(name, avatar, role, pin, active, lang, homeBranch, JSON.stringify(access), id);
+  if (Array.isArray(body.perms)) setUserPerms(id, body.perms, homeBranch, actor);
   else if (role !== cur.role) db.prepare(`DELETE FROM user_perms WHERE user_id=?`).run(id);
   // revoke sessions if deactivated
   if (!active) db.prepare(`DELETE FROM auth_sessions WHERE user_id=?`).run(id);
@@ -452,7 +512,7 @@ export function updateUser(id, body, branch_id = 'br1') {
 export function updateOwnLang(user_id, lang, branch_id = 'br1') {
   const clean = lang === 'en' ? 'en' : 'vi';
   const cur = db.prepare(`SELECT * FROM users WHERE id=? AND active=1`).get(user_id);
-  if (!cur) throw new Error('NgÆ°á»i dÃ¹ng khÃ´ng tá»“n táº¡i');
+  if (!cur) throw new Error('Người dùng không tồn tại');
   db.prepare(`UPDATE users SET lang=? WHERE id=?`).run(clean, user_id);
   audit('user.lang.update', { username: cur.username, lang: clean }, branch_id, cur.username);
   const row = db.prepare(`SELECT * FROM users WHERE id=?`).get(user_id);
@@ -462,9 +522,9 @@ export function updateOwnLang(user_id, lang, branch_id = 'br1') {
 }
 export function deleteUser(id, branch_id = 'br1') {
   const cur = db.prepare(`SELECT * FROM users WHERE id=?`).get(id);
-  if (!cur) throw new Error('NgÆ°á»i dÃ¹ng khÃ´ng tá»“n táº¡i');
+  if (!cur) throw new Error('Người dùng không tồn tại');
   if (cur.role === 'owner' && db.prepare(`SELECT COUNT(*) n FROM users WHERE role='owner'`).get().n <= 1)
-    throw new Error('KhÃ´ng thá»ƒ xÃ³a Admin cuá»‘i cÃ¹ng');
+    throw new Error('Không thể xóa Admin cuối cùng');
   db.prepare(`DELETE FROM auth_sessions WHERE user_id=?`).run(id);
   db.prepare(`DELETE FROM user_perms WHERE user_id=?`).run(id);
   db.prepare(`DELETE FROM users WHERE id=?`).run(id);
@@ -483,6 +543,7 @@ function publicUser(u) {
   return {
     id: u.id,
     name: u.name,
+    avatar: u.avatar || '',
     role: u.role,
     username: u.username,
     lang: u.lang || 'vi',
@@ -496,19 +557,19 @@ function publicUser(u) {
 export function requireAuth(perm) {
   return (req, res, next) => {
     const user = userFor(tokenFromReq(req));
-    if (!user) return res.status(401).json({ error: 'Cáº§n Ä‘Äƒng nháº­p' });
-    if (perm && !canUser(user, perm)) return res.status(403).json({ error: `KhÃ´ng Ä‘á»§ quyá»n (${perm})` });
+    if (!user) return res.status(401).json({ error: 'Cần đăng nhập' });
+    if (perm && !canUser(user, perm)) return res.status(403).json({ error: `Không đủ quyền (${perm})` });
     req.user = user;
     next();
   };
 }
 
 // Imperative permission check for handlers that need branch + actor in one call
-// (dÃ¹ng trong cÃ¡c route DMS). NÃ©m lá»—i cÃ³ status Ä‘á»ƒ wrap() tráº£ Ä‘Ãºng mÃ£ HTTP.
+// (dùng trong các route DMS). Ném lỗi có status để wrap() trả đúng mã HTTP.
 export function requirePermission(req, perm) {
   const user = req.user || userFor(tokenFromReq(req));
-  if (!user) { const e = new Error('Cáº§n Ä‘Äƒng nháº­p'); e.status = 401; throw e; }
-  if (perm && !canUser(user, perm)) { const e = new Error(`KhÃ´ng Ä‘á»§ quyá»n (${perm})`); e.status = 403; throw e; }
+  if (!user) { const e = new Error('Cần đăng nhập'); e.status = 401; throw e; }
+  if (perm && !canUser(user, perm)) { const e = new Error(`Không đủ quyền (${perm})`); e.status = 403; throw e; }
   req.user = user;
   return { branch_id: resolveBranch(req), actor: user, user };
 }
@@ -522,7 +583,7 @@ export function attachUser() {
   };
 }
 
-// NgÆ°á»i phá»¥ trÃ¡ch thao tÃ¡c, dÃ¹ng cho nháº­t kÃ½ hoáº¡t Ä‘á»™ng. Máº·c Ä‘á»‹nh 'system'.
+// Người phụ trách thao tác, dùng cho nhật ký hoạt động. Mặc định 'system'.
 export function actorName(req) {
   return req?.user?.name || req?.user?.username || 'system';
 }

@@ -3,7 +3,6 @@
   "version": "0.1.0",
   "description": "iPad Self-Order + POS/ERP for FnB, Retail, Warehouse & Online — Local Store Server",
   "type": "module",
-  "main": "server/index.js",
   "scripts": {
     "start": "node server/index.js",
     "dev": "node --watch server/index.js",
@@ -11,10 +10,8 @@
   },
   "dependencies": {
     "express": "^4.21.2",
-    "socket.io": "^4.8.1"
-  },
-  "overrides": {
-    "ws": "^8.21.0"
-  },
-  "devDependencies": {}
+    "pdfkit": "^0.19.1",
+    "socket.io": "^4.8.1",
+    "write-excel-file": "^4.1.1"
+  }
 }

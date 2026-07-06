@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Cài đặt — POS/ERP</title>
+  <script src="/runtime-config.js"></script>
+  <script type="module">
+    // Extract any existing search parameters (like tab=invoices)
+    const urlParams = new URLSearchParams(window.location.search);
+    const tab = urlParams.get('tab');
+    
+    sessionStorage.setItem('adminActiveView', 'settings');
+    if (tab) {
+      sessionStorage.setItem('settingsActiveTab', tab);
+    }
+    
+    // Keep old direct file links working; the real Settings module is /settings.
+    window.location.replace('/settings' + (tab ? `?tab=${encodeURIComponent(tab)}` : ''));
+  </script>
+</head>
+<body>
+  <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; background: #0f172a; color: #94a3b8; text-align: center; gap: 12px;">
+    <div style="width: 24px; height: 24px; border: 3px solid #38bdf8; border-top-color: transparent; border-radius: 50%; animation: spin 1s linear infinite;"></div>
+    <div style="font-size: 14px; font-weight: 500;">Đang chuyển hướng đến Cài đặt...</div>
+  </div>
+  <style>
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+  </style>
+</body>
+</html>

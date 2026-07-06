@@ -1,0 +1,432 @@
+<!DOCTYPE html>
+<html lang="vi"><head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Hóa đơn điện tử — POS/ERP</title>
+<link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/shared/app.css">
+<script src="/runtime-config.js"></script>
+<script src="/socket.io/socket.io.js"></script>
+<style>
+.view{max-width:1080px;width:100%;margin:0 auto}
+.cards{grid-template-columns:repeat(auto-fit,minmax(180px,1fr))}
+
+/* Toolbar — căn đều, kiểu Apple */
+.inv-toolbar{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:16px}
+.inv-search{position:relative;flex:1;min-width:220px}
+.inv-search input{width:100%;height:42px;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:0 14px 0 40px;font-size:14px;color:var(--text);transition:border-color .12s,box-shadow .12s}
+.inv-search input:focus{outline:none;border-color:var(--brand);box-shadow:0 0 0 3px var(--brand-dim)}
+.inv-search .ic{position:absolute;left:14px;top:50%;transform:translateY(-50%);opacity:.5;font-size:14px;pointer-events:none}
+.seg{display:inline-flex;gap:4px;background:var(--surface2);border:1px solid var(--border2);border-radius:12px;padding:4px}
+.seg button{padding:9px 16px;border-radius:9px;background:transparent;border:0;color:var(--muted);font-weight:700;font-size:13px;cursor:pointer;transition:.12s}
+.seg button.on{background:var(--surface);color:var(--brand);box-shadow:0 1px 3px rgba(15,23,42,.1)}
+
+/* Bảng — thẻ bo góc, hàng cao đều, canh lề tuyệt đối */
+.itable-wrap{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);box-shadow:0 1px 2px rgba(20,33,47,.04);overflow:hidden}
+.itable{width:100%;border-collapse:separate;border-spacing:0}
+.itable th{text-align:left;font-size:10.5px;font-weight:800;letter-spacing:.5px;text-transform:uppercase;color:var(--faint);padding:13px 16px;background:var(--surface2);border-bottom:1px solid var(--border);white-space:nowrap}
+.itable th.r,.itable td.r{text-align:right}
+.itable td{padding:13px 16px;border-bottom:1px solid var(--border);font-size:13.5px;vertical-align:middle}
+.itable tbody tr:last-child td{border-bottom:0}
+.itable tbody tr{cursor:pointer;transition:background .1s}
+.itable tbody tr:hover{background:var(--surface2)}
+.itable .mono{font-family:var(--mono)}
+.inv-no{font-family:var(--mono);font-size:12.5px;font-weight:700;color:var(--text)}
+.inv-cust b{font-size:13.5px;font-weight:650}
+.inv-mst{font-family:var(--mono);font-size:11px;color:var(--faint);margin-top:1px}
+.inv-amount{font-family:var(--mono);font-weight:700;color:var(--text)}
+.inv-look{font-family:var(--mono);font-size:11px;color:var(--faint)}
+.inv-chev{color:var(--faint);font-size:15px;text-align:right;width:24px}
+
+/* Detail modal */
+.dt-head{display:flex;align-items:flex-start;gap:12px;margin-bottom:4px}
+.dt-head .num{font-family:var(--mono);font-size:18px;font-weight:800;letter-spacing:-.01em}
+.dt-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:16px}
+.dt-box{background:var(--surface2);border:1px solid var(--border);border-radius:12px;padding:11px 13px;min-width:0}
+.dt-box.full{grid-column:1/-1}
+.dt-box .k{font-size:10px;color:var(--faint);text-transform:uppercase;letter-spacing:.5px;font-weight:800}
+.dt-box .v{font-size:14px;font-weight:650;margin-top:3px;word-break:break-word}
+.dt-box .v.mono{font-family:var(--mono);font-size:13px;font-weight:700}
+.dt-box .v.amt{color:var(--brand);font-family:var(--mono);font-size:16px;font-weight:800}
+.dt-copy{display:inline-flex;align-items:center;gap:6px}
+.dt-copy button{margin-left:auto;border:1px solid var(--border);background:var(--surface);border-radius:8px;padding:3px 9px;font-size:11px;font-weight:700;color:var(--brand);cursor:pointer}
+.dt-acts{display:flex;gap:10px;margin-top:22px}
+.dt-acts .btn{flex:1;padding:12px}
+@media(max-width:560px){.dt-grid{grid-template-columns:1fr}.seg{width:100%}.seg button{flex:1}}
+</style></head>
+<body>
+<div id="top"></div>
+<div class="view">
+  <!-- Tab Switcher -->
+  <div style="display:flex;gap:4px;background:var(--surface2);border:1px solid var(--border2);padding:4px;border-radius:12px;margin-bottom:18px;max-width:380px">
+    <button id="tabListBtn" class="btn active-tab" style="flex:1;padding:8px;border-radius:9px;background:var(--surface);border:0;color:var(--brand);font-weight:700;font-size:13px;cursor:pointer;box-shadow:0 1px 3px rgba(15,23,42,.08)">📄 Danh sách HĐĐT</button>
+    <button id="tabReconcileBtn" class="btn" style="flex:1;padding:8px;border-radius:9px;background:transparent;border:0;color:var(--muted);font-weight:700;font-size:13px;cursor:pointer">🔍 Đối soát HĐĐT</button>
+  </div>
+
+  <!-- TAB 1: LIST VIEW -->
+  <div id="listView">
+    <div class="cards" id="cards"></div>
+    <div class="inv-toolbar">
+      <div class="inv-search"><span class="ic">🔍</span><input id="search" placeholder="Tìm số hóa đơn, khách hàng, MST, mã tra cứu..."></div>
+      <div class="seg" id="statusSeg">
+        <button data-s="" class="on">Tất cả</button>
+        <button data-s="issued">Đã phát hành</button>
+        <button data-s="cancelled">Đã hủy</button>
+      </div>
+    </div>
+    <div id="list"></div>
+  </div>
+
+  <!-- TAB 2: RECONCILE VIEW -->
+  <div id="reconcileView" style="display:none">
+    <div class="cards" id="reconCards"></div>
+    
+    <div class="inv-toolbar" style="margin-top:18px; background:var(--surface2); padding:16px; border-radius:12px; border:1px solid var(--border)">
+      <div style="display:flex; gap:16px; align-items:center; flex-wrap:wrap; width:100%">
+        <div style="flex: 1; min-width: 160px">
+          <label style="font-size:11px; font-weight:bold; color:var(--muted); display:block; margin-bottom:4px">Từ ngày</label>
+          <input type="date" id="reconDateFrom" style="width:100%; height:38px; background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:0 10px; color:var(--text)">
+        </div>
+        <div style="flex: 1; min-width: 160px">
+          <label style="font-size:11px; font-weight:bold; color:var(--muted); display:block; margin-bottom:4px">Đến ngày</label>
+          <input type="date" id="reconDateTo" style="width:100%; height:38px; background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:0 10px; color:var(--text)">
+        </div>
+        <div style="flex: 1; min-width: 180px">
+          <label style="font-size:11px; font-weight:bold; color:var(--muted); display:block; margin-bottom:4px">Trạng thái đối soát</label>
+          <select id="reconStatus" style="width:100%; height:38px; background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:0 10px; color:var(--text)">
+            <option value="">Tất cả hóa đơn</option>
+            <option value="MISSING" selected>Lệch (Chưa xuất / Lỗi)</option>
+            <option value="ISSUED">Đã phát hành khớp</option>
+            <option value="FAILED">Lỗi phát hành</option>
+            <option value="QUEUED">Đang chờ xử lý</option>
+          </select>
+        </div>
+        <div style="display:flex; gap:8px; align-self:flex-end">
+          <button class="btn primary" id="reconLoadBtn" style="height:38px">Lọc đối soát</button>
+          <button class="btn" id="reconBatchRetryBtn" style="height:38px; background:var(--brand); color:white; border:0; display:none">🔄 Phát hành lại hàng loạt</button>
+        </div>
+      </div>
+    </div>
+    
+    <div id="reconList" style="margin-top:16px"></div>
+  </div>
+</div>
+
+<div class="overlay" id="detailOv">
+  <div class="modal" id="detailModal"></div>
+</div>
+
+<script type="module">
+import { api, connect, money, toast, esc, startClock, topbar, requireModuleAccess, renderUserChip, hasPerm } from '/shared/client.js';
+document.getElementById('top').innerHTML = topbar('invoice', {
+  title: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><line x1="10" y1="9" x2="8" y2="9"/></svg>Hóa đơn điện tử',
+  sub: 'Danh sách hóa đơn đã phát hành · tra cứu, xem chi tiết và hủy theo quy định',
+  actions: `<a class="btn" href="/settings?tab=einvoice">⚙️ Cấu hình HĐĐT</a><button class="btn primary" id="refreshBtn">↻ Tải lại</button>`,
+});
+await requireModuleAccess('invoice'); renderUserChip();
+
+const $ = id => document.getElementById(id);
+let invoices = [], status = '', search = '';
+
+connect('invoice', {
+  'invoice:issued': load,
+  'invoice:cancelled': load,
+  'invoice:choice': load,
+});
+
+const fmtTime = ts => { if (!ts) return '—'; const d = new Date(ts); return isNaN(d) ? '—' : d.toLocaleString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }); };
+const custName = c => c.name || c.company || 'Khách không xuất hóa đơn';
+
+async function load(){
+  try {
+    invoices = await api('/invoices');
+    invoices = Array.isArray(invoices) ? invoices : [];
+  } catch(e){ invoices = []; toast(e.message, true); }
+  render();
+}
+
+function filtered(){
+  const q = search.trim().toLowerCase();
+  return invoices.filter(i => {
+    if (status && i.status !== status) return false;
+    if (!q) return true;
+    const c = i.customer || {};
+    return [i.invoice_no, i.lookup_code, c.name, c.company, c.tax_code, c.phone, c.email]
+      .filter(Boolean).some(v => String(v).toLowerCase().includes(q));
+  });
+}
+
+function render(){
+  const issued = invoices.filter(i => i.status === 'issued');
+  const cancelled = invoices.filter(i => i.status === 'cancelled');
+  const totalIssued = issued.reduce((s, i) => s + (Number(i.total) || 0), 0);
+  $('cards').innerHTML = `
+    <div class="card"><div class="lb">Tổng hóa đơn</div><div class="vl">${invoices.length}</div></div>
+    <div class="card"><div class="lb">Đã phát hành</div><div class="vl gr">${issued.length}</div></div>
+    <div class="card"><div class="lb">Tổng tiền (đã phát hành)</div><div class="vl cy">${money(totalIssued)}</div></div>
+    <div class="card"><div class="lb">Đã hủy</div><div class="vl rd">${cancelled.length}</div></div>`;
+
+  const rows = filtered();
+  if (!rows.length){
+    $('list').innerHTML = `<div class="itable-wrap"><div class="empty" style="padding:48px 16px">${invoices.length ? 'Không có hóa đơn khớp bộ lọc.' : 'Chưa có hóa đơn nào được phát hành.'}</div></div>`;
+    return;
+  }
+  $('list').innerHTML = `<div class="itable-wrap"><table class="itable">
+    <thead><tr>
+      <th>Số HĐ</th><th>Khách hàng</th><th>Liên hệ</th>
+      <th class="r">Tiền</th><th>Trạng thái</th><th>Mã tra cứu</th><th></th>
+    </tr></thead>
+    <tbody>${rows.map(rowHtml).join('')}</tbody>
+  </table></div>`;
+  $('list').querySelectorAll('tr[data-id]').forEach(tr => tr.onclick = () => openDetail(tr.dataset.id));
+}
+
+function statusChip(s){
+  return s === 'cancelled'
+    ? '<span class="chip c-late">Đã hủy</span>'
+    : '<span class="chip c-done">Đã phát hành</span>';
+}
+
+function rowHtml(i){
+  const c = i.customer || {};
+  const self = c._source === 'customer_self_service';
+  const contact = [c.phone, c.email].filter(Boolean).map(esc).join(' · ');
+  return `<tr data-id="${esc(i.id)}">
+    <td><span class="inv-no">${esc(i.invoice_no || '—')}</span></td>
+    <td class="inv-cust"><b>${esc(custName(c))}</b>${self ? ' <span class="chip c-done" style="font-size:9px;padding:2px 7px">Tự xuất</span>' : ''}${c.tax_code ? `<div class="inv-mst">MST: ${esc(c.tax_code)}</div>` : ''}</td>
+    <td><small style="color:var(--muted)">${contact || '—'}</small></td>
+    <td class="r"><span class="inv-amount">${money(i.total)}</span></td>
+    <td>${statusChip(i.status)}</td>
+    <td><span class="inv-look">${esc(i.lookup_code || '—')}</span></td>
+    <td class="inv-chev">›</td>
+  </tr>`;
+}
+
+function openDetail(id){
+  const i = invoices.find(x => x.id === id);
+  if (!i) return;
+  const c = i.customer || {};
+  const contact = [c.phone, c.email].filter(Boolean).map(esc).join(' · ') || '—';
+  const canCancel = i.status === 'issued' && hasPerm('invoice');
+  $('detailModal').innerHTML = `
+    <div class="dt-head">
+      <div style="flex:1">
+        <div class="num">${esc(i.invoice_no || '—')}</div>
+        <div class="sub" style="margin:4px 0 0">${esc(custName(c))}</div>
+      </div>
+      ${statusChip(i.status)}
+    </div>
+    <div class="dt-grid">
+      <div class="dt-box"><div class="k">Khách hàng</div><div class="v">${esc(custName(c))}</div></div>
+      <div class="dt-box"><div class="k">Mã số thuế</div><div class="v mono">${esc(c.tax_code || '—')}</div></div>
+      <div class="dt-box full"><div class="k">Liên hệ</div><div class="v">${contact}</div></div>
+      <div class="dt-box"><div class="k">Tổng tiền</div><div class="v amt">${money(i.total)}</div></div>
+      <div class="dt-box"><div class="k">Thời gian phát hành</div><div class="v" style="font-size:13px">${fmtTime(i.issued_at)}</div></div>
+      <div class="dt-box full"><div class="k">Mã tra cứu cơ quan thuế</div><div class="v mono dt-copy"><span id="lookupVal">${esc(i.lookup_code || '—')}</span>${i.lookup_code ? `<button id="copyLookup">Sao chép</button>` : ''}</div></div>
+    </div>
+    <div class="dt-acts">
+      <button class="btn" id="closeDetail">Đóng</button>
+      ${canCancel ? `<button class="btn danger" id="cancelInv">Hủy hóa đơn</button>` : ''}
+    </div>`;
+  $('detailOv').classList.add('show');
+  $('closeDetail').onclick = closeDetail;
+  const copyBtn = $('copyLookup');
+  if (copyBtn) copyBtn.onclick = async () => {
+    try { await navigator.clipboard.writeText(i.lookup_code); toast('Đã sao chép mã tra cứu'); }
+    catch { toast('Không sao chép được', true); }
+  };
+  const cancelBtn = $('cancelInv');
+  if (cancelBtn) cancelBtn.onclick = () => cancelInvoice(i);
+}
+function closeDetail(){ $('detailOv').classList.remove('show'); }
+
+async function cancelInvoice(i){
+  const reason = (prompt(`Hủy hóa đơn ${i.invoice_no}?\nNhập lý do hủy (lưu để đối chiếu, không xóa dữ liệu):`, '') || '').trim();
+  if (reason === '') return;
+  try {
+    await api(`/invoices/${i.id}/cancel`, { method: 'POST', body: { reason } });
+    toast('Đã hủy hóa đơn ' + i.invoice_no);
+    closeDetail(); load();
+  } catch(e){ toast(e.message || 'Không hủy được hóa đơn', true); }
+}
+
+// ── Reconciliation UI Logic ──
+let activeTab = 'list';
+let reconcileData = null;
+
+$('tabListBtn').onclick = () => switchTab('list');
+$('tabReconcileBtn').onclick = () => switchTab('reconcile');
+$('reconLoadBtn').onclick = loadReconciliation;
+
+function switchTab(t) {
+  activeTab = t;
+  $('tabListBtn').style.background = t === 'list' ? 'var(--surface)' : 'transparent';
+  $('tabListBtn').style.color = t === 'list' ? 'var(--brand)' : 'var(--muted)';
+  $('tabListBtn').style.boxShadow = t === 'list' ? '0 1px 3px rgba(15,23,42,.08)' : 'none';
+
+  $('tabReconcileBtn').style.background = t === 'reconcile' ? 'var(--surface)' : 'transparent';
+  $('tabReconcileBtn').style.color = t === 'reconcile' ? 'var(--brand)' : 'var(--muted)';
+  $('tabReconcileBtn').style.boxShadow = t === 'reconcile' ? '0 1px 3px rgba(15,23,42,.08)' : 'none';
+
+  $('listView').style.display = t === 'list' ? 'block' : 'none';
+  $('reconcileView').style.display = t === 'reconcile' ? 'block' : 'none';
+
+  if (t === 'reconcile') {
+    loadReconciliation();
+  } else {
+    load();
+  }
+}
+
+async function loadReconciliation() {
+  const dateFrom = $('reconDateFrom').value;
+  const dateTo = $('reconDateTo').value;
+  const status = $('reconStatus').value;
+  $('reconList').innerHTML = `<div class="itable-wrap"><div class="empty" style="padding:48px 16px">🔄 Đang tải đối soát...</div></div>`;
+  try {
+    reconcileData = await api(`/einvoice/reconciliation?date_from=${dateFrom}&date_to=${dateTo}&status=${status}`);
+    renderReconciliation();
+  } catch (e) {
+    toast(e.message, true);
+    $('reconList').innerHTML = `<div class="itable-wrap"><div class="empty" style="padding:48px 16px; color:var(--late)">Lỗi: ${e.message}</div></div>`;
+  }
+}
+
+function renderReconciliation() {
+  if (!reconcileData) return;
+  const { summary, items } = reconcileData;
+
+  $('reconCards').innerHTML = `
+    <div class="card"><div class="lb">Tổng số Bill</div><div class="vl">${summary.total_bills}</div></div>
+    <div class="card"><div class="lb">Đã phát hành khớp</div><div class="vl gr">${summary.issued_count}</div></div>
+    <div class="card"><div class="lb">Đang chờ xử lý</div><div class="vl cy">${summary.queued_count}</div></div>
+    <div class="card"><div class="lb">Lệch (Lỗi / Chưa xuất)</div><div class="vl rd">${summary.missing_count}</div></div>`;
+
+  if (!items || !items.length) {
+    $('reconList').innerHTML = `<div class="itable-wrap"><div class="empty" style="padding:48px 16px">Khớp hoàn toàn! Không có giao dịch lệch trong bộ lọc.</div></div>`;
+    $('reconBatchRetryBtn').style.display = 'none';
+    return;
+  }
+
+  const failedOrMissing = items.filter(x => x.invoice_status === 'FAILED' || !x.invoice_status || x.invoice_status === 'NOT_CREATED');
+  $('reconBatchRetryBtn').style.display = failedOrMissing.length ? 'block' : 'none';
+
+  $('reconList').innerHTML = `<div class="itable-wrap"><table class="itable">
+    <thead><tr>
+      <th>Số Bill</th><th>Transaction ID</th><th>Số HĐĐT (MISA)</th>
+      <th>Ngày bán</th><th class="r">Tiền Bill</th><th>Trạng thái</th><th>Chi tiết / Lỗi</th><th class="r">Thao tác</th>
+    </tr></thead>
+    <tbody>${items.map(row => {
+      const isMissing = !row.invoice_status || row.invoice_status === 'NOT_CREATED';
+      const isFailed = row.invoice_status === 'FAILED';
+      const isQueued = ['QUEUED', 'SENDING', 'RETRYING'].includes(row.invoice_status);
+      const isIssued = row.invoice_status === 'ISSUED';
+
+      let statusBadge = '';
+      if (isIssued) statusBadge = '<span class="chip c-done">Đã phát hành</span>';
+      else if (isFailed) statusBadge = '<span class="chip c-late">Lỗi phát hành</span>';
+      else if (isQueued) statusBadge = '<span class="chip c-orange" style="background:#fef3c7;color:#d97706">Đang xử lý</span>';
+      else statusBadge = '<span class="chip c-late" style="background:#ffedd5;color:#ea580c">Chưa xuất</span>';
+
+      return `<tr>
+        <td class="mono" style="font-weight:bold">${esc(row.bill_no || '—')}</td>
+        <td class="mono" style="font-size:11px;color:var(--faint)">${esc(row.order_id)}</td>
+        <td class="mono">${esc(row.invoice_no || '—')}</td>
+        <td>${fmtTime(row.paid_at)}</td>
+        <td class="r" style="font-weight:bold">${money(row.order_total)}</td>
+        <td>${statusBadge}</td>
+        <td style="max-width:240px;overflow:hidden;text-overflow:ellipsis;font-size:12px;color:var(--muted)">
+          ${esc(row.error_message || row.buyer_name || '—')}
+        </td>
+        <td class="r">
+          ${isQueued ? `<button class="btn btn-sync-rec" data-invoice-id="${esc(row.e_invoice_id)}" style="padding:4px 8px;font-size:11px">Đồng bộ</button>` : ''}
+          ${(isFailed || isMissing) ? `<button class="btn btn-retry-rec primary" data-order-id="${esc(row.order_id)}" data-invoice-id="${esc(row.e_invoice_id || '')}" style="padding:4px 8px;font-size:11px">Phát hành</button>` : ''}
+        </td>
+      </tr>`;
+    }).join('')}</tbody>
+  </table></div>`;
+
+  $('reconList').querySelectorAll('.btn-sync-rec').forEach(btn => {
+    btn.onclick = async () => {
+      const invId = btn.dataset.invoiceId;
+      try {
+        btn.disabled = true;
+        btn.innerText = '...';
+        await api(`/einvoice/${invId}/sync`, { method: 'POST' });
+        toast('Đã đồng bộ trạng thái hóa đơn');
+        loadReconciliation();
+      } catch (err) {
+        toast(err.message, true);
+        btn.disabled = false;
+        btn.innerText = 'Đồng bộ';
+      }
+    };
+  });
+
+  $('reconList').querySelectorAll('.btn-retry-rec').forEach(btn => {
+    btn.onclick = async () => {
+      const orderId = btn.dataset.orderId;
+      const invId = btn.dataset.invoiceId;
+      const pin = prompt('Nhập PIN Quản lý/Admin để phát hành lại hóa đơn này:');
+      if (pin === null) return;
+      try {
+        btn.disabled = true;
+        btn.innerText = '...';
+        await api(`/orders/${orderId}/einvoice/retry`, {
+          method: 'POST',
+          body: { security_pin: pin, e_invoice_id: invId || null }
+        });
+        toast('Đã xếp hàng phát hành hóa đơn');
+        loadReconciliation();
+      } catch (err) {
+        toast(err.message, true);
+        btn.disabled = false;
+        btn.innerText = 'Phát hành';
+      }
+    };
+  });
+}
+
+$('reconBatchRetryBtn').onclick = async () => {
+  if (!reconcileData || !reconcileData.items) return;
+  const failedOrMissing = reconcileData.items.filter(x => x.invoice_status === 'FAILED' || !x.invoice_status || x.invoice_status === 'NOT_CREATED');
+  if (!failedOrMissing.length) return;
+
+  if (!confirm(`Bạn có chắc chắn muốn phát hành lại ${failedOrMissing.length} hóa đơn lỗi/chưa xuất này không?`)) return;
+
+  const pin = prompt('Nhập PIN Quản lý/Admin để xác nhận phát hành hàng loạt:');
+  if (pin === null) return;
+
+  toast(`Đang gửi yêu cầu phát hành ${failedOrMissing.length} hóa đơn...`);
+  let successCount = 0;
+  let failCount = 0;
+
+  for (const item of failedOrMissing) {
+    try {
+      await api(`/orders/${item.order_id}/einvoice/retry`, {
+        method: 'POST',
+        body: { security_pin: pin, e_invoice_id: item.e_invoice_id || null }
+      });
+      successCount++;
+    } catch (err) {
+      failCount++;
+    }
+  }
+
+  toast(`Hoàn tất: Thành công ${successCount}, Thất bại ${failCount}`);
+  loadReconciliation();
+};
+
+// ---- bind ----
+$('search').oninput = () => { search = $('search').value; render(); };
+$('statusSeg').querySelectorAll('button').forEach(b => b.onclick = () => {
+  status = b.dataset.s;
+  $('statusSeg').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b));
+  render();
+});
+$('refreshBtn').onclick = load;
+$('detailOv').onclick = e => { if (e.target === $('detailOv')) closeDetail(); };
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDetail(); });
+
+startClock(); load();
+</script>
+</body></html>

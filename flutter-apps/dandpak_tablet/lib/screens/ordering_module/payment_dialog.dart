@@ -141,7 +141,7 @@ class _PaymentDialogState extends State<PaymentDialog> {
                           const Text('Tổng cần thanh toán:', style: TextStyle(color: Colors.white70, fontSize: 16)),
                           Text(
                             'đ$total',
-                            style: const TextStyle(fontSize: 22, fontWeight: FontWeight.extrabold, color: Color(0xFF2F7D6B)),
+                            style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: Color(0xFF2F7D6B)),
                           ),
                         ],
                       ),

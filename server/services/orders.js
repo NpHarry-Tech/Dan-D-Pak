@@ -97,7 +97,7 @@ export function createOrUpdateOrder(options) {
   }
 
   try {
-    const needsStaffConfirm = source === 'customer_ipad' || require_confirm === true;
+    const needsStaffConfirm = source === 'customer_ipad' || require_confirm === true || (source === 'staff_pos' && !!table_id);
 
     let order = table_id ? getOpenOrderForTable(table_id, branch_id) : null;
     const isNew = !order;
@@ -147,11 +147,7 @@ export function createOrUpdateOrder(options) {
     if (printable.length) printKitchenTickets(full, printable, branch_id, actor);
     printCupLabels(full, created, branch_id);
     emit('order:new', { order: full, newItems: created, isNew, pendingConfirm: needsStaffConfirm }, branch_id);
-    if (needsStaffConfirm) {
-      const payload = { order: full, newItems: created, source, branch_id };
-      emit('order:pending', payload, branch_id);
-      emit('order:customer_pending', payload, branch_id);
-    }
+    if (needsStaffConfirm) emit('order:pending', { order: full, newItems: created }, branch_id);
     if (printable.length) emit('kds:refresh', { station: 'all' }, branch_id);
     emit('stats:dirty', {}, branch_id);
 
@@ -167,11 +163,9 @@ export function createOrUpdateOrder(options) {
   }
 }
 
-export function getOrder(order_id, branch_id = null) {
+export function getOrder(order_id) {
   if (!order_id) return null;
-  const order = branch_id
-    ? db.prepare(`SELECT * FROM orders WHERE id=? AND branch_id=?`).get(order_id, branch_id)
-    : db.prepare(`SELECT * FROM orders WHERE id=?`).get(order_id);
+  const order = db.prepare(`SELECT * FROM orders WHERE id=?`).get(order_id);
   if (!order) return null;
   order.items = db.prepare(`SELECT * FROM order_items WHERE order_id=? ORDER BY created_at`).all(order_id)
     .map(it => {
@@ -250,8 +244,7 @@ export function confirmPendingItems(order_id, item_ids = [], branch_id = 'br1', 
   if (kitchenItems.length) printKitchenTickets(full, kitchenItems, branch_id, actor);
   printCupLabels(full, confirmed, branch_id);
   emit('order:updated', full, branch_id);
-  emit('order:pending', { order: full, confirmed: pending.map(i => i.id), branch_id }, branch_id);
-  emit('order:confirmed', { order: full, confirmed: pending.map(i => i.id), branch_id }, branch_id);
+  emit('order:pending', { order: full, confirmed: pending.map(i => i.id) }, branch_id);
   if (kitchenItems.length) {
     emit('order:new', { order: full, newItems: kitchenItems, isNew: false, confirmed: true }, branch_id);
     emit('kds:refresh', { station: 'all' }, branch_id);
@@ -281,8 +274,7 @@ export function rejectPendingItems(order_id, item_ids = [], reason = '', branch_
   archiveOrder(full);
   audit('order.reject', { order: order_id, items: pending.length, reason: cleanReason }, branch_id, actor);
   emit('order:updated', full, branch_id);
-  emit('order:pending', { order: full, rejected: pending.map(i => i.id), reason: cleanReason, branch_id }, branch_id);
-  emit('order:rejected', { order: full, rejected: pending.map(i => i.id), reason: cleanReason, branch_id }, branch_id);
+  emit('order:pending', { order: full, rejected: pending.map(i => i.id), reason: cleanReason }, branch_id);
   emit('stats:dirty', {}, branch_id);
   return full;
 }
@@ -394,11 +386,9 @@ function parseJson(raw, fallback) {
   try { return raw ? JSON.parse(raw) : fallback; } catch { return fallback; }
 }
 
-export function getTableState(table_id, branch_id = null) {
+export function getTableState(table_id) {
   if (!table_id) return null;
-  const t = branch_id
-    ? db.prepare(`SELECT * FROM tables WHERE id=? AND branch_id=?`).get(table_id, branch_id)
-    : db.prepare(`SELECT * FROM tables WHERE id=?`).get(table_id);
+  const t = db.prepare(`SELECT * FROM tables WHERE id=?`).get(table_id);
   if (!t) return null;
   const order = getOpenOrderForTable(table_id, t.branch_id);
   const call = db.prepare(`SELECT * FROM staff_calls WHERE table_id=? AND status='open' ORDER BY created_at DESC LIMIT 1`).get(table_id);
@@ -413,12 +403,7 @@ export function getTableState(table_id, branch_id = null) {
 
 export function listTables(branch_id = 'br1') {
   return db.prepare(`SELECT id FROM tables WHERE branch_id=? ORDER BY code`).all(branch_id)
-    .map(r => getTableState(r.id, branch_id));
-}
-
-export function listZones(branch_id = 'br1') {
-  return db.prepare(`SELECT zone, MIN(id) id FROM tables WHERE branch_id=? GROUP BY zone ORDER BY zone`).all(branch_id)
-    .map(r => ({ id: r.zone, name: r.zone }));
+    .map(r => getTableState(r.id));
 }
 
 export function getStationTickets(station, branch_id = 'br1') {

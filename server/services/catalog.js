@@ -27,7 +27,66 @@ export function safeJson(raw, fallback) {
   try { return JSON.parse(raw); } catch { return fallback; }
 }
 
-export function listMenu({ forCustomer = false, includeDeleted = false } = {}) {
+export function listMenu(options = {}) {
+  const {
+    forCustomer = false,
+    includeDeleted = false,
+    page = null,
+    limit = 40,
+    q = '',
+    category_id = '',
+  } = options;
+
+  const parsedPage = page !== null ? parseInt(page) : null;
+  const parsedLimit = parseInt(limit) || 40;
+
+  if (parsedPage !== null && parsedPage > 0) {
+    const categories = db.prepare(`SELECT * FROM categories ORDER BY sort`).all();
+
+    let sql = `SELECT * FROM menu_items WHERE 1=1`;
+    const params = [];
+
+    if (!includeDeleted) {
+      sql += ` AND deleted_at IS NULL`;
+    }
+
+    if (forCustomer) {
+      sql += ` AND hidden = 0`;
+    }
+
+    if (q && String(q).trim() !== '') {
+      sql += ` AND (name LIKE ? OR code LIKE ?)`;
+      const searchVal = `%${String(q).trim()}%`;
+      params.push(searchVal, searchVal);
+    }
+
+    if (category_id && String(category_id).trim() !== '') {
+      sql += ` AND category_id = ?`;
+      params.push(String(category_id).trim());
+    }
+
+    sql += ` ORDER BY sort`;
+
+    const countSql = `SELECT COUNT(*) AS total FROM (${sql})`;
+    const totalRow = db.prepare(countSql).get(...params);
+    const total = totalRow ? (totalRow.total || 0) : 0;
+
+    sql += ` LIMIT ? OFFSET ?`;
+    const offset = (parsedPage - 1) * parsedLimit;
+    const paginatedParams = [...params, parsedLimit, offset];
+
+    const rows = db.prepare(sql).all(...paginatedParams);
+    const items = rows.map(r => normalizeMenuItem(r, { forCustomer, includeRecipe: !forCustomer }));
+
+    return {
+      categories,
+      items,
+      total,
+      page: parsedPage,
+      limit: parsedLimit,
+    };
+  }
+
   const cacheKey = `menu:${forCustomer ? 'pub' : 'adm'}:${includeDeleted ? 'all' : 'live'}`;
   const cached = cacheGet(cacheKey);
   if (cached) return cached;

@@ -13,6 +13,9 @@ function snapshotCustomer(c) {
   return {
     id: c.id || null, name: c.name || '', phone: c.phone || '', email: c.email || '',
     tax_code: c.tax_code || '', company: c.company || '', address: c.address || '',
+    address_detail: c.address_detail || '', address_ward: c.address_ward || '',
+    address_province: c.address_province || '', ward_code: c.ward_code || '',
+    province_code: c.province_code || '',
     birthday: c.birthday || '', preferences: c.preferences || '', allergies: c.allergies || '',
     perk_type: c.perk_type || 'none', perk_value: c.perk_value || 0,
   };
@@ -33,34 +36,54 @@ export function checkout({ items, payments, voucher_id = null, customer = null, 
     else if (customer && (customer.name || customer.tax_code)) cust = customer;
 
     // First pass (promos + order voucher) to know the base the perk/manual applies on.
-    const pre = calculateRetailDiscount(lines, voucher_id, branch_id);
+    const pre = calculateRetailDiscount(lines, voucher_id, branch_id, { customer: cust });
     const baseForExtra = Math.max(0, pre.subtotal - pre.lineDiscount - pre.orderDiscount);
     const customerPerk = cust ? perkDiscount(cust, baseForExtra) : 0;
     const manual = Math.max(0, Math.round(Number(manual_discount) || 0));
     const extraDiscount = customerPerk + manual;
 
-    const discountPlan = calculateRetailDiscount(lines, voucher_id, branch_id, { extraDiscount });
+    const discountPlan = calculateRetailDiscount(lines, voucher_id, branch_id, { customer: cust, extraDiscount });
     const orderItems = lines.map((line, idx) => {
       const promo = discountPlan.appliedSkuPromos.find(p => p.line_index === idx);
       return {
         sku_id: line.sku_id,
         qty: line.qty,
         lot_id: line.lot_id || null,
-        promo: promo ? { voucher_id: promo.voucher_id, code: promo.code, name: promo.name, amount: promo.amount } : null,
+        promo: promo ? {
+          voucher_id: promo.voucher_id,
+          code: promo.code,
+          name: promo.name,
+          amount: promo.amount,
+          type: promo.type,
+          value: promo.value,
+          free_units: promo.free_units,
+          free_product_name: promo.free_product_name,
+          description: promo.description,
+        } : null,
       };
     });
     const order = createOrUpdateOrder({ branch_id, table_id: null, channel: 'retail', items: orderItems, actor: cashier || 'system', skipTransaction: true });
     db.prepare(`UPDATE orders SET voucher_id=?, voucher_code=? WHERE id=?`)
       .run(discountPlan.orderVoucher?.id || null, discountPlan.orderVoucher?.code || null, order.id);
     const snap = snapshotCustomer(cust);
-    const receipt = payOrder(order.id, Array.isArray(payments) ? payments : [], { discount: discountPlan.discount, cashier, customer: snap, invoice_customer, skipTransaction: true }, branch_id);
-    if (cust?.id) recordPurchase(cust.id, receipt.total, branch_id, order.id);
-    receipt.discount_breakdown = {
+    const discountBreakdown = {
       product_promos: discountPlan.lineDiscount,
       voucher: discountPlan.orderDiscount,
       customer_perk: customerPerk,
       manual,
     };
+    const receipt = payOrder(order.id, Array.isArray(payments) ? payments : [], {
+      discount: discountPlan.discount,
+      cashier,
+      customer: snap,
+      invoice_customer,
+      skipTransaction: true,
+      discount_breakdown: discountBreakdown,
+      voucher: discountPlan.orderVoucher,
+      promotions: discountPlan.appliedSkuPromos,
+    }, branch_id);
+    if (cust?.id || cust?.phone) recordPurchase(cust, receipt.total, branch_id, order.id);
+    receipt.discount_breakdown = discountBreakdown;
     receipt.voucher = discountPlan.orderVoucher;
     receipt.promotions = discountPlan.appliedSkuPromos;
     if (!receipt.customer && snap) receipt.customer = snap;
@@ -114,7 +137,14 @@ function normalizeCheckoutItems(items, branch_id) {
       if (!lot) throw new Error('Lot không tồn tại cho ' + sku.name);
       if (lot.qty_on_hand + 0.000001 < qty) throw new Error(`Lot ${lot.lot_no} của ${sku.name} không đủ tồn`);
     }
-    out.push({ sku_id: sku.id, qty, lot_id, price: sku.price, name: sku.name });
+    out.push({
+      sku_id: sku.id,
+      qty,
+      lot_id,
+      voucher_id: raw.voucher_id || null,
+      price: sku.price,
+      name: sku.name,
+    });
   }
   return out;
 }

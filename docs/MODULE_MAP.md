@@ -6,7 +6,7 @@ Last updated: 2026-06-18
 | --- | --- | --- | --- |
 | Auth/users/roles/permissions | `server/services/auth.js` | `server/modules/auth`, `users`, `roles`, `permissions` | Yes |
 | Branches/tables/devices | `server/services/orders.js`, `server/services/system.js` | `server/modules/branches`, `devices` | Yes |
-| Menu/catalog/pricing | `server/services/catalog.js`, `server/services/vouchers.js` | `server/modules/menu`, `pricing`, `promotions`, `vouchers` | Yes |
+| Menu/catalog/pricing | `server/services/catalog.js`, `server/services/bookMenu.js`, `server/services/vouchers.js` | `server/modules/menu`, `pricing`, `promotions`, `vouchers` | Yes |
 | Orders/KDS | `server/services/orders.js` | `server/modules/orders`, `kds` | Yes |
 | Payments/shifts/cash drawer | `server/services/payments.js`, `shifts.js`, `cashDrawer.js` | `server/modules/payments` | Yes |
 | Invoices/MISA | `server/services/invoices.js`, `misa.js` | `server/modules/invoices`, `integrations/misa` | Yes |
@@ -23,4 +23,4 @@ Last updated: 2026-06-18
 - Public functions must have validation and predictable errors.
 - Sensitive actions need permission checks and audit logs.
 - Deletion must be reviewed for append-only alternatives.
-- Shared business logic belongs in services/modules, not copied across native screens.
+- Shared business logic belongs in services/modules, not copied across HTML pages.

@@ -88,7 +88,7 @@ class _ModifierDialogState extends State<ModifierDialog> {
                   Expanded(
                     child: Text(
                       widget.item.name,
-                      style: const TextStyle(fontSize: 20, fontWeight: FontWeight.extrabold, color: Colors.white),
+                      style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: Colors.white),
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
@@ -181,7 +181,7 @@ class _ModifierDialogState extends State<ModifierDialog> {
                   ),
                   Text(
                     'đ$_totalPrice',
-                    style: const TextStyle(fontSize: 22, fontWeight: FontWeight.extrabold, color: Color(0xFF2F7D6B)),
+                    style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: Color(0xFF2F7D6B)),
                   ),
                 ],
               ),

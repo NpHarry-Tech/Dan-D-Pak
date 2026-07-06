@@ -7,6 +7,10 @@ class SocketService {
     'kds:refresh',
     'order:item',
     'table:updated',
+    // Sửa món / tắt món / đổi giá từ POS giữa giờ → iPad order tự tải lại
+    // menu (mọi tablet khách cùng thấy thay đổi ngay, không cần F5 tay).
+    'menu:updated',
+    'settings:updated',
   ];
 
   final String url;
@@ -18,14 +22,19 @@ class SocketService {
 
   bool get isConnected => _client.isConnected;
 
-  void connect({required void Function(bool) onConnectionChanged}) {
+  void connect({
+    required void Function(bool) onConnectionChanged,
+    String device = 'kds',
+    void Function(String event, dynamic payload)? onEvent,
+  }) {
     _client.connect(
       url: url,
       token: token,
       branchId: branchId,
-      device: 'kds',
+      device: device,
       events: _events,
       onConnectionChanged: onConnectionChanged,
+      onEvent: onEvent,
     );
   }
 

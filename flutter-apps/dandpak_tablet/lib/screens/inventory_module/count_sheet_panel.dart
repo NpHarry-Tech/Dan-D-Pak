@@ -260,7 +260,7 @@ class _CountSheetPanelState extends State<CountSheetPanel> {
                               height: 38,
                               child: TextFormField(
                                 initialValue: counted.toString(),
-                                keyboardType: const TextInputType.withModifiers(decimal: true),
+                                keyboardType: const TextInputType.numberWithOptions(decimal: true),
                                 style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold),
                                 textAlign: TextAlign.center,
                                 decoration: InputDecoration(

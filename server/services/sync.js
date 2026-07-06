@@ -4,17 +4,16 @@
 import { db, now, migrate } from '../db.js';
 import { emit } from '../realtime.js';
 import { DatabaseSync } from 'node:sqlite';
-import { dirname } from 'node:path';
+import { resolve, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { mkdirSync } from 'node:fs';
-import { runtimePaths, DEVICE_ID } from '../config/paths.js';
-import { env } from '../config/env.js';
 
-const REPLICA_PATH = runtimePaths.syncReplica;
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const REPLICA_PATH = resolve(__dirname, '..', 'permanent-storage', 'eternal_replica.db');
 
 const state = { offline: false, lastSyncAt: now(), lastError: null };
 let replicaDb = null;
 const cachedStatements = {};
-const DONE_QUEUE_RETENTION = Math.max(100, parseInt(process.env.SYNC_DONE_RETENTION || '500', 10) || 500);
 
 export function getReplicaDb() {
   if (replicaDb) return replicaDb;
@@ -85,24 +84,6 @@ function replicateRecord(replica, table, record) {
   stmt.run(...vals);
 }
 
-function pruneDoneQueue(limit = DONE_QUEUE_RETENTION) {
-  try {
-    db.prepare(`
-      DELETE FROM sync_queue
-      WHERE status != 'pending'
-        AND rowid NOT IN (
-          SELECT rowid
-          FROM sync_queue
-          WHERE status != 'pending'
-          ORDER BY created_at DESC
-          LIMIT ?
-        )
-    `).run(limit);
-  } catch (err) {
-    console.warn('[sync] failed to prune completed sync_queue rows:', err.message);
-  }
-}
-
 export function syncBatch(branch_id = 'br1') {
   if (state.offline) return 0;
   
@@ -142,7 +123,6 @@ export function syncBatch(branch_id = 'br1') {
     throw err;
   }
   
-  if (synced > 0) pruneDoneQueue();
   state.lastSyncAt = now();
   return synced;
 }
@@ -169,13 +149,6 @@ export function status(branch_id = 'br1') {
     online: !state.offline,
     pending: pendingCount(branch_id),
     lastSyncAt: state.lastSyncAt,
-    deviceId: DEVICE_ID,
-    localReplicaPath: REPLICA_PATH,
-    centralSync: {
-      configured: !!env.CENTRAL_SYNC_URL,
-      url: env.CENTRAL_SYNC_URL ? env.CENTRAL_SYNC_URL.replace(/\/+$/, '') : '',
-      mode: env.CENTRAL_SYNC_URL ? 'ready-for-central-endpoint' : 'local-device-only',
-    },
     recent: pendingEvents(branch_id),
   };
 }

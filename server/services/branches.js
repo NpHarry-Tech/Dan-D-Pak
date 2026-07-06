@@ -17,6 +17,17 @@ function mapBranch(row) {
   return row ? { ...row, active: row.active !== 0 } : null;
 }
 
+function addressFields(body = {}, cur = {}) {
+  return {
+    address: body.address !== undefined ? (body.address || null) : cur.address,
+    address_detail: body.address_detail !== undefined ? (body.address_detail || null) : cur.address_detail,
+    address_ward: body.address_ward !== undefined ? (body.address_ward || null) : cur.address_ward,
+    address_province: body.address_province !== undefined ? (body.address_province || null) : cur.address_province,
+    ward_code: body.ward_code !== undefined ? (body.ward_code || null) : cur.ward_code,
+    province_code: body.province_code !== undefined ? (body.province_code || null) : cur.province_code,
+  };
+}
+
 export function listBranches({ all = false } = {}) {
   const rows = db.prepare(`SELECT * FROM branches ORDER BY sort,name`).all().map(mapBranch);
   return all ? rows : rows.filter(b => b.active);
@@ -38,8 +49,9 @@ export function createBranch(body = {}, actor = 'system') {
   const sort = Number.isFinite(Number(body.sort))
     ? Number(body.sort)
     : (db.prepare(`SELECT COALESCE(MAX(sort),0)+1 n FROM branches`).get().n || 1);
-  db.prepare(`INSERT INTO branches (id,name,address,code,phone,active,sort,note) VALUES (?,?,?,?,?,?,?,?)`)
-    .run(id, name, body.address || null, code, body.phone || null, body.active === false ? 0 : 1, sort, body.note || null);
+  const addr = addressFields(body);
+  db.prepare(`INSERT INTO branches (id,name,address,address_detail,address_ward,address_province,ward_code,province_code,code,phone,active,sort,note) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+    .run(id, name, addr.address, addr.address_detail, addr.address_ward, addr.address_province, addr.ward_code, addr.province_code, code, body.phone || null, body.active === false ? 0 : 1, sort, body.note || null);
   bootstrapWarehouseDefaults(id);
   bootstrapTableDefaults(id);
   audit('branch.create', { id, name, code }, id, actor);
@@ -53,10 +65,16 @@ export function updateBranch(id, body = {}, actor = 'system') {
   const code = body.code !== undefined ? normalizeCode(body.code || cur.code || name) : (cur.code || normalizeCode(name));
   const dup = db.prepare(`SELECT id FROM branches WHERE UPPER(code)=UPPER(?) AND id!=?`).get(code, id);
   if (dup) throw new Error('Mã chi nhánh đã tồn tại');
-  db.prepare(`UPDATE branches SET name=?, address=?, code=?, phone=?, active=?, sort=?, note=? WHERE id=?`)
+  const addr = addressFields(body, cur);
+  db.prepare(`UPDATE branches SET name=?, address=?, address_detail=?, address_ward=?, address_province=?, ward_code=?, province_code=?, code=?, phone=?, active=?, sort=?, note=? WHERE id=?`)
     .run(
       name,
-      body.address !== undefined ? (body.address || null) : cur.address,
+      addr.address,
+      addr.address_detail,
+      addr.address_ward,
+      addr.address_province,
+      addr.ward_code,
+      addr.province_code,
       code,
       body.phone !== undefined ? (body.phone || null) : cur.phone,
       body.active !== undefined ? (body.active ? 1 : 0) : (cur.active ? 1 : 0),

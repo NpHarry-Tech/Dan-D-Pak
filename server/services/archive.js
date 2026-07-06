@@ -1,12 +1,13 @@
 // Permanent archive snapshots for business-critical records.
 // SQLite remains the primary operational store; this writes durable JSON/NDJSON
 // copies into separate folders so records can still be inspected/exported fast.
-import { closeSync, existsSync, fsyncSync, mkdirSync, openSync, readdirSync, readFileSync, renameSync, statSync, writeFileSync, writeSync } from 'node:fs';
-import { open as openFile, rename as renameAsync, writeFile as writeFileAsync } from 'node:fs/promises';
+import { closeSync, existsSync, fsyncSync, mkdirSync, openSync, readdirSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync, writeSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { runtimePaths } from '../config/paths.js';
+import { fileURLToPath } from 'node:url';
+import zlib from 'node:zlib';
 
-export const PERMANENT_ROOT = runtimePaths.permanentStorage;
+const __dirname = dirname(fileURLToPath(import.meta.url));
+export const PERMANENT_ROOT = join(__dirname, '..', 'permanent-storage');
 
 const ENTITY_KINDS = new Set(['customers', 'orders', 'invoices', 'payments', 'staff', 'cash-drawer']);
 const FOLDERS = ['customers', 'orders', 'invoices', 'payments', 'reports', 'audit', 'staff', 'cash-drawer'];
@@ -49,68 +50,6 @@ function writeJsonAtomic(file, value) {
   renameSync(tmp, file);
 }
 
-async function writeJsonAtomicAsync(file, value) {
-  ensureDir(dirname(file));
-  const tmp = file + '.tmp';
-  await writeFileAsync(tmp, JSON.stringify(value, null, 2), 'utf8');
-  await renameAsync(tmp, file);
-}
-
-const entityArchiveQueue = new Map();
-let entityArchiveFlushTimer = null;
-let entityArchiveFlushing = false;
-const ENTITY_ARCHIVE_BATCH = Math.max(1, parseInt(process.env.ENTITY_ARCHIVE_BATCH || '80', 10) || 80);
-const ENTITY_ARCHIVE_FLUSH_MS = Math.max(25, parseInt(process.env.ENTITY_ARCHIVE_FLUSH_MS || '250', 10) || 250);
-
-async function flushEntityArchiveQueue() {
-  if (entityArchiveFlushing) return;
-  entityArchiveFlushing = true;
-  try {
-    while (entityArchiveQueue.size) {
-      const batch = [...entityArchiveQueue.entries()].slice(0, ENTITY_ARCHIVE_BATCH);
-      for (const [file] of batch) entityArchiveQueue.delete(file);
-      await Promise.all(batch.map(([file, value]) => writeJsonAtomicAsync(file, value)));
-    }
-  } catch (e) {
-    console.warn('[archive] async entity archive failed:', e.message);
-  } finally {
-    entityArchiveFlushing = false;
-    if (entityArchiveQueue.size && !entityArchiveFlushTimer) {
-      entityArchiveFlushTimer = setTimeout(() => {
-        entityArchiveFlushTimer = null;
-        void flushEntityArchiveQueue();
-      }, ENTITY_ARCHIVE_FLUSH_MS);
-      entityArchiveFlushTimer.unref?.();
-    }
-  }
-}
-
-function queueJsonAtomic(file, value) {
-  entityArchiveQueue.set(file, value);
-  if (entityArchiveQueue.size >= ENTITY_ARCHIVE_BATCH) {
-    if (entityArchiveFlushTimer) {
-      clearTimeout(entityArchiveFlushTimer);
-      entityArchiveFlushTimer = null;
-    }
-    void flushEntityArchiveQueue();
-    return;
-  }
-  if (!entityArchiveFlushTimer) {
-    entityArchiveFlushTimer = setTimeout(() => {
-      entityArchiveFlushTimer = null;
-      void flushEntityArchiveQueue();
-    }, ENTITY_ARCHIVE_FLUSH_MS);
-    entityArchiveFlushTimer.unref?.();
-  }
-}
-
-function flushEntityArchiveQueueSync() {
-  for (const [file, value] of entityArchiveQueue.entries()) {
-    writeJsonAtomic(file, value);
-  }
-  entityArchiveQueue.clear();
-}
-
 export function ensurePermanentStorage() {
   ensureDir(PERMANENT_ROOT);
   for (const folder of FOLDERS) ensureDir(join(PERMANENT_ROOT, folder));
@@ -132,8 +71,8 @@ export function archiveEntity(kind, entity = {}, opts = {}) {
     };
     const byId = join(PERMANENT_ROOT, kind, branch, 'by-id', `${id}.json`);
     const byDate = join(PERMANENT_ROOT, kind, branch, 'by-date', isoDate(ts), `${id}.json`);
-    queueJsonAtomic(byId, payload);
-    queueJsonAtomic(byDate, payload);
+    writeJsonAtomic(byId, payload);
+    writeJsonAtomic(byDate, payload);
     return { byId, byDate };
   } catch (e) {
     console.warn('[archive] entity archive failed:', e.message);
@@ -237,87 +176,6 @@ export function appendAuditArchive(entry = {}) {
   }
 }
 
-const auditArchiveQueue = [];
-let auditArchiveFlushTimer = null;
-let auditArchiveFlushing = false;
-const AUDIT_ARCHIVE_BATCH = Math.max(1, parseInt(process.env.AUDIT_ARCHIVE_BATCH || '80', 10) || 80);
-const AUDIT_ARCHIVE_FLUSH_MS = Math.max(25, parseInt(process.env.AUDIT_ARCHIVE_FLUSH_MS || '250', 10) || 250);
-
-function auditArchiveTarget(entry = {}) {
-  const branch = safePart(entry.branch_id || 'br1');
-  const day = isoDate(entry.created_at);
-  return join(PERMANENT_ROOT, 'audit', branch, `${day}.ndjson`);
-}
-
-async function appendAuditArchiveBatch(entries = []) {
-  const byFile = new Map();
-  for (const entry of entries) {
-    const file = auditArchiveTarget(entry);
-    const line = JSON.stringify({ archived_at: new Date().toISOString(), ...entry }) + '\n';
-    byFile.set(file, (byFile.get(file) || '') + line);
-  }
-  for (const [file, text] of byFile) {
-    ensureDir(dirname(file));
-    const fh = await openFile(file, 'a');
-    try {
-      await fh.writeFile(text, 'utf8');
-      await fh.sync();
-    } finally {
-      await fh.close().catch(() => {});
-    }
-  }
-}
-
-async function flushAuditArchiveQueue() {
-  if (auditArchiveFlushing) return;
-  auditArchiveFlushing = true;
-  try {
-    while (auditArchiveQueue.length) {
-      const batch = auditArchiveQueue.splice(0, AUDIT_ARCHIVE_BATCH);
-      await appendAuditArchiveBatch(batch);
-    }
-  } catch (e) {
-    console.warn('[archive] async audit archive failed:', e.message);
-  } finally {
-    auditArchiveFlushing = false;
-    if (auditArchiveQueue.length && !auditArchiveFlushTimer) {
-      auditArchiveFlushTimer = setTimeout(() => {
-        auditArchiveFlushTimer = null;
-        void flushAuditArchiveQueue();
-      }, AUDIT_ARCHIVE_FLUSH_MS);
-      auditArchiveFlushTimer.unref?.();
-    }
-  }
-}
-
-export function queueAuditArchive(entry = {}) {
-  auditArchiveQueue.push(entry);
-  if (auditArchiveQueue.length >= AUDIT_ARCHIVE_BATCH) {
-    if (auditArchiveFlushTimer) {
-      clearTimeout(auditArchiveFlushTimer);
-      auditArchiveFlushTimer = null;
-    }
-    void flushAuditArchiveQueue();
-    return;
-  }
-  if (!auditArchiveFlushTimer) {
-    auditArchiveFlushTimer = setTimeout(() => {
-      auditArchiveFlushTimer = null;
-      void flushAuditArchiveQueue();
-    }, AUDIT_ARCHIVE_FLUSH_MS);
-    auditArchiveFlushTimer.unref?.();
-  }
-}
-
-function flushAuditArchiveQueueSync() {
-  while (auditArchiveQueue.length) {
-    appendAuditArchive(auditArchiveQueue.shift());
-  }
-}
-
-process.once('exit', flushAuditArchiveQueueSync);
-process.once('exit', flushEntityArchiveQueueSync);
-
 // Read footprint entries archived in the last `days` days (today inclusive),
 // across all branches. Pure fs read (no SQLite) so db.js can call it to self-heal
 // audit_log after a crash where WAL+synchronous=NORMAL lost its most-recent rows
@@ -399,4 +257,134 @@ export function storageStatus() {
     root: PERMANENT_ROOT,
     folders: FOLDERS.map(folder => ({ folder, files: countTopLevel(join(PERMANENT_ROOT, folder)) })),
   };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Monthly audit archive — space-saving cold tier for the activity log.
+//
+// Storage format: ONE gzip'd NDJSON file per branch per month
+//   permanent-storage/audit/<branch>/monthly/<YYYY-MM>.ndjson.gz
+// Chosen because it (a) compresses append-only logs extremely well, (b) is
+// trivially and quickly decompressed on lookup (gunzip + line parse), and
+// (c) needs no encryption key to reopen — so even a super-old month reopens
+// fast and reliably. db.js drives the lifecycle (compact → rehydrate → purge).
+// ═══════════════════════════════════════════════════════════════════════════
+
+function auditBranchDir(branch) {
+  return join(PERMANENT_ROOT, 'audit', safePart(branch));
+}
+function monthlyDir(branch) {
+  return join(auditBranchDir(branch), 'monthly');
+}
+function monthlyFile(branch, ym) {
+  return join(monthlyDir(branch), `${ym}.ndjson.gz`);
+}
+
+/** Branch folders that have any audit footprint on disk. */
+export function listAuditBranches() {
+  const auditRoot = join(PERMANENT_ROOT, 'audit');
+  if (!existsSync(auditRoot)) return [];
+  try {
+    return readdirSync(auditRoot).filter((n) => {
+      try { return statSync(join(auditRoot, n)).isDirectory(); } catch { return false; }
+    });
+  } catch { return []; }
+}
+
+/** 'YYYY-MM' months that already have a compact monthly archive. */
+export function listArchivedMonths(branch) {
+  const dir = monthlyDir(branch);
+  if (!existsSync(dir)) return [];
+  try {
+    return readdirSync(dir)
+      .filter((f) => f.endsWith('.ndjson.gz'))
+      .map((f) => f.slice(0, 7))
+      .sort();
+  } catch { return []; }
+}
+
+/** 'YYYY-MM' months that still have per-day NDJSON footprint files. */
+export function listAuditDayMonths(branch) {
+  const dir = auditBranchDir(branch);
+  if (!existsSync(dir)) return [];
+  const set = new Set();
+  try {
+    for (const n of readdirSync(dir)) {
+      if (/^\d{4}-\d{2}-\d{2}\.ndjson$/.test(n)) set.add(n.slice(0, 7));
+    }
+  } catch { /* ignore */ }
+  return [...set];
+}
+
+export function hasMonthlyArchive(branch, ym) {
+  return existsSync(monthlyFile(branch, ym));
+}
+
+export function writeMonthlyArchive(branch, ym, entries) {
+  ensureDir(monthlyDir(branch));
+  const ndjson = entries.map((e) => JSON.stringify(e)).join('\n') + (entries.length ? '\n' : '');
+  const gz = zlib.gzipSync(Buffer.from(ndjson, 'utf8'), { level: 9 });
+  const file = monthlyFile(branch, ym);
+  const tmp = file + '.tmp';
+  writeFileSync(tmp, gz);
+  renameSync(tmp, file);
+  return file;
+}
+
+export function readMonthlyArchive(branch, ym) {
+  const file = monthlyFile(branch, ym);
+  if (!existsSync(file)) return [];
+  try {
+    const text = zlib.gunzipSync(readFileSync(file)).toString('utf8');
+    const out = [];
+    for (const line of text.split('\n')) {
+      const s = line.trim();
+      if (!s) continue;
+      try { const e = JSON.parse(s); if (e && e.id) out.push(e); } catch { /* skip torn line */ }
+    }
+    return out;
+  } catch (e) {
+    console.warn('[archive] read monthly archive failed:', e.message);
+    return [];
+  }
+}
+
+export function deleteMonthlyArchive(branch, ym) {
+  const file = monthlyFile(branch, ym);
+  try { if (existsSync(file)) { unlinkSync(file); return true; } } catch { /* ignore */ }
+  return false;
+}
+
+/** Read every audit entry from the per-day NDJSON files of one month. */
+export function readDayEntriesForMonth(branch, ym) {
+  const dir = auditBranchDir(branch);
+  if (!existsSync(dir)) return [];
+  const out = [];
+  let files = [];
+  try { files = readdirSync(dir); } catch { return out; }
+  for (const name of files) {
+    if (!name.endsWith('.ndjson') || name.slice(0, 7) !== ym) continue;
+    let text = '';
+    try { text = readFileSync(join(dir, name), 'utf8'); } catch { continue; }
+    for (const line of text.split('\n')) {
+      const s = line.trim();
+      if (!s) continue;
+      try { const e = JSON.parse(s); if (e && e.id && e.action && e.created_at) out.push(e); } catch { /* skip */ }
+    }
+  }
+  return out;
+}
+
+/** Delete the per-day NDJSON files of one month (after it is consolidated). */
+export function deleteDayFilesForMonth(branch, ym) {
+  const dir = auditBranchDir(branch);
+  if (!existsSync(dir)) return 0;
+  let removed = 0;
+  let files = [];
+  try { files = readdirSync(dir); } catch { return 0; }
+  for (const name of files) {
+    if (!/^\d{4}-\d{2}-\d{2}\.ndjson$/.test(name) || name.slice(0, 7) !== ym) continue;
+    try { unlinkSync(join(dir, name)); removed++; } catch { /* ignore */ }
+  }
+  return removed;
 }

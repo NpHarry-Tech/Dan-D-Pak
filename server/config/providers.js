@@ -4,7 +4,7 @@ export const PROVIDERS = Object.freeze({
   database: ['sqlite', 'postgres'],
   realtime: ['websocket', 'socketio'],
   storage: ['local', 's3'],
-  deploymentTarget: ['local', 'tablet', 'vps'],
+  deploymentTarget: ['local', 'vps'],
 });
 
 export function providerSummary() {

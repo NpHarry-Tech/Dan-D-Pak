@@ -1,40 +1,53 @@
 # Security Boundaries
 
-Last updated: 2026-06-29
+Last updated: 2026-06-20
 
-## Never Commit
+## Never commit
 
-- `.env`, `.env.*` except `.env.example`
-- real database files
-- database dumps, backups, exports
-- customer, staff, payment, or invoice data
+- `.env`, `.env.*` (except `.env.example`)
+- real database files (`*.db`, `*.sqlite`, `*.sqlite3`, `store.db*`)
+- database dumps, backups, exports (`*.dump`, `*.backup`, `backups/`)
+- customer, staff, or payment data
 - bank secrets, integration secrets, service/API tokens
 
-## Secret Handling
+These are enforced by `.gitignore`. See [DATA_SAFETY.md](DATA_SAFETY.md).
 
-- Passwords/PINs are hashed only.
-- Provider secrets are encrypted at rest or held in environment/secret manager.
-- Full card PAN/CVV is never stored.
-- Bank account numbers are masked in UI.
-- Token creation, rotation, and deletion are audited.
+## Secret handling
 
-## Network Boundaries
+- Passwords and PINs: **hashed only**, never plaintext.
+- Bank credentials / payment provider secrets: **encrypted at rest** or held in an
+  environment / secret manager. Never logged in full.
+- Card data: never store PAN/CVV. Bank account numbers are **masked** in UI.
+- Integration tokens: encrypted; creation / rotation / deletion is audited; full
+  token value is never written to logs.
 
-- Databases are never public.
-- Backend accepts traffic only from trusted LAN/VPN/proxy origins.
-- Optional gateways proxy API/realtime only and avoid sensitive body logging.
-- Hardware agent binds to loopback and requires a shared token for write routes.
+## Network boundaries
 
-## Access Control
+- PostgreSQL is **never** public.
+- Company backend accepts only: LAN devices, VPS VPN/tunnel IP, approved admin.
+- VPS terminates TLS, proxies `/api` and WebSocket, and never touches the DB.
+- VPS avoids logging sensitive request/response bodies.
 
-- Every sensitive action has a permission guard.
-- Branch-scoped data uses the authenticated branch context.
-- Privileged changes write audit logs.
-- Orders, payments, inventory, and settings use append-only history patterns.
+## Access control
 
-## Client Rules
+- Role-based permissions on every sensitive action.
+- Append-only logs for sensitive changes (prices, settings, bank config, tokens).
+- Every privileged action writes an audit log — see [AUDIT_LOGGING.md](AUDIT_LOGGING.md).
 
-- Native apps receive connection targets and user-scoped tokens only.
-- No direct database connection from clients.
-- No backend service secrets in client code or local config.
-- Client UI must show pending/synced/failed states honestly.
+## Append-only / non-destructive principles
+
+- Orders are cancelled/voided with a reason and actor, never deleted.
+- Prices are versioned; old orders keep their original price snapshot.
+- Inventory changes go through movement records, never direct quantity edits.
+- Payments are reversed via refund/void records, never deleted.
+- Settings and bank config changes create version/history rows.
+
+## Frontend rules
+
+- No hardcoded IPs or API hosts. `API_BASE_URL` / `REALTIME_URL` are configurable
+  via `web/runtime-config.js`, `window.APP_CONFIG`, `VITE_*`, or localStorage,
+  falling back to same-origin `/api`.
+- No direct database connection from the browser.
+- No secret keys in frontend code.
+- No fake success when data is only pending — UI shows pending/synced/failed
+  states honestly (see [OFFLINE_FIRST_ARCHITECTURE.md](OFFLINE_FIRST_ARCHITECTURE.md)).

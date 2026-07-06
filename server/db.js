@@ -4,15 +4,20 @@
 import { DatabaseSync } from 'node:sqlite';
 import { fileURLToPath } from 'node:url';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
-import { mkdirSync, existsSync, readdirSync, statSync, rmSync, copyFileSync, renameSync } from 'node:fs';
-import { ensurePermanentStorage, queueAuditArchive, readRecentAuditArchive } from './services/archive.js';
+import { mkdirSync, existsSync, readdirSync, statSync, rmSync } from 'node:fs';
+import {
+  appendAuditArchive, ensurePermanentStorage, readRecentAuditArchive,
+  listAuditBranches, listArchivedMonths, listAuditDayMonths, hasMonthlyArchive,
+  writeMonthlyArchive, readMonthlyArchive, deleteMonthlyArchive,
+  readDayEntriesForMonth, deleteDayFilesForMonth,
+} from './services/archive.js';
 import { env } from './config/env.js';
-import { defaultSqlitePath, runtimePaths, ROOT } from './config/paths.js';
 import crypto from 'node:crypto';
 import zlib from 'node:zlib';
 
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+const ROOT = join(__dirname, '..');
 
 function resolveDbPath() {
   if (env.DATABASE_URL && env.DATABASE_PROVIDER === 'sqlite') {
@@ -21,132 +26,12 @@ function resolveDbPath() {
       return isAbsolute(path) ? path : resolve(ROOT, path);
     }
   }
-  if (!env.SQLITE_PATH) return defaultSqlitePath();
+  if (!env.SQLITE_PATH) return join(__dirname, 'store.db');
   return isAbsolute(env.SQLITE_PATH) ? env.SQLITE_PATH : resolve(ROOT, env.SQLITE_PATH);
 }
 
 export const DB_PATH = resolveDbPath();
 mkdirSync(dirname(DB_PATH), { recursive: true });
-
-function samePath(a, b) {
-  return resolve(a).toLowerCase() === resolve(b).toLowerCase();
-}
-
-function quoteSqlString(value) {
-  return `'${String(value).replace(/'/g, "''")}'`;
-}
-
-function timestampForFile() {
-  return new Date().toISOString().replace(/[:.]/g, '-');
-}
-
-function sqliteStats(dbPath) {
-  if (!dbPath || !existsSync(dbPath)) return { exists: false, score: 0, counts: {} };
-  let probe;
-  try {
-    probe = new DatabaseSync(dbPath);
-    const tables = new Set(probe.prepare(`
-      SELECT name FROM sqlite_master
-      WHERE type='table' AND name NOT LIKE 'sqlite_%'
-    `).all().map(row => row.name));
-    const count = (table) => tables.has(table) ? Number(probe.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get().n || 0) : 0;
-    const counts = {
-      shifts: count('shifts'),
-      orders: count('orders'),
-      payments: count('payments'),
-      customers: count('customers'),
-      skus: count('skus'),
-      menu_items: count('menu_items'),
-      inventory_items: count('inventory_items'),
-      users: count('users'),
-      branches: count('branches'),
-    };
-    const score =
-      counts.shifts * 100000 +
-      counts.orders * 10000 +
-      counts.payments * 10000 +
-      counts.customers * 100 +
-      counts.skus +
-      counts.menu_items * 10 +
-      counts.inventory_items;
-    return { exists: true, score, counts };
-  } catch (err) {
-    return { exists: true, score: 0, counts: {}, error: err.message };
-  } finally {
-    try { probe?.close(); } catch {}
-  }
-}
-
-function copyDirMissing(sourceDir, targetDir) {
-  if (!sourceDir || !existsSync(sourceDir)) return 0;
-  mkdirSync(targetDir, { recursive: true });
-  let copied = 0;
-  for (const entry of readdirSync(sourceDir, { withFileTypes: true })) {
-    const src = join(sourceDir, entry.name);
-    const dest = join(targetDir, entry.name);
-    if (entry.isDirectory()) copied += copyDirMissing(src, dest);
-    else if (!existsSync(dest)) {
-      mkdirSync(dirname(dest), { recursive: true });
-      copyFileSync(src, dest);
-      copied += 1;
-    }
-  }
-  return copied;
-}
-
-function backupExistingSqlite(dbPath, backupDir) {
-  mkdirSync(backupDir, { recursive: true });
-  for (const suffix of ['', '-wal', '-shm']) {
-    const src = dbPath + suffix;
-    if (!existsSync(src)) continue;
-    copyFileSync(src, join(backupDir, 'legacy-target-' + basenameForBackup(src)));
-    rmSync(src, { force: true });
-  }
-}
-
-function basenameForBackup(file) {
-  return file.split(/[\\/]/).pop();
-}
-
-function copySqliteSnapshot(sourceDb, targetDb, backupRoot) {
-  const tmp = join(dirname(targetDb), `${basenameForBackup(targetDb)}.migrating-${process.pid}-${Date.now()}`);
-  rmSync(tmp, { force: true });
-  const source = new DatabaseSync(sourceDb);
-  try {
-    source.exec('PRAGMA busy_timeout = 10000;');
-    source.exec(`VACUUM INTO ${quoteSqlString(tmp)};`);
-  } finally {
-    source.close();
-  }
-  const backupDir = join(backupRoot, 'migration-backups', timestampForFile());
-  backupExistingSqlite(targetDb, backupDir);
-  renameSync(tmp, targetDb);
-  return backupDir;
-}
-
-function migrateLegacySourceDataIfUseful() {
-  if (!runtimePaths.appDataDir || env.SQLITE_PATH || env.DATABASE_URL) return;
-  const legacyDb = join(runtimePaths.serverRoot, 'store.db');
-  if (samePath(legacyDb, DB_PATH) || !existsSync(legacyDb)) return;
-  const targetStats = sqliteStats(DB_PATH);
-  const sourceStats = sqliteStats(legacyDb);
-  if (sourceStats.score <= targetStats.score) return;
-
-  const backupDir = copySqliteSnapshot(legacyDb, DB_PATH, runtimePaths.appDataDir);
-  copyDirMissing(join(runtimePaths.serverRoot, 'permanent-storage'), runtimePaths.permanentStorage);
-  copyDirMissing(join(runtimePaths.serverRoot, 'enterprise-storage'), runtimePaths.enterpriseStorage);
-  copyDirMissing(join(runtimePaths.serverRoot, 'uploads', 'documents'), runtimePaths.uploads);
-  copyDirMissing(join(ROOT, 'backups'), runtimePaths.backups);
-  console.warn('[data] migrated richer legacy server data into app data', {
-    sourceDb: legacyDb,
-    targetDb: DB_PATH,
-    sourceStats,
-    targetStats,
-    backupDir,
-  });
-}
-
-migrateLegacySourceDataIfUseful();
 
 export const db = new DatabaseSync(DB_PATH);
 
@@ -173,6 +58,11 @@ export function migrate(targetDb = globalDb) {
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
     address TEXT,
+    address_detail TEXT,
+    address_ward TEXT,
+    address_province TEXT,
+    ward_code TEXT,
+    province_code TEXT,
     code TEXT,
     phone TEXT,
     active INTEGER NOT NULL DEFAULT 1,
@@ -408,10 +298,13 @@ export function migrate(targetDb = globalDb) {
     value INTEGER NOT NULL,
     scope TEXT NOT NULL DEFAULT 'order',
     sku_id TEXT,
+    lot_no TEXT,
     min_total INTEGER NOT NULL DEFAULT 0,
     active INTEGER NOT NULL DEFAULT 1,
     starts_at TEXT,
     ends_at TEXT,
+    schedule_json TEXT DEFAULT '{}',
+    scope_json TEXT DEFAULT '{}',
     note TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT
@@ -422,18 +315,28 @@ export function migrate(targetDb = globalDb) {
   CREATE TABLE IF NOT EXISTS customers (
     id TEXT PRIMARY KEY,
     branch_id TEXT NOT NULL,
+    code TEXT,
     name TEXT NOT NULL,
     phone TEXT,
     email TEXT,
+    avatar TEXT,
     tax_code TEXT,
     company TEXT,
     address TEXT,
+    address_detail TEXT,
+    address_ward TEXT,
+    address_province TEXT,
+    ward_code TEXT,
+    province_code TEXT,
     perk_type TEXT NOT NULL DEFAULT 'none',
     perk_value INTEGER NOT NULL DEFAULT 0,
     auto_invoice INTEGER NOT NULL DEFAULT 0,
     note TEXT,
+    loyalty_points INTEGER NOT NULL DEFAULT 0,
+    loyalty_tier TEXT,
     total_orders INTEGER NOT NULL DEFAULT 0,
     total_spent INTEGER NOT NULL DEFAULT 0,
+    last_visit_at TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT
   );
@@ -471,6 +374,7 @@ export function migrate(targetDb = globalDb) {
     branch_id TEXT,
     username TEXT UNIQUE NOT NULL,
     name TEXT NOT NULL,
+    avatar TEXT,
     pin TEXT NOT NULL,
     role TEXT NOT NULL,
     active INTEGER NOT NULL DEFAULT 1
@@ -510,6 +414,64 @@ export function migrate(targetDb = globalDb) {
     issued_at TEXT NOT NULL
   );
 
+  -- E-Invoice queue: hóa đơn điện tử gắn với order, xử lý bất đồng bộ.
+  -- Tuân thủ NĐ 70/2025/NĐ-CP & TT 32/2025/TT-BTC.
+  CREATE TABLE IF NOT EXISTS e_invoices (
+    id TEXT PRIMARY KEY,
+    order_id TEXT NOT NULL,
+    branch_id TEXT NOT NULL,
+    provider TEXT NOT NULL DEFAULT 'local',
+    invoice_status TEXT NOT NULL DEFAULT 'NOT_CREATED',
+    invoice_template TEXT,
+    invoice_series TEXT,
+    invoice_no TEXT,
+    provider_invoice_id TEXT,
+    tax_authority_code TEXT,
+    lookup_code TEXT,
+    lookup_url TEXT,
+    pdf_url TEXT,
+    xml_url TEXT,
+    qr_data TEXT,
+    idempotency_key TEXT NOT NULL,
+    customer_mode TEXT NOT NULL DEFAULT 'WALK_IN',
+    buyer_name TEXT,
+    buyer_tax_code TEXT,
+    buyer_address TEXT,
+    buyer_email TEXT,
+    buyer_phone TEXT,
+    issued_at TEXT,
+    last_sync_at TEXT,
+    error_code TEXT,
+    error_message TEXT,
+    attempt_count INTEGER NOT NULL DEFAULT 0,
+    next_retry_at TEXT,
+    request_snapshot TEXT,
+    response_snapshot TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_einv_order ON e_invoices(order_id);
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_einv_idempotency ON e_invoices(idempotency_key);
+  CREATE INDEX IF NOT EXISTS idx_einv_status ON e_invoices(invoice_status, next_retry_at);
+  CREATE INDEX IF NOT EXISTS idx_einv_branch ON e_invoices(branch_id, created_at DESC);
+
+  -- Audit log bất biến cho mọi thao tác HĐĐT. Không cho sửa/xóa từ UI.
+  CREATE TABLE IF NOT EXISTS invoice_audit_logs (
+    id TEXT PRIMARY KEY,
+    order_id TEXT NOT NULL,
+    e_invoice_id TEXT,
+    actor_id TEXT,
+    actor_role TEXT,
+    action TEXT NOT NULL,
+    old_status TEXT,
+    new_status TEXT,
+    reason TEXT,
+    payload_snapshot TEXT,
+    response_snapshot TEXT,
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_inv_audit_order ON invoice_audit_logs(order_id, created_at);
+
   CREATE TABLE IF NOT EXISTS sync_queue (
     id TEXT PRIMARY KEY,
     branch_id TEXT NOT NULL,
@@ -519,30 +481,6 @@ export function migrate(targetDb = globalDb) {
     created_at TEXT NOT NULL,
     synced_at TEXT
   );
-  DELETE FROM sync_queue
-    WHERE status='pending'
-      AND rowid NOT IN (
-        SELECT MIN(rowid)
-        FROM sync_queue
-        WHERE status='pending'
-        GROUP BY kind, ref
-      );
-  DELETE FROM sync_queue
-    WHERE status!='pending'
-      AND rowid NOT IN (
-        SELECT rowid
-        FROM sync_queue
-        WHERE status!='pending'
-        ORDER BY created_at DESC
-        LIMIT 500
-      );
-  CREATE UNIQUE INDEX IF NOT EXISTS idx_sync_queue_pending_ref
-    ON sync_queue(kind, ref)
-    WHERE status='pending';
-  CREATE INDEX IF NOT EXISTS idx_sync_queue_status_created
-    ON sync_queue(status, created_at);
-  CREATE INDEX IF NOT EXISTS idx_sync_queue_created
-    ON sync_queue(created_at);
 
   CREATE TABLE IF NOT EXISTS audit_log (
     id TEXT PRIMARY KEY,
@@ -696,6 +634,12 @@ export function migrate(targetDb = globalDb) {
   addColumnIfMissing('branches', 'active', 'INTEGER NOT NULL DEFAULT 1');
   addColumnIfMissing('branches', 'sort', 'INTEGER DEFAULT 0');
   addColumnIfMissing('branches', 'note', 'TEXT');
+  addColumnIfMissing('branches', 'address_detail', 'TEXT');
+  addColumnIfMissing('branches', 'address_ward', 'TEXT');
+  addColumnIfMissing('branches', 'address_province', 'TEXT');
+  addColumnIfMissing('branches', 'ward_code', 'TEXT');
+  addColumnIfMissing('branches', 'province_code', 'TEXT');
+  addColumnIfMissing('users', 'avatar', 'TEXT');
   addColumnIfMissing('users', 'branch_access_json', `TEXT DEFAULT '[]'`);
   addColumnIfMissing('warehouses', 'sales_channels_json', 'TEXT');
   addColumnIfMissing('order_items', 'sku_id', 'TEXT');
@@ -730,6 +674,15 @@ export function migrate(targetDb = globalDb) {
   addColumnIfMissing('skus', 'expiry_required', 'INTEGER NOT NULL DEFAULT 0');
   addColumnIfMissing('skus', 'active', 'INTEGER NOT NULL DEFAULT 1');
   addColumnIfMissing('skus', 'units_json', `TEXT DEFAULT '[]'`);          // alt units of measure
+  // KiotViet product-list parity (Kho BCM): mã hàng, giá trước thuế, %VAT, thương hiệu, nhóm hàng, thời gian tạo.
+  addColumnIfMissing('skus', 'code', 'TEXT');                             // Mã hàng (KiotViet SP…)
+  addColumnIfMissing('skus', 'price_pre_tax', 'INTEGER');                 // Giá bán trước thuế
+  addColumnIfMissing('skus', 'vat', 'REAL');                             // VAT hàng bán (%) — null = KCT
+  addColumnIfMissing('skus', 'brand', 'TEXT');                            // Thương hiệu
+  addColumnIfMissing('skus', 'group_path', 'TEXT');                       // Nhóm hàng (3 cấp, "A>>B>>C")
+  addColumnIfMissing('skus', 'weight', 'REAL');                           // Trọng lượng
+  addColumnIfMissing('skus', 'sellable', 'INTEGER NOT NULL DEFAULT 1');   // Được bán trực tiếp
+  addColumnIfMissing('skus', 'created_at', 'TEXT');                       // Thời gian tạo (ISO)
   addColumnIfMissing('inventory_items', 'units_json', `TEXT DEFAULT '[]'`);
 
   addColumnIfMissing('stock_movements', 'item_type', 'TEXT');
@@ -745,6 +698,10 @@ export function migrate(targetDb = globalDb) {
   addColumnIfMissing('orders', 'customer_json', 'TEXT');
   addColumnIfMissing('orders', 'invoice_id', 'TEXT');
   addColumnIfMissing('orders', 'invoice_choice', 'TEXT');   // 'issued' | 'declined' — khách tự chọn xuất HĐ VAT hay không sau khi thanh toán
+  // E-invoice compliance (NĐ 70/2025): trạng thái HĐĐT trên order để query nhanh
+  addColumnIfMissing('orders', 'einvoice_id', 'TEXT');
+  addColumnIfMissing('orders', 'einvoice_status', `TEXT DEFAULT 'NOT_CREATED'`);
+  addColumnIfMissing('orders', 'locked_at', 'TEXT');
   addColumnIfMissing('orders', 'voucher_id', 'TEXT');
   addColumnIfMissing('orders', 'voucher_code', 'TEXT');
   addColumnIfMissing('payments', 'shift_id', 'TEXT');
@@ -768,10 +725,20 @@ export function migrate(targetDb = globalDb) {
   addColumnIfMissing('order_items', 'kds_dismissed', 'INTEGER DEFAULT 0');
   addColumnIfMissing('users', 'lang', 'TEXT');
   addColumnIfMissing('customers', 'birthday', 'TEXT');
+  addColumnIfMissing('customers', 'avatar', 'TEXT');
   addColumnIfMissing('customers', 'preferences', 'TEXT');
   addColumnIfMissing('customers', 'allergies', 'TEXT');
   addColumnIfMissing('customers', 'favorite_items_json', `TEXT DEFAULT '[]'`);
   addColumnIfMissing('customers', 'last_profiled_at', 'TEXT');
+  addColumnIfMissing('customers', 'code', 'TEXT');
+  addColumnIfMissing('customers', 'address_detail', 'TEXT');
+  addColumnIfMissing('customers', 'address_ward', 'TEXT');
+  addColumnIfMissing('customers', 'address_province', 'TEXT');
+  addColumnIfMissing('customers', 'ward_code', 'TEXT');
+  addColumnIfMissing('customers', 'province_code', 'TEXT');
+  addColumnIfMissing('customers', 'loyalty_points', 'INTEGER NOT NULL DEFAULT 0');
+  addColumnIfMissing('customers', 'loyalty_tier', 'TEXT');
+  addColumnIfMissing('customers', 'last_visit_at', 'TEXT');
   // Contacts/Partners: one directory shared by sales (customer) and purchasing (supplier).
   addColumnIfMissing('customers', 'partner_type', `TEXT NOT NULL DEFAULT 'customer'`); // customer | supplier | both
   addColumnIfMissing('customers', 'contact_person', 'TEXT'); // người liên hệ (chủ yếu cho NCC)
@@ -786,6 +753,22 @@ export function migrate(targetDb = globalDb) {
   addColumnIfMissing('cash_drawer_entries', 'actor_name', 'TEXT');
   addColumnIfMissing('cash_drawer_entries', 'balance_before', 'INTEGER NOT NULL DEFAULT 0');
   addColumnIfMissing('cash_drawer_entries', 'balance_after', 'INTEGER NOT NULL DEFAULT 0');
+
+  const customerBranches = db.prepare(`SELECT DISTINCT branch_id FROM customers`).all();
+  const codeUpd = db.prepare(`UPDATE customers SET code=? WHERE id=? AND branch_id=?`);
+  for (const b of customerBranches) {
+    const branchId = b.branch_id || 'br1';
+    let seq = Number(db.prepare(`
+      SELECT COALESCE(MAX(CAST(SUBSTR(code, 3) AS INTEGER)), 0) AS n
+      FROM customers WHERE branch_id=? AND code GLOB 'DC[0-9]*'`).get(branchId)?.n) || 0;
+    const missing = db.prepare(`
+      SELECT id FROM customers
+      WHERE branch_id=? AND (code IS NULL OR TRIM(code)='')
+      ORDER BY created_at, rowid`).all(branchId);
+    for (const row of missing) codeUpd.run(`DC${String(++seq).padStart(6, '0')}`, row.id, branchId);
+  }
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_customers_code ON customers(branch_id, code);`);
+  db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_customers_branch_code_unique ON customers(branch_id, code) WHERE code IS NOT NULL AND code!='';`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_cash_drawer_reimburses ON cash_drawer_entries(reimburses_entry_id);`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_cash_drawer_alloc_expense ON cash_drawer_reimbursement_allocations(expense_id);`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_cash_drawer_alloc_reimbursement ON cash_drawer_reimbursement_allocations(reimbursement_id);`);
@@ -806,6 +789,13 @@ export function migrate(targetDb = globalDb) {
   db.exec(`CREATE INDEX IF NOT EXISTS idx_stock_lots_fefo ON stock_lots(warehouse_id, item_type, item_id, qty_on_hand, expiry_date ASC);`);
   // audit_log: sync engine query mỗi 6 giây
   db.exec(`CREATE INDEX IF NOT EXISTS idx_audit_branch_created ON audit_log(branch_id, created_at DESC);`);
+  // Cold-tier lifecycle: hot_until marks a rehydrated old row (kept hot for 7 days
+  // after a lookup, then re-compacted). NULL = naturally-hot recent row.
+  addColumnIfMissing('audit_log', 'hot_until', 'TEXT');
+  addColumnIfMissing('vouchers', 'lot_no', 'TEXT');
+  addColumnIfMissing('vouchers', 'schedule_json', `TEXT DEFAULT '{}'`);
+  addColumnIfMissing('vouchers', 'scope_json', `TEXT DEFAULT '{}'`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_audit_hot_until ON audit_log(hot_until);`);
   // shifts: báo cáo, dashboard
   db.exec(`CREATE INDEX IF NOT EXISTS idx_shifts_branch_opened ON shifts(branch_id, opened_at DESC, status);`);
   // cash_drawer_entries: báo cáo két, ca
@@ -916,6 +906,8 @@ function initSyncTriggers(targetDb) {
     { name: 'order_items', key: 'id', hasBranch: false, orderRef: 'order_id' },
     { name: 'staff_calls', key: 'id' },
     { name: 'invoices', key: 'id' },
+    { name: 'e_invoices', key: 'id' },
+    { name: 'invoice_audit_logs', key: 'id' },
     { name: 'audit_log', key: 'id' },
     { name: 'app_settings', composite: ['branch_id', 'key'] },
     { name: 'shifts', key: 'id' },
@@ -1008,9 +1000,9 @@ export function audit(action, detail, branch_id = 'br1', actor = 'system') {
   const created_at = now();
   const cleanDetail = typeof detail === 'string' ? detail : JSON.stringify(detail);
   const entry = { id, branch_id, actor, action, detail: cleanDetail, created_at };
-  // Keep business requests fast: SQLite is the queryable audit source, while the
-  // NDJSON footprint is fsync'd in small batches by the archive queue.
-  queueAuditArchive(entry);
+  // Durable archive FIRST (fsync'd NDJSON): if the SQLite write below fails — or a
+  // crash hits right after — the footprint line is already safely on disk.
+  appendAuditArchive(entry);
   // Logging must never break the business operation that triggered it: swallow
   // SQLite errors (the NDJSON archive above still has the entry for recovery).
   try {
@@ -1144,11 +1136,190 @@ export function purgeOldAudit(days = 7) {
   return db.prepare(`DELETE FROM audit_log WHERE created_at < ?`).run(cutoff).changes;
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// Activity-log lifecycle (tiered retention)
+//   • Hot  : rows of the last AUDIT_HOT_MONTHS months live in SQLite → instant query.
+//   • Cold : older months are consolidated into ONE gzip'd NDJSON per month
+//            (services/archive.js) and their SQLite rows dropped → tiny store.db.
+//   • Open : a lookup that reaches a cold month rehydrates it back into SQLite and
+//            marks it hot for AUDIT_REHYDRATE_DAYS; the daily job re-compacts it
+//            once that window passes → back to the space-saving format.
+//   • Purge: archives (and rows) older than AUDIT_RETENTION_MONTHS are deleted
+//            (as month 37 begins, month 1 is dropped).
+// ═══════════════════════════════════════════════════════════════════════════
+const AUDIT_HOT_MONTHS = 3;
+const AUDIT_RETENTION_MONTHS = 36;
+const AUDIT_REHYDRATE_DAYS = 7;
+const AUDIT_MS_DAY = 24 * 60 * 60 * 1000;
+
+function monthIndexNow() { const d = new Date(); return d.getUTCFullYear() * 12 + d.getUTCMonth(); }
+function monthToIndex(ym) { const [y, m] = String(ym).split('-').map(Number); return y * 12 + (m - 1); }
+function indexToYm(idx) { const y = Math.floor(idx / 12); const m = idx % 12; return `${y}-${String(m + 1).padStart(2, '0')}`; }
+function ymStartIso(ym) { const [y, m] = ym.split('-').map(Number); return new Date(Date.UTC(y, m - 1, 1)).toISOString(); }
+function ymEndIso(ym) { const [y, m] = ym.split('-').map(Number); return new Date(Date.UTC(y, m, 1)).toISOString(); }
+function ymOfDate(d) { return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`; }
+function monthsBetween(start, end) {
+  const out = [];
+  const last = monthToIndex(ymOfDate(end));
+  for (let idx = monthToIndex(ymOfDate(start)); idx <= last && out.length < 60; idx++) out.push(indexToYm(idx));
+  return out;
+}
+
+// Consolidate one branch-month into its gzip archive, then drop the SQLite rows
+// that are no longer within a hot window and the now-redundant per-day files.
+function rollUpAuditMonth(branch, ym) {
+  const startIso = ymStartIso(ym), endIso = ymEndIso(ym);
+  const byId = new Map();
+  const add = (e) => {
+    if (!e || !e.id || !e.action) return;
+    const detail = typeof e.detail === 'string'
+      ? decryptDecompress(e.detail)
+      : (e.detail == null ? '' : JSON.stringify(e.detail));
+    byId.set(e.id, {
+      id: e.id,
+      branch_id: e.branch_id || branch,
+      actor: e.actor || 'system',
+      action: e.action,
+      detail,
+      created_at: e.created_at,
+    });
+  };
+  for (const e of readMonthlyArchive(branch, ym)) add(e);       // preserve on re-roll
+  for (const e of readDayEntriesForMonth(branch, ym)) add(e);   // durable footprint
+  for (const r of db.prepare(
+    `SELECT id,branch_id,actor,action,detail,created_at FROM audit_log WHERE branch_id=? AND created_at>=? AND created_at<?`
+  ).all(branch, startIso, endIso)) add(r);
+
+  const entries = [...byId.values()].sort((a, b) => (a.created_at < b.created_at ? -1 : 1));
+  if (!entries.length) return { archived: 0, removed: 0 };
+
+  writeMonthlyArchive(branch, ym, entries);                     // durable archive FIRST
+  const nowIso = now();
+  const removed = db.prepare(
+    `DELETE FROM audit_log WHERE branch_id=? AND created_at>=? AND created_at<? AND (hot_until IS NULL OR hot_until<=?)`
+  ).run(branch, startIso, endIso, nowIso).changes;
+  deleteDayFilesForMonth(branch, ym);
+  return { archived: entries.length, removed };
+}
+
+// Daily job: archive every month older than the hot window, and re-compact any
+// rehydrated month whose 7-day hot window has passed.
+export function compactAuditToMonthly(hotMonths = AUDIT_HOT_MONTHS) {
+  let archivedMonths = 0, removedRows = 0;
+  try {
+    const nowIso = now();
+    const cutoffIdx = monthIndexNow() - hotMonths;              // months <= cutoff are cold
+    const hotWindowStartIso = ymStartIso(indexToYm(monthIndexNow() - (hotMonths - 1)));
+    for (const branch of listAuditBranches()) {
+      const months = new Set();
+      for (const ym of listAuditDayMonths(branch)) if (monthToIndex(ym) <= cutoffIdx) months.add(ym);
+      for (const r of db.prepare(
+        `SELECT DISTINCT substr(created_at,1,7) ym FROM audit_log WHERE branch_id=? AND created_at<?`
+      ).all(branch, hotWindowStartIso)) if (r.ym) months.add(r.ym);
+      for (const r of db.prepare(
+        `SELECT DISTINCT substr(created_at,1,7) ym FROM audit_log WHERE branch_id=? AND hot_until IS NOT NULL AND hot_until<=?`
+      ).all(branch, nowIso)) if (r.ym) months.add(r.ym);
+      for (const ym of months) {
+        if (monthToIndex(ym) > cutoffIdx) continue;             // never touch the hot window
+        const res = rollUpAuditMonth(branch, ym);
+        if (res.archived) archivedMonths++;
+        removedRows += res.removed;
+      }
+    }
+  } catch (e) {
+    console.warn('[audit] compactAuditToMonthly failed:', e.message);
+  }
+  return { archivedMonths, removedRows };
+}
+
+// Pull cold months back into SQLite and (re)mark them hot for AUDIT_REHYDRATE_DAYS.
+export function rehydrateAuditMonths(branch, months = []) {
+  let touched = 0;
+  const hotUntil = new Date(Date.now() + AUDIT_REHYDRATE_DAYS * AUDIT_MS_DAY).toISOString();
+  const ins = db.prepare(
+    `INSERT OR IGNORE INTO audit_log (id,branch_id,actor,action,detail,created_at,hot_until) VALUES (?,?,?,?,?,?,?)`
+  );
+  for (const ym of months) {
+    const entries = readMonthlyArchive(branch, ym);
+    if (!entries.length) continue;
+    db.exec('BEGIN TRANSACTION;');
+    try {
+      for (const e of entries) {
+        const detail = typeof e.detail === 'string' ? e.detail : JSON.stringify(e.detail ?? null);
+        ins.run(e.id, e.branch_id || branch, e.actor || 'system', e.action, detail, e.created_at, hotUntil);
+      }
+      db.exec('COMMIT;');
+    } catch (err) {
+      db.exec('ROLLBACK;');
+      throw err;
+    }
+    // Extend the hot window on every re-open (naturally-hot rows keep hot_until NULL).
+    db.prepare(
+      `UPDATE audit_log SET hot_until=? WHERE branch_id=? AND created_at>=? AND created_at<? AND hot_until IS NOT NULL`
+    ).run(hotUntil, branch, ymStartIso(ym), ymEndIso(ym));
+    touched += entries.length;
+  }
+  return touched;
+}
+
+// Called by GET /audit: rehydrate any cold month the query window reaches into so
+// even super-old lookups are served from fast SQLite.
+export function rehydrateAuditForQuery(branch, { from = null, to = null, period = null, before = null } = {}) {
+  try {
+    const end = to ? new Date(to) : (before ? new Date(before) : new Date());
+    let start;
+    if (from) start = new Date(from);
+    else if (period) start = auditPeriodStart(period);
+    else start = new Date(end.getTime() - 62 * AUDIT_MS_DAY);  // unbounded paging: ~2 months up to the cursor
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return 0;
+    const wanted = monthsBetween(start, end).filter((ym) => hasMonthlyArchive(branch, ym));
+    if (!wanted.length) return 0;
+    return rehydrateAuditMonths(branch, wanted);
+  } catch (e) {
+    console.warn('[audit] rehydrateAuditForQuery failed:', e.message);
+    return 0;
+  }
+}
+
+function auditPeriodStart(period) {
+  const ref = new Date();
+  if (period === 'day') { const d = new Date(ref); d.setHours(0, 0, 0, 0); return d; }
+  if (period === 'week') { const d = new Date(ref); const day = d.getDay(); const diff = d.getDate() - day + (day === 0 ? -6 : 1); const mon = new Date(d.setDate(diff)); mon.setHours(0, 0, 0, 0); return mon; }
+  if (period === 'month') return new Date(ref.getFullYear(), ref.getMonth(), 1);
+  if (period === 'quarter') return new Date(ref.getFullYear(), Math.floor(ref.getMonth() / 3) * 3, 1);
+  if (period === 'year') return new Date(ref.getFullYear(), 0, 1);
+  return new Date(ref.getTime() - 62 * AUDIT_MS_DAY);
+}
+
+// Delete archives + rows older than the retention window (month 37 drops month 1).
+export function purgeAuditBeyondRetention(retentionMonths = AUDIT_RETENTION_MONTHS) {
+  let removedFiles = 0, removedRows = 0;
+  try {
+    const keepFromIdx = monthIndexNow() - (retentionMonths - 1);  // keep last N months incl. current
+    const cutoffIso = ymStartIso(indexToYm(keepFromIdx));
+    for (const branch of listAuditBranches()) {
+      for (const ym of listArchivedMonths(branch)) {
+        if (monthToIndex(ym) < keepFromIdx) {
+          if (deleteMonthlyArchive(branch, ym)) removedFiles++;
+          removedFiles += deleteDayFilesForMonth(branch, ym);
+        }
+      }
+      for (const ym of listAuditDayMonths(branch)) {
+        if (monthToIndex(ym) < keepFromIdx) removedFiles += deleteDayFilesForMonth(branch, ym);
+      }
+    }
+    removedRows = db.prepare(`DELETE FROM audit_log WHERE created_at<?`).run(cutoffIso).changes;
+  } catch (e) {
+    console.warn('[audit] purgeAuditBeyondRetention failed:', e.message);
+  }
+  return { removedFiles, removedRows };
+}
+
 // Sao lưu THẬT cơ sở dữ liệu: VACUUM INTO tạo một bản sao nhất quán (đã gộp WAL)
 // vào thư mục backups/. Đây là bản sao có thể copy ra ổ ngoài/VPS. Giữ `retentionDays`.
 export function backupDatabase(retentionDays = 14) {
   try {
-    const dir = runtimePaths.backups;
+    const dir = join(ROOT, 'backups');
     mkdirSync(dir, { recursive: true });
     const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
     const dest = join(dir, `store-${stamp}.db`);
@@ -1170,7 +1341,7 @@ export function backupDatabase(retentionDays = 14) {
 // Liệt kê các bản sao lưu hiện có (cho /database/status báo cáo TRUNG THỰC).
 export function listBackups() {
   try {
-    const dir = runtimePaths.backups;
+    const dir = join(ROOT, 'backups');
     if (!existsSync(dir)) return [];
     return readdirSync(dir)
       .filter(f => /^store-.*\.db$/.test(f))
