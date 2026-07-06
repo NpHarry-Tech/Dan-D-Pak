@@ -56,10 +56,10 @@ api.get('/dev/seed', async (req, res) => {
   }
   try {
     const { stdout: seedOut, stderr: seedErr } = await execAsync('node server/seed.js');
-    const { stdout: bcmOut, stderr: bcmErr } = await execAsync('node server/scripts/import-bcm-products.js');
+    const { stdout: bcmOut, stderr: bcmErr } = await execAsync('python server/scripts/import_kiotviet_excel.py');
     return res.json({
       ok: true,
-      message: 'Đã nạp dữ liệu nhân viên mới và đồng bộ kho hàng BCM thành công!',
+      message: 'Đã nạp dữ liệu nhân viên mới và đồng bộ kho hàng BCM thành công từ KiotViet Excel!',
       seed: { stdout: seedOut, stderr: seedErr },
       bcm: { stdout: bcmOut, stderr: bcmErr }
     });

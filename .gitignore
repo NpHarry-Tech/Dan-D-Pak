@@ -50,4 +50,8 @@ scratch/
 build/
 **/build/
 
+# Generated product images
+web/assets/product-images/*
+!web/assets/product-images/.gitkeep
+
 
