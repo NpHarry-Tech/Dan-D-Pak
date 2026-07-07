@@ -50,6 +50,11 @@ export function loadEnv(source = process.env) {
     DISABLE_DEMO_SEED: source.DISABLE_DEMO_SEED === 'true' || source.DISABLE_DEMO_SEED === '1',
     CONFIG_SEED_URL: clean(source.CONFIG_SEED_URL) || DEFAULTS.CONFIG_SEED_URL,
     DISABLE_WEB_UI: source.DISABLE_WEB_UI === 'true' || source.DISABLE_WEB_UI === '1',
+    // 'auto' = server tự in trên phần cứng cùng máy (mô hình LAN 1 máy chủ).
+    // 'agent' = server chỉ xếp hàng job; việc in vật lý + mở két do Hardware
+    // Agent tại cửa hàng thực thi (mô hình VPS trung tâm — server ở datacenter
+    // không với tới máy in LAN / két / A920 trong cửa hàng).
+    PRINT_DISPATCH: clean(source.PRINT_DISPATCH) || 'auto',
   };
 
   env.CORS_ORIGINS = asList(env.CORS_ORIGIN);

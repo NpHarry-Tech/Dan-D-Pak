@@ -8,6 +8,7 @@ import net from 'node:net';
 import { promisify } from 'node:util';
 import { db, uid, now, audit } from '../db.js';
 import { emit } from '../realtime.js';
+import { env } from '../config/env.js';
 import { getPrintConfig } from './settings.js';
 import { listSystemPrinters } from './system.js';
 
@@ -645,7 +646,10 @@ export function createJob({ printer, type, title, payload, branch_id = 'br1', re
   const job = getJob(id);
   emit('print:new', job, branch_id);
   const p = printerById(printer, branch_id);
-  if (p?.active !== false && p?.auto && p?.connection && p.connection !== 'browser') {
+  // Ở chế độ 'agent', server (trên VPS) KHÔNG tự in — chỉ xếp hàng + emit;
+  // Hardware Agent tại cửa hàng nhận job và in trên máy in LAN/USB tại chỗ.
+  if (env.PRINT_DISPATCH !== 'agent' &&
+      p?.active !== false && p?.auto && p?.connection && p.connection !== 'browser') {
     setTimeout(() => dispatchJob(id, branch_id).catch(() => {}), 25);
   }
   return job;
@@ -658,7 +662,7 @@ export function listJobs(branch_id = 'br1', query = {}) {
 
 export async function listPrinters(branch_id = 'br1', { force = false } = {}) {
   const configured = printerRows(branch_id);
-  const system = await listSystemPrinters({ force }).catch(() => []);
+  const system = await listSystemPrinters({ force, branch: branch_id }).catch(() => []);
   const systemMap = new Map(system.map(p => [String(p.name || '').toLowerCase(), p]));
   return Promise.all(configured.map(async p => {
     const connection = p.connection || 'browser';
@@ -763,6 +767,63 @@ export async function dispatchJob(id, branch_id = 'br1', { force = false } = {})
   }
 }
 
+// ── Hardware Agent (mô hình VPS trung tâm) ─────────────────────────────────
+// Agent chạy tại cửa hàng: hỏi job đang chờ, in vật lý, báo lại kết quả.
+
+// Các job cần agent in (tuyến lan/system, chưa in xong). Bao gồm cả 'failed'
+// gần đây để agent tự thử lại sau khi máy in bị kẹt/tắt rồi bật lại.
+export function pendingAgentJobs(branch_id = 'br1', { limit = 40 } = {}) {
+  const rows = db.prepare(
+    `SELECT * FROM print_jobs
+      WHERE branch_id=? AND status IN ('queued','failed')
+      ORDER BY created_at ASC LIMIT ?`,
+  ).all(branch_id, Math.max(1, Math.min(100, limit))).map(publicJob);
+  return rows
+    .map(job => resolveAgentJob(job, branch_id))
+    .filter(x => x && (x.connection === 'lan' || x.connection === 'system'));
+}
+
+// Gói mọi thứ agent cần để in 1 job: text đã render + đích + có mở két không.
+function resolveAgentJob(job, branch_id) {
+  if (!job) return null;
+  const printer = printerById(job.printer, branch_id);
+  if (!printer || printer.active === false) return null;
+  const connection = printer.connection || 'browser';
+  return {
+    id: job.id,
+    type: job.type,
+    connection,
+    ip: printer.ip || '',
+    port: printer.port || 9100,
+    systemName: printer.systemName || printer.name || '',
+    drawer: !!(printer.openDrawerOnPrint && job.type === 'receipt') || job.type === 'cash_drawer',
+    text: renderJobText(job),
+    created_at: job.created_at,
+  };
+}
+
+export function agentJob(id, branch_id = 'br1') {
+  const job = getJobForBranch(id, branch_id);
+  return resolveAgentJob(job, branch_id);
+}
+
+// Agent gọi khi đã in xong / in lỗi trên máy in vật lý tại cửa hàng.
+export function agentReportResult(id, branch_id, { ok, error } = {}) {
+  const existing = getJob(id);
+  if (!existing) throw new Error('Print job không tồn tại');
+  if (existing.branch_id !== branch_id) throw new Error('Print job không thuộc chi nhánh hiện tại');
+  if (ok) {
+    const job = patchJob(id, { status: 'printed', printed_at: now(), printed_by: 'agent', error: null });
+    emit('print:done', job, branch_id);
+    audit('print.agent.printed', { job: id, printer: job?.printer, type: job?.type }, branch_id, 'agent');
+    return job;
+  }
+  const job = patchJob(id, { status: 'failed', error: String(error || 'Agent in lỗi') });
+  emit('print:failed', job, branch_id);
+  audit('print.agent.failed', { job: id, printer: job?.printer, error: job?.error }, branch_id, 'agent');
+  return job;
+}
+
 export function markPrinted(id, branch_id = 'br1', actor = 'manual') {
   const existing = getJob(id);
   if (!existing) throw new Error('Print job không tồn tại');
@@ -797,6 +858,8 @@ export async function testPrinter(printerId, branch_id = 'br1') {
     },
     branch_id,
   });
+  // Chế độ agent: server không in trực tiếp — chỉ xếp hàng để agent cửa hàng in.
+  if (env.PRINT_DISPATCH === 'agent') return getJob(job.id);
   return dispatchJob(job.id, branch_id, { force: true });
 }
 
@@ -806,6 +869,19 @@ export async function openCashDrawer(branch_id = 'br1', printerId = '') {
   if (!p) throw new Error('Chưa cấu hình máy in/két tiền');
   if (p.connection !== 'lan') throw new Error('Mở két tự động cần máy in bill kết nối LAN/IP ESC/POS');
   if (!p.ip) throw new Error('Thiếu IP máy in bill nối két tiền');
+  // Chế độ agent: server (VPS) không với tới két trong cửa hàng → xếp job
+  // cash_drawer để Hardware Agent gửi xung mở két trên máy in LAN tại chỗ.
+  if (env.PRINT_DISPATCH === 'agent') {
+    const job = createJob({
+      printer: p.id,
+      type: 'cash_drawer',
+      title: 'Mở két tiền',
+      payload: { ref: uid('drawer_'), note: 'Mở két thủ công từ Printer Monitor' },
+      branch_id,
+    });
+    audit('cash_drawer.open_agent', { printer: p.id, target: printerTarget(p) }, branch_id);
+    return { ok: true, printer: p.id, target: printerTarget(p), queued: true, job: getJob(job.id) };
+  }
   await writeLan(p.ip, p.port || 9100, Buffer.concat([ESC_INIT, ESC_DRAWER]), 4500);
   const job = createJob({
     printer: p.id,

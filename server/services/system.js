@@ -2,6 +2,7 @@
 import { promisify } from 'util';
 import os from 'os';
 import dns from 'dns/promises';
+import { env } from '../config/env.js';
 
 const execFileAsync = promisify(execFile);
 let printerCache = { at: 0, data: [] };
@@ -77,7 +78,28 @@ async function listLpstatPrinters() {
     }));
 }
 
-export async function listSystemPrinters({ force = false } = {}) {
+// Danh sách máy in OS do Hardware Agent tại cửa hàng báo lên (theo chi nhánh).
+// Server trên VPS không có máy in thật → khi chạy chế độ agent, màn Cài đặt lấy
+// danh sách ở đây thay vì tự dò trên VPS.
+const agentPrinters = new Map(); // branch -> { at, data }
+const AGENT_PRINTERS_TTL = 90_000;
+
+export function setAgentPrinters(branch = 'br1', list = []) {
+  const data = Array.isArray(list) ? list.map(normalizePrinter).filter(Boolean) : [];
+  agentPrinters.set(branch, { at: Date.now(), data });
+  return data;
+}
+
+export function getAgentPrinters(branch = 'br1') {
+  const e = agentPrinters.get(branch);
+  return e && Date.now() - e.at < AGENT_PRINTERS_TTL ? e.data : [];
+}
+
+export async function listSystemPrinters({ force = false, branch = '' } = {}) {
+  // Chế độ agent: ưu tiên danh sách máy in do agent cửa hàng gửi lên.
+  if (env.PRINT_DISPATCH === 'agent') {
+    return branch ? getAgentPrinters(branch) : [];
+  }
   if (!force && cacheValid(printerCache, 10000)) return printerCache.data;
   let data = [];
   try {

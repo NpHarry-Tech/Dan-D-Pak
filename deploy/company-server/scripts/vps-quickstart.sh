@@ -35,6 +35,9 @@ STORAGE_PROVIDER=local
 STORAGE_PATH=/app/storage
 JWT_SECRET=$(openssl rand -hex 32)
 SESSION_SECRET=$(openssl rand -hex 32)
+# VPS ở datacenter không với tới máy in/két trong cửa hàng → chỉ xếp hàng job
+# in; Hardware Agent chạy tại cửa hàng (server/agent.js) sẽ in vật lý tại chỗ.
+PRINT_DISPATCH=agent
 EOF
   chmod 600 .env
   echo "[quickstart] Đã tạo .env cho ${HOST} (secret sinh ngẫu nhiên, file chmod 600)."

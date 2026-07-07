@@ -456,7 +456,7 @@ api.get('/settings/connections/status', guardAny('settings.connections'), wrap(a
   const force = req.query.force === '1';
   const [internetCheck, systemPrinters, printerStatuses] = await Promise.all([
     System.checkInternet({ force }),
-    System.listSystemPrinters({ force }),
+    System.listSystemPrinters({ force, branch: branch(req) }),
     Print.listPrinters(branch(req), { force }).catch(() => []),
   ]);
   return {
@@ -483,7 +483,7 @@ api.get('/settings/connections/status', guardAny('settings.connections'), wrap(a
   };
 }));
 api.get('/settings/system/printers', guardAny('settings.connections', 'settings.printers', 'settings.print'), wrap(async (req) => ({
-  printers: await System.listSystemPrinters({ force: req.query.force === '1' }),
+  printers: await System.listSystemPrinters({ force: req.query.force === '1', branch: visibleBranch(req) }),
   checkedAt: new Date().toISOString(),
 })));
 api.get('/devices', guardAny('settings.devices', 'settings.connections'), wrap(() => notImplemented('Device registry endpoint is planned but not implemented yet. Current live device visibility is available through /api/settings/connections/status.')));
@@ -1122,6 +1122,27 @@ api.post('/print/reprint', printGuard, wrap(() => notImplemented('Generic print 
 api.post('/print/jobs/:id/print', printGuard, wrap((req) => Print.dispatchJob(req.params.id, branch(req), { force: true })));
 api.post('/print/jobs/:id/printed', printGuard, wrap((req) => Print.markPrinted(req.params.id, branch(req), actor(req))));
 api.post('/print/jobs/:id/reprint', printGuard, wrap((req) => Print.reprint(req.params.id, branch(req))));
+
+// --- Hardware Agent (in vật lý + mở két tại cửa hàng khi server ở VPS) ---
+// Agent đăng nhập bằng tài khoản có quyền in rồi poll các endpoint dưới đây.
+api.get('/agent/print/pending', printGuard, wrap((req) => ({
+  jobs: Print.pendingAgentJobs(branch(req), { limit: parseInt(req.query.limit) || 40 }),
+  serverTime: Date.now(),
+})));
+api.get('/agent/print/jobs/:id', printGuard, wrap((req) => {
+  const j = Print.agentJob(req.params.id, branch(req));
+  if (!j) throw new Error('Job không cần agent in (browser/không tồn tại)');
+  return j;
+}));
+api.post('/agent/print/jobs/:id/result', printGuard, wrap((req) =>
+  Print.agentReportResult(req.params.id, branch(req), {
+    ok: req.body.ok === true || req.body.ok === 'true',
+    error: req.body.error,
+  })));
+api.post('/agent/printers/report', printGuard, wrap((req) => ({
+  ok: true,
+  count: System.setAgentPrinters(branch(req), req.body.printers || []).length,
+})));
 
 // --- MISA e-invoice ---
 api.post('/invoices/issue', guard('invoice'), wrap((req) => {
