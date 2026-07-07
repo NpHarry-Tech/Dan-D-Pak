@@ -145,6 +145,26 @@ class _CustomerDisplayWindowAppState extends State<CustomerDisplayWindowApp> {
   @override
   void initState() {
     super.initState();
+    // Bỏ thanh tiêu đề + 3 nút SAU khi cửa sổ khách đã vẽ xong frame đầu (view
+    // sẵn sàng) — làm từ chính engine này nên đổi style không gây crash như khi
+    // làm từ tiến trình chính lúc cửa sổ còn đang khởi tạo.
+    //
+    // CẦU CHÌ chống crash-loop: đặt 1 file cờ TRƯỚC khi bỏ khung, xoá NGAY SAU
+    // khi thành công. Nếu bỏ khung lỡ làm sập (native), cờ còn lại → lần mở sau
+    // tự bỏ qua bước này → app vẫn dùng được (tệ nhất là còn title bar).
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      Future.delayed(const Duration(milliseconds: 700), () {
+        final lock = File('${Directory.systemTemp.path}/dandpak_borderless.lock');
+        try {
+          if (lock.existsSync()) return; // lần trước có thể đã sập → bỏ qua
+          lock.createSync();
+        } catch (_) {}
+        makeWindowBorderless();
+        try {
+          lock.deleteSync();
+        } catch (_) {}
+      });
+    });
     DesktopMultiWindow.setMethodHandler(
         (MethodCall call, int fromWindowId) async {
       if (call.method == 'update') {
