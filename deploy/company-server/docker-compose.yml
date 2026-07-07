@@ -32,8 +32,10 @@ services:
       - app_storage:/app/storage
       # Permanent JSON archive (thanh toán, đơn hàng...)
       - app_permanent:/app/server/permanent-storage
-    expose:
-      - "3000"
+    # Mở 3000 trực tiếp bên cạnh Caddy:80 — app POS/tablet nhập IP trần sẽ tự
+    # nối cổng 3000 (mặc định của máy chủ LAN) nên phải cho vào được.
+    ports:
+      - "3000:3000"
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://localhost:3000/health').then(r=>r.ok?process.exit(0):process.exit(1)).catch(()=>process.exit(1))"]
       interval: 30s

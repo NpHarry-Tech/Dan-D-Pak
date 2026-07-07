@@ -65,8 +65,13 @@ class DanDpakApiClient {
       ).hasMatch(host);
 
       if (isIpOrLocalhost) {
-        // Force http for raw IP / localhost because SSL is not used on LAN/localhost
-        final port = uri.hasPort ? uri.port : 3000;
+        // Force http for raw IP / localhost because SSL is not used on LAN/localhost.
+        // Dart Uri XÓA cổng mặc định khi parse ("http://ip:80" → hasPort=false),
+        // nên phải nhìn chuỗi gốc: người dùng đã gõ cổng thì tôn trọng cổng đó
+        // (VD server công ty sau Caddy :80); chỉ khi hoàn toàn không gõ cổng
+        // mới áp mặc định 3000 của máy chủ LAN.
+        final explicitPort = RegExp(r'^https?://[^/]+:\d+').hasMatch(trimmed);
+        final port = (uri.hasPort || explicitPort) ? uri.port : 3000;
         trimmed = 'http://$host:$port${uri.path}';
         trimmed = trimmed.replaceFirst(RegExp(r'/$'), '');
       }

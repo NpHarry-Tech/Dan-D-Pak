@@ -49,8 +49,9 @@ if command -v ufw >/dev/null 2>&1; then
   ufw allow 22/tcp >/dev/null
   ufw allow 80/tcp >/dev/null
   ufw allow 443/tcp >/dev/null
+  ufw allow 3000/tcp >/dev/null   # app POS nhập IP trần tự nối :3000
   ufw --force enable >/dev/null
-  echo "[quickstart] Tường lửa: chỉ mở 22 (SSH), 80, 443."
+  echo "[quickstart] Tường lửa: chỉ mở 22 (SSH), 80, 443, 3000."
 fi
 
 echo "[quickstart] Chờ server sẵn sàng..."
