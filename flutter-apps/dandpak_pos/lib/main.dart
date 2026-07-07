@@ -9,6 +9,7 @@ import 'providers/pos_provider.dart';
 import 'screens/branch_select_screen.dart';
 import 'screens/customer_display/second_screen.dart';
 import 'screens/launcher_screen.dart';
+import 'services/second_window_fullscreen.dart';
 import 'screens/login_gate_screen.dart';
 import 'screens/splash_screen.dart';
 import 'services/api_service.dart';
@@ -98,6 +99,9 @@ class _DandpakPosAppState extends State<DandpakPosApp>
       _secondaryDisplayAutoOpenQueued = false;
       _secondaryDisplayAutoOpenBranch = branchId;
       if (!display.enabled) return;
+      // Chỉ TỰ ĐỘNG mở màn hình khách khi máy được xác nhận có 2 màn hình —
+      // máy POS 1 màn hình sẽ không bao giờ bị cửa sổ phụ tự bật đè lên.
+      if (!hasSecondMonitor()) return;
       await SecondScreen.instance.open(display).catchError((_) {});
     });
   }

@@ -61,6 +61,24 @@ typedef _MonitorFromWindowD = int Function(int, int);
 typedef _GetMonitorInfoC = Int32 Function(IntPtr, Pointer<_MonitorInfo>);
 typedef _GetMonitorInfoD = int Function(int, Pointer<_MonitorInfo>);
 
+/// Số màn hình vật lý đang cắm vào máy. Ngoài Windows / lỗi FFI → coi như 1.
+int monitorCount() {
+  if (!Platform.isWindows) return 1;
+  try {
+    final user32 = DynamicLibrary.open('user32.dll');
+    final getMetrics = user32
+        .lookupFunction<_GetSystemMetricsC, _GetSystemMetricsD>(
+            'GetSystemMetrics');
+    final n = getMetrics(_smCmonitors);
+    return n > 0 ? n : 1;
+  } catch (_) {
+    return 1;
+  }
+}
+
+/// Máy có màn hình thứ 2 (màn khách) hay không.
+bool hasSecondMonitor() => monitorCount() > 1;
+
 /// Biến cửa sổ phụ (tìm theo tiêu đề) thành kiosk toàn màn hình KHÔNG VIỀN:
 /// bỏ thanh tiêu đề Windows + phủ kín đúng một màn hình vật lý. Nếu máy có
 /// từ 2 màn hình trở lên thì tự đưa sang màn hình KHÔNG phải màn chính (màn

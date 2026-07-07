@@ -37,9 +37,12 @@ class SecondScreen {
     await window.setFrame(const Offset(160, 120) & const Size(1024, 768));
     await window.setTitle('Màn hình phụ');
     await window.show();
-    // Kiosk khách: bỏ khung/title bar Windows và phủ kín màn hình (ưu tiên
-    // màn hình thứ 2 nếu có). Fire-and-forget — lỗi thì giữ cửa sổ thường.
-    unawaited(makeSecondWindowFullscreen());
+    // Kiosk toàn màn hình CHỈ khi máy thật sự có màn hình thứ 2 — trên máy
+    // 1 màn hình thì giữ cửa sổ thường 1024x768 để xem trước, không để
+    // kiosk TOPMOST chiếm mất màn POS đang bán hàng.
+    if (hasSecondMonitor()) {
+      unawaited(makeSecondWindowFullscreen());
+    }
     _ctrl = ctrl;
     _lastAdsJson = '';
     ctrl.addListener(_schedulePush);
