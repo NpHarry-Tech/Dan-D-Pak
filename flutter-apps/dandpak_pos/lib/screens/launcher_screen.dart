@@ -1,3 +1,5 @@
+import 'dart:io' show Platform;
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -19,6 +21,7 @@ import 'pos_screen.dart';
 import 'printers/printers_screen.dart';
 import 'purchase/purchase_screen.dart';
 import 'retail/retail_screen.dart';
+import 'self_order/self_order_screen.dart';
 import 'warehouse/warehouse_screen.dart';
 
 class LauncherScreen extends StatefulWidget {
@@ -79,6 +82,15 @@ class _LauncherScreenState extends State<LauncherScreen> {
     if (module.key == 'retail') {
       Navigator.of(context)
           .push(MaterialPageRoute(builder: (_) => const RetailScreen()));
+      return;
+    }
+    if (module.key == 'ipad') {
+      // Màn KHÁCH tự gọi món (WebView /ipad) — thường mở trên tablet đặt tại
+      // bàn rồi đưa cho khách; nhân viên thoát bằng 5 chạm góc trên-trái.
+      final serverUrl = context.read<AuthProvider>().serverUrl;
+      Navigator.of(context).push(MaterialPageRoute(
+          fullscreenDialog: true,
+          builder: (_) => SelfOrderScreen(serverUrl: serverUrl)));
       return;
     }
     if (module.key == 'warehouse') {
@@ -205,9 +217,11 @@ class _LauncherScreenState extends State<LauncherScreen> {
     final catalog = _catalog;
     if (catalog == null) return const SizedBox.shrink();
 
+    // Màn tự gọi món chạy trên WebView (chỉ Android/iOS) → chỉ hiện tile 'ipad'
+    // trên tablet; desktop Windows ẩn đi như trước (webview không hỗ trợ).
     final visible = catalog.modules
         .where((m) => m.visible)
-        .where((m) => m.key != 'ipad')
+        .where((m) => m.key != 'ipad' || Platform.isAndroid || Platform.isIOS)
         .toList();
 
     final blocks = <Widget>[];

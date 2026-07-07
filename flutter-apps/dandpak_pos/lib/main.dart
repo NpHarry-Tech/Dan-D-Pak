@@ -1,3 +1,5 @@
+import 'dart:io' show Platform;
+
 import 'package:dandpak_core/dandpak_core.dart';
 import 'package:flutter/material.dart';
 import 'package:media_kit/media_kit.dart';
@@ -23,6 +25,9 @@ import 'widgets/window_controls.dart';
 /// (mặc định localhost) hoặc server_url trỏ về chính máy (127.0.0.1/localhost).
 /// Trỏ tới IP/tên miền khác (VPS công ty) → là client thuần, không chạy engine.
 Future<bool> _shouldRunLocalEngine() async {
+  // Android/iOS (tablet) KHÔNG có Node engine đi kèm → luôn là client thuần,
+  // nối tới server trung tâm (VPS/LAN). Chỉ desktop mới tự chạy engine local.
+  if (Platform.isAndroid || Platform.isIOS) return false;
   try {
     final saved = await LocalStore.instance.getString('server_url');
     final url = (saved == null || saved.trim().isEmpty)
