@@ -1,4 +1,3 @@
-import 'dart:isolate';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -16,6 +15,7 @@ import '../ui/app_theme.dart';
 import '../ui/debouncer.dart';
 import '../widgets/dan_top_bar.dart';
 import '../widgets/manager_pin_dialog.dart';
+import '../widgets/resizable_pane.dart';
 import 'order_history_dialog.dart';
 import 'payment_dialog.dart';
 import 'shift_dialog.dart';
@@ -997,19 +997,23 @@ class _PosScreenState extends State<PosScreen> {
                   );
                 }
 
-                final rightWidth = math.min(
-                  632.0,
-                  math.max(380.0, constraints.maxWidth * 0.335),
-                );
-
                 return Padding(
                   padding: const EdgeInsets.all(12),
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       Expanded(child: RepaintBoundary(child: _floorMap())),
-                      const SizedBox(width: 16),
-                      SizedBox(width: rightWidth, child: RepaintBoundary(child: _billPane())),
+                      ResizablePane(
+                        storageKey: 'fnb',
+                        maxAvailable: constraints.maxWidth,
+                        minWidth: 360,
+                        maxWidth: 720,
+                        defaultWidth: math.min(
+                          632.0,
+                          math.max(380.0, constraints.maxWidth * 0.335),
+                        ),
+                        child: RepaintBoundary(child: _billPane()),
+                      ),
                     ],
                   ),
                 );

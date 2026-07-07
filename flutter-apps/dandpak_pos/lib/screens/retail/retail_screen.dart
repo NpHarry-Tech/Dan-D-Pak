@@ -1,4 +1,3 @@
-import 'dart:isolate';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -13,8 +12,8 @@ import '../../ui/debouncer.dart';
 import '../../ui/format.dart';
 import '../../widgets/address_fields.dart';
 import '../../widgets/dan_top_bar.dart';
+import '../../widgets/resizable_pane.dart';
 import '../../widgets/tax_lookup.dart';
-import '../management/management_widgets.dart';
 import '../customer_display/customer_display_screen.dart';
 import '../order_history_dialog.dart';
 import '../shift_dialog.dart';
@@ -830,8 +829,14 @@ class _RetailScreenState extends State<RetailScreen> {
               return Row(
                 children: [
                   Expanded(child: RepaintBoundary(child: _productArea())),
-                  Container(width: 1, color: DanColors.border),
-                  SizedBox(width: 500, child: RepaintBoundary(child: _cartPanel())),
+                  ResizablePane(
+                    storageKey: 'retail',
+                    maxAvailable: c.maxWidth,
+                    minWidth: 360,
+                    maxWidth: 760,
+                    defaultWidth: 500,
+                    child: RepaintBoundary(child: _cartPanel()),
+                  ),
                 ],
               );
             }),

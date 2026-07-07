@@ -36,7 +36,7 @@ class _MovementDialogState extends State<MovementDialog> {
 
   @override
   void initState() {
-    super.didUpdateWidget(widget);
+    super.initState();
     _costController.text = widget.item.cost.toString();
     _lotController.text = widget.item.trackLot ? 'LOT-' : '';
   }

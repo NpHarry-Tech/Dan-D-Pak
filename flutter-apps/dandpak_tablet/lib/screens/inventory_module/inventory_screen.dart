@@ -92,7 +92,7 @@ class _InventoryScreenState extends State<InventoryScreen> with SingleTickerProv
       setState(() {
         _inventory = results[0] as List<InventoryItem>;
         _lots = results[1] as List<Lot>;
-        _movements = results[2] as List<dynamic>;
+        _movements = results[2];
         _loading = false;
       });
     } catch (e) {
