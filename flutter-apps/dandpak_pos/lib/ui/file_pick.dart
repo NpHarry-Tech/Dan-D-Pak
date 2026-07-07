@@ -7,7 +7,10 @@ import 'dart:io';
 /// Returns null if the user cancels or anything fails.
 Future<String?> pickReceiptAsDataUrl() async {
   try {
-    final path = await _pickPath();
+    if (Platform.isWindows) return await _pickDataUrlWindows();
+
+    // macOS / Linux: pick a path then read it in Dart (stdout is UTF-8 there).
+    final path = await _pickPathUnix();
     if (path == null || path.trim().isEmpty) return null;
     final file = File(path.trim());
     if (!await file.exists()) return null;
@@ -19,21 +22,48 @@ Future<String?> pickReceiptAsDataUrl() async {
   }
 }
 
-Future<String?> _pickPath() async {
-  if (Platform.isWindows) {
-    // WinForms OpenFileDialog needs a single-threaded apartment (-STA).
-    const ps = r'''
+/// Windows: the dialog + file read + base64 all happen INSIDE PowerShell, and
+/// only the finished `data:` URL (pure ASCII) crosses back to Dart. This avoids
+/// a real bug: paths containing non-ASCII characters (e.g. a OneDrive folder
+/// named "… hoặc …") got corrupted when the raw path was returned through
+/// Process.run stdout (decoded with the system codepage), so the file could no
+/// longer be found and the image was silently dropped. Reading in PowerShell
+/// also forces OneDrive "online-only" files to download first.
+Future<String?> _pickDataUrlWindows() async {
+  const ps = r'''
 Add-Type -AssemblyName System.Windows.Forms | Out-Null
 $f = New-Object System.Windows.Forms.OpenFileDialog
 $f.Filter = 'Anh/PDF|*.jpg;*.jpeg;*.png;*.webp;*.gif;*.pdf|Tat ca|*.*'
 $f.Title = 'Chon anh hoa don'
-if ($f.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { [Console]::Out.Write($f.FileName) }
-''';
-    final res = await Process.run(
-        'powershell', ['-NoProfile', '-STA', '-Command', ps]);
-    final out = (res.stdout as String?)?.trim() ?? '';
-    return out.isEmpty ? null : out;
+if ($f.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
+  $path = $f.FileName
+  $ext = [System.IO.Path]::GetExtension($path).ToLowerInvariant()
+  switch ($ext) {
+    '.png'  { $mime = 'image/png' }
+    '.webp' { $mime = 'image/webp' }
+    '.gif'  { $mime = 'image/gif' }
+    '.pdf'  { $mime = 'application/pdf' }
+    default { $mime = 'image/jpeg' }
   }
+  $bytes = [System.IO.File]::ReadAllBytes($path)
+  $b64 = [System.Convert]::ToBase64String($bytes)
+  [Console]::Out.Write("data:$mime;base64,$b64")
+}
+''';
+  // base64 output is ASCII → decode as ascii so no codepage can mangle it,
+  // and allow a big buffer for multi-MB images.
+  final res = await Process.run(
+    'powershell',
+    ['-NoProfile', '-STA', '-Command', ps],
+    stdoutEncoding: ascii,
+  );
+  final out = (res.stdout as String?)?.trim() ?? '';
+  return out.startsWith('data:image/') || out.startsWith('data:application/pdf')
+      ? out
+      : null;
+}
+
+Future<String?> _pickPathUnix() async {
   if (Platform.isMacOS) {
     const script =
         'POSIX path of (choose file with prompt "Chọn ảnh hóa đơn" of type {"public.image","com.adobe.pdf"})';
