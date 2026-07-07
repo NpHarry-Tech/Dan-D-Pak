@@ -1,4 +1,3 @@
-import 'dart:isolate';
 import 'package:dandpak_core/dandpak_core.dart';
 
 import '../models/tablet_models.dart';

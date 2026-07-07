@@ -753,8 +753,12 @@ export function handlePayosWebhook(body = {}, headers = {}, branch_id = 'br1') {
 // Tạo link thanh toán payOS (v2). Trả về { checkoutUrl, qrCode, paymentLinkId, ... }.
 export async function createPayosPaymentLink(cfg = {}, { orderCode, amount, description, returnUrl, cancelUrl } = {}) {
   const base = (cleanText(cfg.apiBase, 220) || 'https://api-merchant.payos.vn').replace(/\/+$/, '');
-  const ret = cleanText(returnUrl, 220) || cleanText(cfg.returnUrl, 220) || 'https://dan-d-pak.onrender.com/pay/success';
-  const cancel = cleanText(cancelUrl, 220) || cleanText(cfg.cancelUrl, 220) || 'https://dan-d-pak.onrender.com/pay/cancel';
+  // Fallback theo APP_URL của server đang chạy — KHÔNG hardcode domain bên thứ ba
+  // (domain onrender.com cũ đã xóa; nếu hardcode, người khác chiếm lại subdomain
+  // là nhận được redirect thanh toán của khách).
+  const appUrl = (cleanText(process.env.APP_URL, 220) || 'http://localhost:3000').replace(/\/+$/, '');
+  const ret = cleanText(returnUrl, 220) || cleanText(cfg.returnUrl, 220) || `${appUrl}/pay/success`;
+  const cancel = cleanText(cancelUrl, 220) || cleanText(cfg.cancelUrl, 220) || `${appUrl}/pay/cancel`;
   const desc = cleanText(description, 25);
   const signData = `amount=${amount}&cancelUrl=${cancel}&description=${desc}&orderCode=${orderCode}&returnUrl=${ret}`;
   const signature = crypto.createHmac('sha256', cleanText(cfg.checksumKey)).update(signData).digest('hex');

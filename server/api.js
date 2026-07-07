@@ -50,9 +50,12 @@ import { promisify } from 'node:util';
 const execAsync = promisify(exec);
 
 api.get('/dev/seed', async (req, res) => {
-  const secret = req.query.secret;
-  if (secret !== 'dandpak2026') {
-    return res.status(403).json({ error: 'Mã bí mật không chính xác' });
+  // Endpoint này exec seed/import GHI ĐÈ dữ liệu thật nên không được phép có
+  // secret mặc định trong source: chỉ mở khi admin đặt biến môi trường
+  // DEV_SEED_SECRET, và không bao giờ mở trên production.
+  const expected = process.env.DEV_SEED_SECRET;
+  if (!expected || process.env.NODE_ENV === 'production' || req.query.secret !== expected) {
+    return res.status(404).json({ error: 'Not found' });
   }
   try {
     const { stdout: seedOut, stderr: seedErr } = await execAsync('node server/seed.js');
@@ -948,25 +951,25 @@ api.post('/warehouses/:id/update', guard('warehouse.manage'), wrap((req) => {
   audit('warehouse.config.reauth', { action: 'update', warehouse_id: req.params.id, approved_by: approvedBy.username }, branch_id, approvedBy.username);
   return Inv.updateWarehouse(req.params.id, req.body, branch_id);
 }));
-api.get('/inventory', wrap((req) => Inv.listInventory(visibleBranch(req), req.query)));
+api.get('/inventory', guard(), wrap((req) => Inv.listInventory(visibleBranch(req), req.query)));
 api.post('/inventory', guard('inventory.adjust'), wrap((req) => Inv.createInventoryItem(req.body, branch(req))));
 api.post('/inventory/movements', guard('inventory.adjust'), wrap(() => notImplemented('Generic inventory movement endpoint is planned. Current app uses warehouse receive/issue/transfer/stocktake endpoints.')));
 api.post('/inventory/:id/update', guard('inventory.adjust'), wrap((req) => Inv.updateInventoryItem(req.params.id, req.body, branch(req))));
 api.post('/inventory/:id/delete', guard('inventory.adjust'), wrap((req) => Inv.deleteInventoryItem(req.params.id, branch(req))));
-api.post('/inventory/:id/receive', wrap((req) => Inv.receiveStock(req.params.id, parseFloat(req.body.qty), visibleBranch(req), req.body)));
+api.post('/inventory/:id/receive', guard('inventory.adjust'), wrap((req) => Inv.receiveStock(req.params.id, parseFloat(req.body.qty), visibleBranch(req), req.body)));
 api.post('/inventory/:id/adjust', guard('inventory.adjust'), wrap((req) => Inv.adjustStock(req.params.id, parseFloat(req.body.stock), branch(req), req.body)));
 
 // --- Retail / SKU ---
-api.get('/skus', wrap((req) => Inv.listSkus(visibleBranch(req), req.query)));
+api.get('/skus', guard(), wrap((req) => Inv.listSkus(visibleBranch(req), req.query)));
 api.post('/skus', guard('inventory.adjust'), wrap((req) => Inv.createSku(req.body, branch(req))));
 api.post('/skus/:id/update', guard('inventory.adjust'), wrap((req) => Inv.updateSku(req.params.id, req.body, branch(req))));
 api.post('/skus/:id/delete', guard('inventory.adjust'), wrap((req) => Inv.deleteSku(req.params.id, branch(req))));
-api.get('/skus/barcode/:code', wrap((req) => {
+api.get('/skus/barcode/:code', guard(), wrap((req) => {
   const s = Inv.findSkuByBarcode(req.params.code, visibleBranch(req), req.query);
   if (!s) throw new Error('Không tìm thấy mã vạch ' + req.params.code);
   return s;
 }));
-api.post('/skus/:id/receive', wrap((req) => Inv.receiveSku(req.params.id, parseFloat(req.body.qty), visibleBranch(req), req.body)));
+api.post('/skus/:id/receive', guard('inventory.adjust'), wrap((req) => Inv.receiveSku(req.params.id, parseFloat(req.body.qty), visibleBranch(req), req.body)));
 api.post('/skus/:id/adjust', guard('inventory.adjust'), wrap((req) => Inv.adjustSku(req.params.id, parseFloat(req.body.stock), branch(req), req.body)));
 api.get('/vouchers', guardAny('discount', 'settings.promotions'), wrap((req) => Vouchers.listVouchers(branch(req))));
 api.get('/vouchers/active', wrap((req) => Vouchers.listActiveVouchers(visibleBranch(req))));
@@ -1081,7 +1084,7 @@ api.post('/retail/:id/refund', guard('refund'), wrap((req) => {
 
 // --- Warehouse documents / lots / counts ---
 api.get('/movements', wrap((req) => Inv.listMovements(visibleBranch(req), req.query)));
-api.get('/warehouse/lots', wrap((req) => Inv.listLots(visibleBranch(req), req.query)));
+api.get('/warehouse/lots', guard(), wrap((req) => Inv.listLots(visibleBranch(req), req.query)));
 api.post('/warehouse/receive', guard('inventory.adjust'), wrap((req) => {
   const branch_id = branch(req);
   const stockType = req.body.stock_type || req.body.item_type;

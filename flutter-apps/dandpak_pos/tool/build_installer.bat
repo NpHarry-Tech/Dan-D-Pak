@@ -33,8 +33,11 @@ if not defined ISCC (
   exit /b 1
 )
 
-"%ISCC%" setup.iss
+REM Ten file cai dat co ngay build de phan biet cac ban giao cho cua hang.
+for /f %%d in ('powershell -NoProfile -Command "Get-Date -Format yyyy-MM-dd"') do set "BUILD_DATE=%%d"
+
+"%ISCC%" /F"dan-d-pak-pos-setup-%BUILD_DATE%" setup.iss
 if errorlevel 1 exit /b 1
 
 echo.
-echo [installer] XONG: %CD%\..\..\dan-d-pak-pos-setup.exe
+echo [installer] XONG: %CD%\..\..\dan-d-pak-pos-setup-%BUILD_DATE%.exe
