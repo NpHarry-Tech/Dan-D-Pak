@@ -8,13 +8,6 @@ import 'app_log.dart';
 
 // Win32 constants
 const _hwndTopmost = -1;
-const _gwlStyle = -16;
-const _wsCaption = 0x00C00000;
-const _wsThickframe = 0x00040000;
-const _wsMinimizebox = 0x00020000;
-const _wsMaximizebox = 0x00010000;
-const _wsSysmenu = 0x00080000;
-const _swpFramechanged = 0x0020;
 const _swpShowwindow = 0x0040;
 const _monitorDefaulttonearest = 2;
 const _smCmonitors = 80;
@@ -49,10 +42,6 @@ typedef _FindWindowC = IntPtr Function(Pointer<Utf16>, Pointer<Utf16>);
 typedef _FindWindowD = int Function(Pointer<Utf16>, Pointer<Utf16>);
 typedef _GetSystemMetricsC = Int32 Function(Int32);
 typedef _GetSystemMetricsD = int Function(int);
-typedef _GetWindowLongPtrC = IntPtr Function(IntPtr, Int32);
-typedef _GetWindowLongPtrD = int Function(int, int);
-typedef _SetWindowLongPtrC = IntPtr Function(IntPtr, Int32, IntPtr);
-typedef _SetWindowLongPtrD = int Function(int, int, int);
 typedef _SetWindowPosC = Int32 Function(
     IntPtr, IntPtr, Int32, Int32, Int32, Int32, Uint32);
 typedef _SetWindowPosD = int Function(int, int, int, int, int, int, int);
@@ -93,12 +82,6 @@ Future<void> makeSecondWindowFullscreen(
     final getMetrics = user32
         .lookupFunction<_GetSystemMetricsC, _GetSystemMetricsD>(
             'GetSystemMetrics');
-    final getLong = user32
-        .lookupFunction<_GetWindowLongPtrC, _GetWindowLongPtrD>(
-            'GetWindowLongPtrW');
-    final setLong = user32
-        .lookupFunction<_SetWindowLongPtrC, _SetWindowLongPtrD>(
-            'SetWindowLongPtrW');
     final setPos = user32
         .lookupFunction<_SetWindowPosC, _SetWindowPosD>('SetWindowPos');
     final monitorFrom = user32
@@ -153,17 +136,19 @@ Future<void> makeSecondWindowFullscreen(
       if (getMonitorInfo(mon, info) == 0) return;
       final r = info.ref.rcMonitor;
 
-      // Bỏ toàn bộ khung cửa sổ (title bar, viền, nút min/max/close).
-      final style = getLong(hwnd, _gwlStyle) &
-          ~(_wsCaption | _wsThickframe | _wsMinimizebox | _wsMaximizebox | _wsSysmenu);
-      setLong(hwnd, _gwlStyle, style);
-      // TOPMOST: nằm TRÊN cả taskbar Windows — màn khách không bao giờ bị
-      // thanh taskbar/cửa sổ khác đè lên. Thoát kiosk: tắt trong Cài đặt
-      // hoặc Alt+F4.
+      // QUAN TRỌNG — chống crash: KHÔNG đổi window-style (strip WS_CAPTION…)
+      // lúc runtime. Cửa sổ phụ do desktop_multi_window quản lý bằng WndProc
+      // riêng; SetWindowLongPtr + SWP_FRAMECHANGED kích WM_NCCALCSIZE khi
+      // Flutter view của cửa sổ con chưa sẵn sàng → access violation làm SẬP
+      // cả app (native crash, try/catch Dart không bắt được).
+      //
+      // Thay vào đó chỉ DI CHUYỂN + PHÓNG cửa sổ phủ kín màn hình khách và đưa
+      // lên TOPMOST (chỉ đổi thứ tự z + vị trí/kích thước — an toàn tuyệt đối,
+      // không đụng frame). Taskbar bị cửa sổ topmost phủ lên nên vẫn khuất.
       setPos(hwnd, _hwndTopmost, r.left, r.top, r.right - r.left,
-          r.bottom - r.top, _swpFramechanged | _swpShowwindow);
-      dlog('SecondScreen fullscreen on monitor '
-          '(${r.left},${r.top})-(${r.right},${r.bottom})');
+          r.bottom - r.top, _swpShowwindow);
+      dlog('SecondScreen covered monitor '
+          '(${r.left},${r.top})-(${r.right},${r.bottom}) topmost');
     } finally {
       calloc.free(info);
     }
