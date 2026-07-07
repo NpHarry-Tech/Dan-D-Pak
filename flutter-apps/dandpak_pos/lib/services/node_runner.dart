@@ -24,12 +24,20 @@ class NodeRunner {
   static bool _starting = false;
   static String? _rootDir;
 
+  /// True chỉ khi máy này tự làm máy chủ (app trỏ localhost). Khi app trỏ VPS,
+  /// cờ này = false: mọi lời gọi ready/recover thành no-op để KHÔNG vô tình
+  /// dựng engine local (getter ready trước đây lazy-start engine khi await).
+  static bool enabled = false;
+
   /// Completes when the Node engine is accepting connections on :3000.
-  /// Idempotent — the same future is shared by every awaiter.
-  static Future<void> get ready => _ready ??= _start();
+  /// Idempotent — the same future is shared by every awaiter. No-op nếu app
+  /// đang dùng máy chủ từ xa (enabled == false).
+  static Future<void> get ready =>
+      enabled ? (_ready ??= _start()) : Future<void>.value();
 
   /// Kick off startup (fire-and-forget from main so first paint isn't blocked).
   static Future<void> startServer() {
+    enabled = true;
     _stopped = false;
     _watchdog ??= Timer.periodic(const Duration(seconds: 10), (_) {
       if (!_stopped) _ensureAlive();
@@ -51,7 +59,7 @@ class NodeRunner {
   /// Gọi khi một request bị connection-refused: đảm bảo engine sống rồi chờ
   /// port mở để caller retry. An toàn gọi song song (chống spawn trùng).
   static Future<bool> recover() async {
-    if (_stopped) return false;
+    if (!enabled || _stopped) return false;
     if (await isPortOpen(3000)) return true;
     await _ensureAlive();
     for (int i = 0; i < 20; i++) {

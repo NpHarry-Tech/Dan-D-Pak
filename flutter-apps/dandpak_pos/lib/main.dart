@@ -14,9 +14,26 @@ import 'screens/login_gate_screen.dart';
 import 'screens/splash_screen.dart';
 import 'services/api_service.dart';
 import 'services/client_log.dart';
+import 'services/local_store.dart';
 import 'services/node_runner.dart';
 import 'ui/app_theme.dart';
 import 'widgets/window_controls.dart';
+
+/// Máy này có phải tự làm máy chủ không? Đúng khi chưa cấu hình server_url
+/// (mặc định localhost) hoặc server_url trỏ về chính máy (127.0.0.1/localhost).
+/// Trỏ tới IP/tên miền khác (VPS công ty) → là client thuần, không chạy engine.
+Future<bool> _shouldRunLocalEngine() async {
+  try {
+    final saved = await LocalStore.instance.getString('server_url');
+    final url = (saved == null || saved.trim().isEmpty)
+        ? DanDpakDefaults.baseUrl
+        : saved.trim();
+    final host = Uri.tryParse(DanDpakApiClient.normalizeBaseUrl(url))?.host ?? '';
+    return host.isEmpty || host == '127.0.0.1' || host == 'localhost';
+  } catch (_) {
+    return true; // an toàn: không đọc được thì cứ chạy như cũ
+  }
+}
 
 Future<void> main(List<String> args) async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -35,13 +52,20 @@ Future<void> main(List<String> args) async {
   try {
     MediaKit.ensureInitialized();
   } catch (_) {}
-  // Start the bundled Node engine in the BACKGROUND — do not await, so the
-  // window paints in <1s. The first API calls await NodeRunner.ready.
-  NodeRunner.startServer();
-  // Tự cứu "connection refused": engine chết/chưa chạy → API client gọi hook
-  // này để hồi sinh Node rồi retry request trong suốt (an toàn vì refused =
-  // request chưa hề tới server). Kèm watchdog 10s trong NodeRunner.
-  DanDpakApiClient.onConnectionRefused = NodeRunner.recover;
+  // Chỉ chạy engine Node đi kèm khi máy này TỰ LÀM máy chủ (server_url trỏ
+  // localhost). Nếu app trỏ tới máy chủ trung tâm/VPS thì KHÔNG bật engine
+  // local — tránh dựng một server thứ 2 thừa với DB riêng chạy song song
+  // (queue MISA, sync engine...) gây xử lý trùng.
+  final localEngine = await _shouldRunLocalEngine();
+  if (localEngine) {
+    // Start the bundled Node engine in the BACKGROUND — do not await, so the
+    // window paints in <1s. The first API calls await NodeRunner.ready.
+    NodeRunner.startServer();
+    // Tự cứu "connection refused": engine chết/chưa chạy → API client gọi hook
+    // này để hồi sinh Node rồi retry request trong suốt (an toàn vì refused =
+    // request chưa hề tới server). Kèm watchdog 10s trong NodeRunner.
+    DanDpakApiClient.onConnectionRefused = NodeRunner.recover;
+  }
 
   final apiService = ApiService();
   // Every uncaught error is shipped to the local engine's log stream
