@@ -1,3 +1,5 @@
+import 'dart:io' show Platform;
+
 import 'package:flutter/material.dart';
 
 import '../../services/api_service.dart';
@@ -88,6 +90,13 @@ class _SettingsTabState extends State<SettingsTab> {
 
   String _selected = 'users';
 
+  // Tablet/điện thoại (Android/iOS) chỉ có 1 màn hình → KHÔNG có "Màn hình phụ"
+  // (màn khách trên màn thứ 2 là tính năng riêng của desktop). Ẩn mục này đi.
+  bool get _isMobile => Platform.isAndroid || Platform.isIOS;
+  List<_SettingsSection> get _visibleSections => _sections
+      .where((s) => !(_isMobile && s.key == 'customer_display'))
+      .toList();
+
   @override
   Widget build(BuildContext context) {
     return LayoutBuilder(builder: (context, constraints) {
@@ -119,7 +128,7 @@ class _SettingsTabState extends State<SettingsTab> {
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
         children: [
-          for (final s in _sections)
+          for (final s in _visibleSections)
             Padding(
               padding: const EdgeInsets.only(right: 8),
               child: ChoiceChip(
@@ -136,7 +145,7 @@ class _SettingsTabState extends State<SettingsTab> {
       child: ListView(
         padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
         children: [
-          for (final s in _sections)
+          for (final s in _visibleSections)
             InkWell(
               onTap: () => setState(() => _selected = s.key),
               borderRadius: BorderRadius.circular(DanRadius.sm),
