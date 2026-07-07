@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import '../models/app_models.dart';
 import '../providers/auth_provider.dart';
 import '../services/api_service.dart';
+import '../services/app_updater.dart';
 import '../ui/app_theme.dart';
 import '../widgets/window_controls.dart';
 import 'accounting/accounting_screen.dart';
@@ -35,11 +36,35 @@ class _LauncherScreenState extends State<LauncherScreen> {
   ModuleCatalog? _catalog;
   String? _error;
   bool _loading = true;
+  UpdateInfo? _update;
+  bool _updating = false;
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _load());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _load();
+      _checkUpdate();
+    });
+  }
+
+  Future<void> _checkUpdate() async {
+    final info = await AppUpdater.checkForUpdate(context.read<ApiService>());
+    if (mounted && info != null) setState(() => _update = info);
+  }
+
+  Future<void> _runUpdate() async {
+    final info = _update;
+    if (info == null || _updating) return;
+    setState(() => _updating = true);
+    final err = await AppUpdater.downloadAndInstall(context.read<ApiService>(), info);
+    // Nếu thành công (Windows) app đã tự thoát; tới đây nghĩa là có lỗi.
+    if (!mounted) return;
+    setState(() => _updating = false);
+    if (err != null) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(err), backgroundColor: DanColors.late));
+    }
   }
 
   Future<void> _load() async {
@@ -157,6 +182,8 @@ class _LauncherScreenState extends State<LauncherScreen> {
             Positioned.fill(
               child: CustomScrollView(
                 slivers: [
+                  if (_update != null)
+                    SliverToBoxAdapter(child: _updateBanner()),
                   SliverToBoxAdapter(
                     child: Center(
                       child: ConstrainedBox(
@@ -207,6 +234,58 @@ class _LauncherScreenState extends State<LauncherScreen> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _updateBanner() {
+    final info = _update!;
+    return Container(
+      width: double.infinity,
+      color: DanColors.brand,
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+      child: Row(
+        children: [
+          const Icon(Icons.system_update_alt, color: Colors.white, size: 20),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Có bản cập nhật mới ${info.version}',
+                    style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 14)),
+                if (info.notes.isNotEmpty)
+                  Text(info.notes,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(color: Colors.white70, fontSize: 12)),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          if (!info.mandatory)
+            TextButton(
+              onPressed: _updating ? null : () => setState(() => _update = null),
+              child: const Text('Để sau',
+                  style: TextStyle(color: Colors.white70)),
+            ),
+          const SizedBox(width: 6),
+          FilledButton.icon(
+            onPressed: _updating ? null : _runUpdate,
+            style: FilledButton.styleFrom(
+                backgroundColor: Colors.white, foregroundColor: DanColors.brand),
+            icon: _updating
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2))
+                : const Icon(Icons.download, size: 18),
+            label: Text(_updating ? 'Đang tải…' : 'Cập nhật ngay'),
+          ),
+        ],
       ),
     );
   }

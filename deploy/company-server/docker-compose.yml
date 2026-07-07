@@ -32,6 +32,8 @@ services:
       - app_storage:/app/storage
       # Permanent JSON archive (thanh toán, đơn hàng...)
       - app_permanent:/app/server/permanent-storage
+      # Bản cài auto-update (exe/apk + manifest) — bền vững qua mỗi lần redeploy
+      - app_releases:/app/server/releases
     # Mở 3000 trực tiếp bên cạnh Caddy:80 — app POS/tablet nhập IP trần sẽ tự
     # nối cổng 3000 (mặc định của máy chủ LAN) nên phải cho vào được.
     ports:
@@ -49,3 +51,4 @@ volumes:
   app_sqlite:
   app_storage:
   app_permanent:
+  app_releases:

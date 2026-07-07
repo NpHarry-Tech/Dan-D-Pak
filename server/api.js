@@ -1,5 +1,5 @@
 // REST API: thin HTTP layer over the Local Store Server services.
-import { Router } from 'express';
+import { Router, raw } from 'express';
 import { db, uid, audit, now, decryptDecompress, listBackups, rehydrateAuditForQuery } from './db.js';
 import { logger } from './core/logger.js';
 import * as Orders from './services/orders.js';
@@ -30,6 +30,7 @@ import * as Branches from './services/branches.js';
 import * as Purchase from './services/purchase.js';
 import * as Expenses from './services/expenses.js';
 import * as ES from './services/enterpriseStorage.js';
+import * as AppRelease from './services/appRelease.js';
 import { emit, getActiveConnections } from './realtime.js';
 import { errorPayload } from './core/errors.js';
 import { notImplemented } from './core/http.js';
@@ -1143,6 +1144,39 @@ api.post('/agent/printers/report', printGuard, wrap((req) => ({
   ok: true,
   count: System.setAgentPrinters(branch(req), req.body.printers || []).length,
 })));
+
+// --- Auto-update: phát hành & phân phối bản cài mới cho thiết bị ---
+// Version: PUBLIC (client hỏi trước cả khi đăng nhập). Chỉ lộ số hiệu + ghi chú.
+api.get('/app/version', wrap((req) => AppRelease.latestFor(
+  String(req.query.platform || 'windows').toLowerCase())));
+// Download: PUBLIC — stream file cài đặt (exe/apk) cho client tự cập nhật.
+// KHÔNG dùng wrap() vì handler tự pipe vào res (wrap sẽ res.json sau khi đã gửi).
+api.get('/app/download/:platform', (req, res) => {
+  try {
+    const { path: filePath, name } = AppRelease.releaseFilePath(
+      String(req.params.platform || '').toLowerCase());
+    res.setHeader('Content-Disposition', `attachment; filename="${name}"`);
+    res.setHeader('Content-Type', 'application/octet-stream');
+    fs.createReadStream(filePath).pipe(res);
+  } catch (e) {
+    logRequestError(req, e);
+    res.status(e.status || 400).json(errorPayload(e));
+  }
+});
+// Publish: chỉ Owner/Admin. Nhận binary thô (raw) tới 300MB (đủ cho apk).
+api.post('/app/publish',
+  guardAny('settings.manage'),
+  raw({ type: '*/*', limit: '300mb' }),
+  wrap((req) => AppRelease.publishRelease(
+    String(req.query.platform || 'windows').toLowerCase(),
+    req.body,
+    {
+      version: req.query.version,
+      buildNumber: req.query.build,
+      notes: req.query.notes,
+      mandatory: req.query.mandatory,
+      fileName: req.query.file,
+    })));
 
 // --- MISA e-invoice ---
 api.post('/invoices/issue', guard('invoice'), wrap((req) => {
