@@ -7,6 +7,7 @@ import 'package:ffi/ffi.dart';
 import 'app_log.dart';
 
 // Win32 constants
+const _hwndTopmost = -1;
 const _gwlStyle = -16;
 const _wsCaption = 0x00C00000;
 const _wsThickframe = 0x00040000;
@@ -138,8 +139,11 @@ Future<void> makeSecondWindowFullscreen(
       final style = getLong(hwnd, _gwlStyle) &
           ~(_wsCaption | _wsThickframe | _wsMinimizebox | _wsMaximizebox | _wsSysmenu);
       setLong(hwnd, _gwlStyle, style);
-      setPos(hwnd, 0, r.left, r.top, r.right - r.left, r.bottom - r.top,
-          _swpFramechanged | _swpShowwindow);
+      // TOPMOST: nằm TRÊN cả taskbar Windows — màn khách không bao giờ bị
+      // thanh taskbar/cửa sổ khác đè lên. Thoát kiosk: tắt trong Cài đặt
+      // hoặc Alt+F4.
+      setPos(hwnd, _hwndTopmost, r.left, r.top, r.right - r.left,
+          r.bottom - r.top, _swpFramechanged | _swpShowwindow);
       dlog('SecondScreen fullscreen on monitor '
           '(${r.left},${r.top})-(${r.right},${r.bottom})');
     } finally {
