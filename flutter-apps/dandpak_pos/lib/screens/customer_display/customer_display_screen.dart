@@ -194,22 +194,16 @@ class _CustomerDisplayScreenState extends State<CustomerDisplayScreen> {
     return Scaffold(
       backgroundColor: DanColors.bg,
       body: switch (d.mode) {
-        CustomerDisplayMode.idle => _idle(d.storeName),
+        CustomerDisplayMode.idle => _idle(),
         CustomerDisplayMode.order => _order(d),
         CustomerDisplayMode.payment => _payment(d),
       },
     );
   }
 
-  Widget _idle(String storeName) {
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        _adCanvas(fit: BoxFit.cover),
-        Positioned(left: 28, right: 28, top: 24, child: _brandBar(storeName)),
-      ],
-    );
-  }
+  // Màn hình phụ chạy kiosk toàn màn hình: quảng cáo phủ 100%, không vẽ đè
+  // thanh thương hiệu/footer nào — nội dung liên hệ/QR nằm trong chính ảnh ads.
+  Widget _idle() => _adCanvas(fit: BoxFit.cover);
 
   Widget _order(CustomerDisplayData d) {
     return SafeArea(
@@ -217,18 +211,7 @@ class _CustomerDisplayScreenState extends State<CustomerDisplayScreen> {
         children: [
           Expanded(
             flex: 5,
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                _adCanvas(fit: BoxFit.cover),
-                Positioned(
-                  left: 22,
-                  right: 22,
-                  top: 18,
-                  child: _brandBar(d.storeName),
-                ),
-              ],
-            ),
+            child: _adCanvas(fit: BoxFit.cover),
           ),
           Expanded(
             flex: 6,
@@ -285,18 +268,7 @@ class _CustomerDisplayScreenState extends State<CustomerDisplayScreen> {
         children: [
           Expanded(
             flex: 5,
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                _adCanvas(fit: BoxFit.cover),
-                Positioned(
-                  left: 22,
-                  right: 22,
-                  top: 18,
-                  child: _brandBar(d.storeName),
-                ),
-              ],
-            ),
+            child: _adCanvas(fit: BoxFit.cover),
           ),
           Expanded(
             flex: 6,
@@ -407,35 +379,6 @@ class _CustomerDisplayScreenState extends State<CustomerDisplayScreen> {
       cacheWidth: decodeWidth,
       gaplessPlayback: true,
       errorBuilder: (_, __, ___) => const SizedBox.shrink(),
-    );
-  }
-
-  Widget _brandBar(String storeName) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: .9),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Row(
-        children: [
-          Image.asset(
-            'assets/web/assets/DanOnLogo.png',
-            height: 42,
-            fit: BoxFit.contain,
-            errorBuilder: (_, __, ___) => const SizedBox(width: 42, height: 42),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Text(
-              storeName,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w900),
-            ),
-          ),
-        ],
-      ),
     );
   }
 

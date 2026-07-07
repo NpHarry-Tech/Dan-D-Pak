@@ -26,6 +26,8 @@ dependencies:
   # two different screens at once). Data is pushed to it over the plugin's own
   # method channel — no server relay needed.
   desktop_multi_window: ^0.2.0
+  # Win32 (FFI) cho kiosk màn hình phụ: bỏ title bar + fullscreen đúng màn khách.
+  ffi: ^2.1.0
 
 dev_dependencies:
   flutter_test:

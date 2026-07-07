@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../providers/customer_display_controller.dart';
+import '../../services/second_window_fullscreen.dart';
 import '../../ui/app_theme.dart';
 import 'customer_display_screen.dart';
 
@@ -36,6 +37,9 @@ class SecondScreen {
     await window.setFrame(const Offset(160, 120) & const Size(1024, 768));
     await window.setTitle('Màn hình phụ');
     await window.show();
+    // Kiosk khách: bỏ khung/title bar Windows và phủ kín màn hình (ưu tiên
+    // màn hình thứ 2 nếu có). Fire-and-forget — lỗi thì giữ cửa sổ thường.
+    unawaited(makeSecondWindowFullscreen());
     _ctrl = ctrl;
     _lastAdsJson = '';
     ctrl.addListener(_schedulePush);
