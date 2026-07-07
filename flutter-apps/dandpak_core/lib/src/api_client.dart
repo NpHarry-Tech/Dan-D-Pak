@@ -194,7 +194,7 @@ class DanDpakApiClient {
   }) async {
     final body = response.body;
     final decoded = body.length >= isolateDecodeThreshold
-        ? await Isolate.run(() => _tryJsonDecode(body))
+        ? await _decodeInIsolate(body)
         : decodeBody(body);
     return _checkStatus(response, decoded, errorMessage: errorMessage);
   }
@@ -237,6 +237,19 @@ class DanDpakApiClient {
         ? Map<String, dynamic>.from(value)
         : <String, dynamic>{};
   }
+}
+
+// The Isolate.run closure MUST be created in a top-level SYNC function: when
+// it is created inside an async method (as decodeResponseAsync used to do),
+// the AOT compiler keeps the whole async frame in the closure context —
+// _AsyncCompleter, http.Response, `this` — and the completer's awaiter chain
+// reaches into the widget tree, none of which can cross an isolate boundary →
+// "Illegal argument in isolate message: object is unsendable". Here the scope
+// holds only the `body` string. If spawning still fails for any reason, fall
+// back to decoding on the main isolate (slower but always correct).
+Future<dynamic> _decodeInIsolate(String body) {
+  return Isolate.run(() => _tryJsonDecode(body))
+      .catchError((_) => _tryJsonDecode(body));
 }
 
 // Top-level so Isolate.run only captures the body string, not the client.

@@ -290,6 +290,15 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
             error: true, onRetry: _loadAll),
       );
     }
+    // Kho đã tải nhưng dữ liệu tồn/lô lỗi: báo rõ thay vì hiển thị bảng rỗng
+    // khiến người dùng tưởng kho chưa có hàng.
+    if (_error != null) {
+      return Padding(
+        padding: const EdgeInsets.all(40),
+        child: InlineMessage('Không tải được dữ liệu kho ($_error)',
+            error: true, onRetry: _loadWarehouseData),
+      );
+    }
     switch (_tab) {
       case 'lots':
         return _lotsView();
