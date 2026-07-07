@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -373,8 +374,19 @@ class _CustomerDisplayScreenState extends State<CustomerDisplayScreen> {
         errorBuilder: (_, __, ___) => const SizedBox.shrink(),
       );
     }
-    return Image.network(
-      src,
+    if (src.startsWith('http')) {
+      return Image.network(
+        src,
+        fit: fit,
+        cacheWidth: decodeWidth,
+        gaplessPlayback: true,
+        errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+      );
+    }
+    // Đường dẫn file cục bộ (ads được ghi ra file tạm để tránh gửi base64 nặng
+    // qua channel — xem SecondScreen._materializeAds).
+    return Image.file(
+      File(src),
       fit: fit,
       cacheWidth: decodeWidth,
       gaplessPlayback: true,

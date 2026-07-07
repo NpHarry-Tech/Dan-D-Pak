@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:desktop_multi_window/desktop_multi_window.dart';
 import 'package:flutter/material.dart';
@@ -56,16 +57,19 @@ class SecondScreen {
     _pushTimer = Timer(const Duration(milliseconds: 30), _push);
   }
 
-  void _push() {
+  Future<void> _push() async {
     final id = _windowId;
     final c = _ctrl;
     if (id == null || c == null) return;
-    // Ad images are data-URLs that can be several MB — only resend the ads
-    // block when it actually changed, not on every cart edit.
+    // Ad images are data-URLs that can be SEVERAL MB. Đẩy nguyên base64 qua
+    // method channel của desktop_multi_window làm SẬP app (message quá lớn cho
+    // IPC giữa 2 cửa sổ). Thay vào đó ghi ảnh ra file tạm MỘT LẦN và chỉ gửi
+    // ĐƯỜNG DẪN (nhẹ) — cửa sổ phụ đọc thẳng từ đĩa (Image.file). Chỉ gửi lại
+    // khối ads khi nó thật sự đổi.
     final adsJson = jsonEncode(c.ads.toJson());
     final payload = <String, dynamic>{'data': c.data.toJson()};
     if (adsJson != _lastAdsJson) {
-      payload['ads'] = c.ads.toJson();
+      payload['ads'] = await _materializeAds(c.ads);
       _lastAdsJson = adsJson;
     }
     // Fire-and-forget; if the window was closed by the user this just no-ops.
@@ -74,6 +78,35 @@ class SecondScreen {
       'update',
       jsonEncode(payload),
     ).catchError((_) => _detach());
+  }
+
+  /// Ghi mỗi ảnh data-URL ra 1 file tạm (đặt tên theo hash nội dung để tái dùng)
+  /// và trả về ads với danh sách images = đường dẫn file. Ảnh http giữ nguyên.
+  Future<Map<String, dynamic>> _materializeAds(CustomerAdConfig ads) async {
+    final dir = Directory('${Directory.systemTemp.path}/dandpak_ads');
+    try {
+      dir.createSync(recursive: true);
+    } catch (_) {}
+    final out = <String>[];
+    for (final img in ads.images) {
+      if (img.startsWith('data:image/')) {
+        try {
+          final comma = img.indexOf(',');
+          final bytes = base64Decode(comma >= 0 ? img.substring(comma + 1) : img);
+          final name = 'ad_${img.hashCode & 0x7fffffff}.img';
+          final f = File('${dir.path}/$name');
+          if (!f.existsSync() || f.lengthSync() != bytes.length) {
+            f.writeAsBytesSync(bytes);
+          }
+          out.add(f.path);
+        } catch (_) {
+          // ảnh hỏng → bỏ qua, không để làm sập
+        }
+      } else if (img.isNotEmpty) {
+        out.add(img); // http/url giữ nguyên
+      }
+    }
+    return {'images': out, 'secondsPerImage': ads.secondsPerImage};
   }
 
   void _detach() {
