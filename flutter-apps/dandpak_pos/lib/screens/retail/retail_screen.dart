@@ -1549,30 +1549,42 @@ class _SkuCard extends StatelessWidget {
                   SizedBox(height: 122, child: _image()),
                   Expanded(
                     child: Padding(
-                      padding: const EdgeInsets.fromLTRB(9, 7, 9, 8),
+                      padding: const EdgeInsets.fromLTRB(9, 6, 9, 7),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          Text(sku.name,
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w800,
-                                  height: 1.22)),
-                          const Spacer(),
-                          Text(Fmt.money(sku.price),
-                              style: const TextStyle(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w900,
-                                  color: DanColors.brand)),
-                          Text('Tồn: ${Fmt.int0(sku.stock)} ${sku.unit}',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                  fontSize: 10.5,
-                                  color: out ? DanColors.late : DanColors.muted,
-                                  fontWeight: FontWeight.w600)),
+                          // Flexible: tên co lại nếu thiếu chỗ, không đẩy tràn card.
+                          Flexible(
+                            child: Text(sku.name,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w800,
+                                    height: 1.18)),
+                          ),
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(Fmt.money(sku.price),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w900,
+                                      color: DanColors.brand)),
+                              Text('Tồn: ${Fmt.int0(sku.stock)} ${sku.unit}',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                      fontSize: 10.5,
+                                      color:
+                                          out ? DanColors.late : DanColors.muted,
+                                      fontWeight: FontWeight.w600)),
+                            ],
+                          ),
                         ],
                       ),
                     ),
@@ -1652,10 +1664,13 @@ class _SkuCard extends StatelessWidget {
   }
 
   Widget _placeholder() {
+    // SKU chưa có ảnh → ô xám nhạt + icon hộp hàng cho có chủ đích (trước đây
+    // để trống trơn nên trông như thẻ bị lỗi/trắng).
     return Container(
       color: DanColors.surface2,
       alignment: Alignment.center,
-      // Không icon placeholder — SKU chưa có ảnh hiển thị ô trống phẳng.
+      child: Icon(Icons.inventory_2_outlined,
+          size: 34, color: DanColors.border),
     );
   }
 }

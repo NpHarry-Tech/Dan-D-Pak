@@ -62,42 +62,20 @@ class DanModuleTopBar extends StatelessWidget implements PreferredSizeWidget {
                 border: Border(bottom: BorderSide(color: DanColors.border)),
               ),
               child: DragToMoveArea(
-                child: Stack(
-                  alignment: Alignment.center,
+                // Row bố cục: [brand] · [tiêu đề co giãn ở giữa] · [actions ·
+                // clock]. Trước đây tiêu đề canh giữa TUYỆT ĐỐI bằng Stack nên
+                // ĐÈ LÊN cụm nút khi topbar chật (chữ chồng nhau). Giờ tiêu đề
+                // nằm trong Expanded ở khoảng giữa → không bao giờ đè, tự cắt
+                // "…" khi hết chỗ.
+                child: Row(
                   children: [
-                    // Left brand · right cluster (actions, clock) with trailing
-                    // space reserved for the window buttons overlay. The
-                    // notification bell is intentionally NOT global here — only
-                    // the POS screen adds one via `actions` (staff read new
-                    // dishes there). Other modules stay bell-free.
-                    Row(
-                      children: [
-                        _Brand(
-                          brandName: brandName,
-                          width: branchWidth,
-                          onTap: onBack,
-                        ),
-                        const Spacer(),
-                        if (actions.isNotEmpty)
-                          Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              for (var i = 0; i < actions.length; i++) ...[
-                                if (i > 0) const SizedBox(width: 8),
-                                actions[i],
-                              ],
-                            ],
-                          ),
-                        const SizedBox(width: 12),
-                        const _LiveClock(),
-                        // Reserve room for the global window buttons (min/max/close)
-                        // pinned at the top-right of the window.
-                        SizedBox(width: WindowControls.supported ? 146 : 0),
-                      ],
+                    _Brand(
+                      brandName: brandName,
+                      width: branchWidth,
+                      onTap: onBack,
                     ),
-                    // Centered page title.
-                    if (constraints.maxWidth >= 1150)
-                      IgnorePointer(
+                    Expanded(
+                      child: Center(
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
@@ -105,19 +83,37 @@ class DanModuleTopBar extends StatelessWidget implements PreferredSizeWidget {
                               Icon(titleIcon, size: 22, color: DanColors.muted),
                               const SizedBox(width: 9),
                             ],
-                            Text(
-                              title,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                fontSize: 17,
-                                fontWeight: FontWeight.w900,
-                                height: 1.18,
+                            Flexible(
+                              child: Text(
+                                title,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontSize: 17,
+                                  fontWeight: FontWeight.w900,
+                                  height: 1.18,
+                                ),
                               ),
                             ),
                           ],
                         ),
                       ),
+                    ),
+                    if (actions.isNotEmpty)
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          for (var i = 0; i < actions.length; i++) ...[
+                            if (i > 0) const SizedBox(width: 8),
+                            actions[i],
+                          ],
+                        ],
+                      ),
+                    const SizedBox(width: 12),
+                    const _LiveClock(),
+                    // Reserve room for the global window buttons (min/max/close)
+                    // pinned at the top-right of the window (desktop only).
+                    SizedBox(width: WindowControls.supported ? 146 : 0),
                   ],
                 ),
               ),

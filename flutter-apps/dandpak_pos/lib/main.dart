@@ -168,8 +168,15 @@ class _DandpakPosAppState extends State<DandpakPosApp>
       debugShowCheckedModeBanner: false,
       title: 'Dan D Pak POS',
       theme: DanTheme.light(),
-      builder: (context, child) =>
-          WindowChrome(child: child ?? const SizedBox()),
+      builder: (context, child) {
+        // POS có bố cục cỡ cố định — KHÓA cỡ chữ hệ điều hành về 1.0 để cỡ chữ
+        // lớn của Android (tablet) không làm tràn/chồng chữ khắp các màn.
+        final mq = MediaQuery.of(context);
+        return MediaQuery(
+          data: mq.copyWith(textScaler: TextScaler.noScaling),
+          child: WindowChrome(child: child ?? const SizedBox()),
+        );
+      },
       home: Consumer<AuthProvider>(
         builder: (context, auth, _) {
           if (!auth.booting) {
