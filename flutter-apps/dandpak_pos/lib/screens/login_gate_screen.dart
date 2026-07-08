@@ -564,52 +564,56 @@ class _AdminLoginDialogState extends State<_AdminLoginDialog> {
                   child: const Text('Đóng'),
                 ),
               ),
-              Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const SizedBox(height: 22),
-                  const Text(
-                    'Đăng nhập quản trị',
-                    style: TextStyle(
-                        fontSize: 21,
-                        fontWeight: FontWeight.w800,
-                        height: 1.25),
-                  ),
-                  const SizedBox(height: 7),
-                  const Text(
-                    'Nhập tài khoản và mã PIN quản trị viên',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: DanColors.muted,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
-                      height: 1.35,
+              // Cuộn được để khi BÀN PHÍM mở, bàn phím số PIN + nút đăng nhập
+              // không bị che (nội dung cao hơn khoảng trống còn lại thì cuộn).
+              SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const SizedBox(height: 22),
+                    const Text(
+                      'Đăng nhập quản trị',
+                      style: TextStyle(
+                          fontSize: 21,
+                          fontWeight: FontWeight.w800,
+                          height: 1.25),
                     ),
-                  ),
-                  const SizedBox(height: 20),
-                  TextField(
-                    controller: _username,
-                    autofocus: true,
-                    textInputAction: TextInputAction.done,
-                    decoration: const InputDecoration(
-                      isDense: true,
-                      labelText: 'Tài khoản',
-                      prefixIcon: Icon(Icons.person_outline, size: 20),
+                    const SizedBox(height: 7),
+                    const Text(
+                      'Nhập tài khoản và mã PIN quản trị viên',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: DanColors.muted,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        height: 1.35,
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 18),
-                  _PinDots(length: _pin.length),
-                  const SizedBox(height: 22),
-                  _PinPad(onPressed: _press),
-                  const SizedBox(height: 18),
-                  SizedBox(
-                    width: double.infinity,
-                    child: FilledButton(
-                      onPressed: _submit,
-                      child: const Text('ĐĂNG NHẬP'),
+                    const SizedBox(height: 20),
+                    TextField(
+                      controller: _username,
+                      autofocus: true,
+                      textInputAction: TextInputAction.done,
+                      decoration: const InputDecoration(
+                        isDense: true,
+                        labelText: 'Tài khoản',
+                        prefixIcon: Icon(Icons.person_outline, size: 20),
+                      ),
                     ),
-                  ),
-                ],
+                    const SizedBox(height: 18),
+                    _PinDots(length: _pin.length),
+                    const SizedBox(height: 22),
+                    _PinPad(onPressed: _press),
+                    const SizedBox(height: 18),
+                    SizedBox(
+                      width: double.infinity,
+                      child: FilledButton(
+                        onPressed: _submit,
+                        child: const Text('ĐĂNG NHẬP'),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ],
           ),

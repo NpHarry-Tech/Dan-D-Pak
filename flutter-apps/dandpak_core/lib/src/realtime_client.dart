@@ -21,12 +21,24 @@ class DanDpakRealtimeClient {
 
     final auth = {'branch': branchId, 'device': device, 'token': token};
     var options = io.OptionBuilder()
-        .setTransports(['websocket'])
+        // WebSocket trước cho độ trễ thấp, NHƯNG cho phép TỤT XUỐNG polling khi
+        // ws chập chờn (WiFi yếu / mạng qua proxy) — trước đây ép ws-only nên chỉ
+        // cần một cú rớt ws là mất kết nối hẳn, không có đường lui.
+        .setTransports(['websocket', 'polling'])
         .setQuery(auth)
         .setAuth(auth)
+        // Bắt tay lâu quá thì bỏ để thử lại, khỏi treo "đang kết nối".
+        .setTimeout(20000)
         .disableAutoConnect();
     if (enableReconnection) {
-      options = options.enableReconnection();
+      // Thử lại nhanh và KHÔNG BAO GIỜ bỏ cuộc: POS phải tự nối lại khi mạng
+      // chớp tắt mà nhân viên không cần làm gì.
+      options = options
+          .enableReconnection()
+          .setReconnectionAttempts(1 << 30)
+          .setReconnectionDelay(800)
+          .setReconnectionDelayMax(5000)
+          .setRandomizationFactor(0.5);
     }
 
     _socket = io.io(url, options.build());

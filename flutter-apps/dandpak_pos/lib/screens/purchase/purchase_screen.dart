@@ -465,10 +465,17 @@ class _PurchaseFormDialogState extends State<_PurchaseFormDialog> {
 
   @override
   Widget build(BuildContext context) {
+    // Chặn TRẦN cao theo khoảng trống CÒN LẠI phía trên bàn phím: khi bàn phím
+    // mở, hộp thoại co lại vừa vặn nên phần header + footer (Tổng, nút "Tạo
+    // đơn") luôn hiện, danh sách ở giữa tự cuộn thay vì bị bàn phím che.
+    final maxH = (MediaQuery.sizeOf(context).height -
+            MediaQuery.viewInsetsOf(context).bottom -
+            48)
+        .clamp(280.0, 740.0);
     return Dialog(
       backgroundColor: DanColors.surface,
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 620, maxHeight: 740),
+        constraints: BoxConstraints(maxWidth: 620, maxHeight: maxH),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [

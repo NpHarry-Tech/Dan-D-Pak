@@ -40,7 +40,19 @@ function emitPresenceThrottled(branch) {
 
 export function initRealtime(httpServer) {
   const corsOrigin = env.CORS_ORIGINS.length ? env.CORS_ORIGINS : (env.isProduction ? [] : '*');
-  io = new Server(httpServer, { cors: { origin: corsOrigin, credentials: true } });
+  io = new Server(httpServer, {
+    cors: { origin: corsOrigin, credentials: true },
+    // Kiên nhẫn hơn với mạng chớp tắt: mặc định pingTimeout 20s khiến chỉ một
+    // lần trễ mạng ngắn là server coi client "chết" và ngắt (nhân viên thấy
+    // "MẤT KẾT NỐI" liên tục). Cho phép im lặng tới 40s trước khi coi là rớt,
+    // ping mỗi 20s. Cho cả nâng cấp transport thêm thời gian.
+    pingInterval: 20000,
+    pingTimeout: 40000,
+    upgradeTimeout: 20000,
+    // Tablet/điện thoại có thể gửi ảnh SKU khi tạo món — nới buffer để không
+    // đứt kết nối vì payload lớn.
+    maxHttpBufferSize: 1e7,
+  });
 
   // Middleware xác thực kết nối Socket.IO
   io.use((socket, next) => {
