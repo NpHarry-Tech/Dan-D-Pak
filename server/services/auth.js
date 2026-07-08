@@ -49,7 +49,10 @@ export const PERMISSIONS = [
   { key: 'pay', label: 'Thanh toán bill' },
   { key: 'discount', label: 'Áp giảm giá và voucher' },
   { key: 'refund', label: 'Hoàn tiền và đổi trả' },
-  { key: 'void', label: 'Hủy bill, hủy món đã gửi' },
+  { key: 'void', label: 'Hủy bill, hủy món đã gửi (chưa chế biến)' },
+  { key: 'void.made', label: 'Xóa món ĐÃ chế biến xong (quyền riêng, nhạy cảm)' },
+  { key: 'table.move', label: 'Chuyển bàn / gộp bàn' },
+  { key: 'bill.split', label: 'Tách bill / thanh toán riêng' },
   { key: 'menu.manage', label: 'Quản lý thực đơn — thêm, sửa, xóa món và danh mục' },
   { key: 'inventory.adjust', label: 'Điều chỉnh tồn kho và kiểm kho' },
   { key: 'warehouse.manage', label: 'Quản lý kho — tạo kho, nhập, xuất, chuyển kho' },
@@ -418,6 +421,18 @@ export function verifyWarehouseConfigPin(pin, branch_id = 'br1') {
     ORDER BY CASE role WHEN 'owner' THEN 0 WHEN 'manager' THEN 1 ELSE 2 END, name
     LIMIT 200`).all();
   const row = rows.find(u => verifyPin(clean, u.pin) && canAccessBranch(u, branch_id));
+  return row ? publicUser(row) : null;
+}
+
+// Xác nhận PIN thuộc về một user CÓ quyền `perm` (dùng cho phân quyền nhiều cấp:
+// nếu người đang thao tác không đủ quyền, quản lý/người có quyền nhập PIN duyệt).
+// Owner/Admin luôn qua (canUser owner=true). Trả publicUser người duyệt hoặc null.
+export function verifyPinHasPerm(pin, perm, branch_id = 'br1') {
+  const clean = String(pin || '').trim();
+  if (!clean) return null;
+  const rows = db.prepare(`SELECT * FROM users WHERE active=1 LIMIT 500`).all();
+  const row = rows.find(u =>
+    verifyPin(clean, u.pin) && canAccessBranch(u, branch_id) && canUser(u, perm));
   return row ? publicUser(row) : null;
 }
 

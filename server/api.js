@@ -768,15 +768,33 @@ api.post('/orders/items/:id/cancel', wrap((req) => {
   const item = db.prepare(`SELECT * FROM order_items WHERE id=?`).get(itemId);
   if (!item) throw new Error('Món không tồn tại');
 
-  if (item.status === 'preparing' || item.status === 'ready' || item.status === 'served') {
-    throw new Error('Bếp đã chế biến món này, không thể hủy!');
-  }
-
+  // Phân quyền nhiều cấp (Admin/Owner bỏ qua mọi kiểm tra vì canUser=true):
+  //  • pending_confirm (khách chưa gửi)         → tự do, chỉ cần quyền 'sell'.
+  //  • đã gửi bếp NHƯNG CHƯA chế biến ('new'/'sent'…) → cần quyền 'void'.
+  //  • ĐÃ chế biến (preparing/ready/served)      → cần quyền RIÊNG 'void.made'.
+  // Nếu người thao tác không đủ quyền → cho phép người CÓ quyền nhập PIN duyệt.
+  const made = ['preparing', 'ready', 'served'].includes(item.status);
   if (item.status !== 'pending_confirm') {
-    const pin = req.body.pin;
-    if (!pin) throw new Error('Yêu cầu nhập mã PIN Quản lý/Admin để hủy món đã gửi.');
-    if (!Auth.verifyManagerOwnerPin(String(pin), branch_id)) {
-      throw new Error('Mã PIN không đúng hoặc không có quyền Quản lý/Admin.');
+    const needPerm = made ? 'void.made' : 'void';
+    const actorOk = Auth.canUser(req.user, needPerm);
+    if (!actorOk) {
+      const pin = req.body.pin;
+      const label = made
+        ? 'xóa món ĐÃ chế biến (quyền "void.made")'
+        : 'hủy món đã gửi (quyền "void")';
+      if (!pin) {
+        const e = new Error(`Cần quyền hoặc PIN của người có quyền để ${label}.`);
+        e.code = 'PERM_REQUIRED';
+        throw e;
+      }
+      const approver = Auth.verifyPinHasPerm(String(pin), needPerm, branch_id);
+      if (!approver) {
+        throw new Error(`PIN không đúng hoặc người đó không có quyền ${label}.`);
+      }
+      audit('order.item.cancel.approved', {
+        item: itemId, status: item.status, perm: needPerm,
+        approved_by: approver.username || approver.name,
+      }, branch_id, actor(req));
     }
   }
   const res = Orders.cancelItem(itemId, req.body.reason || 'Nhân viên hủy', branch_id, actor(req));
