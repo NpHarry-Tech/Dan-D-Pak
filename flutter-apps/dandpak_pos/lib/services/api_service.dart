@@ -59,6 +59,15 @@ class ApiService extends DanDpakApiClient {
     return <dynamic>[];
   }
 
+  /// Thực đơn ĐẦY ĐỦ {categories, items} — dùng cho màn khách tự gọi món.
+  Future<Map<String, dynamic>> getMenuFull() async {
+    final decoded =
+        await getJson('/api/menu', errorMessage: 'Không tải được thực đơn');
+    if (decoded is Map) return Map<String, dynamic>.from(decoded);
+    if (decoded is List) return {'categories': [], 'items': decoded};
+    return {'categories': [], 'items': []};
+  }
+
   Future<Map<String, dynamic>> getMenuPaginated({
     required int page,
     int limit = 40,
@@ -294,6 +303,38 @@ class ApiService extends DanDpakApiClient {
   Future<void> resolveStaffCall(String tableId) async {
     await postJson('/api/calls/$tableId/resolve',
         errorMessage: 'Failed to resolve staff call');
+  }
+
+  // ─── iPad Self-order (khách tự gọi món) — CÙNG backend với web /ipad ───
+  /// Bàn + đơn đang mở của bàn (field `order` = đơn hiện tại).
+  Future<Map<String, dynamic>> getTable(String tableId) async {
+    return mapFrom(await getJson('/api/tables/$tableId',
+        errorMessage: 'Không tải được bàn'));
+  }
+
+  /// Khách gọi nhân viên.
+  Future<void> callStaff(String tableId, String reason) async {
+    await postJson('/api/calls',
+        body: {'table_id': tableId, 'reason': reason},
+        errorMessage: 'Không gọi được nhân viên');
+  }
+
+  /// Nhân viên mở khoá chọn bàn cho iPad bằng PIN.
+  Future<Map<String, dynamic>> ipadUnlock(String pin) async {
+    return mapFrom(await postJson('/api/device/ipad/unlock',
+        body: {'pin': pin}, errorMessage: 'PIN không đúng'));
+  }
+
+  /// Danh sách POS/máy in để liên kết cho iPad.
+  Future<Map<String, dynamic>> ipadSetupOptions() async {
+    return mapFrom(await getJson('/api/device/ipad/setup-options',
+        errorMessage: 'Không tải được thiết bị'));
+  }
+
+  /// Cấu hình vận hành (phương thức thanh toán…).
+  Future<Map<String, dynamic>> operationsConfig() async {
+    return mapFrom(await getJson('/api/operations/config',
+        errorMessage: 'Không tải được cấu hình vận hành'));
   }
 
   Future<void> setItemStatus(String itemId, String status) async {
