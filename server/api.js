@@ -511,6 +511,15 @@ api.post('/device/ipad/unlock', wrap((req) => {
   if (!AppSettings.verifyIpadStaffPin(req.body.pin, visibleBranch(req))) throw new Error('Mật khẩu không đúng');
   return { ok: true };
 }));
+api.get('/device/ipad/setup-options', wrap((req) => {
+  const b = visibleBranch(req);
+  const activePos = getActiveConnections(b).filter(c => c.device === 'pos');
+  const printers = Print.listPrinters(b) || [];
+  return {
+    posDevices: activePos,
+    printers: printers
+  };
+}));
 
 // --- Catalog / Menu ---
 api.get('/menu', wrap((req) => Catalog.listMenu({ forCustomer: true, ...req.query })));

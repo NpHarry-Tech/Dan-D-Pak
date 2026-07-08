@@ -58,8 +58,28 @@ const STATIONS=[['all','🍽️ Tất cả'],['kitchen','🔥 Bếp'],['bar','�
 let station = localStorage.getItem('kds_station') || 'all';
 let allTickets = [];  // every active ticket across stations (for live badge counts)
 
+function showNativeNotification(title, body) {
+  if (typeof Notification !== 'undefined') {
+    if (Notification.permission === 'granted') {
+      new Notification(title, { body });
+    } else if (Notification.permission !== 'denied') {
+      Notification.requestPermission().then(permission => {
+        if (permission === 'granted') new Notification(title, { body });
+      });
+    }
+  }
+}
+if (typeof Notification !== 'undefined' && Notification.permission === 'default') {
+  Notification.requestPermission();
+}
+
 connect('kds', {
-  'order:new': ()=>{ playNotificationSound('kds_new_order'); load(); },
+  'order:new': (p)=>{
+    playNotificationSound('kds_new_order');
+    load();
+    const tableStr = p?.order?.table_code ? ` - Bàn ${p.order.table_code}` : '';
+    showNativeNotification('Có đơn hàng mới', `Đơn #${(p?.order?.bill_no || '').slice(-5).toUpperCase()}${tableStr}`);
+  },
   'kds:refresh': load, 'order:item': load,
 });
 

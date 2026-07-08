@@ -152,6 +152,13 @@ app.use('/assets', express.static(ENGINE_ASSETS, { etag: false, lastModified: fa
 
 if (!env.DISABLE_WEB_UI) {
   app.use(express.static(WEB, { etag: false, lastModified: false }));
+  app.get('/tablet', (req, res) => res.redirect('/tablet/'));
+  app.get('/tablet/app/*', (req, res, next) => {
+    if (!req.path.includes('.')) {
+      return res.sendFile(join(WEB, 'tablet', 'app', 'index.html'));
+    }
+    next();
+  });
   app.get('/', (req, res) => res.sendFile(join(WEB, 'index.html')));
   app.get('/settings', (req, res) => res.sendFile(join(WEB, 'admin.html')));
   // Haravan-style settings sub-routes (/settings/staff, /settings/location, ...) all serve the admin shell.

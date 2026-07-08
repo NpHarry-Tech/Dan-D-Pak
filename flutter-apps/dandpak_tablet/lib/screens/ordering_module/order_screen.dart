@@ -213,20 +213,25 @@ class _OrderScreenState extends State<OrderScreen> {
 
     return Scaffold(
       key: _scaffoldKey,
-      backgroundColor: const Color(0xFF0F141C),
+      backgroundColor: const Color(0xFFF7F8FA),
       appBar: AppBar(
-        backgroundColor: const Color(0xFF161C23),
+        backgroundColor: const Color(0xFFFFFFFF),
+        foregroundColor: const Color(0xFF1A2230),
+        elevation: 0,
+        scrolledUnderElevation: 0,
         title: Row(
           children: [
             const Text('Gọi món & Phục vụ', style: TextStyle(fontWeight: FontWeight.bold)),
             const SizedBox(width: 20),
             ElevatedButton.icon(
               style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF242F3D),
-                foregroundColor: Colors.white,
+                backgroundColor: const Color(0xFFF3F5F7),
+                foregroundColor: const Color(0xFF1A2230),
+                elevation: 0,
+                side: const BorderSide(color: Color(0xFFD3D8DF)),
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
               ),
-              icon: const Icon(Icons.table_bar, size: 18, color: Color(0xFF2F7D6B)),
+              icon: const Icon(Icons.table_bar, size: 18, color: Color(0xFF0891B2)),
               label: Text(
                 orderProv.selectedTable != null ? 'Bàn: ${orderProv.selectedTable!.name}' : 'Chọn Bàn',
                 style: const TextStyle(fontWeight: FontWeight.bold),
@@ -237,14 +242,14 @@ class _OrderScreenState extends State<OrderScreen> {
         ),
         actions: [
           IconButton(
-            icon: const Icon(Icons.refresh, color: Colors.white70),
+            icon: const Icon(Icons.refresh, color: Color(0xFF677084)),
             onPressed: _loadMenuAndTables,
           ),
         ],
       ),
       drawer: _buildTableDrawer(orderProv),
       body: _loading
-          ? const Center(child: CircularProgressIndicator(color: Color(0xFF2F7D6B)))
+          ? const Center(child: CircularProgressIndicator(color: Color(0xFF0891B2)))
           : Row(
               children: [
                 // Left Menu Grid
@@ -256,7 +261,10 @@ class _OrderScreenState extends State<OrderScreen> {
                       RepaintBoundary(
                         child: Container(
                           height: 54,
-                          color: const Color(0xFF161C23),
+                          color: const Color(0xFFFFFFFF),
+                          decoration: const BoxDecoration(
+                            border: Border(bottom: BorderSide(color: Color(0xFFE7EAEE))),
+                          ),
                           child: ListView.builder(
                             scrollDirection: Axis.horizontal,
                             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
@@ -269,10 +277,11 @@ class _OrderScreenState extends State<OrderScreen> {
                                 child: ChoiceChip(
                                   label: Text(cat == 'all' ? 'Tất cả' : cat),
                                   selected: active,
-                                  selectedColor: const Color(0xFF2F7D6B),
+                                  selectedColor: const Color(0xFF0891B2),
                                   checkmarkColor: Colors.white,
+                                  backgroundColor: const Color(0xFFF3F5F7),
                                   labelStyle: TextStyle(
-                                    color: active ? Colors.white : Colors.white70,
+                                    color: active ? Colors.white : const Color(0xFF677084),
                                     fontWeight: FontWeight.bold,
                                   ),
                                   onSelected: (_) => orderProv.selectCategory(cat),
@@ -293,7 +302,7 @@ class _OrderScreenState extends State<OrderScreen> {
                       Expanded(
                         child: RepaintBoundary(
                           child: filteredItems.isEmpty
-                              ? const Center(child: Text('Không tìm thấy món ăn nào', style: TextStyle(color: Colors.white30)))
+                              ? const Center(child: Text('Không tìm thấy món ăn nào', style: TextStyle(color: Color(0xFF677084))))
                               : GridView.builder(
                                   padding: const EdgeInsets.all(14),
                                   gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
@@ -314,120 +323,124 @@ class _OrderScreenState extends State<OrderScreen> {
                   ),
                 ),
                 // Right Sidebar Cart
-                VerticalDivider(color: Colors.white.withOpacity(0.05), width: 1),
+                VerticalDivider(color: const Color(0xFFE7EAEE), width: 1),
                 Expanded(
                   flex: 3,
                   child: RepaintBoundary(
                     child: Container(
-                      color: const Color(0xFF161C23),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(16),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF1E2630),
-                            border: Border(bottom: BorderSide(color: Colors.white.withOpacity(0.05))),
-                          ),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              const Text('Giỏ hàng', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white)),
-                              if (orderProv.cart.isNotEmpty)
-                                TextButton(
-                                  onPressed: orderProv.clearCart,
-                                  child: const Text('Xóa hết', style: TextStyle(color: Color(0xFFFF7A7A))),
-                                ),
-                            ],
-                          ),
-                        ),
-                        Expanded(
-                          child: orderProv.cart.isEmpty
-                              ? const Center(
-                                  child: Column(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Icon(Icons.shopping_basket_outlined, size: 48, color: Colors.white24),
-                                      SizedBox(height: 12),
-                                      Text('Chưa chọn món ăn', style: TextStyle(color: Colors.white38)),
-                                    ],
+                      color: const Color(0xFFFFFFFF),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(16),
+                            decoration: const BoxDecoration(
+                              color: Color(0xFFF3F5F7),
+                              border: Border(bottom: BorderSide(color: Color(0xFFE7EAEE))),
+                            ),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                const Text('Giỏ hàng', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF1A2230))),
+                                if (orderProv.cart.isNotEmpty)
+                                  TextButton(
+                                    onPressed: orderProv.clearCart,
+                                    child: const Text('Xóa hết', style: TextStyle(color: Color(0xFFFF6B6B))),
                                   ),
-                                )
-                              : ListView.separated(
-                                  padding: const EdgeInsets.all(16),
-                                  itemCount: orderProv.cart.length,
-                                  separatorBuilder: (_, __) => const Divider(color: Colors.white10),
-                                  itemBuilder: (context, index) {
-                                    final cartItem = orderProv.cart[index];
-                                    return _buildCartRow(orderProv, cartItem, index);
-                                  },
-                                ),
-                        ),
-                        Container(
-                          padding: const EdgeInsets.all(20),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF1E2630),
-                            border: Border(top: BorderSide(color: Colors.white.withOpacity(0.05))),
+                              ],
+                            ),
                           ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                children: [
-                                  const Text('Tổng hóa đơn:', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: Colors.white70)),
-                                  Text(
-                                    'đ${orderProv.cartTotal}',
-                                    style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: Color(0xFF2F7D6B)),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 16),
-                              Row(
-                                children: [
-                                  Expanded(
-                                    child: OutlinedButton(
-                                      style: OutlinedButton.styleFrom(
-                                        side: const BorderSide(color: Color(0xFF2F7D6B)),
-                                        padding: const EdgeInsets.symmetric(vertical: 14),
-                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                                      ),
-                                      onPressed: orderProv.cart.isEmpty ? null : _sendToKitchen,
-                                      child: const Text('GỬI BẾP', style: TextStyle(color: Color(0xFF2F7D6B), fontWeight: FontWeight.bold)),
+                          Expanded(
+                            child: orderProv.cart.isEmpty
+                                ? const Center(
+                                    child: Column(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(Icons.shopping_basket_outlined, size: 48, color: Color(0xFF9AA3B2)),
+                                        SizedBox(height: 12),
+                                        Text('Chưa chọn món ăn', style: TextStyle(color: Color(0xFF677084))),
+                                      ],
                                     ),
+                                  )
+                                : ListView.separated(
+                                    padding: const EdgeInsets.all(16),
+                                    itemCount: orderProv.cart.length,
+                                    separatorBuilder: (_, __) => const Divider(color: Color(0xFFE7EAEE)),
+                                    itemBuilder: (context, index) {
+                                      final cartItem = orderProv.cart[index];
+                                      return _buildCartRow(orderProv, cartItem, index);
+                                    },
                                   ),
-                                  const SizedBox(width: 10),
-                                  Expanded(
-                                    child: FilledButton(
-                                      style: FilledButton.styleFrom(
-                                        backgroundColor: const Color(0xFF2F7D6B),
-                                        padding: const EdgeInsets.symmetric(vertical: 14),
-                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                                      ),
-                                      onPressed: orderProv.cart.isEmpty ? null : _checkoutAndPay,
-                                      child: const Text('THANH TOÁN', style: TextStyle(fontWeight: FontWeight.bold)),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ],
                           ),
-                        ),
-                      ],
+                          Container(
+                            padding: const EdgeInsets.all(20),
+                            decoration: const BoxDecoration(
+                              color: Color(0xFFF3F5F7),
+                              border: Border(top: BorderSide(color: Color(0xFFE7EAEE))),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                Row(
+                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    const Text('Tổng hóa đơn:', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: Color(0xFF677084))),
+                                    Text(
+                                      'đ${orderProv.cartTotal}',
+                                      style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: Color(0xFF0891B2)),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 16),
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: OutlinedButton(
+                                        style: OutlinedButton.styleFrom(
+                                          foregroundColor: const Color(0xFF0891B2),
+                                          side: const BorderSide(color: Color(0xFF0891B2)),
+                                          padding: const EdgeInsets.symmetric(vertical: 14),
+                                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                        ),
+                                        onPressed: orderProv.cart.isEmpty ? null : _sendToKitchen,
+                                        child: const Text('GỬI BẾP', style: TextStyle(fontWeight: FontWeight.bold)),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      child: FilledButton(
+                                        style: FilledButton.styleFrom(
+                                          backgroundColor: const Color(0xFF0891B2),
+                                          padding: const EdgeInsets.symmetric(vertical: 14),
+                                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                        ),
+                                        onPressed: orderProv.cart.isEmpty ? null : _checkoutAndPay,
+                                        child: const Text('THANH TOÁN', style: TextStyle(fontWeight: FontWeight.bold)),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ),
-              ),
-            ],
+              ],
             ),
     );
   }
 
   Widget _buildMenuItemCard(MenuItem item) {
     return Card(
-      color: const Color(0xFF1E2630),
-      elevation: 3,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      color: const Color(0xFFFFFFFF),
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: const BorderSide(color: Color(0xFFE7EAEE)),
+      ),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: () => _showModifierDialog(item),
@@ -438,7 +451,7 @@ class _OrderScreenState extends State<OrderScreen> {
               child: item.image != null && item.image!.startsWith('http')
                   ? Image.network(item.image!, fit: BoxFit.cover)
                   : Container(
-                      color: const Color(0xFF242F3D),
+                      color: const Color(0xFFF3F5F7),
                       alignment: Alignment.center,
                       child: Text(item.emoji ?? '🍔', style: const TextStyle(fontSize: 48)),
                     ),
@@ -450,14 +463,14 @@ class _OrderScreenState extends State<OrderScreen> {
                 children: [
                   Text(
                     item.name,
-                    style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.white),
+                    style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFF1A2230)),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
                   const SizedBox(height: 4),
                   Text(
                     'đ${item.price}',
-                    style: const TextStyle(fontSize: 13, color: Color(0xFF2F7D6B), fontWeight: FontWeight.w800),
+                    style: const TextStyle(fontSize: 13, color: Color(0xFF0891B2), fontWeight: FontWeight.w800),
                   ),
                 ],
               ),
@@ -479,13 +492,13 @@ class _OrderScreenState extends State<OrderScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(cartItem.item.name, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14)),
+                  Text(cartItem.item.name, style: const TextStyle(color: Color(0xFF1A2230), fontWeight: FontWeight.bold, fontSize: 14)),
                   if (cartItem.selectedModifiers.isNotEmpty)
                     Padding(
                       padding: const EdgeInsets.only(top: 2),
                       child: Text(
                         cartItem.selectedModifiers.map((e) => e.name).join(', '),
-                        style: const TextStyle(color: Colors.white54, fontSize: 11, fontStyle: FontStyle.italic),
+                        style: const TextStyle(color: Color(0xFF677084), fontSize: 11, fontStyle: FontStyle.italic),
                       ),
                     ),
                   if (cartItem.notes.isNotEmpty)
@@ -500,7 +513,7 @@ class _OrderScreenState extends State<OrderScreen> {
               ),
             ),
             const SizedBox(width: 8),
-            Text('đ${cartItem.totalPrice}', style: const TextStyle(color: Colors.white70, fontWeight: FontWeight.bold, fontSize: 13)),
+            Text('đ${cartItem.totalPrice}', style: const TextStyle(color: Color(0xFF1A2230), fontWeight: FontWeight.bold, fontSize: 13)),
           ],
         ),
         const SizedBox(height: 8),
@@ -510,23 +523,23 @@ class _OrderScreenState extends State<OrderScreen> {
             Row(
               children: [
                 IconButton(
-                  style: IconButton.styleFrom(backgroundColor: const Color(0xFF242F3D), padding: EdgeInsets.zero, minimumSize: const Size(28, 28)),
-                  icon: const Icon(Icons.remove, color: Colors.white70, size: 14),
+                  style: IconButton.styleFrom(backgroundColor: const Color(0xFFF3F5F7), padding: EdgeInsets.zero, minimumSize: const Size(28, 28)),
+                  icon: const Icon(Icons.remove, color: Color(0xFF677084), size: 14),
                   onPressed: () => orderProv.updateCartQty(index, cartItem.qty - 1),
                 ),
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 10),
-                  child: Text('${cartItem.qty}', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                  child: Text('${cartItem.qty}', style: const TextStyle(color: Color(0xFF1A2230), fontWeight: FontWeight.bold)),
                 ),
                 IconButton(
-                  style: IconButton.styleFrom(backgroundColor: const Color(0xFF242F3D), padding: EdgeInsets.zero, minimumSize: const Size(28, 28)),
-                  icon: const Icon(Icons.add, color: Colors.white70, size: 14),
+                  style: IconButton.styleFrom(backgroundColor: const Color(0xFFF3F5F7), padding: EdgeInsets.zero, minimumSize: const Size(28, 28)),
+                  icon: const Icon(Icons.add, color: Color(0xFF677084), size: 14),
                   onPressed: () => orderProv.updateCartQty(index, cartItem.qty + 1),
                 ),
               ],
             ),
             IconButton(
-              icon: const Icon(Icons.delete, color: Color(0xFFFF7A7A), size: 18),
+              icon: const Icon(Icons.delete, color: Color(0xFFFF6B6B), size: 18),
               onPressed: () => orderProv.removeFromCart(index),
             )
           ],
@@ -537,25 +550,25 @@ class _OrderScreenState extends State<OrderScreen> {
 
   Widget _buildTableDrawer(OrderingProvider orderProv) {
     return Drawer(
-      backgroundColor: const Color(0xFF161C23),
+      backgroundColor: const Color(0xFFFFFFFF),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           const DrawerHeader(
-            decoration: BoxDecoration(color: Color(0xFF1E2630)),
+            decoration: BoxDecoration(color: Color(0xFFF3F5F7)),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(Icons.table_bar, size: 36, color: Color(0xFF2F7D6B)),
+                Icon(Icons.table_bar, size: 36, color: Color(0xFF0891B2)),
                 SizedBox(height: 8),
-                Text('Sơ đồ Bàn / Khu vực', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+                Text('Sơ đồ Bàn / Khu vực', style: TextStyle(color: Color(0xFF1A2230), fontSize: 18, fontWeight: FontWeight.bold)),
               ],
             ),
           ),
           Expanded(
             child: _zones.isEmpty
-                ? const Center(child: Text('Không có dữ liệu bàn', style: TextStyle(color: Colors.white30)))
+                ? const Center(child: Text('Không có dữ liệu bàn', style: TextStyle(color: Color(0xFF677084))))
                 : ListView.builder(
                     padding: const EdgeInsets.all(14),
                     itemCount: _zones.length,
@@ -565,7 +578,7 @@ class _OrderScreenState extends State<OrderScreen> {
                       return Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(zone.name.toUpperCase(), style: const TextStyle(color: Color(0xFF2F7D6B), fontWeight: FontWeight.bold, fontSize: 13, letterSpacing: 1)),
+                          Text(zone.name.toUpperCase(), style: const TextStyle(color: Color(0xFF0891B2), fontWeight: FontWeight.bold, fontSize: 13, letterSpacing: 1)),
                           const SizedBox(height: 10),
                           GridView.builder(
                             shrinkWrap: true,
@@ -582,9 +595,9 @@ class _OrderScreenState extends State<OrderScreen> {
                               final isSelected = orderProv.selectedTable?.id == table.id;
                               final isServing = table.status == 'serving' || table.status == 'busy';
                               
-                              Color cardColor = const Color(0xFF1E2630);
-                              if (isSelected) cardColor = const Color(0xFF2F7D6B);
-                              else if (isServing) cardColor = const Color(0xFFE0A93B).withOpacity(0.2);
+                              Color cardColor = const Color(0xFFFFFFFF);
+                              if (isSelected) cardColor = const Color(0xFF0891B2);
+                              else if (isServing) cardColor = const Color(0xFFFFC24D).withOpacity(0.15);
 
                               return InkWell(
                                 onTap: () {
@@ -596,7 +609,7 @@ class _OrderScreenState extends State<OrderScreen> {
                                     color: cardColor,
                                     borderRadius: BorderRadius.circular(8),
                                     border: Border.all(
-                                      color: isSelected ? const Color(0xFF2F7D6B) : Colors.white10,
+                                      color: isSelected ? const Color(0xFF0891B2) : const Color(0xFFE7EAEE),
                                     ),
                                   ),
                                   alignment: Alignment.center,
@@ -606,7 +619,7 @@ class _OrderScreenState extends State<OrderScreen> {
                                       Text(
                                         table.name,
                                         style: TextStyle(
-                                          color: isSelected ? Colors.white : Colors.white70,
+                                          color: isSelected ? Colors.white : const Color(0xFF1A2230),
                                           fontWeight: FontWeight.bold,
                                         ),
                                       ),
@@ -614,7 +627,7 @@ class _OrderScreenState extends State<OrderScreen> {
                                       Text(
                                         isServing ? 'Có khách' : 'Trống',
                                         style: TextStyle(
-                                          color: isSelected ? Colors.white70 : Colors.white30,
+                                          color: isSelected ? Colors.white70 : const Color(0xFF677084),
                                           fontSize: 10,
                                         ),
                                       )

@@ -961,7 +961,7 @@ export function printReceipt(receipt, branch_id = 'br1') {
   const reprint = isReprintPayload(receipt);
   for (let i = 0; i < copies; i++) {
     jobs.push(createJob({
-      printer: 'bill',
+      printer: receipt.linked_printer_id || 'bill',
       type: 'receipt',
       title: `Receipt #${receipt.number}${copies > 1 ? ` (${i + 1}/${copies})` : ''}${reprint ? ' (in lại)' : ''}`,
       payload: { ...receipt, print_config: cfg, reprint, copy_index: i + 1, copy_total: copies },

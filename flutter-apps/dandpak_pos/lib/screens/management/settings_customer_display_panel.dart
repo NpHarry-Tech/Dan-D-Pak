@@ -104,11 +104,12 @@ class _CustomerDisplaySettingsPanelState
 
   Future<void> _addImage() async {
     if (_images.length >= _maxImages) {
-      _toast('Tối đa $_maxImages ảnh', error: true);
+      _toast('Tối đa $_maxImages ảnh/video', error: true);
       return;
     }
-    final dataUrl = await pickReceiptAsDataUrl();
-    if (dataUrl == null || !dataUrl.startsWith('data:image/')) return;
+    final dataUrl = await pickAdFileAsDataUrl();
+    if (dataUrl == null) return;
+    if (!dataUrl.startsWith('data:image/') && !dataUrl.startsWith('data:video/')) return;
     setState(() => _images = [..._images, dataUrl]);
   }
 
@@ -266,6 +267,15 @@ class _CustomerDisplaySettingsPanelState
     );
   }
 
+  bool _isVideo(String src) {
+    final s = src.toLowerCase();
+    return s.startsWith('data:video/') ||
+        s.endsWith('.mp4') ||
+        s.endsWith('.mov') ||
+        s.endsWith('.avi') ||
+        s.endsWith('.mkv');
+  }
+
   Widget _thumb(String src, int i) {
     return Stack(
       children: [
@@ -275,14 +285,28 @@ class _CustomerDisplaySettingsPanelState
             width: 150,
             height: 96,
             color: Colors.white,
-            child: src.startsWith('data:image/')
-                ? Image.memory(_dataUrlBytes(src),
-                    fit: BoxFit.contain,
-                    // 150x96 preview tile — decode small, ad sources can be huge.
-                    cacheWidth: 300,
-                    errorBuilder: (_, __, ___) =>
-                        const Icon(Icons.broken_image_outlined))
-                : Image.network(src, fit: BoxFit.contain, cacheWidth: 300),
+            child: _isVideo(src)
+                ? Container(
+                    color: Colors.black87,
+                    child: const Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.play_circle_fill, size: 36, color: Colors.white70),
+                          SizedBox(height: 4),
+                          Text('VIDEO', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.white70)),
+                        ],
+                      ),
+                    ),
+                  )
+                : (src.startsWith('data:image/')
+                    ? Image.memory(_dataUrlBytes(src),
+                        fit: BoxFit.contain,
+                        // 150x96 preview tile — decode small, ad sources can be huge.
+                        cacheWidth: 300,
+                        errorBuilder: (_, __, ___) =>
+                            const Icon(Icons.broken_image_outlined))
+                    : Image.network(src, fit: BoxFit.contain, cacheWidth: 300)),
           ),
         ),
         Positioned(

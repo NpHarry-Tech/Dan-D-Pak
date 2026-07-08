@@ -153,19 +153,19 @@ class _CountSheetPanelState extends State<CountSheetPanel> {
             Expanded(
               child: TextField(
                 controller: _sessionNameController,
-                style: const TextStyle(color: Colors.white),
+                style: const TextStyle(color: Color(0xFF1A2230)),
                 decoration: InputDecoration(
                   labelText: 'Tên / Mã phiên kiểm kho',
-                  labelStyle: const TextStyle(color: Colors.white70),
+                  labelStyle: const TextStyle(color: Color(0xFF677084)),
                   filled: true,
-                  fillColor: const Color(0xFF1E2630),
+                  fillColor: const Color(0xFFF3F5F7),
                   border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
                 ),
               ),
             ),
             const SizedBox(width: 14),
             IconButton(
-              icon: const Icon(Icons.qr_code_scanner, color: Color(0xFF2F7D6B), size: 30),
+              icon: const Icon(Icons.qr_code_scanner, color: Color(0xFF0891B2), size: 30),
               onPressed: () {
                 // Barcode simulation helper
                 if (widget.inventory.isNotEmpty) {
@@ -200,13 +200,13 @@ class _CountSheetPanelState extends State<CountSheetPanel> {
             return TextField(
               controller: controller,
               focusNode: focusNode,
-              style: const TextStyle(color: Colors.white),
+              style: const TextStyle(color: Color(0xFF1A2230)),
               decoration: InputDecoration(
                 hintText: 'Nhập tên hàng, mã vạch để tìm kiếm...',
-                hintStyle: const TextStyle(color: Colors.white30),
-                prefixIcon: const Icon(Icons.search, color: Colors.white54),
+                hintStyle: const TextStyle(color: Color(0xFF9AA3B2)),
+                prefixIcon: const Icon(Icons.search, color: Color(0xFF677084)),
                 filled: true,
-                fillColor: const Color(0xFF1E2630),
+                fillColor: const Color(0xFFF3F5F7),
                 border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
               ),
             );
@@ -219,12 +219,12 @@ class _CountSheetPanelState extends State<CountSheetPanel> {
               ? const Center(
                   child: Text(
                     'Chưa có mặt hàng nào được thêm vào danh sách kiểm.',
-                    style: TextStyle(color: Colors.white30),
+                    style: TextStyle(color: Color(0xFF677084)),
                   ),
                 )
               : ListView.separated(
                   itemCount: _lines.length,
-                  separatorBuilder: (_, __) => const Divider(color: Colors.white10),
+                  separatorBuilder: (_, __) => const Divider(color: Color(0xFFE7EAEE)),
                   itemBuilder: (context, index) {
                     final line = _lines[index];
                     final item = line['item'] as InventoryItem;
@@ -241,8 +241,8 @@ class _CountSheetPanelState extends State<CountSheetPanel> {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text(item.name, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-                                Text('Đơn vị: ${item.unit} | Giá vốn: đ${item.cost}', style: const TextStyle(color: Colors.white30, fontSize: 11)),
+                                Text(item.name, style: const TextStyle(color: Color(0xFF1A2230), fontWeight: FontWeight.bold)),
+                                Text('Đơn vị: ${item.unit} | Giá vốn: đ${item.cost}', style: const TextStyle(color: Color(0xFF677084), fontSize: 11)),
                               ],
                             ),
                           ),
@@ -250,7 +250,7 @@ class _CountSheetPanelState extends State<CountSheetPanel> {
                             flex: 2,
                             child: Text(
                               'Sổ sách: ${item.stock}',
-                              style: const TextStyle(color: Colors.white70),
+                              style: const TextStyle(color: Color(0xFF1A2230)),
                               textAlign: TextAlign.center,
                             ),
                           ),
@@ -261,12 +261,12 @@ class _CountSheetPanelState extends State<CountSheetPanel> {
                               child: TextFormField(
                                 initialValue: counted.toString(),
                                 keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                                style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold),
+                                style: const TextStyle(color: Color(0xFF1A2230), fontSize: 14, fontWeight: FontWeight.bold),
                                 textAlign: TextAlign.center,
                                 decoration: InputDecoration(
                                   contentPadding: const EdgeInsets.symmetric(horizontal: 6),
                                   filled: true,
-                                  fillColor: const Color(0xFF0F151D),
+                                  fillColor: const Color(0xFFF3F5F7),
                                   border: OutlineInputBorder(borderRadius: BorderRadius.circular(6), borderSide: BorderSide.none),
                                 ),
                                 onChanged: (val) => _updateCounted(index, val),
@@ -281,7 +281,7 @@ class _CountSheetPanelState extends State<CountSheetPanel> {
                                   'Lệch: ${diff > 0 ? "+" : ""}${diff.toStringAsFixed(1)}',
                                   style: TextStyle(
                                     color: diff == 0
-                                        ? Colors.white54
+                                        ? const Color(0xFF677084)
                                         : (diff > 0 ? Colors.green : Colors.orangeAccent),
                                     fontWeight: FontWeight.bold,
                                     fontSize: 13,
@@ -291,7 +291,7 @@ class _CountSheetPanelState extends State<CountSheetPanel> {
                                 Text(
                                   'đ${diffVal > 0 ? "+" : ""}${diffVal.toInt()}',
                                   style: TextStyle(
-                                    color: diffVal == 0 ? Colors.white30 : (diffVal > 0 ? Colors.green : Colors.orangeAccent),
+                                    color: diffVal == 0 ? const Color(0xFF9AA3B2) : (diffVal > 0 ? Colors.green : Colors.orangeAccent),
                                     fontSize: 10,
                                   ),
                                 ),
@@ -316,18 +316,19 @@ class _CountSheetPanelState extends State<CountSheetPanel> {
         Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            color: const Color(0xFF1E2630),
+            color: const Color(0xFFF3F5F7),
             borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: const Color(0xFFE7EAEE)),
           ),
           child: Column(
             children: [
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Text('Tổng số lượng lệch:', style: TextStyle(color: Colors.white70)),
+                  const Text('Tổng số lượng lệch:', style: TextStyle(color: Color(0xFF677084))),
                   Text(
                     _totalVarianceQty.toStringAsFixed(1),
-                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                    style: const TextStyle(color: Color(0xFF1A2230), fontWeight: FontWeight.bold),
                   ),
                 ],
               ),
@@ -335,12 +336,12 @@ class _CountSheetPanelState extends State<CountSheetPanel> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Text('Giá trị chênh lệch:', style: TextStyle(color: Colors.white70)),
+                  const Text('Giá trị chênh lệch:', style: TextStyle(color: Color(0xFF677084))),
                   Text(
                     'đ${_totalVarianceValue.toInt()}',
                     style: TextStyle(
                       color: _totalVarianceValue == 0
-                          ? Colors.white
+                          ? const Color(0xFF1A2230)
                           : (_totalVarianceValue > 0 ? Colors.green : Colors.orangeAccent),
                       fontWeight: FontWeight.bold,
                       fontSize: 16,
@@ -351,7 +352,7 @@ class _CountSheetPanelState extends State<CountSheetPanel> {
               const SizedBox(height: 16),
               FilledButton(
                 style: FilledButton.styleFrom(
-                  backgroundColor: const Color(0xFF2F7D6B),
+                  backgroundColor: const Color(0xFF0891B2),
                   padding: const EdgeInsets.symmetric(vertical: 14),
                   minimumSize: const Size(double.infinity, 44),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),

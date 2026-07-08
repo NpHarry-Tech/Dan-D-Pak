@@ -86,7 +86,7 @@ function requireOpenShiftForSales(branch_id = 'br1') {
 
 // items: [{menu_item_id, qty, note, mods:[{group,name,price}]}] or [{sku_id, qty}]
 export function createOrUpdateOrder(options) {
-  const { branch_id = 'br1', table_id, channel = 'dine_in', source = 'staff_pos', require_confirm = false, items, actor = 'system', skipTransaction = false } = options;
+  const { branch_id = 'br1', table_id, channel = 'dine_in', source = 'staff_pos', require_confirm = false, items, actor = 'system', skipTransaction = false, linked_pos_device, linked_printer_id } = options;
   if (!items?.length) throw new Error('Order trống');
   requireOpenShiftForSales(branch_id);
 
@@ -103,6 +103,12 @@ export function createOrUpdateOrder(options) {
     const isNew = !order;
     if (isNew) {
       order = insertOpenOrder({ branch_id, table_id: table_id || null, channel });
+    }
+
+    if (linked_pos_device || linked_printer_id) {
+      db.prepare(`UPDATE orders SET linked_pos_device = ?, linked_printer_id = ? WHERE id = ?`)
+        .run(linked_pos_device || null, linked_printer_id || null, order.id);
+      order = db.prepare(`SELECT * FROM orders WHERE id=?`).get(order.id);
     }
 
     const insItem = db.prepare(`INSERT INTO order_items

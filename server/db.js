@@ -263,7 +263,9 @@ export function migrate(targetDb = globalDb) {
     customer_json TEXT,
     invoice_id TEXT,
     voucher_id TEXT,
-    voucher_code TEXT
+    voucher_code TEXT,
+    linked_pos_device TEXT,
+    linked_printer_id TEXT
   );
 
   CREATE TABLE IF NOT EXISTS order_items (
@@ -704,6 +706,8 @@ export function migrate(targetDb = globalDb) {
   addColumnIfMissing('orders', 'locked_at', 'TEXT');
   addColumnIfMissing('orders', 'voucher_id', 'TEXT');
   addColumnIfMissing('orders', 'voucher_code', 'TEXT');
+  addColumnIfMissing('orders', 'linked_pos_device', 'TEXT');
+  addColumnIfMissing('orders', 'linked_printer_id', 'TEXT');
   addColumnIfMissing('payments', 'shift_id', 'TEXT');
   // Thanh toán thẻ qua máy POS (VCB SmartPOS...): lưu mã giao dịch để ĐỐI SOÁT
   // với sao kê acquirer. mode = auto (native bridge) | manual (thu ngân nhập tay) | mock.

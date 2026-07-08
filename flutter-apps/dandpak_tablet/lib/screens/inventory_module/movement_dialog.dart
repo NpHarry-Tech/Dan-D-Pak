@@ -107,8 +107,11 @@ class _MovementDialogState extends State<MovementDialog> {
   Widget build(BuildContext context) {
     final isReceipt = widget.mode == 'receipt';
     return Dialog(
-      backgroundColor: const Color(0xFF1C2430),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      backgroundColor: const Color(0xFFFFFFFF),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: const BorderSide(color: Color(0xFFE7EAEE)),
+      ),
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 500),
         child: Padding(
@@ -122,30 +125,30 @@ class _MovementDialogState extends State<MovementDialog> {
                 children: [
                   Text(
                     isReceipt ? 'Phiếu Nhập: ${widget.item.name}' : 'Phiếu Xuất: ${widget.item.name}',
-                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white),
+                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF1A2230)),
                   ),
                   IconButton(
-                    icon: const Icon(Icons.close, color: Colors.white54),
+                    icon: const Icon(Icons.close, color: Color(0xFF677084)),
                     onPressed: () => Navigator.of(context).pop(),
                   )
                 ],
               ),
-              const Divider(color: Colors.white12),
+              const Divider(color: Color(0xFFE7EAEE)),
               const SizedBox(height: 10),
               Text(
                 'Tồn kho hiện tại: ${widget.item.stock} ${widget.item.unit}',
-                style: const TextStyle(color: Colors.white60, fontSize: 13),
+                style: const TextStyle(color: Color(0xFF677084), fontSize: 13),
               ),
               const SizedBox(height: 18),
               TextField(
                 controller: _qtyController,
                 keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                style: const TextStyle(color: Colors.white),
+                style: const TextStyle(color: Color(0xFF1A2230)),
                 decoration: InputDecoration(
                   labelText: 'Số lượng cần ${isReceipt ? 'nhập' : 'xuất'} (${widget.item.unit})',
-                  labelStyle: const TextStyle(color: Colors.white70),
+                  labelStyle: const TextStyle(color: Color(0xFF677084)),
                   filled: true,
-                  fillColor: const Color(0xFF0F151D),
+                  fillColor: const Color(0xFFF3F5F7),
                   border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
                 ),
               ),
@@ -156,12 +159,12 @@ class _MovementDialogState extends State<MovementDialog> {
                     Expanded(
                       child: TextField(
                         controller: _lotController,
-                        style: const TextStyle(color: Colors.white),
+                        style: const TextStyle(color: Color(0xFF1A2230)),
                         decoration: InputDecoration(
                           labelText: 'Lô sản xuất / Lot',
-                          labelStyle: const TextStyle(color: Colors.white70),
+                          labelStyle: const TextStyle(color: Color(0xFF677084)),
                           filled: true,
-                          fillColor: const Color(0xFF0F151D),
+                          fillColor: const Color(0xFFF3F5F7),
                           border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
                         ),
                       ),
@@ -170,14 +173,14 @@ class _MovementDialogState extends State<MovementDialog> {
                     Expanded(
                       child: TextField(
                         controller: _expiryController,
-                        style: const TextStyle(color: Colors.white),
+                        style: const TextStyle(color: Color(0xFF1A2230)),
                         decoration: InputDecoration(
                           labelText: 'Hạn sử dụng (HSD)',
-                          labelStyle: const TextStyle(color: Colors.white70),
+                          labelStyle: const TextStyle(color: Color(0xFF677084)),
                           hintText: 'YYYY-MM-DD',
-                          hintStyle: const TextStyle(color: Colors.white30),
+                          hintStyle: const TextStyle(color: Color(0xFF9AA3B2)),
                           filled: true,
-                          fillColor: const Color(0xFF0F151D),
+                          fillColor: const Color(0xFFF3F5F7),
                           border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
                         ),
                       ),
@@ -191,12 +194,12 @@ class _MovementDialogState extends State<MovementDialog> {
                       child: TextField(
                         controller: _costController,
                         keyboardType: TextInputType.number,
-                        style: const TextStyle(color: Colors.white),
+                        style: const TextStyle(color: Color(0xFF1A2230)),
                         decoration: InputDecoration(
                           labelText: 'Giá vốn nhập hàng',
-                          labelStyle: const TextStyle(color: Colors.white70),
+                          labelStyle: const TextStyle(color: Color(0xFF677084)),
                           filled: true,
-                          fillColor: const Color(0xFF0F151D),
+                          fillColor: const Color(0xFFF3F5F7),
                           border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
                         ),
                       ),
@@ -205,12 +208,12 @@ class _MovementDialogState extends State<MovementDialog> {
                     Expanded(
                       child: TextField(
                         controller: _supplierController,
-                        style: const TextStyle(color: Colors.white),
+                        style: const TextStyle(color: Color(0xFF1A2230)),
                         decoration: InputDecoration(
                           labelText: 'Nhà cung cấp',
-                          labelStyle: const TextStyle(color: Colors.white70),
+                          labelStyle: const TextStyle(color: Color(0xFF677084)),
                           filled: true,
-                          fillColor: const Color(0xFF0F151D),
+                          fillColor: const Color(0xFFF3F5F7),
                           border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
                         ),
                       ),
@@ -219,21 +222,21 @@ class _MovementDialogState extends State<MovementDialog> {
                 ),
               ] else ...[
                 DropdownButtonFormField<String>(
-                  dropdownColor: const Color(0xFF1C2430),
+                  dropdownColor: const Color(0xFFFFFFFF),
                   value: _issueReason,
-                  style: const TextStyle(color: Colors.white, fontSize: 15),
+                  style: const TextStyle(color: Color(0xFF1A2230), fontSize: 15),
                   decoration: InputDecoration(
                     labelText: 'Lý do xuất kho',
-                    labelStyle: const TextStyle(color: Colors.white70),
+                    labelStyle: const TextStyle(color: Color(0xFF677084)),
                     filled: true,
-                    fillColor: const Color(0xFF0F151D),
+                    fillColor: const Color(0xFFF3F5F7),
                     border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
                   ),
                   items: const [
-                    DropdownMenuItem(value: 'manual_issue', child: Text('Xuất dùng nội bộ')),
-                    DropdownMenuItem(value: 'waste', child: Text('Hao hụt / Hủy bỏ')),
-                    DropdownMenuItem(value: 'damaged', child: Text('Hao hụt hỏng vỡ')),
-                    DropdownMenuItem(value: 'sample', child: Text('Hàng mẫu')),
+                    DropdownMenuItem(value: 'manual_issue', child: Text('Xuất dùng nội bộ', style: TextStyle(color: Color(0xFF1A2230)))),
+                    DropdownMenuItem(value: 'waste', child: Text('Hao hụt / Hủy bỏ', style: TextStyle(color: Color(0xFF1A2230)))),
+                    DropdownMenuItem(value: 'damaged', child: Text('Hao hụt hỏng vỡ', style: TextStyle(color: Color(0xFF1A2230)))),
+                    DropdownMenuItem(value: 'sample', child: Text('Hàng mẫu', style: TextStyle(color: Color(0xFF1A2230)))),
                   ],
                   onChanged: (val) {
                     if (val != null) {
@@ -256,19 +259,19 @@ class _MovementDialogState extends State<MovementDialog> {
                   Expanded(
                     child: OutlinedButton(
                       style: OutlinedButton.styleFrom(
-                        side: const BorderSide(color: Colors.white30),
+                        side: const BorderSide(color: Color(0xFFD3D8DF)),
                         padding: const EdgeInsets.symmetric(vertical: 14),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                       ),
                       onPressed: () => Navigator.of(context).pop(),
-                      child: const Text('Hủy', style: TextStyle(color: Colors.white70)),
+                      child: const Text('Hủy', style: TextStyle(color: Color(0xFF677084))),
                     ),
                   ),
                   const SizedBox(width: 14),
                   Expanded(
                     child: FilledButton(
                       style: FilledButton.styleFrom(
-                        backgroundColor: widget.mode == 'receipt' ? const Color(0xFF2F7D6B) : const Color(0xFFFF7A7A),
+                        backgroundColor: widget.mode == 'receipt' ? const Color(0xFF0891B2) : const Color(0xFFFF7A7A),
                         padding: const EdgeInsets.symmetric(vertical: 14),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                       ),

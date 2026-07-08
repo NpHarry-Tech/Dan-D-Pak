@@ -770,7 +770,7 @@ class _PosScreenState extends State<PosScreen> {
     }
   }
 
-  Future<void> _showMenuPicker({required String title}) async {
+  Future<void> _showMenuPicker({required String title, bool isRetail = false}) async {
     final pos = context.read<PosProvider>();
     final api = context.read<ApiService>();
 
@@ -782,6 +782,7 @@ class _PosScreenState extends State<PosScreen> {
           pos: pos,
           api: api,
           onAdd: _addMenuItem,
+          isRetail: isRetail,
         );
       },
     );
@@ -901,8 +902,8 @@ class _PosScreenState extends State<PosScreen> {
         isFree: _isFree,
         isPaying: _isPaying,
         isCalling: _isCalling,
-        onAddFood: () => _showMenuPicker(title: 'Thêm món FnB'),
-        onAddRetail: () => _showMenuPicker(title: 'Thêm retail'),
+        onAddFood: () => _showMenuPicker(title: 'Thêm món FnB', isRetail: false),
+        onAddRetail: () => _showMenuPicker(title: 'Thêm retail', isRetail: true),
         onMove: _moveTable,
         onMerge: _mergeTable,
         onSplit: _splitBill,
@@ -2879,12 +2880,14 @@ class _MenuPickerDialog extends StatefulWidget {
   final PosProvider pos;
   final ApiService api;
   final Future<bool> Function(MenuItem) onAdd;
+  final bool isRetail;
 
   const _MenuPickerDialog({
     required this.title,
     required this.pos,
     required this.api,
     required this.onAdd,
+    this.isRetail = false,
   });
 
   @override
@@ -2939,19 +2942,43 @@ class _MenuPickerDialogState extends State<_MenuPickerDialog> {
     });
 
     try {
-      final result = await widget.api.getMenuPaginated(
-        page: _currentPage,
-        limit: 40,
-        q: _search,
-        categoryId: _selectedCategoryId ?? '',
-      );
+      final List<MenuItem> items;
+      final int total;
 
-      final itemsData = result['items'] as List? ?? [];
-      final total = result['total'] as int? ?? 0;
-
-      final items = itemsData
-          .map((e) => MenuItem.fromJson(Map<String, dynamic>.from(e)))
-          .toList();
+      if (widget.isRetail) {
+        final result = await widget.api.getSkusPaginated(
+          page: _currentPage,
+          limit: 40,
+          q: _search,
+        );
+        final itemsData = result['items'] as List? ?? [];
+        total = result['total'] as int? ?? 0;
+        items = itemsData.map((e) {
+          final m = Map<String, dynamic>.from(e);
+          return MenuItem(
+            id: m['id']?.toString() ?? '',
+            code: m['barcode']?.toString() ?? '',
+            name: m['name']?.toString() ?? '',
+            price: (m['price'] as num?)?.toDouble() ?? 0.0,
+            categoryId: m['category']?.toString() ?? '',
+            imageUrl: m['image']?.toString() ?? '',
+            modifiers: [],
+            isRetail: true,
+          );
+        }).toList();
+      } else {
+        final result = await widget.api.getMenuPaginated(
+          page: _currentPage,
+          limit: 40,
+          q: _search,
+          categoryId: _selectedCategoryId ?? '',
+        );
+        final itemsData = result['items'] as List? ?? [];
+        total = result['total'] as int? ?? 0;
+        items = itemsData
+            .map((e) => MenuItem.fromJson(Map<String, dynamic>.from(e)))
+            .toList();
+      }
 
       if (!mounted) return;
       setState(() {
@@ -3029,37 +3056,38 @@ class _MenuPickerDialogState extends State<_MenuPickerDialog> {
                 },
               ),
             ),
-            SizedBox(
-              height: 58,
-              child: ListView(
-                scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.fromLTRB(18, 12, 18, 8),
-                children: [
-                  _PickerChip(
-                    label: 'Tất cả',
-                    selected: _selectedCategoryId == null,
-                    onTap: () {
-                      setState(() {
-                        _selectedCategoryId = null;
-                      });
-                      _loadNextPage(isRefresh: true);
-                    },
-                  ),
-                  ...widget.pos.categories.map(
-                    (category) => _PickerChip(
-                      label: category.name,
-                      selected: _selectedCategoryId == category.id,
+            if (!widget.isRetail)
+              SizedBox(
+                height: 58,
+                child: ListView(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.fromLTRB(18, 12, 18, 8),
+                  children: [
+                    _PickerChip(
+                      label: 'Tất cả',
+                      selected: _selectedCategoryId == null,
                       onTap: () {
                         setState(() {
-                          _selectedCategoryId = category.id;
+                          _selectedCategoryId = null;
                         });
                         _loadNextPage(isRefresh: true);
                       },
                     ),
-                  ),
-                ],
+                    ...widget.pos.categories.map(
+                      (category) => _PickerChip(
+                        label: category.name,
+                        selected: _selectedCategoryId == category.id,
+                        onTap: () {
+                          setState(() {
+                            _selectedCategoryId = category.id;
+                          });
+                          _loadNextPage(isRefresh: true);
+                        },
+                      ),
+                    ),
+                  ],
+                ),
               ),
-            ),
             Expanded(
               child: _loadedItems.isEmpty && !_loadingPage
                   ? const Center(

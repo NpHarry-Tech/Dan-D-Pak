@@ -95,8 +95,11 @@ class _PaymentDialogState extends State<PaymentDialog> {
     final suggestCashList = [total, 100000, 200000, 500000].where((a) => a >= total).toSet().toList();
 
     return Dialog(
-      backgroundColor: const Color(0xFF1C2430),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      backgroundColor: const Color(0xFFFFFFFF),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: const BorderSide(color: Color(0xFFE7EAEE)),
+      ),
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 600, maxHeight: 600),
         child: Padding(
@@ -109,15 +112,15 @@ class _PaymentDialogState extends State<PaymentDialog> {
                 children: [
                   Text(
                     'Thanh toán hóa đơn: ${widget.order['bill_no']}',
-                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white),
+                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF1A2230)),
                   ),
                   IconButton(
-                    icon: const Icon(Icons.close, color: Colors.white54),
+                    icon: const Icon(Icons.close, color: Color(0xFF677084)),
                     onPressed: () => Navigator.of(context).pop(),
                   )
                 ],
               ),
-              const Divider(color: Colors.white12),
+              const Divider(color: Color(0xFFE7EAEE)),
               const SizedBox(height: 10),
               // Payment method row
               Row(
@@ -138,24 +141,24 @@ class _PaymentDialogState extends State<PaymentDialog> {
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          const Text('Tổng cần thanh toán:', style: TextStyle(color: Colors.white70, fontSize: 16)),
+                          const Text('Tổng cần thanh toán:', style: TextStyle(color: Color(0xFF1A2230), fontSize: 16)),
                           Text(
                             'đ$total',
-                            style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: Color(0xFF2F7D6B)),
+                            style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: Color(0xFF0891B2)),
                           ),
                         ],
                       ),
                       const SizedBox(height: 20),
                       if (_paymentMethod == 'cash') ...[
-                        const Text('KHÁCH ĐƯA', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.white60)),
+                        const Text('KHÁCH ĐƯA', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF677084))),
                         const SizedBox(height: 8),
                         TextField(
                           controller: _amountController,
                           keyboardType: TextInputType.number,
-                          style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+                          style: const TextStyle(color: Color(0xFF1A2230), fontSize: 18, fontWeight: FontWeight.bold),
                           decoration: InputDecoration(
                             filled: true,
-                            fillColor: const Color(0xFF0F151D),
+                            fillColor: const Color(0xFFF3F5F7),
                             border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
                           ),
                           onChanged: (val) {
@@ -174,11 +177,11 @@ class _PaymentDialogState extends State<PaymentDialog> {
                               child: Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                                 decoration: BoxDecoration(
-                                  color: const Color(0xFF242F3D),
+                                  color: const Color(0xFFFFFFFF),
                                   borderRadius: BorderRadius.circular(8),
-                                  border: Border.all(color: Colors.white10),
+                                  border: Border.all(color: const Color(0xFFE7EAEE)),
                                 ),
-                                child: Text('đ$cash', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                                child: Text('đ$cash', style: const TextStyle(color: Color(0xFF1A2230), fontWeight: FontWeight.bold)),
                               ),
                             );
                           }).toList(),
@@ -187,7 +190,7 @@ class _PaymentDialogState extends State<PaymentDialog> {
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            const Text('TIỀN THỪA TRẢ KHÁCH:', style: TextStyle(color: Colors.white60, fontSize: 15)),
+                            const Text('TIỀN THỪA TRẢ KHÁCH:', style: TextStyle(color: Color(0xFF677084), fontSize: 15)),
                             Text(
                               'đ$_changeDue',
                               style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.orangeAccent),
@@ -200,13 +203,17 @@ class _PaymentDialogState extends State<PaymentDialog> {
                             children: [
                               Container(
                                 padding: const EdgeInsets.all(12),
-                                decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12)),
-                                child: Icon(Icons.qr_code_2, size: 200, color: const Color(0xFF1C2430)),
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(color: const Color(0xFFE7EAEE)),
+                                ),
+                                child: Icon(Icons.qr_code_2, size: 200, color: const Color(0xFF1A2230)),
                               ),
                               const SizedBox(height: 14),
                               const Text(
                                 'Quét mã QR để chuyển khoản trực tiếp.',
-                                style: TextStyle(color: Colors.white70, fontSize: 13),
+                                style: TextStyle(color: Color(0xFF677084), fontSize: 13),
                               )
                             ],
                           ),
@@ -217,11 +224,11 @@ class _PaymentDialogState extends State<PaymentDialog> {
                             padding: EdgeInsets.symmetric(vertical: 40),
                             child: Column(
                               children: [
-                                Icon(Icons.contactless, size: 72, color: Colors.white30),
-                                SizedBox(height: 16),
+                                Icon(Icons.contactless, size: 72, color: Color(0xFF9AA3B2)),
+                                const SizedBox(height: 16),
                                 Text(
                                   'Chèn hoặc quẹt thẻ trên thiết bị POS thanh toán.',
-                                  style: TextStyle(color: Colors.white70, fontSize: 14),
+                                  style: TextStyle(color: Color(0xFF677084), fontSize: 14),
                                 )
                               ],
                             ),
@@ -236,26 +243,26 @@ class _PaymentDialogState extends State<PaymentDialog> {
                 Text(_error!, style: const TextStyle(color: Color(0xFFFF7A7A), fontWeight: FontWeight.bold), textAlign: TextAlign.center),
                 const SizedBox(height: 10),
               ],
-              const Divider(color: Colors.white12),
+              const Divider(color: Color(0xFFE7EAEE)),
               const SizedBox(height: 10),
               Row(
                 children: [
                   Expanded(
                     child: OutlinedButton(
                       style: OutlinedButton.styleFrom(
-                        side: const BorderSide(color: Colors.white30),
+                        side: const BorderSide(color: Color(0xFFD3D8DF)),
                         padding: const EdgeInsets.symmetric(vertical: 14),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                       ),
                       onPressed: () => Navigator.of(context).pop(),
-                      child: const Text('Hủy', style: TextStyle(color: Colors.white70)),
+                      child: const Text('Hủy', style: TextStyle(color: Color(0xFF677084))),
                     ),
                   ),
                   const SizedBox(width: 14),
                   Expanded(
                     child: FilledButton(
                       style: FilledButton.styleFrom(
-                        backgroundColor: const Color(0xFF2F7D6B),
+                        backgroundColor: const Color(0xFF0891B2),
                         padding: const EdgeInsets.symmetric(vertical: 14),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                       ),
@@ -283,18 +290,18 @@ class _PaymentDialogState extends State<PaymentDialog> {
         child: Container(
           padding: const EdgeInsets.symmetric(vertical: 12),
           decoration: BoxDecoration(
-            color: active ? const Color(0xFF2F7D6B) : const Color(0xFF242F3D),
+            color: active ? const Color(0xFF0891B2) : const Color(0xFFF3F5F7),
             borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: active ? const Color(0xFF2F7D6B) : Colors.white10),
+            border: Border.all(color: active ? const Color(0xFF0891B2) : const Color(0xFFE7EAEE)),
           ),
           child: Column(
             children: [
-              Icon(icon, color: active ? Colors.white : Colors.white70, size: 24),
+              Icon(icon, color: active ? Colors.white : const Color(0xFF677084), size: 24),
               const SizedBox(height: 6),
               Text(
                 label,
                 style: TextStyle(
-                  color: active ? Colors.white : Colors.white70,
+                  color: active ? Colors.white : const Color(0xFF677084),
                   fontSize: 12,
                   fontWeight: FontWeight.bold,
                 ),

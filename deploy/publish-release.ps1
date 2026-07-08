@@ -47,11 +47,11 @@ $fileName = [System.IO.Path]::GetFileName($File)
 $q = "platform=$Platform&build=$build&version=$([uri]::EscapeDataString($version))&file=$([uri]::EscapeDataString($fileName))&notes=$([uri]::EscapeDataString($Notes))&mandatory=$([bool]$Mandatory)".ToLower()
 $bytes = [System.IO.File]::ReadAllBytes((Resolve-Path $File))
 
-Write-Host "  Đang tải lên..." -ForegroundColor Cyan
+Write-Host "  Uploading..." -ForegroundColor Cyan
 $res = Invoke-RestMethod -Method Post -Uri "$Server/api/app/publish?$q" `
   -Headers @{ 'x-auth-token' = $token } `
   -ContentType 'application/octet-stream' -Body $bytes
 
 Write-Host ""
-Write-Host "  ✅ Đã phát hành build $($res.buildNumber) ($($res.version)) — $($res.bytes) bytes" -ForegroundColor Green
-Write-Host "  Các máy POS sẽ thấy 'Cập nhật ngay' trong lần mở app kế tiếp." -ForegroundColor Green
+Write-Host "  Success: Published build $($res.buildNumber) ($($res.version)) - $($res.bytes) bytes" -ForegroundColor Green
+Write-Host "  POS clients will see the update on next app launch." -ForegroundColor Green

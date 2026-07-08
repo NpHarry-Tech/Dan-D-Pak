@@ -2265,13 +2265,28 @@
     window.addEventListener('error', e => showFatal((e.message || 'Script error') + (e.filename ? ('<br>@ ' + e.filename + ':' + e.lineno) : '')));
     window.addEventListener('unhandledrejection', e => showFatal('Promise: ' + (e.reason?.message || e.reason)));
 
+    function showNativeNotification(title, body) {
+      if (typeof Notification !== 'undefined') {
+        if (Notification.permission === 'granted') {
+          new Notification(title, { body });
+        } else if (Notification.permission !== 'denied') {
+          Notification.requestPermission().then(permission => {
+            if (permission === 'granted') new Notification(title, { body });
+          });
+        }
+      }
+    }
+    if (typeof Notification !== 'undefined' && Notification.permission === 'default') {
+      Notification.requestPermission();
+    }
+
     const socket = connect('ipad', {
       'menu:updated': () => { loadMenu().then(render); },
       'book-menu:updated': () => { loadBookManifest().then(() => { bookPage = 0; render(); preloadBookPages(); }); },
       'order:item': (p) => { if (sentOrder && p.order_id === sentOrder.id) { sentOrder = p.order; render(); } },
       'order:pending': (p) => { if (sentOrder && p.order?.id === sentOrder.id) { sentOrder = p.order; render(); } },
       'order:updated': (p) => { if (sentOrder && p?.id === sentOrder.id) { sentOrder = p; render(); } },
-      'payment:done': (p) => { if (sentOrder && p.order_id === sentOrder.id) { sentOrder = null; cart = []; toast('Bàn đã thanh toán xong. Cảm ơn quý khách!'); render(); } },
+      'payment:done': (p) => { if (sentOrder && p.order_id === sentOrder.id) { sentOrder = null; cart = []; toast('Bàn đã thanh toán xong. Cảm ơn quý khách!'); showNativeNotification('Thanh toán thành công', 'Cảm ơn quý khách đã dùng bữa tại Dan D Pak!'); render(); } },
     });
 
     async function loadMenu() { MENU = await api('/menu'); if (!activeCat) activeCat = MENU.categories[0]?.id; }
@@ -2446,7 +2461,7 @@
 
     function renderMI(i) {
       const img = i.image
-        ? `<div class="mi-img"><img src="${esc(i.image)}" alt="" loading="lazy" onerror="this.parentElement.classList.add('emoji');this.remove();this.parentElement.textContent='${i.emoji || '🍽️'}'"></div>`
+        ? `<div class="mi-img"><img src="${esc(i.image)}" alt="" loading="lazy" onerror="const p=this.parentElement;if(p){p.classList.add('emoji');p.textContent='${i.emoji || '🍽️'}';}"></div>`
         : `<div class="mi-img emoji">${i.emoji || '🍽️'}</div>`;
       return `<div class="mi ${i.available ? '' : 'off'}" data-m="${i.id}">
     ${img}
@@ -2460,7 +2475,7 @@
     }
     function renderBookItem(i) {
       const img = i.image
-        ? `<img src="${esc(i.image)}" alt="" loading="lazy" onerror="this.parentElement.textContent='${i.emoji || '🍽️'}';this.remove()">`
+        ? `<img src="${esc(i.image)}" alt="" loading="lazy" onerror="const p=this.parentElement;if(p){p.textContent='${i.emoji || '🍽️'}';}">`
         : `${i.emoji || '🍽️'}`;
       return `<div class="book-item ${i.available ? '' : 'off'}" data-m="${i.id}">
     <div class="book-photo">${img}</div>
@@ -2547,9 +2562,41 @@
           <span id="langEnBtn" style="${getLang() === 'en' ? 'color:var(--primary);text-decoration:underline;' : 'color:var(--muted);'}">EN</span>
         </div>`,
       })}
+    <div class="ipad-config-panel" style="padding: 16px; margin: 16px; background: var(--surface2); border: 1px solid var(--border); border-radius: 12px; display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+      <div>
+        <label style="font-weight: 700; font-size: 13px; color: var(--muted); margin-bottom: 6px; display: block;">Liên kết thiết bị POS</label>
+        <select id="ipadLinkedPos" style="width: 100%; height: 38px; padding: 6px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text);">
+          <option value="">-- Không liên kết --</option>
+        </select>
+      </div>
+      <div>
+        <label style="font-weight: 700; font-size: 13px; color: var(--muted); margin-bottom: 6px; display: block;">Liên kết máy in bill</label>
+        <select id="ipadLinkedPrinter" style="width: 100%; height: 38px; padding: 6px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text);">
+          <option value="">-- Dùng máy in mặc định --</option>
+        </select>
+      </div>
+    </div>
     <div class="tablepick" id="tp"><div class="empty">Đang tải bàn…</div></div>`;
       renderUserChip();
       startClock();
+
+      const savedPos = localStorage.getItem('ipad_linked_pos') || '';
+      const savedPrinter = localStorage.getItem('ipad_linked_printer') || '';
+
+      api('/device/ipad/setup-options').then(opts => {
+        const posSel = document.getElementById('ipadLinkedPos');
+        const priSel = document.getElementById('ipadLinkedPrinter');
+        if (posSel && opts.posDevices) {
+          posSel.innerHTML = '<option value="">-- Không liên kết --</option>' + opts.posDevices.map(d => 
+            `<option value="${esc(d.id)}" ${d.id === savedPos ? 'selected' : ''}>${esc(d.user_name || 'POS')} (${esc(d.ip)})</option>`
+          ).join('');
+        }
+        if (priSel && opts.printers) {
+          priSel.innerHTML = '<option value="">-- Dùng máy in mặc định --</option>' + opts.printers.map(p => 
+            `<option value="${esc(p.id)}" ${p.id === savedPrinter ? 'selected' : ''}>${esc(p.name)} (${esc(p.connection)})</option>`
+          ).join('');
+        }
+      }).catch(err => console.error('Lỗi tải setup options:', err));
       api('/tables').then(tables => {
         document.getElementById('tp').innerHTML = tables.map(t => `
       <div class="tp ${t.status !== 'free' ? 'busy' : ''}" data-t="${t.id}" data-code="${t.code}">
@@ -2559,6 +2606,11 @@
         document.querySelectorAll('#tp .tp').forEach(el => el.onclick = () => {
           tableId = el.dataset.t; tableCode = el.dataset.code;
           tablePickUnlocked = false;
+
+          const posSel = document.getElementById('ipadLinkedPos');
+          const priSel = document.getElementById('ipadLinkedPrinter');
+          if (posSel) localStorage.setItem('ipad_linked_pos', posSel.value);
+          if (priSel) localStorage.setItem('ipad_linked_printer', priSel.value);
           localStorage.setItem('ipad_table', tableId); localStorage.setItem('ipad_tablecode', tableCode);
           refreshOrder().then(render);
         });
@@ -2826,7 +2878,9 @@
     async function sendOrder() {
       try {
         const items = cart.map(c => ({ menu_item_id: c.item.id, qty: c.qty, note: c.note, mods: c.mods }));
-        const order = await api('/orders', { method: 'POST', body: { table_id: tableId, channel: 'dine_in', source: 'customer_ipad', items } });
+        const linked_pos_device = localStorage.getItem('ipad_linked_pos') || null;
+        const linked_printer_id = localStorage.getItem('ipad_linked_printer') || null;
+        const order = await api('/orders', { method: 'POST', body: { table_id: tableId, channel: 'dine_in', source: 'customer_ipad', items, linked_pos_device, linked_printer_id } });
         sentOrder = order; cart = []; render(); toast('✅ Đã gửi yêu cầu! Nhân viên sẽ xác nhận lại với bàn ' + tableCode);
       } catch (e) { toast(e.message, true); }
     }

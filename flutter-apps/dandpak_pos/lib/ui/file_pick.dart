@@ -86,3 +86,81 @@ String _mimeForPath(String path) {
   if (p.endsWith('.pdf')) return 'application/pdf';
   return 'image/jpeg';
 }
+
+/// Pick an ad media file (image or video) and convert it to a data URL.
+Future<String?> pickAdFileAsDataUrl() async {
+  try {
+    if (Platform.isWindows) return await _pickAdDataUrlWindows();
+
+    final path = await _pickAdPathUnix();
+    if (path == null || path.trim().isEmpty) return null;
+    final file = File(path.trim());
+    if (!await file.exists()) return null;
+    final bytes = await file.readAsBytes();
+    if (bytes.isEmpty) return null;
+    return 'data:${_mimeForAdPath(path)};base64,${base64Encode(bytes)}';
+  } catch (_) {
+    return null;
+  }
+}
+
+Future<String?> _pickAdDataUrlWindows() async {
+  const ps = r'''
+Add-Type -AssemblyName System.Windows.Forms | Out-Null
+$f = New-Object System.Windows.Forms.OpenFileDialog
+$f.Filter = 'Media Files|*.jpg;*.jpeg;*.png;*.webp;*.gif;*.mp4;*.mov;*.avi;*.mkv|All files|*.*'
+$f.Title = 'Chon hinh anh hoac video quang cao'
+if ($f.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
+  $path = $f.FileName
+  $ext = [System.IO.Path]::GetExtension($path).ToLowerInvariant()
+  switch ($ext) {
+    '.png'  { $mime = 'image/png' }
+    '.webp' { $mime = 'image/webp' }
+    '.gif'  { $mime = 'image/gif' }
+    '.mp4'  { $mime = 'video/mp4' }
+    '.mov'  { $mime = 'video/quicktime' }
+    '.avi'  { $mime = 'video/x-msvideo' }
+    '.mkv'  { $mime = 'video/x-matroska' }
+    default { $mime = 'image/jpeg' }
+  }
+  $bytes = [System.IO.File]::ReadAllBytes($path)
+  $b64 = [System.Convert]::ToBase64String($bytes)
+  [Console]::Out.Write("data:$mime;base64,$b64")
+}
+''';
+  final res = await Process.run(
+    'powershell',
+    ['-NoProfile', '-STA', '-Command', ps],
+    stdoutEncoding: ascii,
+  );
+  final out = (res.stdout as String?)?.trim() ?? '';
+  return out.startsWith('data:image/') || out.startsWith('data:video/')
+      ? out
+      : null;
+}
+
+Future<String?> _pickAdPathUnix() async {
+  if (Platform.isMacOS) {
+    const script =
+        'POSIX path of (choose file with prompt "Chọn hình ảnh hoặc video quảng cáo" of type {"public.image","public.movie"})';
+    final res = await Process.run('osascript', ['-e', script]);
+    final out = (res.stdout as String?)?.trim() ?? '';
+    return out.isEmpty ? null : out;
+  }
+  final res = await Process.run(
+      'zenity', ['--file-selection', '--title=Chọn hình ảnh hoặc video quảng cáo']);
+  final out = (res.stdout as String?)?.trim() ?? '';
+  return out.isEmpty ? null : out;
+}
+
+String _mimeForAdPath(String path) {
+  final p = path.toLowerCase();
+  if (p.endsWith('.png')) return 'image/png';
+  if (p.endsWith('.webp')) return 'image/webp';
+  if (p.endsWith('.gif')) return 'image/gif';
+  if (p.endsWith('.mp4')) return 'video/mp4';
+  if (p.endsWith('.mov')) return 'video/quicktime';
+  if (p.endsWith('.avi')) return 'video/x-msvideo';
+  if (p.endsWith('.mkv')) return 'video/x-matroska';
+  return 'image/jpeg';
+}

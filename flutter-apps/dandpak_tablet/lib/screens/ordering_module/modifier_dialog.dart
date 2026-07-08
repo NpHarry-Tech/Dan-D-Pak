@@ -73,8 +73,11 @@ class _ModifierDialogState extends State<ModifierDialog> {
     }
 
     return Dialog(
-      backgroundColor: const Color(0xFF1C2430),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      backgroundColor: const Color(0xFFFFFFFF),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: const BorderSide(color: Color(0xFFE7EAEE)),
+      ),
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 500, maxHeight: 650),
         child: Padding(
@@ -88,17 +91,17 @@ class _ModifierDialogState extends State<ModifierDialog> {
                   Expanded(
                     child: Text(
                       widget.item.name,
-                      style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: Colors.white),
+                      style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: Color(0xFF1A2230)),
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
                   IconButton(
-                    icon: const Icon(Icons.close, color: Colors.white54),
+                    icon: const Icon(Icons.close, color: Color(0xFF677084)),
                     onPressed: () => Navigator.of(context).pop(),
                   )
                 ],
               ),
-              const Divider(color: Colors.white12),
+              const Divider(color: Color(0xFFE7EAEE)),
               Expanded(
                 child: SingleChildScrollView(
                   child: Column(
@@ -107,7 +110,7 @@ class _ModifierDialogState extends State<ModifierDialog> {
                       if (options.isNotEmpty) ...[
                         const Text(
                           'TÙY CHỌN & TOPPING',
-                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: Color(0xFF2F7D6B), letterSpacing: 1),
+                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: Color(0xFF0891B2), letterSpacing: 1),
                         ),
                         const SizedBox(height: 10),
                         ListView.builder(
@@ -118,12 +121,12 @@ class _ModifierDialogState extends State<ModifierDialog> {
                             final opt = options[index];
                             final isSelected = _selectedModifiers.any((m) => m.name == opt.name);
                             return CheckboxListTile(
-                              title: Text(opt.name, style: const TextStyle(color: Colors.white, fontSize: 14)),
+                              title: Text(opt.name, style: const TextStyle(color: Color(0xFF1A2230), fontSize: 14)),
                               subtitle: opt.price > 0
-                                  ? Text('+đ${opt.price}', style: const TextStyle(color: Color(0xFF2F7D6B), fontWeight: FontWeight.bold))
+                                  ? Text('+đ${opt.price}', style: const TextStyle(color: Color(0xFF0891B2), fontWeight: FontWeight.bold))
                                   : null,
                               value: isSelected,
-                              activeColor: const Color(0xFF2F7D6B),
+                              activeColor: const Color(0xFF0891B2),
                               checkColor: Colors.white,
                               contentPadding: EdgeInsets.zero,
                               onChanged: (_) => _toggleModifier(opt),
@@ -134,17 +137,17 @@ class _ModifierDialogState extends State<ModifierDialog> {
                       ],
                       const Text(
                         'GHI CHÚ MÓN ĂN',
-                        style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: Color(0xFF2F7D6B), letterSpacing: 1),
+                        style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: Color(0xFF0891B2), letterSpacing: 1),
                       ),
                       const SizedBox(height: 10),
                       TextField(
                         controller: _notesController,
-                        style: const TextStyle(color: Colors.white, fontSize: 14),
+                        style: const TextStyle(color: Color(0xFF1A2230), fontSize: 14),
                         decoration: InputDecoration(
                           hintText: 'Ví dụ: ít đường, không đá, chín kỹ...',
-                          hintStyle: const TextStyle(color: Colors.white30),
+                          hintStyle: const TextStyle(color: Color(0xFF9AA3B2)),
                           filled: true,
-                          fillColor: const Color(0xFF0F151D),
+                          fillColor: const Color(0xFFF3F5F7),
                           border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
                         ),
                         maxLines: 2,
@@ -153,7 +156,7 @@ class _ModifierDialogState extends State<ModifierDialog> {
                   ),
                 ),
               ),
-              const Divider(color: Colors.white12),
+              const Divider(color: Color(0xFFE7EAEE)),
               const SizedBox(height: 10),
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -161,34 +164,34 @@ class _ModifierDialogState extends State<ModifierDialog> {
                   Row(
                     children: [
                       IconButton(
-                        style: IconButton.styleFrom(backgroundColor: const Color(0xFF242F3D)),
-                        icon: const Icon(Icons.remove, color: Colors.white),
+                        style: IconButton.styleFrom(backgroundColor: const Color(0xFFF3F5F7)),
+                        icon: const Icon(Icons.remove, color: Color(0xFF677084)),
                         onPressed: _qty > 1 ? () => setState(() => _qty--) : null,
                       ),
                       Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 16),
                         child: Text(
                           '$_qty',
-                          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white),
+                          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF1A2230)),
                         ),
                       ),
                       IconButton(
-                        style: IconButton.styleFrom(backgroundColor: const Color(0xFF242F3D)),
-                        icon: const Icon(Icons.add, color: Colors.white),
+                        style: IconButton.styleFrom(backgroundColor: const Color(0xFFF3F5F7)),
+                        icon: const Icon(Icons.add, color: Color(0xFF677084)),
                         onPressed: () => setState(() => _qty++),
                       ),
                     ],
                   ),
                   Text(
                     'đ$_totalPrice',
-                    style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: Color(0xFF2F7D6B)),
+                    style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: Color(0xFF0891B2)),
                   ),
                 ],
               ),
               const SizedBox(height: 20),
               FilledButton(
                 style: FilledButton.styleFrom(
-                  backgroundColor: const Color(0xFF2F7D6B),
+                  backgroundColor: const Color(0xFF0891B2),
                   padding: const EdgeInsets.symmetric(vertical: 16),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                 ),

@@ -4,7 +4,9 @@
 
 list(APPEND FLUTTER_PLUGIN_LIST
   desktop_multi_window
+  local_notifier
   media_kit_libs_windows_audio
+  video_player_win
 )
 
 list(APPEND FLUTTER_FFI_PLUGIN_LIST

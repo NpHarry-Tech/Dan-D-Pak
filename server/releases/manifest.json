@@ -1,16 +1,4 @@
 {
-  "windows": {
-    "buildNumber": 0,
-    "version": "",
-    "file": "",
-    "notes": "",
-    "mandatory": false
-  },
-  "android": {
-    "buildNumber": 0,
-    "version": "",
-    "file": "",
-    "notes": "",
-    "mandatory": false
-  }
+  "windows": { "buildNumber": 0, "version": "", "file": "", "notes": "", "mandatory": false },
+  "android": { "buildNumber": 0, "version": "", "file": "", "notes": "", "mandatory": false }
 }

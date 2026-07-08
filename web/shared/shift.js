@@ -2,7 +2,7 @@
 // Rendering is kept IDENTICAL to the FnB POS (web/pos.html) so the shift /
 // cash-drawer panel looks and behaves the same on both screens. Both surfaces
 // hit the same backend (/shifts/*, /cash-drawer/*) → one shift, one drawer.
-import { api, money, toast, esc, getUser } from './client.js';
+import { api, money, toast, esc, getUser, logout } from './client.js';
 
 const FALLBACK = {
   shifts: {
@@ -277,6 +277,7 @@ export async function mountShift(container, { onChange } = {}) {
       try {
         const r = await api('/shifts/close', { method: 'POST', body: { shift_key: ov.querySelector('#shKey').value, counts, closing_cash: countCash(ov) } });
         ov.remove(); toast('Đã kết ca · doanh thu ' + money(r.report?.total_revenue || 0)); reload();
+        await logout();
       } catch (e) { toast(e.message, true); }
     };
   }

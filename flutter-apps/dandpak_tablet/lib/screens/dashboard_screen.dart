@@ -1,4 +1,5 @@
 // lib/screens/dashboard_screen.dart
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/app_provider.dart';
@@ -48,7 +49,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
           // Left Custom Sidebar
           Container(
             width: 250,
-            color: const Color(0xFF161C23),
+            color: const Color(0xFFFFFFFF),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -60,10 +61,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       Container(
                         padding: const EdgeInsets.all(8),
                         decoration: BoxDecoration(
-                          color: const Color(0xFF2F7D6B).withOpacity(0.15),
+                          color: const Color(0xFF0891B2).withOpacity(0.15),
                           borderRadius: BorderRadius.circular(8),
                         ),
-                        child: const Icon(Icons.tablet, color: Color(0xFF2F7D6B), size: 24),
+                        child: const Icon(Icons.tablet, color: Color(0xFF0891B2), size: 24),
                       ),
                       const SizedBox(width: 12),
                       const Column(
@@ -71,11 +72,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         children: [
                           Text(
                             'DAN D PAK',
-                            style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16, letterSpacing: 1),
+                            style: TextStyle(color: Color(0xFF1A2230), fontWeight: FontWeight.bold, fontSize: 16, letterSpacing: 1),
                           ),
                           Text(
                             'Tablet Native',
-                            style: TextStyle(color: Colors.white38, fontSize: 11),
+                            style: TextStyle(color: Color(0xFF677084), fontSize: 11),
                           ),
                         ],
                       ),
@@ -89,17 +90,18 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                       decoration: BoxDecoration(
-                        color: const Color(0xFF1E2630),
+                        color: const Color(0xFFF3F5F7),
+                        border: Border.all(color: const Color(0xFFD3D8DF)),
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: Row(
                         children: [
-                          const Icon(Icons.store, color: Colors.white54, size: 16),
+                          const Icon(Icons.store, color: Color(0xFF677084), size: 16),
                           const SizedBox(width: 8),
                           Expanded(
                             child: Text(
                               appProv.activeBranch!.name,
-                              style: const TextStyle(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.bold),
+                              style: const TextStyle(color: Color(0xFF1A2230), fontSize: 12, fontWeight: FontWeight.bold),
                               overflow: TextOverflow.ellipsis,
                             ),
                           ),
@@ -122,11 +124,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(8)),
                     leading: const Icon(Icons.touch_app_outlined,
-                        color: Colors.white60, size: 20),
+                        color: Color(0xFF677084), size: 20),
                     title: const Text(
                       'iPad Self-order (Khách)',
                       style: TextStyle(
-                        color: Colors.white70,
+                        color: Color(0xFF1A2230),
                         fontSize: 13.5,
                         fontWeight: FontWeight.bold,
                       ),
@@ -147,7 +149,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   child: Row(
                     children: [
                       CircleAvatar(
-                        backgroundColor: const Color(0xFF2F7D6B),
+                        backgroundColor: const Color(0xFF0891B2),
                         radius: 16,
                         child: Text(
                           userInitial,
@@ -161,12 +163,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           children: [
                             Text(
                               authProv.currentUser?.name ?? 'Nhân viên',
-                              style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold),
+                              style: const TextStyle(color: Color(0xFF1A2230), fontSize: 13, fontWeight: FontWeight.bold),
                               overflow: TextOverflow.ellipsis,
                             ),
                             Text(
                               authProv.currentUser?.username ?? 'user',
-                              style: const TextStyle(color: Colors.white30, fontSize: 11),
+                              style: const TextStyle(color: Color(0xFF677084), fontSize: 11),
                             ),
                           ],
                         ),
@@ -185,7 +187,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             ),
           ),
           // Vertical Splitter line
-          VerticalDivider(color: Colors.white.withOpacity(0.05), width: 1),
+          VerticalDivider(color: const Color(0xFFE7EAEE), width: 1),
           // Right Views viewport
           Expanded(
             child: _views[_selectedIndex],
@@ -201,13 +203,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
       child: ListTile(
         selected: active,
-        selectedTileColor: const Color(0xFF2F7D6B).withOpacity(0.12),
+        selectedTileColor: const Color(0xFF0891B2).withOpacity(0.12),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-        leading: Icon(icon, color: active ? const Color(0xFF2F7D6B) : Colors.white60, size: 20),
+        leading: Icon(icon, color: active ? const Color(0xFF0891B2) : const Color(0xFF677084), size: 20),
         title: Text(
           title,
           style: TextStyle(
-            color: active ? const Color(0xFF2F7D6B) : Colors.white70,
+            color: active ? const Color(0xFF0891B2) : const Color(0xFF1A2230),
             fontSize: 13.5,
             fontWeight: FontWeight.bold,
           ),

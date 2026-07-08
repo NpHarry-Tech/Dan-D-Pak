@@ -5,6 +5,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:qr_flutter/qr_flutter.dart';
+import 'package:video_player/video_player.dart';
 
 import '../../ui/app_theme.dart';
 
@@ -153,34 +154,126 @@ class CustomerDisplayScreen extends StatefulWidget {
 class _CustomerDisplayScreenState extends State<CustomerDisplayScreen> {
   Timer? _adTimer;
   int _adIndex = 0;
+  List<String> _materializedPaths = [];
+  bool _materializing = false;
 
   @override
   void initState() {
     super.initState();
-    _restartAdTimer();
+    _materializeLocalAds().then((_) {
+      _restartAdTimer();
+    });
   }
 
   @override
   void didUpdateWidget(covariant CustomerDisplayScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (_adSignature(oldWidget.ads) != _adSignature(widget.ads)) {
-      _adIndex = 0;
-      _restartAdTimer();
+      _materializeLocalAds().then((_) {
+        _adIndex = 0;
+        _restartAdTimer();
+      });
     }
   }
 
   String _adSignature(CustomerAdConfig ads) =>
       '${ads.secondsPerImage}:${ads.images.length}:${ads.images.map((e) => e.hashCode).join(',')}';
 
+  Future<void> _materializeLocalAds() async {
+    if (_materializing) return;
+    _materializing = true;
+    final dir = Directory('${Directory.systemTemp.path}/dandpak_ads');
+    try {
+      await dir.create(recursive: true);
+    } catch (_) {}
+    final out = <String>[];
+    for (final img in widget.ads.images) {
+      if (img.startsWith('data:image/')) {
+        try {
+          final comma = img.indexOf(',');
+          final bytes = base64Decode(comma >= 0 ? img.substring(comma + 1) : img);
+          final name = 'ad_${img.hashCode & 0x7fffffff}.img';
+          final f = File('${dir.path}/$name');
+          if (!f.existsSync() || f.lengthSync() != bytes.length) {
+            await f.writeAsBytes(bytes);
+          }
+          out.add(f.path);
+        } catch (_) {
+          // ignore
+        }
+      } else if (img.startsWith('data:video/')) {
+        try {
+          final comma = img.indexOf(',');
+          final bytes = base64Decode(comma >= 0 ? img.substring(comma + 1) : img);
+          
+          String ext = '.mp4';
+          if (img.contains('video/quicktime')) ext = '.mov';
+          else if (img.contains('video/x-msvideo')) ext = '.avi';
+          else if (img.contains('video/x-matroska')) ext = '.mkv';
+          
+          final name = 'ad_${img.hashCode & 0x7fffffff}$ext';
+          final f = File('${dir.path}/$name');
+          if (!f.existsSync() || f.lengthSync() != bytes.length) {
+            await f.writeAsBytes(bytes);
+          }
+          out.add(f.path);
+        } catch (_) {
+          // ignore
+        }
+      } else if (img.isNotEmpty) {
+        out.add(img);
+      }
+    }
+    if (mounted) {
+      setState(() {
+        _materializedPaths = out;
+        _materializing = false;
+      });
+    }
+  }
+
   void _restartAdTimer() {
     _adTimer?.cancel();
-    if (widget.ads.images.length <= 1) return;
-    final secs = widget.ads.secondsPerImage.clamp(5, 120);
-    _adTimer = Timer.periodic(Duration(seconds: secs), (_) {
-      if (mounted) {
-        setState(() => _adIndex = (_adIndex + 1) % widget.ads.images.length);
-      }
+    if (_materializedPaths.isEmpty) return;
+    _scheduleNextAd();
+  }
+
+  void _scheduleNextAd() {
+    _adTimer?.cancel();
+    if (_materializedPaths.length <= 1) return;
+
+    final currentSrc = _materializedPaths[_adIndex % _materializedPaths.length];
+    final isVideo = _isVideoFile(currentSrc);
+
+    if (isVideo) {
+      // The video player will call onFinished to transition, but set a fallback timeout of 60s
+      _adTimer = Timer(const Duration(seconds: 60), () {
+        _transitionToNextAd();
+      });
+    } else {
+      final secs = widget.ads.secondsPerImage.clamp(5, 120);
+      _adTimer = Timer(Duration(seconds: secs), () {
+        _transitionToNextAd();
+      });
+    }
+  }
+
+  void _transitionToNextAd() {
+    if (!mounted) return;
+    if (_materializedPaths.isEmpty) return;
+    setState(() {
+      _adIndex = (_adIndex + 1) % _materializedPaths.length;
     });
+    _scheduleNextAd();
+  }
+
+  bool _isVideoFile(String path) {
+    final p = path.toLowerCase();
+    return p.startsWith('data:video/') ||
+        p.endsWith('.mp4') ||
+        p.endsWith('.mov') ||
+        p.endsWith('.avi') ||
+        p.endsWith('.mkv');
   }
 
   @override
@@ -330,13 +423,21 @@ class _CustomerDisplayScreenState extends State<CustomerDisplayScreen> {
   }
 
   Widget _adCanvas({BoxFit fit = BoxFit.contain}) {
-    final imgs = widget.ads.images;
-    if (imgs.isEmpty) return _adFallback();
+    if (_materializedPaths.isEmpty) return _adFallback();
+    final src = _materializedPaths[_adIndex % _materializedPaths.length];
+
     return AnimatedSwitcher(
       duration: const Duration(milliseconds: 450),
       child: SizedBox.expand(
-        key: ValueKey('ad:$_adIndex:${imgs[_adIndex % imgs.length].hashCode}'),
-        child: _adImage(imgs[_adIndex % imgs.length], fit: fit),
+        key: ValueKey('ad:$_adIndex:${src.hashCode}'),
+        child: _isVideoFile(src)
+            ? AdVideoPlayer(
+                file: File(src),
+                fit: fit,
+                onFinished: _transitionToNextAd,
+                loop: _materializedPaths.length <= 1,
+              )
+            : _adImage(src, fit: fit),
       ),
     );
   }
@@ -383,8 +484,6 @@ class _CustomerDisplayScreenState extends State<CustomerDisplayScreen> {
         errorBuilder: (_, __, ___) => const SizedBox.shrink(),
       );
     }
-    // Đường dẫn file cục bộ (ads được ghi ra file tạm để tránh gửi base64 nặng
-    // qua channel — xem SecondScreen._materializeAds).
     return Image.file(
       File(src),
       fit: fit,
@@ -586,4 +685,86 @@ class _OrderHeaderRow extends StatelessWidget {
 Uint8List _dataUrlBytes(String dataUrl) {
   final comma = dataUrl.indexOf(',');
   return base64Decode(comma >= 0 ? dataUrl.substring(comma + 1) : dataUrl);
+}
+
+class AdVideoPlayer extends StatefulWidget {
+  final File file;
+  final BoxFit fit;
+  final VoidCallback onFinished;
+  final bool loop;
+
+  const AdVideoPlayer({
+    super.key,
+    required this.file,
+    required this.fit,
+    required this.onFinished,
+    this.loop = false,
+  });
+
+  @override
+  State<AdVideoPlayer> createState() => _AdVideoPlayerState();
+}
+
+class _AdVideoPlayerState extends State<AdVideoPlayer> {
+  VideoPlayerController? _controller;
+  bool _initialized = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _init();
+  }
+
+  Future<void> _init() async {
+    final controller = VideoPlayerController.file(widget.file);
+    _controller = controller;
+    try {
+      await controller.initialize();
+      if (!mounted) return;
+      setState(() {
+        _initialized = true;
+      });
+      await controller.setVolume(0.0); // Mute ads for POS
+      // Chỉ có 1 quảng cáo video → LẶP mãi (không thì phát 1 lần rồi đứng hình).
+      // Nhiều quảng cáo → phát 1 lần rồi báo onFinished để chuyển ad kế tiếp.
+      await controller.setLooping(widget.loop);
+      await controller.play();
+      if (!widget.loop) controller.addListener(_listener);
+    } catch (e) {
+      debugPrint("Error initializing video: $e");
+      widget.onFinished();
+    }
+  }
+
+  void _listener() {
+    if (!mounted || _controller == null) return;
+    if (_controller!.value.position >= _controller!.value.duration) {
+      _controller!.removeListener(_listener);
+      widget.onFinished();
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller?.removeListener(_listener);
+    _controller?.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!_initialized || _controller == null) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    return SizedBox.expand(
+      child: FittedBox(
+        fit: widget.fit,
+        child: SizedBox(
+          width: _controller!.value.size.width,
+          height: _controller!.value.size.height,
+          child: VideoPlayer(_controller!),
+        ),
+      ),
+    );
+  }
 }

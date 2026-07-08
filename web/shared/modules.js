@@ -16,6 +16,7 @@ export const MODULES = [
   { key: 'pos', label: 'FnB POS', icon: '💳', group: 'sales', href: '/pos', perm: 'module.pos', status: 'active' },
   { key: 'retail', label: 'Retail POS', icon: '🛒', group: 'sales', href: '/retail', perm: 'module.retail', status: 'active' },
   { key: 'kds', label: 'KDS', icon: '👨‍🍳', group: 'sales', href: '/kds', perm: 'module.kds', status: 'active' },
+  { key: 'tablet', label: 'Tablet App (Flutter)', icon: '📱', group: 'sales', href: '/tablet', perm: 'module.tablet', status: 'active' },
   { key: 'online', label: 'Kênh online', icon: '🌐', group: 'sales', href: '/online', perm: 'module.online', status: 'active' },
   { key: 'warehouse', label: 'Kho', icon: '📦', group: 'supply', href: '/warehouse', perm: 'module.warehouse', status: 'active' },
   { key: 'inventory', label: 'Tồn kho', icon: '🏷️', group: 'supply', href: '/warehouse', perm: 'module.inventory', status: 'active' },
@@ -27,6 +28,6 @@ export const MODULES = [
   { key: 'printing', label: 'In ấn', icon: '🖨️', group: 'settings', href: '/printers', perm: 'module.printing', status: 'active' },
 ];
 
-export const TOPBAR_MODULES = ['ipad', 'pos', 'retail', 'online', 'kds', 'warehouse', 'admin'];
+export const TOPBAR_MODULES = ['ipad', 'pos', 'retail', 'online', 'kds', 'tablet', 'warehouse', 'admin'];
 
 export const moduleByKey = (key) => MODULES.find(m => m.key === key);

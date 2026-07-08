@@ -866,6 +866,8 @@ function buildReceipt(order_id, payment_id, lines, paid, { cashier = '', discoun
     lines, paid, change, paid_at: order.paid_at, created_at: order.created_at, number: order.bill_no || order_id.slice(-6).toUpperCase(),
     bill_no: order.bill_no || order_id.slice(-6).toUpperCase(),
     cashier,
+    linked_pos_device: order.linked_pos_device || null,
+    linked_printer_id: order.linked_printer_id || null,
   };
 }
 

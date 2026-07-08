@@ -1,5 +1,6 @@
 // lib/providers/app_provider.dart
 import 'package:dandpak_core/dandpak_core.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/tablet_models.dart';
@@ -29,7 +30,8 @@ class AppProvider with ChangeNotifier {
 
   Future<void> _loadSettings() async {
     final prefs = await SharedPreferences.getInstance();
-    _serverUrl = prefs.getString('server_url') ?? DanDpakDefaults.baseUrl;
+    final String defaultUrl = kIsWeb ? Uri.base.origin : DanDpakDefaults.baseUrl;
+    _serverUrl = prefs.getString('server_url') ?? defaultUrl;
     final savedBranchId = prefs.getString('active_branch_id');
     final savedBranchName = prefs.getString('active_branch_name');
     if (savedBranchId != null && savedBranchName != null) {

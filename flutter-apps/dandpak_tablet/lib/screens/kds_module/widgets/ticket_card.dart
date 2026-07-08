@@ -95,16 +95,19 @@ class _TicketCardState extends State<TicketCard> {
     
     return Container(
       decoration: BoxDecoration(
-        color: const Color(0xFF1E2630),
+        color: const Color(0xFFFFFFFF),
         borderRadius: BorderRadius.circular(12),
         border: Border(
           left: BorderSide(
             color: cancelled ? Colors.grey : _slaColor,
             width: 6,
           ),
+          top: const BorderSide(color: Color(0xFFE7EAEE)),
+          right: const BorderSide(color: Color(0xFFE7EAEE)),
+          bottom: const BorderSide(color: Color(0xFFE7EAEE)),
         ),
         boxShadow: const [
-          BoxShadow(color: Colors.black26, blurRadius: 4, offset: Offset(0, 2)),
+          BoxShadow(color: Color(0x0A102840), blurRadius: 2, offset: Offset(0, 1)),
         ],
       ),
       padding: const EdgeInsets.all(14),
@@ -116,7 +119,7 @@ class _TicketCardState extends State<TicketCard> {
             children: [
               Text(
                 'Bàn ${widget.item['table_code'] ?? widget.item['table_id'] ?? '—'}',
-                style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16, color: Colors.white),
+                style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16, color: Color(0xFF1A2230)),
               ),
               if (!cancelled)
                 Container(
@@ -140,7 +143,7 @@ class _TicketCardState extends State<TicketCard> {
           const SizedBox(height: 10),
           Text(
             '${widget.item['qty'] ?? 1}× ${widget.item['name'] ?? ''}',
-            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
+            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF1A2230)),
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
           ),
@@ -148,7 +151,7 @@ class _TicketCardState extends State<TicketCard> {
             const SizedBox(height: 6),
             Text(
               mods.map((m) => m is Map ? (m['name'] ?? '') : m.toString()).join(', '),
-              style: const TextStyle(color: Colors.white70, fontSize: 13, fontStyle: FontStyle.italic),
+              style: const TextStyle(color: Color(0xFF677084), fontSize: 13, fontStyle: FontStyle.italic),
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
             ),
@@ -158,12 +161,12 @@ class _TicketCardState extends State<TicketCard> {
             Container(
               padding: const EdgeInsets.all(6),
               decoration: BoxDecoration(
-                color: Colors.redAccent.withOpacity(0.1),
+                color: Colors.redAccent.withOpacity(0.08),
                 borderRadius: BorderRadius.circular(6),
               ),
               child: Text(
                 'Ghi chú: ${widget.item['notes']}',
-                style: const TextStyle(color: Color(0xFFFF8A8A), fontSize: 12, fontWeight: FontWeight.w600),
+                style: const TextStyle(color: Color(0xFFE5584B), fontSize: 12, fontWeight: FontWeight.w600),
               ),
             ),
           ],
@@ -175,12 +178,12 @@ class _TicketCardState extends State<TicketCard> {
               if (cancelled)
                 TextButton(
                   onPressed: () => widget.onStatusChanged(widget.item['id'].toString(), 'served'),
-                  child: const Text('Ẩn', style: TextStyle(color: Colors.white54)),
+                  child: const Text('Ẩn', style: TextStyle(color: Color(0xFF677084))),
                 )
               else if (action != null)
                 FilledButton(
                   style: FilledButton.styleFrom(
-                    backgroundColor: const Color(0xFF2F7D6B),
+                    backgroundColor: const Color(0xFF0891B2),
                     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                   ),
@@ -205,10 +208,10 @@ class _StatusPill extends StatelessWidget {
       'new': ('Mới', const Color(0xFF4C8DFF)),
       'accepted': ('Đã nhận', const Color(0xFF49D17F)),
       'preparing': ('Đang làm', const Color(0xFFE0A93B)),
-      'ready': ('Xong', const Color(0xFF2F7D6B)),
+      'ready': ('Xong', const Color(0xFF0891B2)),
       'cancelled': ('Đã hủy', Colors.grey),
     };
-    final detail = map[status] ?? (status, Colors.white54);
+    final detail = map[status] ?? (status, const Color(0xFF677084));
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(

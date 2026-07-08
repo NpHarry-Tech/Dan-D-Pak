@@ -100,11 +100,11 @@ const DEFAULT_ROLE_PERMS = {
   owner: ['*'],
   manager: ['menu.manage', 'inventory.adjust', 'warehouse.manage', 'refund', 'void', 'discount', 'reports', 'invoice', 'online', 'sell', 'pay', 'audit.view', 'settings.manage',
     'contacts.create', 'contacts.edit', 'contacts.delete', 'settings.loyalty', 'settings.promotions',
-    'module.ipad', 'module.pos', 'module.retail', 'module.kds', 'module.online', 'module.warehouse', 'module.inventory', 'module.printing',
+    'module.ipad', 'module.pos', 'module.retail', 'module.kds', 'module.tablet', 'module.online', 'module.warehouse', 'module.inventory', 'module.printing',
     'module.invoice', 'module.reports', 'module.contacts', 'module.purchase', 'module.expenses', 'module.accounting'],
-  cashier: ['sell', 'pay', 'discount', 'invoice', 'module.pos', 'module.retail', 'module.invoice'],
-  kitchen: ['kds', 'module.kds'],
-  warehouse: ['inventory.adjust', 'warehouse.manage', 'warehouse', 'module.warehouse', 'module.inventory', 'module.purchase'],
+  cashier: ['sell', 'pay', 'discount', 'invoice', 'module.pos', 'module.retail', 'module.tablet', 'module.invoice'],
+  kitchen: ['kds', 'module.kds', 'module.tablet'],
+  warehouse: ['inventory.adjust', 'warehouse.manage', 'warehouse', 'module.warehouse', 'module.inventory', 'module.tablet', 'module.purchase'],
 };
 export const ROLE_PERMS = DEFAULT_ROLE_PERMS; // kept for backwards-compat imports
 

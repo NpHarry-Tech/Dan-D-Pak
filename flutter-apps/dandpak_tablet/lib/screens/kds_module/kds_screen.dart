@@ -146,9 +146,12 @@ class _KdsScreenState extends State<KdsScreen> {
     final filtered = _filteredItems;
 
     return Scaffold(
-      backgroundColor: const Color(0xFF11161B),
+      backgroundColor: const Color(0xFFF7F8FA),
       appBar: AppBar(
-        backgroundColor: const Color(0xFF161C23),
+        backgroundColor: const Color(0xFFFFFFFF),
+        foregroundColor: const Color(0xFF1A2230),
+        elevation: 0,
+        scrolledUnderElevation: 0,
         title: Row(
           children: [
             const Text('Màn hình Bếp (KDS)', style: TextStyle(fontWeight: FontWeight.bold)),
@@ -164,13 +167,13 @@ class _KdsScreenState extends State<KdsScreen> {
             const SizedBox(width: 6),
             Text(
               _socketConnected ? 'Realtime' : 'Mất kết nối',
-              style: const TextStyle(fontSize: 12, color: Colors.white54, fontWeight: FontWeight.w600),
+              style: const TextStyle(fontSize: 12, color: Color(0xFF677084), fontWeight: FontWeight.w600),
             ),
           ],
         ),
         actions: [
           IconButton(
-            icon: const Icon(Icons.refresh, color: Colors.white70),
+            icon: const Icon(Icons.refresh, color: Color(0xFF677084)),
             onPressed: _loadTickets,
           ),
         ],
@@ -181,7 +184,10 @@ class _KdsScreenState extends State<KdsScreen> {
           RepaintBoundary(
             child: Container(
               height: 58,
-              color: const Color(0xFF161C23),
+              color: const Color(0xFFFFFFFF),
+              decoration: const BoxDecoration(
+                border: Border(bottom: BorderSide(color: Color(0xFFE7EAEE))),
+              ),
               child: ListView(
                 scrollDirection: Axis.horizontal,
                 padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
@@ -191,11 +197,11 @@ class _KdsScreenState extends State<KdsScreen> {
                   return Padding(
                     padding: const EdgeInsets.only(right: 8),
                     child: FilterChip(
-                      label: Text('${_stationLabel(st)} ($count)', style: TextStyle(fontWeight: FontWeight.bold, color: active ? Colors.white : Colors.white70)),
+                      label: Text('${_stationLabel(st)} ($count)', style: TextStyle(fontWeight: FontWeight.bold, color: active ? Colors.white : const Color(0xFF677084))),
                       selected: active,
-                      selectedColor: const Color(0xFF2F7D6B),
+                      selectedColor: const Color(0xFF0891B2),
                       checkmarkColor: Colors.white,
-                      backgroundColor: const Color(0xFF1E2630),
+                      backgroundColor: const Color(0xFFF3F5F7),
                       onSelected: (_) => setState(() => _activeStation = st),
                     ),
                   );
@@ -216,12 +222,12 @@ class _KdsScreenState extends State<KdsScreen> {
             ),
           Expanded(
             child: _loading && _items.isEmpty
-                ? const Center(child: CircularProgressIndicator(color: Color(0xFF2F7D6B)))
+                ? const Center(child: CircularProgressIndicator(color: Color(0xFF0891B2)))
                 : filtered.isEmpty
                     ? const Center(
                         child: Text(
                           'Không có món nào đang chờ chế biến.',
-                          style: TextStyle(color: Colors.white30, fontSize: 16, fontWeight: FontWeight.w600),
+                          style: TextStyle(color: Color(0xFF677084), fontSize: 16, fontWeight: FontWeight.w600),
                         ),
                       )
                     : RepaintBoundary(

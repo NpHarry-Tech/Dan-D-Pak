@@ -102,6 +102,25 @@ class SecondScreen {
         } catch (_) {
           // ảnh hỏng → bỏ qua, không để làm sập
         }
+      } else if (img.startsWith('data:video/')) {
+        try {
+          final comma = img.indexOf(',');
+          final bytes = base64Decode(comma >= 0 ? img.substring(comma + 1) : img);
+          
+          String ext = '.mp4';
+          if (img.contains('video/quicktime')) ext = '.mov';
+          else if (img.contains('video/x-msvideo')) ext = '.avi';
+          else if (img.contains('video/x-matroska')) ext = '.mkv';
+          
+          final name = 'ad_${img.hashCode & 0x7fffffff}$ext';
+          final f = File('${dir.path}/$name');
+          if (!f.existsSync() || f.lengthSync() != bytes.length) {
+            f.writeAsBytesSync(bytes);
+          }
+          out.add(f.path);
+        } catch (_) {
+          // video hỏng → bỏ qua
+        }
       } else if (img.isNotEmpty) {
         out.add(img); // http/url giữ nguyên
       }

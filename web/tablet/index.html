@@ -1,0 +1,636 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dan D Pak — Tablet App Simulator</title>
+  <!-- Google Fonts: Outfit & JetBrains Mono -->
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-color: #0b0e14;
+      --panel-bg: rgba(22, 29, 38, 0.8);
+      --panel-border: rgba(255, 255, 255, 0.08);
+      --text-color: #ffffff;
+      --text-muted: #8a99ad;
+      --brand-color: #2F7D6B;
+      --brand-hover: #3b9c85;
+      
+      /* Device colors */
+      --bezel-color: #1e2330;
+      --shell-color: #080a0f;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: 'Outfit', sans-serif;
+    }
+
+    body {
+      background-color: var(--bg-color);
+      color: var(--text-color);
+      height: 100vh;
+      overflow: hidden;
+      display: flex;
+      flex-direction: row;
+      background-image: 
+        radial-gradient(circle at 10% 20%, rgba(47, 125, 107, 0.05) 0%, transparent 40%),
+        radial-gradient(circle at 90% 80%, rgba(47, 125, 107, 0.05) 0%, transparent 40%),
+        linear-gradient(rgba(255, 255, 255, 0.007) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255, 255, 255, 0.007) 1px, transparent 1px);
+      background-size: 100% 100%, 100% 100%, 30px 30px, 30px 30px;
+    }
+
+    /* Side Control Panel */
+    .control-panel {
+      width: 320px;
+      height: 100vh;
+      background: var(--panel-bg);
+      border-right: 1px solid var(--panel-border);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      padding: 30px 24px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      z-index: 10;
+      box-shadow: 10px 0 30px rgba(0, 0, 0, 0.3);
+    }
+
+    .panel-header {
+      margin-bottom: 30px;
+    }
+
+    .brand-title {
+      font-size: 24px;
+      font-weight: 800;
+      letter-spacing: 1.5px;
+      background: linear-gradient(135deg, #fff 0%, #2F7D6B 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin-bottom: 6px;
+    }
+
+    .brand-sub {
+      font-size: 13px;
+      color: var(--text-muted);
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+
+    .section-title {
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+      color: var(--brand-color);
+      margin-bottom: 14px;
+      margin-top: 24px;
+    }
+
+    .control-group {
+      background: rgba(0, 0, 0, 0.2);
+      border: 1px solid rgba(255, 255, 255, 0.03);
+      border-radius: 12px;
+      padding: 16px;
+      margin-bottom: 16px;
+    }
+
+    /* Custom Slider */
+    .slider-container {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .slider-header {
+      display: flex;
+      justify-content: space-between;
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+
+    .slider-value {
+      font-family: 'JetBrains Mono', monospace;
+      color: #fff;
+      font-weight: 600;
+    }
+
+    .range-input {
+      -webkit-appearance: none;
+      width: 100%;
+      height: 6px;
+      border-radius: 3px;
+      background: #1e2633;
+      outline: none;
+    }
+
+    .range-input::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: var(--brand-color);
+      cursor: pointer;
+      transition: transform 0.1s;
+    }
+
+    .range-input::-webkit-slider-thumb:hover {
+      transform: scale(1.2);
+    }
+
+    /* Buttons */
+    .btn {
+      width: 100%;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      color: #fff;
+      padding: 12px 16px;
+      border-radius: 10px;
+      cursor: pointer;
+      font-weight: 600;
+      font-size: 14px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      transition: all 0.2s ease;
+      margin-bottom: 10px;
+    }
+
+    .btn:hover {
+      background: rgba(255, 255, 255, 0.1);
+      border-color: rgba(255, 255, 255, 0.2);
+      transform: translateY(-1px);
+    }
+
+    .btn-primary {
+      background: var(--brand-color);
+      border: none;
+    }
+
+    .btn-primary:hover {
+      background: var(--brand-hover);
+      box-shadow: 0 4px 15px rgba(47, 125, 107, 0.3);
+    }
+
+    /* Skins Selector */
+    .skins-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 10px;
+    }
+
+    .skin-btn {
+      aspect-ratio: 1;
+      border-radius: 50%;
+      border: 2px solid transparent;
+      cursor: pointer;
+      transition: transform 0.2s;
+      position: relative;
+    }
+
+    .skin-btn:hover {
+      transform: scale(1.1);
+    }
+
+    .skin-btn.active {
+      border-color: #fff;
+    }
+
+    .skin-btn::after {
+      content: '';
+      position: absolute;
+      inset: 3px;
+      border-radius: 50%;
+      background: inherit;
+    }
+
+    .skin-space-gray { background-color: #3b3f46; }
+    .skin-silver { background-color: #d1d5db; }
+    .skin-gold { background-color: #e5c158; }
+    .skin-midnight { background-color: #1a202c; }
+
+    /* Footer info */
+    .panel-footer {
+      font-size: 12px;
+      color: var(--text-muted);
+      line-height: 1.6;
+    }
+
+    .panel-footer a {
+      color: var(--brand-color);
+      text-decoration: none;
+      font-weight: 600;
+    }
+
+    /* Simulator Main Area */
+    .simulator-area {
+      flex: 1;
+      height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      overflow: hidden;
+      padding: 40px;
+    }
+
+    /* Device Scaler Wrapper */
+    .device-scaler {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transform-origin: center center;
+      transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    /* Device Container (Landscape defaults) */
+    .tablet-device {
+      width: 1112px;
+      height: 834px;
+      border-radius: 40px;
+      background-color: var(--bezel-color);
+      border: 6px solid var(--shell-color);
+      box-shadow: 0 25px 60px -15px rgba(0, 0, 0, 0.8), 0 0 40px rgba(47, 125, 107, 0.1);
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      padding: 16px; /* Bezel size */
+      transition: width 0.4s cubic-bezier(0.16, 1, 0.3, 1), 
+                  height 0.4s cubic-bezier(0.16, 1, 0.3, 1), 
+                  background-color 0.3s;
+      overflow: hidden;
+    }
+
+    /* Portrait orientation override */
+    .tablet-device.portrait {
+      width: 834px;
+      height: 1112px;
+    }
+
+    /* Bezel-less mode */
+    .tablet-device.bezel-less {
+      padding: 0;
+      border: none;
+      border-radius: 0;
+      box-shadow: none;
+      width: 100% !important;
+      height: 100% !important;
+    }
+
+    .tablet-device.bezel-less .status-bar,
+    .tablet-device.bezel-less .home-bar {
+      display: none;
+    }
+
+    /* Camera punch hole */
+    .camera-notch {
+      position: absolute;
+      background-color: #000;
+      border-radius: 50%;
+      z-index: 10;
+      transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    /* Camera position based on orientation */
+    .tablet-device:not(.portrait) .camera-notch {
+      left: 6px;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 8px;
+      height: 8px;
+    }
+
+    .tablet-device.portrait .camera-notch {
+      top: 6px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 8px;
+      height: 8px;
+    }
+
+    /* Screen Area */
+    .tablet-screen {
+      flex: 1;
+      width: 100%;
+      background-color: #0f141c;
+      border-radius: 26px;
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.5);
+    }
+
+    .tablet-device.bezel-less .tablet-screen {
+      border-radius: 0;
+    }
+
+    /* Status Bar simulated */
+    .status-bar {
+      height: 28px;
+      background-color: #161c23;
+      padding: 0 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 12px;
+      font-weight: 600;
+      color: rgba(255, 255, 255, 0.85);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+      user-select: none;
+    }
+
+    .status-left {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .status-store {
+      background: rgba(47, 125, 107, 0.15);
+      color: #3b9c85;
+      padding: 1px 6px;
+      border-radius: 4px;
+      font-size: 10px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .status-right {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    /* Icons inside status bar */
+    .status-icon {
+      font-size: 12px;
+      display: flex;
+      align-items: center;
+    }
+
+    /* Battery icon */
+    .battery-icon {
+      width: 22px;
+      height: 11px;
+      border: 1.5px solid rgba(255, 255, 255, 0.8);
+      border-radius: 3px;
+      padding: 1px;
+      position: relative;
+      display: flex;
+      align-items: center;
+    }
+
+    .battery-icon::after {
+      content: '';
+      position: absolute;
+      right: -3px;
+      top: 2.5px;
+      width: 1.5px;
+      height: 4px;
+      background: rgba(255, 255, 255, 0.8);
+      border-radius: 0 1px 1px 0;
+    }
+
+    .battery-level {
+      height: 100%;
+      width: 95%; /* 95% default */
+      background-color: #3b9c85;
+      border-radius: 1px;
+    }
+
+    /* Iframe loading Flutter web */
+    .app-iframe {
+      flex: 1;
+      width: 100%;
+      border: none;
+      background-color: #0f141c;
+    }
+
+    /* Home Bar simulated */
+    .home-bar {
+      height: 18px;
+      background-color: #0f141c;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      user-select: none;
+    }
+
+    .home-indicator {
+      width: 140px;
+      height: 4.5px;
+      background-color: rgba(255, 255, 255, 0.25);
+      border-radius: 2.5px;
+      transition: background-color 0.2s;
+    }
+
+    .home-indicator:hover {
+      background-color: rgba(255, 255, 255, 0.4);
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Sidebar Controls -->
+  <div class="control-panel">
+    <div class="panel-top">
+      <div class="panel-header">
+        <h1 class="brand-title">DAN D PAK</h1>
+        <div class="brand-sub">Tablet Simulator</div>
+      </div>
+
+      <div class="section-title">Điều hướng & Xem</div>
+      <button class="btn btn-primary" id="btn-rotate">
+        <svg width="18" height="18" fill="currentColor" viewBox="0 0 24 24">
+          <path d="M16.48 2.52c3.27 1.55 5.61 4.72 5.97 8.48h-2.02c-.35-2.89-2.01-5.32-4.52-6.52l1.9-1.9-1.33-1.33-4.18 4.19 4.19 4.18 1.33-1.33-1.36-1.37zm-8.96 0L11.7 6.7l-1.33 1.33-1.9-1.9c-2.5 1.2-4.17 3.63-4.52 6.52H1.93c.36-3.76 2.7-6.93 5.97-8.48l-1.38-1.38L7.85 1.2l4.18 4.19-4.51 4.13z"/>
+        </svg>
+        Xoay màn hình (Rotate)
+      </button>
+      <button class="btn" id="btn-bezel">
+        Ẩn / Hiện Bezel
+      </button>
+      <a href="./app/" class="btn" style="text-decoration: none;">
+        Mở toàn màn hình gốc ↗
+      </a>
+
+      <div class="section-title">Tỉ lệ hiển thị (Zoom)</div>
+      <div class="control-group">
+        <div class="slider-container">
+          <div class="slider-header">
+            <span>Tỉ lệ (Zoom Scale)</span>
+            <span class="slider-value" id="zoom-val">80%</span>
+          </div>
+          <input type="range" min="30" max="100" value="80" class="range-input" id="zoom-slider">
+        </div>
+      </div>
+
+      <div class="section-title">Màu vỏ thiết bị</div>
+      <div class="control-group">
+        <div class="skins-grid">
+          <div class="skin-btn skin-space-gray active" data-color="#1e2330" data-shell="#080a0f" title="Space Gray"></div>
+          <div class="skin-btn skin-silver" data-color="#e2e8f0" data-shell="#cbd5e1" title="Silver"></div>
+          <div class="skin-btn skin-gold" data-color="#d97706" data-shell="#b45309" title="Rose Gold"></div>
+          <div class="skin-btn skin-midnight" data-color="#0f172a" data-shell="#020617" title="Midnight"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel-bottom">
+      <div class="panel-footer">
+        <p>Phân hệ: <b>Touch Ordering · KDS · Inventory</b></p>
+        <p style="margin-top: 4px;">Đăng nhập bằng mã PIN cấu hình chi nhánh. Kết nối realtime qua WebSocket.</p>
+        <p style="margin-top: 10px; font-size: 11px; opacity: 0.6;">© 2026 Dan D Pak POS Suite.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Simulator Main Area -->
+  <div class="simulator-area">
+    <div class="device-scaler" id="device-scaler" style="transform: scale(0.8)">
+      <div class="tablet-device" id="tablet-device">
+        <!-- Device Camera Notch -->
+        <div class="camera-notch"></div>
+        
+        <!-- Screen Content -->
+        <div class="tablet-screen">
+          <!-- Status Bar -->
+          <div class="status-bar">
+            <div class="status-left">
+              <span id="live-time">12:00 PM</span>
+              <span class="status-store">Dan D Pak POS</span>
+            </div>
+            <div class="status-right">
+              <!-- Wi-Fi Icon -->
+              <span class="status-icon" title="Wi-Fi Connected">
+                <svg width="14" height="14" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M12 21l-12-12c2.9-2.9 6.8-4.5 12-4.5s9.1 1.6 12 4.5l-12 12zm0-16.5c-4.4 0-7.8 1.3-10.3 3.8l10.3 10.3 10.3-10.3c-2.5-2.5-5.9-3.8-10.3-3.8z"/>
+                </svg>
+              </span>
+              <!-- Network Signal -->
+              <span class="status-icon" title="LAN Discovery Mode">
+                <svg width="14" height="14" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M12 2c5.52 0 10 4.48 10 10s-4.48 10-10 10S2 17.52 2 12 6.48 2 12 2zm1 10h3l-4 4-4-4h3V7h2v5z"/>
+                </svg>
+              </span>
+              <!-- Battery Indicator -->
+              <div class="battery-icon" title="Battery: 98% (Simulated)">
+                <div class="battery-level"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- App Iframe -->
+          <iframe class="app-iframe" src="./app/" id="app-viewport"></iframe>
+
+          <!-- Home gesture bar -->
+          <div class="home-bar">
+            <div class="home-indicator"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Elements
+    const btnRotate = document.getElementById('btn-rotate');
+    const btnBezel = document.getElementById('btn-bezel');
+    const zoomSlider = document.getElementById('zoom-slider');
+    const zoomVal = document.getElementById('zoom-val');
+    const deviceScaler = document.getElementById('device-scaler');
+    const tabletDevice = document.getElementById('tablet-device');
+    const liveTime = document.getElementById('live-time');
+    const skinBtns = document.querySelectorAll('.skin-btn');
+
+    // Live clock update
+    function updateClock() {
+      const now = new Date();
+      let hours = now.getHours();
+      const minutes = String(now.getMinutes()).padStart(2, '0');
+      const ampm = hours >= 12 ? 'PM' : 'AM';
+      hours = hours % 12;
+      hours = hours ? hours : 12; // 0 should be 12
+      liveTime.textContent = `${hours}:${minutes} ${ampm}`;
+    }
+    updateClock();
+    setInterval(updateClock, 1000);
+
+    // Orientation toggle
+    btnRotate.addEventListener('click', () => {
+      tabletDevice.classList.toggle('portrait');
+      autoFitZoom();
+    });
+
+    // Bezel toggle
+    btnBezel.addEventListener('click', () => {
+      tabletDevice.classList.toggle('bezel-less');
+      if (tabletDevice.classList.contains('bezel-less')) {
+        deviceScaler.style.transform = 'scale(1)';
+        zoomSlider.disabled = true;
+        zoomSlider.style.opacity = '0.5';
+      } else {
+        zoomSlider.disabled = false;
+        zoomSlider.style.opacity = '1';
+        updateZoomScale(zoomSlider.value);
+      }
+    });
+
+    // Zoom scale controller
+    function updateZoomScale(value) {
+      const scale = value / 100;
+      deviceScaler.style.transform = `scale(${scale})`;
+      zoomVal.textContent = `${value}%`;
+    }
+
+    zoomSlider.addEventListener('input', (e) => {
+      updateZoomScale(e.target.value);
+    });
+
+    // Device Skin color switcher
+    skinBtns.forEach(btn => {
+      btn.addEventListener('click', () => {
+        skinBtns.forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        
+        const bezelColor = btn.getAttribute('data-color');
+        const shellColor = btn.getAttribute('data-shell');
+        
+        tabletDevice.style.setProperty('--bezel-color', bezelColor);
+        tabletDevice.style.setProperty('--shell-color', shellColor);
+      });
+    });
+
+    // Auto-fit zoom to window height
+    function autoFitZoom() {
+      if (tabletDevice.classList.contains('bezel-less')) return;
+      
+      const windowWidth = window.innerWidth - 360; // Subtract control panel
+      const windowHeight = window.innerHeight - 80; // Margin
+      
+      const isPortrait = tabletDevice.classList.contains('portrait');
+      const deviceWidth = isPortrait ? 834 : 1112;
+      const deviceHeight = isPortrait ? 1112 : 834;
+      
+      const scaleX = windowWidth / deviceWidth;
+      const scaleY = windowHeight / deviceHeight;
+      const idealScale = Math.min(scaleX, scaleY, 1.0); // Don't exceed 100%
+      
+      const zoomPercentage = Math.round(idealScale * 100);
+      zoomSlider.value = zoomPercentage;
+      updateZoomScale(zoomPercentage);
+    }
+
+    // Auto-fit on load and resize
+    window.addEventListener('resize', autoFitZoom);
+    setTimeout(autoFitZoom, 300);
+  </script>
+</body>
+</html>

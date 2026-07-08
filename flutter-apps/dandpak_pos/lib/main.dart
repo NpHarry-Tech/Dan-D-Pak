@@ -4,6 +4,8 @@ import 'package:dandpak_core/dandpak_core.dart';
 import 'package:flutter/material.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:provider/provider.dart';
+import 'package:video_player_win/video_player_win.dart';
+import 'package:local_notifier/local_notifier.dart';
 
 import 'providers/auth_provider.dart';
 import 'providers/customer_display_controller.dart';
@@ -42,6 +44,17 @@ Future<bool> _shouldRunLocalEngine() async {
 
 Future<void> main(List<String> args) async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  if (Platform.isWindows) {
+    try {
+      WindowsVideoPlayer.registerWith();
+    } catch (_) {}
+    try {
+      await localNotifier.setup(
+        appName: 'Dan D Pak POS',
+      );
+    } catch (_) {}
+  }
 
   // desktop_multi_window launches the 2nd display window as a fresh engine
   // running this same main() with ['multi_window', windowId, args]. That window

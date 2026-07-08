@@ -293,6 +293,7 @@ class PosProvider extends ChangeNotifier {
           categoryId: '',
           imageUrl: i['image']?.toString() ?? '',
           modifiers: [],
+          isRetail: skuId.isNotEmpty,
         );
       }
 
@@ -407,7 +408,7 @@ class PosProvider extends ChangeNotifier {
 
       final List<Map<String, dynamic>> orderItems = unsaved
           .map((c) => {
-                'menu_item_id': c.item.id,
+                if (c.item.isRetail) 'sku_id': c.item.id else 'menu_item_id': c.item.id,
                 'qty': c.qty,
                 'note': c.notes,
                 'mods': c.selectedModifiers

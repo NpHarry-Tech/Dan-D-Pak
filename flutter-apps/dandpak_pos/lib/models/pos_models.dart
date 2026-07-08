@@ -178,6 +178,7 @@ class MenuItem {
   final String categoryId;
   final String imageUrl;
   final List<Modifier> modifiers;
+  final bool isRetail;
 
   MenuItem({
     required this.id,
@@ -187,6 +188,7 @@ class MenuItem {
     required this.categoryId,
     required this.imageUrl,
     required this.modifiers,
+    this.isRetail = false,
   });
 
   factory MenuItem.fromJson(Map<String, dynamic> json) {
@@ -203,6 +205,7 @@ class MenuItem {
       categoryId: json['category_id'] ?? json['category'] ?? '',
       imageUrl: json['image_url'] ?? json['image'] ?? '',
       modifiers: parsedMods,
+      isRetail: json['is_retail'] ?? false,
     );
   }
 }

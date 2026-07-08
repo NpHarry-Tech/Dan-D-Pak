@@ -1,7 +1,9 @@
 import 'dart:convert';
+import 'dart:io' show Platform;
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:dandpak_core/dandpak_core.dart';
+import 'package:local_notifier/local_notifier.dart';
 import '../ui/sound_player.dart';
 import 'app_log.dart';
 
@@ -107,6 +109,10 @@ class SocketService {
         // Play the mapped notification sound
         _handleSoundNotification(event, payload);
 
+        if (event == 'payment:done') {
+          _showNativeNotification(payload);
+        }
+
         _dispatch(event, payload);
       },
     );
@@ -119,6 +125,30 @@ class SocketService {
       } catch (e) {
         dlog('Error in SocketService listener: $e');
       }
+    }
+  }
+
+  void _showNativeNotification(dynamic payload) {
+    try {
+      if (kIsWeb) return;
+      if (!Platform.isWindows && !Platform.isMacOS && !Platform.isLinux) return;
+      if (payload is Map && payload['receipt'] is Map) {
+        final receipt = payload['receipt'] as Map;
+        final tableCode = receipt['table_code'] ?? 'Mang về';
+        final total = receipt['total'] ?? 0;
+        final billNo = receipt['bill_no'] ?? '';
+
+        final title = 'Khách hàng đã thanh toán';
+        final body = 'Bàn $tableCode đã thanh toán thành công số tiền ${total}đ (Hóa đơn $billNo)';
+
+        final notification = LocalNotification(
+          title: title,
+          body: body,
+        );
+        notification.show();
+      }
+    } catch (e) {
+      dlog('Failed to show native notification: $e');
     }
   }
 

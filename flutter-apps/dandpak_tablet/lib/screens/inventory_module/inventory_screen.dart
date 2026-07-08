@@ -127,9 +127,12 @@ class _InventoryScreenState extends State<InventoryScreen> with SingleTickerProv
     final appProv = Provider.of<AppProvider>(context);
 
     return Scaffold(
-      backgroundColor: const Color(0xFF0F141C),
+      backgroundColor: const Color(0xFFF7F8FA),
       appBar: AppBar(
-        backgroundColor: const Color(0xFF161C23),
+        backgroundColor: const Color(0xFFFFFFFF),
+        foregroundColor: const Color(0xFF1A2230),
+        elevation: 0,
+        scrolledUnderElevation: 0,
         title: const Text('Quản lý Kho hàng', style: TextStyle(fontWeight: FontWeight.bold)),
         actions: [
           if (_warehouses.isNotEmpty) ...[
@@ -137,18 +140,19 @@ class _InventoryScreenState extends State<InventoryScreen> with SingleTickerProv
               padding: const EdgeInsets.symmetric(horizontal: 10),
               margin: const EdgeInsets.symmetric(vertical: 8),
               decoration: BoxDecoration(
-                color: const Color(0xFF1E2630),
+                color: const Color(0xFFF3F5F7),
                 borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: const Color(0xFFD3D8DF)),
               ),
               child: DropdownButtonHideUnderline(
                 child: DropdownButton<String>(
-                  dropdownColor: const Color(0xFF1E2630),
+                  dropdownColor: const Color(0xFFFFFFFF),
                   value: appProv.activeWarehouse?.id,
-                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                  style: const TextStyle(color: Color(0xFF1A2230), fontWeight: FontWeight.bold),
                   items: _warehouses.map((wh) {
                     return DropdownMenuItem(
                       value: wh.id,
-                      child: Text(wh.name),
+                      child: Text(wh.name, style: const TextStyle(color: Color(0xFF1A2230))),
                     );
                   }).toList(),
                   onChanged: (val) {
@@ -164,15 +168,15 @@ class _InventoryScreenState extends State<InventoryScreen> with SingleTickerProv
             const SizedBox(width: 14),
           ],
           IconButton(
-            icon: const Icon(Icons.refresh, color: Colors.white70),
+            icon: const Icon(Icons.refresh, color: Color(0xFF677084)),
             onPressed: _loadWarehouseData,
           ),
         ],
         bottom: TabBar(
           controller: _tabController,
-          labelColor: const Color(0xFF2F7D6B),
-          unselectedLabelColor: Colors.white60,
-          indicatorColor: const Color(0xFF2F7D6B),
+          labelColor: const Color(0xFF0891B2),
+          unselectedLabelColor: const Color(0xFF677084),
+          indicatorColor: const Color(0xFF0891B2),
           tabs: const [
             Tab(icon: Icon(Icons.inventory_2), text: 'Tồn Kho'),
             Tab(icon: Icon(Icons.compare_arrows), text: 'Nhập/Xuất Nhanh'),
@@ -182,7 +186,7 @@ class _InventoryScreenState extends State<InventoryScreen> with SingleTickerProv
         ),
       ),
       body: _loading
-          ? const Center(child: CircularProgressIndicator(color: Color(0xFF2F7D6B)))
+          ? const Center(child: CircularProgressIndicator(color: Color(0xFF0891B2)))
           : Column(
               children: [
                 if (_error != null)
@@ -210,20 +214,20 @@ class _InventoryScreenState extends State<InventoryScreen> with SingleTickerProv
 
   Widget _buildStockTab() {
     if (_inventory.isEmpty) {
-      return const Center(child: Text('Không có dữ liệu tồn kho.', style: TextStyle(color: Colors.white30)));
+      return const Center(child: Text('Không có dữ liệu tồn kho.', style: TextStyle(color: Color(0xFF677084))));
     }
 
     return ListView.separated(
       padding: const EdgeInsets.all(16),
       itemCount: _inventory.length,
-      separatorBuilder: (_, __) => const Divider(color: Colors.white10),
+      separatorBuilder: (_, __) => const Divider(color: Color(0xFFE7EAEE)),
       itemBuilder: (context, index) {
         final item = _inventory[index];
         final isLow = item.stock < item.minStock;
         final isOut = item.stock <= 0;
 
-        Color titleColor = Colors.white;
-        Color statusColor = Colors.white54;
+        Color titleColor = const Color(0xFF1A2230);
+        Color statusColor = const Color(0xFF677084);
         String statusText = 'Bình thường';
         if (isOut) {
           titleColor = const Color(0xFFFF7A7A);
@@ -270,7 +274,7 @@ class _InventoryScreenState extends State<InventoryScreen> with SingleTickerProv
                     const SizedBox(height: 4),
                     Text(
                       'Loại: ${item.stockType.toUpperCase()} | Định mức: ${item.minStock} ${item.unit}',
-                      style: const TextStyle(color: Colors.white30, fontSize: 12),
+                      style: const TextStyle(color: Color(0xFF677084), fontSize: 12),
                     ),
                   ],
                 ),
@@ -288,7 +292,7 @@ class _InventoryScreenState extends State<InventoryScreen> with SingleTickerProv
                   ),
                   Text(
                     'đ${item.cost} / đơn vị',
-                    style: const TextStyle(color: Colors.white30, fontSize: 11),
+                    style: const TextStyle(color: Color(0xFF677084), fontSize: 11),
                   ),
                 ],
               ),
@@ -301,13 +305,13 @@ class _InventoryScreenState extends State<InventoryScreen> with SingleTickerProv
 
   Widget _buildQuickMovementsTab() {
     if (_inventory.isEmpty) {
-      return const Center(child: Text('Không có dữ liệu tồn kho.', style: TextStyle(color: Colors.white30)));
+      return const Center(child: Text('Không có dữ liệu tồn kho.', style: TextStyle(color: Color(0xFF677084))));
     }
 
     return ListView.separated(
       padding: const EdgeInsets.all(16),
       itemCount: _inventory.length,
-      separatorBuilder: (_, __) => const Divider(color: Colors.white10),
+      separatorBuilder: (_, __) => const Divider(color: Color(0xFFE7EAEE)),
       itemBuilder: (context, index) {
         final item = _inventory[index];
         return Padding(
@@ -318,15 +322,15 @@ class _InventoryScreenState extends State<InventoryScreen> with SingleTickerProv
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(item.name, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-                    Text('Tồn hiện tại: ${item.stock} ${item.unit}', style: const TextStyle(color: Colors.white30, fontSize: 12)),
+                    Text(item.name, style: const TextStyle(color: Color(0xFF1A2230), fontWeight: FontWeight.bold)),
+                    Text('Tồn hiện tại: ${item.stock} ${item.unit}', style: const TextStyle(color: Color(0xFF677084), fontSize: 12)),
                   ],
                 ),
               ),
               OutlinedButton.icon(
                 style: OutlinedButton.styleFrom(
-                  side: const BorderSide(color: Color(0xFF2F7D6B)),
-                  foregroundColor: const Color(0xFF2F7D6B),
+                  side: const BorderSide(color: Color(0xFF0891B2)),
+                  foregroundColor: const Color(0xFF0891B2),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                 ),
                 icon: const Icon(Icons.add, size: 16),
@@ -353,7 +357,7 @@ class _InventoryScreenState extends State<InventoryScreen> with SingleTickerProv
 
   Widget _buildStocktakeTab(AppProvider appProv) {
     if (appProv.activeWarehouse == null) {
-      return const Center(child: Text('Chưa chọn kho hàng', style: TextStyle(color: Colors.white30)));
+      return const Center(child: Text('Chưa chọn kho hàng', style: TextStyle(color: Color(0xFF677084))));
     }
 
     final authProv = Provider.of<AuthProvider>(context, listen: false);
@@ -376,13 +380,13 @@ class _InventoryScreenState extends State<InventoryScreen> with SingleTickerProv
 
   Widget _buildHistoryTab() {
     if (_movements.isEmpty) {
-      return const Center(child: Text('Không có lịch sử nhập xuất.', style: TextStyle(color: Colors.white30)));
+      return const Center(child: Text('Không có lịch sử nhập xuất.', style: TextStyle(color: Color(0xFF677084))));
     }
 
     return ListView.separated(
       padding: const EdgeInsets.all(16),
       itemCount: _movements.length,
-      separatorBuilder: (_, __) => const Divider(color: Colors.white10),
+      separatorBuilder: (_, __) => const Divider(color: Color(0xFFE7EAEE)),
       itemBuilder: (context, index) {
         final mv = _movements[index];
         final type = mv['type']?.toString() ?? 'issue';
@@ -410,10 +414,10 @@ class _InventoryScreenState extends State<InventoryScreen> with SingleTickerProv
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(mv['item_name'] ?? mv['sku_name'] ?? 'Hàng hóa', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                    Text(mv['item_name'] ?? mv['sku_name'] ?? 'Hàng hóa', style: const TextStyle(color: Color(0xFF1A2230), fontWeight: FontWeight.bold)),
                     Text(
                       'Lý do: ${mv['reason'] ?? mv['lot_no'] ?? 'Nhập kho'}',
-                      style: const TextStyle(color: Colors.white30, fontSize: 12),
+                      style: const TextStyle(color: Color(0xFF677084), fontSize: 12),
                     ),
                   ],
                 ),
@@ -431,7 +435,7 @@ class _InventoryScreenState extends State<InventoryScreen> with SingleTickerProv
                   ),
                   Text(
                     mv['created_at'] != null ? mv['created_at'].toString().split('T')[0] : '',
-                    style: const TextStyle(color: Colors.white30, fontSize: 10),
+                    style: const TextStyle(color: Color(0xFF677084), fontSize: 10),
                   ),
                 ],
               ),

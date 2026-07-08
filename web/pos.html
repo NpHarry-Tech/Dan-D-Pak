@@ -220,7 +220,7 @@
 </div>
 
 <script type="module">
-import { api, connect, money, toast, esc, startClock, topbar, requireModuleAccess, renderUserChip, getUser, requestPinCode, pollPayosPaid } from '/shared/client.js';
+import { api, connect, money, toast, esc, startClock, topbar, requireModuleAccess, renderUserChip, getUser, requestPinCode, pollPayosPaid, logout } from '/shared/client.js';
 import { playNotificationSound, applyConfig } from '/js/core/notificationSound.js';
 import { mountOrderHistory } from '/shared/orderHistory.js';
 import { perkTag, perkAmount, openCustomerPicker } from '/shared/customer.js';
@@ -339,6 +339,21 @@ function openOrderPromoPicker(o, customer, currentDisc, onPicked){
 // Load sound config from server settings
 api('/settings/app').then(s => { if(s?.notification_sound_config) applyConfig(s.notification_sound_config); }).catch(()=>{});
 
+function showNativeNotification(title, body) {
+  if (typeof Notification !== 'undefined') {
+    if (Notification.permission === 'granted') {
+      new Notification(title, { body });
+    } else if (Notification.permission !== 'denied') {
+      Notification.requestPermission().then(permission => {
+        if (permission === 'granted') new Notification(title, { body });
+      });
+    }
+  }
+}
+if (typeof Notification !== 'undefined' && Notification.permission === 'default') {
+  Notification.requestPermission();
+}
+
 connect('pos', {
   'order:new':(p)=>{ refreshPending(); refreshFloor(); if(sel&&p.order?.table_id===sel) loadBill(sel); },
   'order:pending':()=>{ playNotificationSound('table_order'); refreshPending(); refreshFloor(); if(sel) loadBill(sel); },
@@ -346,7 +361,15 @@ connect('pos', {
   'order:item':(p)=>{ refreshPending(); if(sel&&p.order_id===order?.id) loadBill(sel); },
   'table:updated':()=>{ refreshFloor(); },
   'staff:call':()=>{ playNotificationSound('staff_call'); refreshCalls(); },
-  'payment:done':()=>{ refreshFloor(); refreshShift(); },
+  'payment:done':(p)=>{
+    refreshFloor();
+    refreshShift();
+    if (p && p.receipt) {
+      const msg = `Bàn ${p.receipt.table_code || 'Mang về'} đã thanh toán ${money(p.receipt.total || 0)}`;
+      toast('🔔 ' + msg);
+      showNativeNotification('Khách hàng đã thanh toán', msg);
+    }
+  },
   'shift:updated':()=>{ refreshShift(); },
 });
 
@@ -802,7 +825,7 @@ async function openShiftPanel({afterOpen}={}){
   if(close) close.onclick=async()=>{
     const counts=Object.fromEntries([...ov.querySelectorAll('[data-denom]')].map(i=>[i.dataset.denom,parseInt(i.value)||0]));
     if(!confirm('Kết ca hiện tại?')) return;
-    try{ const r=await api('/shifts/close',{method:'POST',body:{shift_key:ov.querySelector('#shiftKey').value,counts,closing_cash:countCash(ov)}}); await refreshShift(); ov.remove(); toast(`Đã kết ca. Ca này ${money(r.report?.total_revenue||0)} · Ngày vận hành ${money(r.day_report?.total_revenue||0)}`); }
+    try{ const r=await api('/shifts/close',{method:'POST',body:{shift_key:ov.querySelector('#shiftKey').value,counts,closing_cash:countCash(ov)}}); await refreshShift(); ov.remove(); toast(`Đã kết ca. Ca này ${money(r.report?.total_revenue||0)} · Ngày vận hành ${money(r.day_report?.total_revenue||0)}`); await logout(); }
     catch(e){toast(e.message,true);}
   };
 }
