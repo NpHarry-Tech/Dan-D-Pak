@@ -743,24 +743,43 @@ class _PosScreenState extends State<PosScreen> {
 
   Future<void> _cancelItem(CartItem item) async {
     final pos = context.read<PosProvider>();
+    final auth = context.read<AuthProvider>();
     String? pin;
     var reason = 'Nhân viên hủy';
+
+    // Món nháp (chưa gửi lên server): xóa tự do, không cần quyền.
     if (!item.persisted) {
       await pos.cancelCartItem(item);
       return;
     }
+
+    // Món chờ khách xác nhận (self-order) — server không đòi quyền; các trạng
+    // thái còn lại phân 2 cấp: ĐÃ chế biến cần quyền riêng "void.made", còn lại
+    // (đã gửi nhưng chưa làm) cần quyền "void". Admin/owner bỏ qua tất cả.
     if (item.status != 'pending_confirm') {
-      pin = await requestManagerPin(
-        context,
-        'Hủy món "${item.item.name}". Cần PIN Manager/Admin.',
-      );
-      if (pin == null) return;
-      reason = await _promptText(
-            title: 'Lý do hủy món',
-            label: 'Lý do',
-            initial: reason,
-          ) ??
-          reason;
+      final made = const ['preparing', 'ready', 'served'].contains(item.status);
+      final needPerm = made ? 'void.made' : 'void';
+      final selfHasPerm = auth.hasPermission(needPerm);
+
+      if (!selfHasPerm) {
+        pin = await requestManagerPin(
+          context,
+          made
+              ? 'Xóa món ĐÃ chế biến "${item.item.name}". Cần PIN người có quyền "xóa món đã chế biến".'
+              : 'Hủy món "${item.item.name}". Cần PIN người có quyền hủy món.',
+        );
+        if (pin == null) return;
+      }
+
+      // Món đã chế biến hoặc phải mượn quyền người khác → ghi lý do để đối soát.
+      if (made || pin != null) {
+        reason = await _promptText(
+              title: 'Lý do hủy món',
+              label: 'Lý do',
+              initial: reason,
+            ) ??
+            reason;
+      }
     }
     try {
       await pos.cancelCartItem(item, reason: reason, managerPin: pin);

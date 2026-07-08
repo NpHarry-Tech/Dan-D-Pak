@@ -1659,15 +1659,18 @@ class _WarehouseSettingsPanelState extends State<WarehouseSettingsPanel> {
                           ),
                           const SizedBox(height: 24),
 
-                          // Form Action Buttons
-                          Row(
+                          // Form Action Buttons — Wrap để không tràn ngang khi
+                          // panel hẹp (tablet): 3 nút có nhãn dài dễ vượt bề
+                          // rộng, tự xuống dòng thay vì overflow đỏ.
+                          Wrap(
+                            spacing: 10,
+                            runSpacing: 10,
                             children: [
                               OutlinedButton.icon(
                                 onPressed: () => _selectWarehouse(null),
                                 icon: const Icon(Icons.add, size: 16),
                                 label: const Text('Tạo kho mới'),
                               ),
-                              const SizedBox(width: 10),
                               FilledButton.icon(
                                 onPressed: _save,
                                 icon: const Icon(Icons.save, size: 16),
@@ -1675,7 +1678,6 @@ class _WarehouseSettingsPanelState extends State<WarehouseSettingsPanel> {
                                     ? 'Tạo kho'
                                     : 'Lưu cấu hình kho'),
                               ),
-                              const SizedBox(width: 10),
                               OutlinedButton.icon(
                                 onPressed: () {
                                   Navigator.of(context).push(

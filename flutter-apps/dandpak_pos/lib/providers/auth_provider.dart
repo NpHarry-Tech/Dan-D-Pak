@@ -157,7 +157,12 @@ class AuthProvider extends ChangeNotifier {
     try {
       final res = await apiService.login(username, pin, branchId);
       _token = res['token'];
-      _currentUser = User.fromJson(res['user']);
+      // Server trả `perms` ở NGOÀI object `user` (publicUser không nhúng quyền).
+      // Gộp vào trước khi parse để hasPermission() hoạt động ngay sau đăng nhập
+      // — nếu không, mọi tài khoản (trừ owner) sẽ như KHÔNG có quyền nào.
+      final userJson = Map<String, dynamic>.from(res['user'] as Map);
+      if (res['perms'] is List) userJson['perms'] = res['perms'];
+      _currentUser = User.fromJson(userJson);
       _selectedBranchId = branchId;
 
       apiService.setToken(_token);

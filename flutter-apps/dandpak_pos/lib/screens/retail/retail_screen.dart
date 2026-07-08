@@ -1220,7 +1220,9 @@ class _RetailScreenState extends State<RetailScreen> {
       padding: const EdgeInsets.symmetric(vertical: 3),
       child: Row(
         children: [
-          Expanded(
+          // Nhãn lấy đúng bề rộng cần (Flexible-loose) nên "TỔNG CỘNG" không bị
+          // cắt "…"; số tiền chiếm phần còn lại và canh phải.
+          Flexible(
             child: Text(label,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
@@ -1231,7 +1233,6 @@ class _RetailScreenState extends State<RetailScreen> {
           ),
           const SizedBox(width: 12),
           Expanded(
-            flex: 2,
             child: Align(
               alignment: Alignment.centerRight,
               child: Text(value,
