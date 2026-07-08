@@ -307,7 +307,17 @@ class _SelfOrderScreenState extends State<SelfOrderScreen> {
       backgroundColor: DanColors.surface2,
       body: Stack(
         children: [
-          Positioned.fill(child: _content()),
+          // Chừa status bar ở đỉnh (SafeArea toàn cục dùng top:false nên mỗi màn
+          // tự lo phần đỉnh) — không để tiêu đề đè lên giờ hệ thống.
+          Positioned.fill(
+            child: SafeArea(
+              top: true,
+              bottom: false,
+              left: false,
+              right: false,
+              child: _content(),
+            ),
+          ),
           // Vùng thoát ẩn cho nhân viên (5 chạm / 3 giây, góc trên-trái).
           Positioned(
             top: 0,
@@ -383,7 +393,11 @@ class _SelfOrderScreenState extends State<SelfOrderScreen> {
                   ),
                   const SizedBox(height: 18),
                   FilledButton.icon(
-                    onPressed: _staffUnlock,
+                    // Máy này do NHÂN VIÊN đã đăng nhập mở từ launcher nên bấm
+                    // vào là chọn bàn luôn (khỏi nhập PIN lại). Khi đã giao cho
+                    // khách (kiosk), muốn ĐỔI bàn phải chạm logo 3 lần + PIN.
+                    onPressed: () =>
+                        setState(() => _tablePickUnlocked = true),
                     icon: const Icon(Icons.lock_open, size: 18),
                     label: const Text('Nhân viên chọn bàn'),
                   ),
