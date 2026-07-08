@@ -31,6 +31,10 @@ dependencies:
   # KHÔNG dùng code_cache (bị xóa khi cập nhật app → mất server_url → tablet
   # rớt về localhost, thiếu dữ liệu).
   path_provider: ^2.1.5
+  # Quét mã vạch/QR bằng camera trên tablet/điện thoại — dùng ML Kit (Android) /
+  # AVFoundation (iOS): nhanh, chính xác, chất lượng cao. KHÔNG có bản Windows
+  # nên desktop tự bỏ qua plugin (ta cũng ẩn nút quét trên desktop).
+  mobile_scanner: ^6.0.10
   # 2nd customer-facing window on monitor 2 (single Flutter window can't show
   # two different screens at once). Data is pushed to it over the plugin's own
   # method channel — no server relay needed.

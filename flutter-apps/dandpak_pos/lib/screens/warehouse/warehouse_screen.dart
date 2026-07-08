@@ -6,6 +6,7 @@ import '../../services/api_service.dart';
 import '../../ui/app_theme.dart';
 import '../../ui/format.dart';
 import '../../widgets/dan_top_bar.dart';
+import '../../widgets/scan_button.dart';
 import '../management/management_widgets.dart';
 
 String _s(dynamic v) => v?.toString() ?? '';
@@ -63,6 +64,7 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
   bool _loading = true;
   String? _error;
   String _search = '';
+  final _searchCtrl = TextEditingController();
 
   // KiotViet-style retail product-list filters (left sidebar).
   bool _showFilters = true;
@@ -88,6 +90,18 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
   void initState() {
     super.initState();
     _loadAll();
+  }
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
+  // Áp mã vừa quét (tablet/điện thoại) vào ô tìm + lọc danh sách ngay.
+  void _applyScanned(String code) {
+    _searchCtrl.text = code;
+    setState(() => _search = code);
   }
 
   Map<String, dynamic>? get _curWh {
@@ -331,9 +345,12 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
             children: [
               Expanded(
                 child: TextField(
-                  decoration: const InputDecoration(
+                  controller: _searchCtrl,
+                  decoration: InputDecoration(
                       hintText: 'Tìm mặt hàng…',
-                      prefixIcon: Icon(Icons.search),
+                      prefixIcon: const Icon(Icons.search),
+                      suffixIcon: ScanIconButton(
+                          title: 'Quét mặt hàng', onCode: _applyScanned),
                       isDense: true),
                   onChanged: (v) => setState(() => _search = v),
                 ),
@@ -540,9 +557,14 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
             child: SizedBox(
               height: 40,
               child: TextField(
+                controller: _searchCtrl,
                 decoration: InputDecoration(
                   hintText: 'Theo mã, tên hàng',
                   prefixIcon: const Icon(Icons.search, size: 20),
+                  suffixIcon: ScanIconButton(
+                      title: 'Quét mặt hàng',
+                      size: 20,
+                      onCode: _applyScanned),
                   isDense: true,
                   filled: true,
                   fillColor: DanColors.surface2,

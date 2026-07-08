@@ -13,6 +13,7 @@ import '../../ui/format.dart';
 import '../../widgets/address_fields.dart';
 import '../../widgets/dan_top_bar.dart';
 import '../../widgets/resizable_pane.dart';
+import '../../widgets/scan_button.dart';
 import '../../widgets/tax_lookup.dart';
 import '../customer_display/customer_display_screen.dart';
 import '../order_history_dialog.dart';
@@ -951,10 +952,18 @@ class _RetailScreenState extends State<RetailScreen> {
                 child: TextField(
                   controller: _searchCtrl,
                   focusNode: _barcodeFocus,
-                  decoration: const InputDecoration(
+                  decoration: InputDecoration(
                     hintText:
                         'Tìm sản phẩm hoặc quét/nhập mã vạch rồi Enter...',
-                    prefixIcon: Icon(Icons.qr_code_scanner),
+                    // Tablet/điện thoại: bấm để mở camera quét; desktop: chỉ là
+                    // icon gợi ý (máy quét USB gõ thẳng vào ô).
+                    prefixIcon: ScanIconButton(
+                      title: 'Quét sản phẩm',
+                      onCode: (code) {
+                        _searchCtrl.text = code;
+                        _submitSearch(code);
+                      },
+                    ),
                     isDense: true,
                   ),
                   onChanged: (v) {
