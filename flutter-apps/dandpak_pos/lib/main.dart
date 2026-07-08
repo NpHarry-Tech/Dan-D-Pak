@@ -174,7 +174,16 @@ class _DandpakPosAppState extends State<DandpakPosApp>
         final mq = MediaQuery.of(context);
         return MediaQuery(
           data: mq.copyWith(textScaler: TextScaler.noScaling),
-          child: WindowChrome(child: child ?? const SizedBox()),
+          child: WindowChrome(
+            // Chừa đúng chiều cao thanh điều hướng / TASKBAR của Android (tablet
+            // Samsung) ở đáy — trước đây nội dung tràn xuống dưới nên nút "Thanh
+            // toán" và hàng SP cuối bị taskbar che. top:false vì mỗi màn/topbar tự
+            // lo phần đỉnh; trên desktop không có inset nên đây là no-op.
+            child: SafeArea(
+              top: false,
+              child: child ?? const SizedBox(),
+            ),
+          ),
         );
       },
       home: Consumer<AuthProvider>(
