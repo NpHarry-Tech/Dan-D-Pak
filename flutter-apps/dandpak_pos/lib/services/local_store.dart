@@ -1,7 +1,9 @@
 import 'dart:convert';
 import 'dart:io';
 
-/// Tiny key-value preference store persisted as one JSON file under APPDATA.
+import 'package:path_provider/path_provider.dart';
+
+/// Tiny key-value preference store persisted as one JSON file.
 ///
 /// The whole map is cached in memory after the first read, so repeated
 /// getString calls during boot cost one disk read total (not one per key),
@@ -13,20 +15,32 @@ class LocalStore {
   static final LocalStore instance = LocalStore._();
 
   Map<String, dynamic>? _cache;
+  File? _fileCache;
 
-  File get _file {
-    final base = Platform.environment['APPDATA'] ??
-        Platform.environment['LOCALAPPDATA'] ??
-        Platform.environment['HOME'] ??
-        Directory.systemTemp.path;
-    return File('$base${Platform.pathSeparator}Dan D Pak POS ERP${Platform.pathSeparator}flutter_pos.json');
+  /// Nơi lưu preferences. Trên Android/iOS DÙNG THƯ MỤC HỖ TRỢ ỨNG DỤNG (bền qua
+  /// cập nhật app) — TUYỆT ĐỐI không dùng systemTemp vì trên Android nó là
+  /// code_cache, bị hệ thống XÓA khi cập nhật app → mất server_url → tablet rớt
+  /// về localhost và "thiếu cơ sở dữ liệu". Desktop giữ nguyên theo APPDATA.
+  Future<File> _resolveFile() async {
+    if (_fileCache != null) return _fileCache!;
+    String base;
+    if (Platform.isAndroid || Platform.isIOS) {
+      base = (await getApplicationSupportDirectory()).path;
+    } else {
+      base = Platform.environment['APPDATA'] ??
+          Platform.environment['LOCALAPPDATA'] ??
+          Platform.environment['HOME'] ??
+          Directory.systemTemp.path;
+    }
+    return _fileCache = File(
+        '$base${Platform.pathSeparator}Dan D Pak POS ERP${Platform.pathSeparator}flutter_pos.json');
   }
 
   Future<Map<String, dynamic>> _read() async {
     final cached = _cache;
     if (cached != null) return cached;
     try {
-      final file = _file;
+      final file = await _resolveFile();
       if (!await file.exists()) return _cache = <String, dynamic>{};
       final decoded = jsonDecode(await file.readAsString());
       return _cache = decoded is Map
@@ -39,7 +53,7 @@ class LocalStore {
 
   Future<void> _write(Map<String, dynamic> data) async {
     _cache = data;
-    final file = _file;
+    final file = await _resolveFile();
     await file.parent.create(recursive: true);
     final tmp = File('${file.path}.tmp');
     await tmp.writeAsString(jsonEncode(data), flush: true);

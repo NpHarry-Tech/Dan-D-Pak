@@ -27,6 +27,10 @@ dependencies:
   webview_flutter: ^4.9.0
   qr_flutter: ^4.1.0
   barcode_widget: ^2.0.4
+  # Thư mục lưu bền cho preferences trên Android/iOS (server_url, token…) —
+  # KHÔNG dùng code_cache (bị xóa khi cập nhật app → mất server_url → tablet
+  # rớt về localhost, thiếu dữ liệu).
+  path_provider: ^2.1.5
   # 2nd customer-facing window on monitor 2 (single Flutter window can't show
   # two different screens at once). Data is pushed to it over the plugin's own
   # method channel — no server relay needed.
