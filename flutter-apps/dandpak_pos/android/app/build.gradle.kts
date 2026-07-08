@@ -30,6 +30,12 @@ android {
             // TODO: Add your own signing config for the release build.
             // Signing with the debug keys for now, so `flutter run --release` works.
             signingConfig = signingConfigs.getByName("debug")
+            // TẮT R8/obfuscation: R8 đổi tên/loại bỏ các lớp ML Kit (barcode) nạp
+            // bằng reflection → BarcodeScanner null → NPE "Không mở được camera".
+            // Không rút gọn để trình quét mã vạch chạy đúng (APK to hơn chút,
+            // chấp nhận được cho máy POS).
+            isMinifyEnabled = false
+            isShrinkResources = false
         }
     }
 }

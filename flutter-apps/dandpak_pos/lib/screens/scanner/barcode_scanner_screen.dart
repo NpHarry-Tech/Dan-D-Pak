@@ -27,6 +27,8 @@ class _BarcodeScannerScreen extends StatefulWidget {
 class _BarcodeScannerScreenState extends State<_BarcodeScannerScreen> {
   // Chỉ nhận các định dạng mã vạch hay gặp trong bán lẻ/kho → ML Kit khỏi dò
   // thừa nên NHANH và ÍT nhận nhầm hơn. noDuplicates để không bắn lặp một mã.
+  // KHÔNG ép cameraResolution: để plugin tự chọn độ phân giải hợp lệ theo máy
+  // (ép 1080p làm CameraX bind lỗi NPE trên một số máy Samsung).
   final MobileScannerController _controller = MobileScannerController(
     detectionSpeed: DetectionSpeed.noDuplicates,
     formats: const [
@@ -42,8 +44,6 @@ class _BarcodeScannerScreenState extends State<_BarcodeScannerScreen> {
       BarcodeFormat.qrCode,
       BarcodeFormat.dataMatrix,
     ],
-    // Ưu tiên độ nét cao để quét được mã nhỏ/xa; camera sau lấy nét liên tục.
-    cameraResolution: const Size(1920, 1080),
   );
 
   bool _handled = false;
