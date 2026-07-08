@@ -54,7 +54,6 @@ class _SelfOrderScreenState extends State<SelfOrderScreen> {
   String? _tableCode;
   bool _loading = true;
   String? _error;
-  bool _tablePickUnlocked = false;
 
   // Kiosk exit
   int _exitTaps = 0;
@@ -209,7 +208,6 @@ class _SelfOrderScreenState extends State<SelfOrderScreen> {
     await LocalStore.instance.remove('ipad_table');
     await LocalStore.instance.remove('ipad_tablecode');
     setState(() {
-      _tablePickUnlocked = true;
       _tableId = null;
       _tableCode = null;
       _cart.clear();
@@ -223,7 +221,6 @@ class _SelfOrderScreenState extends State<SelfOrderScreen> {
     setState(() {
       _tableId = id;
       _tableCode = code;
-      _tablePickUnlocked = false;
     });
     await _refreshOrder();
   }
@@ -353,61 +350,12 @@ class _SelfOrderScreenState extends State<SelfOrderScreen> {
         ),
       );
     }
+    // Chưa gắn bàn → VÀO THẲNG màn chọn bàn (không qua cổng "thiết bị chưa gắn
+    // bàn"). Muốn ĐỔI bàn khi đang phục vụ khách: chạm logo 3 lần + PIN.
     if (_tableId == null || _tableId!.isEmpty) {
-      return _tablePickUnlocked ? _TablePick(state: this) : _tableGate();
+      return _TablePick(state: this);
     }
     return _menuView();
-  }
-
-  // ─── Table gate (chưa gắn bàn) ───
-  Widget _tableGate() {
-    return Column(
-      children: [
-        _topBar(title: 'Chưa chọn bàn', showCall: false),
-        Expanded(
-          child: Center(
-            child: Container(
-              width: 420,
-              padding: const EdgeInsets.all(28),
-              decoration: BoxDecoration(
-                color: DanColors.surface,
-                borderRadius: BorderRadius.circular(18),
-                border: Border.all(color: DanColors.border),
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Image.asset('assets/web/assets/logo.png',
-                      height: 60,
-                      errorBuilder: (_, __, ___) =>
-                          const SizedBox(height: 60)),
-                  const SizedBox(height: 16),
-                  const Text('Thiết bị chưa gắn bàn',
-                      style: TextStyle(
-                          fontSize: 18, fontWeight: FontWeight.w900)),
-                  const SizedBox(height: 8),
-                  const Text(
-                    'Nhân viên chạm logo góc trái 3 lần (hoặc nút bên dưới), nhập PIN rồi chọn bàn cho iPad này.',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(color: DanColors.muted, height: 1.4),
-                  ),
-                  const SizedBox(height: 18),
-                  FilledButton.icon(
-                    // Máy này do NHÂN VIÊN đã đăng nhập mở từ launcher nên bấm
-                    // vào là chọn bàn luôn (khỏi nhập PIN lại). Khi đã giao cho
-                    // khách (kiosk), muốn ĐỔI bàn phải chạm logo 3 lần + PIN.
-                    onPressed: () =>
-                        setState(() => _tablePickUnlocked = true),
-                    icon: const Icon(Icons.lock_open, size: 18),
-                    label: const Text('Nhân viên chọn bàn'),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ],
-    );
   }
 
   // ─── Top bar ───
