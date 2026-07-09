@@ -1,9 +1,9 @@
 {
   "windows": {
-    "buildNumber": 5,
-    "version": "2026.07.09d",
-    "file": "dan-d-pak-pos-setup-2026-07-09c.exe",
-    "notes": "Màn hình 'Khách tự gọi món' giao diện sáng đồng bộ; sửa màn Mạng & kết nối đo đúng độ trễ; thêm chọn ảnh từ thư viện + xuất báo cáo trên máy tính bảng.",
+    "buildNumber": 6,
+    "version": "2026.07.09e",
+    "file": "dan-d-pak-pos-setup-2026-07-09e.exe",
+    "notes": "Màn Mạng & kết nối đo đúng độ trễ (tách Internet/API/Socket); giao diện 'Khách tự gọi món' sáng đồng bộ + topbar chuẩn; tinh gọn mã nguồn.",
     "mandatory": false
   },
   "android": {
