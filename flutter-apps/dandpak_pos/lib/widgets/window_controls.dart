@@ -3,7 +3,8 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import '../ui/app_theme.dart';
+import '../services/black_box.dart';
+
 
 /// Bridge to the native runner's custom window-chrome channel (the app has a
 /// frameless window; the Flutter top bar is the title bar).
@@ -13,7 +14,12 @@ class WindowControls {
 
   static Future<void> minimize() => _safe('minimize');
   static Future<void> maximizeOrRestore() => _safe('maximizeOrRestore');
-  static Future<void> close() => _safe('close');
+  static Future<void> close() {
+    // Người dùng chủ động đóng app → đánh dấu thoát sạch để hộp đen không
+    // báo nhầm là crash ở lần mở sau.
+    BlackBox.markCleanExit();
+    return _safe('close');
+  }
   static Future<void> startDrag() => _safe('startDrag');
   static Future<void> startResize(String edge) => _safe('startResize', edge);
 
@@ -53,7 +59,7 @@ class _WindowButtonsState extends State<WindowButtons> {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            _WinBtn(
+            const _WinBtn(
               icon: Icons.remove,
               tooltip: 'Thu nhỏ',
               onTap: WindowControls.minimize,
@@ -67,7 +73,7 @@ class _WindowButtonsState extends State<WindowButtons> {
                 await WindowControls.maximizeOrRestore();
               },
             ),
-            _WinBtn(
+            const _WinBtn(
               icon: Icons.close,
               tooltip: 'Đóng',
               onTap: WindowControls.close,
@@ -138,7 +144,7 @@ class _WinBtnState extends State<_WinBtn> {
                 shape: BoxShape.circle,
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.12),
+                    color: Colors.black.withValues(alpha: 0.12),
                     blurRadius: 1.5,
                     offset: const Offset(0, 1),
                   ),
@@ -151,7 +157,7 @@ class _WinBtnState extends State<_WinBtn> {
                   child: Icon(
                     displayIcon,
                     size: 10,
-                    color: Colors.black.withOpacity(0.7),
+                    color: Colors.black.withValues(alpha: 0.7),
                   ),
                 ),
               ),
@@ -168,10 +174,10 @@ class _WinBtnState extends State<_WinBtn> {
         bg = _hover ? const Color(0xFFE81123) : Colors.transparent; // Windows Close Red
         fg = _hover ? Colors.white : const Color(0xFFE81123);
       } else if (widget.tooltip == 'Thu nhỏ') {
-        bg = _hover ? const Color(0xFFFFBD2E).withOpacity(0.1) : Colors.transparent;
+        bg = _hover ? const Color(0xFFFFBD2E).withValues(alpha: 0.1) : Colors.transparent;
         fg = const Color(0xFFD97706); // Amber/orange
       } else {
-        bg = _hover ? const Color(0xFF27C93F).withOpacity(0.1) : Colors.transparent;
+        bg = _hover ? const Color(0xFF27C93F).withValues(alpha: 0.1) : Colors.transparent;
         fg = const Color(0xFF16A34A); // Green
       }
 

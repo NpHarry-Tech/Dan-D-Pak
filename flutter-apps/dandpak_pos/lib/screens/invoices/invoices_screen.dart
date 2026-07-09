@@ -84,7 +84,7 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
         ],
       ),
     );
-    if (reason == null) return;
+    if (reason == null || !mounted) return;
     try {
       await context
           .read<ApiService>()

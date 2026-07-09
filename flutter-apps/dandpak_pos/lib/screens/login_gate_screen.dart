@@ -5,6 +5,7 @@ import '../models/pos_models.dart';
 import '../providers/auth_provider.dart';
 import '../ui/app_theme.dart';
 import '../widgets/window_controls.dart';
+import '../services/black_box.dart';
 
 const _roleLabels = {
   'owner': 'Admin',
@@ -32,6 +33,7 @@ class _LoginGateScreenState extends State<LoginGateScreen> {
   @override
   void initState() {
     super.initState();
+    BlackBox.screen = 'login';
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       final auth = context.read<AuthProvider>();
       if (auth.loginUsers.isNotEmpty) return;
@@ -161,12 +163,12 @@ class _LoginGateScreenState extends State<LoginGateScreen> {
                 ),
               ),
             ),
-            Positioned(
+            const Positioned(
               top: 0,
               left: 0,
               right: 146,
               height: 62,
-              child: const DragToMoveArea(
+              child: DragToMoveArea(
                 child: SizedBox.expand(),
               ),
             ),

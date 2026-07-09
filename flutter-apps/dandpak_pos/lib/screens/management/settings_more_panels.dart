@@ -1,32 +1,15 @@
-import 'dart:convert';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart'
-    show rootBundle, Clipboard, ClipboardData;
+import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 
 import '../../services/api_service.dart';
 import '../../ui/app_theme.dart';
-import '../../ui/sound_player.dart';
-import '../../widgets/side_sheet.dart';
 import '../warehouse/warehouse_screen.dart';
 import 'management_widgets.dart';
 import 'settings_tab.dart';
 
 String _s(dynamic v) => v?.toString() ?? '';
 bool _b(dynamic v) => v == true || v == 1 || v == '1';
-
-const _channelNames = {
-  'misa': 'MISA · Hóa đơn điện tử',
-  'payos': 'payOS · Cổng thanh toán',
-  'vietqr': 'VietQR API',
-  'sepay': 'SePay · Đối soát chuyển khoản',
-  'casso': 'Casso · Đối soát chuyển khoản',
-  'grabmerchant': 'GrabFood / GrabMerchant',
-  'shopeefood': 'ShopeeFood',
-  'befood': 'beFood',
-  'grabmart': 'GrabMart',
-  'website': 'Website / QR order',
-};
 
 String _prettyField(String key) {
   final withSpaces = key
@@ -481,11 +464,11 @@ class _IntegrationsPanelState extends State<IntegrationsPanel> {
       showDialog(
         context: context,
         builder: (ctx) => AlertDialog(
-          title: Row(
+          title: const Row(
             children: [
               Icon(Icons.error, color: DanColors.late),
-              const SizedBox(width: 10),
-              const Text('Lỗi kết nối'),
+              SizedBox(width: 10),
+              Text('Lỗi kết nối'),
             ],
           ),
           content: Text(e.toString().replaceFirst('Exception: ', '')),
@@ -587,7 +570,7 @@ class _IntegrationsPanelState extends State<IntegrationsPanel> {
                             const SizedBox(height: 4),
                             Text(
                               def.desc,
-                              style: TextStyle(
+                              style: const TextStyle(
                                 fontSize: 12.5,
                                 color: DanColors.muted,
                                 height: 1.4,
@@ -735,7 +718,7 @@ class _IntegrationsPanelState extends State<IntegrationsPanel> {
                   child: OutlinedButton.icon(
                     style: OutlinedButton.styleFrom(
                       foregroundColor: DanColors.text,
-                      side: BorderSide(color: DanColors.border),
+                      side: const BorderSide(color: DanColors.border),
                       padding: const EdgeInsets.symmetric(
                           horizontal: 16, vertical: 12),
                     ),
@@ -763,7 +746,7 @@ class _IntegrationsPanelState extends State<IntegrationsPanel> {
         ),
         Container(
           padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
+          decoration: const BoxDecoration(
             color: DanColors.surface,
             border: Border(top: BorderSide(color: DanColors.border)),
           ),
@@ -817,7 +800,7 @@ class _IntegrationsPanelState extends State<IntegrationsPanel> {
       dropdown = Padding(
         padding: const EdgeInsets.only(bottom: 16),
         child: DropdownButtonFormField<String>(
-          value: conf['orderMode'],
+          initialValue: conf['orderMode'],
           decoration:
               const InputDecoration(labelText: 'Cách nhận đơn', isDense: true),
           items: const [
@@ -997,7 +980,7 @@ class _IntegrationsPanelState extends State<IntegrationsPanel> {
           children: [
             Container(
               width: 300,
-              decoration: BoxDecoration(
+              decoration: const BoxDecoration(
                 border: Border(
                   right: BorderSide(color: DanColors.border),
                 ),
@@ -1412,7 +1395,7 @@ class _WarehouseSettingsPanelState extends State<WarehouseSettingsPanel> {
                                 horizontal: 8, vertical: 3),
                             decoration: BoxDecoration(
                               color: (active ? DanColors.done : DanColors.faint)
-                                  .withOpacity(0.12),
+                                  .withValues(alpha: 0.12),
                               borderRadius: BorderRadius.circular(99),
                             ),
                             child: Text(
@@ -1509,7 +1492,7 @@ class _WarehouseSettingsPanelState extends State<WarehouseSettingsPanel> {
                             children: [
                               Expanded(
                                 child: DropdownButtonFormField<String>(
-                                  value: _type,
+                                  initialValue: _type,
                                   decoration: const InputDecoration(
                                       labelText: 'Loại kho'),
                                   items: const [
@@ -1539,7 +1522,7 @@ class _WarehouseSettingsPanelState extends State<WarehouseSettingsPanel> {
                               const SizedBox(width: 14),
                               Expanded(
                                 child: DropdownButtonFormField<bool>(
-                                  value: _active,
+                                  initialValue: _active,
                                   decoration: const InputDecoration(
                                       labelText: 'Trạng thái'),
                                   items: const [
@@ -1553,8 +1536,9 @@ class _WarehouseSettingsPanelState extends State<WarehouseSettingsPanel> {
                                     ),
                                   ],
                                   onChanged: (val) {
-                                    if (val != null)
+                                    if (val != null) {
                                       setState(() => _active = val);
+                                    }
                                   },
                                 ),
                               ),

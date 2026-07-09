@@ -7,6 +7,7 @@ import '../../services/api_service.dart';
 import '../../ui/app_theme.dart';
 import '../../widgets/dan_top_bar.dart';
 import 'settings_tab.dart';
+import '../../services/black_box.dart';
 
 /// Standalone "Cài đặt" module screen (web /settings). Hosts the settings
 /// sub-nav: users, branches, tables, menu, operations, connections, etc.
@@ -21,6 +22,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   void initState() {
     super.initState();
+    BlackBox.screen = 'settings';
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         context

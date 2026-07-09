@@ -66,5 +66,9 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+	<key>NSCameraUsageDescription</key>
+	<string>Ứng dụng cần sử dụng camera để quét mã vạch sản phẩm phục vụ bán lẻ và nhập xuất kho.</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Ứng dụng cần truy cập mạng nội bộ để kết nối và đồng bộ với máy chủ POS tại cửa hàng.</string>
 </dict>
 </plist>

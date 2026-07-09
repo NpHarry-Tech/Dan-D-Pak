@@ -24,6 +24,7 @@ import 'purchase/purchase_screen.dart';
 import 'retail/retail_screen.dart';
 import 'self_order/self_order_screen.dart';
 import 'warehouse/warehouse_screen.dart';
+import '../services/black_box.dart';
 
 class LauncherScreen extends StatefulWidget {
   const LauncherScreen({super.key});
@@ -42,6 +43,7 @@ class _LauncherScreenState extends State<LauncherScreen> {
   @override
   void initState() {
     super.initState();
+    BlackBox.screen = 'launcher';
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _load();
       _checkUpdate();
@@ -223,12 +225,12 @@ class _LauncherScreenState extends State<LauncherScreen> {
                 ],
               ),
             ),
-            Positioned(
+            const Positioned(
               top: 0,
               left: 0,
               right: 146,
               height: 62,
-              child: const DragToMoveArea(
+              child: DragToMoveArea(
                 child: SizedBox.expand(),
               ),
             ),

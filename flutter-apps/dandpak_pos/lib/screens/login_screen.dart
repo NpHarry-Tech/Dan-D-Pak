@@ -14,7 +14,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final TextEditingController _serverController = TextEditingController();
   final TextEditingController _usernameController = TextEditingController(text: DanDpakDefaults.username);
   String _pin = '';
-  String _branchId = DanDpakDefaults.branchId;
+  final String _branchId = DanDpakDefaults.branchId;
 
   @override
   void initState() {

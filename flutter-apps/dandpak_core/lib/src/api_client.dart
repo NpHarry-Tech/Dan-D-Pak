@@ -18,6 +18,20 @@ class DanDpakApiClient {
   /// server (không có nguy cơ double-submit).
   static Future<bool> Function()? onConnectionRefused;
 
+  /// Quan sát mọi request đã có phản hồi ("hộp đen" của app gắn vào đây để ghi
+  /// vệt API trước crash). Nhận 1 dòng gọn: "GET /api/menu → 200". Callback
+  /// không được ném lỗi; client tự nuốt mọi lỗi từ hook này.
+  static void Function(String line)? onRequestTrace;
+
+  static void _trace(http.Response response) {
+    final cb = onRequestTrace;
+    if (cb == null) return;
+    try {
+      final req = response.request;
+      cb('${req?.method ?? '?'} ${req?.url.path ?? '?'} → ${response.statusCode}');
+    } catch (_) {}
+  }
+
   static bool _isRefused(Object e) {
     if (e is SocketException) return true;
     final s = e.toString();
@@ -217,6 +231,7 @@ class DanDpakApiClient {
     dynamic decoded, {
     String? errorMessage,
   }) {
+    _trace(response);
     if (response.statusCode >= 200 && response.statusCode < 300) {
       return decoded;
     }

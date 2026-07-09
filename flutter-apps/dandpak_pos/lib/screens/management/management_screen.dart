@@ -9,6 +9,7 @@ import '../../ui/app_theme.dart';
 import '../../widgets/dan_top_bar.dart';
 import 'dashboard_tab.dart';
 import 'reports_screen.dart';
+import '../../services/black_box.dart';
 
 /// Native port of the web "Quản lý" (admin.html) page.
 /// Matches the web exactly: a single Dashboard view with a "Báo cáo" button
@@ -41,6 +42,7 @@ class _ManagementScreenState extends State<ManagementScreen> {
   @override
   void initState() {
     super.initState();
+    BlackBox.screen = 'management';
     WidgetsBinding.instance.addPostFrameCallback((_) => _connectRealtime());
   }
 

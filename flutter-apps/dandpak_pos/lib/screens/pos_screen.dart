@@ -19,6 +19,7 @@ import '../widgets/resizable_pane.dart';
 import 'order_history_dialog.dart';
 import 'payment_dialog.dart';
 import 'shift_dialog.dart';
+import '../services/black_box.dart';
 
 class PosScreen extends StatefulWidget {
   const PosScreen({super.key});
@@ -42,6 +43,7 @@ class _PosScreenState extends State<PosScreen> {
   @override
   void initState() {
     super.initState();
+    BlackBox.screen = 'pos';
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final pos = context.read<PosProvider>();
       final auth = context.read<AuthProvider>();
@@ -3137,7 +3139,7 @@ class _MenuPickerDialogState extends State<_MenuPickerDialog> {
                           price: _vnd(item.price),
                           onTap: () async {
                             final added = await widget.onAdd(item);
-                            if (added && mounted) {
+                            if (added && context.mounted) {
                               Navigator.of(context).pop();
                             }
                           },

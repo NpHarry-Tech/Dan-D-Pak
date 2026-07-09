@@ -1,0 +1,1776 @@
+ (bỏ chọn = Printactive, lưu trữ — không xóa)
+$calling ĐANG GỌI
+$lateCount trễ
+$lotNo · HSD $expiry · tồn ${qtyOnHand.round()}
+$n BÀN MỞ
+$n món
+$name · ${_connRoleLabel(role)}
+$open ĐANG DÙNG
+$paying CHỜ THU
+$seats chỗ
+$shown sản phẩm
+$terminal · nhập approval code nếu quẹt thủ công.
+$total bàn · ${math.max(0, total - open)} trống
+$who vừa kết nối vào hệ thống.
+$who đã đăng nhập vào hệ thống.
+$who đã đăng xuất khỏi hệ thống.
+${Fmt.int0(orders)} đơn
+${_cart.fold<int>(0, (s, c) => s + c.qty)} món
+${_cart.length} mặt hàng
+${_currencyFormat.format(value)}đ
+${_decimal.format(v.round())}đ
+${_dmy(createdAt)} lúc ${_hm(createdAt)}
+${_methodLabel(_lines[i].method)}${_lines[i].reference.isEmpty ? 
+${_money.format(v.round())}đ
+${_money.format(value)}đ
+${_pingMs}ms · ${_pingLabel(_pingMs)}
+${_roleLabelOf(role)} · $ovCount ghi đè
+${_routingOverrides.length} người có ghi đè
+${_typeLabels[v.type] ?? v.type}: ${v.valueLabel}
+${config.length} bảng
+${configRows.round()} hàng
+${d.hour.toString().padLeft(2, 
+${def.name} phát hiện tiền về tài khoản → gọi Webhook URL ở trên.
+${docLabel[_s(d[
+${h.toString().padLeft(2, 
+${list.length} SP (hiện ${_skus.length})
+${money.format(value)}đ
+${rolePerms[role]?.length ?? 0} quyền
+${s.rows.length} dòng
+${selected.length} chi nhánh
+${sku.name} đã hết hàng
+${tables.length} bàn · $open đang dùng
+${txn.length} bảng
+${txnRows.round()} hàng
+${v.displayName}: giảm ${Fmt.money(amount)}
+${v.displayName}: tặng $freeUnits ${line.sku.unit}
+${value.round()}đ
+${widget.cart.length} dòng hàng
+% ưu đãi
+(Ca hôm nay)
+(Khởi tạo từ máy tính tiền)
+(Trong ngày)
+(chưa cấp số)
+(chưa đặt)
+(không bắt buộc)
+(mẫu trống)
+)}:${d.minute.toString().padLeft(2, 
+--title=Select hình ảnh hoặc video quảng cáo
+--title=Select ảnh hóa đơn
+/assets/menu-book/${(_pages(_book() ?? {}).length + 1).toString().padLeft(2, 
+0đ
+1 điểm = VND
+1 ảnh → hiển thị cố định. Nhiều ảnh → chạy luân phiên theo thời gian đã chọn.
+1. Quyền truy cập Camera (Máy ảnh)
+1. Quyền truy cập thiết bị
+1. Đối chiếu tiền-về chưa khớp
+10 hoặc 13 chữ số
+12 tháng gần nhất
+15 giây
+2. Connection Network nội bộ & Printternet
+2. Lý do / ghi chú đối soát
+2. Thu thập thông tin cá nhân
+20 giây
+25 giây
+2x Trà đào 60.000đ\n1x Bánh cookie 30.000đ
+3. Chia sẻ thông tin với bên thứ ba
+3. No thu thập thông tin cá nhân
+30 giây
+4. Contacts & Hỗ trợ
+4. Contacts hỗ trợ
+5 năm gần nhất
+7 ngày gần nhất
+8 quý gần nhất
+8 tuần gần nhất
+90.000đ
+API Base URL
+Account kết nối
+Account ngân hàng nhận chuyển khoản
+Account này chưa có quyền xem báo cáo nào.
+Account, vai trò và quyền truy cập của nhân viên.
+Active — đang hoạt động
+Add bàn
+Add chi nhánh
+Add chi phí
+Add danh mục
+Add danh mục in
+Add dòng
+Add hành vi
+Add hóa đơn
+Add hạng
+Add khách hàng
+Add liên hệ
+Add món
+Add món FnB
+Add món FnB/retail hoặc chờ khách gọi món từ tablet.
+Add món kèm / extra
+Add món mới
+Add mặt hàng
+Add mặt hàng kho
+Add nguyên liệu
+Add nhân viên
+Add nút
+Add nước / đá
+Add sản phẩm / nhóm ưu tiên
+Add ít nhất một dòng hàng
+Add ảnh
+Address Server (IP LAN)
+Address giao / nhận hàng
+Address nhận hàng
+Address trên hóa đơn
+Admin luôn có toàn quyền, không cần chỉnh.
+All chi nhánh
+All danh mục
+All kênh
+All lot của SKU
+All lịch sử
+All ngoại trừ danh mục chọn
+All nhân viên
+All nhóm
+All thực đơn
+All trạng thái
+Allergen / dị ứng
+BILL
+Backup & Phục hồi cấu hình
+Backup/phục hồi danh mục, nhân sự, menu, cài đặt. No bao gồm dữ liệu giao dịch đơn hàng
+Ban/Kenh: ${_placeLabel(r)}
+Bank Transfer / ví
+Bank Transfer / ví trong ngày
+Bill & Tem nhãn
+Bill & tem nhãn
+Bill trung bình
+Bill tối thiểu
+Bill đã KẾT CA — cần PIN Management/Admin để xác nhận thay đổi.
+Bill đã kết ca. Các thao tác thay đổi sau bán cần PIN Management/Admin.
+Branch & phân vùng
+Branch & Địa điểm kinh doanh
+Branch: ${branch.name} · Trực tiếp
+Bán buôn/Retail
+Bán cho người tiêu dùng
+Bán cả ngày
+Bán retail
+Bên nhận tiền / NCC *
+Bình thường
+Bạn chịu trách nhiệm xác nhận khoản thu này — được ghi vào nhật ký.
+Bạn có đồng ý cấp quyền truy cập Camera không?
+Bạn không có quyền thực hiện thao tác này
+Bản
+Bản cập nhật tải về rỗng
+Bảng cấu hình
+Bảng cấu hình (giữ khi reset)
+Bảng giao dịch
+Bảng món
+Bảng quản lý
+Bấm nút [+ Add danh mục in] ở bên dưới:\n• Select kết nối: Network Printer (LAN/IP).\n• Import IP máy in bếp/bar vào cột IP máy in (LAN) (VD: 192.168.1.50).\n• Import Port (mặc định là 9100).\n• Select Format in tương ứng (VD: Phiếu bếp/bar (Kitchen ticket) cho bếp, Tem ly (Cup label) cho tem nhãn...).
+Bấm để xem chi tiết
+Bật
+Bật cho tablet/iPad dọc; mỗi hotspot mở đúng món thật trong backend.
+Bật chương trình "${v.name}".
+Bật chương trình tích điểm theo số điện thoại
+Bật màn hình phụ (màn thứ 2)
+Bật âm thanh thông báo
+Bắt đầu làm
+Bắt đầu thiết lập →
+Bằng chữ: ${_s(receipt[
+BẾP
+Bếp
+Bếp đang chuẩn bị món của bạn
+Bỏ ảnh
+Bộ lọc
+CAO NHẤT
+CHI NHÁNH
+CHÈN DỮ LIỆU
+CHẾ ĐỘ HOẠT ĐỘNG
+CSDL toàn vẹn
+Ca mở
+Ca sáng
+Ca tối
+Ca đang mở
+Ca đóng
+Ca, thanh toán, vận hành
+Ca: chưa mở
+Ca: đang mở
+Cam kết Security & Quyền riêng tư
+Cam kết bảo mật dữ liệu và quyền sử dụng camera.
+Cancel URL (Cancel thanh toán)
+Cancel bill / hủy món
+Cancel bỏ
+Cancel hóa đơn
+Cancel link thanh toán: POST /v2/payment-requests/{id}/cancel
+Cancel món
+Cancel món "${item.item.name}". Cần PIN người có quyền hủy món.
+Cancel đơn
+Cancelled hóa đơn.
+Cancelled lưu cấu hình kho
+Cancelled món.
+Cancelled đơn
+Cancelled/trả
+Cart đang trống
+Cash bán hàng
+Cash dự kiến
+Cash trong ngày
+Cash: 100.000đ
+Casso · Đối soát chuyển khoản
+Casso — tự đối soát chuyển khoản
+Category mới
+Category, món ăn, recipe trừ kho và lịch bán.
+Chi tiêu
+Chi tiêu tối thiểu
+Chi trực tiếp
+Chi trực tiếp (kế toán)
+Chi từ két
+Chi từ két tiền
+Cho phép đăng nhập
+Cho phép đổi điểm thành giảm giá
+Chuyển bàn
+Chuyển bàn ${table.code} sang
+Chuyển kho
+Chuyển tới: $stationName
+Chuyển đi
+Chuyển đến
+Chào mừng bạn đến với tính năng Tax & Kế toán!
+Chào mừng quý khách
+Chúng tôi cam kết:\n
+Chưa bán món nào
+Chưa có
+Chưa có IP
+Chưa có bàn
+Chưa có ca đang mở. Sau khi mở ca, doanh thu thanh toán sẽ được gom vào báo cáo tại đây.
+Chưa có ca được mở hôm nay, tạm tính theo ngày lịch từ $startText đến $endText.
+Chưa có chương trình khuyến mại
+Chưa có cấu hình menu quyển
+Chưa có doanh thu hôm nay
+Chưa có doanh thu trong kỳ này
+Chưa có dòng nào — bấm “+ Dòng chữ” bên dưới.
+Chưa có dòng thanh toán
+Chưa có dữ liệu
+Chưa có dữ liệu hóa đơn
+Chưa có giao dịch két trong ca này
+Chưa có hóa đơn nào
+Chưa có job in nào
+Chưa có khoản chi nào
+Chưa có khách hàng
+Chưa có khách hàng phù hợp
+Chưa có khách phù hợp
+Chưa có liên hệ nào
+Chưa có lô hàng nào
+Chưa có lệnh in nào
+Chưa có lịch sử kho
+Chưa có lịch sử đặt hàng chi tiết
+Chưa có máy in nào được cấu hình trong Category in
+Chưa có máy in nào. Bấm "+ Add danh mục in" bên dưới để thêm.
+Chưa có món kèm / extra.
+Chưa có món trong nhóm này
+Chưa có nhân viên để hiển thị.\nDùng "Login quản trị viên" bên dưới.
+Chưa có phiếu kho nào
+Chưa có sản phẩm
+Chưa có thiết bị nào kết nối
+Chưa có trang menu
+Chưa có tài liệu nào.\n(Upload tài liệu mới sẽ bổ sung sau khi tích hợp chọn file.)
+Chưa có đơn mua nào
+Chưa có đơn online nào
+Chưa có địa chỉ nhận hàng riêng
+Chưa có ảnh
+Chưa có ảnh — màn hình phụ sẽ hiện logo khi rảnh.
+Chưa có ảnh — sẽ in dòng chữ [${_s(row[
+Chưa cấu hình máy in nào
+Chưa giao
+Chưa gán món
+Chưa kết nối
+Chưa liên kết
+Chưa nối kênh bán hàng
+Chưa thiết lập
+Chưa tải được danh sách cơ sở.
+Chưa đủ dữ liệu
+Chưa đủ tiền
+Chưa đủ tiền thanh toán
+Chấm tương tác
+Chậm
+Chỉ 1 lần
+Chỉ một ngày
+Chỉ tích điểm khi khách có số điện thoại
+Chỉ áp dụng cho các danh mục chọn
+Chờ bếp
+Chờ in
+Chờ nhân viên xác nhận
+Chờ thu
+Chờ thu ngân
+Chờ xử lý
+Confirm chi tiền
+Confirm hoàn ${Fmt.money(_n(widget.receipt[
+Confirm hoàn chi
+Confirm quyền
+Confirm thay đổi cấu hình danh mục máy in.
+Confirm thay đổi cấu hình máy POS thẻ.
+Confirm thông tin hồ sơ
+Confirm thủ công
+Confirm đã hủy
+Confirm đã thu ${Fmt.money(widget.amount)}
+Confirm đơn
+Connection hệ thống
+Connection phần cứng
+Connection thành công!
+Connection thất bại.
+Cost Price / đơn vị
+Customers không có công nợ
+Customers đã thanh toán
+Customers, nhà cung cấp hoặc nhân viên
+CÔNG TY
+Cá nhân
+Các dòng thanh toán
+Cách hoạt động (Đường B — tự đối soát)
+Cách nhận đơn
+Cách tích điểm tự động
+Còn $daysLeft ngày
+Còn nợ
+Còn nợ ${Fmt.money(due)}
+Còn thiếu
+Công nợ phải trả: 
+Cơ sở dữ liệu
+Cơ sở dữ liệu & Tài liệu
+Cả hai
+Cảm ơn quý khách • ${_money(d.total)}
+CẤU HÌNH CHI TIẾT
+Cấu hình Server
+Cấu hình Server (Server)
+Cấu hình bàn
+Cấu hình bàn & Sơ đồ
+Cấu hình cách máy POS xử lý khi bấm "Payment thẻ". "Tự động" khi máy chưa cấu nối sẽ tự hạ xuống "Thủ công", không bị treo.
+Cấu hình kho
+Cấu hình kết nối Invoices điện tử (MISA meInvoice)
+Cấu hình menu
+Cấu hình máy in, in thử và lịch sử lệnh in đã có trong module "Printers" ở màn hình ứng dụng.
+Cấu hình thông báo
+Cấu hình trong hệ thống ERP/POS (Tại đây)
+Cần giữ lại ít nhất một quyển menu
+Cần mở ca làm việc trước khi bán hàng.
+Cần mở ca làm việc trước khi bán retail.
+Cần nhập khu vực và số bàn
+Cần nhập tên chi nhánh
+Cần nhập tên liên hệ
+Cần nhập tên món và chọn nhóm
+Cần nhập tên và tên đăng nhập
+Cần thanh toán
+Cắm máy in bếp/bar vào switch hoặc router bằng dây mạng LAN. Đảm bảo thiết bị POS ở quầy và iPad cũng kết nối cùng mạng LAN (chung Wi-Fi/mạng nội bộ) đó.
+CỔNG (PORT)
+Cổng thanh toán QR/thẻ payOS — tạo link thanh toán và nhận webhook xác nhận đã thanh toán.
+Cộng tiền hàng
+Cột hiển thị
+Cửa hàng
+DANBILL
+DANBILL${DateTime.now().millisecondsSinceEpoch}
+Danh bạ khách hàng
+Date bán (YYYY-MM-DD)
+Date bắt đầu kê khai
+Date chuyển sang phương pháp kê khai *
+Date giao dịch cuối
+Date giờ
+Date giờ chi
+Date giờ hoàn
+Date lập
+Date trong tháng
+Date tạo
+Delete bàn "${_s(table[
+Delete chi phí
+Delete danh mục "${c.name}".
+Delete dòng
+Delete giỏ
+Delete khoản chi ${Fmt.money(_n(e[
+Delete liên hệ
+Delete lọc
+Delete lọc ngày
+Delete món nháp
+Delete món ăn "${item.name}". Cần PIN Manager hoặc Admin.
+Delete món ĐÃ chế biến "${item.item.name}". Cần PIN người có quyền "xóa món đã chế biến".
+Delete nhân viên "${_s(user[
+Delete quyển
+Delete toàn bộ dữ liệu giao dịch như đơn, thanh toán, ca và phiếu. Giữ lại cấu hình. Cần PIN Admin.
+Delete tài liệu
+Delete ảnh
+Description món
+Discount và voucher
+Done & Kích hoạt
+Download cấu hình (.json)
+Dung lượng CSDL
+Dung lượng file
+Dán URL này vào Casso → Cấu hình Webhook. Casso gửi kèm header secure-token = secret bên dưới. Khi tiền về khớp nội dung DANBILL+mã bill và đủ tiền, hệ thống tự đóng bill + in hoá đơn.
+Dán URL này vào SePay → Tích hợp → Cấu hình Webhooks. SePay gửi kèm header Authorization: Apikey <API Key>. Khi tiền về khớp nội dung DANBILL+mã bill và đủ tiền, hệ thống tự đóng bill + in hoá đơn.
+Dán URL này vào payOS Dashboard → Kênh thanh toán → Cấu hình Webhook. payOS sẽ gọi về đây khi khách thanh toán xong.
+Dán nội dung JSON cấu hình đã xuất...
+Dòng chữ
+Dòng cấu hình
+Dòng giao dịch
+Dòng hàng
+Dòng mô tả
+Dòng đầy đủ
+Dùng mẫu
+Dưới định mức
+Dị ứng
+Dị ứng / allergen
+Dịch vụ
+Dọn sạch giao dịch & Reset bàn
+EMAIL
+Edit bàn
+Edit chi nhánh
+Edit chi phí
+Edit chương trình
+Edit danh mục
+Edit liên hệ
+Edit món
+Edit nhân viên
+Email nhận hóa đơn
+Error gọi POS-Link native: $e
+Error kết nối
+Error kết nối máy POS: $e
+Error lưu giao dịch vào bill: ${_friendlyError(e)}. Bạn hãy nhập mã phê duyệt.
+Expand giỏ hàng
+Export cấu hình
+Export dùng nội bộ
+Export hóa đơn
+Export hóa đơn VAT
+Export hóa đơn công ty
+Export hóa đơn điện tử, đồng bộ khách hàng và trạng thái hóa đơn.
+Export kho thất bại
+FEFO tự động
+FILE
+Failed to open URL: $e
+File cấu hình phải là JSON object
+GHI CHÚ
+GHI CHÚ NỘI BỘ
+GIAO DỊCH KÉT CA NÀY
+GetWindowLongPtrW
+Ghi chi phí
+Ghi thanh toán
+Ghi đè theo nhân viên
+Giao dịch bị hủy hoặc thất bại.
+Giao dịch bị từ chối hoặc thất bại.
+Giao dịch không khớp / chưa đủ tiền được ghi vào nhật ký để đối soát thủ công.
+Giá
+Giá sau thuế
+Giá trước thuế
+Giá trị
+Giải mã chi tiết
+Giảm số tiền
+Giảm theo %
+Giới thiệu
+Giới thiệu bạn bè
+Giờ
+Giờ bắt đầu
+Giờ kết thúc
+Góc
+Gõ token vào nội dung; khi in sẽ thay bằng dữ liệu thật. VD {items} = danh sách món.
+Gần nhất
+Gọi máy POS
+Gộp bàn
+Gộp bàn ${table.code} vào
+Gợi ý voucher đang hoạt động
+Gợi ý: ${bestVoucher.displayName}
+Gợi ý: ${bestVoucher.displayName} giảm ${Fmt.money(best)}
+Gửi món vào bếp
+Gửi món vào bếp/bar trước khi thanh toán.
+Gửi yêu cầu →
+Hao hụt / hủy
+Header bắt buộc mọi request: x-client-id + x-api-key
+History / Đổi trả
+History bán hàng
+History lệnh in
+History thao tác hệ thống, lỗi phát sinh và truy vết theo thời gian.
+History tích điểm
+History đặt hàng
+Hiển thị quảng cáo khi rảnh, đơn hàng khi đang order, và QR khi thanh toán. Dùng chung cho cả FnB và Retail.
+Hiện
+Hiện bộ lọc
+Hiện nút trên tablet/iPad
+Hiện tại: ${Fmt.money(_origDrawerCash)}
+Hiệu lực & lịch chạy
+Hoàn / trả hàng
+Hoàn chi
+Hoàn cho: ${_s(entry[
+Hoàn tiền / cashback
+Hoàn tiền và đổi trả
+Hoàn trả thất bại
+Hoạt động
+Hoạt động hệ thống
+HÓA ĐƠN BÁN HÀNG
+HÓA ĐƠN THANH TOÁN
+HÓA ĐƠN ĐIỆN TỬ KHỞI TẠO TỪ MÁY TÍNH TIỀN\nCẢM ƠN QUÝ KHÁCH - HẸN GẶP LẠI!
+Hàng hóa / SKU cụ thể
+Hàng hóa / dịch vụ
+Hàng hóa / mọi SKU
+Hình thức
+Hình thức TT
+Hình thức khuyến mại
+HĐ $invoiceNo
+HĐĐT (MISA)
+Hướng dẫn cấu hình in trực tiếp qua LAN (Mô hình IPOS - No dùng KDS)
+Hạn dùng (YYYY-MM-DD)
+Hạng
+Hết
+Hết hạn
+Hệ số nhân
+Họ tên
+Hỏng vỡ
+Hỗ trợ
+IP MÁY POS THẺ (TETHERING/LAN)
+IP máy in (LAN)
+Import PIN Management để xác nhận đưa các hóa đơn lỗi vào hàng đợi gửi lại sau và kết ca:
+Import PubHTML5
+Import approval code thủ công rồi thêm dòng thanh toán
+Import bên nhận tiền / NCC
+Import chữ hoặc chèn {dữ liệu}…
+Import giá trị
+Import hoặc chọn tên máy in thật (VD: EPSON TM-T82)
+Import kho thất bại
+Import lý do chi
+Import lý do nếu từ chối (ví dụ: hết món...)
+Import mã PIN
+Import mã số thuế trước khi truy xuất
+Import mã voucher giấy, voucher công ty, đối tác hoặc UrBox. CTKM sản phẩm chọn bằng icon hộp quà trên từng dòng hàng.
+Import mã địa điểm kinh doanh (MST 13 số nếu có) và chọn trụ sở chính:
+Import mật khẩu (PIN) của bạn để chịu trách nhiệm xác nhận này.
+Import số lượng nhận
+Import số tiền
+Import số tiền > 0
+Import số tiền chi
+Import thông tin xuất hóa đơn
+Import tài khoản quản trị
+Import tài khoản và mã PIN quản trị viên
+Import tên chương trình khuyến mại
+Import tên kho
+Import tên khách hoặc tên công ty xuất hóa đơn
+Import tên mặt hàng
+Import tên, SĐT hoặc tên công ty
+Import tồn đầu
+Import vào kho
+Import địa chỉ API của máy chủ trung tâm:
+Info đăng ký kinh doanh
+Invoices ${id.toString().padLeft(2, 
+Invoices / Tạm tính
+Invoices / toàn bill
+Invoices không có số tiền cần thanh toán.
+Invoices tối thiểu
+Invoices điện tử
+Invoices điện tử, kế toán và nền tảng bán hàng.
+Job in gần đây
+KHỔ IN
+KIỂM TRA ĐƠN HÀNG
+KM toàn bill
+Kho & kênh bán
+Kho & thực đơn
+Kho / Tồn thấp
+Kho bếp / vật dụng
+Kho nhận
+Kho trống
+Kho tài liệu nội bộ dùng cho vận hành và đào tạo.
+Khuyến mại / Voucher
+Khuyến mại / voucher
+Khuyến mại theo
+Khác
+Khác (Custom)
+Khách
+Khách bàn ${table.code} đang gọi: ${table.callReason}
+Khách báo đã chuyển ${Fmt.money(widget.amount)} nhưng hệ thống chưa tự khớp (QR cũ, webhook chậm, mất mạng...).
+Khách chưa đặt tên
+Khách gọi nhân viên
+Khách không xuất hóa đơn
+Khách lẻ
+Khách mới
+Khách quét QR VietQR và chuyển khoản kèm nội dung DANBILL+mã bill (sinh tự động trên màn thanh toán).
+Khách trả hàng
+Khách tự gọi món (iPad)
+Khách yêu cầu xuất hóa đơn
+Khách đã chuyển? Confirm thủ công
+Khách đã thanh toán qua payOS
+Khách đưa (VND)
+Kiểm kho
+Kiểm tra cấu hình
+Kiểm tra payOS
+Kiểm tra thành công
+Kiểm tra thất bại
+Kiểm tra tính toàn vẹn
+Kiểm đếm khi kết ca
+Kiểm đếm tiền thực nhận
+Kiểm đếm đầu ca
+KÉT SAU HOÀN CHI
+Két trước hoàn chi
+Kênh
+Kênh bán hàng đang nối với kho này
+Kênh online
+Kênh online chung
+Kênh đặt món từ website, QR bàn, landing page hoặc kiosk tự gọi món.
+Kích hoạt
+Ký hiệu HĐ
+Ký hiệu hóa đơn
+Kế toán
+Kế toán / người giao
+Kết ca
+Kết ca hiện tại? System sẽ chốt báo cáo ca.
+Kết quả: ${_s(result[
+Kỳ báo cáo: ${r.rangeLabel}${r.generatedAt.isNotEmpty ? 
+Kỳ sau
+Kỳ trước
+LOCALAPPDATA
+LOẠI LIÊN HỆ
+Link PubHTML5
+Link tra cứu
+List chương trình
+List dữ liệu (token)
+Liên kết
+Liên kết dịch vụ
+Loading
+Loading…
+Login $displayName
+Login failed
+Login nhân viên
+Login quản trị
+Login quản trị viên
+Logo
+Logo / Ảnh
+Logo/Ảnh
+Logout
+Logout failed
+Lot ${lot.lotNo}
+Lot / HSD
+Lot/Date áp dụng
+Loyalty Points
+Loyalty Points & CTKM
+Loyalty Points & Khuyến mại
+Loyalty Points khách hàng
+Loyalty Points theo giá trị mua hàng
+Loyalty Points theo số lần giao dịch
+Loại
+Loại database
+Loại kho
+Loại khách hàng
+Loại thông báo
+Loại đối tác
+Luôn nhận
+Luồng VietQR API đang dùng
+Làm tròn
+Lên
+Lô ${_s(l[
+Lô & HSD
+Lý do
+Lý do *
+Lý do chi tiền
+Lý do hủy
+Lý do hủy món
+Lý do từ chối
+Lý do xuất
+Lý do đổi trả / hoàn hàng
+Lấy thông tin đơn: GET /v2/payment-requests/{id}
+Lấy token: POST /token_generate
+Lề phải
+Lề trái
+Lệnh in thiếu ID
+Lịch bán
+Lời cảm ơn
+Lời cảm ơn (footer)
+Lựa chọn quy mô doanh thu ước tính để kích hoạt biểu mẫu biểu thuế tương ứng:
+MISA · Invoices điện tử
+MST (nếu xuất cho công ty)
+MST khách
+Management danh mục
+Management kho hàng và liên kết kênh bán.
+Management nhân viên
+Management quyền và vai trò
+Management thực đơn
+Management và kiểm tra sức khỏe cơ sở dữ liệu SQLite tại cửa hàng
+Mang đi
+Menu mới
+Menu quyển
+Menu quyển tương tác
+Miễn phí
+Miễn thuế GTGT và TNCN. Sử dụng Sổ kế toán S1a đơn giản, không bắt buộc HĐĐT.
+Module này sẽ được port native từ bản web hiện tại bằng cùng API backend.
+Month áp dụng
+Mua ${value.round()} tặng 1
+Mua X tặng 1
+Mua thêm
+MÃ CỦA CƠ QUAN THUẾ:\n${_s(invoice[
+MÃ KH
+MÃ SỐ THUẾ
+MÓN
+MÓN ĐÃ HỦY
+Màn bếp (KDS)
+Màn hình phụ
+Màn hình phụ đang hiển thị đúng QR của hóa đơn này.
+Màn hình self-order và thiết bị cho khách.
+Màn hình tự order (iPad / máy khách)
+Màu nút
+Máy POS
+Máy POS / thẻ
+Máy POS / thẻ trong ngày
+Máy POS thẻ (quẹt thẻ)
+Máy POS đã duyệt giao dịch
+Mã
+Mã QR
+Mã QR / chuyển khoản
+Mã chi nhánh
+Mã hàng
+Mã hóa
+Mã hóa đơn: $_billNo
+Mã kho
+Mã khách hàng
+Mã lỗi
+Mã ngân hàng (VCB, MB, ACB...)
+Mã phê duyệt / Approval code
+Mã phường/xã
+Mã số thuế
+Mã số thuế (MST) (bỏ qua nếu chưa có)
+Mã tham chiếu / approval
+Mã trạng thái
+Mã tỉnh/thành
+Mã voucher
+Mã voucher không tồn tại hoặc chưa đủ điều kiện.
+Mã địa điểm kinh doanh...
+Mã địa điểm: ${_s(loc[
+Món & tiền
+Món khách vừa gọi
+Món mới lên màn hình bếp (KDS)
+Món ăn kèm & Extra
+Món đang ẩn — không hiện trên thiết bị khách hàng
+Món đã sẵn sàng — mời quý khách dùng bữa
+Món được mở khi bấm
+Mô hình HKD quy mô lớn. Nghĩa vụ thuế và báo cáo tài chính bắt buộc tương đương doanh nghiệp.
+Mô hình này giúp máy POS quầy và iPad tự động gửi lệnh in trực tiếp đến máy in bếp/bar qua mạng LAN nội bộ, phù hợp khi quán chưa trang bị màn hình KDS. Hãy làm theo các bước sau:
+Môi trường Staging & Reset giao dịch
+MẤT KẾT NỐI
+Mẫu hóa đơn chuẩn
+Mẫu số hóa đơn
+Mẫu tem chuẩn
+Mặt hàng
+Mệnh giá tiền mặt
+Mới
+Mở
+Mở két
+Mở két khi in
+Mở két tiền
+Mở màn Kho
+Mở màn hình phụ trên màn 2
+Mở tồn
+NGƯỜI LIÊN HỆ
+NHÀ CUNG CẤP
+Name Hộ kinh doanh
+Name Hộ kinh doanh *
+Name chi nhánh
+Name chương trình
+Name chủ tài khoản
+Name chứa
+Name cá nhân hoặc công ty
+Name công ty
+Name công ty (nếu có)
+Name cửa hàng
+Name hàng
+Name hành vi
+Name hạng
+Name khách
+Name khách / tên nhà cung cấp
+Name khách hàng
+Name mẫu in
+Name mặt hàng
+Name ngân hàng
+Name người / nhà cung cấp nhận tiền
+Name người mua / công ty
+Name người phụ trách bên NCC
+Name nhân viên
+Name nhóm
+Name nhóm mới
+Name nơi mua
+Name quyển
+Name đăng nhập
+Network Printer (LAN/IP)
+Nghe thử
+Ngoài lịch
+Nguyên liệu
+Nguyên liệu (hiển thị)
+Nguyên liệu FnB
+Nguyên nhân
+Nguồn tiền
+Ngân hàng
+Ngăn xếp kỹ thuật (debug)
+Ngưng hoạt động
+Người hoàn tiền
+Người nhận hóa đơn
+Người tạo giao dịch
+Nhàn rỗi
+Nháp
+Nhân
+Nhân bản sang Staging
+Nhân sự & Phân quyền
+Nhân điểm
+Nhân điểm trong ngày sinh nhật
+Nhãn in
+Nhãn nội bộ
+Nhãn sau tên
+Nhóm
+Nhóm 1 (< 1 tỷ/năm)
+Nhóm 1: Revenue < 1 tỷ đồng / năm
+Nhóm 2 (1 tỷ - 3 tỷ/năm)
+Nhóm 2: Revenue 1 tỷ – 3 tỷ đồng / năm
+Nhóm 3 (3 tỷ - 50 tỷ/năm)
+Nhóm 3: Revenue 3 tỷ – 50 tỷ đồng / năm
+Nhóm 4 (> 50 tỷ/năm)
+Nhóm 4: Revenue > 50 tỷ đồng / năm
+Nhóm hàng
+Nhóm khách hàng
+Nhóm ngành
+Nhận
+Nhận món
+Nhận và đồng bộ đơn hàng
+Nhận đơn Shopee Food, quản lý xác nhận đơn và đồng bộ món bán online.
+Nhận đơn, đồng bộ menu, trạng thái món và tồn khả dụng cho kênh Grab.
+Nhật ký hoạt động
+Nhật ký hoạt động hệ thống được lưu trong SQLite local tối đa 3 năm. Các dòng lỗi có thể mở ra để xem nguyên nhân chi tiết.
+Nhật ký này chưa có id để giải mã
+No bật/tắt được voucher
+No chuyển được bàn
+No chuyển được bàn: ${_cleanError(e)}
+No clone được staging
+No còn số tiền cần thu
+No có bàn phù hợp
+No có chi tiết bổ sung
+No có khoản chi nào đang chờ hoàn
+No có khoản tiền-về nào chưa khớp trong 4 giờ qua. Nếu khách đã chuyển mà webhook chưa về, dùng bước 2 bên dưới.
+No có món
+No có món nào
+No có món nào chờ xác nhận.
+No có món nào đang chờ${_station != 
+No có nhân viên phù hợp.
+No có nhật ký trong bộ lọc này
+No có sản phẩm
+No có sản phẩm khớp bộ lọc
+No có voucher ngoài đang hoạt động
+No có đơn nào
+No cập nhật được bàn
+No cập nhật được chi nhánh
+No cập nhật được chi phí
+No cập nhật được kho
+No cập nhật được lệnh in
+No cập nhật được món
+No cập nhật được nhóm
+No cập nhật được trạng thái món
+No cập nhật được tài khoản
+No cập nhật được voucher
+No cập nhật được ẩn/hiện
+No dùng
+No ghi được chi phí
+No ghi được chi từ két
+No ghi được hoàn chi
+No ghi được thanh toán
+No giải mã được nhật ký
+No giới hạn
+No gọi được nhân viên
+No gộp được bàn
+No gộp được bàn: ${_cleanError(e)}
+No gửi món vào bếp
+No gửi được lệnh in
+No gửi được lệnh in lại hóa đơn
+No gửi được món: ${_cleanError(e)}
+No hủy được hóa đơn
+No hủy được món: ${_cleanError(e)}
+No hủy được đơn
+No in lại được
+No in thử được
+No in được tạm tính: ${_cleanError(e)}
+No kiểm tra được CSDL
+No kiểm tra được cập nhật
+No kiểm tra được kết nối
+No kiểm tra được trạng thái payOS
+No kết nối
+No kết được ca làm việc
+No lưu được cấu hình
+No lưu được danh mục
+No lưu được khách hàng
+No lưu được liên hệ
+No lưu được liên kết
+No lưu được mẫu in
+No lưu được phân quyền
+No lưu được đơn mua
+No lưu được đơn: ${_cleanError(e)}
+No mở được ca làm việc
+No mở được camera để quét.
+No mở được màn tự gọi món\n${_clean(_error!)}
+No mở được thanh toán: ${_cleanError(e)}
+No nhận
+No nhận được hàng
+No nhập kiểm đếm thì hệ thống dùng ${fmtMoney(pos.openingSuggestion)} từ ca trước / tiền két gốc.
+No phục hồi được cấu hình
+No reset được giao dịch
+No ràng buộc
+No rõ
+No thanh toán được hóa đơn
+No thấy lệnh in bill vừa thanh toán
+No thể hủy hóa đơn điện tử
+No thể kết nối đến thiết bị POS ($targetIp:$targetPort) qua USB/LAN. Vui lòng bật "Chia sẻ kết nối Printternet qua USB" (USB Tethering) trên máy POS, hoặc kiểm tra địa chỉ IP cấu hình. Details lỗi: $e
+No thể phát hành lại hóa đơn
+No thể tải danh sách món chờ xác nhận
+No thể tải tổng hợp HĐĐT của ca
+No thể từ chối món ăn
+No thể xác nhận món ăn
+No thể đồng bộ trạng thái hóa đơn
+No tra cứu được MST
+No tra cứu được thông tin theo MST này.
+No trả được đơn
+No tách được bill
+No tách được bill: ${_cleanError(e)}
+No tạo được QR thanh toán
+No tạo được bàn
+No tạo được chi nhánh
+No tạo được kho
+No tạo được món
+No tạo được mặt hàng
+No tạo được nhóm
+No tạo được tài khoản
+No tạo được voucher
+No tải thêm được nhật ký ($_error)
+No tải được bàn
+No tải được báo cáo
+No tải được báo cáo ($_reportError)
+No tải được ca làm việc
+No tải được chi nhánh
+No tải được chi phí
+No tải được chi phí ($_error)
+No tải được chi tiết hóa đơn
+No tải được chi tiết hóa đơn ($_receiptError)
+No tải được cấu hình
+No tải được cấu hình màn hình phụ
+No tải được cấu hình vận hành
+No tải được danh bạ
+No tải được danh bạ ($_error)
+No tải được danh mục báo cáo
+No tải được danh mục báo cáo ($_catalogError)
+No tải được danh mục chi phí
+No tải được danh sách kho
+No tải được danh sách máy in hệ điều hành
+No tải được danh sách nhân viên
+No tải được danh sách voucher
+No tải được dữ liệu kho ($_error)
+No tải được file
+No tải được giao dịch ngân hàng
+No tải được hóa đơn
+No tải được hóa đơn ($_error)
+No tải được kho ($_error)
+No tải được khách hàng
+No tải được khách hàng: ${_cleanError(e)}
+No tải được két tiền
+No tải được kênh bán
+No tải được liên kết
+No tải được lô hàng
+No tải được lô hàng retail
+No tải được lệnh in
+No tải được lịch sử ($_listError)
+No tải được lịch sử bán hàng
+No tải được lịch sử bán lẻ
+No tải được lịch sử kho
+No tải được máy in
+No tải được máy in ($_error)
+No tải được nguyên liệu
+No tải được nhật ký hoạt động
+No tải được nhật ký hoạt động ($_error)
+No tải được nội dung bill
+No tải được phiếu bếp
+No tải được phiếu bếp ($_error)
+No tải được phiếu kho
+No tải được phân quyền
+No tải được sản phẩm
+No tải được số liệu
+No tải được số liệu ($_error)
+No tải được thiết bị
+No tải được thông tin HĐĐT
+No tải được thực đơn
+No tải được thực đơn ($_error)
+No tải được trang sản phẩm $page
+No tải được trang thực đơn $page
+No tải được trạng thái CSDL
+No tải được trạng thái CSDL ($_error)
+No tải được trạng thái kết nối
+No tải được tài liệu
+No tải được tài liệu ($_error)
+No tải được tồn kho
+No tải được voucher đang chạy
+No tải được xu hướng doanh thu
+No tải được đơn
+No tải được đơn mua
+No tải được đơn mua ($_error)
+No tải được đơn online
+No tải được đơn online ($_error)
+No tải được ảnh trang
+No tải được: $_error
+No xuất được báo cáo
+No xuất được cấu hình
+No xuất được hóa đơn VAT
+No xuất được: ${e.toString().replaceFirst(
+No xác nhận được
+No xác nhận được giao hàng
+No xác nhận được thanh toán
+No xác nhận được đơn
+No xóa được bàn
+No xóa được chi phí
+No xóa được liên hệ
+No xóa được món
+No xóa được nhóm
+No xóa được tài khoản
+No xóa được tài liệu
+No xóa được đơn
+No yêu cầu bill tối thiểu
+No áp dụng CTKM
+No đủ tồn cho lô đã chọn
+No ưu đãi
+No ống hút
+Not found bill đang mở để thanh toán. Vui lòng chọn lại bàn.
+Not found mã vạch
+Not found món
+Not found nhân viên phù hợp.
+Not found sản phẩm $q
+Notes món
+Notes nội bộ
+Notes nội bộ / mô tả cách chạy CTKM
+Notes phục vụ đối soát, vận hành nội bộ...
+Notifications Quyền Camera
+Notifications đơn hàng & sự kiện
+Nếu credential chưa đủ hoặc API lỗi, hệ thống vẫn dùng QR public từ thông tin ngân hàng để không đứng bill.
+Nền tảng này chưa hỗ trợ tự cập nhật
+NỘI DUNG MẪU
+Nội dung CK
+Nội dung mới
+Nợ cần thu từ khách
+Nợ hiện tại
+Open Shift làm việc
+Order mới sẽ hiện ở đây realtime
+Order online mới
+Order thêm
+PIN (4 số)
+PIN của bạn (hoặc Admin)
+PIN hiện tại: 
+PIN không đúng
+PIN không đúng hoặc không đăng nhập được: $e
+PIN mới (4 số)
+PIN mới (để trống nếu giữ nguyên)
+PIN nhân viên
+PIN này dùng để nhân viên mở khóa/thoát chế độ tự order trên thiết bị khách.
+PIN phải đúng 4 chữ số
+PIN tài khoản đang đăng nhập / Admin
+POS nhà hàng
+POSIX path of (choose file with prompt "Select hình ảnh hoặc video quảng cáo" of type {"public.image","public.movie"})
+POSIX path of (choose file with prompt "Select ảnh hóa đơn" of type {"public.image","com.adobe.pdf"})
+Paid, nhưng chưa in được: $printError
+Paper Size gợi ý
+Payment công nợ
+Payment hóa đơn
+Payment quá thời gian chờ. App sẽ tự kiểm tra lại bill; nếu bill chưa đóng, vui lòng thử lại.
+Payment retail ${widget.invoiceLabel}
+Payment thất bại
+Pending lưu
+Pending quẹt thẻ trên máy $terminalName
+Phiếu bếp
+Phiếu bếp (Kitchen ticket)
+Phiếu chạy
+Phiếu chạy món
+Phiếu chạy món (Runner)
+Phiếu kho
+Phiếu mua hàng
+Phiếu nhập/xuất
+Phát âm khi có order mới, gọi nhân viên, thanh toán…
+Phân loại doanh thu
+Phân loại nhóm doanh thu kinh doanh
+Phân quyền chi tiết
+Phân quyền in & Kích hoạt
+Phân quyền vai trò ${_roleLabel(widget.role)}
+Phân quyền: Admin toàn quyền
+Phóng to / khôi phục
+Phương thức
+Phường/Xã
+Phạm vi & Tỷ lệ thuế suất
+Phạm vi áp dụng
+Phục hồi
+Phục hồi cấu hình
+Phục hồi từ JSON
+Policy bảo mật
+Preparing cấu hình merchant, store và webhook cho đơn từ Be.
+Print lại
+Print phiếu tự kiểm tra (Self-Test) bằng cách tắt nguồn máy in, nhấn giữ nút FEED rồi bật nguồn lại, thả tay sau 3 giây. Ghi lại địa chỉ IP tĩnh hiển thị trên phiếu (ví dụ: 192.168.1.50).\nSave ý: Hãy đặt IP tĩnh (Static IP) hoặc gán IP cố định trong Router cho máy in để tránh bị thay đổi IP khi khởi động lại.
+Print thử
+Print tạm tính
+Printers #${index + 1} (${ctrl.id.text.isNotEmpty ? ctrl.id.text : "Chưa đặt tên"})
+Printers hệ thống
+Printers hệ điều hành (OS)
+Printers nhiệt in logo dạng chữ [${_s(row[
+Processing thanh toán, vui lòng chờ.
+Profile khai thuế Hộ kinh doanh
+Profile thuế
+Promotions / giảm giá
+Promotions sản phẩm
+Public URL (Website)
+QR thanh toán
+Quantity bảng ghi hiện tại trong hệ thống CSDL local
+Quantity không hợp lệ
+Quy mô doanh thu
+Quy đổi
+Quyền mặc định vai trò
+Quyền riêng
+Quyển đang chỉnh
+Quét mã vạch
+Quét mã vạch bằng camera
+Quét mã để thanh toán
+Quét mặt hàng
+Quét sản phẩm
+Quét/chạm sản phẩm để bắt đầu
+Quý
+Quý ${((from.month - 1) ~/ 3) + 1}/${from.year}
+Quảng cáo khi rảnh, hiển thị đơn & QR cho màn thứ 2.
+Quầy / Table
+Quầy nước
+Quẹt thẻ trên máy POS rồi nhập mã phê duyệt để đối soát.
+RT${_tab.id.toString().padLeft(2, 
+Receive vào kho
+Recipe trừ kho
+Required mở ca trước khi bán
+Restore mẫu chuẩn
+Return URL (Success)
+Revenue ca hôm nay
+Revenue theo giờ
+Revenue theo kênh
+Revenue theo thời gian
+Revenue được tính từ lúc mở ca đầu ngày $startText đến $endText.
+Roadmap theo kiến trúc ERP
+Rộng mm
+SKU áp dụng
+SL
+SLA phút
+SQLite
+SQLite Version
+Salad/Lạnh
+Sales, mở bàn, thêm món
+Save chỉnh sửa
+Save chỉnh sửa chương trình khuyến mại.
+Save cấu hình kho
+Save cấu hình máy POS thẻ
+Save danh mục in
+Save kết nối đang chọn
+Save menu quyển
+Save quyền
+Save trữ cục bộ
+Save trữ lâu dài
+Save ý: Mọi cấu hình chi tiết khác cần thiết lập trên giao diện Web quản trị.
+SePay · Đối soát chuyển khoản
+SePay — tự đối soát chuyển khoản
+Select Món
+Select NCC hoặc nhập tên nơi mua
+Select SKU áp dụng
+Select bàn cho iPad
+Select chi nhánh
+Select các dòng khách muốn thanh toán riêng.
+Select các khoản chi được hoàn
+Select cơ sở
+Select cơ sở / chi nhánh để bắt đầu ca làm
+Select cột hiển thị
+Select danh mục hàng hóa áp dụng:
+Select giao dịch tiền-về khớp, hoặc nhập lý do xác nhận tay.
+Select khách
+Select khách hàng
+Select khách đã lưu hoặc tạo mới. Khách có ưu đãi sẽ tự áp giảm giá vào đơn.
+Select lại
+Select món
+Select món trên màn hình
+Select một bàn để xem bill
+Select một báo cáo
+Select một nút để chỉnh món, vị trí và màu.
+Select một đơn để xem chi tiết
+Select ngày
+Select nền tem
+Select phạm vi áp dụng thuế cho các mặt hàng trong thực đơn:
+Select vai trò / nhân viên sẽ nhận từng loại thông báo. Vì mỗi thiết bị 
+Select đúng tên máy in thật từ hệ điều hành, đặt nhãn hiển thị và tuyến nhận job in.
+Select ảnh
+Select ảnh / PDF hóa đơn
+Select ảnh logo
+Select ảnh món
+Select ảnh đại diện
+Selling Price sau thuế
+Selling Price trước thuế
+SetWindowLongPtrW
+Shift & Két tiền
+Sinh mã QR thanh toán động cho từng bill iPad/POS và sẵn sàng đối soát khi VietQR callback.
+Sinh nhật
+Sinh nhật khách
+Skip & Kết ca
+Sound thông báo
+Sound và định tuyến thông báo sự kiện.
+Staff cần đọc lại với khách, kiểm tra topping/ghi chú trước khi duyệt chuyển xuống bếp.
+Staff hủy
+Staff mới sẽ nhận quyền theo vai trò, sau đó có thể chỉnh riêng từng người.
+Staff nhập PIN để chọn/đổi bàn cho iPad này.
+Staff xác nhận
+Statistics Cơ sở dữ liệu
+Status kết nối:
+Status máy in
+Status thiết bị, máy in và đồng bộ cloud.
+Sync máy in hệ điều hành
+Sync sản phẩm
+Sync sản phẩm retail, tồn kho và đơn hàng mart.
+Sync thông tin khách hàng
+Sync trạng thái hóa đơn
+Sync tồn kho
+System gặp lỗi khi xử lý một thao tác.
+System khớp đúng bill theo nội dung; đủ tiền thì tự đóng bill, in hoá đơn, đẩy realtime cho POS/iPad.
+System liên kết trực tiếp với nhà cung cấp MISA meInvoice để phát hành hóa đơn tự động từ máy tính tiền.
+System sẽ hướng dẫn bạn thiết lập hồ sơ kê khai thuế, tự động gán thuế suất mặc định và hỗ trợ xuất biểu mẫu kê khai theo quy định mới nhất.
+SĐT
+Sơ đồ bàn
+SẢN PHẨM
+Sản xuất
+Sẵn sàng
+Sẵn sàng thanh toán qua $terminalName
+SỐ TIỀN: ${_money(d.total)}
+SỐ ĐIỆN THOẠI
+Số Bill nội bộ
+Số HĐĐT
+Số bill
+Số bill trong ngày
+Số bill: {billNo}\n{place}\nCashier: {cashier}\nDate: {time}
+Số bàn / Mã bàn
+Số bản
+Số chỗ ngồi
+Số lô (tuỳ chọn)
+Số lần/khách
+Số ngày nợ
+Số nhà, tên đường, ấp/tổ/khu phố
+Số phải hoàn (đã chọn)
+Số tiền
+Số tiền *
+Số tiền giảm (VND)
+Số tiền khách đưa không đủ
+Số tiền không hợp lệ
+Số tài khoản
+Số tài khoản nhận tiền
+Sở thích / insight
+TB/KỲ
+THIẾT LẬP TÍNH NĂNG
+THÀNH TIỀN
+THÔNG TIN CỬA HÀNG
+TRỰC TIẾP
+Table $tableCode đã thanh toán thành công số tiền ${total}đ (Invoices $billNo)
+Table chưa có order
+Table đang gọi nhân viên
+Table đang trống sẽ hiện thao tác thêm món sau khi chọn
+Table đã thanh toán xong. Cảm ơn quý khách!
+Table/Nơi
+Tax GTGT/TNCN tính theo tỷ lệ %. Kê khai thuế theo Quý, bắt buộc sử dụng HĐĐT và Sổ S2a.
+Tax GTGT/TNCN tính theo tỷ lệ %. Kê khai thuế theo Quý/Year, bắt buộc sử dụng Bộ 4 sổ và HĐĐT.
+Tax suất
+Tem nhãn
+Tem sản phẩm
+Tem sản phẩm (Product label)
+Thao tác dọn sạch giao dịch sẽ xóa vĩnh viễn toàn bộ hóa đơn, ca làm và chi phí tại local.
+Thao tác phát sinh lỗi.
+Thao tác quản trị cơ sở dữ liệu
+Thay đổi cấu hình liên kết đối tác.
+Theo dõi động cơ dữ liệu local, sao lưu cấu hình và thống kê hệ thống.
+Theo giờ mỗi ngày
+Theo mã, tên hàng
+Theo mã, tên, số điện thoại
+Theo ngày
+Theo ngày trong tuần
+Theo năm
+Theo quý
+Theo tháng
+Theo tuần
+Theo vai trò
+Thiết bị
+Thiết bị & POS đang hoạt động (${connections.length})
+Thiết bị khách
+Thiết bị máy in (${_printers.length})
+Thiết kế mẫu in
+Thiết kế mẫu in hóa đơn và tem sản phẩm.
+Thiết lập bàn, khu vực và sơ đồ phòng bán.
+Thiết lập chi nhánh, kho và phân vùng bán hàng.
+Thiết lập hồ sơ kê khai thuế lần đầu
+Thiếu mã bill để tìm lệnh in
+Thiếu mã hóa đơn để thanh toán.
+Thu nhỏ
+Thu nhỏ giỏ hàng
+Thành voucher
+Thành điểm
+Thương hiệu
+Thưởng theo sản phẩm ưu tiên
+Thủ công — thu ngân tự quẹt rồi nhập approval code
+Thủ kho
+Thứ trong tuần
+Thử lại
+Thử lại QR
+Thử lại kết nối tự động
+Thực nhận đã kiểm đếm
+Time mỗi ảnh:
+Tiền két
+Tiền két gốc mặc định (đ)
+Tiền thối
+Tiền thối: 10.000đ
+Tiền thực nhận lớn hơn số phải hoàn của các khoản đã chọn
+Tiền tố nội dung CK (memo)
+Total HĐ
+Total bán
+Total bán trừ trả hàng
+Total chi trong kỳ
+Total kiểm đếm
+Total ngày vận hành
+Total số ca làm
+Total số hóa đơn
+Total đã gọi
+Total đơn
+Toàn hệ thống
+Toàn quyền
+Toàn quyền cài đặt
+Toàn thời gian
+Tra cứu
+Tra cứu HĐĐT
+Trang này chưa có nút. Bấm "Add nút" hoặc bấm lên ảnh để tạo nhanh.
+Trang thai: ${_statusLabel(_s(r[
+Trang trước
+Trong tháng sinh nhật
+Trung tâm báo cáo
+Truy xuất thông tin công ty từ Cục Tax
+Trà đào cam sả
+Trình duyệt
+Trình duyệt (Browser)
+Trình thiết kế trực quan mẫu hóa đơn & tem nhãn (kéo-thả) sẽ được bổ sung — hiện dùng mẫu mặc định của hệ thống.
+Trạm/Tuyến in (ID)
+Trống
+Trụ sở chính
+Trừ recipe
+Trực tiếp
+Tuần
+TÊN *
+TÊN MÁY POS THẺ
+Tài liệu
+Tách bill / thanh toán riêng
+Tách bill bàn ${table.code}
+Tách và thanh toán riêng
+Tìm mã đơn / bàn / mã HĐ...
+Tìm mã đơn, NCC…
+Tìm món, mã món...
+Tìm món...
+Tìm mặt hàng…
+Tìm nhân viên theo tên hoặc tài khoản...
+Tìm nhân viên...
+Tìm sản phẩm hoặc quét/nhập mã vạch rồi Enter...
+Tìm số HĐ, khách, MST…
+Tìm theo hành động, nhân viên, nội dung...
+Tìm theo loại, máy in, mã…
+Tìm theo tên / SĐT / MST
+Tìm theo tên, SĐT, MST…
+Tìm tài liệu…
+Tìm tên, SĐT, MST...
+Tôi cam đoan thông tin khai trên là đúng sự thật và chịu hoàn toàn trách nhiệm.
+Tôi xác nhận các hàng hóa khác không thuộc đối tượng chịu thuế
+Tại bàn
+Tại quầy
+Tạm hết
+Tạm tính
+Tạo
+Tạo CTKM
+Tạo QR chuyển khoản
+Tạo QR động: POST /qr/generate-customer
+Tạo bàn "${_code.text.trim()}".
+Tạo bản sao CSDL sang môi trường staging. Cần PIN Admin.
+Tạo chương trình
+Tạo chương trình khuyến mại.
+Tạo danh mục "$name".
+Tạo kho
+Tạo kho "$name".
+Tạo kho mới
+Tạo link thanh toán: POST /v2/payment-requests
+Tạo lại QR
+Tạo món
+Tạo món mới "${_name.text.trim()}".
+Tạo môi trường thử nghiệm hoặc dọn dẹp các đơn hàng chạy thử trước khi khai trương
+Tạo mới
+Tạo quyển
+Tạo tài khoản "${_name.text.trim()}".
+Tạo đơn
+Tạo đơn mua
+Tải bản cập nhật thất bại
+Tải các station
+Tắt
+Tắt chương trình "${v.name}".
+Tắt kho
+Tắt — không dùng máy POS thẻ
+Tặng kèm
+Tỉnh/Thành phố
+Tối thiểu
+Tối thiểu ${Fmt.money(voucher.minTotal)}
+Tối đa $_maxImages ảnh/video
+Tối đa % bill
+Tồn thấp
+Tồn: ${Fmt.int0(sku.stock)} ${sku.unit}
+TỔNG CỘNG
+TỔNG THANH TOÁN
+TỔNG: 90.000đ
+Tới
+Từ
+Từ ${_ymd.format(_from)}
+Từ giờ
+Từ điểm
+Từ: ${dateText(_from)}
+Tự bật xuất hóa đơn
+Tự dùng ${fmtMoney(pos.openingSuggestion)}
+Tự in bill hệ thống sau khi quẹt thẻ thành công
+Tự in khi có đơn mới
+Tự nhận đơn hợp lệ
+Tự phát hành hóa đơn sau thanh toán
+Tự sinh nếu để trống
+Tự tách phường/xã, tỉnh/thành
+Tự xác nhận nếu còn hàng
+Tự đóng bill bằng chính VietQR: nếu gói VietQR của bạn có callback, dán URL này vào mục đăng ký callback của VietQR. Khi khách trả tiền, VietQR gọi về đây → hệ thống tự đóng đúng bill (khớp theo nội dung DANBILL+mã bill). Khi đó không cần SePay. VietQR thường gửi kèm Basic Auth = chính username/password ở trên.
+Tự động chọn xuất hóa đơn VAT khi thanh toán
+Tự động in
+Tự động nếu bỏ trống
+Tự động — máy tự quẹt thẻ qua app ngân hàng (cần app POS Android)
+Tỷ lệ thuế suất tính theo doanh thu (%) của từng nhóm ngành:
+Tỷ lệ thuế suất áp dụng
+URL ảnh trang menu
+Update bàn "${_code.text.trim()}".
+Update danh mục "${c.name}".
+Update hồ sơ
+Update món "${_name.text.trim()}".
+Update nhân viên "${_name.text.trim()}".
+Update quyền mặc định vai trò "${_roleLabel(widget.role)}".
+VAT hàng bán
+VAT hàng bán (%)
+VD: 192.168.42.129 hoặc 127.0.0.1
+VD: Bún bò Huế
+VD: Bếp, Bar, Bill
+VD: Chợ Bình Điền
+VD: DANBILL
+VD: Giảm 10% đơn từ 500k
+VD: Khách quét QR cũ, đã kiểm tra app ngân hàng thấy tiền về
+VD: Khách trả hàng
+VD: Quầy, Bếp nóng, Bar
+VD: Tầng 1, Sân vườn
+VD: ít cay, không hành, tách sốt…
+Voucher ngoài
+Voucher toàn bill
+Vui lòng chọn ít nhất một món để từ chối.
+Vui lòng chọn ít nhất một món để xác nhận.
+Vui lòng kiểm tra đơn và thanh toán
+Vui lòng kiểm đếm số tiền thực nhận
+Vui lòng nhập ID cho dòng máy in thứ ${i + 1}
+Vui lòng nhập lý do từ chối để đối soát.
+Vui lòng nhập mã PIN
+Vui lòng nhập tên Hộ kinh doanh
+Vào Settings để cấu hình sơ đồ bàn.
+Ví dụ: kho bếp nối iPad/POS nhà hàng; kho bán lẻ nối Retail POS, GrabMart hoặc Website.
+Ví điện tử
+Vật dụng bếp
+Vị trí
+WAL
+Webhook hiện tại nhận JSON có field channel="${def.key}". Sau này khi có API chính thức, adapter của từng bên sẽ đọc cùng cấu hình này.
+Webhook nhận JSON có field channel="website". Tắt kết nối này thì website/kênh bán hàng sẽ không gửi đơn được.
+XEM TRƯỚC TRÊN SƠ ĐỒ BÀN
+XEM TRƯỚC TRÊN THIẾT BỊ KHÁCH HÀNG
+XLS
+Xem lại đơn đã thanh toán, hóa đơn đã hủy, trạng thái ca và in lại receipt.
+Xem nhật ký hoạt động
+Xem trước (minh họa)
+Xin cảm ơn và hẹn gặp lại
+Xuống
+Xác thực dữ liệu webhook: ký HMAC-SHA256 bằng Checksum Key rồi so với field signature
+Xác định địa chỉ IP của máy in
+Xử lý đơn online
+Y %
+YYYY-MM-DD
+YYYY-MM-DD HH:mm
+Year
+Year ${from.year}
+Yes ${matches.length} sản phẩm trùng khớp, hãy chạm sản phẩm cần bán
+Yes CTKM: ${buyX.displayName}
+Yes bản cập nhật mới ${info.version}
+Yes két
+]))} (nhận ${Fmt.int0(_n((lines[i] as Map)[
+]).round()} món · ${methods.isEmpty ? 
+])} chỗ
+])} lúc ${_fmtDateTime(raw?[
+])} mở ${_s(raw?[
+])}]; ảnh dùng để xem/tham chiếu.
+])}đ
+])}đ)
+])}′ · ${_stationLabel(_s(it[
+]} dòng · ${active[
+]} dòng · ${g[
+]} món cần duyệt
+]} món · Kiểm tra trước khi duyệt
+^(Tỉnh|Thành phố|TP\.?|Phường|Xã|Thị trấn)\s+
+assets/web/assets/DanOnLogo.png
+bill|receipt|hóa|hoa
+bottomLeft
+byYear
+changeLine
+chưa chọn driver
+cái
+discountLabel
+giảm ${Fmt.money(amount)}
+hiện tại
+hóa đơn chưa
+iPad khách
+iPad sẽ gửi order hiện tại lên backend, backend tạo content/orderId riêng cho bill rồi trả QR về màn hình phụ.
+invoiceLookupUrl
+không HSD
+không còn ở trạng thái mở
+kết nối ${_fmtTime(_s(c[
+paidLine
+payOS · Cổng thanh toán
+paymentLines
+providerLabel
+quá thời gian chờ
+rollMarginLeftMm
+runner|chạy
+sữa, trứng...
+thiết bị. Yes thể ghi đè riêng cho từng nhân viên bên dưới.
+thịt bò, hành...
+topLeft
+totalLine
+tặng ${free.round()} ${_s(promo[
+usageLimit
+{changeLine}
+{footer} {invoiceLookupUrl}
+{grandTotalLine}
+{invoiceLookupUrl}
+{items} {subtotalLine} {vatLine} {orderPromoLine} {grandTotalLine} {totalLine} {paymentLines} {paidLine} {changeLine} {grandTotal}
+{orderPromoLine}
+{paidLine}
+{paymentLines}
+{storeName}\n{address}\nĐT: {phone}
+{subtotalLine}
+{subtotalLine}\n{vatLine}\n{orderPromoLine}\n{grandTotalLine}\n{paymentLines}\n{paidLine}\n{changeLine}
+{totalLine}
+{vatLine}
+}$bđ
+}$mm:${ss.toString().padLeft(2, 
+}${Fmt.money(item.price)} · ${_stationLabels[item.station] ?? item.station}
+Âm riêng cho từng sự kiện
+Âm: ${_soundName(sound)}
+Ít đá · 50% đường
+àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ
+Ăn kèm
+Ăn uống/Giải trí
+ĐT
+ĐT: ${_s(company[
+Đang bán
+Đang bật
+Đang chọn món...
+Đang dùng
+Đang giả lập giao dịch...
+Đang gọi
+Đang hoạt động
+Đang in
+Đang khởi động hệ thống...
+Đang kiểm tra...
+Đang kích hoạt
+Đang lưu
+Đang mở
+Đang nằm trong roadmap
+Đang sử dụng
+Đang tạo QR...
+Đang được port trong module này.
+Điều chỉnh hóa đơn
+Điều chỉnh hóa đơn (đ)
+Điều chỉnh kiểm kê
+Điều chỉnh tồn kho
+Điểm
+Điểm / hóa đơn
+Điểm cộng
+Điểm hiện tại
+Điểm hành vi ngoài mua hàng
+Điểm theo SĐT, hạng thành viên, CTKM, voucher và lịch áp dụng.
+Điểm tối thiểu
+Điện thoại
+ĐÃ THANH TOÁN
+Đánh giá trải nghiệm
+Đã bật món
+Đã chuyển bàn ${table.code} sang ${target.code}.
+Đã chọn ảnh đại diện
+Đã clone sang staging
+Đã copy JSON cấu hình
+Đã copy nội dung hóa đơn
+Đã cập nhật hàng hóa/kho.
+Đã cập nhật nhân sự/phân quyền.
+Đã cập nhật thực đơn.
+Đã cập nhật tài liệu.
+Đã cập nhật voucher.
+Đã dọn sạch dữ liệu giao dịch và reset bàn.
+Đã ghi nhận chi tiền két
+Đã ghi nhận hoàn chi
+Đã ghi nhận thanh toán nhưng thiếu mã bill để gửi lệnh in. Vui lòng mở lịch sử bán hàng để in lại.
+Đã ghi nhận thanh toán.
+Đã gộp bàn ${table.code} vào ${target.code}.
+Đã gửi ${jobs.length} lệnh in lại hóa đơn
+Đã gửi job in thử
+Đã gửi lệnh in lại hóa đơn
+Đã gửi lệnh in thử tới ${_s(p[
+Đã gửi lệnh in tạm tính.
+Đã gửi lệnh mở két tiền
+Đã gửi món vào bếp/bar.
+Đã hiện món
+Đã hoàn ${Fmt.money(_n(res[
+Đã import menu mới
+Đã in
+Đã in lại
+Đã khóa
+Đã kết ca
+Đã kết ca (ghi nhận quản lý bỏ qua)
+Đã kết nối
+Đã liên kết (Đang hoạt động)
+Đã lưu
+Đã lưu chương trình khuyến mại
+Đã lưu cấu hình kho
+Đã lưu cấu hình máy POS thẻ
+Đã lưu cấu hình thông báo
+Đã lưu cấu hình tài chính
+Đã lưu cấu hình tích điểm
+Đã lưu danh mục
+Đã lưu danh mục in thành công
+Đã lưu hồ sơ kê khai thuế thành công!
+Đã lưu liên kết
+Đã lưu menu quyển
+Đã lưu màn hình phụ
+Đã lưu trữ món (đã có order)
+Đã mở ca
+Đã mở màn hình phụ. Nếu cần, kéo cửa sổ sang màn hình thứ 2 để setup lần đầu.
+Đã mở tài liệu
+Đã nhân bản cơ sở dữ liệu sang staging.
+Đã nhận
+Đã nhập kho
+Đã phát hành
+Đã phục hồi cấu hình
+Đã phục hồi cấu hình hệ thống.
+Đã phục vụ
+Đã reset dữ liệu giao dịch
+Đã sao chép Webhook URL vào bộ nhớ tạm
+Đã thêm ${_s(it[
+Đã trả
+Đã trả đơn
+Đã trả: 100.000đ
+Đã tạo lệnh in.
+Đã tạo mặt hàng
+Đã tạo nhóm $name
+Đã tải bản cập nhật về ${file.path}. Mở file này để cài (Android).
+Đã tải tài liệu lên hệ thống.
+Đã tắt món
+Đã từ chối các món ăn đã chọn.
+Đã xuất HĐĐT
+Đã xuất cấu hình hệ thống.
+Đã xuất hóa đơn VAT${invoiceNo.isEmpty ? 
+Đã xuất kho
+Đã xác nhận
+Đã xác nhận giao hàng
+Đã xác nhận món ăn và gửi xuống bếp/bar.
+Đã xác nhận thanh toán
+Đã xác nhận xử lý yêu cầu gọi phục vụ
+Đã xác nhận đơn
+Đã xác thực Cục Tax — xóa MST để nhập/kiểm tra lại
+Đã xóa bàn
+Đã xóa món
+Đã xóa nhân viên
+Đã xóa nhóm
+Đã xóa tài liệu.
+Đã xóa đơn
+Đã xử lý
+Đã xử lý đổi trả bán lẻ.
+Đã điền thông tin công ty từ dữ liệu Cục Tax
+Đã đính kèm tài liệu
+Đã đóng
+Đã đồng bộ ${_systemPrinters.length} máy in từ hệ điều hành
+Đã đổi PIN thiết bị khách
+Đã ẩn món
+Đúng ngày sinh nhật
+ĐĂNG NHẬP
+ĐĂNG NHẬP THU NGÂN
+Đăng ký số điện thoại
+Đăng ký webhook: POST /confirm-webhook
+ĐƠN GIÁ
+Đơn F&B tại bàn / POS
+Đơn của bàn
+Đơn khách
+Đơn vị
+Đơn đang mở
+Đưa mã vạch / QR vào khung để quét
+Đường B (phương án thay thế SePay): đọc giao dịch ngân hàng và bắn webhook xác nhận tiền về theo nội dung bill.
+Đường B: đọc biến động số dư ngân hàng, khi khách chuyển khoản/quét VietQR đúng nội dung bill thì tự đóng bill. Rẻ nhất cho chuyển khoản.
+Đường D9, KĐT Sala, TP.HCM
+Đường dẫn API payOS (soạn sẵn để nối sau)
+Đường kẻ
+Đường kẻ ngang
+Đặt làm trụ sở chính
+Đến ${_ymd.format(_to)}
+Đến giờ
+Đến: ${dateText(_to)}
+Để sau
+Để thực hiện việc quét mã vạch sản phẩm, ứng dụng cần sử dụng Camera của thiết bị.\n\n
+Để trống = tất cả
+Để trống tự sinh DC000001
+Địa điểm kinh doanh liên kết
+Định mức tối thiểu
+Định mức tối thiểu: ${Fmt.int0(minStock)} ${_s(s[
+Định tuyến theo vai trò
+Đối chiếu giao dịch tiền-về
+Đổi PIN
+Đổi cơ sở
+Đổi mật khẩu (PIN) mở khóa thiết bị khách.
+Đổi tiền két gốc mặc định.
+Đổi trả
+Đổi trả / Hoàn hàng
+Đổi địa chỉ Server
+Đổi ảnh
+Độ trễ (Ping)
+Động cơ CSDL Local
+Đủ
+Đủ tiền
+đ
+đã đóng
+đã được thanh toán
+đúng số tiền
+đăng nhập bằng một vai trò, cấu hình theo vai trò cũng chính là theo 
+ƯU ĐÃI MẶC ĐỊNH CHO KHÁCH
+ƯU ĐÃI MẶC ĐỊNH CHO NHÂN VIÊN
+Ưu đãi
+Ưu đãi ${perkValue.round()}%
+Ưu đãi ${perkValue.round()}đ
+Ưu đãi khách hàng
+Ưu đãi riêng
+Ảnh (*.jpg;*.jpeg;*.png;*.webp;*.gif)|*.jpg;*.jpeg;*.png;*.webp;*.gif
+Ảnh hóa đơn
+Ảnh món
+Ảnh quảng cáo
+Ảnh tối đa 20MB
+Ảnh đại diện
+Ẩn
+Ẩn bộ lọc
+Ẩn khỏi iPad / POS
+Ứng dụng Dan D Pak POS cam kết bảo vệ thông tin riêng tư của người dùng. Dưới đây là chính sách thu thập và xử lý dữ liệu chi tiết:
+Ứng dụng Dan D Pak POS cam kết tuyệt đối bảo vệ dữ liệu và quyền riêng tư của bạn. Dưới đây là cách chúng tôi xử lý các quyền hạn nhạy cảm trên thiết bị:
+Ứng dụng chưa được cấp quyền camera.\nVào Settings → Ứng dụng → cấp quyền Camera rồi thử lại.
+— Khác
+— Mua chợ / nhập tên tay —
+• Camera: Ứng dụng chỉ sử dụng Camera để quét mã vạch/QR của sản phẩm phục vụ nghiệp vụ bán hàng (Retail) và nhập xuất kho (Warehouse). Chúng tôi cam kết KHÔNG lưu trữ hình ảnh, KHÔNG thu thập dữ liệu cá nhân hay gửi bất cứ hình ảnh/video nào từ camera lên máy chủ bên ngoài. Mọi quá trình xử lý hình ảnh mã vạch đều được diễn ra hoàn toàn cục bộ trên thiết bị của bạn thông qua Google ML Kit SDK.\n
+• Chúng tôi tuyệt đối không mua bán, trao đổi hoặc tiết lộ bất kỳ thông tin nào từ ứng dụng này cho bên thứ ba ngoại trừ trường hợp có yêu cầu chính thức từ cơ quan pháp luật có thẩm quyền.
+• Chỉ sử dụng camera để nhận diện mã vạch tại chỗ.\n
+• KHÔNG chụp ảnh, quay video hay lưu trữ dữ liệu của bạn.\n
+• KHÔNG truyền tải bất kỳ dữ liệu hình ảnh nào ra máy chủ bên ngoài.\n\n
+• Mục đích sử dụng: Sử dụng duy nhất cho chức năng quét mã vạch sản phẩm (Retail) và nhập xuất kho (Warehouse) qua camera trên tablet/điện thoại.\n
+• Mục đích sử dụng: Đảm bảo giao tiếp thời gian thực (realtime) qua Socket.IO và gửi các yêu cầu nghiệp vụ (tạo hóa đơn, cập nhật bàn, gọi món) tới máy chủ POS trung tâm.\n
+• Nếu bạn có bất kỳ câu hỏi nào về việc phân quyền thiết bị hoặc chính sách bảo mật này, vui lòng liên hệ với Administrator hệ thống hoặc Bộ phận Kỹ thuật Dan D Pak.
+• Nếu có bất kỳ thắc mắc nào liên quan đến chính sách bảo mật này, xin vui lòng liên hệ với ban quản trị hệ thống Dan D Pak để được hỗ trợ giải đáp nhanh chóng nhất.
+• Printternet & Network nội bộ (Local Network): Cần mạng để kết nối, truyền tải dữ liệu và đồng bộ hóa trạng thái đơn hàng thời gian thực giữa máy khách POS và máy chủ POS trung tâm (cục bộ hoặc Cloud/VPS).
+• Security tuyệt đối: Mọi quá trình xử lý hình ảnh để nhận diện mã vạch đều được thực hiện cục bộ trên thiết bị của bạn thông qua thư viện Google ML Kit SDK. Ứng dụng KHÔNG chụp ảnh, KHÔNG ghi video, KHÔNG lưu trữ và KHÔNG gửi bất kỳ hình ảnh nào từ camera của bạn lên mạng hay máy chủ bên thứ ba.
+• Security: Data giao dịch được mã hóa và truyền trực tiếp trong mạng nội bộ LAN cửa hàng hoặc qua kênh bảo mật VPS doanh nghiệp.
+• Tích chọn ô Đang sử dụng và Tự động in trên dòng máy in vừa thêm.\n• Trong Menu FnB, gán đúng Station cho từng món ăn (chọn Bếp hoặc Bar). System sẽ tự động gửi món đến máy in tương ứng khi nhận đơn từ iPad hoặc POS quầy.\n• Bấm nút [Save danh mục in] để hoàn tất cấu hình.
+• Ứng dụng Dan D Pak POS hoạt động như một công cụ quản trị nguồn lực doanh nghiệp nội bộ. Chúng tôi KHÔNG thu thập thông tin cá nhân của khách hàng vãng lai sử dụng tablet tự phục vụ (Self-order) hay dữ liệu riêng tư của nhân viên ngoại trừ các thông tin đăng nhập nghiệp vụ (mã PIN nhân viên, thông tin chi nhánh cửa hàng) được lưu trữ an toàn trong vùng nhớ ứng dụng.
+• Ứng dụng không tự động thu thập bất kỳ thông tin cá nhân hay vị trí địa lý của người dùng. Các thông tin cấu hình (URL máy chủ, mã PIN nhân viên, ca làm việc) được lưu trữ an toàn trong vùng nhớ cache bảo mật của ứng dụng trên thiết bị và chỉ được gửi tới máy chủ POS nội bộ được bạn cấu hình để phục vụ xác thực nghiệp vụ.
+⏱ SLA ${t.slaMinutes}′
+⚠ $lowCount tồn thấp
+⚠️ Warning tồn kho (${d.lowStock.length})
+✅ Đã gửi yêu cầu! Staff sẽ xác nhận với bàn $_tableCode
+➕ Món ăn kèm / Extra  (chọn nhiều)
+🍳 Bếp
+🔔 Đã gọi nhân viên
+🔥 Top món bán chạy hôm nay

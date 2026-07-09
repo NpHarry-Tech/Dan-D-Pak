@@ -8,6 +8,7 @@ import '../../ui/format.dart';
 import '../../widgets/dan_top_bar.dart';
 import '../../widgets/scan_button.dart';
 import '../management/management_widgets.dart';
+import '../../services/black_box.dart';
 
 String _s(dynamic v) => v?.toString() ?? '';
 num _n(dynamic v) => v is num ? v : num.tryParse(_s(v)) ?? 0;
@@ -89,6 +90,7 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
   @override
   void initState() {
     super.initState();
+    BlackBox.screen = 'warehouse';
     _loadAll();
   }
 

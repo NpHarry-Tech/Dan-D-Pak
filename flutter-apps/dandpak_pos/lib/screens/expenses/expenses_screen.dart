@@ -127,7 +127,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
         ],
       ),
     );
-    if (ok != true) return;
+    if (ok != true || !mounted) return;
     try {
       await context.read<ApiService>().deleteExpense(_s(e['id']));
       _load();

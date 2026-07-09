@@ -19,6 +19,7 @@ import '../customer_display/customer_display_screen.dart';
 import '../order_history_dialog.dart';
 import '../shift_dialog.dart';
 import 'retail_checkout_dialog.dart';
+import '../../services/black_box.dart';
 
 class RetailScreen extends StatefulWidget {
   const RetailScreen({super.key});
@@ -74,6 +75,7 @@ class _RetailScreenState extends State<RetailScreen> {
   @override
   void initState() {
     super.initState();
+    BlackBox.screen = 'retail';
     _skuScrollCtrl.addListener(_onSkuScroll);
     _load();
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -1679,7 +1681,7 @@ class _SkuCard extends StatelessWidget {
     return Container(
       color: DanColors.surface2,
       alignment: Alignment.center,
-      child: Icon(Icons.inventory_2_outlined,
+      child: const Icon(Icons.inventory_2_outlined,
           size: 34, color: DanColors.border),
     );
   }

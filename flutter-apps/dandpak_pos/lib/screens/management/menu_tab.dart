@@ -1499,7 +1499,7 @@ class _MenuItemPreview extends StatelessWidget {
                 decoration: BoxDecoration(
                   color: const Color(0x2BFF6B6B),
                   borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: DanColors.late.withOpacity(0.3)),
+                  border: Border.all(color: DanColors.late.withValues(alpha: 0.3)),
                 ),
                 child: const Text(
                   'Món đang ẩn — không hiện trên thiết bị khách hàng',

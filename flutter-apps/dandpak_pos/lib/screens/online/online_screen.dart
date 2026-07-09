@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import 'package:dandpak_core/dandpak_core.dart';
 
 import '../../providers/auth_provider.dart';
 import '../../services/api_service.dart';
@@ -13,6 +12,7 @@ import '../../ui/debouncer.dart';
 import '../../ui/format.dart';
 import '../../widgets/dan_top_bar.dart';
 import '../management/management_widgets.dart';
+import '../../services/black_box.dart';
 
 String _s(dynamic v) => v?.toString() ?? '';
 num _n(dynamic v) => v is num ? v : num.tryParse(_s(v)) ?? 0;
@@ -51,14 +51,6 @@ class OnlineScreen extends StatefulWidget {
 }
 
 class _OnlineScreenState extends State<OnlineScreen> {
-  static const _events = [
-    'order:new',
-    'order:updated',
-    'order:customer_pending',
-    'payment:done',
-    'online:order',
-  ];
-
   final SocketService _socketService = SocketService();
   final Debouncer _socketRefresh = Debouncer();
   List<Map<String, dynamic>> _orders = [];
@@ -72,6 +64,7 @@ class _OnlineScreenState extends State<OnlineScreen> {
   @override
   void initState() {
     super.initState();
+    BlackBox.screen = 'online';
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _connect();
       _loadChannels();

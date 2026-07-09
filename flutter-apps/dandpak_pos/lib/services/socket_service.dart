@@ -6,6 +6,7 @@ import 'package:dandpak_core/dandpak_core.dart';
 import 'package:local_notifier/local_notifier.dart';
 import '../ui/sound_player.dart';
 import 'app_log.dart';
+import 'black_box.dart';
 
 /// Synthetic event dispatched to every listener when the socket RECONNECTS
 /// after a drop: events missed while offline are gone, so each screen must
@@ -85,6 +86,7 @@ class SocketService {
       events: _events,
       onConnectionChanged: (isConnected) {
         dlog(isConnected ? 'Socket.IO connected.' : 'Socket.IO disconnected.');
+        BlackBox.add('socket', isConnected ? 'connected' : 'DISCONNECTED');
         connected.value = isConnected;
         if (isConnected && !wasConnected) {
           // Vừa nối lại sau khi rớt: các event trong lúc offline đã MẤT —
@@ -101,6 +103,7 @@ class SocketService {
           return;
         }
         dlog('Realtime event received: $event');
+        BlackBox.add('socket', event);
 
         // Settings đổi từ máy khác → nạp lại cấu hình âm báo tại đây luôn
         // (SocketService sở hữu sound config).
@@ -138,8 +141,8 @@ class SocketService {
         final total = receipt['total'] ?? 0;
         final billNo = receipt['bill_no'] ?? '';
 
-        final title = 'Khách hàng đã thanh toán';
-        final body = 'Bàn $tableCode đã thanh toán thành công số tiền ${total}đ (Hóa đơn $billNo)';
+        const title = 'Khách hàng đã thanh toán';
+        final body = 'Bàn $tableCode đã thanh toán thành công số tiền $totalđ (Hóa đơn $billNo)';
 
         final notification = LocalNotification(
           title: title,

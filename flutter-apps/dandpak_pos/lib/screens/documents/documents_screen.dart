@@ -121,7 +121,7 @@ class _DocumentsBodyState extends State<DocumentsBody> {
         ],
       ),
     );
-    if (ok != true) return;
+    if (ok != true || !mounted) return;
     try {
       await context.read<ApiService>().deleteDocument(_s(f['id']));
       _load();

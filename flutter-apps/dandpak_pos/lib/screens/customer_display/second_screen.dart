@@ -7,6 +7,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../providers/customer_display_controller.dart';
+import '../../services/ad_cache.dart';
+import '../../services/black_box.dart';
 import '../../services/second_window_fullscreen.dart';
 import '../../ui/app_theme.dart';
 import 'customer_display_screen.dart';
@@ -80,53 +82,11 @@ class SecondScreen {
     ).catchError((_) => _detach());
   }
 
-  /// Ghi mỗi ảnh data-URL ra 1 file tạm (đặt tên theo hash nội dung để tái dùng)
-  /// và trả về ads với danh sách images = đường dẫn file. Ảnh http giữ nguyên.
-  Future<Map<String, dynamic>> _materializeAds(CustomerAdConfig ads) async {
-    final dir = Directory('${Directory.systemTemp.path}/dandpak_ads');
-    try {
-      dir.createSync(recursive: true);
-    } catch (_) {}
-    final out = <String>[];
-    for (final img in ads.images) {
-      if (img.startsWith('data:image/')) {
-        try {
-          final comma = img.indexOf(',');
-          final bytes = base64Decode(comma >= 0 ? img.substring(comma + 1) : img);
-          final name = 'ad_${img.hashCode & 0x7fffffff}.img';
-          final f = File('${dir.path}/$name');
-          if (!f.existsSync() || f.lengthSync() != bytes.length) {
-            f.writeAsBytesSync(bytes);
-          }
-          out.add(f.path);
-        } catch (_) {
-          // ảnh hỏng → bỏ qua, không để làm sập
-        }
-      } else if (img.startsWith('data:video/')) {
-        try {
-          final comma = img.indexOf(',');
-          final bytes = base64Decode(comma >= 0 ? img.substring(comma + 1) : img);
-          
-          String ext = '.mp4';
-          if (img.contains('video/quicktime')) ext = '.mov';
-          else if (img.contains('video/x-msvideo')) ext = '.avi';
-          else if (img.contains('video/x-matroska')) ext = '.mkv';
-          
-          final name = 'ad_${img.hashCode & 0x7fffffff}$ext';
-          final f = File('${dir.path}/$name');
-          if (!f.existsSync() || f.lengthSync() != bytes.length) {
-            f.writeAsBytesSync(bytes);
-          }
-          out.add(f.path);
-        } catch (_) {
-          // video hỏng → bỏ qua
-        }
-      } else if (img.isNotEmpty) {
-        out.add(img); // http/url giữ nguyên
-      }
-    }
-    return {'images': out, 'secondsPerImage': ads.secondsPerImage};
-  }
+  /// Ads gửi sang cửa sổ phụ dưới dạng ĐƯỜNG DẪN file (nhẹ) — xem ad_cache.dart.
+  Future<Map<String, dynamic>> _materializeAds(CustomerAdConfig ads) async => {
+        'images': await materializeAdSources(ads.images),
+        'secondsPerImage': ads.secondsPerImage,
+      };
 
   void _detach() {
     _pushTimer?.cancel();
@@ -213,7 +173,85 @@ class _CustomerDisplayWindowAppState extends State<CustomerDisplayWindowApp> {
       debugShowCheckedModeBanner: false,
       title: 'Màn hình phụ',
       theme: DanTheme.light(),
-      home: CustomerDisplayScreen(data: _data, ads: _ads),
+      home: Stack(
+        children: [
+          CustomerDisplayScreen(data: _data, ads: _ads),
+          // Vùng kéo ẩn trên cùng: đè chuột + kéo để di chuyển cửa sổ,
+          // nhấp đúp để bật/tắt toàn màn hình. Bình thường trong suốt
+          // (khách không thấy), rê chuột vào mới hiện gợi ý mờ cho nhân viên.
+          const Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            height: 36,
+            child: _HiddenDragBar(),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Thanh kéo ẩn của cửa sổ phụ. Cách dùng được mô tả cho người dùng ngay trong
+/// Cài đặt → Màn hình phụ → "Cách sử dụng" (settings_customer_display_panel).
+class _HiddenDragBar extends StatefulWidget {
+  const _HiddenDragBar();
+
+  @override
+  State<_HiddenDragBar> createState() => _HiddenDragBarState();
+}
+
+class _HiddenDragBarState extends State<_HiddenDragBar> {
+  bool _hover = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hover = true),
+      onExit: (_) => setState(() => _hover = false),
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque, // vùng trong suốt vẫn nhận chuột
+        // Kéo tự vẽ theo con trỏ (không chặn luồng UI — xem service).
+        onPanStart: (_) {
+          BlackBox.add('display', 'drag-start');
+          beginSecondWindowDrag();
+        },
+        onPanUpdate: (_) => updateSecondWindowDrag(),
+        onPanEnd: (_) => endSecondWindowDrag(),
+        onPanCancel: endSecondWindowDrag,
+        onDoubleTap: () {
+          BlackBox.add('display', 'toggle-fullscreen');
+          toggleSecondWindowFullscreen();
+        },
+        child: AnimatedOpacity(
+          opacity: _hover ? 1 : 0,
+          duration: const Duration(milliseconds: 150),
+          child: Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  Colors.black.withValues(alpha: 0.45),
+                  Colors.black.withValues(alpha: 0),
+                ],
+              ),
+            ),
+            alignment: Alignment.center,
+            child: const Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.drag_indicator, size: 16, color: Colors.white70),
+                SizedBox(width: 6),
+                Text(
+                  'Kéo để di chuyển  •  Nhấp đúp để phóng to / thu nhỏ',
+                  style: TextStyle(color: Colors.white70, fontSize: 12),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

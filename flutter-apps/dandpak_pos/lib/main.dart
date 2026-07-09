@@ -17,6 +17,7 @@ import 'services/second_window_fullscreen.dart';
 import 'screens/login_gate_screen.dart';
 import 'screens/splash_screen.dart';
 import 'services/api_service.dart';
+import 'services/black_box.dart';
 import 'services/client_log.dart';
 import 'services/local_store.dart';
 import 'services/node_runner.dart';
@@ -61,6 +62,9 @@ Future<void> main(List<String> args) async {
   // is a thin display — no Node engine, no provider tree, just the screen fed
   // over the plugin channel.
   if (args.isNotEmpty && args.first == 'multi_window') {
+    // Hộp đen riêng cho cửa sổ phụ — crash ở engine này cũng giết cả tiến
+    // trình nên cần vệt riêng để biết bên nào gây chết.
+    BlackBox.init(role: 'display');
     runApp(const CustomerDisplayWindowApp());
     return;
   }
@@ -90,6 +94,10 @@ Future<void> main(List<String> args) async {
   // (POST /api/client-log) so client + server logs live in one place.
   ClientLog.attach(apiService);
   ClientLog.installGlobalHooks();
+  // Hộp đen: ghi vệt thao tác ra đĩa; nếu lần chạy trước chết bất thường thì
+  // tự gửi hồ sơ (những thao tác cuối) về server → nhật ký hoạt động.
+  BlackBox.init(role: 'main', api: apiService);
+  DanDpakApiClient.onRequestTrace = (line) => BlackBox.add('api', line);
   runApp(
     MultiProvider(
       providers: [
@@ -151,6 +159,7 @@ class _DandpakPosAppState extends State<DandpakPosApp>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.detached) {
+      BlackBox.markCleanExit();
       NodeRunner.stopServer();
     }
   }
@@ -158,6 +167,7 @@ class _DandpakPosAppState extends State<DandpakPosApp>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    BlackBox.markCleanExit();
     NodeRunner.stopServer();
     super.dispose();
   }
@@ -174,14 +184,21 @@ class _DandpakPosAppState extends State<DandpakPosApp>
         final mq = MediaQuery.of(context);
         return MediaQuery(
           data: mq.copyWith(textScaler: TextScaler.noScaling),
-          child: WindowChrome(
-            // Chừa đúng chiều cao thanh điều hướng / TASKBAR của Android (tablet
-            // Samsung) ở đáy — trước đây nội dung tràn xuống dưới nên nút "Thanh
-            // toán" và hàng SP cuối bị taskbar che. top:false vì mỗi màn/topbar tự
-            // lo phần đỉnh; trên desktop không có inset nên đây là no-op.
-            child: SafeArea(
-              top: false,
-              child: child ?? const SizedBox(),
+          // Hộp đen: ghi MỌI cú chạm/click (toạ độ + màn hình hiện tại) —
+          // Listener thuần không tranh gesture, không ảnh hưởng hiệu năng.
+          child: Listener(
+            behavior: HitTestBehavior.translucent,
+            onPointerDown: (e) => BlackBox.add('tap',
+                '(${e.position.dx.toStringAsFixed(0)},${e.position.dy.toStringAsFixed(0)})'),
+            child: WindowChrome(
+              // Chừa đúng chiều cao thanh điều hướng / TASKBAR của Android (tablet
+              // Samsung) ở đáy — trước đây nội dung tràn xuống dưới nên nút "Thanh
+              // toán" và hàng SP cuối bị taskbar che. top:false vì mỗi màn/topbar tự
+              // lo phần đỉnh; trên desktop không có inset nên đây là no-op.
+              child: SafeArea(
+                top: false,
+                child: child ?? const SizedBox(),
+              ),
             ),
           ),
         );

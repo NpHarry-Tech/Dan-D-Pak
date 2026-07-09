@@ -4,7 +4,6 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import 'package:dandpak_core/dandpak_core.dart';
 
 import '../../models/kds_models.dart';
 import '../../providers/auth_provider.dart';
@@ -14,6 +13,7 @@ import '../../ui/app_theme.dart';
 import '../../ui/debouncer.dart';
 import '../../widgets/dan_top_bar.dart';
 import '../management/management_widgets.dart';
+import '../../services/black_box.dart';
 
 const _stations = [
   ['all', 'Tất cả'],
@@ -33,23 +33,13 @@ class KdsScreen extends StatefulWidget {
 }
 
 class _KdsScreenState extends State<KdsScreen> {
-  static const _events = [
-    'order:new',
-    'order:item',
-    'order:updated',
-    'order:confirmed',
-    'table:updated',
-    'kds:updated',
-    'stats:dirty',
-  ];
-
   final SocketService _socketService = SocketService();
   final Debouncer _socketRefresh = Debouncer();
   Timer? _ticker;
   List<KdsTicket> _tickets = [];
   String _station = 'all';
   bool _loading = true;
-  bool _online = true;
+  final bool _online = true;
   bool _disposed = false;
   String? _error;
   // The 1s ticker only bumps this notifier: each ticket card / station chip
@@ -60,6 +50,7 @@ class _KdsScreenState extends State<KdsScreen> {
   @override
   void initState() {
     super.initState();
+    BlackBox.screen = 'kds';
     _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
       if (mounted) _now.value = DateTime.now();
     });

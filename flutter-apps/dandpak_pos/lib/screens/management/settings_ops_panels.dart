@@ -475,23 +475,26 @@ class _OperationsPanelState extends State<OperationsPanel> {
                         onChanged: (v) => setState(() => locs[idx]['address'] = v),
                       ),
                       const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          Radio<bool>(
-                            value: true,
-                            groupValue: _b(locs[idx]['isHeadquarters']),
-                            activeColor: DanColors.brand,
-                            onChanged: (v) {
-                              setState(() {
-                                for (var l in locs) {
-                                  l['isHeadquarters'] = false;
-                                }
-                                locs[idx]['isHeadquarters'] = true;
-                              });
-                            },
-                          ),
-                          const Text('Đặt làm trụ sở chính', style: TextStyle(fontSize: 12)),
-                        ],
+                      RadioGroup<bool>(
+                        groupValue: _b(locs[idx]['isHeadquarters']),
+                        onChanged: (v) {
+                          setState(() {
+                            for (var l in locs) {
+                              l['isHeadquarters'] = false;
+                            }
+                            locs[idx]['isHeadquarters'] = true;
+                          });
+                        },
+                        child: const Row(
+                          children: [
+                            Radio<bool>(
+                              value: true,
+                              activeColor: DanColors.brand,
+                            ),
+                            Text('Đặt làm trụ sở chính',
+                                style: TextStyle(fontSize: 12)),
+                          ],
+                        ),
                       ),
                     ],
                   ),
@@ -575,7 +578,7 @@ class _OperationsPanelState extends State<OperationsPanel> {
               ),
               const SizedBox(height: 6),
               DropdownButtonFormField<String>(
-                value: scope,
+                initialValue: scope,
                 decoration: const InputDecoration(isDense: true),
                 items: const [
                   DropdownMenuItem(value: 'all', child: Text('Tất cả thực đơn')),
@@ -1003,7 +1006,7 @@ class _OperationsPanelState extends State<OperationsPanel> {
             boxShadow: active
                 ? [
                     BoxShadow(
-                      color: Colors.black.withOpacity(0.05),
+                      color: Colors.black.withValues(alpha: 0.05),
                       blurRadius: 3,
                       offset: const Offset(0, 1),
                     )
@@ -1897,7 +1900,7 @@ class _ConnectionsPanelState extends State<ConnectionsPanel> {
                           const Text('Kết nối', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
                           const SizedBox(height: 6),
                           DropdownButtonFormField<String>(
-                            value: conn.isEmpty ? 'browser' : conn,
+                            initialValue: conn.isEmpty ? 'browser' : conn,
                             isExpanded: true,
                             decoration: const InputDecoration(isDense: true),
                             items: const [
@@ -1920,7 +1923,7 @@ class _ConnectionsPanelState extends State<ConnectionsPanel> {
                           const Text('Định dạng in', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
                           const SizedBox(height: 6),
                           DropdownButtonFormField<String>(
-                            value: output.isEmpty ? 'custom' : output,
+                            initialValue: output.isEmpty ? 'custom' : output,
                             isExpanded: true,
                             decoration: const InputDecoration(isDense: true),
                             items: const [
@@ -2143,7 +2146,7 @@ class _ConnectionsPanelState extends State<ConnectionsPanel> {
             child: Switch(
               value: value,
               onChanged: onChanged,
-              activeColor: DanColors.brand,
+              activeThumbColor: DanColors.brand,
             ),
           ),
         ),

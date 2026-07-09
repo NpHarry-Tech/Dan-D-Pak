@@ -136,7 +136,7 @@ class _CustomerDisplaySettingsPanelState
       await SecondScreen.instance
           .open(context.read<CustomerDisplayController>());
       _toast(
-          'Đã mở màn hình phụ. Nếu cần, kéo cửa sổ sang màn hình thứ 2 để setup lần đầu.');
+          'Đã mở màn hình phụ. Rê chuột lên mép trên của nó để kéo đi chỗ khác hoặc nhấp đúp để phóng to / thu nhỏ.');
     } catch (_) {
       // Fallback khi plugin đa cửa sổ không khả dụng: route toàn màn hình.
       if (!mounted) return;
@@ -167,9 +167,11 @@ class _CustomerDisplaySettingsPanelState
                     value: _enabled,
                     onChanged: (v) => setState(() => _enabled = v),
                     contentPadding: EdgeInsets.zero,
-                    title: const Text('Bật màn hình phụ (màn thứ 2)'),
+                    title: const Text('Bật màn hình phụ (màn hình hướng về khách)'),
                     subtitle: const Text(
-                        'Hiển thị quảng cáo khi rảnh, đơn hàng khi đang order, và QR khi thanh toán. Dùng chung cho cả FnB và Bán lẻ.'),
+                        'Màn hình thứ hai quay về phía khách hàng: chiếu quảng cáo khi quầy rảnh, '
+                        'hiện chi tiết đơn hàng khi nhân viên đang lên món / quét hàng, '
+                        'và hiện mã QR chuyển khoản khi thanh toán. Dùng chung cho cả nhà hàng và bán lẻ.'),
                   ),
                   const SizedBox(height: 10),
                   Align(
@@ -203,6 +205,23 @@ class _CustomerDisplaySettingsPanelState
                       ),
                     ],
                   ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 14),
+            const Panel(
+              title: 'Cách sử dụng',
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _GuideLine(
+                      'Khi bật, màn hình phụ tự mở sang màn hình thứ hai và phủ kín toàn màn hình.'),
+                  _GuideLine(
+                      'Muốn dời vị trí: rê chuột lên sát mép trên của màn hình phụ, một thanh công cụ mờ sẽ hiện ra — giữ chuột vào thanh này rồi kéo cửa sổ tới nơi mong muốn.'),
+                  _GuideLine(
+                      'Muốn phóng to hoặc thu nhỏ: nhấp đúp chuột vào thanh công cụ đó để chuyển qua lại giữa chế độ toàn màn hình và chế độ cửa sổ.'),
+                  _GuideLine(
+                      'Bình thường thanh công cụ này ẩn hoàn toàn, khách hàng không nhìn thấy.'),
                 ],
               ),
             ),
@@ -330,4 +349,31 @@ class _CustomerDisplaySettingsPanelState
 Uint8List _dataUrlBytes(String dataUrl) {
   final comma = dataUrl.indexOf(',');
   return base64Decode(comma >= 0 ? dataUrl.substring(comma + 1) : dataUrl);
+}
+
+/// Một dòng hướng dẫn có chấm đầu dòng, dùng trong panel "Cách sử dụng".
+class _GuideLine extends StatelessWidget {
+  final String text;
+  const _GuideLine(this.text);
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Padding(
+            padding: EdgeInsets.only(top: 6, right: 8),
+            child: Icon(Icons.circle, size: 5, color: DanColors.muted),
+          ),
+          Expanded(
+            child: Text(text,
+                style: const TextStyle(
+                    color: DanColors.muted, fontSize: 12.5, height: 1.45)),
+          ),
+        ],
+      ),
+    );
+  }
 }

@@ -1,9 +1,10 @@
-import 'dart:ui';
 
 import 'package:flutter/foundation.dart';
 
+import '../app_version.dart';
 import 'api_service.dart';
 import 'app_log.dart';
+import 'black_box.dart';
 
 /// Ships client-side runtime errors to the local engine
 /// (`POST /api/client-log`) so every error on a POS terminal lands in ONE
@@ -54,12 +55,17 @@ class ClientLog {
           message.length > 200 ? message.substring(0, 200) : message;
       if (!_sentThisRun.add(key)) return;
       _windowCount++;
+      // Lỗi Dart cũng vào hộp đen — nếu sau đó app chết native thì vệt này
+      // nằm ngay trước điểm chết trong hồ sơ.
+      BlackBox.add('error', message);
       api.postClientLog({
         'app': 'dandpak_pos',
-        'version': '0.1.0',
-        'screen': context,
+        'version': '$kAppVersionName+$kAppBuildNumber',
+        'screen': '${BlackBox.screen}|$context',
         'message': message,
         'stack': (stack ?? StackTrace.current).toString(),
+        // ~40 thao tác gần nhất (chạm, API, socket, đổi màn) dẫn tới lỗi này.
+        'breadcrumbs': BlackBox.recentTrace(),
       }).catchError((_) {});
     } catch (_) {
       // Reporting must never break the app.

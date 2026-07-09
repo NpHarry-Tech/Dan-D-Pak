@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:video_player/video_player.dart';
 
+import '../../services/ad_cache.dart';
 import '../../ui/app_theme.dart';
 
 enum CustomerDisplayMode { idle, order, payment }
@@ -182,48 +183,8 @@ class _CustomerDisplayScreenState extends State<CustomerDisplayScreen> {
   Future<void> _materializeLocalAds() async {
     if (_materializing) return;
     _materializing = true;
-    final dir = Directory('${Directory.systemTemp.path}/dandpak_ads');
-    try {
-      await dir.create(recursive: true);
-    } catch (_) {}
-    final out = <String>[];
-    for (final img in widget.ads.images) {
-      if (img.startsWith('data:image/')) {
-        try {
-          final comma = img.indexOf(',');
-          final bytes = base64Decode(comma >= 0 ? img.substring(comma + 1) : img);
-          final name = 'ad_${img.hashCode & 0x7fffffff}.img';
-          final f = File('${dir.path}/$name');
-          if (!f.existsSync() || f.lengthSync() != bytes.length) {
-            await f.writeAsBytes(bytes);
-          }
-          out.add(f.path);
-        } catch (_) {
-          // ignore
-        }
-      } else if (img.startsWith('data:video/')) {
-        try {
-          final comma = img.indexOf(',');
-          final bytes = base64Decode(comma >= 0 ? img.substring(comma + 1) : img);
-          
-          String ext = '.mp4';
-          if (img.contains('video/quicktime')) ext = '.mov';
-          else if (img.contains('video/x-msvideo')) ext = '.avi';
-          else if (img.contains('video/x-matroska')) ext = '.mkv';
-          
-          final name = 'ad_${img.hashCode & 0x7fffffff}$ext';
-          final f = File('${dir.path}/$name');
-          if (!f.existsSync() || f.lengthSync() != bytes.length) {
-            await f.writeAsBytes(bytes);
-          }
-          out.add(f.path);
-        } catch (_) {
-          // ignore
-        }
-      } else if (img.isNotEmpty) {
-        out.add(img);
-      }
-    }
+    // Data-URL → file tạm dùng chung (xem ad_cache.dart) để phát mượt, nhẹ RAM.
+    final out = await materializeAdSources(widget.ads.images);
     if (mounted) {
       setState(() {
         _materializedPaths = out;
