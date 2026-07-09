@@ -59,3 +59,14 @@ server/uploads/menu/*
 !server/uploads/menu/.gitkeep
 
 
+
+# Dữ liệu nặng của engine — không đưa vào git (đồng bộ riêng, import script)
+server/assets/product-images/
+server/assets/menu-books/
+server/releases/*.apk
+
+# Cấu hình công cụ AI cục bộ của máy dev
+.aevum/
+.antigravitycli/
+.gemini/
+.mcp.json
