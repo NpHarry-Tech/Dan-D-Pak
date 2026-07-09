@@ -1009,7 +1009,13 @@ api.post('/orders/:id/pay', guard('pay'), wrap((req) => {
   const manual = applyManualConfirm(req, req.body.lines, branch_id);
   const receipt = Pay.payOrder(req.params.id, req.body.lines, { discount, customer: req.body.customer || null, invoice_customer: req.body.invoice_customer || null, cashier: req.user?.name || req.user?.username || '' }, branch_id);
   if (manual) for (const tx of manual.txIds) Pay.markBankTxClaimed(tx, req.params.id, manual.approver.username, branch_id);
-  if (req.body.customer?.id || req.body.customer?.phone) Customers.recordPurchase(req.body.customer, receipt.total, branch_id, req.params.id);
+  if (req.body.customer?.id || req.body.customer?.phone) {
+    Customers.recordPurchase(req.body.customer, receipt.total, branch_id, req.params.id);
+  } else {
+    // Đơn đã gắn khách từ lúc tạo (iPad self-order check-in SĐT) nhưng thu ngân
+    // thanh toán không gửi lại customer → vẫn tích điểm từ customer_json của đơn.
+    Pay.recordLoyaltyFromOrder(db.prepare(`SELECT id,branch_id,total,customer_json FROM orders WHERE id=?`).get(req.params.id));
+  }
   return receipt;
 }));
 // --- Auto-confirm thanh toán: webhook công khai (xác thực bằng key/chữ ký của nhà cung cấp) ---

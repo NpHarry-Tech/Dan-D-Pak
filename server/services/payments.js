@@ -12,9 +12,9 @@ import { recordPurchase } from './customers.js';
 import * as einvoice from './einvoice.js';
 
 // Đơn có gắn khách (iPad self-order check-in SĐT / thu ngân chọn khách) mà được
-// đóng bill qua đường TỰ ĐỘNG (webhook QR, khách tự xác nhận) thì vẫn phải tích
-// điểm — đường thủ công /orders/:id/pay đã tự recordPurchase ở api.js.
-function recordLoyaltyFromOrder(order) {
+// đóng bill KHÔNG kèm customer trong body (webhook QR, khách tự xác nhận, thu
+// ngân bấm thanh toán thường) thì vẫn phải tích điểm từ customer_json của đơn.
+export function recordLoyaltyFromOrder(order) {
   try {
     const cust = JSON.parse(order?.customer_json || 'null');
     if (cust && (cust.id || cust.phone)) {
