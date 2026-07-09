@@ -8,7 +8,20 @@ import { printReceipt } from './printing.js';
 import { canonicalMethodKey, getIntegrations, getOperationsConfig, getPrintConfig } from './settings.js';
 import { getActiveShift } from './shifts.js';
 import { archiveOrder, archivePayment } from './archive.js';
+import { recordPurchase } from './customers.js';
 import * as einvoice from './einvoice.js';
+
+// Đơn có gắn khách (iPad self-order check-in SĐT / thu ngân chọn khách) mà được
+// đóng bill qua đường TỰ ĐỘNG (webhook QR, khách tự xác nhận) thì vẫn phải tích
+// điểm — đường thủ công /orders/:id/pay đã tự recordPurchase ở api.js.
+function recordLoyaltyFromOrder(order) {
+  try {
+    const cust = JSON.parse(order?.customer_json || 'null');
+    if (cust && (cust.id || cust.phone)) {
+      recordPurchase(cust, order.total, order.branch_id || 'br1', order.id);
+    }
+  } catch { /* khách không hợp lệ → bỏ qua, không chặn thanh toán */ }
+}
 
 // 4 phương thức chuẩn sau khi gom (cash / bank / visa / voucher) + vài key
 // đặc thù; mọi key cũ (internet_banking, qrcode, card, may_pos...) được
@@ -545,6 +558,7 @@ export function customerQrPay(order_id, { method = 'qrcode', reference = '' } = 
       message: 'Đã ghi nhận. Thu ngân sẽ xác nhận thanh toán trong giây lát.' };
   }
   const receipt = payOrder(order_id, [{ method: chosen, amount: order.total, reference: ref }], { cashier: 'Khach tu thanh toan QR' }, branch_id);
+  recordLoyaltyFromOrder(order);
   return { ...receipt, status: 'paid' };
 }
 
@@ -626,6 +640,7 @@ function processIncomingCredit(provider, { externalId, amount, content, accountN
     return { ok: true, status: 'error', message: e.message };
   }
   recordBankTx({ provider, externalId, branch_id: order.branch_id, amount: amt, content, accountNumber, reference, order_id: order.id, status: 'paid', raw });
+  recordLoyaltyFromOrder(order);
   audit('payment.auto_confirmed', { provider, order: order.id, amount: amt, reference }, order.branch_id || 'br1', `auto:${provider}`);
   emit('payment:auto', { order_id: order.id, provider, amount: amt, bill_no: order.bill_no || null }, order.branch_id || 'br1');
   return { ok: true, status: 'paid', order_id: order.id, bill_no: order.bill_no || null, amount: parseInt(order.total) || 0 };

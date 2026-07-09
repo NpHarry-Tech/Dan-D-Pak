@@ -279,6 +279,53 @@ export function rebuildCustomerInsights(id, branch_id = 'br1') {
   return favoriteItems;
 }
 
+// iPad self-order: khách nhập SĐT ở đầu bữa. SĐT lạ → TỰ TẠO khách mới (chưa có
+// tên thật, tạm đặt "Khách <sđt>" — nhân viên đổi sau trong Liên hệ). Trả về hồ
+// sơ + danh sách MÓN HAY GỌI (chỉ hiện từ lần ăn thứ 3 — tức đã có ≥2 bill paid).
+export function selfOrderCheckin(phone, branch_id = 'br1') {
+  const clean = String(phone || '').replace(/\D/g, '');
+  if (clean.length < 8 || clean.length > 12) throw new Error('Số điện thoại không hợp lệ');
+  let customer = findByPhone(clean, branch_id);
+  let isNew = false;
+  if (!customer) {
+    // Khách mới chỉ có SĐT: vẫn lưu hồ sơ đầy đủ (tích điểm được ngay), tên
+    // tạm là "Khách hàng chưa đặt tên" — nhân viên bổ sung tên sau ở Liên hệ.
+    customer = upsertCustomer({ name: 'Khách hàng chưa đặt tên', phone: clean }, branch_id);
+    isNew = true;
+    audit('customer.self_checkin_new', { id: customer.id, phone: clean }, branch_id, 'ipad');
+  }
+  const visits = parseInt(customer.total_orders) || 0;
+  let favorites = [];
+  if (visits >= 2) {
+    let fav = [];
+    try { fav = JSON.parse(customer.favorite_items_json || '[]'); } catch { /* rebuild dưới */ }
+    if (!Array.isArray(fav) || !fav.length) fav = rebuildCustomerInsights(customer.id, branch_id);
+    const menuIds = fav.filter(f => f.type === 'menu' && f.id).map(f => f.id).slice(0, 8);
+    if (menuIds.length) {
+      const marks = menuIds.map(() => '?').join(',');
+      const rows = db.prepare(`SELECT id,name,price,image,emoji FROM menu_items
+        WHERE id IN (${marks}) AND available=1 AND hidden=0 AND deleted_at IS NULL`).all(...menuIds);
+      const byId = new Map(rows.map(r => [r.id, r]));
+      favorites = fav
+        .filter(f => byId.has(f.id))
+        .map(f => ({ ...byId.get(f.id), times: f.qty }));
+    }
+  }
+  return {
+    ok: true,
+    is_new: isNew,
+    customer: {
+      id: customer.id,
+      name: customer.name || '',
+      phone: customer.phone || clean,
+      loyalty_points: parseInt(customer.loyalty_points) || 0,
+      loyalty_tier: customer.loyalty_tier || '',
+      visits,
+    },
+    favorites,
+  };
+}
+
 // Compute the discount a customer's default perk grants on a given base amount.
 export function perkDiscount(customer, base = 0) {
   if (!customer) return 0;

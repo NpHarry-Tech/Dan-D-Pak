@@ -111,6 +111,20 @@ export function createOrUpdateOrder(options) {
       order = db.prepare(`SELECT * FROM orders WHERE id=?`).get(order.id);
     }
 
+    // iPad self-order gửi kèm khách (đã check-in bằng SĐT): gắn vào đơn ngay từ
+    // lúc tạo để lúc thanh toán — kể cả tự khớp qua webhook QR — vẫn tích điểm
+    // đúng người. Chỉ ghi khi đơn CHƯA có khách (không đè lựa chọn của thu ngân).
+    const cust = options.customer;
+    if (cust && (cust.id || cust.phone)) {
+      const snap = JSON.stringify({
+        id: String(cust.id || ''),
+        name: String(cust.name || '').slice(0, 200),
+        phone: String(cust.phone || '').slice(0, 40),
+      });
+      db.prepare(`UPDATE orders SET customer_json=COALESCE(NULLIF(customer_json,''),?) WHERE id=?`)
+        .run(snap, order.id);
+    }
+
     const insItem = db.prepare(`INSERT INTO order_items
       (id,order_id,menu_item_id,sku_id,name,emoji,qty,unit_price,station,sla_minutes,note,mods_json,status,lot_id,promo_json,created_at)
       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);

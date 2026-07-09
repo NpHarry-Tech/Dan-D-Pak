@@ -22,7 +22,7 @@ import 'pos_screen.dart';
 import 'printers/printers_screen.dart';
 import 'purchase/purchase_screen.dart';
 import 'retail/retail_screen.dart';
-import 'self_order/self_order_screen.dart';
+import 'self_order/self_order_table_screen.dart';
 import 'warehouse/warehouse_screen.dart';
 import '../services/black_box.dart';
 
@@ -112,12 +112,16 @@ class _LauncherScreenState extends State<LauncherScreen> {
       return;
     }
     if (module.key == 'ipad') {
-      // Màn KHÁCH tự gọi món (WebView /ipad) — thường mở trên tablet đặt tại
-      // bàn rồi đưa cho khách; nhân viên thoát bằng 5 chạm góc trên-trái.
-      final serverUrl = context.read<AuthProvider>().serverUrl;
+      // Man NHAN VIEN chon ban cho khach tu goi mon (native Flutter kiosk).
+      final auth = context.read<AuthProvider>();
       Navigator.of(context).push(MaterialPageRoute(
+          settings: const RouteSettings(name: '/so-table'),
           fullscreenDialog: true,
-          builder: (_) => SelfOrderScreen(serverUrl: serverUrl)));
+          builder: (_) => SelfOrderTableScreen(
+                serverUrl: auth.serverUrl,
+                branchId: auth.selectedBranchId,
+                staffToken: auth.token,
+              )));
       return;
     }
     if (module.key == 'warehouse') {

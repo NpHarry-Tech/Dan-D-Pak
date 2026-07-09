@@ -519,6 +519,10 @@ api.post('/device/ipad/unlock', wrap((req) => {
   if (!AppSettings.verifyIpadStaffPin(req.body.pin, visibleBranch(req))) throw new Error('Mật khẩu không đúng');
   return { ok: true };
 }));
+// iPad self-order: khách nhập SĐT đầu bữa → tự tạo khách mới nếu chưa có,
+// trả về điểm tích lũy + món hay gọi (từ lần ăn thứ 3). Route mở như các
+// route iPad khác (thiết bị công cộng đặt tại bàn).
+api.post('/self-order/checkin', wrap((req) => Customers.selfOrderCheckin(req.body?.phone, visibleBranch(req))));
 api.get('/device/ipad/setup-options', wrap((req) => {
   const b = visibleBranch(req);
   const activePos = getActiveConnections(b).filter(c => c.device === 'pos');

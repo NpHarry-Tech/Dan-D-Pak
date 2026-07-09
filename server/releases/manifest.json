@@ -7,10 +7,10 @@
     "mandatory": false
   },
   "android": {
-    "buildNumber": 1,
-    "version": "2026.07.09",
-    "file": "dan-d-pak-tablet-2026.07.09.apk",
-    "notes": "Bản đầu tiên có cơ chế báo cập nhật: app tự hỏi server và mời tải bản mới khi vào màn đăng nhập.",
+    "buildNumber": 4,
+    "version": "2026.07.09c",
+    "file": "dan-d-pak-pos-android-2026.07.09c.apk",
+    "notes": "Tablet dùng CHUNG app Dan D Pak POS: đầy đủ POS + iPad Self-Order flow mới (chọn bàn, 5 ngôn ngữ, SĐT tích điểm, món hay gọi, thanh toán QR/cash/card, hóa đơn MST, cảm ơn).",
     "mandatory": false
   }
 }

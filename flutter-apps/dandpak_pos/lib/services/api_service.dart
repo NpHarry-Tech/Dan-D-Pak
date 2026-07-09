@@ -1,7 +1,10 @@
 import 'package:dandpak_core/dandpak_core.dart';
 import '../models/app_models.dart';
+import '../screens/self_order/self_order_models.dart';
 
 class ApiService extends DanDpakApiClient {
+  ApiService({super.baseUrl, super.token, super.branchId});
+
   Future<List<dynamic>> getBranches() async {
     return listFrom(await getJson('/api/branches',
         errorMessage: 'Failed to load branches'));
@@ -1290,5 +1293,147 @@ class ApiService extends DanDpakApiClient {
         body: body,
         timeout: const Duration(seconds: 5),
         errorMessage: 'client-log failed');
+  }
+
+  // ── iPad Self-Order ────────────────────────────────────────────────────────
+
+  /// Khách check-in bằng SĐT: server tự tạo khách mới nếu chưa có, trả về
+  /// điểm tích lũy + món hay gọi (từ lần ăn thứ 3).
+  Future<Map<String, dynamic>> selfOrderCheckin(String phone) async {
+    return mapFrom(await postJson(
+      '/api/self-order/checkin',
+      body: {'phone': phone},
+      errorMessage: 'Check-in failed',
+    ));
+  }
+
+  /// Lấy đơn theo ID (dùng cho màn thanh toán — poll trạng thái).
+  Future<Map<String, dynamic>> getOrderById(String orderId) async {
+    return mapFrom(await getJson('/api/orders/$orderId',
+        errorMessage: 'Failed to load order'));
+  }
+
+  /// Sinh mã QR chuyển khoản theo đúng hóa đơn.
+  Future<Map<String, dynamic>> paymentQr(String orderId) async {
+    return mapFrom(await postJson('/api/orders/$orderId/payment-qr',
+        body: const {}, errorMessage: 'Failed to build payment QR'));
+  }
+
+  /// Tra cứu MST doanh nghiệp (route công khai cho màn khách).
+  Future<Map<String, dynamic>> taxLookup(String mst) async {
+    return mapFrom(await getJson('/api/public/tax-lookup/$mst',
+        errorMessage: 'Tax lookup failed'));
+  }
+
+  /// Khách chọn xuất/không xuất hóa đơn công ty sau khi thanh toán QR.
+  Future<Map<String, dynamic>> customerInvoice(
+    String orderId, {
+    required bool issue,
+    Map<String, dynamic>? customer,
+  }) async {
+    return mapFrom(await postJson(
+      '/api/orders/$orderId/customer-invoice',
+      body: {
+        'decision': issue ? 'issue' : 'decline',
+        if (customer != null) 'customer': customer,
+      },
+      errorMessage: 'Failed to submit invoice request',
+    ));
+  }
+
+  /// Tạo đơn mới (dùng cho self-order kiosk).
+  Future<Map<String, dynamic>> createOrder({
+    required String? tableId,
+    required String? orderType,
+    required List<Map<String, dynamic>> items,
+    Map<String, dynamic>? customer,
+  }) async {
+    return mapFrom(await postJson(
+      '/api/orders',
+      body: {
+        'table_id': tableId,
+        'channel': orderType ?? 'dine_in',
+        'source': 'staff_pos',
+        'items': items,
+        if (customer != null) 'customer': customer,
+      },
+      errorMessage: 'Failed to create order',
+    ));
+  }
+
+  /// Lấy danh sách zone cho màn chọn bàn self-order.
+  Future<List<SoZone>> fetchSoZones() async {
+    final data = listFrom(
+        await getJson('/api/zones', errorMessage: 'Failed to load zones'));
+    return data
+        .whereType<Map>()
+        .map((e) => SoZone(
+              id: (e['id'] ?? '').toString(),
+              name: (e['name'] ?? '').toString(),
+            ))
+        .toList();
+  }
+
+  /// Lấy danh sách bàn cho màn chọn bàn self-order.
+  Future<List<SoTableModel>> fetchSoTables() async {
+    final data = listFrom(
+        await getJson('/api/tables', errorMessage: 'Failed to load tables'));
+    return data
+        .whereType<Map>()
+        .map((e) => SoTableModel(
+              id: (e['id'] ?? '').toString(),
+              code: (e['code'] ?? '').toString(),
+              name: (e['name'] ?? '').toString(),
+              zoneId: (e['zone_id'] ?? e['zone'] ?? '').toString(),
+              status: (e['status'] ?? 'empty').toString(),
+            ))
+        .toList();
+  }
+
+  /// Lấy menu đầy đủ và trả về dạng SoMenuItem list cho self-order.
+  Future<List<SoMenuItem>> fetchMenuRaw() async {
+    final decoded =
+        await getJson('/api/menu', errorMessage: 'Failed to load menu');
+    final List<dynamic> data = decoded is List
+        ? decoded
+        : (decoded is Map && decoded['items'] is List
+            ? decoded['items'] as List
+            : <dynamic>[]);
+
+    final catNames = <String, String>{};
+    if (decoded is Map && decoded['categories'] is List) {
+      for (final category in decoded['categories'] as List) {
+        if (category is Map && category['id'] != null) {
+          catNames[category['id'].toString()] =
+              (category['name'] ?? '').toString();
+        }
+      }
+    }
+
+    int intVal(dynamic v) {
+      if (v is int) return v;
+      if (v is num) return v.toInt();
+      return int.tryParse(v?.toString() ?? '') ?? 0;
+    }
+
+    return data.whereType<Map>().map((item) {
+      final categoryId = item['category_id']?.toString();
+      final hasCategory = (item['category'] ?? '').toString().isNotEmpty;
+      final category = hasCategory
+          ? item['category'].toString()
+          : (categoryId != null
+              ? (catNames[categoryId] ?? categoryId)
+              : null);
+      return SoMenuItem(
+        id: (item['id'] ?? '').toString(),
+        name: (item['name'] ?? '').toString(),
+        price: intVal(item['price']),
+        category: category,
+        image: item['image']?.toString(),
+        emoji: item['emoji']?.toString(),
+        description: item['description']?.toString(),
+        modifiers: item['modifiers'] is List ? item['modifiers'] as List : [],
+      );
+    }).toList();
   }
 }
