@@ -1,7 +1,0 @@
-# Cấu hình keystore cho phát hành Android (sao chép thành key.properties)
-# Đường dẫn storeFile nên trỏ tương đối hoặc tuyệt đối tới file .jks của bạn.
-# Ví dụ: nếu đặt file my-release-key.jks vào thư mục android/app/ thì ghi là: ../app/my-release-key.jks
-storeFile=../app/my-release-key.jks
-storePassword=mat_khau_keystore
-keyAlias=ten_alias
-keyPassword=mat_khau_alias_key
