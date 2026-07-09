@@ -54,16 +54,12 @@ class _BarcodeScannerScreenState extends State<_BarcodeScannerScreen> {
   @override
   void initState() {
     super.initState();
-    // App khoá landscape (manifest sensorLandscape). Khi quét, khách hay CẦM
-    // DỌC máy → nếu vẫn khoá ngang thì hình camera bị xoay 90°. Ở màn quét cho
-    // phép XOAY TỰ DO theo cách cầm máy để camera đúng chiều; khôi phục landscape
-    // khi thoát (setPreferredOrientations ghi đè manifest lúc chạy).
-    SystemChrome.setPreferredOrientations(const [
-      DeviceOrientation.portraitUp,
-      DeviceOrientation.portraitDown,
-      DeviceOrientation.landscapeLeft,
-      DeviceOrientation.landscapeRight,
-    ]);
+    // App khoá landscape (manifest sensorLandscape). Ở landscape, mobile_scanner
+    // trên nhiều máy Samsung render hình camera XOAY 90° (mã vạch nằm ngang →
+    // không đọc được / hình bị lệch). ÉP màn quét về DỌC (portrait) — đúng chiều
+    // tự nhiên của cảm biến camera → hình thẳng, quét chuẩn. Người dùng cầm máy
+    // dọc để quét (tự nhiên). Khôi phục landscape khi thoát.
+    SystemChrome.setPreferredOrientations(const [DeviceOrientation.portraitUp]);
   }
 
   void _onDetect(BarcodeCapture capture) {
