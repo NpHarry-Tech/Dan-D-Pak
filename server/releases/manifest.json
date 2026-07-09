@@ -1,4 +1,16 @@
 {
-  "windows": { "buildNumber": 0, "version": "", "file": "", "notes": "", "mandatory": false },
-  "android": { "buildNumber": 0, "version": "", "file": "", "notes": "", "mandatory": false }
+  "windows": {
+    "buildNumber": 4,
+    "version": "2026.07.09c",
+    "file": "dan-d-pak-pos-setup-2026-07-09c.exe",
+    "notes": "Thêm hộp đen chống crash: ghi lại từng thao tác, tự phát hiện và báo cáo về hệ thống khi app thoát bất thường (kèm vệt thao tác dẫn đến lỗi). Kèm bản vá kéo/nhấp đúp màn hình phụ.",
+    "mandatory": false
+  },
+  "android": {
+    "buildNumber": 1,
+    "version": "2026.07.09",
+    "file": "dan-d-pak-tablet-2026.07.09.apk",
+    "notes": "Bản đầu tiên có cơ chế báo cập nhật: app tự hỏi server và mời tải bản mới khi vào màn đăng nhập.",
+    "mandatory": false
+  }
 }

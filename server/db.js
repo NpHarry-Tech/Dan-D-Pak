@@ -1106,40 +1106,6 @@ export function decryptDecompress(encText) {
   }
 }
 
-export function compactOldAuditLogs(daysLimit = 90) {
-  const cutoff = new Date(Date.now() - daysLimit * 24 * 60 * 60 * 1000).toISOString();
-  try {
-    const rows = db.prepare(`SELECT id, detail FROM audit_log WHERE created_at < ? AND detail NOT LIKE '__ENC__:%'`).all(cutoff);
-    if (!rows.length) return 0;
-    
-    const stmt = db.prepare(`UPDATE audit_log SET detail = ? WHERE id = ?`);
-    let count = 0;
-    db.exec('BEGIN TRANSACTION;');
-    try {
-      for (const r of rows) {
-        const enc = encryptCompress(r.detail);
-        stmt.run(enc, r.id);
-        count++;
-      }
-      db.exec('COMMIT;');
-    } catch (err) {
-      db.exec('ROLLBACK;');
-      throw err;
-    }
-    return count;
-  } catch (e) {
-    console.error('[audit] compact old logs failed:', e.message);
-    return 0;
-  }
-}
-
-// Giữ nhật ký hoạt động trong `days` ngày gần nhất (cửa sổ trượt). Sang ngày thứ 8
-// các dòng của ngày đầu tiên đã quá 7 ngày nên bị xóa. Trả về số dòng đã xóa.
-export function purgeOldAudit(days = 7) {
-  const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
-  return db.prepare(`DELETE FROM audit_log WHERE created_at < ?`).run(cutoff).changes;
-}
-
 // ═══════════════════════════════════════════════════════════════════════════
 // Activity-log lifecycle (tiered retention)
 //   • Hot  : rows of the last AUDIT_HOT_MONTHS months live in SQLite → instant query.

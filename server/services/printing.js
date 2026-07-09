@@ -594,6 +594,7 @@ function writeLan(host, port, buffer, timeoutMs = 4500) {
 }
 
 async function writeSystemPrinter(name, text) {
+  const safeName = String(name || '').replace(/[^a-zA-Z0-9\s\-_\\]/g, '');
   const dir = mkdtempSync(join(tmpdir(), 'dandpak-print-'));
   const file = join(dir, 'job.txt');
   writeFileSync(file, ascii(text) + '\n', 'utf8');
@@ -601,10 +602,10 @@ async function writeSystemPrinter(name, text) {
     if (process.platform === 'win32') {
       await execFileAsync('powershell.exe', [
         '-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command',
-        `Get-Content -Raw -LiteralPath ${JSON.stringify(file)} | Out-Printer -Name ${JSON.stringify(name)}`,
+        `Get-Content -Raw -LiteralPath ${JSON.stringify(file)} | Out-Printer -Name ${JSON.stringify(safeName)}`,
       ], { timeout: 12000, windowsHide: true });
     } else {
-      await execFileAsync('lp', ['-d', name, file], { timeout: 12000 });
+      await execFileAsync('lp', ['-d', safeName, file], { timeout: 12000 });
     }
   } finally {
     try { rmSync(dir, { recursive: true, force: true }); } catch {}

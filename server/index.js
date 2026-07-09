@@ -43,7 +43,6 @@ function compressionMiddleware(req, res, next) {
 }
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const WEB = join(__dirname, '..', 'web');
 const ENGINE_ASSETS = join(__dirname, 'assets');
 const PORT = env.PORT;
 export const UPLOADS_DIR = join(__dirname, 'uploads', 'documents');
@@ -74,11 +73,11 @@ if (isEmpty) {
       logger.warn(`failed to restore config from URL: ${err.message}; falling back to demo seed`);
       await import('./seed.js');
     }
-  } else if (existsSync(join(ROOT, 'server/config-seed.json'))) {
+  } else if (existsSync(join(__dirname, 'config-seed.json'))) {
     try {
       logger.info(`empty database detected; restoring config from local server/config-seed.json`);
       const { importConfig } = await import('./services/configBackup.js');
-      const snapshot = JSON.parse(readFileSync(join(ROOT, 'server/config-seed.json'), 'utf8'));
+      const snapshot = JSON.parse(readFileSync(join(__dirname, 'config-seed.json'), 'utf8'));
       const result = importConfig(snapshot);
       logger.info('config restored from local file', result.counts);
     } catch (err) {
@@ -150,29 +149,6 @@ app.use((req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
 app.use('/uploads', express.static(join(__dirname, 'uploads'), { etag: false, lastModified: false }));
 app.use('/assets', express.static(ENGINE_ASSETS, { etag: false, lastModified: false }));
 
-if (!env.DISABLE_WEB_UI) {
-  app.use(express.static(WEB, { etag: false, lastModified: false }));
-  app.get('/tablet', (req, res) => res.redirect('/tablet/'));
-  app.get('/tablet/app/*', (req, res, next) => {
-    if (!req.path.includes('.')) {
-      return res.sendFile(join(WEB, 'tablet', 'app', 'index.html'));
-    }
-    next();
-  });
-  app.get('/', (req, res) => res.sendFile(join(WEB, 'index.html')));
-  app.get('/settings', (req, res) => res.sendFile(join(WEB, 'admin.html')));
-  // Haravan-style settings sub-routes (/settings/staff, /settings/location, ...) all serve the admin shell.
-  app.get('/settings/:tab', (req, res) => res.sendFile(join(WEB, 'admin.html')));
-  // Report center lives in the admin shell; /reports/<type> deep-links a specific report.
-  app.get('/reports', (req, res) => res.sendFile(join(WEB, 'admin.html')));
-  app.get('/reports/:type', (req, res) => res.sendFile(join(WEB, 'admin.html')));
-  // Module sub-tabs deep-linked Haravan-style (/contacts/customers, /database/logs, ...).
-  app.get('/contacts/:tab', (req, res) => res.sendFile(join(WEB, 'contacts.html')));
-  app.get('/database/:tab', (req, res) => res.sendFile(join(WEB, 'database.html')));
-  for (const v of ['ipad', 'pos', 'kds', 'admin', 'retail', 'warehouse', 'sim', 'printers', 'online', 'contacts', 'purchase', 'expenses', 'invoices', 'database', 'documents']) {
-    app.get('/' + v, (req, res) => res.sendFile(join(WEB, v + '.html')));
-  }
-}
 app.use(errorHandler);
 
 const server = createServer(app);
@@ -219,10 +195,8 @@ server.listen(PORT, () => {
   logger.info('POS/ERP server started', {
     port: PORT,
     localUrl: `http://localhost:${PORT}`,
-    webRoot: WEB,
     runtime: runtimeSnapshot(),
   });
-  if (!existsSync(WEB)) logger.warn('web folder missing', { webRoot: WEB });
 });
 
 function shutdown(signal) {

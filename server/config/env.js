@@ -12,7 +12,7 @@ const DEFAULTS = {
   BACKUP_RETENTION_DAYS: 14,
   DISABLE_DEMO_SEED: false,
   CONFIG_SEED_URL: '',
-  DISABLE_WEB_UI: false,
+  DISABLE_WEB_UI: true,
 };
 
 function clean(value) {
@@ -49,7 +49,7 @@ export function loadEnv(source = process.env) {
     BACKUP_RETENTION_DAYS: asInt(source.BACKUP_RETENTION_DAYS, DEFAULTS.BACKUP_RETENTION_DAYS),
     DISABLE_DEMO_SEED: source.DISABLE_DEMO_SEED === 'true' || source.DISABLE_DEMO_SEED === '1',
     CONFIG_SEED_URL: clean(source.CONFIG_SEED_URL) || DEFAULTS.CONFIG_SEED_URL,
-    DISABLE_WEB_UI: source.DISABLE_WEB_UI === 'true' || source.DISABLE_WEB_UI === '1',
+    DISABLE_WEB_UI: source.DISABLE_WEB_UI !== undefined ? (source.DISABLE_WEB_UI === 'true' || source.DISABLE_WEB_UI === '1') : DEFAULTS.DISABLE_WEB_UI,
     // 'auto' = server tự in trên phần cứng cùng máy (mô hình LAN 1 máy chủ).
     // 'agent' = server chỉ xếp hàng job; việc in vật lý + mở két do Hardware
     // Agent tại cửa hàng thực thi (mô hình VPS trung tâm — server ở datacenter

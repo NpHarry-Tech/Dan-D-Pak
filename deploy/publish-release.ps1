@@ -22,7 +22,10 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
-$verFile = Join-Path $root 'flutter-apps\dandpak_pos\lib\app_version.dart'
+# Số build đọc từ app_version.dart của ĐÚNG app theo nền tảng:
+# windows = dandpak_pos (desktop), android = dandpak_tablet.
+$verApp = if ($Platform -eq 'android') { 'dandpak_tablet' } else { 'dandpak_pos' }
+$verFile = Join-Path $root "flutter-apps\$verApp\lib\app_version.dart"
 
 if (-not (Test-Path $File)) { throw "Không thấy file cài đặt: $File" }
 if (-not (Test-Path $verFile)) { throw "Không thấy app_version.dart: $verFile" }

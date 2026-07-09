@@ -29,7 +29,6 @@ import * as CashDrawer from './services/cashDrawer.js';
 import * as Branches from './services/branches.js';
 import * as Purchase from './services/purchase.js';
 import * as Expenses from './services/expenses.js';
-import * as ES from './services/enterpriseStorage.js';
 import * as AppRelease from './services/appRelease.js';
 import { emit, getActiveConnections } from './realtime.js';
 import { errorPayload } from './core/errors.js';
@@ -43,6 +42,22 @@ const AVATAR_UPLOADS_DIR = nodePath.join(__apiDir, 'uploads', 'avatars');
 const MENU_UPLOADS_DIR = nodePath.join(__apiDir, 'uploads', 'menu');
 const AVATAR_ALLOWED_MIME = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);
 const AVATAR_MAX_BYTES = 20 * 1024 * 1024;
+
+const SECURE_MIME_EXT = {
+  'image/jpeg': '.jpg',
+  'image/jpg': '.jpg',
+  'image/png': '.png',
+  'image/webp': '.webp',
+  'image/gif': '.gif',
+  'application/pdf': '.pdf',
+  'application/vnd.ms-excel': '.xls',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': '.xlsx',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': '.docx',
+  'text/csv': '.csv',
+  'text/plain': '.txt',
+  'application/json': '.json',
+};
+
 
 export const api = Router();
 
@@ -59,16 +74,9 @@ api.get('/dev/seed', async (req, res) => {
     return res.status(404).json({ error: 'Not found' });
   }
   try {
-    const { stdout: seedOut, stderr: seedErr } = await execAsync('node server/seed.js');
-    const { stdout: bcmOut, stderr: bcmErr } = await execAsync('python server/scripts/import_kiotviet_excel.py');
-    const { stdout: menuOut, stderr: menuErr } = await execAsync('python server/scripts/import_lounge_menu.py');
-    return res.json({
-      ok: true,
-      message: 'Đã nạp dữ liệu nhân viên mới, đồng bộ kho hàng BCM từ KiotViet Excel và import Lounge Menu thành công!',
-      seed: { stdout: seedOut, stderr: seedErr },
-      bcm: { stdout: bcmOut, stderr: bcmErr },
-      menu: { stdout: menuOut, stderr: menuErr }
-    });
+    // Chỉ chạy seed demo Node — các script import Python cũ đã bị gỡ khỏi repo.
+    const { stdout, stderr } = await execAsync('node server/seed.js');
+    return res.json({ ok: true, message: 'Đã nạp dữ liệu demo.', seed: { stdout, stderr } });
   } catch (error) {
     return res.status(500).json({ error: error.message });
   }
@@ -284,24 +292,24 @@ api.post('/settings/roles/:role/permissions', guardAny('settings.perms'), wrap((
   return Auth.setRolePerms(req.params.role, req.body.perms, branch_id, req.user);
 }));
 api.get('/settings/users', guardAny('settings.users'), wrap((req) => Auth.listAllUsers(branch(req))));
-api.post('/settings/users/avatar-upload', guardAny('settings.users'), wrap((req) => {
+// Lưu ảnh gửi lên dạng base64 (≤20MB, đúng mime ảnh) vào thư mục uploads và trả
+// URL công khai. Dùng chung cho avatar nhân viên, ảnh món và avatar đối tác.
+function saveBase64Image(req, { dir, urlBase, prefix, auditAction }) {
   const { data, mime_type, original_name } = req.body || {};
-  if (!data || !original_name) throw new Error('Thieu du lieu anh dai dien');
-  if (!AVATAR_ALLOWED_MIME.has(mime_type)) throw new Error(`Dinh dang anh khong duoc ho tro: ${mime_type}`);
-
+  if (!data || !original_name) throw new Error('Thiếu dữ liệu ảnh');
+  if (!AVATAR_ALLOWED_MIME.has(mime_type)) throw new Error(`Định dạng ảnh không được hỗ trợ: ${mime_type}`);
   const buf = Buffer.from(String(data), 'base64');
-  if (!buf.byteLength) throw new Error('File anh rong');
-  if (buf.byteLength > AVATAR_MAX_BYTES) throw new Error('Anh qua lon, toi da 20MB');
-
-  const ext = (nodePath.extname(original_name).toLowerCase() || '.jpg').replace(/[^.a-z0-9]/g, '');
-  const stored = `${uid('av_')}${ext}`;
-  fs.mkdirSync(AVATAR_UPLOADS_DIR, { recursive: true });
-  fs.writeFileSync(nodePath.join(AVATAR_UPLOADS_DIR, stored), buf);
-
-  const url = `/uploads/avatars/${stored}`;
-  audit('user.avatar_upload', { url, original_name, size: buf.byteLength }, branch(req), actor(req));
+  if (!buf.byteLength) throw new Error('File ảnh rỗng');
+  if (buf.byteLength > AVATAR_MAX_BYTES) throw new Error('Ảnh quá lớn, tối đa 20MB');
+  const stored = `${uid(prefix)}${SECURE_MIME_EXT[mime_type] || '.jpg'}`;
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(nodePath.join(dir, stored), buf);
+  const url = `${urlBase}/${stored}`;
+  audit(auditAction, { url, original_name, size: buf.byteLength }, branch(req), actor(req));
   return { ok: true, url, size: buf.byteLength };
-}));
+}
+api.post('/settings/users/avatar-upload', guardAny('settings.users'), wrap((req) =>
+  saveBase64Image(req, { dir: AVATAR_UPLOADS_DIR, urlBase: '/uploads/avatars', prefix: 'av_', auditAction: 'user.avatar_upload' })));
 api.post('/settings/users', guardAny('settings.users'), wrap((req) => {
   const branch_id = branch(req);
   const pin = req.body?.security_pin;
@@ -525,24 +533,8 @@ api.get('/device/ipad/setup-options', wrap((req) => {
 api.get('/menu', wrap((req) => Catalog.listMenu({ forCustomer: true, ...req.query })));
 api.get('/menu/manage', guard('menu.manage'), wrap((req) => Catalog.listMenu({ forCustomer: false, ...req.query })));
 
-api.post('/menu/image-upload', guard('menu.manage'), wrap((req) => {
-  const { data, mime_type, original_name } = req.body || {};
-  if (!data || !original_name) throw new Error('Thieu du lieu anh mon');
-  if (!AVATAR_ALLOWED_MIME.has(mime_type)) throw new Error(`Dinh dang anh khong duoc ho tro: ${mime_type}`);
-
-  const buf = Buffer.from(String(data), 'base64');
-  if (!buf.byteLength) throw new Error('File anh rong');
-  if (buf.byteLength > AVATAR_MAX_BYTES) throw new Error('Anh qua lon, toi da 20MB');
-
-  const ext = (nodePath.extname(original_name).toLowerCase() || '.jpg').replace(/[^.a-z0-9]/g, '');
-  const stored = `${uid('menu_')}${ext}`;
-  fs.mkdirSync(MENU_UPLOADS_DIR, { recursive: true });
-  fs.writeFileSync(nodePath.join(MENU_UPLOADS_DIR, stored), buf);
-
-  const url = `/uploads/menu/${stored}`;
-  audit('menu.image_upload', { url, original_name, size: buf.byteLength }, branch(req), actor(req));
-  return { ok: true, url, size: buf.byteLength };
-}));
+api.post('/menu/image-upload', guard('menu.manage'), wrap((req) =>
+  saveBase64Image(req, { dir: MENU_UPLOADS_DIR, urlBase: '/uploads/menu', prefix: 'menu_', auditAction: 'menu.image_upload' })));
 
 api.post('/menu', guard('menu.manage'), wrap((req) => {
   const branch_id = branch(req);
@@ -694,15 +686,15 @@ api.post('/categories/:id/delete', guard('menu.manage'), wrap((req) => {
 
 // --- Tables ---
 api.get('/tables', wrap((req) => Orders.listTables(visibleBranch(req))));
-api.get('/tables/:id', wrap((req) => {
+api.get('/tables/:id', guardAny('sell', 'pay', 'kds', 'order.view'), wrap((req) => {
   const branch_id = visibleBranch(req);
   return {
     table: Orders.getTableState(req.params.id),
     order: Orders.getOrder(Orders.getOpenOrderForTable(req.params.id, branch_id)?.id),
   };
 }));
-api.post('/tables/:id/move', guard('sell'), wrap((req) => Orders.moveTable(req.params.id, req.body.to_table_id, branch(req), actor(req))));
-api.post('/tables/:id/merge', guard('sell'), wrap((req) => Orders.mergeTables(req.params.id, req.body.target_table_id, branch(req), actor(req))));
+api.post('/tables/:id/move', guard('table.move'), wrap((req) => Orders.moveTable(req.params.id, req.body.to_table_id, branch(req), actor(req))));
+api.post('/tables/:id/merge', guard('table.move'), wrap((req) => Orders.mergeTables(req.params.id, req.body.target_table_id, branch(req), actor(req))));
 api.post('/settings/tables', guardAny('settings.tables'), wrap((req) => {
   const branch_id = branch(req);
   const pin = req.body?.security_pin;
@@ -729,7 +721,9 @@ api.post('/settings/tables/:id/delete', guardAny('settings.tables'), wrap((req) 
 }));
 
 // --- Orders ---
-api.post('/orders', wrap((req) => Orders.createOrUpdateOrder({ ...req.body, branch_id: visibleBranch(req), actor: actor(req) })));
+// POST /orders: yêu cầu đăng nhập + quyền 'sell'. Tất cả thiết bị (POS, tablet)
+// phải đăng nhập trước khi tạo/thêm món vào đơn hàng.
+api.post('/orders', guard('sell'), wrap((req) => Orders.createOrUpdateOrder({ ...req.body, branch_id: visibleBranch(req), actor: actor(req) })));
 api.get('/orders', guard('pay'), wrap(() => notImplemented('Order list endpoint is planned. Use /api/orders/history or table-specific order reads in the current app.')));
 api.get('/orders/pending-confirmation', guard('sell'), wrap((req) => Orders.listPendingConfirmations(branch(req))));
 api.get('/orders/history', guard('pay'), wrap((req) => History.listOrderHistory(branch(req), req.query)));
@@ -748,14 +742,14 @@ api.post('/orders/:id/receipt/print', guard('pay'), wrap((req) => {
   // In lại từ Lịch sử: đánh dấu reprint để tiêu đề bill là "(IN LẠI)".
   return Print.printReceipt({ ...History.orderReceipt(req.params.id, branch_id), reprint: true }, branch_id);
 }));
-api.get('/orders/:id', wrap((req) => Orders.getOrder(req.params.id)));
+api.get('/orders/:id', guardAny('sell', 'pay', 'kds', 'order.view'), wrap((req) => Orders.getOrder(req.params.id)));
 api.patch('/orders/:id', guard('sell'), wrap(() => notImplemented('Generic order patch is planned. Current app uses action-specific order endpoints.')));
-api.post('/orders/:id/confirm', guard('sell'), wrap((req) => Orders.confirmPendingItems(req.params.id, req.body.item_ids, branch(req), actor(req))));
-api.post('/orders/:id/reject', guard('sell'), wrap((req) => Orders.rejectPendingItems(req.params.id, req.body.item_ids, req.body.reason, branch(req), actor(req))));
-api.post('/orders/:id/split', guard('pay'), wrap((req) => Orders.splitOrderItems(req.params.id, req.body.item_ids, branch(req), actor(req))));
-api.post('/orders/items/:id/status', wrap((req) => {
-  // Route mở cho KDS chuyển trạng thái (nhận/làm/xong/giao). HỦY món phải đi qua
-  // /orders/items/:id/cancel (có cổng PIN Quản lý) — chặn ở đây để không lách quyền.
+api.post('/orders/:id/confirm', guard('order.confirm'), wrap((req) => Orders.confirmPendingItems(req.params.id, req.body.item_ids, branch(req), actor(req))));
+api.post('/orders/:id/reject', guard('order.confirm'), wrap((req) => Orders.rejectPendingItems(req.params.id, req.body.item_ids, req.body.reason, branch(req), actor(req))));
+api.post('/orders/:id/split', guard('bill.split'), wrap((req) => Orders.splitOrderItems(req.params.id, req.body.item_ids, branch(req), actor(req))));
+api.post('/orders/items/:id/status', guardAny('kds', 'sell'), wrap((req) => {
+  // Route được bảo vệ bằng guard kđs|sell. KDS chuyển trạng thái (nhận/làm/xong/giao).
+  // HỦY món phải đi qua /orders/items/:id/cancel (có cổng PIN Quản lý) — chặn ở đây để không lách quyền.
   if (String(req.body.status) === 'cancelled') {
     const e = new Error('Hủy món phải dùng chức năng Hủy (cần PIN Quản lý/Admin).');
     e.status = 403; throw e;
@@ -802,7 +796,7 @@ api.post('/orders/items/:id/cancel', wrap((req) => {
   return res;
 }));
 
-api.post('/orders/items/:id/kds-dismiss', wrap((req) => {
+api.post('/orders/items/:id/kds-dismiss', guard('kds'), wrap((req) => {
   const branch_id = visibleBranch(req);
   const itemId = req.params.id;
   const item = db.prepare(`SELECT * FROM order_items WHERE id=?`).get(itemId);
@@ -818,11 +812,104 @@ api.patch('/kds/tickets/:id', wrap(() => notImplemented('Generic KDS ticket patc
 api.get('/kds/:station', wrap((req) => Orders.getStationTickets(req.params.station, visibleBranch(req))));
 
 // --- Staff calls ---
+// POST /calls và GET /calls: mở cho iPad/khách (không cần đăng nhập) gọi nhân viên.
+// POST /calls/:id/resolve: cần quyền 'sell' (nhân viên phục vụ xác nhận đã xử lý).
 api.post('/calls', wrap((req) => Orders.createStaffCall(req.body.table_id, req.body.reason, visibleBranch(req))));
 api.get('/calls', wrap((req) => Orders.listStaffCalls(visibleBranch(req))));
-api.post('/calls/:table_id/resolve', wrap((req) => { Orders.resolveStaffCall(req.params.table_id, visibleBranch(req)); return { ok: true }; }));
+api.post('/calls/:table_id/resolve', guard('sell'), wrap((req) => { Orders.resolveStaffCall(req.params.table_id, visibleBranch(req)); return { ok: true }; }));
 
 // --- Payments ---
+// ── Void Bill (Hủy toàn bộ đơn hàng chưa thanh toán) ────────────────────────
+// Luật:
+//  • Yêu cầu quyền 'void' (cashier không có void mặc định, chỉ manager/owner).
+//  • BẮT BUỘC PIN của Manager hoặc Admin — không thể bypass bằng quyền đơn thuần.
+//  • Chỉ áp dụng cho bill chưa thanh toán (status='open'). Bill đã paid → dùng refund.
+//  • Ghi audit đầy đủ: ai void, bill nào, lý do gì, ai phê duyệt bằng PIN.
+api.post('/orders/:id/void', guard('void'), wrap((req) => {
+  const branch_id = branch(req);
+  const { pin, reason } = req.body || {};
+
+  // Bắt buộc PIN manager/admin dù actor có quyền 'void'
+  if (!pin) {
+    const e = new Error('Cần nhập PIN của Quản lý hoặc Admin để hủy bill.');
+    e.code = 'PERM_REQUIRED';
+    throw e;
+  }
+  const approvedBy = Auth.verifyManagerOwnerPin(pin, branch_id);
+  if (!approvedBy) {
+    throw new Error('PIN không đúng hoặc người đó không có quyền Quản lý/Admin.');
+  }
+
+  const order = db.prepare(`SELECT * FROM orders WHERE id=? AND branch_id=?`).get(req.params.id, branch_id);
+  if (!order) throw new Error('Bill không tồn tại.');
+  if (order.status === 'paid') throw new Error('Không thể void bill đã thanh toán. Hãy dùng chức năng Hoàn tiền.');
+  if (order.status === 'void') throw new Error('Bill đã được void trước đó.');
+
+  const cleanReason = String(reason || '').trim() || 'Quản lý hủy bill';
+
+  // Cancel toàn bộ món chưa bị hủy
+  db.prepare(`UPDATE order_items SET status='cancelled', reject_reason=? WHERE order_id=? AND status!='cancelled'`)
+    .run(cleanReason, req.params.id);
+  db.prepare(`UPDATE orders SET status='void', subtotal=0, total=0 WHERE id=?`).run(req.params.id);
+
+  // Trả bàn về trống nếu có
+  if (order.table_id) {
+    db.prepare(`UPDATE tables SET status='free' WHERE id=?`).run(order.table_id);
+    Orders.resolveStaffCall(order.table_id, branch_id);
+    emit('table:updated', Orders.getTableState(order.table_id), branch_id);
+  }
+
+  audit('order.void', {
+    order: req.params.id, bill_no: order.bill_no,
+    reason: cleanReason, approved_by: approvedBy.username,
+  }, branch_id, actor(req));
+  emit('order:updated', Orders.getOrder(req.params.id), branch_id);
+  emit('stats:dirty', {}, branch_id);
+  return { ok: true, order_id: req.params.id, bill_no: order.bill_no, approved_by: approvedBy.name };
+}));
+
+// ── Refund FnB (Hoàn tiền đơn FnB đã thanh toán) ────────────────────────────
+// Luật:
+//  • Yêu cầu quyền 'refund'.
+//  • BẮT BUỘC PIN Manager/Admin + lý do hoàn tiền.
+//  • Chỉ áp dụng cho bill đã paid (status='paid').
+//  • Ghi audit chi tiết và phát sự kiện realtime.
+api.post('/orders/:id/refund', guard('refund'), wrap((req) => {
+  const branch_id = branch(req);
+  const { pin, reason } = req.body || {};
+
+  if (!pin) {
+    const e = new Error('Cần nhập PIN của Quản lý hoặc Admin để hoàn tiền.');
+    e.code = 'PERM_REQUIRED';
+    throw e;
+  }
+  const approvedBy = Auth.verifyManagerOwnerPin(pin, branch_id);
+  if (!approvedBy) throw new Error('PIN không đúng hoặc người đó không có quyền Quản lý/Admin.');
+
+  const order = db.prepare(`SELECT * FROM orders WHERE id=? AND branch_id=?`).get(req.params.id, branch_id);
+  if (!order) throw new Error('Bill không tồn tại.');
+  if (order.status !== 'paid') throw new Error('Chỉ có thể hoàn tiền cho bill đã thanh toán.');
+
+  const cleanReason = String(reason || '').trim();
+  if (!cleanReason) throw new Error('Cần nhập lý do hoàn tiền.');
+
+  // Tạo bản ghi hoàn tiền trong audit (bảng refunds sẽ được thêm qua migration)
+  const refundId = uid('ref_');
+  try {
+    db.prepare(`INSERT INTO refunds (id,order_id,branch_id,reason,approved_by,amount,created_at) VALUES (?,?,?,?,?,?,?)`)
+      .run(refundId, req.params.id, branch_id, cleanReason, approvedBy.username, order.total, now());
+  } catch {
+    // Bảng refunds chưa có → ghi vào audit_log để không mất dữ liệu
+  }
+
+  audit('order.refund', {
+    refund_id: refundId, order: req.params.id, bill_no: order.bill_no,
+    amount: order.total, reason: cleanReason, approved_by: approvedBy.username,
+  }, branch_id, actor(req));
+  emit('stats:dirty', {}, branch_id);
+  return { ok: true, refund_id: refundId, order_id: req.params.id, bill_no: order.bill_no, amount: order.total, approved_by: approvedBy.name };
+}));
+
 api.post('/payments', guard('pay'), wrap(() => notImplemented('Generic payment creation is planned. Current app uses /api/orders/:id/pay.')));
 api.get('/payments', guard('reports'), wrap(() => notImplemented('Payment list endpoint is planned. Current reports are available through dashboard/report center endpoints.')));
 api.post('/orders/:id/request-payment', wrap((req) => { Pay.requestPayment(req.body.table_id, visibleBranch(req)); return { ok: true }; }));
@@ -1060,24 +1147,8 @@ api.get('/partners', guardAny('module.contacts', 'contacts.create', 'contacts.ed
   counts: Customers.partnerCounts(branch(req)),
 })));
 api.get('/partners/:id', guardAny('module.contacts', 'contacts.create', 'contacts.edit', 'contacts.delete'), wrap((req) => Customers.getCustomer(req.params.id, branch(req))));
-api.post('/partners/avatar-upload', guardAny('contacts.create', 'contacts.edit'), wrap((req) => {
-  const { data, mime_type, original_name } = req.body || {};
-  if (!data || !original_name) throw new Error('Thiếu dữ liệu ảnh đại diện');
-  if (!AVATAR_ALLOWED_MIME.has(mime_type)) throw new Error(`Định dạng ảnh không được hỗ trợ: ${mime_type}`);
-
-  const buf = Buffer.from(String(data), 'base64');
-  if (!buf.byteLength) throw new Error('File ảnh rỗng');
-  if (buf.byteLength > AVATAR_MAX_BYTES) throw new Error('Ảnh quá lớn, tối đa 20MB');
-
-  const ext = (nodePath.extname(original_name).toLowerCase() || '.jpg').replace(/[^.a-z0-9]/g, '');
-  const stored = `${uid('av_')}${ext}`;
-  fs.mkdirSync(AVATAR_UPLOADS_DIR, { recursive: true });
-  fs.writeFileSync(nodePath.join(AVATAR_UPLOADS_DIR, stored), buf);
-
-  const url = `/uploads/avatars/${stored}`;
-  audit('partner.avatar_upload', { url, original_name, size: buf.byteLength }, branch(req), actor(req));
-  return { ok: true, url, size: buf.byteLength };
-}));
+api.post('/partners/avatar-upload', guardAny('contacts.create', 'contacts.edit'), wrap((req) =>
+  saveBase64Image(req, { dir: AVATAR_UPLOADS_DIR, urlBase: '/uploads/avatars', prefix: 'av_', auditAction: 'partner.avatar_upload' })));
 api.post('/partners', guard(), wrap((req) => {
   requireContactMutationPermission(req);
   return Customers.upsertCustomer(req.body, branch(req));
@@ -1104,14 +1175,14 @@ api.post('/expenses/categories/:id/delete', guard('module.expenses'), wrap((req)
 api.post('/expenses', guard('module.expenses'), wrap((req) => Expenses.createExpense(req.body, branch(req), req.user)));
 api.post('/expenses/:id', guard('module.expenses'), wrap((req) => Expenses.updateExpense(req.params.id, req.body, branch(req), req.user)));
 api.post('/expenses/:id/delete', guard('module.expenses'), wrap((req) => Expenses.deleteExpense(req.params.id, branch(req), req.user)));
-api.get('/retail/sales', wrap((req) => Retail.listRetailSales(visibleBranch(req))));
+api.get('/retail/sales', guardAny('pay', 'reports'), wrap((req) => Retail.listRetailSales(visibleBranch(req))));
 api.post('/retail/:id/refund', guard('refund'), wrap((req) => {
   assertBillEditable(req.params.id, req, 'refund');
   return Retail.refund(req.params.id, req.body.reason, branch(req));
 }));
 
 // --- Warehouse documents / lots / counts ---
-api.get('/movements', wrap((req) => Inv.listMovements(visibleBranch(req), req.query)));
+api.get('/movements', guardAny('inventory.adjust', 'warehouse.manage', 'reports'), wrap((req) => Inv.listMovements(visibleBranch(req), req.query)));
 api.get('/warehouse/lots', guard(), wrap((req) => Inv.listLots(visibleBranch(req), req.query)));
 api.post('/warehouse/receive', guard('inventory.adjust'), wrap((req) => {
   const branch_id = branch(req);
@@ -1124,13 +1195,13 @@ api.post('/warehouse/issue', guard('inventory.adjust'), wrap((req) => Inv.issueS
 api.post('/warehouse/transfer', guard('inventory.adjust'), wrap((req) => Inv.transferStock(req.body, branch(req))));
 api.post('/warehouse/stocktake', guard('inventory.adjust'), wrap((req) => Inv.applyStocktake(req.body, branch(req))));
 api.get('/warehouse/stocktakes', guard('inventory.adjust'), wrap((req) => Inv.listStocktakes(branch(req))));
-api.get('/warehouse/documents', wrap((req) => Inv.listDocuments(visibleBranch(req), req.query)));
-api.get('/warehouse/documents/:id', wrap((req) => Inv.getDocument(req.params.id, visibleBranch(req))));
+api.get('/warehouse/documents', guardAny('inventory.adjust', 'warehouse.manage'), wrap((req) => Inv.listDocuments(visibleBranch(req), req.query)));
+api.get('/warehouse/documents/:id', guardAny('inventory.adjust', 'warehouse.manage'), wrap((req) => Inv.getDocument(req.params.id, visibleBranch(req))));
 
 // --- Online channels ---
 api.post('/online/webhook', wrap((req) => Online.receive(req.body, visibleBranch(req), req.headers)));
-api.get('/online/orders', wrap((req) => Online.listOnline(visibleBranch(req))));
-api.get('/online/channels', wrap((req) => Online.listChannels(visibleBranch(req))));
+api.get('/online/orders', guard('online'), wrap((req) => Online.listOnline(visibleBranch(req))));
+api.get('/online/channels', guardAny('online', 'settings.integrations'), wrap((req) => Online.listChannels(visibleBranch(req))));
 api.post('/online/orders/:id/status', guard('online'), wrap((req) => Online.setStatus(req.params.id, req.body.status, branch(req))));
 api.post('/online/orders/:id/confirm-payment', guard('online'), wrap((req) => Online.confirmPayment(req.params.id, branch(req))));
 api.post('/online/orders/:id/confirm-delivery', guard('online'), wrap((req) => Online.confirmDelivery(req.params.id, branch(req))));
@@ -1295,7 +1366,7 @@ api.post('/client-log', guard(), wrap((req) => {
   if (nowMs - _clientLogWindowStart > 60_000) { _clientLogWindowStart = nowMs; _clientLogCount = 0; }
   if (++_clientLogCount > 120) return { ok: true, throttled: true };
   const b = req.body || {};
-  logger.error('client error', {
+  const entry = {
     user: req.user?.username || '',
     branch: branch(req),
     app: String(b.app || '').slice(0, 40),
@@ -1303,7 +1374,20 @@ api.post('/client-log', guard(), wrap((req) => {
     screen: String(b.screen || '').slice(0, 120),
     message: String(b.message || '').slice(0, 600),
     stack: String(b.stack || '').slice(0, 4000),
-  });
+    // Vệt thao tác cuối từ "hộp đen" của app (chạm/API/socket/đổi màn).
+    breadcrumbs: String(b.breadcrumbs || '').slice(0, 4000),
+  };
+  logger.error('client error', entry);
+  // kind='crash' = app phát hiện lần chạy trước chết bất thường (crash native).
+  // Ghi vào NHẬT KÝ HOẠT ĐỘNG (audit) → nằm trong database gốc + kho lưu bền
+  // NDJSON (giữ 36 tháng) — sau này bị lại là có hồ sơ tra cứu ngay trong app.
+  if (b.kind === 'crash') {
+    audit('client.crash', {
+      app: entry.app, version: entry.version, screen: entry.screen,
+      message: entry.message,
+      last_actions: String(b.stack || '').slice(0, 12000),
+    }, entry.branch, entry.user || 'system');
+  }
   return { ok: true };
 }));
 
@@ -1341,7 +1425,7 @@ api.post('/config/import', guardAny('settings.manage'), wrap(async (req) => {
 // --- Database Management & Documentation APIs ---
 
 // GET /api/database/status
-api.get('/database/status', guardAny('settings.manage'), wrap(async (req) => {
+api.get('/database/status', guardAny('settings.manage'), wrap(async () => {
   const fs = await import('node:fs');
   const { DB_PATH } = await import('./db.js');
   
@@ -1647,10 +1731,11 @@ api.post('/documents/upload', wrap(async (req) => {
   const buf = Buffer.from(data, 'base64');
   if (buf.byteLength > DMS_MAX_BYTES) throw new Error(`File quá lớn — tối đa 25MB`);
 
-  const ext = nodePath.extname(original_name) || '';
+  const ext = SECURE_MIME_EXT[mime_type] || '.bin';
   const stored_name = uid('f_') + ext;
   fs.mkdirSync(UPLOADS_DIR, { recursive: true });
   fs.writeFileSync(nodePath.join(UPLOADS_DIR, stored_name), buf);
+
 
   const rec = saveDocumentRecord({
     branch_id, name: name || original_name, original_name, stored_name, mime_type, file_size: buf.byteLength,
@@ -1735,7 +1820,8 @@ api.delete('/documents/files/:id', wrap(async (req) => {
   const { branch_id, actor } = Auth.requirePermission(req, 'module.documents');
   // Require Manager/Owner PIN for permanent deletion
   const { pin } = req.body || {};
-  if (pin && !Auth.verifyManagerOwnerPin(pin, branch_id)) throw new Error('Cần PIN Quản lý hoặc Admin để xóa vĩnh viễn tài liệu.');
+  if (!pin || !Auth.verifyManagerOwnerPin(pin, branch_id)) throw new Error('Cần PIN Quản lý hoặc Admin để xóa vĩnh viễn tài liệu.');
+
 
   const rec = db.prepare(`SELECT * FROM document_files WHERE id=? AND branch_id=?`).get(req.params.id, branch_id);
   if (!rec) throw new Error('Tài liệu không tồn tại');

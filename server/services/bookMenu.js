@@ -7,13 +7,10 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const SERVER_ROOT = join(__dirname, '..');
 const SERVER_ASSET_DIR = join(SERVER_ROOT, 'assets', 'menu-book');
 const UPLOAD_BOOK_DIR = join(SERVER_ROOT, 'uploads', 'menu-books');
-const WEB_ROOT = join(__dirname, '..', '..', 'web');
-const WEB_ASSET_DIR = join(WEB_ROOT, 'assets', 'menu-book');
 const MENU_BOOK_KEY = 'book_menu_config';
 
 function readDefaultManifest() {
-  const DEFAULT_ASSET_DIR = existsSync(SERVER_ASSET_DIR) ? SERVER_ASSET_DIR : WEB_ASSET_DIR;
-  const file = join(DEFAULT_ASSET_DIR, 'manifest.json');
+  const file = join(SERVER_ASSET_DIR, 'manifest.json');
   if (existsSync(file)) {
     try { return JSON.parse(readFileSync(file, 'utf8')); } catch {}
   }

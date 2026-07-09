@@ -49,16 +49,18 @@ export const PERMISSIONS = [
   { key: 'pay', label: 'Thanh toán bill' },
   { key: 'discount', label: 'Áp giảm giá và voucher' },
   { key: 'refund', label: 'Hoàn tiền và đổi trả' },
-  { key: 'void', label: 'Hủy bill, hủy món đã gửi (chưa chế biến)' },
+  { key: 'void', label: 'Hủy toàn bộ bill / hủy món đã gửi (chưa chế biến)' },
   { key: 'void.made', label: 'Xóa món ĐÃ chế biến xong (quyền riêng, nhạy cảm)' },
   { key: 'table.move', label: 'Chuyển bàn / gộp bàn' },
   { key: 'bill.split', label: 'Tách bill / thanh toán riêng' },
+  { key: 'order.view', label: 'Xem chi tiết đơn hàng và trạng thái bàn' },
+  { key: 'order.confirm', label: 'Xác nhận / từ chối món từ màn khách (iPad)' },
   { key: 'menu.manage', label: 'Quản lý thực đơn — thêm, sửa, xóa món và danh mục' },
   { key: 'inventory.adjust', label: 'Điều chỉnh tồn kho và kiểm kho' },
   { key: 'warehouse.manage', label: 'Quản lý kho — tạo kho, nhập, xuất, chuyển kho' },
   { key: 'invoice', label: 'Xuất hóa đơn điện tử' },
   { key: 'online', label: 'Xử lý đơn hàng online' },
-  { key: 'kds', label: 'Sử dụng màn hình bếp' },
+  { key: 'kds', label: 'Sử dụng màn hình bếp (KDS)' },
   { key: 'reports', label: 'Báo cáo — xem toàn bộ trung tâm báo cáo' },
   ...REPORT_PERMISSIONS,
   { key: 'contacts.create', label: 'Danh bạ — tạo mới khách hàng, nhà cung cấp, nhân viên' },
@@ -101,13 +103,25 @@ export const ROLES = [
 // Built-in defaults used to seed the editable matrix on first run.
 const DEFAULT_ROLE_PERMS = {
   owner: ['*'],
-  manager: ['menu.manage', 'inventory.adjust', 'warehouse.manage', 'refund', 'void', 'discount', 'reports', 'invoice', 'online', 'sell', 'pay', 'audit.view', 'settings.manage',
+  manager: [
+    'menu.manage', 'inventory.adjust', 'warehouse.manage',
+    'refund', 'void', 'void.made', 'discount',
+    'table.move', 'bill.split', 'order.view', 'order.confirm',
+    'reports', 'invoice', 'online', 'sell', 'pay', 'audit.view', 'settings.manage',
     'contacts.create', 'contacts.edit', 'contacts.delete', 'settings.loyalty', 'settings.promotions',
-    'module.ipad', 'module.pos', 'module.retail', 'module.kds', 'module.tablet', 'module.online', 'module.warehouse', 'module.inventory', 'module.printing',
-    'module.invoice', 'module.reports', 'module.contacts', 'module.purchase', 'module.expenses', 'module.accounting'],
-  cashier: ['sell', 'pay', 'discount', 'invoice', 'module.pos', 'module.retail', 'module.tablet', 'module.invoice'],
-  kitchen: ['kds', 'module.kds', 'module.tablet'],
-  warehouse: ['inventory.adjust', 'warehouse.manage', 'warehouse', 'module.warehouse', 'module.inventory', 'module.tablet', 'module.purchase'],
+    'module.ipad', 'module.pos', 'module.retail', 'module.kds', 'module.online', 'module.warehouse',
+    'module.inventory', 'module.printing', 'module.invoice', 'module.reports', 'module.contacts',
+    'module.purchase', 'module.expenses', 'module.accounting',
+  ],
+  // Thu ngân: bán hàng, thanh toán, chuyển bàn, tách bill, xác nhận món, xem đơn
+  cashier: [
+    'sell', 'pay', 'discount', 'invoice',
+    'table.move', 'bill.split', 'order.view', 'order.confirm',
+    'module.pos', 'module.retail', 'module.invoice',
+  ],
+  // Bếp: chỉ KDS + xem đơn (không được thay đổi bill hay thanh toán)
+  kitchen: ['kds', 'order.view', 'module.kds'],
+  warehouse: ['inventory.adjust', 'warehouse.manage', 'module.warehouse', 'module.inventory', 'module.purchase'],
 };
 export const ROLE_PERMS = DEFAULT_ROLE_PERMS; // kept for backwards-compat imports
 
@@ -160,6 +174,22 @@ function seedNewContactPerms() {
   }
 }
 seedNewContactPerms();
+// Seed các quyền vận hành mới (order.view, order.confirm, table.move, bill.split, void.made).
+// Dùng INSERT OR IGNORE để idempotent — chạy lại không gây trùng.
+function seedNewOperationalPerms() {
+  const ins = db.prepare(`INSERT OR IGNORE INTO role_perms (role,perm) VALUES (?,?)`);
+  // Manager: tất cả quyền vận hành mới
+  for (const p of ['order.view', 'order.confirm', 'table.move', 'bill.split', 'void.made']) {
+    ins.run('manager', p);
+  }
+  // Cashier: xem đơn, xác nhận món, chuyển bàn, tách bill
+  for (const p of ['order.view', 'order.confirm', 'table.move', 'bill.split']) {
+    ins.run('cashier', p);
+  }
+  // Kitchen: chỉ xem đơn
+  ins.run('kitchen', 'order.view');
+}
+seedNewOperationalPerms();
 
 let permCache = null;
 function loadPerms() {
