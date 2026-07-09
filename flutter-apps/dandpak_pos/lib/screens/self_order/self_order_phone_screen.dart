@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../services/api_service.dart';
+import '../../ui/app_theme.dart';
 import 'self_order_menu_screen.dart';
 import 'self_order_models.dart';
 import 'self_order_staff_exit.dart';
@@ -90,7 +91,6 @@ class _SelfOrderPhoneScreenState extends State<SelfOrderPhoneScreen> {
           : null;
       final favorites = r['favorites'] is List ? r['favorites'] as List : [];
       final isNew = r['is_new'] == true;
-      // Chào khách 1.5s rồi vào menu.
       final name = (customer?['name'] ?? '').toString();
       final points = customer?['loyalty_points'] ?? 0;
       final hello = isNew || name.isEmpty || name == 'Khách hàng chưa đặt tên'
@@ -98,15 +98,20 @@ class _SelfOrderPhoneScreenState extends State<SelfOrderPhoneScreen> {
           : '${L.memberHello.replaceFirst('%s', name)}  ·  ${L.pointsLabel}: $points';
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text(hello),
-        backgroundColor: const Color(0xFF0891B2),
+        backgroundColor: DanColors.brand,
         duration: const Duration(seconds: 2),
       ));
       _openMenu(customer: customer, favorites: favorites);
     } catch (e) {
+      // Kiosk KHÔNG được kẹt: nếu tích điểm lỗi (server chưa có route, mạng
+      // chớp…) vẫn cho khách vào gọi món bình thường, chỉ là chưa gắn thẻ.
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text(e.toString().replaceFirst('Exception: ', '')),
-          backgroundColor: const Color(0xFFFF7A7A)));
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Chưa kết nối được tích điểm — bạn vẫn có thể gọi món bình thường.'),
+        backgroundColor: DanColors.late,
+        duration: Duration(seconds: 2),
+      ));
+      _openMenu();
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -115,24 +120,9 @@ class _SelfOrderPhoneScreenState extends State<SelfOrderPhoneScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF0B1220),
+      backgroundColor: DanColors.bg,
       body: Stack(
         children: [
-          Positioned.fill(
-            child: Container(
-              decoration: const BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [
-                    Color(0xFF0B1220),
-                    Color(0xFF0E2040),
-                    Color(0xFF071830),
-                  ],
-                ),
-              ),
-            ),
-          ),
           SafeArea(
             child: Center(
               child: SingleChildScrollView(
@@ -142,37 +132,59 @@ class _SelfOrderPhoneScreenState extends State<SelfOrderPhoneScreen> {
                   constraints: const BoxConstraints(maxWidth: 520),
                   child: Column(
                     children: [
+                      // Chip bàn đang phục vụ
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 14, vertical: 7),
+                        decoration: BoxDecoration(
+                          color: DanColors.brand.withValues(alpha: 0.10),
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(
+                              color: DanColors.brand.withValues(alpha: 0.35)),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.table_bar_rounded,
+                                size: 16, color: DanColors.brand),
+                            const SizedBox(width: 6),
+                            Text(widget.table.name,
+                                style: const TextStyle(
+                                    color: DanColors.brand,
+                                    fontWeight: FontWeight.bold)),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 24),
                       Container(
                         padding: const EdgeInsets.all(14),
                         decoration: BoxDecoration(
-                          color: const Color(0xFF0891B2).withValues(alpha: 0.15),
+                          color: DanColors.brand.withValues(alpha: 0.10),
                           shape: BoxShape.circle,
                         ),
                         child: const Icon(Icons.card_giftcard_rounded,
-                            color: Color(0xFF0891B2), size: 40),
+                            color: DanColors.brand, size: 40),
                       ),
                       const SizedBox(height: 18),
                       Text(L.phoneTitle,
                           textAlign: TextAlign.center,
                           style: const TextStyle(
-                              color: Colors.white,
+                              color: DanColors.text,
                               fontSize: 28,
                               fontWeight: FontWeight.w900)),
                       const SizedBox(height: 8),
                       Text(L.phoneSub,
                           textAlign: TextAlign.center,
-                          style: TextStyle(
-                              color: Colors.white.withValues(alpha: 0.55),
-                              fontSize: 14)),
+                          style: const TextStyle(
+                              color: DanColors.muted, fontSize: 14)),
                       const SizedBox(height: 28),
                       Container(
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 20, vertical: 8),
+                            horizontal: 20, vertical: 4),
                         decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.06),
+                          color: Colors.white,
                           borderRadius: BorderRadius.circular(18),
-                          border: Border.all(
-                              color: Colors.white.withValues(alpha: 0.12)),
+                          border: Border.all(color: DanColors.border),
                         ),
                         child: TextField(
                           controller: _phoneCtrl,
@@ -183,23 +195,23 @@ class _SelfOrderPhoneScreenState extends State<SelfOrderPhoneScreen> {
                             LengthLimitingTextInputFormatter(12),
                           ],
                           style: const TextStyle(
-                            color: Colors.white,
+                            color: DanColors.text,
                             fontSize: 26,
                             fontWeight: FontWeight.bold,
                             letterSpacing: 3,
                           ),
-                          cursorColor: const Color(0xFF0891B2),
+                          cursorColor: DanColors.brand,
                           decoration: InputDecoration(
                             hintText: L.phoneHint,
-                            hintStyle: TextStyle(
-                              color: Colors.white.withValues(alpha: 0.25),
+                            hintStyle: const TextStyle(
+                              color: DanColors.faint,
                               fontSize: 17,
                               letterSpacing: 0,
                               fontWeight: FontWeight.w400,
                             ),
                             border: InputBorder.none,
-                            prefixIcon: Icon(Icons.phone_outlined,
-                                color: Colors.white.withValues(alpha: 0.4)),
+                            prefixIcon: const Icon(Icons.phone_outlined,
+                                color: DanColors.muted),
                           ),
                           onSubmitted: (_) => _continue(),
                         ),
@@ -207,15 +219,14 @@ class _SelfOrderPhoneScreenState extends State<SelfOrderPhoneScreen> {
                       const SizedBox(height: 26),
                       SizedBox(
                         width: double.infinity,
-                        child: ElevatedButton(
+                        child: FilledButton(
                           onPressed: _busy ? null : _continue,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF0891B2),
+                          style: FilledButton.styleFrom(
+                            backgroundColor: DanColors.brand,
                             foregroundColor: Colors.white,
                             padding: const EdgeInsets.symmetric(vertical: 18),
                             shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(16)),
-                            elevation: 0,
                           ),
                           child: _busy
                               ? const SizedBox(
@@ -233,8 +244,7 @@ class _SelfOrderPhoneScreenState extends State<SelfOrderPhoneScreen> {
                       TextButton(
                         onPressed: _busy ? null : () => _openMenu(),
                         style: TextButton.styleFrom(
-                          foregroundColor:
-                              Colors.white.withValues(alpha: 0.45),
+                          foregroundColor: DanColors.muted,
                           padding: const EdgeInsets.symmetric(vertical: 10),
                         ),
                         child: Text(L.btnSkip,

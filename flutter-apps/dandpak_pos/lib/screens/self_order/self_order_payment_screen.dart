@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../services/api_service.dart';
+import '../../ui/app_theme.dart';
 import 'self_order_models.dart';
 import 'self_order_staff_exit.dart';
 import 'self_order_strings.dart';
@@ -658,32 +659,35 @@ class _SelfOrderPaymentScreenState extends State<SelfOrderPaymentScreen> {
   // ── Cảm ơn ────────────────────────────────────────────────────────────────
   Widget _thanksView() {
     return Container(
-      color: const Color(0xFF0B1220),
+      color: DanColors.bg,
       child: Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.favorite_rounded,
-                color: Color(0xFF0891B2), size: 84),
-            const SizedBox(height: 20),
+            Container(
+              padding: const EdgeInsets.all(22),
+              decoration: BoxDecoration(
+                color: DanColors.brand.withValues(alpha: 0.10),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.favorite_rounded,
+                  color: DanColors.brand, size: 64),
+            ),
+            const SizedBox(height: 22),
             Text(L.thanksTitle,
                 textAlign: TextAlign.center,
                 style: const TextStyle(
-                    color: Colors.white,
+                    color: DanColors.text,
                     fontSize: 34,
                     fontWeight: FontWeight.w900)),
             const SizedBox(height: 8),
             Text(L.thanksSub,
                 textAlign: TextAlign.center,
-                style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.6),
-                    fontSize: 16)),
+                style: const TextStyle(color: DanColors.muted, fontSize: 16)),
             if (_paidByQr) ...[
               const SizedBox(height: 12),
               Text(L.paidOk,
-                  style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.45),
-                      fontSize: 13)),
+                  style: const TextStyle(color: DanColors.faint, fontSize: 13)),
             ],
           ],
         ),

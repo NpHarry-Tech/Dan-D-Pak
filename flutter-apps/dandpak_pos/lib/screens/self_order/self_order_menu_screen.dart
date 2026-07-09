@@ -152,6 +152,7 @@ class _SelfOrderMenuScreenState extends State<SelfOrderMenuScreen> {
       final r = await _api.createOrder(
         tableId: widget.table.id,
         orderType: 'dine_in',
+        source: 'customer_ipad', // khách tự gọi → chờ nhân viên xác nhận
         items: items,
         customer: (cust != null && (cust['id'] ?? '').toString().isNotEmpty)
             ? {

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../services/api_service.dart';
+import '../../ui/app_theme.dart';
 import 'self_order_models.dart';
 import 'self_order_phone_screen.dart';
 import 'self_order_staff_exit.dart';
@@ -85,37 +86,9 @@ class _SelfOrderWelcomeScreenState extends State<SelfOrderWelcomeScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF0B1220),
+      backgroundColor: DanColors.bg,
       body: Stack(
         children: [
-          Positioned.fill(
-            child: Container(
-              decoration: const BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [
-                    Color(0xFF0B1220),
-                    Color(0xFF0E2040),
-                    Color(0xFF071830),
-                  ],
-                  stops: [0, 0.55, 1],
-                ),
-              ),
-            ),
-          ),
-          const Positioned(
-            top: -120,
-            right: -80,
-            child:
-                _GlowCircle(color: Color(0xFF0891B2), size: 380, opacity: 0.13),
-          ),
-          const Positioned(
-            bottom: -100,
-            left: -60,
-            child:
-                _GlowCircle(color: Color(0xFF8B5CF6), size: 320, opacity: 0.10),
-          ),
           SafeArea(
             child: Center(
               child: SingleChildScrollView(
@@ -129,27 +102,27 @@ class _SelfOrderWelcomeScreenState extends State<SelfOrderWelcomeScreen>
                       // Chip bàn đang phục vụ
                       Container(
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 14, vertical: 6),
+                            horizontal: 14, vertical: 7),
                         decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.08),
+                          color: DanColors.brand.withValues(alpha: 0.10),
                           borderRadius: BorderRadius.circular(20),
                           border: Border.all(
-                              color: Colors.white.withValues(alpha: 0.15)),
+                              color: DanColors.brand.withValues(alpha: 0.35)),
                         ),
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             const Icon(Icons.table_bar_rounded,
-                                size: 16, color: Color(0xFF0891B2)),
+                                size: 16, color: DanColors.brand),
                             const SizedBox(width: 6),
                             Text(widget.table.name,
                                 style: const TextStyle(
-                                    color: Colors.white,
+                                    color: DanColors.brand,
                                     fontWeight: FontWeight.bold)),
                           ],
                         ),
                       ),
-                      const SizedBox(height: 20),
+                      const SizedBox(height: 24),
                       FadeTransition(
                         opacity: _fadeAnim,
                         child: Column(
@@ -158,7 +131,7 @@ class _SelfOrderWelcomeScreenState extends State<SelfOrderWelcomeScreen>
                               _lang.greetTitle,
                               textAlign: TextAlign.center,
                               style: const TextStyle(
-                                color: Colors.white,
+                                color: DanColors.text,
                                 fontSize: 34,
                                 fontWeight: FontWeight.w900,
                               ),
@@ -167,8 +140,8 @@ class _SelfOrderWelcomeScreenState extends State<SelfOrderWelcomeScreen>
                             Text(
                               _lang.greetSub,
                               textAlign: TextAlign.center,
-                              style: TextStyle(
-                                color: Colors.white.withValues(alpha: 0.55),
+                              style: const TextStyle(
+                                color: DanColors.muted,
                                 fontSize: 15,
                               ),
                             ),
@@ -193,16 +166,15 @@ class _SelfOrderWelcomeScreenState extends State<SelfOrderWelcomeScreen>
                         opacity: _fadeAnim,
                         child: SizedBox(
                           width: 320,
-                          child: ElevatedButton(
+                          child: FilledButton(
                             onPressed: _proceed,
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFF0891B2),
+                            style: FilledButton.styleFrom(
+                              backgroundColor: DanColors.brand,
                               foregroundColor: Colors.white,
                               padding: const EdgeInsets.symmetric(vertical: 18),
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(16),
                               ),
-                              elevation: 0,
                             ),
                             child: Text(
                               _lang.btnStart,
@@ -251,20 +223,16 @@ class _LangTile extends StatelessWidget {
         width: 118,
         padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 8),
         decoration: BoxDecoration(
-          color: isSelected
-              ? const Color(0xFF0891B2).withValues(alpha: 0.18)
-              : Colors.white.withValues(alpha: 0.04),
+          color: isSelected ? DanColors.brand.withValues(alpha: 0.10) : Colors.white,
           borderRadius: BorderRadius.circular(20),
           border: Border.all(
-            color: isSelected
-                ? const Color(0xFF0891B2)
-                : Colors.white.withValues(alpha: 0.08),
+            color: isSelected ? DanColors.brand : DanColors.border,
             width: isSelected ? 2 : 1,
           ),
           boxShadow: isSelected
               ? [
                   BoxShadow(
-                    color: const Color(0xFF0891B2).withValues(alpha: 0.20),
+                    color: DanColors.brand.withValues(alpha: 0.18),
                     blurRadius: 12,
                     spreadRadius: 1,
                   )
@@ -280,42 +248,11 @@ class _LangTile extends StatelessWidget {
               lang.nativeName,
               textAlign: TextAlign.center,
               style: TextStyle(
-                color: isSelected
-                    ? Colors.white
-                    : Colors.white.withValues(alpha: 0.55),
+                color: isSelected ? DanColors.brand : DanColors.muted,
                 fontSize: 13,
                 fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
               ),
             ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _GlowCircle extends StatelessWidget {
-  final Color color;
-  final double size;
-  final double opacity;
-
-  const _GlowCircle({
-    required this.color,
-    required this.size,
-    required this.opacity,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        gradient: RadialGradient(
-          colors: [
-            color.withValues(alpha: opacity),
-            color.withValues(alpha: 0)
           ],
         ),
       ),

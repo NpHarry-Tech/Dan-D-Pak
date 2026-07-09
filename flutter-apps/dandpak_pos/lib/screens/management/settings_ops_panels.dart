@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../../services/api_service.dart';
+import '../../services/app_log.dart';
+import '../../services/socket_service.dart';
 import '../../ui/app_theme.dart';
 import '../../ui/format.dart';
 import 'management_widgets.dart';
@@ -1228,7 +1230,10 @@ class _ConnectionsPanelState extends State<ConnectionsPanel> {
   List<Map<String, dynamic>> _printers = [];
   List<Map<String, dynamic>> _systemPrinters = [];
   List<Map<String, dynamic>> _recentJobs = [];
-  int _pingMs = 0;
+  // Phép đo API server ĐO RIÊNG bằng /health (KHÔNG lấy wall-clock của cả cụm
+  // getConnectionsStatus+settings+printers — cụm đó gồm dò máy in/internet phía
+  // server nên chậm nhiều giây, không phản ánh độ trễ mạng thật).
+  Map<String, dynamic> _health = {};
   bool _loading = true;
   bool _savingCt = false;
   bool _savingPrinters = false;
@@ -1266,18 +1271,22 @@ class _ConnectionsPanelState extends State<ConnectionsPanel> {
   Future<void> _load({bool force = false}) async {
     setState(() { _loading = true; _error = null; });
     try {
-      final sw = Stopwatch()..start();
+      // Đo "API server sống + độ trễ thật" RIÊNG bằng /health (nhẹ) TRƯỚC —
+      // không lẫn với thời gian dò máy in/internet phía server.
+      final health = await widget.api.probe('/health');
+      dlog('[NET] measuredTarget=${health['target']} endpoint=${health['endpoint']} '
+          'statusCode=${health['statusCode']} durationMs=${health['durationMs']} '
+          'exceptionType=${health['exceptionType']}');
       final results = await Future.wait([
         widget.api.getConnectionsStatus(force: force),
         widget.api.getAppSettings(),
         widget.api.getSystemPrinters(force: force).catchError((_) => <String, dynamic>{}),
         widget.api.getPrintJobs().catchError((_) => <dynamic>[]),
       ]);
-      sw.stop();
       if (!mounted) return;
       setState(() {
         _status = Map<String, dynamic>.from(results[0] as Map);
-        _pingMs = sw.elapsedMilliseconds;
+        _health = health;
         final settings = Map<String, dynamic>.from(results[1] as Map);
         _ops = settings['operations_config'] is Map
             ? Map<String, dynamic>.from(settings['operations_config'])
@@ -1425,6 +1434,11 @@ class _ConnectionsPanelState extends State<ConnectionsPanel> {
   });
 
   // ── Mạng & Máy chủ ──
+  // Ba trạng thái ĐO ĐỘC LẬP, không suy diễn chéo:
+  //  1. Internet: server có ra được internet không (server tự đo).
+  //  2. API server: /health trả 200 → OK; trả 4xx/5xx → "server có lỗi" NHƯNG
+  //     KHÔNG phải mất mạng; không kết nối được (statusCode=0) → mới là mất kết nối.
+  //  3. Realtime (socket): SocketService().connected — tách hẳn khỏi API.
   Widget _networkPanel() {
     final internet = _b(_status['internet']);
     final wan = _status['internetCheck'] is Map
@@ -1433,25 +1447,56 @@ class _ConnectionsPanelState extends State<ConnectionsPanel> {
     final ips = (_status['serverIps'] is List)
         ? (_status['serverIps'] as List).map(_s).where((e) => e.isNotEmpty).toList()
         : <String>[];
+
+    final apiStatus = _i(_health['statusCode']);
+    final apiMs = _i(_health['durationMs']);
+    final apiOk = _b(_health['ok']);
+    final apiReachable = apiStatus > 0; // server có TRẢ LỜI (kể cả 4xx/5xx)
+    final target = _s(_health['target']);
+    final exType = _s(_health['exceptionType']);
+
+    Widget apiPill;
+    if (apiOk) {
+      apiPill = _pill('OK · ${apiMs}ms · ${_pingLabel(apiMs)}', _pingColor(apiMs));
+    } else if (apiReachable) {
+      // Máy chủ trả lời nhưng /health không 2xx — lỗi ứng dụng, KHÔNG phải mạng.
+      apiPill = _pill('Server lỗi (HTTP $apiStatus)', DanColors.late);
+    } else {
+      apiPill = _pill('Mất kết nối${exType.isEmpty ? '' : ' · $exType'}', DanColors.late);
+    }
+
     return Panel(
-      title: 'Mạng & Máy chủ',
+      title: 'Mạng & kết nối',
       child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        _infoRow('Internet / WAN',
-            internet ? _pill('Online · ${wanMs}ms', DanColors.done) : _pill('Offline', DanColors.late)),
+        _infoRow('Internet',
+            internet ? _pill('OK · ${wanMs}ms', DanColors.done) : _pill('Không ra được internet', DanColors.late)),
+        const Divider(height: 18, color: DanColors.border),
+        _infoRow('Máy chủ (API)', apiPill),
+        const Divider(height: 18, color: DanColors.border),
+        // Realtime tách riêng — socket rớt KHÔNG có nghĩa là API/mạng hỏng.
+        _infoRow('Realtime (socket)',
+            ValueListenableBuilder<bool>(
+              valueListenable: SocketService().connected,
+              builder: (_, on, __) => on
+                  ? _pill('Đang kết nối', DanColors.done)
+                  : _pill('Đang kết nối lại…', DanColors.doing),
+            )),
+        const Divider(height: 18, color: DanColors.border),
+        _infoRow('Địa chỉ đo (endpoint)',
+            Text(target.isEmpty ? '—' : '$target/health',
+                style: const TextStyle(fontFamily: 'JetBrains Mono', fontSize: 12,
+                    fontWeight: FontWeight.w600, color: DanColors.muted))),
         const Divider(height: 18, color: DanColors.border),
         _infoRow('Địa chỉ Server (IP LAN)',
-            Text(ips.isEmpty ? '127.0.0.1' : ips.join(', '),
+            Text(ips.isEmpty ? '—' : ips.join(', '),
                 style: const TextStyle(fontFamily: 'JetBrains Mono', fontSize: 12.5,
                     fontWeight: FontWeight.w700, color: DanColors.brand))),
-        const Divider(height: 18, color: DanColors.border),
-        _infoRow('Độ trễ (Ping)',
-            _pill('${_pingMs}ms · ${_pingLabel(_pingMs)}', _pingColor(_pingMs))),
       ]),
     );
   }
 
-  String _pingLabel(int ms) => ms < 100 ? 'Nhanh' : (ms < 250 ? 'Bình thường' : 'Chậm');
-  Color _pingColor(int ms) => ms < 100 ? DanColors.done : (ms < 250 ? DanColors.doing : DanColors.late);
+  String _pingLabel(int ms) => ms < 120 ? 'Nhanh' : (ms < 400 ? 'Bình thường' : 'Chậm');
+  Color _pingColor(int ms) => ms < 120 ? DanColors.done : (ms < 400 ? DanColors.doing : DanColors.late);
 
   // ── Lưu trữ cục bộ ──
   Widget _storagePanel() {

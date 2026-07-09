@@ -1,4 +1,4 @@
-package com.dandpak.pos
+package com.dandpak.dandpak_pos
 
 import android.app.Activity
 import android.content.Intent

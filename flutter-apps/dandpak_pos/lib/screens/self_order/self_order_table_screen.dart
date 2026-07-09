@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
+import '../../providers/auth_provider.dart';
 import '../../services/api_service.dart';
+import '../../ui/app_theme.dart';
+import '../../widgets/dan_top_bar.dart';
 import 'self_order_models.dart';
 import 'self_order_welcome_screen.dart';
 
@@ -78,64 +82,30 @@ class _SelfOrderTableScreenState extends State<SelfOrderTableScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Topbar CHUẨN như mọi module khác (đồng bộ giao diện).
+    final auth = context.watch<AuthProvider>();
+    final user = auth.currentUser;
+    final branch = auth.selectedBranch;
     return Scaffold(
-      backgroundColor: const Color(0xFFF7F8FA),
-      body: SafeArea(
-        child: Column(
-          children: [
-            // Header nhân viên: logo (chạm 1 lần → về Admin) + tiêu đề + refresh
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              color: Colors.white,
-              child: Row(
-                children: [
-                  GestureDetector(
-                    onTap: () => Navigator.of(context).pop(),
-                    child: Container(
-                      width: 40,
-                      height: 40,
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF0891B2),
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: const Center(
-                        child: Text('D',
-                            style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 20,
-                                fontWeight: FontWeight.w900)),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  const Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('iPad Self-Order — Chọn bàn',
-                            style: TextStyle(
-                                fontSize: 17,
-                                fontWeight: FontWeight.bold,
-                                color: Color(0xFF1A2230))),
-                        Text('Chọn bàn cho khách rồi đưa máy — chạm logo để về Admin',
-                            style: TextStyle(
-                                fontSize: 12, color: Color(0xFF9AA3B2))),
-                      ],
-                    ),
-                  ),
-                  IconButton(
-                    onPressed: _load,
-                    icon: const Icon(Icons.refresh, color: Color(0xFF677084)),
-                    tooltip: 'Tải lại',
-                  ),
-                ],
-              ),
-            ),
-            const Divider(height: 1, color: Color(0xFFE7EAEE)),
-            Expanded(child: _body()),
-          ],
-        ),
+      backgroundColor: DanColors.bg,
+      appBar: DanModuleTopBar(
+        brandName: branch.name.isNotEmpty ? branch.name : branch.id,
+        title: 'Khách tự gọi món',
+        subtitle: 'Chọn bàn cho khách rồi đưa máy',
+        titleIcon: Icons.phone_iphone_rounded,
+        userName: user?.name ?? '—',
+        userRole: roleLabel(user?.role ?? ''),
+        online: true,
+        onBack: () => Navigator.of(context).maybePop(),
+        actions: [
+          IconButton(
+            onPressed: _load,
+            icon: const Icon(Icons.refresh, color: DanColors.muted),
+            tooltip: 'Tải lại',
+          ),
+        ],
       ),
+      body: _body(),
     );
   }
 

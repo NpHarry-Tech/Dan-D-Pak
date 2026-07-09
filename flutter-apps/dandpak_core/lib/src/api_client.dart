@@ -163,6 +163,55 @@ class DanDpakApiClient {
     });
   }
 
+  /// Probe MỘT endpoint và trả về kết quả CÓ CẤU TRÚC cho màn "Mạng & kết nối".
+  /// Mục tiêu: phân biệt rạch ròi ba trạng thái, KHÔNG gộp lẫn:
+  ///  - server sống  : HTTP 2xx (ok=true)
+  ///  - route sai/thiếu: HTTP 404… (ok=false NHƯNG statusCode>0 → server VẪN
+  ///    trả lời, KHÔNG phải mất mạng)
+  ///  - mất mạng     : SocketException/timeout (statusCode=0 + exceptionType)
+  /// Đây là phép đo trực tiếp từ THIẾT BỊ (không phải server tự đo), nên phản
+  /// ánh đúng độ trễ thật client↔server. Không dùng _withEngineRetry để số đo
+  /// là một lần gọi sạch.
+  Future<Map<String, dynamic>> probe(
+    String path, {
+    Duration timeout = const Duration(seconds: 5),
+  }) async {
+    final sw = Stopwatch()..start();
+    final url = uri(path);
+    try {
+      final res = await http.get(url, headers: headers()).timeout(timeout);
+      sw.stop();
+      return {
+        'ok': res.statusCode >= 200 && res.statusCode < 300,
+        'target': '${url.host}:${url.port}',
+        'endpoint': path,
+        'statusCode': res.statusCode,
+        'durationMs': sw.elapsedMilliseconds,
+        'exceptionType': '',
+      };
+    } on TimeoutException {
+      sw.stop();
+      return {
+        'ok': false,
+        'target': '${url.host}:${url.port}',
+        'endpoint': path,
+        'statusCode': 0,
+        'durationMs': sw.elapsedMilliseconds,
+        'exceptionType': 'TimeoutException',
+      };
+    } catch (e) {
+      sw.stop();
+      return {
+        'ok': false,
+        'target': '${url.host}:${url.port}',
+        'endpoint': path,
+        'statusCode': 0,
+        'durationMs': sw.elapsedMilliseconds,
+        'exceptionType': e.runtimeType.toString(),
+      };
+    }
+  }
+
   /// Fetch raw bytes for a path (e.g. report/document exports), authenticated.
   Future<List<int>> getBytes(
     String path, {

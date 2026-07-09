@@ -12,7 +12,7 @@ export const MODULE_GROUPS = [
 ];
 
 export const MODULES = [
-  { key: 'ipad', label: 'iPad Self-Order', icon: '📱', group: 'sales', href: '/ipad?pick=1', perm: 'module.ipad', status: 'active', depends: ['pos'], description: 'Customers self-order, send to kitchen, call staff and request payment.' },
+  { key: 'ipad', label: 'Khách tự gọi món', icon: '📱', group: 'sales', href: '/ipad?pick=1', perm: 'module.ipad', status: 'active', depends: ['pos'], description: 'Khách tự chọn món, gửi bếp, gọi nhân viên và tự thanh toán.' },
   { key: 'pos', label: 'FnB POS', icon: '💳', group: 'sales', href: '/pos', perm: 'module.pos', status: 'active', depends: ['inventory'], description: 'Table, order, discount, payment, receipt and realtime with the kitchen.' },
   { key: 'retail', label: 'Retail POS', icon: '🛒', group: 'sales', href: '/retail', perm: 'module.retail', status: 'active', depends: ['inventory'], description: 'Retail sales, barcode, lot/date, voucher and return.' },
   { key: 'kds', label: 'KDS', icon: '👨‍🍳', group: 'sales', href: '/kds', perm: 'module.kds', status: 'active', depends: ['pos'], description: 'Kitchen/bar screen, SLA and realtime cooking status.' },

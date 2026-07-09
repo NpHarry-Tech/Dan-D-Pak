@@ -1347,13 +1347,16 @@ class ApiService extends DanDpakApiClient {
     required String? orderType,
     required List<Map<String, dynamic>> items,
     Map<String, dynamic>? customer,
+    String source = 'staff_pos',
   }) async {
     return mapFrom(await postJson(
       '/api/orders',
       body: {
         'table_id': tableId,
         'channel': orderType ?? 'dine_in',
-        'source': 'staff_pos',
+        // 'customer_ipad' → server đánh dấu chờ nhân viên xác nhận + phát
+        // order:pending để POS (mọi máy TRỪ máy khách) hiện đơn cần duyệt.
+        'source': source,
         'items': items,
         if (customer != null) 'customer': customer,
       },
@@ -1361,17 +1364,20 @@ class ApiService extends DanDpakApiClient {
     ));
   }
 
-  /// Lấy danh sách zone cho màn chọn bàn self-order.
+  /// Danh sách khu (zone) cho màn chọn bàn self-order. Server KHÔNG có route
+  /// /api/zones riêng — mỗi bàn trong /api/tables mang tên khu ở cột `zone`,
+  /// nên suy ra danh sách khu từ chính danh sách bàn (giữ thứ tự xuất hiện).
   Future<List<SoZone>> fetchSoZones() async {
     final data = listFrom(
-        await getJson('/api/zones', errorMessage: 'Failed to load zones'));
-    return data
-        .whereType<Map>()
-        .map((e) => SoZone(
-              id: (e['id'] ?? '').toString(),
-              name: (e['name'] ?? '').toString(),
-            ))
-        .toList();
+        await getJson('/api/tables', errorMessage: 'Failed to load zones'));
+    final seen = <String>{};
+    final zones = <SoZone>[];
+    for (final e in data.whereType<Map>()) {
+      final z = (e['zone_id'] ?? e['zone'] ?? '').toString();
+      if (z.isEmpty || !seen.add(z)) continue;
+      zones.add(SoZone(id: z, name: z));
+    }
+    return zones;
   }
 
   /// Lấy danh sách bàn cho màn chọn bàn self-order.
@@ -1383,7 +1389,8 @@ class ApiService extends DanDpakApiClient {
         .map((e) => SoTableModel(
               id: (e['id'] ?? '').toString(),
               code: (e['code'] ?? '').toString(),
-              name: (e['name'] ?? '').toString(),
+              // Server chỉ có `code` (VD "A01") — dùng làm tên hiển thị.
+              name: (e['name'] ?? e['code'] ?? '').toString(),
               zoneId: (e['zone_id'] ?? e['zone'] ?? '').toString(),
               status: (e['status'] ?? 'empty').toString(),
             ))
@@ -1424,12 +1431,16 @@ class ApiService extends DanDpakApiClient {
           : (categoryId != null
               ? (catNames[categoryId] ?? categoryId)
               : null);
+      // Ảnh món trên server là đường dẫn tương đối (/uploads/menu/...) —
+      // ghép baseUrl để Image.network hiển thị được trên thiết bị.
+      String? img = item['image']?.toString();
+      if (img != null && img.startsWith('/')) img = '$baseUrl$img';
       return SoMenuItem(
         id: (item['id'] ?? '').toString(),
         name: (item['name'] ?? '').toString(),
         price: intVal(item['price']),
         category: category,
-        image: item['image']?.toString(),
+        image: img,
         emoji: item['emoji']?.toString(),
         description: item['description']?.toString(),
         modifiers: item['modifiers'] is List ? item['modifiers'] as List : [],
