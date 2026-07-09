@@ -2304,6 +2304,15 @@ class _MenuPickCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Ảnh món lưu ở server dạng đường dẫn tương đối (/uploads/menu/...). Trên
+    // tablet/điện thoại (app không cùng origin với server) phải GHÉP địa chỉ
+    // máy chủ mới tải được — nếu không ảnh sẽ "mất" dù server đã lưu.
+    final raw = item.imageUrl;
+    final resolvedUrl = (raw.isEmpty ||
+            raw.startsWith('http') ||
+            raw.startsWith('data:'))
+        ? raw
+        : '${context.read<AuthProvider>().serverUrl}${raw.startsWith('/') ? '' : '/'}$raw';
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(12),
@@ -2320,10 +2329,10 @@ class _MenuPickCard extends StatelessWidget {
             Expanded(
               child: Center(
                 // Món chưa có ảnh: ô trống phẳng, không icon placeholder.
-                child: item.imageUrl.isEmpty
+                child: resolvedUrl.isEmpty
                     ? const SizedBox.shrink()
                     : Image.network(
-                        item.imageUrl,
+                        resolvedUrl,
                         fit: BoxFit.contain,
                         // Decode at thumbnail size (not full-res) so a big menu
                         // doesn't exhaust RAM/CPU on weak POS hardware.

@@ -1862,36 +1862,44 @@ class _EmptyCart extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Image.asset(
-            'assets/web/assets/DanOnLogo.png',
-            width: 148,
-            errorBuilder: (_, __, ___) => const Icon(
-                Icons.shopping_bag_outlined,
-                size: 58,
-                color: DanColors.faint),
-          ),
-          const SizedBox(height: 18),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            decoration: BoxDecoration(
-              color: DanColors.surface2,
-              borderRadius: BorderRadius.circular(99),
-              border: Border.all(color: DanColors.border2),
+    // Cuộn được + ảnh giới hạn chiều cao: trên tablet màn ngắn, khối rỗng này
+    // KHÔNG còn tràn xuống đè lên phần tổng tiền/thanh toán bên dưới.
+    return SingleChildScrollView(
+      padding: const EdgeInsets.symmetric(vertical: 16),
+      child: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 132, maxHeight: 80),
+              child: Image.asset(
+                'assets/web/assets/DanOnLogo.png',
+                fit: BoxFit.contain,
+                errorBuilder: (_, __, ___) => const Icon(
+                    Icons.shopping_bag_outlined,
+                    size: 52,
+                    color: DanColors.faint),
+              ),
             ),
-            child: const Text('Quét/chạm sản phẩm để bắt đầu',
-                style: TextStyle(
-                    color: DanColors.muted,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w800)),
-          ),
-          const SizedBox(height: 8),
-          const Text('Giỏ hàng đang trống',
-              style: TextStyle(fontSize: 11, color: DanColors.faint)),
-        ],
+            const SizedBox(height: 14),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: DanColors.surface2,
+                borderRadius: BorderRadius.circular(99),
+                border: Border.all(color: DanColors.border2),
+              ),
+              child: const Text('Quét/chạm sản phẩm để bắt đầu',
+                  style: TextStyle(
+                      color: DanColors.muted,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800)),
+            ),
+            const SizedBox(height: 8),
+            const Text('Giỏ hàng đang trống',
+                style: TextStyle(fontSize: 11, color: DanColors.faint)),
+          ],
+        ),
       ),
     );
   }

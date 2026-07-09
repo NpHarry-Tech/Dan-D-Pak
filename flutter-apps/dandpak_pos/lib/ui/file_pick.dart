@@ -1,12 +1,34 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:image_picker/image_picker.dart';
+
+/// Chọn ảnh trên Android/iOS bằng image_picker (thư viện ảnh) và trả về data
+/// URL. Desktop KHÔNG dùng nhánh này. [source] mặc định gallery; truyền camera
+/// để chụp mới.
+Future<String?> _pickImageMobileAsDataUrl(
+    {ImageSource source = ImageSource.gallery}) async {
+  try {
+    final x = await ImagePicker().pickImage(source: source, imageQuality: 88);
+    if (x == null) return null;
+    final bytes = await x.readAsBytes();
+    if (bytes.isEmpty) return null;
+    return 'data:${_mimeForPath(x.name)};base64,${base64Encode(bytes)}';
+  } catch (_) {
+    return null;
+  }
+}
+
 /// Opens the OS file picker WITHOUT a Flutter plugin (uses a native shell
 /// dialog through Process.run) and returns the chosen image/PDF as a
 /// `data:<mime>;base64,...` URL — the same shape the web sends for receipts.
 /// Returns null if the user cancels or anything fails.
 Future<String?> pickReceiptAsDataUrl() async {
   try {
+    // Tablet/điện thoại: mở thư viện ảnh (chụp hoá đơn thì chọn ảnh vừa chụp).
+    if (Platform.isAndroid || Platform.isIOS) {
+      return await _pickImageMobileAsDataUrl();
+    }
     if (Platform.isWindows) return await _pickDataUrlWindows();
 
     // macOS / Linux: pick a path then read it in Dart (stdout is UTF-8 there).
@@ -90,6 +112,11 @@ String _mimeForPath(String path) {
 /// Pick an ad media file (image or video) and convert it to a data URL.
 Future<String?> pickAdFileAsDataUrl() async {
   try {
+    // Tablet/điện thoại: chọn ảnh quảng cáo từ thư viện (video quảng cáo hiếm
+    // dùng trên tablet — nếu cần sẽ bổ sung pickVideo sau).
+    if (Platform.isAndroid || Platform.isIOS) {
+      return await _pickImageMobileAsDataUrl();
+    }
     if (Platform.isWindows) return await _pickAdDataUrlWindows();
 
     final path = await _pickAdPathUnix();

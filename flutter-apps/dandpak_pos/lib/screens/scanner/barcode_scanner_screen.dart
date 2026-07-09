@@ -31,6 +31,9 @@ class _BarcodeScannerScreenState extends State<_BarcodeScannerScreen> {
   // (ép 1080p làm CameraX bind lỗi NPE trên một số máy Samsung).
   final MobileScannerController _controller = MobileScannerController(
     detectionSpeed: DetectionSpeed.noDuplicates,
+    // Camera SAU (không gương). Camera trước mới bị lật gương — ép back để
+    // hình quét đúng chiều, không soi gương trên tablet.
+    facing: CameraFacing.back,
     formats: const [
       BarcodeFormat.ean13,
       BarcodeFormat.ean8,
@@ -48,6 +51,21 @@ class _BarcodeScannerScreenState extends State<_BarcodeScannerScreen> {
 
   bool _handled = false;
 
+  @override
+  void initState() {
+    super.initState();
+    // App khoá landscape (manifest sensorLandscape). Khi quét, khách hay CẦM
+    // DỌC máy → nếu vẫn khoá ngang thì hình camera bị xoay 90°. Ở màn quét cho
+    // phép XOAY TỰ DO theo cách cầm máy để camera đúng chiều; khôi phục landscape
+    // khi thoát (setPreferredOrientations ghi đè manifest lúc chạy).
+    SystemChrome.setPreferredOrientations(const [
+      DeviceOrientation.portraitUp,
+      DeviceOrientation.portraitDown,
+      DeviceOrientation.landscapeLeft,
+      DeviceOrientation.landscapeRight,
+    ]);
+  }
+
   void _onDetect(BarcodeCapture capture) {
     if (_handled || !mounted) return;
     for (final b in capture.barcodes) {
@@ -64,6 +82,11 @@ class _BarcodeScannerScreenState extends State<_BarcodeScannerScreen> {
   @override
   void dispose() {
     _controller.dispose();
+    // Trả app về khoá landscape như cũ khi rời màn quét.
+    SystemChrome.setPreferredOrientations(const [
+      DeviceOrientation.landscapeLeft,
+      DeviceOrientation.landscapeRight,
+    ]);
     super.dispose();
   }
 

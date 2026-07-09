@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 
 import '../../models/management_models.dart';
@@ -1003,6 +1004,13 @@ class _ItemFormDialogState extends State<_ItemFormDialog> {
   }
 
   Future<String?> _pickImagePath() async {
+    // Tablet/điện thoại: chọn ảnh món từ thư viện ảnh (image_picker trả về
+    // đường dẫn đọc được ngay bằng File(path)).
+    if (Platform.isAndroid || Platform.isIOS) {
+      final x = await ImagePicker()
+          .pickImage(source: ImageSource.gallery, imageQuality: 90);
+      return x?.path;
+    }
     const script = r'''
 Add-Type -AssemblyName System.Windows.Forms
 [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new()

@@ -422,9 +422,19 @@ class _SelfOrderMenuScreenState extends State<SelfOrderMenuScreen> {
                                 child: Column(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
-                                    const Icon(Icons.shopping_basket_outlined,
-                                        size: 48, color: Color(0xFFD3D8DF)),
-                                    const SizedBox(height: 10),
+                                    Opacity(
+                                      opacity: 0.55,
+                                      child: Image.asset(
+                                        'assets/web/assets/DanOnLogo.png',
+                                        width: 140,
+                                        fit: BoxFit.contain,
+                                        errorBuilder: (_, __, ___) => const Icon(
+                                            Icons.shopping_basket_outlined,
+                                            size: 48,
+                                            color: Color(0xFFD3D8DF)),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 12),
                                     Text(L.cartEmpty,
                                         style: const TextStyle(
                                             color: Color(0xFF9AA3B2),

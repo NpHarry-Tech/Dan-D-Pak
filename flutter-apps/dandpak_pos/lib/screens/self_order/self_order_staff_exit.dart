@@ -90,23 +90,25 @@ class _SelfOrderStaffLogoState extends State<SelfOrderStaffLogo> {
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: _tap,
-      child: Container(
-        width: 40,
-        height: 40,
-        decoration: BoxDecoration(
-          gradient: const LinearGradient(
-            colors: [Color(0xFF0891B2), Color(0xFF0E6EAA)],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
+      child: SizedBox(
+        width: 44,
+        height: 44,
+        child: Image.asset(
+          'assets/web/assets/logo.png',
+          fit: BoxFit.contain,
+          // Nếu thiếu asset thì vẫn hiện ô chữ D (không để trống/hỏng UI).
+          errorBuilder: (_, __, ___) => Container(
+            decoration: BoxDecoration(
+              color: const Color(0xFF0891B2),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            alignment: Alignment.center,
+            child: const Text('D',
+                style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 20,
+                    fontWeight: FontWeight.w900)),
           ),
-          borderRadius: BorderRadius.circular(10),
-        ),
-        child: const Center(
-          child: Text('D',
-              style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 20,
-                  fontWeight: FontWeight.w900)),
         ),
       ),
     );

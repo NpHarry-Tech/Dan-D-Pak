@@ -1,16 +1,16 @@
 {
   "windows": {
-    "buildNumber": 4,
-    "version": "2026.07.09c",
+    "buildNumber": 5,
+    "version": "2026.07.09d",
     "file": "dan-d-pak-pos-setup-2026-07-09c.exe",
-    "notes": "Thêm hộp đen chống crash: ghi lại từng thao tác, tự phát hiện và báo cáo về hệ thống khi app thoát bất thường (kèm vệt thao tác dẫn đến lỗi). Kèm bản vá kéo/nhấp đúp màn hình phụ.",
+    "notes": "Màn hình 'Khách tự gọi món' giao diện sáng đồng bộ; sửa màn Mạng & kết nối đo đúng độ trễ; thêm chọn ảnh từ thư viện + xuất báo cáo trên máy tính bảng.",
     "mandatory": false
   },
   "android": {
-    "buildNumber": 4,
-    "version": "2026.07.09c",
-    "file": "dan-d-pak-pos-android-2026.07.09c.apk",
-    "notes": "Tablet dùng CHUNG app Dan D Pak POS: đầy đủ POS + iPad Self-Order flow mới (chọn bàn, 5 ngôn ngữ, SĐT tích điểm, món hay gọi, thanh toán QR/cash/card, hóa đơn MST, cảm ơn).",
+    "buildNumber": 5,
+    "version": "2026.07.09d",
+    "file": "dan-d-pak-pos-android-2026.07.09d.apk",
+    "notes": "Khách tự gọi món giao diện sáng đồng bộ + topbar chuẩn; sửa Retail giỏ hàng chồng chữ; thêm ảnh từ thư viện/chụp; xuất báo cáo; ảnh món hiện đúng; camera quét ép camera sau (bớt gương).",
     "mandatory": false
   }
 }

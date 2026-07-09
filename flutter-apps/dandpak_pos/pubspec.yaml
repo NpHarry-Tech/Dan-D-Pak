@@ -44,6 +44,12 @@ dependencies:
   video_player: ^2.11.1
   video_player_win: ^3.2.2
   local_notifier: ^0.1.6
+  # Chọn ảnh từ THƯ VIỆN hoặc CHỤP MỚI trên tablet/điện thoại (Android/iOS).
+  # Desktop vẫn dùng hộp thoại hệ điều hành như cũ — plugin chỉ nạp trên mobile.
+  image_picker: ^1.1.2
+  # Mở/chia sẻ file xuất (báo cáo, tài liệu) trên tablet/điện thoại qua khay
+  # chia sẻ hệ điều hành. Desktop vẫn mở bằng ứng dụng mặc định như cũ.
+  share_plus: ^10.1.4
 
 dev_dependencies:
   flutter_test:

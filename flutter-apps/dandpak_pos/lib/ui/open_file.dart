@@ -1,5 +1,7 @@
 import 'dart:io';
 
+import 'package:share_plus/share_plus.dart';
+
 /// Writes [bytes] to a temp file and opens it with the OS default app.
 /// Used for report/document exports (HTML opens in browser → print to PDF,
 /// XLS in Excel, etc.). Returns the file path.
@@ -19,6 +21,9 @@ Future<String> openBytes(List<int> bytes, String filename) async {
     await Process.start('explorer.exe', [path]);
   } else if (Platform.isMacOS) {
     await Process.start('open', [path]);
+  } else if (Platform.isAndroid || Platform.isIOS) {
+    // Tablet/điện thoại: mở khay chia sẻ để xem/lưu file (không có xdg-open).
+    await Share.shareXFiles([XFile(path)], subject: safe);
   } else {
     await Process.start('xdg-open', [path]);
   }
