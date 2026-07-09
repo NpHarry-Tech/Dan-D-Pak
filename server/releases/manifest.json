@@ -7,10 +7,10 @@
     "mandatory": false
   },
   "android": {
-    "buildNumber": 5,
-    "version": "2026.07.09d",
-    "file": "dan-d-pak-pos-android-2026.07.09d.apk",
-    "notes": "Khách tự gọi món giao diện sáng đồng bộ + topbar chuẩn; sửa Retail giỏ hàng chồng chữ; thêm ảnh từ thư viện/chụp; xuất báo cáo; ảnh món hiện đúng; camera quét ép camera sau (bớt gương).",
+    "buildNumber": 6,
+    "version": "2026.07.09e",
+    "file": "dan-d-pak-pos-android-2026.07.09e.apk",
+    "notes": "Khách tự gọi món giao diện sáng đồng bộ + topbar chuẩn; sửa Retail giỏ hàng chồng chữ; thêm ảnh từ thư viện/chụp; xuất báo cáo; ảnh món hiện đúng; camera quét về dọc đúng chiều.",
     "mandatory": false
   }
 }
