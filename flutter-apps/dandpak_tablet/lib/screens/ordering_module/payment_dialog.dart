@@ -208,7 +208,7 @@ class _PaymentDialogState extends State<PaymentDialog> {
                                   borderRadius: BorderRadius.circular(12),
                                   border: Border.all(color: const Color(0xFFE7EAEE)),
                                 ),
-                                child: Icon(Icons.qr_code_2, size: 200, color: const Color(0xFF1A2230)),
+                                child: const Icon(Icons.qr_code_2, size: 200, color: Color(0xFF1A2230)),
                               ),
                               const SizedBox(height: 14),
                               const Text(
@@ -225,7 +225,7 @@ class _PaymentDialogState extends State<PaymentDialog> {
                             child: Column(
                               children: [
                                 Icon(Icons.contactless, size: 72, color: Color(0xFF9AA3B2)),
-                                const SizedBox(height: 16),
+                                SizedBox(height: 16),
                                 Text(
                                   'Chèn hoặc quẹt thẻ trên thiết bị POS thanh toán.',
                                   style: TextStyle(color: Color(0xFF677084), fontSize: 14),

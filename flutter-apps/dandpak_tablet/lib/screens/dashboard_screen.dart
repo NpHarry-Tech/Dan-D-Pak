@@ -1,5 +1,4 @@
 // lib/screens/dashboard_screen.dart
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/app_provider.dart';
@@ -8,7 +7,7 @@ import 'connection_screen.dart';
 import 'kds_module/kds_screen.dart';
 import 'ordering_module/order_screen.dart';
 import 'inventory_module/inventory_screen.dart';
-import 'self_order_module/self_order_screen.dart';
+import 'self_order_module/self_order_welcome_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -61,7 +60,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       Container(
                         padding: const EdgeInsets.all(8),
                         decoration: BoxDecoration(
-                          color: const Color(0xFF0891B2).withOpacity(0.15),
+                          color: const Color(0xFF0891B2).withValues(alpha: 0.15),
                           borderRadius: BorderRadius.circular(8),
                         ),
                         child: const Icon(Icons.tablet, color: Color(0xFF0891B2), size: 24),
@@ -136,8 +135,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     onTap: () {
                       Navigator.of(context).push(MaterialPageRoute(
                         fullscreenDialog: true,
-                        builder: (_) =>
-                            SelfOrderScreen(serverUrl: appProv.serverUrl),
+                        builder: (_) => SelfOrderWelcomeScreen(
+                          serverUrl: appProv.serverUrl,
+                          branchId: appProv.activeBranch?.id,
+                          staffToken: authProv.token,
+                        ),
                       ));
                     },
                   ),
@@ -187,7 +189,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             ),
           ),
           // Vertical Splitter line
-          VerticalDivider(color: const Color(0xFFE7EAEE), width: 1),
+          const VerticalDivider(color: Color(0xFFE7EAEE), width: 1),
           // Right Views viewport
           Expanded(
             child: _views[_selectedIndex],
@@ -203,7 +205,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
       child: ListTile(
         selected: active,
-        selectedTileColor: const Color(0xFF0891B2).withOpacity(0.12),
+        selectedTileColor: const Color(0xFF0891B2).withValues(alpha: 0.12),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
         leading: Icon(icon, color: active ? const Color(0xFF0891B2) : const Color(0xFF677084), size: 20),
         title: Text(

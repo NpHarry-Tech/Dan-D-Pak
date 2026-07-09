@@ -14,6 +14,8 @@ dependencies:
   http: ^1.2.0
   provider: ^6.1.2
   shared_preferences: ^2.2.2
+  # Mở trình duyệt tải APK bản cập nhật từ server (cơ chế báo cập nhật).
+  url_launcher: ^6.3.0
   # iPad Self-order: bê nguyên màn khách tự gọi món /ipad (web đã chạy ổn
   # định qua fleet-sim) vào tablet — không viết lại UI mới.
   webview_flutter: ^4.9.0

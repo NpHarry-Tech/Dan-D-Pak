@@ -1,7 +1,6 @@
 // lib/providers/app_provider.dart
 import 'package:dandpak_core/dandpak_core.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/tablet_models.dart';
 import '../services/api_service.dart';

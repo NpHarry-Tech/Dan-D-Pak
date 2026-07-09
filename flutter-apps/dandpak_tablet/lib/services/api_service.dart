@@ -3,8 +3,7 @@ import 'package:dandpak_core/dandpak_core.dart';
 import '../models/tablet_models.dart';
 
 class ApiService extends DanDpakApiClient {
-  ApiService({required String baseUrl, String? token, String? branchId})
-      : super(baseUrl: baseUrl, token: token, branchId: branchId);
+  ApiService({required super.baseUrl, super.token, super.branchId});
 
   static const _shortTimeout = Duration(seconds: 5);
 

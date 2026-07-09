@@ -295,7 +295,7 @@ class _OrderScreenState extends State<OrderScreen> {
                         Container(
                           width: double.infinity,
                           padding: const EdgeInsets.all(12),
-                          color: const Color(0xFFFF7A7A).withOpacity(0.15),
+                          color: const Color(0xFFFF7A7A).withValues(alpha: 0.15),
                           child: Text('Lỗi: $_error', style: const TextStyle(color: Color(0xFFFF7A7A), fontWeight: FontWeight.bold), textAlign: TextAlign.center),
                         ),
                       // Menu Grid
@@ -323,7 +323,7 @@ class _OrderScreenState extends State<OrderScreen> {
                   ),
                 ),
                 // Right Sidebar Cart
-                VerticalDivider(color: const Color(0xFFE7EAEE), width: 1),
+                const VerticalDivider(color: Color(0xFFE7EAEE), width: 1),
                 Expanded(
                   flex: 3,
                   child: RepaintBoundary(
@@ -596,8 +596,12 @@ class _OrderScreenState extends State<OrderScreen> {
                               final isServing = table.status == 'serving' || table.status == 'busy';
                               
                               Color cardColor = const Color(0xFFFFFFFF);
-                              if (isSelected) cardColor = const Color(0xFF0891B2);
-                              else if (isServing) cardColor = const Color(0xFFFFC24D).withOpacity(0.15);
+                              if (isSelected) {
+                                cardColor = const Color(0xFF0891B2);
+                              } else if (isServing) {
+                                cardColor = const Color(0xFFFFC24D)
+                                    .withValues(alpha: 0.15);
+                              }
 
                               return InkWell(
                                 onTap: () {

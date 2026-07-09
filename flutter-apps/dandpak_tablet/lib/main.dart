@@ -37,7 +37,6 @@ class DandpakTabletApp extends StatelessWidget {
           seedColor: const Color(0xFF0891B2),
           brightness: Brightness.light,
           primary: const Color(0xFF0891B2),
-          background: const Color(0xFFF7F8FA),
           surface: const Color(0xFFFFFFFF),
         ),
         scaffoldBackgroundColor: const Color(0xFFF7F8FA),

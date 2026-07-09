@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/app_provider.dart';
 import '../providers/auth_provider.dart';
+import '../services/app_updater.dart';
 import 'connection_screen.dart';
 import 'dashboard_screen.dart';
 
@@ -17,6 +18,18 @@ class LoginScreen extends StatefulWidget {
 class _LoginScreenState extends State<LoginScreen> {
   final _usernameController = TextEditingController(text: DanDpakDefaults.username);
   String _pin = '';
+
+  @override
+  void initState() {
+    super.initState();
+    // Vừa vào màn đăng nhập (server đã kết nối được) → hỏi server có bản
+    // cập nhật mới không; có thì hiện hộp thoại mời tải. Lỗi mạng bỏ qua.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final url = context.read<AppProvider>().serverUrl;
+      TabletUpdater.checkAndPrompt(context, url);
+    });
+  }
 
   void _handleKeyPress(String value) {
     if (_pin.length < 4) {
@@ -32,12 +45,6 @@ class _LoginScreenState extends State<LoginScreen> {
         _pin = _pin.substring(0, _pin.length - 1);
       });
     }
-  }
-
-  void _handleClear() {
-    setState(() {
-      _pin = '';
-    });
   }
 
   Future<void> _submitLogin() async {
@@ -163,7 +170,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         const SizedBox(height: 24),
                         DropdownButtonFormField<String>(
                           dropdownColor: const Color(0xFF1E2633),
-                          value: appProv.activeBranch?.id,
+                          initialValue: appProv.activeBranch?.id,
                           style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w500),
                           decoration: const InputDecoration(
                             labelText: 'Chi nhánh',
@@ -269,9 +276,13 @@ class _LoginScreenState extends State<LoginScreen> {
                             }
 
                             String keyLabel = '';
-                            if (isZero) keyLabel = '0';
-                            else if (isBackspace) keyLabel = '⌫';
-                            else keyLabel = '${index + 1}';
+                            if (isZero) {
+                              keyLabel = '0';
+                            } else if (isBackspace) {
+                              keyLabel = '⌫';
+                            } else {
+                              keyLabel = '${index + 1}';
+                            }
 
                             return ElevatedButton(
                               style: ElevatedButton.styleFrom(

@@ -213,7 +213,7 @@ class _KdsScreenState extends State<KdsScreen> {
             Container(
               width: double.infinity,
               padding: const EdgeInsets.all(12),
-              color: const Color(0xFFFF7A7A).withOpacity(0.15),
+              color: const Color(0xFFFF7A7A).withValues(alpha: 0.15),
               child: Text(
                 'Lỗi: $_error',
                 style: const TextStyle(color: Color(0xFFFF7A7A), fontWeight: FontWeight.bold),

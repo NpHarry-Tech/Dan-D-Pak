@@ -223,7 +223,7 @@ class _MovementDialogState extends State<MovementDialog> {
               ] else ...[
                 DropdownButtonFormField<String>(
                   dropdownColor: const Color(0xFFFFFFFF),
-                  value: _issueReason,
+                  initialValue: _issueReason,
                   style: const TextStyle(color: Color(0xFF1A2230), fontSize: 15),
                   decoration: InputDecoration(
                     labelText: 'Lý do xuất kho',

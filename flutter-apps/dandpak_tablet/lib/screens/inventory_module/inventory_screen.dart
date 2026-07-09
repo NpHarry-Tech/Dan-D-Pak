@@ -193,7 +193,7 @@ class _InventoryScreenState extends State<InventoryScreen> with SingleTickerProv
                   Container(
                     width: double.infinity,
                     padding: const EdgeInsets.all(12),
-                    color: const Color(0xFFFF7A7A).withOpacity(0.15),
+                    color: const Color(0xFFFF7A7A).withValues(alpha: 0.15),
                     child: Text('Lỗi: $_error', style: const TextStyle(color: Color(0xFFFF7A7A), fontWeight: FontWeight.bold), textAlign: TextAlign.center),
                   ),
                 Expanded(
@@ -243,8 +243,8 @@ class _InventoryScreenState extends State<InventoryScreen> with SingleTickerProv
           padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
           decoration: BoxDecoration(
             color: isOut
-                ? Colors.redAccent.withOpacity(0.04)
-                : (isLow ? Colors.orangeAccent.withOpacity(0.04) : Colors.transparent),
+                ? Colors.redAccent.withValues(alpha: 0.04)
+                : (isLow ? Colors.orangeAccent.withValues(alpha: 0.04) : Colors.transparent),
             borderRadius: BorderRadius.circular(8),
           ),
           child: Row(
@@ -261,7 +261,7 @@ class _InventoryScreenState extends State<InventoryScreen> with SingleTickerProv
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                             decoration: BoxDecoration(
-                              color: statusColor.withOpacity(0.18),
+                              color: statusColor.withValues(alpha: 0.18),
                               borderRadius: BorderRadius.circular(4),
                             ),
                             child: Text(
@@ -400,7 +400,7 @@ class _InventoryScreenState extends State<InventoryScreen> with SingleTickerProv
               Container(
                 padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
-                  color: isReceipt ? Colors.green.withOpacity(0.12) : Colors.redAccent.withOpacity(0.12),
+                  color: isReceipt ? Colors.green.withValues(alpha: 0.12) : Colors.redAccent.withValues(alpha: 0.12),
                   shape: BoxShape.circle,
                 ),
                 child: Icon(
