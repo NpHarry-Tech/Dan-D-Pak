@@ -6,11 +6,12 @@ import { fileURLToPath } from 'node:url';
 import { db, uid, now, audit, defaultWarehouseId } from '../db.js';
 import { emit } from '../realtime.js';
 
-// Ảnh sản phẩm import từ KiotViet đã nằm sẵn ở web/assets/product-images dưới
-// tên kv_{barcode}.*, nhưng nhiều SKU chưa được gán trường image trong DB.
-// Tự khớp theo barcode (quét thư mục đúng 1 lần, cache trong RAM) để POS hiển
+// Ảnh sản phẩm import từ KiotViet nằm ở server/assets/product-images dưới tên
+// kv_{barcode}.* (trước ở web/assets — web/ đã gỡ khỏi repo; đường dẫn này
+// khớp route static /assets của index.js). Nhiều SKU chưa gán trường image
+// trong DB → tự khớp theo barcode (quét thư mục 1 lần, cache RAM) để POS hiển
 // thị ảnh thật thay vì ô trống.
-const PRODUCT_IMG_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'web', 'assets', 'product-images');
+const PRODUCT_IMG_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'assets', 'product-images');
 let _productImgIndex = null;
 function productImageForBarcode(barcode) {
   const bc = String(barcode || '').trim();

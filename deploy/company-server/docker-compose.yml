@@ -34,6 +34,12 @@ services:
       - app_permanent:/app/server/permanent-storage
       # Bản cài auto-update (exe/apk + manifest) — bền vững qua mỗi lần redeploy
       - app_releases:/app/server/releases
+      # Uploads runtime (ảnh món, avatar, tài liệu DMS) — TRƯỚC ĐÂY nằm trong
+      # container nên mỗi lần rebuild là MẤT; giờ bền vững qua volume.
+      - app_uploads:/app/server/uploads
+      # Ảnh SKU KiotViet (521MB, gitignore nên không nằm trong image) — seed
+      # một lần bằng: docker compose cp <thư-mục-ảnh>/. app:/app/server/assets/product-images/
+      - app_product_images:/app/server/assets/product-images
     # Mở 3000 trực tiếp bên cạnh Caddy:80 — app POS/tablet nhập IP trần sẽ tự
     # nối cổng 3000 (mặc định của máy chủ LAN) nên phải cho vào được.
     ports:
@@ -52,3 +58,5 @@ volumes:
   app_storage:
   app_permanent:
   app_releases:
+  app_uploads:
+  app_product_images:

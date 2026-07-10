@@ -10,12 +10,15 @@ ENV NODE_ENV=production
 COPY package*.json ./
 RUN npm ci --omit=dev
 
-# Copy source code và web pages
+# Copy source code (web/ cũ đã gỡ khỏi repo — client giờ là app Flutter native).
+# LƯU Ý: server/assets/product-images bị gitignore (521MB ảnh SKU) nên KHÔNG
+# nằm trong image — được mount qua volume app_product_images (compose) và seed
+# bằng docker cp một lần; server/uploads cũng mount volume để không mất khi build.
 COPY server ./server
-COPY web ./web
 
 # Thư mục data bền vững — sẽ được mount từ Docker volumes
-RUN mkdir -p /app/server-data /app/storage /app/server/permanent-storage /app/server/uploads
+RUN mkdir -p /app/server-data /app/storage /app/server/permanent-storage \
+    /app/server/uploads /app/server/assets/product-images
 
 EXPOSE 3000
 
