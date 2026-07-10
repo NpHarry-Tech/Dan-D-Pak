@@ -3,6 +3,22 @@ import 'dart:io';
 
 import 'package:image_picker/image_picker.dart';
 
+import '../services/system_log.dart';
+
+// Plugin chọn ảnh/file lỗi → trả null (lỗi nghiệp vụ, app không chết) nhưng
+// PHẢI để lại dấu vết trong nhật ký hệ thống để truy ra máy nào hỏng plugin gì.
+void _logPickFailed(String action, Object e) {
+  SystemLog.log(
+    level: 'warn',
+    source: 'flutter_app',
+    eventType: 'plugin_error',
+    title: 'Chọn file/ảnh thất bại ($action)',
+    message: e.toString(),
+    action: action,
+    exceptionType: e.runtimeType.toString(),
+  );
+}
+
 /// Chọn ảnh trên Android/iOS bằng image_picker (thư viện ảnh) và trả về data
 /// URL. Desktop KHÔNG dùng nhánh này. [source] mặc định gallery; truyền camera
 /// để chụp mới.
@@ -14,7 +30,8 @@ Future<String?> _pickImageMobileAsDataUrl(
     final bytes = await x.readAsBytes();
     if (bytes.isEmpty) return null;
     return 'data:${_mimeForPath(x.name)};base64,${base64Encode(bytes)}';
-  } catch (_) {
+  } catch (e) {
+    _logPickFailed('image_picker', e);
     return null;
   }
 }
@@ -39,7 +56,8 @@ Future<String?> pickReceiptAsDataUrl() async {
     final bytes = await file.readAsBytes();
     if (bytes.isEmpty) return null;
     return 'data:${_mimeForPath(path)};base64,${base64Encode(bytes)}';
-  } catch (_) {
+  } catch (e) {
+    _logPickFailed('pick_receipt', e);
     return null;
   }
 }
@@ -126,7 +144,8 @@ Future<String?> pickAdFileAsDataUrl() async {
     final bytes = await file.readAsBytes();
     if (bytes.isEmpty) return null;
     return 'data:${_mimeForAdPath(path)};base64,${base64Encode(bytes)}';
-  } catch (_) {
+  } catch (e) {
+    _logPickFailed('pick_ad_media', e);
     return null;
   }
 }

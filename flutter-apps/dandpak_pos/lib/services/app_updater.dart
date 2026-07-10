@@ -1,8 +1,13 @@
 import 'dart:io';
 
+import 'package:flutter/services.dart';
+import 'package:path_provider/path_provider.dart';
+
 import '../app_version.dart';
 import 'api_service.dart';
 import 'app_log.dart';
+import 'black_box.dart';
+import 'system_log.dart';
 
 /// Thông tin một bản cập nhật khả dụng trên server.
 class UpdateInfo {
@@ -22,9 +27,10 @@ class UpdateInfo {
 
 /// Auto-update: hỏi server có bản mới hơn bản đang chạy không, tải về và cài.
 ///
-/// - Windows (desktop): tải setup.exe → chạy → thoát app để installer cài đè
-///   (installer dùng cùng AppId nên NÂNG CẤP TẠI CHỖ, giữ nguyên dữ liệu).
-/// - Android: tải apk rồi mở trình cài đặt hệ thống (làm sau khi có bản APK).
+/// - Windows (desktop): tải setup.exe → chạy IM LẶNG → thoát app để installer
+///   cài đè (cùng AppId nên NÂNG CẤP TẠI CHỖ, giữ dữ liệu, xong tự mở lại app).
+/// - Android: tải apk → FileProvider → mở trình cài đặt hệ thống; lần đầu có
+///   thể phải cấp quyền "Cài ứng dụng từ nguồn này" (app tự dẫn tới màn đó).
 class AppUpdater {
   /// Nền tảng gửi cho server. iOS/khác → null (chưa hỗ trợ tự cập nhật).
   static String? get _platform {
@@ -74,24 +80,74 @@ class AppUpdater {
       if (bytes.isEmpty) return 'Bản cập nhật tải về rỗng';
 
       final ext = platform == 'android' ? 'apk' : 'exe';
-      final dir = Directory.systemTemp.createTempSync('dandpak_update_');
+      // Android: PHẢI nằm trong getCacheDir() (path_provider) vì FileProvider
+      // chỉ chia sẻ được cache-path (systemTemp trỏ vào code_cache — không share
+      // được). Dùng thư mục cố định để bản sau ghi đè bản trước, không rác máy.
+      final base = platform == 'android'
+          ? (await getTemporaryDirectory()).path
+          : Directory.systemTemp.path;
+      final dir = Directory('$base/dandpak_update')..createSync(recursive: true);
       final file = File('${dir.path}/dan-d-pak-update.$ext');
       await file.writeAsBytes(bytes, flush: true);
 
       if (platform == 'windows') {
-        // Chạy installer rồi thoát app NGAY để không khoá file .exe đang chạy.
-        // Installer (Inno, cùng AppId) sẽ cài đè và tự mở lại app khi xong.
-        await Process.start(file.path, [], mode: ProcessStartMode.detached);
+        // Cài IM LẶNG: không wizard, tự dùng lại thư mục cài cũ
+        // (UsePreviousAppDir=yes), cài xong tự mở lại app ([Run] postinstall).
+        // Thoát app NGAY sau khi khởi chạy để không khoá file .exe đang chạy.
+        SystemLog.log(
+          level: 'info',
+          source: 'updater',
+          eventType: 'update_started',
+          title: 'Bắt đầu cài bản cập nhật ${info.version} (build ${info.buildNumber})',
+          action: 'app_update',
+        );
+        await Process.start(file.path, [
+          '/VERYSILENT',
+          '/SUPPRESSMSGBOXES',
+          '/NORESTART',
+          '/SP-',
+          '/FORCECLOSEAPPLICATIONS',
+        ], mode: ProcessStartMode.detached);
+        BlackBox.markCleanExit(); // thoát chủ động để cập nhật — không phải crash
         await Future.delayed(const Duration(milliseconds: 400));
         exit(0);
       }
 
-      // Android: mở apk bằng trình cài đặt hệ thống. Cần plugin/intent — sẽ bổ
-      // sung khi bản APK sẵn sàng. Tạm thời báo đường dẫn đã tải.
-      return 'Đã tải bản cập nhật về ${file.path}. Mở file này để cài (Android).';
+      // Android: mở trình cài đặt hệ thống qua kênh native (FileProvider).
+      const ch = MethodChannel('com.dandpak.pos/updater');
+      final res = await ch.invokeMethod<String>('installApk', {'path': file.path});
+      if (res == 'NEEDS_PERMISSION') {
+        return 'Hãy bật "Cho phép từ nguồn này" cho Dan D Pak POS ở màn cài đặt '
+            'vừa mở, rồi quay lại bấm Cập nhật ngay lần nữa.';
+      }
+      if (res != null && res.isNotEmpty) {
+        _logUpdateFailed(info, res);
+        return res; // lỗi từ phía native
+      }
+      SystemLog.log(
+        level: 'info',
+        source: 'updater',
+        eventType: 'update_started',
+        title: 'Đã mở trình cài đặt bản ${info.version} (build ${info.buildNumber})',
+        action: 'app_update',
+      );
+      return null; // trình cài đặt đã mở — bấm Cài đặt là xong
     } catch (e) {
       dlog('downloadAndInstall failed: $e');
-      return e.toString().replaceFirst('Exception: ', '');
+      final message = e.toString().replaceFirst('Exception: ', '');
+      _logUpdateFailed(info, message);
+      return message;
     }
+  }
+
+  static void _logUpdateFailed(UpdateInfo info, String message) {
+    SystemLog.log(
+      level: 'error',
+      source: 'updater',
+      eventType: 'update_failed',
+      title: 'Cập nhật bản ${info.version} (build ${info.buildNumber}) thất bại',
+      message: message,
+      action: 'app_update',
+    );
   }
 }

@@ -11,6 +11,7 @@ import { emit } from '../realtime.js';
 import { env } from '../config/env.js';
 import { getPrintConfig } from './settings.js';
 import { listSystemPrinters } from './system.js';
+import { logSystem } from './systemLogs.js';
 
 const execFileAsync = promisify(execFile);
 const STATION_PRINTER = { kitchen: 'kitchen', salad: 'kitchen', bar: 'bar', beverage: 'bar' };
@@ -764,6 +765,12 @@ export async function dispatchJob(id, branch_id = 'br1', { force = false } = {})
     job = patchJob(id, { status: 'failed', error: e.message || String(e) });
     emit('print:failed', job, branch_id);
     audit('print.failed', { job: id, printer: job.printer, type: job.type, error: job.error }, branch_id);
+    logSystem({
+      level: 'error', source: 'printer', eventType: 'print_failed',
+      title: `In thất bại trên tuyến ${printer?.label || job.printer || '?'}`,
+      message: job.error, branchId: branch_id,
+      action: `print:${job.type}`, extra: { job: id, transport: connection, target },
+    });
     throw e;
   }
 }
@@ -822,6 +829,12 @@ export function agentReportResult(id, branch_id, { ok, error } = {}) {
   const job = patchJob(id, { status: 'failed', error: String(error || 'Agent in lỗi') });
   emit('print:failed', job, branch_id);
   audit('print.agent.failed', { job: id, printer: job?.printer, error: job?.error }, branch_id, 'agent');
+  logSystem({
+    level: 'error', source: 'printer', eventType: 'print_failed',
+    title: `Hardware Agent báo in lỗi (tuyến ${job?.printer || '?'})`,
+    message: job?.error, branchId: branch_id, username: 'agent',
+    action: `print:${job?.type}`, extra: { job: id },
+  });
   return job;
 }
 

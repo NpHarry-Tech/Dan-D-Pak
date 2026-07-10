@@ -7,6 +7,8 @@ import 'package:local_notifier/local_notifier.dart';
 import '../ui/sound_player.dart';
 import 'app_log.dart';
 import 'black_box.dart';
+import 'connectivity_status.dart';
+import 'system_log.dart';
 
 /// Synthetic event dispatched to every listener when the socket RECONNECTS
 /// after a drop: events missed while offline are gone, so each screen must
@@ -88,6 +90,10 @@ class SocketService {
         dlog(isConnected ? 'Socket.IO connected.' : 'Socket.IO disconnected.');
         BlackBox.add('socket', isConnected ? 'connected' : 'DISCONNECTED');
         connected.value = isConnected;
+        ConnectivityStatus.instance.setSocketConnected(isConnected);
+        // Rớt/nối lại realtime đều vào nhật ký hệ thống (có throttle) — mất
+        // realtime nghĩa là dữ liệu trên màn có thể cũ, phải truy vết được.
+        _logTransition(isConnected);
         if (isConnected && !wasConnected) {
           // Vừa nối lại sau khi rớt: các event trong lúc offline đã MẤT —
           // phát tín hiệu để mọi màn tự tải lại toàn bộ dữ liệu của nó.
@@ -100,6 +106,7 @@ class SocketService {
       onEvent: (event, payload) {
         if (event == 'connect_error') {
           dlog('Socket.IO connection error.');
+          _logConnectError(payload);
           return;
         }
         dlog('Realtime event received: $event');
@@ -118,6 +125,55 @@ class SocketService {
 
         _dispatch(event, payload);
       },
+    );
+  }
+
+  // Chống spam nhật ký khi mạng chớp tắt liên tục: mỗi loại chuyển trạng thái
+  // ghi tối đa 1 lần / 30 giây.
+  DateTime _lastTransitionLog = DateTime.fromMillisecondsSinceEpoch(0);
+  DateTime _lastConnectErrorLog = DateTime.fromMillisecondsSinceEpoch(0);
+  DateTime? _disconnectedAt;
+
+  void _logTransition(bool isConnected) {
+    if (isConnected) {
+      final downFor = _disconnectedAt == null
+          ? null
+          : DateTime.now().difference(_disconnectedAt!);
+      if (downFor != null) {
+        _disconnectedAt = null;
+        SystemLog.log(
+          level: 'info',
+          source: 'socket',
+          eventType: 'socket_reconnect',
+          title: 'Realtime đã nối lại sau ${downFor.inSeconds}s gián đoạn',
+          durationMs: downFor.inMilliseconds,
+        );
+      }
+      return;
+    }
+    _disconnectedAt ??= DateTime.now();
+    final now = DateTime.now();
+    if (now.difference(_lastTransitionLog).inSeconds < 30) return;
+    _lastTransitionLog = now;
+    SystemLog.log(
+      level: 'warn',
+      source: 'socket',
+      eventType: 'socket_disconnect',
+      title: 'Mất kết nối realtime (Socket.IO)',
+      message: 'Server $_baseUrl · chi nhánh $_branch — dữ liệu trên màn có thể cũ tới khi nối lại.',
+    );
+  }
+
+  void _logConnectError(dynamic payload) {
+    final now = DateTime.now();
+    if (now.difference(_lastConnectErrorLog).inSeconds < 30) return;
+    _lastConnectErrorLog = now;
+    SystemLog.log(
+      level: 'warn',
+      source: 'socket',
+      eventType: 'socket_error',
+      title: 'Socket.IO connect_error',
+      message: '$payload',
     );
   }
 

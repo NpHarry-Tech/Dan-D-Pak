@@ -4,8 +4,24 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
+import 'system_log.dart';
+
 class CardTerminalService {
   static const _channel = MethodChannel('com.dandpak.pos/card_terminal');
+
+  /// Mọi nhánh lỗi của máy quẹt thẻ đều trả LỖI NGHIỆP VỤ (map approved=false)
+  /// thay vì ném — và ghi nhật ký hệ thống tại đây để truy vết được.
+  static Map<String, dynamic> _fail(String error, {String mode = ''}) {
+    SystemLog.log(
+      level: 'error',
+      source: 'payment',
+      eventType: 'card_terminal_error',
+      title: 'Máy quẹt thẻ lỗi${mode.isEmpty ? '' : ' (chế độ $mode)'}',
+      message: error,
+      action: 'card_charge',
+    );
+    return {'approved': false, 'error': error};
+  }
 
   /// Requests card terminal payment.
   /// Returns a map of response fields mapping to `CONTRACT.md`.
@@ -41,12 +57,24 @@ class CardTerminalService {
             'billNo': billNo,
             'terminalName': terminalName,
           });
-          return jsonDecode(resultJson);
+          final decoded = jsonDecode(resultJson);
+          final result = decoded is Map
+              ? Map<String, dynamic>.from(decoded)
+              : <String, dynamic>{'approved': false, 'error': 'Phản hồi POS-Link sai định dạng'};
+          if (result['approved'] != true && result['error'] != null) {
+            // Từ chối/thất bại từ app VCB cũng phải để lại dấu vết.
+            SystemLog.log(
+              level: 'warn',
+              source: 'payment',
+              eventType: 'card_terminal_error',
+              title: 'Máy quẹt thẻ từ chối giao dịch',
+              message: '${result['error']}',
+              action: 'card_charge',
+            );
+          }
+          return result;
         } catch (e) {
-          return {
-            'approved': false,
-            'error': 'Lỗi gọi POS-Link native: $e',
-          };
+          return _fail('Lỗi gọi POS-Link native: $e', mode: 'auto/android');
         }
       } else {
         // Desktop PC -> Socket TCP/IP over local LAN / USB Network Tethering
@@ -120,10 +148,10 @@ class CardTerminalService {
             };
           }
         } catch (e) {
-          return {
-            'approved': false,
-            'error': 'Không thể kết nối đến thiết bị POS ($targetIp:$targetPort) qua USB/LAN. Vui lòng bật "Chia sẻ kết nối Internet qua USB" (USB Tethering) trên máy POS, hoặc kiểm tra địa chỉ IP cấu hình. Chi tiết lỗi: $e',
-          };
+          return _fail(
+            'Không thể kết nối đến thiết bị POS ($targetIp:$targetPort) qua USB/LAN. Vui lòng bật "Chia sẻ kết nối Internet qua USB" (USB Tethering) trên máy POS, hoặc kiểm tra địa chỉ IP cấu hình. Chi tiết lỗi: $e',
+            mode: 'auto/desktop',
+          );
         }
       }
     }

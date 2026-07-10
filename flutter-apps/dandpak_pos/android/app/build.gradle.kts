@@ -67,6 +67,11 @@ kotlin {
     }
 }
 
+dependencies {
+    // FileProvider cho auto-update (MainActivity mở trình cài APK).
+    implementation("androidx.core:core-ktx:1.13.1")
+}
+
 flutter {
     source = "../.."
 }

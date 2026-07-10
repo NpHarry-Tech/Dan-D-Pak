@@ -5,6 +5,7 @@ import '../app_version.dart';
 import 'api_service.dart';
 import 'app_log.dart';
 import 'black_box.dart';
+import 'system_log.dart';
 
 /// Ships client-side runtime errors to the local engine
 /// (`POST /api/client-log`) so every error on a POS terminal lands in ONE
@@ -58,10 +59,24 @@ class ClientLog {
       // Lỗi Dart cũng vào hộp đen — nếu sau đó app chết native thì vệt này
       // nằm ngay trước điểm chết trong hồ sơ.
       BlackBox.add('error', message);
+      // Và vào nhật ký hệ thống hợp nhất (system_logs) — queue fail-safe,
+      // sống sót qua restart, hiển thị trong màn Nhật ký hoạt động.
+      SystemLog.log(
+        level: 'error',
+        source: 'flutter_app',
+        eventType: 'uncaught_exception',
+        title: 'Lỗi runtime chưa được bắt ($context)',
+        message: message,
+        exceptionType: error.runtimeType.toString(),
+        stackTrace: (stack ?? StackTrace.current).toString(),
+      );
       api.postClientLog({
         'app': 'dandpak_pos',
         'version': '$kAppVersionName+$kAppBuildNumber',
         'screen': '${BlackBox.screen}|$context',
+        // Bản này đã tự ghi system_logs (SystemLog.log ở trên) → server đừng
+        // mirror thêm lần nữa kẻo 1 lỗi thành 2 dòng nhật ký.
+        'mirrored': true,
         'message': message,
         'stack': (stack ?? StackTrace.current).toString(),
         // ~40 thao tác gần nhất (chạm, API, socket, đổi màn) dẫn tới lỗi này.

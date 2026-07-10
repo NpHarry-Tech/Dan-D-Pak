@@ -31,13 +31,15 @@ class DanDpakRealtimeClient {
         .setTimeout(20000)
         .disableAutoConnect();
     if (enableReconnection) {
-      // Thử lại nhanh và KHÔNG BAO GIỜ bỏ cuộc: POS phải tự nối lại khi mạng
-      // chớp tắt mà nhân viên không cần làm gì.
+      // KHÔNG BAO GIỜ bỏ cuộc, nhưng lùi dần theo cấp số nhân
+      // (~1s → 2s → 4s → 8s → 16s → 30s): mạng chớp tắt thì nối lại gần như
+      // ngay, còn server chết hẳn thì không dội request mỗi giây làm nặng
+      // thêm thiết bị yếu lẫn server đang gượng dậy.
       options = options
           .enableReconnection()
           .setReconnectionAttempts(1 << 30)
-          .setReconnectionDelay(800)
-          .setReconnectionDelayMax(5000)
+          .setReconnectionDelay(1000)
+          .setReconnectionDelayMax(30000)
           .setRandomizationFactor(0.5);
     }
 

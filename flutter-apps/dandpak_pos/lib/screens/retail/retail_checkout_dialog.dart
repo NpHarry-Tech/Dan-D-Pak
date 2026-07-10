@@ -5,6 +5,7 @@ import '../../models/retail_models.dart';
 import '../../providers/customer_display_controller.dart';
 import '../../services/api_service.dart';
 import '../../services/card_terminal_service.dart';
+import '../../services/system_log.dart';
 import '../../ui/app_theme.dart';
 import '../../widgets/address_fields.dart';
 import '../../widgets/manual_confirm_dialog.dart';
@@ -482,20 +483,44 @@ class _RetailCheckoutDialogState extends State<RetailCheckoutDialog> {
         'security_pin': _manualPin,
     };
     try {
-      final receipt = await widget.api.retailCheckout(body);
-      final orderId =
-          receipt['id']?.toString() ?? receipt['order_id']?.toString() ?? '';
-      final billNo =
-          receipt['bill_no']?.toString() ?? receipt['number']?.toString() ?? '';
-      final printError = await widget.api
-          .forcePrintReceiptJob(orderId: orderId, billNo: billNo);
-      if (!mounted) return;
-      final out = Map<String, dynamic>.from(receipt);
-      if (printError != null && printError.isNotEmpty) {
-        out['print_error'] = printError;
-      }
-      Navigator.of(context).pop(out);
+      // Checkout + in bill chạy dưới 1 correlationId để truy vết trọn flow.
+      await SystemLog.runFlow('retail_checkout', () async {
+        final receipt = await widget.api.retailCheckout(body);
+        final orderId =
+            receipt['id']?.toString() ?? receipt['order_id']?.toString() ?? '';
+        final billNo = receipt['bill_no']?.toString() ??
+            receipt['number']?.toString() ??
+            '';
+        final printError = await widget.api
+            .forcePrintReceiptJob(orderId: orderId, billNo: billNo);
+        if (printError != null && printError.isNotEmpty) {
+          SystemLog.log(
+            level: 'error',
+            source: 'printer',
+            eventType: 'print_failed',
+            title: 'In bill bán lẻ thất bại sau thanh toán',
+            message: printError,
+            orderId: orderId,
+            action: 'retail_checkout_print',
+          );
+        }
+        if (!mounted) return;
+        final out = Map<String, dynamic>.from(receipt);
+        if (printError != null && printError.isNotEmpty) {
+          out['print_error'] = printError;
+        }
+        Navigator.of(context).pop(out);
+      });
     } catch (e) {
+      SystemLog.log(
+        level: 'error',
+        source: 'payment',
+        eventType: 'payment_failed',
+        title: 'Thanh toán bán lẻ thất bại',
+        message: e.toString().replaceFirst('Exception: ', ''),
+        action: 'retail_checkout',
+        exceptionType: e.runtimeType.toString(),
+      );
       if (!mounted) return;
       setState(() => _paying = false);
       _toast(e.toString().replaceFirst('Exception: ', ''), error: true);

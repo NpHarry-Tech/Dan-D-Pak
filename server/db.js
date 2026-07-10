@@ -494,6 +494,57 @@ export function migrate(targetDb = globalDb) {
   );
   CREATE INDEX IF NOT EXISTS idx_audit_branch_time ON audit_log(branch_id, created_at);
 
+  -- Nhật ký HỆ THỐNG hợp nhất (crash/api_error/socket/printer/payment/sync…).
+  -- Khác audit_log (vệt thao tác người dùng, mã hóa + lưu 36 tháng): bảng này
+  -- là log kỹ thuật giàu cột để lọc/truy vết nhanh, giữ ngắn hạn (~60 ngày).
+  -- Ghi qua services/systemLogs.js — KHÔNG insert tay để đảm bảo che dữ liệu
+  -- nhạy cảm (PIN/token/số thẻ) trước khi xuống đĩa.
+  CREATE TABLE IF NOT EXISTS system_logs (
+    id TEXT PRIMARY KEY,
+    timestamp TEXT NOT NULL,
+    level TEXT NOT NULL,
+    source TEXT NOT NULL,
+    event_type TEXT NOT NULL,
+    title TEXT NOT NULL,
+    message TEXT,
+    user_id TEXT,
+    username TEXT,
+    branch_id TEXT,
+    branch_name TEXT,
+    device_id TEXT,
+    device_name TEXT,
+    app_version TEXT,
+    build_number TEXT,
+    platform TEXT,
+    os_version TEXT,
+    screen TEXT,
+    action TEXT,
+    endpoint TEXT,
+    method TEXT,
+    status_code INTEGER,
+    duration_ms INTEGER,
+    request_id TEXT,
+    correlation_id TEXT,
+    order_id TEXT,
+    table_id TEXT,
+    payment_id TEXT,
+    exception_type TEXT,
+    stack_trace TEXT,
+    extra_json TEXT,
+    is_resolved INTEGER DEFAULT 0,
+    resolved_at TEXT,
+    resolved_by TEXT,
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_system_logs_timestamp ON system_logs(timestamp);
+  CREATE INDEX IF NOT EXISTS idx_system_logs_level ON system_logs(level);
+  CREATE INDEX IF NOT EXISTS idx_system_logs_event_type ON system_logs(event_type);
+  CREATE INDEX IF NOT EXISTS idx_system_logs_source ON system_logs(source);
+  CREATE INDEX IF NOT EXISTS idx_system_logs_device ON system_logs(device_id);
+  CREATE INDEX IF NOT EXISTS idx_system_logs_branch ON system_logs(branch_id);
+  CREATE INDEX IF NOT EXISTS idx_system_logs_correlation ON system_logs(correlation_id);
+  CREATE INDEX IF NOT EXISTS idx_system_logs_resolved ON system_logs(is_resolved);
+
   CREATE TABLE IF NOT EXISTS app_settings (
     branch_id TEXT NOT NULL,
     key TEXT NOT NULL,

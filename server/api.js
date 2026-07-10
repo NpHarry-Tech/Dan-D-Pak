@@ -30,6 +30,7 @@ import * as Branches from './services/branches.js';
 import * as Purchase from './services/purchase.js';
 import * as Expenses from './services/expenses.js';
 import * as AppRelease from './services/appRelease.js';
+import { logSystem, listSystemLogs, resolveSystemLog } from './services/systemLogs.js';
 import { emit, getActiveConnections } from './realtime.js';
 import { errorPayload } from './core/errors.js';
 import { notImplemented } from './core/http.js';
@@ -209,7 +210,37 @@ function logRequestError(req, e) {
       details: e?.details,
       stack: String(e?.stack || '').split('\n').slice(0, 5).join('\n').trim(),
     }, branch_id, actor);
+    // Song song, ghi vào nhật ký HỆ THỐNG hợp nhất (system_logs) với đủ cột
+    // endpoint/status/correlation để màn Nhật ký hoạt động lọc & truy vết.
+    const path = req?.originalUrl || req?.url || '';
+    logSystem({
+      level: status >= 500 ? 'error' : 'warn',
+      source: 'backend',
+      eventType: pickBackendEventType(path, status),
+      title: `API ${req?.method || ''} ${path} → ${status}`,
+      message: e?.message || 'Request failed',
+      username: actor,
+      branchId: branch_id,
+      endpoint: path,
+      method: req?.method,
+      statusCode: status,
+      requestId: req?.headers?.['x-request-id'],
+      correlationId: req?.headers?.['x-correlation-id'],
+      exceptionType: e?.code || e?.name || 'Error',
+      stackTrace: String(e?.stack || '').split('\n').slice(0, 8).join('\n').trim(),
+    });
   } catch { /* logging must never break the request */ }
+}
+
+// Phân loại event_type theo route để filter nhanh (thanh toán/in/HĐĐT/sync…).
+function pickBackendEventType(path, status) {
+  const p = String(path || '');
+  if (/\/pay|\/payment|\/payos|\/retail\/checkout|payment-qr/.test(p)) return 'payment_failed';
+  if (/\/print/.test(p)) return 'print_failed';
+  if (/\/einvoice|\/invoices/.test(p)) return 'einvoice_error';
+  if (/\/sync/.test(p)) return 'sync_failed';
+  if (/\/app\//.test(p)) return 'update_failed';
+  return status >= 500 ? 'backend_exception' : 'api_error';
 }
 
 const wrap = (fn) => (req, res) => {
@@ -1398,8 +1429,74 @@ api.post('/client-log', guard(), wrap((req) => {
       last_actions: String(b.stack || '').slice(0, 12000),
     }, entry.branch, entry.user || 'system');
   }
+  // Mirror sang nhật ký HỆ THỐNG hợp nhất — kể cả app bản cũ (chưa có
+  // SystemLog client) vẫn để lại dấu vết crash/lỗi trong system_logs.
+  // App bản mới gửi mirrored=true (đã tự ghi qua POST /system-logs) → bỏ qua
+  // để 1 lỗi không thành 2 dòng; riêng crash luôn mirror (BlackBox chỉ đi
+  // đường client-log).
+  if (b.kind === 'crash' || b.mirrored !== true) {
+    logSystem({
+      level: b.kind === 'crash' ? 'fatal' : 'error',
+      source: 'flutter_app',
+      eventType: b.kind === 'crash' ? 'crash' : 'uncaught_exception',
+      title: b.kind === 'crash'
+        ? 'App thoát bất thường lần chạy trước (nghi crash native)'
+        : `Lỗi runtime trên ${entry.screen || 'app'}`,
+      message: entry.message,
+      username: entry.user,
+      branchId: entry.branch,
+      appVersion: entry.version,
+      screen: entry.screen,
+      stackTrace: entry.stack,
+      extra: entry.breadcrumbs ? { breadcrumbs: entry.breadcrumbs } : null,
+    });
+  }
   return { ok: true };
 }));
+
+// --- Nhật ký hệ thống hợp nhất (system_logs) --------------------------------
+// Nhận log từ app Flutter (POST — 1 entry hoặc batch {entries:[...]}), đọc có
+// filter cho màn Nhật ký hoạt động (GET), đánh dấu đã xử lý (resolve).
+// Throttle như client-log: 1 client lỗi lặp vô hạn không được spam đầy đĩa.
+let _sysLogWindowStart = 0;
+let _sysLogCount = 0;
+api.post('/system-logs', guard(), wrap((req) => {
+  const nowMs = Date.now();
+  if (nowMs - _sysLogWindowStart > 60_000) { _sysLogWindowStart = nowMs; _sysLogCount = 0; }
+  const raw = Array.isArray(req.body?.entries) ? req.body.entries
+    : (req.body && typeof req.body === 'object' ? [req.body] : []);
+  const accepted = [];
+  for (const entry of raw.slice(0, 50)) {
+    if (++_sysLogCount > 300) return { ok: true, throttled: true, accepted: accepted.length };
+    if (!entry || typeof entry !== 'object') continue;
+    // Server là nguồn sự thật cho user/branch — không tin client tự khai.
+    const id = logSystem({
+      ...entry,
+      username: req.user?.username || entry.username || '',
+      userId: req.user?.id || entry.userId || '',
+      branchId: branch(req),
+    });
+    if (id) accepted.push(id);
+  }
+  return { ok: true, accepted: accepted.length };
+}));
+
+api.get('/system-logs', guard('audit.view'), wrap((req) => ({
+  logs: listSystemLogs(branch(req), {
+    levels: req.query.levels,
+    sources: req.query.sources,
+    eventTypes: req.query.event_types,
+    q: req.query.q,
+    from: req.query.from,
+    to: req.query.to,
+    before: req.query.before,
+    limit: req.query.limit,
+    unresolvedOnly: req.query.unresolved === '1',
+  }),
+})));
+
+api.post('/system-logs/:id/resolve', guard('audit.view'), wrap((req) =>
+  resolveSystemLog(req.params.id, req.user?.username)));
 
 api.get('/audit', guard('audit.view'), wrap((req) => {
   const branch_id = branch(req);

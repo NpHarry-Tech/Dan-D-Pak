@@ -1,7 +1,7 @@
 [Setup]
 AppId={{DANDPAK-POS-DESKTOP-APP}}
 AppName=Dan D Pak POS
-AppVersion=2026.07.09e
+AppVersion=2026.07.09f
 DefaultDirName={commonpf}\DanDPakPOS
 DefaultGroupName=Dan D Pak POS
 OutputDir=..\..
@@ -13,7 +13,10 @@ UninstallDisplayIcon={app}\dandpak_pos.exe
 DisableProgramGroupPage=yes
 PrivilegesRequired=admin
 ArchitecturesInstallIn64BitMode=x64
-UsePreviousAppDir=no
+; Nhớ thư mục cài lần trước — auto-update cài đè đúng chỗ, không hỏi lại.
+UsePreviousAppDir=yes
+DisableDirPage=auto
+CloseApplications=yes
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
@@ -33,4 +36,5 @@ Name: "{group}\Dan D Pak POS"; Filename: "{app}\dandpak_pos.exe"; WorkingDir: "{
 Name: "{commondesktop}\Dan D Pak POS"; Filename: "{app}\dandpak_pos.exe"; WorkingDir: "{app}"; Tasks: desktopicon
 
 [Run]
-Filename: "{app}\dandpak_pos.exe"; Description: "{cm:LaunchProgram,Dan D Pak POS}"; WorkingDir: "{app}"; Flags: nowait postinstall skipifsilent runasoriginaluser unchecked
+; Không skipifsilent/unchecked: auto-update chạy /VERYSILENT xong TỰ mở lại app.
+Filename: "{app}\dandpak_pos.exe"; Description: "{cm:LaunchProgram,Dan D Pak POS}"; WorkingDir: "{app}"; Flags: nowait postinstall runasoriginaluser

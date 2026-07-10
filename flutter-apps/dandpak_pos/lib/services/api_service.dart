@@ -1084,6 +1084,41 @@ class ApiService extends DanDpakApiClient {
         body: {'id': id}, errorMessage: 'Không giải mã được nhật ký'));
   }
 
+  /// Nhật ký HỆ THỐNG hợp nhất (crash/api/socket/printer/payment/updater…) —
+  /// bảng system_logs, hiển thị chung trong màn "Nhật ký hoạt động".
+  Future<List<dynamic>> getSystemLogs({
+    int limit = 50,
+    String before = '',
+    String levels = '',
+    String sources = '',
+    String eventTypes = '',
+    String q = '',
+    String from = '',
+    String to = '',
+  }) async {
+    final params = <String>['limit=$limit'];
+    if (before.isNotEmpty) params.add('before=${Uri.encodeComponent(before)}');
+    if (levels.isNotEmpty) params.add('levels=${Uri.encodeComponent(levels)}');
+    if (sources.isNotEmpty) {
+      params.add('sources=${Uri.encodeComponent(sources)}');
+    }
+    if (eventTypes.isNotEmpty) {
+      params.add('event_types=${Uri.encodeComponent(eventTypes)}');
+    }
+    if (q.isNotEmpty) params.add('q=${Uri.encodeComponent(q)}');
+    if (from.isNotEmpty) params.add('from=${Uri.encodeComponent(from)}');
+    if (to.isNotEmpty) params.add('to=${Uri.encodeComponent(to)}');
+    final res = await getJson('/api/system-logs?${params.join('&')}',
+        errorMessage: 'Không tải được nhật ký hệ thống');
+    if (res is Map && res['logs'] is List) return res['logs'] as List;
+    return <dynamic>[];
+  }
+
+  Future<void> resolveSystemLog(String id) async {
+    await postJson('/api/system-logs/$id/resolve',
+        errorMessage: 'Không đánh dấu được đã xử lý');
+  }
+
   Future<Map<String, dynamic>> exportConfig() async {
     return mapFrom(await getJson('/api/config/export',
         errorMessage: 'Không xuất được cấu hình'));

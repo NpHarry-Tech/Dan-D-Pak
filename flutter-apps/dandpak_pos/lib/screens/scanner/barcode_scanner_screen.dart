@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
+import '../../services/system_log.dart';
 import '../../ui/app_theme.dart';
 
 /// Mở trình quét mã vạch/QR bằng camera và trả về chuỗi mã quét được, hoặc
@@ -50,6 +51,25 @@ class _BarcodeScannerScreenState extends State<_BarcodeScannerScreen> {
   );
 
   bool _handled = false;
+  bool _errorLogged = false;
+
+  // Camera/scanner lỗi → app KHÔNG chết (errorBuilder hiện màn lỗi nghiệp vụ)
+  // nhưng phải ghi nhật ký để biết máy nào camera hỏng/bị chặn quyền.
+  Widget _buildError(BuildContext context, MobileScannerException error) {
+    if (!_errorLogged) {
+      _errorLogged = true;
+      SystemLog.log(
+        level: 'warn',
+        source: 'flutter_app',
+        eventType: 'scanner_error',
+        title: 'Camera quét mã lỗi (${error.errorCode.name})',
+        message: error.errorDetails?.message ?? error.toString(),
+        action: 'barcode_scan',
+        exceptionType: 'MobileScannerException',
+      );
+    }
+    return _ScannerError(error: error, onClose: _close);
+  }
 
   @override
   void initState() {
@@ -108,7 +128,7 @@ class _BarcodeScannerScreenState extends State<_BarcodeScannerScreen> {
             scanWindow: window,
             fit: BoxFit.cover,
             errorBuilder: (context, error, child) =>
-                _ScannerError(error: error, onClose: _close),
+                _buildError(context, error),
             placeholderBuilder: (context, child) =>
                 const ColoredBox(color: Colors.black),
           ),

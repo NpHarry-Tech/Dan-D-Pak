@@ -249,7 +249,10 @@ class _LauncherScreenState extends State<LauncherScreen> {
     return Container(
       width: double.infinity,
       color: DanColors.brand,
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+      // Windows: chừa chỗ cho 3 nút cửa sổ ghim góc phải trên (WindowChrome,
+      // rộng ~146px) — không thì nút "Cập nhật ngay" bị đè, khó bấm.
+      padding: EdgeInsets.fromLTRB(
+          20, 12, WindowControls.supported ? 158 : 20, 12),
       child: Row(
         children: [
           const Icon(Icons.system_update_alt, color: Colors.white, size: 20),

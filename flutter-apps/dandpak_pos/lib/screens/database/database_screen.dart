@@ -822,20 +822,51 @@ class _AuditLogTab extends StatefulWidget {
   State<_AuditLogTab> createState() => _AuditLogTabState();
 }
 
+/// Một dòng trong danh sách gộp: hoặc audit_log (vệt thao tác người dùng)
+/// hoặc system_logs (log kỹ thuật crash/api/socket/printer/payment…).
+class _LogEntry {
+  final bool isSystem;
+  final Map<String, dynamic> data;
+  final DateTime? ts;
+  const _LogEntry(this.isSystem, this.data, this.ts);
+}
+
 class _AuditLogTabState extends State<_AuditLogTab> {
   static const _pageSize = 50;
 
-  final _search = TextEditingController();
-  final List<Map<String, dynamic>> _rows = [];
+  // Bộ lọc loại log — mỗi chip ánh xạ sang nguồn (audit / system_logs) và
+  // filter server-side (levels / sources / event_types).
+  static const _filters = <(String, String)>[
+    ('all', 'Tất cả'),
+    ('user', 'Hoạt động người dùng'),
+    ('system', 'Hệ thống'),
+    ('warn', 'Cảnh báo'),
+    ('error', 'Lỗi'),
+    ('crash', 'Crash nghiêm trọng'),
+    ('api', 'API'),
+    ('socket', 'Socket'),
+    ('payment', 'Thanh toán'),
+    ('printer', 'Máy in'),
+    ('sync', 'Đồng bộ'),
+    ('update', 'Cập nhật app'),
+  ];
 
+  final _search = TextEditingController();
+  final List<_LogEntry> _rows = [];
+
+  String _filter = 'all';
   bool _loading = true;
   bool _loadingMore = false;
-  bool _hasMore = false;
-  String? _cursor;
+  bool _hasMoreAudit = false;
+  bool _hasMoreSys = false;
+  String? _auditCursor;
+  String? _sysCursor;
   String? _error;
   String _granularity = '';
   DateTime _anchor = DateTime.now();
   Timer? _timer;
+
+  bool get _hasMore => _hasMoreAudit || _hasMoreSys;
 
   @override
   void initState() {
@@ -855,8 +886,34 @@ class _AuditLogTabState extends State<_AuditLogTab> {
     super.dispose();
   }
 
+  /// (levels, sources, eventTypes) gửi cho /api/system-logs theo chip đang chọn.
+  (String, String, String) _sysQuery() {
+    switch (_filter) {
+      case 'warn':
+        return ('warn', '', '');
+      case 'error':
+        return ('error,fatal', '', '');
+      case 'crash':
+        return ('', '', 'crash,uncaught_exception');
+      case 'api':
+        return ('', '', 'api_error,api_timeout,api_offline,slow_request,backend_exception');
+      case 'socket':
+        return ('', 'socket', '');
+      case 'payment':
+        return ('', '', 'payment_failed,card_terminal_error');
+      case 'printer':
+        return ('', 'printer', '');
+      case 'sync':
+        return ('', '', 'sync_failed,socket_disconnect,socket_reconnect,network_offline,network_online');
+      case 'update':
+        return ('', 'updater', '');
+      default:
+        return ('', '', '');
+    }
+  }
+
   Future<void> _load({bool append = false, bool silent = false}) async {
-    if (append && (!_hasMore || _loadingMore || _cursor == null)) return;
+    if (append && (!_hasMore || _loadingMore)) return;
     final api = context.read<ApiService>();
     final range = _range();
     if (!silent) {
@@ -870,29 +927,86 @@ class _AuditLogTabState extends State<_AuditLogTab> {
       });
     }
 
+    final search = _search.text.trim();
+    final from =
+        range.from == null ? '' : range.from!.toUtc().toIso8601String();
+    final to = range.to == null ? '' : range.to!.toUtc().toIso8601String();
+    // 'user' = chỉ vệt thao tác; các chip kỹ thuật = chỉ system_logs;
+    // 'all' = gộp cả hai. Nguồn nào lỗi (VD server cũ chưa có /system-logs)
+    // thì bỏ qua nguồn đó, KHÔNG sập cả màn.
+    final includeAudit = _filter == 'all' || _filter == 'user';
+    final includeSys = _filter != 'user';
+    final sys = _sysQuery();
+
     try {
-      final data = await api.getAuditLogs(
-        limit: _pageSize,
-        before: append ? _cursor ?? '' : '',
-        search: _search.text.trim(),
-        from: range.from == null ? '' : range.from!.toUtc().toIso8601String(),
-        to: range.to == null ? '' : range.to!.toUtc().toIso8601String(),
-      );
-      final nextRows = data
-          .map((item) =>
-              item is Map ? Map<String, dynamic>.from(item) : {'detail': item})
+      final results = await Future.wait<List<dynamic>>([
+        if (includeAudit && (!append || _hasMoreAudit))
+          api
+              .getAuditLogs(
+                limit: _pageSize,
+                before: append ? _auditCursor ?? '' : '',
+                search: search,
+                from: from,
+                to: to,
+              )
+              .catchError((_) => <dynamic>[])
+        else
+          Future.value(<dynamic>[]),
+        if (includeSys && (!append || _hasMoreSys))
+          api
+              .getSystemLogs(
+                limit: _pageSize,
+                before: append ? _sysCursor ?? '' : '',
+                levels: sys.$1,
+                sources: sys.$2,
+                eventTypes: sys.$3,
+                q: search,
+                from: from,
+                to: to,
+              )
+              .catchError((_) => <dynamic>[])
+        else
+          Future.value(<dynamic>[]),
+      ]);
+
+      final auditRows = results[0]
+          .map((item) => item is Map
+              ? Map<String, dynamic>.from(item)
+              : <String, dynamic>{'detail': item})
           .toList();
+      final sysRows = results[1]
+          .whereType<Map>()
+          .map((item) => Map<String, dynamic>.from(item))
+          .toList();
+
+      final next = <_LogEntry>[
+        for (final r in auditRows)
+          _LogEntry(false, r, DateTime.tryParse(_s(r['created_at']))),
+        for (final r in sysRows)
+          _LogEntry(true, r, DateTime.tryParse(_s(r['timestamp']))),
+      ];
+
       if (!mounted) return;
       setState(() {
         if (append) {
-          _rows.addAll(nextRows);
+          _rows.addAll(next);
         } else {
           _rows
             ..clear()
-            ..addAll(nextRows);
+            ..addAll(next);
         }
-        _cursor = nextRows.isEmpty ? _cursor : _s(nextRows.last['created_at']);
-        _hasMore = nextRows.length >= _pageSize;
+        // Gộp 2 nguồn → sắp theo thời gian giảm dần cho một dòng chảy duy nhất.
+        _rows.sort((a, b) {
+          final ta = a.ts?.millisecondsSinceEpoch ?? 0;
+          final tb = b.ts?.millisecondsSinceEpoch ?? 0;
+          return tb.compareTo(ta);
+        });
+        if (auditRows.isNotEmpty) {
+          _auditCursor = _s(auditRows.last['created_at']);
+        }
+        if (sysRows.isNotEmpty) _sysCursor = _s(sysRows.last['timestamp']);
+        _hasMoreAudit = includeAudit && auditRows.length >= _pageSize;
+        _hasMoreSys = includeSys && sysRows.length >= _pageSize;
         if (!silent) {
           _loading = false;
           _loadingMore = false;
@@ -915,6 +1029,7 @@ class _AuditLogTabState extends State<_AuditLogTab> {
     setState(() {
       _search.clear();
       _granularity = '';
+      _filter = 'all';
       _anchor = DateTime.now();
     });
     _load();
@@ -1042,10 +1157,16 @@ class _AuditLogTabState extends State<_AuditLogTab> {
                     )
                   else
                     for (var i = 0; i < _rows.length; i++) ...[
-                      _AuditLogRow(
-                        entry: _rows[i],
-                        api: context.read<ApiService>(),
-                      ),
+                      if (_rows[i].isSystem)
+                        _SystemLogRow(
+                          entry: _rows[i].data,
+                          api: context.read<ApiService>(),
+                        )
+                      else
+                        _AuditLogRow(
+                          entry: _rows[i].data,
+                          api: context.read<ApiService>(),
+                        ),
                       if (i < _rows.length - 1)
                         const Divider(height: 1, color: DanColors.border),
                     ],
@@ -1078,7 +1199,47 @@ class _AuditLogTabState extends State<_AuditLogTab> {
 
   Widget _filterBar() {
     return Panel(
-      child: LayoutBuilder(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // Hàng chip lọc loại log (người dùng / hệ thống / lỗi / crash…).
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final (key, label) in _filters)
+                ChoiceChip(
+                  label: Text(label),
+                  selected: _filter == key,
+                  labelStyle: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                    color: _filter == key ? Colors.white : DanColors.muted,
+                  ),
+                  selectedColor: DanColors.brand,
+                  backgroundColor: DanColors.surface2,
+                  side: BorderSide(
+                      color: _filter == key
+                          ? DanColors.brand
+                          : DanColors.border2),
+                  showCheckmark: false,
+                  onSelected: (_) {
+                    if (_filter == key) return;
+                    setState(() => _filter = key);
+                    _load();
+                  },
+                ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          _filterControls(),
+        ],
+      ),
+    );
+  }
+
+  Widget _filterControls() {
+    return LayoutBuilder(
         builder: (context, constraints) {
           const controlHeight = 48.0;
           const actionWidth = 98.0;
@@ -1170,9 +1331,7 @@ class _AuditLogTabState extends State<_AuditLogTab> {
               ),
             ],
           );
-        },
-      ),
-    );
+        });
   }
 
   Widget _periodControl() {
@@ -1665,4 +1824,418 @@ class _AuditSummary {
   final String meta;
 
   const _AuditSummary(this.title, this.meta);
+}
+
+// ── Nhật ký HỆ THỐNG (system_logs): dòng + modal chi tiết ───────────────────
+
+Color _levelColor(String level) {
+  switch (level) {
+    case 'debug':
+      return DanColors.faint;
+    case 'info':
+      return DanColors.brand;
+    case 'warn':
+      return const Color(0xFFD97706);
+    case 'fatal':
+      return const Color(0xFF7F1D1D);
+    default:
+      return DanColors.late; // error
+  }
+}
+
+String _sourceLabel(String source) {
+  const map = {
+    'flutter_app': 'APP',
+    'backend': 'API',
+    'socket': 'SOCKET',
+    'printer': 'PRINTER',
+    'payment': 'PAYMENT',
+    'updater': 'UPDATE',
+    'misa': 'MISA',
+    'database': 'DB',
+    'sync': 'SYNC',
+  };
+  return map[source] ?? source.toUpperCase();
+}
+
+Widget _logBadge(String text, Color color, {bool filled = false}) {
+  return Container(
+    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+    decoration: BoxDecoration(
+      color: filled ? color : color.withValues(alpha: .12),
+      borderRadius: BorderRadius.circular(999),
+    ),
+    child: Text(
+      text,
+      style: TextStyle(
+        color: filled ? Colors.white : color,
+        fontSize: 10,
+        fontWeight: FontWeight.w900,
+      ),
+    ),
+  );
+}
+
+class _SystemLogRow extends StatefulWidget {
+  final Map<String, dynamic> entry;
+  final ApiService api;
+
+  const _SystemLogRow({required this.entry, required this.api});
+
+  @override
+  State<_SystemLogRow> createState() => _SystemLogRowState();
+}
+
+class _SystemLogRowState extends State<_SystemLogRow> {
+  late bool _resolved = _n(widget.entry['is_resolved']) == 1;
+
+  @override
+  Widget build(BuildContext context) {
+    final e = widget.entry;
+    final level = _s(e['level']);
+    final color = _levelColor(level);
+    final ts = DateTime.tryParse(_s(e['timestamp']))?.toLocal();
+    final title = _s(e['title']);
+    final message = _s(e['message']);
+    final isSevere = level == 'error' || level == 'fatal';
+    final who = [
+      if (_s(e['username']).isNotEmpty) _s(e['username']),
+      if (_s(e['device_name']).isNotEmpty) _s(e['device_name']),
+      if (_s(e['branch_name']).isNotEmpty)
+        _s(e['branch_name'])
+      else if (_s(e['branch_id']).isNotEmpty)
+        _s(e['branch_id']),
+    ].join(' · ');
+
+    return InkWell(
+      onTap: _openDetail,
+      child: Container(
+        margin: const EdgeInsets.symmetric(vertical: 8),
+        padding: const EdgeInsets.fromLTRB(10, 10, 10, 12),
+        decoration: BoxDecoration(
+          color: isSevere && !_resolved
+              ? const Color(0xFFFFE9E9)
+              : Colors.transparent,
+          borderRadius: BorderRadius.circular(DanRadius.sm),
+          border: isSevere && !_resolved
+              ? Border(left: BorderSide(color: color, width: 3))
+              : null,
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SizedBox(
+              width: 76,
+              child: Text(
+                ts == null ? '-' : _hm(ts),
+                style: const TextStyle(
+                  color: DanColors.faint,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 5,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      _logBadge(level.toUpperCase(), color, filled: isSevere),
+                      _logBadge(_sourceLabel(_s(e['source'])), DanColors.muted),
+                      if (_resolved)
+                        _logBadge('ĐÃ XỬ LÝ', const Color(0xFF16A34A)),
+                      Text(
+                        title,
+                        style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (message.isNotEmpty) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      message,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: isSevere ? color : DanColors.muted,
+                        fontSize: 11.5,
+                        fontWeight:
+                            isSevere ? FontWeight.w700 : FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 3),
+                  Text(
+                    [
+                      if (ts != null) '${_dmy(ts)} lúc ${_hm(ts)}',
+                      if (who.isNotEmpty) who,
+                    ].join(' · '),
+                    style: const TextStyle(color: DanColors.faint, fontSize: 11),
+                  ),
+                  const SizedBox(height: 7),
+                  Text(
+                    'Bấm để xem chi tiết',
+                    style: TextStyle(
+                      color: isSevere ? color : DanColors.brand,
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openDetail() async {
+    final resolvedNow = await showDialog<bool>(
+      context: context,
+      builder: (_) => _SystemLogDetailDialog(
+        entry: widget.entry,
+        api: widget.api,
+        resolved: _resolved,
+      ),
+    );
+    if (resolvedNow == true && mounted) setState(() => _resolved = true);
+  }
+}
+
+class _SystemLogDetailDialog extends StatefulWidget {
+  final Map<String, dynamic> entry;
+  final ApiService api;
+  final bool resolved;
+
+  const _SystemLogDetailDialog({
+    required this.entry,
+    required this.api,
+    required this.resolved,
+  });
+
+  @override
+  State<_SystemLogDetailDialog> createState() => _SystemLogDetailDialogState();
+}
+
+class _SystemLogDetailDialogState extends State<_SystemLogDetailDialog> {
+  late bool _resolved = widget.resolved;
+  bool _resolving = false;
+
+  // Các field hiển thị theo thứ tự spec — bỏ field rỗng cho gọn.
+  static const _fieldLabels = <(String, String)>[
+    ('event_type', 'Loại sự kiện'),
+    ('source', 'Nguồn'),
+    ('level', 'Mức độ'),
+    ('timestamp', 'Thời điểm'),
+    ('device_id', 'Mã thiết bị'),
+    ('device_name', 'Tên thiết bị'),
+    ('user_id', 'Mã người dùng'),
+    ('username', 'Người dùng'),
+    ('branch_id', 'Chi nhánh'),
+    ('branch_name', 'Tên chi nhánh'),
+    ('app_version', 'Phiên bản app'),
+    ('build_number', 'Số build'),
+    ('platform', 'Nền tảng'),
+    ('os_version', 'Hệ điều hành'),
+    ('screen', 'Màn hình'),
+    ('action', 'Thao tác'),
+    ('endpoint', 'Endpoint'),
+    ('method', 'Method'),
+    ('status_code', 'Mã trạng thái'),
+    ('duration_ms', 'Thời gian (ms)'),
+    ('request_id', 'Request ID'),
+    ('correlation_id', 'Correlation ID'),
+    ('order_id', 'Mã đơn'),
+    ('table_id', 'Mã bàn'),
+    ('payment_id', 'Mã thanh toán'),
+    ('exception_type', 'Loại exception'),
+    ('resolved_by', 'Người xử lý'),
+    ('resolved_at', 'Xử lý lúc'),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    final e = widget.entry;
+    final level = _s(e['level']);
+    final color = _levelColor(level);
+    final stack = _s(e['stack_trace']);
+    final extra = _s(e['extra_json']);
+    final message = _s(e['message']);
+
+    return AlertDialog(
+      title: Row(
+        children: [
+          _logBadge(level.toUpperCase(), color,
+              filled: level == 'error' || level == 'fatal'),
+          const SizedBox(width: 8),
+          _logBadge(_sourceLabel(_s(e['source'])), DanColors.muted),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              _s(e['title']),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900),
+            ),
+          ),
+        ],
+      ),
+      content: SizedBox(
+        width: 720,
+        height: 440,
+        child: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (message.isNotEmpty) ...[
+                SelectableText(
+                  message,
+                  style: const TextStyle(fontSize: 13, height: 1.4),
+                ),
+                const SizedBox(height: 12),
+              ],
+              for (final (key, label) in _fieldLabels)
+                if (_s(e[key]).isNotEmpty) _line(label, _s(e[key])),
+              if (extra.isNotEmpty) ...[
+                const SizedBox(height: 10),
+                _monoBox('Dữ liệu bổ sung (extra_json)', _prettyJson(extra)),
+              ],
+              if (stack.isNotEmpty) ...[
+                const SizedBox(height: 10),
+                _monoBox('Stack trace', stack),
+              ],
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton.icon(
+          onPressed: _copyJson,
+          icon: const Icon(Icons.copy_all_outlined, size: 18),
+          label: const Text('Copy JSON'),
+        ),
+        if (!_resolved)
+          OutlinedButton.icon(
+            onPressed: _resolving ? null : _markResolved,
+            icon: _resolving
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2))
+                : const Icon(Icons.task_alt, size: 18),
+            label: const Text('Đánh dấu đã xử lý'),
+          )
+        else
+          _logBadge('ĐÃ XỬ LÝ', const Color(0xFF16A34A)),
+        FilledButton(
+          onPressed: () => Navigator.of(context).pop(_resolved),
+          child: const Text('Đóng'),
+        ),
+      ],
+    );
+  }
+
+  Widget _line(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 150,
+            child: Text(
+              label,
+              style: const TextStyle(
+                color: DanColors.muted,
+                fontSize: 12,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+          Expanded(
+            child: SelectableText(
+              value,
+              style: const TextStyle(fontSize: 12, height: 1.35),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _monoBox(String label, String text) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          label,
+          style: const TextStyle(
+            color: DanColors.muted,
+            fontSize: 12,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        const SizedBox(height: 6),
+        Container(
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            color: const Color(0xFFE9EDF2),
+            borderRadius: BorderRadius.circular(DanRadius.sm),
+          ),
+          child: SelectableText(
+            text,
+            style: const TextStyle(
+              color: DanColors.muted,
+              fontFamily: 'monospace',
+              fontSize: 11,
+              height: 1.35,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  String _prettyJson(String raw) {
+    try {
+      return const JsonEncoder.withIndent('  ').convert(jsonDecode(raw));
+    } catch (_) {
+      return raw;
+    }
+  }
+
+  void _copyJson() {
+    final jsonText = const JsonEncoder.withIndent('  ').convert(widget.entry);
+    Clipboard.setData(ClipboardData(text: jsonText));
+    ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+      const SnackBar(content: Text('Đã copy JSON của dòng nhật ký')),
+    );
+  }
+
+  Future<void> _markResolved() async {
+    setState(() => _resolving = true);
+    try {
+      await widget.api.resolveSystemLog(_s(widget.entry['id']));
+      if (!mounted) return;
+      setState(() {
+        _resolved = true;
+        _resolving = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _resolving = false);
+      ScaffoldMessenger.maybeOf(context)?.showSnackBar(SnackBar(
+        content: Text(e.toString().replaceFirst('Exception: ', '')),
+        backgroundColor: DanColors.late,
+      ));
+    }
+  }
 }

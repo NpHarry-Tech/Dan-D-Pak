@@ -6,6 +6,7 @@ import '../services/app_log.dart';
 import '../services/local_store.dart';
 import '../services/node_runner.dart';
 import '../services/socket_service.dart';
+import '../services/system_log.dart';
 
 class AuthProvider extends ChangeNotifier {
   final ApiService apiService;
@@ -75,6 +76,7 @@ class AuthProvider extends ChangeNotifier {
           apiService.setToken(null);
         }
       }
+      _syncLogContext();
     } finally {
       _booting = false;
       notifyListeners();
@@ -167,6 +169,7 @@ class AuthProvider extends ChangeNotifier {
 
       apiService.setToken(_token);
       apiService.setBranchId(branchId);
+      _syncLogContext();
 
       final prefs = LocalStore.instance;
       await prefs.setString('auth_token', _token!);
@@ -179,6 +182,16 @@ class AuthProvider extends ChangeNotifier {
       notifyListeners();
       rethrow;
     }
+  }
+
+  /// Mọi dòng nhật ký hệ thống từ giờ mang đúng user/chi nhánh hiện tại.
+  void _syncLogContext() {
+    SystemLog.setContext(
+      user: _currentUser?.username ?? '',
+      uid: _currentUser?.id ?? '',
+      branch: _selectedBranchId,
+      branchLabel: selectedBranch.name,
+    );
   }
 
   Future<void> logout({bool keepBranch = false}) async {
@@ -194,6 +207,7 @@ class AuthProvider extends ChangeNotifier {
     _branchConfirmed = keepBranch;
     apiService.setToken(null);
     SocketService().logoutDisconnect();
+    _syncLogContext();
 
     final prefs = LocalStore.instance;
     await prefs.remove('auth_token');

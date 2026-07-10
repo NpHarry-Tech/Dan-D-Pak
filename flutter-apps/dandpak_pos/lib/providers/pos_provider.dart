@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart' hide Category;
 import '../models/pos_models.dart';
 import '../services/api_service.dart';
 import '../services/app_log.dart';
+import '../services/system_log.dart';
 
 double _doubleValue(dynamic value) {
   if (value is num) return value.toDouble();
@@ -489,10 +490,14 @@ class PosProvider extends ChangeNotifier {
 
   Future<void> confirmActiveOrder() async {
     if (_activeOrderId == null) return;
-    final order = await apiService.confirmOrderItems(_activeOrderId!, const []);
-    _applyOrderDetails(order);
-    await loadFloor();
-    notifyListeners();
+    // Gửi bếp = flow có correlationId (request confirm + phiếu bếp in ra).
+    await SystemLog.runFlow('send_kitchen', () async {
+      final order =
+          await apiService.confirmOrderItems(_activeOrderId!, const []);
+      _applyOrderDetails(order);
+      await loadFloor();
+      notifyListeners();
+    });
   }
 
   Future<void> cancelCartItem(
@@ -537,47 +542,61 @@ class PosProvider extends ChangeNotifier {
     _isSavingOrder = true;
     notifyListeners();
 
-    try {
-      final payload = {
-        'lines': [
-          {
-            'method': method,
-            'amount': amountDue,
-            if (cardMeta != null) 'card': cardMeta,
-            if (bankTxId != null && bankTxId.isNotEmpty) 'bank_tx_id': bankTxId,
-            if (manualReason != null)
-              'manual_confirm': {'reason': manualReason},
-          }
-        ],
-        'discount': discountOverride ?? _activeDiscount,
-        if ((customerOverride ?? _selectedCustomer) != null)
-          'customer': customerOverride ?? _selectedCustomer,
-        if (securityPin != null && securityPin.isNotEmpty)
-          'security_pin': securityPin,
-      };
+    // Cả flow thanh toán chạy dưới MỘT correlationId — request /pay, lệnh in,
+    // HĐĐT phát sinh đều truy vết được thành một chuỗi trong nhật ký.
+    return SystemLog.runFlow('payment', () async {
+      try {
+        final payload = {
+          'lines': [
+            {
+              'method': method,
+              'amount': amountDue,
+              if (cardMeta != null) 'card': cardMeta,
+              if (bankTxId != null && bankTxId.isNotEmpty) 'bank_tx_id': bankTxId,
+              if (manualReason != null)
+                'manual_confirm': {'reason': manualReason},
+            }
+          ],
+          'discount': discountOverride ?? _activeDiscount,
+          if ((customerOverride ?? _selectedCustomer) != null)
+            'customer': customerOverride ?? _selectedCustomer,
+          if (securityPin != null && securityPin.isNotEmpty)
+            'security_pin': securityPin,
+        };
 
-      await apiService.payOrder(targetOrderId, payload);
+        await apiService.payOrder(targetOrderId, payload);
 
-      // Reset POS workspace selection
-      _selectedTable = null;
-      _cart = [];
-      _activeOrderId = null;
-      _activeBillNo = null;
-      _activeDiscount = 0.0;
-      _selectedCustomer = null;
+        // Reset POS workspace selection
+        _selectedTable = null;
+        _cart = [];
+        _activeOrderId = null;
+        _activeBillNo = null;
+        _activeDiscount = 0.0;
+        _selectedCustomer = null;
 
-      await loadFloor();
-      await loadShift();
+        await loadFloor();
+        await loadShift();
 
-      _isSavingOrder = false;
-      _isPayingOrder = false;
-      notifyListeners();
-    } catch (e) {
-      _isSavingOrder = false;
-      _isPayingOrder = false;
-      notifyListeners();
-      rethrow;
-    }
+        _isSavingOrder = false;
+        _isPayingOrder = false;
+        notifyListeners();
+      } catch (e) {
+        _isSavingOrder = false;
+        _isPayingOrder = false;
+        notifyListeners();
+        SystemLog.log(
+          level: 'error',
+          source: 'payment',
+          eventType: 'payment_failed',
+          title: 'Thanh toán thất bại ($method)',
+          message: e.toString().replaceFirst('Exception: ', ''),
+          orderId: targetOrderId,
+          action: 'pay_order',
+          exceptionType: e.runtimeType.toString(),
+        );
+        rethrow;
+      }
+    });
   }
 
   // Open shift

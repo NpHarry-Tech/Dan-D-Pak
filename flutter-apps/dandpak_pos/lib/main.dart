@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io' show Platform;
 
 import 'package:dandpak_core/dandpak_core.dart';
@@ -7,6 +8,7 @@ import 'package:provider/provider.dart';
 import 'package:video_player_win/video_player_win.dart';
 import 'package:local_notifier/local_notifier.dart';
 
+import 'app_version.dart';
 import 'providers/auth_provider.dart';
 import 'providers/customer_display_controller.dart';
 import 'providers/pos_provider.dart';
@@ -19,7 +21,9 @@ import 'screens/splash_screen.dart';
 import 'services/api_service.dart';
 import 'services/black_box.dart';
 import 'services/client_log.dart';
+import 'services/connectivity_status.dart';
 import 'services/local_store.dart';
+import 'services/system_log.dart';
 import 'services/node_runner.dart';
 import 'ui/app_theme.dart';
 import 'widgets/window_controls.dart';
@@ -44,6 +48,17 @@ Future<bool> _shouldRunLocalEngine() async {
 }
 
 Future<void> main(List<String> args) async {
+  // runZonedGuarded: TẤM LƯỚI CUỐI cho mọi lỗi async không ai bắt — production
+  // app không được chết im lặng; lỗi được ghi nhật ký rồi app chạy tiếp.
+  // (ensureInitialized + runApp phải nằm CÙNG zone, nên bọc cả thân main.)
+  await runZonedGuarded(() async {
+    await _mainImpl(args);
+  }, (error, stack) {
+    ClientLog.report(error, stack, context: 'zone');
+  });
+}
+
+Future<void> _mainImpl(List<String> args) async {
   WidgetsFlutterBinding.ensureInitialized();
 
   if (Platform.isWindows) {
@@ -94,10 +109,50 @@ Future<void> main(List<String> args) async {
   // (POST /api/client-log) so client + server logs live in one place.
   ClientLog.attach(apiService);
   ClientLog.installGlobalHooks();
+  // Nhật ký hệ thống hợp nhất: queue fail-safe đẩy về bảng system_logs của
+  // server (màn "Nhật ký hoạt động" đọc được cả crash/api/socket/printer...).
+  SystemLog.attach(apiService);
+  _logUpdateSuccessIfJustUpdated();
   // Hộp đen: ghi vệt thao tác ra đĩa; nếu lần chạy trước chết bất thường thì
   // tự gửi hồ sơ (những thao tác cuối) về server → nhật ký hoạt động.
   BlackBox.init(role: 'main', api: apiService);
   DanDpakApiClient.onRequestTrace = (line) => BlackBox.add('api', line);
+  // Mỗi request mang correlationId của flow hiện tại (SystemLog.runFlow).
+  DanDpakApiClient.correlationIdProvider = SystemLog.currentCorrelationId;
+  // Kết quả đo mỗi request → tách trạng thái mạng (offline ≠ HTTP lỗi) + ghi
+  // nhật ký lỗi mạng/timeout/chậm. Lỗi HTTP 4xx/5xx do server tự ghi
+  // (logRequestError) — client không ghi trùng.
+  DanDpakApiClient.onApiResult = (t) {
+    ConnectivityStatus.instance.onApiTrace(t);
+    if (t.networkIssue) {
+      SystemLog.log(
+        level: 'warn',
+        source: 'flutter_app',
+        eventType:
+            t.exceptionType == 'TimeoutException' ? 'api_timeout' : 'api_offline',
+        title: 'Không gọi được ${t.method} ${t.path}',
+        message: t.error ?? '',
+        endpoint: t.path,
+        method: t.method,
+        statusCode: 0,
+        durationMs: t.durationMs,
+        correlationId: t.correlationId,
+        exceptionType: t.exceptionType,
+      );
+    } else if (t.ok && t.durationMs > 4000) {
+      SystemLog.log(
+        level: 'warn',
+        source: 'flutter_app',
+        eventType: 'slow_request',
+        title: 'Request chậm phía thiết bị: ${t.method} ${t.path} mất ${t.durationMs}ms',
+        endpoint: t.path,
+        method: t.method,
+        statusCode: t.statusCode,
+        durationMs: t.durationMs,
+        correlationId: t.correlationId,
+      );
+    }
+  };
   runApp(
     MultiProvider(
       providers: [
@@ -116,6 +171,24 @@ Future<void> main(List<String> args) async {
       child: const DandpakPosApp(),
     ),
   );
+}
+
+/// Sau auto-update, app mở lại với build mới → ghi update_success vào nhật ký
+/// (so build đang chạy với build đã lưu của lần chạy trước).
+Future<void> _logUpdateSuccessIfJustUpdated() async {
+  try {
+    final prev = await LocalStore.instance.getString('last_run_build');
+    if (prev == '$kAppBuildNumber') return;
+    await LocalStore.instance.setString('last_run_build', '$kAppBuildNumber');
+    if (prev == null) return; // lần chạy đầu tiên — không phải update
+    SystemLog.log(
+      level: 'info',
+      source: 'updater',
+      eventType: 'update_success',
+      title: 'Cập nhật thành công: build $prev → $kAppBuildNumber ($kAppVersionName)',
+      action: 'app_update',
+    );
+  } catch (_) {/* không chặn boot */}
 }
 
 class DandpakPosApp extends StatefulWidget {

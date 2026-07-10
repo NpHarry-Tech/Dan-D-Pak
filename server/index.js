@@ -19,6 +19,7 @@ import { runtimeSnapshot } from './config/runtime.js';
 import { apiNotFound, errorHandler } from './core/http.js';
 import { logger } from './core/logger.js';
 import { requestLogger } from './core/requestLogger.js';
+import { logSystem, maintainSystemLogs } from './services/systemLogs.js';
 
 // Gzip middleware dùng Node built-in zlib — không cần thêm npm package.
 // Với 50 thiết bị, menu JSON ~50KB → ~8KB sau nén, giảm tải mạng LAN 80%.
@@ -167,6 +168,10 @@ function maintainAudit() {
     const p = purgeAuditBeyondRetention(36);
     if (p.removedFiles || p.removedRows) logger.warn('audit beyond 36-month retention purged', p);
   } catch (e) { logger.warn('audit maintenance failed', { message: e.message }); }
+  // Nhật ký hệ thống hợp nhất: giữ 60 ngày / tối đa 200k dòng (log kỹ thuật
+  // ngắn hạn — hồ sơ dài hạn đã có audit_log + kho NDJSON 36 tháng).
+  const s = maintainSystemLogs();
+  if (s.removedByAge || s.removedByCount) logger.info('system_logs pruned', s);
 }
 maintainAudit();
 setInterval(maintainAudit, 24 * 60 * 60 * 1000).unref();
@@ -186,6 +191,11 @@ setInterval(runBackup, 24 * 60 * 60 * 1000).unref();
 function runInvoiceWorker() {
   processInvoiceQueue().catch(err => {
     logger.error('Invoice worker error', { message: err.message, stack: err.stack });
+    logSystem({
+      level: 'error', source: 'misa', eventType: 'einvoice_error',
+      title: 'Worker hóa đơn điện tử gặp lỗi',
+      message: err.message, exceptionType: err.name, stackTrace: err.stack,
+    });
   });
 }
 runInvoiceWorker();
@@ -215,12 +225,28 @@ process.on('SIGINT', shutdown);
 process.on('SIGTERM', shutdown);
 
 // Trap lỗi không bắt được — log rõ ràng trước khi crash thay vì crash thầm lặng.
+// Ghi cả vào system_logs (fatal) để màn Nhật ký hoạt động thấy được server chết.
 process.on('uncaughtException', (err) => {
   logger.error('uncaughtException — server sẽ thoát', { message: err.message, stack: err.stack });
+  try {
+    logSystem({
+      level: 'fatal', source: 'backend', eventType: 'crash',
+      title: 'Server crash: uncaughtException',
+      message: err.message, exceptionType: err.name, stackTrace: err.stack,
+    });
+  } catch { /* đang chết — không được ném thêm */ }
   setTimeout(() => process.exit(1), 500).unref();
 });
 process.on('unhandledRejection', (reason) => {
   const message = reason instanceof Error ? reason.message : String(reason);
   const stack = reason instanceof Error ? reason.stack : undefined;
   logger.error('unhandledRejection', { message, stack });
+  try {
+    logSystem({
+      level: 'error', source: 'backend', eventType: 'unhandled_rejection',
+      title: 'Server unhandledRejection',
+      message, stackTrace: stack,
+      exceptionType: reason instanceof Error ? reason.name : 'UnhandledRejection',
+    });
+  } catch { /* logging must never crash the handler */ }
 });
