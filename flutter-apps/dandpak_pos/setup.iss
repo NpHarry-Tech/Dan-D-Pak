@@ -1,7 +1,7 @@
 [Setup]
 AppId={{DANDPAK-POS-DESKTOP-APP}}
 AppName=Dan D Pak POS
-AppVersion=2026.07.09f
+AppVersion=2026.07.10
 DefaultDirName={commonpf}\DanDPakPOS
 DefaultGroupName=Dan D Pak POS
 OutputDir=..\..
