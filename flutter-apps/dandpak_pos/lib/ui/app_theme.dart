@@ -30,10 +30,28 @@ class DanRadius {
   static const lg = 14.0;
 }
 
+/// Chuyển trang TỨC THÌ — dùng ở chế độ máy yếu: mỗi hiệu ứng trượt/mờ là
+/// hàng chục frame raster mà POS Celeron không kham nổi (khựng → nghi crash).
+class _InstantPageTransitionsBuilder extends PageTransitionsBuilder {
+  const _InstantPageTransitionsBuilder();
+
+  @override
+  Widget buildTransitions<T>(
+    PageRoute<T> route,
+    BuildContext context,
+    Animation<double> animation,
+    Animation<double> secondaryAnimation,
+    Widget child,
+  ) =>
+      child;
+}
+
 class DanTheme {
   const DanTheme._();
 
-  static ThemeData light() {
+  /// [lowEnd] = chế độ máy yếu (PerfMode tự đo và bật): bỏ hiệu ứng chuyển
+  /// trang + hiệu ứng loang khi chạm — giảm hẳn tải raster trên GPU onboard.
+  static ThemeData light({bool lowEnd = false}) {
     final base = ThemeData(
       useMaterial3: true,
       brightness: Brightness.light,
@@ -47,6 +65,16 @@ class DanTheme {
       ),
     );
     return base.copyWith(
+      pageTransitionsTheme: lowEnd
+          ? const PageTransitionsTheme(builders: {
+              TargetPlatform.android: _InstantPageTransitionsBuilder(),
+              TargetPlatform.iOS: _InstantPageTransitionsBuilder(),
+              TargetPlatform.windows: _InstantPageTransitionsBuilder(),
+              TargetPlatform.macOS: _InstantPageTransitionsBuilder(),
+              TargetPlatform.linux: _InstantPageTransitionsBuilder(),
+            })
+          : null,
+      splashFactory: lowEnd ? NoSplash.splashFactory : null,
       textTheme: base.textTheme.apply(
         bodyColor: DanColors.text,
         displayColor: DanColors.text,

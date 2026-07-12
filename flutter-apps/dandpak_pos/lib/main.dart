@@ -23,6 +23,7 @@ import 'services/black_box.dart';
 import 'services/client_log.dart';
 import 'services/connectivity_status.dart';
 import 'services/local_store.dart';
+import 'services/perf_mode.dart';
 import 'services/system_log.dart';
 import 'services/node_runner.dart';
 import 'ui/app_theme.dart';
@@ -113,6 +114,9 @@ Future<void> _mainImpl(List<String> args) async {
   // server (màn "Nhật ký hoạt động" đọc được cả crash/api/socket/printer...).
   SystemLog.attach(apiService);
   _logUpdateSuccessIfJustUpdated();
+  // Máy yếu tự thích nghi: đo frame thật → tắt hiệu ứng, hạ trần cache ảnh;
+  // mọi cú đứng hình ≥700ms vào nhật ký (ui_freeze) + hộp đen.
+  PerfMode.init();
   // Hộp đen: ghi vệt thao tác ra đĩa; nếu lần chạy trước chết bất thường thì
   // tự gửi hồ sơ (những thao tác cuối) về server → nhật ký hoạt động.
   BlackBox.init(role: 'main', api: apiService);
@@ -247,10 +251,19 @@ class _DandpakPosAppState extends State<DandpakPosApp>
 
   @override
   Widget build(BuildContext context) {
+    // Theme đọc PerfMode: máy yếu (tự đo) → tắt hiệu ứng chuyển trang/chạm
+    // ngay khi có kết luận, không cần mở lại app.
+    return ValueListenableBuilder<bool>(
+      valueListenable: PerfMode.lowEnd,
+      builder: (context, lowEnd, _) => _buildApp(lowEnd),
+    );
+  }
+
+  Widget _buildApp(bool lowEnd) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       title: 'Dan D Pak POS',
-      theme: DanTheme.light(),
+      theme: DanTheme.light(lowEnd: lowEnd),
       builder: (context, child) {
         // POS có bố cục cỡ cố định — KHÓA cỡ chữ hệ điều hành về 1.0 để cỡ chữ
         // lớn của Android (tablet) không làm tràn/chồng chữ khắp các màn.

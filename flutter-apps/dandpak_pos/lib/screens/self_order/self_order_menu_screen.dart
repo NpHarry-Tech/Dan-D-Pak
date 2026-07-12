@@ -734,7 +734,12 @@ class _FavCard extends StatelessWidget {
             ),
             clipBehavior: Clip.antiAlias,
             child: item.image != null && item.image!.startsWith('http')
-                ? Image.network(item.image!, fit: BoxFit.cover,
+                ? Image.network(item.image!,
+                    fit: BoxFit.cover,
+                    // Decode cỡ thumbnail — menu dài không được nuốt RAM tablet.
+                    cacheWidth: 112,
+                    filterQuality: FilterQuality.low,
+                    gaplessPlayback: true,
                     errorBuilder: (_, __, ___) =>
                         Center(child: Text(item.emoji ?? '🍽️')))
                 : Center(
@@ -795,7 +800,13 @@ class _MenuCard extends StatelessWidget {
           children: [
             Expanded(
               child: item.image != null && item.image!.startsWith('http')
-                  ? Image.network(item.image!, fit: BoxFit.cover,
+                  ? Image.network(item.image!,
+                      fit: BoxFit.cover,
+                      // Ô lưới ~190dp — decode đúng cỡ hiển thị, menu hàng
+                      // trăm món không được nuốt RAM/CPU tablet.
+                      cacheWidth: 380,
+                      filterQuality: FilterQuality.low,
+                      gaplessPlayback: true,
                       errorBuilder: (_, __, ___) => _emojiBox(item.emoji))
                   : _emojiBox(item.emoji),
             ),

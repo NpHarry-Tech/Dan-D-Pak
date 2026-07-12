@@ -730,6 +730,9 @@ class _PaymentDialogState extends State<PaymentDialog> {
               child: Image.network(
                 img,
                 fit: BoxFit.contain,
+                // QR VietQR trả ảnh lớn — decode vừa khung 236dp là đủ nét.
+                cacheWidth: 520,
+                gaplessPlayback: true,
                 errorBuilder: (_, __, ___) =>
                     const Icon(Icons.qr_code_2, size: 92),
               ),
