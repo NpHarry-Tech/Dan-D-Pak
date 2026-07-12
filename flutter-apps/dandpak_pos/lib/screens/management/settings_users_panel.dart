@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 
 import '../../services/api_service.dart';
 import '../../ui/app_theme.dart';
+import '../../ui/file_pick.dart';
 import '../../widgets/side_sheet.dart';
 import 'settings_tab.dart';
 
@@ -479,25 +480,11 @@ class _UserFormDialogState extends State<_UserFormDialog> {
     }
   }
 
-  Future<String?> _pickImagePath() async {
-    const script = r'''
-Add-Type -AssemblyName System.Windows.Forms
-[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new()
-$dialog = New-Object System.Windows.Forms.OpenFileDialog
-$dialog.Title = 'Chon anh dai dien'
-$dialog.Filter = 'Image (*.jpg;*.jpeg;*.png;*.webp;*.gif)|*.jpg;*.jpeg;*.png;*.webp;*.gif'
-$dialog.Multiselect = $false
-if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
-  Write-Output $dialog.FileName
-}
-''';
-    final result = await Process.run(
-      'powershell.exe',
-      ['-NoProfile', '-STA', '-Command', script],
-    );
-    if (result.exitCode != 0) return null;
-    return result.stdout.toString().trim();
-  }
+  // Helper chung: tablet/điện thoại mở thư viện ảnh (image_picker), desktop
+  // mở hộp thoại hệ điều hành — bản cũ chỉ có PowerShell nên trên Android
+  // bấm nút không có phản ứng gì.
+  Future<String?> _pickImagePath() =>
+      pickImagePathCross(title: 'Chon anh dai dien');
 
   void _toast(String message, {bool error = false}) {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(

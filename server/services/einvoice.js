@@ -4,6 +4,7 @@ import { getOrder } from './orders.js';
 import { getIntegrations, getPrintConfig } from './settings.js';
 import * as Misa from './misa.js';
 import { archiveInvoice, archiveOrder } from './archive.js';
+import { silentSaveFromInvoice } from './customers.js';
 
 const RETRY_BACKOFF = [10, 30, 60, 300, 900, 1800]; // seconds backoff
 const MAX_ATTEMPTS = 10;
@@ -108,6 +109,10 @@ export function createInvoiceRequest(order_id, customer_mode = 'WALK_IN', buyer_
   });
 
   emit('einvoice:queued', { id, order_id, status: initialStatus }, branch_id);
+
+  // Khách khai thông tin khi xuất HĐ → âm thầm lưu/bổ sung hồ sơ khách hàng
+  // (không toast/label gì phía UI; hàm tự nuốt lỗi).
+  silentSaveFromInvoice(finalBuyer, branch_id);
 
   // Return fresh record
   return get(id);
@@ -550,6 +555,14 @@ export function upgradeBuyer(order_id, customer = {}, branch_id = 'br1', actor =
     payload_snapshot: JSON.stringify({ mode, buyer: { name, tax_code, email: customer.email || '' } })
   });
   emit('einvoice:queued', { id: inv.id, order_id, status }, branch_id);
+  // Âm thầm lưu/bổ sung hồ sơ khách từ thông tin HĐ vừa khai (tự nuốt lỗi).
+  silentSaveFromInvoice({
+    name,
+    phone: customer.phone,
+    tax_code,
+    address: customer.address,
+    email: customer.email,
+  }, branch_id);
   return get(inv.id);
 }
 

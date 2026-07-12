@@ -117,21 +117,35 @@ class _BarcodeScannerScreenState extends State<_BarcodeScannerScreen> {
       height: side,
     );
 
+    // CHỜ MÀN XOAY DỌC XONG rồi mới mount camera: initState ép portrait nhưng
+    // Android xoay activity mất vài frame — nếu MobileScanner khởi tạo NGAY
+    // khi còn landscape, CameraX bind với rotation ngang và trên nhiều máy
+    // Samsung KHÔNG cập nhật lại sau khi xoay → hình camera nằm ngang vĩnh
+    // viễn. Đợi MediaQuery báo portrait (build chạy lại tự nhiên khi xoay)
+    // thì camera bind đúng chiều ngay từ đầu.
+    final isPortrait =
+        MediaQuery.orientationOf(context) == Orientation.portrait;
+
     return Scaffold(
       backgroundColor: Colors.black,
       body: Stack(
         fit: StackFit.expand,
         children: [
-          MobileScanner(
-            controller: _controller,
-            onDetect: _onDetect,
-            scanWindow: window,
-            fit: BoxFit.cover,
-            errorBuilder: (context, error, child) =>
-                _buildError(context, error),
-            placeholderBuilder: (context, child) =>
-                const ColoredBox(color: Colors.black),
-          ),
+          if (isPortrait)
+            MobileScanner(
+              controller: _controller,
+              onDetect: _onDetect,
+              scanWindow: window,
+              fit: BoxFit.cover,
+              errorBuilder: (context, error, child) =>
+                  _buildError(context, error),
+              placeholderBuilder: (context, child) =>
+                  const ColoredBox(color: Colors.black),
+            )
+          else
+            const Center(
+              child: CircularProgressIndicator(color: Colors.white54),
+            ),
           // Lớp phủ tối + ô khoét sáng giữa màn.
           CustomPaint(
             size: Size.infinite,

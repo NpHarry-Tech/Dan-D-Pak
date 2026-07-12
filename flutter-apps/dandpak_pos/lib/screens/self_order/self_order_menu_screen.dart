@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../../services/api_service.dart';
+import '../../services/local_store.dart';
+import '../../services/socket_service.dart';
 import 'self_order_cart.dart';
 import 'self_order_models.dart';
 import 'self_order_payment_screen.dart';
@@ -12,6 +14,8 @@ import 'self_order_strings.dart';
 /// Màn hình GỌI MÓN của khách (kiosk). Bàn đã cố định từ màn chọn bàn.
 /// - Có mục "Món bạn hay gọi" (từ lần ăn thứ 3 của SĐT đã check-in).
 /// - GỬI BẾP nhiều đợt trong bữa; xong bữa bấm THANH TOÁN.
+/// - Mục "Món đã gửi bếp" hiện trạng thái từng món REALTIME theo KDS
+///   (chờ xác nhận → bếp nhận → đang chế biến → đã xong → đã phục vụ).
 class SelfOrderMenuScreen extends StatefulWidget {
   final String serverUrl;
   final String? branchId;
@@ -20,6 +24,10 @@ class SelfOrderMenuScreen extends StatefulWidget {
   final SelfOrderLang lang;
   final Map<String, dynamic>? customer;
   final List<dynamic> favorites;
+
+  /// Đơn MỞ sẵn của bàn (khách gọi tiếp giữa bữa): màn chọn bàn truyền vào để
+  /// tiếp tục phiên — không bắt chọn lại ngôn ngữ / nhập lại SĐT.
+  final Map<String, dynamic>? resumeOrder;
 
   const SelfOrderMenuScreen({
     super.key,
@@ -30,6 +38,7 @@ class SelfOrderMenuScreen extends StatefulWidget {
     required this.lang,
     this.customer,
     this.favorites = const [],
+    this.resumeOrder,
   });
 
   @override
@@ -45,8 +54,11 @@ class _SelfOrderMenuScreenState extends State<SelfOrderMenuScreen> {
   bool _sending = false;
   String? _orderId; // đơn mở của bàn — có sau lần gửi bếp đầu tiên
   int _sentTotal = 0; // tổng tiền các món ĐÃ gửi bếp
+  // Món đã gửi bếp (kèm status KDS) — cập nhật realtime qua socket.
+  List<Map<String, dynamic>> _sentItems = [];
 
   late final ApiService _api;
+  void Function(String, dynamic)? _socketListener;
 
   SelfOrderLang get L => widget.lang;
 
@@ -58,7 +70,71 @@ class _SelfOrderMenuScreenState extends State<SelfOrderMenuScreen> {
       token: widget.staffToken,
       branchId: widget.branchId,
     );
+    // Nhớ ngôn ngữ khách đã chọn cho bàn này — giữa bữa quay lại gọi thêm
+    // thì vào thẳng menu đúng ngôn ngữ, không hỏi lại.
+    LocalStore.instance.setString('so_lang_${widget.table.id}', L.code);
+    final resume = widget.resumeOrder;
+    if (resume != null) _applyOrder(resume);
+    _socketListener = _onSocket;
+    SocketService().addListener(_socketListener!);
     _load();
+  }
+
+  @override
+  void dispose() {
+    if (_socketListener != null) {
+      SocketService().removeListener(_socketListener!);
+    }
+    super.dispose();
+  }
+
+  /// Đồng bộ trạng thái đơn từ server (id, tổng đã gửi, danh sách món + status).
+  void _applyOrder(Map<String, dynamic> order) {
+    final id = (order['id'] ?? '').toString();
+    if (id.isEmpty) return;
+    _orderId = id;
+    final total = order['total'];
+    _sentTotal = total is num
+        ? total.toInt()
+        : int.tryParse('${total ?? ''}') ?? _sentTotal;
+    final items = order['items'];
+    if (items is List) {
+      _sentItems = items
+          .whereType<Map>()
+          .map((e) => Map<String, dynamic>.from(e))
+          .toList();
+    }
+  }
+
+  void _onSocket(String event, dynamic payload) {
+    if (!mounted || payload is! Map) return;
+    final oid = _orderId;
+    if (oid == null) return;
+    switch (event) {
+      case 'order:item': // KDS đổi trạng thái món → cập nhật chip ngay
+      case 'order:updated':
+      case 'order:confirmed':
+      case 'order:new':
+        final order = payload['order'];
+        final pid =
+            (payload['order_id'] ?? (order is Map ? order['id'] : '') ?? '')
+                .toString();
+        if (pid == oid && order is Map) {
+          setState(() => _applyOrder(Map<String, dynamic>.from(order)));
+        }
+        break;
+      case 'payment:done':
+        if ((payload['order_id'] ?? '').toString() == oid) {
+          // Thu ngân đã tính tiền bàn này → kết thúc phiên, về màn chọn bàn.
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text(L.paidOk),
+            backgroundColor: const Color(0xFF49D17F),
+          ));
+          Navigator.of(context).popUntil(
+              (r) => !((r.settings.name ?? '').startsWith('/so-')));
+        }
+        break;
+    }
   }
 
   Future<void> _load() async {
@@ -164,10 +240,9 @@ class _SelfOrderMenuScreenState extends State<SelfOrderMenuScreen> {
       );
       if (!mounted) return;
       setState(() {
-        _orderId = (r['id'] ?? _orderId ?? '').toString().isEmpty
-            ? _orderId
-            : (r['id'] ?? '').toString();
-        _sentTotal += _cartTotal;
+        // Server trả về đơn ĐẦY ĐỦ (id, total, items + status) — đồng bộ
+        // thẳng thay vì tự cộng dồn phía client.
+        _applyOrder(r);
         _cart.clear();
         _sending = false;
       });
@@ -219,6 +294,96 @@ class _SelfOrderMenuScreenState extends State<SelfOrderMenuScreen> {
           FadeTransition(opacity: anim, child: child),
       transitionDuration: const Duration(milliseconds: 350),
     ));
+  }
+
+  // ── Mục "Món đã gửi bếp" — trạng thái realtime theo KDS ──────────────────
+  static const Map<String, Color> _statusColors = {
+    'pending_confirm': Color(0xFF9AA3B2),
+    'new': Color(0xFF0891B2),
+    'accepted': Color(0xFF0891B2),
+    'preparing': Color(0xFFD97706),
+    'ready': Color(0xFF16A34A),
+    'served': Color(0xFF49D17F),
+    'cancelled': Color(0xFFFF6B6B),
+  };
+
+  Widget _sentItemsSection() {
+    return Container(
+      constraints: const BoxConstraints(maxHeight: 250),
+      decoration: const BoxDecoration(
+        color: Color(0xFFF9FBFC),
+        border: Border(bottom: BorderSide(color: Color(0xFFE7EAEE))),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 10, 16, 4),
+            child: Text(
+              '${L.sentItemsTitle} (${_sentItems.length})',
+              style: const TextStyle(
+                fontSize: 12.5,
+                fontWeight: FontWeight.w800,
+                color: Color(0xFF677084),
+              ),
+            ),
+          ),
+          Flexible(
+            child: ListView.builder(
+              shrinkWrap: true,
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+              itemCount: _sentItems.length,
+              itemBuilder: (_, i) => _sentItemRow(_sentItems[i]),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _sentItemRow(Map<String, dynamic> item) {
+    final status = (item['status'] ?? '').toString();
+    final cancelled = status == 'cancelled';
+    final color = _statusColors[status] ?? const Color(0xFF9AA3B2);
+    final qty = item['qty'] is num ? (item['qty'] as num).toInt() : 1;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              '${item['name'] ?? ''}  ×$qty',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 13,
+                color: cancelled
+                    ? const Color(0xFF9AA3B2)
+                    : const Color(0xFF1A2230),
+                decoration: cancelled ? TextDecoration.lineThrough : null,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(999),
+            ),
+            child: Text(
+              L.itemStatusLabel(status),
+              style: TextStyle(
+                fontSize: 10.5,
+                fontWeight: FontWeight.w800,
+                color: color,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -416,6 +581,8 @@ class _SelfOrderMenuScreenState extends State<SelfOrderMenuScreen> {
                           ],
                         ),
                       ),
+                      // Món ĐÃ GỬI BẾP + trạng thái realtime theo KDS.
+                      if (_sentItems.isNotEmpty) _sentItemsSection(),
                       Expanded(
                         child: _cart.isEmpty
                             ? Center(

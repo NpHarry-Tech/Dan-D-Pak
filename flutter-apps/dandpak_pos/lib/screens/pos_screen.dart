@@ -1283,6 +1283,32 @@ class _TableCard extends StatelessWidget {
   final bool isPaying;
   final bool isCalling;
 
+  // Trạng thái tiến độ MÓN của bàn đang có khách (đơn mở):
+  // chưa gọi món → đang chờ bếp x/y → đã lên đủ → đã in tạm tính (sắp tính
+  // tiền). Đã thanh toán thì server trả bàn về 'free' → hiện "Trống".
+  String _statusLabel() {
+    if (isCalling) return 'Đang gọi';
+    if (isFree) return 'Trống';
+    if (isPaying) return 'Chờ thu ngân';
+    if (table.prebillPrinted) return 'Đã in tạm tính';
+    if (table.itemsCount == 0) return 'Chưa có món';
+    if (table.itemsDone < table.itemsCount) {
+      return 'Chưa đủ món ${table.itemsDone}/${table.itemsCount}';
+    }
+    return 'Đã đủ món';
+  }
+
+  Color _statusColor() {
+    if (isCalling) return DanColors.late;
+    if (isFree) return DanColors.faint;
+    if (isPaying) return DanColors.paying;
+    if (table.prebillPrinted) return DanColors.paying;
+    if (table.itemsCount > 0 && table.itemsDone >= table.itemsCount) {
+      return const Color(0xFF16A34A); // đã đủ món — xanh lá
+    }
+    return DanColors.faint;
+  }
+
   @override
   Widget build(BuildContext context) {
     final busy = !isFree && !isPaying && !isCalling;
@@ -1340,19 +1366,13 @@ class _TableCard extends StatelessWidget {
                   ),
                   const SizedBox(height: 5),
                   Text(
-                    isCalling
-                        ? 'Đang gọi'
-                        : isFree
-                            ? 'Trống'
-                            : isPaying
-                                ? 'Chờ thu ngân'
-                                : 'Đang dùng',
+                    _statusLabel(),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: DanColors.faint,
+                    style: TextStyle(
+                      color: _statusColor(),
                       fontSize: 10,
-                      fontWeight: FontWeight.w500,
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
                   if ((table.activeOrderTotal ?? 0) > 0) ...[

@@ -1,10 +1,14 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../providers/auth_provider.dart';
 import '../../services/api_service.dart';
+import '../../services/local_store.dart';
 import '../../ui/app_theme.dart';
 import '../../widgets/dan_top_bar.dart';
+import 'self_order_menu_screen.dart';
 import 'self_order_models.dart';
 import 'self_order_welcome_screen.dart';
 
@@ -65,7 +69,28 @@ class _SelfOrderTableScreenState extends State<SelfOrderTableScreen> {
     }
   }
 
-  void _pickTable(SoTableModel t) {
+  Future<void> _pickTable(SoTableModel t) async {
+    // Bàn ĐANG CÓ KHÁCH với đơn mở (đã chọn ngôn ngữ + nhập SĐT đầu bữa) →
+    // vào THẲNG menu tiếp tục phiên cũ: giữ ngôn ngữ đã lưu theo bàn, giữ
+    // khách đã check-in trên đơn — không bắt chọn/điền lại.
+    Map<String, dynamic>? openOrder;
+    final busy =
+        t.status == 'busy' || t.status == 'serving' || t.status == 'paying';
+    if (busy) {
+      try {
+        final res = await _api.getTable(t.id);
+        if (res['order'] is Map) {
+          openOrder = Map<String, dynamic>.from(res['order'] as Map);
+        }
+      } catch (_) {/* lỗi mạng → rơi về flow chọn ngôn ngữ thường */}
+    }
+    if (!mounted) return;
+
+    if (openOrder != null && (openOrder['id'] ?? '').toString().isNotEmpty) {
+      await _resumeSession(t, openOrder);
+      return;
+    }
+
     Navigator.of(context).push(PageRouteBuilder(
       settings: const RouteSettings(name: '/so-lang'),
       pageBuilder: (_, __, ___) => SelfOrderWelcomeScreen(
@@ -73,6 +98,59 @@ class _SelfOrderTableScreenState extends State<SelfOrderTableScreen> {
         branchId: widget.branchId,
         staffToken: widget.staffToken,
         table: t,
+      ),
+      transitionsBuilder: (_, anim, __, child) =>
+          FadeTransition(opacity: anim, child: child),
+      transitionDuration: const Duration(milliseconds: 350),
+    ));
+  }
+
+  /// Tiếp tục phiên gọi món của bàn đang có khách: khôi phục ngôn ngữ (đã lưu
+  /// theo bàn) + khách (gắn trên đơn từ lúc check-in SĐT) rồi vào thẳng menu.
+  Future<void> _resumeSession(
+      SoTableModel t, Map<String, dynamic> openOrder) async {
+    final langCode = await LocalStore.instance.getString('so_lang_${t.id}');
+    final lang = kSelfOrderLangs.firstWhere(
+      (l) => l.code == langCode,
+      orElse: () => kSelfOrderLangs.first,
+    );
+
+    Map<String, dynamic>? customer;
+    final cjson = openOrder['customer_json'];
+    if (cjson is String && cjson.isNotEmpty) {
+      try {
+        final decoded = jsonDecode(cjson);
+        if (decoded is Map) customer = Map<String, dynamic>.from(decoded);
+      } catch (_) {/* JSON hỏng → coi như chưa có khách */}
+    } else if (cjson is Map) {
+      customer = Map<String, dynamic>.from(cjson);
+    }
+
+    // Best-effort: lấy lại điểm + "món hay gọi" cho SĐT đã check-in.
+    List<dynamic> favorites = const [];
+    final phone = (customer?['phone'] ?? '').toString();
+    if (phone.isNotEmpty) {
+      try {
+        final r = await _api.selfOrderCheckin(phone);
+        if (r['customer'] is Map) {
+          customer = Map<String, dynamic>.from(r['customer'] as Map);
+        }
+        if (r['favorites'] is List) favorites = r['favorites'] as List;
+      } catch (_) {/* không chặn khách gọi món */}
+    }
+    if (!mounted) return;
+
+    Navigator.of(context).push(PageRouteBuilder(
+      settings: const RouteSettings(name: '/so-menu'),
+      pageBuilder: (_, __, ___) => SelfOrderMenuScreen(
+        serverUrl: widget.serverUrl,
+        branchId: widget.branchId,
+        staffToken: widget.staffToken,
+        table: t,
+        lang: lang,
+        customer: customer,
+        favorites: favorites,
+        resumeOrder: openOrder,
       ),
       transitionsBuilder: (_, anim, __, child) =>
           FadeTransition(opacity: anim, child: child),

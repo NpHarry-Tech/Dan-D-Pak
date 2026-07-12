@@ -774,6 +774,15 @@ api.get('/orders/:id/receipt/text', guard('pay'), wrap((req) => {
 }));
 api.post('/orders/:id/receipt/print', guard('pay'), wrap((req) => {
   const branch_id = branch(req);
+  // Đơn còn MỞ → đây là lệnh IN TẠM TÍNH: ghi dấu để sơ đồ bàn hiện trạng thái
+  // "Đã in tạm tính" (bàn sắp thanh toán). Đơn đã đóng = in lại từ Lịch sử.
+  try {
+    const o = db.prepare(`SELECT status, table_id FROM orders WHERE id=?`).get(req.params.id);
+    if (o?.status === 'open') {
+      db.prepare(`UPDATE orders SET prebill_printed_at=? WHERE id=?`).run(now(), req.params.id);
+      if (o.table_id) emit('table:updated', Orders.getTableState(o.table_id), branch_id);
+    }
+  } catch { /* đánh dấu lỗi không được chặn lệnh in */ }
   // In lại từ Lịch sử: đánh dấu reprint để tiêu đề bill là "(IN LẠI)".
   return Print.printReceipt({ ...History.orderReceipt(req.params.id, branch_id), reprint: true }, branch_id);
 }));

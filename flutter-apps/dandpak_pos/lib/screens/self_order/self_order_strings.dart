@@ -66,6 +66,16 @@ class SelfOrderLang {
   final String thanksTitle;
   final String thanksSub;
 
+  // Mục "Món đã gửi bếp" — trạng thái từng món realtime theo KDS.
+  // Optional với mặc định tiếng Việt để khỏi phá 5 constructor cũ.
+  final String sentItemsTitle;
+  final String stWaitConfirm;
+  final String stQueued;
+  final String stPreparing;
+  final String stReady;
+  final String stServed;
+  final String stCancelled;
+
   const SelfOrderLang({
     required this.code,
     required this.flag,
@@ -118,7 +128,34 @@ class SelfOrderLang {
     required this.invoiceDone,
     required this.thanksTitle,
     required this.thanksSub,
+    this.sentItemsTitle = 'Món đã gửi bếp',
+    this.stWaitConfirm = 'Chờ xác nhận',
+    this.stQueued = 'Bếp đã nhận',
+    this.stPreparing = 'Đang chế biến',
+    this.stReady = 'Đã xong',
+    this.stServed = 'Đã phục vụ',
+    this.stCancelled = 'Đã hủy',
   });
+
+  /// Nhãn trạng thái món (khớp trạng thái KDS phía server).
+  String itemStatusLabel(String status) {
+    switch (status) {
+      case 'pending_confirm':
+        return stWaitConfirm;
+      case 'new':
+      case 'accepted':
+        return stQueued;
+      case 'preparing':
+        return stPreparing;
+      case 'ready':
+        return stReady;
+      case 'served':
+        return stServed;
+      case 'cancelled':
+        return stCancelled;
+    }
+    return status;
+  }
 }
 
 const List<SelfOrderLang> kSelfOrderLangs = [
@@ -227,6 +264,13 @@ const List<SelfOrderLang> kSelfOrderLangs = [
     invoiceDone: 'Done! The e-invoice will be sent to your email.',
     thanksTitle: 'Thank you!',
     thanksSub: 'See you again soon 💙',
+    sentItemsTitle: 'Sent to kitchen',
+    stWaitConfirm: 'Awaiting confirm',
+    stQueued: 'Accepted',
+    stPreparing: 'Preparing',
+    stReady: 'Ready',
+    stServed: 'Served',
+    stCancelled: 'Cancelled',
   ),
   SelfOrderLang(
     code: 'zh',
@@ -280,6 +324,13 @@ const List<SelfOrderLang> kSelfOrderLangs = [
     invoiceDone: '已完成！电子发票将发送到您的邮箱。',
     thanksTitle: '谢谢惠顾！',
     thanksSub: '期待您再次光临 💙',
+    sentItemsTitle: '已下单的菜',
+    stWaitConfirm: '待确认',
+    stQueued: '厨房已接单',
+    stPreparing: '制作中',
+    stReady: '已完成',
+    stServed: '已上菜',
+    stCancelled: '已取消',
   ),
   SelfOrderLang(
     code: 'ja',
@@ -333,6 +384,13 @@ const List<SelfOrderLang> kSelfOrderLangs = [
     invoiceDone: '完了しました！電子インボイスをメールでお送りします。',
     thanksTitle: 'ありがとうございました！',
     thanksSub: 'またのお越しをお待ちしております 💙',
+    sentItemsTitle: '注文済みの品',
+    stWaitConfirm: '確認待ち',
+    stQueued: '受付済み',
+    stPreparing: '調理中',
+    stReady: 'できあがり',
+    stServed: '提供済み',
+    stCancelled: 'キャンセル',
   ),
   SelfOrderLang(
     code: 'ko',
@@ -386,5 +444,12 @@ const List<SelfOrderLang> kSelfOrderLangs = [
     invoiceDone: '완료되었습니다! 전자계산서를 이메일로 보내드립니다.',
     thanksTitle: '감사합니다!',
     thanksSub: '다음에 또 뵙겠습니다 💙',
+    sentItemsTitle: '주문한 메뉴',
+    stWaitConfirm: '확인 대기',
+    stQueued: '접수됨',
+    stPreparing: '조리 중',
+    stReady: '완료',
+    stServed: '서빙 완료',
+    stCancelled: '취소됨',
   ),
 ];

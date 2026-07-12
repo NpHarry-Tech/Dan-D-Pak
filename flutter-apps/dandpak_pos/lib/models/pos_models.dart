@@ -98,6 +98,13 @@ class TableModel {
   final String? activeOrderId;
   final double? activeOrderTotal;
   final String callReason;
+  // Tiến độ món của đơn mở (server đếm theo trạng thái KDS) — thẻ bàn hiện
+  // "Chưa có món / Chưa đủ món x/y / Đã đủ món / Đã in tạm tính".
+  final int itemsCount;
+  final int itemsDone;
+  final bool prebillPrinted;
+  final String customerName;
+  final String customerPhone;
 
   TableModel({
     required this.id,
@@ -108,12 +115,22 @@ class TableModel {
     this.activeOrderId,
     this.activeOrderTotal,
     this.callReason = '',
+    this.itemsCount = 0,
+    this.itemsDone = 0,
+    this.prebillPrinted = false,
+    this.customerName = '',
+    this.customerPhone = '',
   });
 
   static double? _money(dynamic value) {
     if (value == null) return null;
     if (value is num) return value.toDouble();
     return double.tryParse(value.toString());
+  }
+
+  static int _count(dynamic value) {
+    if (value is num) return value.toInt();
+    return int.tryParse('${value ?? ''}') ?? 0;
   }
 
   factory TableModel.fromJson(Map<String, dynamic> json) {
@@ -133,6 +150,13 @@ class TableModel {
       activeOrderId: activeOrderId,
       activeOrderTotal: amount != null && amount > 0 ? amount : null,
       callReason: json['call']?.toString() ?? '',
+      itemsCount: _count(json['items_count']),
+      itemsDone: _count(json['items_done']),
+      prebillPrinted: json['prebill_printed'] == 1 ||
+          json['prebill_printed'] == true ||
+          json['prebill_printed'] == '1',
+      customerName: json['customer_name']?.toString() ?? '',
+      customerPhone: json['customer_phone']?.toString() ?? '',
     );
   }
 }

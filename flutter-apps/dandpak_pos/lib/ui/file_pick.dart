@@ -36,6 +36,46 @@ Future<String?> _pickImageMobileAsDataUrl(
   }
 }
 
+/// Chọn MỘT ảnh và trả về ĐƯỜNG DẪN file — dùng cho avatar nhân viên/khách
+/// hàng và ảnh món (caller tự đọc bytes + upload).
+///
+/// Trước đây mỗi màn tự mở PowerShell OpenFileDialog → trên Android bấm nút
+/// KHÔNG có phản ứng gì (Process.run('powershell') fail lặng lẽ). Giờ:
+/// Android/iOS đi qua image_picker (thư viện ảnh), desktop giữ hộp thoại hệ
+/// điều hành. Trả null nếu người dùng hủy hoặc plugin lỗi (đã ghi nhật ký).
+Future<String?> pickImagePathCross({String title = 'Chọn ảnh'}) async {
+  try {
+    if (Platform.isAndroid || Platform.isIOS) {
+      final x = await ImagePicker().pickImage(
+          source: ImageSource.gallery, imageQuality: 88);
+      return x?.path;
+    }
+    if (Platform.isWindows) {
+      final ps = '''
+Add-Type -AssemblyName System.Windows.Forms | Out-Null
+[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new()
+\$f = New-Object System.Windows.Forms.OpenFileDialog
+\$f.Title = '$title'
+\$f.Filter = 'Anh (*.jpg;*.jpeg;*.png;*.webp;*.gif)|*.jpg;*.jpeg;*.png;*.webp;*.gif'
+\$f.Multiselect = \$false
+if (\$f.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output \$f.FileName }
+''';
+      final result = await Process.run(
+        'powershell.exe',
+        ['-NoProfile', '-STA', '-Command', ps],
+      );
+      if (result.exitCode != 0) return null;
+      final path = result.stdout.toString().trim();
+      return path.isEmpty ? null : path;
+    }
+    final path = await _pickPathUnix();
+    return (path == null || path.trim().isEmpty) ? null : path.trim();
+  } catch (e) {
+    _logPickFailed('pick_image_path', e);
+    return null;
+  }
+}
+
 /// Opens the OS file picker WITHOUT a Flutter plugin (uses a native shell
 /// dialog through Process.run) and returns the chosen image/PDF as a
 /// `data:<mime>;base64,...` URL — the same shape the web sends for receipts.

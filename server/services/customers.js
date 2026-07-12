@@ -279,9 +279,54 @@ export function rebuildCustomerInsights(id, branch_id = 'br1') {
   return favoriteItems;
 }
 
-// iPad self-order: khách nhập SĐT ở đầu bữa. SĐT lạ → TỰ TẠO khách mới (chưa có
-// tên thật, tạm đặt "Khách <sđt>" — nhân viên đổi sau trong Liên hệ). Trả về hồ
-// sơ + danh sách MÓN HAY GỌI (chỉ hiện từ lần ăn thứ 3 — tức đã có ≥2 bill paid).
+// Tên placeholder cho khách tự lưu từ SĐT (self-order check-in) — khách chưa
+// có hồ sơ chính thức. 'Khách hàng chưa đặt tên' là placeholder bản cũ.
+export const UNREGISTERED_NAME = 'Khách hàng chưa đăng ký thành viên';
+const PLACEHOLDER_NAMES = new Set([UNREGISTERED_NAME, 'Khách hàng chưa đặt tên']);
+
+// Tự lưu/bổ sung hồ sơ khách từ thông tin HÓA ĐƠN sau bữa ăn — hoàn toàn ÂM
+// THẦM (không toast, không label phía UI): khách đã chịu khai tên/SĐT/email
+// khi xuất HĐ thì thông tin đó tự chảy vào mục Khách hàng.
+//  • Chỉ chạy khi có SĐT (khóa nhận diện); không có SĐT thì thôi.
+//  • Khách đã có hồ sơ: chỉ BỔ SUNG chỗ trống (tên placeholder → tên thật,
+//    email/MST/địa chỉ đang trống) — không bao giờ đè dữ liệu đã có.
+//  • Không được ném lỗi: lưu khách thất bại không được chặn phát hành HĐ.
+export function silentSaveFromInvoice(buyer = {}, branch_id = 'br1') {
+  try {
+    const phone = String(buyer.phone || '').replace(/\D/g, '');
+    if (phone.length < 8 || phone.length > 12) return null;
+    const name = String(buyer.name || '').trim().slice(0, 200);
+    const existing = findByPhone(phone, branch_id);
+    if (!existing) {
+      const customer = upsertCustomer({
+        name: name || UNREGISTERED_NAME,
+        phone,
+        email: String(buyer.email || '').trim(),
+        tax_code: String(buyer.tax_code || '').trim(),
+        address: String(buyer.address || '').trim(),
+      }, branch_id);
+      audit('customer.auto_from_invoice', { id: customer.id, phone }, branch_id, 'system');
+      return customer;
+    }
+    const patch = {};
+    if (name && PLACEHOLDER_NAMES.has(String(existing.name || '').trim())) patch.name = name;
+    if (!String(existing.email || '').trim() && String(buyer.email || '').trim()) patch.email = String(buyer.email).trim();
+    if (!String(existing.tax_code || '').trim() && String(buyer.tax_code || '').trim()) patch.tax_code = String(buyer.tax_code).trim();
+    if (!String(existing.address || '').trim() && String(buyer.address || '').trim()) patch.address = String(buyer.address).trim();
+    if (!Object.keys(patch).length) return existing;
+    const sets = Object.keys(patch).map(k => `${k}=?`).join(', ');
+    db.prepare(`UPDATE customers SET ${sets}, updated_at=? WHERE id=? AND branch_id=?`)
+      .run(...Object.values(patch), now(), existing.id, branch_id);
+    audit('customer.auto_from_invoice', { id: existing.id, phone, filled: Object.keys(patch) }, branch_id, 'system');
+    return { ...existing, ...patch };
+  } catch {
+    return null; // lưu hồ sơ khách là việc phụ — không bao giờ phá flow hóa đơn
+  }
+}
+
+// iPad self-order: khách nhập SĐT ở đầu bữa. SĐT lạ → TỰ TẠO khách mới (tên
+// placeholder — nhân viên đổi sau trong Liên hệ). Trả về hồ sơ + danh sách
+// MÓN HAY GỌI (chỉ hiện từ lần ăn thứ 3 — tức đã có ≥2 bill paid).
 export function selfOrderCheckin(phone, branch_id = 'br1') {
   const clean = String(phone || '').replace(/\D/g, '');
   if (clean.length < 8 || clean.length > 12) throw new Error('Số điện thoại không hợp lệ');
@@ -289,8 +334,9 @@ export function selfOrderCheckin(phone, branch_id = 'br1') {
   let isNew = false;
   if (!customer) {
     // Khách mới chỉ có SĐT: vẫn lưu hồ sơ đầy đủ (tích điểm được ngay), tên
-    // tạm là "Khách hàng chưa đặt tên" — nhân viên bổ sung tên sau ở Liên hệ.
-    customer = upsertCustomer({ name: 'Khách hàng chưa đặt tên', phone: clean }, branch_id);
+    // tạm là placeholder — nhân viên bổ sung tên sau ở Liên hệ, hoặc tự lấy
+    // từ hóa đơn VAT nếu khách xuất HĐ sau bữa ăn (silentSaveFromInvoice).
+    customer = upsertCustomer({ name: UNREGISTERED_NAME, phone: clean }, branch_id);
     isNew = true;
     audit('customer.self_checkin_new', { id: customer.id, phone: clean }, branch_id, 'ipad');
   }

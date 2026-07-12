@@ -412,10 +412,32 @@ export function getTableState(table_id) {
   if (!t) return null;
   const order = getOpenOrderForTable(table_id, t.branch_id);
   const call = db.prepare(`SELECT * FROM staff_calls WHERE table_id=? AND status='open' ORDER BY created_at DESC LIMIT 1`).get(table_id);
+  // Tiến độ món của đơn mở — sơ đồ bàn POS hiện "Chưa có món / Chưa lên đủ món
+  // / Đã đủ món / Đã in tạm tính" thay cho chữ "Đang dùng" chung chung.
+  // items_done = món ĐÃ LÊN theo KDS (ready/served). pending_confirm vẫn đếm
+  // vào items_count để thấy bàn đã gọi món (đang chờ xác nhận).
+  let items_count = 0;
+  let items_done = 0;
+  if (order) {
+    const agg = db.prepare(`SELECT COUNT(*) n,
+        COALESCE(SUM(CASE WHEN status IN ('ready','served') THEN 1 ELSE 0 END), 0) done
+      FROM order_items WHERE order_id=? AND status!='cancelled'`).get(order.id);
+    items_count = agg?.n || 0;
+    items_done = agg?.done || 0;
+  }
+  let customer = null;
+  if (order?.customer_json) {
+    try { customer = JSON.parse(order.customer_json); } catch { /* JSON hỏng → bỏ */ }
+  }
   return {
     ...t,
     amount: order?.total || 0,
     order_id: order?.id || null,
+    items_count,
+    items_done,
+    prebill_printed: order?.prebill_printed_at ? 1 : 0,
+    customer_name: customer?.name || '',
+    customer_phone: customer?.phone || '',
     call: call?.reason || null,
     status: call ? 'calling' : t.status,
   };
@@ -456,6 +478,8 @@ export function setItemStatus(item_id, status, branch_id = 'br1', actor = 'syste
   if (status === 'ready') printRunnerSlip(item, order, branch_id);
   emit('order:item', { order_id: item.order_id, item_id, status, order }, branch_id);
   emit('kds:refresh', { station: item.station }, branch_id);
+  // Tiến độ món đổi → sơ đồ bàn POS cập nhật trạng thái "x/y món" ngay.
+  if (order?.table_id) emit('table:updated', getTableState(order.table_id), branch_id);
   return db.prepare(`SELECT * FROM order_items WHERE id=?`).get(item_id);
 }
 

@@ -759,6 +759,8 @@ export function migrate(targetDb = globalDb) {
   addColumnIfMissing('orders', 'voucher_code', 'TEXT');
   addColumnIfMissing('orders', 'linked_pos_device', 'TEXT');
   addColumnIfMissing('orders', 'linked_printer_id', 'TEXT');
+  // Dấu "đã in tạm tính" cho đơn còn mở — sơ đồ bàn POS hiện trạng thái này.
+  addColumnIfMissing('orders', 'prebill_printed_at', 'TEXT');
   addColumnIfMissing('payments', 'shift_id', 'TEXT');
   // Thanh toán thẻ qua máy POS (VCB SmartPOS...): lưu mã giao dịch để ĐỐI SOÁT
   // với sao kê acquirer. mode = auto (native bridge) | manual (thu ngân nhập tay) | mock.

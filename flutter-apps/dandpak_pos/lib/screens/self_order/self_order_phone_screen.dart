@@ -93,7 +93,13 @@ class _SelfOrderPhoneScreenState extends State<SelfOrderPhoneScreen> {
       final isNew = r['is_new'] == true;
       final name = (customer?['name'] ?? '').toString();
       final points = customer?['loyalty_points'] ?? 0;
-      final hello = isNew || name.isEmpty || name == 'Khách hàng chưa đặt tên'
+      // Tên placeholder (khách tự lưu từ SĐT, chưa có tên thật) → chào như
+      // khách mới thay vì đọc nguyên câu placeholder.
+      const placeholders = {
+        'Khách hàng chưa đăng ký thành viên',
+        'Khách hàng chưa đặt tên',
+      };
+      final hello = isNew || name.isEmpty || placeholders.contains(name)
           ? L.memberNew
           : '${L.memberHello.replaceFirst('%s', name)}  ·  ${L.pointsLabel}: $points';
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
