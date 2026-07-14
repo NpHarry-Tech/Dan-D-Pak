@@ -488,6 +488,20 @@ export function cancelItem(item_id, reason, branch_id = 'br1', actor = 'system')
   const item = db.prepare(`SELECT order_id FROM order_items WHERE id=?`).get(item_id);
   recomputeTotals(item.order_id);
   audit('item.cancel', { item: item_id, reason }, branch_id, actor);
+
+  // Hủy DÒNG ACTIVE CUỐI CÙNG của đơn → đóng đơn rỗng và GIẢI PHÓNG BÀN (giống
+  // rejectPendingItems ở trên). Thiếu bước này thì đơn vẫn 'open' và tables.status
+  // vẫn 'busy' → bàn kẹt "Đang phục vụ" dù giỏ đã trống (đúng lỗi "xóa hết món
+  // mà bàn vẫn bị giữ"). setTableByOpenOrders tự emit table:updated về 'free'.
+  const ord = db.prepare(`SELECT id, table_id, status FROM orders WHERE id=?`).get(item.order_id);
+  if (ord && ord.status === 'open') {
+    const activeLeft = db.prepare(`SELECT COUNT(*) n FROM order_items WHERE order_id=? AND status!='cancelled'`).get(item.order_id).n;
+    if (!activeLeft) {
+      db.prepare(`UPDATE orders SET status='void', subtotal=0, total=0 WHERE id=?`).run(item.order_id);
+      if (ord.table_id) setTableByOpenOrders(ord.table_id, branch_id);
+    }
+  }
+
   const order = getOrder(item.order_id);
   archiveOrder(order);
   emit('order:updated', order, branch_id);
