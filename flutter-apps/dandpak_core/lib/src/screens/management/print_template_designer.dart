@@ -787,7 +787,7 @@ class _PrintTemplateDesignerState extends State<PrintTemplateDesigner> {
       field('Email', 'email'),
       field(t('Lời cảm ơn (footer)'), 'footer', maxLines: 2),
       SizedBox(height: 4),
-      _accentPicker(),
+      _densityPicker(),
     ];
   }
 
@@ -1281,7 +1281,7 @@ class _PrintTemplateDesignerState extends State<PrintTemplateDesigner> {
           fontFamily: 'Be Vietnam Pro',
           fontSize: 12.5,
           height: 1.36,
-          color: bold ? _accent : Colors.black87,
+          color: _inkColor(bold),
           fontWeight: bold ? FontWeight.w800 : FontWeight.w500,
         ),
       ),
@@ -1460,60 +1460,79 @@ class _PrintTemplateDesignerState extends State<PrintTemplateDesigner> {
     );
   }
 
-  static const _accentSwatches = <String>[
-    '#111111', '#0891B2', '#0F766E', '#B45309', '#B91C1C', '#7C3AED', '#1D4ED8',
+  // Độ đậm bản in (sắc tố đen) — máy in nhiệt điều chỉnh được độ đậm/nhạt của
+  // mực. Mỗi mức = một sắc độ đen; dòng ĐẬM luôn đậm hơn nền một bậc.
+  static const _densities = <List<Object>>[
+    ['light', 'Nhạt', 0xFF6B7280],
+    ['medium', 'Vừa', 0xFF3A4250],
+    ['dark', 'Đậm', 0xFF1A1F27],
+    ['max', 'Rất đậm', 0xFF000000],
   ];
 
-  /// Màu nhấn — CHỈ áp cho preview trên màn hình & hóa đơn A4/PDF. Máy in nhiệt
-  /// in đen trắng nên tên cửa hàng/dòng đậm sẽ in đen bình thường.
-  Color get _accent =>
-      _parseHexColor(_s(_bill['accentColor'])) ?? const Color(0xFF111111);
-
-  static Color? _parseHexColor(String hex) {
-    var h = hex.replaceAll('#', '').trim();
-    if (h.length == 6) h = 'FF$h';
-    if (h.length != 8) return null;
-    final v = int.tryParse(h, radix: 16);
-    return v == null ? null : Color(v);
+  String get _densityKey {
+    final k = _s(_bill['printDensity']);
+    return _densities.any((d) => d[0] == k) ? k : 'dark';
   }
 
-  Widget _accentPicker() {
-    final cur = _s(_bill['accentColor']).isEmpty ? '#111111' : _s(_bill['accentColor']);
+  /// Sắc độ mực cho preview theo độ đậm đã chọn; chữ đậm xuống thêm 1 bậc.
+  Color _inkColor(bool bold) {
+    final idx = _densities.indexWhere((d) => d[0] == _densityKey);
+    final use = bold ? (idx + 1).clamp(0, _densities.length - 1) : idx;
+    return Color(_densities[use.clamp(0, _densities.length - 1)][2] as int);
+  }
+
+  Widget _densityPicker() {
     return Padding(
       padding: EdgeInsets.only(bottom: 8),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(t('Màu nhấn (tên cửa hàng & dòng đậm)'),
+          Text(t('Độ đậm bản in (sắc tố đen)'),
               style: TextStyle(fontSize: 12.5, color: DanColors.muted)),
           SizedBox(height: 2),
           Text(
-              t('Chỉ hiển thị trên màn hình & hóa đơn A4 — máy in nhiệt in đen trắng.'),
+              t('Chỉnh độ đậm/nhạt mực khi in. Bản in càng đậm càng rõ nhưng tốn giấy nhiệt & mòn đầu in hơn.'),
               style: TextStyle(fontSize: 10.5, color: DanColors.faint, height: 1.3)),
           SizedBox(height: 8),
           Wrap(
             spacing: 8,
             runSpacing: 8,
             children: [
-              for (final hex in _accentSwatches)
+              for (final d in _densities)
                 InkWell(
-                  onTap: () => _setBillField('accentColor', hex),
-                  borderRadius: BorderRadius.circular(20),
+                  onTap: () => _setBillField('printDensity', d[0] as String),
+                  borderRadius: BorderRadius.circular(8),
                   child: Container(
-                    width: 26,
-                    height: 26,
+                    padding: EdgeInsets.symmetric(horizontal: 10, vertical: 7),
                     decoration: BoxDecoration(
-                      color: _parseHexColor(hex),
-                      shape: BoxShape.circle,
+                      color: DanColors.surface,
+                      borderRadius: BorderRadius.circular(8),
                       border: Border.all(
-                          color: cur.toLowerCase() == hex.toLowerCase()
+                          color: _densityKey == d[0]
                               ? DanColors.brand
                               : DanColors.border,
-                          width: cur.toLowerCase() == hex.toLowerCase() ? 3 : 1.5),
+                          width: _densityKey == d[0] ? 2 : 1),
                     ),
-                    child: cur.toLowerCase() == hex.toLowerCase()
-                        ? Icon(Icons.check, size: 14, color: Colors.white)
-                        : null,
+                    child: Row(mainAxisSize: MainAxisSize.min, children: [
+                      Container(
+                        width: 16,
+                        height: 16,
+                        decoration: BoxDecoration(
+                          color: Color(d[2] as int),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                      ),
+                      SizedBox(width: 6),
+                      Text(t(d[1] as String),
+                          style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: _densityKey == d[0]
+                                  ? FontWeight.w800
+                                  : FontWeight.w600,
+                              color: _densityKey == d[0]
+                                  ? DanColors.brand
+                                  : DanColors.muted)),
+                    ]),
                   ),
                 ),
             ],

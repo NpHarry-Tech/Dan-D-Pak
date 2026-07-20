@@ -538,9 +538,23 @@ export function renderJobText(job) {
   return renderGeneric(job);
 }
 
-function escposBuffer(text, { cut = true, drawer = false } = {}) {
+// Độ đậm bản in → lệnh ESC/POS PHỔ BIẾN & AN TOÀN (máy nào không hỗ trợ thì bỏ
+// qua, không hỏng): ESC G n = double-strike (in 2 lần/điểm → đậm hơn),
+// ESC E n = emphasized/bold. light/medium để mặc định máy; dark bật double-strike;
+// max bật cả hai. Khớp 4 mức "sắc tố đen" ở trình thiết kế mẫu in.
+function densityPrefix(density) {
+  const on = (cmd) => Buffer.from([0x1b, cmd, 0x01]);
+  switch (String(density || '').toLowerCase()) {
+    case 'dark': return on(0x47);                                  // ESC G 1
+    case 'max': return Buffer.concat([on(0x47), on(0x45)]);        // ESC G 1 + ESC E 1
+    default: return Buffer.alloc(0);                               // light / medium
+  }
+}
+
+function escposBuffer(text, { cut = true, drawer = false, density = '' } = {}) {
   return Buffer.concat([
     ESC_INIT,
+    densityPrefix(density),
     Buffer.from(ascii(text) + '\n\n', 'utf8'),
     drawer ? ESC_DRAWER : Buffer.alloc(0),
     cut ? ESC_CUT : Buffer.alloc(0),
@@ -822,7 +836,10 @@ export async function dispatchJob(id, branch_id = 'br1', { force = false } = {})
   try {
     if (connection === 'lan') {
       if (!printer.ip) throw new Error('Thiếu IP máy in LAN');
-      await writeLan(printer.ip, printer.port || 9100, escposBuffer(text, { drawer: printer.openDrawerOnPrint && job.type === 'receipt' }));
+      await writeLan(printer.ip, printer.port || 9100, escposBuffer(text, {
+        drawer: printer.openDrawerOnPrint && job.type === 'receipt',
+        density: getPrintConfig(branch_id)?.bill?.printDensity,
+      }));
     } else if (connection === 'system') {
       const name = printer.systemName || printer.name;
       if (!name) throw new Error('Thiếu tên máy in hệ điều hành');
@@ -878,6 +895,7 @@ function resolveAgentJob(job, branch_id) {
     systemName: printer.systemName || printer.name || '',
     drawer: !!(printer.openDrawerOnPrint && job.type === 'receipt') || job.type === 'cash_drawer',
     text: renderJobText(job),
+    density: getPrintConfig(branch_id)?.bill?.printDensity || '',
     created_at: job.created_at,
   };
 }

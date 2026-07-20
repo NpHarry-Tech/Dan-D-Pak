@@ -109,9 +109,21 @@ function ascii(s) {
     .replace(/[^\x09\x0a\x0d\x20-\x7e]/g, '');
 }
 
-function escposBuffer(text, { cut = true, drawer = false } = {}) {
+// Độ đậm bản in (khớp densityPrefix ở services/printing.js): ESC G 1 = double-strike,
+// ESC E 1 = emphasized. Máy không hỗ trợ sẽ bỏ qua, không hỏng.
+function densityPrefix(density) {
+  const on = (cmd) => Buffer.from([0x1b, cmd, 0x01]);
+  switch (String(density || '').toLowerCase()) {
+    case 'dark': return on(0x47);
+    case 'max': return Buffer.concat([on(0x47), on(0x45)]);
+    default: return Buffer.alloc(0);
+  }
+}
+
+function escposBuffer(text, { cut = true, drawer = false, density = '' } = {}) {
   return Buffer.concat([
     ESC_INIT,
+    densityPrefix(density),
     Buffer.from(ascii(text) + '\n\n', 'utf8'),
     drawer ? ESC_DRAWER : Buffer.alloc(0),
     cut ? ESC_CUT : Buffer.alloc(0),
@@ -160,7 +172,7 @@ async function printJob(j) {
   const drawer = !!j.drawer;
   if (j.connection === 'lan') {
     if (!j.ip) throw new Error('Máy in LAN thiếu IP');
-    await writeLan(j.ip, j.port || 9100, escposBuffer(j.text, { drawer }));
+    await writeLan(j.ip, j.port || 9100, escposBuffer(j.text, { drawer, density: j.density }));
   } else if (j.connection === 'system') {
     if (!j.systemName) throw new Error('Thiếu tên máy in hệ điều hành');
     await writeSystemPrinter(j.systemName, j.text);
