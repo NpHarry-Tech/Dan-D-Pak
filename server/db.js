@@ -12,7 +12,6 @@ import {
   bootstrapWarehouseDefaults, bootstrapTableDefaults,
 } from './db/bootstrap.js';
 import { backupDatabase, listBackups } from './db/maintenance.js';
-import { runMigrations } from './db/migrations.js';
 
 export {
   db, DB_PATH, ROOT, now, uid, audit, encryptCompress, decryptDecompress,
@@ -1002,7 +1001,109 @@ export function migrate(targetDb = globalDb) {
   addColumnIfMissing('document_files', 'content_hash', 'TEXT');
   db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_docfiles_content_hash ON document_files(branch_id, content_hash) WHERE content_hash IS NOT NULL AND is_archived=0;`);
 
-  runMigrations(db);
+  // ── Kênh ngoài / Haravan (gộp từ hệ migration có version cũ v1–v3) ──────────
+  // Trước đây 3 migration này sống ở db/migrations.js (một CƠ CHẾ schema thứ hai
+  // song song). Đã gộp về đây thành MỘT đường DDL idempotent duy nhất: fresh DB
+  // tạo bảng đủ cột shop_domain ngay; DB cũ (migrate dở) được addColumnIfMissing
+  // + DROP/CREATE index bù — mọi đường hội tụ về cùng schema. shop_domain đặt
+  // CUỐI mỗi bảng để khớp đúng thứ tự cột mà ALTER ADD COLUMN (v3) sinh ra.
+  db.exec(`
+  CREATE INDEX IF NOT EXISTS idx_sync_queue_status_created ON sync_queue(status, created_at);
+  CREATE INDEX IF NOT EXISTS idx_sync_queue_done_synced    ON sync_queue(status, synced_at, created_at);
+
+  CREATE TABLE IF NOT EXISTS external_orders (
+    id TEXT PRIMARY KEY,
+    provider TEXT NOT NULL,
+    external_order_id TEXT NOT NULL,
+    internal_order_id TEXT,
+    external_order_code TEXT,
+    sync_status TEXT NOT NULL DEFAULT 'pending',
+    raw_payload TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT,
+    shop_domain TEXT NOT NULL DEFAULT ''
+  );
+  CREATE TABLE IF NOT EXISTS external_customers (
+    id TEXT PRIMARY KEY,
+    provider TEXT NOT NULL,
+    external_customer_id TEXT NOT NULL,
+    internal_customer_id TEXT,
+    raw_payload TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT,
+    shop_domain TEXT NOT NULL DEFAULT ''
+  );
+  CREATE TABLE IF NOT EXISTS external_products (
+    id TEXT PRIMARY KEY,
+    provider TEXT NOT NULL,
+    external_product_id TEXT NOT NULL,
+    external_variant_id TEXT NOT NULL DEFAULT '',
+    internal_product_id TEXT,
+    internal_variant_id TEXT,
+    sku TEXT,
+    raw_payload TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT,
+    shop_domain TEXT NOT NULL DEFAULT ''
+  );
+  CREATE TABLE IF NOT EXISTS sync_logs (
+    id TEXT PRIMARY KEY,
+    provider TEXT NOT NULL,
+    topic TEXT,
+    external_id TEXT,
+    status TEXT NOT NULL,
+    error_message TEXT,
+    raw_payload TEXT,
+    retry_count INTEGER NOT NULL DEFAULT 0,
+    next_retry_at TEXT,
+    processed_at TEXT,
+    created_at TEXT NOT NULL,
+    shop_domain TEXT NOT NULL DEFAULT ''
+  );
+  CREATE TABLE IF NOT EXISTS haravan_shops (
+    id TEXT PRIMARY KEY,
+    shop_domain TEXT NOT NULL UNIQUE,
+    org_id TEXT,
+    branch_id TEXT NOT NULL DEFAULT 'ONLINE',
+    access_token TEXT NOT NULL,
+    refresh_token TEXT,
+    scope TEXT,
+    token_type TEXT NOT NULL DEFAULT 'Bearer',
+    expires_at TEXT,
+    location_id TEXT,
+    api_base TEXT NOT NULL DEFAULT 'https://apis.haravan.com',
+    installed_at TEXT NOT NULL,
+    updated_at TEXT,
+    active INTEGER NOT NULL DEFAULT 1,
+    raw_payload TEXT
+  );
+  CREATE TABLE IF NOT EXISTS haravan_sync_state (
+    id TEXT PRIMARY KEY,
+    shop_domain TEXT NOT NULL,
+    resource TEXT NOT NULL,
+    cursor TEXT,
+    updated_at TEXT NOT NULL,
+    UNIQUE(shop_domain, resource)
+  );
+  `);
+  // DB tạo external_*/sync_logs ở thời v2 (chưa multi-shop) sẽ thiếu shop_domain.
+  addColumnIfMissing('external_orders', 'shop_domain', "TEXT NOT NULL DEFAULT ''");
+  addColumnIfMissing('external_customers', 'shop_domain', "TEXT NOT NULL DEFAULT ''");
+  addColumnIfMissing('external_products', 'shop_domain', "TEXT NOT NULL DEFAULT ''");
+  addColumnIfMissing('sync_logs', 'shop_domain', "TEXT NOT NULL DEFAULT ''");
+  // Unique key external_* chuyển sang shop-scoped: gỡ index cũ (nếu còn) rồi tạo bản mới.
+  db.exec(`
+  DROP INDEX IF EXISTS uniq_external_order;
+  DROP INDEX IF EXISTS uniq_external_customer;
+  DROP INDEX IF EXISTS uniq_external_product_variant;
+  CREATE UNIQUE INDEX IF NOT EXISTS uniq_external_order_shop           ON external_orders(provider, shop_domain, external_order_id);
+  CREATE UNIQUE INDEX IF NOT EXISTS uniq_external_customer_shop        ON external_customers(provider, shop_domain, external_customer_id);
+  CREATE UNIQUE INDEX IF NOT EXISTS uniq_external_product_variant_shop ON external_products(provider, shop_domain, external_product_id, external_variant_id);
+  CREATE INDEX IF NOT EXISTS idx_sync_logs_provider_created       ON sync_logs(provider, created_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_sync_logs_queue                  ON sync_logs(provider, status, next_retry_at, created_at);
+  CREATE INDEX IF NOT EXISTS idx_sync_logs_provider_shop_created  ON sync_logs(provider, shop_domain, created_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_haravan_sync_state_shop_resource ON haravan_sync_state(shop_domain, resource);
+  `);
 
   if (isMaster) {
     dropSyncTriggers(db);
