@@ -71,6 +71,14 @@ server/assets/product-images/
 server/assets/menu-books/
 server/releases/*.apk
 
+# Dữ liệu NGUỒN của script import (export thô từ KiotViet/BCM — không phải asset
+# runtime). Data thật đã nằm trong SQLite; giữ trên đĩa để import lại, KHÔNG version.
+server/scripts/data/*.md
+server/scripts/data/*.xlsx
+server/scripts/data/*.csv
+server/scripts/*.xlsx
+server/scripts/*.csv
+
 # Cấu hình công cụ AI cục bộ của máy dev
 .aevum/
 .antigravitycli/
