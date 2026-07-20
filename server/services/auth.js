@@ -71,6 +71,7 @@ export const PERMISSIONS = [
   { key: 'settings.users', label: 'Cài đặt — Quản lý nhân viên' },
   { key: 'settings.perms', label: 'Cài đặt — Quản lý quyền và vai trò' },
   { key: 'settings.branches', label: 'Cài đặt — Quản lý chi nhánh & phân vùng' },
+  { key: 'settings.warehouse', label: 'Cài đặt — Kho & kênh bán' },
   { key: 'settings.sync', label: 'Cài đặt — Cloud Sync & Đồng bộ ngoại tuyến' },
   { key: 'settings.integrations', label: 'Cài đặt — Liên kết dịch vụ (MISA, PayOS...)' },
   { key: 'settings.connections', label: 'Cài đặt — Kết nối hệ thống (Mạng, máy in, POS...)' },
@@ -109,6 +110,7 @@ const DEFAULT_ROLE_PERMS = {
     'table.move', 'bill.split', 'order.view', 'order.confirm',
     'reports', 'invoice', 'online', 'sell', 'pay', 'audit.view', 'settings.manage',
     'contacts.create', 'contacts.edit', 'contacts.delete', 'settings.loyalty', 'settings.promotions',
+    'settings.warehouse',
     'module.ipad', 'module.pos', 'module.retail', 'module.kds', 'module.online', 'module.warehouse',
     'module.inventory', 'module.printing', 'module.invoice', 'module.reports', 'module.contacts',
     'module.purchase', 'module.expenses', 'module.accounting',
@@ -403,7 +405,10 @@ export function login(username, pin, branch_id = 'br1', meta = {}) {
   db.prepare(`INSERT INTO auth_sessions (token,user_id,branch_id,created_at,last_seen_at) VALUES (?,?,?,?,?)`)
     .run(token, u.id, selectedBranch, ts, ts);
   audit('auth.login', { user: u.username, role: u.role, ip }, selectedBranch, u.username);
-  return { token, user, perms: effectivePermsForUser(u) };
+  // Cảnh báo bảo mật: tài khoản Admin còn dùng PIN mặc định '1234' (từ lần khởi tạo
+  // DB rỗng). Trả cờ để app nhắc chủ cửa hàng đổi PIN — không chặn đăng nhập.
+  const usingDefaultPin = u.role === 'owner' && verifyPin('1234', u.pin);
+  return { token, user, perms: effectivePermsForUser(u), ...(usingDefaultPin ? { security_warning: 'default_admin_pin' } : {}) };
 }
 
 export function verifyManagerOwnerPin(pin, branch_id = 'br1') {

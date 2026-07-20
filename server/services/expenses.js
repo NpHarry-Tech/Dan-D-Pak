@@ -4,6 +4,7 @@
 // double-counted; a 'direct' expense (kế toán chi trực tiếp / chuyển khoản) is
 // recorded in the ledger only and never touches the drawer.
 import { db, uid, now, audit } from '../db.js';
+import { intval } from '../core/util.js';
 import { emit } from '../realtime.js';
 import { getCustomer } from './customers.js';
 import { createEntry as createDrawerEntry } from './cashDrawer.js';
@@ -11,7 +12,6 @@ import { createEntry as createDrawerEntry } from './cashDrawer.js';
 const SOURCES = ['drawer', 'direct'];
 const DEFAULT_CATEGORIES = ['Thuê mặt bằng', 'Điện nước', 'Lương nhân viên', 'Marketing', 'Nguyên vật liệu', 'Vận chuyển', 'Sửa chữa & bảo trì', 'Khác'];
 
-function intval(v) { return Math.round(Number(v) || 0); }
 function str(v, max = 400) { return String(v ?? '').trim().slice(0, max); }
 function parseDate(v) {
   if (!v) return now();

@@ -1,9 +1,10 @@
 import Database from 'node:sqlite';
 import { writeFileSync, mkdirSync, existsSync } from 'node:fs';
-import { join, extname } from 'node:path';
+import { join, extname, resolve } from 'node:path';
 
-const db = new Database.DatabaseSync('c:/Users/PC/Desktop/Dan D Pak/server/store.db');
-const destDir = 'c:/Users/PC/Desktop/Dan D Pak/web/assets/product-images';
+const dbPath = process.env.SQLITE_PATH || resolve('runtime/server-data/store.db');
+const db = new Database.DatabaseSync(dbPath);
+const destDir = resolve('server/assets/product-images');
 
 mkdirSync(destDir, { recursive: true });
 

@@ -1,10 +1,12 @@
 // Order lifecycle: create/append items, route to KDS stations, and drive
 // kitchen ticket status transitions.
 import { db, uid, now, audit } from '../db.js';
+import { parseJson } from '../core/util.js';
 import { emit } from '../realtime.js';
 import { printKitchenTickets, printRunnerSlip, printCupLabels } from './printing.js';
 import { getMenuItemForOrder } from './catalog.js';
 import { getOperationsConfig } from './settings.js';
+import { applyChannelPrice } from './inventory.js';
 import { getActiveShift } from './shifts.js';
 import { archiveOrder } from './archive.js';
 
@@ -86,7 +88,10 @@ function requireOpenShiftForSales(branch_id = 'br1') {
 
 // items: [{menu_item_id, qty, note, mods:[{group,name,price}]}] or [{sku_id, qty}]
 export function createOrUpdateOrder(options) {
-  const { branch_id = 'br1', table_id, channel = 'dine_in', source = 'staff_pos', require_confirm = false, items, actor = 'system', skipTransaction = false, linked_pos_device, linked_printer_id } = options;
+  // order_id: nối món vào ĐÚNG đơn đang mở này (dùng khi GỘP giỏ Retail vào bill F&B,
+  // kể cả bill mang về không có bàn). Không truyền thì giữ nguyên hành vi cũ: tìm đơn
+  // mở theo bàn, không có thì tạo đơn mới.
+  const { branch_id = 'br1', table_id, order_id = null, channel = 'dine_in', source = 'staff_pos', require_confirm = false, items, actor = 'system', skipTransaction = false, linked_pos_device, linked_printer_id } = options;
   if (!items?.length) throw new Error('Order trống');
   requireOpenShiftForSales(branch_id);
 
@@ -99,7 +104,14 @@ export function createOrUpdateOrder(options) {
   try {
     const needsStaffConfirm = source === 'customer_ipad' || require_confirm === true || (source === 'staff_pos' && !!table_id);
 
-    let order = table_id ? getOpenOrderForTable(table_id, branch_id) : null;
+    let order = null;
+    if (order_id) {
+      order = db.prepare(`SELECT * FROM orders WHERE id=? AND branch_id=? AND status='open'`)
+        .get(order_id, branch_id);
+      if (!order) throw new Error('Bill cần gộp không tồn tại hoặc đã đóng.');
+    } else if (table_id) {
+      order = getOpenOrderForTable(table_id, branch_id);
+    }
     const isNew = !order;
     if (isNew) {
       order = insertOpenOrder({ branch_id, table_id: table_id || null, channel });
@@ -139,7 +151,11 @@ export function createOrUpdateOrder(options) {
         if (sku.stock < qty) throw new Error(`Hết hàng: ${sku.name} (còn ${sku.stock})`);
         const lotId = line.lot_id || null;
         validateSkuLot(sku, qty, lotId, branch_id);
-        insItem.run(id, order.id, null, sku.id, sku.name, sku.emoji, qty, sku.price, 'retail', 0, null, '[]',
+        // Giá theo bảng giá kênh: đơn retail thuần dùng cấu hình 'retail',
+        // retail thêm trong đơn F&B (order bàn) dùng cấu hình 'fnb_retail'.
+        const priced = applyChannelPrice(
+          sku, branch_id, order.channel === 'retail' ? 'retail' : 'fnb_retail');
+        insItem.run(id, order.id, null, sku.id, sku.name, sku.emoji, qty, priced.price, 'retail', 0, null, '[]',
           needsStaffConfirm ? 'pending_confirm' : 'served', lotId, line.promo ? JSON.stringify(line.promo) : null, now());
       } else {
         const mi = getMenuItemForOrder(line.menu_item_id);
@@ -187,23 +203,25 @@ export function getOrder(order_id) {
   if (!order_id) return null;
   const order = db.prepare(`SELECT * FROM orders WHERE id=?`).get(order_id);
   if (!order) return null;
-  order.items = db.prepare(`SELECT * FROM order_items WHERE order_id=? ORDER BY created_at`).all(order_id)
-    .map(it => {
-      let image = null;
-      if (it.menu_item_id) {
-        const mi = db.prepare(`SELECT image FROM menu_items WHERE id=?`).get(it.menu_item_id);
-        image = mi?.image || null;
-      } else if (it.sku_id) {
-        const sku = db.prepare(`SELECT image FROM skus WHERE id=?`).get(it.sku_id);
-        image = sku?.image || null;
-      }
-      return {
-        ...it,
-        image,
-        mods: parseJson(it.mods_json, []),
-        promo: parseJson(it.promo_json, null)
-      };
-    });
+  const rawItems = db.prepare(`SELECT * FROM order_items WHERE order_id=? ORDER BY created_at`).all(order_id);
+  // PERF: gom ảnh theo LÔ thay vì N+1 (trước đây mỗi dòng món chạy 1 query menu_items
+  // hoặc skus — đơn 30 món = 30 query phụ, getOrder được gọi ở mọi lần đọc/realtime).
+  const miIds = [...new Set(rawItems.filter(i => i.menu_item_id).map(i => i.menu_item_id))];
+  const skuIds = [...new Set(rawItems.filter(i => !i.menu_item_id && i.sku_id).map(i => i.sku_id))];
+  const miImg = new Map();
+  if (miIds.length) {
+    for (const r of db.prepare(`SELECT id,image FROM menu_items WHERE id IN (${miIds.map(() => '?').join(',')})`).all(...miIds)) miImg.set(r.id, r.image || null);
+  }
+  const skuImg = new Map();
+  if (skuIds.length) {
+    for (const r of db.prepare(`SELECT id,image FROM skus WHERE id IN (${skuIds.map(() => '?').join(',')})`).all(...skuIds)) skuImg.set(r.id, r.image || null);
+  }
+  order.items = rawItems.map(it => ({
+    ...it,
+    image: it.menu_item_id ? (miImg.get(it.menu_item_id) || null) : (it.sku_id ? (skuImg.get(it.sku_id) || null) : null),
+    mods: parseJson(it.mods_json, []),
+    promo: parseJson(it.promo_json, null),
+  }));
   if (order.table_id) {
     const t = db.prepare(`SELECT code,zone FROM tables WHERE id=?`).get(order.table_id);
     order.table_code = t?.code;
@@ -402,29 +420,15 @@ function validateSkuLot(sku, qty, lot_id, branch_id) {
   }
 }
 
-function parseJson(raw, fallback) {
-  try { return raw ? JSON.parse(raw) : fallback; } catch { return fallback; }
-}
 
-export function getTableState(table_id) {
-  if (!table_id) return null;
-  const t = db.prepare(`SELECT * FROM tables WHERE id=?`).get(table_id);
-  if (!t) return null;
-  const order = getOpenOrderForTable(table_id, t.branch_id);
-  const call = db.prepare(`SELECT * FROM staff_calls WHERE table_id=? AND status='open' ORDER BY created_at DESC LIMIT 1`).get(table_id);
-  // Tiến độ món của đơn mở — sơ đồ bàn POS hiện "Chưa có món / Chưa lên đủ món
-  // / Đã đủ món / Đã in tạm tính" thay cho chữ "Đang dùng" chung chung.
-  // items_done = món ĐÃ LÊN theo KDS (ready/served). pending_confirm vẫn đếm
-  // vào items_count để thấy bàn đã gọi món (đang chờ xác nhận).
-  let items_count = 0;
-  let items_done = 0;
-  if (order) {
-    const agg = db.prepare(`SELECT COUNT(*) n,
-        COALESCE(SUM(CASE WHEN status IN ('ready','served') THEN 1 ELSE 0 END), 0) done
-      FROM order_items WHERE order_id=? AND status!='cancelled'`).get(order.id);
-    items_count = agg?.n || 0;
-    items_done = agg?.done || 0;
-  }
+// Tổng hợp món cho sơ đồ bàn: items_count = tổng dòng còn hiệu lực; done = ĐÃ LÊN theo
+// KDS (ready/served). Dùng CHUNG chuỗi này cho cả đường 1-bàn lẫn nạp-theo-lô.
+const TABLE_ITEM_AGG = `COUNT(*) n, COALESCE(SUM(CASE WHEN status IN ('ready','served') THEN 1 ELSE 0 END), 0) done`;
+
+// Ghép trạng thái 1 bàn từ dữ liệu đã nạp sẵn (bàn + đơn mở + gọi NV + tổng hợp món).
+// KHÔNG chạy query — MỘT nguồn shape duy nhất cho getTableState (1 bàn) và listTables (lô),
+// để hai đường không lệch nhau. Sơ đồ bàn POS: "Chưa có món / Chưa đủ / Đã đủ / Đã in tạm tính".
+function buildTableState(t, order, call, agg) {
   let customer = null;
   if (order?.customer_json) {
     try { customer = JSON.parse(order.customer_json); } catch { /* JSON hỏng → bỏ */ }
@@ -433,8 +437,8 @@ export function getTableState(table_id) {
     ...t,
     amount: order?.total || 0,
     order_id: order?.id || null,
-    items_count,
-    items_done,
+    items_count: agg?.n || 0,
+    items_done: agg?.done || 0,
     prebill_printed: order?.prebill_printed_at ? 1 : 0,
     customer_name: customer?.name || '',
     customer_phone: customer?.phone || '',
@@ -443,9 +447,46 @@ export function getTableState(table_id) {
   };
 }
 
+export function getTableState(table_id) {
+  if (!table_id) return null;
+  const t = db.prepare(`SELECT * FROM tables WHERE id=?`).get(table_id);
+  if (!t) return null;
+  const order = getOpenOrderForTable(table_id, t.branch_id);
+  const call = db.prepare(`SELECT * FROM staff_calls WHERE table_id=? AND status='open' ORDER BY created_at DESC LIMIT 1`).get(table_id);
+  const agg = order
+    ? db.prepare(`SELECT ${TABLE_ITEM_AGG} FROM order_items WHERE order_id=? AND status!='cancelled'`).get(order.id)
+    : null;
+  return buildTableState(t, order, call, agg);
+}
+
+// PERF: trước đây gọi getTableState cho TỪNG bàn → ~4 query/bàn (50 bàn ≈ 200 query mỗi lần
+// refresh sơ đồ). Giờ nạp theo LÔ: 1 query bàn + 1 đơn mở + 1 gọi NV + 1 tổng hợp món, rồi
+// ghép trong JS bằng cùng buildTableState → kết quả y hệt bản 1-bàn, số truy vấn cố định.
 export function listTables(branch_id = 'br1') {
-  return db.prepare(`SELECT id FROM tables WHERE branch_id=? ORDER BY code`).all(branch_id)
-    .map(r => getTableState(r.id));
+  const tables = db.prepare(`SELECT * FROM tables WHERE branch_id=? ORDER BY code`).all(branch_id);
+  if (!tables.length) return [];
+
+  const orderByTable = new Map();
+  for (const o of db.prepare(`SELECT * FROM orders WHERE branch_id=? AND status='open' ORDER BY created_at DESC`).all(branch_id)) {
+    if (o.table_id && !orderByTable.has(o.table_id)) orderByTable.set(o.table_id, o); // DESC → giữ đơn mở MỚI NHẤT mỗi bàn (khớp getOpenOrderForTable)
+  }
+  const callByTable = new Map();
+  for (const c of db.prepare(`SELECT * FROM staff_calls WHERE branch_id=? AND status='open' ORDER BY created_at DESC`).all(branch_id)) {
+    if (c.table_id && !callByTable.has(c.table_id)) callByTable.set(c.table_id, c);
+  }
+  const openIds = [...orderByTable.values()].map(o => o.id);
+  const aggByOrder = new Map();
+  if (openIds.length) {
+    for (const r of db.prepare(`SELECT order_id, ${TABLE_ITEM_AGG} FROM order_items WHERE order_id IN (${openIds.map(() => '?').join(',')}) AND status!='cancelled' GROUP BY order_id`).all(...openIds)) {
+      aggByOrder.set(r.order_id, r);
+    }
+  }
+  return tables.map(t => {
+    const order = orderByTable.get(t.id) || null;
+    const call = callByTable.get(t.id) || null;
+    const agg = order ? (aggByOrder.get(order.id) || null) : null;
+    return buildTableState(t, order, call, agg);
+  });
 }
 
 export function getStationTickets(station, branch_id = 'br1') {

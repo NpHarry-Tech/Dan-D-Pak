@@ -2,6 +2,7 @@
 // via webhook, map to internal items, route to KDS (FnB) or packing (retail),
 // and track fulfillment status. Orders are treated as prepaid (channel revenue).
 import { db, uid, now, audit } from '../db.js';
+import { headerVal, safeEqual } from '../core/util.js';
 import { emit } from '../realtime.js';
 import { createOrUpdateOrder, getOrder } from './orders.js';
 import { deductForOrder } from './inventory.js';
@@ -43,29 +44,22 @@ function assertChannelEnabled(channel, branch_id = 'br1') {
   if (!available[channel]) throw new Error('Kenh ' + CHANNELS[channel] + ' chua duoc bat trong Cai dat ket noi.');
 }
 
-function headerVal(headers = {}, name) {
-  if (!headers) return '';
-  const lower = name.toLowerCase();
-  for (const k of Object.keys(headers)) if (k.toLowerCase() === lower) return String(headers[k] || '');
-  return '';
-}
-
-// Xác thực webhook đối tác online. Nếu kênh đã cấu hình webhookSecret thì BẮT BUỘC
-// request mang đúng secret (header x-webhook-secret / secure-token / Bearer/Apikey).
-// Chưa cấu hình secret → vẫn nhận (để không phá kết nối đang chạy) nhưng GHI AUDIT
-// cảnh báo để vận hành biết kênh đang nhận đơn không xác thực.
+// Enabled online channels must be authenticated. Missing or wrong webhookSecret
+// rejects the request; public order intake should not fail open.
 function assertWebhookSecret(channel, headers = {}, branch_id = 'br1') {
   const integKey = CHANNEL_INTEGRATION[channel] || channel;
   const cfg = getIntegrations(branch_id).channels?.[integKey] || {};
   const secret = String(cfg.webhookSecret || '').trim();
   if (!secret) {
-    audit('online.webhook.unverified', { channel, reason: 'no_secret_configured' }, branch_id, `webhook:${channel}`);
-    return;
+    audit('online.webhook.rejected', { channel, reason: 'missing_secret_config' }, branch_id, `webhook:${channel}`);
+    const e = new Error('Kenh online da bat nhung chua cau hinh webhook secret.');
+    e.status = 401;
+    throw e;
   }
   const provided = (headerVal(headers, 'x-webhook-secret')
     || headerVal(headers, 'secure-token')
     || headerVal(headers, 'authorization').replace(/^(bearer|apikey)\s+/i, '')).trim();
-  if (provided !== secret) {
+  if (!safeEqual(provided, secret)) {
     audit('online.webhook.rejected', { channel, reason: 'bad_secret' }, branch_id, `webhook:${channel}`);
     const e = new Error('Sai webhook secret cho kenh ' + (CHANNELS[channel] || channel));
     e.status = 401;
@@ -241,10 +235,20 @@ export function receive(payload, branch_id = 'br1', headers = {}) {
   const channel = norm.channel;
   assertChannelEnabled(channel, branch_id);
   assertWebhookSecret(channel, headers, branch_id);
+  const ref = norm.ref || (channel.slice(0, 2).toUpperCase() + '-' + Math.floor(Math.random() * 90000 + 10000));
   if (!norm.items?.length) throw new Error('Đơn online rỗng');
 
   db.prepare('BEGIN IMMEDIATE').run();
   try {
+    const existing = db.prepare(`SELECT id FROM orders WHERE branch_id=? AND online_channel=? AND online_ref=? ORDER BY created_at DESC LIMIT 1`)
+      .get(branch_id, channel, ref);
+    if (existing) {
+      audit('online.receive.duplicate', { channel, ref, order: existing.id }, branch_id);
+      const full = listOne(existing.id);
+      db.prepare('COMMIT').run();
+      return full;
+    }
+
     const mappedItems = norm.items.map(line => {
       const mapped = resolveItemMapping(line, branch_id);
       return {
@@ -256,7 +260,6 @@ export function receive(payload, branch_id = 'br1', headers = {}) {
     });
 
     const order = createOrUpdateOrder({ branch_id, table_id: null, channel: 'online', items: mappedItems, skipTransaction: true });
-    const ref = norm.ref || (channel.slice(0, 2).toUpperCase() + '-' + Math.floor(Math.random() * 90000 + 10000));
     
     // Update order items with original webhook names, prices, and notes
     const dbItems = db.prepare(`SELECT id FROM order_items WHERE order_id=? ORDER BY created_at ASC`).all(order.id);

@@ -1,14 +1,12 @@
 // Shift management: opening cash count, payment grouping, and close-shift report.
 import { db, uid, now, audit } from '../db.js';
+import { parseJson } from '../core/util.js';
 import { getOperationsConfig } from './settings.js';
 import { emit } from '../realtime.js';
 import * as CashDrawer from './cashDrawer.js';
 import * as einvoice from './einvoice.js';
 import * as Auth from './auth.js';
 
-function parseJson(raw, fallback) {
-  try { return raw ? JSON.parse(raw) : fallback; } catch { return fallback; }
-}
 
 function cashTotal(counts = {}) {
   return Object.entries(counts || {}).reduce((sum, [denom, qty]) => {

@@ -1,9 +1,9 @@
 import { publicEnvSnapshot } from './env.js';
 
 export const PROVIDERS = Object.freeze({
-  database: ['sqlite', 'postgres'],
-  realtime: ['websocket', 'socketio'],
-  storage: ['local', 's3'],
+  database: ['sqlite'],
+  realtime: ['socketio'],
+  storage: ['local'],
   deploymentTarget: ['local', 'vps'],
 });
 

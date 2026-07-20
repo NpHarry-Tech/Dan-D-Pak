@@ -102,8 +102,11 @@ export function get(id) {
     lookup_url: `https://tracuu.example.vn/?code=${i.lookup_code}` };
 }
 
-export function byOrder(order_id) {
-  const i = db.prepare(`SELECT id FROM invoices WHERE order_id=? AND status!='cancelled' ORDER BY issued_at DESC LIMIT 1`).get(order_id);
+export function byOrder(order_id, branch_id = null) {
+  // branch_id != null → khóa theo chi nhánh để chống IDOR (đọc HĐĐT chi nhánh khác).
+  const i = branch_id
+    ? db.prepare(`SELECT id FROM invoices WHERE order_id=? AND branch_id=? AND status!='cancelled' ORDER BY issued_at DESC LIMIT 1`).get(order_id, branch_id)
+    : db.prepare(`SELECT id FROM invoices WHERE order_id=? AND status!='cancelled' ORDER BY issued_at DESC LIMIT 1`).get(order_id);
   return i ? get(i.id) : null;
 }
 

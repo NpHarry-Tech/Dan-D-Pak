@@ -1,4 +1,5 @@
 import { db, uid, now, audit } from '../db.js';
+import { parseJson } from '../core/util.js';
 import { emit } from '../realtime.js';
 import { getOrder } from './orders.js';
 import { getIntegrations, getPrintConfig } from './settings.js';
@@ -117,7 +118,6 @@ export function createInvoiceRequest(order_id, customer_mode = 'WALK_IN', buyer_
   // Return fresh record
   return get(id);
 }
-
 /**
  * Backfill: khi bật MISA, đẩy toàn bộ hóa đơn đã ghi nhận lúc MISA off
  * (PENDING_PROVIDER) vào hàng đợi để phát hành thật. Idempotent.
@@ -741,8 +741,4 @@ function writeAuditLog({ order_id, e_invoice_id, actor_id, actor_role, action, o
     uid('eial_'), order_id, e_invoice_id, actor_id, actor_role, action,
     old_status, new_status, reason, payload_snapshot, response_snapshot, now()
   );
-}
-
-function parseJson(raw, fallback) {
-  try { return raw ? JSON.parse(raw) : fallback; } catch { return fallback; }
 }

@@ -5,6 +5,8 @@ import 'dart:isolate';
 
 import 'package:http/http.dart' as http;
 
+import 'utils/translation.dart';
+
 /// Lỗi API có PHÂN LOẠI — nền tảng của crash hardening phía mạng:
 ///  • [offline]  = không chạm được server (SocketException/ClientException).
 ///  • [timedOut] = server không trả lời kịp.
@@ -133,7 +135,7 @@ class DanDpakApiClient {
   String? branchId;
 
   DanDpakApiClient({String baseUrl = defaultBaseUrl, this.token, this.branchId})
-    : baseUrl = normalizeBaseUrl(baseUrl);
+      : baseUrl = normalizeBaseUrl(baseUrl);
 
   static String normalizeBaseUrl(String url) {
     var trimmed = url.trim();
@@ -187,6 +189,19 @@ class DanDpakApiClient {
     return Uri.parse('$baseUrl$normalizedPath');
   }
 
+  /// Tên máy gửi kèm mọi request (x-device-name) để Nhật ký hoạt động trên
+  /// server ghi rõ "ai làm gì ở THIẾT BỊ NÀO" — kể cả log phía backend.
+  static final String _deviceName = () {
+    try {
+      // Header HTTP chỉ an toàn với ASCII — lọc ký tự lạ khỏi tên máy.
+      return Platform.localHostname
+          .replaceAll(RegExp(r'[^\x20-\x7E]'), '?')
+          .trim();
+    } catch (_) {
+      return '';
+    }
+  }();
+
   Map<String, String> headers([Map<String, String>? extra]) {
     final result = <String, String>{
       'Content-Type': 'application/json; charset=utf-8',
@@ -195,6 +210,7 @@ class DanDpakApiClient {
         'Authorization': 'Bearer $token',
       },
       if (branchId != null && branchId!.isNotEmpty) 'x-branch-id': branchId!,
+      if (_deviceName.isNotEmpty) 'x-device-name': _deviceName,
     };
     if (extra != null) result.addAll(extra);
     return result;
@@ -212,8 +228,7 @@ class DanDpakApiClient {
   }) async {
     final sw = Stopwatch()..start();
     final cid = _safeCorrelationId();
-    final hdrs =
-        headers(cid == null ? null : {'x-correlation-id': cid});
+    final hdrs = headers(cid == null ? null : {'x-correlation-id': cid});
     final target = uri(path);
     try {
       final http.Response response;
@@ -224,8 +239,10 @@ class DanDpakApiClient {
                   headers: hdrs, body: body == null ? null : jsonEncode(body))
               .timeout(timeout);
         case 'DELETE':
-          response =
-              await http.delete(target, headers: hdrs).timeout(timeout);
+          response = await http
+              .delete(target,
+                  headers: hdrs, body: body == null ? null : jsonEncode(body))
+              .timeout(timeout);
         default:
           response = await http.get(target, headers: hdrs).timeout(timeout);
       }
@@ -236,9 +253,8 @@ class DanDpakApiClient {
         statusCode: response.statusCode,
         durationMs: sw.elapsedMilliseconds,
         correlationId: cid,
-        error: response.statusCode >= 400
-            ? 'HTTP ${response.statusCode}'
-            : null,
+        error:
+            response.statusCode >= 400 ? 'HTTP ${response.statusCode}' : null,
       ));
       return response;
     } on TimeoutException catch (e) {
@@ -314,10 +330,21 @@ class DanDpakApiClient {
     String? errorMessage,
   }) {
     return _withEngineRetry(() async {
-      final response = await _send('GET', path,
-          timeout: timeout, errorMessage: errorMessage);
-      return decodeResponseAsync(response,
-          errorMessage: errorMessage, method: 'GET', path: path);
+      ApiException? lastNetworkError;
+      for (var attempt = 1; attempt <= 3; attempt++) {
+        try {
+          final response = await _send('GET', path,
+              timeout: timeout, errorMessage: errorMessage);
+          return decodeResponseAsync(response,
+              errorMessage: errorMessage, method: 'GET', path: path);
+        } on ApiException catch (e) {
+          if (!e.isNetworkIssue) rethrow;
+          lastNetworkError = e;
+          if (attempt == 3) break;
+          await Future.delayed(Duration(milliseconds: 250 * attempt));
+        }
+      }
+      throw lastNetworkError!;
     });
   }
 
@@ -407,12 +434,13 @@ class DanDpakApiClient {
 
   Future<dynamic> deleteJson(
     String path, {
+    Object? body,
     Duration timeout = defaultTimeout,
     String? errorMessage,
   }) {
     return _withEngineRetry(() async {
       final response = await _send('DELETE', path,
-          timeout: timeout, errorMessage: errorMessage);
+          body: body, timeout: timeout, errorMessage: errorMessage);
       return decodeResponseAsync(response,
           errorMessage: errorMessage, method: 'DELETE', path: path);
     });
@@ -456,9 +484,8 @@ class DanDpakApiClient {
       return decoded;
     }
 
-    final serverMessage = decoded is Map
-        ? decoded['error'] ?? decoded['message']
-        : null;
+    final serverMessage =
+        decoded is Map ? decoded['error'] ?? decoded['message'] : null;
     // HTTP lỗi = server ĐÃ trả lời → ApiException nghiệp vụ có statusCode,
     // KHÔNG phải offline. UI hiện message; ai cần status thì đọc được.
     throw ApiException(
@@ -509,14 +536,14 @@ dynamic _tryJsonDecode(String body) {
 
 String _timeoutMessage(Duration timeout, String? errorMessage) {
   final action = errorMessage?.trim().isNotEmpty == true
-      ? errorMessage!.trim()
-      : 'Yêu cầu';
-  return '$action quá thời gian chờ ${timeout.inSeconds} giây. Vui lòng kiểm tra server/máy in rồi thử lại.';
+      ? t(errorMessage!.trim())
+      : t('Yêu cầu');
+  return '$action ${t('quá thời gian chờ')} ${timeout.inSeconds} ${t('giây')}. ${t('Vui lòng kiểm tra server/máy in rồi thử lại')}.';
 }
 
 String _offlineMessage(String? errorMessage) {
   final action = errorMessage?.trim().isNotEmpty == true
-      ? errorMessage!.trim()
-      : 'Yêu cầu';
-  return '$action: không kết nối được máy chủ. Kiểm tra mạng/WiFi rồi thử lại — thao tác CHƯA được ghi nhận.';
+      ? t(errorMessage!.trim())
+      : t('Yêu cầu');
+  return '$action: ${t('không kết nối được máy chủ')}. ${t('Kiểm tra mạng/WiFi rồi thử lại')} — ${t('thao tác CHƯA được ghi nhận')}.';
 }

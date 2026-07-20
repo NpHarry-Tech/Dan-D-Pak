@@ -1,9 +1,11 @@
 // Customer directory — remembers buyers (incl. full invoice info) so special
 // customers can carry a default perk (free / % / amount off) into retail & POS.
 import { db, uid, now, audit } from '../db.js';
+import { parseJson } from '../core/util.js';
 import { emit } from '../realtime.js';
 import { archiveCustomer } from './archive.js';
 import { getLoyaltyConfig } from './settings.js';
+import { lookupTaxCode as lookupTaxCodeFromTaxModule } from './tax.js';
 
 const PERKS = ['none', 'pct', 'amount', 'free'];
 const PARTNER_TYPES = ['customer', 'supplier', 'both', 'staff'];
@@ -32,9 +34,6 @@ function normalizeRow(r) {
 
 function pickPartnerType(v) { return PARTNER_TYPES.includes(v) ? v : 'customer'; }
 
-function parseJson(raw, fallback) {
-  try { return raw ? JSON.parse(raw) : fallback; } catch { return fallback; }
-}
 
 function matchesTerm(c, term) {
   if (!term) return true;
@@ -385,22 +384,5 @@ export function perkDiscount(customer, base = 0) {
 // Look up company name/address from a Vietnamese tax code via the free VietQR
 // business directory (used to prefill invoice info the first time an MST is typed).
 export async function lookupTaxCode(taxCode) {
-  const tc = String(taxCode || '').replace(/\s+/g, '');
-  if (!/^\d{10}(\d{3})?$/.test(tc)) throw new Error('Mã số thuế phải gồm 10 hoặc 13 chữ số');
-  const local = db.prepare(`SELECT * FROM customers WHERE tax_code=?`).get(tc);
-  try {
-    const ctrl = new AbortController();
-    const t = setTimeout(() => ctrl.abort(), 8000);
-    const res = await fetch(`https://api.vietqr.io/v2/business/${tc}`, { signal: ctrl.signal, headers: { Accept: 'application/json' } });
-    clearTimeout(t);
-    if (res.ok) {
-      const json = await res.json();
-      const d = json?.data;
-      if (d && (d.name || d.shortName)) {
-        return { ok: true, source: 'vietqr', tax_code: tc, company: d.name || d.shortName || '', name: d.shortName || d.name || '', address: d.address || '', existed: local ? { id: local.id, name: local.name } : null };
-      }
-    }
-  } catch { /* fall through to local / not-found */ }
-  if (local) return { ok: true, source: 'local', tax_code: tc, company: local.company || local.name, name: local.name, address: local.address || '', existed: { id: local.id, name: local.name } };
-  return { ok: false, tax_code: tc, message: 'Không tra cứu được thông tin theo MST này. Vui lòng nhập tay (có thể do mạng hoặc MST chưa có trên cơ sở dữ liệu công khai).' };
+  return lookupTaxCodeFromTaxModule(taxCode);
 }

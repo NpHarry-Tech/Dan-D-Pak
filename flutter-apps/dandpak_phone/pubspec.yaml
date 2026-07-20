@@ -1,0 +1,55 @@
+name: dandpak_phone
+description: "Dan D Pak Phone POS Application."
+publish_to: 'none'
+version: 0.1.0
+
+environment:
+  sdk: '>=3.3.0 <4.0.0'
+
+# Vỏ mỏng: mọi code + plugin đến từ dandpak_core (phụ thuộc bắc cầu). App chỉ
+# khai báo asset/font mà code lõi tham chiếu tại runtime (Image.asset/family).
+dependencies:
+  flutter:
+    sdk: flutter
+  dandpak_core:
+    path: ../dandpak_core
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/brand/DanOnLogo.png
+    - assets/brand/logo.png
+    - assets/brand/MISA.jpg
+    - assets/brand/payoslogo.png
+    - assets/brand/vietqr.png
+    - assets/brand/sepay.webp
+    - assets/brand/Casso.png
+    - assets/brand/grabmerchantlogo.webp
+    - assets/brand/grabmartlogo.png
+    - assets/brand/shopeefoodlogo.png
+    - assets/brand/befoodlogo.png
+    - assets/brand/Haravan.png
+    - assets/brand/sounds/notifications/catalog.json
+    - assets/data/vn_admin_units_2026.json
+  fonts:
+    - family: Be Vietnam Pro
+      fonts:
+        - asset: assets/fonts/BeVietnamPro-Regular.ttf
+          weight: 400
+        - asset: assets/fonts/BeVietnamPro-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/BeVietnamPro-SemiBold.ttf
+          weight: 600
+        - asset: assets/fonts/BeVietnamPro-Bold.ttf
+          weight: 700
+        - asset: assets/fonts/BeVietnamPro-ExtraBold.ttf
+          weight: 800
+    - family: JetBrains Mono
+      fonts:
+        - asset: assets/fonts/JetBrainsMono-Regular.ttf
+          weight: 400

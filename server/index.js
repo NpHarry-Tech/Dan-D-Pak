@@ -3,12 +3,16 @@ import express from 'express';
 import { createServer } from 'node:http';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { existsSync, mkdirSync, readFileSync } from 'node:fs';
+import { mkdirSync } from 'node:fs';
 import zlib from 'node:zlib';
 import { db, migrate, reconcileAuditFromArchive, compactAuditToMonthly, purgeAuditBeyondRetention, backupDatabase } from './db.js';
 import { initRealtime } from './realtime.js';
 import { api } from './api.js';
 import { startSyncEngine } from './services/sync.js';
+import {
+  handleHaravanWebhook, verifyHaravanSubscribe, installUrl as haravanInstallUrl,
+  oauthCallback as haravanOauthCallback, startHaravanWorker,
+} from './services/haravanConnector.js';
 import { processInvoiceQueue } from './services/einvoice.js';
 import { ensureStorageDirectories } from './services/enterpriseStorage.js';
 import { bootstrapDefaultAdmin } from './services/bootstrapAdmin.js';
@@ -19,7 +23,11 @@ import { runtimeSnapshot } from './config/runtime.js';
 import { apiNotFound, errorHandler } from './core/http.js';
 import { logger } from './core/logger.js';
 import { requestLogger } from './core/requestLogger.js';
+import { requestContextMiddleware } from './core/requestContext.js';
 import { logSystem, maintainSystemLogs } from './services/systemLogs.js';
+import { maintainPrintJobs } from './services/printing.js';
+import { maintainRetailCarts } from './services/retailCart.js';
+import { rateLimit } from './core/rateLimit.js';
 
 // Gzip middleware dùng Node built-in zlib — không cần thêm npm package.
 // Với 50 thiết bị, menu JSON ~50KB → ~8KB sau nén, giảm tải mạng LAN 80%.
@@ -60,32 +68,13 @@ try {
   logger.warn(`footprint reconcile skipped: ${err.message}`);
 }
 // Auto-seed on first run only if the database is empty and not suppressed.
+// (Cơ chế config-seed.json / CONFIG_SEED_URL thời server free không có disk
+// đã GỠ BỎ 2026-07-16 — dữ liệu thật giờ sống bền trong SQLite + backup.)
 const hasMenu = db.prepare(`SELECT COUNT(*) n FROM menu_items`).get().n;
 const hasBranch = db.prepare(`SELECT COUNT(*) n FROM branches`).get().n;
 const isEmpty = !hasMenu && !hasBranch;
 if (isEmpty) {
-  if (env.CONFIG_SEED_URL) {
-    try {
-      logger.info(`empty database detected; restoring config from CONFIG_SEED_URL`);
-      const { fetchAndRestoreConfig } = await import('./services/configBackup.js');
-      const result = await fetchAndRestoreConfig(env.CONFIG_SEED_URL);
-      logger.info('config restored from URL', result.counts);
-    } catch (err) {
-      logger.warn(`failed to restore config from URL: ${err.message}; falling back to demo seed`);
-      await import('./seed.js');
-    }
-  } else if (existsSync(join(__dirname, 'config-seed.json'))) {
-    try {
-      logger.info(`empty database detected; restoring config from local server/config-seed.json`);
-      const { importConfig } = await import('./services/configBackup.js');
-      const snapshot = JSON.parse(readFileSync(join(__dirname, 'config-seed.json'), 'utf8'));
-      const result = importConfig(snapshot);
-      logger.info('config restored from local file', result.counts);
-    } catch (err) {
-      logger.warn(`failed to restore config from local file: ${err.message}; falling back to demo seed`);
-      await import('./seed.js');
-    }
-  } else if (env.DISABLE_DEMO_SEED) {
+  if (env.DISABLE_DEMO_SEED) {
     logger.warn('empty database detected; DISABLE_DEMO_SEED=true — skipping demo seed');
   } else {
     logger.warn('empty catalog detected; running demo seed');
@@ -105,19 +94,53 @@ if (adminBootstrap.pinReset) logger.warn('admin PIN reset via DANDPAK_ADMIN_RESE
 
 const app = express();
 app.disable('x-powered-by');
-// Security headers (tương đương helmet, không cần thêm thư viện). Không đặt CSP
-// vì app dùng nhiều inline module/handler — sẽ bổ sung CSP riêng sau nếu cần.
+// Security headers (tương đương helmet, không cần thêm thư viện).
 app.use((req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'SAMEORIGIN');
   res.setHeader('Referrer-Policy', 'no-referrer');
   res.setHeader('X-DNS-Prefetch-Control', 'off');
   res.setHeader('Permissions-Policy', 'geolocation=(), microphone=(), camera=()');
+  res.setHeader('Content-Security-Policy', "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; connect-src 'self' ws: wss:; object-src 'none'; base-uri 'self'; frame-ancestors 'self'");
   next();
 });
 app.use(createCorsMiddleware(env));
 app.use(compressionMiddleware);              // gzip trước mọi API response
+app.use('/api', rateLimit({ key: 'api', windowMs: 60_000, max: 6000 }));
+// Rate-limit webhook Haravan (300/phút/IP) bằng limiter DÙNG CHUNG ở core/rateLimit.js.
+const haravanWebhookRateLimit = rateLimit({ key: 'haravan-webhook', windowMs: 60_000, max: 300, message: 'rate_limited' });
+app.get('/webhooks/haravan', haravanWebhookRateLimit, (req, res) => {
+  try {
+    res.status(200).send(verifyHaravanSubscribe(req.query));
+  } catch (err) {
+    res.status(err.status || 400).send(err.message || 'Haravan webhook verify failed');
+  }
+});
+app.post('/webhooks/haravan', haravanWebhookRateLimit, express.raw({ type: '*/*', limit: '10mb' }), (req, res) => {
+  try {
+    handleHaravanWebhook(Buffer.isBuffer(req.body) ? req.body : Buffer.from(req.body || ''), req.headers);
+    res.status(200).send('OK');
+  } catch (err) {
+    res.status(err.status || 400).send(err.message || 'Haravan webhook failed');
+  }
+});
 app.use(express.json({ limit: '35mb' })); // DMS cho phép file 25MB → base64 phình ~33MB
+
+app.get('/auth/haravan/install', (req, res) => {
+  try {
+    res.redirect(haravanInstallUrl({ branch_id: req.query.branch_id || req.query.branch || 'ONLINE' }).url);
+  } catch (err) {
+    res.status(err.status || 400).send(err.message || 'Haravan install failed');
+  }
+});
+app.get('/auth/haravan/callback', async (req, res) => {
+  try {
+    const out = await haravanOauthCallback(req.query);
+    res.status(200).send(`Haravan connected: ${out.shopDomain}`);
+  } catch (err) {
+    res.status(err.status || 400).send(err.message || 'Haravan OAuth failed');
+  }
+});
 
 app.get('/health', (req, res) => {
   const mem = process.memoryUsage();
@@ -143,7 +166,7 @@ app.get('/health', (req, res) => {
   return res.status(health.ok ? 200 : 503).json(health);
 });
 
-app.use('/api', requestLogger, api);
+app.use('/api', requestContextMiddleware, requestLogger, api);
 app.use('/api', apiNotFound);
 // During active development, always serve fresh HTML/CSS/JS (no stale browser cache).
 app.use((req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
@@ -155,6 +178,7 @@ app.use(errorHandler);
 const server = createServer(app);
 initRealtime(server);
 startSyncEngine();
+startHaravanWorker();
 
 // Vòng đời nhật ký hoạt động (giữ tối đa 3 năm / 36 tháng):
 //  • Hot: các tháng gần nhất (3 tháng) nằm trong SQLite → tra cứu tức thì.
@@ -163,6 +187,13 @@ startSyncEngine();
 //  • Tới tháng thứ 37 thì xóa tháng thứ 1 (cả file nén lẫn dòng SQLite).
 function maintainAudit() {
   try {
+    const redundant = db.prepare(
+      `DELETE FROM audit_log WHERE action IN (
+        'system.error','client.crash','print.failed','print.agent.failed',
+        'einvoice.backfill_failed','einvoice.auto_create_failed'
+      )`
+    ).run().changes;
+    if (redundant) logger.info('redundant audit rows pruned', { removed: redundant });
     const c = compactAuditToMonthly(3);
     if (c.archivedMonths || c.removedRows) logger.info('audit compacted to monthly archives', c);
     const p = purgeAuditBeyondRetention(36);
@@ -171,7 +202,13 @@ function maintainAudit() {
   // Nhật ký hệ thống hợp nhất: giữ 60 ngày / tối đa 200k dòng (log kỹ thuật
   // ngắn hạn — hồ sơ dài hạn đã có audit_log + kho NDJSON 36 tháng).
   const s = maintainSystemLogs();
-  if (s.removedByAge || s.removedByCount) logger.info('system_logs pruned', s);
+  if (s.removedRedundant || s.removedExactDuplicates || s.removedByAge || s.removedByCount) {
+    logger.info('system_logs pruned', s);
+  }
+  const pj = maintainPrintJobs();
+  if (pj.removedByAge || pj.removedByCount) logger.info('print_jobs pruned', pj);
+  const rc = maintainRetailCarts();
+  if (rc) logger.info('retail_carts pruned', { removed: rc });
 }
 maintainAudit();
 setInterval(maintainAudit, 24 * 60 * 60 * 1000).unref();
@@ -200,6 +237,24 @@ function runInvoiceWorker() {
 }
 runInvoiceWorker();
 setInterval(runInvoiceWorker, 10000).unref();
+
+server.on('error', (err) => {
+  if (err.code === 'EADDRINUSE') {
+    const message = `Server đã chạy hoặc cổng ${PORT} đang được chương trình khác sử dụng.`;
+    logger.error('server port already in use', { port: PORT, message: err.message });
+    logSystem({
+      level: 'fatal',
+      source: 'backend',
+      eventType: 'startup_port_in_use',
+      title: 'Không khởi động được server',
+      message,
+      exceptionType: err.name,
+      stackTrace: err.stack,
+    });
+    process.exit(1);
+  }
+  throw err;
+});
 
 server.listen(PORT, () => {
   logger.info('POS/ERP server started', {

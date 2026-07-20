@@ -1,6 +1,7 @@
 // Payment Core: multi-method payment lines, close bill, trigger inventory deduction.
 import crypto from 'node:crypto';
 import { db, uid, now, audit } from '../db.js';
+import { cleanText, headerVal, safeEqual } from '../core/util.js';
 import { emit } from '../realtime.js';
 import { getOrder, getTableState, resolveStaffCall } from './orders.js';
 import { deductForOrder } from './inventory.js';
@@ -8,8 +9,11 @@ import { printReceipt } from './printing.js';
 import { canonicalMethodKey, getIntegrations, getOperationsConfig, getPrintConfig } from './settings.js';
 import { getActiveShift } from './shifts.js';
 import { archiveOrder, archivePayment } from './archive.js';
-import { recordPurchase } from './customers.js';
+import { getCustomer, recordPurchase } from './customers.js';
+import { buildDiscountPlan } from './vouchers.js';
 import * as einvoice from './einvoice.js';
+import { receiptTaxBlock } from './tax.js';
+import { logSystem } from './systemLogs.js';
 
 // Đơn có gắn khách (iPad self-order check-in SĐT / thu ngân chọn khách) mà được
 // đóng bill KHÔNG kèm customer trong body (webhook QR, khách tự xác nhận, thu
@@ -29,9 +33,6 @@ export function recordLoyaltyFromOrder(order) {
 const METHODS = ['cash', 'bank', 'visa', 'voucher', 'momo', 'zalopay', 'online'];
 const CUSTOMER_QR_METHODS = ['qr', 'qrcode', 'internet_banking', 'bank', 'momo', 'zalopay'];
 
-function cleanText(value, max = 200) {
-  return String(value || '').trim().slice(0, max);
-}
 
 // Chuẩn hoá metadata giao dịch thẻ (máy POS trả về) để lưu phục vụ đối soát.
 const CARD_MODES = ['auto', 'manual', 'mock'];
@@ -245,6 +246,43 @@ function mergeInvoiceCustomer(customer, invoiceCustomer) {
   };
 }
 
+/// Kế hoạch giảm giá cho ĐƠN F&B ĐANG MỞ — dựng `lines` từ chính đơn rồi chạy CHUNG
+/// engine với Retail (`buildDiscountPlan`). Nhờ vậy hàng RETAIL bán trong đơn F&B được
+/// hưởng CTKM theo sản phẩm y hệt bên Retail, còn MÓN F&B (không có sku_id) thì KHÔNG
+/// bao giờ dính CTKM sản phẩm (vd "mua 5 tặng 1") — chỉ nhận voucher đơn / ưu đãi khách
+/// / giảm tay áp cho cả bill.
+/// [line_vouchers]: { <order_item_id>: <voucher_id> } — chọn CTKM cho từng dòng retail.
+export function buildOrderDiscountPlan(order_id, {
+  voucher_id = null,
+  line_vouchers = null,
+  manual_discount = 0,
+  customer = null,
+  branch_id = 'br1',
+} = {}) {
+  const order = getOrder(order_id);
+  if (!order) throw new Error('Order không tồn tại');
+  const lv = line_vouchers && typeof line_vouchers === 'object' ? line_vouchers : {};
+  const lines = (order.items || [])
+    .filter(i => i.status !== 'cancelled')
+    .map(i => ({
+      item_id: i.id,
+      sku_id: i.sku_id || null,
+      qty: Number(i.qty) || 0,
+      price: Number(i.unit_price) || 0,
+      lot_id: i.lot_id || null,
+      voucher_id: lv[i.id] || null,
+      name: i.name,
+    }));
+  // Khách: ưu tiên request, nếu không thì lấy khách đã gắn vào đơn (iPad check-in…).
+  let cust = customer;
+  if (!cust && order.customer_json) {
+    try { cust = JSON.parse(order.customer_json); } catch { /* JSON hỏng → bỏ */ }
+  }
+  if (cust?.id) cust = getCustomer(cust.id, branch_id) || cust;
+  const plan = buildDiscountPlan(lines, { voucher_id, customer: cust, manual_discount, branch_id });
+  return { ...plan, lines, customer: cust };
+}
+
 // lines: [{method, amount, reference}]
 export function payOrder(order_id, lines, options = {}, branch_id = 'br1') {
   const {
@@ -360,7 +398,18 @@ export function payOrder(order_id, lines, options = {}, branch_id = 'br1') {
       }
       einvoice.createInvoiceRequest(order_id, customerMode, buyerInfo, branch_id, cashier || 'system');
     } catch (e) {
-      audit('einvoice.auto_create_failed', { order: order_id, error: e.message }, branch_id);
+      logSystem({
+        level: 'error',
+        source: 'misa',
+        eventType: 'einvoice_error',
+        title: 'Không thể tự tạo yêu cầu hóa đơn điện tử sau thanh toán',
+        message: e.message,
+        branchId: branch_id,
+        orderId: order_id,
+        action: 'einvoice_auto_create',
+        exceptionType: e.name,
+        stackTrace: e.stack,
+      });
     }
 
     return receipt;
@@ -646,12 +695,6 @@ function processIncomingCredit(provider, { externalId, amount, content, accountN
   return { ok: true, status: 'paid', order_id: order.id, bill_no: order.bill_no || null, amount: parseInt(order.total) || 0 };
 }
 
-function headerVal(headers = {}, name) {
-  if (!headers) return '';
-  const lower = name.toLowerCase();
-  for (const k of Object.keys(headers)) if (k.toLowerCase() === lower) return String(headers[k] || '');
-  return '';
-}
 
 // --- Đường B: SePay -------------------------------------------------------
 // SePay POST: { id, accountNumber, content, transferType:'in'|'out', transferAmount, referenceCode, ... }
@@ -659,10 +702,16 @@ function headerVal(headers = {}, name) {
 export function handleSepayWebhook(body = {}, headers = {}, branch_id = 'br1') {
   const cfg = getIntegrations(branch_id).channels?.sepay || {};
   if (!cfg.enabled) return { ok: true, status: 'disabled' };
-  if (cleanText(cfg.apiKey)) {
-    const provided = headerVal(headers, 'authorization').replace(/^apikey\s+/i, '').trim();
-    if (provided !== cleanText(cfg.apiKey)) { audit('payment.webhook.rejected', { provider: 'sepay', reason: 'bad_api_key' }, branch_id, 'webhook:sepay'); const e = new Error('Sai API key SePay'); e.status = 401; throw e; }
+  // BẢO MẬT (fail-closed): webhook này TỰ ĐÓNG BILL khi có "tiền về" nên bắt buộc xác thực.
+  // Bật SePay mà CHƯA đặt API key → TỪ CHỐI. Trước đây bỏ qua kiểm tra khi thiếu key →
+  // kẻ tấn công POST giả "tiền vào" khớp nội dung bill (mã DANBILL nhìn thấy trên QR) để
+  // đóng bill mà không trả tiền.
+  if (!cleanText(cfg.apiKey)) {
+    audit('payment.webhook.rejected', { provider: 'sepay', reason: 'no_api_key' }, branch_id, 'webhook:sepay');
+    const e = new Error('SePay đang bật nhưng chưa cấu hình API key để xác thực webhook — từ chối.'); e.status = 401; throw e;
   }
+  const provided = headerVal(headers, 'authorization').replace(/^apikey\s+/i, '').trim();
+  if (!safeEqual(provided, cleanText(cfg.apiKey))) { audit('payment.webhook.rejected', { provider: 'sepay', reason: 'bad_api_key' }, branch_id, 'webhook:sepay'); const e = new Error('Sai API key SePay'); e.status = 401; throw e; }
   const transferType = String(body?.transferType || body?.transfer_type || '').toLowerCase();
   if (transferType && transferType !== 'in') return { ok: true, status: 'ignored', reason: 'not_credit' };
   const acc = String(body?.accountNumber || body?.account_number || '');
@@ -682,10 +731,13 @@ export function handleSepayWebhook(body = {}, headers = {}, branch_id = 'br1') {
 export function handleCassoWebhook(body = {}, headers = {}, branch_id = 'br1') {
   const cfg = getIntegrations(branch_id).channels?.casso || {};
   if (!cfg.enabled) return { ok: true, status: 'disabled' };
-  if (cleanText(cfg.webhookSecret)) {
-    const token = headerVal(headers, 'secure-token') || headerVal(headers, 'x-casso-signature');
-    if (token !== cleanText(cfg.webhookSecret)) { audit('payment.webhook.rejected', { provider: 'casso', reason: 'bad_secure_token' }, branch_id, 'webhook:casso'); const e = new Error('Sai secure-token Casso'); e.status = 401; throw e; }
+  // BẢO MẬT (fail-closed): bắt buộc secure-token. Bật Casso mà chưa đặt secret → từ chối.
+  if (!cleanText(cfg.webhookSecret)) {
+    audit('payment.webhook.rejected', { provider: 'casso', reason: 'no_secure_token' }, branch_id, 'webhook:casso');
+    const e = new Error('Casso đang bật nhưng chưa cấu hình secure-token để xác thực webhook — từ chối.'); e.status = 401; throw e;
   }
+  const token = headerVal(headers, 'secure-token') || headerVal(headers, 'x-casso-signature');
+  if (!safeEqual(token, cleanText(cfg.webhookSecret))) { audit('payment.webhook.rejected', { provider: 'casso', reason: 'bad_secure_token' }, branch_id, 'webhook:casso'); const e = new Error('Sai secure-token Casso'); e.status = 401; throw e; }
   const list = Array.isArray(body?.data) ? body.data : (Array.isArray(body) ? body : []);
   const results = [];
   for (const t of list) {
@@ -711,11 +763,19 @@ export function handleCassoWebhook(body = {}, headers = {}, branch_id = 'br1') {
 export function handleVietqrWebhook(body = {}, headers = {}, branch_id = 'br1') {
   const cfg = getIntegrations(branch_id).channels?.vietqr || {};
   if (!cfg.enabled) return { ok: true, status: 'disabled' };
+  // BẢO MẬT (fail-closed): webhook tự đóng bill → bắt buộc Basic Auth khớp username/password
+  // VietQR. Bật VietQR mà chưa cấu hình username/password → từ chối. Trước đây nếu request
+  // KHÔNG gửi header Basic thì bỏ qua kiểm tra hoàn toàn → giả "tiền về" đóng bill được.
+  if (!cleanText(cfg.username) || !cleanText(cfg.password)) {
+    audit('payment.webhook.rejected', { provider: 'vietqr', reason: 'no_basic_auth_configured' }, branch_id, 'webhook:vietqr');
+    const e = new Error('VietQR đang bật nhưng chưa cấu hình username/password để xác thực webhook — từ chối.'); e.status = 401; throw e;
+  }
   const auth = headerVal(headers, 'authorization');
-  if (cleanText(cfg.username) && cleanText(cfg.password) && /^basic\s+/i.test(auth)) {
-    let decoded = '';
-    try { decoded = Buffer.from(auth.replace(/^basic\s+/i, '').trim(), 'base64').toString('utf8'); } catch { decoded = ''; }
-    if (decoded !== `${cleanText(cfg.username)}:${cleanText(cfg.password)}`) { audit('payment.webhook.rejected', { provider: 'vietqr', reason: 'bad_basic_auth' }, branch_id, 'webhook:vietqr'); const e = new Error('Sai Basic Auth VietQR'); e.status = 401; throw e; }
+  let decoded = '';
+  try { decoded = Buffer.from(auth.replace(/^basic\s+/i, '').trim(), 'base64').toString('utf8'); } catch { decoded = ''; }
+  if (!/^basic\s+/i.test(auth) || !safeEqual(decoded, `${cleanText(cfg.username)}:${cleanText(cfg.password)}`)) {
+    audit('payment.webhook.rejected', { provider: 'vietqr', reason: 'bad_basic_auth' }, branch_id, 'webhook:vietqr');
+    const e = new Error('Sai Basic Auth VietQR'); e.status = 401; throw e;
   }
   const transType = String(body?.transType || body?.transtype || body?.type || '').toUpperCase();
   if (transType && transType !== 'C') return { ok: true, status: 'ignored', reason: 'not_credit' };
@@ -850,27 +910,13 @@ function buildReceipt(order_id, payment_id, lines, paid, { cashier = '', discoun
   const order = getOrder(order_id);
   const branch = db.prepare(`SELECT name FROM branches WHERE id=?`).get(order.branch_id);
   const printCfg = getPrintConfig(order.branch_id);
-  const cfg = printCfg.einvoice || {};
-  const billCfg = printCfg.bill || {};
   const change = Math.max(0, paid - order.total);
   const orderVoucher = voucher || lookupVoucher(order.voucher_id, order.branch_id);
   return {
     payment_id, order_id, branch: branch?.name, table_code: order.table_code,
     items: order.items.filter(i => i.status !== 'cancelled'),
     subtotal: order.subtotal, discount: order.discount, total: order.total,
-    tax: {
-      price_includes_vat: cfg.priceIncludesVat !== '0',
-      vat_rate: cfg.defaultVatRate || '8',
-      standard_vat_rate: cfg.standardVatRate || '10',
-      legal_basis: cfg.legalBasis || '',
-      unit_policy: cfg.unitPolicy || 'required',
-      seller_tax_code: cfg.taxCode || billCfg.taxCode || '',
-      seller_company: cfg.company || billCfg.storeName || '',
-      seller_address: cfg.address || billCfg.address || '',
-      seller_phone: cfg.phone || billCfg.phone || '',
-      seller_email: cfg.email || billCfg.email || '',
-      invoice_series: cfg.series || '',
-    },
+    tax: receiptTaxBlock(printCfg),
     voucher_id: order.voucher_id, voucher_code: order.voucher_code,
     voucher: orderVoucher,
     promotions: Array.isArray(promotions) ? promotions : order.items.map(i => i.promo).filter(Boolean),

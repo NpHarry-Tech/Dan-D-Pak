@@ -157,7 +157,11 @@ export function recentAudit(branch_id = 'br1', limit = 30, before = null, period
     timeCutoff = d.toISOString();
   }
 
-  let query = `SELECT id,action,detail,actor,created_at FROM audit_log WHERE branch_id=?`;
+  let query = `SELECT id,action,detail,actor,created_at FROM audit_log
+    WHERE branch_id=? AND action NOT IN (
+      'system.error','client.crash','print.failed','print.agent.failed',
+      'einvoice.backfill_failed','einvoice.auto_create_failed'
+    )`;
   const params = [branch_id];
 
   if (timeCutoff) {

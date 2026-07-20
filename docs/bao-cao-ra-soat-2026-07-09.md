@@ -94,5 +94,4 @@ bật/tắt toàn màn hình; mô tả cách dùng viết ngay trong phần Cài
 - **Socket.IO cho iPad:** thiết bị tự khai `device=ipad` được miễn token → về lý thuyết
   máy lạ trong LAN có thể vào room chi nhánh nghe sự kiện realtime. Chấp nhận được trong
   LAN cửa hàng, nhưng khi server ở VPS công khai thì nên cấp token thiết bị riêng cho iPad.
-- **Postgres adapter:** đã xóa stub; khi thật sự chuyển Postgres thì viết theo kế hoạch
-  trong `docs/audit/10_CLEAN_ARCHITECTURE_REFACTOR_PLAN.md` + `db/schema/0001,0002`.
+- **Postgres adapter:** đã xóa stub; runtime hiện chỉ hỗ trợ SQLite.

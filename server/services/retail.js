@@ -1,12 +1,13 @@
 // Retail checkout & returns. Reuses the order + payment core so retail revenue
 // flows into the same dashboard as FnB.
 import { db, uid, now, audit } from '../db.js';
+import { parseJson } from '../core/util.js';
 import { emit } from '../realtime.js';
 import { createOrUpdateOrder, getOrder } from './orders.js';
 import { payOrder } from './payments.js';
-import { returnSku } from './inventory.js';
-import { calculateRetailDiscount } from './vouchers.js';
-import { getCustomer, perkDiscount, recordPurchase } from './customers.js';
+import { returnSku, applyChannelPrice } from './inventory.js';
+import { buildDiscountPlan } from './vouchers.js';
+import { getCustomer, recordPurchase } from './customers.js';
 
 function snapshotCustomer(c) {
   if (!c) return null;
@@ -20,7 +21,6 @@ function snapshotCustomer(c) {
     perk_type: c.perk_type || 'none', perk_value: c.perk_value || 0,
   };
 }
-
 // lines (cart): [{sku_id, qty, lot_id}]; payments: [{method, amount, reference}]
 export function checkout({ items, payments, voucher_id = null, customer = null, customer_id = null, invoice_customer = null, manual_discount = 0, branch_id = 'br1', cashier = '' }) {
   if (!items?.length) throw new Error('Giỏ hàng trống');
@@ -35,14 +35,15 @@ export function checkout({ items, payments, voucher_id = null, customer = null, 
     else if (customer?.id) cust = getCustomer(customer.id, branch_id) || customer;
     else if (customer && (customer.name || customer.tax_code)) cust = customer;
 
-    // First pass (promos + order voucher) to know the base the perk/manual applies on.
-    const pre = calculateRetailDiscount(lines, voucher_id, branch_id, { customer: cust });
-    const baseForExtra = Math.max(0, pre.subtotal - pre.lineDiscount - pre.orderDiscount);
-    const customerPerk = cust ? perkDiscount(cust, baseForExtra) : 0;
-    const manual = Math.max(0, Math.round(Number(manual_discount) || 0));
-    const extraDiscount = customerPerk + manual;
-
-    const discountPlan = calculateRetailDiscount(lines, voucher_id, branch_id, { customer: cust, extraDiscount });
+    // Dùng CHUNG engine giảm giá với F&B (buildDiscountPlan trong vouchers.js) →
+    // hai bên áp cùng thứ tự CTKM sản phẩm → voucher đơn → ưu đãi khách → giảm tay,
+    // nên KHÔNG THỂ lệch nhau.
+    const discountPlan = buildDiscountPlan(lines, {
+      voucher_id,
+      customer: cust,
+      manual_discount,
+      branch_id,
+    });
     const orderItems = lines.map((line, idx) => {
       const promo = discountPlan.appliedSkuPromos.find(p => p.line_index === idx);
       return {
@@ -66,12 +67,7 @@ export function checkout({ items, payments, voucher_id = null, customer = null, 
     db.prepare(`UPDATE orders SET voucher_id=?, voucher_code=? WHERE id=?`)
       .run(discountPlan.orderVoucher?.id || null, discountPlan.orderVoucher?.code || null, order.id);
     const snap = snapshotCustomer(cust);
-    const discountBreakdown = {
-      product_promos: discountPlan.lineDiscount,
-      voucher: discountPlan.orderDiscount,
-      customer_perk: customerPerk,
-      manual,
-    };
+    const discountBreakdown = discountPlan.breakdown;
     const receipt = payOrder(order.id, Array.isArray(payments) ? payments : [], {
       discount: discountPlan.discount,
       cashier,
@@ -137,18 +133,17 @@ function normalizeCheckoutItems(items, branch_id) {
       if (!lot) throw new Error('Lot không tồn tại cho ' + sku.name);
       if (lot.qty_on_hand + 0.000001 < qty) throw new Error(`Lot ${lot.lot_no} của ${sku.name} không đủ tồn`);
     }
+    // Giá server-authoritative: áp bảng giá kênh retail (nếu cấu hình) —
+    // client không tự quyết giá được.
+    const priced = applyChannelPrice(sku, branch_id, 'retail');
     out.push({
       sku_id: sku.id,
       qty,
       lot_id,
       voucher_id: raw.voucher_id || null,
-      price: sku.price,
+      price: priced.price,
       name: sku.name,
     });
   }
   return out;
-}
-
-function parseJson(raw, fallback) {
-  try { return raw ? JSON.parse(raw) : fallback; } catch { return fallback; }
 }

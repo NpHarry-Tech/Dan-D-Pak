@@ -1,86 +1,76 @@
 # Architecture
 
-Last updated: 2026-06-27
+Last updated: 2026-07-13
 
-## Core Decision
+Dan D Pak now runs as a modular monolith backend plus native Flutter app shells.
 
-Dan-D-Pak is split into two deployment zones:
-
-1. **Public VPS zone**: serves the public web shell, terminates HTTPS, proxies
-   `/api` and Socket.IO, exposes non-sensitive health/version endpoints, and can
-   hold an encrypted temporary event buffer for 1-7 days.
-2. **Private company server zone**: owns the backend API, PostgreSQL production
-   database, realtime service, auth, settings, orders, payments, inventory,
-   invoices, printing, integrations, reports, audit logs, sync worker, and
-   backups.
-
-The company server is the source of truth. The VPS is a gateway/relay only. The
-VPS never permanently stores real business data and never exposes PostgreSQL.
-
-## Current Architecture
-
-The app is a Node/Express modular monolith serving both API and static frontend files.
-
-- Entry: `server/index.js`
-- API router: `server/api.js`
-- Database: SQLite through `server/db.js`
-- Realtime: Socket.IO through `server/realtime.js`
-- Business logic: `server/services/*`
-- Frontend: static HTML pages in `web/`
-- Shared frontend runtime: `web/shared/client.js`
-
-Current folder mapping:
-
-- `web/` maps to target `public-web/`
-- `server/` maps to target `company-server/`
-- `deploy/vps/` plus `vps-gateway/` map to target `vps-gateway/`
-
-## Target Architecture
-
-The target remains a modular monolith before any microservice split.
-
-Provider seams:
-
-- Database: `sqlite`, `supabase`, `postgres`
-- Realtime: `socketio`, `websocket`, `supabase`
-- Storage: `local`, `s3`
-- Deployment: `local`, `vps`
-
-Target request path:
+## Runtime Shape
 
 ```text
-Browser / POS / iPad / KDS
-  -> Public VPS HTTPS gateway, or direct LAN company server
-  -> company server API + Socket.IO
-  -> private PostgreSQL source of truth
+dandpak_core (Flutter package) — TOÀN BỘ code dùng chung
+  models/ providers/ screens/ services/ ui/ widgets/ utils/ + bootstrap.dart
+  app_flavor.dart  điểm phân hoá theo thiết bị (appId + bộ module + layout)
+        ^ path dependency
+        |
+Flutter app shells (vỏ mỏng: chỉ main.dart + app_version.dart)
+  dandpak_desktop  Windows/Linux/macOS — bộ module đầy đủ (quầy)
+  dandpak_tablet   Android/iOS — bộ module gọi món/bếp/kho
+  dandpak_phone    Android/iOS — bộ module quản trị/duyệt
+        |
+        | HTTP /api + Socket.IO
+        v
+server/
+  index.js         Express + Socket.IO entry
+  api.js           top-level API registrar (đã mỏng dần khi tách module)
+  modules/         domain route modules (route ownership)
+  services/        business services (nguồn sự thật nghiệp vụ)
+  db.js + db/      SQLite schema/helpers and extracted database helpers
 ```
 
-If the company server is unavailable, write actions become `LOCAL_PENDING` or
-`VPS_PENDING`; the UI must not show official success until the event is synced
-and acknowledged by the company server.
+There is no active static browser app. The Flutter browser-platform folder was removed from the split apps, and shared UI images live under each app's `assets/brand/` directory.
 
-## Current Provider State
+## Backend Modules
 
-- `sqlite`: live
-- `socketio`: live
-- `local archive storage`: live through `server/services/archive.js`
-- `postgres`, `supabase`, `websocket`, `s3`: scaffolded/planned
+`server/api.js` remains the compatibility registrar. Domain route ownership lives under
+`server/modules/<domain>/routes.js` (each has an `index.js` re-exporting its service):
 
-## Boundaries
+- ✅ Route ownership đã tách hết vào module — **23 module**: `inventory`, `invoices`, `payments`,
+  `tax`, `orders` (+void/refund+staff-calls), `reports`, `audit` (+archive), `purchase`, `expenses`,
+  `online`, `printing`, `retail` (POS+vouchers), `contacts`, `catalog` (menu+categories), `agent`
+  (hardware print), `appRelease` (auto-update), `sync`, `auth` (login+registry), `clientLog`,
+  `config`, `settings` (user/perm/PIN/config/devices), `database` (backup/restore/staging),
+  `documents` (DMS + export `fileCashDrawerReceipt` cho payments).
+- ⏳ CÒN inline trong `api.js` (thin registrar ~320 dòng): chỉ còn **helper cross-cutting dùng chung**
+  (wrap/guard/branch/visibleBranch/actor/publicBranch + saveBase64Image/applyManualConfirm/
+  assertBillEditable/scopedUserBody/requireContactMutationPermission/logRequestError — truyền vào
+  module) và route dev `/dev/seed` (khóa env). Đây là vai trò registrar + helper chung, đúng thiết kế.
+- Route module chỉ validate + gọi service; nghiệp vụ luôn ở `services/*` (34 file). `api.js` từ
+  **1796 → ~320 dòng**.
 
-Frontend must call backend APIs through `web/js/core/apiClient.js` and the existing `api()` export from `web/shared/client.js`.
+Business rules stay in `server/services/*` (34 file, một domain một file — đây là ranh giới
+module thật). Route modules only validate request shape, call services, and return normalized
+API payloads. Việc tách phần route inline còn lại là dọn dần, không đổi hành vi.
 
-Backend must keep infrastructure details behind `server/config/*` and `server/adapters/*` as the codebase migrates toward VPS/PostgreSQL.
+## Flutter Apps
 
-## No-Large-Refactor Rule
+**Không còn nhân bản code giữa 3 app.** Toàn bộ code UI + nghiệp vụ dùng chung (models,
+providers, screens, services, ui, widgets, utils, bootstrap) sống MỘT nơi trong
+`flutter-apps/dandpak_core`. Ba app chỉ là "vỏ mỏng" (`lib/main.dart` + `lib/app_version.dart`):
 
-Large HTML screens and service modules should be extracted gradually. Do not move order, payment, invoice, inventory, audit, or report logic without focused tests and a rollback path.
+- `flutter-apps/dandpak_desktop` — Windows/Linux/macOS
+- `flutter-apps/dandpak_tablet` — Android/iOS
+- `flutter-apps/dandpak_phone` — Android/iOS
 
-## Schema Roadmap
+Mỗi `main.dart` gọi `runDandpakApp(flavor: AppFlavor(...))` với **AppFlavor** riêng — điểm phân
+hoá DUY NHẤT giữa 3 app:
 
-- Live runtime today: SQLite in `server/db.js`.
-- Planned company memory: additive PostgreSQL schema in `server/db/schema/`.
-- Planned VPS buffer: `vps-gateway/temp-buffer/schema.sql`.
+- `appId` — định danh máy (đi vào hộp đen/nhật ký để biết lỗi ở app nào).
+- `versionName`/`buildNumber` — lấy từ `app_version.dart` của chính app.
+- `enabledModuleKeys` — BỘ MODULE hiển thị (desktop = tất cả; tablet/phone = bộ riêng →
+  "khác số lượng module").
+- `layout` (`station`/`tablet`/`handset`) — tinh chỉnh bố cục UX (cùng ngôn ngữ thiết kế
+  `ui/app_theme.dart`, khác cách sắp xếp).
 
-All migrations must be additive and reviewed. No destructive migration is allowed
-against business data.
+Plugin (media_kit, mobile_scanner, desktop_multi_window…) khai báo trong `dandpak_core` và
+kéo vào 3 app qua phụ thuộc bắc cầu; app chỉ giữ khai báo `assets/`+`fonts` và thư mục nền
+tảng (`windows/`, `android/`, `ios/`…). Unit test dùng chung nằm ở `dandpak_core/test/`.

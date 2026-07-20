@@ -8,7 +8,7 @@
 // IN THẬT trên máy in/ két tại chỗ và báo kết quả về.
 //
 // Cách chạy:
-//   CENTRAL_URL=http://171.244.199.186 AGENT_USERNAME=warehouse \
+//   CENTRAL_URL=http://42.96.18.70:3000 AGENT_USERNAME=warehouse \
 //   AGENT_PIN=5555 BRANCH_ID=br1 node server/agent.js
 // hoặc copy deploy/company-server/agent.env.example -> server/.env.agent,
 // điền thông tin rồi chạy: node server/agent.js

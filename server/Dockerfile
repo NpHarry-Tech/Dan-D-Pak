@@ -1,10 +1,13 @@
 FROM node:22-bookworm-slim
 
 # Cài sqlite3 CLI để backup + diagnostic
-RUN apt-get update && apt-get install -y sqlite3 curl && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    sqlite3 curl chromium \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 ENV NODE_ENV=production
+ENV REPORT_PDF_BROWSER=/usr/bin/chromium
 
 # Copy dependency manifests trước để tận dụng Docker layer cache
 COPY package*.json ./

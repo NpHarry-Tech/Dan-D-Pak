@@ -1,11 +1,53 @@
 name: dandpak_core
-description: Shared Dan D Pak Flutter client primitives.
+description: Lõi dùng chung cho 3 app Dan D Pak (desktop/tablet/phone) — models, providers, screens, services, ui, widgets + điểm vào khởi động.
 publish_to: 'none'
 version: 0.1.0
 
 environment:
   sdk: '>=3.3.0 <4.0.0'
 
+# Gói này chứa toàn bộ code UI + nghiệp vụ dùng chung nên phụ thuộc Flutter và
+# mọi plugin mà các màn hình/services cần. Ba app chỉ cần depend `dandpak_core`
+# — plugin được kéo vào theo phụ thuộc bắc cầu, không cần khai lại ở từng app.
 dependencies:
+  flutter:
+    sdk: flutter
+  provider: ^6.1.2
+  intl: ^0.19.0
   http: ^1.2.0
   socket_io_client: ^2.0.3
+  # Âm báo thông báo (.ogg) phát trong app — libmpv (media_kit) giải mã Ogg/Vorbis.
+  media_kit: ^1.1.10
+  media_kit_libs_windows_audio: ^1.0.9
+  media_kit_libs_android_audio: ^1.3.6
+  qr_flutter: ^4.1.0
+  barcode_widget: ^2.0.4
+  # Lưu bền preferences trên Android/iOS (server_url, token…).
+  path_provider: ^2.1.5
+  # Quét mã vạch/QR bằng camera (ML Kit/AVFoundation) — không có bản Windows,
+  # desktop tự bỏ qua.
+  mobile_scanner: ^6.0.10
+  # Cửa sổ phụ màn khách trên desktop (Windows/Linux/macOS).
+  desktop_multi_window: ^0.2.0
+  # Win32 (FFI) cho kiosk màn hình phụ desktop.
+  ffi: ^2.1.0
+  video_player: ^2.11.1
+  video_player_win: ^3.2.2
+  local_notifier: ^0.1.6
+  # Chọn/chụp ảnh trên tablet/điện thoại; desktop dùng hộp thoại OS.
+  image_picker: ^1.1.2
+  # Mở/chia sẻ file xuất qua khay chia sẻ hệ điều hành trên mobile.
+  share_plus: ^10.1.4
+  # Chọn file dữ liệu (.xlsx) + hộp thoại lưu file mẫu — Kho: import Excel.
+  # (>=10: compileSdk 36, khớp flutter_plugin_android_lifecycle mới.)
+  file_picker: ^10.0.0
+  # Đọc/ghi file Excel .xlsx thuần Dart (file mẫu kiểm kho/nhập/xuất hàng).
+  excel: ^4.0.6
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true

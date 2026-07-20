@@ -45,7 +45,6 @@ PostgreSQL is never exposed publicly.
 
 Today the company server runs as a Node/Express modular monolith
 (`server/index.js`, `server/api.js`) with a live SQLite database (`server/db.js`)
-and Socket.IO (`server/realtime.js`). The PostgreSQL production target is scaffolded
-via `server/adapters/database/postgres.adapter.js` and the planned schema in
-`server/db/schema/` (see [DATABASE_SCHEMA.md](DATABASE_SCHEMA.md)). Migration from
-SQLite to PostgreSQL is an additive, non-destructive phase.
+and Socket.IO (`server/realtime.js`). Production uses one SQLite database on a
+durable VPS volume; backups are snapshots, not writable replicas. See
+[DATABASE_SCHEMA.md](DATABASE_SCHEMA.md).

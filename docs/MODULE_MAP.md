@@ -1,6 +1,20 @@
 # Module Map
 
-Last updated: 2026-06-18
+Last updated: 2026-07-13
+
+**Ranh giới module = tầng `server/services/*`** (34 file, một domain một file). Tầng
+`server/modules/<domain>/` là *route ownership* (routes.js + index.js re-export service).
+
+Trạng thái tách route ownership (THỰC TẾ, không phải kế hoạch):
+
+- ✅ Đã tách HẾT route vào module (**23 module**): inventory, invoices, payments, tax, orders,
+  reports, audit, purchase, expenses, online, printing, retail, contacts, catalog, agent,
+  appRelease, sync, auth, clientLog, config, settings, database, documents.
+- ⏳ `api.js` còn ~320 dòng: chỉ giữ helper cross-cutting dùng chung (wrap/guard/branch/…,
+  saveBase64Image/applyManualConfirm/assertBillEditable/scopedUserBody/logRequestError — truyền
+  vào module) + route dev `/dev/seed`. Đây là vai trò registrar, đúng thiết kế.
+- Gotcha: `fileCashDrawerReceipt` export từ `modules/documents` (api.js import lại để truyền cho
+  `payments`); `saveBase64Image` là helper chung của settings/catalog/contacts.
 
 | Domain | Current files | Target module zone | Protected |
 | --- | --- | --- | --- |
@@ -11,6 +25,7 @@ Last updated: 2026-06-18
 | Payments/shifts/cash drawer | `server/services/payments.js`, `shifts.js`, `cashDrawer.js` | `server/modules/payments` | Yes |
 | Invoices/MISA | `server/services/invoices.js`, `misa.js` | `server/modules/invoices`, `integrations/misa` | Yes |
 | Inventory/warehouse/SKU | `server/services/inventory.js` | `server/modules/inventory` | Yes |
+| Tax/VAT/MST | `server/services/tax.js`, `settings.js`, `customers.js` | `server/modules/tax` | Yes |
 | Retail | `server/services/retail.js` | `server/modules/pos`, `inventory` | Yes |
 | Customers | `server/services/customers.js` | `server/modules/customers` | Yes |
 | Reports/audit/archive | `server/services/reports.js`, `reportCenter.js`, `archive.js` | `server/modules/reports`, `audit` | Yes |
@@ -23,4 +38,8 @@ Last updated: 2026-06-18
 - Public functions must have validation and predictable errors.
 - Sensitive actions need permission checks and audit logs.
 - Deletion must be reviewed for append-only alternatives.
-- Shared business logic belongs in services/modules, not copied across HTML pages.
+- Shared business logic belongs in services/modules, not copied across app screens.
+- Backend route ownership lives in `server/modules/<domain>/routes.js`; `server/api.js`
+  stays as the top-level registrar and shared compatibility layer.
+- Flutter domain API methods move from `lib/services/api_service.dart` into
+  `lib/services/api/<domain>_api.dart` parts when a group grows.

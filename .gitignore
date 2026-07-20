@@ -16,6 +16,8 @@ out/
 Thumbs.db
 
 backups/
+runtime/
+server-data/
 server/store.db
 server/store.db-shm
 server/store.db-wal
@@ -40,7 +42,11 @@ server/permanent-storage/**
 # Model / Temporary
 artifacts/
 scratch/
+.runlogs/
 *.exe
+*.apk
+*.tgz
+*.zip
 
 # Flutter temp
 **/.dart_tool/

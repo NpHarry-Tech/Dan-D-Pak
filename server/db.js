@@ -1,49 +1,26 @@
-// SQLite layer for the Local Store Server.
-// The schema is migration-friendly: existing demo DBs keep working while new
-// warehouse/menu fields are added in place.
-import { DatabaseSync } from 'node:sqlite';
-import { fileURLToPath } from 'node:url';
-import { dirname, isAbsolute, join, resolve } from 'node:path';
-import { mkdirSync, existsSync, readdirSync, statSync, rmSync } from 'node:fs';
+// SQLite layer facade for the Local Store Server.
+// Heavy DB concerns live in server/db/*; keep this file as the stable import surface.
+import { ensurePermanentStorage } from './services/archive.js';
+import { db, DB_PATH, ROOT } from './db/connection.js';
+import { now, uid } from './db/ids.js';
 import {
-  appendAuditArchive, ensurePermanentStorage, readRecentAuditArchive,
-  listAuditBranches, listArchivedMonths, listAuditDayMonths, hasMonthlyArchive,
-  writeMonthlyArchive, readMonthlyArchive, deleteMonthlyArchive,
-  readDayEntriesForMonth, deleteDayFilesForMonth,
-} from './services/archive.js';
-import { env } from './config/env.js';
-import crypto from 'node:crypto';
-import zlib from 'node:zlib';
+  audit, encryptCompress, decryptDecompress, reconcileAuditFromArchive, compactAuditToMonthly,
+  rehydrateAuditMonths, rehydrateAuditForQuery, purgeAuditBeyondRetention,
+} from './db/audit.js';
+import {
+  defaultWarehouseIds, defaultWarehouseId, bootstrapBranchDefaults,
+  bootstrapWarehouseDefaults, bootstrapTableDefaults,
+} from './db/bootstrap.js';
+import { backupDatabase, listBackups } from './db/maintenance.js';
+import { runMigrations } from './db/migrations.js';
 
-
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const ROOT = join(__dirname, '..');
-
-function resolveDbPath() {
-  if (env.DATABASE_URL && env.DATABASE_PROVIDER === 'sqlite') {
-    if (env.DATABASE_URL.startsWith('sqlite://')) {
-      const path = env.DATABASE_URL.replace('sqlite://', '');
-      return isAbsolute(path) ? path : resolve(ROOT, path);
-    }
-  }
-  if (!env.SQLITE_PATH) return join(__dirname, 'store.db');
-  return isAbsolute(env.SQLITE_PATH) ? env.SQLITE_PATH : resolve(ROOT, env.SQLITE_PATH);
-}
-
-export const DB_PATH = resolveDbPath();
-mkdirSync(dirname(DB_PATH), { recursive: true });
-
-export const db = new DatabaseSync(DB_PATH);
-
-db.exec('PRAGMA journal_mode = WAL;');
-db.exec('PRAGMA foreign_keys = ON;');
-db.exec('PRAGMA busy_timeout = 5000;');        // Retry 5 giây trước khi báo lỗi locked — quan trọng khi 50 thiết bị cùng ghi
-db.exec('PRAGMA synchronous = NORMAL;');       // Nhanh hơn FULL, vẫn an toàn với WAL
-db.exec('PRAGMA cache_size = -65536;');        // 64 MB page cache trong RAM
-db.exec('PRAGMA temp_store = MEMORY;');        // Bảng tạm trong RAM
-db.exec('PRAGMA mmap_size = 134217728;');      // 128 MB memory-mapped I/O
-db.exec('PRAGMA wal_autocheckpoint = 1000;');  // Checkpoint mỗi 1000 pages (~4 MB)
-
+export {
+  db, DB_PATH, ROOT, now, uid, audit, encryptCompress, decryptDecompress,
+  reconcileAuditFromArchive, compactAuditToMonthly, rehydrateAuditMonths, rehydrateAuditForQuery,
+  purgeAuditBeyondRetention, defaultWarehouseIds, defaultWarehouseId,
+  bootstrapBranchDefaults, bootstrapWarehouseDefaults, bootstrapTableDefaults,
+  backupDatabase, listBackups,
+};
 const globalDb = db;
 export function migrate(targetDb = globalDb) {
   const isMaster = (targetDb === globalDb);
@@ -114,6 +91,7 @@ export function migrate(targetDb = globalDb) {
     allergens_json TEXT DEFAULT '[]',
     schedule_json TEXT DEFAULT '{"mode":"always"}',
     modifiers_json TEXT DEFAULT '[]',
+    translations_json TEXT DEFAULT '{}',
     sort INTEGER DEFAULT 0
   );
 
@@ -646,6 +624,46 @@ export function migrate(targetDb = globalDb) {
   );
   CREATE INDEX IF NOT EXISTS idx_pp_po ON purchase_payments(po_id);
 
+  -- Trả hàng nhập (KiotViet PurchaseReturns): trả hàng đã nhập về lại NCC.
+  -- status: draft (Phiếu tạm) -> returned (Đã trả hàng) | cancelled (Đã hủy).
+  -- Khi returned: xuất kho các dòng hàng (1 phiếu kho type 'purchase_return').
+  CREATE TABLE IF NOT EXISTS purchase_returns (
+    id TEXT PRIMARY KEY,
+    branch_id TEXT NOT NULL,
+    code TEXT,
+    supplier_id TEXT,
+    supplier_name TEXT,
+    po_id TEXT,
+    warehouse_id TEXT,
+    status TEXT NOT NULL DEFAULT 'draft',
+    note TEXT,
+    subtotal INTEGER NOT NULL DEFAULT 0,
+    vat_refund INTEGER NOT NULL DEFAULT 0,
+    total INTEGER NOT NULL DEFAULT 0,
+    refund_received INTEGER NOT NULL DEFAULT 0,
+    created_by TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT,
+    returned_at TEXT
+  );
+  CREATE INDEX IF NOT EXISTS idx_pr_branch ON purchase_returns(branch_id);
+
+  CREATE TABLE IF NOT EXISTS purchase_return_lines (
+    id TEXT PRIMARY KEY,
+    pr_id TEXT NOT NULL,
+    item_type TEXT NOT NULL,
+    item_id TEXT NOT NULL,
+    name TEXT,
+    unit TEXT,
+    qty REAL NOT NULL DEFAULT 0,
+    unit_cost REAL NOT NULL DEFAULT 0,
+    line_total INTEGER NOT NULL DEFAULT 0,
+    lot_id TEXT,
+    lot_no TEXT,
+    expiry_date TEXT
+  );
+  CREATE INDEX IF NOT EXISTS idx_prl_pr ON purchase_return_lines(pr_id);
+
   -- Expenses (Chi phí): general business expense ledger. Two cash sources:
   --   'drawer'  -> trừ vào két ca đang mở (reuses cash_drawer_entries, linked via drawer_entry_id)
   --   'direct'  -> kế toán chi trực tiếp / chuyển khoản (không đụng két)
@@ -707,6 +725,7 @@ export function migrate(targetDb = globalDb) {
   addColumnIfMissing('menu_items', 'allergens_json', `TEXT DEFAULT '[]'`);
   addColumnIfMissing('menu_items', 'schedule_json', `TEXT DEFAULT '{"mode":"always"}'`);
   addColumnIfMissing('menu_items', 'addons_json', `TEXT DEFAULT '[]'`);   // combos & extras
+  addColumnIfMissing('menu_items', 'translations_json', `TEXT DEFAULT '{}'`);
 
   addColumnIfMissing('inventory_items', 'warehouse_id', 'TEXT');
   addColumnIfMissing('inventory_items', 'item_type', `TEXT NOT NULL DEFAULT 'ingredient'`);
@@ -804,12 +823,55 @@ export function migrate(targetDb = globalDb) {
   // Purchase payments: support paying a supplier straight from the cash drawer.
   addColumnIfMissing('purchase_payments', 'source', `TEXT NOT NULL DEFAULT 'direct'`); // drawer | direct
   addColumnIfMissing('purchase_payments', 'drawer_entry_id', 'TEXT');
+  // ── Kho KiotViet hoàn thiện (2026-07-15) ────────────────────────────────────
+  // Kiểm kho theo phiếu: nháp (Phiếu tạm) -> cân bằng kho (approved) | hủy.
+  addColumnIfMissing('stocktake_sessions', 'code', 'TEXT');        // Mã kiểm kho KK000001
+  addColumnIfMissing('stocktake_sessions', 'note', 'TEXT');
+  addColumnIfMissing('stocktake_sessions', 'created_by', 'TEXT');
+  addColumnIfMissing('stocktake_sessions', 'cancelled_at', 'TEXT');
+  addColumnIfMissing('stocktake_lines', 'lot_no', 'TEXT');         // kiểm theo lô (file mẫu Lô 1/Lô 2…)
+  addColumnIfMissing('stocktake_lines', 'expiry_date', 'TEXT');
+  addColumnIfMissing('stocktake_lines', 'note', 'TEXT');
+  // Phiếu kho có mã đọc được (PN/XK/CH/KK/XDNB/THN…) thay vì chỉ doc_xxx.
+  addColumnIfMissing('inventory_documents', 'code', 'TEXT');
+  addColumnIfMissing('inventory_documents', 'note', 'TEXT');
+  addColumnIfMissing('inventory_documents', 'created_by', 'TEXT');
+  // Nhập hàng: VAT nhập hàng + lô/HSD khai ngay trên dòng phiếu.
+  addColumnIfMissing('purchase_orders', 'vat_amount', 'INTEGER NOT NULL DEFAULT 0');
+  addColumnIfMissing('purchase_orders', 'received_at', 'TEXT');
+  addColumnIfMissing('purchase_orders', 'created_by', 'TEXT');
+  // Số hóa đơn đầu vào của NCC (KiotViet: "Số hóa đơn đầu vào").
+  addColumnIfMissing('purchase_orders', 'invoice_no', 'TEXT');
+  addColumnIfMissing('purchase_order_lines', 'lot_no', 'TEXT');
+  addColumnIfMissing('purchase_order_lines', 'expiry_date', 'TEXT');
   addColumnIfMissing('cash_drawer_entries', 'invoice_image', 'TEXT');
   addColumnIfMissing('cash_drawer_entries', 'reimburses_entry_id', 'TEXT');
   addColumnIfMissing('cash_drawer_entries', 'actor_id', 'TEXT');
   addColumnIfMissing('cash_drawer_entries', 'actor_name', 'TEXT');
   addColumnIfMissing('cash_drawer_entries', 'balance_before', 'INTEGER NOT NULL DEFAULT 0');
   addColumnIfMissing('cash_drawer_entries', 'balance_after', 'INTEGER NOT NULL DEFAULT 0');
+
+  // BẢNG GIÁ (KiotViet): nhiều bảng giá bán song song "Bảng giá chung" (=
+  // skus.price). Bảng giá tạo/sửa trong Cài đặt → Kho & kênh bán; giá riêng
+  // từng SKU lưu ở price_book_items — SKU không có dòng thì dùng giá chung.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS price_books (
+      id TEXT PRIMARY KEY,
+      branch_id TEXT NOT NULL DEFAULT 'br1',
+      name TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'active',
+      created_at TEXT NOT NULL,
+      updated_at TEXT
+    );
+    CREATE TABLE IF NOT EXISTS price_book_items (
+      book_id TEXT NOT NULL,
+      sku_id TEXT NOT NULL,
+      price INTEGER NOT NULL,
+      updated_at TEXT,
+      PRIMARY KEY (book_id, sku_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_pbi_book ON price_book_items(book_id);
+  `);
 
   const customerBranches = db.prepare(`SELECT DISTINCT branch_id FROM customers`).all();
   const codeUpd = db.prepare(`UPDATE customers SET code=? WHERE id=? AND branch_id=?`);
@@ -836,6 +898,7 @@ export function migrate(targetDb = globalDb) {
   db.exec(`CREATE INDEX IF NOT EXISTS idx_orders_branch_status ON orders(branch_id, status);`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_orders_branch_created ON orders(branch_id, created_at DESC);`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_orders_branch_paid ON orders(branch_id, status, paid_at DESC);`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_orders_online_ref ON orders(branch_id, online_channel, online_ref) WHERE online_ref IS NOT NULL AND online_ref!='';`);
   db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_bill_no ON orders(branch_id, bill_no) WHERE bill_no IS NOT NULL;`);
   // order_items: KDS gọi mỗi vài giây; pending_confirm polling
   db.exec(`CREATE INDEX IF NOT EXISTS idx_order_items_order ON order_items(order_id, created_at);`);
@@ -853,10 +916,20 @@ export function migrate(targetDb = globalDb) {
   addColumnIfMissing('vouchers', 'schedule_json', `TEXT DEFAULT '{}'`);
   addColumnIfMissing('vouchers', 'scope_json', `TEXT DEFAULT '{}'`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_audit_hot_until ON audit_log(hot_until);`);
+  // Client log delivery is retried after lost HTTP responses. Its stable evt_ key
+  // makes those retries idempotent without merging separate, real incidents.
+  db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_system_logs_client_event
+    ON system_logs(COALESCE(branch_id,''), request_id)
+    WHERE request_id LIKE 'evt_%';`);
   // shifts: báo cáo, dashboard
   db.exec(`CREATE INDEX IF NOT EXISTS idx_shifts_branch_opened ON shifts(branch_id, opened_at DESC, status);`);
   // cash_drawer_entries: báo cáo két, ca
   db.exec(`CREATE INDEX IF NOT EXISTS idx_cash_drawer_branch_occurred ON cash_drawer_entries(branch_id, occurred_at DESC);`);
+  // print_jobs: bảng tăng vô hạn (mỗi bill/tem/ticket = 1 dòng). Thiếu 2 index này
+  // thì listJobs (Phiếu in) + agent poll phải full-scan + sort cả bảng → chậm hàng
+  // chục giây. idx branch+created cho danh sách; idx branch+status cho agent poll.
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_print_jobs_branch_created ON print_jobs(branch_id, created_at DESC);`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_print_jobs_branch_status ON print_jobs(branch_id, status, created_at);`);
 
   // Enterprise storage: system-wide + branch + user scoped key-value store.
   db.exec(`
@@ -926,14 +999,29 @@ export function migrate(targetDb = globalDb) {
   CREATE INDEX IF NOT EXISTS idx_docfiles_category ON document_files(branch_id, category, created_at);
   CREATE INDEX IF NOT EXISTS idx_docfiles_source   ON document_files(branch_id, source, created_at);
   `);
+  addColumnIfMissing('document_files', 'content_hash', 'TEXT');
+  db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_docfiles_content_hash ON document_files(branch_id, content_hash) WHERE content_hash IS NOT NULL AND is_archived=0;`);
+
+  runMigrations(db);
 
   if (isMaster) {
-    initSyncTriggers(db);
+    dropSyncTriggers(db);
     ensurePermanentStorage();
     bootstrapBranchDefaults();
     for (const b of db.prepare(`SELECT id FROM branches WHERE active=1 ORDER BY sort,name`).all()) {
       bootstrapWarehouseDefaults(b.id);
       bootstrapTableDefaults(b.id);
+    }
+    initSyncTriggers(db);
+  }
+}
+function dropSyncTriggers(targetDb) {
+  const triggers = targetDb
+    .prepare(`SELECT name FROM sqlite_master WHERE type='trigger' AND name LIKE 'trg_sync_%'`)
+    .all();
+  for (const { name } of triggers) {
+    if (/^trg_sync_(ins|upd)_[a-z0-9_]+$/i.test(name)) {
+      targetDb.exec(`DROP TRIGGER IF EXISTS ${name};`);
     }
   }
 }
@@ -973,6 +1061,8 @@ function initSyncTriggers(targetDb) {
     { name: 'purchase_orders', key: 'id' },
     { name: 'purchase_order_lines', key: 'id', hasBranch: false, poRef: 'po_id' },
     { name: 'purchase_payments', key: 'id' },
+    { name: 'purchase_returns', key: 'id' },
+    { name: 'purchase_return_lines', key: 'id', hasBranch: false, prRef: 'pr_id' },
     { name: 'expense_categories', key: 'id' },
     { name: 'expenses', key: 'id' },
     { name: 'enterprise_storage', composite: ['scope', 'scope_id', 'key'] },
@@ -1001,6 +1091,8 @@ function initSyncTriggers(targetDb) {
         branchSql = `COALESCE((SELECT branch_id FROM orders WHERE id = (SELECT order_id FROM payments WHERE id = NEW.${t.paymentRef})), 'br1')`;
       } else if (t.poRef) {
         branchSql = `COALESCE((SELECT branch_id FROM purchase_orders WHERE id = NEW.${t.poRef}), 'br1')`;
+      } else if (t.prRef) {
+        branchSql = `COALESCE((SELECT branch_id FROM purchase_returns WHERE id = NEW.${t.prRef}), 'br1')`;
       } else {
         branchSql = `'br1'`;
       }
@@ -1046,424 +1138,5 @@ function initSyncTriggers(targetDb) {
         END;
       `);
     }
-  }
-}
-
-export const now = () => new Date().toISOString();
-export const uid = (p = '') => p + Math.random().toString(36).slice(2, 8) + Date.now().toString(36).slice(-4);
-
-export function audit(action, detail, branch_id = 'br1', actor = 'system') {
-  const id = uid('a_');
-  const created_at = now();
-  const cleanDetail = typeof detail === 'string' ? detail : JSON.stringify(detail);
-  const entry = { id, branch_id, actor, action, detail: cleanDetail, created_at };
-  // Durable archive FIRST (fsync'd NDJSON): if the SQLite write below fails — or a
-  // crash hits right after — the footprint line is already safely on disk.
-  appendAuditArchive(entry);
-  // Logging must never break the business operation that triggered it: swallow
-  // SQLite errors (the NDJSON archive above still has the entry for recovery).
-  try {
-    db.prepare(`INSERT INTO audit_log (id,branch_id,actor,action,detail,created_at) VALUES (?,?,?,?,?,?)`)
-      .run(id, branch_id, actor, action, cleanDetail, created_at);
-  } catch (e) {
-    console.warn('[audit] sqlite write failed (kept in NDJSON archive):', e.message);
-  }
-}
-
-export function defaultWarehouseIds(branch_id = 'br1') {
-  if (branch_id === 'br1') {
-    return { kitchen: 'wh_kitchen', retail: 'wh_retail', showroom: 'wh_showroom_bcm' };
-  }
-  const clean = String(branch_id || 'br1').replace(/[^a-zA-Z0-9_]/g, '_').toLowerCase();
-  return {
-    kitchen: `${clean}_wh_kitchen`,
-    retail: `${clean}_wh_retail`,
-    showroom: `${clean}_wh_showroom_bcm`,
-  };
-}
-
-export function defaultWarehouseId(branch_id = 'br1', stockType = 'inventory') {
-  const ids = defaultWarehouseIds(branch_id);
-  return stockType === 'sku' || stockType === 'retail' ? ids.retail : ids.kitchen;
-}
-
-export function bootstrapBranchDefaults() {
-  db.prepare(`INSERT OR IGNORE INTO branches (id,name,address,code,active,sort) VALUES (?,?,?,?,1,?)`)
-    .run('br1', 'Dan D Pak Sala', 'Sala, TP.HCM', 'SALA', 1);
-  db.prepare(`UPDATE branches
-    SET name=CASE WHEN name IN ('District 1 - HCMC','Dan D Pak') THEN 'Dan D Pak Sala' ELSE name END,
-        code=COALESCE(NULLIF(code,''),'SALA'),
-        active=COALESCE(active,1),
-        sort=COALESCE(sort,1)
-    WHERE id='br1'`).run();
-  db.prepare(`UPDATE users SET branch_access_json='["*"]' WHERE role='owner' AND (branch_access_json IS NULL OR branch_access_json='' OR branch_access_json='[]')`).run();
-}
-
-// Self-heal after a crash: replay the fsync'd NDJSON footprint archive back into
-// audit_log. With WAL+synchronous=NORMAL, a power loss can roll back SQLite's most
-// recent commits, but the archive (written + fsync'd before each SQLite insert)
-// still has them. INSERT OR IGNORE on the primary key makes this idempotent, so it
-// only restores rows that are genuinely missing. Returns how many were restored.
-export function reconcileAuditFromArchive(days = 2) {
-  let restored = 0;
-  try {
-    const entries = readRecentAuditArchive(days);
-    if (!entries.length) return 0;
-    const stmt = db.prepare(`INSERT OR IGNORE INTO audit_log (id,branch_id,actor,action,detail,created_at) VALUES (?,?,?,?,?,?)`);
-    for (const e of entries) {
-      const detail = typeof e.detail === 'string' ? e.detail : JSON.stringify(e.detail ?? null);
-      const r = stmt.run(e.id, e.branch_id ?? 'br1', e.actor ?? 'system', e.action, detail, e.created_at);
-      if (r.changes > 0) restored++;
-    }
-  } catch (e) {
-    console.warn('[audit] reconcile from archive failed:', e.message);
-  }
-  return restored;
-}
-
-const ALGORITHM = 'aes-256-ctr';
-// Khóa mã hóa chi tiết audit khi nén/lưu trữ. Ưu tiên biến môi trường AUDIT_LOG_KEY
-// để không hardcode bí mật trong source. Lưu ý: nếu đặt key MỚI sau khi đã có bản ghi
-// mã hóa bằng key cũ thì các bản cũ đó sẽ không giải mã được — nên đặt key ngay từ đầu
-// (compaction chỉ mã hóa bản ghi > 90 ngày, hệ thống mới thường chưa có).
-const SECRET_KEY = crypto.scryptSync(
-  process.env.AUDIT_LOG_KEY || process.env.SESSION_SECRET || 'dandpak-audit-log-key-secret-12345',
-  'salt', 32);
-
-export function encryptCompress(text) {
-  try {
-    const compressed = zlib.gzipSync(Buffer.from(text, 'utf8'));
-    const iv = crypto.randomBytes(16);
-    const cipher = crypto.createCipheriv(ALGORITHM, SECRET_KEY, iv);
-    const encrypted = Buffer.concat([cipher.update(compressed), cipher.final()]);
-    return '__ENC__:' + iv.toString('hex') + ':' + encrypted.toString('hex');
-  } catch (e) {
-    console.error('[audit] compression/encryption failed:', e.message);
-    return text;
-  }
-}
-
-export function decryptDecompress(encText) {
-  if (!encText || !encText.startsWith('__ENC__:')) return encText;
-  try {
-    const parts = encText.split(':');
-    if (parts.length !== 3) return encText;
-    const iv = Buffer.from(parts[1], 'hex');
-    const encrypted = Buffer.from(parts[2], 'hex');
-    const decipher = crypto.createDecipheriv(ALGORITHM, SECRET_KEY, iv);
-    const decrypted = Buffer.concat([decipher.update(encrypted), decipher.final()]);
-    return zlib.gunzipSync(decrypted).toString('utf8');
-  } catch (e) {
-    console.error('[audit] decryption/decompression failed:', e.message);
-    return encText;
-  }
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// Activity-log lifecycle (tiered retention)
-//   • Hot  : rows of the last AUDIT_HOT_MONTHS months live in SQLite → instant query.
-//   • Cold : older months are consolidated into ONE gzip'd NDJSON per month
-//            (services/archive.js) and their SQLite rows dropped → tiny store.db.
-//   • Open : a lookup that reaches a cold month rehydrates it back into SQLite and
-//            marks it hot for AUDIT_REHYDRATE_DAYS; the daily job re-compacts it
-//            once that window passes → back to the space-saving format.
-//   • Purge: archives (and rows) older than AUDIT_RETENTION_MONTHS are deleted
-//            (as month 37 begins, month 1 is dropped).
-// ═══════════════════════════════════════════════════════════════════════════
-const AUDIT_HOT_MONTHS = 3;
-const AUDIT_RETENTION_MONTHS = 36;
-const AUDIT_REHYDRATE_DAYS = 7;
-const AUDIT_MS_DAY = 24 * 60 * 60 * 1000;
-
-function monthIndexNow() { const d = new Date(); return d.getUTCFullYear() * 12 + d.getUTCMonth(); }
-function monthToIndex(ym) { const [y, m] = String(ym).split('-').map(Number); return y * 12 + (m - 1); }
-function indexToYm(idx) { const y = Math.floor(idx / 12); const m = idx % 12; return `${y}-${String(m + 1).padStart(2, '0')}`; }
-function ymStartIso(ym) { const [y, m] = ym.split('-').map(Number); return new Date(Date.UTC(y, m - 1, 1)).toISOString(); }
-function ymEndIso(ym) { const [y, m] = ym.split('-').map(Number); return new Date(Date.UTC(y, m, 1)).toISOString(); }
-function ymOfDate(d) { return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`; }
-function monthsBetween(start, end) {
-  const out = [];
-  const last = monthToIndex(ymOfDate(end));
-  for (let idx = monthToIndex(ymOfDate(start)); idx <= last && out.length < 60; idx++) out.push(indexToYm(idx));
-  return out;
-}
-
-// Consolidate one branch-month into its gzip archive, then drop the SQLite rows
-// that are no longer within a hot window and the now-redundant per-day files.
-function rollUpAuditMonth(branch, ym) {
-  const startIso = ymStartIso(ym), endIso = ymEndIso(ym);
-  const byId = new Map();
-  const add = (e) => {
-    if (!e || !e.id || !e.action) return;
-    const detail = typeof e.detail === 'string'
-      ? decryptDecompress(e.detail)
-      : (e.detail == null ? '' : JSON.stringify(e.detail));
-    byId.set(e.id, {
-      id: e.id,
-      branch_id: e.branch_id || branch,
-      actor: e.actor || 'system',
-      action: e.action,
-      detail,
-      created_at: e.created_at,
-    });
-  };
-  for (const e of readMonthlyArchive(branch, ym)) add(e);       // preserve on re-roll
-  for (const e of readDayEntriesForMonth(branch, ym)) add(e);   // durable footprint
-  for (const r of db.prepare(
-    `SELECT id,branch_id,actor,action,detail,created_at FROM audit_log WHERE branch_id=? AND created_at>=? AND created_at<?`
-  ).all(branch, startIso, endIso)) add(r);
-
-  const entries = [...byId.values()].sort((a, b) => (a.created_at < b.created_at ? -1 : 1));
-  if (!entries.length) return { archived: 0, removed: 0 };
-
-  writeMonthlyArchive(branch, ym, entries);                     // durable archive FIRST
-  const nowIso = now();
-  const removed = db.prepare(
-    `DELETE FROM audit_log WHERE branch_id=? AND created_at>=? AND created_at<? AND (hot_until IS NULL OR hot_until<=?)`
-  ).run(branch, startIso, endIso, nowIso).changes;
-  deleteDayFilesForMonth(branch, ym);
-  return { archived: entries.length, removed };
-}
-
-// Daily job: archive every month older than the hot window, and re-compact any
-// rehydrated month whose 7-day hot window has passed.
-export function compactAuditToMonthly(hotMonths = AUDIT_HOT_MONTHS) {
-  let archivedMonths = 0, removedRows = 0;
-  try {
-    const nowIso = now();
-    const cutoffIdx = monthIndexNow() - hotMonths;              // months <= cutoff are cold
-    const hotWindowStartIso = ymStartIso(indexToYm(monthIndexNow() - (hotMonths - 1)));
-    for (const branch of listAuditBranches()) {
-      const months = new Set();
-      for (const ym of listAuditDayMonths(branch)) if (monthToIndex(ym) <= cutoffIdx) months.add(ym);
-      for (const r of db.prepare(
-        `SELECT DISTINCT substr(created_at,1,7) ym FROM audit_log WHERE branch_id=? AND created_at<?`
-      ).all(branch, hotWindowStartIso)) if (r.ym) months.add(r.ym);
-      for (const r of db.prepare(
-        `SELECT DISTINCT substr(created_at,1,7) ym FROM audit_log WHERE branch_id=? AND hot_until IS NOT NULL AND hot_until<=?`
-      ).all(branch, nowIso)) if (r.ym) months.add(r.ym);
-      for (const ym of months) {
-        if (monthToIndex(ym) > cutoffIdx) continue;             // never touch the hot window
-        const res = rollUpAuditMonth(branch, ym);
-        if (res.archived) archivedMonths++;
-        removedRows += res.removed;
-      }
-    }
-  } catch (e) {
-    console.warn('[audit] compactAuditToMonthly failed:', e.message);
-  }
-  return { archivedMonths, removedRows };
-}
-
-// Pull cold months back into SQLite and (re)mark them hot for AUDIT_REHYDRATE_DAYS.
-export function rehydrateAuditMonths(branch, months = []) {
-  let touched = 0;
-  const hotUntil = new Date(Date.now() + AUDIT_REHYDRATE_DAYS * AUDIT_MS_DAY).toISOString();
-  const ins = db.prepare(
-    `INSERT OR IGNORE INTO audit_log (id,branch_id,actor,action,detail,created_at,hot_until) VALUES (?,?,?,?,?,?,?)`
-  );
-  for (const ym of months) {
-    const entries = readMonthlyArchive(branch, ym);
-    if (!entries.length) continue;
-    db.exec('BEGIN TRANSACTION;');
-    try {
-      for (const e of entries) {
-        const detail = typeof e.detail === 'string' ? e.detail : JSON.stringify(e.detail ?? null);
-        ins.run(e.id, e.branch_id || branch, e.actor || 'system', e.action, detail, e.created_at, hotUntil);
-      }
-      db.exec('COMMIT;');
-    } catch (err) {
-      db.exec('ROLLBACK;');
-      throw err;
-    }
-    // Extend the hot window on every re-open (naturally-hot rows keep hot_until NULL).
-    db.prepare(
-      `UPDATE audit_log SET hot_until=? WHERE branch_id=? AND created_at>=? AND created_at<? AND hot_until IS NOT NULL`
-    ).run(hotUntil, branch, ymStartIso(ym), ymEndIso(ym));
-    touched += entries.length;
-  }
-  return touched;
-}
-
-// Called by GET /audit: rehydrate any cold month the query window reaches into so
-// even super-old lookups are served from fast SQLite.
-export function rehydrateAuditForQuery(branch, { from = null, to = null, period = null, before = null } = {}) {
-  try {
-    const end = to ? new Date(to) : (before ? new Date(before) : new Date());
-    let start;
-    if (from) start = new Date(from);
-    else if (period) start = auditPeriodStart(period);
-    else start = new Date(end.getTime() - 62 * AUDIT_MS_DAY);  // unbounded paging: ~2 months up to the cursor
-    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return 0;
-    const wanted = monthsBetween(start, end).filter((ym) => hasMonthlyArchive(branch, ym));
-    if (!wanted.length) return 0;
-    return rehydrateAuditMonths(branch, wanted);
-  } catch (e) {
-    console.warn('[audit] rehydrateAuditForQuery failed:', e.message);
-    return 0;
-  }
-}
-
-function auditPeriodStart(period) {
-  const ref = new Date();
-  if (period === 'day') { const d = new Date(ref); d.setHours(0, 0, 0, 0); return d; }
-  if (period === 'week') { const d = new Date(ref); const day = d.getDay(); const diff = d.getDate() - day + (day === 0 ? -6 : 1); const mon = new Date(d.setDate(diff)); mon.setHours(0, 0, 0, 0); return mon; }
-  if (period === 'month') return new Date(ref.getFullYear(), ref.getMonth(), 1);
-  if (period === 'quarter') return new Date(ref.getFullYear(), Math.floor(ref.getMonth() / 3) * 3, 1);
-  if (period === 'year') return new Date(ref.getFullYear(), 0, 1);
-  return new Date(ref.getTime() - 62 * AUDIT_MS_DAY);
-}
-
-// Delete archives + rows older than the retention window (month 37 drops month 1).
-export function purgeAuditBeyondRetention(retentionMonths = AUDIT_RETENTION_MONTHS) {
-  let removedFiles = 0, removedRows = 0;
-  try {
-    const keepFromIdx = monthIndexNow() - (retentionMonths - 1);  // keep last N months incl. current
-    const cutoffIso = ymStartIso(indexToYm(keepFromIdx));
-    for (const branch of listAuditBranches()) {
-      for (const ym of listArchivedMonths(branch)) {
-        if (monthToIndex(ym) < keepFromIdx) {
-          if (deleteMonthlyArchive(branch, ym)) removedFiles++;
-          removedFiles += deleteDayFilesForMonth(branch, ym);
-        }
-      }
-      for (const ym of listAuditDayMonths(branch)) {
-        if (monthToIndex(ym) < keepFromIdx) removedFiles += deleteDayFilesForMonth(branch, ym);
-      }
-    }
-    removedRows = db.prepare(`DELETE FROM audit_log WHERE created_at<?`).run(cutoffIso).changes;
-  } catch (e) {
-    console.warn('[audit] purgeAuditBeyondRetention failed:', e.message);
-  }
-  return { removedFiles, removedRows };
-}
-
-// Sao lưu THẬT cơ sở dữ liệu: VACUUM INTO tạo một bản sao nhất quán (đã gộp WAL)
-// vào thư mục backups/. Đây là bản sao có thể copy ra ổ ngoài/VPS. Giữ `retentionDays`.
-export function backupDatabase(retentionDays = 14) {
-  try {
-    const dir = join(ROOT, 'backups');
-    mkdirSync(dir, { recursive: true });
-    const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-    const dest = join(dir, `store-${stamp}.db`);
-    if (!existsSync(dest)) db.exec(`VACUUM INTO '${dest.replace(/'/g, "''")}'`);
-    // Dọn bản sao quá hạn
-    const cutoff = Date.now() - Math.max(1, retentionDays) * 24 * 60 * 60 * 1000;
-    let pruned = 0;
-    for (const f of readdirSync(dir)) {
-      if (!/^store-.*\.db$/.test(f)) continue;
-      const full = join(dir, f);
-      try { if (statSync(full).mtimeMs < cutoff) { rmSync(full, { force: true }); pruned++; } } catch { /* ignore */ }
-    }
-    return { ok: true, path: dest, bytes: existsSync(dest) ? statSync(dest).size : 0, pruned };
-  } catch (e) {
-    return { ok: false, error: e.message };
-  }
-}
-
-// Liệt kê các bản sao lưu hiện có (cho /database/status báo cáo TRUNG THỰC).
-export function listBackups() {
-  try {
-    const dir = join(ROOT, 'backups');
-    if (!existsSync(dir)) return [];
-    return readdirSync(dir)
-      .filter(f => /^store-.*\.db$/.test(f))
-      .map(f => { const s = statSync(join(dir, f)); return { file: f, bytes: s.size, mtime: new Date(s.mtimeMs).toISOString() }; })
-      .sort((a, b) => b.mtime.localeCompare(a.mtime));
-  } catch { return []; }
-}
-
-
-export function bootstrapWarehouseDefaults(branch_id = 'br1') {
-  const ids = defaultWarehouseIds(branch_id);
-  db.prepare(`INSERT OR IGNORE INTO warehouses (id,branch_id,code,name,type,sort) VALUES (?,?,?,?,?,?)`)
-    .run(ids.kitchen, branch_id, 'KITCHEN', 'Kho bếp / nguyên liệu & vật dụng', 'kitchen', 1);
-  db.prepare(`INSERT OR IGNORE INTO warehouses (id,branch_id,code,name,type,sort) VALUES (?,?,?,?,?,?)`)
-    .run(ids.retail, branch_id, 'BCM', 'Kho BCM', 'retail', 2);
-  db.prepare(`UPDATE warehouses SET code='BCM', name='Kho BCM', type='retail', active=1, sort=2 WHERE id=? AND branch_id=? AND (code='RETAIL' OR name LIKE '%retail%')`)
-    .run(ids.retail, branch_id);
-  db.prepare(`INSERT OR IGNORE INTO warehouses (id,branch_id,code,name,type,sort) VALUES (?,?,?,?,?,?)`)
-    .run(ids.showroom, branch_id, 'SHOWROOM_BCM', 'Showroom BCM', 'retail', 3);
-  db.prepare(`UPDATE warehouses SET sales_channels_json=? WHERE id=? AND branch_id=? AND (sales_channels_json IS NULL OR sales_channels_json='')`)
-    .run(JSON.stringify(['ipad', 'pos']), ids.kitchen, branch_id);
-  db.prepare(`UPDATE warehouses SET sales_channels_json=? WHERE id=? AND branch_id=? AND (sales_channels_json IS NULL OR sales_channels_json='')`)
-    .run(JSON.stringify(['retail', 'online', 'grabmart', 'website']), ids.retail, branch_id);
-  db.prepare(`UPDATE warehouses SET sales_channels_json=? WHERE id=? AND branch_id=? AND (sales_channels_json IS NULL OR sales_channels_json='')`)
-    .run(JSON.stringify(['retail', 'grabmart']), ids.showroom, branch_id);
-
-  db.prepare(`UPDATE inventory_items SET warehouse_id=COALESCE(warehouse_id,?), item_type=COALESCE(item_type,'ingredient'), active=COALESCE(active,1) WHERE branch_id=?`)
-    .run(ids.kitchen, branch_id);
-  db.prepare(`UPDATE skus SET warehouse_id=COALESCE(warehouse_id,?), active=COALESCE(active,1) WHERE branch_id=?`)
-    .run(ids.retail, branch_id);
-  db.prepare(`UPDATE menu_items SET ingredients_json=COALESCE(ingredients_json,'[]'), allergens_json=COALESCE(allergens_json,'[]'), schedule_json=COALESCE(schedule_json,'{"mode":"always"}'), hidden=COALESCE(hidden,0)`)
-    .run();
-
-  backfillMovementMeta(branch_id);
-  createOpeningLots(branch_id);
-  bootstrapVoucherDefaults(branch_id);
-}
-
-export function bootstrapTableDefaults(branch_id = 'br1') {
-  const existing = db.prepare(`SELECT COUNT(*) n FROM tables WHERE branch_id=?`).get(branch_id).n;
-  if (existing) return;
-  const prefix = branch_id === 'br1' ? '' : `${String(branch_id).replace(/[^a-zA-Z0-9_]/g, '_').toLowerCase()}_`;
-  const rows = [
-    ['Tầng trệt', ['A01', 'A02', 'A03', 'A04', 'A05', 'A06', 'A07', 'A08', 'A09', 'A10']],
-    ['Tầng 1', ['A11', 'A12', 'A13', 'A14', 'A15', 'A16', 'A17', 'A18', 'A19']],
-    ['Nội bộ', ['Nội Bộ 01']],
-    ['OS', ['OS1', 'OS2']],
-    ['Take away', ['TA01']],
-  ];
-  const ins = db.prepare(`INSERT OR IGNORE INTO tables (id,branch_id,zone,code,seats,status) VALUES (?,?,?,?,?,'free')`);
-  for (const [zone, codes] of rows) {
-    for (const code of codes) ins.run(`${prefix}t_${code.replace(/\s+/g, '_')}`, branch_id, zone, code, 4);
-  }
-}
-
-function backfillMovementMeta(branch_id) {
-  const rows = db.prepare(`SELECT id, inventory_item_id FROM stock_movements WHERE branch_id=? AND item_type IS NULL`).all(branch_id);
-  const upd = db.prepare(`UPDATE stock_movements SET item_type=?, warehouse_id=? WHERE id=?`);
-  for (const r of rows) {
-    const inv = db.prepare(`SELECT warehouse_id FROM inventory_items WHERE id=?`).get(r.inventory_item_id);
-    const sku = inv ? null : db.prepare(`SELECT warehouse_id FROM skus WHERE id=?`).get(r.inventory_item_id);
-    upd.run(inv ? 'inventory' : 'sku', inv?.warehouse_id || sku?.warehouse_id || defaultWarehouseId(branch_id, inv ? 'inventory' : 'sku'), r.id);
-  }
-}
-
-function createOpeningLots(branch_id) {
-  const countLots = db.prepare(`SELECT COUNT(*) n FROM stock_lots WHERE branch_id=? AND item_type=? AND item_id=?`);
-  const insLot = db.prepare(`INSERT OR IGNORE INTO stock_lots
-    (id,branch_id,warehouse_id,item_type,item_id,lot_no,received_at,qty_on_hand,unit_cost,supplier,status,created_at)
-    VALUES (?,?,?,?,?,?,?,?,?,?,'active',?)`);
-
-  for (const i of db.prepare(`SELECT id, warehouse_id, stock, cost FROM inventory_items WHERE branch_id=? AND stock>0`).all(branch_id)) {
-    if (countLots.get(branch_id, 'inventory', i.id).n) continue;
-    insLot.run(uid('lot_'), branch_id, i.warehouse_id || defaultWarehouseId(branch_id, 'inventory'), 'inventory', i.id, 'OPENING', now(), i.stock, i.cost || 0, 'opening', now());
-  }
-  for (const s of db.prepare(`SELECT id, warehouse_id, stock, cost FROM skus WHERE branch_id=? AND stock>0`).all(branch_id)) {
-    if (countLots.get(branch_id, 'sku', s.id).n) continue;
-    insLot.run(uid('lot_'), branch_id, s.warehouse_id || defaultWarehouseId(branch_id, 'sku'), 'sku', s.id, 'OPENING', now(), s.stock, s.cost || 0, 'opening', now());
-  }
-}
-
-function bootstrapVoucherDefaults(branch_id) {
-  const anySku = db.prepare(`SELECT id FROM skus WHERE branch_id=? AND active=1 LIMIT 1`).get(branch_id);
-  if (!anySku) return;
-  const hasVoucher = db.prepare(`SELECT COUNT(*) n FROM vouchers WHERE branch_id=?`).get(branch_id).n;
-  if (hasVoucher) return;
-
-  const choco = db.prepare(`SELECT id FROM skus WHERE branch_id=? AND id='s_choco' AND active=1`).get(branch_id)
-    || db.prepare(`SELECT id FROM skus WHERE branch_id=? AND active=1 ORDER BY name LIMIT 1`).get(branch_id);
-  const ts = now();
-  const prefix = branch_id === 'br1' ? '' : `${String(branch_id).replace(/[^a-zA-Z0-9_]/g, '_').toLowerCase()}_`;
-  db.prepare(`INSERT OR IGNORE INTO vouchers
-    (id,branch_id,code,name,type,value,scope,sku_id,min_total,active,note,created_at,updated_at)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`)
-    .run(`${prefix}v_open10`, branch_id, 'OPEN10', 'Khai trương -10%', 'pct', 10, 'order', null, 0, 1, 'Voucher mẫu toàn bill', ts, ts);
-  if (choco) {
-    db.prepare(`INSERT OR IGNORE INTO vouchers
-      (id,branch_id,code,name,type,value,scope,sku_id,min_total,active,note,created_at,updated_at)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`)
-      .run(`${prefix}v_choco5`, branch_id, 'CHOCO5', 'Promo SKU giảm 5K', 'amount', 5000, 'sku', choco.id, 0, 1, 'Promo mẫu gán SKU', ts, ts);
   }
 }

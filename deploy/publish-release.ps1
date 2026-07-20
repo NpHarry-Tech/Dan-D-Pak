@@ -3,12 +3,13 @@
 #
 # Dùng sau khi đã build xong installer:
 #   powershell -File deploy\publish-release.ps1 `
-#       -Server http://171.244.199.186 -Username admin -Pin 1234 `
+#       -Server http://42.96.18.70:3000 -Username admin -Pin 1234 `
 #       -File "dan-d-pak-pos-setup-2026-07-07.exe"
 #
 # Script tự đọc số build (kAppBuildNumber) + version (kAppVersionName) trong
-# flutter-apps/dandpak_pos/lib/app_version.dart, đăng nhập lấy token, rồi upload
-# file cài đặt kèm số build. Xong là mọi máy POS thấy "Cập nhật ngay".
+# app_version.dart của app KHỚP platform (windows -> dandpak_desktop, android ->
+# dandpak_tablet), đăng nhập lấy token, rồi upload file cài đặt kèm số build.
+# Xong là mọi máy POS thấy "Cập nhật ngay".
 # ============================================================
 param(
   [Parameter(Mandatory = $true)][string]$Server,
@@ -22,9 +23,10 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
-# Cả 2 nền tảng đều là dandpak_pos (desktop Windows + tablet Android build từ
-# CÙNG một app — dandpak_tablet đã ngừng phát triển, xem DEPRECATED.md).
-$verFile = Join-Path $root 'flutter-apps\dandpak_pos\lib\app_version.dart'
+# 3 app giờ là vỏ mỏng trên dandpak_core; chọn app_version.dart theo platform.
+# (windows/linux/macos = desktop; android/ios = tablet.)
+$appDir = if ($Platform -in @('android', 'ios')) { 'dandpak_tablet' } else { 'dandpak_desktop' }
+$verFile = Join-Path $root "flutter-apps\$appDir\lib\app_version.dart"
 
 if (-not (Test-Path $File)) { throw "Không thấy file cài đặt: $File" }
 if (-not (Test-Path $verFile)) { throw "Không thấy app_version.dart: $verFile" }
@@ -46,7 +48,9 @@ if (-not $token) { throw "Đăng nhập thất bại" }
 
 # 2) Upload binary (raw) kèm tham số qua query string
 $fileName = [System.IO.Path]::GetFileName($File)
-$q = "platform=$Platform&build=$build&version=$([uri]::EscapeDataString($version))&file=$([uri]::EscapeDataString($fileName))&notes=$([uri]::EscapeDataString($Notes))&mandatory=$([bool]$Mandatory)".ToLower()
+$platformParam = $Platform.ToLowerInvariant()
+$mandatoryParam = ([bool]$Mandatory).ToString().ToLowerInvariant()
+$q = "platform=$platformParam&build=$build&version=$([uri]::EscapeDataString($version))&file=$([uri]::EscapeDataString($fileName))&notes=$([uri]::EscapeDataString($Notes))&mandatory=$mandatoryParam"
 $bytes = [System.IO.File]::ReadAllBytes((Resolve-Path $File))
 
 Write-Host "  Uploading..." -ForegroundColor Cyan

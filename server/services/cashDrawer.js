@@ -1,13 +1,11 @@
 import { db, uid, now, audit } from '../db.js';
+import { cleanText } from '../core/util.js';
 import { archiveCashDrawerEntry } from './archive.js';
 
 function parseAmount(v) {
   const n = Math.round(Number(v) || 0);
   if (n <= 0) throw new Error('Số tiền phải lớn hơn 0');
   return n;
-}
-function cleanText(v, max = 800) {
-  return String(v ?? '').trim().slice(0, max);
 }
 function parseDate(v) {
   if (!v) return now();

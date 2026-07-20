@@ -12,6 +12,7 @@ import { env } from '../config/env.js';
 import { getPrintConfig } from './settings.js';
 import { listSystemPrinters } from './system.js';
 import { logSystem } from './systemLogs.js';
+import { receiptTaxNote } from './tax.js';
 
 const execFileAsync = promisify(execFile);
 const STATION_PRINTER = { kitchen: 'kitchen', salad: 'kitchen', bar: 'bar', beverage: 'bar' };
@@ -296,7 +297,7 @@ function receiptVars(p = {}) {
   const storeName = cfg.storeName || p.branch || 'DAN D PAK';
   const storeSubtitle = cfg.storeSubtitle || '';
   const footer = cfg.footer || 'Xin cam on va hen gap lai';
-  const taxNote = cfg.taxIncludedText || 'Don gia da bao gom VAT';
+  const taxNote = receiptTaxNote(cfg);
   const qrNote = cfg.qrNote || '';
   const showQr = cfg.showQr !== '0' && !p.preview;
 
@@ -402,7 +403,9 @@ function labelVars(p = {}) {
     note: p.note || '',
     qty: p.qty || '',
     copy: p.copy || '',
-    barcode: p.order_no || p.itemName || '',
+    barcode: p.barcode || p.order_no || p.itemName || '',
+    price: p.price || '',
+    code: p.code || '',
   };
 }
 
@@ -657,14 +660,82 @@ export function createJob({ printer, type, title, payload, branch_id = 'br1', re
   return job;
 }
 
+/// In TEM MÃ sản phẩm (nút "In tem mã" trong Kho hàng): tìm máy in tem đã
+/// cấu hình (output product_label, fallback cup_label/tên có "tem"), tạo
+/// [copies] job type 'product_label' — Hardware Agent/máy in local sẽ in.
+export function printProductLabel(branch_id = 'br1', { sku_id = '', sku = {}, copies = 1 } = {}) {
+  if (sku_id && !sku.name) {
+    sku = db.prepare(`SELECT id, name, code, barcode, price FROM skus WHERE id=?`).get(String(sku_id)) || {};
+    if (!sku.id) {
+      const e = new Error('Không tìm thấy sản phẩm để in tem');
+      e.status = 404;
+      throw e;
+    }
+  }
+  const printers = printerRows(branch_id);
+  const byOutput = (out) => printers.find(p => p.active !== false && p.output === out);
+  const printer = byOutput('product_label') ||
+      byOutput('cup_label') ||
+      printers.find(p => p.active !== false &&
+          /tem|label/i.test(`${p.id} ${p.name} ${p.type}`));
+  if (!printer) {
+    const e = new Error('Chưa cấu hình máy in tem — thêm máy in loại "Tem nhãn" trong Cài đặt');
+    e.status = 400;
+    throw e;
+  }
+  const n = Math.max(1, Math.min(30, parseInt(copies) || 1));
+  const name = String(sku.name || '');
+  const payload = {
+    itemName: name,
+    code: String(sku.code || ''),
+    barcode: String(sku.barcode || sku.code || ''),
+    price: sku.price ? `${Math.round(Number(sku.price) || 0).toLocaleString('vi-VN')}d` : '',
+    qty: 1,
+  };
+  const jobs = [];
+  for (let i = 0; i < n; i++) {
+    jobs.push(createJob({
+      printer: printer.id,
+      type: 'product_label',
+      title: `Tem: ${name}`.slice(0, 120),
+      payload: { ...payload, copy: n > 1 ? `${i + 1}/${n}` : '' },
+      branch_id,
+    }));
+  }
+  return { ok: true, printer: printer.id, jobs: jobs.length };
+}
+
 export function listJobs(branch_id = 'br1', query = {}) {
   const limit = Math.max(1, Math.min(300, parseInt(query.limit || query) || 120));
   return db.prepare(`SELECT * FROM print_jobs WHERE branch_id=? ORDER BY created_at DESC LIMIT ?`).all(branch_id, limit).map(publicJob);
 }
 
-export async function listPrinters(branch_id = 'br1', { force = false } = {}) {
+// print_jobs tăng vô hạn (mỗi lần in = 1 dòng, payload_json to). Dọn định kỳ để
+// bảng không phình → truy vấn danh sách/agent-poll luôn nhanh. Job >30 ngày là rác
+// (kể cả còn 'queued' thì máy in đã offline cả tháng). Mirror maintainSystemLogs.
+export function maintainPrintJobs({ days = 30, maxRows = 50_000 } = {}) {
+  try {
+    const cutoff = new Date(Date.now() - days * 86_400_000).toISOString();
+    const byAge = db.prepare(`DELETE FROM print_jobs WHERE created_at < ?`).run(cutoff).changes;
+    let byCount = 0;
+    const total = db.prepare(`SELECT COUNT(*) n FROM print_jobs`).get().n;
+    if (total > maxRows) {
+      byCount = db.prepare(
+        `DELETE FROM print_jobs WHERE id IN (
+           SELECT id FROM print_jobs ORDER BY created_at ASC LIMIT ?)`
+      ).run(total - maxRows).changes;
+    }
+    return { removedByAge: byAge, removedByCount: byCount };
+  } catch {
+    return { removedByAge: 0, removedByCount: 0 };
+  }
+}
+
+export async function listPrinters(branch_id = 'br1', { live = false, force = false } = {}) {
   const configured = printerRows(branch_id);
-  const system = await listSystemPrinters({ force, branch: branch_id }).catch(() => []);
+  const system = live && configured.some(p => (p.connection || 'browser') === 'system')
+    ? await listSystemPrinters({ force, branch: branch_id }).catch(() => [])
+    : [];
   const systemMap = new Map(system.map(p => [String(p.name || '').toLowerCase(), p]));
   return Promise.all(configured.map(async p => {
     const connection = p.connection || 'browser';
@@ -678,6 +749,8 @@ export async function listPrinters(branch_id = 'br1', { force = false } = {}) {
 
     if (p.active === false) {
       status = 'disabled'; state = 'warn'; statusText = 'Tạm tắt'; online = false;
+    } else if (!live) {
+      status = 'ready'; state = 'ok'; statusText = 'Chưa kiểm tra live'; online = true;
     } else if (connection === 'lan') {
       if (!p.ip) {
         status = 'not_configured'; state = 'bad'; statusText = 'Chưa nhập IP máy in LAN'; online = false;
@@ -764,7 +837,6 @@ export async function dispatchJob(id, branch_id = 'br1', { force = false } = {})
   } catch (e) {
     job = patchJob(id, { status: 'failed', error: e.message || String(e) });
     emit('print:failed', job, branch_id);
-    audit('print.failed', { job: id, printer: job.printer, type: job.type, error: job.error }, branch_id);
     logSystem({
       level: 'error', source: 'printer', eventType: 'print_failed',
       title: `In thất bại trên tuyến ${printer?.label || job.printer || '?'}`,
@@ -828,7 +900,6 @@ export function agentReportResult(id, branch_id, { ok, error } = {}) {
   }
   const job = patchJob(id, { status: 'failed', error: String(error || 'Agent in lỗi') });
   emit('print:failed', job, branch_id);
-  audit('print.agent.failed', { job: id, printer: job?.printer, error: job?.error }, branch_id, 'agent');
   logSystem({
     level: 'error', source: 'printer', eventType: 'print_failed',
     title: `Hardware Agent báo in lỗi (tuyến ${job?.printer || '?'})`,

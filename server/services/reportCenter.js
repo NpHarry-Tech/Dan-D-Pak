@@ -1178,6 +1178,11 @@ function browserCandidates() {
     'msedge',
     'chrome',
     'google-chrome',
+    'chromium',
+    'chromium-browser',
+    '/usr/bin/google-chrome',
+    '/usr/bin/chromium',
+    '/usr/bin/chromium-browser',
   ].filter(Boolean);
 }
 export async function renderReportPdf(report) {
@@ -1215,8 +1220,8 @@ export async function renderReportPdfKit(report) {
     doc.on('end', () => resolve(Buffer.concat(chunks)));
     doc.on('error', reject);
   });
-  const regular = path.resolve(process.cwd(), 'flutter-apps/dandpak_pos/assets/fonts/BeVietnamPro-Regular.ttf');
-  const bold = path.resolve(process.cwd(), 'flutter-apps/dandpak_pos/assets/fonts/BeVietnamPro-Bold.ttf');
+  const regular = path.resolve(process.cwd(), 'flutter-apps/dandpak_desktop/assets/fonts/BeVietnamPro-Regular.ttf');
+  const bold = path.resolve(process.cwd(), 'flutter-apps/dandpak_desktop/assets/fonts/BeVietnamPro-Bold.ttf');
   const hasFont = existsSync(regular) && existsSync(bold);
   if (hasFont) {
     doc.registerFont('ReportRegular', regular);

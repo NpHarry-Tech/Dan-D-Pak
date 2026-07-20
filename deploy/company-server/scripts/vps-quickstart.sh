@@ -61,7 +61,7 @@ echo "[quickstart] Chờ server sẵn sàng..."
 for i in $(seq 1 45); do
   if curl -fsS "http://localhost/health" >/dev/null 2>&1; then
     echo ""
-    echo "[quickstart] ✅ XONG — DB đã tự nạp từ server/config-seed.json."
+    echo "[quickstart] ✅ XONG — server đã chạy (DB trống sẽ seed demo; phục hồi dữ liệu thật bằng backup SQLite)."
     echo "[quickstart] Mở:  http://${HOST}"
     echo "[quickstart] Máy POS: đăng nhập với Server URL = http://${HOST}"
     echo "[quickstart] ⚠️  Việc đầu tiên: đổi PIN của TẤT CẢ nhân viên (Cài đặt → Nhân sự)."

@@ -2,7 +2,9 @@
 // One compact voucher table covers order-level discounts, line promos, and
 // birthday/time-window campaigns.
 import { db, uid, now, audit } from '../db.js';
+import { parseJson } from '../core/util.js';
 import { emit } from '../realtime.js';
+import { perkDiscount } from './customers.js';
 
 const TYPES = ['pct', 'amount', 'buy_x_get_1'];
 // order    = toan bill
@@ -21,7 +23,6 @@ export function listVouchers(branch_id = 'br1') {
     WHERE v.branch_id=?
     ORDER BY v.active DESC, v.created_at DESC`).all(branch_id).map(normalizeRow);
 }
-
 export function listActiveVouchers(branch_id = 'br1') {
   return listVouchers(branch_id).filter(v => isUsableNow(v, { ignoreCustomer: true }));
 }
@@ -82,10 +83,15 @@ export function getVoucher(id, branch_id = 'br1') {
 export function calculateRetailDiscount(lines, voucher_id = null, branch_id = 'br1', opts = {}) {
   const active = listVouchers(branch_id).filter(v => isUsableNow(v, { customer: opts.customer }));
   const skuVouchers = active.filter(v => v.scope === 'sku' || v.scope === 'all_sku');
-  const matchesLine = (v, line, lineLotNo) =>
-    v.scope === 'all_sku'
-      ? true
-      : (v.sku_id === line.sku_id && (!v.lot_no || v.lot_no === lineLotNo));
+  // CTKM cấp SẢN PHẨM (scope 'sku' và 'all_sku', gồm cả "mua X tặng 1") CHỈ được áp
+  // cho dòng HÀNG RETAIL THẬT (có sku_id). Món F&B (menu_item, không có sku_id) TUYỆT
+  // ĐỐI không dính — không thể có chuyện "mua 5 tặng 1" cho món ăn. Giảm giá cấp BILL
+  // (voucher đơn / ưu đãi khách / giảm tay) thì vẫn áp bình thường cho cả hai.
+  const matchesLine = (v, line, lineLotNo) => {
+    if (!line.sku_id) return false;
+    if (v.scope === 'all_sku') return true;
+    return v.sku_id === line.sku_id && (!v.lot_no || v.lot_no === lineLotNo);
+  };
   const subtotal = lines.reduce((s, l) => s + l.qty * l.price, 0);
   const appliedSkuPromos = [];
   let lineDiscount = 0;
@@ -108,7 +114,10 @@ export function calculateRetailDiscount(lines, voucher_id = null, branch_id = 'b
       ? skuVouchers.filter(v => v.id === selectedVoucherId && matchesLine(v, line, lineLotNo))
       : [];
     if (selectedVoucherId && !lineSkuVouchers.length) {
-      throw new Error('Voucher san pham khong kha dung hoac da tat');
+      // Nói rõ nguyên nhân: món F&B không có sku_id nên KHÔNG áp được CTKM sản phẩm.
+      throw new Error(!line.sku_id
+        ? `Món "${line.name || 'F&B'}" là món F&B nên không áp được khuyến mại theo sản phẩm (CTKM sản phẩm chỉ dành cho hàng retail).`
+        : 'Voucher san pham khong kha dung hoac da tat');
     }
 
     const buyXMatches = lineSkuVouchers.filter(v =>
@@ -188,6 +197,41 @@ export function calculateRetailDiscount(lines, voucher_id = null, branch_id = 'b
     total: Math.max(0, subtotal - discount),
     appliedSkuPromos,
     orderVoucher,
+  };
+}
+
+/// KẾ HOẠCH GIẢM GIÁ DÙNG CHUNG cho CẢ Retail LẪN F&B — một engine duy nhất, cùng
+/// thứ tự áp, nên hai bên không thể lệch nhau:
+///   1) CTKM theo sản phẩm  → CHỈ dòng hàng retail (có sku_id); món F&B không dính.
+///   2) Voucher đơn (scope 'order') → áp cả bill (cả F&B lẫn retail).
+///   3) Ưu đãi khách hàng (perk)    → tính trên phần còn lại sau (1)+(2).
+///   4) Giảm tay (manual)           → cộng vào phần "extra", bị kẹp không quá tổng.
+/// [lines]: [{ sku_id?, qty, price, lot_id?, voucher_id?, name }]
+export function buildDiscountPlan(lines, {
+  voucher_id = null,
+  customer = null,
+  manual_discount = 0,
+  branch_id = 'br1',
+} = {}) {
+  // Lượt 1: biết phần còn lại SAU khuyến mại sản phẩm + voucher đơn để tính perk đúng gốc.
+  const pre = calculateRetailDiscount(lines, voucher_id, branch_id, { customer });
+  const baseForExtra = Math.max(0, pre.subtotal - pre.lineDiscount - pre.orderDiscount);
+  const customerPerk = customer ? perkDiscount(customer, baseForExtra) : 0;
+  const manual = Math.max(0, Math.round(Number(manual_discount) || 0));
+  const plan = calculateRetailDiscount(lines, voucher_id, branch_id, {
+    customer,
+    extraDiscount: customerPerk + manual,
+  });
+  return {
+    ...plan,
+    customerPerk,
+    manual,
+    breakdown: {
+      product_promos: plan.lineDiscount,
+      voucher: plan.orderDiscount,
+      customer_perk: customerPerk,
+      manual,
+    },
   };
 }
 
@@ -517,8 +561,4 @@ function scopeLabel(scope = {}) {
 
 function formatVnd(n) {
   return `${Math.round(Number(n) || 0).toLocaleString('vi-VN')}d`;
-}
-
-function parseJson(raw, fallback) {
-  try { return raw ? JSON.parse(raw) : fallback; } catch { return fallback; }
 }

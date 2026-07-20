@@ -1,5 +1,9 @@
 import { db, now, audit } from '../db.js';
 import { emit } from '../realtime.js';
+import {
+  DEFAULT_TAX_FILING_PROFILE as TAX_DEFAULT_PROFILE,
+  sanitizeTaxFilingProfile as sanitizeTaxProfile,
+} from './tax.js';
 
 const DEFAULTS = {
   ipad_staff_pin: '0000',
@@ -366,6 +370,25 @@ const DEFAULT_INTEGRATIONS = {
       printOnReceive: true,
       note: '',
     },
+    haravan: {
+      enabled: false,
+      environment: 'production',
+      shopDomain: '',
+      accessToken: '',
+      webhookSecret: '',
+      clientId: '',
+      clientSecret: '',
+      verifyToken: '',
+      locationId: '',
+      apiBase: 'https://apis.haravan.com',
+      defaultBranchId: 'ONLINE',
+      orderMode: 'manual_confirm',
+      syncOrders: true,
+      syncProducts: true,
+      syncInventory: true,
+      printOnReceive: true,
+      note: '',
+    },
   },
 };
 // Card-terminal hardware the POS app can drive. The A920Pro is an Android smart
@@ -723,6 +746,41 @@ function sanitizeOperationsConfig(raw = {}) {
   };
 }
 
+// ── Cấu hình bán RETAIL (Cài đặt → Kho & kênh bán) ──────────────────────────
+// Hai "mặt trận" bán retail: POS bán lẻ độc lập (standalone) và mục "Thêm
+// retail" trong POS F&B (fnb). Mỗi bên chọn KHO lấy hàng + BẢNG GIÁ riêng;
+// sync=true → fnb dùng y cấu hình standalone (tick "đồng bộ cả 2").
+const DEFAULT_RETAIL_CONFIG = {
+  sync: true,
+  standalone: { warehouse_id: '', price_book_id: 'default' },
+  fnb: { warehouse_id: '', price_book_id: 'default' },
+};
+
+function sanitizeRetailSection(raw = {}) {
+  return {
+    // '' = theo liên kết kênh bán của kho (hành vi cũ, không ép kho cụ thể).
+    warehouse_id: String(raw?.warehouse_id || '').slice(0, 80),
+    price_book_id: String(raw?.price_book_id || 'default').slice(0, 80) || 'default',
+  };
+}
+
+export function sanitizeRetailConfig(raw = {}) {
+  const standalone = sanitizeRetailSection(raw.standalone);
+  const sync = raw.sync !== false;
+  return {
+    sync,
+    standalone,
+    fnb: sync ? { ...standalone } : sanitizeRetailSection(raw.fnb),
+  };
+}
+
+export function getRetailConfig(branch_id = 'br1') {
+  const row = db.prepare(`SELECT value FROM app_settings WHERE branch_id=? AND key='retail_config'`).get(branch_id);
+  let parsed = {};
+  try { parsed = row?.value ? JSON.parse(row.value) : {}; } catch { parsed = {}; }
+  return sanitizeRetailConfig({ ...DEFAULT_RETAIL_CONFIG, ...parsed });
+}
+
 export function getSettings(branch_id = 'br1') {
   const rows = db.prepare(`SELECT key,value FROM app_settings WHERE branch_id=?`).all(branch_id);
   const out = { ...DEFAULTS, ...Object.fromEntries(rows.map(r => [r.key, r.value])) };
@@ -733,6 +791,7 @@ export function getSettings(branch_id = 'br1') {
   out.tax_filing_profile = getTaxFilingProfile(branch_id);
   out.customer_display = getCustomerDisplayConfig(branch_id);
   out.loyalty_config = getLoyaltyConfig(branch_id);
+  out.retail_config = getRetailConfig(branch_id);
   return out;
 }
 
@@ -761,6 +820,9 @@ export function updateSettings(body = {}, branch_id = 'br1') {
   }
   if (body.loyalty_config !== undefined) {
     next.loyalty_config = sanitizeLoyaltyConfig(body.loyalty_config);
+  }
+  if (body.retail_config !== undefined) {
+    next.retail_config = sanitizeRetailConfig(body.retail_config);
   }
   const ins = db.prepare(`INSERT OR REPLACE INTO app_settings (branch_id,key,value,updated_at) VALUES (?,?,?,?)`);
   for (const [key, value] of Object.entries(next)) {
@@ -950,6 +1012,26 @@ export function getPublicIntegrations(branch_id = 'br1') {
   return maskIntegrations(getIntegrations(branch_id));
 }
 
+function hasConfiguredChannel(channel = {}) {
+  const c = plainObject(channel);
+  return bool(c.enabled)
+    || !!str(c.shopDomain || c.publicUrl || c.apiKey || c.accessToken || c.webhookSecret || c.clientSecret || c.checksumKey);
+}
+
+export function getIntegrationChannel(channel, branch_id = 'br1') {
+  const key = String(channel || '').trim();
+  const direct = getIntegrations(branch_id).channels?.[key];
+  if (hasConfiguredChannel(direct)) return direct;
+  const rows = db.prepare(`SELECT value FROM app_settings WHERE key=? ORDER BY updated_at DESC`).all(INTEGRATIONS_KEY);
+  for (const row of rows) {
+    try {
+      const found = sanitizeIntegrations(JSON.parse(row.value)).channels?.[key];
+      if (hasConfiguredChannel(found)) return found;
+    } catch {}
+  }
+  return direct || DEFAULT_INTEGRATIONS.channels[key] || {};
+}
+
 export function getOperationsConfig(branch_id = 'br1') {
   const row = db.prepare(`SELECT value FROM app_settings WHERE branch_id=? AND key=?`).get(branch_id, OPERATIONS_CONFIG_KEY);
   if (!row?.value) return sanitizeOperationsConfig(DEFAULT_OPERATIONS_CONFIG);
@@ -983,39 +1065,11 @@ export function updateIntegrations(body = {}, branch_id = 'br1') {
 
 export function getTaxFilingProfile(branch_id = 'br1') {
   const row = db.prepare(`SELECT value FROM app_settings WHERE branch_id=? AND key=?`).get(branch_id, TAX_FILING_PROFILE_KEY);
-  if (!row?.value) return sanitizeTaxFilingProfile(DEFAULT_TAX_FILING_PROFILE);
-  try { return sanitizeTaxFilingProfile(JSON.parse(row.value)); }
-  catch { return sanitizeTaxFilingProfile(DEFAULT_TAX_FILING_PROFILE); }
+  if (!row?.value) return sanitizeTaxProfile(TAX_DEFAULT_PROFILE);
+  try { return sanitizeTaxProfile(JSON.parse(row.value)); }
+  catch { return sanitizeTaxProfile(TAX_DEFAULT_PROFILE); }
 }
 
 export function sanitizeTaxFilingProfile(raw = {}) {
-  const input = raw && typeof raw === 'object' ? raw : {};
-  const locations = Array.isArray(input.locations) ? input.locations.map(loc => ({
-    id: str(loc.id || ''),
-    name: str(loc.name || ''),
-    address: str(loc.address || ''),
-    branchId: str(loc.branchId || ''),
-    isHeadquarters: bool(loc.isHeadquarters, false)
-  })) : [];
-  
-  const taxRates = Array.isArray(input.taxRates) ? input.taxRates.map(tr => ({
-    category: str(tr.category || ''),
-    name: str(tr.name || ''),
-    vat: parseFloat(tr.vat) || 0.0,
-    pit: parseFloat(tr.pit) || 0.0
-  })) : DEFAULT_TAX_FILING_PROFILE.taxRates;
-
-  return {
-    hasProfile: bool(input.hasProfile, false),
-    taxCode: str(input.taxCode || ''),
-    businessName: str(input.businessName || ''),
-    transitionDate: str(input.transitionDate || ''),
-    locations,
-    revenueGroup: parseInt(input.revenueGroup) || 1,
-    productScope: str(input.productScope || 'all'),
-    scopeValue: Array.isArray(input.scopeValue) ? input.scopeValue.map(v => str(v)) : [],
-    confirmNoTax: bool(input.confirmNoTax, false),
-    taxRates,
-    updated_at: input.updated_at || now()
-  };
+  return sanitizeTaxProfile(raw);
 }

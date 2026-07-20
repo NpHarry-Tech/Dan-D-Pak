@@ -44,8 +44,7 @@ ghi thay đổi có: `table, ref (pk), op, payload, updated_at, origin_device, s
 ### 4.2 Định danh & chống trùng (idempotency)
 - Mỗi Local Hub có `hub_id` cố định. Mỗi bản ghi sync mang `hub_id + seq` (số tăng dần).
 - VPS lưu `processed_seq` theo từng hub → đẩy lại cùng bản ghi cũng KHÔNG áp 2 lần
-  (chống double khi mạng chập chờn). Schema `processed_event_ids` đã phác trong
-  `server/db/schema/0001_planned_company_server.sql`.
+  (chống double khi mạng chập chờn).
 
 ### 4.3 Chống XUNG ĐỘT (2 nơi sửa cùng 1 bản ghi)
 Quy tắc theo LOẠI dữ liệu (không dùng "last-write-wins" mù cho mọi thứ):

@@ -1,27 +1,27 @@
-// Nhật ký HỆ THỐNG hợp nhất — nơi MỌI lỗi/sự kiện kỹ thuật đổ về một bảng
-// (system_logs) để màn "Nhật ký hoạt động" đọc được: crash app, api_error,
-// socket rớt, máy in lỗi, thanh toán lỗi, MISA lỗi, sync, cập nhật app…
+// Nháº­t kÃ½ Há»† THá»NG há»£p nháº¥t â€” nÆ¡i Má»ŒI lá»—i/sá»± kiá»‡n ká»¹ thuáº­t Ä‘á»• vá» má»™t báº£ng
+// (system_logs) Ä‘á»ƒ mÃ n "Nháº­t kÃ½ hoáº¡t Ä‘á»™ng" Ä‘á»c Ä‘Æ°á»£c: crash app, api_error,
+// socket rá»›t, mÃ¡y in lá»—i, thanh toÃ¡n lá»—i, MISA lá»—i, sync, cáº­p nháº­t appâ€¦
 //
-// Nguyên tắc sắt:
-//  • logSystem KHÔNG BAO GIỜ ném lỗi — ghi log không được phá nghiệp vụ.
-//  • Mọi text đi qua sanitize: PIN/password/token/số thẻ bị che trước khi
-//    xuống đĩa (token chỉ giữ 6 đầu + 4 cuối, thẻ chỉ giữ last4).
-//  • Giữ ngắn hạn: maintainSystemLogs() xén theo ngày + trần số dòng để bảng
-//    không phình vô hạn trên máy cửa hàng.
+// NguyÃªn táº¯c sáº¯t:
+//  â€¢ logSystem KHÃ”NG BAO GIá»œ nÃ©m lá»—i â€” ghi log khÃ´ng Ä‘Æ°á»£c phÃ¡ nghiá»‡p vá»¥.
+//  â€¢ Má»i text Ä‘i qua sanitize: PIN/password/token/sá»‘ tháº» bá»‹ che trÆ°á»›c khi
+//    xuá»‘ng Ä‘Ä©a (token chá»‰ giá»¯ 6 Ä‘áº§u + 4 cuá»‘i, tháº» chá»‰ giá»¯ last4).
+//  â€¢ Giá»¯ ngáº¯n háº¡n: maintainSystemLogs() xÃ©n theo ngÃ y + tráº§n sá»‘ dÃ²ng Ä‘á»ƒ báº£ng
+//    khÃ´ng phÃ¬nh vÃ´ háº¡n trÃªn mÃ¡y cá»­a hÃ ng.
 import { db, uid, now } from '../db.js';
 import { logger } from '../core/logger.js';
 
 export const LEVELS = ['debug', 'info', 'warn', 'error', 'fatal'];
 const LEVEL_SET = new Set(LEVELS);
 
-// ── Che dữ liệu nhạy cảm ────────────────────────────────────────────────────
-// Áp lên MỌI chuỗi tự do (message/stack/extra) — phòng khi caller lỡ nhét
-// nguyên payload có PIN/token vào log.
+// â”€â”€ Che dá»¯ liá»‡u nháº¡y cáº£m â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Ãp lÃªn Má»ŒI chuá»—i tá»± do (message/stack/extra) â€” phÃ²ng khi caller lá»¡ nhÃ©t
+// nguyÃªn payload cÃ³ PIN/token vÃ o log.
 const SENSITIVE_FIELD =
   /("?(?:pin|password|passwd|security_pin|old_pin|new_pin|otp|cvv|secret)"?\s*[:=]\s*)("[^"]*"|'[^']*'|[^\s,;}&]+)/gi;
 const TOKEN_FIELD =
   /("?(?:token|authorization|api[_-]?key|access[_-]?token|refresh[_-]?token)"?\s*[:=]\s*"?)([A-Za-z0-9._\-]{12,})("?)/gi;
-const CARD_NUMBER = /\b(\d{2})\d{9,13}(\d{4})\b/g; // 13–19 số liền → giữ 2 đầu 4 cuối
+const CARD_NUMBER = /\b(\d{2})\d{9,13}(\d{4})\b/g; // 13â€“19 sá»‘ liá»n â†’ giá»¯ 2 Ä‘áº§u 4 cuá»‘i
 
 export function sanitizeText(value, max = 8000) {
   let text = value == null ? '' : String(value);
@@ -30,10 +30,10 @@ export function sanitizeText(value, max = 8000) {
     text = text
       .replace(SENSITIVE_FIELD, '$1"***"')
       .replace(TOKEN_FIELD, (m, pre, tok, post) =>
-        `${pre}${tok.slice(0, 6)}…${tok.slice(-4)}${post}`)
+        `${pre}${tok.slice(0, 6)}â€¦${tok.slice(-4)}${post}`)
       .replace(CARD_NUMBER, '$1***********$2');
-  } catch { /* regex không được phá log */ }
-  return text.length > max ? `${text.slice(0, max)}…[cắt bớt]` : text;
+  } catch { /* regex khÃ´ng Ä‘Æ°á»£c phÃ¡ log */ }
+  return text.length > max ? `${text.slice(0, max)}â€¦[cáº¯t bá»›t]` : text;
 }
 
 function intOrNull(v) {
@@ -41,7 +41,7 @@ function intOrNull(v) {
   return Number.isFinite(n) ? Math.round(n) : null;
 }
 
-// ── Ghi log ─────────────────────────────────────────────────────────────────
+// â”€â”€ Ghi log â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const INSERT_SQL = `INSERT INTO system_logs (
   id, timestamp, level, source, event_type, title, message,
   user_id, username, branch_id, branch_name, device_id, device_name,
@@ -51,9 +51,9 @@ const INSERT_SQL = `INSERT INTO system_logs (
   exception_type, stack_trace, extra_json, created_at
 ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`;
 
-/** Ghi một dòng nhật ký hệ thống. Nhận entry dạng camelCase (eventType,
- *  statusCode…) hoặc snake_case (event_type…) — client Flutter gửi camelCase.
- *  Trả về id (hoặc null nếu ghi thất bại). KHÔNG BAO GIỜ ném lỗi. */
+/** Ghi má»™t dÃ²ng nháº­t kÃ½ há»‡ thá»‘ng. Nháº­n entry dáº¡ng camelCase (eventType,
+ *  statusCodeâ€¦) hoáº·c snake_case (event_typeâ€¦) â€” client Flutter gá»­i camelCase.
+ *  Tráº£ vá» id (hoáº·c null náº¿u ghi tháº¥t báº¡i). KHÃ”NG BAO GIá»œ nÃ©m lá»—i. */
 export function logSystem(entry = {}) {
   try {
     const pick = (...keys) => {
@@ -77,7 +77,7 @@ export function logSystem(entry = {}) {
       id, ts, level,
       s(pick('source')) || 'backend',
       s(pick('event_type', 'eventType')) || 'event',
-      s(pick('title'), 300) || 'Sự kiện hệ thống',
+      s(pick('title'), 300) || 'Sá»± kiá»‡n há»‡ thá»‘ng',
       s(pick('message'), 4000),
       s(pick('user_id', 'userId')),
       s(pick('username')),
@@ -107,16 +107,16 @@ export function logSystem(entry = {}) {
     );
     return id;
   } catch (e) {
-    // Ghi log thất bại (đĩa đầy/DB khóa) → chỉ than ra console, không ném.
+    // Ghi log tháº¥t báº¡i (Ä‘Ä©a Ä‘áº§y/DB khÃ³a) â†’ chá»‰ than ra console, khÃ´ng nÃ©m.
     logger.warn('system-log write failed', { message: e?.message });
     return null;
   }
 }
 
-// ── Đọc log (màn Nhật ký hoạt động) ─────────────────────────────────────────
-/** Lọc theo level/source/event_type (CSV), tìm chữ, khoảng thời gian, cursor
- *  phân trang `before` (timestamp). Log không gắn chi nhánh (branch rỗng) là
- *  log toàn hệ thống → luôn hiện. */
+// â”€â”€ Äá»c log (mÃ n Nháº­t kÃ½ hoáº¡t Ä‘á»™ng) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+/** Lá»c theo level/source/event_type (CSV), tÃ¬m chá»¯, khoáº£ng thá»i gian, cursor
+ *  phÃ¢n trang `before` (timestamp). Log khÃ´ng gáº¯n chi nhÃ¡nh (branch rá»—ng) lÃ 
+ *  log toÃ n há»‡ thá»‘ng â†’ luÃ´n hiá»‡n. */
 export function listSystemLogs(branch_id, opts = {}) {
   const where = [`(branch_id = ? OR branch_id IS NULL OR branch_id = '')`];
   const params = [branch_id];
@@ -157,18 +157,56 @@ export function listSystemLogs(branch_id, opts = {}) {
 }
 
 export function resolveSystemLog(id, username) {
+  const row = db.prepare('SELECT * FROM system_logs WHERE id = ?').get(String(id));
+  if (!row) throw new Error('Khong tim thay dong nhat ky nay.');
+  const at = now();
+  const by = String(username || 'system');
   const r = db.prepare(
-    `UPDATE system_logs SET is_resolved = 1, resolved_at = ?, resolved_by = ? WHERE id = ?`
-  ).run(now(), `${username || 'system'}`, `${id}`);
-  if (!r.changes) throw new Error('Không tìm thấy dòng nhật ký này.');
-  return { ok: true, id };
+    'UPDATE system_logs SET is_resolved = 1, resolved_at = ?, resolved_by = ? WHERE id = ?'
+  ).run(at, by, String(id));
+
+  let similar = 0;
+  if (row.event_type === 'crash') {
+    similar = db.prepare(
+      `UPDATE system_logs
+          SET is_resolved = 1, resolved_at = ?, resolved_by = ?
+        WHERE is_resolved = 0
+          AND event_type = 'crash'
+          AND source = ?
+          AND COALESCE(branch_id,'') = COALESCE(?,'')
+          AND COALESCE(title,'') = COALESCE(?,'')
+          AND COALESCE(message,'') = COALESCE(?,'')
+          AND COALESCE(stack_trace,'') = COALESCE(?,'')`
+    ).run(at, by, row.source, row.branch_id, row.title, row.message, row.stack_trace).changes;
+  }
+  return { ok: true, id, resolved: r.changes + similar };
 }
 
-// ── Dọn dẹp định kỳ ─────────────────────────────────────────────────────────
-/** Giữ log tối đa [days] ngày VÀ tối đa [maxRows] dòng (xóa dòng cũ nhất
- *  trước). Gọi mỗi ngày từ index.js — cùng nhịp với maintainAudit. */
+// â”€â”€ Dá»n dáº¹p Ä‘á»‹nh ká»³ â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+/** Giá»¯ log tá»‘i Ä‘a [days] ngÃ y VÃ€ tá»‘i Ä‘a [maxRows] dÃ²ng (xÃ³a dÃ²ng cÅ© nháº¥t
+ *  trÆ°á»›c). Gá»i má»—i ngÃ y tá»« index.js â€” cÃ¹ng nhá»‹p vá»›i maintainAudit. */
 export function maintainSystemLogs({ days = 60, maxRows = 200_000 } = {}) {
   try {
+    const redundant = db.prepare(`DELETE FROM system_logs WHERE
+      event_type = 'socket_error'
+      OR (event_type = 'api_error' AND status_code BETWEEN 400 AND 499)
+      OR (event_type = 'slow_request' AND source = 'flutter_app')
+      OR (event_type IN ('print_failed','payment_failed') AND source = 'flutter_app')
+      OR (event_type IN ('api_timeout','api_offline','slow_request')
+          AND endpoint LIKE '/api/system-logs%')`).run().changes;
+    const exactDuplicates = db.prepare(`DELETE FROM system_logs WHERE rowid IN (
+      SELECT rowid FROM (
+        SELECT rowid, ROW_NUMBER() OVER (
+          PARTITION BY timestamp, level, source, event_type, title, message,
+            user_id, username, branch_id, device_id, device_name,
+            app_version, build_number, platform, screen, action, endpoint,
+            method, status_code, duration_ms, request_id, correlation_id,
+            order_id, table_id, payment_id, exception_type, stack_trace, extra_json
+          ORDER BY rowid
+        ) AS duplicate_number
+        FROM system_logs
+      ) WHERE duplicate_number > 1
+    )`).run().changes;
     const cutoff = new Date(Date.now() - days * 86_400_000).toISOString();
     const byAge = db.prepare(`DELETE FROM system_logs WHERE timestamp < ?`).run(cutoff).changes;
     let byCount = 0;
@@ -179,9 +217,19 @@ export function maintainSystemLogs({ days = 60, maxRows = 200_000 } = {}) {
            SELECT id FROM system_logs ORDER BY timestamp ASC LIMIT ?)`
       ).run(total - maxRows).changes;
     }
-    return { removedByAge: byAge, removedByCount: byCount };
+    return {
+      removedRedundant: redundant,
+      removedExactDuplicates: exactDuplicates,
+      removedByAge: byAge,
+      removedByCount: byCount,
+    };
   } catch (e) {
     logger.warn('system-log maintenance failed', { message: e?.message });
-    return { removedByAge: 0, removedByCount: 0 };
+    return {
+      removedRedundant: 0,
+      removedExactDuplicates: 0,
+      removedByAge: 0,
+      removedByCount: 0,
+    };
   }
 }

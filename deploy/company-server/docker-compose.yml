@@ -25,6 +25,8 @@ services:
     environment:
       PORT: 3000
       NODE_ENV: production
+      DEPLOYMENT_TARGET: vps
+      DISABLE_DEMO_SEED: "true"
     volumes:
       # SQLite database — dữ liệu bền vững, không mất khi update
       - app_sqlite:/app/server-data

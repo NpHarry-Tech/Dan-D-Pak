@@ -35,6 +35,8 @@ export function requestLogger(req, res, next) {
           statusCode: res.statusCode,
           durationMs: ms,
           username: req.user?.username,
+          deviceName: req.headers?.['x-device-name'],
+          branchId: req.headers?.['x-branch-id'],
           requestId: req.headers?.['x-request-id'],
           correlationId: req.headers?.['x-correlation-id'],
         });

@@ -25,7 +25,7 @@ infrastructure/ (adapters)               → repositories (sqlite/postgres), rea
 2. **Repository layer**: gom mọi `db.prepare` theo bảng vào `infrastructure/repositories/*` (OrderRepo, PaymentRepo, InventoryRepo...). Service gọi repo, không chạm SQL.
 3. **Payment provider port**: định nghĩa `PaymentGateway` interface; SePay/Casso/VietQR/payOS là adapter. Chuẩn hóa verify signature (timingSafeEqual) + fail-closed tại 1 chỗ.
 4. **Validation tập trung**: schema cho mỗi endpoint (thay các `throw new Error('Thiếu...')` rải rác).
-5. **Kích hoạt adapter Postgres**: hoàn thiện `adapters/database/postgres.adapter.js` + migration từ `db/schema/0001,0002`; chạy dual-write/verify trước cutover.
+5. **Giữ một SQLite production**: chỉ xem xét provider khác khi có yêu cầu vận hành và kế hoạch migration đã được duyệt.
 6. **Tách frontend**: rút workflow khỏi HTML lớn vào `web/js/*` module đã có (apiClient/eventBus). Hoặc hợp nhất về Flutter apps.
 7. **CSP + hardening**: sau khi inline scripts được module hóa, bật CSP.
 

@@ -5,13 +5,12 @@ const DEFAULTS = {
   DATABASE_PROVIDER: 'sqlite',
   REALTIME_PROVIDER: 'socketio',
   STORAGE_PROVIDER: 'local',
-  SQLITE_PATH: '',
+  SQLITE_PATH: 'runtime/server-data/store.db',
   STORAGE_PATH: 'storage',
   CORS_ORIGIN: '',
   LOG_LEVEL: 'info',
   BACKUP_RETENTION_DAYS: 14,
   DISABLE_DEMO_SEED: false,
-  CONFIG_SEED_URL: '',
   DISABLE_WEB_UI: true,
 };
 
@@ -48,8 +47,18 @@ export function loadEnv(source = process.env) {
     LOG_LEVEL: clean(source.LOG_LEVEL) || DEFAULTS.LOG_LEVEL,
     BACKUP_RETENTION_DAYS: asInt(source.BACKUP_RETENTION_DAYS, DEFAULTS.BACKUP_RETENTION_DAYS),
     DISABLE_DEMO_SEED: source.DISABLE_DEMO_SEED === 'true' || source.DISABLE_DEMO_SEED === '1',
-    CONFIG_SEED_URL: clean(source.CONFIG_SEED_URL) || DEFAULTS.CONFIG_SEED_URL,
     DISABLE_WEB_UI: source.DISABLE_WEB_UI !== undefined ? (source.DISABLE_WEB_UI === 'true' || source.DISABLE_WEB_UI === '1') : DEFAULTS.DISABLE_WEB_UI,
+    HARAVAN_ENABLED: source.HARAVAN_ENABLED === 'true' || source.HARAVAN_ENABLED === '1',
+    HARAVAN_SHOP_DOMAIN: clean(source.HARAVAN_SHOP_DOMAIN) || '',
+    HARAVAN_ACCESS_TOKEN: clean(source.HARAVAN_ACCESS_TOKEN) || '',
+    HARAVAN_WEBHOOK_SECRET: clean(source.HARAVAN_WEBHOOK_SECRET) || '',
+    HARAVAN_CLIENT_ID: clean(source.HARAVAN_CLIENT_ID) || '',
+    HARAVAN_CLIENT_SECRET: clean(source.HARAVAN_CLIENT_SECRET) || '',
+    HARAVAN_WEBHOOK_VERIFY_TOKEN: clean(source.HARAVAN_WEBHOOK_VERIFY_TOKEN) || '',
+    HARAVAN_SCOPES: clean(source.HARAVAN_SCOPES) || '',
+    HARAVAN_LOCATION_ID: clean(source.HARAVAN_LOCATION_ID) || '',
+    HARAVAN_API_BASE_URL: clean(source.HARAVAN_API_BASE_URL) || 'https://apis.haravan.com',
+    HARAVAN_DEFAULT_BRANCH_ID: clean(source.HARAVAN_DEFAULT_BRANCH_ID) || 'ONLINE',
     // 'auto' = server tự in trên phần cứng cùng máy (mô hình LAN 1 máy chủ).
     // 'agent' = server chỉ xếp hàng job; việc in vật lý + mở két do Hardware
     // Agent tại cửa hàng thực thi (mô hình VPS trung tâm — server ở datacenter
@@ -70,11 +79,14 @@ function validateEnv(env) {
   if (env.isProduction && !env.CORS_ORIGINS.length) {
     warnings.push('CORS_ORIGIN is not set; production should allow only trusted frontend origins.');
   }
-  if (env.DATABASE_PROVIDER === 'postgres' && !env.DATABASE_URL) {
-    warnings.push('DATABASE_PROVIDER=postgres requires DATABASE_URL before the Postgres adapter can be used.');
-  }
   if (env.STORAGE_PROVIDER === 'local' && !env.STORAGE_PATH) {
     warnings.push('STORAGE_PATH is empty; local storage needs a durable path on VPS.');
+  }
+  if (env.HARAVAN_ENABLED && (!env.HARAVAN_SHOP_DOMAIN || !env.HARAVAN_ACCESS_TOKEN || !env.HARAVAN_WEBHOOK_SECRET)) {
+    warnings.push('HARAVAN_ENABLED=true requires HARAVAN_SHOP_DOMAIN, HARAVAN_ACCESS_TOKEN and HARAVAN_WEBHOOK_SECRET.');
+  }
+  if ((env.HARAVAN_CLIENT_ID || env.HARAVAN_CLIENT_SECRET) && (!env.HARAVAN_CLIENT_ID || !env.HARAVAN_CLIENT_SECRET || !env.APP_URL)) {
+    warnings.push('Haravan OAuth requires HARAVAN_CLIENT_ID, HARAVAN_CLIENT_SECRET and APP_URL.');
   }
   return warnings;
 }

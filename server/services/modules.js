@@ -51,7 +51,7 @@ export const MODULES = [
   { key: 'studio', label: 'Studio', icon: '🧩', group: 'studio', href: '', perm: 'module.studio', status: 'planned', depends: ['settings'], description: 'Model, field, view, automation, approval rule, PDF reports and export customization.' },
   { key: 'automation', label: 'Automation', icon: '⚡', group: 'studio', href: '', perm: 'module.automation', status: 'planned', depends: ['studio'], description: 'Server action, webhook, scheduled action, trigger and approval flow.' },
 
-  { key: 'database', label: 'Database & Documentation', icon: '🛢️', group: 'developer', href: '/database', perm: 'module.database', status: 'active', depends: ['settings'], description: 'Backup, restore, staging, clear transactions, database health check — with guidance documents & system diagrams.' },
+  { key: 'database', label: 'Database & Documentation', icon: '🛢️', group: 'developer', href: '/database', perm: 'module.database', status: 'active', depends: ['settings'], description: 'Backup, restore, clear transactions, database health check — with guidance documents & system diagrams.' },
   { key: 'developer', label: 'Developer', icon: '🛠️', group: 'developer', href: '', perm: 'module.developer', status: 'planned', depends: ['settings'], description: 'Debug mode, technical menu, model metadata, API and internal tutorials.' },
 ];
 
@@ -59,6 +59,10 @@ export const MODULE_PERMISSIONS = MODULES.filter(m => m.perm).map(m => ({
   key: m.perm,
   label: m.label,
 }));
+
+function isUsableModule(module) {
+  return module.status === 'active' || module.status === 'core';
+}
 
 export function listModules(perms = []) {
   const set = new Set(perms || []);
@@ -73,5 +77,5 @@ export function listModules(perms = []) {
 }
 
 export function visibleModules(perms = []) {
-  return listModules(perms).filter(m => m.visible);
+  return listModules(perms).filter(m => m.visible && isUsableModule(m));
 }

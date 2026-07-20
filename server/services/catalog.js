@@ -6,6 +6,7 @@ import { db, audit } from '../db.js';
 const _cache = new Map(); // key -> { value, expiresAt }
 const MENU_TTL     = 10_000; // 10 giây
 const SETTINGS_TTL = 15_000; // 15 giây
+export const MENU_TRANSLATION_LANGS = ['vi', 'en', 'zh', 'ja', 'ko'];
 
 function cacheGet(key) {
   const e = _cache.get(key);
@@ -35,7 +36,9 @@ export function listMenu(options = {}) {
     limit = 40,
     q = '',
     category_id = '',
+    lang = 'vi',
   } = options;
+  const menuLang = normalizeMenuLang(lang);
 
   const parsedPage = page !== null ? parseInt(page) : null;
   const parsedLimit = parseInt(limit) || 40;
@@ -54,12 +57,6 @@ export function listMenu(options = {}) {
       sql += ` AND hidden = 0`;
     }
 
-    if (q && String(q).trim() !== '') {
-      sql += ` AND (name LIKE ? OR code LIKE ?)`;
-      const searchVal = `%${String(q).trim()}%`;
-      params.push(searchVal, searchVal);
-    }
-
     if (category_id && String(category_id).trim() !== '') {
       sql += ` AND category_id = ?`;
       params.push(String(category_id).trim());
@@ -67,16 +64,15 @@ export function listMenu(options = {}) {
 
     sql += ` ORDER BY sort`;
 
-    const countSql = `SELECT COUNT(*) AS total FROM (${sql})`;
-    const totalRow = db.prepare(countSql).get(...params);
-    const total = totalRow ? (totalRow.total || 0) : 0;
-
-    sql += ` LIMIT ? OFFSET ?`;
     const offset = (parsedPage - 1) * parsedLimit;
-    const paginatedParams = [...params, parsedLimit, offset];
-
-    const rows = db.prepare(sql).all(...paginatedParams);
-    const items = rows.map(r => normalizeMenuItem(r, { forCustomer, includeRecipe: !forCustomer }));
+    const search = foldSearch(q);
+    const allRows = db.prepare(sql).all(...params);
+    const filteredRows = search
+      ? allRows.filter(row => menuSearchText(row).includes(search))
+      : allRows;
+    const total = filteredRows.length;
+    const rows = filteredRows.slice(offset, offset + parsedLimit);
+    const items = rows.map(r => normalizeMenuItem(r, { forCustomer, includeRecipe: !forCustomer, lang: menuLang }));
 
     return {
       categories,
@@ -87,14 +83,33 @@ export function listMenu(options = {}) {
     };
   }
 
-  const cacheKey = `menu:${forCustomer ? 'pub' : 'adm'}:${includeDeleted ? 'all' : 'live'}`;
+  const cacheKey = `menu:${forCustomer ? 'pub' : 'adm'}:${includeDeleted ? 'all' : 'live'}:${menuLang}`;
   const cached = cacheGet(cacheKey);
   if (cached) return cached;
   const categories = db.prepare(`SELECT * FROM categories ORDER BY sort`).all();
   const rows = db.prepare(`SELECT * FROM menu_items ORDER BY sort`).all()
     .filter(r => includeDeleted || !r.deleted_at)
     .filter(r => !forCustomer || !r.hidden);
-  return cacheSet(cacheKey, { categories, items: rows.map(r => normalizeMenuItem(r, { forCustomer, includeRecipe: !forCustomer })) }, MENU_TTL);
+  return cacheSet(cacheKey, { categories, items: rows.map(r => normalizeMenuItem(r, { forCustomer, includeRecipe: !forCustomer, lang: menuLang })) }, MENU_TTL);
+}
+
+function foldSearch(value = '') {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd')
+    .replace(/Đ/g, 'd')
+    .toLowerCase()
+    .trim();
+}
+
+function menuSearchText(row) {
+  const translations = normalizeMenuTranslations(row.translations_json, row);
+  return foldSearch([
+    row.name,
+    row.description,
+    ...Object.values(translations).flatMap(t => [t.name, t.description]),
+  ].filter(Boolean).join(' '));
 }
 
 export function getMenuItem(id, opts = {}) {
@@ -110,13 +125,14 @@ export function getMenuItemForOrder(id) {
   return item;
 }
 
-export function normalizeMenuItem(row, { forCustomer = false, includeRecipe = false } = {}) {
+export function normalizeMenuItem(row, { forCustomer = false, includeRecipe = false, lang = 'vi' } = {}) {
   const schedule = safeJson(row.schedule_json, { mode: 'always' }) || { mode: 'always' };
   const scheduleAvailable = isScheduleAvailable(schedule);
   const visible = !row.deleted_at && !row.hidden;
   const canOrder = !!row.available && visible && scheduleAvailable;
   const recipe = includeRecipe || forCustomer ? getRecipe(row.id) : null;
   const ingredients = safeJson(row.ingredients_json, []);
+  const translations = normalizeMenuTranslations(row.translations_json, row);
   const out = {
     ...row,
     available_flag: !!row.available,
@@ -130,9 +146,88 @@ export function normalizeMenuItem(row, { forCustomer = false, includeRecipe = fa
     ingredients: ingredients.length ? ingredients : (recipe || []).map(r => r.name),
     allergens: safeJson(row.allergens_json, []),
     schedule,
+    translations,
   };
+  const menuLang = normalizeMenuLang(lang);
+  if (forCustomer && menuLang !== 'vi') {
+    const t = translations[menuLang] || {};
+    if (t.name) out.name = t.name;
+    if (t.description) out.description = t.description;
+  }
   if (includeRecipe) out.recipe = recipe || getRecipe(row.id);
   return out;
+}
+
+export function normalizeMenuLang(lang) {
+  const code = String(lang || 'vi').toLowerCase().trim();
+  return MENU_TRANSLATION_LANGS.includes(code) ? code : 'vi';
+}
+
+export function normalizeMenuTranslations(raw, source = {}) {
+  const obj = safeJson(raw, {}) || {};
+  const out = {};
+  for (const lang of MENU_TRANSLATION_LANGS) {
+    const row = obj[lang] && typeof obj[lang] === 'object' ? obj[lang] : {};
+    out[lang] = {
+      name: String(row.name || '').trim(),
+      description: String(row.description || '').trim(),
+    };
+  }
+  if (!out.vi.name) out.vi.name = String(source.name || '').trim();
+  if (!out.vi.description) out.vi.description = String(source.description || '').trim();
+  return out;
+}
+
+export async function completeMenuTranslations({ name = '', description = '', translations = {} } = {}) {
+  const base = {
+    name: String(name || '').trim(),
+    description: String(description || '').trim(),
+  };
+  const out = normalizeMenuTranslations(translations, base);
+  out.vi = {
+    name: out.vi.name || base.name,
+    description: out.vi.description || base.description,
+  };
+
+  const jobs = [];
+  for (const lang of MENU_TRANSLATION_LANGS) {
+    if (lang === 'vi') continue;
+    if (!out[lang].name && base.name) {
+      jobs.push(translateText(base.name, lang).then(v => { out[lang].name = v; }));
+    }
+    if (!out[lang].description && base.description) {
+      jobs.push(translateText(base.description, lang).then(v => { out[lang].description = v; }));
+    }
+  }
+  await Promise.all(jobs);
+  return out;
+}
+
+async function translateText(text, targetLang) {
+  const value = String(text || '').trim();
+  if (!value) return '';
+  const url = new URL('https://translate.googleapis.com/translate_a/single');
+  url.searchParams.set('client', 'gtx');
+  url.searchParams.set('sl', 'vi');
+  url.searchParams.set('tl', targetLang);
+  url.searchParams.set('dt', 't');
+  url.searchParams.set('q', value);
+  let timer;
+  try {
+    const ctl = new AbortController();
+    timer = setTimeout(() => ctl.abort(), 3500);
+    const res = await fetch(url, { signal: ctl.signal });
+    if (!res.ok) return value;
+    const data = await res.json();
+    const translated = Array.isArray(data?.[0])
+      ? data[0].map(part => Array.isArray(part) ? part[0] : '').join('')
+      : '';
+    return String(translated || value).trim();
+  } catch {
+    return value;
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 }
 
 export function isScheduleAvailable(schedule, at = new Date()) {

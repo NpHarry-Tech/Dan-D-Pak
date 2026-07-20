@@ -1,34 +1,21 @@
 # Deployment
 
-Last updated: 2026-06-27
+Last updated: 2026-07-13
 
-## Supported Targets
+Deploy the Node/Express backend as the private company server and build Flutter native app shells separately.
 
-Local/company server:
+## Backend
 
-- Run one Node/Express app that serves both `web/` and `/api`.
-- Use same-origin API calls by default; override `API_BASE_URL` only when a gateway/proxy requires it.
-- Run `npm install` then `npm start` for local development.
-- Set `PORT`, `NODE_ENV`, `CORS_ORIGIN`, provider flags, and secrets only in backend environment variables.
+- Source: `server/`
+- Entry: `server/index.js`
+- API: `/api/*`
+- Realtime: Socket.IO
+- Runtime data: `server/permanent-storage/`, database file or configured database adapter
 
-Database/realtime:
+## Flutter Apps
 
-- Current local code uses SQLite and Socket.IO.
-- PostgreSQL/WebSocket provider integration is scaffolded/planned and must keep secrets backend-only.
+- Desktop: `flutter-apps/dandpak_desktop`
+- Tablet: `flutter-apps/dandpak_tablet`
+- Phone: `flutter-apps/dandpak_phone`
 
-## VPS / Company Server
-
-Use `deploy/vps/` and the VPS docs:
-
-- [VPS deployment](VPS_DEPLOYMENT.md)
-- [VPS migration plan](VPS_MIGRATION_PLAN.md)
-- [VPS security checklist](VPS_SECURITY_CHECKLIST.md)
-- [VPS backup/restore](VPS_BACKUP_RESTORE.md)
-
-## Deployment Safety
-
-- Do not deploy with committed `.env` or DB files.
-- Verify `GET /health`.
-- Verify API errors return JSON.
-- Verify realtime across iPad/POS/KDS.
-- Verify backup before migration.
+Run `flutter pub get` inside the app being built, then build for the app's supported platforms.

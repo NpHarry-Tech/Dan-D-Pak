@@ -1,7 +1,0 @@
-(node:8400) ExperimentalWarning: SQLite is an experimental feature and might change at any time
-(Use `node --trace-warnings ...` to show where the warning was created)
-{"time":"2026-06-24T18:20:46.360Z","level":"warn","message":"restored 405 footprint entries from durable archive after unclean shutdown"}
-{"time":"2026-06-24T18:20:46.417Z","level":"warn","message":"default admin account created","meta":{"username":"admin"}}
-[sync] failed to initialize replica database: database is locked
-[sync] batch replication failed: database is locked
-[sync] startup sync failed: database is locked
