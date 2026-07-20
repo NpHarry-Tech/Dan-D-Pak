@@ -565,9 +565,9 @@ class _PrintTemplateDesignerState extends State<PrintTemplateDesigner> {
                 return Row(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Expanded(flex: 5, child: _editorPane()),
+                    Expanded(flex: 6, child: _editorPane()),
                     SizedBox(width: 12),
-                    SizedBox(width: 360, child: _previewPane()),
+                    Expanded(flex: 4, child: _previewPane()),
                   ],
                 );
               },
@@ -786,6 +786,8 @@ class _PrintTemplateDesignerState extends State<PrintTemplateDesigner> {
       ]),
       field('Email', 'email'),
       field(t('Lời cảm ơn (footer)'), 'footer', maxLines: 2),
+      SizedBox(height: 4),
+      _accentPicker(),
     ];
   }
 
@@ -962,6 +964,7 @@ class _PrintTemplateDesignerState extends State<PrintTemplateDesigner> {
                 ),
               ],
             ]),
+            if (hasImage) _logoSizeRow(id, _d(row['logoScale'], 1.0)),
             SizedBox(height: 4),
             Text(
               hasImage
@@ -1129,7 +1132,7 @@ class _PrintTemplateDesignerState extends State<PrintTemplateDesigner> {
                 Icon(Icons.receipt_long, size: 15, color: DanColors.muted),
                 SizedBox(width: 6),
                 Flexible(
-                  child: Text(t('Xem trước (minh họa)'),
+                  child: Text(t('Xem trước trực tiếp'),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
@@ -1137,6 +1140,8 @@ class _PrintTemplateDesignerState extends State<PrintTemplateDesigner> {
                           fontWeight: FontWeight.w700,
                           color: DanColors.muted)),
                 ),
+                SizedBox(width: 8),
+                if (_kind == 'bill') _widthToggle(),
               ],
             ),
           ),
@@ -1186,12 +1191,13 @@ class _PrintTemplateDesignerState extends State<PrintTemplateDesigner> {
       }
       if (type == 'image') {
         final src = _s(row['src']);
+        final scale = _d(row['logoScale'], 1.0).clamp(0.5, 2.0);
         widgets.add(Padding(
           padding: EdgeInsets.symmetric(vertical: 6),
           child: Center(
             child: src.startsWith('data:image/')
                 ? Image.memory(_dataUrlBytes(src),
-                    height: 56, fit: BoxFit.contain)
+                    height: (56 * scale).toDouble(), fit: BoxFit.contain)
                 : _pvLogoPlaceholder(_s(row['label'])),
           ),
         ));
@@ -1275,7 +1281,7 @@ class _PrintTemplateDesignerState extends State<PrintTemplateDesigner> {
           fontFamily: 'Be Vietnam Pro',
           fontSize: 12.5,
           height: 1.36,
-          color: Colors.black87,
+          color: bold ? _accent : Colors.black87,
           fontWeight: bold ? FontWeight.w800 : FontWeight.w500,
         ),
       ),
@@ -1413,6 +1419,136 @@ class _PrintTemplateDesignerState extends State<PrintTemplateDesigner> {
               onPressed: () => Navigator.of(ctx).pop(), child: Text(t('Đóng'))),
         ],
       ),
+    );
+  }
+
+  // ── Khổ giấy nhanh + màu nhấn ─────────────────────────────────────────────
+
+  /// Nút gạt 58mm/80mm nổi bật ngay trên preview — đổi tức thì để xem bill dạng
+  /// hẹp (58mm · 32 ký tự) hay rộng (80mm · 40 ký tự). Tái dùng _applyPaper.
+  Widget _widthToggle() {
+    final is58 = _d(_template['widthMm'], 80) <= 58;
+    return Container(
+      decoration: BoxDecoration(
+        color: DanColors.surface2,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: DanColors.border),
+      ),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        _segCell('58mm', is58, () => _applyPaper('K57')),
+        _segCell('80mm', !is58, () => _applyPaper('K80')),
+      ]),
+    );
+  }
+
+  Widget _segCell(String label, bool active, VoidCallback onTap) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
+        padding: EdgeInsets.symmetric(horizontal: 11, vertical: 5),
+        decoration: BoxDecoration(
+          color: active ? DanColors.brand : Colors.transparent,
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Text(label,
+            style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w800,
+                color: active ? Colors.white : DanColors.muted)),
+      ),
+    );
+  }
+
+  static const _accentSwatches = <String>[
+    '#111111', '#0891B2', '#0F766E', '#B45309', '#B91C1C', '#7C3AED', '#1D4ED8',
+  ];
+
+  /// Màu nhấn — CHỈ áp cho preview trên màn hình & hóa đơn A4/PDF. Máy in nhiệt
+  /// in đen trắng nên tên cửa hàng/dòng đậm sẽ in đen bình thường.
+  Color get _accent =>
+      _parseHexColor(_s(_bill['accentColor'])) ?? const Color(0xFF111111);
+
+  static Color? _parseHexColor(String hex) {
+    var h = hex.replaceAll('#', '').trim();
+    if (h.length == 6) h = 'FF$h';
+    if (h.length != 8) return null;
+    final v = int.tryParse(h, radix: 16);
+    return v == null ? null : Color(v);
+  }
+
+  Widget _accentPicker() {
+    final cur = _s(_bill['accentColor']).isEmpty ? '#111111' : _s(_bill['accentColor']);
+    return Padding(
+      padding: EdgeInsets.only(bottom: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(t('Màu nhấn (tên cửa hàng & dòng đậm)'),
+              style: TextStyle(fontSize: 12.5, color: DanColors.muted)),
+          SizedBox(height: 2),
+          Text(
+              t('Chỉ hiển thị trên màn hình & hóa đơn A4 — máy in nhiệt in đen trắng.'),
+              style: TextStyle(fontSize: 10.5, color: DanColors.faint, height: 1.3)),
+          SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final hex in _accentSwatches)
+                InkWell(
+                  onTap: () => _setBillField('accentColor', hex),
+                  borderRadius: BorderRadius.circular(20),
+                  child: Container(
+                    width: 26,
+                    height: 26,
+                    decoration: BoxDecoration(
+                      color: _parseHexColor(hex),
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                          color: cur.toLowerCase() == hex.toLowerCase()
+                              ? DanColors.brand
+                              : DanColors.border,
+                          width: cur.toLowerCase() == hex.toLowerCase() ? 3 : 1.5),
+                    ),
+                    child: cur.toLowerCase() == hex.toLowerCase()
+                        ? Icon(Icons.check, size: 14, color: Colors.white)
+                        : null,
+                  ),
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Chọn cỡ logo cho dòng ảnh (Nhỏ/Vừa/Lớn → hệ số 0.7/1.0/1.4). Preview áp
+  /// tức thì; máy in dùng hệ số này cho bitmap logo thật.
+  Widget _logoSizeRow(String id, double scale) {
+    Widget cell(String label, double s) {
+      final active = (scale - s).abs() < 0.05;
+      return _segCell(label, active, () => _updateRow(id, (r) => r['logoScale'] = s));
+    }
+    return Padding(
+      padding: EdgeInsets.only(top: 8),
+      child: Row(children: [
+        Text(t('Cỡ logo:'),
+            style: TextStyle(fontSize: 12, color: DanColors.muted)),
+        SizedBox(width: 8),
+        Container(
+          decoration: BoxDecoration(
+            color: DanColors.surface2,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: DanColors.border),
+          ),
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            cell(t('Nhỏ'), 0.7),
+            cell(t('Vừa'), 1.0),
+            cell(t('Lớn'), 1.4),
+          ]),
+        ),
+      ]),
     );
   }
 
