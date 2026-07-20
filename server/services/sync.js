@@ -3,6 +3,7 @@
 // is not enabled, so this service must not create a second database.
 import { db, now } from '../db.js';
 import { emit } from '../realtime.js';
+import { logger } from '../core/logger.js';
 
 const state = { offline: false, lastSyncAt: now(), lastError: null };
 const DONE_RETENTION_DAYS = 7;
@@ -17,7 +18,7 @@ export function syncBatch(branch_id = 'br1') {
   try {
     pending = db.prepare(`SELECT * FROM sync_queue WHERE status = 'pending' ORDER BY created_at ASC LIMIT 100`).all();
   } catch (err) {
-    console.warn('[sync] failed to query sync_queue:', err.message);
+    logger.warn('sync failed to query sync_queue', { message: err.message });
     return 0;
   }
 
@@ -36,7 +37,7 @@ export function syncBatch(branch_id = 'br1') {
     try {
       db.exec('ROLLBACK;');
     } catch {}
-    console.error('[sync] batch flush failed:', err.message);
+    logger.error('sync batch flush failed', { message: err.message });
     state.lastError = err.message;
     throw err;
   }
@@ -97,7 +98,7 @@ function maybePruneDoneQueue(force = false) {
   try {
     return pruneDoneQueue();
   } catch (err) {
-    console.warn('[sync] prune done queue failed:', err.message);
+    logger.warn('sync prune done queue failed', { message: err.message });
     return 0;
   }
 }
@@ -153,7 +154,7 @@ export function startSyncEngine(branch_id = 'br1') {
     syncBatch(branch_id);
     maybePruneDoneQueue(true);
   } catch (err) {
-    console.warn('[sync] startup sync failed:', err.message);
+    logger.warn('sync startup sync failed', { message: err.message });
   }
   
   timer = setInterval(() => {
@@ -167,7 +168,7 @@ export function startSyncEngine(branch_id = 'br1') {
         emit('sync:status', status(branch_id), branch_id);
       }
     } catch (err) {
-      console.warn('[sync] background sync failed:', err.message);
+      logger.warn('sync background sync failed', { message: err.message });
     }
   }, 6000);
 }

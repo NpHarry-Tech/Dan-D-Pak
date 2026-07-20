@@ -4,6 +4,7 @@
 // plaintext value so a half-migrated database keeps working; migratePlaintextPins()
 // upgrades any remaining plaintext rows on startup.
 import crypto from 'node:crypto';
+import { logger } from '../core/logger.js';
 
 const SCRYPT = { N: 16384, r: 8, p: 1, maxmem: 64 * 1024 * 1024 };
 const KEYLEN = 32;
@@ -50,7 +51,7 @@ export function migratePlaintextPins(db) {
     const upd = db.prepare(`UPDATE users SET pin=? WHERE id=?`);
     for (const r of rows) { upd.run(hashPin(r.pin), r.id); migrated++; }
   } catch (e) {
-    console.warn('[pin] plaintext migration failed:', e.message);
+    logger.warn('pin plaintext migration failed', { message: e.message });
   }
   return migrated;
 }

@@ -5,6 +5,7 @@ import { env } from './config/env.js';
 import { audit } from './db.js';
 import { userFor, canAccessBranch } from './services/auth.js';
 import { normalizeIp } from './core/util.js';
+import { logger } from './core/logger.js';
 
 let io = null;
 
@@ -150,11 +151,11 @@ export function initRealtime(httpServer) {
         try {
           emitPresenceThrottled(branch);
         } catch (err) {
-          console.warn('[Socket.IO] disconnect presence error:', err.message);
+          logger.warn('socket disconnect presence error', { message: err.message });
         }
       });
     } catch (err) {
-      console.warn('[Socket.IO] connection error:', err.message);
+      logger.warn('socket connection error', { message: err.message });
     }
   });
 
@@ -175,7 +176,7 @@ export function emit(event, payload, branch = 'br1') {
       }
     }
   } catch (err) {
-    console.warn('[Socket.IO] broadcast emit error:', err.message);
+    logger.warn('socket broadcast emit error', { message: err.message });
   }
 }
 
@@ -190,7 +191,7 @@ function emitPresence(branch) {
     }
     io.to(staffRoom(branch)).emit('presence', { count: sockets.length, devices });
   } catch (err) {
-    console.warn('[Socket.IO] emitPresence error:', err.message);
+    logger.warn('socket emitPresence error', { message: err.message });
   }
 }
 
@@ -210,7 +211,7 @@ export function getActiveConnections(branch = 'br1') {
       };
     });
   } catch (err) {
-    console.warn('[Socket.IO] getActiveConnections error:', err.message);
+    logger.warn('socket getActiveConnections error', { message: err.message });
     return [];
   }
 }

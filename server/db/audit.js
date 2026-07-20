@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import zlib from 'node:zlib';
 import { db } from './connection.js';
+import { logger } from '../core/logger.js';
 import { currentDevice } from '../core/requestContext.js';
 import {
   appendAuditArchive, readRecentAuditArchive, listAuditBranches, listArchivedMonths,
@@ -42,7 +43,7 @@ export function audit(action, detail, branch_id = 'br1', actor = 'system') {
     db.prepare(`INSERT INTO audit_log (id,branch_id,actor,action,detail,created_at) VALUES (?,?,?,?,?,?)`)
       .run(id, branch_id, actor, action, cleanDetail, created_at);
   } catch (e) {
-    console.warn('[audit] sqlite write failed (kept in NDJSON archive):', e.message);
+    logger.warn('audit sqlite write failed (kept in NDJSON archive)', { message: e.message });
   }
 }
 
@@ -60,7 +61,7 @@ export function reconcileAuditFromArchive(days = 2) {
       if (r.changes > 0) restored++;
     }
   } catch (e) {
-    console.warn('[audit] reconcile from archive failed:', e.message);
+    logger.warn('audit reconcile from archive failed', { message: e.message });
   }
   return restored;
 }
@@ -82,7 +83,7 @@ export function encryptCompress(text) {
     const encrypted = Buffer.concat([cipher.update(compressed), cipher.final()]);
     return '__ENC__:' + iv.toString('hex') + ':' + encrypted.toString('hex');
   } catch (e) {
-    console.error('[audit] compression/encryption failed:', e.message);
+    logger.error('audit compression/encryption failed', { message: e.message });
     return text;
   }
 }
@@ -98,7 +99,7 @@ export function decryptDecompress(encText) {
     const decrypted = Buffer.concat([decipher.update(encrypted), decipher.final()]);
     return zlib.gunzipSync(decrypted).toString('utf8');
   } catch (e) {
-    console.error('[audit] decryption/decompression failed:', e.message);
+    logger.error('audit decryption/decompression failed', { message: e.message });
     return encText;
   }
 }
@@ -194,7 +195,7 @@ export function compactAuditToMonthly(hotMonths = AUDIT_HOT_MONTHS) {
       }
     }
   } catch (e) {
-    console.warn('[audit] compactAuditToMonthly failed:', e.message);
+    logger.warn('audit compactAuditToMonthly failed', { message: e.message });
   }
   return { archivedMonths, removedRows };
 }
@@ -244,7 +245,7 @@ export function rehydrateAuditForQuery(branch, { from = null, to = null, period 
     if (!wanted.length) return 0;
     return rehydrateAuditMonths(branch, wanted);
   } catch (e) {
-    console.warn('[audit] rehydrateAuditForQuery failed:', e.message);
+    logger.warn('audit rehydrateAuditForQuery failed', { message: e.message });
     return 0;
   }
 }
@@ -278,7 +279,7 @@ export function purgeAuditBeyondRetention(retentionMonths = AUDIT_RETENTION_MONT
     }
     removedRows = db.prepare(`DELETE FROM audit_log WHERE created_at<?`).run(cutoffIso).changes;
   } catch (e) {
-    console.warn('[audit] purgeAuditBeyondRetention failed:', e.message);
+    logger.warn('audit purgeAuditBeyondRetention failed', { message: e.message });
   }
   return { removedFiles, removedRows };
 }

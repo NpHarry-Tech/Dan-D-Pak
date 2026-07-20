@@ -5,6 +5,7 @@ import { closeSync, existsSync, fsyncSync, mkdirSync, openSync, readdirSync, rea
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import zlib from 'node:zlib';
+import { logger } from '../core/logger.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 export const PERMANENT_ROOT = join(__dirname, '..', 'permanent-storage');
@@ -75,7 +76,7 @@ export function archiveEntity(kind, entity = {}, opts = {}) {
     writeJsonAtomic(byDate, payload);
     return { byId, byDate };
   } catch (e) {
-    console.warn('[archive] entity archive failed:', e.message);
+    logger.warn('archive entity archive failed', { message: e.message });
     return null;
   }
 }
@@ -128,7 +129,7 @@ export function archiveCashDrawerEntry(entry) {
     writeJsonAtomic(file, payload);
     return { ...(base || {}), journal: file, archive_sequence: sequence, archive_file_name: fileName };
   } catch (e) {
-    console.warn('[archive] cash drawer journal failed:', e.message);
+    logger.warn('archive cash drawer journal failed', { message: e.message });
     return base;
   }
 }
@@ -147,7 +148,7 @@ export function archiveDashboardReport(report = {}, branch_id = 'br1') {
     writeJsonAtomic(join(PERMANENT_ROOT, 'reports', branch, 'daily', `${isoDate()}.json`), stamped);
     return stamped;
   } catch (e) {
-    console.warn('[archive] report archive failed:', e.message);
+    logger.warn('archive report archive failed', { message: e.message });
     return null;
   }
 }
@@ -169,7 +170,7 @@ export function appendAuditArchive(entry = {}) {
     fsyncSync(fd);
     return file;
   } catch (e) {
-    console.warn('[archive] audit archive failed:', e.message);
+    logger.warn('archive audit archive failed', { message: e.message });
     return null;
   } finally {
     if (fd !== undefined) { try { closeSync(fd); } catch { /* already closed */ } }
@@ -209,7 +210,7 @@ export function readRecentAuditArchive(days = 2) {
       }
     }
   } catch (e) {
-    console.warn('[archive] read recent audit failed:', e.message);
+    logger.warn('archive read recent audit failed', { message: e.message });
   }
   return out;
 }
@@ -344,7 +345,7 @@ export function readMonthlyArchive(branch, ym) {
     }
     return out;
   } catch (e) {
-    console.warn('[archive] read monthly archive failed:', e.message);
+    logger.warn('archive read monthly archive failed', { message: e.message });
     return [];
   }
 }

@@ -3,6 +3,7 @@
 // route dời NGUYÊN VĂN, không đổi logic.
 import * as Auth from '../../services/auth.js';
 import { db, audit, decryptDecompress, listBackups } from '../../db.js';
+import { logger } from '../../core/logger.js';
 
 export function registerDatabaseRoutes(api, { wrap, guardAny, branch }) {
 // --- Database Management & Documentation APIs ---
@@ -129,7 +130,7 @@ api.post('/database/reset-transactions', guardAny('settings.manage'), wrap(async
       try {
         db.exec(`DELETE FROM ${table}`);
       } catch (e) {
-        console.error(`Lỗi khi dọn dẹp bảng ${table}:`, e.message);
+        logger.error('database reset-transactions table cleanup failed', { table, message: e.message });
       }
     }
     try {
