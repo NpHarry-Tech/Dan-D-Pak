@@ -39,6 +39,15 @@ class ApiService extends DanDpakApiClient {
         body: {'lang': lang}, errorMessage: 'Không lưu được ngôn ngữ'));
   }
 
+  /// Đổi PIN của chính mình (tự xác thực bằng PIN hiện tại). Dùng cho luồng
+  /// ép-đổi PIN mặc định lần đầu.
+  Future<Map<String, dynamic>> changeMyPin(
+      String currentPin, String newPin) async {
+    return mapFrom(await postJson('/api/me/pin',
+        body: {'current_pin': currentPin, 'new_pin': newPin},
+        errorMessage: 'Không đổi được mã PIN'));
+  }
+
   Future<List<dynamic>> getUsers() async {
     return listFrom(
         await getJson('/api/users', errorMessage: 'Failed to load users'));

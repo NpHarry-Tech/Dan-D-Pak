@@ -2239,7 +2239,15 @@ class _DevicesPanelState extends State<DevicesPanel> {
   String _currentPin = '';
   bool _loading = true;
   bool _saving = false;
+  bool _isDefaultPin = false;
   String? _error;
+
+  // Mật khẩu 4 số dễ đoán — chặn tại chỗ (server cũng chốt chặn lại).
+  static const _weakPins = {
+    '0000', '1111', '2222', '3333', '4444', '5555', '6666', '7777', '8888',
+    '9999', '1234', '4321', '2345', '3456', '4567', '5678', '6789', '0123',
+    '1212', '2580',
+  };
 
   @override
   void initState() {
@@ -2260,6 +2268,7 @@ class _DevicesPanelState extends State<DevicesPanel> {
       if (!mounted) return;
       setState(() {
         _currentPin = _s(s['ipad_staff_pin']);
+        _isDefaultPin = s['ipad_pin_is_default'] == true;
         _loading = false;
         _error = null;
       });
@@ -2280,6 +2289,12 @@ class _DevicesPanelState extends State<DevicesPanel> {
           backgroundColor: DanColors.late));
       return;
     }
+    if (_weakPins.contains(newPin)) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(t('Mật khẩu quá dễ đoán (0000/1111/1234…). Hãy chọn 4 số khác.')),
+          backgroundColor: DanColors.late));
+      return;
+    }
     final approval = await settingsPin(
         context, t('Đổi mật khẩu (PIN) mở khóa thiết bị khách.'));
     if (approval == null) return;
@@ -2290,6 +2305,7 @@ class _DevicesPanelState extends State<DevicesPanel> {
       if (!mounted) return;
       setState(() {
         _currentPin = newPin;
+        _isDefaultPin = false;
         _pin.clear();
         _saving = false;
       });
@@ -2325,6 +2341,36 @@ class _DevicesPanelState extends State<DevicesPanel> {
                   Text(
                       t('PIN này dùng để nhân viên mở khóa/thoát chế độ tự order trên thiết bị khách.'),
                       style: TextStyle(fontSize: 12.5, color: DanColors.muted)),
+                  if (_isDefaultPin) ...[
+                    SizedBox(height: 12),
+                    Container(
+                      padding: EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: DanColors.late.withValues(alpha: 0.10),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                            color: DanColors.late.withValues(alpha: 0.45)),
+                      ),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Icon(Icons.warning_amber_rounded,
+                              size: 20, color: DanColors.late),
+                          SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              t('Thiết bị khách đang dùng mật khẩu MẶC ĐỊNH — ai cũng đoán được. Hãy đặt mã PIN mới ngay để tránh khách tự thoát vào màn nhân viên.'),
+                              style: TextStyle(
+                                  fontSize: 12.5,
+                                  height: 1.4,
+                                  color: DanColors.text,
+                                  fontWeight: FontWeight.w600),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                   SizedBox(height: 12),
                   Row(
                     children: [

@@ -13,6 +13,7 @@ import 'providers/customer_display_controller.dart';
 import 'providers/pos_provider.dart';
 import 'screens/branch_select_screen.dart';
 import 'screens/customer_display/second_screen.dart';
+import 'screens/force_change_pin_screen.dart';
 import 'screens/launcher_screen.dart';
 import 'services/second_window_fullscreen.dart';
 import 'screens/login_gate_screen.dart';
@@ -287,7 +288,11 @@ class _DandpakPosAppState extends State<DandpakPosApp>
             _queueSavedSecondaryDisplayOpen(auth.selectedBranchId);
           }
           if (auth.booting) return SplashScreen();
-          if (auth.isLoggedIn) return LauncherScreen();
+          if (auth.isLoggedIn) {
+            // Chặn cứng: tài khoản còn PIN mặc định phải đổi trước khi vào app.
+            if (auth.mustChangePin) return const ForceChangePinScreen();
+            return LauncherScreen();
+          }
           if (!auth.branchConfirmed) return BranchSelectScreen();
           return LoginGateScreen();
         },

@@ -22,6 +22,9 @@ class AuthProvider extends ChangeNotifier {
   String? _token;
   List<Branch> _branches = [];
   List<User> _loginUsers = [];
+  // Server báo tài khoản vừa đăng nhập còn dùng PIN mặc định (owner/1234) →
+  // app phải ép đổi PIN NGAY trước khi cho dùng tiếp (chặn ở login gate).
+  bool _mustChangePin = false;
 
   AuthProvider({required this.apiService}) {
     _loadPreferences();
@@ -36,6 +39,7 @@ class AuthProvider extends ChangeNotifier {
   String get language => _language;
   User? get currentUser => _currentUser;
   String? get token => _token;
+  bool get mustChangePin => _mustChangePin;
   List<Branch> get branches => _branches;
   List<User> get loginUsers => _loginUsers;
   Branch get selectedBranch => _branches.firstWhere(
@@ -170,6 +174,7 @@ class AuthProvider extends ChangeNotifier {
     try {
       final res = await apiService.login(username, pin, branchId);
       _token = res['token'];
+      _mustChangePin = res['security_warning'] == 'default_admin_pin';
       // Server trả `perms` ở NGOÀI object `user` (publicUser không nhúng quyền).
       // Gộp vào trước khi parse để hasPermission() hoạt động ngay sau đăng nhập
       // — nếu không, mọi tài khoản (trừ owner) sẽ như KHÔNG có quyền nào.
@@ -203,6 +208,14 @@ class AuthProvider extends ChangeNotifier {
       notifyListeners();
       rethrow;
     }
+  }
+
+  /// Đổi PIN của chính mình (dùng cho luồng ép-đổi PIN mặc định lần đầu). Xóa cờ
+  /// [mustChangePin] khi thành công để login gate cho đi tiếp.
+  Future<void> changeOwnPin(String currentPin, String newPin) async {
+    await apiService.changeMyPin(currentPin, newPin);
+    _mustChangePin = false;
+    notifyListeners();
   }
 
   void _setLanguage(String lang, {bool notify = true}) {

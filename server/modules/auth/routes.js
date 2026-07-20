@@ -27,6 +27,9 @@ api.post('/logout', wrap((req) => {
 }));
 api.get('/me', guard(), wrap((req) => ({ ...req.user, perms: Auth.effectivePermsForUser(req.user.id) })));
 api.post('/me/lang', guard(), wrap((req) => Auth.updateOwnLang(req.user.id, req.body.lang, branch(req))));
+// Đổi PIN của chính mình (tự xác thực bằng PIN hiện tại). Nền cho luồng ép-đổi
+// PIN mặc định lần đầu — xem security_warning='default_admin_pin' ở /login.
+api.post('/me/pin', guard(), wrap((req) => Auth.changeOwnPin(req.user.id, req.body.current_pin, req.body.new_pin, branch(req))));
 api.get('/users', wrap((req) => Auth.listUsers(visibleBranch(req))));
 api.get('/ping', wrap(() => ({ ok: true, serverTime: Date.now() })));
 

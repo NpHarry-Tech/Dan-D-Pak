@@ -12,6 +12,12 @@ function storedFourDigitPin(value, fallback = DEFAULTS.ipad_staff_pin) {
   const digits = String(value || '').replace(/\D/g, '');
   return digits.length >= 4 ? digits.slice(0, 4) : fallback;
 }
+// Mật khẩu 4 số dễ đoán — cấm dùng cho thiết bị khách (kiosk đặt tại bàn, ai
+// cũng chạm được nên PIN yếu = mở toang màn nhân viên).
+const WEAK_IPAD_PINS = new Set([
+  '0000', '1111', '2222', '3333', '4444', '5555', '6666', '7777', '8888', '9999',
+  '1234', '4321', '2345', '3456', '4567', '5678', '6789', '0123', '1212', '2580',
+]);
 const INTEGRATIONS_KEY = 'integrations_config';
 const PRINT_CONFIG_KEY = 'print_config';
 const OPERATIONS_CONFIG_KEY = 'operations_config';
@@ -785,6 +791,8 @@ export function getSettings(branch_id = 'br1') {
   const rows = db.prepare(`SELECT key,value FROM app_settings WHERE branch_id=?`).all(branch_id);
   const out = { ...DEFAULTS, ...Object.fromEntries(rows.map(r => [r.key, r.value])) };
   out.ipad_staff_pin = storedFourDigitPin(out.ipad_staff_pin);
+  // Cờ để Cài đặt cảnh báo/ép đổi: thiết bị khách còn dùng mật khẩu mặc định 0000.
+  out.ipad_pin_is_default = WEAK_IPAD_PINS.has(out.ipad_staff_pin);
   out.print_config = getPrintConfig(branch_id);
   out.operations_config = getOperationsConfig(branch_id);
   out.notification_sound_config = getNotificationSoundConfig(branch_id);
@@ -801,6 +809,9 @@ export function updateSettings(body = {}, branch_id = 'br1') {
   if (body.ipad_staff_pin !== undefined) {
     const pin = String(body.ipad_staff_pin || '').trim();
     if (!/^\d{4}$/.test(pin)) throw new Error('Mật khẩu iPad phải đúng 4 chữ số');
+    // Ép đặt mật khẩu MẠNH khi thiết lập: không cho lưu dãy mặc định/dễ đoán
+    // (0000/1111/1234…) — chống việc đổi từ mặc định này sang mặc định khác.
+    if (WEAK_IPAD_PINS.has(pin)) throw new Error('Mật khẩu iPad quá dễ đoán (0000/1111/1234…). Hãy chọn 4 số khác.');
     next.ipad_staff_pin = pin;
   }
   if (body.print_config !== undefined) {

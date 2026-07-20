@@ -570,6 +570,30 @@ export function updateOwnLang(user_id, lang, branch_id = 'br1') {
   archiveStaff(out);
   return publicUser(out);
 }
+
+// PIN yếu/dễ đoán tuyệt đối cấm — chặn cả admin lẫn nhân viên khi tự đổi PIN.
+export const WEAK_PINS = new Set([
+  '0000', '1111', '2222', '3333', '4444', '5555', '6666', '7777', '8888', '9999',
+  '1234', '4321', '2345', '3456', '4567', '5678', '6789', '0123', '1212', '2580',
+  '000000', '111111', '123456', '654321', '121212',
+]);
+
+// Đổi PIN của CHÍNH mình: người dùng tự xác thực bằng PIN HIỆN TẠI (không cần PIN
+// quản lý khác). Dùng cho luồng ép-đổi-PIN-mặc-định lần đầu (owner còn dùng 1234)
+// và cho việc đổi PIN chủ động. Chặn PIN yếu để không đổi từ mặc định này sang mặc
+// định khác.
+export function changeOwnPin(user_id, currentPin, newPin, branch_id = 'br1') {
+  const cur = db.prepare(`SELECT * FROM users WHERE id=? AND active=1`).get(user_id);
+  if (!cur) throw new Error('Người dùng không tồn tại');
+  if (!verifyPin(String(currentPin ?? ''), cur.pin)) throw new Error('Mã PIN hiện tại không đúng.');
+  const next = String(newPin ?? '').trim();
+  if (!/^\d{4,6}$/.test(next)) throw new Error('PIN mới phải gồm 4–6 chữ số.');
+  if (WEAK_PINS.has(next)) throw new Error('PIN mới quá dễ đoán (1234/0000/1111…). Hãy chọn dãy số khác.');
+  if (verifyPin(next, cur.pin)) throw new Error('PIN mới phải khác PIN hiện tại.');
+  db.prepare(`UPDATE users SET pin=? WHERE id=?`).run(hashPin(next), user_id);
+  audit('user.pin.self_change', { username: cur.username, role: cur.role }, branch_id, cur.username);
+  return { ok: true };
+}
 export function deleteUser(id, branch_id = 'br1') {
   const cur = db.prepare(`SELECT * FROM users WHERE id=?`).get(id);
   if (!cur) throw new Error('Người dùng không tồn tại');
