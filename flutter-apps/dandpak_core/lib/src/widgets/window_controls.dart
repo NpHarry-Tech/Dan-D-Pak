@@ -193,16 +193,25 @@ class _WinBtnState extends State<_WinBtn> {
         onExit: (_) => setState(() => _hover = false),
         child: GestureDetector(
           onTap: widget.onTap,
-          child: AnimatedContainer(
-            duration: Duration(milliseconds: 100),
+          child: SizedBox(
             width: 44,
-            height: 62, // Aligns perfectly with the 62px top bar
-            color: bg,
-            alignment: Alignment.center,
-            child: Icon(
-              displayIcon,
-              size: widget.iconSize,
-              color: fg,
+            height: 62,
+            child: Center(
+              child: AnimatedContainer(
+                duration: Duration(milliseconds: 100),
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: bg,
+                  borderRadius: BorderRadius.circular(7),
+                ),
+                alignment: Alignment.center,
+                child: Icon(
+                  displayIcon,
+                  size: widget.iconSize,
+                  color: fg,
+                ),
+              ),
             ),
           ),
         ),
