@@ -13,7 +13,7 @@ const SUPPORTED_TOPICS = new Set([
   'orders/create', 'orders/updated', 'orders/update', 'orders/cancelled', 'orders/cancel', 'orders/paid',
   'customers/create', 'customers/update',
   'products/create', 'products/update', 'products/delete',
-  'inventory/update',
+  'inventory/update', 'inventorylocationbalances/update',
 ]);
 
 let workerRunning = false;
@@ -52,6 +52,9 @@ function legacyConfig() {
     apiBase: c.apiBase || env.HARAVAN_API_BASE_URL || 'https://apis.haravan.com',
     defaultBranchId: c.defaultBranchId || env.HARAVAN_DEFAULT_BRANCH_ID || 'ONLINE',
     locationId: c.locationId || env.HARAVAN_LOCATION_ID || '',
+    syncOrders: c.syncOrders !== false,
+    syncProducts: c.syncProducts !== false,
+    syncInventory: c.syncInventory !== false,
   };
 }
 
@@ -63,26 +66,44 @@ function installedShop(shopDomain) {
 
 function config(shopDomain = '') {
   const installed = installedShop(shopDomain);
+  const fallback = legacyConfig();
   if (installed) return {
     enabled: true,
     shopDomain: installed.shop_domain,
     accessToken: installed.access_token,
     refreshToken: installed.refresh_token || '',
-    webhookSecret: env.HARAVAN_CLIENT_SECRET || legacyConfig().webhookSecret,
-    clientId: env.HARAVAN_CLIENT_ID || legacyConfig().clientId,
-    clientSecret: env.HARAVAN_CLIENT_SECRET || legacyConfig().clientSecret,
-    verifyToken: env.HARAVAN_WEBHOOK_VERIFY_TOKEN || legacyConfig().verifyToken,
+    webhookSecret: env.HARAVAN_CLIENT_SECRET || fallback.webhookSecret,
+    clientId: env.HARAVAN_CLIENT_ID || fallback.clientId,
+    clientSecret: env.HARAVAN_CLIENT_SECRET || fallback.clientSecret,
+    verifyToken: env.HARAVAN_WEBHOOK_VERIFY_TOKEN || fallback.verifyToken,
     apiBase: installed.api_base || 'https://apis.haravan.com',
     defaultBranchId: installed.branch_id || 'ONLINE',
-    locationId: installed.location_id || legacyConfig().locationId,
+    locationId: installed.location_id || fallback.locationId,
+    syncOrders: fallback.syncOrders,
+    syncProducts: fallback.syncProducts,
+    syncInventory: fallback.syncInventory,
   };
-  const legacy = legacyConfig();
-  if (!shopDomain || legacy.shopDomain === normShop(shopDomain)) return legacy;
-  return { ...legacy, shopDomain: normShop(shopDomain) };
+  if (!shopDomain || fallback.shopDomain === normShop(shopDomain)) return fallback;
+  return { ...fallback, shopDomain: normShop(shopDomain) };
 }
 
 function defaultBranch(shopDomain = '') {
-  return config(shopDomain).defaultBranchId || 'ONLINE';
+  const wanted = cleanId(config(shopDomain).defaultBranchId);
+  const exact = wanted && db.prepare(`SELECT id FROM branches
+    WHERE active=1 AND (lower(id)=lower(?) OR lower(name)=lower(?) OR lower(code)=lower(?)) LIMIT 1`)
+    .get(wanted, wanted, wanted);
+  if (exact?.id) return exact.id;
+  const active = db.prepare(`SELECT id FROM branches WHERE active=1 ORDER BY sort,name`).all();
+  if (active.length === 1) return active[0].id;
+  throw new Error(`HARAVAN_DEFAULT_BRANCH_ID does not match an active branch: ${wanted || '(empty)'}`);
+}
+
+function topicEnabled(topic, cfg = config()) {
+  if (!cfg.enabled) return false;
+  if (topic.startsWith('orders/') || topic.startsWith('customers/')) return cfg.syncOrders;
+  if (topic.startsWith('products/')) return cfg.syncProducts;
+  if (topic === 'inventory/update' || topic === 'inventorylocationbalances/update') return cfg.syncInventory;
+  return false;
 }
 
 export function verifyHaravanWebhook(rawBody, signature, secret = config().webhookSecret) {
@@ -101,7 +122,10 @@ function externalIdFor(topic, payload) {
   if (topic.startsWith('orders/')) return cleanId(payload.id || payload.order_id || payload.order_number);
   if (topic.startsWith('customers/')) return cleanId(payload.id || payload.customer?.id || payload.email || payload.phone);
   if (topic.startsWith('products/')) return cleanId(payload.id || payload.product_id || payload.handle);
-  if (topic === 'inventory/update') return cleanId(payload.inventory_item_id || payload.variant_id || payload.sku);
+  if (topic === 'inventory/update' || topic === 'inventorylocationbalances/update') {
+    const item = payload.inventory_location_balance || payload.inventoryLocationBalance || payload;
+    return cleanId(item.id || item.inventory_item_id || item.variant_id || item.product_variant_id || item.sku);
+  }
   return cleanId(payload.id);
 }
 
@@ -136,14 +160,22 @@ export function handleHaravanWebhook(rawBody, headers = {}) {
 
   const payload = parseJsonText(rawBody.toString('utf8'));
   const external_id = externalIdFor(topic, payload);
+  const raw_payload = { shop, payload };
+  const supported = SUPPORTED_TOPICS.has(topic) && topicEnabled(topic, config(shop));
+  const duplicate = db.prepare(`SELECT id FROM sync_logs
+    WHERE provider=? AND shop_domain=? AND topic=? AND external_id=? AND raw_payload=?
+      AND status IN ('received','retrying','success','ignored')
+    ORDER BY created_at DESC LIMIT 1`)
+    .get(PROVIDER, shop, topic, external_id, json(raw_payload));
+  if (duplicate) return { ok: true, log_id: duplicate.id, duplicate: true };
   const logId = writeSyncLog({
     shop_domain: shop,
     topic,
     external_id,
-    status: SUPPORTED_TOPICS.has(topic) ? 'received' : 'ignored',
-    raw_payload: { shop, payload },
+    status: supported ? 'received' : 'ignored',
+    raw_payload,
   });
-  if (SUPPORTED_TOPICS.has(topic)) setImmediate(() => processHaravanQueue());
+  if (supported) setImmediate(() => processHaravanQueue());
   return { ok: true, log_id: logId };
 }
 
@@ -260,7 +292,7 @@ function upsertState(shopDomain, resource, cursor) {
   db.prepare(`INSERT INTO haravan_sync_state (id,shop_domain,resource,cursor,updated_at)
     VALUES (?,?,?,?,?)
     ON CONFLICT(shop_domain, resource) DO UPDATE SET cursor=excluded.cursor,updated_at=excluded.updated_at`)
-    .run(uid('hss_'), normShop(shopDomain), resource, String(cursor || ''), now());
+    .run(uid('hss_'), normShop(shopDomain), resource, String(cursor ?? ''), now());
 }
 function getState(shopDomain, resource) {
   return db.prepare(`SELECT cursor FROM haravan_sync_state WHERE shop_domain=? AND resource=?`).get(normShop(shopDomain), resource)?.cursor || '';
@@ -437,9 +469,15 @@ export function deleteHaravanProduct(payload, shopDomain = '') {
 
 export function syncHaravanInventory(payload, shopDomain = '') {
   const shop = normShop(shopDomain);
-  const variantId = cleanId(payload.variant_id || payload.inventory_item_id);
-  const sku = cleanId(payload.sku);
-  const qty = Number(payload.quantity ?? payload.available ?? payload.inventory_quantity);
+  const cfg = config(shop);
+  if (!cfg.enabled || !cfg.syncInventory) return { ignored: true, reason: 'inventory_sync_disabled' };
+  if (!/^\d+$/.test(cleanId(cfg.locationId))) return { ignored: true, reason: 'location_not_configured' };
+  const item = payload.inventory_location_balance || payload.inventoryLocationBalance || payload;
+  const locationId = cleanId(item.loc_id || item.location_id);
+  if (locationId && locationId !== cleanId(cfg.locationId)) return { ignored: true, reason: 'different_location' };
+  const variantId = cleanId(item.variant_id || item.product_variant_id || item.inventory_item_id);
+  const sku = cleanId(item.sku || item.barcode);
+  const qty = Number(item.qty_available ?? item.quantity ?? item.available ?? item.inventory_quantity);
   if (!Number.isFinite(qty)) return { ignored: true };
   const mapped = variantId
     ? db.prepare(`SELECT internal_variant_id FROM external_products WHERE provider=? AND shop_domain=? AND external_variant_id=?`).get(PROVIDER, shop, variantId)
@@ -453,11 +491,12 @@ export function syncHaravanInventory(payload, shopDomain = '') {
 }
 
 function handleTopic(topic, payload, shopDomain = '') {
+  if (!topicEnabled(topic, config(shopDomain))) return { ignored: true, reason: 'sync_disabled' };
   if (topic.startsWith('orders/')) return syncHaravanOrder(payload, topic, shopDomain);
   if (topic.startsWith('customers/')) return syncHaravanCustomer(payload, shopDomain);
   if (topic === 'products/delete') return deleteHaravanProduct(payload, shopDomain);
   if (topic.startsWith('products/')) return syncHaravanProduct(payload, shopDomain);
-  if (topic === 'inventory/update') return syncHaravanInventory(payload, shopDomain);
+  if (topic === 'inventory/update' || topic === 'inventorylocationbalances/update') return syncHaravanInventory(payload, shopDomain);
   return { ignored: true };
 }
 
@@ -473,8 +512,9 @@ export function processHaravanQueue(limit = 20) {
     for (const row of rows) {
       try {
         const body = parseJsonText(row.raw_payload || '{}');
-        handleTopic(row.topic, body.payload || body, row.shop_domain || body.shop || '');
-        db.prepare(`UPDATE sync_logs SET status='success', processed_at=?, error_message=NULL WHERE id=?`).run(now(), row.id);
+        const result = handleTopic(row.topic, body.payload || body, row.shop_domain || body.shop || '');
+        db.prepare(`UPDATE sync_logs SET status=?, processed_at=?, error_message=NULL WHERE id=?`)
+          .run(result?.ignored ? 'ignored' : 'success', now(), row.id);
         processed++;
       } catch (err) {
         const retries = (row.retry_count || 0) + 1;
@@ -550,12 +590,15 @@ function chunks(rows, size) {
 export async function pushInventoryToHaravan({ shopDomain = '', skuIds = [], reason = 'newproduct' } = {}) {
   const shop = normShop(shopDomain || config().shopDomain);
   const cfg = config(shop);
-  if (!cfg.locationId) throw new Error('HARAVAN_LOCATION_ID is not set');
+  if (!cfg.enabled || !cfg.syncInventory) return { shopDomain: shop, pushed: 0, skipped: 'inventory_sync_disabled' };
+  if (!/^\d+$/.test(cleanId(cfg.locationId))) throw new Error('HARAVAN_LOCATION_ID is not set');
+  const branch_id = defaultBranch(shop);
   const ids = Array.isArray(skuIds) && skuIds.length ? skuIds.map(cleanId) : null;
   const rows = db.prepare(`SELECT ep.external_product_id, ep.external_variant_id, ep.sku, s.id sku_id, s.stock
     FROM external_products ep JOIN skus s ON s.id=ep.internal_variant_id
-    WHERE ep.provider=? AND ep.shop_domain=? ${ids ? `AND s.id IN (${ids.map(() => '?').join(',')})` : ''}
-    ORDER BY s.id`).all(PROVIDER, shop, ...(ids || []));
+    WHERE ep.provider=? AND ep.shop_domain=? AND s.branch_id=? AND s.active=1
+      ${ids ? `AND s.id IN (${ids.map(() => '?').join(',')})` : ''}
+    ORDER BY s.id`).all(PROVIDER, shop, branch_id, ...(ids || []));
   let pushed = 0;
   for (const batch of chunks(rows, 100)) {
     await haravanRequest('/com/inventories/adjustorset.json', {
@@ -584,9 +627,22 @@ export async function pushInventoryToHaravan({ shopDomain = '', skuIds = [], rea
 export async function pushPendingInventoryChanges() {
   const out = [];
   for (const shop of shopsToSync()) {
-    const lastRowid = Number(getState(shop, 'inventory_push_rowid') || 0);
+    const cfg = config(shop);
+    if (!cfg.enabled || !cfg.syncInventory || !cfg.accessToken || !/^\d+$/.test(cleanId(cfg.locationId))) continue;
+    const branch_id = defaultBranch(shop);
+    const savedCursor = getState(shop, 'inventory_push_rowid');
+    if (!savedCursor) {
+      const latest = db.prepare(`SELECT COALESCE(MAX(rowid),0) rowid FROM stock_movements
+        WHERE branch_id=? AND item_type='sku'`).get(branch_id)?.rowid || 0;
+      upsertState(shop, 'inventory_push_rowid', latest);
+      out.push({ shopDomain: shop, pushed: 0, initialized: true });
+      continue;
+    }
+    const lastRowid = Number(savedCursor);
     const rows = db.prepare(`SELECT rowid, inventory_item_id FROM stock_movements
-      WHERE rowid>? AND item_type='sku' ORDER BY rowid ASC LIMIT 500`).all(lastRowid);
+      WHERE branch_id=? AND rowid>? AND item_type='sku'
+        AND COALESCE(reason,'') NOT LIKE 'haravan:%'
+      ORDER BY rowid ASC LIMIT 500`).all(branch_id, lastRowid);
     if (!rows.length) continue;
     const skuIds = [...new Set(rows.map(r => r.inventory_item_id).filter(Boolean))];
     if (skuIds.length) out.push(await pushInventoryToHaravan({ shopDomain: shop, skuIds, reason: 'newproduct' }));
@@ -618,13 +674,25 @@ export function listSyncLogs(limit = 100) {
 }
 
 export function startHaravanWorker() {
+  db.prepare(`DELETE FROM sync_logs
+    WHERE provider=? AND topic='inventory/push' AND status='failed'
+      AND error_message='HARAVAN_LOCATION_ID is not set'`).run(PROVIDER);
   if (!timer) {
     timer = setInterval(() => processHaravanQueue(), 30000);
     timer.unref?.();
   }
   if (!inventoryTimer) {
     inventoryTimer = setInterval(() => pushPendingInventoryChanges().catch(err =>
-      writeSyncLog({ topic: 'inventory/push', status: 'failed', error_message: err.message })), 60000);
+      writeWorkerFailureOnce('inventory/push', err)), 60000);
     inventoryTimer.unref?.();
   }
+}
+
+function writeWorkerFailureOnce(topic, err) {
+  const message = cleanId(err?.message || err);
+  const cutoff = new Date(Date.now() - 15 * 60 * 1000).toISOString();
+  const existing = db.prepare(`SELECT id FROM sync_logs
+    WHERE provider=? AND topic=? AND status='failed' AND error_message=? AND created_at>=?
+    ORDER BY created_at DESC LIMIT 1`).get(PROVIDER, topic, message, cutoff);
+  return existing?.id || writeSyncLog({ topic, status: 'failed', error_message: message });
 }

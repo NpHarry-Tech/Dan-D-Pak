@@ -1102,6 +1102,7 @@ export function migrate(targetDb = globalDb) {
   CREATE INDEX IF NOT EXISTS idx_sync_logs_provider_created       ON sync_logs(provider, created_at DESC);
   CREATE INDEX IF NOT EXISTS idx_sync_logs_queue                  ON sync_logs(provider, status, next_retry_at, created_at);
   CREATE INDEX IF NOT EXISTS idx_sync_logs_provider_shop_created  ON sync_logs(provider, shop_domain, created_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_sync_logs_webhook_dedupe         ON sync_logs(provider, shop_domain, topic, external_id, created_at DESC);
   CREATE INDEX IF NOT EXISTS idx_haravan_sync_state_shop_resource ON haravan_sync_state(shop_domain, resource);
   `);
 
