@@ -58,6 +58,18 @@ export const PERMISSIONS = [
   { key: 'menu.manage', label: 'Quản lý thực đơn — thêm, sửa, xóa món và danh mục' },
   { key: 'inventory.adjust', label: 'Điều chỉnh tồn kho và kiểm kho' },
   { key: 'warehouse.manage', label: 'Quản lý kho — tạo kho, nhập, xuất, chuyển kho' },
+  // Quyền KHO chi tiết theo từng tính năng (cấp riêng lẻ). Route bảo vệ bằng
+  // guardAny(granular, coarse) nên ai đang có quyền cũ (inventory.adjust /
+  // warehouse.manage) vẫn chạy bình thường — quyền mới để cấp/giới hạn tinh hơn.
+  { key: 'warehouse.item', label: 'Kho — Thêm & sửa mặt hàng, SKU, định mức tồn' },
+  { key: 'warehouse.receive', label: 'Kho — Nhập kho (nhận hàng vào tồn)' },
+  { key: 'warehouse.issue', label: 'Kho — Xuất kho & xuất dùng nội bộ' },
+  { key: 'warehouse.transfer', label: 'Kho — Chuyển hàng giữa các kho' },
+  { key: 'warehouse.stocktake', label: 'Kho — Kiểm kho (tạo, sửa, lưu tạm phiếu kiểm)' },
+  { key: 'warehouse.stocktake.balance', label: 'Kho — CÂN BẰNG KHO: duyệt kiểm kho, đồng bộ tồn thực tế (nhạy cảm)' },
+  { key: 'warehouse.pricebook', label: 'Kho — Thiết lập giá & bảng giá' },
+  { key: 'warehouse.create', label: 'Kho — Tạo & sửa kho hàng' },
+  { key: 'warehouse.delete', label: 'Kho — XÓA mặt hàng, SKU, phiếu kho, phiếu kiểm, bảng giá (nhạy cảm)' },
   { key: 'invoice', label: 'Xuất hóa đơn điện tử' },
   { key: 'online', label: 'Xử lý đơn hàng online' },
   { key: 'kds', label: 'Sử dụng màn hình bếp (KDS)' },
@@ -111,6 +123,9 @@ const DEFAULT_ROLE_PERMS = {
     'reports', 'invoice', 'online', 'sell', 'pay', 'audit.view', 'settings.manage',
     'contacts.create', 'contacts.edit', 'contacts.delete', 'settings.loyalty', 'settings.promotions',
     'settings.warehouse',
+    'warehouse.item', 'warehouse.receive', 'warehouse.issue', 'warehouse.transfer',
+    'warehouse.stocktake', 'warehouse.stocktake.balance', 'warehouse.pricebook',
+    'warehouse.create', 'warehouse.delete',
     'module.ipad', 'module.pos', 'module.retail', 'module.kds', 'module.online', 'module.warehouse',
     'module.inventory', 'module.printing', 'module.invoice', 'module.reports', 'module.contacts',
     'module.purchase', 'module.expenses', 'module.accounting',
@@ -123,7 +138,13 @@ const DEFAULT_ROLE_PERMS = {
   ],
   // Bếp: chỉ KDS + xem đơn (không được thay đổi bill hay thanh toán)
   kitchen: ['kds', 'order.view', 'module.kds'],
-  warehouse: ['inventory.adjust', 'warehouse.manage', 'module.warehouse', 'module.inventory', 'module.purchase'],
+  warehouse: [
+    'inventory.adjust', 'warehouse.manage', 'module.warehouse', 'module.inventory', 'module.purchase',
+    // Thủ kho có đủ mọi nghiệp vụ kho chi tiết (kể cả cân bằng & xóa phiếu).
+    'warehouse.item', 'warehouse.receive', 'warehouse.issue', 'warehouse.transfer',
+    'warehouse.stocktake', 'warehouse.stocktake.balance', 'warehouse.pricebook',
+    'warehouse.create', 'warehouse.delete',
+  ],
 };
 export const ROLE_PERMS = DEFAULT_ROLE_PERMS; // kept for backwards-compat imports
 
