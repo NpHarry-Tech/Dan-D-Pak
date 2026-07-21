@@ -25,15 +25,6 @@ const _smXvirtualscreen = 76;
 const _smYvirtualscreen = 77;
 const _smCxvirtualscreen = 78;
 const _smCyvirtualscreen = 79;
-// Window style (GWL_STYLE) + bits để BỎ KHUNG cửa sổ (borderless kiosk).
-const _gwlStyle = -16;
-const _wsCaption = 0x00C00000; // title bar + viền
-const _wsThickframe = 0x00040000; // viền kéo giãn
-const _wsMinimizebox = 0x00020000;
-const _wsMaximizebox = 0x00010000;
-const _wsSysmenu = 0x00080000;
-const _swpFramechanged = 0x0020;
-const _swpNomove = 0x0002;
 
 final class _Rect extends Struct {
   @Int32()
@@ -70,10 +61,6 @@ typedef _GetWindowRectC = Int32 Function(IntPtr, Pointer<_Rect>);
 typedef _GetWindowRectD = int Function(int, Pointer<_Rect>);
 typedef _GetCursorPosC = Int32 Function(Pointer<_Point>);
 typedef _GetCursorPosD = int Function(Pointer<_Point>);
-typedef _GetWindowLongPtrC = IntPtr Function(IntPtr, Int32);
-typedef _GetWindowLongPtrD = int Function(int, int);
-typedef _SetWindowLongPtrC = IntPtr Function(IntPtr, Int32, IntPtr);
-typedef _SetWindowLongPtrD = int Function(int, int, int);
 
 final class _Point extends Struct {
   @Int32()
@@ -198,43 +185,6 @@ Future<void> makeSecondWindowFullscreen({String title = 'Màn hình phụ'}) asy
     }
   } catch (e) {
     dlog('SecondScreen fullscreen failed (window kept as-is): $e');
-  }
-}
-
-/// BỎ KHUNG cửa sổ phụ (title bar "Màn hình phụ" + viền) → kiosk sạch không chữ.
-///
-/// AN TOÀN vì gọi TỪ ENGINE CỦA CHÍNH CỬA SỔ PHỤ SAU khi frame đầu đã vẽ (view
-/// Flutter đã sẵn sàng). Crash WM_NCCALCSIZE trước đây là do đổi style lúc view
-/// CHƯA sẵn sàng (ngay sau createWindow từ engine chính) — ở đây view đã dựng nên
-/// SWP_FRAMECHANGED được WndProc con xử lý an toàn. Bọc try/catch; lỗi → giữ khung.
-void hideSecondWindowChrome({String title = 'Màn hình phụ'}) {
-  if (!Platform.isWindows) return;
-  try {
-    final hwnd = _findHwnd(title);
-    if (hwnd == 0) return;
-    final getStyle = _user32
-        .lookupFunction<_GetWindowLongPtrC, _GetWindowLongPtrD>(
-            'GetWindowLongPtrW');
-    final setStyle = _user32
-        .lookupFunction<_SetWindowLongPtrC, _SetWindowLongPtrD>(
-            'SetWindowLongPtrW');
-    final setPos =
-        _user32.lookupFunction<_SetWindowPosC, _SetWindowPosD>('SetWindowPos');
-    final cur = getStyle(hwnd, _gwlStyle);
-    const strip = _wsCaption |
-        _wsThickframe |
-        _wsMinimizebox |
-        _wsMaximizebox |
-        _wsSysmenu;
-    final next = cur & ~strip;
-    if (next == cur) return; // đã bỏ khung rồi
-    setStyle(hwnd, _gwlStyle, next);
-    // Áp thay đổi KHUNG mà không move/resize/đổi z-order.
-    setPos(hwnd, 0, 0, 0, 0, 0,
-        _swpFramechanged | _swpNomove | _swpNosize | _swpNozorder | _swpNoactivate);
-    dlog('SecondScreen chrome stripped (borderless)');
-  } catch (e) {
-    dlog('hideSecondWindowChrome failed (frame kept): $e');
   }
 }
 

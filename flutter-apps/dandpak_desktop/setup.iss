@@ -1,11 +1,11 @@
 [Setup]
 AppId={{DANDPAK-POS-DESKTOP-APP}}
 AppName=Dan D Pak POS
-AppVersion=2026.07.21.2
+AppVersion=2026.07.21.3
 DefaultDirName={commonpf}\DanDPakPOS
 DefaultGroupName=Dan D Pak POS
 OutputDir=..\..\artifacts\releases
-OutputBaseFilename=dan-d-pak-pos-setup-2026-07-21-2
+OutputBaseFilename=dan-d-pak-pos-setup-2026-07-21-3
 Compression=lzma
 SolidCompression=yes
 SetupIconFile=windows\runner\resources\app_icon.ico

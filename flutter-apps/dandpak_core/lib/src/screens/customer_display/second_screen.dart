@@ -25,6 +25,7 @@ class SecondScreen {
   CustomerDisplayController? _ctrl;
   Timer? _pushTimer;
   String _lastAdsJson = '';
+  int _pushFailures = 0;
 
   bool get isOpen => _windowId != null;
 
@@ -77,16 +78,31 @@ class SecondScreen {
     // khối ads khi nó thật sự đổi.
     final adsJson = jsonEncode(c.ads.toJson());
     final payload = <String, dynamic>{'data': c.data.toJson()};
-    if (adsJson != _lastAdsJson) {
+    final includesAds = adsJson != _lastAdsJson;
+    if (includesAds) {
       payload['ads'] = await _materializeAds(c.ads);
-      _lastAdsJson = adsJson;
     }
-    // Fire-and-forget; if the window was closed by the user this just no-ops.
-    DesktopMultiWindow.invokeMethod(
-      id,
-      'update',
-      jsonEncode(payload),
-    ).catchError((_) => _detach());
+    try {
+      await DesktopMultiWindow.invokeMethod(
+        id,
+        'update',
+        jsonEncode(payload),
+      );
+      if (includesAds) _lastAdsJson = adsJson;
+      _pushFailures = 0;
+    } catch (_) {
+      // createWindow().show() returns before the child Flutter engine has
+      // necessarily installed its method handler. That startup race is not a
+      // closed window: keep the controller listener and retry briefly.
+      if (_windowId != id || _ctrl == null) return;
+      _pushFailures++;
+      if (_pushFailures >= 10) {
+        _detach();
+        return;
+      }
+      _pushTimer?.cancel();
+      _pushTimer = Timer(const Duration(milliseconds: 150), _push);
+    }
   }
 
   /// Ads gửi sang cửa sổ phụ dưới dạng ĐƯỜNG DẪN file (nhẹ) — xem ad_cache.dart.
@@ -101,6 +117,7 @@ class SecondScreen {
     _ctrl = null;
     if (forgetWindow) _windowId = null;
     _lastAdsJson = '';
+    _pushFailures = 0;
   }
 
   Future<void> close() async {
@@ -136,12 +153,6 @@ class _CustomerDisplayWindowAppState extends State<CustomerDisplayWindowApp> {
   @override
   void initState() {
     super.initState();
-    // Bỏ KHUNG cửa sổ phụ (title bar "Màn hình phụ" + viền) → kiosk sạch. Chạy
-    // TỪ ENGINE NÀY (của chính cửa sổ phụ) SAU frame đầu + trễ nhẹ để view Flutter
-    // dựng xong, tránh crash WM_NCCALCSIZE (xem hideSecondWindowChrome).
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      Future.delayed(const Duration(milliseconds: 400), hideSecondWindowChrome);
-    });
     DesktopMultiWindow.setMethodHandler(
         (MethodCall call, int fromWindowId) async {
       if (call.method == 'update') {
