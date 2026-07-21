@@ -1,7 +1,9 @@
+import 'dart:async';
 import 'dart:io' show Platform;
 
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:local_notifier/local_notifier.dart';
 
 // Màu khớp DanColors (không import app_theme để app_theme có thể export lại file này
@@ -16,13 +18,14 @@ final GlobalKey<ScaffoldMessengerState> appMessengerKey =
 
 /// MỘT nơi DUY NHẤT phát thông báo cho người dùng (root/DRY) — thay cho việc mỗi
 /// màn tự SnackBar / native-notif một kiểu, gây bất đồng bộ UI. Kết hợp:
-///  • Native OS notification trên desktop (Windows/macOS/Linux) qua local_notifier —
+///  • Native OS notification trên desktop qua local_notifier và Android qua MethodChannel —
 ///    hiện cả khi app chạy nền (đúng ảnh thông báo desktop khách gửi).
 ///  • Banner trong-app (SnackBar toàn cục) trên mọi nền tảng — tablet/phone thấy ngay.
-/// (Native OS notification cho Android/iOS nền = việc mở rộng sau: chỉ cần thêm
-///  1 backend hiển thị vào đây, không phải sửa nơi gọi.)
 class AppNotifier {
   const AppNotifier._();
+
+  static const _androidChannel = MethodChannel('com.dandpak.pos/notifications');
+  static final _logo = rootBundle.load('assets/brand/DanOnLogo.png');
 
   static void show({
     required String title,
@@ -30,17 +33,35 @@ class AppNotifier {
     bool isError = false,
     bool inApp = true,
     bool osNotify = true,
+    bool androidNotify = false,
   }) {
-    if (osNotify) _osNotification(title, body);
+    if (osNotify) _osNotification(title, body, androidNotify);
     if (inApp) _inAppBanner(title, body, isError);
   }
 
-  static void _osNotification(String title, String body) {
+  static void _osNotification(String title, String body, bool androidNotify) {
     try {
       if (kIsWeb) return;
+      if (Platform.isAndroid) {
+        if (!androidNotify) return;
+        unawaited(_showAndroidNotification(title, body));
+        return;
+      }
       if (!Platform.isWindows && !Platform.isMacOS && !Platform.isLinux) return;
       LocalNotification(title: title, body: body.isEmpty ? title : body).show();
     } catch (_) {/* thông báo KHÔNG được phá luồng chính */}
+  }
+
+  static Future<void> _showAndroidNotification(
+      String title, String body) async {
+    try {
+      final logo = await _logo;
+      await _androidChannel.invokeMethod('showNotification', {
+        'title': title,
+        'body': body,
+        'logo': logo.buffer.asUint8List(logo.offsetInBytes, logo.lengthInBytes),
+      });
+    } catch (_) {/* thông báo không được phá luồng chính */}
   }
 
   static void _inAppBanner(String title, String body, bool isError) {
@@ -63,8 +84,8 @@ class AppNotifier {
               Padding(
                 padding: const EdgeInsets.only(top: 2),
                 child: Text(body,
-                    style: const TextStyle(
-                        color: Colors.white70, fontSize: 12.5)),
+                    style:
+                        const TextStyle(color: Colors.white70, fontSize: 12.5)),
               ),
           ],
         ),

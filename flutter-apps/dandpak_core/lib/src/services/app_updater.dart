@@ -5,8 +5,10 @@ import 'package:path_provider/path_provider.dart';
 
 import '../app_flavor.dart';
 import 'api_service.dart';
+import 'app_notifier.dart';
 import 'app_log.dart';
 import 'black_box.dart';
+import 'local_store.dart';
 import 'system_log.dart';
 
 /// Thông tin một bản cập nhật khả dụng trên server.
@@ -32,6 +34,8 @@ class UpdateInfo {
 /// - Android: tải apk → FileProvider → mở trình cài đặt hệ thống; lần đầu có
 ///   thể phải cấp quyền "Cài ứng dụng từ nguồn này" (app tự dẫn tới màn đó).
 class AppUpdater {
+  static final Set<int> _notifiedBuilds = {};
+
   /// Nền tảng gửi cho server. iOS/khác → null (chưa hỗ trợ tự cập nhật).
   static String? get _platform {
     if (Platform.isWindows) return 'windows';
@@ -52,23 +56,50 @@ class AppUpdater {
       final build = (decoded['buildNumber'] as num?)?.toInt() ?? 0;
       final available = decoded['available'] == true;
       final url = (decoded['url'] ?? '').toString();
-      if (!available || url.isEmpty || build <= AppFlavor.current.buildNumber) return null;
-      return UpdateInfo(
+      if (!available || url.isEmpty || build <= AppFlavor.current.buildNumber)
+        return null;
+      final info = UpdateInfo(
         buildNumber: build,
         version: (decoded['version'] ?? '').toString(),
         notes: (decoded['notes'] ?? '').toString(),
         url: url,
         mandatory: decoded['mandatory'] == true,
       );
+      await _notifyAvailableOnce(info);
+      return info;
     } catch (e) {
       dlog('checkForUpdate failed: $e');
       return null; // im lặng — cập nhật không bao giờ được cản trở bán hàng
     }
   }
 
+  static String notificationBody(UpdateInfo info, {String? localeName}) {
+    final version = info.version.isEmpty ? '${info.buildNumber}' : info.version;
+    return (localeName ?? Platform.localeName).toLowerCase().startsWith('vi')
+        ? 'Phần mềm hiện tại có bản cập nhật mới số "$version", hãy vào app để cập nhật ngay lập tức.'
+        : 'A new software update "$version" is available. Open the app to update now.';
+  }
+
+  static Future<void> _notifyAvailableOnce(UpdateInfo info) async {
+    if (!_notifiedBuilds.add(info.buildNumber)) return;
+    try {
+      const key = 'notified_update_build';
+      final store = LocalStore.instance;
+      if (await store.getString(key) == '${info.buildNumber}') return;
+      await store.setString(key, '${info.buildNumber}');
+      AppNotifier.show(
+        title: 'Dan-D Pak POS',
+        body: notificationBody(info),
+        inApp: false,
+        androidNotify: true,
+      );
+    } catch (_) {/* thông báo không được làm hỏng kiểm tra cập nhật */}
+  }
+
   /// Tải bản cài về rồi khởi chạy. Trả lỗi (String) nếu thất bại, null nếu OK
   /// (khi OK, với Windows app sẽ tự thoát để installer cài đè).
-  static Future<String?> downloadAndInstall(ApiService api, UpdateInfo info) async {
+  static Future<String?> downloadAndInstall(
+      ApiService api, UpdateInfo info) async {
     final platform = _platform;
     if (platform == null) return 'Nền tảng này chưa hỗ trợ tự cập nhật';
     try {
@@ -86,7 +117,8 @@ class AppUpdater {
       final base = platform == 'android'
           ? (await getTemporaryDirectory()).path
           : Directory.systemTemp.path;
-      final dir = Directory('$base/dandpak_update')..createSync(recursive: true);
+      final dir = Directory('$base/dandpak_update')
+        ..createSync(recursive: true);
       final file = File('${dir.path}/dan-d-pak-update.$ext');
       await file.writeAsBytes(bytes, flush: true);
 
@@ -98,24 +130,30 @@ class AppUpdater {
           level: 'info',
           source: 'updater',
           eventType: 'update_started',
-          title: 'Bắt đầu cài bản cập nhật ${info.version} (build ${info.buildNumber})',
+          title:
+              'Bắt đầu cài bản cập nhật ${info.version} (build ${info.buildNumber})',
           action: 'app_update',
         );
-        await Process.start(file.path, [
-          '/VERYSILENT',
-          '/SUPPRESSMSGBOXES',
-          '/NORESTART',
-          '/SP-',
-          '/FORCECLOSEAPPLICATIONS',
-        ], mode: ProcessStartMode.detached);
-        BlackBox.markCleanExit(); // thoát chủ động để cập nhật — không phải crash
+        await Process.start(
+            file.path,
+            [
+              '/VERYSILENT',
+              '/SUPPRESSMSGBOXES',
+              '/NORESTART',
+              '/SP-',
+              '/FORCECLOSEAPPLICATIONS',
+            ],
+            mode: ProcessStartMode.detached);
+        BlackBox
+            .markCleanExit(); // thoát chủ động để cập nhật — không phải crash
         await Future.delayed(const Duration(milliseconds: 400));
         exit(0);
       }
 
       // Android: mở trình cài đặt hệ thống qua kênh native (FileProvider).
       const ch = MethodChannel('com.dandpak.pos/updater');
-      final res = await ch.invokeMethod<String>('installApk', {'path': file.path});
+      final res =
+          await ch.invokeMethod<String>('installApk', {'path': file.path});
       if (res == 'NEEDS_PERMISSION') {
         return 'Hãy bật "Cho phép từ nguồn này" cho Dan D Pak POS ở màn cài đặt '
             'vừa mở, rồi quay lại bấm Cập nhật ngay lần nữa.';
@@ -128,7 +166,8 @@ class AppUpdater {
         level: 'info',
         source: 'updater',
         eventType: 'update_started',
-        title: 'Đã mở trình cài đặt bản ${info.version} (build ${info.buildNumber})',
+        title:
+            'Đã mở trình cài đặt bản ${info.version} (build ${info.buildNumber})',
         action: 'app_update',
       );
       return null; // trình cài đặt đã mở — bấm Cài đặt là xong
@@ -145,7 +184,8 @@ class AppUpdater {
       level: 'error',
       source: 'updater',
       eventType: 'update_failed',
-      title: 'Cập nhật bản ${info.version} (build ${info.buildNumber}) thất bại',
+      title:
+          'Cập nhật bản ${info.version} (build ${info.buildNumber}) thất bại',
       message: message,
       action: 'app_update',
     );

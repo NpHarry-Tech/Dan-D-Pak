@@ -7,6 +7,20 @@ import 'package:dandpak_core/src/services/app_updater.dart';
 // `flutter test` luôn xanh trên máy dev; chạy thật bằng:
 //   flutter test --dart-define=E2E=true test/app_updater_test.dart
 void main() {
+  test('update notification follows the device language', () {
+    const info = UpdateInfo(
+      buildNumber: 30,
+      version: '2026.07.21.3',
+      notes: '',
+      url: '/update.apk',
+      mandatory: false,
+    );
+    expect(AppUpdater.notificationBody(info, localeName: 'vi_VN'),
+        contains('cập nhật mới số "2026.07.21.3"'));
+    expect(AppUpdater.notificationBody(info, localeName: 'en_US'),
+        contains('update "2026.07.21.3"'));
+  });
+
   const runE2e = bool.fromEnvironment('E2E');
   test('AppUpdater.checkForUpdate and getBytes e2e integration test', () async {
     final api = ApiService();

@@ -116,6 +116,7 @@ class SocketService {
       onEvent: (event, payload) {
         if (event == 'connect_error') {
           dlog('Socket.IO connection error.');
+          _logConnectErrorOnce(payload);
           return;
         }
         dlog('Realtime event received: $event');
@@ -135,13 +136,13 @@ class SocketService {
     );
   }
 
-  // Chống spam nhật ký khi mạng chớp tắt liên tục: mỗi loại chuyển trạng thái
-  // ghi tối đa 1 lần / 30 giây.
-  DateTime _lastTransitionLog = DateTime.fromMillisecondsSinceEpoch(0);
+  // Mỗi đợt mất kết nối chỉ ghi một dòng; kết nối lại mới mở khóa lần kế tiếp.
   DateTime? _disconnectedAt;
+  bool _outageLogged = false;
 
   void _logTransition(bool isConnected) {
     if (isConnected) {
+      _outageLogged = false;
       final downFor = _disconnectedAt == null
           ? null
           : DateTime.now().difference(_disconnectedAt!);
@@ -158,9 +159,8 @@ class SocketService {
       return;
     }
     _disconnectedAt ??= DateTime.now();
-    final now = DateTime.now();
-    if (now.difference(_lastTransitionLog).inSeconds < 30) return;
-    _lastTransitionLog = now;
+    if (_outageLogged) return;
+    _outageLogged = true;
     SystemLog.log(
       level: 'warn',
       source: 'socket',
@@ -168,6 +168,18 @@ class SocketService {
       title: 'Mất kết nối realtime (Socket.IO)',
       message:
           'Server $_baseUrl · chi nhánh $_branch — dữ liệu trên màn có thể cũ tới khi nối lại.',
+    );
+  }
+
+  void _logConnectErrorOnce(dynamic error) {
+    if (_outageLogged) return;
+    _outageLogged = true;
+    SystemLog.log(
+      level: 'warn',
+      source: 'socket',
+      eventType: 'socket_error',
+      title: 'Socket.IO connect_error',
+      message: '$error',
     );
   }
 
@@ -366,6 +378,7 @@ class SocketService {
     _token = null;
     _soundConfig = null;
     _routingConfig = null;
+    _outageLogged = false;
     currentUserRole = '';
     _listeners.clear();
     connected.value = true; // reset — chủ động ngắt, không phải mất kết nối

@@ -1,10 +1,19 @@
 package com.dandpak.dandpak_phone
 
+import android.Manifest
 import android.app.Activity
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
+import androidx.core.app.ActivityCompat
+import androidx.core.app.NotificationCompat
+import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.FileProvider
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
@@ -15,9 +24,12 @@ import java.io.File
 class MainActivity: FlutterActivity() {
     private val CHANNEL = "com.dandpak.pos/card_terminal"
     private val UPDATER_CHANNEL = "com.dandpak.pos/updater"
+    private val NOTIFICATION_CHANNEL = "com.dandpak.pos/notifications"
     private val REQ_VCB_PAYMENT = 1001
+    private val REQ_NOTIFICATIONS = 1002
     private var pendingResult: MethodChannel.Result? = null
     private var pendingTerminal: String = ""
+    private var pendingNotification: Triple<String, String, ByteArray?>? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -59,6 +71,60 @@ class MainActivity: FlutterActivity() {
                 result.notImplemented()
             }
         }
+
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, NOTIFICATION_CHANNEL).setMethodCallHandler { call, result ->
+            if (call.method == "showNotification") {
+                showSystemNotification(
+                    call.argument<String>("title") ?: "Dan-D Pak POS",
+                    call.argument<String>("body") ?: "",
+                    call.argument<ByteArray>("logo")
+                )
+                result.success(null)
+            } else {
+                result.notImplemented()
+            }
+        }
+    }
+
+    private fun showSystemNotification(title: String, body: String, logo: ByteArray?) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ActivityCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            pendingNotification = Triple(title, body, logo)
+            ActivityCompat.requestPermissions(
+                this, arrayOf(Manifest.permission.POST_NOTIFICATIONS), REQ_NOTIFICATIONS)
+            return
+        }
+        val channelId = "dandpak_updates"
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            getSystemService(NotificationManager::class.java).createNotificationChannel(
+                NotificationChannel(channelId, "Dan-D Pak POS", NotificationManager.IMPORTANCE_HIGH)
+            )
+        }
+        val openApp = packageManager.getLaunchIntentForPackage(packageName)
+            ?: Intent(this, MainActivity::class.java)
+        val pendingIntent = PendingIntent.getActivity(
+            this, 0, openApp,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val notification = NotificationCompat.Builder(this, channelId)
+            .setSmallIcon(applicationInfo.icon)
+            .setContentTitle(title)
+            .setContentText(body)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(body))
+            .setContentIntent(pendingIntent)
+            .setAutoCancel(true)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+        logo?.let { BitmapFactory.decodeByteArray(it, 0, it.size) }
+            ?.let(notification::setLargeIcon)
+        NotificationManagerCompat.from(this).notify(20260721, notification.build())
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == REQ_NOTIFICATIONS && grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) {
+            pendingNotification?.let { showSystemNotification(it.first, it.second, it.third) }
+        }
+        if (requestCode == REQ_NOTIFICATIONS) pendingNotification = null
     }
 
     /** Trả null nếu đã mở trình cài đặt; "NEEDS_PERMISSION" nếu phải cấp quyền
