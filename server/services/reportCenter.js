@@ -30,6 +30,8 @@ export const REPORTS = [
   { key: 'purchase', group: 'inventory', label: 'Báo cáo nhập hàng', description: 'Phiếu nhập, supplier, lot, hạn dùng, giá vốn.' },
   { key: 'issue', group: 'inventory', label: 'Báo cáo xuất hàng', description: 'Xuất kho, bán hàng, recipe, chuyển kho, kiểm kho.' },
   { key: 'stock', group: 'inventory', label: 'Báo cáo tồn kho chi tiết', description: 'Tồn hiện tại, min stock, giá trị tồn, hạn dùng.' },
+  { key: 'low_stock', group: 'inventory', label: 'Hàng cần nhập (dưới định mức)', description: 'Mặt hàng tồn ≤ định mức, gợi ý số lượng nhập và giá trị cần nhập.' },
+  { key: 'expiry_alert', group: 'inventory', label: 'Cảnh báo hạn sử dụng', description: 'Lô hàng sắp hết hạn hoặc đã hết hạn, số ngày còn lại và giá trị tồn rủi ro.' },
   { key: 'stocktake', group: 'inventory', label: 'Báo cáo kiểm kho', description: 'Phiên kiểm kho, chênh lệch, lý do điều chỉnh.' },
   { key: 'cash_drawer', group: 'cash', label: 'Báo cáo tiền két', description: 'Thu tiền mặt, chi tiền, hoàn chi, số dư két theo ca và theo kỳ.' },
   { key: 'payables', group: 'debt', label: 'Công nợ phải trả', description: 'Ước tính phải trả theo phiếu nhập và supplier.' },
@@ -454,6 +456,98 @@ function buildStock(branch_id, query) {
     { key: 'expiry_date', label: 'HSD' },
     { key: 'supplier', label: 'Supplier' },
   ], lots.map(r => ({ ...r, qty_fmt: qty(r.qty_on_hand), unit_cost_fmt: money(r.unit_cost || 0) }))));
+  return report;
+}
+
+// Cảnh báo "Hàng cần nhập": tồn ≤ định mức (min_stock>0). Gợi ý SL nhập = min−tồn
+// và ước giá trị cần nhập theo giá vốn — như báo cáo "Hàng hóa cần nhập" KiotViet.
+function buildLowStock(branch_id, query) {
+  const report = reportShell('low_stock', query);
+  const raw = [
+    ...db.prepare(`SELECT 'inventory' stock_type, i.*, w.name warehouse_name FROM inventory_items i LEFT JOIN warehouses w ON w.id=i.warehouse_id WHERE i.branch_id=? AND i.active=1`).all(branch_id),
+    ...db.prepare(`SELECT 'sku' stock_type, s.*, w.name warehouse_name FROM skus s LEFT JOIN warehouses w ON w.id=s.warehouse_id WHERE s.branch_id=? AND s.active=1`).all(branch_id),
+  ].filter(r => !query.warehouse_id || r.warehouse_id === query.warehouse_id)
+    .filter(r => (Number(r.min_stock) || 0) > 0 && (Number(r.stock) || 0) <= (Number(r.min_stock) || 0))
+    .map(r => {
+      const stock = Number(r.stock) || 0, min = Number(r.min_stock) || 0;
+      const suggest = Math.max(0, min - stock);
+      return { r, stock, min, suggest, value: suggest * (Number(r.cost) || 0), out: stock <= 0 };
+    })
+    .sort((a, b) => (a.stock - a.min) - (b.stock - b.min));
+  report.summary = [
+    { label: 'Số mặt hàng cần nhập', value: raw.length },
+    { label: 'Hết hàng', value: raw.filter(x => x.out).length },
+    { label: 'Giá trị cần nhập (ước)', value: money(raw.reduce((s, x) => s + x.value, 0)) },
+  ];
+  report.sections.push(section('Hàng cần nhập lại', [
+    { key: 'warehouse_name', label: 'Kho' },
+    { key: 'name', label: 'Mặt hàng' },
+    { key: 'status_label', label: 'Tình trạng' },
+    { key: 'stock_fmt', label: 'Tồn', align: 'right' },
+    { key: 'min_fmt', label: 'Định mức', align: 'right' },
+    { key: 'suggest_fmt', label: 'Gợi ý nhập', align: 'right' },
+    { key: 'unit', label: 'ĐVT' },
+    { key: 'value_fmt', label: 'Giá trị nhập', align: 'right' },
+    { key: 'supplier', label: 'Nhà cung cấp' },
+  ], raw.map(x => ({
+    warehouse_name: x.r.warehouse_name || '',
+    name: x.r.name || '',
+    status_label: x.out ? 'Hết hàng' : 'Dưới định mức',
+    stock_fmt: qty(x.stock), min_fmt: qty(x.min), suggest_fmt: qty(x.suggest),
+    unit: x.r.unit || '', value_fmt: money(x.value), supplier: x.r.supplier || '',
+  }))));
+  return report;
+}
+
+// Cảnh báo hạn sử dụng: lô còn tồn có HSD trong ≤N ngày (mặc định 30) hoặc đã quá
+// hạn. Sắp xếp gấp nhất trước, kèm giá trị tồn rủi ro (qty×giá vốn lô).
+function buildExpiryAlert(branch_id, query) {
+  const report = reportShell('expiry_alert', query);
+  const days = Math.max(1, parseInt(query.days) || 30);
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const DAY = 86400000;
+  const rows = db.prepare(`
+    SELECT l.*, COALESCE(i.name, s.name) item_name, COALESCE(i.unit, s.unit) unit, w.name warehouse_name
+    FROM stock_lots l
+    LEFT JOIN inventory_items i ON i.id=l.item_id AND l.item_type='inventory'
+    LEFT JOIN skus s ON s.id=l.item_id AND l.item_type='sku'
+    LEFT JOIN warehouses w ON w.id=l.warehouse_id
+    WHERE l.branch_id=? AND l.qty_on_hand>0 AND l.expiry_date IS NOT NULL AND l.expiry_date!=''
+    ORDER BY l.expiry_date ASC`).all(branch_id)
+    .filter(r => !query.warehouse_id || r.warehouse_id === query.warehouse_id)
+    .map(r => {
+      const exp = new Date(r.expiry_date); exp.setHours(0, 0, 0, 0);
+      const daysLeft = Math.round((exp.getTime() - today.getTime()) / DAY);
+      return { r, daysLeft, expired: daysLeft < 0, value: (Number(r.qty_on_hand) || 0) * (Number(r.unit_cost) || 0) };
+    })
+    .filter(x => Number.isFinite(x.daysLeft) && x.daysLeft <= days)
+    .sort((a, b) => a.daysLeft - b.daysLeft);
+  report.summary = [
+    { label: 'Đã hết hạn', value: rows.filter(x => x.expired).length },
+    { label: `Sắp hết hạn (≤${days} ngày)`, value: rows.filter(x => !x.expired).length },
+    { label: 'Giá trị tồn rủi ro', value: money(rows.reduce((s, x) => s + x.value, 0)) },
+  ];
+  report.sections.push(section('Lô hàng theo hạn dùng', [
+    { key: 'warehouse_name', label: 'Kho' },
+    { key: 'item_name', label: 'Mặt hàng' },
+    { key: 'lot_no', label: 'Lot' },
+    { key: 'expiry_date', label: 'HSD' },
+    { key: 'days_left_label', label: 'Còn lại', align: 'right' },
+    { key: 'status_label', label: 'Tình trạng' },
+    { key: 'qty_fmt', label: 'Tồn lot', align: 'right' },
+    { key: 'unit', label: 'ĐVT' },
+    { key: 'value_fmt', label: 'Giá trị', align: 'right' },
+  ], rows.map(x => ({
+    warehouse_name: x.r.warehouse_name || '',
+    item_name: x.r.item_name || '',
+    lot_no: x.r.lot_no || '',
+    expiry_date: x.r.expiry_date || '',
+    days_left_label: x.expired ? `quá ${Math.abs(x.daysLeft)} ngày` : `${x.daysLeft} ngày`,
+    status_label: x.expired ? 'Đã hết hạn' : (x.daysLeft <= 7 ? 'Rất gấp' : 'Sắp hết hạn'),
+    qty_fmt: qty(x.r.qty_on_hand),
+    unit: x.r.unit || '',
+    value_fmt: money(x.value),
+  }))));
   return report;
 }
 function buildStocktake(branch_id, query) {
@@ -991,6 +1085,8 @@ function buildSingleReport(type = 'sales_overview', branch_id = 'br1', query = {
   else if (type === 'purchase') report = buildMovements(type, branch_id, query);
   else if (type === 'issue') report = buildMovements(type, branch_id, query);
   else if (type === 'stock') report = buildStock(branch_id, query);
+  else if (type === 'low_stock') report = buildLowStock(branch_id, query);
+  else if (type === 'expiry_alert') report = buildExpiryAlert(branch_id, query);
   else if (type === 'stocktake') report = buildStocktake(branch_id, query);
   else if (type === 'cash_drawer') report = buildCashDrawer(branch_id, query);
   else if (type === 'payables') report = buildPayables(branch_id, query);
