@@ -804,7 +804,11 @@ extension _PrintDesignerMethods on _PrintTemplateDesignerState {
       );
     }
 
-    return Row(
+    // IntrinsicHeight: cho Row một chiều cao hữu hạn (= card cao nhất) để
+    // crossAxisAlignment.stretch KHÔNG ép con cao vô hạn khi nằm trong
+    // SingleChildScrollView (nếu không sẽ crash "BoxConstraints forces infinite height").
+    return IntrinsicHeight(
+      child: Row(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         card('compact', Icons.short_text, t('Gọn'),
@@ -816,6 +820,7 @@ extension _PrintDesignerMethods on _PrintTemplateDesignerState {
         card('detailed', Icons.article_outlined, t('Chi tiết'),
             t('Logo + thuế + QR tra cứu')),
       ],
+      ),
     );
   }
 
