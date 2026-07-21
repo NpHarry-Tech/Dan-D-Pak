@@ -17,6 +17,7 @@ const TECHNICAL_ONLY_ACTIONS = new Set([
   'print.agent.failed',
   'einvoice.backfill_failed',
   'einvoice.auto_create_failed',
+  'settings.template_autosave',
 ]);
 
 export function audit(action, detail, branch_id = 'br1', actor = 'system') {

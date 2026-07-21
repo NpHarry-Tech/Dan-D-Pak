@@ -204,7 +204,6 @@ class PosProvider extends ChangeNotifier {
   // so F&B POS and Retail POS see the same shift/drawer).
   Future<void> loadShift() async {
     _isLoadingShift = true;
-    notifyListeners();
 
     try {
       final state = await apiService.getShiftState();

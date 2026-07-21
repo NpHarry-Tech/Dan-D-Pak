@@ -7,15 +7,15 @@ import 'package:dandpak_core/src/screens/management/print_template_designer.dart
 void main() {
   testWidgets('PrintTemplateDesigner: visual preview (logo + QR + diacritics)',
       (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1400, 900));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
     final details = <FlutterErrorDetails>[];
     final prev = FlutterError.onError;
     FlutterError.onError = (d) => details.add(d);
 
     await tester.pumpWidget(MaterialApp(
       home: Scaffold(
-        body: SizedBox(
-          width: 1400,
-          height: 900,
+        body: SizedBox.expand(
           child: PrintTemplateDesigner(
             api: ApiService(),
             initialConfig: const {
@@ -37,7 +37,8 @@ void main() {
                       'y': 1,
                       'x': 38,
                       'label': 'Logo',
-                      'src': ''
+                      'src':
+                          'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII='
                     },
                     {
                       'type': 'text',
@@ -70,8 +71,12 @@ void main() {
     // Preview: real QR rendered, and the diacritic title shows in BOTH editor + preview.
     expect(find.byType(QrImageView), findsWidgets);
     expect(find.text('HÓA ĐƠN THANH TOÁN'), findsWidgets);
-    // Logo placeholder shown (no image src yet).
-    expect(find.text('Logo'), findsWidgets);
+    expect(find.byType(Image), findsWidgets);
+
+    for (final width in [700.0, 900.0, 1200.0, 1600.0, 2048.0]) {
+      await tester.binding.setSurfaceSize(Size(width, 900));
+      await tester.pump();
+    }
 
     FlutterError.onError = prev;
     for (final d in details.take(3)) {

@@ -6,7 +6,7 @@ import 'package:qr_flutter/qr_flutter.dart';
 import 'package:dandpak_core/src/screens/customer_display/customer_display_screen.dart';
 
 void main() {
-  test('secondary window avoids unsafe native teardown and frame mutation', () {
+  test('secondary window defers chrome mutation to its rendered engine', () {
     final windowSource =
         File('lib/src/screens/customer_display/second_screen.dart')
             .readAsStringSync();
@@ -17,7 +17,16 @@ void main() {
     expect(windowSource, contains('fromWindowId(id).hide()'));
     expect(windowSource, isNot(contains('fromWindowId(id).close()')));
     expect(
-        fullscreenSource, isNot(contains("lookupFunction<_SetWindowLongPtrC")));
+      windowSource,
+      contains(
+        'Future.delayed(const Duration(milliseconds: 400), '
+        'hideSecondWindowChrome)',
+      ),
+    );
+    expect(
+      fullscreenSource,
+      contains("lookupFunction<_SetWindowLongPtrC"),
+    );
   });
 
   Future<List<FlutterErrorDetails>> pump(

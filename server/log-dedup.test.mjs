@@ -31,4 +31,5 @@ test('activity log keeps domain audit and drops duplicate technical noise', () =
   assert.match(routes, /entry\.eventId/);
   assert.match(routes, /WHERE request_id = \?/);
   assert.match(auditStore, /TECHNICAL_ONLY_ACTIONS\.has\(action\)/);
+  assert.match(auditStore, /settings\.template_autosave/);
 });

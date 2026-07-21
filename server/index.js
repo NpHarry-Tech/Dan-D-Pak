@@ -190,7 +190,8 @@ function maintainAudit() {
     const redundant = db.prepare(
       `DELETE FROM audit_log WHERE action IN (
         'system.error','client.crash','print.failed','print.agent.failed',
-        'einvoice.backfill_failed','einvoice.auto_create_failed'
+        'einvoice.backfill_failed','einvoice.auto_create_failed',
+        'settings.template_autosave'
       )`
     ).run().changes;
     if (redundant) logger.info('redundant audit rows pruned', { removed: redundant });

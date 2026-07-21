@@ -970,88 +970,100 @@ class _PermissionEditor extends StatelessWidget {
         border: Border.all(color: DanColors.border),
         borderRadius: BorderRadius.circular(DanRadius.md),
       ),
-      child: Column(
-        children: [
-          Padding(
-            padding: EdgeInsets.fromLTRB(14, 12, 10, 10),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    locked
-                        ? t('Phân quyền: Admin toàn quyền')
-                        : t('Phân quyền chi tiết'),
-                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.w900),
+      child: Material(
+        color: Colors.transparent,
+        child: Column(
+          children: [
+            Padding(
+              padding: EdgeInsets.fromLTRB(14, 12, 10, 10),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      locked
+                          ? t('Phân quyền: Admin toàn quyền')
+                          : t('Phân quyền chi tiết'),
+                      style:
+                          TextStyle(fontSize: 14, fontWeight: FontWeight.w900),
+                    ),
                   ),
+                  if (!locked) ...[
+                    Flexible(
+                      child: Wrap(
+                        alignment: WrapAlignment.end,
+                        children: [
+                          TextButton(
+                              onPressed: onReset,
+                              child: Text(t('Theo vai trò'))),
+                          TextButton(
+                            onPressed: () => onChanged(allKeys.toSet()),
+                            child: Text(t('Chọn tất cả')),
+                          ),
+                          TextButton(
+                            onPressed: () => onChanged(<String>{}),
+                            child: Text(t('Bỏ chọn')),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            Divider(height: 1, color: DanColors.border),
+            for (final entry in grouped.entries)
+              ExpansionTile(
+                initiallyExpanded:
+                    entry.key == t('Bán hàng') || entry.key == t('Cài đặt'),
+                tilePadding: EdgeInsets.symmetric(horizontal: 14),
+                title: Text(
+                  '${entry.key} (${entry.value.where((p) => selected.contains(_s(p['key']))).length}/${entry.value.length})',
+                  style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w900),
                 ),
-                if (!locked) ...[
-                  TextButton(
-                      onPressed: onReset, child: Text(t('Theo vai trò'))),
-                  TextButton(
-                    onPressed: () => onChanged(allKeys.toSet()),
-                    child: Text(t('Chọn tất cả')),
-                  ),
-                  TextButton(
-                    onPressed: () => onChanged(<String>{}),
-                    child: Text(t('Bỏ chọn')),
+                children: [
+                  LayoutBuilder(
+                    builder: (context, constraints) {
+                      final itemWidth = constraints.maxWidth >= 560
+                          ? (constraints.maxWidth - 8) / 2
+                          : constraints.maxWidth;
+                      return Wrap(
+                        children: [
+                          for (final perm in entry.value)
+                            SizedBox(
+                              width: itemWidth,
+                              child: CheckboxListTile(
+                                dense: true,
+                                value: selected.contains(_s(perm['key'])),
+                                onChanged: locked
+                                    ? null
+                                    : (checked) {
+                                        final next = Set<String>.of(selected);
+                                        if (checked == true) {
+                                          next.add(_s(perm['key']));
+                                        } else {
+                                          next.remove(_s(perm['key']));
+                                        }
+                                        onChanged(next);
+                                      },
+                                activeColor: DanColors.brand,
+                                title: Text(_permissionLabel(perm),
+                                    style: TextStyle(
+                                        fontSize: 12.5,
+                                        fontWeight: FontWeight.w700)),
+                                subtitle: Text(_s(perm['key']),
+                                    style: TextStyle(
+                                        fontSize: 10.5,
+                                        color: DanColors.faint)),
+                              ),
+                            ),
+                        ],
+                      );
+                    },
                   ),
                 ],
-              ],
-            ),
-          ),
-          Divider(height: 1, color: DanColors.border),
-          for (final entry in grouped.entries)
-            ExpansionTile(
-              initiallyExpanded:
-                  entry.key == t('Bán hàng') || entry.key == t('Cài đặt'),
-              tilePadding: EdgeInsets.symmetric(horizontal: 14),
-              title: Text(
-                '${entry.key} (${entry.value.where((p) => selected.contains(_s(p['key']))).length}/${entry.value.length})',
-                style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w900),
               ),
-              children: [
-                LayoutBuilder(
-                  builder: (context, constraints) {
-                    final itemWidth = constraints.maxWidth >= 560
-                        ? (constraints.maxWidth - 8) / 2
-                        : constraints.maxWidth;
-                    return Wrap(
-                      children: [
-                        for (final perm in entry.value)
-                          SizedBox(
-                            width: itemWidth,
-                            child: CheckboxListTile(
-                              dense: true,
-                              value: selected.contains(_s(perm['key'])),
-                              onChanged: locked
-                                  ? null
-                                  : (checked) {
-                                      final next = Set<String>.of(selected);
-                                      if (checked == true) {
-                                        next.add(_s(perm['key']));
-                                      } else {
-                                        next.remove(_s(perm['key']));
-                                      }
-                                      onChanged(next);
-                                    },
-                              activeColor: DanColors.brand,
-                              title: Text(_permissionLabel(perm),
-                                  style: TextStyle(
-                                      fontSize: 12.5,
-                                      fontWeight: FontWeight.w700)),
-                              subtitle: Text(_s(perm['key']),
-                                  style: TextStyle(
-                                      fontSize: 10.5,
-                                      color: DanColors.faint)),
-                            ),
-                          ),
-                      ],
-                    );
-                  },
-                ),
-              ],
-            ),
-        ],
+          ],
+        ),
       ),
     );
   }
