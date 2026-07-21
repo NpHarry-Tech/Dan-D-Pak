@@ -136,6 +136,12 @@ class _CustomerDisplayWindowAppState extends State<CustomerDisplayWindowApp> {
   @override
   void initState() {
     super.initState();
+    // Bỏ KHUNG cửa sổ phụ (title bar "Màn hình phụ" + viền) → kiosk sạch. Chạy
+    // TỪ ENGINE NÀY (của chính cửa sổ phụ) SAU frame đầu + trễ nhẹ để view Flutter
+    // dựng xong, tránh crash WM_NCCALCSIZE (xem hideSecondWindowChrome).
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      Future.delayed(const Duration(milliseconds: 400), hideSecondWindowChrome);
+    });
     DesktopMultiWindow.setMethodHandler(
         (MethodCall call, int fromWindowId) async {
       if (call.method == 'update') {
