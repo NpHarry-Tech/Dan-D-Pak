@@ -249,13 +249,71 @@ class _PrintTemplateDesignerState extends State<PrintTemplateDesigner> {
   Map<String, dynamic> _lineRow() =>
       {'id': 'line_${_rowSeq++}', 'type': 'line'};
 
-  Map<String, dynamic> _qrRow(String data) => {
+  Map<String, dynamic> _qrRow(String data,
+          {String caption = '', bool showCaption = false}) =>
+      {
         'id': 'qr_${_rowSeq++}',
         'type': 'qr',
         'qrText': data,
-        'qrCaption': '',
-        'qrShowCaption': false,
+        'qrCaption': caption,
+        'qrShowCaption': showCaption,
       };
+
+  Map<String, dynamic> _imageRow({String label = 'Logo'}) => {
+        'id': 'img_${_rowSeq++}',
+        'type': 'image',
+        'src': '',
+        'label': label,
+        'logoScale': 1.0,
+      };
+
+  // ── Phiên bản mẫu bill (Gọn / Chuẩn / Chi tiết) ───────────────────────────
+  // Bấm 1 nút đổi cả bố cục: Gọn = tối giản tiết kiệm giấy; Chuẩn = mặc định;
+  // Chi tiết = đủ logo + thông tin cửa hàng + thuế + QR tra cứu.
+
+  List<Map<String, dynamic>> _compactBillRows() => [
+        _tRow('{storeName}', align: 'center', bold: true),
+        _lineRow(),
+        _tRow(t('{billNo} · {time}')),
+        _lineRow(),
+        _tRow('{items}'),
+        _lineRow(),
+        _tRow('{grandTotalLine}', bold: true),
+        _tRow('{footer}', align: 'center'),
+      ];
+
+  List<Map<String, dynamic>> _detailedBillRows() => [
+        _imageRow(),
+        _tRow('{storeName}', align: 'center', bold: true),
+        _tRow('{storeSubtitle}', align: 'center'),
+        _tRow(t('{address}\nĐT: {phone} · MST: {taxCode}'), align: 'center'),
+        _lineRow(),
+        _tRow(t('HÓA ĐƠN THANH TOÁN'), align: 'center', bold: true),
+        _tRow(t(
+            'Số bill: {billNo}\n{place}\nThu ngân: {cashier}\nNgày: {time}\nKhách: {customerName}')),
+        _lineRow(),
+        _tRow('{items}'),
+        _lineRow(),
+        _tRow('{subtotalLine}\n{vatLine}\n{orderPromoLine}'),
+        _tRow('{grandTotalLine}', bold: true),
+        _tRow('{paymentLines}\n{paidLine}\n{changeLine}'),
+        _lineRow(),
+        _qrRow('{invoiceLookupUrl}',
+            caption: t('Quét để tra cứu hóa đơn'), showCaption: true),
+        _tRow('{footer}', align: 'center'),
+      ];
+
+  void _applyPreset(String preset) {
+    final rows = switch (preset) {
+      'compact' => _compactBillRows(),
+      'detailed' => _detailedBillRows(),
+      _ => (_defaultBill()['rows'] as List)
+          .map((e) => Map<String, dynamic>.from(e as Map))
+          .toList(),
+    };
+    _template['preset'] = preset;
+    _setRows(rows);
+  }
 
   // ── Rows accessors ────────────────────────────────────────────────────────
 
@@ -794,6 +852,7 @@ class _PrintTemplateDesignerState extends State<PrintTemplateDesigner> {
   List<Widget> _rowsEditor() {
     final rows = _rows;
     return [
+      if (_kind == 'bill') ...[_presetBar(), SizedBox(height: 12)],
       if (rows.isEmpty)
         Padding(
           padding: EdgeInsets.symmetric(vertical: 8),
@@ -838,6 +897,64 @@ class _PrintTemplateDesignerState extends State<PrintTemplateDesigner> {
       onPressed: onTap,
       icon: Icon(icon, size: 18),
       label: Text(label),
+    );
+  }
+
+  /// Chọn nhanh PHIÊN BẢN bố cục bill. Đổi cả bộ dòng chỉ với 1 chạm.
+  Widget _presetBar() {
+    final cur = _s(_template['preset']);
+    Widget card(String preset, IconData icon, String title, String desc) {
+      final active = cur == preset;
+      return Expanded(
+        child: InkWell(
+          onTap: () => _applyPreset(preset),
+          borderRadius: BorderRadius.circular(DanRadius.sm),
+          child: Container(
+            padding: EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+            decoration: BoxDecoration(
+              color: active ? DanColors.brandDim : DanColors.surface,
+              borderRadius: BorderRadius.circular(DanRadius.sm),
+              border: Border.all(
+                  color: active ? DanColors.brand : DanColors.border,
+                  width: active ? 2 : 1),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(children: [
+                  Icon(icon,
+                      size: 16,
+                      color: active ? DanColors.brand : DanColors.muted),
+                  SizedBox(width: 6),
+                  Text(title,
+                      style: TextStyle(
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w800,
+                          color: active ? DanColors.brand : DanColors.text)),
+                ]),
+                SizedBox(height: 3),
+                Text(desc,
+                    style: TextStyle(
+                        fontSize: 10.5, color: DanColors.faint, height: 1.3)),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        card('compact', Icons.short_text, t('Gọn'),
+            t('Tối giản, tiết kiệm giấy')),
+        SizedBox(width: 8),
+        card('standard', Icons.receipt_long_outlined, t('Chuẩn'),
+            t('Đủ dùng hằng ngày')),
+        SizedBox(width: 8),
+        card('detailed', Icons.article_outlined, t('Chi tiết'),
+            t('Logo + thuế + QR tra cứu')),
+      ],
     );
   }
 
