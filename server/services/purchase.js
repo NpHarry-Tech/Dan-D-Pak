@@ -7,6 +7,7 @@ import { emit } from '../realtime.js';
 import { getCustomer } from './customers.js';
 import { receiveSku, receiveStock, issueLinesDocumented } from './inventory.js';
 import { createEntry as createDrawerEntry } from './cashDrawer.js';
+import { matchesSearch, searchTokens } from '../core/search.js';
 
 const STATUSES = ['draft', 'confirmed', 'received', 'cancelled'];
 const RETURN_STATUSES = ['draft', 'returned', 'cancelled'];
@@ -65,10 +66,10 @@ export function listPurchaseOrders(branch_id = 'br1', filters = {}) {
   if (filters.status && STATUSES.includes(filters.status)) { where += ' AND status=?'; params.push(filters.status); }
   if (filters.supplier_id) { where += ' AND supplier_id=?'; params.push(String(filters.supplier_id)); }
   const rows = db.prepare(`SELECT * FROM purchase_orders WHERE ${where} ORDER BY created_at DESC LIMIT 300`).all(...params);
-  const term = String(filters.q || '').trim().toLowerCase();
+  const term = searchTokens(filters.q);
   const out = rows.map(decoratePO);
   const filtered = term
-    ? out.filter(po => [po.code, po.supplier_name, po.note].some(v => String(v || '').toLowerCase().includes(term)))
+    ? out.filter(po => matchesSearch([po.code, po.supplier_name, po.note], term))
     : out;
   return {
     orders: filtered,
@@ -411,11 +412,9 @@ export function listPurchaseReturns(branch_id = 'br1', filters = {}) {
   if (filters.status && RETURN_STATUSES.includes(filters.status)) { where += ' AND status=?'; params.push(filters.status); }
   if (filters.supplier_id) { where += ' AND supplier_id=?'; params.push(String(filters.supplier_id)); }
   const rows = db.prepare(`SELECT * FROM purchase_returns WHERE ${where} ORDER BY created_at DESC LIMIT 300`).all(...params);
-  const term = String(filters.q || '').trim().toLowerCase();
+  const term = searchTokens(filters.q);
   const out = rows.map(decorateReturn);
-  return term
-    ? out.filter(pr => [pr.code, pr.supplier_name, pr.note].some(v => String(v || '').toLowerCase().includes(term)))
-    : out;
+  return out.filter(pr => matchesSearch([pr.code, pr.supplier_name, pr.note], term));
 }
 
 export function getPurchaseReturn(id, branch_id = 'br1') {

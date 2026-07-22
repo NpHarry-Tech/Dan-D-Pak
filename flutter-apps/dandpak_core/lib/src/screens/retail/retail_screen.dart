@@ -54,6 +54,7 @@ class _RetailScreenState extends State<RetailScreen> {
   int _skuPage = 1;
   bool _hasMoreSkus = true;
   bool _loadingSkus = false;
+  final _skuSearchGuard = SearchRequestGuard();
   final _skuScrollCtrl = ScrollController();
   final _skuDebouncer = Debouncer(delay: Duration(milliseconds: 300));
 
@@ -112,8 +113,14 @@ class _RetailScreenState extends State<RetailScreen> {
   }
 
   Future<void> _loadSkusNextPage({bool isRefresh = false}) async {
-    if (_loadingSkus) return;
+    if (_loadingSkus && !isRefresh) return;
     if (!isRefresh && !_hasMoreSkus) return;
+
+    final generation = isRefresh
+        ? _skuSearchGuard.next()
+        : _skuSearchGuard.current;
+    final query = _search;
+    final page = isRefresh ? 1 : _skuPage;
 
     setState(() {
       _loadingSkus = true;
@@ -127,9 +134,9 @@ class _RetailScreenState extends State<RetailScreen> {
     try {
       final api = context.read<ApiService>();
       final result = await api.getSkusPaginated(
-        page: _skuPage,
+        page: page,
         limit: 40,
-        q: _search,
+        q: query,
         channel: 'retail',
       );
 
@@ -141,7 +148,7 @@ class _RetailScreenState extends State<RetailScreen> {
           .map((e) => Sku.fromJson(Map<String, dynamic>.from(e)))
           .toList();
 
-      if (!mounted) return;
+      if (!mounted || !_skuSearchGuard.isCurrent(generation)) return;
       setState(() {
         _skus.addAll(skus);
         _hasMoreSkus = _skus.length < total;
@@ -152,7 +159,7 @@ class _RetailScreenState extends State<RetailScreen> {
       });
     } catch (e) {
       debugPrint("Error loading paginated SKUs: $e");
-      if (mounted) {
+      if (mounted && _skuSearchGuard.isCurrent(generation)) {
         setState(() {
           _loadingSkus = false;
         });
@@ -358,7 +365,7 @@ class _RetailScreenState extends State<RetailScreen> {
             totals.orderDiscount +
             totals.customerDiscount +
             totals.manualDiscount,
-        tax: 0,
+        tax: totals.vat,
         total: totals.total,
         discountLabel: t('Khuyến mãi / giảm giá'),
       );
@@ -702,12 +709,29 @@ class _RetailScreenState extends State<RetailScreen> {
         (afterVoucher - customerDiscount).clamp(0, double.infinity);
     final manualDiscount = 0;
     final total = afterCustomer.clamp(0, double.infinity);
+    num allocated = 0;
+    num vat = 0;
+    if (subtotal > 0 && total > 0) {
+      final pricedLines = _cart.where((line) => line.lineTotal > 0).toList();
+      for (var index = 0; index < pricedLines.length; index++) {
+        final line = pricedLines[index];
+        final discountedGross = index == pricedLines.length - 1
+            ? total - allocated
+            : (line.lineTotal * total / subtotal).round();
+        allocated += discountedGross;
+        if (line.sku.vatRate > 0) {
+          vat += discountedGross -
+              (discountedGross / (1 + line.sku.vatRate / 100)).round();
+        }
+      }
+    }
     return _RetailTotals(
       subtotal: subtotal,
       productDiscount: productDiscount,
       orderDiscount: orderDiscount,
       customerDiscount: customerDiscount,
       manualDiscount: manualDiscount,
+      vat: vat,
       total: total,
       orderVoucher: orderVoucher,
     );
@@ -736,6 +760,7 @@ class _RetailScreenState extends State<RetailScreen> {
         customerDiscount: totals.customerDiscount,
         manualDiscount: 0,
         total: totals.total,
+        vatAmount: totals.vat,
         channelLabel: 'Checkout',
       ),
     );
@@ -1339,6 +1364,8 @@ class _RetailScreenState extends State<RetailScreen> {
             _totalRow(t('Ưu đãi khách hàng'),
                 '-${Fmt.money(totals.customerDiscount)}',
                 accent: DanColors.done),
+          if (totals.vat > 0)
+            _totalRow(t('Trong đó VAT'), Fmt.money(totals.vat)),
           Divider(height: 18, color: DanColors.border),
           _totalRow(t('TỔNG CỘNG'), Fmt.money(totals.total), big: true),
           SizedBox(height: 12),
@@ -1431,4 +1458,3 @@ class _RetailScreenState extends State<RetailScreen> {
     );
   }
 }
-

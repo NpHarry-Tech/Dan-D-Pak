@@ -33,8 +33,8 @@ api.post('/menu', guard('menu.manage'), wrap(async (req) => {
     translations: b.translations,
   });
   db.prepare(`INSERT INTO menu_items
-    (id,category_id,name,emoji,image,description,price,station,sla_minutes,available,hidden,ingredients_json,allergens_json,schedule_json,modifiers_json,addons_json,translations_json,sort)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
+    (id,category_id,name,emoji,image,description,price,price_includes_vat,vat_rate,station,sla_minutes,available,hidden,ingredients_json,allergens_json,schedule_json,modifiers_json,addons_json,translations_json,sort)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
     id,
     b.category_id,
     b.name,
@@ -42,6 +42,8 @@ api.post('/menu', guard('menu.manage'), wrap(async (req) => {
     b.image || null,
     b.description || null,
     parseInt(b.price) || 0,
+    [false, 0, '0'].includes(b.price_includes_vat) ? 0 : 1,
+    b.vat_rate === undefined ? 8 : Math.min(100, Math.max(0, Number(b.vat_rate) || 0)),
     b.station || 'kitchen',
     parseInt(b.sla_minutes) || 10,
     b.available === false ? 0 : 1,
@@ -79,7 +81,7 @@ api.post('/menu/:id/update', guard('menu.manage'), wrap(async (req) => {
     translations: b.translations !== undefined ? b.translations : cur.translations_json,
   });
   db.prepare(`UPDATE menu_items SET
-      name=?, emoji=?, image=?, description=?, price=?, category_id=?, station=?, sla_minutes=?,
+      name=?, emoji=?, image=?, description=?, price=?, price_includes_vat=?, vat_rate=?, category_id=?, station=?, sla_minutes=?,
       ingredients_json=?, allergens_json=?, schedule_json=?, hidden=?, addons_json=?, translations_json=?
     WHERE id=?`).run(
     nextName,
@@ -87,6 +89,8 @@ api.post('/menu/:id/update', guard('menu.manage'), wrap(async (req) => {
     b.image !== undefined ? (b.image || null) : cur.image,
     nextDescription || null,
     b.price !== undefined ? parseInt(b.price) : cur.price,
+    b.price_includes_vat !== undefined ? (b.price_includes_vat ? 1 : 0) : cur.price_includes_vat,
+    b.vat_rate !== undefined ? Math.min(100, Math.max(0, Number(b.vat_rate) || 0)) : cur.vat_rate,
     v('category_id', cur.category_id),
     v('station', cur.station),
     b.sla_minutes !== undefined ? parseInt(b.sla_minutes) : cur.sla_minutes,

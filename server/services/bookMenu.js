@@ -1,12 +1,13 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { storagePath } from '../config/env.js';
 import { db, now, uid, audit } from '../db.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const SERVER_ROOT = join(__dirname, '..');
 const SERVER_ASSET_DIR = join(SERVER_ROOT, 'assets', 'menu-book');
-const UPLOAD_BOOK_DIR = join(SERVER_ROOT, 'uploads', 'menu-books');
+const UPLOAD_BOOK_DIR = storagePath('uploads', 'menu-books');
 const MENU_BOOK_KEY = 'book_menu_config';
 
 function readDefaultManifest() {

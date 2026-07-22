@@ -19,6 +19,8 @@ const SUPPORTED_TOPICS = new Set([
 let workerRunning = false;
 let timer = null;
 let inventoryTimer = null;
+let recoveryTimer = null;
+let syncAllRunning = false;
 
 function json(v) { return JSON.stringify(v ?? null); }
 function parseJsonText(text) { return text ? JSON.parse(text) : {}; }
@@ -431,7 +433,16 @@ export function syncHaravanProduct(payload, shopDomain = '') {
   for (const variant of variants) {
     const variantId = cleanId(variant.id || variant.variant_id || productId);
     const skuCode = cleanId(variant.sku || product.sku || variant.barcode || variantId);
-    const skuId = `hvn_${variantId}`.replace(/[^a-zA-Z0-9_]/g, '_').slice(0, 80);
+    const generatedSkuId = `hvn_${variantId}`.replace(/[^a-zA-Z0-9_]/g, '_').slice(0, 80);
+    const catalogMatch = skuCode ? db.prepare(`SELECT id FROM skus
+      WHERE active=1 AND barcode=? AND id NOT LIKE 'hvn_%' ORDER BY id LIMIT 1`).get(skuCode) : null;
+    const mapped = db.prepare(`SELECT internal_variant_id FROM external_products
+      WHERE provider=? AND shop_domain=? AND external_product_id=? AND external_variant_id=?`)
+      .get(PROVIDER, shop, productId, variantId);
+    const skuId = catalogMatch?.id || mapped?.internal_variant_id || generatedSkuId;
+    if (catalogMatch && mapped?.internal_variant_id && mapped.internal_variant_id !== skuId && mapped.internal_variant_id.startsWith('hvn_')) {
+      db.prepare('UPDATE skus SET active=0 WHERE id=?').run(mapped.internal_variant_id);
+    }
     const name = [product.title || product.name || 'Haravan product', variant.title && variant.title !== 'Default Title' ? variant.title : ''].filter(Boolean).join(' - ');
     db.prepare(`INSERT INTO skus (id,branch_id,barcode,name,price,cost,stock,unit,category,source_url,active)
       VALUES (?,?,?,?,?,?,?,?,?,?,1)
@@ -471,10 +482,10 @@ export function syncHaravanInventory(payload, shopDomain = '') {
   const shop = normShop(shopDomain);
   const cfg = config(shop);
   if (!cfg.enabled || !cfg.syncInventory) return { ignored: true, reason: 'inventory_sync_disabled' };
-  if (!/^\d+$/.test(cleanId(cfg.locationId))) return { ignored: true, reason: 'location_not_configured' };
   const item = payload.inventory_location_balance || payload.inventoryLocationBalance || payload;
+  if (!item._all_locations && !/^\d+$/.test(cleanId(cfg.locationId))) return { ignored: true, reason: 'location_not_configured' };
   const locationId = cleanId(item.loc_id || item.location_id);
-  if (locationId && locationId !== cleanId(cfg.locationId)) return { ignored: true, reason: 'different_location' };
+  if (!item._all_locations && locationId && locationId !== cleanId(cfg.locationId)) return { ignored: true, reason: 'different_location' };
   const variantId = cleanId(item.variant_id || item.product_variant_id || item.inventory_item_id);
   const sku = cleanId(item.sku || item.barcode);
   const qty = Number(item.qty_available ?? item.quantity ?? item.available ?? item.inventory_quantity);
@@ -533,7 +544,11 @@ export function processHaravanQueue(limit = 20) {
 function resourcePath(resource, page, updatedAtMin = '') {
   const params = new URLSearchParams({ limit: '50', page: String(page) });
   if (updatedAtMin) params.set('updated_at_min', updatedAtMin);
-  if (resource === 'orders') return { path: `/com/orders.json?${params}`, listKey: 'orders', topic: 'orders/updated' };
+  if (resource === 'orders') {
+    params.set('status', 'any');
+    params.set('order', 'updated_at asc');
+    return { path: `/com/orders.json?${params}`, listKey: 'orders', topic: 'orders/updated' };
+  }
   if (resource === 'products') return { path: `/com/products.json?${params}`, listKey: 'products', topic: 'products/update' };
   if (resource === 'customers') return { path: `/com/customers.json?${params}`, listKey: 'customers', topic: 'customers/update' };
   throw new Error('unsupported_haravan_resource');
@@ -549,6 +564,7 @@ async function pullHaravanResource(resource, { shopDomain = '', delta = true, ma
     const data = await haravanRequest(spec.path, { shopDomain: shop });
     const rows = Array.isArray(data[spec.listKey]) ? data[spec.listKey] : [];
     for (const row of rows) {
+      if (delta && since && row.updated_at && String(row.updated_at) <= since) continue;
       writeSyncLog({ shop_domain: shop, topic: spec.topic, external_id: cleanId(row.id), status: 'received', raw_payload: { shop, payload: row } });
       if (row.updated_at && (!newest || String(row.updated_at) > newest)) newest = row.updated_at;
     }
@@ -559,6 +575,42 @@ async function pullHaravanResource(resource, { shopDomain = '', delta = true, ma
   processHaravanQueue();
   audit(`haravan.${resource}.pull`, { shop_domain: shop, queued, delta }, defaultBranch(shop), 'admin');
   return { shopDomain: shop, resource, queued };
+}
+
+async function pullHaravanInventory({ shopDomain = '', delta = true } = {}) {
+  const shop = normShop(shopDomain || config().shopDomain);
+  const cfg = config(shop);
+  if (!cfg.syncInventory) return { shopDomain: shop, resource: 'inventory', queued: 0 };
+  const stateKey = 'inventory.updated_at_min';
+  const since = delta ? getState(shop, stateKey) : '';
+  let newest = since;
+  let queued = 0;
+  const locationId = cleanId(cfg.locationId);
+  if (!/^\d+$/.test(locationId)) throw new Error('haravan_location_id_required');
+  const variantIds = db.prepare(`SELECT DISTINCT external_variant_id FROM external_products
+    WHERE provider=? AND shop_domain=? AND external_variant_id<>'' ORDER BY external_variant_id`)
+    .all(PROVIDER, shop).map(row => cleanId(row.external_variant_id)).filter(id => /^\d+$/.test(id));
+  for (const batch of chunks(variantIds, 50)) {
+    const params = new URLSearchParams({
+      limit: '250',
+      location_ids: locationId,
+      variant_ids: batch.join(','),
+    });
+    if (since) params.set('updated_at_min', since);
+    const data = await haravanRequest(`/com/inventory_locations.json?${params}`, { shopDomain: shop });
+    const rows = Array.isArray(data.inventory_locations) ? data.inventory_locations : [];
+    for (const row of rows) {
+      if (delta && since && row.updated_at && String(row.updated_at) <= since) continue;
+      writeSyncLog({ shop_domain: shop, topic: 'inventorylocationbalances/update',
+        external_id: cleanId(row.id || row.variant_id), status: 'received', raw_payload: { shop, payload: row } });
+      if (row.updated_at && (!newest || String(row.updated_at) > newest)) newest = row.updated_at;
+      queued++;
+    }
+  }
+  if (newest) upsertState(shop, stateKey, newest);
+  processHaravanQueue(500);
+  audit('haravan.inventory.pull', { shop_domain: shop, queued, delta }, defaultBranch(shop), 'admin');
+  return { shopDomain: shop, resource: 'inventory', queued };
 }
 
 function shopsToSync(shopDomain = '') {
@@ -580,6 +632,47 @@ async function pullForShops(resource, opts = {}) {
 export async function pullHaravanOrders(opts = {}) { return pullForShops('orders', opts); }
 export async function pullHaravanProducts(opts = {}) { return pullForShops('products', opts); }
 export async function pullHaravanCustomers(opts = {}) { return pullForShops('customers', opts); }
+
+function drainHaravanQueue() {
+  let processed = 0;
+  for (let i = 0; i < 1000; i++) {
+    const pending = db.prepare(`SELECT COUNT(*) n FROM sync_logs
+      WHERE provider=? AND status IN ('received','retrying')
+        AND (next_retry_at IS NULL OR next_retry_at <= ?)`).get(PROVIDER, now()).n;
+    if (!pending) break;
+    const result = processHaravanQueue(500);
+    if (result.skipped || !result.processed) break;
+    processed += result.processed;
+  }
+  return processed;
+}
+
+export async function syncAllHaravan({ shopDomain = '', delta = true, subscribe = true } = {}) {
+  if (syncAllRunning) return { skipped: true, reason: 'sync_already_running' };
+  syncAllRunning = true;
+  try {
+    const results = [];
+    for (const shop of shopsToSync(shopDomain)) {
+      const cfg = config(shop);
+      if (!cfg.enabled || !cfg.accessToken) continue;
+      if (subscribe) await subscribeWebhook(shop).catch(err =>
+        writeWorkerFailureOnce('webhook/subscribe', err));
+      if (cfg.syncProducts) results.push(await pullHaravanResource('products', { shopDomain: shop, delta }));
+      drainHaravanQueue();
+      if (cfg.syncInventory) results.push(await pullHaravanInventory({ shopDomain: shop, delta }));
+      if (cfg.syncOrders) {
+        results.push(await pullHaravanResource('customers', { shopDomain: shop, delta }));
+        drainHaravanQueue();
+        results.push(await pullHaravanResource('orders', { shopDomain: shop, delta }));
+      }
+      drainHaravanQueue();
+    }
+    const queued = results.reduce((sum, row) => sum + Number(row.queued || 0), 0);
+    return { results, queued };
+  } finally {
+    syncAllRunning = false;
+  }
+}
 
 function chunks(rows, size) {
   const out = [];
@@ -685,6 +778,13 @@ export function startHaravanWorker() {
     inventoryTimer = setInterval(() => pushPendingInventoryChanges().catch(err =>
       writeWorkerFailureOnce('inventory/push', err)), 60000);
     inventoryTimer.unref?.();
+  }
+  if (!recoveryTimer) {
+    setTimeout(() => syncAllHaravan({ delta: true }).catch(err =>
+      writeWorkerFailureOnce('sync/all', err)), 5000).unref?.();
+    recoveryTimer = setInterval(() => syncAllHaravan({ delta: true, subscribe: false }).catch(err =>
+      writeWorkerFailureOnce('sync/all', err)), 5 * 60 * 1000);
+    recoveryTimer.unref?.();
   }
 }
 

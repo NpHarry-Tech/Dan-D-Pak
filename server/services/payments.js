@@ -3,7 +3,7 @@ import crypto from 'node:crypto';
 import { db, uid, now, audit } from '../db.js';
 import { cleanText, headerVal, safeEqual } from '../core/util.js';
 import { emit } from '../realtime.js';
-import { getOrder, getTableState, resolveStaffCall } from './orders.js';
+import { getOrder, getTableState, recomputeTotals, resolveStaffCall } from './orders.js';
 import { deductForOrder } from './inventory.js';
 import { printReceipt } from './printing.js';
 import { canonicalMethodKey, getIntegrations, getOperationsConfig, getPrintConfig } from './settings.js';
@@ -14,6 +14,7 @@ import { buildDiscountPlan } from './vouchers.js';
 import * as einvoice from './einvoice.js';
 import { receiptTaxBlock } from './tax.js';
 import { logSystem } from './systemLogs.js';
+import { money } from '../core/money.js';
 
 // Đơn có gắn khách (iPad self-order check-in SĐT / thu ngân chọn khách) mà được
 // đóng bill KHÔNG kèm customer trong body (webhook QR, khách tự xác nhận, thu
@@ -284,6 +285,31 @@ export function buildOrderDiscountPlan(order_id, {
 }
 
 // lines: [{method, amount, reference}]
+function settlePaymentLines(lines, total) {
+  const settled = (Array.isArray(lines) ? lines : []).map(line => {
+    let tendered_amount;
+    try { tendered_amount = money(line?.amount); }
+    catch { throw new Error('Số tiền thanh toán không hợp lệ'); }
+    if (tendered_amount <= 0) throw new Error('Số tiền thanh toán phải lớn hơn 0');
+    const method = canonicalMethodKey(line.method);
+    if (!METHODS.includes(method)) throw new Error('Phương thức không hợp lệ: ' + method);
+    return { ...line, method, amount: tendered_amount, tendered_amount };
+  });
+  const paid = settled.reduce((sum, line) => sum + line.tendered_amount, 0);
+  if (paid < total) throw new Error(`Chưa đủ tiền: cần ${total}, nhận ${paid}`);
+  let change = paid - total;
+  const cashTendered = settled.filter(line => line.method === 'cash').reduce((sum, line) => sum + line.tendered_amount, 0);
+  if (change > cashTendered) throw new Error('Số tiền dư chỉ có thể trả lại từ khoản thanh toán tiền mặt');
+  for (let index = settled.length - 1; index >= 0 && change > 0; index--) {
+    const line = settled[index];
+    if (line.method !== 'cash') continue;
+    const returned = Math.min(change, line.amount);
+    line.amount -= returned;
+    change -= returned;
+  }
+  return { lines: settled, paid };
+}
+
 export function payOrder(order_id, lines, options = {}, branch_id = 'br1') {
   const {
     discount,
@@ -308,8 +334,9 @@ export function payOrder(order_id, lines, options = {}, branch_id = 'br1') {
     if (order.status !== 'open') throw new Error('Order đã đóng');
 
     if (typeof discount === 'number') {
-      db.prepare(`UPDATE orders SET discount=?, total=MAX(0,subtotal-?) WHERE id=?`).run(discount, discount, order_id);
+      db.prepare(`UPDATE orders SET discount=? WHERE id=?`).run(discount, order_id);
     }
+    recomputeTotals(order_id);
     const invoiceCustomer = normalizeInvoiceCustomer(invoice_customer);
     const customerSnapshot = mergeInvoiceCustomer(customer, invoiceCustomer);
     if (customerSnapshot) {
@@ -328,21 +355,15 @@ export function payOrder(order_id, lines, options = {}, branch_id = 'br1') {
     const shift = getActiveShift(branch_id);
     if (ops.shifts.requireOpenShift !== false && !shift) throw new Error('Can mo ca lam viec truoc khi thanh toan.');
 
-    const paid = lines.reduce((s, l) => s + (parseInt(l.amount) || 0), 0);
-    if (paid < fresh.total) throw new Error(`Chưa đủ tiền: cần ${fresh.total}, nhận ${paid}`);
-    for (const l of lines) {
-      // Gom key cũ về chuẩn (internet_banking/qrcode→bank, card/may_pos→visa)
-      // ngay tại điểm ghi duy nhất — báo cáo/kết ca từ nay chỉ thấy 4 nhóm.
-      l.method = canonicalMethodKey(l.method);
-      if (!METHODS.includes(l.method)) throw new Error('Phương thức không hợp lệ: ' + l.method);
-    }
+    const payment = settlePaymentLines(lines, fresh.total);
+    const paid = payment.paid;
 
     const pid = uid('pay_');
     db.prepare(`INSERT INTO payments (id,order_id,shift_id,total,created_at) VALUES (?,?,?,?,?)`).run(pid, order_id, shift?.id || null, fresh.total, now());
-    const insLine = db.prepare(`INSERT INTO payment_lines (id,payment_id,method,amount,reference,card_txn_id,card_rrn,card_approval,card_mask,card_scheme,card_terminal,card_mode) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`);
-    for (const l of lines) {
+    const insLine = db.prepare(`INSERT INTO payment_lines (id,payment_id,method,amount,tendered_amount,reference,card_txn_id,card_rrn,card_approval,card_mask,card_scheme,card_terminal,card_mode) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`);
+    for (const l of payment.lines) {
       const c = sanitizeCardMeta(l.card);
-      insLine.run(uid('pl_'), pid, l.method, parseInt(l.amount) || 0, l.reference || null,
+      insLine.run(uid('pl_'), pid, l.method, l.amount, l.tendered_amount, l.reference || null,
         c.txnId, c.rrn, c.approval, c.mask, c.scheme, c.terminal, c.mode);
     }
 
@@ -364,8 +385,9 @@ export function payOrder(order_id, lines, options = {}, branch_id = 'br1') {
       resolveStaffCall(order.table_id, branch_id);
       emit('table:updated', getTableState(order.table_id), branch_id);
     }
-    audit('payment.done', { order: order_id, total: fresh.total, lines: lines.length, shift_id: shift?.id || null }, branch_id);
-    const receipt = buildReceipt(order_id, pid, lines, paid, { cashier, discount_breakdown, voucher, promotions });
+    audit('payment.done', { order: order_id, total: fresh.total, lines: payment.lines.length, shift_id: shift?.id || null }, branch_id);
+    const receiptLines = payment.lines.map(line => ({ ...line, amount: line.tendered_amount }));
+    const receipt = buildReceipt(order_id, pid, receiptLines, paid, { cashier, discount_breakdown, voucher, promotions });
     receipt.print_config = getPrintConfig(branch_id);
     receipt.branch_id = branch_id;
     archiveOrder(getOrder(order_id));
@@ -434,14 +456,14 @@ export async function generateCustomerPaymentQr(order_id, { method = 'qrcode' } 
   const pending = order.items.filter(i => i.status === 'pending_confirm');
   if (pending.length) throw new Error(`Con ${pending.length} dong mon dang cho nhan vien xac nhan`);
   const opsW = getOperationsConfig(branch_id);
-  const amountW = Math.max(0, parseInt(order.total) || 0);
+  const amountW = Math.max(0, money(order.total));
   if (!amountW) throw new Error('Bill hien tai khong co so tien can thanh toan.');
   return buildPaymentQr({ amount: amountW, reference: paymentReferenceForOrder(order, opsW), orderId: vietQrOrderId(order), method, orderRefId: order.id, branch_id });
 }
 
 // Retail/standalone: chưa tạo order khi hiển thị QR → client gửi amount + reference.
 export async function buildStandalonePaymentQr({ amount, reference, method = 'qrcode' } = {}, branch_id = 'br1') {
-  const amt = Math.max(0, parseInt(amount) || 0);
+  const amt = Math.max(0, money(amount));
   if (!amt) throw new Error('Thieu so tien tao QR');
   const ref = vietQrSafe(reference || '', 23) || `DANBILL${vietQrSafe(String(Date.now()), 13)}`;
   return buildPaymentQr({ amount: amt, reference: ref, orderId: ref, method, orderRefId: null, branch_id });
@@ -633,7 +655,7 @@ function recordBankTx({ provider, externalId, branch_id, amount, content, accoun
     const r = db.prepare(`INSERT OR IGNORE INTO bank_transactions
       (id,provider,external_id,branch_id,amount,content,account_number,reference,order_id,status,raw_json,created_at)
       VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`)
-      .run(id, provider, externalId || id, branch_id || null, parseInt(amount) || 0,
+      .run(id, provider, externalId || id, branch_id || null, money(amount),
         cleanText(content, 400), cleanText(accountNumber, 60), cleanText(reference, 120),
         order_id || null, status, JSON.stringify(raw || {}).slice(0, 4000), now());
     return { id, inserted: r.changes > 0 };
@@ -665,7 +687,7 @@ function findOpenOrderByContent(content) {
 
 // Lõi auto-confirm: nhận 1 giao dịch tiền-về đã chuẩn hoá, khớp bill và tự đóng.
 function processIncomingCredit(provider, { externalId, amount, content, accountNumber, raw } = {}) {
-  const amt = parseInt(amount) || 0;
+  const amt = money(amount);
   if (externalId) {
     const dup = db.prepare(`SELECT id, status FROM bank_transactions WHERE provider=? AND external_id=? AND status IN ('paid','unmatched','underpaid','error','duplicate')`).get(provider, String(externalId));
     if (dup) return { ok: true, status: 'duplicate', tx_id: dup.id };
@@ -677,7 +699,7 @@ function processIncomingCredit(provider, { externalId, amount, content, accountN
   }
   const ops = getOperationsConfig(order.branch_id || 'br1');
   const reference = paymentReferenceForOrder(order, ops);
-  if (amt < (parseInt(order.total) || 0)) {
+  if (amt < money(order.total)) {
     recordBankTx({ provider, externalId, branch_id: order.branch_id, amount: amt, content, accountNumber, reference, order_id: order.id, status: 'underpaid', raw });
     return { ok: true, status: 'underpaid', message: `So tien ${amt} chua du ${order.total} cho bill ${order.bill_no || order.id}.` };
   }
@@ -692,7 +714,7 @@ function processIncomingCredit(provider, { externalId, amount, content, accountN
   recordLoyaltyFromOrder(order);
   audit('payment.auto_confirmed', { provider, order: order.id, amount: amt, reference }, order.branch_id || 'br1', `auto:${provider}`);
   emit('payment:auto', { order_id: order.id, provider, amount: amt, bill_no: order.bill_no || null }, order.branch_id || 'br1');
-  return { ok: true, status: 'paid', order_id: order.id, bill_no: order.bill_no || null, amount: parseInt(order.total) || 0 };
+  return { ok: true, status: 'paid', order_id: order.id, bill_no: order.bill_no || null, amount: money(order.total) };
 }
 
 
@@ -741,7 +763,7 @@ export function handleCassoWebhook(body = {}, headers = {}, branch_id = 'br1') {
   const list = Array.isArray(body?.data) ? body.data : (Array.isArray(body) ? body : []);
   const results = [];
   for (const t of list) {
-    const amount = parseInt(t?.amount) || 0;
+    const amount = money(t?.amount);
     if (amount <= 0) continue; // chỉ xử lý tiền vào
     const acc = String(t?.subAccId || t?.bank_sub_acc_id || t?.accountNumber || '');
     if (cleanText(cfg.accountNumber) && acc && acc !== cleanText(cfg.accountNumber)) continue;
@@ -860,7 +882,7 @@ export async function getPayosPaymentStatus(orderCode, branch_id = 'br1') {
     });
     const d = res?.data || res || {};
     const status = String(d.status || '').toUpperCase();
-    return { ok: true, status, paid: status === 'PAID', amountPaid: parseInt(d.amountPaid) || 0, orderCode: d.orderCode || orderCode };
+    return { ok: true, status, paid: status === 'PAID', amountPaid: money(d.amountPaid), orderCode: d.orderCode || orderCode };
   } catch (e) {
     return { ok: false, status: 'error', paid: false, message: String(e.message || '').slice(0, 160) };
   }
@@ -915,7 +937,7 @@ function buildReceipt(order_id, payment_id, lines, paid, { cashier = '', discoun
   return {
     payment_id, order_id, branch: branch?.name, table_code: order.table_code,
     items: order.items.filter(i => i.status !== 'cancelled'),
-    subtotal: order.subtotal, discount: order.discount, total: order.total,
+    subtotal: order.subtotal, goods_amount: order.goods_amount, vat_amount: order.vat_amount, discount: order.discount, total: order.total,
     tax: receiptTaxBlock(printCfg),
     voucher_id: order.voucher_id, voucher_code: order.voucher_code,
     voucher: orderVoucher,

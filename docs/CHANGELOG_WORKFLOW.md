@@ -30,6 +30,27 @@ For every meaningful change, append a changelog entry in the PR/commit notes or 
 
 This restructuring pass adds docs, config/adapters, frontend API/realtime seams, VPS scaffolding, and protected-zone warnings. It does not intentionally change order/payment/inventory business behavior.
 
+## 2026-07-22 Item-level VAT Pricing
+
+- Summary: F&B menu items and retail SKUs can store tax-inclusive or tax-exclusive configured prices with an item VAT rate; checkout always uses the backend-calculated customer price and snapshots VAT on the order.
+- Database impact: adds VAT configuration to menu/SKU masters, `order_items.vat_rate`, and order `goods_amount`/`vat_amount`; existing paid totals are not rewritten.
+- UI impact: VAT appears in F&B POS, retail POS, checkout, printed/history receipts, QR payment view, and the customer display.
+- Deployment impact: deploy backend and desktop together, then restart the backend once for migration.
+- Validation: Node regression tests passed 6/6, full server syntax and Dart analysis passed, and the Windows release build succeeded.
+
+## 2026-07-22 Checkout Reconciliation and Idempotency
+
+- Summary: Separated cash tender/change from recognized revenue, made retail checkout retries idempotent, blocked unpriced SKUs, honored `STORAGE_PATH`, restored fresh-install demo seeding, repaired desktop launch targets, and fixed the missing history import that blocked refunds.
+- Files changed: payment/retail/order/history/shift services, SQLite migration, storage path users, desktop checkout/launcher, tests, and safety documentation.
+- Protected domains touched: orders, payments, payment lines, refunds, shifts, inventory, audit archives, DMS files, and SKU pricing.
+- Database impact: adds `payment_lines.tendered_amount` and `orders.client_request_id`; first startup backfills tendered values and caps legacy payment allocations to `payments.total` exactly once.
+- API contract impact: `POST /api/retail/checkout` accepts `client_request_id` or `Idempotency-Key`; replay returns the original receipt with `idempotent_replay=true`.
+- Deployment impact: back up SQLite, deploy backend and Flutter desktop together, restart backend for migration, then verify the configured `STORAGE_PATH` volume is writable.
+- Manual tests: 82 server files passed syntax checks; Node tests passed 6/6; focused Dart analysis and the Windows release build passed; a real fresh DB seeded six demo users and wrote archives only below its temporary `STORAGE_PATH`.
+- Production rollout: backend restarted successfully on 2026-07-22, the three reported overpayment bills now reconcile at 300,000đ revenue while retaining 450,000đ tendered for receipt display, and Windows build 48 (`2026.07.22.1`) was published as an optional update.
+- Rollback plan: restore the pre-deploy SQLite backup before reverting code because the migration rewrites legacy overpayment allocations; durable files remain under configured `STORAGE_PATH`.
+- Warning: this is a `destructive-risk` migration limited to correcting payment allocation rows where recorded line totals exceeded the authoritative payment total.
+
 ## 2026-06-18 Warehouse Channel Configuration
 
 - Summary: Added warehouse-to-sales-channel configuration, moved warehouse create/config controls into Settings, and improved the Warehouse stock screen search/filter UI.

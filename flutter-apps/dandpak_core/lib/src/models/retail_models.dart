@@ -42,6 +42,7 @@ class Sku {
   final String emoji;
   final String image;
   final num price;
+  final num vatRate;
   final num stock;
   final String unit;
   final String category;
@@ -56,6 +57,7 @@ class Sku {
     required this.emoji,
     required this.image,
     required this.price,
+    required this.vatRate,
     required this.stock,
     required this.unit,
     required this.category,
@@ -73,6 +75,7 @@ class Sku {
         'emoji': emoji,
         'image': image,
         'price': price,
+        'vat_rate': vatRate,
         'stock': stock,
         'unit': unit,
         'category': category,
@@ -89,7 +92,8 @@ class Sku {
       name: retailS(j['name']),
       emoji: retailS(j['emoji']),
       image: retailS(j['image']),
-      price: retailN(j['price']),
+      price: retailN(j['sale_price'] ?? j['price']),
+      vatRate: retailN(j['vat']),
       stock: retailN(j['stock']),
       unit: unit.isEmpty ? 'cái' : unit,
       category: retailS(j['category']),

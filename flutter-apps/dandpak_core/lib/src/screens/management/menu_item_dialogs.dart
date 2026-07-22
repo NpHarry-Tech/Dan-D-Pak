@@ -25,6 +25,7 @@ class _ItemFormDialog extends StatefulWidget {
 class _ItemFormDialogState extends State<_ItemFormDialog> {
   late final TextEditingController _name;
   late final TextEditingController _price;
+  late final TextEditingController _vatRate;
   late final TextEditingController _emoji;
   late final TextEditingController _sla;
   late final TextEditingController _image;
@@ -35,6 +36,7 @@ class _ItemFormDialogState extends State<_ItemFormDialog> {
   late String _categoryId;
   late String _station;
   late bool _hidden;
+  late bool _priceIncludesVat;
   late String _schedMode;
   late final TextEditingController _start;
   late final TextEditingController _end;
@@ -56,6 +58,7 @@ class _ItemFormDialogState extends State<_ItemFormDialog> {
     _name = TextEditingController(text: i?.name ?? '');
     _price = TextEditingController(
         text: i != null ? i.price.round().toString() : '');
+    _vatRate = TextEditingController(text: (i?.vatRate ?? 8).toString());
     _emoji = TextEditingController(text: i?.emoji ?? '');
     _sla = TextEditingController(text: (i?.slaMinutes ?? 10).toString());
     _image = TextEditingController(text: i?.image ?? '');
@@ -68,6 +71,7 @@ class _ItemFormDialogState extends State<_ItemFormDialog> {
         : (widget.categories.isNotEmpty ? widget.categories.first.id : '');
     _station = _stationLabels.containsKey(i?.station) ? i!.station : 'kitchen';
     _hidden = i?.hidden ?? false;
+    _priceIncludesVat = i?.priceIncludesVat ?? true;
     final s = i?.schedule ?? MenuSchedule();
     _schedMode = {'always', 'daily', 'weekly', 'date'}.contains(s.mode)
         ? s.mode
@@ -112,6 +116,7 @@ class _ItemFormDialogState extends State<_ItemFormDialog> {
     for (final c in [
       _name,
       _price,
+      _vatRate,
       _emoji,
       _sla,
       _image,
@@ -182,6 +187,8 @@ class _ItemFormDialogState extends State<_ItemFormDialog> {
     final body = <String, dynamic>{
       'name': _name.text.trim(),
       'price': int.tryParse(_price.text.trim()) ?? 0,
+      'vat_rate': num.tryParse(_vatRate.text.trim()) ?? 0,
+      'price_includes_vat': _priceIncludesVat,
       'emoji': _emoji.text.trim(),
       'sla_minutes': int.tryParse(_sla.text.trim()) ?? 10,
       'image': _image.text.trim(),
@@ -292,6 +299,23 @@ class _ItemFormDialogState extends State<_ItemFormDialog> {
                         ),
                         Row(
                           children: [
+                            Expanded(
+                                child:
+                                    _field('VAT (%)', _vatRate, number: true)),
+                            SizedBox(width: 12),
+                            Expanded(
+                              child: SwitchListTile(
+                                contentPadding: EdgeInsets.zero,
+                                title: Text(t('Đơn giá đã gồm VAT')),
+                                value: _priceIncludesVat,
+                                onChanged: (value) =>
+                                    setState(() => _priceIncludesVat = value),
+                              ),
+                            ),
+                          ],
+                        ),
+                        Row(
+                          children: [
                             Expanded(child: _categoryDropdown()),
                             SizedBox(width: 12),
                             Expanded(child: _stationDropdown()),
@@ -385,7 +409,12 @@ class _ItemFormDialogState extends State<_ItemFormDialog> {
   String get pvEmoji => _emoji.text.trim();
   String get pvImage => _image.text.trim();
   String get pvDescription => _description.text.trim();
-  num get pvPrice => num.tryParse(_price.text.trim()) ?? 0;
+  num get pvPrice {
+    final price = num.tryParse(_price.text.trim()) ?? 0;
+    final vat = num.tryParse(_vatRate.text.trim()) ?? 0;
+    return _priceIncludesVat ? price : (price * (1 + vat / 100)).round();
+  }
+
   bool get pvHidden => _hidden;
   String get pvStationLabel => _stationLabels[_station] ?? _station;
   String get pvCategory => _categoryName;
@@ -1313,4 +1342,3 @@ class _MenuItemPreview extends StatelessWidget {
     );
   }
 }
-

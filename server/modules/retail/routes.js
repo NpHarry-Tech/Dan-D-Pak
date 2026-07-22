@@ -47,7 +47,12 @@ api.post('/retail/checkout', guard('pay'), wrap((req) => {
   const branch_id = branch(req);
   // Cùng cơ chế xác nhận thủ công như /orders/:id/pay (PIN chính mình + audit).
   const manual = applyManualConfirm(req, req.body?.payments, branch_id);
-  const receipt = Retail.checkout({ ...req.body, branch_id, cashier: req.user?.name || req.user?.username || '' });
+  const receipt = Retail.checkout({
+    ...req.body,
+    client_request_id: req.body?.client_request_id || req.headers['idempotency-key'],
+    branch_id,
+    cashier: req.user?.name || req.user?.username || '',
+  });
   if (manual) {
     const orderId = receipt?.order_id || receipt?.id || null;
     for (const tx of manual.txIds) Pay.markBankTxClaimed(tx, orderId, manual.approver.username, branch_id);

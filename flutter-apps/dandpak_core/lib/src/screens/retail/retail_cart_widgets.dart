@@ -243,6 +243,7 @@ class _RetailTotals {
   final num orderDiscount;
   final num customerDiscount;
   final num manualDiscount;
+  final num vat;
   final num total;
   final RetailVoucher? orderVoucher;
 
@@ -252,6 +253,7 @@ class _RetailTotals {
     required this.orderDiscount,
     required this.customerDiscount,
     required this.manualDiscount,
+    required this.vat,
     required this.total,
     required this.orderVoucher,
   });
@@ -661,4 +663,3 @@ class _CountDot extends StatelessWidget {
     );
   }
 }
-

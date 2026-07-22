@@ -144,6 +144,29 @@ class PosProvider extends ChangeNotifier {
     return math.max(0.0, cartSubtotal - _activeDiscount);
   }
 
+  double get cartVat {
+    final subtotal = cartSubtotal;
+    final total = cartTotal;
+    if (subtotal <= 0 || total <= 0) return 0;
+    final pricedItems = _cart.where((item) => item.totalPrice > 0).toList();
+    var allocated = 0.0;
+    var vat = 0.0;
+    for (var index = 0; index < pricedItems.length; index++) {
+      final item = pricedItems[index];
+      final gross = item.totalPrice;
+      final discountedGross = index == pricedItems.length - 1
+          ? total - allocated
+          : (gross * total / subtotal).roundToDouble();
+      allocated += discountedGross;
+      final rate = item.item.vatRate;
+      if (rate > 0) {
+        vat += discountedGross -
+            (discountedGross / (1 + rate / 100)).roundToDouble();
+      }
+    }
+    return vat;
+  }
+
   // Load floor zones & tables
   Future<void> loadFloor() async {
     _isLoadingFloor = true;
@@ -295,6 +318,17 @@ class PosProvider extends ChangeNotifier {
           isRetail: skuId.isNotEmpty,
         );
       }
+      foundItem = MenuItem(
+        id: foundItem.id,
+        code: foundItem.code,
+        name: foundItem.name,
+        price: _doubleValue(i['unit_price']),
+        vatRate: _doubleValue(i['vat_rate']),
+        categoryId: foundItem.categoryId,
+        imageUrl: foundItem.imageUrl,
+        modifiers: foundItem.modifiers,
+        isRetail: foundItem.isRetail,
+      );
 
       final List<dynamic> mods = i['mods'] ?? [];
       final selectedMods = mods

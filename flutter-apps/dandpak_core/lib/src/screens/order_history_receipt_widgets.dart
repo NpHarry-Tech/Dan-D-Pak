@@ -159,12 +159,15 @@ class _ReceiptCard extends StatelessWidget {
               SizedBox(height: 16),
               _ItemsTable(items: items),
               Divider(height: 22, color: DanColors.border2),
-              _sumLine(t('Cộng tiền hàng'),
-                  receipt['goods_amount'] ?? receipt['subtotal']),
+              _sumLine(t('Tạm tính'), receipt['subtotal']),
               if (_n(receipt['discount']) > 0)
                 _sumLine(t('Giảm giá'), -_n(receipt['discount'])),
-              _sumLine('Thuế GTGT (${_n(receipt['vat_rate']).round()}%)',
-                  receipt['vat_amount']),
+              if (_n(receipt['vat_amount']) > 0)
+                _sumLine(
+                    _n(receipt['vat_rate']) > 0
+                        ? 'Trong đó VAT (${_n(receipt['vat_rate']).round()}%)'
+                        : 'Trong đó VAT',
+                    receipt['vat_amount']),
               _sumLine(t('TỔNG THANH TOÁN'), receipt['total'], grand: true),
               if (_s(receipt['total_words']).isNotEmpty) ...[
                 SizedBox(height: 8),

@@ -9,6 +9,7 @@ import { getOperationsConfig } from './settings.js';
 import { applyChannelPrice } from './inventory.js';
 import { getActiveShift } from './shifts.js';
 import { archiveOrder } from './archive.js';
+import { orderVatTotals, salePrice } from './tax.js';
 
 // Số Bill nội bộ: Dan{ddMMyy}{seq} — seq là số thứ tự đơn trong NGÀY (reset mỗi
 // ngày vận hành: ca sáng → ca tối đều trong 1 ngày dương lịch). VD Dan210626001.
@@ -62,14 +63,14 @@ export function getOpenOrderForTable(table_id, branch_id = 'br1') {
     .get(table_id, branch_id);
 }
 
-function recomputeTotals(order_id) {
-  const items = db.prepare(`SELECT qty,unit_price FROM order_items WHERE order_id=? AND status!='cancelled'`).all(order_id);
-  const subtotal = items.reduce((s, it) => s + it.qty * it.unit_price, 0);
+export function recomputeTotals(order_id) {
+  const items = db.prepare(`SELECT qty,unit_price,vat_rate,status FROM order_items WHERE order_id=?`).all(order_id);
   const order = db.prepare(`SELECT discount FROM orders WHERE id=?`).get(order_id);
   const discount = order?.discount || 0;
-  const total = Math.max(0, subtotal - discount);
-  db.prepare(`UPDATE orders SET subtotal=?, total=? WHERE id=?`).run(subtotal, total, order_id);
-  return { subtotal, discount, total };
+  const totals = orderVatTotals(items, discount);
+  db.prepare(`UPDATE orders SET subtotal=?, goods_amount=?, vat_amount=?, total=? WHERE id=?`)
+    .run(totals.subtotal, totals.goods_amount, totals.vat_amount, totals.total, order_id);
+  return { ...totals, discount };
 }
 
 function setTableByOpenOrders(table_id, branch_id = 'br1') {
@@ -138,8 +139,8 @@ export function createOrUpdateOrder(options) {
     }
 
     const insItem = db.prepare(`INSERT INTO order_items
-      (id,order_id,menu_item_id,sku_id,name,emoji,qty,unit_price,station,sla_minutes,note,mods_json,status,lot_id,promo_json,created_at)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
+      (id,order_id,menu_item_id,sku_id,name,emoji,qty,unit_price,vat_rate,station,sla_minutes,note,mods_json,status,lot_id,promo_json,created_at)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
 
     const created = [];
     for (const line of items) {
@@ -155,7 +156,8 @@ export function createOrUpdateOrder(options) {
         // retail thêm trong đơn F&B (order bàn) dùng cấu hình 'fnb_retail'.
         const priced = applyChannelPrice(
           sku, branch_id, order.channel === 'retail' ? 'retail' : 'fnb_retail');
-        insItem.run(id, order.id, null, sku.id, sku.name, sku.emoji, qty, priced.price, 'retail', 0, null, '[]',
+        if (Number(priced.price) <= 0) throw new Error(`SKU chưa có giá bán: ${sku.name}`);
+        insItem.run(id, order.id, null, sku.id, sku.name, sku.emoji, qty, priced.price, Number(sku.vat) || 0, 'retail', 0, null, '[]',
           needsStaffConfirm ? 'pending_confirm' : 'served', lotId, line.promo ? JSON.stringify(line.promo) : null, now());
       } else {
         const mi = getMenuItemForOrder(line.menu_item_id);
@@ -163,8 +165,8 @@ export function createOrUpdateOrder(options) {
         // BẢO MẬT: giá modifier do client gửi — chỉ cho phép CỘNG THÊM (>=0), không
         // bao giờ trừ. Nếu không, khách tự gửi mod giá âm để hạ đơn giá về 0/âm.
         const modSum = mods.reduce((s, m) => s + Math.max(0, parseInt(m?.price) || 0), 0);
-        const unitPrice = Math.max(0, (parseInt(mi.price) || 0) + modSum);
-        insItem.run(id, order.id, mi.id, null, mi.name, mi.emoji, qty, unitPrice, mi.station, mi.sla_minutes,
+        const unitPrice = salePrice(mi.price, mi.vat_rate, mi.price_includes_vat) + modSum;
+        insItem.run(id, order.id, mi.id, null, mi.name, mi.emoji, qty, unitPrice, Number(mi.vat_rate) || 0, mi.station, mi.sla_minutes,
           line.note || null, JSON.stringify(mods), needsStaffConfirm ? 'pending_confirm' : 'new', null, null, now());
       }
       created.push(db.prepare(`SELECT * FROM order_items WHERE id=?`).get(id));
@@ -305,7 +307,7 @@ export function rejectPendingItems(order_id, item_ids = [], reason = '', branch_
   recomputeTotals(order_id);
   const activeLeft = db.prepare(`SELECT COUNT(*) n FROM order_items WHERE order_id=? AND status!='cancelled'`).get(order_id).n;
   if (!activeLeft) {
-    db.prepare(`UPDATE orders SET status='void', subtotal=0, total=0 WHERE id=?`).run(order_id);
+    db.prepare(`UPDATE orders SET status='void', subtotal=0, goods_amount=0, vat_amount=0, total=0 WHERE id=?`).run(order_id);
     if (order.table_id) setTableByOpenOrders(order.table_id, branch_id);
   }
   const full = getOrder(order_id);
@@ -365,7 +367,7 @@ export function mergeTables(source_table_id, target_table_id, branch_id = 'br1',
     upd.run(target.id, newPath, item.id);
   }
 
-  db.prepare(`UPDATE orders SET status='void', subtotal=0,total=0 WHERE id=?`).run(source.id);
+  db.prepare(`UPDATE orders SET status='void', subtotal=0,goods_amount=0,vat_amount=0,total=0 WHERE id=?`).run(source.id);
   recomputeTotals(target.id);
   setTableByOpenOrders(source_table_id, branch_id);
   setTableByOpenOrders(target_table_id, branch_id);
@@ -538,7 +540,7 @@ export function cancelItem(item_id, reason, branch_id = 'br1', actor = 'system')
   if (ord && ord.status === 'open') {
     const activeLeft = db.prepare(`SELECT COUNT(*) n FROM order_items WHERE order_id=? AND status!='cancelled'`).get(item.order_id).n;
     if (!activeLeft) {
-      db.prepare(`UPDATE orders SET status='void', subtotal=0, total=0 WHERE id=?`).run(item.order_id);
+      db.prepare(`UPDATE orders SET status='void', subtotal=0, goods_amount=0, vat_amount=0, total=0 WHERE id=?`).run(item.order_id);
       if (ord.table_id) setTableByOpenOrders(ord.table_id, branch_id);
     }
   }

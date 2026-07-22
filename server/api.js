@@ -2,6 +2,7 @@
 import { Router } from 'express';
 import { uid, audit } from './db.js';
 import * as Auth from './services/auth.js';
+import * as History from './services/history.js';
 import { logSystem } from './services/systemLogs.js';
 import { registerInventoryRoutes } from './modules/inventory/routes.js';
 import { registerInvoiceRoutes } from './modules/invoices/routes.js';
@@ -29,10 +30,9 @@ import * as Haravan from './services/haravanConnector.js';
 import { errorPayload } from './core/errors.js';
 import fs from 'node:fs';
 import nodePath from 'node:path';
-import { fileURLToPath } from 'node:url';
-const __apiDir = nodePath.dirname(fileURLToPath(import.meta.url));
-const AVATAR_UPLOADS_DIR = nodePath.join(__apiDir, 'uploads', 'avatars');
-const MENU_UPLOADS_DIR = nodePath.join(__apiDir, 'uploads', 'menu');
+import { storagePath } from './config/env.js';
+const AVATAR_UPLOADS_DIR = storagePath('uploads', 'avatars');
+const MENU_UPLOADS_DIR = storagePath('uploads', 'menu');
 const AVATAR_ALLOWED_MIME = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);
 const AVATAR_MAX_BYTES = 20 * 1024 * 1024;
 
@@ -231,6 +231,7 @@ api.post('/v1/integrations/haravan/unsubscribe-webhook', guardAny('settings.inte
 api.post('/v1/integrations/haravan/sync-orders', guardAny('settings.integrations'), wrap((req) => Haravan.pullHaravanOrders({ shopDomain: req.body?.shop_domain || req.body?.shopDomain || '', delta: req.body?.delta !== false })));
 api.post('/v1/integrations/haravan/sync-products', guardAny('settings.integrations'), wrap((req) => Haravan.pullHaravanProducts({ shopDomain: req.body?.shop_domain || req.body?.shopDomain || '', delta: req.body?.delta !== false })));
 api.post('/v1/integrations/haravan/sync-customers', guardAny('settings.integrations'), wrap((req) => Haravan.pullHaravanCustomers({ shopDomain: req.body?.shop_domain || req.body?.shopDomain || '', delta: req.body?.delta !== false })));
+api.post('/v1/integrations/haravan/sync-all', guardAny('settings.integrations'), wrap((req) => Haravan.syncAllHaravan({ shopDomain: req.body?.shop_domain || req.body?.shopDomain || '', delta: req.body?.delta !== false, subscribe: req.body?.subscribe !== false })));
 api.post('/v1/integrations/haravan/push-inventory', guardAny('settings.integrations', 'inventory.adjust'), wrap((req) => Haravan.pushInventoryToHaravan({ shopDomain: req.body?.shop_domain || req.body?.shopDomain || '', skuIds: req.body?.sku_ids || req.body?.skuIds || [] })));
 api.post('/v1/integrations/haravan/push-pending-inventory', guardAny('settings.integrations', 'inventory.adjust'), wrap(() => Haravan.pushPendingInventoryChanges()));
 api.get('/v1/integrations/haravan/sync-logs', guardAny('settings.integrations', 'online'), wrap((req) => Haravan.listSyncLogs(req.query.limit)));

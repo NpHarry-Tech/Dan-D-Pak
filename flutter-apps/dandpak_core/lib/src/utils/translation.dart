@@ -1,4 +1,5 @@
 import 'translation_map.dart';
+export 'search.dart';
 
 const supportedAppLangs = ['vi', 'en'];
 
@@ -6,21 +7,6 @@ const supportedAppLangs = ['vi', 'en'];
 String t(String key) {
   return L10n.translate(key);
 }
-
-String foldSearch(Object? value) {
-  var s = (value ?? '').toString().toLowerCase();
-  const from =
-      'àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ';
-  const to =
-      'aaaaaaaaaaaaaaaaaeeeeeeeeeeeiiiiiooooooooooooooooouuuuuuuuuuuyyyyyd';
-  for (var i = 0; i < from.length; i++) {
-    s = s.replaceAll(from[i], to[i]);
-  }
-  return s.trim();
-}
-
-bool searchMatches(Object? value, String foldedQuery) =>
-    foldedQuery.isEmpty || foldSearch(value).contains(foldedQuery);
 
 const _fallbackPhrases = <MapEntry<String, String>>[
   MapEntry('Không tải được', 'Could not load'),

@@ -1,5 +1,6 @@
 // Reporting Core: realtime KPIs for the Admin dashboard.
 import { db } from '../db.js';
+import { matchesSearch, searchTokens } from '../core/search.js';
 import { archiveDashboardReport } from './archive.js';
 
 const todayStart = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return d.toISOString(); };
@@ -184,14 +185,9 @@ export function recentAudit(branch_id = 'br1', limit = 30, before = null, period
     params.push(before);
   }
 
-  if (search && String(search).trim()) {
-    query += ` AND (actor LIKE ? OR action LIKE ? OR detail LIKE ?)`;
-    const s = `%${String(search).trim()}%`;
-    params.push(s, s, s);
-  }
-
-  query += ` ORDER BY created_at DESC LIMIT ?`;
-  params.push(lim);
-
-  return db.prepare(query).all(...params);
+  query += ` ORDER BY created_at DESC LIMIT 10000`;
+  const tokens = searchTokens(search);
+  return db.prepare(query).all(...params)
+    .filter(row => matchesSearch([row.actor, row.action, row.detail], tokens))
+    .slice(0, lim);
 }

@@ -140,7 +140,7 @@ export function shiftReport(shift_id, branch_id = 'br1') {
     WHERE p.shift_id=?
     GROUP BY pl.method
     ORDER BY amount DESC`).all(shift_id);
-  const billLines = db.prepare(`SELECT method,amount,reference FROM payment_lines WHERE payment_id=? ORDER BY rowid`);
+  const billLines = db.prepare(`SELECT method,COALESCE(tendered_amount,amount) amount,reference FROM payment_lines WHERE payment_id=? ORDER BY rowid`);
   const bills = payments.map(p => ({
     ...p,
     number: p.bill_no || p.order_id.slice(-6).toUpperCase(),

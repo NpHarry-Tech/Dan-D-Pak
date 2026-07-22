@@ -6,6 +6,7 @@ import { join } from 'node:path';
 
 const tmp = mkdtempSync(join(tmpdir(), 'haravan-'));
 process.env.SQLITE_PATH = join(tmp, 'test.db');
+process.env.STORAGE_PATH = join(tmp, 'storage');
 process.env.HARAVAN_WEBHOOK_SECRET = 'test_secret';
 process.env.HARAVAN_DEFAULT_BRANCH_ID = 'ONLINE';
 process.env.HARAVAN_ENABLED = 'true';
@@ -122,6 +123,38 @@ try {
 
   const savedSignature = crypto.createHmac('sha256', 'sec_5678').update(body).digest('base64');
   assert.equal(Haravan.verifyHaravanWebhook(body, savedSignature), true);
+  globalThis.fetch = async (url) => {
+    const value = String(url);
+    // A stale webhook credential must not block the product/order snapshot.
+    if (value.includes('webhook.haravan.com')) return { ok: false, status: 401, json: async () => ({ error: true }) };
+    if (value.includes('/com/products.json')) return { ok: true, json: async () => ({ products: [{
+      id: 501, title: 'Realtime product', updated_at: '2026-07-22T00:00:00.000Z',
+      variants: [{ id: 502, sku: 'RT-502', price: 12000 }],
+    }] }) };
+    if (value.includes('/com/inventory_locations.json')) {
+      const url = new URL(value);
+      assert.equal(url.searchParams.get('location_ids'), '963414');
+      assert.deepEqual(url.searchParams.get('variant_ids').split(','), ['22', '502']);
+      return { ok: true, json: async () => ({
+      inventory_locations: [{ id: 503, loc_id: 963414, product_id: 501, variant_id: 502, qty_available: 8, updated_at: '2026-07-22T00:00:01.000Z' }],
+      }) };
+    }
+    if (value.includes('/com/customers.json')) return { ok: true, json: async () => ({
+      customers: [{ id: 504, first_name: 'Realtime', last_name: 'Customer', phone: '0900000504', updated_at: '2026-07-22T00:00:02.000Z' }],
+    }) };
+    if (value.includes('/com/orders.json')) return { ok: true, json: async () => ({ orders: [{
+      id: 505, order_number: 'RT505', total_price: 12000, updated_at: '2026-07-22T00:00:03.000Z',
+      line_items: [{ product_id: 501, variant_id: 502, sku: 'RT-502', name: 'Realtime product', quantity: 1, price: 12000 }],
+    }] }) };
+    throw new Error(`unexpected Haravan URL: ${value}`);
+  };
+  const fullSync = await Haravan.syncAllHaravan({ shopDomain: 'shop.myharavan.com', delta: false });
+  assert.equal(fullSync.queued, 4);
+  assert.equal(db.prepare(`SELECT stock FROM skus WHERE id='hvn_502'`).get().stock, 8);
+  assert.equal(db.prepare(`SELECT COUNT(*) n FROM customers WHERE phone='0900000504'`).get().n, 1);
+  assert.equal(db.prepare(`SELECT COUNT(*) n FROM orders WHERE online_ref='505'`).get().n, 1);
+  Settings.updateIntegrations({ channels: { haravan: { locationId: '963414' } } }, 'sala');
+
   let pushedBody = null;
   let fetchCalls = 0;
   globalThis.fetch = async (url, init) => {

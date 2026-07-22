@@ -5,7 +5,9 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { db, uid, now, audit, defaultWarehouseId } from '../db.js';
 import { emit } from '../realtime.js';
+import { matchesSearch, searchTokens } from '../core/search.js';
 import { getRetailConfig } from './settings.js';
+import { salePrice } from './tax.js';
 
 // Ảnh sản phẩm import từ KiotViet nằm ở server/assets/product-images dưới tên
 // kv_{barcode}.* (trước ở web/assets — web/ đã gỡ khỏi repo; đường dẫn này
@@ -131,16 +133,16 @@ function channelPriceBookId(branch_id, channel) {
 }
 
 /// Áp giá bảng giá của kênh lên 1 row SKU (đã enrich). SKU không có giá riêng
-/// trong bảng → giữ nguyên giá chung. price = giá SAU thuế, pre_tax tính lại.
+/// trong bảng → giữ nguyên giá chung. price trả về là giá khách thanh toán.
 export function applyChannelPrice(sku, branch_id, channel) {
+  if (!sku) return sku;
   const bookId = channelPriceBookId(branch_id, channel);
-  if (!bookId || !sku) return sku;
-  const row = db.prepare(`SELECT price FROM price_book_items WHERE book_id=? AND sku_id=?`).get(bookId, sku.id);
-  if (!row) return sku;
-  const price = Math.max(0, Math.round(Number(row.price) || 0));
+  const row = bookId ? db.prepare(`SELECT price FROM price_book_items WHERE book_id=? AND sku_id=?`).get(bookId, sku.id) : null;
+  const configuredPrice = Math.max(0, Math.round(Number(row?.price ?? sku.price) || 0));
   const vat = sku.vat == null ? null : Number(sku.vat);
-  const price_pre_tax = (!vat || vat <= 0) ? price : Math.round(price / (1 + vat / 100));
-  return { ...sku, price, price_pre_tax, price_book_id: bookId };
+  const includesVat = sku.price_includes_vat !== 0;
+  const price_pre_tax = includesVat && vat > 0 ? Math.round(configuredPrice / (1 + vat / 100)) : configuredPrice;
+  return { ...sku, configured_price: configuredPrice, price: salePrice(configuredPrice, vat, includesVat), price_pre_tax, price_book_id: row ? bookId : null };
 }
 // How many base units in 1 of `uom` (the entered unit name).
 function unitFactor(item, uom) {
@@ -225,12 +227,7 @@ export function listSkus(branch_id = 'br1', filters = {}) {
   let sql = `SELECT * FROM skus WHERE branch_id=? AND active=1`;
   const params = [branch_id];
 
-  const q = textOr(filters.q || filters.search || filters.query || '', '');
-  if (q) {
-    sql += ` AND (name LIKE ? OR barcode LIKE ? OR category LIKE ?)`;
-    const likeVal = `%${q}%`;
-    params.push(likeVal, likeVal, likeVal);
-  }
+  const search = searchTokens(filters.q || filters.search || filters.query);
 
   if (filters.warehouse_id || forcedWh) {
     sql += ` AND COALESCE(warehouse_id, ?) = ?`;
@@ -244,19 +241,18 @@ export function listSkus(branch_id = 'br1', filters = {}) {
 
   sql += ` ORDER BY name`;
 
+  // ponytail: in-memory fold handles Vietnamese and cross-field tokens; add a
+  // normalized indexed column if a measured catalog above 100k rows needs it.
+  const matchedRows = db.prepare(sql).all(...params)
+    .filter(s => matchesSearch([s.code, s.name, s.barcode, s.category, s.brand, s.unit], search));
+
   const page = intOr(filters.page, null);
   const limit = intOr(filters.limit, 40);
 
   if (page !== null && page > 0) {
-    const countSql = `SELECT COUNT(*) AS total FROM (${sql})`;
-    const totalRow = db.prepare(countSql).get(...params);
-    const total = totalRow ? (totalRow.total || 0) : 0;
-
-    sql += ` LIMIT ? OFFSET ?`;
     const offset = (page - 1) * limit;
-    const paginatedParams = [...params, limit, offset];
-
-    const rows = db.prepare(sql).all(...paginatedParams);
+    const total = matchedRows.length;
+    const rows = matchedRows.slice(offset, offset + limit);
     const items = rows.map(s => withProductImage(applyChannelPrice(
         enrichStockRow('sku', s, filters.warehouse_id || forcedWh),
         branch_id, filters.channel)));
@@ -268,8 +264,7 @@ export function listSkus(branch_id = 'br1', filters = {}) {
     };
   }
 
-  const rows = db.prepare(sql).all(...params);
-  return rows.map(s => withProductImage(applyChannelPrice(
+  return matchedRows.map(s => withProductImage(applyChannelPrice(
       enrichStockRow('sku', s, filters.warehouse_id || forcedWh),
       branch_id, filters.channel)));
 }
@@ -285,7 +280,7 @@ export function priceBook(branch_id = 'br1', filters = {}) {
   const params = [];
   let sql = `
     SELECT s.id, s.code, s.barcode, s.name, s.emoji, s.image, s.unit, s.category, s.group_path,
-      s.brand, s.stock, s.min_stock, s.cost, s.price, s.price_pre_tax, s.vat, s.warehouse_id,
+      s.brand, s.stock, s.min_stock, s.cost, s.price, s.price_pre_tax, s.vat, s.price_includes_vat, s.warehouse_id,
       ${useBook ? 'pbi.price AS book_price,' : 'NULL AS book_price,'}
       (SELECT m.unit_cost FROM stock_movements m
         WHERE m.inventory_item_id=s.id AND m.item_type='sku'
@@ -305,6 +300,7 @@ export function priceBook(branch_id = 'br1', filters = {}) {
   sql += ` ORDER BY s.name`;
   return db.prepare(sql).all(...params).map(r => withProductImage({
     ...r,
+    sale_price: salePrice(r.price, r.vat, r.price_includes_vat !== 0),
     low: (r.stock || 0) <= (r.min_stock || 0),
   }));
 }
@@ -360,7 +356,7 @@ export function setPriceBookEntry(body = {}, branch_id = 'br1', user = {}) {
   const bookId = String(body.book_id || '').trim();
   const skuId = String(body.sku_id || '').trim();
   if (!bookId || !skuId) throw new Error('Thiếu book_id/sku_id');
-  const sku = db.prepare(`SELECT id, name, vat FROM skus WHERE id=? AND branch_id=?`).get(skuId, branch_id);
+  const sku = db.prepare(`SELECT id, name, vat, price_includes_vat FROM skus WHERE id=? AND branch_id=?`).get(skuId, branch_id);
   if (!sku) throw new Error('Không tìm thấy sản phẩm');
   const raw = body.price;
   const clear = raw === null || raw === undefined || raw === '';
@@ -369,7 +365,7 @@ export function setPriceBookEntry(body = {}, branch_id = 'br1', user = {}) {
   if (bookId === 'default') {
     if (clear) throw new Error('Bảng giá chung phải có giá bán');
     const vat = sku.vat == null ? null : Number(sku.vat);
-    const preTax = (!vat || vat <= 0) ? price : Math.round(price / (1 + vat / 100));
+    const preTax = sku.price_includes_vat !== 0 && vat > 0 ? Math.round(price / (1 + vat / 100)) : price;
     db.prepare(`UPDATE skus SET price=?, price_pre_tax=?, price_updated_at=? WHERE id=?`)
       .run(price, preTax, now(), skuId);
     audit('pricebook.set_price', { sku_id: skuId, name: sku.name, price, book: 'default' }, branch_id, user?.username || user?.name);
@@ -478,13 +474,17 @@ export function createSku(body, branch_id = 'br1') {
   if (!body.name) throw new Error('Thiếu tên SKU');
   const id = body.id || uid('s_');
   const warehouse_id = body.warehouse_id || fallbackWarehouse(branch_id, 'sku');
+  const price = parseInt(body.price) || 0;
+  const priceIncludesVat = [false, 0, '0'].includes(body.price_includes_vat) ? 0 : 1;
+  const vat = body.vat == null ? null : Math.min(100, Math.max(0, Number(body.vat) || 0));
+  const pricePreTax = priceIncludesVat && vat > 0 ? Math.round(price / (1 + vat / 100)) : price;
   db.prepare(`INSERT INTO skus
-    (id,branch_id,barcode,name,emoji,image,price,cost,stock,min_stock,unit,warehouse_id,category,supplier,source_url,track_lot,expiry_required,active,units_json)
-    VALUES (?,?,?,?,?,?,?,?,0,?,?,?,?,?,?,?,?,1,?)`).run(
+    (id,branch_id,barcode,name,emoji,image,price,price_includes_vat,price_pre_tax,vat,cost,stock,min_stock,unit,warehouse_id,category,supplier,source_url,track_lot,expiry_required,active,units_json)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
     id, branch_id, body.barcode || null, body.name, body.emoji || '📦', body.image || null,
-    parseInt(body.price) || 0, parseInt(body.cost) || 0, parseFloat(body.min_stock) || 0,
+    price, priceIncludesVat, pricePreTax, vat, parseInt(body.cost) || 0, 0, parseFloat(body.min_stock) || 0,
     body.unit || 'cái', warehouse_id, body.category || null, body.supplier || null, body.source_url || null,
-    asBool(body.track_lot), asBool(body.expiry_required), JSON.stringify(normalizeUnits(body.units)));
+    asBool(body.track_lot), asBool(body.expiry_required), 1, JSON.stringify(normalizeUnits(body.units)));
 
   const opening = parseFloat(body.opening_stock || body.stock || 0);
   if (opening > 0) receiveSku(id, opening, branch_id, {
@@ -513,15 +513,22 @@ export function deleteSku(id, branch_id = 'br1') {
 export function updateSku(id, body, branch_id = 'br1') {
   const cur = db.prepare(`SELECT * FROM skus WHERE id=? AND branch_id=?`).get(id, branch_id);
   if (!cur) throw new Error('SKU không tồn tại');
+  const price = intOr(body.price, cur.price);
+  const priceIncludesVat = boolOr(body.price_includes_vat, cur.price_includes_vat);
+  const vat = body.vat !== undefined ? (body.vat == null ? null : Math.min(100, Math.max(0, Number(body.vat) || 0))) : cur.vat;
+  const pricePreTax = priceIncludesVat && vat > 0 ? Math.round(price / (1 + vat / 100)) : price;
   db.prepare(`UPDATE skus SET
-      barcode=?, name=?, emoji=?, image=?, price=?, cost=?, min_stock=?, unit=?, warehouse_id=?,
+      barcode=?, name=?, emoji=?, image=?, price=?, price_includes_vat=?, price_pre_tax=?, vat=?, cost=?, min_stock=?, unit=?, warehouse_id=?,
       category=?, supplier=?, source_url=?, track_lot=?, expiry_required=?, active=?, units_json=?
     WHERE id=? AND branch_id=?`).run(
     nullableText(body.barcode, cur.barcode),
     textOr(body.name, cur.name),
     textOr(body.emoji, cur.emoji || '📦'),
     nullableText(body.image, cur.image),
-    intOr(body.price, cur.price),
+    price,
+    priceIncludesVat,
+    pricePreTax,
+    vat,
     intOr(body.cost, cur.cost || 0),
     numberOr(body.min_stock, cur.min_stock),
     textOr(body.unit, cur.unit || 'cái'),
@@ -954,8 +961,7 @@ export function listStocktakes(branch_id = 'br1', filters = {}) {
   if (filters.warehouse_id) { where += ' AND s.warehouse_id=?'; params.push(String(filters.warehouse_id)); }
   if (filters.from) { where += ' AND s.created_at>=?'; params.push(String(filters.from)); }
   if (filters.to) { where += ' AND s.created_at<=?'; params.push(String(filters.to)); }
-  const q = String(filters.q || '').trim();
-  if (q) { where += ' AND (s.code LIKE ? OR s.name LIKE ?)'; params.push(`%${q}%`, `%${q}%`); }
+  const search = searchTokens(filters.q);
   const rows = db.prepare(`
     SELECT s.*, w.name AS warehouse_name,
       (SELECT COUNT(*) FROM stocktake_lines l WHERE l.session_id=s.id) AS lines,
@@ -966,8 +972,8 @@ export function listStocktakes(branch_id = 'br1', filters = {}) {
     FROM stocktake_sessions s
     LEFT JOIN warehouses w ON w.id=s.warehouse_id
     WHERE ${where}
-    ORDER BY s.created_at DESC LIMIT ?`).all(...params, limit);
-  return rows;
+    ORDER BY s.created_at DESC LIMIT 5000`).all(...params);
+  return rows.filter(row => matchesSearch([row.code, row.name, row.warehouse_name], search)).slice(0, limit);
 }
 
 export function listLots(branch_id = 'br1', filters = {}) {

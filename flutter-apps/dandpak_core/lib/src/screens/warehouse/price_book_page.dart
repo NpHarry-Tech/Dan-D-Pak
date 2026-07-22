@@ -78,9 +78,8 @@ class _PriceBookPageState extends State<PriceBookPage> {
     final q = _search.trim().toLowerCase();
     return _rows.where((s) {
       if (q.isNotEmpty) {
-        final hay =
-            '${kvs(s['code'])} ${kvs(s['name'])} ${kvs(s['barcode'])}'
-                .toLowerCase();
+        final hay = '${kvs(s['code'])} ${kvs(s['name'])} ${kvs(s['barcode'])}'
+            .toLowerCase();
         if (!hay.contains(q)) return false;
       }
       if (_catFilter.isNotEmpty && kvs(s['category']) != _catFilter) {
@@ -146,85 +145,109 @@ class _PriceBookPageState extends State<PriceBookPage> {
         ? (s['book_price'] == null ? '' : kvNumText(kvn(s['book_price'])))
         : kvNumText(kvn(s['price']));
     final ctrl = TextEditingController(text: initial);
+    final vatCtrl = TextEditingController(
+        text: s['vat'] == null ? '0' : kvNumText(kvn(s['vat'])));
+    var priceIncludesVat = s['price_includes_vat'] != 0;
     final saved = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: DanColors.surface,
-        title: Text(kvs(s['name']),
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(fontWeight: FontWeight.w900, fontSize: 16)),
-        content: SizedBox(
-          width: 340,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(t('Giá vốn'),
-                      style: TextStyle(fontSize: 12.5, color: DanColors.muted)),
-                  Text(Fmt.money(kvn(s['cost'])),
-                      style: TextStyle(fontWeight: FontWeight.w700)),
-                ],
-              ),
-              SizedBox(height: 4),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(t('Giá nhập cuối'),
-                      style: TextStyle(fontSize: 12.5, color: DanColors.muted)),
-                  Text(
-                      kvn(s['last_in_cost']) > 0
-                          ? Fmt.money(kvn(s['last_in_cost']))
-                          : '—',
-                      style: TextStyle(fontWeight: FontWeight.w700)),
-                ],
-              ),
-              if (isBook) ...[
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          backgroundColor: DanColors.surface,
+          title: Text(kvs(s['name']),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(fontWeight: FontWeight.w900, fontSize: 16)),
+          content: SizedBox(
+            width: 340,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(t('Giá vốn'),
+                        style:
+                            TextStyle(fontSize: 12.5, color: DanColors.muted)),
+                    Text(Fmt.money(kvn(s['cost'])),
+                        style: TextStyle(fontWeight: FontWeight.w700)),
+                  ],
+                ),
                 SizedBox(height: 4),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text(t('Giá chung'),
+                    Text(t('Giá nhập cuối'),
                         style:
                             TextStyle(fontSize: 12.5, color: DanColors.muted)),
-                    Text(Fmt.money(kvn(s['price'])),
+                    Text(
+                        kvn(s['last_in_cost']) > 0
+                            ? Fmt.money(kvn(s['last_in_cost']))
+                            : '—',
                         style: TextStyle(fontWeight: FontWeight.w700)),
                   ],
                 ),
+                if (isBook) ...[
+                  SizedBox(height: 4),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(t('Giá chung'),
+                          style: TextStyle(
+                              fontSize: 12.5, color: DanColors.muted)),
+                      Text(Fmt.money(kvn(s['sale_price'] ?? s['price'])),
+                          style: TextStyle(fontWeight: FontWeight.w700)),
+                    ],
+                  ),
+                ],
+                SizedBox(height: 14),
+                TextField(
+                  controller: ctrl,
+                  autofocus: true,
+                  keyboardType: TextInputType.number,
+                  decoration: InputDecoration(
+                      labelText: isBook
+                          ? '${t('Giá trong')} "$_bookName" (${priceIncludesVat ? t('đã gồm VAT') : t('chưa gồm VAT')})'
+                          : t('Đơn giá cấu hình'),
+                      helperText:
+                          isBook ? t('Để trống = dùng giá chung') : null,
+                      isDense: true),
+                  onSubmitted: (_) => Navigator.of(ctx).pop(true),
+                ),
+                if (!isBook) ...[
+                  SizedBox(height: 10),
+                  TextField(
+                    controller: vatCtrl,
+                    keyboardType: TextInputType.number,
+                    decoration:
+                        InputDecoration(labelText: 'VAT (%)', isDense: true),
+                  ),
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: Text(t('Đơn giá đã gồm VAT')),
+                    value: priceIncludesVat,
+                    onChanged: (value) =>
+                        setDialogState(() => priceIncludesVat = value),
+                  ),
+                ],
               ],
-              SizedBox(height: 14),
-              TextField(
-                controller: ctrl,
-                autofocus: true,
-                keyboardType: TextInputType.number,
-                decoration: InputDecoration(
-                    labelText: isBook
-                        ? '${t('Giá trong')} "$_bookName"'
-                        : t('Giá bán (sau thuế)'),
-                    helperText: isBook
-                        ? t('Để trống = dùng giá chung')
-                        : null,
-                    isDense: true),
-                onSubmitted: (_) => Navigator.of(ctx).pop(true),
-              ),
-            ],
+            ),
           ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.of(ctx).pop(false),
+                child: Text(t('Hủy'))),
+            FilledButton(
+                onPressed: () => Navigator.of(ctx).pop(true),
+                child: Text(t('Lưu giá'))),
+          ],
         ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.of(ctx).pop(false),
-              child: Text(t('Hủy'))),
-          FilledButton(
-              onPressed: () => Navigator.of(ctx).pop(true),
-              child: Text(t('Lưu giá'))),
-        ],
       ),
     );
     final raw = ctrl.text.trim();
     final price = kvParseNum(raw);
+    final vat = kvParseNum(vatCtrl.text.trim()) ?? 0;
     ctrl.dispose();
+    vatCtrl.dispose();
     if (saved != true) return;
 
     try {
@@ -239,20 +262,21 @@ class _PriceBookPageState extends State<PriceBookPage> {
         setState(() => s['book_price'] = raw.isEmpty ? null : price);
       } else {
         if (price == null || price < 0) return;
-        // price = giá SAU thuế (giá POS đang bán). price_pre_tax tính ngược
-        // theo VAT của SKU; VAT null (KCT) thì trước thuế = sau thuế.
-        final vat = s['vat'] == null ? null : kvn(s['vat']);
-        final preTax = (vat == null || vat <= 0)
-            ? price
-            : (price / (1 + vat / 100)).round();
         await context.read<ApiService>().updateSku(kvs(s['id']), {
           'price': price,
-          'price_pre_tax': preTax,
+          'vat': vat,
+          'price_includes_vat': priceIncludesVat,
         });
         if (!mounted) return;
         setState(() {
           s['price'] = price;
-          s['price_pre_tax'] = preTax;
+          s['vat'] = vat;
+          s['price_includes_vat'] = priceIncludesVat ? 1 : 0;
+          s['price_pre_tax'] = priceIncludesVat && vat > 0
+              ? (price / (1 + vat / 100)).round()
+              : price;
+          s['sale_price'] =
+              priceIncludesVat ? price : (price * (1 + vat / 100)).round();
         });
       }
       if (!mounted) return;
@@ -271,6 +295,14 @@ class _PriceBookPageState extends State<PriceBookPage> {
     if (vat == null) return 'KCT';
     final v = kvn(vat);
     return v == v.round() ? '${v.round()}%' : '$v%';
+  }
+
+  num _salePrice(Map<String, dynamic> sku, dynamic configuredPrice) {
+    final price = kvn(configuredPrice);
+    final vat = kvn(sku['vat']);
+    return sku['price_includes_vat'] != 0
+        ? price
+        : (price * (1 + vat / 100)).round();
   }
 
   @override
@@ -411,9 +443,9 @@ class _PriceBookPageState extends State<PriceBookPage> {
             SizedBox(
               width: 104,
               child: _bookId == 'default'
-                  ? money(kvn(s['price']), bold: true)
+                  ? money(kvn(s['sale_price'] ?? s['price']), bold: true)
                   : (s['book_price'] != null
-                      ? Text(Fmt.money(kvn(s['book_price'])),
+                      ? Text(Fmt.money(_salePrice(s, s['book_price'])),
                           textAlign: TextAlign.right,
                           style: TextStyle(
                               fontSize: 12.5,
@@ -431,8 +463,8 @@ class _PriceBookPageState extends State<PriceBookPage> {
               child: IconButton(
                 tooltip: t('Sửa giá'),
                 onPressed: () => _editPrice(s),
-                icon: Icon(Icons.edit_outlined,
-                    size: 17, color: DanColors.muted),
+                icon:
+                    Icon(Icons.edit_outlined, size: 17, color: DanColors.muted),
               ),
             ),
           ],

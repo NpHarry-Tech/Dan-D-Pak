@@ -36,6 +36,12 @@ class BlackBox {
   static const int _maxLine = 300;
   static const int _maxFileBytes = 2 * 1024 * 1024; // ~2MB thì xoay file
   static const String _cleanMark = '## CLEAN-EXIT';
+  static bool _previousRunCrashed = false;
+
+  /// True only for the current engine's immediately preceding run. The main
+  /// app uses this once to suppress risky automatic secondary-window startup,
+  /// breaking a native crash/relaunch loop while leaving manual open enabled.
+  static bool get previousRunCrashed => _previousRunCrashed;
 
   static Directory get _dir =>
       Directory('${Directory.systemTemp.path}/dandpak_blackbox');
@@ -46,6 +52,7 @@ class BlackBox {
   /// về server sau vài giây (đợi app nối server xong).
   static void init({required String role, ApiService? api}) {
     _role = role;
+    _previousRunCrashed = false;
     try {
       _dir.createSync(recursive: true);
       final cur = File(_currentPath);
@@ -54,6 +61,7 @@ class BlackBox {
       if (cur.existsSync()) {
         final text = _safeReadTail(cur, 16000);
         if (text.trim().isNotEmpty && !text.contains(_cleanMark)) {
+          _previousRunCrashed = true;
           // Lần chạy trước KHÔNG thoát sạch → nghi crash. Giữ hồ sơ lại.
           crashAt = cur.statSync().modified;
           final ts = DateTime.now()

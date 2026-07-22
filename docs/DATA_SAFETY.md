@@ -21,7 +21,9 @@ Orders, order items, kitchen tickets, payments, payment lines, refunds, voids, i
 - `.env`
 - `.env.*`
 - `backups/`
-- `server/permanent-storage/**` data files
+- `server/permanent-storage/**` legacy/default durable archives
+- `server/uploads/**` legacy/default uploads and DMS files
+- `storage/**` durable archives, documents, uploads, and enterprise snapshots
 - database dumps, exported reports, invoice exports, customer exports, payment reconciliation files
 
 ## Rules
@@ -40,3 +42,7 @@ Orders, order items, kitchen tickets, payments, payment lines, refunds, voids, i
 The source tree keeps code in `server/`. Local runtime database files live under
 `runtime/server-data/` and are ignored. VPS Docker stores the same single live DB
 at `/app/server-data/store.db`.
+
+Durable non-database files resolve from `STORAGE_PATH`: archives live under
+`<STORAGE_PATH>/permanent-storage`, DMS/uploads under `<STORAGE_PATH>/uploads`,
+and enterprise snapshots under `<STORAGE_PATH>/enterprise-storage`.

@@ -6,6 +6,7 @@ import * as Branches from '../../services/branches.js';
 import * as AppSettings from '../../services/settings.js';
 import * as Einvoices from '../../services/einvoice.js';
 import * as Misa from '../../services/misa.js';
+import * as Haravan from '../../services/haravanConnector.js';
 import * as Pay from '../../services/payments.js';
 import * as System from '../../services/system.js';
 import * as Print from '../../services/printing.js';
@@ -155,6 +156,20 @@ api.post('/settings/integrations', guardAny('settings.integrations'), wrap((req)
         stackTrace: e.stack,
       });
     }
+  }
+  // Saving a valid Haravan connection is the trigger: return Settings quickly,
+  // then subscribe webhooks and pull the initial snapshot on the server.  The
+  // worker continues delta recovery afterwards, so a weak POS never performs
+  // the heavy synchronization itself and no manual "push" is required.
+  if (saved?.channels?.haravan?.enabled) {
+    setTimeout(() => Haravan.syncAllHaravan({ delta: true, subscribe: true }).catch(e => {
+      logSystem({
+        level: 'error', source: 'haravan', eventType: 'sync_error',
+        title: 'Không thể tự đồng bộ Haravan sau khi lưu kết nối', message: e.message,
+        branchId: branch_id, username: approvedBy.username, action: 'haravan_sync_all',
+        exceptionType: e.name, stackTrace: e.stack,
+      });
+    }), 0).unref?.();
   }
   return saved;
 }));

@@ -6,6 +6,7 @@ import { emit } from '../realtime.js';
 import { archiveCustomer } from './archive.js';
 import { getLoyaltyConfig } from './settings.js';
 import { lookupTaxCode as lookupTaxCodeFromTaxModule } from './tax.js';
+import { matchesSearch, searchTokens } from '../core/search.js';
 
 const PERKS = ['none', 'pct', 'amount', 'free'];
 const PARTNER_TYPES = ['customer', 'supplier', 'both', 'staff'];
@@ -36,15 +37,13 @@ function pickPartnerType(v) { return PARTNER_TYPES.includes(v) ? v : 'customer';
 
 
 function matchesTerm(c, term) {
-  if (!term) return true;
-  return [c.code, c.name, c.phone, c.tax_code, c.company, c.email, c.contact_person, c.address, c.preferences, c.allergies, c.profile_summary]
-    .some(v => String(v || '').toLowerCase().includes(term));
+  return matchesSearch([c.code, c.name, c.phone, c.tax_code, c.company, c.email, c.contact_person, c.address, c.preferences, c.allergies, c.profile_summary], term);
 }
 
 // Sales-side customer picker (POS/retail/invoice). Suppliers never show here.
 export function listCustomers(branch_id = 'br1', q = '') {
   const rows = db.prepare(`SELECT * FROM customers WHERE branch_id=? AND active!=0 ORDER BY updated_at DESC, created_at DESC`).all(branch_id);
-  const term = String(q || '').trim().toLowerCase();
+  const term = searchTokens(q);
   // Khách hàng + nhân viên (CBNV) đều chọn được ở POS để áp ưu đãi mặc định. NCC thì không.
   const out = rows.map(normalizeRow).filter(c => c.is_customer || c.is_staff);
   return out.filter(c => matchesTerm(c, term)).slice(0, 200);
@@ -53,7 +52,7 @@ export function listCustomers(branch_id = 'br1', q = '') {
 // Full contacts directory (Liên hệ): customers + suppliers, filterable by type.
 export function listPartners(branch_id = 'br1', { type = 'all', q = '', includeInactive = false } = {}) {
   const rows = db.prepare(`SELECT * FROM customers WHERE branch_id=? ORDER BY updated_at DESC, created_at DESC`).all(branch_id);
-  const term = String(q || '').trim().toLowerCase();
+  const term = searchTokens(q);
   let out = rows.map(normalizeRow);
   if (!includeInactive) out = out.filter(c => c.active !== 0);
   if (type === 'customer') out = out.filter(c => c.is_customer);

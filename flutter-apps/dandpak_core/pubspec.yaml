@@ -27,8 +27,6 @@ dependencies:
   # Quét mã vạch/QR bằng camera (ML Kit/AVFoundation) — không có bản Windows,
   # desktop tự bỏ qua.
   mobile_scanner: ^6.0.10
-  # Cửa sổ phụ màn khách trên desktop (Windows/Linux/macOS).
-  desktop_multi_window: ^0.2.0
   # Win32 (FFI) cho kiosk màn hình phụ desktop.
   ffi: ^2.1.0
   video_player: ^2.11.1

@@ -309,7 +309,7 @@ SQLite (`node:sqlite`) tại `runtime/server-data/store.db` khi chạy local, ho
 
 Đặc điểm quan trọng:
 
-- **Nhật ký hoạt động (`audit_log`)** trong SQLite chỉ giữ **7 ngày gần nhất** (`purgeOldAudit`, dọn khi khởi động + mỗi ngày). Bản đầy đủ được ghi song song xuống `permanent-storage/audit/` dạng NDJSON.
+- **Nhật ký hoạt động (`audit_log`)** trong SQLite chỉ giữ **7 ngày gần nhất** (`purgeOldAudit`, dọn khi khởi động + mỗi ngày). Bản đầy đủ được ghi song song xuống `<STORAGE_PATH>/permanent-storage/audit/` dạng NDJSON.
 - **`permanent-storage/`** là **bộ nhớ vĩnh viễn dạng file**: orders, payments, customers, staff, cash-drawer, reports được snapshot theo `by-id/` và `by-date/`. Đây là dữ liệu được bảo vệ, **gitignored**.
 - Database được coi là **bộ nhớ vĩnh viễn của cửa hàng** — lưu lịch sử thay đổi quan trọng, không chỉ trạng thái mới nhất. Xem [docs/COMPANY_DATABASE_MEMORY.md](docs/COMPANY_DATABASE_MEMORY.md) và [docs/DATABASE_SCHEMA.md](docs/DATABASE_SCHEMA.md).
 
@@ -396,7 +396,7 @@ Hợp đồng chi tiết: [docs/API_CONTRACT.md](docs/API_CONTRACT.md).
 | `DATABASE_URL` | — | Bắt buộc khi `postgres` |
 | `REALTIME_PROVIDER` | `socketio` | `socketio` \| `websocket` |
 | `STORAGE_PROVIDER` | `local` | `local` \| `s3` |
-| `STORAGE_PATH` | `storage` | Thư mục lưu trữ local |
+| `STORAGE_PATH` | `server` | Thư mục lưu trữ local; deployment nên đặt volume bền riêng (ví dụ `/app/storage`) |
 | `LOG_LEVEL` | `info` | Mức log |
 | `BACKUP_RETENTION_DAYS` | `14` | Số ngày giữ backup |
 | `DISABLE_DEMO_SEED` | `false` | Tắt nạp dữ liệu demo lần đầu |

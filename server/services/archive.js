@@ -3,12 +3,11 @@
 // copies into separate folders so records can still be inspected/exported fast.
 import { closeSync, existsSync, fsyncSync, mkdirSync, openSync, readdirSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync, writeSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import zlib from 'node:zlib';
 import { logger } from '../core/logger.js';
+import { storagePath } from '../config/env.js';
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-export const PERMANENT_ROOT = join(__dirname, '..', 'permanent-storage');
+export const PERMANENT_ROOT = storagePath('permanent-storage');
 
 const ENTITY_KINDS = new Set(['customers', 'orders', 'invoices', 'payments', 'staff', 'cash-drawer']);
 const FOLDERS = ['customers', 'orders', 'invoices', 'payments', 'reports', 'audit', 'staff', 'cash-drawer'];

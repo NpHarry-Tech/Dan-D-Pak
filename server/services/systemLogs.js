@@ -10,6 +10,7 @@
 //    khÃ´ng phÃ¬nh vÃ´ háº¡n trÃªn mÃ¡y cá»­a hÃ ng.
 import { db, uid, now } from '../db.js';
 import { logger } from '../core/logger.js';
+import { matchesSearch, searchTokens } from '../core/search.js';
 
 export const LEVELS = ['debug', 'info', 'warn', 'error', 'fatal'];
 const LEVEL_SET = new Set(LEVELS);
@@ -137,13 +138,7 @@ export function listSystemLogs(branch_id, opts = {}) {
     where.push(`event_type IN (${eventTypes.map(() => '?').join(',')})`);
     params.push(...eventTypes);
   }
-  const q = `${opts.q || ''}`.trim();
-  if (q) {
-    where.push(`(title LIKE ? OR message LIKE ? OR endpoint LIKE ? OR screen LIKE ?
-      OR exception_type LIKE ? OR username LIKE ? OR device_name LIKE ? OR correlation_id LIKE ?)`);
-    const like = `%${q}%`;
-    params.push(like, like, like, like, like, like, like, like);
-  }
+  const search = searchTokens(opts.q);
   if (opts.from) { where.push('timestamp >= ?'); params.push(`${opts.from}`); }
   if (opts.to) { where.push('timestamp < ?'); params.push(`${opts.to}`); }
   if (opts.before) { where.push('timestamp < ?'); params.push(`${opts.before}`); }
@@ -152,8 +147,11 @@ export function listSystemLogs(branch_id, opts = {}) {
   const limit = Math.min(Math.max(parseInt(opts.limit) || 50, 1), 200);
   return db.prepare(
     `SELECT * FROM system_logs WHERE ${where.join(' AND ')}
-     ORDER BY timestamp DESC LIMIT ?`
-  ).all(...params, limit);
+     ORDER BY timestamp DESC LIMIT 5000`
+  ).all(...params)
+    .filter(row => matchesSearch([row.title, row.message, row.endpoint, row.screen,
+      row.exception_type, row.username, row.device_name, row.correlation_id], search))
+    .slice(0, limit);
 }
 
 export function resolveSystemLog(id, username) {

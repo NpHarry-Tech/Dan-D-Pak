@@ -6,12 +6,12 @@ import { db, uid, audit, now } from '../../db.js';
 import { errorPayload } from '../../core/errors.js';
 import fs from 'node:fs';
 import nodePath from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
 import { rateLimit } from '../../core/rateLimit.js';
+import { storagePath } from '../../config/env.js';
+import { matchesSearch, searchTokens } from '../../core/search.js';
 
-const __docDir = nodePath.dirname(fileURLToPath(import.meta.url));
-const UPLOADS_DIR = nodePath.join(__docDir, '..', '..', 'uploads', 'documents');
+const UPLOADS_DIR = storagePath('uploads', 'documents');
 
 const DMS_ALLOWED_MIME = new Set([
   'image/jpeg','image/png','image/webp','image/gif',
@@ -129,14 +129,12 @@ api.get('/documents/files', wrap(async (req) => {
   if (source && source !== 'all')     { sql += ` AND source=?`;   params.push(source); }
   if (from)  { sql += ` AND created_at>=?`; params.push(from); }
   if (to)    { sql += ` AND created_at<=?`; params.push(to + 'T23:59:59'); }
-  if (q)     { sql += ` AND (name LIKE ? OR original_name LIKE ? OR description LIKE ?)`; const like = `%${q}%`; params.push(like, like, like); }
-
-  sql += ` ORDER BY created_at DESC LIMIT ? OFFSET ?`;
-  params.push(parseInt(limit), parseInt(offset));
-
-  const rows = db.prepare(sql).all(...params);
-  const countSql = sql.replace(/^SELECT \* /, 'SELECT COUNT(*) n ').replace(/ ORDER BY[\s\S]*$/, '');
-  const total = db.prepare(countSql).get(...params.slice(0, -2)).n;
+  sql += ` ORDER BY created_at DESC LIMIT 10000`;
+  const matched = db.prepare(sql).all(...params)
+    .filter(row => matchesSearch([row.name, row.original_name, row.description, row.tags_json], searchTokens(q)));
+  const start = Math.max(0, parseInt(offset) || 0);
+  const rows = matched.slice(start, start + Math.min(Math.max(parseInt(limit) || 100, 1), 500));
+  const total = matched.length;
 
   return { files: rows.map(r => ({ ...r, tags: JSON.parse(r.tags_json || '[]') })), total };
 }));

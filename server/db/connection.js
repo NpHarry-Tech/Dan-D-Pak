@@ -1,7 +1,7 @@
 import { DatabaseSync } from 'node:sqlite';
 import { fileURLToPath } from 'node:url';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
-import { mkdirSync } from 'node:fs';
+import { existsSync, mkdirSync, statSync } from 'node:fs';
 import { env } from '../config/env.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -19,6 +19,7 @@ function resolveDbPath() {
 }
 
 export const DB_PATH = resolveDbPath();
+export const DB_WAS_EMPTY = !existsSync(DB_PATH) || statSync(DB_PATH).size === 0;
 mkdirSync(dirname(DB_PATH), { recursive: true });
 
 export const db = new DatabaseSync(DB_PATH);

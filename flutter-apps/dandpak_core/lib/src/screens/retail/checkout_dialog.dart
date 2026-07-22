@@ -26,6 +26,7 @@ class CheckoutDialog extends StatefulWidget {
   final num customerDiscount;
   final num manualDiscount;
   final num total;
+  final num vatAmount;
   final String? orderId;
   final int? itemCount;
   final String channelLabel;
@@ -44,6 +45,7 @@ class CheckoutDialog extends StatefulWidget {
     required this.customerDiscount,
     required this.manualDiscount,
     required this.total,
+    this.vatAmount = 0,
     this.orderId,
     this.itemCount,
     this.channelLabel = 'Checkout',
@@ -56,6 +58,8 @@ class CheckoutDialog extends StatefulWidget {
 }
 
 class _CheckoutDialogState extends State<CheckoutDialog> {
+  final String _clientRequestId =
+      'retail_${DateTime.now().microsecondsSinceEpoch}';
   final _amountCtrl = TextEditingController();
   final _adjustmentCtrl = TextEditingController();
   final _refCtrl = TextEditingController();
@@ -199,6 +203,9 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
   num get _adjustment => retailN(_adjustmentCtrl.text.trim())
       .clamp(0, (widget.total + widget.manualDiscount).toDouble());
   num get _payable => (widget.total - _adjustment).clamp(0, double.infinity);
+  num get _vatPayable => widget.total > 0
+      ? (widget.vatAmount * _payable / widget.total).round()
+      : 0;
   num get _paid => _lines.fold<num>(0, (s, l) => s + l.amount);
   num get _remain => (_payable - _paid).clamp(0, double.infinity);
   num get _change => (_paid - _payable).clamp(0, double.infinity);
@@ -275,6 +282,8 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
       _display?.showPayment(
         method: t('Chuyển khoản QR'),
         total: amount,
+        subtotal: amount - _vatPayable,
+        tax: _vatPayable,
         qrImageUrl: data['imageUrl']?.toString() ?? '',
         qrData: data['qrString']?.toString() ?? data['qr']?.toString() ?? '',
       );
@@ -482,6 +491,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
       'customer_id': widget.customer?.id,
       'invoice_customer': invoiceCustomer,
       'manual_discount': _adjustment.round(),
+      'client_request_id': _clientRequestId,
       if (_manualPin != null && _manualPin!.isNotEmpty)
         'security_pin': _manualPin,
     };
@@ -507,8 +517,10 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
         final billNo = receipt['bill_no']?.toString() ??
             receipt['number']?.toString() ??
             '';
-        final printError = await widget.api
-            .forcePrintReceiptJob(orderId: orderId, billNo: billNo);
+        final printError = receipt['idempotent_replay'] == true
+            ? null
+            : await widget.api
+                .forcePrintReceiptJob(orderId: orderId, billNo: billNo);
         if (!mounted) return;
         final out = Map<String, dynamic>.from(receipt);
         if (printError != null && printError.isNotEmpty) {
@@ -754,6 +766,8 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
             _totalRow(t('Điều chỉnh hóa đơn'), '-${Fmt.money(_adjustment)}',
                 accent: DanColors.late),
           Divider(height: 18, color: DanColors.border),
+          if (_vatPayable > 0)
+            _totalRow(t('Trong đó VAT'), Fmt.money(_vatPayable)),
           _totalRow(t('Cần thanh toán'), Fmt.money(_payable), big: true),
         ],
       ),

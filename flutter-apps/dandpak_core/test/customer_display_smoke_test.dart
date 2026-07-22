@@ -13,13 +13,20 @@ void main() {
     final fullscreenSource =
         File('lib/src/services/second_window_fullscreen.dart')
             .readAsStringSync();
-
-    expect(windowSource, contains('fromWindowId(id).hide()'));
-    expect(windowSource, isNot(contains('fromWindowId(id).close()')));
+    final runnerSource =
+        File('../dandpak_desktop/windows/runner/main.cpp').readAsStringSync();
+    expect(windowSource, contains("const ['--customer-display']"));
+    expect(windowSource, contains('HttpServer.bind'));
+    expect(windowSource, isNot(contains('desktop_multi_window')));
     expect(windowSource, contains('_pushFailures >= 10'));
     expect(windowSource, isNot(contains('hideSecondWindowChrome')));
     expect(fullscreenSource, isNot(contains('SetWindowLongPtrW')));
     expect(fullscreenSource, isNot(contains('_swpFramechanged')));
+    expect(fullscreenSource, contains('GetCurrentProcessId'));
+    expect(fullscreenSource, contains('EnumWindows'));
+    expect(fullscreenSource, isNot(contains('FindWindowW')));
+    expect(windowSource, contains('Future<void>? _opening'));
+    expect(runnerSource, contains('customer_display ? L"Màn hình phụ"'));
   });
 
   Future<List<FlutterErrorDetails>> pump(

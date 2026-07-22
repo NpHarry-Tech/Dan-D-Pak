@@ -8,6 +8,7 @@ import { intval } from '../core/util.js';
 import { emit } from '../realtime.js';
 import { getCustomer } from './customers.js';
 import { createEntry as createDrawerEntry } from './cashDrawer.js';
+import { matchesSearch, searchTokens } from '../core/search.js';
 
 const SOURCES = ['drawer', 'direct'];
 const DEFAULT_CATEGORIES = ['Thuê mặt bằng', 'Điện nước', 'Lương nhân viên', 'Marketing', 'Nguyên vật liệu', 'Vận chuyển', 'Sửa chữa & bảo trì', 'Khác'];
@@ -72,8 +73,8 @@ export function listExpenses(branch_id = 'br1', filters = {}) {
   if (filters.from) { where += ' AND expense_date>=?'; params.push(new Date(String(filters.from) + 'T00:00:00').toISOString()); }
   if (filters.to) { where += ' AND expense_date<=?'; params.push(new Date(String(filters.to) + 'T23:59:59.999').toISOString()); }
   const rows = db.prepare(`SELECT * FROM expenses WHERE ${where} ORDER BY expense_date DESC, created_at DESC LIMIT 500`).all(...params);
-  const term = String(filters.q || '').trim().toLowerCase();
-  const out = rows.map(expenseOut).filter(e => !term || [e.code, e.payee_name, e.category_name, e.note].some(v => String(v || '').toLowerCase().includes(term)));
+  const term = searchTokens(filters.q);
+  const out = rows.map(expenseOut).filter(e => matchesSearch([e.code, e.payee_name, e.category_name, e.note], term));
   return { expenses: out, summary: summarize(out) };
 }
 

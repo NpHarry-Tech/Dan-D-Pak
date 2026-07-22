@@ -1,9 +1,8 @@
 ﻿import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
-import 'package:desktop_multi_window/desktop_multi_window.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
 import '../../providers/customer_display_controller.dart';
 import '../../services/ad_cache.dart';
@@ -13,47 +12,68 @@ import '../../ui/app_theme.dart';
 import 'customer_display_screen.dart';
 import '../../utils/translation.dart';
 
-/// Owns the secondary display window on the 2nd monitor. Opened via
-/// desktop_multi_window; the main window streams [CustomerDisplayData] to it
-/// over the plugin's own method channel (no server relay), and it renders the
-/// shared [CustomerDisplayScreen].
+/// Owns an isolated customer-display process. Process isolation keeps a GPU or
+/// Flutter renderer failure on weak POS hardware from terminating the POS.
 class SecondScreen {
   SecondScreen._();
   static final SecondScreen instance = SecondScreen._();
 
-  int? _windowId;
+  static const _port = 47831;
+  Process? _process;
+  bool _open = false;
   CustomerDisplayController? _ctrl;
   Timer? _pushTimer;
   String _lastAdsJson = '';
   int _pushFailures = 0;
+  Future<void>? _opening;
 
-  bool get isOpen => _windowId != null;
+  bool get isOpen => _open;
 
   Future<void> open(CustomerDisplayController ctrl) async {
-    final existingId = _windowId;
-    if (existingId != null) {
+    final inFlight = _opening;
+    if (inFlight != null) {
+      await inFlight;
+      return open(ctrl);
+    }
+    final operation = _openOnce(ctrl);
+    _opening = operation;
+    try {
+      await operation;
+    } finally {
+      if (identical(_opening, operation)) _opening = null;
+    }
+  }
+
+  Future<void> _openOnce(CustomerDisplayController ctrl) async {
+    if (await _ping()) {
+      _open = true;
       if (!identical(_ctrl, ctrl)) {
         _ctrl?.removeListener(_schedulePush);
         _ctrl = ctrl;
         ctrl.addListener(_schedulePush);
         _lastAdsJson = '';
       }
-      await WindowController.fromWindowId(existingId).show();
       _push();
       return;
     }
-    final window = await DesktopMultiWindow.createWindow(
-        jsonEncode({'route': 'customer_display'}));
-    _windowId = window.windowId;
-    await window.setFrame(Offset(160, 120) & Size(1024, 768));
-    await window.setTitle(t('Màn hình phụ'));
-    await window.show();
-    // Kiosk toàn màn hình CHỈ khi máy thật sự có màn hình thứ 2 — trên máy
-    // 1 màn hình thì giữ cửa sổ thường 1024x768 để xem trước, không để
-    // kiosk TOPMOST chiếm mất màn POS đang bán hàng.
-    if (hasSecondMonitor()) {
-      unawaited(makeSecondWindowFullscreen());
+    BlackBox.add('display', 'start isolated process');
+    _process = await Process.start(
+      Platform.resolvedExecutable,
+      const ['--customer-display'],
+      mode: ProcessStartMode.normal,
+    );
+    unawaited(_process!.stdout.drain<void>());
+    unawaited(_process!.stderr.drain<void>());
+    unawaited(_process!.exitCode.then((code) {
+      _open = false;
+      BlackBox.add('display', 'isolated process exited code=$code');
+    }));
+    for (var i = 0; i < 50 && !await _ping(); i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 100));
     }
+    if (!await _ping()) throw StateError('Màn hình phụ không khởi động được');
+    _open = true;
+    BlackBox.add('display', 'isolated process ready pid=${_process?.pid}');
     _ctrl = ctrl;
     _lastAdsJson = '';
     ctrl.addListener(_schedulePush);
@@ -68,12 +88,10 @@ class SecondScreen {
   }
 
   Future<void> _push() async {
-    final id = _windowId;
     final c = _ctrl;
-    if (id == null || c == null) return;
+    if (!_open || c == null) return;
     // Ad images are data-URLs that can be SEVERAL MB. Đẩy nguyên base64 qua
-    // method channel của desktop_multi_window làm SẬP app (message quá lớn cho
-    // IPC giữa 2 cửa sổ). Thay vào đó ghi ảnh ra file tạm MỘT LẦN và chỉ gửi
+    // Ghi ảnh ra file tạm MỘT LẦN và chỉ gửi
     // ĐƯỜNG DẪN (nhẹ) — cửa sổ phụ đọc thẳng từ đĩa (Image.file). Chỉ gửi lại
     // khối ads khi nó thật sự đổi.
     final adsJson = jsonEncode(c.ads.toJson());
@@ -83,18 +101,14 @@ class SecondScreen {
       payload['ads'] = await _materializeAds(c.ads);
     }
     try {
-      await DesktopMultiWindow.invokeMethod(
-        id,
-        'update',
-        jsonEncode(payload),
-      );
+      await _request('update', payload);
       if (includesAds) _lastAdsJson = adsJson;
       _pushFailures = 0;
     } catch (_) {
       // createWindow().show() returns before the child Flutter engine has
       // necessarily installed its method handler. That startup race is not a
       // closed window: keep the controller listener and retry briefly.
-      if (_windowId != id || _ctrl == null) return;
+      if (!_open || _ctrl == null) return;
       _pushFailures++;
       if (_pushFailures >= 10) {
         _detach();
@@ -115,29 +129,104 @@ class SecondScreen {
     _pushTimer?.cancel();
     _ctrl?.removeListener(_schedulePush);
     _ctrl = null;
-    if (forgetWindow) _windowId = null;
+    if (forgetWindow) _open = false;
     _lastAdsJson = '';
     _pushFailures = 0;
   }
 
   Future<void> close() async {
-    final id = _windowId;
     _detach(forgetWindow: false);
-    if (id != null) {
-      try {
-        // desktop_multi_window 0.2.1 destroys its Flutter engine from inside
-        // WM_DESTROY; toggling the setting then caused a native use-after-free.
-        // Keep the one secondary engine alive and only change its visibility.
-        await WindowController.fromWindowId(id).hide();
-      } catch (_) {
-        _windowId = null;
+    try {
+      await _request('close');
+    } catch (_) {
+      _process?.kill();
+    }
+    _process = null;
+    _open = false;
+  }
+
+  Future<bool> _ping() async {
+    try {
+      await _request('health');
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<void> _request(String path, [Object? body]) async {
+    final client = HttpClient()..connectionTimeout = const Duration(seconds: 1);
+    try {
+      final request =
+          await client.postUrl(Uri.parse('http://127.0.0.1:$_port/$path'));
+      if (body != null) {
+        request.headers.contentType = ContentType.json;
+        request.write(jsonEncode(body));
       }
+      final response =
+          await request.close().timeout(const Duration(seconds: 2));
+      await response.drain<void>();
+      if (response.statusCode != HttpStatus.ok) {
+        throw HttpException('Display bridge HTTP ${response.statusCode}');
+      }
+    } finally {
+      client.close(force: true);
     }
   }
 }
 
-/// Root widget of the secondary display window. Receives display data over the
-/// plugin channel and paints the shared customer display.
+final class _DisplayBridge {
+  CustomerDisplayData data = const CustomerDisplayData();
+  CustomerAdConfig ads = const CustomerAdConfig();
+  VoidCallback? onUpdate;
+}
+
+final _displayBridge = _DisplayBridge();
+
+Future<bool> startCustomerDisplayProcessBridge() async {
+  try {
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 47831);
+    unawaited(server.forEach((request) async {
+      try {
+        if (request.method != 'POST') {
+          request.response.statusCode = HttpStatus.methodNotAllowed;
+        } else if (request.uri.path == '/health') {
+          request.response.statusCode = HttpStatus.ok;
+        } else if (request.uri.path == '/update') {
+          if (request.contentLength > 2 * 1024 * 1024) {
+            request.response.statusCode = HttpStatus.requestEntityTooLarge;
+            await request.response.close();
+            return;
+          }
+          final raw = await utf8.decoder.bind(request).join();
+          final m = jsonDecode(raw) as Map<String, dynamic>;
+          _displayBridge.data = CustomerDisplayData.fromJson(
+              Map<String, dynamic>.from(m['data'] ?? {}));
+          if (m['ads'] is Map) {
+            _displayBridge.ads = CustomerAdConfig.fromJson(
+                Map<String, dynamic>.from(m['ads'] as Map));
+          }
+          _displayBridge.onUpdate?.call();
+        } else if (request.uri.path == '/close') {
+          request.response.statusCode = HttpStatus.ok;
+          await request.response.close();
+          Timer(const Duration(milliseconds: 50), () => exit(0));
+          return;
+        } else {
+          request.response.statusCode = HttpStatus.notFound;
+        }
+      } catch (_) {
+        request.response.statusCode = HttpStatus.badRequest;
+      }
+      await request.response.close();
+    }));
+    return true;
+  } on SocketException {
+    return false;
+  }
+}
+
+/// Root widget of the isolated secondary-display process.
 class CustomerDisplayWindowApp extends StatefulWidget {
   CustomerDisplayWindowApp({super.key});
 
@@ -153,27 +242,23 @@ class _CustomerDisplayWindowAppState extends State<CustomerDisplayWindowApp> {
   @override
   void initState() {
     super.initState();
-    DesktopMultiWindow.setMethodHandler(
-        (MethodCall call, int fromWindowId) async {
-      if (call.method == 'update') {
-        try {
-          final m =
-              jsonDecode(call.arguments as String) as Map<String, dynamic>;
-          if (!mounted) return;
-          setState(() {
-            _data = CustomerDisplayData.fromJson(
-                Map<String, dynamic>.from(m['data'] ?? {}));
-            // 'ads' is only sent when it changes — keep the previous config
-            // when the key is absent.
-            if (m['ads'] is Map) {
-              _ads = CustomerAdConfig.fromJson(
-                  Map<String, dynamic>.from(m['ads'] as Map));
-            }
-          });
-        } catch (_) {}
-      }
-      return null;
+    _displayBridge.onUpdate = () {
+      if (!mounted) return;
+      setState(() {
+        _data = _displayBridge.data;
+        _ads = _displayBridge.ads;
+      });
+    };
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      BlackBox.add('display', 'first-frame rendered');
+      if (hasSecondMonitor()) await makeSecondWindowFullscreen();
     });
+  }
+
+  @override
+  void dispose() {
+    _displayBridge.onUpdate = null;
+    super.dispose();
   }
 
   @override

@@ -12,6 +12,8 @@ set "ISCC="
 for %%P in (
   "%ProgramFiles(x86)%\Inno Setup 6\ISCC.exe"
   "%ProgramFiles%\Inno Setup 6\ISCC.exe"
+  "%LOCALAPPDATA%\Programs\Inno Setup 6\ISCC.exe"
+  "%LOCALAPPDATA%\Programs\antigravity\resources\app\node_modules\innosetup\bin\ISCC.exe"
   "D:\Antigravity\resources\app\node_modules\innosetup\bin\ISCC.exe"
 ) do (
   if exist "%%~P" set "ISCC=%%~P"
@@ -41,4 +43,4 @@ set "BUILD_DATE=%BUILD_VERSION:.=-%"
 if errorlevel 1 exit /b 1
 
 echo.
-echo [installer] XONG: %CD%\..\..\dan-d-pak-pos-setup-%BUILD_DATE%.exe
+echo [installer] XONG: %CD%\..\..\artifacts\releases\dan-d-pak-pos-setup-%BUILD_DATE%.exe

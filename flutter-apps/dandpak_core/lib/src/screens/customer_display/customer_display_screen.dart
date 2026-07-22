@@ -371,6 +371,13 @@ class _CustomerDisplayScreenState extends State<CustomerDisplayScreen> {
                             fontSize: 26,
                             fontWeight: FontWeight.w900,
                             color: DanColors.brand)),
+                    if (d.tax > 0) ...[
+                      SizedBox(height: 6),
+                      Text(
+                          '${t('Tiền hàng')}: ${_money(d.subtotal)}  ·  VAT: ${_money(d.tax)}',
+                          style:
+                              TextStyle(fontSize: 14, color: DanColors.muted)),
+                    ],
                     SizedBox(height: 8),
                     Text(t('Vui lòng kiểm tra đơn và thanh toán'),
                         style: TextStyle(fontSize: 15, color: DanColors.muted)),
@@ -529,7 +536,7 @@ class _CustomerDisplayScreenState extends State<CustomerDisplayScreen> {
       child: Column(
         children: [
           _totalRow(t('Thành tiền'), _money(d.subtotal)),
-          _totalRow('VAT', d.tax > 0 ? _money(d.tax) : t('0đ')),
+          _totalRow(t('Trong đó VAT'), d.tax > 0 ? _money(d.tax) : t('0đ')),
           if (d.discount > 0)
             _totalRow(d.discountLabel, '- ${_money(d.discount)}'),
           SizedBox(height: 8),

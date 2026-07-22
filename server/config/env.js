@@ -1,3 +1,8 @@
+import { isAbsolute, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const PROJECT_ROOT = fileURLToPath(new URL('../../', import.meta.url));
+
 const DEFAULTS = {
   PORT: 3000,
   NODE_ENV: 'development',
@@ -6,7 +11,7 @@ const DEFAULTS = {
   REALTIME_PROVIDER: 'socketio',
   STORAGE_PROVIDER: 'local',
   SQLITE_PATH: 'runtime/server-data/store.db',
-  STORAGE_PATH: 'storage',
+  STORAGE_PATH: 'server',
   CORS_ORIGIN: '',
   LOG_LEVEL: 'info',
   BACKUP_RETENTION_DAYS: 14,
@@ -92,6 +97,11 @@ function validateEnv(env) {
 }
 
 export const env = loadEnv();
+
+export function storagePath(...parts) {
+  const root = isAbsolute(env.STORAGE_PATH) ? env.STORAGE_PATH : resolve(PROJECT_ROOT, env.STORAGE_PATH);
+  return resolve(root, ...parts);
+}
 
 export function publicEnvSnapshot() {
   return {

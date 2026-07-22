@@ -203,6 +203,7 @@ class _PosScreenState extends State<PosScreen> {
         customerDiscount: 0,
         manualDiscount: 0,
         total: pos.cartTotal,
+        vatAmount: pos.cartVat,
         orderId: pos.activeOrderId,
         itemCount: pos.cart.length,
         channelLabel: 'Checkout',
@@ -1092,4 +1093,3 @@ class _PosScreenState extends State<PosScreen> {
     );
   }
 }
-

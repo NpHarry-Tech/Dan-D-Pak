@@ -1,18 +1,19 @@
 [Setup]
 AppId={{DANDPAK-POS-DESKTOP-APP}}
 AppName=Dan D Pak POS
-AppVersion=2026.07.21.3
+AppVersion=2026.07.22.2
 DefaultDirName={commonpf}\DanDPakPOS
 DefaultGroupName=Dan D Pak POS
 OutputDir=..\..\artifacts\releases
-OutputBaseFilename=dan-d-pak-pos-setup-2026-07-21-3
+OutputBaseFilename=dan-d-pak-pos-setup-2026-07-22-2
 Compression=lzma
 SolidCompression=yes
 SetupIconFile=windows\runner\resources\app_icon.ico
 UninstallDisplayIcon={app}\dandpak_desktop.exe
 DisableProgramGroupPage=yes
 PrivilegesRequired=admin
-ArchitecturesInstallIn64BitMode=x64
+ArchitecturesAllowed=x64compatible
+ArchitecturesInstallIn64BitMode=x64compatible
 ; Nhớ thư mục cài lần trước — auto-update cài đè đúng chỗ, không hỏi lại.
 UsePreviousAppDir=yes
 DisableDirPage=auto

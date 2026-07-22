@@ -303,8 +303,8 @@ function receiptVars(p = {}) {
 
   const lines = Array.isArray(p.lines) ? p.lines : [];
   const total = Number(p.total) || 0;
-  const subtotal = Number(p.subtotal ?? p.goods_amount) || 0;
   const vatAmount = Number(p.vat_amount ?? p.tax?.vat_amount) || 0;
+  const subtotal = Number(p.subtotal) || 0;
   const orderDiscount = orderWideDiscount(p);
   const orderPromoName = p.voucher?.name || p.voucher_code || 'Giam gia toan bill';
   const linesPaid = lines.reduce((s, l) => s + (Number(l.amount) || 0), 0);
@@ -363,7 +363,7 @@ function receiptVars(p = {}) {
     subtotal: money(subtotal),
     subtotalLine: labelValue('THANH TIEN:', danMoney(subtotal), W),
     vatAmount: money(vatAmount),
-    vatLine: vatAmount > 0 ? labelValue('VAT:', danMoney(vatAmount), W) : '',
+    vatLine: vatAmount > 0 ? labelValue('TRONG DO VAT:', danMoney(vatAmount), W) : '',
     orderPromoName,
     orderPromoAmount: money(orderDiscount),
     orderPromoLine: orderDiscount > 0 ? labelValue(`${orderPromoName}:`, `-${danMoney(orderDiscount)}`, W) : '',
@@ -483,9 +483,9 @@ function renderReceipt(p = {}) {
   }
   
   rows.push(line());
-  rows.push('THANH TIEN'.padEnd(22) + money(p.subtotal || p.goods_amount || 0).padStart(18));
   const vatAmount = Number(p.vat_amount ?? p.tax?.vat_amount) || 0;
-  if (vatAmount > 0) rows.push('VAT'.padEnd(22) + money(vatAmount).padStart(18));
+  rows.push('THANH TIEN'.padEnd(22) + money(p.subtotal || 0).padStart(18));
+  if (vatAmount > 0) rows.push('TRONG DO VAT'.padEnd(22) + money(vatAmount).padStart(18));
   const orderDiscount = orderWideDiscount(p);
   if (orderDiscount > 0) {
     const label = p.voucher?.name || p.voucher_code || 'KM TOAN BILL';

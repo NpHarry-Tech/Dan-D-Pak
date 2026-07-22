@@ -438,13 +438,10 @@ class _KvItemSearchFieldState extends State<KvItemSearchField> {
   }
 
   List<Map<String, dynamic>> get _results {
-    final q = _q.trim().toLowerCase();
-    if (q.isEmpty) return const [];
+    if (foldSearch(_q).isEmpty) return const [];
     return widget.items
-        .where((s) =>
-            kvs(s['name']).toLowerCase().contains(q) ||
-            kvs(s['code']).toLowerCase().contains(q) ||
-            kvs(s['barcode']).toLowerCase().contains(q))
+        .where((s) => searchMatchesAny(
+            [s['name'], s['code'], s['barcode'], s['category']], _q))
         .take(8)
         .toList();
   }

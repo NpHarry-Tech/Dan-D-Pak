@@ -224,6 +224,7 @@ class _BillPane extends StatelessWidget {
           _BillFooter(
             subtotal: pos.cartSubtotal,
             discount: pos.activeDiscount,
+            vat: pos.cartVat,
             total: pos.cartTotal,
             saving: pos.isSavingOrder || openingPayment,
             canPay: hasItems && !openingPayment && !hasPending,
@@ -430,6 +431,7 @@ class _BillFooter extends StatelessWidget {
   _BillFooter({
     required this.subtotal,
     required this.discount,
+    required this.vat,
     required this.total,
     required this.saving,
     required this.canPay,
@@ -445,6 +447,7 @@ class _BillFooter extends StatelessWidget {
 
   final double subtotal;
   final double discount;
+  final double vat;
   final double total;
   final bool saving;
   final bool canPay;
@@ -471,6 +474,8 @@ class _BillFooter extends StatelessWidget {
           _BillTotalLine(label: t('Tạm tính'), value: money(subtotal)),
           if (discount > 0)
             _BillTotalLine(label: t('Giảm giá'), value: '-${money(discount)}'),
+          if (vat > 0)
+            _BillTotalLine(label: t('Trong đó VAT'), value: money(vat)),
           SizedBox(height: 5),
           Row(
             children: [
@@ -672,4 +677,3 @@ class _BillOpButton extends StatelessWidget {
     );
   }
 }
-

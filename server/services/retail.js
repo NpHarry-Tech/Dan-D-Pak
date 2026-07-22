@@ -8,6 +8,7 @@ import { payOrder } from './payments.js';
 import { returnSku, applyChannelPrice } from './inventory.js';
 import { buildDiscountPlan } from './vouchers.js';
 import { getCustomer, recordPurchase } from './customers.js';
+import { orderReceipt } from './history.js';
 
 function snapshotCustomer(c) {
   if (!c) return null;
@@ -22,11 +23,23 @@ function snapshotCustomer(c) {
   };
 }
 // lines (cart): [{sku_id, qty, lot_id}]; payments: [{method, amount, reference}]
-export function checkout({ items, payments, voucher_id = null, customer = null, customer_id = null, invoice_customer = null, manual_discount = 0, branch_id = 'br1', cashier = '' }) {
+export function checkout({ items, payments, voucher_id = null, customer = null, customer_id = null, invoice_customer = null, manual_discount = 0, branch_id = 'br1', cashier = '', client_request_id = null }) {
   if (!items?.length) throw new Error('Giỏ hàng trống');
+  const requestId = String(client_request_id || '').trim();
+  if (requestId.length > 128) throw new Error('client_request_id tối đa 128 ký tự');
 
   db.prepare('BEGIN IMMEDIATE').run();
   try {
+    if (requestId) {
+      const existing = db.prepare(`SELECT id,status FROM orders WHERE branch_id=? AND client_request_id=?`).get(branch_id, requestId);
+      if (existing) {
+        if (existing.status !== 'paid') throw Object.assign(new Error('Checkout trước với mã này chưa hoàn tất'), { status: 409 });
+        const receipt = orderReceipt(existing.id, branch_id);
+        receipt.idempotent_replay = true;
+        db.prepare('COMMIT').run();
+        return receipt;
+      }
+    }
     const lines = normalizeCheckoutItems(items, branch_id);
 
     // Resolve customer: saved (authoritative perk from DB) or ad-hoc walk-in object.
@@ -64,6 +77,7 @@ export function checkout({ items, payments, voucher_id = null, customer = null, 
       };
     });
     const order = createOrUpdateOrder({ branch_id, table_id: null, channel: 'retail', items: orderItems, actor: cashier || 'system', skipTransaction: true });
+    if (requestId) db.prepare(`UPDATE orders SET client_request_id=? WHERE id=?`).run(requestId, order.id);
     db.prepare(`UPDATE orders SET voucher_id=?, voucher_code=? WHERE id=?`)
       .run(discountPlan.orderVoucher?.id || null, discountPlan.orderVoucher?.code || null, order.id);
     const snap = snapshotCustomer(cust);

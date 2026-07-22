@@ -8,7 +8,6 @@ import '../../providers/customer_display_controller.dart';
 import '../../services/api_service.dart';
 import '../../ui/app_theme.dart';
 import '../../ui/file_pick.dart';
-import '../customer_display/customer_display_route.dart';
 import '../customer_display/second_screen.dart';
 import 'management_widgets.dart';
 import 'settings_tab.dart';
@@ -125,24 +124,6 @@ class _CustomerDisplaySettingsPanelState
   void _toast(String msg, {bool error = false}) =>
       appToast(context, msg, isError: error);
 
-  /// Mở màn hình phụ trên màn 2 — điểm mở DUY NHẤT của toàn app (nút ở
-  /// topbar POS đã bỏ). Màn hình phụ dùng chung cho FnB lẫn Retail: controller
-  /// toàn cục tự mirror giỏ hàng đang thao tác và QR khi thanh toán.
-  Future<void> _openCustomerDisplay() async {
-    try {
-      await SecondScreen.instance
-          .open(context.read<CustomerDisplayController>());
-      _toast(t(
-          'Đã mở màn hình phụ. Rê chuột lên mép trên của nó để kéo đi chỗ khác hoặc nhấp đúp để phóng to / thu nhỏ.'));
-    } catch (_) {
-      // Fallback khi plugin đa cửa sổ không khả dụng: route toàn màn hình.
-      if (!mounted) return;
-      Navigator.of(context).push(
-        MaterialPageRoute(builder: (_) => CustomerDisplayRoute()),
-      );
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     return SettingsPanelScaffold(
@@ -170,15 +151,6 @@ class _CustomerDisplaySettingsPanelState
                         'Màn hình thứ hai quay về phía khách hàng: chiếu quảng cáo khi quầy rảnh, hiện chi tiết đơn hàng khi nhân viên đang lên món / quét hàng, và hiện mã QR chuyển khoản khi thanh toán. Dùng chung cho cả nhà hàng và bán lẻ.')),
                   ),
                   SizedBox(height: 10),
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: FilledButton.icon(
-                      onPressed: _openCustomerDisplay,
-                      icon: Icon(Icons.desktop_windows_outlined, size: 18),
-                      label: Text(t('Mở màn hình phụ trên màn 2')),
-                    ),
-                  ),
-                  SizedBox(height: 6),
                   Row(
                     children: [
                       Text(t('Thời gian mỗi ảnh:')),

@@ -29,6 +29,7 @@ server/db.sqlite
 *.sqlite3
 tmp_*
 uploads/
+/storage/
 storage/private/
 *.dump
 *.backup

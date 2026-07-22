@@ -78,13 +78,10 @@ class _WarehouseDocPageState extends State<WarehouseDocPage> {
   }
 
   List<Map<String, dynamic>> get _filtered {
-    final q = _search.trim().toLowerCase();
-    if (q.isEmpty) return _rows;
+    if (foldSearch(_search).isEmpty) return _rows;
     return _rows
-        .where((r) =>
-            kvs(r['code']).toLowerCase().contains(q) ||
-            kvs(r['id']).toLowerCase().contains(q) ||
-            kvs(r['note']).toLowerCase().contains(q))
+        .where((r) => searchMatchesAny(
+            [r['code'], r['id'], r['note'], r['reason']], _search))
         .toList();
   }
 

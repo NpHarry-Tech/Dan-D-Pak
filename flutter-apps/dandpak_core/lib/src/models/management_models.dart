@@ -274,6 +274,8 @@ class AdminMenuItem {
   final String image;
   final String description;
   final num price;
+  final num vatRate;
+  final bool priceIncludesVat;
   final String categoryId;
   final String station;
   final int slaMinutes;
@@ -294,6 +296,8 @@ class AdminMenuItem {
     required this.image,
     required this.description,
     required this.price,
+    required this.vatRate,
+    required this.priceIncludesVat,
     required this.categoryId,
     required this.station,
     required this.slaMinutes,
@@ -318,6 +322,9 @@ class AdminMenuItem {
       image: _str(j['image']),
       description: _str(j['description']),
       price: _num(j['price']),
+      vatRate: _num(j['vat_rate']),
+      priceIncludesVat:
+          j['price_includes_vat'] != 0 && j['price_includes_vat'] != false,
       categoryId: _str(j['category_id']),
       station: _str(j['station']).isEmpty ? 'kitchen' : _str(j['station']),
       slaMinutes: _int(j['sla_minutes'] ?? 10),

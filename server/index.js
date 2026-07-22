@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { mkdirSync } from 'node:fs';
 import zlib from 'node:zlib';
-import { db, migrate, reconcileAuditFromArchive, compactAuditToMonthly, purgeAuditBeyondRetention, backupDatabase } from './db.js';
+import { db, DB_WAS_EMPTY, migrate, reconcileAuditFromArchive, compactAuditToMonthly, purgeAuditBeyondRetention, backupDatabase } from './db.js';
 import { initRealtime } from './realtime.js';
 import { api } from './api.js';
 import { startSyncEngine } from './services/sync.js';
@@ -17,7 +17,7 @@ import { processInvoiceQueue } from './services/einvoice.js';
 import { ensureStorageDirectories } from './services/enterpriseStorage.js';
 import { bootstrapDefaultAdmin } from './services/bootstrapAdmin.js';
 import { migratePlaintextPins } from './services/pin.js';
-import { env } from './config/env.js';
+import { env, storagePath } from './config/env.js';
 import { createCorsMiddleware } from './config/cors.js';
 import { runtimeSnapshot } from './config/runtime.js';
 import { apiNotFound, errorHandler } from './core/http.js';
@@ -54,7 +54,7 @@ function compressionMiddleware(req, res, next) {
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ENGINE_ASSETS = join(__dirname, 'assets');
 const PORT = env.PORT;
-export const UPLOADS_DIR = join(__dirname, 'uploads', 'documents');
+export const UPLOADS_DIR = storagePath('uploads', 'documents');
 mkdirSync(UPLOADS_DIR, { recursive: true });
 globalThis.__DANDPAK_STARTED_AT = new Date().toISOString();
 
@@ -70,10 +70,7 @@ try {
 // Auto-seed on first run only if the database is empty and not suppressed.
 // (Cơ chế config-seed.json / CONFIG_SEED_URL thời server free không có disk
 // đã GỠ BỎ 2026-07-16 — dữ liệu thật giờ sống bền trong SQLite + backup.)
-const hasMenu = db.prepare(`SELECT COUNT(*) n FROM menu_items`).get().n;
-const hasBranch = db.prepare(`SELECT COUNT(*) n FROM branches`).get().n;
-const isEmpty = !hasMenu && !hasBranch;
-if (isEmpty) {
+if (DB_WAS_EMPTY) {
   if (env.DISABLE_DEMO_SEED) {
     logger.warn('empty database detected; DISABLE_DEMO_SEED=true — skipping demo seed');
   } else {
@@ -170,7 +167,7 @@ app.use('/api', requestContextMiddleware, requestLogger, api);
 app.use('/api', apiNotFound);
 // During active development, always serve fresh HTML/CSS/JS (no stale browser cache).
 app.use((req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
-app.use('/uploads', express.static(join(__dirname, 'uploads'), { etag: false, lastModified: false }));
+app.use('/uploads', express.static(storagePath('uploads'), { etag: false, lastModified: false }));
 app.use('/assets', express.static(ENGINE_ASSETS, { etag: false, lastModified: false }));
 
 app.use(errorHandler);

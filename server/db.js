@@ -1,7 +1,7 @@
 // SQLite layer facade for the Local Store Server.
 // Heavy DB concerns live in server/db/*; keep this file as the stable import surface.
 import { ensurePermanentStorage } from './services/archive.js';
-import { db, DB_PATH, ROOT } from './db/connection.js';
+import { db, DB_PATH, DB_WAS_EMPTY, ROOT } from './db/connection.js';
 import { now, uid } from './db/ids.js';
 import {
   audit, encryptCompress, decryptDecompress, reconcileAuditFromArchive, compactAuditToMonthly,
@@ -14,7 +14,7 @@ import {
 import { backupDatabase, listBackups } from './db/maintenance.js';
 
 export {
-  db, DB_PATH, ROOT, now, uid, audit, encryptCompress, decryptDecompress,
+  db, DB_PATH, DB_WAS_EMPTY, ROOT, now, uid, audit, encryptCompress, decryptDecompress,
   reconcileAuditFromArchive, compactAuditToMonthly, rehydrateAuditMonths, rehydrateAuditForQuery,
   purgeAuditBeyondRetention, defaultWarehouseIds, defaultWarehouseId,
   bootstrapBranchDefaults, bootstrapWarehouseDefaults, bootstrapTableDefaults,
@@ -81,6 +81,8 @@ export function migrate(targetDb = globalDb) {
     image TEXT,
     description TEXT,
     price INTEGER NOT NULL,
+    price_includes_vat INTEGER NOT NULL DEFAULT 1,
+    vat_rate REAL NOT NULL DEFAULT 8,
     station TEXT NOT NULL DEFAULT 'kitchen',
     sla_minutes INTEGER DEFAULT 10,
     available INTEGER NOT NULL DEFAULT 1,
@@ -102,6 +104,7 @@ export function migrate(targetDb = globalDb) {
     emoji TEXT,
     image TEXT,
     price INTEGER NOT NULL,
+    price_includes_vat INTEGER NOT NULL DEFAULT 1,
     cost INTEGER DEFAULT 0,
     stock REAL NOT NULL DEFAULT 0,
     min_stock REAL NOT NULL DEFAULT 0,
@@ -231,6 +234,8 @@ export function migrate(targetDb = globalDb) {
     status TEXT NOT NULL DEFAULT 'open',
     subtotal INTEGER NOT NULL DEFAULT 0,
     discount INTEGER NOT NULL DEFAULT 0,
+    goods_amount INTEGER NOT NULL DEFAULT 0,
+    vat_amount INTEGER NOT NULL DEFAULT 0,
     total INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL,
     paid_at TEXT,
@@ -242,7 +247,8 @@ export function migrate(targetDb = globalDb) {
     voucher_id TEXT,
     voucher_code TEXT,
     linked_pos_device TEXT,
-    linked_printer_id TEXT
+    linked_printer_id TEXT,
+    client_request_id TEXT
   );
 
   CREATE TABLE IF NOT EXISTS order_items (
@@ -254,6 +260,7 @@ export function migrate(targetDb = globalDb) {
     emoji TEXT,
     qty INTEGER NOT NULL DEFAULT 1,
     unit_price INTEGER NOT NULL,
+    vat_rate REAL NOT NULL DEFAULT 0,
     station TEXT NOT NULL DEFAULT 'kitchen',
     sla_minutes INTEGER DEFAULT 10,
     note TEXT,
@@ -336,6 +343,7 @@ export function migrate(targetDb = globalDb) {
     payment_id TEXT NOT NULL,
     method TEXT NOT NULL,
     amount INTEGER NOT NULL,
+    tendered_amount INTEGER,
     reference TEXT
   );
 
@@ -749,6 +757,7 @@ export function migrate(targetDb = globalDb) {
   addColumnIfMissing('skus', 'code', 'TEXT');                             // Mã hàng (KiotViet SP…)
   addColumnIfMissing('skus', 'price_pre_tax', 'INTEGER');                 // Giá bán trước thuế
   addColumnIfMissing('skus', 'vat', 'REAL');                             // VAT hàng bán (%) — null = KCT
+  addColumnIfMissing('skus', 'price_includes_vat', 'INTEGER NOT NULL DEFAULT 1');
   addColumnIfMissing('skus', 'brand', 'TEXT');                            // Thương hiệu
   addColumnIfMissing('skus', 'group_path', 'TEXT');                       // Nhóm hàng (3 cấp, "A>>B>>C")
   addColumnIfMissing('skus', 'weight', 'REAL');                           // Trọng lượng
@@ -777,9 +786,30 @@ export function migrate(targetDb = globalDb) {
   addColumnIfMissing('orders', 'voucher_code', 'TEXT');
   addColumnIfMissing('orders', 'linked_pos_device', 'TEXT');
   addColumnIfMissing('orders', 'linked_printer_id', 'TEXT');
+  addColumnIfMissing('orders', 'client_request_id', 'TEXT');
+  addColumnIfMissing('orders', 'goods_amount', 'INTEGER NOT NULL DEFAULT 0');
+  addColumnIfMissing('orders', 'vat_amount', 'INTEGER NOT NULL DEFAULT 0');
   // Dấu "đã in tạm tính" cho đơn còn mở — sơ đồ bàn POS hiện trạng thái này.
   addColumnIfMissing('orders', 'prebill_printed_at', 'TEXT');
   addColumnIfMissing('payments', 'shift_id', 'TEXT');
+  addColumnIfMissing('payment_lines', 'tendered_amount', 'INTEGER');
+  db.prepare(`UPDATE payment_lines SET tendered_amount=amount WHERE tendered_amount IS NULL`).run();
+  const overpaidPayments = db.prepare(`
+    SELECT p.id, p.total, COALESCE(SUM(pl.amount),0) paid
+    FROM payments p JOIN payment_lines pl ON pl.payment_id=p.id
+    GROUP BY p.id HAVING paid>p.total`).all();
+  const reduceApplied = db.prepare(`UPDATE payment_lines SET amount=amount-? WHERE id=?`);
+  for (const payment of overpaidPayments) {
+    let excess = Math.max(0, Number(payment.paid) - Number(payment.total));
+    if (!excess) continue;
+    const lines = db.prepare(`SELECT id,amount FROM payment_lines WHERE payment_id=? AND amount>0 ORDER BY method='cash' DESC,rowid DESC`).all(payment.id);
+    for (const line of lines) {
+      const reduction = Math.min(excess, Number(line.amount));
+      reduceApplied.run(reduction, line.id);
+      excess -= reduction;
+      if (!excess) break;
+    }
+  }
   // Thanh toán thẻ qua máy POS (VCB SmartPOS...): lưu mã giao dịch để ĐỐI SOÁT
   // với sao kê acquirer. mode = auto (native bridge) | manual (thu ngân nhập tay) | mock.
   addColumnIfMissing('payment_lines', 'card_txn_id', 'TEXT');   // mã giao dịch của máy/acquirer
@@ -797,6 +827,13 @@ export function migrate(targetDb = globalDb) {
   addColumnIfMissing('print_jobs', 'reprint_of', 'TEXT');
   addColumnIfMissing('print_jobs', 'printed_by', 'TEXT');
   addColumnIfMissing('order_items', 'table_path', 'TEXT');
+  addColumnIfMissing('order_items', 'vat_rate', 'REAL');
+  addColumnIfMissing('menu_items', 'price_includes_vat', 'INTEGER NOT NULL DEFAULT 1');
+  addColumnIfMissing('menu_items', 'vat_rate', 'REAL NOT NULL DEFAULT 8');
+  db.prepare(`UPDATE order_items SET vat_rate=COALESCE(
+    (SELECT m.vat_rate FROM menu_items m WHERE m.id=order_items.menu_item_id),
+    (SELECT s.vat FROM skus s WHERE s.id=order_items.sku_id), 0)
+    WHERE vat_rate IS NULL AND order_id IN (SELECT id FROM orders WHERE status='open')`).run();
   addColumnIfMissing('order_items', 'kds_dismissed', 'INTEGER DEFAULT 0');
   addColumnIfMissing('users', 'lang', 'TEXT');
   addColumnIfMissing('customers', 'birthday', 'TEXT');
@@ -899,6 +936,7 @@ export function migrate(targetDb = globalDb) {
   db.exec(`CREATE INDEX IF NOT EXISTS idx_orders_branch_paid ON orders(branch_id, status, paid_at DESC);`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_orders_online_ref ON orders(branch_id, online_channel, online_ref) WHERE online_ref IS NOT NULL AND online_ref!='';`);
   db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_bill_no ON orders(branch_id, bill_no) WHERE bill_no IS NOT NULL;`);
+  db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_checkout_request ON orders(branch_id, client_request_id) WHERE client_request_id IS NOT NULL;`);
   // order_items: KDS gọi mỗi vài giây; pending_confirm polling
   db.exec(`CREATE INDEX IF NOT EXISTS idx_order_items_order ON order_items(order_id, created_at);`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_order_items_status ON order_items(status, created_at);`);

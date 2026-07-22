@@ -46,8 +46,17 @@ final class _MonitorInfo extends Struct {
   external int dwFlags;
 }
 
-typedef _FindWindowC = IntPtr Function(Pointer<Utf16>, Pointer<Utf16>);
-typedef _FindWindowD = int Function(Pointer<Utf16>, Pointer<Utf16>);
+typedef _EnumWindowsProcC = Int32 Function(IntPtr, IntPtr);
+typedef _EnumWindowsC = Int32 Function(
+    Pointer<NativeFunction<_EnumWindowsProcC>>, IntPtr);
+typedef _EnumWindowsD = int Function(
+    Pointer<NativeFunction<_EnumWindowsProcC>>, int);
+typedef _GetWindowThreadProcessIdC = Uint32 Function(IntPtr, Pointer<Uint32>);
+typedef _GetWindowThreadProcessIdD = int Function(int, Pointer<Uint32>);
+typedef _GetCurrentProcessIdC = Uint32 Function();
+typedef _GetCurrentProcessIdD = int Function();
+typedef _IsWindowVisibleC = Int32 Function(IntPtr);
+typedef _IsWindowVisibleD = int Function(int);
 typedef _GetSystemMetricsC = Int32 Function(Int32);
 typedef _GetSystemMetricsD = int Function(int);
 typedef _SetWindowPosC = Int32 Function(
@@ -70,17 +79,42 @@ final class _Point extends Struct {
 }
 
 final DynamicLibrary _user32 = DynamicLibrary.open('user32.dll');
+final DynamicLibrary _kernel32 = DynamicLibrary.open('kernel32.dll');
 
-/// Tìm HWND của cửa sổ theo tiêu đề. Không thấy → 0.
-int _findHwnd(String title) {
-  final findWindow =
-      _user32.lookupFunction<_FindWindowC, _FindWindowD>('FindWindowW');
-  final titlePtr = title.toNativeUtf16();
+int _enumTargetPid = 0;
+int _enumFoundHwnd = 0;
+final _getWindowPid = _user32.lookupFunction<_GetWindowThreadProcessIdC,
+    _GetWindowThreadProcessIdD>('GetWindowThreadProcessId');
+final _isWindowVisible = _user32
+    .lookupFunction<_IsWindowVisibleC, _IsWindowVisibleD>('IsWindowVisible');
+
+int _collectOwnWindow(int hwnd, int _) {
+  final pid = calloc<Uint32>();
   try {
-    return findWindow(nullptr, titlePtr);
+    _getWindowPid(hwnd, pid);
+    if (pid.value == _enumTargetPid && _isWindowVisible(hwnd) != 0) {
+      _enumFoundHwnd = hwnd;
+      return 0;
+    }
+    return 1;
   } finally {
-    calloc.free(titlePtr);
+    calloc.free(pid);
   }
+}
+
+final _enumOwnWindow =
+    Pointer.fromFunction<_EnumWindowsProcC>(_collectOwnWindow, 0);
+
+/// Mỗi tiến trình màn hình phụ chỉ có một cửa sổ top-level. Tìm theo PID thay
+/// vì title để không phụ thuộc Unicode, bản dịch hay tên cửa sổ thay đổi.
+int _findHwnd(String _) {
+  _enumTargetPid =
+      _kernel32.lookupFunction<_GetCurrentProcessIdC, _GetCurrentProcessIdD>(
+          'GetCurrentProcessId')();
+  _enumFoundHwnd = 0;
+  _user32.lookupFunction<_EnumWindowsC, _EnumWindowsD>('EnumWindows')(
+      _enumOwnWindow, 0);
+  return _enumFoundHwnd;
 }
 
 /// Số màn hình vật lý đang cắm vào máy. Ngoài Windows / lỗi FFI → coi như 1.
@@ -155,7 +189,7 @@ Future<void> makeSecondWindowFullscreen({String title = 'Màn hình phụ'}) asy
         py = vy + 60; // màn phụ phía trên
       }
       if (px != null && py != null) {
-        setPos(hwnd, 0, px, py, 320, 240, _swpShowwindow);
+        setPos(hwnd, 0, px, py, 320, 240, _swpShowwindow | _swpAsyncwindowpos);
       }
     }
 
@@ -167,17 +201,11 @@ Future<void> makeSecondWindowFullscreen({String title = 'Màn hình phụ'}) asy
       if (getMonitorInfo(mon, info) == 0) return;
       final r = info.ref.rcMonitor;
 
-      // QUAN TRỌNG — chống crash: KHÔNG đổi window-style (strip WS_CAPTION…)
-      // lúc runtime. Cửa sổ phụ do desktop_multi_window quản lý bằng WndProc
-      // riêng; SetWindowLongPtr + SWP_FRAMECHANGED kích WM_NCCALCSIZE khi
-      // Flutter view của cửa sổ con chưa sẵn sàng → access violation làm SẬP
-      // cả app (native crash, try/catch Dart không bắt được).
-      //
-      // Thay vào đó chỉ DI CHUYỂN + PHÓNG cửa sổ phủ kín màn hình khách và đưa
+      // Chỉ DI CHUYỂN + PHÓNG cửa sổ phủ kín màn hình khách và đưa
       // lên TOPMOST (chỉ đổi thứ tự z + vị trí/kích thước — an toàn tuyệt đối,
       // không đụng frame). Taskbar bị cửa sổ topmost phủ lên nên vẫn khuất.
       setPos(hwnd, _hwndTopmost, r.left, r.top, r.right - r.left,
-          r.bottom - r.top, _swpShowwindow);
+          r.bottom - r.top, _swpShowwindow | _swpAsyncwindowpos);
       dlog('SecondScreen covered monitor '
           '(${r.left},${r.top})-(${r.right},${r.bottom}) topmost');
     } finally {

@@ -15,6 +15,7 @@
 
 import { db } from '../db.js';
 import { getPrintConfig } from './settings.js';
+import { allocateProportion, divideMoney, money, multiplyMoney, netFromGross } from '../core/money.js';
 
 const DEFAULT_BASE = { sandbox: 'https://testapi.meinvoice.vn', production: 'https://api.meinvoice.vn' };
 
@@ -111,46 +112,38 @@ export async function issueInvoice(order, customer = {}, items = [], cfg = {}) {
   // mặc định là giá ĐÃ GỒM VAT → phải TÁCH ngược ra tiền hàng + tiền thuế,
   // không được cộng thuế chồng lên (làm tổng hóa đơn ≠ tổng bill).
   const einvCfg = (getPrintConfig(order.branch_id || 'br1')?.einvoice) || {};
-  const includesVat = String(einvCfg.priceIncludesVat ?? '1') !== '0';
   const defaultRate = parseFloat(einvCfg.defaultVatRate) || 8;
 
-  const qtyOf = (it) => Number(it.qty) || 1;
+  const qtyOf = (it) => String(it.qty ?? '1');
   // Giá dòng THU THẬT của khách: đơn giá + topping/mods, nhân số lượng.
   const grossOf = (it) => {
     const mods = Array.isArray(it.mods)
-      ? it.mods.reduce((s, m) => s + (parseInt(m?.price) || 0), 0)
+      ? it.mods.reduce((s, m) => s + money(m?.price), 0)
       : 0;
-    return ((parseInt(it.unit_price) || 0) + mods) * qtyOf(it);
+    return multiplyMoney(money(it.unit_price) + mods, qtyOf(it));
   };
   const lineGross = items.map(grossOf);
   const grossSum = lineGross.reduce((a, b) => a + b, 0);
-  const totalAmount = parseInt(order.total) || 0;
+  const totalAmount = money(order.total);
   // Giảm giá (voucher/khuyến mãi/giảm tay) = chênh lệch tổng — PHÂN BỔ vào
   // từng dòng theo tỷ trọng để tổng các dòng khớp TUYỆT ĐỐI tổng bill
   // (dòng cuối nhận phần dư làm tròn).
-  const scale = grossSum > 0 ? totalAmount / grossSum : 0;
   let allocated = 0;
   const originalInvoiceDetail = items.map((it, i) => {
     const qty = qtyOf(it);
     const isLast = i === items.length - 1;
     const netLine = isLast
       ? totalAmount - allocated
-      : Math.round(lineGross[i] * scale);
+      : allocateProportion(totalAmount, lineGross[i], grossSum);
     allocated += isLast ? 0 : netLine;
 
     const vatRate = it.vat_rate !== undefined ? Number(it.vat_rate) : defaultRate;
     let amountWithoutVAT;
     let vatAmount;
-    if (includesVat) {
-      // netLine đã gồm VAT → tách: tiền hàng = net / (1 + rate)
-      amountWithoutVAT = Math.round(netLine / (1 + vatRate / 100));
-      vatAmount = netLine - amountWithoutVAT;
-    } else {
-      amountWithoutVAT = netLine;
-      vatAmount = Math.round(netLine * (vatRate / 100));
-    }
+    amountWithoutVAT = netFromGross(netLine, vatRate);
+    vatAmount = netLine - amountWithoutVAT;
     const unitPrice = qty > 0
-      ? Math.round((amountWithoutVAT / qty) * 100) / 100
+      ? divideMoney(amountWithoutVAT, qty, 2)
       : amountWithoutVAT;
 
     return {
@@ -170,7 +163,7 @@ export async function issueInvoice(order, customer = {}, items = [], cfg = {}) {
   const totalVATAmount = originalInvoiceDetail.reduce((sum, item) => sum + item.VATAmount, 0);
   // Giá gồm VAT: tổng hóa đơn = đúng tổng bill khách trả. Giá chưa VAT:
   // tổng = tiền hàng + thuế.
-  const grandTotal = includesVat ? totalAmount : totalAmountWithoutVAT + totalVATAmount;
+  const grandTotal = totalAmount;
 
   const payload = {
     RefID: `einv:${cfg.taxCode}:${order.id}`,

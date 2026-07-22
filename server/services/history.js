@@ -2,6 +2,7 @@
 // Read-only over orders/payments/invoices — like KiotViet "Lịch sử bán hàng" / Odoo orders.
 import { db } from '../db.js';
 import { getPrintConfig } from './settings.js';
+import { matchesSearch, searchTokens } from '../core/search.js';
 
 // Đọc số tiền VND thành chữ tiếng Việt.
 function moneyToWords(n) {
@@ -34,7 +35,7 @@ function moneyToWords(n) {
 
 export function listOrderHistory(branch_id = 'br1', { limit = 60, q = '', channel = '', from = '', to = '' } = {}) {
   const params = [branch_id];
-  const search = String(q || '').trim().replace(/^#/, '').toLowerCase();
+  const search = searchTokens(String(q || '').replace(/^#/, ''));
   let sql = `SELECT o.id, o.bill_no, o.channel, o.status, o.total, o.subtotal, o.discount, o.created_at, o.paid_at,
       o.online_channel, o.online_ref, o.invoice_id, t.code AS table_code, i.invoice_no
     FROM orders o
@@ -44,26 +45,18 @@ export function listOrderHistory(branch_id = 'br1', { limit = 60, q = '', channe
   if (channel) { sql += ' AND o.channel=?'; params.push(channel); }
   if (from) { sql += ' AND COALESCE(o.paid_at,o.created_at) >= ?'; params.push(from); }
   if (to) { sql += ' AND COALESCE(o.paid_at,o.created_at) <= ?'; params.push(to); }
-  if (search) {
-    sql += ` AND (
-      LOWER(COALESCE(o.bill_no,'')) LIKE ?
-      OR LOWER(o.id) LIKE ?
-      OR LOWER(COALESCE(t.code,'')) LIKE ?
-      OR LOWER(COALESCE(o.online_ref,'')) LIKE ?
-      OR LOWER(COALESCE(i.invoice_no,'')) LIKE ?
-    )`;
-    const like = `%${search}%`;
-    params.push(like, like, like, like, like);
-  }
-  sql += ' ORDER BY COALESCE(o.paid_at,o.created_at) DESC LIMIT ?';
-  params.push(Math.min(parseInt(limit) || 60, 300));
+  sql += ' ORDER BY COALESCE(o.paid_at,o.created_at) DESC LIMIT 3000';
 
   const methodStmt = db.prepare(`SELECT pl.method, SUM(pl.amount) amount
     FROM payment_lines pl JOIN payments p ON p.id=pl.payment_id WHERE p.order_id=? GROUP BY pl.method`);
   const itemCountStmt = db.prepare(`SELECT COALESCE(SUM(qty),0) n FROM order_items WHERE order_id=? AND status!='cancelled'`);
   const shiftStmt = db.prepare(`SELECT s.status FROM payments p JOIN shifts s ON s.id=p.shift_id WHERE p.order_id=? ORDER BY p.created_at DESC LIMIT 1`);
 
-  let rows = db.prepare(sql).all(...params).map(o => ({
+  const max = Math.min(parseInt(limit) || 60, 300);
+  let rows = db.prepare(sql).all(...params)
+    .filter(o => matchesSearch([o.bill_no, o.id, o.table_code, o.online_ref, o.invoice_no], search))
+    .slice(0, max)
+    .map(o => ({
     ...o,
     number: o.bill_no || o.id.slice(-6).toUpperCase(),
     methods: methodStmt.all(o.id),
@@ -104,27 +97,27 @@ export function orderReceipt(order_id, branch_id = 'br1') {
     .map(i => { let mods = []; try { mods = JSON.parse(i.mods_json || '[]'); } catch {}
       return { ...i, mods, line_total: i.qty * i.unit_price, kind: i.sku_id ? 'retail' : 'fnb' }; });
 
-  const lines = db.prepare(`SELECT pl.method, pl.amount, pl.reference FROM payment_lines pl
+  const lines = db.prepare(`SELECT pl.method, COALESCE(pl.tendered_amount,pl.amount) amount, pl.reference FROM payment_lines pl
     JOIN payments p ON p.id=pl.payment_id WHERE p.order_id=? ORDER BY pl.rowid`).all(order_id);
 
   // Thu ngân + trạng thái ca: lấy theo ca làm việc của lần thanh toán (nếu có).
-  const cashierRow = db.prepare(`SELECT s.user_name, s.status AS shift_status FROM payments p
-    JOIN shifts s ON s.id=p.shift_id WHERE p.order_id=? ORDER BY p.created_at DESC LIMIT 1`).get(order_id);
+  const cashierRow = db.prepare(`SELECT p.id AS payment_id, s.user_name, s.status AS shift_status FROM payments p
+    LEFT JOIN shifts s ON s.id=p.shift_id WHERE p.order_id=? ORDER BY p.created_at DESC LIMIT 1`).get(order_id);
 
   const inv = o.invoice_id ? db.prepare(`SELECT invoice_no,lookup_code,issued_at,customer_json FROM invoices WHERE id=?`).get(o.invoice_id) : null;
   const paid = lines.reduce((s, l) => s + (Number(l.amount) || 0), 0);
   let customer = {};
   try { customer = JSON.parse((inv?.customer_json) || o.customer_json || '{}') || {}; } catch {}
 
-  // VAT: giá đã gồm thuế (mặc định) → tách thuế ra từ tổng đã trả để tổng luôn khớp tiền thực thu.
-  const vatRate = parseInt(ein.defaultVatRate || '8') || 8;
-  const incl = (ein.priceIncludesVat ?? '1') !== '0';
   const total = o.total;
-  const goods = incl ? Math.round(total / (1 + vatRate / 100)) : (o.subtotal - (o.discount || 0));
-  const vat = incl ? (total - goods) : Math.round(goods * vatRate / 100);
+  const vat = Number(o.vat_amount) || 0;
+  const goods = Number(o.goods_amount) || Math.max(0, total - vat);
+  const rates = [...new Set(items.map(item => Number(item.vat_rate) || 0).filter(rate => rate > 0))];
+  const vatRate = rates.length === 1 ? rates[0] : null;
 
   return {
     order_id,
+    payment_id: cashierRow?.payment_id || null,
     number: o.bill_no || o.id.slice(-6).toUpperCase(),
     bill_no: o.bill_no || o.id.slice(-6).toUpperCase(),
     company,

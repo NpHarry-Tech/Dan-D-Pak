@@ -16,11 +16,11 @@
 // Accepts a Markdown pipe-table OR comma/semicolon/tab CSV, and auto-repairs
 // mojibake (UTF-8 that got decoded as Latin-1, e.g. "HÃ ng hÃ³a" -> "Hàng hóa").
 
-import { readFileSync, existsSync, readdirSync, writeFileSync, mkdirSync } from 'node:fs';
+import { readFileSync, existsSync, readdirSync, writeFileSync, mkdirSync, copyFileSync } from 'node:fs';
 import { resolve, dirname, join, extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { inflateRawSync } from 'node:zlib';
-import { db, migrate, now, audit } from '../db.js';
+import { db, migrate, now, audit, backupDatabase } from '../db.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const BRANCH_ID = 'br1';
@@ -28,9 +28,39 @@ const WAREHOUSE_ID = 'wh_retail';
 
 const args = process.argv.slice(2);
 const COMMIT = args.includes('--commit');
+const PRODUCT_IMAGE_ROOT = process.env.KIOTVIET_IMAGE_ROOT || 'E:\\Trash\\Product DDP\\04 Product';
+
+function imageKey(value) {
+  return clean(value).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/\b(ddp|dan d pak|product|san pham)\b/g, ' ').replace(/[^a-z0-9]+/g, ' ').trim();
+}
+
+function localImageCandidates(root = PRODUCT_IMAGE_ROOT) {
+  if (!existsSync(root)) return [];
+  const out = [];
+  const walk = dir => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const path = join(dir, entry.name);
+      if (entry.isDirectory()) walk(path);
+      else if (/\.(png|jpe?g|webp)$/i.test(entry.name)) {
+        out.push({ path, key: imageKey(entry.name.replace(/\.[^.]+$/, '')) });
+      }
+    }
+  };
+  walk(root);
+  return out;
+}
+
+function matchLocalImage(name, candidates) {
+  const key = imageKey(name);
+  if (!key) return null;
+  const matches = candidates.filter(c => c.key.length >= 8 && (key.includes(c.key) || c.key.includes(key)));
+  matches.sort((a, b) => Math.abs(a.key.length - key.length) - Math.abs(b.key.length - key.length));
+  return matches[0]?.path || null;
+}
 
 function findLocalImage(skuId) {
-  const destDir = resolve(__dirname, '..', '..', 'web', 'assets', 'product-images');
+  const destDir = resolve(__dirname, '..', 'assets', 'product-images');
   if (!existsSync(destDir)) return null;
   try {
     const files = readdirSync(destDir);
@@ -46,7 +76,7 @@ async function downloadProductImage(skuId, url) {
   const local = findLocalImage(skuId);
   if (local) return local;
 
-  const destDir = resolve(__dirname, '..', '..', 'web', 'assets', 'product-images');
+  const destDir = resolve(__dirname, '..', 'assets', 'product-images');
   try {
     const res = await fetch(url);
     if (!res.ok) return url;
@@ -68,6 +98,16 @@ async function downloadProductImage(skuId, url) {
     console.warn(`⚠️  Không tải được ảnh cho ${skuId}: ${err.message}`);
     return url;
   }
+}
+
+function copyProductImage(skuId, source) {
+  if (!source || !existsSync(source)) return null;
+  const destDir = resolve(__dirname, '..', 'assets', 'product-images');
+  const ext = extname(source).toLowerCase() || '.png';
+  mkdirSync(destDir, { recursive: true });
+  const filename = `${skuId}${ext}`;
+  copyFileSync(source, join(destDir, filename));
+  return `/assets/product-images/${filename}`;
 }
 function defaultFile() {
   const dir = (f) => resolve(__dirname, 'data', f);
@@ -350,6 +390,9 @@ async function run() {
   }
 
   const used = new Set();
+  const existingRows = db.prepare(`SELECT id,code,barcode,image FROM skus WHERE branch_id=? AND warehouse_id=?`).all(BRANCH_ID, WAREHOUSE_ID);
+  const existingByCode = new Map(existingRows.filter(x => clean(x.code)).map(x => [clean(x.code).toLowerCase(), x]));
+  const existingByBarcode = new Map(existingRows.filter(x => clean(x.barcode)).map(x => [clean(x.barcode).toLowerCase(), x]));
   const records = [];
   for (let r = 1; r < rows.length; r++) {
     const row = rows[r];
@@ -359,13 +402,17 @@ async function run() {
     const trackLot = truthy(cell(row, idx, 'trackLot')) ? 1 : 0;
     const group = cell(row, idx, 'group');
     const brand = cell(row, idx, 'brand');
+    const barcode = cell(row, idx, 'barcode') || code;
+    const existing = existingByCode.get(code.toLowerCase()) || existingByBarcode.get(barcode.toLowerCase());
+    const id = existing && !used.has(existing.id) ? existing.id : skuIdFor(code || barcode, used);
+    used.add(id);
     records.push({
-      id: skuIdFor(code, used),
+      id,
       branch_id: BRANCH_ID,
-      barcode: cell(row, idx, 'barcode') || code,
+      barcode,
       name,
       emoji: '🛍️',
-      image: clean(cell(row, idx, 'images').split(',')[0]) || null,
+      image: existing?.image || clean(cell(row, idx, 'images').split(',')[0]) || null,
       price: moneyToInt(cell(row, idx, 'priceAfter')),
       cost: 0,
       stock: numOr(cell(row, idx, 'stock'), 0),
@@ -391,6 +438,9 @@ async function run() {
   }
 
   console.log(`\n📦 Đọc được ${records.length} dòng sản phẩm từ ${FILE}`);
+  const duplicateCodes = records.length - new Set(records.map(x => x.code.toLowerCase())).size;
+  const duplicateBarcodes = records.filter(x => x.barcode).length - new Set(records.filter(x => x.barcode).map(x => x.barcode.toLowerCase())).size;
+  console.log(`   Trùng mã hàng: ${duplicateCodes} · trùng barcode: ${duplicateBarcodes} · có ảnh: ${records.filter(x => x.image).length}`);
   console.log(`   Ví dụ 3 dòng đầu:`);
   for (const s of records.slice(0, 3)) {
     console.log(`   • [${s.code}] ${s.name}`);
@@ -404,7 +454,11 @@ async function run() {
     return;
   }
 
+  const backup = backupDatabase();
+  console.log(`\n🛡️  Đã sao lưu database: ${backup?.path || backup}`);
   console.log(`\n📥 Đang kiểm tra và tải hình ảnh sản phẩm về thư mục local...`);
+  const imageCandidates = localImageCandidates();
+  let copiedLocal = 0;
   for (let i = 0; i < records.length; i++) {
     const s = records[i];
     if (s.image && s.image.startsWith('http')) {
@@ -412,6 +466,10 @@ async function run() {
     } else {
       const local = findLocalImage(s.id);
       if (local) s.image = local;
+      else {
+        const matched = matchLocalImage(s.name, imageCandidates);
+        if (matched) { s.image = copyProductImage(s.id, matched); copiedLocal++; }
+      }
     }
   }
 
@@ -453,6 +511,7 @@ async function run() {
   audit('kiotviet.import', { skus: records.length, deactivated, file: FILE, at: now() }, BRANCH_ID);
   console.log(`\n✅ Đã nhập ${records.length} SKU vào Kho BCM (${WAREHOUSE_ID}).`);
   console.log(`   Vô hiệu hóa ${deactivated} SKU cũ không có trong file (nguồn scraped trước đây).\n`);
+  console.log(`   Bổ sung ${copiedLocal} ảnh từ ${PRODUCT_IMAGE_ROOT}.\n`);
 }
 
 run();

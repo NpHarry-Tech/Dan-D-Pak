@@ -123,6 +123,7 @@ class CustomerDisplayController extends ChangeNotifier {
         subtotal: pos.cartSubtotal,
         discount: pos.activeDiscount,
         discountLabel: 'Giảm giá',
+        tax: pos.cartVat,
         total: pos.cartTotal,
       );
     }
@@ -145,6 +146,8 @@ class CustomerDisplayController extends ChangeNotifier {
   void showPayment({
     required String method,
     required num total,
+    num subtotal = 0,
+    num tax = 0,
     String qrData = '',
     String qrImageUrl = '',
   }) {
@@ -155,6 +158,8 @@ class CustomerDisplayController extends ChangeNotifier {
       paymentMethod: method,
       qrData: qrData,
       qrImageUrl: qrImageUrl,
+      subtotal: subtotal,
+      tax: tax,
       total: total,
     );
     notifyListeners();

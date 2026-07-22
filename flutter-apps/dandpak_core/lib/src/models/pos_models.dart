@@ -187,7 +187,8 @@ class Modifier {
   factory Modifier.fromJson(Map<String, dynamic> json) {
     return Modifier(
       name: json['name'] ?? json['label'] ?? '',
-      price: _doubleValue(json['price'] ?? json['unit_price']),
+      price: _doubleValue(
+          json['sale_price'] ?? json['price'] ?? json['unit_price']),
     );
   }
 
@@ -202,6 +203,7 @@ class MenuItem {
   final String code;
   final String name;
   final double price;
+  final double vatRate;
   final String categoryId;
   final String imageUrl;
   final List<Modifier> modifiers;
@@ -212,6 +214,7 @@ class MenuItem {
     required this.code,
     required this.name,
     required this.price,
+    this.vatRate = 0,
     required this.categoryId,
     required this.imageUrl,
     required this.modifiers,
@@ -228,7 +231,9 @@ class MenuItem {
       id: json['id'] ?? '',
       code: json['code'] ?? json['sku'] ?? '',
       name: json['name'] ?? '',
-      price: _doubleValue(json['price'] ?? json['unit_price']),
+      price: _doubleValue(
+          json['sale_price'] ?? json['price'] ?? json['unit_price']),
+      vatRate: _doubleValue(json['vat_rate']),
       categoryId: json['category_id'] ?? json['category'] ?? '',
       imageUrl: json['image_url'] ?? json['image'] ?? '',
       modifiers: parsedMods,

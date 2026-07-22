@@ -1,4 +1,6 @@
 import { db, audit } from '../db.js';
+import { salePrice } from './tax.js';
+import { matchesSearch, searchTokens } from '../core/search.js';
 
 // ---------- Simple in-memory cache ----------
 // Menu và print config là dữ liệu đọc nhiều nhưng thay đổi ít.
@@ -65,10 +67,10 @@ export function listMenu(options = {}) {
     sql += ` ORDER BY sort`;
 
     const offset = (parsedPage - 1) * parsedLimit;
-    const search = foldSearch(q);
+    const search = searchTokens(q);
     const allRows = db.prepare(sql).all(...params);
     const filteredRows = search
-      ? allRows.filter(row => menuSearchText(row).includes(search))
+      ? allRows.filter(row => matchesSearch(menuSearchValues(row), search))
       : allRows;
     const total = filteredRows.length;
     const rows = filteredRows.slice(offset, offset + parsedLimit);
@@ -93,23 +95,13 @@ export function listMenu(options = {}) {
   return cacheSet(cacheKey, { categories, items: rows.map(r => normalizeMenuItem(r, { forCustomer, includeRecipe: !forCustomer, lang: menuLang })) }, MENU_TTL);
 }
 
-function foldSearch(value = '') {
-  return String(value || '')
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/đ/g, 'd')
-    .replace(/Đ/g, 'd')
-    .toLowerCase()
-    .trim();
-}
-
-function menuSearchText(row) {
+function menuSearchValues(row) {
   const translations = normalizeMenuTranslations(row.translations_json, row);
-  return foldSearch([
+  return [
     row.name,
     row.description,
     ...Object.values(translations).flatMap(t => [t.name, t.description]),
-  ].filter(Boolean).join(' '));
+  ].filter(Boolean);
 }
 
 export function getMenuItem(id, opts = {}) {
@@ -133,15 +125,22 @@ export function normalizeMenuItem(row, { forCustomer = false, includeRecipe = fa
   const recipe = includeRecipe || forCustomer ? getRecipe(row.id) : null;
   const ingredients = safeJson(row.ingredients_json, []);
   const translations = normalizeMenuTranslations(row.translations_json, row);
+  const priceIncludesVat = row.price_includes_vat !== 0;
+  const vatRate = Number(row.vat_rate) || 0;
   const out = {
     ...row,
+    price_includes_vat: priceIncludesVat,
+    sale_price: salePrice(row.price, vatRate, priceIncludesVat),
     available_flag: !!row.available,
     hidden: !!row.hidden,
     available: forCustomer ? canOrder : !!row.available,
     can_order: canOrder,
     schedule_available: scheduleAvailable,
     availability_reason: !visible ? 'hidden' : !row.available ? 'manual' : !scheduleAvailable ? 'schedule' : null,
-    modifiers: safeJson(row.modifiers_json, []),
+    modifiers: safeJson(row.modifiers_json, []).map(mod => ({
+      ...mod,
+      sale_price: salePrice(mod.price, vatRate, priceIncludesVat),
+    })),
     addons: enrichAddons(row.addons_json),
     ingredients: ingredients.length ? ingredients : (recipe || []).map(r => r.name),
     allergens: safeJson(row.allergens_json, []),

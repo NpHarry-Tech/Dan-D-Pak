@@ -70,12 +70,11 @@ Future<void> _mainImpl(List<String> args) async {
     } catch (_) {}
   }
 
-  // desktop_multi_window launches the 2nd display window as a fresh engine
-  // running this same main() with ['multi_window', windowId, args]. That window
-
-  // over the plugin channel.
-  if (args.isNotEmpty && args.first == 'multi_window') {
+  // The customer display is a separate process so its renderer cannot crash
+  // the POS process. Data travels only over a loopback HTTP bridge.
+  if (args.contains('--customer-display')) {
     BlackBox.init(role: 'display');
+    if (!await startCustomerDisplayProcessBridge()) return;
     runApp(CustomerDisplayWindowApp());
     return;
   }
@@ -229,6 +228,14 @@ class _DandpakPosAppState extends State<DandpakPosApp>
       _secondaryDisplayAutoOpenBranch = branchId;
       if (!display.enabled) return;
 
+      // A native crash cannot be caught by Dart. Never recreate the secondary
+      // engine automatically on the first recovery launch: this breaks the
+      // otherwise permanent crash loop and lets the operator disable/retry it.
+      if (BlackBox.previousRunCrashed) {
+        BlackBox.add('display', 'auto-open suppressed after unclean exit');
+        return;
+      }
+
       if (!hasSecondMonitor()) return;
       await SecondScreen.instance.open(display).catchError((_) {});
     });
@@ -238,6 +245,7 @@ class _DandpakPosAppState extends State<DandpakPosApp>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.detached) {
       BlackBox.markCleanExit();
+      unawaited(SecondScreen.instance.close());
       NodeRunner.stopServer();
     }
   }
@@ -246,6 +254,7 @@ class _DandpakPosAppState extends State<DandpakPosApp>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     BlackBox.markCleanExit();
+    unawaited(SecondScreen.instance.close());
     NodeRunner.stopServer();
     super.dispose();
   }
