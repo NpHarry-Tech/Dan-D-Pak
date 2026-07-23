@@ -15,6 +15,18 @@ const { db, migrate } = await import('../db.js');
 const Haravan = await import('./haravanConnector.js');
 const Settings = await import('./settings.js');
 migrate(db);
+Settings.updateIntegrations({ channels: { haravan: {
+  enabled: true,
+  shopDomain: 'shop.myharavan.com',
+  accessToken: 'tok_1234',
+  webhookSecret: 'sec_5678',
+  locationId: '963414',
+  defaultBranchId: 'Sala',
+  syncOrders: true,
+  syncCustomers: true,
+  syncProducts: true,
+  syncInventory: true,
+} } }, 'sala');
 
 try {
   const order = {
@@ -154,6 +166,20 @@ try {
   assert.equal(db.prepare(`SELECT COUNT(*) n FROM customers WHERE phone='0900000504'`).get().n, 1);
   assert.equal(db.prepare(`SELECT COUNT(*) n FROM orders WHERE online_ref='505'`).get().n, 1);
   Settings.updateIntegrations({ channels: { haravan: { locationId: '963414' } } }, 'sala');
+
+  Settings.updateIntegrations({ channels: { haravan: { syncOrders: false, syncCustomers: true } } }, 'sala');
+  const disabledOrders = await Haravan.pullHaravanOrders({ shopDomain: 'shop.myharavan.com', delta: false });
+  assert.equal(disabledOrders.queued, 0);
+  const blockedOrder = { ...order, id: 999, order_number: 'BLOCKED999' };
+  const blockedBody = Buffer.from(JSON.stringify(blockedOrder));
+  const blockedSignature = crypto.createHmac('sha256', 'sec_5678').update(blockedBody).digest('base64');
+  const blocked = Haravan.handleHaravanWebhook(blockedBody, {
+    'x-haravan-hmacsha256': blockedSignature,
+    'x-haravan-topic': 'orders/create',
+    'x-haravan-shop-domain': 'shop.myharavan.com',
+  });
+  assert.equal(db.prepare(`SELECT status FROM sync_logs WHERE id=?`).get(blocked.log_id).status, 'ignored');
+  assert.equal(db.prepare(`SELECT COUNT(*) n FROM orders WHERE online_ref='999'`).get().n, 0);
 
   let pushedBody = null;
   let fetchCalls = 0;

@@ -54,7 +54,8 @@ function legacyConfig() {
     apiBase: c.apiBase || env.HARAVAN_API_BASE_URL || 'https://apis.haravan.com',
     defaultBranchId: c.defaultBranchId || env.HARAVAN_DEFAULT_BRANCH_ID || 'ONLINE',
     locationId: c.locationId || env.HARAVAN_LOCATION_ID || '',
-    syncOrders: c.syncOrders !== false,
+    syncOrders: c.syncOrders === true,
+    syncCustomers: c.syncCustomers !== false,
     syncProducts: c.syncProducts !== false,
     syncInventory: c.syncInventory !== false,
   };
@@ -82,6 +83,7 @@ function config(shopDomain = '') {
     defaultBranchId: installed.branch_id || 'ONLINE',
     locationId: installed.location_id || fallback.locationId,
     syncOrders: fallback.syncOrders,
+    syncCustomers: fallback.syncCustomers,
     syncProducts: fallback.syncProducts,
     syncInventory: fallback.syncInventory,
   };
@@ -102,7 +104,8 @@ function defaultBranch(shopDomain = '') {
 
 function topicEnabled(topic, cfg = config()) {
   if (!cfg.enabled) return false;
-  if (topic.startsWith('orders/') || topic.startsWith('customers/')) return cfg.syncOrders;
+  if (topic.startsWith('orders/')) return cfg.syncOrders;
+  if (topic.startsWith('customers/')) return cfg.syncCustomers;
   if (topic.startsWith('products/')) return cfg.syncProducts;
   if (topic === 'inventory/update' || topic === 'inventorylocationbalances/update') return cfg.syncInventory;
   return false;
@@ -625,7 +628,12 @@ function shopsToSync(shopDomain = '') {
 
 async function pullForShops(resource, opts = {}) {
   const out = [];
-  for (const shop of shopsToSync(opts.shopDomain)) out.push(await pullHaravanResource(resource, { ...opts, shopDomain: shop }));
+  for (const shop of shopsToSync(opts.shopDomain)) {
+    const cfg = config(shop);
+    if (resource === 'orders' && !cfg.syncOrders) continue;
+    if (resource === 'customers' && !cfg.syncCustomers) continue;
+    out.push(await pullHaravanResource(resource, { ...opts, shopDomain: shop }));
+  }
   return { results: out, queued: out.reduce((sum, x) => sum + x.queued, 0) };
 }
 
@@ -660,9 +668,11 @@ export async function syncAllHaravan({ shopDomain = '', delta = true, subscribe 
       if (cfg.syncProducts) results.push(await pullHaravanResource('products', { shopDomain: shop, delta }));
       drainHaravanQueue();
       if (cfg.syncInventory) results.push(await pullHaravanInventory({ shopDomain: shop, delta }));
-      if (cfg.syncOrders) {
+      if (cfg.syncCustomers) {
         results.push(await pullHaravanResource('customers', { shopDomain: shop, delta }));
         drainHaravanQueue();
+      }
+      if (cfg.syncOrders) {
         results.push(await pullHaravanResource('orders', { shopDomain: shop, delta }));
       }
       drainHaravanQueue();

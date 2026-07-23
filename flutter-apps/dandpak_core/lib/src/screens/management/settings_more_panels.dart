@@ -148,7 +148,7 @@ List<IntegrationDef> get _integrationDefs => [
           key: 'haravan',
           icon: 'H',
           name: 'Haravan',
-          desc: t('Kênh bán hàng online Haravan: nhận đơn, khách hàng, sản phẩm và tồn kho qua backend.'),
+          desc: t('Haravan: đồng bộ khách hàng, sản phẩm và tồn kho. Đơn hàng được quản lý trực tiếp trên Haravan.'),
           type: 'haravan',
           channel: 'haravan',
           imageAsset: 'assets/brand/Haravan.png'),
@@ -385,7 +385,8 @@ class _IntegrationsPanelState extends State<IntegrationsPanel> {
           conf['syncInvoices'] ??= true;
           conf['syncCustomers'] ??= true;
         } else if (key == 'haravan') {
-          conf['syncOrders'] ??= true;
+          conf['syncOrders'] ??= false;
+          conf['syncCustomers'] ??= true;
           conf['syncProducts'] ??= true;
           conf['syncInventory'] ??= true;
           conf['printOnReceive'] ??= true;
@@ -407,7 +408,7 @@ class _IntegrationsPanelState extends State<IntegrationsPanel> {
           conf['printOnReceive'] ??= true;
         }
 
-        if (key == 'website' || key == 'haravan' || def.type == 'delivery' || def.type == 'mart') {
+        if (key == 'website' || def.type == 'delivery' || def.type == 'mart') {
           conf['orderMode'] ??= 'manual_confirm';
         }
       }
@@ -885,7 +886,7 @@ class _IntegrationsPanelState extends State<IntegrationsPanel> {
     final checkboxes = <Widget>[];
 
     Widget? dropdown;
-    if (def.key == 'website' || def.key == 'haravan' || def.type == 'delivery' || def.type == 'mart') {
+    if (def.key == 'website' || def.type == 'delivery' || def.type == 'mart') {
       dropdown = Padding(
         padding: EdgeInsets.only(bottom: 16),
         child: DropdownButtonFormField<String>(
@@ -919,10 +920,9 @@ class _IntegrationsPanelState extends State<IntegrationsPanel> {
       ]);
     } else if (def.key == 'haravan') {
       checkboxes.addAll([
-        _buildCheckboxRow(conf, 'syncOrders', t('Nhận và đồng bộ đơn hàng')),
+        _buildCheckboxRow(conf, 'syncCustomers', t('Đồng bộ thông tin khách hàng')),
         _buildCheckboxRow(conf, 'syncProducts', t('Đồng bộ sản phẩm')),
         _buildCheckboxRow(conf, 'syncInventory', t('Đồng bộ tồn kho')),
-        _buildCheckboxRow(conf, 'printOnReceive', t('Tự in khi có đơn mới')),
       ]);
     } else if (def.key == 'website') {
       checkboxes.addAll([
@@ -1160,4 +1160,3 @@ class _IntegrationsPanelState extends State<IntegrationsPanel> {
 }
 
 // ── Warehouse & sales channels (Kho & kênh bán) ─────────────────────────────
-
