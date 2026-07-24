@@ -4,6 +4,7 @@ import { safeEqual } from '../core/util.js';
 import { env } from '../config/env.js';
 import { emit } from '../realtime.js';
 import { getIntegrationChannel } from './settings.js';
+import { decryptSecret, encryptSecret, isEncrypted } from '../core/crypto.js';
 
 const PROVIDER = 'haravan';
 const AUTH_BASE = 'https://accounts.haravan.com';
@@ -70,11 +71,23 @@ function installedShop(shopDomain) {
 function config(shopDomain = '') {
   const installed = installedShop(shopDomain);
   const fallback = legacyConfig();
-  if (installed) return {
+  if (installed) {
+    if (!isEncrypted(installed.access_token) ||
+        (installed.refresh_token && !isEncrypted(installed.refresh_token))) {
+      const access = encryptSecret(installed.access_token, `haravan:${installed.shop_domain}:access`);
+      const refresh = installed.refresh_token
+        ? encryptSecret(installed.refresh_token, `haravan:${installed.shop_domain}:refresh`)
+        : null;
+      db.prepare(`UPDATE haravan_shops SET access_token=?,refresh_token=?,updated_at=? WHERE id=?`)
+        .run(access, refresh, now(), installed.id);
+      installed.access_token = access;
+      installed.refresh_token = refresh;
+    }
+    return {
     enabled: true,
     shopDomain: installed.shop_domain,
-    accessToken: installed.access_token,
-    refreshToken: installed.refresh_token || '',
+    accessToken: decryptSecret(installed.access_token, `haravan:${installed.shop_domain}:access`),
+    refreshToken: decryptSecret(installed.refresh_token || '', `haravan:${installed.shop_domain}:refresh`),
     webhookSecret: env.HARAVAN_CLIENT_SECRET || fallback.webhookSecret,
     clientId: env.HARAVAN_CLIENT_ID || fallback.clientId,
     clientSecret: env.HARAVAN_CLIENT_SECRET || fallback.clientSecret,
@@ -87,6 +100,7 @@ function config(shopDomain = '') {
     syncProducts: fallback.syncProducts,
     syncInventory: fallback.syncInventory,
   };
+  }
   if (!shopDomain || fallback.shopDomain === normShop(shopDomain)) return fallback;
   return { ...fallback, shopDomain: normShop(shopDomain) };
 }
@@ -235,7 +249,9 @@ export async function oauthCallback({ code, state, shop, redirect_uri }) {
       refresh_token=excluded.refresh_token,scope=excluded.scope,token_type=excluded.token_type,
       expires_at=excluded.expires_at,api_base=excluded.api_base,updated_at=excluded.updated_at,active=1,raw_payload=excluded.raw_payload`)
     .run(uid('hshop_'), shopDomain, cleanId(claims.org_id || claims.orgid || ''), stateData.branch_id || legacyConfig().defaultBranchId,
-      tokens.access_token, tokens.refresh_token || null, tokens.scope || '', tokens.token_type || 'Bearer',
+      encryptSecret(tokens.access_token, `haravan:${shopDomain}:access`),
+      tokens.refresh_token ? encryptSecret(tokens.refresh_token, `haravan:${shopDomain}:refresh`) : null,
+      tokens.scope || '', tokens.token_type || 'Bearer',
       expiresAt, legacyConfig().locationId || null, legacyConfig().apiBase, now(), now(), 1, json({ tokens: { ...tokens, access_token: '***', refresh_token: tokens.refresh_token ? '***' : undefined }, claims }));
   audit('haravan.oauth.install', { shop_domain: shopDomain, scope: tokens.scope || '' }, stateData.branch_id || legacyConfig().defaultBranchId, 'haravan');
   await subscribeWebhook(shopDomain).catch(err => writeSyncLog({ shop_domain: shopDomain, topic: 'webhook/subscribe', status: 'failed', error_message: err.message }));
@@ -498,10 +514,20 @@ export function syncHaravanInventory(payload, shopDomain = '') {
     : null;
   const skuId = mapped?.internal_variant_id || (sku ? db.prepare(`SELECT id FROM skus WHERE barcode=? OR id=? LIMIT 1`).get(sku, sku)?.id : null);
   if (!skuId) return { ignored: true };
-  db.prepare(`UPDATE skus SET stock=? WHERE id=?`).run(qty, skuId);
-  audit('haravan.inventory.sync', { shop_domain: shop, sku_id: skuId, qty }, defaultBranch(shop), 'haravan');
-  emit('inventory:updated', { ids: [skuId] }, defaultBranch(shop));
-  return { sku_id: skuId, qty };
+  // BR-STOCK-001: POS la Inventory Source of Truth. Ton gui tu Haravan la
+  // OBSERVATION/RECONCILIATION INPUT, khong duoc am tham ghi de ton chinh thuc
+  // cua POS. Chi ghi nhan lech de doi chieu/kiem tra thu cong; KHONG UPDATE skus.stock.
+  const posQty = Number(db.prepare(`SELECT stock FROM skus WHERE id=?`).get(skuId)?.stock) || 0;
+  const discrepancy = qty - posQty;
+  if (discrepancy !== 0) {
+    audit('haravan.inventory.discrepancy', {
+      shop_domain: shop, sku_id: skuId, pos_qty: posQty, haravan_qty: qty, discrepancy,
+    }, defaultBranch(shop), 'haravan');
+    emit('inventory:reconciliation_needed', { sku_id: skuId, pos_qty: posQty, haravan_qty: qty, discrepancy }, defaultBranch(shop));
+  } else {
+    audit('haravan.inventory.reconciled', { shop_domain: shop, sku_id: skuId, qty }, defaultBranch(shop), 'haravan');
+  }
+  return { sku_id: skuId, pos_qty: posQty, haravan_qty: qty, discrepancy, applied: false };
 }
 
 function handleTopic(topic, payload, shopDomain = '') {

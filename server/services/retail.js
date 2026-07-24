@@ -33,6 +33,16 @@ export function checkout({ items, payments, voucher_id = null, customer = null, 
     if (requestId) {
       const existing = db.prepare(`SELECT id,status FROM orders WHERE branch_id=? AND client_request_id=?`).get(branch_id, requestId);
       if (existing) {
+        if (existing.status === 'partially_paid') {
+          const replay = payOrder(existing.id, Array.isArray(payments) ? payments : [], {
+            skipTransaction: true,
+            cashier,
+            idempotency_key: requestId,
+          }, branch_id);
+          replay.idempotent_replay = true;
+          db.prepare('COMMIT').run();
+          return replay;
+        }
         if (existing.status !== 'paid') throw Object.assign(new Error('Checkout trước với mã này chưa hoàn tất'), { status: 409 });
         const receipt = orderReceipt(existing.id, branch_id);
         receipt.idempotent_replay = true;
@@ -91,8 +101,11 @@ export function checkout({ items, payments, voucher_id = null, customer = null, 
       discount_breakdown: discountBreakdown,
       voucher: discountPlan.orderVoucher,
       promotions: discountPlan.appliedSkuPromos,
+      idempotency_key: requestId || null,
     }, branch_id);
-    if (cust?.id || cust?.phone) recordPurchase(cust, receipt.total, branch_id, order.id);
+    if (receipt.fully_settled !== false && (cust?.id || cust?.phone)) {
+      recordPurchase(cust, receipt.total, branch_id, order.id);
+    }
     receipt.discount_breakdown = discountBreakdown;
     receipt.voucher = discountPlan.orderVoucher;
     receipt.promotions = discountPlan.appliedSkuPromos;

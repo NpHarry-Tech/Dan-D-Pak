@@ -1,8 +1,10 @@
-:80 {
-    # Chuyển tiếp toàn bộ các yêu cầu HTTP thường và API đến container app
-    reverse_proxy /api/* app:3000
-    reverse_proxy /socket.io/* app:3000
+{$APP_DOMAIN} {
+    encode zstd gzip
 
-    # Chuyển tiếp các yêu cầu giao diện hoặc healthcheck khác
-    reverse_proxy * app:3000
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        -Server
+    }
+
+    reverse_proxy app:3000
 }

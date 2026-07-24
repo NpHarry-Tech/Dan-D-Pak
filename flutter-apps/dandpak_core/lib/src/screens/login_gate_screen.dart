@@ -81,7 +81,7 @@ class _LoginGateScreenState extends State<LoginGateScreen> {
       context: context,
       barrierDismissible: false,
       barrierColor: Color(0x8F0A121C),
-      builder: (_) => _AdminLoginDialog(),
+      builder: (_) => AdminLoginDialog(),
     );
     if (creds == null || !mounted) return;
     await _login(creds['username'] ?? '', creds['pin'] ?? '',
@@ -404,95 +404,96 @@ class _PinDialogState extends State<_PinDialog> {
         ),
         child: SingleChildScrollView(
           child: Container(
-          // Tablet mini: KHÔNG ép cứng 450 khi màn hẹp hơn → tránh tràn ngang.
-          width: MediaQuery.sizeOf(context).width - 40 < 450
-              ? MediaQuery.sizeOf(context).width - 40
-              : 450,
-          padding: EdgeInsets.fromLTRB(30, 22, 30, 25),
-          decoration: BoxDecoration(
-            color: DanColors.surface,
-            borderRadius: BorderRadius.circular(28),
-            border: Border.all(color: DanColors.border2),
-            boxShadow: [
-              BoxShadow(
-                color: Color(0x330F172A),
-                blurRadius: 90,
-                offset: Offset(0, 28),
-              ),
-            ],
-          ),
-          child: Stack(
-            children: [
-              Positioned(
-                top: 2,
-                left: 0,
-                child: TextButton(
-                  onPressed: () => Navigator.of(context).pop(null),
-                  style: TextButton.styleFrom(
-                    foregroundColor: DanColors.brand,
-                    padding: EdgeInsets.symmetric(horizontal: 8, vertical: 7),
-                    textStyle:
-                        TextStyle(fontSize: 13, fontWeight: FontWeight.w800),
-                  ),
-                  child: Text(t('Chọn lại')),
+            // Tablet mini: KHÔNG ép cứng 450 khi màn hẹp hơn → tránh tràn ngang.
+            width: MediaQuery.sizeOf(context).width - 40 < 450
+                ? MediaQuery.sizeOf(context).width - 40
+                : 450,
+            padding: EdgeInsets.fromLTRB(30, 22, 30, 25),
+            decoration: BoxDecoration(
+              color: DanColors.surface,
+              borderRadius: BorderRadius.circular(28),
+              border: Border.all(color: DanColors.border2),
+              boxShadow: [
+                BoxShadow(
+                  color: Color(0x330F172A),
+                  blurRadius: 90,
+                  offset: Offset(0, 28),
                 ),
-              ),
-              Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  SizedBox(height: 22),
-                  Text(
-                    t('Nhập mã PIN'),
-                    style: TextStyle(
-                        fontSize: 21,
-                        fontWeight: FontWeight.w800,
-                        height: 1.25),
-                  ),
-                  SizedBox(height: 7),
-                  Text(
-                    '${t('Đăng nhập')} $displayName',
-                    style: TextStyle(
-                      color: DanColors.muted,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
-                      height: 1.35,
+              ],
+            ),
+            child: Stack(
+              children: [
+                Positioned(
+                  top: 2,
+                  left: 0,
+                  child: TextButton(
+                    onPressed: () => Navigator.of(context).pop(null),
+                    style: TextButton.styleFrom(
+                      foregroundColor: DanColors.brand,
+                      padding: EdgeInsets.symmetric(horizontal: 8, vertical: 7),
+                      textStyle:
+                          TextStyle(fontSize: 13, fontWeight: FontWeight.w800),
                     ),
+                    child: Text(t('Chọn lại')),
                   ),
-                  SizedBox(height: 10),
-                  Container(
-                    padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: DanColors.brandDim,
-                      borderRadius: BorderRadius.circular(99),
-                    ),
-                    child: Text(
-                      (_roleLabels[widget.user.role] ?? widget.user.role)
-                          .toUpperCase(),
+                ),
+                Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    SizedBox(height: 22),
+                    Text(
+                      t('Nhập mã PIN'),
                       style: TextStyle(
-                        color: DanColors.brand,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: .3,
+                          fontSize: 21,
+                          fontWeight: FontWeight.w800,
+                          height: 1.25),
+                    ),
+                    SizedBox(height: 7),
+                    Text(
+                      '${t('Đăng nhập')} $displayName',
+                      style: TextStyle(
+                        color: DanColors.muted,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        height: 1.35,
                       ),
                     ),
-                  ),
-                  SizedBox(height: 28),
-                  _PinDots(length: _pin.length),
-                  SizedBox(height: 36),
-                  // Bọc keypad để CŨNG nhận bàn phím thiết bị/rời (gõ số/Backspace).
-                  // Enter bỏ qua vì PIN đủ 4 số là tự đăng nhập.
-                  PinKeyCapture(
-                    onKey: (k) {
-                      if (k == 'enter') return;
-                      _press(k);
-                    },
-                    child: _PinPad(onPressed: _press),
-                  ),
-                ],
-              ),
-            ],
+                    SizedBox(height: 10),
+                    Container(
+                      padding:
+                          EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: DanColors.brandDim,
+                        borderRadius: BorderRadius.circular(99),
+                      ),
+                      child: Text(
+                        (_roleLabels[widget.user.role] ?? widget.user.role)
+                            .toUpperCase(),
+                        style: TextStyle(
+                          color: DanColors.brand,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: .3,
+                        ),
+                      ),
+                    ),
+                    SizedBox(height: 28),
+                    _PinDots(length: _pin.length),
+                    SizedBox(height: 36),
+                    // Bọc keypad để CŨNG nhận bàn phím thiết bị/rời (gõ số/Backspace).
+                    // Enter bỏ qua vì PIN đủ 4 số là tự đăng nhập.
+                    PinKeyCapture(
+                      onKey: (k) {
+                        if (k == 'enter') return;
+                        _press(k);
+                      },
+                      child: _PinPad(onPressed: _press),
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ),
-        ),
         ),
       ),
     );
@@ -500,14 +501,14 @@ class _PinDialogState extends State<_PinDialog> {
 }
 
 /// Đăng nhập quản trị: gõ tài khoản + PIN (admin không hiện trong lưới).
-class _AdminLoginDialog extends StatefulWidget {
-  _AdminLoginDialog();
+class AdminLoginDialog extends StatefulWidget {
+  AdminLoginDialog({super.key});
 
   @override
-  State<_AdminLoginDialog> createState() => _AdminLoginDialogState();
+  State<AdminLoginDialog> createState() => _AdminLoginDialogState();
 }
 
-class _AdminLoginDialogState extends State<_AdminLoginDialog> {
+class _AdminLoginDialogState extends State<AdminLoginDialog> {
   final TextEditingController _username = TextEditingController();
   String _pin = '';
 
@@ -552,61 +553,69 @@ class _AdminLoginDialogState extends State<_AdminLoginDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final viewport = MediaQuery.sizeOf(context);
+    final compact = viewport.height < 800;
     return Dialog(
       elevation: 0,
       backgroundColor: Colors.transparent,
-      insetPadding: EdgeInsets.all(20),
+      insetPadding: EdgeInsets.all(compact ? 12 : 20),
       child: ConstrainedBox(
-        constraints: BoxConstraints(maxWidth: 450),
-        child: Container(
-          // Tablet mini: KHÔNG ép cứng 450 khi màn hẹp hơn → tránh tràn ngang.
-          width: MediaQuery.sizeOf(context).width - 40 < 450
-              ? MediaQuery.sizeOf(context).width - 40
-              : 450,
-          padding: EdgeInsets.fromLTRB(30, 20, 30, 24),
-          decoration: BoxDecoration(
-            color: DanColors.surface,
-            borderRadius: BorderRadius.circular(28),
-            border: Border.all(color: DanColors.border2),
-            boxShadow: [
-              BoxShadow(
-                color: Color(0x330F172A),
-                blurRadius: 90,
-                offset: Offset(0, 28),
-              ),
-            ],
-          ),
-          child: Stack(
-            children: [
-              Positioned(
-                top: 2,
-                left: 0,
-                child: TextButton(
-                  onPressed: () => Navigator.of(context).pop(null),
-                  style: TextButton.styleFrom(
-                    foregroundColor: DanColors.brand,
-                    padding: EdgeInsets.symmetric(horizontal: 8, vertical: 7),
-                    textStyle:
-                        TextStyle(fontSize: 13, fontWeight: FontWeight.w800),
-                  ),
-                  child: Text(t('Đóng')),
+        constraints: BoxConstraints(
+          maxWidth: 450,
+          maxHeight: viewport.height - (compact ? 24 : 32),
+        ),
+        child: SingleChildScrollView(
+          child: Container(
+            // Tablet mini: KHÔNG ép cứng 450 khi màn hẹp hơn → tránh tràn ngang.
+            width: viewport.width - 40 < 450 ? viewport.width - 40 : 450,
+            padding: EdgeInsets.fromLTRB(
+              compact ? 24 : 30,
+              compact ? 12 : 20,
+              compact ? 24 : 30,
+              compact ? 14 : 24,
+            ),
+            decoration: BoxDecoration(
+              color: DanColors.surface,
+              borderRadius: BorderRadius.circular(28),
+              border: Border.all(color: DanColors.border2),
+              boxShadow: [
+                BoxShadow(
+                  color: Color(0x330F172A),
+                  blurRadius: 90,
+                  offset: Offset(0, 28),
                 ),
-              ),
-              // Cuộn được để khi BÀN PHÍM mở, bàn phím số PIN + nút đăng nhập
-              // không bị che (nội dung cao hơn khoảng trống còn lại thì cuộn).
-              SingleChildScrollView(
-                child: Column(
+              ],
+            ),
+            child: Stack(
+              children: [
+                Positioned(
+                  top: 2,
+                  left: 0,
+                  child: TextButton(
+                    onPressed: () => Navigator.of(context).pop(null),
+                    style: TextButton.styleFrom(
+                      foregroundColor: DanColors.brand,
+                      padding: EdgeInsets.symmetric(horizontal: 8, vertical: 7),
+                      textStyle:
+                          TextStyle(fontSize: 13, fontWeight: FontWeight.w800),
+                    ),
+                    child: Text(t('Đóng')),
+                  ),
+                ),
+                // Cuộn được để khi BÀN PHÍM mở, bàn phím số PIN + nút đăng nhập
+                // không bị che (nội dung cao hơn khoảng trống còn lại thì cuộn).
+                Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    SizedBox(height: 22),
+                    SizedBox(height: compact ? 16 : 22),
                     Text(
                       t('Đăng nhập quản trị'),
                       style: TextStyle(
-                          fontSize: 21,
+                          fontSize: compact ? 19 : 21,
                           fontWeight: FontWeight.w800,
                           height: 1.25),
                     ),
-                    SizedBox(height: 7),
+                    SizedBox(height: compact ? 3 : 7),
                     Text(
                       t('Nhập tài khoản và mã PIN quản trị viên'),
                       textAlign: TextAlign.center,
@@ -617,7 +626,7 @@ class _AdminLoginDialogState extends State<_AdminLoginDialog> {
                         height: 1.35,
                       ),
                     ),
-                    SizedBox(height: 20),
+                    SizedBox(height: compact ? 10 : 20),
                     TextField(
                       controller: _username,
                       autofocus: true,
@@ -628,11 +637,11 @@ class _AdminLoginDialogState extends State<_AdminLoginDialog> {
                         prefixIcon: Icon(Icons.person_outline, size: 20),
                       ),
                     ),
-                    SizedBox(height: 18),
+                    SizedBox(height: compact ? 8 : 18),
                     _PinDots(length: _pin.length),
-                    SizedBox(height: 22),
-                    _PinPad(onPressed: _press),
-                    SizedBox(height: 18),
+                    SizedBox(height: compact ? 10 : 22),
+                    _PinPad(onPressed: _press, compact: compact),
+                    SizedBox(height: compact ? 8 : 18),
                     SizedBox(
                       width: double.infinity,
                       child: FilledButton(
@@ -642,8 +651,8 @@ class _AdminLoginDialogState extends State<_AdminLoginDialog> {
                     ),
                   ],
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -682,20 +691,21 @@ class _PinDots extends StatelessWidget {
 
 class _PinPad extends StatelessWidget {
   final ValueChanged<String> onPressed;
+  final bool compact;
 
-  _PinPad({required this.onPressed});
+  _PinPad({required this.onPressed, this.compact = false});
 
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      width: 312,
+      width: compact ? 270 : 312,
       child: GridView.count(
         shrinkWrap: true,
         physics: NeverScrollableScrollPhysics(),
         crossAxisCount: 3,
-        mainAxisSpacing: 12,
-        crossAxisSpacing: 14,
-        childAspectRatio: 1.33,
+        mainAxisSpacing: compact ? 7 : 12,
+        crossAxisSpacing: compact ? 10 : 14,
+        childAspectRatio: compact ? 1.65 : 1.33,
         children: [
           for (final key in ['1', '2', '3', '4', '5', '6', '7', '8', '9'])
             _PinKey(label: key, onPressed: () => onPressed(key)),

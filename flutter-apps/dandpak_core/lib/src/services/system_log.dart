@@ -49,12 +49,24 @@ class SystemLog {
 
   /// Gọi 1 lần từ main() sau khi có ApiService. Nạp queue tồn từ đĩa (log của
   /// lần chạy trước chưa kịp gửi) và bật nhịp flush 15s.
-  static void attach(ApiService api) {
+  static Future<void> attach(ApiService api) async {
     _api = api;
-    _initDeviceIdentity();
+    await _initDeviceIdentity();
     _restoreQueueFromDisk();
     _flushTimer?.cancel();
     _flushTimer = Timer.periodic(const Duration(seconds: 15), (_) => _flush());
+  }
+
+  static Map<String, String> requestHeaders() {
+    String safe(String value) =>
+        value.replaceAll(RegExp(r'[^\x20-\x7E]'), '?').trim();
+    return {
+      if (_deviceId.isNotEmpty) 'x-device-id': safe(_deviceId),
+      'x-app-version': safe(AppFlavor.current.versionName),
+      'x-build-number': '${AppFlavor.current.buildNumber}',
+      'x-platform': safe(Platform.operatingSystem),
+      'x-os-version': safe(Platform.operatingSystemVersion),
+    };
   }
 
   static void setContext({

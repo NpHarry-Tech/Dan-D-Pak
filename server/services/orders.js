@@ -59,7 +59,7 @@ function insertOpenOrder({ branch_id = 'br1', table_id = null, channel = 'dine_i
 
 export function getOpenOrderForTable(table_id, branch_id = 'br1') {
   if (!table_id) return undefined;
-  return db.prepare(`SELECT * FROM orders WHERE table_id=? AND branch_id=? AND status='open' ORDER BY created_at DESC LIMIT 1`)
+  return db.prepare(`SELECT * FROM orders WHERE table_id=? AND branch_id=? AND status IN ('open','partially_paid') ORDER BY created_at DESC LIMIT 1`)
     .get(table_id, branch_id);
 }
 
@@ -238,7 +238,7 @@ export function listPendingConfirmations(branch_id = 'br1') {
     FROM order_items oi
     JOIN orders o ON o.id=oi.order_id
     LEFT JOIN tables t ON t.id=o.table_id
-    WHERE o.branch_id=? AND o.status='open' AND oi.status='pending_confirm'
+    WHERE o.branch_id=? AND o.status IN ('open','partially_paid') AND oi.status='pending_confirm'
     ORDER BY oi.created_at`).all(branch_id)
     .map(r => ({ ...r, mods: parseJson(r.mods_json, []), promo: parseJson(r.promo_json, null) }));
   const groups = new Map();
@@ -469,7 +469,7 @@ export function listTables(branch_id = 'br1') {
   if (!tables.length) return [];
 
   const orderByTable = new Map();
-  for (const o of db.prepare(`SELECT * FROM orders WHERE branch_id=? AND status='open' ORDER BY created_at DESC`).all(branch_id)) {
+  for (const o of db.prepare(`SELECT * FROM orders WHERE branch_id=? AND status IN ('open','partially_paid') ORDER BY created_at DESC`).all(branch_id)) {
     if (o.table_id && !orderByTable.has(o.table_id)) orderByTable.set(o.table_id, o); // DESC → giữ đơn mở MỚI NHẤT mỗi bàn (khớp getOpenOrderForTable)
   }
   const callByTable = new Map();

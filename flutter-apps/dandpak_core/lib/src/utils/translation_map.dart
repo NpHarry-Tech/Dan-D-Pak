@@ -2137,13 +2137,16 @@ const Map<String, String> viToEnMap = {
 
   // Generated missing static i18n keys (2026-07-14).
   'Cấu hình Máy chủ (Server)': 'Server Configuration',
-  'Nhập địa chỉ API của máy chủ trung tâm:': 'Enter the API address of the central server:',
+  'Nhập địa chỉ API của máy chủ trung tâm:':
+      'Enter the API address of the central server:',
   'Địa chỉ Server': 'Server address',
-  'Mặc định là http://127.0.0.1:3000. Nếu đây là máy POS phụ, hãy nhập IP LAN của máy chủ chính.': 'Default is http://127.0.0.1:3000. If this is a secondary POS, enter the LAN IP of the primary server.',
+  'Máy chủ mặc định là https://api.dandpakpos.io.vn.':
+      'The default server is https://api.dandpakpos.io.vn.',
   'Hủy': 'Cancel',
   'Lưu & Kết nối': 'Save & Connect',
   'Chọn cơ sở': 'Select facility',
-  'Chọn cơ sở / chi nhánh để bắt đầu ca làm': 'Select facility/branch to start shift',
+  'Chọn cơ sở / chi nhánh để bắt đầu ca làm':
+      'Select facility/branch to start shift',
   'Tải lại': 'Reload',
   'Đang tải…': 'Loading…',
   'Cập nhật ngay': 'Update now',
@@ -2152,7 +2155,8 @@ const Map<String, String> viToEnMap = {
   'Thu ngân': 'Cashier',
   'Đăng nhập nhân viên': 'Employee login',
   'Đăng nhập quản trị viên': 'Login as administrator',
-  'Chưa có nhân viên để hiển thị.\\nDùng "Đăng nhập quản trị viên" bên dưới.': 'There are no employees to display yet.\\nUse "Administrator Login" below.',
+  'Chưa có nhân viên để hiển thị.\\nDùng "Đăng nhập quản trị viên" bên dưới.':
+      'There are no employees to display yet.\\nUse "Administrator Login" below.',
   'Không tìm thấy nhân viên phù hợp.': 'No suitable employee found.',
   'Tiếng Việt': 'Vietnamese',
   'Chọn lại': 'Select again',
@@ -2160,19 +2164,22 @@ const Map<String, String> viToEnMap = {
   'Nhập tài khoản quản trị': 'Enter the admin account',
   'Đóng': 'Close',
   'Đăng nhập quản trị': 'Login admin',
-  'Nhập tài khoản và mã PIN quản trị viên': 'Enter the account and administrator PIN',
+  'Nhập tài khoản và mã PIN quản trị viên':
+      'Enter the account and administrator PIN',
   'Tài khoản': 'Account',
   'Tất cả kênh': 'All channels',
   'Tiền mặt': 'Cash',
   'Chuyển khoản': 'Transfer',
   'Thẻ': 'Card',
-  'Bill đã KẾT CA — cần PIN Quản lý/Admin để xác nhận thay đổi.': 'Bill FINISHED — needs Management/Admin PIN to confirm changes.',
+  'Bill đã KẾT CA — cần PIN Quản lý/Admin để xác nhận thay đổi.':
+      'Bill FINISHED — needs Management/Admin PIN to confirm changes.',
   'Lịch sử bán hàng': 'Sales history',
   'Không có đơn nào': 'There are no applications',
   'Chọn một đơn để xem chi tiết': 'Select an order to view details',
   'Đã hủy': 'Canceled',
   'In lại': 'Reprint',
-  'Bill đã kết ca. Các thao tác thay đổi sau bán cần PIN Quản lý/Admin.': 'Bill ended the shift. Post-sale changes require a Management/Admin PIN.',
+  'Bill đã kết ca. Các thao tác thay đổi sau bán cần PIN Quản lý/Admin.':
+      'Bill ended the shift. Post-sale changes require a Management/Admin PIN.',
   'Xuất hóa đơn VAT': 'Export VAT invoice',
   'Tên người mua / công ty': 'Buyer/company name',
   'Tên cá nhân hoặc công ty': 'Personal or company name',
@@ -2187,10 +2194,13 @@ const Map<String, String> viToEnMap = {
   'Thành tiền': 'Make money',
   'Đã thanh toán': 'Paid',
   'giấy': 'paper',
-  'Không tìm thấy bill đang mở để thanh toán. Vui lòng chọn lại bàn.': 'No open bill found for payment. Please reselect your table.',
+  'Không tìm thấy bill đang mở để thanh toán. Vui lòng chọn lại bàn.':
+      'No open bill found for payment. Please reselect your table.',
   'Không có bàn phù hợp': 'There are no suitable tables',
-  'Chọn các dòng khách muốn thanh toán riêng.': 'Select the lines customers want to pay separately.',
-  'Chọn khách đã lưu hoặc tạo mới. Khách có ưu đãi sẽ tự áp giảm giá vào đơn.': 'Select a saved guest or create a new one. Customers with incentives will automatically apply the discount to their orders.',
+  'Chọn các dòng khách muốn thanh toán riêng.':
+      'Select the lines customers want to pay separately.',
+  'Chọn khách đã lưu hoặc tạo mới. Khách có ưu đãi sẽ tự áp giảm giá vào đơn.':
+      'Select a saved guest or create a new one. Customers with incentives will automatically apply the discount to their orders.',
   'Tên khách': 'Guest name',
   'Tên công ty': 'Company name',
   'Lưu': 'Save',
@@ -2202,7 +2212,8 @@ const Map<String, String> viToEnMap = {
   'Thêm retail': 'Add retail',
   'Lịch sử': 'History',
   'Khu vực': 'Area',
-  'Vào Cài đặt để cấu hình sơ đồ bàn.': 'Go to Settings to configure the table map.',
+  'Vào Cài đặt để cấu hình sơ đồ bàn.':
+      'Go to Settings to configure the table map.',
   'Đã in tạm tính': 'Temporarily printed',
   'Chưa có món': 'No dishes yet',
   'Đã đủ món': 'Enough dishes',
@@ -2211,7 +2222,8 @@ const Map<String, String> viToEnMap = {
   'Sửa': 'Edit',
   'Bàn đang gọi nhân viên': 'The desk is calling for staff',
   'Bàn chưa có order': 'The table has no orders yet',
-  'Thêm món FnB/retail hoặc chờ khách gọi món từ tablet.': 'Add FnB/retail dishes or wait for customers to order from the tablet.',
+  'Thêm món FnB/retail hoặc chờ khách gọi món từ tablet.':
+      'Add FnB/retail dishes or wait for customers to order from the tablet.',
   'Hủy món': 'Cancel the dish',
   'Xóa món nháp': 'Delete drafts',
   'Chờ xác nhận': 'Wait for confirmation',
@@ -2222,16 +2234,19 @@ const Map<String, String> viToEnMap = {
   'Chọn khách': 'Select guests',
   'Không rõ': 'Unknown',
   'Không có món nào chờ xác nhận.': 'There are no items awaiting confirmation.',
-  'Nhập lý do nếu từ chối (ví dụ: hết món...)': 'Enter the reason if refusing (for example: out of food...)',
+  'Nhập lý do nếu từ chối (ví dụ: hết món...)':
+      'Enter the reason if refusing (for example: out of food...)',
   'Từ chối (Reject)': 'Reject',
   'Xác nhận (Accept)': 'Accept',
-  'Nhân viên cần đọc lại với khách, kiểm tra topping/ghi chú trước khi duyệt chuyển xuống bếp.': 'Staff need to read it over with guests and check toppings/notes before approving it and sending it to the kitchen.',
+  'Nhân viên cần đọc lại với khách, kiểm tra topping/ghi chú trước khi duyệt chuyển xuống bếp.':
+      'Staff need to read it over with guests and check toppings/notes before approving it and sending it to the kitchen.',
   'Tất cả': 'All',
   'Không tìm thấy món': 'Item not found',
   'mất': 'lost',
   'Đồng ý': 'Agreed',
   'Cảnh báo Compliance': 'Compliance Alerts',
-  'Nhập PIN Quản lý để xác nhận đưa các hóa đơn lỗi vào hàng đợi gửi lại sau và kết ca:': 'Enter the Management PIN to confirm placing error invoices in the resend queue for later and end the shift:',
+  'Nhập PIN Quản lý để xác nhận đưa các hóa đơn lỗi vào hàng đợi gửi lại sau và kết ca:':
+      'Enter the Management PIN to confirm placing error invoices in the resend queue for later and end the shift:',
   'Mã PIN Quản lý': 'Management PIN',
   'Hủy bỏ': 'Cancel',
   'Bỏ qua & Kết ca': 'Skip & End Shift',
@@ -2250,7 +2265,8 @@ const Map<String, String> viToEnMap = {
   'Nhập bên nhận tiền / NCC': 'Enter the payee / NCC',
   'Nhập lý do chi': 'Enter the reason',
   'Ngày giờ chi': 'Date and time',
-  'Tên người / nhà cung cấp nhận tiền': 'Name of person/vendor receiving payment',
+  'Tên người / nhà cung cấp nhận tiền':
+      'Name of person/vendor receiving payment',
   'Ghi chú': 'Notes',
   'Xác nhận chi tiền': 'Confirm payment',
   'Chọn ảnh / PDF hóa đơn': 'Select photo/PDF of invoice',
@@ -2262,16 +2278,23 @@ const Map<String, String> viToEnMap = {
   'Cập nhật': 'Update',
   'Xác nhận quyền': 'Confirm permissions',
   'Xác nhận': 'Confirmed',
-  'Chọn giao dịch tiền-về khớp, hoặc nhập lý do xác nhận tay.': 'Select the pre-match transaction, or enter the reason for manual confirmation.',
-  'Nhập mật khẩu (PIN) của bạn để chịu trách nhiệm xác nhận này.': 'Enter your password (PIN) to be responsible for this confirmation.',
+  'Chọn giao dịch tiền-về khớp, hoặc nhập lý do xác nhận tay.':
+      'Select the pre-match transaction, or enter the reason for manual confirmation.',
+  'Nhập mật khẩu (PIN) của bạn để chịu trách nhiệm xác nhận này.':
+      'Enter your password (PIN) to be responsible for this confirmation.',
   'Xác nhận thủ công': 'Manual confirmation',
-  'Không có khoản tiền-về nào chưa khớp trong 4 giờ qua. Nếu khách đã chuyển mà webhook chưa về, dùng bước 2 bên dưới.': 'There have been no unmatched deposits in the last 4 hours. If the customer has moved but the webhook has not returned, use step 2 below.',
+  'Không có khoản tiền-về nào chưa khớp trong 4 giờ qua. Nếu khách đã chuyển mà webhook chưa về, dùng bước 2 bên dưới.':
+      'There have been no unmatched deposits in the last 4 hours. If the customer has moved but the webhook has not returned, use step 2 below.',
   'Mở rộng giỏ hàng': 'Expand shopping cart',
   'Nhập mã số thuế trước khi truy xuất': 'Enter tax code before retrieval',
-  'Không tra cứu được thông tin theo MST này.': 'Cannot look up information according to this code.',
-  'Đã điền thông tin công ty từ dữ liệu Cục Thuế': 'Filled in company information from Tax Department data',
-  'Đã xác thực Cục Thuế — xóa MST để nhập/kiểm tra lại': 'Tax Department authenticated — delete MST to enter/check again',
-  'Truy xuất thông tin công ty từ Cục Thuế': 'Retrieve company information from the Tax Department',
+  'Không tra cứu được thông tin theo MST này.':
+      'Cannot look up information according to this code.',
+  'Đã điền thông tin công ty từ dữ liệu Cục Thuế':
+      'Filled in company information from Tax Department data',
+  'Đã xác thực Cục Thuế — xóa MST để nhập/kiểm tra lại':
+      'Tax Department authenticated — delete MST to enter/check again',
+  'Truy xuất thông tin công ty từ Cục Thuế':
+      'Retrieve company information from the Tax Department',
   'Truy xuất Cục Thuế': 'Retrieve the Tax Department',
   'Nhà cung cấp': 'Supplier',
   'Nhân viên': 'Staff',
@@ -2298,7 +2321,8 @@ const Map<String, String> viToEnMap = {
   'Xóa liên hệ': 'Delete contact',
   'Xóa': 'Delete',
   'Sửa liên hệ': 'Edit contact',
-  'Khách hàng, nhà cung cấp hoặc nhân viên': 'Customers, suppliers or employees',
+  'Khách hàng, nhà cung cấp hoặc nhân viên':
+      'Customers, suppliers or employees',
   'Tên nhân viên': 'Employee name',
   'Tên khách / tên nhà cung cấp': 'Customer name / supplier name',
   'Tên công ty (nếu có)': 'Company name (if any)',
@@ -2306,22 +2330,29 @@ const Map<String, String> viToEnMap = {
   'Địa chỉ giao / nhận hàng': 'Delivery/receipt address',
   'Không ưu đãi': 'No incentives',
   'Ghi chú nội bộ': 'Internal notes',
-  ' (bỏ chọn = Inactive, lưu trữ — không xóa)': ' (uncheck = Inactive, archive — do not delete)',
+  ' (bỏ chọn = Inactive, lưu trữ — không xóa)':
+      ' (uncheck = Inactive, archive — do not delete)',
   'Chọn ảnh': 'Select photo',
   'Xóa ảnh': 'Delete photos',
   'Đóng (Esc)': 'Close (Esc)',
   'Khuyến mãi / giảm giá': 'Promotions/discounts',
-  'Kéo để di chuyển  •  Nhấp đúp để phóng to / thu nhỏ': 'Drag to move • Double click to zoom in/out',
+  'Kéo để di chuyển  •  Nhấp đúp để phóng to / thu nhỏ':
+      'Drag to move • Double click to zoom in/out',
   'Cách sử dụng': 'How to use',
-  'Lịch sử thao tác hệ thống, lỗi phát sinh và truy vết theo thời gian.': 'History of system operations, errors and tracking over time.',
-  'Xóa toàn bộ dữ liệu giao dịch như đơn, thanh toán, ca và phiếu. Giữ lại cấu hình. Cần PIN Admin.': 'Delete all transaction data such as orders, payments, shifts and tickets. Retain configuration. Need Admin PIN.',
+  'Lịch sử thao tác hệ thống, lỗi phát sinh và truy vết theo thời gian.':
+      'History of system operations, errors and tracking over time.',
+  'Xóa toàn bộ dữ liệu giao dịch như đơn, thanh toán, ca và phiếu. Giữ lại cấu hình. Cần PIN Admin.':
+      'Delete all transaction data such as orders, payments, shifts and tickets. Retain configuration. Need Admin PIN.',
   'Xuất cấu hình': 'Export configuration',
-  'Quản lý và kiểm tra sức khỏe cơ sở dữ liệu SQLite tại cửa hàng': 'Manage and check the health of SQLite databases at the store',
+  'Quản lý và kiểm tra sức khỏe cơ sở dữ liệu SQLite tại cửa hàng':
+      'Manage and check the health of SQLite databases at the store',
   'Sao lưu & Phục hồi cấu hình': 'Backup & Restore configuration',
-  'Sao lưu/phục hồi danh mục, nhân sự, menu, cài đặt. Không bao gồm dữ liệu giao dịch đơn hàng': 'Backup/restore categories, personnel, menus, settings. Does not include order transaction data',
+  'Sao lưu/phục hồi danh mục, nhân sự, menu, cài đặt. Không bao gồm dữ liệu giao dịch đơn hàng':
+      'Backup/restore categories, personnel, menus, settings. Does not include order transaction data',
   'Tải xuống cấu hình (.json)': 'Download configuration (.json)',
   'Thống kê Cơ sở dữ liệu': 'Database Statistics',
-  'Số lượng bảng ghi hiện tại trong hệ thống CSDL local': 'The number of current records in the local database system',
+  'Số lượng bảng ghi hiện tại trong hệ thống CSDL local':
+      'The number of current records in the local database system',
   'Tổng số hóa đơn': 'Total invoices',
   'Tổng số ca làm': 'Total number of shifts',
   'Hoạt động người dùng': 'User activity',
@@ -2342,7 +2373,8 @@ const Map<String, String> viToEnMap = {
   'Thu gọn': 'Collapse',
   'Không có chi tiết bổ sung': 'No additional details',
   'Chi tiết': 'Details',
-  'Hệ thống gặp lỗi khi xử lý một thao tác.': 'The system encountered an error while processing an operation.',
+  'Hệ thống gặp lỗi khi xử lý một thao tác.':
+      'The system encountered an error while processing an operation.',
   'Đã hủy hóa đơn.': 'Invoice canceled.',
   'Loại sự kiện': 'Event type',
   'Nguồn': 'Source',
@@ -2389,7 +2421,8 @@ const Map<String, String> viToEnMap = {
   'Hóa đơn': 'Invoice',
   'Tổng tiền HĐ': 'Total contract amount',
   'Màn hình bếp (KDS)': 'Kitchen screen (KDS)',
-  'Không có món nào đang chờ ở station này': 'There are no items waiting at this station',
+  'Không có món nào đang chờ ở station này':
+      'There are no items waiting at this station',
   'Không có món nào đang chờ': 'There are no items pending',
   'Xác nhận đã hủy': 'Confirmed cancellation',
   'Đã giao': 'Delivered',
@@ -2401,8 +2434,10 @@ const Map<String, String> viToEnMap = {
   'Xóa trang': 'Delete page',
   'Chọn Món': 'Select Food',
   'Thêm nút': 'Add button',
-  'Trang này chưa có nút. Bấm "Thêm nút" hoặc bấm lên ảnh để tạo nhanh.': 'This page doesn\'t have buttons yet. Click "Add button" or click on the photo to quickly create.',
-  'Chọn một nút để chỉnh món, vị trí và màu.': 'Select a button to adjust the item, position and color.',
+  'Trang này chưa có nút. Bấm "Thêm nút" hoặc bấm lên ảnh để tạo nhanh.':
+      'This page doesn\'t have buttons yet. Click "Add button" or click on the photo to quickly create.',
+  'Chọn một nút để chỉnh món, vị trí và màu.':
+      'Select a button to adjust the item, position and color.',
   'Ngày': 'Day',
   'Tháng': 'Month',
   'Năm': 'Year',
@@ -2462,25 +2497,34 @@ const Map<String, String> viToEnMap = {
   'Không ống hút': 'No straws',
   'Tất cả chi nhánh': 'All branches',
   'Chọn chi nhánh': 'Select branch',
-  'Tài khoản này chưa có quyền xem báo cáo nào.': 'This account does not have permission to view any reports.',
+  'Tài khoản này chưa có quyền xem báo cáo nào.':
+      'This account does not have permission to view any reports.',
   'Xóa lọc ngày': 'Clear date filter',
   'Chọn một báo cáo': 'Select a report',
   'Kỳ báo cáo': 'Reporting period',
   'Xuất lúc': 'Output at',
   'Không có dữ liệu': 'No data available',
-  'Đã mở màn hình phụ. Rê chuột lên mép trên của nó để kéo đi chỗ khác hoặc nhấp đúp để phóng to / thu nhỏ.': 'Secondary screen opened. Hover over its top edge to drag it away or double-click to zoom in/out.',
-  'Bật màn hình phụ (màn hình hướng về khách)': 'Turn on the secondary display (guest-facing display)',
-  'Màn hình thứ hai quay về phía khách hàng: chiếu quảng cáo khi quầy rảnh, hiện chi tiết đơn hàng khi nhân viên đang lên món / quét hàng, và hiện mã QR chuyển khoản khi thanh toán. Dùng chung cho cả nhà hàng và bán lẻ.': 'The second screen faces the customer: displays advertisements when the counter is free, displays order details when staff are loading/scanning orders, and displays QR codes for bank transfers when paying. Used for both restaurants and retail.',
+  'Đã mở màn hình phụ. Rê chuột lên mép trên của nó để kéo đi chỗ khác hoặc nhấp đúp để phóng to / thu nhỏ.':
+      'Secondary screen opened. Hover over its top edge to drag it away or double-click to zoom in/out.',
+  'Bật màn hình phụ (màn hình hướng về khách)':
+      'Turn on the secondary display (guest-facing display)',
+  'Màn hình thứ hai quay về phía khách hàng: chiếu quảng cáo khi quầy rảnh, hiện chi tiết đơn hàng khi nhân viên đang lên món / quét hàng, và hiện mã QR chuyển khoản khi thanh toán. Dùng chung cho cả nhà hàng và bán lẻ.':
+      'The second screen faces the customer: displays advertisements when the counter is free, displays order details when staff are loading/scanning orders, and displays QR codes for bank transfers when paying. Used for both restaurants and retail.',
   'Thời gian mỗi ảnh:': 'Time per photo:',
-  'Khi bật, màn hình phụ tự mở sang màn hình thứ hai và phủ kín toàn màn hình.': 'When turned on, the secondary screen automatically opens to the second screen and covers the entire screen.',
-  'Muốn dời vị trí: rê chuột lên sát mép trên của màn hình phụ, một thanh công cụ mờ sẽ hiện ra — giữ chuột vào thanh này rồi kéo cửa sổ tới nơi mong muốn.': 'To move the position: hover the mouse close to the top edge of the secondary screen, a translucent toolbar will appear - hold the mouse on this bar and then drag the window to the desired place.',
-  'Muốn phóng to hoặc thu nhỏ: nhấp đúp chuột vào thanh công cụ đó để chuyển qua lại giữa chế độ toàn màn hình và chế độ cửa sổ.': 'Want to zoom in or out: double click on the toolbar to switch back and forth between full screen mode and windowed mode.',
-  'Bình thường thanh công cụ này ẩn hoàn toàn, khách hàng không nhìn thấy.': 'Normally this toolbar is completely hidden and cannot be seen by customers.',
+  'Khi bật, màn hình phụ tự mở sang màn hình thứ hai và phủ kín toàn màn hình.':
+      'When turned on, the secondary screen automatically opens to the second screen and covers the entire screen.',
+  'Muốn dời vị trí: rê chuột lên sát mép trên của màn hình phụ, một thanh công cụ mờ sẽ hiện ra — giữ chuột vào thanh này rồi kéo cửa sổ tới nơi mong muốn.':
+      'To move the position: hover the mouse close to the top edge of the secondary screen, a translucent toolbar will appear - hold the mouse on this bar and then drag the window to the desired place.',
+  'Muốn phóng to hoặc thu nhỏ: nhấp đúp chuột vào thanh công cụ đó để chuyển qua lại giữa chế độ toàn màn hình và chế độ cửa sổ.':
+      'Want to zoom in or out: double click on the toolbar to switch back and forth between full screen mode and windowed mode.',
+  'Bình thường thanh công cụ này ẩn hoàn toàn, khách hàng không nhìn thấy.':
+      'Normally this toolbar is completely hidden and cannot be seen by customers.',
   'Thêm ảnh': 'Add photos',
   'Tích điểm & CTKM': 'Earn points & give promotions',
   'Đổi điểm & cashback': 'Redeem points & cashback',
   'Tích điểm theo giá trị mua hàng': 'Earn points based on purchase value',
-  'Tích điểm theo số lần giao dịch': 'Accumulate points according to the number of transactions',
+  'Tích điểm theo số lần giao dịch':
+      'Accumulate points according to the number of transactions',
   'Hóa đơn tối thiểu': 'Minimum invoice',
   'Thêm hạng': 'Add class',
   'Tên hạng': 'Class name',
@@ -2488,9 +2532,12 @@ const Map<String, String> viToEnMap = {
   'Tên chứa': 'Name contains',
   'Thêm hành vi': 'Add behavior',
   'Tên hành vi': 'Behavior name',
-  'Xuất hóa đơn điện tử, đồng bộ khách hàng và trạng thái hóa đơn.': 'Export electronic invoices, synchronize customers and invoice status.',
-  'Chuẩn bị cấu hình merchant, store và webhook cho đơn từ Be.': 'Prepare merchant, store and webhook configuration for application from Be.',
-  'Đồng bộ sản phẩm retail, tồn kho và đơn hàng mart.': 'Synchronize retail products, inventory and mart orders.',
+  'Xuất hóa đơn điện tử, đồng bộ khách hàng và trạng thái hóa đơn.':
+      'Export electronic invoices, synchronize customers and invoice status.',
+  'Chuẩn bị cấu hình merchant, store và webhook cho đơn từ Be.':
+      'Prepare merchant, store and webhook configuration for application from Be.',
+  'Đồng bộ sản phẩm retail, tồn kho và đơn hàng mart.':
+      'Synchronize retail products, inventory and mart orders.',
   'Tài khoản / Username': 'Account / Username',
   'Mật khẩu / Token / Password': 'Password / Token / Password',
   'Return URL (Thành công)': 'Return URL (Success)',
@@ -2498,7 +2545,8 @@ const Map<String, String> viToEnMap = {
   'Kết nối thành công!': 'Connection successful!',
   'Kết nối thất bại.': 'Connection failed.',
   'Lỗi kết nối': 'Connection error',
-  'Ghi chú phục vụ đối soát, vận hành nội bộ...': 'Notes for internal control and operations...',
+  'Ghi chú phục vụ đối soát, vận hành nội bộ...':
+      'Notes for internal control and operations...',
   'Lưu kết nối đang chọn': 'Save the currently selected connection',
   'Nhân viên xác nhận': 'Staff confirmed',
   'Đồng bộ trạng thái hóa đơn': 'Synchronize invoice status',
@@ -2506,41 +2554,56 @@ const Map<String, String> viToEnMap = {
   'Đồng bộ menu': 'Synchronize menus',
   'Đồng bộ tồn kho': 'Synchronize inventory',
   'Đồng bộ sản phẩm': 'Product synchronization',
-  'Huỷ link thanh toán: POST /v2/payment-requests/{id}/cancel': 'Cancel payment link: POST /v2/payment-requests/{id}/cancel',
-  'Hệ thống khớp đúng bill theo nội dung; đủ tiền thì tự đóng bill, in hoá đơn, đẩy realtime cho POS/iPad.': 'The system matches the bill according to the content; If you have enough money, pay the bill yourself, print the invoice, and push realtime to POS/iPad.',
+  'Huỷ link thanh toán: POST /v2/payment-requests/{id}/cancel':
+      'Cancel payment link: POST /v2/payment-requests/{id}/cancel',
+  'Hệ thống khớp đúng bill theo nội dung; đủ tiền thì tự đóng bill, in hoá đơn, đẩy realtime cho POS/iPad.':
+      'The system matches the bill according to the content; If you have enough money, pay the bill yourself, print the invoice, and push realtime to POS/iPad.',
   'Nhập tên kho': 'Enter the warehouse name',
   'Đã hủy lưu cấu hình kho': 'Store configuration unsaved',
   'Kho bếp': 'Kitchen warehouse',
   'Tên kho': 'Warehouse name',
   'Sắp xếp': 'Arrange',
   'Lưu cấu hình kho': 'Save the repository configuration',
-  'Cấu hình máy in, in thử và lịch sử lệnh in đã có trong module "Máy in" ở màn hình ứng dụng.': 'Printer configuration, test printing and print job history are available in the "Printer" module on the application screen.',
+  'Cấu hình máy in, in thử và lịch sử lệnh in đã có trong module "Máy in" ở màn hình ứng dụng.':
+      'Printer configuration, test printing and print job history are available in the "Printer" module on the application screen.',
   'Đơn hàng online': 'Online orders',
   'Hóa đơn & Thanh toán': 'Invoices & Payments',
   'Đơn hàng online mới': 'New online order',
   'Thanh toán thành công': 'Payment successful',
   'Thông báo đơn hàng & sự kiện': 'Order & event notifications',
-  'Chọn vai trò / nhân viên sẽ nhận từng loại thông báo. Vì mỗi thiết bị đăng nhập bằng một vai trò, cấu hình theo vai trò cũng chính là theo thiết bị. Có thể ghi đè riêng cho từng nhân viên bên dưới.': 'Select the roles/employees who will receive each type of notification. Because each device logs in with a role, configuration by role is also per device. Can be overridden separately for each employee below.',
+  'Chọn vai trò / nhân viên sẽ nhận từng loại thông báo. Vì mỗi thiết bị đăng nhập bằng một vai trò, cấu hình theo vai trò cũng chính là theo thiết bị. Có thể ghi đè riêng cho từng nhân viên bên dưới.':
+      'Select the roles/employees who will receive each type of notification. Because each device logs in with a role, configuration by role is also per device. Can be overridden separately for each employee below.',
   'Không có nhân viên phù hợp.': 'There are no suitable staff.',
   'Không': 'No',
   'Không nhận': 'Not accepted',
   'Bán lẻ (Retail POS)': 'Retail (Retail POS)',
   'Bán buôn/Bán lẻ': 'Wholesale/Retail',
   'Thuế suất': 'Tax rate',
-  'Chào mừng bạn đến với tính năng Thuế & Kế toán!': 'Welcome to the Tax & Accounting feature!',
-  'Hệ thống sẽ hướng dẫn bạn thiết lập hồ sơ kê khai thuế, tự động gán thuế suất mặc định và hỗ trợ xuất biểu mẫu kê khai theo quy định mới nhất.': 'The system will guide you to set up tax declaration documents, automatically assign default tax rates and support exporting declaration forms according to the latest regulations.',
+  'Chào mừng bạn đến với tính năng Thuế & Kế toán!':
+      'Welcome to the Tax & Accounting feature!',
+  'Hệ thống sẽ hướng dẫn bạn thiết lập hồ sơ kê khai thuế, tự động gán thuế suất mặc định và hỗ trợ xuất biểu mẫu kê khai theo quy định mới nhất.':
+      'The system will guide you to set up tax declaration documents, automatically assign default tax rates and support exporting declaration forms according to the latest regulations.',
   'Thông tin đăng ký kinh doanh': 'Business registration information',
   'Tên Hộ kinh doanh *': 'Name of Business Household *',
-  'Ngày chuyển sang phương pháp kê khai *': 'Date of switching to declaration method *',
+  'Ngày chuyển sang phương pháp kê khai *':
+      'Date of switching to declaration method *',
   'Chi nhánh & Địa điểm kinh doanh': 'Branches & Business Locations',
-  'Nhập mã địa điểm kinh doanh (MST 13 số nếu có) và chọn trụ sở chính:': 'Enter the business location code (13-digit MST if available) and select headquarters:',
-  'Nhóm 1: Doanh thu < 1 tỷ đồng / năm': 'Group 1: Revenue < 1 billion VND / year',
-  'Nhóm 2: Doanh thu 1 tỷ – 3 tỷ đồng / năm': 'Group 2: Revenue 1 billion - 3 billion VND / year',
-  'Thuế GTGT/TNCN tính theo tỷ lệ %. Kê khai thuế theo Quý, bắt buộc sử dụng HĐĐT và Sổ S2a.': 'VAT/PIT calculated at the rate of %. Declare taxes quarterly, required to use e-Invoice and Book S2a.',
-  'Nhóm 3: Doanh thu 3 tỷ – 50 tỷ đồng / năm': 'Group 3: Revenue 3 billion - 50 billion VND / year',
-  'Thuế GTGT/TNCN tính theo tỷ lệ %. Kê khai thuế theo Quý/Năm, bắt buộc sử dụng Bộ 4 sổ và HĐĐT.': 'VAT/PIT calculated at the rate of %. Tax declaration by Quarter/Year, mandatory use of 4 books and e-invoice.',
-  'Nhóm 4: Doanh thu > 50 tỷ đồng / năm': 'Group 4: Revenue > 50 billion VND / year',
-  'Chọn phạm vi áp dụng thuế cho các mặt hàng trong thực đơn:': 'Select the tax scope for menu items:',
+  'Nhập mã địa điểm kinh doanh (MST 13 số nếu có) và chọn trụ sở chính:':
+      'Enter the business location code (13-digit MST if available) and select headquarters:',
+  'Nhóm 1: Doanh thu < 1 tỷ đồng / năm':
+      'Group 1: Revenue < 1 billion VND / year',
+  'Nhóm 2: Doanh thu 1 tỷ – 3 tỷ đồng / năm':
+      'Group 2: Revenue 1 billion - 3 billion VND / year',
+  'Thuế GTGT/TNCN tính theo tỷ lệ %. Kê khai thuế theo Quý, bắt buộc sử dụng HĐĐT và Sổ S2a.':
+      'VAT/PIT calculated at the rate of %. Declare taxes quarterly, required to use e-Invoice and Book S2a.',
+  'Nhóm 3: Doanh thu 3 tỷ – 50 tỷ đồng / năm':
+      'Group 3: Revenue 3 billion - 50 billion VND / year',
+  'Thuế GTGT/TNCN tính theo tỷ lệ %. Kê khai thuế theo Quý/Năm, bắt buộc sử dụng Bộ 4 sổ và HĐĐT.':
+      'VAT/PIT calculated at the rate of %. Tax declaration by Quarter/Year, mandatory use of 4 books and e-invoice.',
+  'Nhóm 4: Doanh thu > 50 tỷ đồng / năm':
+      'Group 4: Revenue > 50 billion VND / year',
+  'Chọn phạm vi áp dụng thuế cho các mặt hàng trong thực đơn:':
+      'Select the tax scope for menu items:',
   'Tất cả thực đơn': 'All menus',
   'Tất cả ngoại trừ danh mục chọn': 'All except select categories',
   'Chọn danh mục hàng hóa áp dụng:': 'Select applicable product categories:',
@@ -2550,13 +2613,17 @@ const Map<String, String> viToEnMap = {
   'Quay lại': 'Come back',
   'Hoàn thành & Kích hoạt': 'Complete & Activate',
   'Tiếp tục': 'Continue',
-  'Hồ sơ khai thuế Hộ kinh doanh': 'Tax declaration documents for business households',
+  'Hồ sơ khai thuế Hộ kinh doanh':
+      'Tax declaration documents for business households',
   'Cập nhật hồ sơ': 'Update profile',
-  'Cấu hình kết nối Hóa đơn điện tử (MISA meInvoice)': 'Configuring electronic invoice connection (MISA meInvoice)',
-  'Hệ thống liên kết trực tiếp với nhà cung cấp MISA meInvoice để phát hành hóa đơn tự động từ máy tính tiền.': 'The system links directly with MISA meInvoice supplier to issue invoices automatically from the cash register.',
+  'Cấu hình kết nối Hóa đơn điện tử (MISA meInvoice)':
+      'Configuring electronic invoice connection (MISA meInvoice)',
+  'Hệ thống liên kết trực tiếp với nhà cung cấp MISA meInvoice để phát hành hóa đơn tự động từ máy tính tiền.':
+      'The system links directly with MISA meInvoice supplier to issue invoices automatically from the cash register.',
   'Trạng thái kết nối:': 'Connection status:',
   'Tài khoản kết nối': 'Connected account',
-  'Lưu ý: Mọi cấu hình chi tiết khác cần thiết lập trên giao diện Web quản trị.': 'Note: All other detailed configurations need to be set up on the Web administration interface.',
+  'Lưu ý: Mọi cấu hình chi tiết khác cần thiết lập trên giao diện Web quản trị.':
+      'Note: All other detailed configurations need to be set up on the Web administration interface.',
   'Hồ sơ thuế': 'Tax records',
   'Thanh toán & Ca': 'Payment & Shift',
   'Tài khoản ngân hàng nhận chuyển khoản': 'Bank account receiving transfer',
@@ -2566,7 +2633,8 @@ const Map<String, String> viToEnMap = {
   'Ca làm việc & Két tiền': 'Shift & Cash Box',
   'Bắt buộc mở ca trước khi bán': 'Required to open shifts before selling',
   'In thử': 'Test print',
-  'Xác nhận thay đổi cấu hình máy POS thẻ.': 'Confirm card POS machine configuration changes.',
+  'Xác nhận thay đổi cấu hình máy POS thẻ.':
+      'Confirm card POS machine configuration changes.',
   'Kết nối': 'Connect',
   'Mạng & kết nối': 'Network & connectivity',
   'Không ra được internet': 'Can\'t access the internet',
@@ -2578,27 +2646,34 @@ const Map<String, String> viToEnMap = {
   'Lưu trữ cục bộ': 'Local storage',
   'Lưu trữ lâu dài': 'Long term storage',
   'Trạng thái máy in': 'Printer status',
-  'Chưa có máy in nào được cấu hình trong Danh mục in': 'There are no printers configured in the Print Catalog',
+  'Chưa có máy in nào được cấu hình trong Danh mục in':
+      'There are no printers configured in the Print Catalog',
   'Mất kết nối': 'Lost connection',
   'Không kết nối': 'No connection',
   'Máy in hệ thống': 'System printer',
-  'Cấu hình cách máy POS xử lý khi bấm "Thanh toán thẻ". "Tự động" khi máy chưa cấu nối sẽ tự hạ xuống "Thủ công", không bị treo.': 'Configure how the POS machine processes when clicking "Card payment". "Automatic" when the machine is not connected will automatically lower to "Manual", without hanging.',
+  'Cấu hình cách máy POS xử lý khi bấm "Thanh toán thẻ". "Tự động" khi máy chưa cấu nối sẽ tự hạ xuống "Thủ công", không bị treo.':
+      'Configure how the POS machine processes when clicking "Card payment". "Automatic" when the machine is not connected will automatically lower to "Manual", without hanging.',
   'Lưu cấu hình máy POS thẻ': 'Save card POS machine configuration',
   'Danh mục in': 'Print catalog',
-  'Chọn đúng tên máy in thật từ hệ điều hành, đặt nhãn hiển thị và tuyến nhận job in.': 'Select the correct real printer name from the operating system, set the display label and print job receipt route.',
-  'Chưa có máy in nào. Bấm "+ Thêm danh mục in" bên dưới để thêm.': 'There are no printers yet. Click "+ Add print category" below to add.',
+  'Chọn đúng tên máy in thật từ hệ điều hành, đặt nhãn hiển thị và tuyến nhận job in.':
+      'Select the correct real printer name from the operating system, set the display label and print job receipt route.',
+  'Chưa có máy in nào. Bấm "+ Thêm danh mục in" bên dưới để thêm.':
+      'There are no printers yet. Click "+ Add print category" below to add.',
   'Đồng bộ máy in hệ điều hành': 'Synchronize printer operating system',
   'Thêm danh mục in': 'Add print categories',
   'Lưu danh mục in': 'Save print list',
-  'Hướng dẫn cấu hình in trực tiếp qua LAN (Mô hình IPOS - Không dùng KDS)': 'Instructions for configuring direct printing via LAN (IPOS model - Do not use KDS)',
+  'Hướng dẫn cấu hình in trực tiếp qua LAN (Mô hình IPOS - Không dùng KDS)':
+      'Instructions for configuring direct printing via LAN (IPOS model - Do not use KDS)',
   'Kết nối phần cứng': 'Hardware connection',
   'Máy in hệ điều hành (OS)': 'Printer operating system (OS)',
   'Định dạng in': 'Print format',
   'Hóa đơn / Tạm tính': 'Invoice / Provisional calculation',
   'Báo cáo (Report)': 'Report',
-  'Nhập hoặc chọn tên máy in thật (VD: EPSON TM-T82)': 'Enter or select the actual printer name (Example: EPSON TM-T82)',
+  'Nhập hoặc chọn tên máy in thật (VD: EPSON TM-T82)':
+      'Enter or select the actual printer name (Example: EPSON TM-T82)',
   'Có két': 'There is a safe',
-  'Xác nhận thay đổi cấu hình danh mục máy in.': 'Confirm the printer catalog configuration change.',
+  'Xác nhận thay đổi cấu hình danh mục máy in.':
+      'Confirm the printer catalog configuration change.',
   'Thiết bị đang kết nối': 'Device is connecting',
   'API server sống + độ trễ thật': 'Live server API + real latency',
   'server có lỗi': 'The server has an error',
@@ -2624,23 +2699,31 @@ const Map<String, String> viToEnMap = {
   'Tháng áp dụng': 'Month of application',
   'Ngày trong tháng': 'Day of the month',
   'Tất cả nhân viên': 'All employees',
-  'Ghi chú nội bộ / mô tả cách chạy CTKM': 'Internal notes/description of how to run CTKM',
+  'Ghi chú nội bộ / mô tả cách chạy CTKM':
+      'Internal notes/description of how to run CTKM',
   'Bỏ qua': 'Skip it',
   'Lưu CTKM': 'Save CTKM',
   'Lưu chỉnh sửa': 'Save edits',
   'Danh sách chương trình': 'Program list',
   'từ': 'word',
   'Tất cả lot của SKU': 'All lots of SKUs',
-  'Tài khoản, vai trò và quyền truy cập của nhân viên.': 'Employee accounts, roles, and access.',
+  'Tài khoản, vai trò và quyền truy cập của nhân viên.':
+      'Employee accounts, roles, and access.',
   'Thực đơn (Menu)': 'Menu',
-  'Danh mục, món ăn, recipe trừ kho và lịch bán.': 'Categories, dishes, recipes except inventory and sales schedule.',
-  'Hóa đơn điện tử, kế toán và nền tảng bán hàng.': 'Electronic invoice, accounting and sales platform.',
-  'Trạng thái thiết bị, máy in và đồng bộ cloud.': 'Device status, printer and cloud sync.',
-  'Quản lý kho hàng và liên kết kênh bán.': 'Warehouse management and sales channel links.',
+  'Danh mục, món ăn, recipe trừ kho và lịch bán.':
+      'Categories, dishes, recipes except inventory and sales schedule.',
+  'Hóa đơn điện tử, kế toán và nền tảng bán hàng.':
+      'Electronic invoice, accounting and sales platform.',
+  'Trạng thái thiết bị, máy in và đồng bộ cloud.':
+      'Device status, printer and cloud sync.',
+  'Quản lý kho hàng và liên kết kênh bán.':
+      'Warehouse management and sales channel links.',
   'Tích điểm & Khuyến mại': 'Earn points & Promotions',
-  'Âm thanh và định tuyến thông báo sự kiện.': 'Sound and event notification routing.',
+  'Âm thanh và định tuyến thông báo sự kiện.':
+      'Sound and event notification routing.',
   'Tích điểm': 'Accumulate points',
-  'Nhân viên mới sẽ nhận quyền theo vai trò, sau đó có thể chỉnh riêng từng người.': 'New employees will receive permissions based on their role, which can then be adjusted individually.',
+  'Nhân viên mới sẽ nhận quyền theo vai trò, sau đó có thể chỉnh riêng từng người.':
+      'New employees will receive permissions based on their role, which can then be adjusted individually.',
   'Ngôn ngữ': 'Language',
   'Lưu quyền': 'Save rights',
   'Chọn tất cả': 'Select all',
@@ -2667,7 +2750,8 @@ const Map<String, String> viToEnMap = {
   'Lịch sử lệnh in': 'Print job history',
   'Tất cả trạng thái': 'All status',
   'Mua hàng': 'Purchase',
-  'Chọn NCC hoặc nhập tên nơi mua': 'Select NCC or enter the name of the place of purchase',
+  'Chọn NCC hoặc nhập tên nơi mua':
+      'Select NCC or enter the name of the place of purchase',
   'Thêm ít nhất một dòng hàng': 'Add at least one row',
   'Tên nơi mua': 'Name of place of purchase',
   'Nhập vào kho': 'Enter into warehouse',
@@ -2684,12 +2768,15 @@ const Map<String, String> viToEnMap = {
   'Nhận hàng vào kho': 'Receive goods into warehouse',
   'Thanh toán NCC': 'NCC payment',
   'Chuyển khoản QR': 'QR transfer',
-  'Nhập approval code thủ công rồi thêm dòng thanh toán': 'Enter the approval code manually and then add a payment line',
+  'Nhập approval code thủ công rồi thêm dòng thanh toán':
+      'Enter the approval code manually and then add a payment line',
   'Nhập số tiền > 0': 'Enter amount > 0',
   'Không còn số tiền cần thu': 'There is no more money to collect',
   'Nhập thông tin xuất hóa đơn': 'Enter invoicing information',
-  'Nhập tên khách hoặc tên công ty xuất hóa đơn': 'Enter the customer name or billing company name',
-  'In bill bán lẻ thất bại sau thanh toán': 'Retail bill printing fails after payment',
+  'Nhập tên khách hoặc tên công ty xuất hóa đơn':
+      'Enter the customer name or billing company name',
+  'In bill bán lẻ thất bại sau thanh toán':
+      'Retail bill printing fails after payment',
   'Thanh toán bán lẻ thất bại': 'Retail payment failure',
   'Xuất hóa đơn công ty': 'Export company invoices',
   'Số điện thoại': 'Phone number',
@@ -2706,22 +2793,27 @@ const Map<String, String> viToEnMap = {
   'Không có sản phẩm': 'There are no products',
   'Giỏ hàng': 'Shopping cart',
   'Xóa giỏ': 'Clear cart',
-  'Nhập mã voucher giấy, voucher công ty, đối tác hoặc UrBox. CTKM sản phẩm chọn bằng icon hộp quà trên từng dòng hàng.': 'Enter paper voucher code, company voucher, partner voucher or UrBox. Product promotions are selected using the gift box icon on each product line.',
-  'Không có voucher ngoài đang hoạt động': 'There are no active external vouchers',
+  'Nhập mã voucher giấy, voucher công ty, đối tác hoặc UrBox. CTKM sản phẩm chọn bằng icon hộp quà trên từng dòng hàng.':
+      'Enter paper voucher code, company voucher, partner voucher or UrBox. Product promotions are selected using the gift box icon on each product line.',
+  'Không có voucher ngoài đang hoạt động':
+      'There are no active external vouchers',
   'Không dùng': 'Do not use',
   'Không yêu cầu bill tối thiểu': 'No minimum bill required',
   'Giỏ hàng đang trống': 'The shopping cart is empty',
   'Chọn khách hàng': 'Select customer',
-  'Nhập tên, SĐT hoặc tên công ty': 'Enter your name, phone number or company name',
+  'Nhập tên, SĐT hoặc tên công ty':
+      'Enter your name, phone number or company name',
   'Thêm khách hàng': 'Add customers',
   'Không mở được camera để quét.': 'Cannot open the camera to scan.',
   'Món bạn hay gọi': 'The dish you often order',
   'Món đã gửi bếp': 'The dish has been sent to the kitchen',
   'tiền mặt': 'cash',
   'quẹt thẻ': 'swipe card',
-  'Khách hàng chưa đăng ký thành viên': 'The customer has not registered as a member',
+  'Khách hàng chưa đăng ký thành viên':
+      'The customer has not registered as a member',
   'Khách hàng chưa đặt tên': 'Unnamed customer',
-  'Chưa kết nối được tích điểm — bạn vẫn có thể gọi món bình thường.': 'Points are not yet connected — you can still order normally.',
+  'Chưa kết nối được tích điểm — bạn vẫn có thể gọi món bình thường.':
+      'Points are not yet connected — you can still order normally.',
   'Nhân viên thoát kiosk': 'Employee exit kiosk',
   'Mật khẩu thiết bị khách': 'Client device password',
   'Mật khẩu không đúng': 'Password is incorrect',
@@ -2729,15 +2821,19 @@ const Map<String, String> viToEnMap = {
   'Chọn ngôn ngữ để bắt đầu': 'Choose a language to get started',
   'Tiếp tục →': 'Continue →',
   'Nhập số điện thoại': 'Enter phone number',
-  'Tích điểm thành viên và lưu món bạn yêu thích (không bắt buộc)': 'Earn membership points and save your favorite dishes (optional)',
+  'Tích điểm thành viên và lưu món bạn yêu thích (không bắt buộc)':
+      'Earn membership points and save your favorite dishes (optional)',
   'Ví dụ: 0901234567': 'For example: 0901234567',
   'Bỏ qua & Gọi món': 'Skip & Order',
-  'Số điện thoại chưa đúng, vui lòng kiểm tra lại': 'The phone number is not correct, please check again',
+  'Số điện thoại chưa đúng, vui lòng kiểm tra lại':
+      'The phone number is not correct, please check again',
   'Xin chào %s!': 'Hello %s!',
-  'Đã tạo thẻ thành viên cho bạn 🎉': 'A membership card has been created for you 🎉',
+  'Đã tạo thẻ thành viên cho bạn 🎉':
+      'A membership card has been created for you 🎉',
   'Điểm tích lũy': 'Accumulated points',
   'Thực đơn': 'Menu',
-  '⭐ Món bạn hay gọi — chạm để gọi lại': '⭐ Food you often order — tap to call again',
+  '⭐ Món bạn hay gọi — chạm để gọi lại':
+      '⭐ Food you often order — tap to call again',
   'Chưa chọn món ăn nào': 'No dishes have been selected yet',
   'GỬI BẾP': 'SEND KITCHEN',
   'Xóa hết': 'Delete all',
@@ -2748,21 +2844,25 @@ const Map<String, String> viToEnMap = {
   'Chọn cách thanh toán': 'Choose payment method',
   'Tổng cần thanh toán': 'Total need to pay',
   'Quẹt thẻ': 'Swipe the card',
-  'Nhân viên sẽ đến hỗ trợ bạn ngay. Xin chờ trong giây lát!': 'Staff will come to assist you immediately. Please wait a moment!',
+  'Nhân viên sẽ đến hỗ trợ bạn ngay. Xin chờ trong giây lát!':
+      'Staff will come to assist you immediately. Please wait a moment!',
   'Quét mã QR để thanh toán': 'Scan QR code to pay',
   'Đang chờ thanh toán…': 'Waiting for payment…',
   'Đã nhận thanh toán. Cảm ơn quý khách!': 'Payment received. Thank you!',
   '← Quay lại': '← Go back',
-  'Nhập mã số thuế để nhận hóa đơn điện tử qua email': 'Enter your tax code to receive an electronic invoice via email',
+  'Nhập mã số thuế để nhận hóa đơn điện tử qua email':
+      'Enter your tax code to receive an electronic invoice via email',
   'Có, xuất hóa đơn': 'Yes, issue invoice',
   'Không, cảm ơn': 'No thanks',
   'Truy xuất': 'Retrieve',
   'Số điện thoại liên hệ': 'Contact phone number',
-  'Đã ghi nhận! Hóa đơn điện tử sẽ được gửi về email của bạn.': 'Noted! An electronic invoice will be sent to your email.',
+  'Đã ghi nhận! Hóa đơn điện tử sẽ được gửi về email của bạn.':
+      'Noted! An electronic invoice will be sent to your email.',
   'Cảm ơn quý khách!': 'Thank you!',
   'Hẹn gặp lại quý khách lần sau 💙': 'See you next time 💙',
   'Khách tự gọi món': 'Guests order their own food',
-  'Chọn bàn cho khách rồi đưa máy': 'Choose a table for the customer and then hand over the phone',
+  'Chọn bàn cho khách rồi đưa máy':
+      'Choose a table for the customer and then hand over the phone',
   'Đang phục vụ': 'In service',
   'món hay gọi': 'favorite dish',
   'Số lượng không hợp lệ': 'Invalid quantity',
@@ -2792,11 +2892,14 @@ const Map<String, String> viToEnMap = {
 
   // Generated missing static i18n keys (2026-07-14 pass 2).
   'Có bản cập nhật mới': 'There is a new update',
-  'PIN không đúng hoặc không đăng nhập được': 'Incorrect PIN or unable to log in',
+  'PIN không đúng hoặc không đăng nhập được':
+      'Incorrect PIN or unable to log in',
   'Chưa có nhân viên để hiển thị.': 'There are no employees to display yet.',
-  'Dùng "Đăng nhập quản trị viên" bên dưới.': 'Use "Administrator Login" below.',
+  'Dùng "Đăng nhập quản trị viên" bên dưới.':
+      'Use "Administrator Login" below.',
   'Đăng nhập': 'Log in',
-  'HÓA ĐƠN ĐIỆN TỬ KHỞI TẠO TỪ MÁY TÍNH TIỀN\\nCẢM ƠN QUÝ KHÁCH - HẸN GẶP LẠI!': 'ELECTRONIC INVOICE INITIALIZED FROM CASH CALCULATOR\\nTHANK YOU - SEE YOU AGAIN!',
+  'HÓA ĐƠN ĐIỆN TỬ KHỞI TẠO TỪ MÁY TÍNH TIỀN\\nCẢM ƠN QUÝ KHÁCH - HẸN GẶP LẠI!':
+      'ELECTRONIC INVOICE INITIALIZED FROM CASH CALCULATOR\\nTHANK YOU - SEE YOU AGAIN!',
   'BÀN MỞ': 'OPEN TABLES',
   'bàn': 'tables',
   'trống': 'blank',
@@ -2805,35 +2908,49 @@ const Map<String, String> viToEnMap = {
   'ĐANG GỌI': 'CALLING',
   'đang dùng': 'in use',
   'Chưa đủ món': 'Not all items ready',
-  'Chưa có tài liệu nào.\\n(Tải lên tài liệu mới sẽ bổ sung sau khi tích hợp chọn file.)': 'There are no documents yet.\\n(Upload new documents will be added after integrating file selection.)',
-  'Doanh thu được tính từ lúc mở ca đầu ngày': 'Revenue is calculated from the opening of the first shift of the day',
+  'Chưa có tài liệu nào.\\n(Tải lên tài liệu mới sẽ bổ sung sau khi tích hợp chọn file.)':
+      'There are no documents yet.\\n(Upload new documents will be added after integrating file selection.)',
+  'Doanh thu được tính từ lúc mở ca đầu ngày':
+      'Revenue is calculated from the opening of the first shift of the day',
   'đến': 'to',
-  'Chưa có ca được mở hôm nay, tạm tính theo ngày lịch từ': 'No shift has been opened today, estimating by calendar day from',
+  'Chưa có ca được mở hôm nay, tạm tính theo ngày lịch từ':
+      'No shift has been opened today, estimating by calendar day from',
   'món': 'items',
   'Cảnh báo tồn kho': 'Inventory alert',
-  '{storeName}\\n{address}\\nĐT: {phone}': '{storeName}\\n{address}\\nPhone: {phone}',
-  'Số bill: {billNo}\\n{place}\\nThu ngân: {cashier}\\nNgày: {time}': 'Bill number: {billNo}\\n{place}\\nCashier: {cashier}\\nDate: {time}',
-  '2x Trà đào 60.000đ\\n1x Bánh cookie 30.000đ': '2x Peach tea 60,000 VND\\n1x Cookies 30,000 VND',
-  'In phiếu tự kiểm tra (Self-Test) bằng cách tắt nguồn máy in, nhấn giữ nút FEED rồi bật nguồn lại, thả tay sau 3 giây. Ghi lại địa chỉ IP tĩnh hiển thị trên phiếu (ví dụ: 192.168.1.50).\\nLưu ý: Hãy đặt IP tĩnh (Static IP) hoặc gán IP cố định trong Router cho máy in để tránh bị thay đổi IP khi khởi động lại.': 'Print the self-test form by turning off the printer power, holding down the FEED button, then turning the power back on, releasing it after 3 seconds. Note down the static IP address displayed on the ticket (for example: 192.168.1.50).\\nNote: Please set a Static IP or assign a fixed IP in the Router to the printer to avoid IP changes when restarting.',
-  'Bấm nút [+ Thêm danh mục in] ở bên dưới:\\n• Chọn kết nối: Network Printer (LAN/IP).\\n• Nhập IP máy in bếp/bar vào cột IP máy in (LAN) (VD: 192.168.1.50).\\n• Nhập Port (mặc định là 9100).\\n• Chọn Định dạng in tương ứng (VD: Phiếu bếp/bar (Kitchen ticket) cho bếp, Tem ly (Cup label) cho tem nhãn...).': 'Click the [+ Add print category] button below:\\n• Select connection: Network Printer (LAN/IP).\\n• Enter the kitchen/bar printer IP in the printer IP (LAN) column (eg: 192.168.1.50).\\n• Enter Port (default is 9100).\\n• Select the corresponding print format (eg: Kitchen ticket for the kitchen, Cup label for the label...).',
-  '• Tích chọn ô Đang sử dụng và Tự động in trên dòng máy in vừa thêm.\\n• Trong Thực đơn FnB, gán đúng Station cho từng món ăn (chọn Bếp hoặc Bar). Hệ thống sẽ tự động gửi món đến máy in tương ứng khi nhận đơn từ iPad hoặc POS quầy.\\n• Bấm nút [Lưu danh mục in] để hoàn tất cấu hình.': '• Check the boxes Currently in use and Automatically print on the newly added printer line.\\n• In the FnB Menu, assign the correct Station to each dish (select Kitchen or Bar). The system will automatically send the order to the corresponding printer when receiving an order from an iPad or POS counter.\\n• Click the [Save print list] button to complete the configuration.',
+  '{storeName}\\n{address}\\nĐT: {phone}':
+      '{storeName}\\n{address}\\nPhone: {phone}',
+  'Số bill: {billNo}\\n{place}\\nThu ngân: {cashier}\\nNgày: {time}':
+      'Bill number: {billNo}\\n{place}\\nCashier: {cashier}\\nDate: {time}',
+  '2x Trà đào 60.000đ\\n1x Bánh cookie 30.000đ':
+      '2x Peach tea 60,000 VND\\n1x Cookies 30,000 VND',
+  'In phiếu tự kiểm tra (Self-Test) bằng cách tắt nguồn máy in, nhấn giữ nút FEED rồi bật nguồn lại, thả tay sau 3 giây. Ghi lại địa chỉ IP tĩnh hiển thị trên phiếu (ví dụ: 192.168.1.50).\\nLưu ý: Hãy đặt IP tĩnh (Static IP) hoặc gán IP cố định trong Router cho máy in để tránh bị thay đổi IP khi khởi động lại.':
+      'Print the self-test form by turning off the printer power, holding down the FEED button, then turning the power back on, releasing it after 3 seconds. Note down the static IP address displayed on the ticket (for example: 192.168.1.50).\\nNote: Please set a Static IP or assign a fixed IP in the Router to the printer to avoid IP changes when restarting.',
+  'Bấm nút [+ Thêm danh mục in] ở bên dưới:\\n• Chọn kết nối: Network Printer (LAN/IP).\\n• Nhập IP máy in bếp/bar vào cột IP máy in (LAN) (VD: 192.168.1.50).\\n• Nhập Port (mặc định là 9100).\\n• Chọn Định dạng in tương ứng (VD: Phiếu bếp/bar (Kitchen ticket) cho bếp, Tem ly (Cup label) cho tem nhãn...).':
+      'Click the [+ Add print category] button below:\\n• Select connection: Network Printer (LAN/IP).\\n• Enter the kitchen/bar printer IP in the printer IP (LAN) column (eg: 192.168.1.50).\\n• Enter Port (default is 9100).\\n• Select the corresponding print format (eg: Kitchen ticket for the kitchen, Cup label for the label...).',
+  '• Tích chọn ô Đang sử dụng và Tự động in trên dòng máy in vừa thêm.\\n• Trong Thực đơn FnB, gán đúng Station cho từng món ăn (chọn Bếp hoặc Bar). Hệ thống sẽ tự động gửi món đến máy in tương ứng khi nhận đơn từ iPad hoặc POS quầy.\\n• Bấm nút [Lưu danh mục in] để hoàn tất cấu hình.':
+      '• Check the boxes Currently in use and Automatically print on the newly added printer line.\\n• In the FnB Menu, assign the correct Station to each dish (select Kitchen or Bar). The system will automatically send the order to the corresponding printer when receiving an order from an iPad or POS counter.\\n• Click the [Save print list] button to complete the configuration.',
   'hiện': 'showing',
   'mặt hàng': 'items',
   'Có CTKM': 'Promotion',
   'Gợi ý': 'Suggested',
   'giảm': 'reduce',
   'Tồn': 'Stock',
-  'Ứng dụng chưa được cấp quyền camera.\\nVào Cài đặt → Ứng dụng → cấp quyền Camera rồi thử lại.': 'The application has not been granted camera permissions.\\nGo to Settings → Applications → grant Camera permissions and try again.',
+  'Ứng dụng chưa được cấp quyền camera.\\nVào Cài đặt → Ứng dụng → cấp quyền Camera rồi thử lại.':
+      'The application has not been granted camera permissions.\\nGo to Settings → Applications → grant Camera permissions and try again.',
   'Dọn dữ liệu giao dịch': 'Clear transaction data',
   'Dọn sạch giao dịch & reset bàn': 'Clear transactions & reset tables',
-  'Thao tác dọn sạch giao dịch sẽ xóa vĩnh viễn toàn bộ hóa đơn, ca làm và chi phí trong database chính.': 'Clearing transactions will permanently delete all bills, shifts and expenses in the main database.',
-  'Chưa có tài liệu nào.\n(Tải lên tài liệu mới sẽ bổ sung sau khi tích hợp chọn file.)': 'No documents yet.\n(Uploading new documents will be added after file picker integration.)',
+  'Thao tác dọn sạch giao dịch sẽ xóa vĩnh viễn toàn bộ hóa đơn, ca làm và chi phí trong database chính.':
+      'Clearing transactions will permanently delete all bills, shifts and expenses in the main database.',
+  'Chưa có tài liệu nào.\n(Tải lên tài liệu mới sẽ bổ sung sau khi tích hợp chọn file.)':
+      'No documents yet.\n(Uploading new documents will be added after file picker integration.)',
   'Nhập mã PIN hiện tại.': 'Enter current PIN.',
   'PIN mới phải gồm 4–6 chữ số.': 'New PIN must be 4–6 digits.',
-  'PIN mới quá dễ đoán. Hãy chọn dãy số khác.': 'New PIN is too easy to guess. Please choose another sequence.',
+  'PIN mới quá dễ đoán. Hãy chọn dãy số khác.':
+      'New PIN is too easy to guess. Please choose another sequence.',
   'Hai lần nhập PIN mới không khớp.': 'The two new PIN entries do not match.',
   'Đổi mã PIN mặc định': 'Change default PIN',
-  'Tài khoản Admin đang dùng mã PIN mặc định. Vì an toàn của cửa hàng, hãy đặt mã PIN mới trước khi tiếp tục.': 'The Admin account is using the default PIN. For your store\'s safety, please set a new PIN before continuing.',
+  'Tài khoản Admin đang dùng mã PIN mặc định. Vì an toàn của cửa hàng, hãy đặt mã PIN mới trước khi tiếp tục.':
+      'The Admin account is using the default PIN. For your store\'s safety, please set a new PIN before continuing.',
   'Mã PIN hiện tại': 'Current PIN',
   'Mã PIN mới (4–6 số)': 'New PIN (4–6 digits)',
   'Nhập lại mã PIN mới': 'Re-enter new PIN',
@@ -2845,24 +2962,34 @@ const Map<String, String> viToEnMap = {
   'Đủ dùng hằng ngày': 'Good for daily use',
   'Logo + thuế + QR tra cứu': 'Logo + tax + lookup QR',
   'Xem trước trực tiếp': 'Live preview',
-  '2x Trà đào 60.000đ\n1x Bánh cookie 30.000đ': '2x Peach tea 60,000đ\n1x Cookie 30,000đ',
+  '2x Trà đào 60.000đ\n1x Bánh cookie 30.000đ':
+      '2x Peach tea 60,000đ\n1x Cookie 30,000đ',
   'Độ đậm bản in (sắc tố đen)': 'Print darkness (black density)',
-  'Chỉnh độ đậm/nhạt mực khi in. Bản in càng đậm càng rõ nhưng tốn giấy nhiệt & mòn đầu in hơn.': 'Adjust how dark/light the print is. Darker is clearer but wears the print head and uses more thermal paper.',
+  'Chỉnh độ đậm/nhạt mực khi in. Bản in càng đậm càng rõ nhưng tốn giấy nhiệt & mòn đầu in hơn.':
+      'Adjust how dark/light the print is. Darker is clearer but wears the print head and uses more thermal paper.',
   'Cỡ logo:': 'Logo size:',
   'Nhỏ': 'Small',
   'Vừa': 'Medium',
   'Lớn': 'Large',
   'Đang đo…': 'Measuring…',
-  'In phiếu tự kiểm tra (Self-Test) bằng cách tắt nguồn máy in, nhấn giữ nút FEED rồi bật nguồn lại, thả tay sau 3 giây. Ghi lại địa chỉ IP tĩnh hiển thị trên phiếu (ví dụ: 192.168.1.50).\nLưu ý: Hãy đặt IP tĩnh (Static IP) hoặc gán IP cố định trong Router cho máy in để tránh bị thay đổi IP khi khởi động lại.': 'Print a Self-Test slip: turn the printer off, hold the FEED button, turn it back on, then release after 3 seconds. Note the static IP shown on the slip (e.g. 192.168.1.50).\nNote: set a Static IP or reserve a fixed IP in the router for the printer so it does not change on restart.',
-  'Bấm nút [+ Thêm danh mục in] ở bên dưới:\n• Chọn kết nối: Network Printer (LAN/IP).\n• Nhập IP máy in bếp/bar vào cột IP máy in (LAN) (VD: 192.168.1.50).\n• Nhập Port (mặc định là 9100).\n• Chọn Định dạng in tương ứng (VD: Phiếu bếp/bar (Kitchen ticket) cho bếp, Tem ly (Cup label) cho tem nhãn...).': 'Press [+ Add printer] below:\n• Choose connection: Network Printer (LAN/IP).\n• Enter the kitchen/bar printer IP in the Printer IP (LAN) column (e.g. 192.168.1.50).\n• Enter the Port (default 9100).\n• Choose the matching print format (e.g. Kitchen ticket for the kitchen, Cup label for labels...).',
-  '• Tích chọn ô Đang sử dụng và Tự động in trên dòng máy in vừa thêm.\n• Trong Thực đơn FnB, gán đúng Station cho từng món ăn (chọn Bếp hoặc Bar). Hệ thống sẽ tự động gửi món đến máy in tương ứng khi nhận đơn từ iPad hoặc POS quầy.\n• Bấm nút [Lưu danh mục in] để hoàn tất cấu hình.': '• Tick Active and Auto-print on the printer row you just added.\n• In the F&B menu, assign the correct Station to each dish (Kitchen or Bar). The system will auto-route each dish to its printer when an order arrives from an iPad or counter POS.\n• Press [Save printers] to finish the setup.',
+  'In phiếu tự kiểm tra (Self-Test) bằng cách tắt nguồn máy in, nhấn giữ nút FEED rồi bật nguồn lại, thả tay sau 3 giây. Ghi lại địa chỉ IP tĩnh hiển thị trên phiếu (ví dụ: 192.168.1.50).\nLưu ý: Hãy đặt IP tĩnh (Static IP) hoặc gán IP cố định trong Router cho máy in để tránh bị thay đổi IP khi khởi động lại.':
+      'Print a Self-Test slip: turn the printer off, hold the FEED button, turn it back on, then release after 3 seconds. Note the static IP shown on the slip (e.g. 192.168.1.50).\nNote: set a Static IP or reserve a fixed IP in the router for the printer so it does not change on restart.',
+  'Bấm nút [+ Thêm danh mục in] ở bên dưới:\n• Chọn kết nối: Network Printer (LAN/IP).\n• Nhập IP máy in bếp/bar vào cột IP máy in (LAN) (VD: 192.168.1.50).\n• Nhập Port (mặc định là 9100).\n• Chọn Định dạng in tương ứng (VD: Phiếu bếp/bar (Kitchen ticket) cho bếp, Tem ly (Cup label) cho tem nhãn...).':
+      'Press [+ Add printer] below:\n• Choose connection: Network Printer (LAN/IP).\n• Enter the kitchen/bar printer IP in the Printer IP (LAN) column (e.g. 192.168.1.50).\n• Enter the Port (default 9100).\n• Choose the matching print format (e.g. Kitchen ticket for the kitchen, Cup label for labels...).',
+  '• Tích chọn ô Đang sử dụng và Tự động in trên dòng máy in vừa thêm.\n• Trong Thực đơn FnB, gán đúng Station cho từng món ăn (chọn Bếp hoặc Bar). Hệ thống sẽ tự động gửi món đến máy in tương ứng khi nhận đơn từ iPad hoặc POS quầy.\n• Bấm nút [Lưu danh mục in] để hoàn tất cấu hình.':
+      '• Tick Active and Auto-print on the printer row you just added.\n• In the F&B menu, assign the correct Station to each dish (Kitchen or Bar). The system will auto-route each dish to its printer when an order arrives from an iPad or counter POS.\n• Press [Save printers] to finish the setup.',
   'In': 'Print',
-  'Kênh bán hàng online Haravan: nhận đơn, khách hàng, sản phẩm và tồn kho qua backend.': 'Haravan online sales channel: receive orders, customers, products and inventory via the backend.',
+  'Kênh bán hàng online Haravan: nhận đơn, khách hàng, sản phẩm và tồn kho qua backend.':
+      'Haravan online sales channel: receive orders, customers, products and inventory via the backend.',
   'Chi nhánh mặc định': 'Default branch',
-  'Đã lưu trên server — để trống nếu giữ nguyên': 'Saved on server — leave blank to keep unchanged',
-  'Webhook Haravan dùng URL /webhooks/haravan. Token và webhook secret chỉ lưu trên server, không đưa xuống POS.': 'Haravan webhook uses the URL /webhooks/haravan. Token and webhook secret are stored only on the server, never sent to the POS.',
-  'Mật khẩu quá dễ đoán (0000/1111/1234…). Hãy chọn 4 số khác.': 'Password is too easy to guess (0000/1111/1234…). Please choose 4 other digits.',
-  'Thiết bị khách đang dùng mật khẩu MẶC ĐỊNH — ai cũng đoán được. Hãy đặt mã PIN mới ngay để tránh khách tự thoát vào màn nhân viên.': 'The customer device is using the DEFAULT password — anyone can guess it. Set a new PIN now so customers cannot exit into the staff screen.',
+  'Đã lưu trên server — để trống nếu giữ nguyên':
+      'Saved on server — leave blank to keep unchanged',
+  'Webhook Haravan dùng URL /webhooks/haravan. Token và webhook secret chỉ lưu trên server, không đưa xuống POS.':
+      'Haravan webhook uses the URL /webhooks/haravan. Token and webhook secret are stored only on the server, never sent to the POS.',
+  'Mật khẩu quá dễ đoán (0000/1111/1234…). Hãy chọn 4 số khác.':
+      'Password is too easy to guess (0000/1111/1234…). Please choose 4 other digits.',
+  'Thiết bị khách đang dùng mật khẩu MẶC ĐỊNH — ai cũng đoán được. Hãy đặt mã PIN mới ngay để tránh khách tự thoát vào màn nhân viên.':
+      'The customer device is using the DEFAULT password — anyone can guess it. Set a new PIN now so customers cannot exit into the staff screen.',
   'Bếp & online': 'Kitchen & online',
   'Tài chính': 'Finance',
   'Danh bạ': 'Contacts',
@@ -2874,27 +3001,32 @@ const Map<String, String> viToEnMap = {
   'Xác nhận món từ khách': 'Confirm items from customer',
   'Bảng giá': 'Price book',
   'Tạo bảng giá': 'Create price book',
-  'Chọn bảng giá khi bán / xem trong Kho → Thiết lập giá': 'Choose a price book when selling / view it in Warehouse → Price setup',
+  'Chọn bảng giá khi bán / xem trong Kho → Thiết lập giá':
+      'Choose a price book when selling / view it in Warehouse → Price setup',
   'Mặc định': 'Default',
   'Đổi tên': 'Rename',
   'Xóa bảng giá': 'Delete price book',
   'Kho': 'Warehouse',
   'Theo kênh bán': 'By sales channel',
   'Cấu hình bán retail': 'Retail sales config',
-  'Đồng bộ cả 2 (F&B dùng y cấu hình Retail POS)': 'Sync both (F&B uses the exact Retail POS config)',
+  'Đồng bộ cả 2 (F&B dùng y cấu hình Retail POS)':
+      'Sync both (F&B uses the exact Retail POS config)',
   'RETAIL POS (bán lẻ)': 'RETAIL POS',
-  'RETAIL TRONG F&B (thêm retail ở POS nhà hàng)': 'RETAIL IN F&B (add retail at the restaurant POS)',
+  'RETAIL TRONG F&B (thêm retail ở POS nhà hàng)':
+      'RETAIL IN F&B (add retail at the restaurant POS)',
   'Đổi tên bảng giá': 'Rename price book',
   'Tên bảng giá': 'Price book name',
   'VD: Giá sỉ, Giá GrabMart…': 'e.g. Wholesale price, GrabMart price…',
   'Kho retail': 'Retail warehouse',
-  'HÓA ĐƠN ĐIỆN TỬ KHỞI TẠO TỪ MÁY TÍNH TIỀN\nCẢM ƠN QUÝ KHÁCH - HẸN GẶP LẠI!': 'E-INVOICE ISSUED FROM THE CASH REGISTER\nTHANK YOU - SEE YOU AGAIN!',
+  'HÓA ĐƠN ĐIỆN TỬ KHỞI TẠO TỪ MÁY TÍNH TIỀN\nCẢM ƠN QUÝ KHÁCH - HẸN GẶP LẠI!':
+      'E-INVOICE ISSUED FROM THE CASH REGISTER\nTHANK YOU - SEE YOU AGAIN!',
   'Quét mã vạch hoặc tìm tên hàng…': 'Scan a barcode or search by item name…',
   'Quét hàng retail': 'Scan retail item',
   'Thoát mà không lưu?': 'Exit without saving?',
   'Ở lại': 'Stay',
   'Thoát, bỏ phiếu': 'Exit, discard slip',
-  'Chọn nhà cung cấp hoặc nhập tên nơi mua': 'Select a supplier or enter where you bought',
+  'Chọn nhà cung cấp hoặc nhập tên nơi mua':
+      'Select a supplier or enter where you bought',
   'Trả hàng nhập': 'Purchase return',
   'Nhập hàng': 'Goods receipt',
   'Kho xuất hàng': 'Source warehouse',
@@ -2925,7 +3057,8 @@ const Map<String, String> viToEnMap = {
   'Không đọc được file': 'Could not read the file',
   'Đã trả hàng': 'Returned',
   'Đã nhập hàng': 'Received',
-  'Phiếu này chưa có dòng hàng đã nhận để trả': 'This slip has no received lines to return',
+  'Phiếu này chưa có dòng hàng đã nhận để trả':
+      'This slip has no received lines to return',
   'Trả hàng từ phiếu': 'Return from slip',
   'Đã ghi thanh toán': 'Payment recorded',
   'Theo mã phiếu trả': 'By return slip code',
@@ -2933,8 +3066,10 @@ const Map<String, String> viToEnMap = {
   'Xuất file': 'Export file',
   'Mã nhập hàng': 'Goods receipt code',
   'Không tìm thấy kết quả': 'No results found',
-  'Bấm "+ Trả hàng nhập" để tạo phiếu trả': 'Press "+ Purchase return" to create a return slip',
-  'Bấm "+ Nhập hàng" để tạo phiếu nhập': 'Press "+ Goods receipt" to create a receipt slip',
+  'Bấm "+ Trả hàng nhập" để tạo phiếu trả':
+      'Press "+ Purchase return" to create a return slip',
+  'Bấm "+ Nhập hàng" để tạo phiếu nhập':
+      'Press "+ Goods receipt" to create a receipt slip',
   'Công nợ phải trả': 'Payables',
   'Hôm nay': 'Today',
   '7 ngày qua': 'Last 7 days',
@@ -2955,13 +3090,15 @@ const Map<String, String> viToEnMap = {
   'Xóa giỏ hàng?': 'Clear the cart?',
   'Giữ lại': 'Keep',
   'SP': 'items',
-  'Ứng dụng chưa được cấp quyền camera.\nVào Cài đặt → Ứng dụng → cấp quyền Camera rồi thử lại.': 'The app has no camera permission.\nGo to Settings → Apps → grant Camera permission, then try again.',
+  'Ứng dụng chưa được cấp quyền camera.\nVào Cài đặt → Ứng dụng → cấp quyền Camera rồi thử lại.':
+      'The app has no camera permission.\nGo to Settings → Apps → grant Camera permission, then try again.',
   'Chi': 'Expense',
   'File không có sheet nào': 'The file has no sheets',
   'Lưu file mẫu': 'Save template file',
   'Tải về file mẫu': 'Download template file',
   'Đã lưu file mẫu': 'Template file saved',
-  'Hoặc tìm hàng hóa phía trên để thêm từng dòng': 'Or search for items above to add them line by line',
+  'Hoặc tìm hàng hóa phía trên để thêm từng dòng':
+      'Or search for items above to add them line by line',
   'Đã thêm': 'Added',
   'Mã phiếu tự động': 'Auto slip code',
   'Lưu tạm': 'Save draft',
@@ -2974,9 +3111,11 @@ const Map<String, String> viToEnMap = {
   'Lưu giá': 'Save price',
   'Đã cập nhật giá': 'Price updated',
   'Giá bán': 'Sale price',
-  'Thử đổi từ khóa hoặc bỏ bớt bộ lọc': 'Try changing keywords or removing some filters',
+  'Thử đổi từ khóa hoặc bỏ bớt bộ lọc':
+      'Try changing keywords or removing some filters',
   'Sửa giá': 'Edit price',
-  'Tạo/sửa bảng giá: Cài đặt → Kho & kênh bán': 'Create/edit price books: Settings → Warehouse & sales channels',
+  'Tạo/sửa bảng giá: Cài đặt → Kho & kênh bán':
+      'Create/edit price books: Settings → Warehouse & sales channels',
   'Dưới định mức tồn': 'Below stock level',
   'Vượt định mức tồn': 'Above stock level',
   'Còn hàng trong kho': 'In stock',
@@ -2990,9 +3129,11 @@ const Map<String, String> viToEnMap = {
   'Phiếu kiểm chưa lưu': 'Stocktake not saved',
   'Lưu tạm & thoát': 'Save draft & exit',
   'Chọn kho kiểm': 'Choose warehouse to count',
-  'Thêm ít nhất một dòng kiểm và nhập SL thực tế': 'Add at least one count line and enter the actual quantity',
+  'Thêm ít nhất một dòng kiểm và nhập SL thực tế':
+      'Add at least one count line and enter the actual quantity',
   'Nhập kiểm kho từ file': 'Import stocktake from file',
-  'Mở file mẫu (Excel/CSV) → copy toàn bộ bảng → dán vào đây. Cột: Mã hàng | Số lượng | Lô 1 | Hạn sử dụng 1 | Số lượng 1 | Lô 2 | …': 'Open the template file (Excel/CSV) → copy the whole table → paste it here. Columns: Item code | Quantity | Lot 1 | Expiry 1 | Quantity 1 | Lot 2 | …',
+  'Mở file mẫu (Excel/CSV) → copy toàn bộ bảng → dán vào đây. Cột: Mã hàng | Số lượng | Lô 1 | Hạn sử dụng 1 | Số lượng 1 | Lô 2 | …':
+      'Open the template file (Excel/CSV) → copy the whole table → paste it here. Columns: Item code | Quantity | Lot 1 | Expiry 1 | Quantity 1 | Lot 2 | …',
   'Nhập vào phiếu': 'Import into slip',
   'Kho kiểm': 'Counted warehouse',
   'Dán từ Excel': 'Paste from Excel',
@@ -3003,7 +3144,8 @@ const Map<String, String> viToEnMap = {
   'Mã kiểm kho': 'Stocktake code',
   'Tổng SL thực tế': 'Total actual qty',
   'Tổng lệch (tạm tính)': 'Total variance (estimated)',
-  'Hoàn thành = lưu phiếu và cân bằng kho ngay. Lưu tạm để kiểm tiếp sau.': 'Complete = save the slip and balance stock now. Save a draft to keep counting later.',
+  'Hoàn thành = lưu phiếu và cân bằng kho ngay. Lưu tạm để kiểm tiếp sau.':
+      'Complete = save the slip and balance stock now. Save a draft to keep counting later.',
   'Đã cân bằng kho': 'Stock balanced',
   'Cân bằng kho': 'Balance stock',
   'Đã hủy phiếu kiểm': 'Stocktake canceled',
@@ -3012,7 +3154,8 @@ const Map<String, String> viToEnMap = {
   'Tổng chênh lệch': 'Total difference',
   'SL lệch tăng': 'Surplus qty',
   'SL lệch giảm': 'Shortage qty',
-  'Bấm "+ Kiểm kho" để tạo phiếu kiểm mới': 'Press "+ Stocktake" to create a new count slip',
+  'Bấm "+ Kiểm kho" để tạo phiếu kiểm mới':
+      'Press "+ Stocktake" to create a new count slip',
   'HSD': 'Expiry',
   'Thực tế': 'Actual',
   'Chuyển hàng': 'Stock transfer',
@@ -3022,16 +3165,20 @@ const Map<String, String> viToEnMap = {
   'Từ kho': 'From warehouse',
   'Tới kho': 'To warehouse',
   'Số dòng': 'Line count',
-  'Phiếu đang nhập dở sẽ MẤT nếu thoát bây giờ.': 'The slip in progress will be LOST if you exit now.',
+  'Phiếu đang nhập dở sẽ MẤT nếu thoát bây giờ.':
+      'The slip in progress will be LOST if you exit now.',
   'Chọn kho': 'Choose warehouse',
-  'Kho đích phải khác kho nguồn': 'Destination warehouse must differ from the source',
+  'Kho đích phải khác kho nguồn':
+      'Destination warehouse must differ from the source',
   'Kho xuất': 'Issuing warehouse',
   'SL chuyển': 'Transfer qty',
   'SL xuất': 'Issue qty',
   'Số mặt hàng': 'Item count',
   'Tổng số lượng': 'Total quantity',
-  'Hàng chuyển đi giữ nguyên lô/HSD ở kho đích.': 'Transferred goods keep their lot/expiry at the destination warehouse.',
-  'Xuất cho cửa hàng tự dùng — trừ tồn theo lô gần hết hạn trước (FEFO).': 'Issue for the store\'s own use — deducts stock from the soonest-to-expire lot first (FEFO).',
+  'Hàng chuyển đi giữ nguyên lô/HSD ở kho đích.':
+      'Transferred goods keep their lot/expiry at the destination warehouse.',
+  'Xuất cho cửa hàng tự dùng — trừ tồn theo lô gần hết hạn trước (FEFO).':
+      'Issue for the store\'s own use — deducts stock from the soonest-to-expire lot first (FEFO).',
   'Vượt tồn kho': 'Exceeds stock on hand',
   'Nghiệp vụ kho': 'Warehouse operations',
   'Xuất nội bộ': 'Internal issue',

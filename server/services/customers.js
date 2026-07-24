@@ -6,7 +6,7 @@ import { emit } from '../realtime.js';
 import { archiveCustomer } from './archive.js';
 import { getLoyaltyConfig } from './settings.js';
 import { lookupTaxCode as lookupTaxCodeFromTaxModule } from './tax.js';
-import { matchesSearch, searchTokens } from '../core/search.js';
+import { searchScore, searchTokens } from '../core/search.js';
 
 const PERKS = ['none', 'pct', 'amount', 'free'];
 const PARTNER_TYPES = ['customer', 'supplier', 'both', 'staff'];
@@ -36,17 +36,30 @@ function normalizeRow(r) {
 function pickPartnerType(v) { return PARTNER_TYPES.includes(v) ? v : 'customer'; }
 
 
-function matchesTerm(c, term) {
-  return matchesSearch([c.code, c.name, c.phone, c.tax_code, c.company, c.email, c.contact_person, c.address, c.preferences, c.allergies, c.profile_summary], term);
+function partnerSearchValues(c) {
+  // Keep directory search aligned with the fields users can see and expect.
+  // Searching hidden address/preferences made "Dan" return names such as "Hà"
+  // merely because the address contained "khu dân cư".
+  return [c.code, c.name, c.phone, c.tax_code, c.company, c.email,
+    c.contact_person];
+}
+
+function rankMatches(rows, q, limit) {
+  if (!searchTokens(q).length) return rows.slice(0, limit);
+  return rows
+    .map((row, index) => ({ row, index, score: searchScore(partnerSearchValues(row), q) }))
+    .filter(item => item.score >= 0)
+    .sort((a, b) => b.score - a.score || a.index - b.index)
+    .slice(0, limit)
+    .map(item => item.row);
 }
 
 // Sales-side customer picker (POS/retail/invoice). Suppliers never show here.
 export function listCustomers(branch_id = 'br1', q = '') {
   const rows = db.prepare(`SELECT * FROM customers WHERE branch_id=? AND active!=0 ORDER BY updated_at DESC, created_at DESC`).all(branch_id);
-  const term = searchTokens(q);
   // Khách hàng + nhân viên (CBNV) đều chọn được ở POS để áp ưu đãi mặc định. NCC thì không.
   const out = rows.map(normalizeRow).filter(c => c.is_customer || c.is_staff);
-  return out.filter(c => matchesTerm(c, term)).slice(0, 200);
+  return rankMatches(out, q, 200);
 }
 
 // Full contacts directory (Liên hệ): customers + suppliers, filterable by type.
@@ -58,7 +71,7 @@ export function listPartners(branch_id = 'br1', { type = 'all', q = '', includeI
   if (type === 'customer') out = out.filter(c => c.is_customer);
   else if (type === 'supplier') out = out.filter(c => c.is_supplier);
   else if (type === 'staff') out = out.filter(c => c.is_staff);
-  return out.filter(c => matchesTerm(c, term)).slice(0, 500);
+  return rankMatches(out, q, 500);
 }
 
 export function partnerCounts(branch_id = 'br1') {

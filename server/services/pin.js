@@ -42,6 +42,11 @@ export function newToken() {
   return 'tk_' + crypto.randomBytes(24).toString('hex');
 }
 
+export function tokenDigest(token) {
+  return 'sha256$' + crypto.createHash('sha256')
+    .update(String(token || ''), 'utf8').digest('hex');
+}
+
 // One-time upgrade: hash any user PIN still stored as plaintext. Idempotent.
 export function migratePlaintextPins(db) {
   let migrated = 0;

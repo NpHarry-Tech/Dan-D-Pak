@@ -573,6 +573,33 @@ class _MenuPickerDialogState extends State<_MenuPickerDialog> {
     if (mounted) _searchFocus.requestFocus();
   }
 
+  Future<void> _submitRetailSearch(String raw) async {
+    if (!widget.isRetail) return;
+    final query = foldSearch(raw);
+    if (query.isEmpty) return;
+    final candidate = searchSubmitCandidate(
+      _loadedItems,
+      query,
+      (item) => [item.code, item.name],
+    );
+    if (candidate == null) {
+      await _tryBarcodeAdd(raw);
+      return;
+    }
+    final ok = await widget.onAdd(candidate);
+    if (!mounted) return;
+    if (ok) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('+1 ${candidate.name}'),
+          duration: Duration(milliseconds: 900),
+          backgroundColor: DanColors.text));
+    }
+    _searchCtrl.clear();
+    _search = '';
+    await _loadNextPage(isRefresh: true);
+    if (mounted) _searchFocus.requestFocus();
+  }
+
   void _onScroll() {
     if (_scrollCtrl.position.pixels >=
         _scrollCtrl.position.maxScrollExtent - 200) {
@@ -774,7 +801,7 @@ class _MenuPickerDialogState extends State<_MenuPickerDialog> {
                   });
                 },
                 // Máy quét USB kết thúc bằng Enter → thêm món ngay.
-                onSubmitted: _tryBarcodeAdd,
+                onSubmitted: widget.isRetail ? _submitRetailSearch : (_) {},
               ),
             ),
             if (!widget.isRetail)

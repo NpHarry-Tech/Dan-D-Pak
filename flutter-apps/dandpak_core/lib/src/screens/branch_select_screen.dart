@@ -87,7 +87,7 @@ class _BranchSelectScreenState extends State<BranchSelectScreen> {
               ),
               SizedBox(height: 12),
               Text(
-                t('Mặc định là http://127.0.0.1:3000. Nếu đây là máy POS phụ, hãy nhập IP LAN của máy chủ chính.'),
+                t('Máy chủ mặc định là https://api.dandpakpos.io.vn.'),
                 style: TextStyle(
                   color: DanColors.muted,
                   fontSize: 11,

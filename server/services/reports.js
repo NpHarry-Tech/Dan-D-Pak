@@ -36,7 +36,7 @@ export function dashboard(branch_id = 'br1') {
   const revenue = paid.reduce((s, o) => s + o.total, 0);
   const bills = paid.length;
   const avg = bills ? Math.round(revenue / bills) : 0;
-  const openOrders = db.prepare(`SELECT COUNT(*) n FROM orders WHERE branch_id=? AND status='open'`).get(branch_id).n;
+  const openOrders = db.prepare(`SELECT COUNT(*) n FROM orders WHERE branch_id=? AND status IN ('open','partially_paid')`).get(branch_id).n;
 
   // revenue by hour
   const byHour = Array.from({ length: 24 }, () => 0);

@@ -14,13 +14,14 @@ const MAX_ATTEMPTS = 10;
  * Creates an e-invoice request in the queue (NOT_CREATED -> QUEUED)
  * Enforces business rules: consumer-sale mode still gets an invoice.
  */
-export function createInvoiceRequest(order_id, customer_mode = 'WALK_IN', buyer_info = {}, branch_id = 'br1', actor = 'system') {
+export function createInvoiceRequest(order_id, customer_mode = 'WALK_IN', buyer_info = {}, branch_id = 'br1', actor = 'system', allocation = {}) {
   const order = getOrder(order_id);
   if (!order) throw new Error('Đơn hàng không tồn tại');
   if (order.status !== 'paid') throw new Error('Chỉ xuất hóa đơn cho đơn hàng đã thanh toán');
 
   // Check if an active/issued e-invoice already exists
-  const existing = db.prepare(`SELECT * FROM e_invoices WHERE order_id = ? AND invoice_status != 'CANCELLED'`).get(order_id);
+  const explicitAllocation = allocation.amount != null || allocation.idempotency_key;
+  const existing = !explicitAllocation && db.prepare(`SELECT * FROM e_invoices WHERE order_id = ? AND invoice_status != 'CANCELLED' ORDER BY created_at DESC LIMIT 1`).get(order_id);
   if (existing) {
     return existing;
   }
@@ -55,7 +56,9 @@ export function createInvoiceRequest(order_id, customer_mode = 'WALK_IN', buyer_
   }
 
   const id = uid('einv_');
-  const idempotency_key = `einv:${branch_id}:${order_id}`;
+  const suppliedKey = String(allocation.idempotency_key || '').trim();
+  if (suppliedKey.length > 128) throw new Error('Idempotency-Key must not exceed 128 characters');
+  const idempotency_key = suppliedKey || (explicitAllocation ? uid('einvkey_') : `einv:${branch_id}:${order_id}`);
   const timeNow = now();
 
   // Determine provider based on config.
@@ -79,17 +82,86 @@ export function createInvoiceRequest(order_id, customer_mode = 'WALK_IN', buyer_
     total: order.total
   };
 
-  db.prepare(`
-    INSERT INTO e_invoices (
-      id, order_id, branch_id, provider, invoice_status, idempotency_key,
-      customer_mode, buyer_name, buyer_tax_code, buyer_address, buyer_email, buyer_phone,
-      request_snapshot, attempt_count, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
-  `).run(
-    id, order_id, branch_id, provider, initialStatus, idempotency_key,
-    customer_mode, finalBuyer.name, finalBuyer.tax_code, finalBuyer.address, finalBuyer.email, finalBuyer.phone,
-    JSON.stringify(requestSnapshot), timeNow, timeNow
-  );
+  const ownsTransaction = !db.isTransaction;
+  if (ownsTransaction) db.prepare('BEGIN IMMEDIATE').run();
+  try {
+    if (suppliedKey) {
+      const replay = db.prepare(`SELECT id,order_id FROM e_invoices WHERE idempotency_key=?`).get(suppliedKey);
+      if (replay) {
+        if (replay.order_id !== order_id) {
+          throw Object.assign(new Error('Idempotency-Key was already used for another order'), { status: 409 });
+        }
+        if (ownsTransaction) db.prepare('COMMIT').run();
+        return get(replay.id);
+      }
+    }
+    let allocated = Number(db.prepare(`
+      SELECT COALESCE(SUM(a.amount),0) total
+      FROM invoice_allocations a
+      JOIN e_invoices e ON e.id=a.e_invoice_id
+      WHERE a.order_id=? AND e.invoice_status!='CANCELLED'
+    `).get(order_id)?.total) || 0;
+    const requestedInput = allocation.amount == null ? null : Math.round(Number(allocation.amount));
+    // The auto-created WALK_IN invoice (fired unconditionally after every full settlement,
+    // see payments.js payOrder()) reserves the ENTIRE order total under the legacy
+    // order-scoped idempotency key. It is a placeholder for "whatever nobody explicitly
+    // split off" — every time a real, explicit allocation is requested it must shrink to
+    // free up room, not just once. Re-derive it from first principles on every call
+    // (order.total minus every OTHER non-cancelled allocation minus this new request)
+    // instead of a one-shot "amount === order.total" match, so a 3rd/4th/Nth split works
+    // exactly like the 2nd one did.
+    if (explicitAllocation && requestedInput > 0) {
+      const autoReservation = db.prepare(`
+        SELECT a.id alloc_id, a.amount, e.id einv_id, e.request_snapshot
+        FROM e_invoices e JOIN invoice_allocations a ON a.e_invoice_id=e.id
+        WHERE e.order_id=? AND e.invoice_status IN ('PENDING_PROVIDER','QUEUED','RETRYING','FAILED')
+          AND e.idempotency_key=?
+        LIMIT 1
+      `).get(order_id, `einv:${branch_id}:${order_id}`);
+      if (autoReservation) {
+        const allocatedElsewhere = allocated - Number(autoReservation.amount);
+        const newAutoAmount = Math.max(0, Number(order.total) - allocatedElsewhere - requestedInput);
+        if (newAutoAmount !== Number(autoReservation.amount)) {
+          db.prepare(`UPDATE invoice_allocations SET amount=? WHERE id=?`).run(newAutoAmount, autoReservation.alloc_id);
+          const autoSnapshot = parseJson(autoReservation.request_snapshot, {});
+          autoSnapshot.total = newAutoAmount;
+          autoSnapshot.allocation = { amount: newAutoAmount };
+          db.prepare(`UPDATE e_invoices SET request_snapshot=?,updated_at=? WHERE id=?`)
+            .run(JSON.stringify(autoSnapshot), now(), autoReservation.einv_id);
+          allocated = allocatedElsewhere + newAutoAmount;
+        }
+      }
+    }
+    const remaining = Number(order.total) - allocated;
+    const requested = requestedInput == null ? remaining : requestedInput;
+    if (!Number.isFinite(requested) || requested <= 0) throw new Error('Invoice allocation amount must be greater than zero');
+    if (requested > remaining) {
+      throw Object.assign(new Error(`Invoice allocation exceeds remaining order amount (${remaining})`), { status: 409 });
+    }
+    requestSnapshot.total = requested;
+    requestSnapshot.allocation = { amount: requested };
+
+    db.prepare(`
+      INSERT INTO e_invoices (
+        id, order_id, branch_id, provider, invoice_status, idempotency_key,
+        customer_mode, buyer_name, buyer_tax_code, buyer_address, buyer_email, buyer_phone,
+        request_snapshot, attempt_count, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
+    `).run(
+      id, order_id, branch_id, provider, initialStatus, idempotency_key,
+      customer_mode, finalBuyer.name, finalBuyer.tax_code, finalBuyer.address, finalBuyer.email, finalBuyer.phone,
+      JSON.stringify(requestSnapshot), timeNow, timeNow
+    );
+    db.prepare(`
+      INSERT INTO invoice_allocations (id,e_invoice_id,order_id,order_item_id,qty,amount,created_at)
+      VALUES (?,?,?,?,?,?,?)
+    `).run(uid('ialloc_'), id, order_id, allocation.order_item_id || null,
+      allocation.qty == null ? null : Number(allocation.qty), requested, timeNow);
+    if (ownsTransaction) db.prepare('COMMIT').run();
+  } catch (error) {
+    if (ownsTransaction && db.isTransaction) db.prepare('ROLLBACK').run();
+    throw error;
+  }
 
   // Update order with e-invoice status
   db.prepare(`UPDATE orders SET einvoice_id = ?, einvoice_status = ?, locked_at = ? WHERE id = ?`).run(id, initialStatus, timeNow, order_id);
@@ -202,11 +274,14 @@ async function processJob(job) {
     email: job.buyer_email,
     phone: job.buyer_phone
   };
+  const request = parseJson(job.request_snapshot, {});
+  const invoiceOrder = { ...order, total: Number(request.total) || order.total };
+  const invoiceItems = Array.isArray(request.items) ? request.items : (order.items || []);
 
   try {
     let result;
     if (job.provider === 'misa' && Misa.isLive(misaCfg)) {
-      result = await Misa.issueInvoice(order, buyer, order.items || [], misaCfg);
+      result = await Misa.issueInvoice(invoiceOrder, buyer, invoiceItems, misaCfg);
     } else {
       // Mock local issue (sandbox/demo)
       const mockInvoiceNo = String(db.prepare(`SELECT COUNT(*) c FROM e_invoices WHERE provider='local'`).get().c + 1).padStart(8, '0');
@@ -738,7 +813,8 @@ function writeAuditLog({ order_id, e_invoice_id, actor_id, actor_role, action, o
       old_status, new_status, reason, payload_snapshot, response_snapshot, created_at
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
-    uid('eial_'), order_id, e_invoice_id, actor_id, actor_role, action,
-    old_status, new_status, reason, payload_snapshot, response_snapshot, now()
+    uid('eial_'), order_id, e_invoice_id ?? null, actor_id ?? null,
+    actor_role ?? null, action, old_status ?? null, new_status ?? null,
+    reason ?? null, payload_snapshot ?? null, response_snapshot ?? null, now()
   );
 }

@@ -55,8 +55,20 @@ class AuthProvider extends ChangeNotifier {
     _booting = true;
     try {
       final prefs = LocalStore.instance;
-      _serverUrl =
-          await prefs.getString('server_url') ?? DanDpakDefaults.baseUrl;
+      final savedServerUrl = await prefs.getString('server_url');
+      final savedHost =
+          Uri.tryParse(DanDpakApiClient.normalizeBaseUrl(savedServerUrl ?? ''))
+              ?.host;
+      _serverUrl = savedServerUrl == null ||
+              savedServerUrl.trim().isEmpty ||
+              savedHost == '127.0.0.1' ||
+              savedHost == 'localhost' ||
+              savedHost == '42.96.18.70'
+          ? DanDpakDefaults.baseUrl
+          : savedServerUrl;
+      if (_serverUrl != savedServerUrl) {
+        await prefs.setString('server_url', _serverUrl);
+      }
       _selectedBranchId =
           await prefs.getString('branch_id') ?? DanDpakDefaults.branchId;
       _setLanguage(await prefs.getString('app_lang') ?? 'vi', notify: false);

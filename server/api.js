@@ -122,10 +122,20 @@ function scopedUserBody(req) {
 // Only unexpected server failures belong in the technical log. Expected 4xx
 // validation/auth/business failures are either already audited by their owner
 // or are user input feedback, not separate system incidents.
+// Loi nghiep vu chu dinh (vd throw new Error('Het hang')) khong can log server —
+// day la thong bao ro rang cho nguoi dung, khong phai su co. Nhung loi he thong
+// KHONG CHU DINH (TypeError, loi bind SQLite ERR_*, ...) van bi tra ve HTTP 400
+// (vi e.status khong duoc set) nhung PHAI duoc log, neu khong se vo hinh mai mai.
+function isUnexpectedSystemError(e) {
+  if (e instanceof TypeError || e instanceof RangeError || e instanceof ReferenceError) return true;
+  const code = String(e?.code || '');
+  return code.startsWith('ERR_');
+}
+
 function logRequestError(req, e) {
   try {
     const status = e?.status || 400;
-    if (status < 500) return;
+    if (status < 500 && !isUnexpectedSystemError(e)) return;
     let branch_id = 'br1';
     try { branch_id = branch(req) || 'br1'; } catch { /* unresolved branch */ }
     const actor = req?.user?.name || req?.user?.username || 'system';

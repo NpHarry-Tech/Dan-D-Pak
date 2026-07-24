@@ -9,6 +9,7 @@ import '../../services/api_service.dart';
 import '../../ui/app_theme.dart';
 import '../../ui/file_pick.dart';
 import '../../ui/format.dart';
+import '../../ui/debouncer.dart';
 import '../../widgets/address_fields.dart';
 import '../../widgets/dan_top_bar.dart';
 import '../../widgets/tax_lookup.dart';
@@ -114,6 +115,8 @@ class _KiotCustomerScreenState extends State<ContactsScreen> {
   String _detailTab = 'info';
   bool _loading = true;
   String? _error;
+  final _searchDebouncer = Debouncer(delay: Duration(milliseconds: 220));
+  final _searchGuard = SearchRequestGuard();
 
   final _salesFrom = TextEditingController();
   final _salesTo = TextEditingController();
@@ -133,10 +136,13 @@ class _KiotCustomerScreenState extends State<ContactsScreen> {
     _salesTo.dispose();
     _pointsFrom.dispose();
     _pointsTo.dispose();
+    _searchDebouncer.dispose();
+    _searchGuard.invalidate();
     super.dispose();
   }
 
   Future<void> _load() async {
+    final request = _searchGuard.next();
     setState(() => _loading = true);
     try {
       final res = await context.read<ApiService>().getPartners(
@@ -144,7 +150,7 @@ class _KiotCustomerScreenState extends State<ContactsScreen> {
             q: _search.trim(),
             includeInactive: _status != 'active',
           );
-      if (!mounted) return;
+      if (!mounted || !_searchGuard.isCurrent(request)) return;
       setState(() {
         _partners = (res['partners'] is List)
             ? (res['partners'] as List)
@@ -163,7 +169,7 @@ class _KiotCustomerScreenState extends State<ContactsScreen> {
         }
       });
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted || !_searchGuard.isCurrent(request)) return;
       setState(() {
         _error = e.toString().replaceFirst('Exception: ', '');
         _loading = false;
@@ -202,17 +208,44 @@ class _KiotCustomerScreenState extends State<ContactsScreen> {
     final maxSales = _ctrlInt(_salesTo);
     final minPoints = _ctrlInt(_pointsFrom);
     final maxPoints = _ctrlInt(_pointsTo);
-    return _partners.where((c) {
-      if (_status == 'active' && !_b(c['active'])) return false;
-      if (_status == 'inactive' && _b(c['active'])) return false;
-      final spent = _n(c['total_spent']).round();
-      final points = _n(c['loyalty_points']).round();
-      if (minSales != null && spent < minSales) return false;
-      if (maxSales != null && spent > maxSales) return false;
-      if (minPoints != null && points < minPoints) return false;
-      if (maxPoints != null && points > maxPoints) return false;
-      return true;
-    }).toList();
+    final ranked = _partners
+        .where((c) {
+          if (_status == 'active' && !_b(c['active'])) return false;
+          if (_status == 'inactive' && _b(c['active'])) return false;
+          final spent = _n(c['total_spent']).round();
+          final points = _n(c['loyalty_points']).round();
+          if (minSales != null && spent < minSales) return false;
+          if (maxSales != null && spent > maxSales) return false;
+          if (minPoints != null && points < minPoints) return false;
+          if (maxPoints != null && points > maxPoints) return false;
+          if (!searchMatchesAny([
+            c['code'],
+            c['name'],
+            c['phone'],
+            c['tax_code'],
+            c['company'],
+            c['email'],
+            c['contact_person'],
+          ], _search)) {
+            return false;
+          }
+          return true;
+        })
+        .map((partner) => (
+              partner,
+              searchScoreAny([
+                partner['code'],
+                partner['name'],
+                partner['phone'],
+                partner['tax_code'],
+                partner['company'],
+                partner['email'],
+                partner['contact_person'],
+              ], _search),
+            ))
+        .toList()
+      ..sort((a, b) => b.$2.compareTo(a.$2));
+    return ranked.map((entry) => entry.$1).toList();
   }
 
   @override
@@ -347,7 +380,10 @@ class _KiotCustomerScreenState extends State<ContactsScreen> {
                     suffixIcon: Icon(Icons.tune_outlined),
                     isDense: true,
                   ),
-                  onChanged: (v) => _search = v,
+                  onChanged: (v) {
+                    _search = v;
+                    _searchDebouncer(_load);
+                  },
                   onSubmitted: (_) => _load(),
                 ),
               ),
@@ -886,4 +922,3 @@ class _KiotCustomerScreenState extends State<ContactsScreen> {
     }
   }
 }
-

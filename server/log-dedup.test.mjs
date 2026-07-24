@@ -9,7 +9,11 @@ test('activity log keeps domain audit and drops duplicate technical noise', () =
   const routes = readFileSync(new URL('./modules/audit/routes.js', import.meta.url), 'utf8');
   const auditStore = readFileSync(new URL('./db/audit.js', import.meta.url), 'utf8');
 
-  assert.match(api, /if \(status < 500\) return/);
+  // Expected 4xx business errors (wrong PIN, out of stock, ...) still skip the log —
+  // but an UNEXPECTED system error (TypeError/ERR_* from Node/SQLite) that happens to
+  // surface as 4xx (no .status set) must still be logged, or it's invisible forever.
+  assert.match(api, /if \(status < 500 && !isUnexpectedSystemError\(e\)\) return/);
+  assert.match(api, /function isUnexpectedSystemError/);
   assert.doesNotMatch(api, /audit\('system\.error'/);
   for (const action of [
     'system.error',

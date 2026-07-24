@@ -15,6 +15,8 @@ class _ContactsScreenState extends State<_LegacyContactsScreen> {
   String _search = '';
   bool _loading = true;
   String? _error;
+  final _searchDebouncer = Debouncer(delay: Duration(milliseconds: 220));
+  final _searchGuard = SearchRequestGuard();
 
   @override
   void initState() {
@@ -22,20 +24,53 @@ class _ContactsScreenState extends State<_LegacyContactsScreen> {
     _load();
   }
 
+  @override
+  void dispose() {
+    _searchDebouncer.dispose();
+    _searchGuard.invalidate();
+    super.dispose();
+  }
+
   Future<void> _load() async {
+    final request = _searchGuard.next();
     setState(() => _loading = true);
     try {
       final res = await context
           .read<ApiService>()
           .getPartners(type: _type, q: _search.trim());
-      if (!mounted) return;
+      if (!mounted || !_searchGuard.isCurrent(request)) return;
       setState(() {
-        _partners = (res['partners'] is List)
+        final List<Map<String, dynamic>> rows = (res['partners'] is List)
             ? (res['partners'] as List)
                 .whereType<Map>()
                 .map((e) => Map<String, dynamic>.from(e))
                 .toList()
-            : [];
+            : <Map<String, dynamic>>[];
+        _partners = rows
+            .where((partner) => searchMatchesAny([
+                  partner['code'],
+                  partner['name'],
+                  partner['phone'],
+                  partner['tax_code'],
+                  partner['company'],
+                  partner['email'],
+                  partner['contact_person'],
+                ], _search))
+            .toList()
+          ..sort((a, b) => searchScoreAny([
+                b['code'],
+                b['name'],
+                b['phone'],
+                b['tax_code'],
+                b['company']
+              ], _search)
+                  .compareTo(searchScoreAny([
+                a['code'],
+                a['name'],
+                a['phone'],
+                a['tax_code'],
+                a['company']
+              ], _search)));
         _counts = res['counts'] is Map
             ? Map<String, dynamic>.from(res['counts'])
             : {};
@@ -43,7 +78,7 @@ class _ContactsScreenState extends State<_LegacyContactsScreen> {
         _error = null;
       });
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted || !_searchGuard.isCurrent(request)) return;
       setState(() {
         _error = e.toString().replaceFirst('Exception: ', '');
         _loading = false;
@@ -121,7 +156,10 @@ class _ContactsScreenState extends State<_LegacyContactsScreen> {
                   hintText: t('Tìm theo tên, SĐT, MST…'),
                   prefixIcon: Icon(Icons.search),
                   isDense: true),
-              onChanged: (v) => _search = v,
+              onChanged: (v) {
+                _search = v;
+                _searchDebouncer(_load);
+              },
               onSubmitted: (_) => _load(),
             ),
           ),
@@ -300,4 +338,3 @@ class _ContactAvatar extends StatelessWidget {
     );
   }
 }
-

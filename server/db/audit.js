@@ -2,13 +2,14 @@ import crypto from 'node:crypto';
 import zlib from 'node:zlib';
 import { db } from './connection.js';
 import { logger } from '../core/logger.js';
-import { currentDevice } from '../core/requestContext.js';
+import { currentRequestMetadata } from '../core/requestContext.js';
 import {
   appendAuditArchive, readRecentAuditArchive, listAuditBranches, listArchivedMonths,
   listAuditDayMonths, hasMonthlyArchive, writeMonthlyArchive, readMonthlyArchive,
   deleteMonthlyArchive, readDayEntriesForMonth, deleteDayFilesForMonth,
 } from '../services/archive.js';
 import { now, uid } from './ids.js';
+import { decryptSecret, encryptSecret } from '../core/crypto.js';
 
 const TECHNICAL_ONLY_ACTIONS = new Set([
   'system.error',
@@ -24,13 +25,16 @@ export function audit(action, detail, branch_id = 'br1', actor = 'system') {
   if (TECHNICAL_ONLY_ACTIONS.has(action)) return null;
   const id = uid('a_');
   const created_at = now();
-  // Gắn TÊN THIẾT BỊ (header x-device-name, đọc từ AsyncLocalStorage của
-  // request) vào detail — Nhật ký hoạt động hiện rõ "ai · làm gì · máy nào".
+  // Gắn metadata của app/thiết bị vào mọi audit từ request.
   let enriched = detail;
   try {
-    const device = currentDevice();
-    if (device && detail && typeof detail === 'object' && !Array.isArray(detail) && !detail.device) {
-      enriched = { ...detail, device };
+    const metadata = Object.fromEntries(
+      Object.entries(currentRequestMetadata()).filter(([, value]) => value),
+    );
+    if (Object.keys(metadata).length) {
+      enriched = detail && typeof detail === 'object' && !Array.isArray(detail)
+        ? { ...metadata, ...detail }
+        : { ...metadata, detail };
     }
   } catch { /* ngoài request (worker/cron) — không có thiết bị */ }
   const cleanDetail = typeof enriched === 'string' ? enriched : JSON.stringify(enriched);
@@ -72,17 +76,16 @@ const ALGORITHM = 'aes-256-ctr';
 // để không hardcode bí mật trong source. Lưu ý: nếu đặt key MỚI sau khi đã có bản ghi
 // mã hóa bằng key cũ thì các bản cũ đó sẽ không giải mã được — nên đặt key ngay từ đầu
 // (compaction chỉ mã hóa bản ghi > 90 ngày, hệ thống mới thường chưa có).
-const SECRET_KEY = crypto.scryptSync(
-  process.env.AUDIT_LOG_KEY || process.env.SESSION_SECRET || 'dandpak-audit-log-key-secret-12345',
-  'salt', 32);
+const legacyAuditKey = process.env.AUDIT_LOG_KEY || process.env.SESSION_SECRET ||
+  process.env.DATA_ENCRYPTION_KEY ||
+  (process.env.NODE_ENV === 'production' ? '' : 'development-only-audit-key');
+if (!legacyAuditKey) throw new Error('Production requires AUDIT_LOG_KEY, SESSION_SECRET, or DATA_ENCRYPTION_KEY');
+const SECRET_KEY = crypto.scryptSync(legacyAuditKey, 'salt', 32);
 
 export function encryptCompress(text) {
   try {
     const compressed = zlib.gzipSync(Buffer.from(text, 'utf8'));
-    const iv = crypto.randomBytes(16);
-    const cipher = crypto.createCipheriv(ALGORITHM, SECRET_KEY, iv);
-    const encrypted = Buffer.concat([cipher.update(compressed), cipher.final()]);
-    return '__ENC__:' + iv.toString('hex') + ':' + encrypted.toString('hex');
+    return '__ENC_GCM__:' + encryptSecret(compressed.toString('base64'), 'audit-log');
   } catch (e) {
     logger.error('audit compression/encryption failed', { message: e.message });
     return text;
@@ -90,6 +93,18 @@ export function encryptCompress(text) {
 }
 
 export function decryptDecompress(encText) {
+  if (encText?.startsWith('__ENC_GCM__:')) {
+    try {
+      const compressed = Buffer.from(
+        decryptSecret(encText.slice('__ENC_GCM__:'.length), 'audit-log'),
+        'base64',
+      );
+      return zlib.gunzipSync(compressed).toString('utf8');
+    } catch (e) {
+      logger.error('audit authenticated decryption failed', { message: e.message });
+      return encText;
+    }
+  }
   if (!encText || !encText.startsWith('__ENC__:')) return encText;
   try {
     const parts = encText.split(':');

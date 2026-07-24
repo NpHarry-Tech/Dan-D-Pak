@@ -64,6 +64,13 @@ const intOr = (v, fallback) => {
   return Number.isFinite(n) ? n : fallback;
 };
 const boolOr = (v, fallback) => (v === undefined || v === null) ? (fallback ? 1 : 0) : (v ? 1 : 0);
+// TEXT trong SQLite khong gioi han do dai — khong co check nay, mot request 5MB "name" vao
+// thang duoc luu nguyen, gay phinh DB va gan chac se treo UI khi render danh sach/label.
+function assertMaxLength(value, max, label) {
+  if (value != null && String(value).length > max) {
+    throw new Error(`${label} quá dài (tối đa ${max} ký tự)`);
+  }
+}
 const qtyNum = (v, label = 'Số lượng') => {
   const n = parseFloat(v);
   if (!Number.isFinite(n) || n <= 0) throw new Error(label + ' không hợp lệ');
@@ -472,6 +479,8 @@ export function deleteInventoryItem(id, branch_id = 'br1') {
 
 export function createSku(body, branch_id = 'br1') {
   if (!body.name) throw new Error('Thiếu tên SKU');
+  assertMaxLength(body.name, 200, 'Tên SKU');
+  assertMaxLength(body.barcode, 100, 'Mã vạch');
   const id = body.id || uid('s_');
   const warehouse_id = body.warehouse_id || fallbackWarehouse(branch_id, 'sku');
   const price = parseInt(body.price) || 0;
@@ -513,6 +522,8 @@ export function deleteSku(id, branch_id = 'br1') {
 export function updateSku(id, body, branch_id = 'br1') {
   const cur = db.prepare(`SELECT * FROM skus WHERE id=? AND branch_id=?`).get(id, branch_id);
   if (!cur) throw new Error('SKU không tồn tại');
+  assertMaxLength(body.name, 200, 'Tên SKU');
+  assertMaxLength(body.barcode, 100, 'Mã vạch');
   const price = intOr(body.price, cur.price);
   const priceIncludesVat = boolOr(body.price_includes_vat, cur.price_includes_vat);
   const vat = body.vat !== undefined ? (body.vat == null ? null : Math.min(100, Math.max(0, Number(body.vat) || 0))) : cur.vat;

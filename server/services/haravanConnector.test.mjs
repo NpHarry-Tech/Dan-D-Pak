@@ -112,14 +112,21 @@ try {
   Haravan.processHaravanQueue();
   assert.equal(receivedInventory.ok, true);
   assert.equal(db.prepare(`SELECT status FROM sync_logs WHERE id=?`).get(receivedInventory.log_id).status, 'success');
-  assert.equal(db.prepare(`SELECT stock FROM skus WHERE id='hvn_22'`).get().stock, 9);
+  // BR-STOCK-001: POS is the inventory source of truth. An inbound Haravan quantity
+  // (9) must NOT overwrite POS stock (4, set locally via syncHaravanProduct above) —
+  // it's an external observation to reconcile, not an authoritative write.
+  assert.equal(db.prepare(`SELECT stock FROM skus WHERE id='hvn_22'`).get().stock, 4);
   assert.equal(db.prepare(`SELECT COUNT(*) n FROM stock_movements`).get().n, movementsBeforeInbound);
   assert.equal(db.prepare(`SELECT branch_id FROM skus WHERE id='hvn_22'`).get().branch_id, 'br1');
+  assert.equal(
+    db.prepare(`SELECT COUNT(*) n FROM audit_log WHERE action='haravan.inventory.discrepancy'`).get().n,
+    1,
+  );
   assert.equal(
     Haravan.syncHaravanInventory({ loc_id: 111, variant_id: 22, qty_available: 3 }, 'shop.myharavan.com').reason,
     'different_location',
   );
-  assert.equal(db.prepare(`SELECT stock FROM skus WHERE id='hvn_22'`).get().stock, 9);
+  assert.equal(db.prepare(`SELECT stock FROM skus WHERE id='hvn_22'`).get().stock, 4);
 
   Settings.updateIntegrations({ channels: { haravan: { syncInventory: false } } }, 'sala');
   const disabledBody = Buffer.from(JSON.stringify({ loc_id: 963414, variant_id: 22, qty_available: 3 }));
@@ -130,7 +137,7 @@ try {
     'x-haravan-shop-domain': 'shop.myharavan.com',
   });
   assert.equal(db.prepare(`SELECT status FROM sync_logs WHERE id=?`).get(disabledLog.log_id).status, 'ignored');
-  assert.equal(db.prepare(`SELECT stock FROM skus WHERE id='hvn_22'`).get().stock, 9);
+  assert.equal(db.prepare(`SELECT stock FROM skus WHERE id='hvn_22'`).get().stock, 4);
   Settings.updateIntegrations({ channels: { haravan: { syncInventory: true } } }, 'sala');
 
   const savedSignature = crypto.createHmac('sha256', 'sec_5678').update(body).digest('base64');
@@ -162,7 +169,15 @@ try {
   };
   const fullSync = await Haravan.syncAllHaravan({ shopDomain: 'shop.myharavan.com', delta: false });
   assert.equal(fullSync.queued, 4);
-  assert.equal(db.prepare(`SELECT stock FROM skus WHERE id='hvn_502'`).get().stock, 8);
+  // BR-STOCK-001: even for a brand-new SKU discovered via Haravan's own product feed
+  // (stock=0 at creation, no inventory_quantity on the product payload), the
+  // FOLLOWING inventory pull (qty_available=8) must still land as a reconciliation
+  // discrepancy, not an authoritative write — POS stays the one place that sets stock.
+  assert.equal(db.prepare(`SELECT stock FROM skus WHERE id='hvn_502'`).get().stock, 0);
+  assert.equal(
+    db.prepare(`SELECT COUNT(*) n FROM audit_log WHERE action='haravan.inventory.discrepancy' AND detail LIKE '%hvn_502%'`).get().n,
+    1,
+  );
   assert.equal(db.prepare(`SELECT COUNT(*) n FROM customers WHERE phone='0900000504'`).get().n, 1);
   assert.equal(db.prepare(`SELECT COUNT(*) n FROM orders WHERE online_ref='505'`).get().n, 1);
   Settings.updateIntegrations({ channels: { haravan: { locationId: '963414' } } }, 'sala');
@@ -209,7 +224,9 @@ try {
   assert.equal(fetchCalls, 2);
   assert.equal(pushedBody.inventory.location_id, 963414);
   assert.equal(pushedBody.inventory.line_items[0].product_variant_id, 22);
-  assert.equal(pushedBody.inventory.line_items[0].quantity, 9);
+  // POS stock for hvn_22 is 4 (never overwritten by the earlier inbound Haravan
+  // webhook, per BR-STOCK-001) — the outbound push must reflect POS's own number.
+  assert.equal(pushedBody.inventory.line_items[0].quantity, 4);
 
   const logsBeforeMissingLocation = db.prepare(`SELECT COUNT(*) n FROM sync_logs`).get().n;
   Settings.updateIntegrations({ channels: { haravan: { locationId: '' } } }, 'sala');

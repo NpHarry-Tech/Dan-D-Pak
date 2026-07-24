@@ -5,7 +5,7 @@ param(
 $ErrorActionPreference = 'Stop'
 
 $Root = Split-Path -Parent $MyInvocation.MyCommand.Path
-$BaseUrl = 'http://127.0.0.1:3000'
+$BaseUrl = 'https://api.dandpakpos.io.vn'
 $AppUrl = "$BaseUrl/?app=desktop"
 $HealthUrl = "$BaseUrl/health"
 $ProfileDir = Join-Path $env:LOCALAPPDATA 'DanDPakPOS\desktop-edge-profile'
@@ -48,32 +48,8 @@ try {
   New-Item -ItemType Directory -Force -Path $ProfileDir | Out-Null
 
   if (-not (Test-DanDPakEngine)) {
-    $node = Get-Command node -ErrorAction SilentlyContinue
-    if (-not $node) {
-      Show-ErrorBox 'Node.js was not found. Please install Node.js or start the POS engine manually.'
-      exit 1
-    }
-
-    Start-Process -FilePath $node.Source `
-      -ArgumentList @('server/index.js') `
-      -WorkingDirectory $Root `
-      -WindowStyle Hidden `
-      -RedirectStandardOutput $OutLog `
-      -RedirectStandardError $ErrLog | Out-Null
-
-    $ready = $false
-    for ($i = 0; $i -lt 40; $i++) {
-      Start-Sleep -Milliseconds 500
-      if (Test-DanDPakEngine) {
-        $ready = $true
-        break
-      }
-    }
-
-    if (-not $ready) {
-      Show-ErrorBox "POS engine did not start. Check logs:`n$ErrLog"
-      exit 1
-    }
+    Show-ErrorBox "Cannot connect to the production server:`n$BaseUrl"
+    exit 1
   }
 
   if ($NoOpen) { exit 0 }

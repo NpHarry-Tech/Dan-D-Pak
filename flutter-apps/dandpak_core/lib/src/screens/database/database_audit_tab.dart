@@ -51,6 +51,7 @@ class _AuditLogTabState extends State<_AuditLogTab> {
   String _granularity = '';
   DateTime _anchor = DateTime.now();
   Timer? _timer;
+  Timer? _searchTimer;
 
   bool get _hasMore => _hasMoreAudit || _hasMoreSys;
 
@@ -72,6 +73,7 @@ class _AuditLogTabState extends State<_AuditLogTab> {
   @override
   void dispose() {
     _timer?.cancel();
+    _searchTimer?.cancel();
     _search.dispose();
     super.dispose();
   }
@@ -487,6 +489,10 @@ class _AuditLogTabState extends State<_AuditLogTab> {
             child: Center(
               child: TextField(
                 controller: _search,
+                onChanged: (_) {
+                  _searchTimer?.cancel();
+                  _searchTimer = Timer(Duration(milliseconds: 220), _load);
+                },
                 onSubmitted: (_) => _load(),
                 decoration: InputDecoration(
                   isDense: true,
@@ -833,7 +839,9 @@ class _AuditLogRowState extends State<_AuditLogRow> {
       'stack',
     };
     for (final entry in detail.entries) {
-      if (!shownKeys.contains(entry.key)) add(entry.key, entry.value);
+      if (!shownKeys.contains(entry.key)) {
+        add(_auditDetailLabel(entry.key), entry.value);
+      }
     }
 
     final stackText = _stringify(detail['stack']);
@@ -941,6 +949,19 @@ class _AuditLogRowState extends State<_AuditLogRow> {
       ),
     );
   }
+}
+
+String _auditDetailLabel(String key) {
+  const labels = {
+    'device_id': 'Mã thiết bị',
+    'device_name': 'Tên thiết bị',
+    'app_version': 'Phiên bản app',
+    'build_number': 'Số build',
+    'platform': 'Nền tảng',
+    'os_version': 'Hệ điều hành',
+    'correlation_id': 'Mã truy vết',
+  };
+  return t(labels[key] ?? key);
 }
 
 bool _isEncrypted(dynamic value) => _s(value).startsWith('__ENC__:');
@@ -1103,4 +1124,3 @@ Widget _logBadge(String text, Color color, {bool filled = false}) {
     ),
   );
 }
-

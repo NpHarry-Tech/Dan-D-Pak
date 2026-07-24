@@ -21,3 +21,17 @@ export function matchesSearch(values, query) {
   const haystack = normalizeSearch(Array.isArray(values) ? values.join(' ') : values, Number.MAX_SAFE_INTEGER);
   return tokens.every(token => haystack.includes(token));
 }
+
+export function searchScore(values, query) {
+  const fields = (Array.isArray(values) ? values : [values])
+    .map(value => normalizeSearch(value, Number.MAX_SAFE_INTEGER))
+    .filter(Boolean);
+  const normalized = normalizeSearch(query);
+  if (!normalized) return 0;
+  if (fields.some(field => field === normalized)) return 1000;
+  if (fields.some(field => field.startsWith(normalized))) return 750;
+  const tokens = searchTokens(normalized);
+  const joined = fields.join(' ');
+  if (!tokens.length || !tokens.every(token => joined.includes(token))) return -1;
+  return 500 - Math.min(200, joined.indexOf(tokens[0]));
+}

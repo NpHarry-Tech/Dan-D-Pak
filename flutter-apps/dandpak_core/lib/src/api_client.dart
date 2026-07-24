@@ -91,6 +91,7 @@ class DanDpakApiClient {
   /// App cung cấp correlationId của flow hiện tại (Zone-based). Mỗi request sẽ
   /// mang header `x-correlation-id` để truy vết Flutter → API → DB → máy in.
   static String? Function()? correlationIdProvider;
+  static Map<String, String> Function()? deviceMetadataProvider;
 
   static void _trace(http.Response response) {
     final cb = onRequestTrace;
@@ -203,6 +204,10 @@ class DanDpakApiClient {
   }();
 
   Map<String, String> headers([Map<String, String>? extra]) {
+    Map<String, String> deviceMetadata = const {};
+    try {
+      deviceMetadata = deviceMetadataProvider?.call() ?? const {};
+    } catch (_) {}
     final result = <String, String>{
       'Content-Type': 'application/json; charset=utf-8',
       if (token != null && token!.isNotEmpty) ...{
@@ -211,6 +216,7 @@ class DanDpakApiClient {
       },
       if (branchId != null && branchId!.isNotEmpty) 'x-branch-id': branchId!,
       if (_deviceName.isNotEmpty) 'x-device-name': _deviceName,
+      ...deviceMetadata,
     };
     if (extra != null) result.addAll(extra);
     return result;

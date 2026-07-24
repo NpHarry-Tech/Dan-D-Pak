@@ -62,11 +62,12 @@ export function registerPaymentRoutes(api, {
       customer: req.body.customer || null,
       invoice_customer: req.body.invoice_customer || null,
       cashier: req.user?.name || req.user?.username || '',
+      idempotency_key: req.body.idempotency_key || req.headers['idempotency-key'] || null,
     }, branch_id);
     if (manual) for (const tx of manual.txIds) Pay.markBankTxClaimed(tx, req.params.id, manual.approver.username, branch_id);
-    if (req.body.customer?.id || req.body.customer?.phone) {
+    if (receipt.fully_settled !== false && (req.body.customer?.id || req.body.customer?.phone)) {
       Customers.recordPurchase(req.body.customer, receipt.total, branch_id, req.params.id);
-    } else {
+    } else if (receipt.fully_settled !== false) {
       Pay.recordLoyaltyFromOrder(db.prepare(`SELECT id,branch_id,total,customer_json FROM orders WHERE id=?`).get(req.params.id));
     }
     return receipt;

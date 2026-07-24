@@ -54,11 +54,23 @@ export function registerInvoiceRoutes(api, {
   api.post('/invoices/issue', guard('invoice'), wrap((req) => {
     const branch_id = branch(req);
     assertBillEditable(req.body.order_id, req, 'invoice_issue');
-    const existing = Einvoices.getInvoiceByOrder(req.body.order_id);
-    if (existing) {
-      return Einvoices.upgradeBuyer(req.body.order_id, req.body.customer || {}, branch_id, actor(req));
-    }
-    return Invoices.issue(req.body.order_id, req.body.customer, branch_id);
+    const customer = req.body.customer || {};
+    const mode = customer.tax_code
+      ? 'COMPANY_TAX_INFO'
+      : (customer.name || customer.email || customer.phone ? 'BUYER_PROVIDED_INFO' : 'NO_BUYER_INFO');
+    return Einvoices.createInvoiceRequest(
+      req.body.order_id,
+      mode,
+      customer,
+      branch_id,
+      actor(req),
+      {
+        amount: req.body.amount ?? req.body.allocation?.amount,
+        order_item_id: req.body.allocation?.order_item_id,
+        qty: req.body.allocation?.qty,
+        idempotency_key: req.body.idempotency_key || req.headers['idempotency-key'] || null,
+      },
+    );
   }));
 
   // BẢO MẬT: danh sách HĐĐT chứa PII (tên, MST, địa chỉ, SĐT, email) + số tiền —

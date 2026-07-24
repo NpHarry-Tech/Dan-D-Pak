@@ -461,11 +461,6 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
 
   Future<void> _confirm() async {
     if (_lines.isEmpty && _pendingAmount > 0) _addLine(_pendingAmount);
-    if (_paid < _payable) {
-      _toast(t('Chưa đủ tiền thanh toán'), error: true);
-      return;
-    }
-
     Map<String, dynamic>? invoiceCustomer;
     try {
       invoiceCustomer = _invoicePayload();
@@ -508,6 +503,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                     .round(),
                 'customer': widget.customer?.toCheckoutCustomer(),
                 'invoice_customer': invoiceCustomer,
+                'idempotency_key': _clientRequestId,
                 if (_manualPin != null && _manualPin!.isNotEmpty)
                   'security_pin': _manualPin,
               })
@@ -517,7 +513,8 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
         final billNo = receipt['bill_no']?.toString() ??
             receipt['number']?.toString() ??
             '';
-        final printError = receipt['idempotent_replay'] == true
+        final printError = receipt['idempotent_replay'] == true ||
+                receipt['fully_settled'] == false
             ? null
             : await widget.api
                 .forcePrintReceiptJob(orderId: orderId, billNo: billNo);

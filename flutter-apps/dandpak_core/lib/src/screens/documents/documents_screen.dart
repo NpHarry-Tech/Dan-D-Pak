@@ -5,6 +5,7 @@ import '../../services/api_service.dart';
 import '../../ui/app_theme.dart';
 import '../../ui/format.dart';
 import '../../ui/open_file.dart';
+import '../../ui/debouncer.dart';
 import '../../widgets/manager_pin_dialog.dart';
 import '../management/management_widgets.dart';
 import '../../utils/translation.dart';
@@ -51,6 +52,8 @@ class _DocumentsBodyState extends State<DocumentsBody> {
   bool _loading = true;
   String? _error;
   String? _downloading;
+  final _searchDebouncer = Debouncer(delay: Duration(milliseconds: 220));
+  final _searchGuard = SearchRequestGuard();
 
   @override
   void initState() {
@@ -58,12 +61,20 @@ class _DocumentsBodyState extends State<DocumentsBody> {
     _load();
   }
 
+  @override
+  void dispose() {
+    _searchDebouncer.dispose();
+    _searchGuard.invalidate();
+    super.dispose();
+  }
+
   Future<void> _load() async {
+    final request = _searchGuard.next();
     setState(() => _loading = true);
     try {
       final res =
           await context.read<ApiService>().getDocuments(q: _search.trim());
-      if (!mounted) return;
+      if (!mounted || !_searchGuard.isCurrent(request)) return;
       setState(() {
         _files = (res['files'] is List)
             ? (res['files'] as List)
@@ -75,7 +86,7 @@ class _DocumentsBodyState extends State<DocumentsBody> {
         _error = null;
       });
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted || !_searchGuard.isCurrent(request)) return;
       setState(() {
         _error = e.toString().replaceFirst('Exception: ', '');
         _loading = false;
@@ -145,7 +156,10 @@ class _DocumentsBodyState extends State<DocumentsBody> {
                 hintText: t('Tìm tài liệu…'),
                 prefixIcon: Icon(Icons.search),
                 isDense: true),
-            onChanged: (v) => _search = v,
+            onChanged: (v) {
+              _search = v;
+              _searchDebouncer(_load);
+            },
             onSubmitted: (_) => _load(),
           ),
         ),

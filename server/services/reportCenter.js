@@ -588,7 +588,7 @@ function buildReceivables(branch_id, query) {
   const rows = db.prepare(`
     SELECT o.id, o.bill_no, o.channel, o.status, o.total, o.created_at, o.customer_json, t.code table_code
     FROM orders o LEFT JOIN tables t ON t.id=o.table_id
-    WHERE o.branch_id=? AND o.status IN ('open','pending','pending_payment')
+    WHERE o.branch_id=? AND o.status IN ('open','partially_paid','pending','pending_payment')
     ORDER BY o.created_at DESC`).all(branch_id).map(r => ({ ...r, customer: parseCustomer(r.customer_json) }));
   report.summary = [
     { label: 'Số khoản phải thu', value: rows.length },

@@ -1,5 +1,6 @@
 import { db, now, audit } from '../db.js';
 import { emit } from '../realtime.js';
+import { decryptSecret, encryptSecret, isEncrypted } from '../core/crypto.js';
 import {
   DEFAULT_TAX_FILING_PROFILE as TAX_DEFAULT_PROFILE,
   sanitizeTaxFilingProfile as sanitizeTaxProfile,
@@ -25,6 +26,33 @@ const NOTIFICATION_SOUND_KEY = 'notification_sound_config';
 const TAX_FILING_PROFILE_KEY = 'tax_filing_profile';
 const CUSTOMER_DISPLAY_KEY = 'customer_display';
 const LOYALTY_CONFIG_KEY = 'loyalty_config';
+const SECRET_SETTING_KEYS = /^(password|secretKey|apiKey|checksumKey|clientSecret|accessToken|refreshToken|webhookSecret|verifyToken)$/i;
+
+function mapIntegrationSecrets(value, branchId, encrypt, path = []) {
+  if (Array.isArray(value)) {
+    return value.map((item, index) =>
+      mapIntegrationSecrets(item, branchId, encrypt, [...path, String(index)]));
+  }
+  if (!value || typeof value !== 'object') return value;
+  const out = {};
+  for (const [key, item] of Object.entries(value)) {
+    const nextPath = [...path, key];
+    const context = `settings:${branchId}:${nextPath.join('.')}`;
+    if (SECRET_SETTING_KEYS.test(key) && typeof item === 'string' && item) {
+      out[key] = encrypt ? encryptSecret(item, context) : decryptSecret(item, context);
+    } else {
+      out[key] = mapIntegrationSecrets(item, branchId, encrypt, nextPath);
+    }
+  }
+  return out;
+}
+
+function hasPlaintextIntegrationSecret(value) {
+  if (!value || typeof value !== 'object') return false;
+  return Object.entries(value).some(([key, item]) =>
+    (SECRET_SETTING_KEYS.test(key) && typeof item === 'string' && item && !isEncrypted(item)) ||
+    hasPlaintextIntegrationSecret(item));
+}
 
 // Second-screen (customer-facing display) config. Ad images are stored inline
 // as data URLs — same approach as the receipt logo — so no upload pipeline is
@@ -1016,7 +1044,15 @@ export function getPrintConfig(branch_id = 'br1') {
 export function getIntegrations(branch_id = 'br1') {
   const row = db.prepare(`SELECT value FROM app_settings WHERE branch_id=? AND key=?`).get(branch_id, INTEGRATIONS_KEY);
   if (!row?.value) return sanitizeIntegrations(DEFAULT_INTEGRATIONS);
-  try { return sanitizeIntegrations(JSON.parse(row.value)); }
+  try {
+    const stored = JSON.parse(row.value);
+    const clean = sanitizeIntegrations(mapIntegrationSecrets(stored, branch_id, false));
+    if (hasPlaintextIntegrationSecret(stored)) {
+      db.prepare(`UPDATE app_settings SET value=?,updated_at=? WHERE branch_id=? AND key=?`)
+        .run(JSON.stringify(mapIntegrationSecrets(clean, branch_id, true)), now(), branch_id, INTEGRATIONS_KEY);
+    }
+    return clean;
+  }
   catch { return sanitizeIntegrations(DEFAULT_INTEGRATIONS); }
 }
 
@@ -1034,10 +1070,11 @@ export function getIntegrationChannel(channel, branch_id = 'br1') {
   const key = String(channel || '').trim();
   const direct = getIntegrations(branch_id).channels?.[key];
   if (hasConfiguredChannel(direct)) return direct;
-  const rows = db.prepare(`SELECT value FROM app_settings WHERE key=? ORDER BY updated_at DESC`).all(INTEGRATIONS_KEY);
+  const rows = db.prepare(`SELECT branch_id,value FROM app_settings WHERE key=? ORDER BY updated_at DESC`).all(INTEGRATIONS_KEY);
   for (const row of rows) {
     try {
-      const found = sanitizeIntegrations(JSON.parse(row.value)).channels?.[key];
+      const found = sanitizeIntegrations(
+        mapIntegrationSecrets(JSON.parse(row.value), row.branch_id, false)).channels?.[key];
       if (hasConfiguredChannel(found)) return found;
     } catch {}
   }
@@ -1068,7 +1105,8 @@ export function updateNotificationSoundConfig(body = {}, branch_id = 'br1') {
 export function updateIntegrations(body = {}, branch_id = 'br1') {
   const clean = sanitizeIntegrations(mergeIntegrationsForSave(body, branch_id));
   db.prepare(`INSERT OR REPLACE INTO app_settings (branch_id,key,value,updated_at) VALUES (?,?,?,?)`)
-    .run(branch_id, INTEGRATIONS_KEY, JSON.stringify(clean), now());
+    .run(branch_id, INTEGRATIONS_KEY,
+      JSON.stringify(mapIntegrationSecrets(clean, branch_id, true)), now());
   const enabled = Object.entries(clean.channels).filter(([, c]) => c.enabled).map(([k]) => k);
   audit('settings.update', { keys: [INTEGRATIONS_KEY], enabled_integrations: enabled }, branch_id);
   emit('settings:updated', { keys: [INTEGRATIONS_KEY] }, branch_id);

@@ -5,7 +5,7 @@ import { db, uid, now, audit } from '../db.js';
 import { archiveStaff } from './archive.js';
 import { MODULE_PERMISSIONS } from './modules.js';
 import { REPORTS } from './reportCenter.js';
-import { hashPin, verifyPin, newToken } from './pin.js';
+import { hashPin, verifyPin, newToken, tokenDigest } from './pin.js';
 
 const sessions = new Map(); // token -> { user, at }
 
@@ -420,11 +420,12 @@ export function login(username, pin, branch_id = 'br1', meta = {}) {
   const selectedBranch = branchExists(branch_id) ? branch_id : (u.branch_id || 'br1');
   if (!canAccessBranch(u, selectedBranch)) throw new Error('Tài khoản này chưa được cấp quyền vào chi nhánh đã chọn.');
   const token = newToken();
+  const digest = tokenDigest(token);
   const user = publicUser(u);
   const ts = now();
-  sessions.set(token, { user, at: ts });
+  sessions.set(digest, { user, at: ts });
   db.prepare(`INSERT INTO auth_sessions (token,user_id,branch_id,created_at,last_seen_at) VALUES (?,?,?,?,?)`)
-    .run(token, u.id, selectedBranch, ts, ts);
+    .run(digest, u.id, selectedBranch, ts, ts);
   audit('auth.login', { user: u.username, role: u.role, ip }, selectedBranch, u.username);
   // Cảnh báo bảo mật: tài khoản Admin còn dùng PIN mặc định '1234' (từ lần khởi tạo
   // DB rỗng). Trả cờ để app nhắc chủ cửa hàng đổi PIN — không chặn đăng nhập.
@@ -494,28 +495,31 @@ export function verifyPinHasPerm(pin, perm, branch_id = 'br1') {
 
 export function logout(token) {
   if (!token) return;
-  sessions.delete(token);
-  db.prepare(`DELETE FROM auth_sessions WHERE token=?`).run(token);
+  const digest = tokenDigest(token);
+  sessions.delete(digest);
+  db.prepare(`DELETE FROM auth_sessions WHERE token IN (?,?)`).run(digest, token);
 }
 
 export function userFor(token) {
   if (!token) return null;
-  const cached = sessions.get(token);
+  const digest = tokenDigest(token);
+  const cached = sessions.get(digest);
   if (cached) {
     const fresh = db.prepare(`SELECT * FROM users WHERE id=? AND active=1`).get(cached.user.id);
-    if (!fresh) { sessions.delete(token); return null; }
+    if (!fresh) { sessions.delete(digest); return null; }
     cached.user = publicUser(fresh);
-    db.prepare(`UPDATE auth_sessions SET last_seen_at=? WHERE token=?`).run(now(), token);
+    db.prepare(`UPDATE auth_sessions SET last_seen_at=? WHERE token=?`).run(now(), digest);
     return cached.user;
   }
   const row = db.prepare(`
     SELECT u.* FROM auth_sessions s
     JOIN users u ON u.id=s.user_id
-    WHERE s.token=? AND u.active=1`).get(token);
+    WHERE s.token IN (?,?) AND u.active=1`).get(digest, token);
   if (!row) return null;
+  db.prepare(`UPDATE auth_sessions SET token=? WHERE token=?`).run(digest, token);
   const user = publicUser(row);
-  sessions.set(token, { user, at: now() });
-  db.prepare(`UPDATE auth_sessions SET last_seen_at=? WHERE token=?`).run(now(), token);
+  sessions.set(digest, { user, at: now() });
+  db.prepare(`UPDATE auth_sessions SET last_seen_at=? WHERE token=?`).run(now(), digest);
   return user;
 }
 

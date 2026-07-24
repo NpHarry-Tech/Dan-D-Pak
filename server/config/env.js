@@ -51,6 +51,7 @@ export function loadEnv(source = process.env) {
     CORS_ORIGIN: clean(source.CORS_ORIGIN) || DEFAULTS.CORS_ORIGIN,
     LOG_LEVEL: clean(source.LOG_LEVEL) || DEFAULTS.LOG_LEVEL,
     BACKUP_RETENTION_DAYS: asInt(source.BACKUP_RETENTION_DAYS, DEFAULTS.BACKUP_RETENTION_DAYS),
+    DATA_ENCRYPTION_KEY: clean(source.DATA_ENCRYPTION_KEY) || '',
     DISABLE_DEMO_SEED: source.DISABLE_DEMO_SEED === 'true' || source.DISABLE_DEMO_SEED === '1',
     DISABLE_WEB_UI: source.DISABLE_WEB_UI !== undefined ? (source.DISABLE_WEB_UI === 'true' || source.DISABLE_WEB_UI === '1') : DEFAULTS.DISABLE_WEB_UI,
     HARAVAN_ENABLED: source.HARAVAN_ENABLED === 'true' || source.HARAVAN_ENABLED === '1',
@@ -97,6 +98,24 @@ function validateEnv(env) {
 }
 
 export const env = loadEnv();
+
+export function assertSecureProductionEnv(config = env) {
+  if (!config.isProduction) return;
+  const key = String(config.DATA_ENCRYPTION_KEY || '');
+  const validKey = /^[0-9a-f]{64}$/i.test(key) ||
+    (() => {
+      try { return Buffer.from(key, 'base64').length === 32; } catch { return false; }
+    })();
+  if (!validKey) {
+    throw new Error('Production requires DATA_ENCRYPTION_KEY (32 random bytes, hex or base64).');
+  }
+  for (const name of ['APP_URL', 'API_BASE_URL']) {
+    const value = config[name];
+    if (value && !value.startsWith('https://')) {
+      throw new Error(`${name} must use HTTPS in production.`);
+    }
+  }
+}
 
 export function storagePath(...parts) {
   const root = isAbsolute(env.STORAGE_PATH) ? env.STORAGE_PATH : resolve(PROJECT_ROOT, env.STORAGE_PATH);

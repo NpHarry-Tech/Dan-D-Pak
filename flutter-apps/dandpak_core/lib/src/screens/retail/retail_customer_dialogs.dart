@@ -33,14 +33,21 @@ class _CustomerPickerDialogState extends State<_CustomerPickerDialog> {
   List<RetailCustomer> get _rows {
     final q = foldSearch(_q);
     if (q.isEmpty) return widget.customers;
-    return widget.customers
-        .where((c) =>
-            searchMatches(c.code, q) ||
-            searchMatches(c.title, q) ||
-            searchMatches(c.phone, q) ||
-            searchMatches(c.taxCode, q) ||
-            searchMatches(c.company, q))
-        .toList();
+    final ranked = widget.customers
+        .map((customer) => (
+              customer,
+              searchScoreAny([
+                customer.code,
+                customer.title,
+                customer.phone,
+                customer.taxCode,
+                customer.company,
+              ], q),
+            ))
+        .where((entry) => entry.$2 >= 0)
+        .toList()
+      ..sort((a, b) => b.$2.compareTo(a.$2));
+    return ranked.map((entry) => entry.$1).toList();
   }
 
   Future<void> _create() async {
@@ -89,6 +96,20 @@ class _CustomerPickerDialogState extends State<_CustomerPickerDialog> {
                   isDense: true,
                 ),
                 onChanged: (v) => setState(() => _q = v),
+                onSubmitted: (_) {
+                  final candidate = searchSubmitCandidate(
+                    _rows,
+                    _q,
+                    (customer) => [
+                      customer.code,
+                      customer.title,
+                      customer.phone,
+                      customer.taxCode,
+                      customer.company,
+                    ],
+                  );
+                  if (candidate != null) Navigator.of(context).pop(candidate);
+                },
               ),
             ),
             Divider(height: 1, color: DanColors.border),

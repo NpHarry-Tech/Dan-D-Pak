@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { MAX_SEARCH_LENGTH, matchesSearch, normalizeSearch, searchTokens } from './search.js';
+import { MAX_SEARCH_LENGTH, matchesSearch, normalizeSearch, searchScore, searchTokens } from './search.js';
 
 test('search groups infinite input into functional, boundary and security classes', () => {
   assert.equal(normalizeSearch('  Điện   THOẠI  '), 'dien thoai');
@@ -12,6 +12,10 @@ test('search groups infinite input into functional, boundary and security classe
   assert.equal(normalizeSearch('x'.repeat(MAX_SEARCH_LENGTH + 50)).length, MAX_SEARCH_LENGTH);
   assert.equal(matchesSearch(['x'.repeat(250), 'needle'], 'needle'), true);
   assert.equal(matchesSearch(['anything'], ''), true);
+  assert.ok(searchScore(['DAN', 'Khách khác'], 'dan') >
+    searchScore(['Cửa hàng Dan D Pak'], 'dan'));
+  assert.equal(searchScore(['Hà', '0909'], 'dan'), -1);
+  assert.equal(searchScore(['DC000012', 'Hà', '0986858422'], 'dan'), -1);
 });
 
 test('10k-row search stays bounded', () => {

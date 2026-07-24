@@ -284,6 +284,13 @@ export function buildOrderDiscountPlan(order_id, {
   return { ...plan, lines, customer: cust };
 }
 
+function paidForOrder(order_id) {
+  return Number(db.prepare(`
+    SELECT COALESCE(SUM(pl.amount),0) paid
+    FROM payment_lines pl JOIN payments p ON p.id=pl.payment_id
+    WHERE p.order_id=?`).get(order_id)?.paid) || 0;
+}
+
 // lines: [{method, amount, reference}]
 function settlePaymentLines(lines, total) {
   const settled = (Array.isArray(lines) ? lines : []).map(line => {
@@ -296,9 +303,11 @@ function settlePaymentLines(lines, total) {
     return { ...line, method, amount: tendered_amount, tendered_amount };
   });
   const paid = settled.reduce((sum, line) => sum + line.tendered_amount, 0);
-  if (paid < total) throw new Error(`Chưa đủ tiền: cần ${total}, nhận ${paid}`);
+  const fullySettled = paid >= total;
+  total = Math.min(total, paid);
   let change = paid - total;
   const cashTendered = settled.filter(line => line.method === 'cash').reduce((sum, line) => sum + line.tendered_amount, 0);
+  if (change > cashTendered) throw new Error('Số tiền thanh toán không tiền mặt vượt quá số còn nợ');
   if (change > cashTendered) throw new Error('Số tiền dư chỉ có thể trả lại từ khoản thanh toán tiền mặt');
   for (let index = settled.length - 1; index >= 0 && change > 0; index--) {
     const line = settled[index];
@@ -307,7 +316,8 @@ function settlePaymentLines(lines, total) {
     line.amount -= returned;
     change -= returned;
   }
-  return { lines: settled, paid };
+  const applied = settled.reduce((sum, line) => sum + line.amount, 0);
+  return { lines: settled, paid, applied, fullySettled };
 }
 
 export function payOrder(order_id, lines, options = {}, branch_id = 'br1') {
@@ -320,6 +330,7 @@ export function payOrder(order_id, lines, options = {}, branch_id = 'br1') {
     discount_breakdown = null,
     voucher = null,
     promotions = null,
+    idempotency_key = null,
   } = options;
 
   let inTx = false;
@@ -329,11 +340,37 @@ export function payOrder(order_id, lines, options = {}, branch_id = 'br1') {
   }
 
   try {
+    const paymentKey = String(idempotency_key || '').trim();
+    if (paymentKey.length > 128) throw new Error('Idempotency-Key must not exceed 128 characters');
+    if (paymentKey) {
+      const replay = db.prepare(`SELECT * FROM payments WHERE idempotency_key=?`).get(paymentKey);
+      if (replay) {
+        if (replay.order_id !== order_id) {
+          throw Object.assign(new Error('Idempotency-Key was already used for another order'), { status: 409 });
+        }
+        const replayOrder = getOrder(order_id);
+        const paidTotal = paidForOrder(order_id);
+        if (inTx) db.prepare('COMMIT').run();
+        return {
+          order_id,
+          bill_no: replayOrder?.bill_no || '',
+          payment_id: replay.id,
+          total: Number(replayOrder?.total) || 0,
+          paid_total: paidTotal,
+          remaining_due: Math.max(0, (Number(replayOrder?.total) || 0) - paidTotal),
+          fully_settled: replayOrder?.status === 'paid',
+          status: replayOrder?.status || '',
+          idempotent_replay: true,
+        };
+      }
+    }
     const order = getOrder(order_id);
+    const wasPartiallyPaid = order?.status === 'partially_paid';
+    if (wasPartiallyPaid) order.status = 'open';
     if (!order) throw new Error('Order không tồn tại');
     if (order.status !== 'open') throw new Error('Order đã đóng');
 
-    if (typeof discount === 'number') {
+    if (order.status === 'open' && !wasPartiallyPaid && typeof discount === 'number') {
       db.prepare(`UPDATE orders SET discount=? WHERE id=?`).run(discount, order_id);
     }
     recomputeTotals(order_id);
@@ -355,11 +392,14 @@ export function payOrder(order_id, lines, options = {}, branch_id = 'br1') {
     const shift = getActiveShift(branch_id);
     if (ops.shifts.requireOpenShift !== false && !shift) throw new Error('Can mo ca lam viec truoc khi thanh toan.');
 
-    const payment = settlePaymentLines(lines, fresh.total);
-    const paid = payment.paid;
+    const paidBefore = paidForOrder(order_id);
+    const remainingDue = fresh.total - paidBefore;
+    if (remainingDue <= 0) throw new Error('Order has no remaining balance');
+    const payment = settlePaymentLines(lines, remainingDue);
 
     const pid = uid('pay_');
-    db.prepare(`INSERT INTO payments (id,order_id,shift_id,total,created_at) VALUES (?,?,?,?,?)`).run(pid, order_id, shift?.id || null, fresh.total, now());
+    db.prepare(`INSERT INTO payments (id,order_id,shift_id,idempotency_key,cashier,total,created_at) VALUES (?,?,?,?,?,?,?)`)
+      .run(pid, order_id, shift?.id || null, paymentKey || null, cashier || null, payment.applied, now());
     const insLine = db.prepare(`INSERT INTO payment_lines (id,payment_id,method,amount,tendered_amount,reference,card_txn_id,card_rrn,card_approval,card_mask,card_scheme,card_terminal,card_mode) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`);
     for (const l of payment.lines) {
       const c = sanitizeCardMeta(l.card);
@@ -367,9 +407,38 @@ export function payOrder(order_id, lines, options = {}, branch_id = 'br1') {
         c.txnId, c.rrn, c.approval, c.mask, c.scheme, c.terminal, c.mode);
     }
 
-    const upd = db.prepare(`UPDATE orders SET status='paid', paid_at=? WHERE id=? AND status='open'`).run(now(), order_id);
+    const paidTotal = paidBefore + payment.applied;
+    const fullySettled = payment.fullySettled || paidTotal >= fresh.total;
+    const upd = db.prepare(`UPDATE orders SET status=?, paid_at=? WHERE id=? AND status IN ('open','partially_paid')`)
+      .run(fullySettled ? 'paid' : 'partially_paid', fullySettled ? now() : null, order_id);
     if (upd.changes === 0) {
       throw new Error('Hóa đơn đã được thanh toán hoặc không còn ở trạng thái mở.');
+    }
+
+    if (!fullySettled) {
+      audit('payment.partial', {
+        order: order_id, payment_id: pid, amount: payment.applied,
+        paid_total: paidTotal, remaining_due: fresh.total - paidTotal,
+        shift_id: shift?.id || null,
+      }, branch_id, cashier || 'system');
+      emit('payment:partial', {
+        order_id, payment_id: pid, paid_total: paidTotal,
+        remaining_due: fresh.total - paidTotal,
+      }, branch_id);
+      emit('stats:dirty', {}, branch_id);
+      if (inTx) db.prepare('COMMIT').run();
+      return {
+        order_id,
+        bill_no: fresh.bill_no || '',
+        payment_id: pid,
+        total: fresh.total,
+        paid: payment.paid,
+        applied: payment.applied,
+        paid_total: paidTotal,
+        remaining_due: fresh.total - paidTotal,
+        fully_settled: false,
+        status: 'partially_paid',
+      };
     }
 
     // Mark all remaining active items served on close
@@ -379,15 +448,22 @@ export function payOrder(order_id, lines, options = {}, branch_id = 'br1') {
     deductForOrder(fresh, branch_id);
 
     if (order.table_id) {
-      const stillOpen = db.prepare(`SELECT 1 FROM orders WHERE table_id=? AND branch_id=? AND status='open' LIMIT 1`)
+      const stillOpen = db.prepare(`SELECT 1 FROM orders WHERE table_id=? AND branch_id=? AND status IN ('open','partially_paid') LIMIT 1`)
         .get(order.table_id, branch_id);
       db.prepare(`UPDATE tables SET status=? WHERE id=?`).run(stillOpen ? 'busy' : 'free', order.table_id);
       resolveStaffCall(order.table_id, branch_id);
       emit('table:updated', getTableState(order.table_id), branch_id);
     }
-    audit('payment.done', { order: order_id, total: fresh.total, lines: payment.lines.length, shift_id: shift?.id || null }, branch_id);
-    const receiptLines = payment.lines.map(line => ({ ...line, amount: line.tendered_amount }));
-    const receipt = buildReceipt(order_id, pid, receiptLines, paid, { cashier, discount_breakdown, voucher, promotions });
+    audit('payment.done', { order: order_id, total: fresh.total, lines: payment.lines.length, shift_id: shift?.id || null }, branch_id, cashier || 'system');
+    const receiptLines = db.prepare(`
+      SELECT pl.method,pl.tendered_amount amount,pl.reference
+      FROM payment_lines pl JOIN payments p ON p.id=pl.payment_id
+      WHERE p.order_id=? ORDER BY p.created_at,pl.rowid`).all(order_id);
+    const tenderedTotal = receiptLines.reduce((sum, line) => sum + (Number(line.amount) || 0), 0);
+    const receipt = buildReceipt(order_id, pid, receiptLines, tenderedTotal, { cashier, discount_breakdown, voucher, promotions });
+    receipt.fully_settled = true;
+    receipt.paid_total = fresh.total;
+    receipt.remaining_due = 0;
     receipt.print_config = getPrintConfig(branch_id);
     receipt.branch_id = branch_id;
     archiveOrder(getOrder(order_id));
@@ -452,11 +528,11 @@ export async function generateCustomerPaymentQr(order_id, { method = 'qrcode' } 
   const order = getOrder(order_id);
   if (!order) throw new Error('Order khong ton tai');
   if (order.branch_id && branch_id && order.branch_id !== branch_id) throw new Error('Order khong thuoc chi nhanh hien tai');
-  if (order.status !== 'open') throw new Error('Order da dong');
+  if (!['open', 'partially_paid'].includes(order.status)) throw new Error('Order da dong');
   const pending = order.items.filter(i => i.status === 'pending_confirm');
   if (pending.length) throw new Error(`Con ${pending.length} dong mon dang cho nhan vien xac nhan`);
   const opsW = getOperationsConfig(branch_id);
-  const amountW = Math.max(0, money(order.total));
+  const amountW = Math.max(0, money(order.total) - paidForOrder(order_id));
   if (!amountW) throw new Error('Bill hien tai khong co so tien can thanh toan.');
   return buildPaymentQr({ amount: amountW, reference: paymentReferenceForOrder(order, opsW), orderId: vietQrOrderId(order), method, orderRefId: order.id, branch_id });
 }
@@ -604,7 +680,7 @@ export function customerQrPay(order_id, { method = 'qrcode', reference = '' } = 
   const chosen = CUSTOMER_QR_METHODS.includes(method) ? method : 'qrcode';
   const order = getOrder(order_id);
   if (!order) throw new Error('Order khong ton tai');
-  if (order.status !== 'open') throw new Error('Order da dong');
+  if (!['open', 'partially_paid'].includes(order.status)) throw new Error('Order da dong');
   const pending = order.items.filter(i => i.status === 'pending_confirm');
   if (pending.length) throw new Error(`Con ${pending.length} dong mon dang cho nhan vien xac nhan`);
   const ops = getOperationsConfig(branch_id);
@@ -623,14 +699,16 @@ export function customerQrPay(order_id, { method = 'qrcode', reference = '' } = 
       db.prepare(`UPDATE tables SET status='paying' WHERE id=? AND status!='free'`).run(order.table_id);
       emit('table:updated', getTableState(order.table_id), branch_id);
     }
-    audit('payment.customer_claimed', { order: order_id, method: chosen, reference: ref, amount: order.total }, branch_id, 'Khach bao da CK');
-    emit('payment:customer_claimed', { order_id, table_id: order.table_id || null, table_code: order.table_code || null, amount: order.total, method: chosen, reference: ref }, branch_id);
-    return { ok: true, status: 'awaiting_staff', order_id, amount: order.total, reference: ref,
+    const remainingDue = Math.max(0, money(order.total) - paidForOrder(order_id));
+    audit('payment.customer_claimed', { order: order_id, method: chosen, reference: ref, amount: remainingDue }, branch_id, 'Khach bao da CK');
+    emit('payment:customer_claimed', { order_id, table_id: order.table_id || null, table_code: order.table_code || null, amount: remainingDue, method: chosen, reference: ref }, branch_id);
+    return { ok: true, status: 'awaiting_staff', order_id, amount: remainingDue, reference: ref,
       message: 'Đã ghi nhận. Thu ngân sẽ xác nhận thanh toán trong giây lát.' };
   }
-  const receipt = payOrder(order_id, [{ method: chosen, amount: order.total, reference: ref }], { cashier: 'Khach tu thanh toan QR' }, branch_id);
-  recordLoyaltyFromOrder(order);
-  return { ...receipt, status: 'paid' };
+  const remainingDue = Math.max(0, money(order.total) - paidForOrder(order_id));
+  const receipt = payOrder(order_id, [{ method: chosen, amount: remainingDue, reference: ref }], { cashier: 'Khach tu thanh toan QR' }, branch_id);
+  if (receipt.fully_settled !== false) recordLoyaltyFromOrder(order);
+  return { ...receipt, status: receipt.status };
 }
 
 // ===========================================================================
@@ -670,7 +748,7 @@ function findOpenOrderByContent(content) {
   const needle = vietQrSafe(content, 250);
   if (!needle) return null;
   // Lấy bill_no của tất cả đơn đang mở (chỉ 2 cột, không load items)
-  const rows = db.prepare(`SELECT id, branch_id, bill_no, voucher_code FROM orders WHERE status='open' ORDER BY created_at DESC LIMIT 500`).all();
+  const rows = db.prepare(`SELECT id, branch_id, bill_no, voucher_code FROM orders WHERE status IN ('open','partially_paid') ORDER BY created_at DESC LIMIT 500`).all();
   for (const row of rows) {
     // Tính reference từ bill_no thay vì load toàn bộ order + items
     const ops = getOperationsConfig(row.branch_id || 'br1');
@@ -699,22 +777,24 @@ function processIncomingCredit(provider, { externalId, amount, content, accountN
   }
   const ops = getOperationsConfig(order.branch_id || 'br1');
   const reference = paymentReferenceForOrder(order, ops);
-  if (amt < money(order.total)) {
-    recordBankTx({ provider, externalId, branch_id: order.branch_id, amount: amt, content, accountNumber, reference, order_id: order.id, status: 'underpaid', raw });
-    return { ok: true, status: 'underpaid', message: `So tien ${amt} chua du ${order.total} cho bill ${order.bill_no || order.id}.` };
-  }
+  const remainingDue = Math.max(0, money(order.total) - paidForOrder(order.id));
   const method = AUTO_PAY_METHOD[provider] || 'bank';
+  let receipt;
   try {
-    payOrder(order.id, [{ method, amount: order.total, reference: `${provider}:${externalId || ''}`.slice(0, 120) }], { cashier: `Auto ${provider.toUpperCase()}` }, order.branch_id || 'br1');
+    receipt = payOrder(order.id, [{ method, amount: Math.min(amt, remainingDue), reference: `${provider}:${externalId || ''}`.slice(0, 120) }], {
+      cashier: `Auto ${provider.toUpperCase()}`,
+      idempotency_key: externalId ? `${provider}:${externalId}` : null,
+    }, order.branch_id || 'br1');
   } catch (e) {
     recordBankTx({ provider, externalId, branch_id: order.branch_id, amount: amt, content, accountNumber, reference, order_id: order.id, status: 'error', raw: { ...(raw || {}), error: e.message } });
     return { ok: true, status: 'error', message: e.message };
   }
-  recordBankTx({ provider, externalId, branch_id: order.branch_id, amount: amt, content, accountNumber, reference, order_id: order.id, status: 'paid', raw });
-  recordLoyaltyFromOrder(order);
+  const txStatus = receipt.fully_settled === false ? 'underpaid' : 'paid';
+  recordBankTx({ provider, externalId, branch_id: order.branch_id, amount: amt, content, accountNumber, reference, order_id: order.id, status: txStatus, raw });
+  if (receipt.fully_settled !== false) recordLoyaltyFromOrder(order);
   audit('payment.auto_confirmed', { provider, order: order.id, amount: amt, reference }, order.branch_id || 'br1', `auto:${provider}`);
   emit('payment:auto', { order_id: order.id, provider, amount: amt, bill_no: order.bill_no || null }, order.branch_id || 'br1');
-  return { ok: true, status: 'paid', order_id: order.id, bill_no: order.bill_no || null, amount: money(order.total) };
+  return { ok: true, status: receipt.status, order_id: order.id, bill_no: order.bill_no || null, amount: Math.min(amt, remainingDue), remaining_due: receipt.remaining_due };
 }
 
 

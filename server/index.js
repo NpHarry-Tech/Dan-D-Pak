@@ -17,7 +17,7 @@ import { processInvoiceQueue } from './services/einvoice.js';
 import { ensureStorageDirectories } from './services/enterpriseStorage.js';
 import { bootstrapDefaultAdmin } from './services/bootstrapAdmin.js';
 import { migratePlaintextPins } from './services/pin.js';
-import { env, storagePath } from './config/env.js';
+import { env, storagePath, assertSecureProductionEnv } from './config/env.js';
 import { createCorsMiddleware } from './config/cors.js';
 import { runtimeSnapshot } from './config/runtime.js';
 import { apiNotFound, errorHandler } from './core/http.js';
@@ -58,6 +58,7 @@ export const UPLOADS_DIR = storagePath('uploads', 'documents');
 mkdirSync(UPLOADS_DIR, { recursive: true });
 globalThis.__DANDPAK_STARTED_AT = new Date().toISOString();
 
+assertSecureProductionEnv();
 migrate();
 // Self-heal the footprint log after an unclean shutdown: replay any entries the
 // durable NDJSON archive kept but SQLite's WAL lost on power loss (idempotent).

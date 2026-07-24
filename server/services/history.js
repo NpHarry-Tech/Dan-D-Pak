@@ -100,8 +100,11 @@ export function orderReceipt(order_id, branch_id = 'br1') {
   const lines = db.prepare(`SELECT pl.method, COALESCE(pl.tendered_amount,pl.amount) amount, pl.reference FROM payment_lines pl
     JOIN payments p ON p.id=pl.payment_id WHERE p.order_id=? ORDER BY pl.rowid`).all(order_id);
 
-  // Thu ngân + trạng thái ca: lấy theo ca làm việc của lần thanh toán (nếu có).
-  const cashierRow = db.prepare(`SELECT p.id AS payment_id, s.user_name, s.status AS shift_status FROM payments p
+  // Thu ngân = người THỰC SỰ bấm thanh toán lần gần nhất (payments.cashier), KHÔNG
+  // phải người mở ca (shifts.user_name) — một ca có thể nhiều người dùng chung
+  // (BR-SHIFT-001). payments.cashier vắng ở các bản ghi cũ trước migration nên
+  // fallback về shifts.user_name để không hiện trống trên hóa đơn cũ.
+  const cashierRow = db.prepare(`SELECT p.id AS payment_id, COALESCE(p.cashier, s.user_name) AS user_name, s.status AS shift_status FROM payments p
     LEFT JOIN shifts s ON s.id=p.shift_id WHERE p.order_id=? ORDER BY p.created_at DESC LIMIT 1`).get(order_id);
 
   const inv = o.invoice_id ? db.prepare(`SELECT invoice_no,lookup_code,issued_at,customer_json FROM invoices WHERE id=?`).get(o.invoice_id) : null;

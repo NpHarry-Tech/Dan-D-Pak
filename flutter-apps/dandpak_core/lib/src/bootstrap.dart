@@ -32,18 +32,7 @@ import 'widgets/window_controls.dart';
 final Map<String, DateTime> _lastApiNetworkLogs = <String, DateTime>{};
 
 Future<bool> _shouldRunLocalEngine() async {
-  if (Platform.isAndroid || Platform.isIOS) return false;
-  try {
-    final saved = await LocalStore.instance.getString('server_url');
-    final url = (saved == null || saved.trim().isEmpty)
-        ? DanDpakDefaults.baseUrl
-        : saved.trim();
-    final host =
-        Uri.tryParse(DanDpakApiClient.normalizeBaseUrl(url))?.host ?? '';
-    return host.isEmpty || host == '127.0.0.1' || host == 'localhost';
-  } catch (_) {
-    return true;
-  }
+  return false;
 }
 
 Future<void> runDandpakApp({
@@ -99,7 +88,8 @@ Future<void> _mainImpl(List<String> args) async {
   ClientLog.attach(apiService);
   ClientLog.installGlobalHooks();
 
-  SystemLog.attach(apiService);
+  await SystemLog.attach(apiService);
+  DanDpakApiClient.deviceMetadataProvider = SystemLog.requestHeaders;
   _logUpdateSuccessIfJustUpdated();
 
   PerfMode.init();

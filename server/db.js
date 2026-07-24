@@ -334,6 +334,8 @@ export function migrate(targetDb = globalDb) {
     id TEXT PRIMARY KEY,
     order_id TEXT NOT NULL,
     shift_id TEXT,
+    idempotency_key TEXT,
+    cashier TEXT,
     total INTEGER NOT NULL,
     created_at TEXT NOT NULL
   );
@@ -437,10 +439,22 @@ export function migrate(targetDb = globalDb) {
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
   );
-  CREATE UNIQUE INDEX IF NOT EXISTS idx_einv_order ON e_invoices(order_id);
+  CREATE INDEX IF NOT EXISTS idx_einv_order ON e_invoices(order_id);
   CREATE UNIQUE INDEX IF NOT EXISTS idx_einv_idempotency ON e_invoices(idempotency_key);
   CREATE INDEX IF NOT EXISTS idx_einv_status ON e_invoices(invoice_status, next_retry_at);
   CREATE INDEX IF NOT EXISTS idx_einv_branch ON e_invoices(branch_id, created_at DESC);
+
+  CREATE TABLE IF NOT EXISTS invoice_allocations (
+    id TEXT PRIMARY KEY,
+    e_invoice_id TEXT NOT NULL,
+    order_id TEXT NOT NULL,
+    order_item_id TEXT,
+    qty REAL,
+    amount INTEGER NOT NULL,
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_inv_alloc_invoice ON invoice_allocations(e_invoice_id);
+  CREATE INDEX IF NOT EXISTS idx_inv_alloc_order ON invoice_allocations(order_id);
 
   -- Audit log bất biến cho mọi thao tác HĐĐT. Không cho sửa/xóa từ UI.
   CREATE TABLE IF NOT EXISTS invoice_audit_logs (
@@ -792,8 +806,30 @@ export function migrate(targetDb = globalDb) {
   // Dấu "đã in tạm tính" cho đơn còn mở — sơ đồ bàn POS hiện trạng thái này.
   addColumnIfMissing('orders', 'prebill_printed_at', 'TEXT');
   addColumnIfMissing('payments', 'shift_id', 'TEXT');
+  addColumnIfMissing('payments', 'idempotency_key', 'TEXT');
+  // Ai THỰC SỰ bấm thanh toán dòng này — KHÁC với shifts.user_name (người MỞ ca).
+  // Một ca có thể nhiều người dùng chung (BR-SHIFT-001); trước đây receipt/audit
+  // join qua shifts.user_name nên mọi giao dịch trong ca hiện sai thành tên người mở ca.
+  addColumnIfMissing('payments', 'cashier', 'TEXT');
+  db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_payments_idempotency
+    ON payments(idempotency_key) WHERE idempotency_key IS NOT NULL;`);
   addColumnIfMissing('payment_lines', 'tendered_amount', 'INTEGER');
   db.prepare(`UPDATE payment_lines SET tendered_amount=amount WHERE tendered_amount IS NULL`).run();
+  db.exec(`
+    DROP INDEX IF EXISTS idx_einv_order;
+    CREATE INDEX IF NOT EXISTS idx_einv_order ON e_invoices(order_id);
+    CREATE TABLE IF NOT EXISTS invoice_allocations (
+      id TEXT PRIMARY KEY,
+      e_invoice_id TEXT NOT NULL,
+      order_id TEXT NOT NULL,
+      order_item_id TEXT,
+      qty REAL,
+      amount INTEGER NOT NULL,
+      created_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_inv_alloc_invoice ON invoice_allocations(e_invoice_id);
+    CREATE INDEX IF NOT EXISTS idx_inv_alloc_order ON invoice_allocations(order_id);
+  `);
   const overpaidPayments = db.prepare(`
     SELECT p.id, p.total, COALESCE(SUM(pl.amount),0) paid
     FROM payments p JOIN payment_lines pl ON pl.payment_id=p.id

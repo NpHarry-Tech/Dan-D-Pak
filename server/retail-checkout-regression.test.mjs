@@ -19,6 +19,7 @@ const Tax = await import('./services/tax.js');
 const Retail = await import('./services/retail.js');
 const CashDrawer = await import('./services/cashDrawer.js');
 const Customers = await import('./services/customers.js');
+const Einvoices = await import('./services/einvoice.js');
 
 migrate();
 
@@ -72,6 +73,96 @@ test('retail checkout separates change and deduplicates retries', () => {
   assert.equal(paymentLine.tendered_amount, 100000);
   assert.equal(CashDrawer.cashSalesForShift(shiftId), 30000);
   assert.equal(PERMANENT_ROOT, join(temp, 'storage', 'permanent-storage'));
+});
+
+test('partial payments are idempotent and deduct stock only when fully settled', () => {
+  Inventory.createSku({ id: 'sku_partial', name: 'Partial SKU', price: 10000, stock: 1 }, 'br1');
+  const first = Retail.checkout({
+    items: [{ sku_id: 'sku_partial', qty: 1 }],
+    payments: [{ method: 'cash', amount: 4000 }],
+    client_request_id: 'partial_pay_1',
+    branch_id: 'br1',
+    cashier: 'Tester',
+  });
+  assert.equal(first.status, 'partially_paid');
+  assert.equal(first.remaining_due, 6000);
+  assert.equal(db.prepare(`SELECT stock FROM skus WHERE id='sku_partial'`).get().stock, 1);
+
+  const replay = Retail.checkout({
+    items: [{ sku_id: 'sku_partial', qty: 1 }],
+    payments: [{ method: 'cash', amount: 4000 }],
+    client_request_id: 'partial_pay_1',
+    branch_id: 'br1',
+    cashier: 'Tester',
+  });
+  assert.equal(replay.idempotent_replay, true);
+  assert.equal(db.prepare(`SELECT COUNT(*) n FROM payments WHERE order_id=?`).get(first.order_id).n, 1);
+
+  const final = Payments.payOrder(first.order_id, [{ method: 'cash', amount: 6000 }], {
+    cashier: 'Tester',
+    idempotency_key: 'partial_pay_2',
+  }, 'br1');
+  assert.equal(final.fully_settled, true);
+  assert.equal(db.prepare(`SELECT status FROM orders WHERE id=?`).get(first.order_id).status, 'paid');
+  assert.equal(db.prepare(`SELECT stock FROM skus WHERE id='sku_partial'`).get().stock, 0);
+  assert.equal(db.prepare(`
+    SELECT SUM(pl.amount) total FROM payment_lines pl JOIN payments p ON p.id=pl.payment_id WHERE p.order_id=?
+  `).get(first.order_id).total, 10000);
+});
+
+test('one paid order can be allocated across multiple active e-invoices', () => {
+  Inventory.createSku({ id: 'sku_invoice_split', name: 'Invoice Split SKU', price: 30000, stock: 1 }, 'br1');
+  const receipt = Retail.checkout({
+    items: [{ sku_id: 'sku_invoice_split', qty: 1 }],
+    payments: [{ method: 'cash', amount: 30000 }],
+    client_request_id: 'invoice_split_checkout',
+    branch_id: 'br1',
+    cashier: 'Tester',
+  });
+  assert.equal(db.prepare(`SELECT COUNT(*) n FROM e_invoices WHERE order_id=?`).get(receipt.order_id).n, 1);
+  const second = Einvoices.createInvoiceRequest(
+    receipt.order_id,
+    'COMPANY_TAX_INFO',
+    { company: 'Dan D Pak', tax_code: '0312345678', email: 'invoice@example.com' },
+    'br1',
+    'Tester',
+    { amount: 12000, idempotency_key: 'invoice_split_2' },
+  );
+  assert.ok(second.id);
+  assert.equal(db.prepare(`SELECT COUNT(*) n FROM e_invoices WHERE order_id=? AND invoice_status!='CANCELLED'`).get(receipt.order_id).n, 2);
+  assert.equal(db.prepare(`SELECT SUM(amount) total FROM invoice_allocations WHERE order_id=?`).get(receipt.order_id).total, 30000);
+  const replay = Einvoices.createInvoiceRequest(
+    receipt.order_id,
+    'COMPANY_TAX_INFO',
+    { company: 'Dan D Pak', tax_code: '0312345678', email: 'invoice@example.com' },
+    'br1',
+    'Tester',
+    { amount: 12000, idempotency_key: 'invoice_split_2' },
+  );
+  assert.equal(replay.id, second.id);
+  // A THIRD split, still within the 18000 the auto WALK_IN invoice is currently holding,
+  // must succeed — BR-INV-002 does not cap an order at exactly two invoices, it only
+  // requires that the sum of all active allocations never exceeds the order total.
+  const third = Einvoices.createInvoiceRequest(
+    receipt.order_id,
+    'NO_BUYER_INFO',
+    {},
+    'br1',
+    'Tester',
+    { amount: 5000, idempotency_key: 'invoice_split_3' },
+  );
+  assert.ok(third.id);
+  assert.equal(db.prepare(`SELECT COUNT(*) n FROM e_invoices WHERE order_id=? AND invoice_status!='CANCELLED'`).get(receipt.order_id).n, 3);
+  assert.equal(db.prepare(`SELECT SUM(amount) total FROM invoice_allocations WHERE order_id=?`).get(receipt.order_id).total, 30000);
+  // A request that exceeds what's ACTUALLY left (13000 now: 30000 - 12000 - 5000) must still be rejected.
+  assert.throws(() => Einvoices.createInvoiceRequest(
+    receipt.order_id,
+    'NO_BUYER_INFO',
+    {},
+    'br1',
+    'Tester',
+    { amount: 20000, idempotency_key: 'invoice_split_overflow' },
+  ), /exceeds remaining/);
 });
 
 test('sellable SKU without a price is blocked', () => {

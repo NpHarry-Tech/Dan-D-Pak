@@ -568,7 +568,8 @@ class PosProvider extends ChangeNotifier {
       throw Exception('Thiếu mã hóa đơn để thanh toán.');
     }
     final amountDue = math.max(0.0, totalOverride ?? cartTotal);
-    if (amountDue <= 0) {
+    final installmentAmount = math.max(0.0, paidAmount);
+    if (amountDue <= 0 || installmentAmount <= 0) {
       throw Exception('Hóa đơn không có số tiền cần thanh toán.');
     }
     if (_isPayingOrder) {
@@ -586,7 +587,7 @@ class PosProvider extends ChangeNotifier {
           'lines': [
             {
               'method': method,
-              'amount': amountDue,
+              'amount': installmentAmount,
               if (cardMeta != null) 'card': cardMeta,
               if (bankTxId != null && bankTxId.isNotEmpty)
                 'bank_tx_id': bankTxId,
@@ -599,17 +600,22 @@ class PosProvider extends ChangeNotifier {
             'customer': customerOverride ?? _selectedCustomer,
           if (securityPin != null && securityPin.isNotEmpty)
             'security_pin': securityPin,
+          'idempotency_key':
+              'pay-$targetOrderId-${DateTime.now().microsecondsSinceEpoch}',
         };
 
-        await apiService.payOrder(targetOrderId, payload);
+        final receipt = await apiService.payOrder(targetOrderId, payload);
 
-        // Reset POS workspace selection
-        _selectedTable = null;
-        _cart = [];
-        _activeOrderId = null;
-        _activeBillNo = null;
-        _activeDiscount = 0.0;
-        _selectedCustomer = null;
+        if (receipt['fully_settled'] != false) {
+          _selectedTable = null;
+          _cart = [];
+          _activeOrderId = null;
+          _activeBillNo = null;
+          _activeDiscount = 0.0;
+          _selectedCustomer = null;
+        } else {
+          await reloadActiveOrder();
+        }
 
         await loadFloor();
         await loadShift();
