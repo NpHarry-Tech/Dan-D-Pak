@@ -527,23 +527,40 @@ class _PosScreenState extends State<PosScreen> {
     Map<String, dynamic>? selected,
   ) {
     final search = TextEditingController();
-    String q = '';
+    // `customers` is only the ~200 most-recently-updated customers preloaded once
+    // (see _pickCustomer above) — with more customers than that, filtering it
+    // locally can never surface an older/less-recently-transacted customer no
+    // matter what's typed. Once the user types, query the server for real.
+    var liveResults = customers;
+    var searching = false;
+    final debouncer = Debouncer(delay: Duration(milliseconds: 300));
+    final searchGuard = SearchRequestGuard();
+    Future<void> runSearch(String query, void Function(void Function()) setModalState) async {
+      final trimmed = query.trim();
+      if (trimmed.isEmpty) {
+        searchGuard.invalidate();
+        setModalState(() { liveResults = customers; searching = false; });
+        return;
+      }
+      final generation = searchGuard.next();
+      setModalState(() => searching = true);
+      try {
+        final rows = (await context.read<ApiService>().getCustomers(q: trimmed))
+            .whereType<Map>()
+            .map((e) => Map<String, dynamic>.from(e))
+            .toList();
+        if (!searchGuard.isCurrent(generation)) return;
+        setModalState(() { liveResults = rows; searching = false; });
+      } catch (_) {
+        if (!searchGuard.isCurrent(generation)) return;
+        setModalState(() => searching = false);
+      }
+    }
     return showDialog<Object>(
       context: context,
       builder: (dialogContext) => StatefulBuilder(
         builder: (context, setModalState) {
-          final needle = q.trim().toLowerCase();
-          final rows = needle.isEmpty
-              ? customers
-              : customers.where((c) {
-                  final haystack = [
-                    c['name'],
-                    c['phone'],
-                    c['tax_code'],
-                    c['company'],
-                  ].join(' ').toLowerCase();
-                  return haystack.contains(needle);
-                }).toList();
+          final rows = liveResults;
           return Dialog(
             backgroundColor: DanColors.surface,
             shape: RoundedRectangleBorder(
@@ -574,8 +591,21 @@ class _PosScreenState extends State<PosScreen> {
                             decoration: InputDecoration(
                               hintText: t('Tìm theo tên / SĐT / MST'),
                               isDense: true,
+                              suffixIcon: searching
+                                  ? Padding(
+                                      padding: EdgeInsets.all(12),
+                                      child: SizedBox(
+                                        width: 16,
+                                        height: 16,
+                                        child: CircularProgressIndicator(
+                                            strokeWidth: 2),
+                                      ),
+                                    )
+                                  : null,
                             ),
-                            onChanged: (v) => setModalState(() => q = v),
+                            onChanged: (v) {
+                              debouncer(() => runSearch(v, setModalState));
+                            },
                           ),
                         ),
                         SizedBox(width: 8),
@@ -601,7 +631,10 @@ class _PosScreenState extends State<PosScreen> {
                     Expanded(
                       child: rows.isEmpty
                           ? Center(
-                              child: Text(t('Chưa có khách phù hợp'),
+                              child: Text(
+                                  searching
+                                      ? t('Đang tìm...')
+                                      : t('Chưa có khách phù hợp'),
                                   style: TextStyle(color: DanColors.faint)),
                             )
                           : ListView.separated(
@@ -632,7 +665,10 @@ class _PosScreenState extends State<PosScreen> {
           );
         },
       ),
-    ).whenComplete(search.dispose);
+    ).whenComplete(() {
+      search.dispose();
+      debouncer.dispose();
+    });
   }
 
   Future<Map<String, dynamic>?> _createCustomerDialog() async {

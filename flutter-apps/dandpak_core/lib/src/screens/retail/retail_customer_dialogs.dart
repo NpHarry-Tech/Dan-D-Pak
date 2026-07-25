@@ -23,32 +23,48 @@ class _NoCustomer {
 class _CustomerPickerDialogState extends State<_CustomerPickerDialog> {
   final _search = TextEditingController();
   String _q = '';
+  // widget.customers is only the ~200 most-recently-updated customers preloaded
+  // when the retail screen opened — with more customers than that (very common:
+  // this branch alone has 668), a customer who hasn't transacted recently is
+  // simply absent from that list, so filtering it locally can NEVER find them
+  // no matter what's typed. Once the user types, query the server for real
+  // (same /api/customers?q=... the "Khách hàng" screen already uses correctly).
+  late List<RetailCustomer> _liveResults = widget.customers;
+  bool _searching = false;
+  final _debouncer = Debouncer(delay: Duration(milliseconds: 300));
+  final _searchGuard = SearchRequestGuard();
 
   @override
   void dispose() {
     _search.dispose();
+    _debouncer.dispose();
     super.dispose();
   }
 
-  List<RetailCustomer> get _rows {
-    final q = foldSearch(_q);
-    if (q.isEmpty) return widget.customers;
-    final ranked = widget.customers
-        .map((customer) => (
-              customer,
-              searchScoreAny([
-                customer.code,
-                customer.title,
-                customer.phone,
-                customer.taxCode,
-                customer.company,
-              ], q),
-            ))
-        .where((entry) => entry.$2 >= 0)
-        .toList()
-      ..sort((a, b) => b.$2.compareTo(a.$2));
-    return ranked.map((entry) => entry.$1).toList();
+  Future<void> _runServerSearch(String query) async {
+    final trimmed = query.trim();
+    if (trimmed.isEmpty) {
+      _searchGuard.invalidate();
+      if (mounted) setState(() { _liveResults = widget.customers; _searching = false; });
+      return;
+    }
+    final generation = _searchGuard.next();
+    if (mounted) setState(() => _searching = true);
+    try {
+      final rows = await widget.api.getCustomers(q: trimmed);
+      if (!mounted || !_searchGuard.isCurrent(generation)) return;
+      final parsed = rows
+          .whereType<Map>()
+          .map((e) => RetailCustomer.fromJson(Map<String, dynamic>.from(e)))
+          .toList();
+      setState(() { _liveResults = parsed; _searching = false; });
+    } catch (_) {
+      if (!mounted || !_searchGuard.isCurrent(generation)) return;
+      setState(() => _searching = false);
+    }
   }
+
+  List<RetailCustomer> get _rows => _liveResults;
 
   Future<void> _create() async {
     final saved = await showDialog<RetailCustomer>(
@@ -93,10 +109,27 @@ class _CustomerPickerDialogState extends State<_CustomerPickerDialog> {
                 decoration: InputDecoration(
                   hintText: t('Tìm mã, tên, SĐT, MST...'),
                   prefixIcon: Icon(Icons.search),
+                  suffixIcon: _searching
+                      ? Padding(
+                          padding: EdgeInsets.all(12),
+                          child: SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
+                        )
+                      : null,
                   isDense: true,
                 ),
-                onChanged: (v) => setState(() => _q = v),
-                onSubmitted: (_) {
+                onChanged: (v) {
+                  setState(() => _q = v);
+                  _debouncer(() => _runServerSearch(v));
+                },
+                onSubmitted: (_) async {
+                  // Enter may land before the debounce fires — search right now
+                  // with whatever's in the box so we pick from fresh results.
+                  await _runServerSearch(_q);
+                  if (!mounted) return;
                   final candidate = searchSubmitCandidate(
                     _rows,
                     _q,
@@ -121,7 +154,12 @@ class _CustomerPickerDialogState extends State<_CustomerPickerDialog> {
             Expanded(
               child: _rows.isEmpty
                   ? Center(
-                      child: Text(t('Chưa có khách hàng'),
+                      child: Text(
+                          _searching
+                              ? t('Đang tìm...')
+                              : (_q.trim().isEmpty
+                                  ? t('Chưa có khách hàng')
+                                  : t('Không tìm thấy khách hàng phù hợp')),
                           style: TextStyle(color: DanColors.faint)))
                   : ListView.separated(
                       padding: EdgeInsets.all(12),
