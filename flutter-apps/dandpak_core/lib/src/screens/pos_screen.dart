@@ -551,9 +551,13 @@ class _PosScreenState extends State<PosScreen> {
             .toList();
         if (!searchGuard.isCurrent(generation)) return;
         setModalState(() { liveResults = rows; searching = false; });
-      } catch (_) {
+      } catch (e) {
         if (!searchGuard.isCurrent(generation)) return;
-        setModalState(() => searching = false);
+        setModalState(() { liveResults = []; searching = false; });
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+              content: Text('${t('Không tìm được khách hàng')}: $e')));
+        }
       }
     }
     return showDialog<Object>(
@@ -567,6 +571,7 @@ class _PosScreenState extends State<PosScreen> {
               borderRadius: BorderRadius.circular(14),
               side: BorderSide(color: DanColors.border),
             ),
+            clipBehavior: Clip.antiAlias,
             child: ConstrainedBox(
               constraints: BoxConstraints(maxWidth: 720, maxHeight: 560),
               child: Padding(

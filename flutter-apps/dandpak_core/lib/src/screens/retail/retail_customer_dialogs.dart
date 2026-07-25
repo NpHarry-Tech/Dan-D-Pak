@@ -58,9 +58,14 @@ class _CustomerPickerDialogState extends State<_CustomerPickerDialog> {
           .map((e) => RetailCustomer.fromJson(Map<String, dynamic>.from(e)))
           .toList();
       setState(() { _liveResults = parsed; _searching = false; });
-    } catch (_) {
+    } catch (e) {
       if (!mounted || !_searchGuard.isCurrent(generation)) return;
-      setState(() => _searching = false);
+      // Previously swallowed silently — a failed search looked identical to a
+      // real "no results", making this impossible to tell apart from the bug
+      // this dialog was fixed for. Surface it instead.
+      setState(() { _liveResults = []; _searching = false; });
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('${t('Không tìm được khách hàng')}: $e')));
     }
   }
 
@@ -78,6 +83,11 @@ class _CustomerPickerDialogState extends State<_CustomerPickerDialog> {
   Widget build(BuildContext context) {
     return Dialog(
       backgroundColor: DanColors.surface,
+      // Without an explicit shape + clip, Dialog doesn't clip its child to its
+      // own rounded corners — the last (partially scrolled) row in a long list
+      // can render past the visible rounded edge instead of being cut cleanly.
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(DanRadius.lg)),
+      clipBehavior: Clip.antiAlias,
       child: ConstrainedBox(
         constraints: BoxConstraints(maxWidth: 560, maxHeight: 660),
         child: Column(
