@@ -4,6 +4,7 @@ import { uid, audit } from './db.js';
 import * as Auth from './services/auth.js';
 import * as History from './services/history.js';
 import { logSystem } from './services/systemLogs.js';
+import { currentRequestMetadata } from './core/requestContext.js';
 import { registerInventoryRoutes } from './modules/inventory/routes.js';
 import { registerInvoiceRoutes } from './modules/invoices/routes.js';
 import { registerPaymentRoutes } from './modules/payments/routes.js';
@@ -148,14 +149,13 @@ function logRequestError(req, e) {
       message: e?.message || 'Request failed',
       username: actor,
       branchId: branch_id,
-      deviceName: req?.headers?.['x-device-name'],
       endpoint: path,
       method: req?.method,
       statusCode: status,
       requestId: req?.headers?.['x-request-id'],
-      correlationId: req?.headers?.['x-correlation-id'],
       exceptionType: e?.code || e?.name || 'Error',
       stackTrace: String(e?.stack || '').split('\n').slice(0, 8).join('\n').trim(),
+      ...currentRequestMetadata(),
     });
   } catch { /* logging must never break the request */ }
 }
