@@ -213,11 +213,27 @@ export function updateWarehouse(id, body, branch_id = 'br1') {
   return withWarehouseMeta(db.prepare(`SELECT * FROM warehouses WHERE id=?`).get(id));
 }
 
+// Mặt hàng nào ĐANG CÓ LÔ (kể cả lô đã về 0) tại 1 kho — dùng để hiện đúng
+// Tồn kho SAU KHI Chuyển hàng: chuyển kho chỉ dời LÔ (stock_lots), không đổi
+// "kho nhà" (warehouse_id) của item, nên lọc CHỈ theo kho nhà sẽ làm món vừa
+// chuyển tới biến mất khỏi danh sách kho đích dù tồn đã đúng (đúng lỗi báo
+// "Chuyển hàng không hoạt động" — lô chuyển đúng, chỉ là danh sách lọc sai).
+function itemIdsWithLotsAt(branch_id, itemType, warehouse_id) {
+  return db.prepare(`SELECT DISTINCT item_id FROM stock_lots WHERE branch_id=? AND item_type=? AND warehouse_id=?`)
+    .all(branch_id, itemType, warehouse_id)
+    .map(r => r.item_id);
+}
+
 export function listInventory(branch_id = 'br1', filters = {}) {
   const rows = db.prepare(`SELECT * FROM inventory_items WHERE branch_id=? AND active=1 ORDER BY item_type,name`).all(branch_id);
+  const stockedIds = filters.warehouse_id
+    ? new Set(itemIdsWithLotsAt(branch_id, 'inventory', filters.warehouse_id))
+    : null;
   return rows
     .filter(i => !filters.item_type || i.item_type === filters.item_type)
-    .filter(i => !filters.warehouse_id || (i.warehouse_id || fallbackWarehouse(branch_id, 'inventory')) === filters.warehouse_id)
+    .filter(i => !filters.warehouse_id ||
+      (i.warehouse_id || fallbackWarehouse(branch_id, 'inventory')) === filters.warehouse_id ||
+      stockedIds.has(i.id))
     .map(i => enrichStockRow('inventory', i, filters.warehouse_id));
 }
 
@@ -236,9 +252,20 @@ export function listSkus(branch_id = 'br1', filters = {}) {
 
   const search = searchTokens(filters.q || filters.search || filters.query);
 
-  if (filters.warehouse_id || forcedWh) {
+  if (filters.warehouse_id) {
+    // Duyệt tồn theo TỪNG kho vật lý (màn Kho hàng) → phải theo LÔ THỰC TẾ
+    // đang ở kho đó (OR), không chỉ theo "kho nhà" của SKU — xem itemIdsWithLotsAt().
+    const stockedIds = itemIdsWithLotsAt(branch_id, 'sku', filters.warehouse_id);
+    const stockedClause = stockedIds.length
+      ? ` OR id IN (${stockedIds.map(() => '?').join(',')})`
+      : '';
+    sql += ` AND (COALESCE(warehouse_id, ?) = ?${stockedClause})`;
+    params.push(fallbackWh, filters.warehouse_id, ...stockedIds);
+  } else if (forcedWh) {
+    // Kho ép theo kênh bán (retail_config) — CHÍNH SÁCH bán hàng, giữ nguyên
+    // theo "kho nhà" như trước, không lẫn với duyệt tồn kho vật lý ở trên.
     sql += ` AND COALESCE(warehouse_id, ?) = ?`;
-    params.push(fallbackWh, filters.warehouse_id || forcedWh);
+    params.push(fallbackWh, forcedWh);
   }
 
   if (channelWarehouseIds && channelWarehouseIds.length > 0) {

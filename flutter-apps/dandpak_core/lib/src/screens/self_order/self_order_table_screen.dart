@@ -82,6 +82,14 @@ class _SelfOrderTableScreenState extends State<SelfOrderTableScreen> {
     } catch (_) {/* lỗi mạng → giữ trạng thái cũ, sẽ tự cập nhật lần sau */}
   }
 
+  // Bàn có cuộc gọi phục vụ đang mở → server trả status='calling' (đè lên
+  // 'busy'/'serving', xem buildTableState() phía server) dù bàn vẫn có đơn
+  // mở. Thiếu 'calling' ở đây khiến màn CHỌN BÀN của self-order hiện "Trống"
+  // trong khi sơ đồ bàn bên POS Cashier vẫn hiện "Đang gọi" — 2 máy nhìn
+  // cùng 1 trạng thái nhưng lệch nhau, đúng lỗi khách báo.
+  bool _isBusy(String status) =>
+      status == 'busy' || status == 'serving' || status == 'paying' || status == 'calling';
+
   Future<void> _load() async {
     setState(() {
       _loading = true;
@@ -108,8 +116,7 @@ class _SelfOrderTableScreenState extends State<SelfOrderTableScreen> {
     // vào THẲNG menu tiếp tục phiên cũ: giữ ngôn ngữ đã lưu theo bàn, giữ
     // khách đã check-in trên đơn — không bắt chọn/điền lại.
     Map<String, dynamic>? openOrder;
-    final busy =
-        t.status == 'busy' || t.status == 'serving' || t.status == 'paying';
+    final busy = _isBusy(t.status);
     if (busy) {
       try {
         final res = await _api.getTable(t.id);
@@ -248,7 +255,8 @@ class _SelfOrderTableScreenState extends State<SelfOrderTableScreen> {
       itemCount: _zones.length,
       itemBuilder: (_, zi) {
         final zone = _zones[zi];
-        final zoneTables = _tables.where((t) => t.zoneId == zone.id).toList();
+        final zoneTables =
+            _tables.where((table) => table.zoneId == zone.id).toList();
         if (zoneTables.isEmpty) return SizedBox.shrink();
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -274,9 +282,7 @@ class _SelfOrderTableScreenState extends State<SelfOrderTableScreen> {
               itemCount: zoneTables.length,
               itemBuilder: (_, ti) {
                 final table = zoneTables[ti];
-                final busy = table.status == 'busy' ||
-                    table.status == 'serving' ||
-                    table.status == 'paying';
+                final busy = _isBusy(table.status);
                 return InkWell(
                   onTap: () => _pickTable(table),
                   borderRadius: BorderRadius.circular(12),
@@ -299,7 +305,10 @@ class _SelfOrderTableScreenState extends State<SelfOrderTableScreen> {
                                 fontSize: 16,
                                 color: Color(0xFF1A2230))),
                         SizedBox(height: 2),
-                        Text(busy ? t('Đang phục vụ') : t('Trống'),
+                        Text(
+                            table.status == 'calling'
+                                ? t('Đang gọi')
+                                : (busy ? t('Đang phục vụ') : t('Trống')),
                             style: TextStyle(
                                 fontSize: 11,
                                 color: busy

@@ -114,6 +114,12 @@ class _KiotCustomerScreenState extends State<ContactsScreen> {
   String? _selectedId;
   String _detailTab = 'info';
   bool _loading = true;
+  // Sau lần tải đầu — mọi lần tải lại kế tiếp (đổi loại đối tác, tìm kiếm,
+  // bấm Tải lại) KHÔNG được xoá sidebar/bộ lọc để hiện lại spinner toàn màn.
+  // Trước đây điều kiện dựa vào `_partners.isEmpty`, nên hễ bộ lọc hiện tại
+  // đang có 0 kết quả (vd "Khách hàng + NCC (0)") thì BẤT KỲ lần tải lại nào
+  // cũng làm cả sidebar biến mất — đúng cảm giác "reload toàn trang" bị báo.
+  bool _hasLoadedOnce = false;
   String? _error;
   final _searchDebouncer = Debouncer(delay: Duration(milliseconds: 220));
   final _searchGuard = SearchRequestGuard();
@@ -162,6 +168,7 @@ class _KiotCustomerScreenState extends State<ContactsScreen> {
             ? Map<String, dynamic>.from(res['counts'])
             : {};
         _loading = false;
+        _hasLoadedOnce = true;
         _error = null;
         if (_selectedId != null &&
             !_partners.any((c) => _s(c['id']) == _selectedId)) {
@@ -173,6 +180,7 @@ class _KiotCustomerScreenState extends State<ContactsScreen> {
       setState(() {
         _error = e.toString().replaceFirst('Exception: ', '');
         _loading = false;
+        _hasLoadedOnce = true;
       });
     }
   }
@@ -271,10 +279,10 @@ class _KiotCustomerScreenState extends State<ContactsScreen> {
   }
 
   Widget _body() {
-    if (_loading && _partners.isEmpty) {
+    if (_loading && !_hasLoadedOnce) {
       return Center(child: CircularProgressIndicator());
     }
-    if (_error != null && _partners.isEmpty) {
+    if (_error != null && !_hasLoadedOnce) {
       return Padding(
         padding: EdgeInsets.all(40),
         child: InlineMessage(t('Không tải được danh bạ ($_error)'),

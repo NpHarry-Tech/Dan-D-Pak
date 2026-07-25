@@ -1,6 +1,17 @@
 // GENERATED SPLIT of self_order_menu_screen.dart — panel giỏ/chi tiết + thẻ món (part of, cùng library).
 part of 'self_order_menu_screen.dart';
 
+/// Ảnh món lưu ở server dạng đường dẫn TƯƠNG ĐỐI (/assets/product-images/...).
+/// iPad self-order không cùng origin với server nên phải ghép địa chỉ máy chủ
+/// mới tải được — thiếu bước này ảnh luôn rơi vào ô emoji dù server có ảnh
+/// (xem cùng pattern ở _MenuPickCard trong pos_shared_widgets.dart).
+String? _soImageUrl(String serverUrl, String? raw) {
+  if (raw == null || raw.isEmpty) return null;
+  if (raw.startsWith('http') || raw.startsWith('data:')) return raw;
+  final base = serverUrl.replaceFirst(RegExp(r'/$'), '');
+  return '$base${raw.startsWith('/') ? '' : '/'}$raw';
+}
+
 class _CartPanel extends StatelessWidget {
   final SelfOrderLang lang;
   final List<SoCartItem> cart;
@@ -145,6 +156,7 @@ class _ItemDetailPanel extends StatelessWidget {
   final SelfOrderLang lang;
   final double width;
   final String categoryLabel;
+  final String serverUrl;
   final VoidCallback onClose;
   final VoidCallback onAdd;
 
@@ -153,6 +165,7 @@ class _ItemDetailPanel extends StatelessWidget {
     required this.lang,
     required this.width,
     required this.categoryLabel,
+    required this.serverUrl,
     required this.onClose,
     required this.onAdd,
   });
@@ -342,8 +355,8 @@ class _ItemDetailPanel extends StatelessWidget {
   }
 
   Widget _itemImage() {
-    final image = item.image;
-    if (image != null && image.startsWith('http')) {
+    final image = _soImageUrl(serverUrl, item.image);
+    if (image != null) {
       return Image.network(
         image,
         fit: BoxFit.cover,
@@ -392,11 +405,13 @@ class _ItemDetailPanel extends StatelessWidget {
 
 class _FavCard extends StatelessWidget {
   final SoMenuItem item;
+  final String serverUrl;
   final ValueChanged<SoMenuItem> onTap;
-  _FavCard({required this.item, required this.onTap});
+  _FavCard({required this.item, required this.serverUrl, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
+    final image = _soImageUrl(serverUrl, item.image);
     return GestureDetector(
       onTap: () => onTap(item),
       child: Container(
@@ -417,8 +432,8 @@ class _FavCard extends StatelessWidget {
               borderRadius: BorderRadius.circular(10),
             ),
             clipBehavior: Clip.antiAlias,
-            child: item.image != null && item.image!.startsWith('http')
-                ? Image.network(item.image!,
+            child: image != null
+                ? Image.network(image,
                     fit: BoxFit.cover,
                     // Decode cỡ thumbnail — menu dài không được nuốt RAM tablet.
                     cacheWidth: 112,
@@ -463,11 +478,13 @@ class _FavCard extends StatelessWidget {
 
 class _MenuCard extends StatelessWidget {
   final SoMenuItem item;
+  final String serverUrl;
   final ValueChanged<SoMenuItem> onTap;
-  _MenuCard({required this.item, required this.onTap});
+  _MenuCard({required this.item, required this.serverUrl, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
+    final image = _soImageUrl(serverUrl, item.image);
     return Card(
       color: Colors.white,
       elevation: 0,
@@ -482,8 +499,8 @@ class _MenuCard extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Expanded(
-              child: item.image != null && item.image!.startsWith('http')
-                  ? Image.network(item.image!,
+              child: image != null
+                  ? Image.network(image,
                       fit: BoxFit.cover,
                       // Ô lưới ~190dp — decode đúng cỡ hiển thị, menu hàng
                       // trăm món không được nuốt RAM/CPU tablet.
@@ -575,13 +592,16 @@ class _QtyBtn extends StatelessWidget {
   _QtyBtn({required this.icon, required this.onTap});
   @override
   Widget build(BuildContext context) => GestureDetector(
+        // Ô 28dp trước đây nhỏ hơn ngón tay khách trên kiosk — nới ra 44dp
+        // (chuẩn touch-target tối thiểu) để bấm trúng ngay lần đầu.
         onTap: onTap,
         child: Container(
-          width: 28,
-          height: 28,
+          width: 44,
+          height: 44,
+          alignment: Alignment.center,
           decoration: BoxDecoration(
-              color: Color(0xFFF3F5F7), borderRadius: BorderRadius.circular(6)),
-          child: Icon(icon, size: 14, color: Color(0xFF677084)),
+              color: Color(0xFFF3F5F7), borderRadius: BorderRadius.circular(10)),
+          child: Icon(icon, size: 18, color: Color(0xFF677084)),
         ),
       );
 }

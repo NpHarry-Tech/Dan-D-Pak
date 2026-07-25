@@ -25,6 +25,9 @@ class _PriceBookPageState extends State<PriceBookPage> {
   List<Map<String, dynamic>> _books = [];
   String _bookId = 'default';
   bool _loading = true;
+  // Xem [_StocktakePageState._hasLoadedOnce] — đổi bảng giá/bộ lọc không
+  // được xoá cả sidebar+bảng để hiện spinner toàn màn.
+  bool _hasLoadedOnce = false;
   String? _error;
   bool _showFilters = true;
   String _search = '';
@@ -64,12 +67,14 @@ class _PriceBookPageState extends State<PriceBookPage> {
         _books = kvMapList(results[1]);
         if (!_books.any((b) => kvs(b['id']) == _bookId)) _bookId = 'default';
         _loading = false;
+        _hasLoadedOnce = true;
       });
     } catch (e) {
       if (!mounted) return;
       setState(() {
         _error = e.toString().replaceFirst('Exception: ', '');
         _loading = false;
+        _hasLoadedOnce = true;
       });
     }
   }
@@ -307,10 +312,10 @@ class _PriceBookPageState extends State<PriceBookPage> {
 
   @override
   Widget build(BuildContext context) {
-    if (_loading && _rows.isEmpty) {
+    if (_loading && !_hasLoadedOnce) {
       return Center(child: CircularProgressIndicator());
     }
-    if (_error != null && _rows.isEmpty) {
+    if (_error != null && !_hasLoadedOnce) {
       return Padding(
         padding: EdgeInsets.all(40),
         child: InlineMessage(t('Không tải được bảng giá ($_error)'),

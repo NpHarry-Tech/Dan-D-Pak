@@ -218,7 +218,25 @@ class _SelfOrderMenuScreenState extends State<SelfOrderMenuScreen> {
     });
   }
 
-  void _showItem(SoMenuItem item) => setState(() => _detailItem = item);
+  // Khách bấm liên tục vào CÙNG 1 món (kiosk công cộng, không kiểm soát được
+  // thao tác) từng dội nhiều setState + Image.network cùng lúc vào giữa
+  // khung hình → tablet yếu có thể khựng/đen màn hình một nhịp. Chỉ chặn
+  // spam trên CÙNG 1 món trong <300ms — khoá theo item id, KHÔNG khoá toàn
+  // cục, để bấm sang món khác ngay sau đó luôn ăn (khoá toàn cục từng làm
+  // rớt lượt bấm món kế tiếp, đúng lỗi "bấm nút sau bị miss").
+  String? _lastTappedItemId;
+  DateTime? _lastItemTapAt;
+  void _showItem(SoMenuItem item) {
+    final now = DateTime.now();
+    if (_lastTappedItemId == item.id &&
+        _lastItemTapAt != null &&
+        now.difference(_lastItemTapAt!) < Duration(milliseconds: 300)) {
+      return;
+    }
+    _lastTappedItemId = item.id;
+    _lastItemTapAt = now;
+    setState(() => _detailItem = item);
+  }
 
   void _addItemById(String id) {
     for (final item in _menu) {
@@ -606,8 +624,10 @@ class _SelfOrderMenuScreenState extends State<SelfOrderMenuScreen> {
                                   scrollDirection: Axis.horizontal,
                                   padding: EdgeInsets.symmetric(horizontal: 12),
                                   itemCount: favs.length,
-                                  itemBuilder: (_, i) =>
-                                      _FavCard(item: favs[i], onTap: _showItem),
+                                  itemBuilder: (_, i) => _FavCard(
+                                      item: favs[i],
+                                      serverUrl: widget.serverUrl,
+                                      onTap: _showItem),
                                 ),
                               ),
                             ],
@@ -635,6 +655,7 @@ class _SelfOrderMenuScreenState extends State<SelfOrderMenuScreen> {
                                       itemCount: _filteredMenu.length,
                                       itemBuilder: (_, i) => _MenuCard(
                                           item: _filteredMenu[i],
+                                          serverUrl: widget.serverUrl,
                                           onTap: _showItem),
                                     ),
                             ),
@@ -654,6 +675,7 @@ class _SelfOrderMenuScreenState extends State<SelfOrderMenuScreen> {
                                         width: width,
                                         categoryLabel: _categoryLabel(
                                             _detailItem!.category ?? ''),
+                                        serverUrl: widget.serverUrl,
                                         onClose: () =>
                                             setState(() => _detailItem = null),
                                         onAdd: () =>

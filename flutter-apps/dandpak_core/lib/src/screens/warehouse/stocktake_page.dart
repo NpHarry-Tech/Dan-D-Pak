@@ -26,6 +26,11 @@ class StocktakePage extends StatefulWidget {
 class _StocktakePageState extends State<StocktakePage> {
   List<Map<String, dynamic>> _rows = [];
   bool _loading = true;
+  // Sau lần tải đầu, đổi bộ lọc (trạng thái/kho/tìm kiếm) không được xoá cả
+  // sidebar+bảng để hiện spinner toàn màn — nhất là khi bộ lọc đang chọn có
+  // sẵn 0 kết quả (vd "Đã hủy") thì mọi lần tải lại sau đó đều trúng bẫy
+  // `_rows.isEmpty`. Dùng cờ này thay vì dựa vào danh sách rỗng.
+  bool _hasLoadedOnce = false;
   String? _error;
   bool _showFilters = true;
   String _search = '';
@@ -73,12 +78,14 @@ class _StocktakePageState extends State<StocktakePage> {
       setState(() {
         _rows = kvMapList(rows);
         _loading = false;
+        _hasLoadedOnce = true;
       });
     } catch (e) {
       if (!mounted) return;
       setState(() {
         _error = e.toString().replaceFirst('Exception: ', '');
         _loading = false;
+        _hasLoadedOnce = true;
       });
     }
   }
@@ -166,10 +173,10 @@ class _StocktakePageState extends State<StocktakePage> {
 
   @override
   Widget build(BuildContext context) {
-    if (_loading && _rows.isEmpty) {
+    if (_loading && !_hasLoadedOnce) {
       return Center(child: CircularProgressIndicator());
     }
-    if (_error != null && _rows.isEmpty) {
+    if (_error != null && !_hasLoadedOnce) {
       return Padding(
         padding: EdgeInsets.all(40),
         child: InlineMessage(t('Không tải được phiếu kiểm kho ($_error)'),

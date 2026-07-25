@@ -32,7 +32,7 @@ class RetailScreen extends StatefulWidget {
   State<RetailScreen> createState() => _RetailScreenState();
 }
 
-class _RetailScreenState extends State<RetailScreen> {
+class _RetailScreenState extends State<RetailScreen> with WidgetsBindingObserver {
   final _searchCtrl = TextEditingController();
   final _barcodeFocus = FocusNode();
 
@@ -89,6 +89,7 @@ class _RetailScreenState extends State<RetailScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     BlackBox.screen = 'retail';
     _skuScrollCtrl.addListener(_onSkuScroll);
     _load();
@@ -103,6 +104,20 @@ class _RetailScreenState extends State<RetailScreen> {
       );
       _socketService.addListener(_onSocketEvent);
     });
+  }
+
+  // Đổi kho/bảng giá bán lẻ từ máy khác trong lúc tablet này đang đứng yên ở
+  // màn Retail (hoặc app bị hệ điều hành treo nền, socket không kịp báo) →
+  // danh sách SKU cũ vẫn còn hiển thị dù server đã đổi. Tải lại NGAY khi app
+  // quay lại foreground, không chỉ trông chờ socket, để không lệch dữ liệu
+  // với máy khác (đúng lỗi báo: tablet vẫn hiện món dù kho liên kết đã trống).
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && mounted) {
+      _socketRefresh(() {
+        if (mounted) _reloadLight();
+      });
+    }
   }
 
   void _onSkuScroll() {
@@ -187,6 +202,7 @@ class _RetailScreenState extends State<RetailScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     try {
       context.read<CustomerDisplayController>().clearRetailMirror();
     } catch (_) {}

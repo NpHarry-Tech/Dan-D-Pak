@@ -65,16 +65,28 @@ class _SelfOrderStaffLogoState extends State<SelfOrderStaffLogo> {
       ),
     );
     if (ok != true || !mounted) return;
-    final r = await widget.api.ipadUnlock(ctrl.text.trim());
-    final valid = r['ok'] == true;
-    if (!mounted) return;
-    if (valid) {
-      // Về màn chọn bàn của module (route '/so-table').
-      Navigator.of(context)
-          .popUntil((r) => r.settings.name == '/so-table' || r.isFirst);
-    } else {
+    // ipadUnlock() ném ApiException khi PIN sai/rate-limit/mất mạng — PHẢI
+    // bọc try/catch, nếu không exception rơi ra ngoài không ai bắt và nhân
+    // viên bấm "Xác nhận" xong không thấy gì xảy ra (tưởng nút hỏng, kẹt
+    // không thoát được kiosk).
+    try {
+      final r = await widget.api.ipadUnlock(ctrl.text.trim());
+      final valid = r['ok'] == true;
+      if (!mounted) return;
+      if (valid) {
+        // Về màn chọn bàn của module (route '/so-table').
+        Navigator.of(context)
+            .popUntil((r) => r.settings.name == '/so-table' || r.isFirst);
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(t('Mật khẩu không đúng')),
+          backgroundColor: Color(0xFFFF7A7A),
+        ));
+      }
+    } catch (e) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(t('Mật khẩu không đúng')),
+        content: Text(e.toString().replaceFirst('Exception: ', '')),
         backgroundColor: Color(0xFFFF7A7A),
       ));
     }

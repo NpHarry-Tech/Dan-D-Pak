@@ -13,45 +13,24 @@ class SplashScreen extends StatelessWidget {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Container(
-              padding: EdgeInsets.all(24),
-              decoration: BoxDecoration(
-                color: DanColors.surface,
-                borderRadius: BorderRadius.circular(DanRadius.lg),
-                border: Border.all(color: DanColors.border),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.03),
-                    blurRadius: 15,
-                    offset: Offset(0, 8),
-                  ),
-                ],
+            Image.asset(
+              'assets/brand/DanOnLogo.png',
+              width: 240,
+              height: 240,
+              fit: BoxFit.contain,
+              errorBuilder: (_, __, ___) => Icon(
+                Icons.store_outlined,
+                size: 240,
+                color: DanColors.brand,
               ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Image.asset(
-                    'assets/brand/DanOnLogo.png',
-                    width: 140,
-                    height: 140,
-                    fit: BoxFit.contain,
-                    errorBuilder: (_, __, ___) => Icon(
-                      Icons.store_outlined,
-                      size: 140,
-                      color: DanColors.brand,
-                    ),
-                  ),
-                  SizedBox(height: 24),
-                  SizedBox(
-                    width: 120,
-                    child: LinearProgressIndicator(
-                      backgroundColor: DanColors.surface3,
-                      valueColor:
-                          AlwaysStoppedAnimation<Color>(DanColors.brand),
-                      minHeight: 4,
-                    ),
-                  ),
-                ],
+            ),
+            SizedBox(height: 24),
+            SizedBox(
+              width: 120,
+              child: LinearProgressIndicator(
+                backgroundColor: DanColors.surface3,
+                valueColor: AlwaysStoppedAnimation<Color>(DanColors.brand),
+                minHeight: 4,
               ),
             ),
             SizedBox(height: 24),
