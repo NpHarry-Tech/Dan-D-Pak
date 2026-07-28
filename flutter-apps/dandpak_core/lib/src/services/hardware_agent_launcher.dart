@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:ffi/ffi.dart';
 
 import 'app_log.dart';
+import 'system_log.dart';
 
 // Tu khoi dong ngam "Hardware Agent" (server/agent.cjs, dong goi san thanh
 // dandpak-agent.exe di kem ban cai Windows) ngay khi thu ngan dang nhap - dung
@@ -40,6 +41,12 @@ class HardwareAgentLauncher {
         'AGENT_USERNAME': username,
         'AGENT_PIN': pin,
         'BRANCH_ID': branchId,
+        // Truyen DUNG dinh danh may cua app xuong agent. Nho vay server ghep
+        // duoc "may POS nao dang cam may in nao" - truoc day agent bao may in
+        // len ma khong noi minh la may nao, nen moi may lai ghi de danh sach
+        // cua may khac va o chon may in chi con may in ao cua Windows.
+        'DEVICE_ID': SystemLog.deviceId,
+        'DEVICE_NAME': Platform.localHostname,
       });
     } catch (e) {
       _attempted = false; // cho thu lai o lan dang nhap sau neu lan nay loi

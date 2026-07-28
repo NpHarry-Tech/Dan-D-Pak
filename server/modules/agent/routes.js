@@ -19,8 +19,18 @@ api.post('/agent/print/jobs/:id/result', printGuard, wrap((req) =>
     ok: req.body.ok === true || req.body.ok === 'true',
     error: req.body.error,
   })));
+// Agent gửi kèm định danh MÁY của nó — server lưu máy in theo từng máy thay vì
+// theo chi nhánh, nếu không nhiều máy chạy agent sẽ ghi đè danh sách của nhau.
+// Agent bản cũ không gửi 2 trường này thì vẫn nhận, gom vào một khoá chung.
 api.post('/agent/printers/report', printGuard, wrap((req) => ({
   ok: true,
-  count: System.setAgentPrinters(branch(req), req.body.printers || []).length,
+  count: System.setAgentPrinters(branch(req), req.body.printers || [], {
+    deviceId: req.body.device_id || req.headers['x-device-id'] || '',
+    deviceName: req.body.device_name || req.headers['x-device-name'] || '',
+  }).length,
+})));
+// Máy in thấy được, nhóm theo MÁY đang cắm — cho màn Cài đặt → Kết nối.
+api.get('/agent/devices', printGuard, wrap((req) => ({
+  devices: System.getAgentDevices(branch(req)),
 })));
 }

@@ -78,21 +78,67 @@ async function listLpstatPrinters() {
     }));
 }
 
-// Danh sách máy in OS do Hardware Agent tại cửa hàng báo lên (theo chi nhánh).
+// Danh sách máy in OS do Hardware Agent tại cửa hàng báo lên.
 // Server trên VPS không có máy in thật → khi chạy chế độ agent, màn Cài đặt lấy
 // danh sách ở đây thay vì tự dò trên VPS.
-const agentPrinters = new Map(); // branch -> { at, data }
+//
+// LƯU THEO TỪNG MÁY, không phải theo chi nhánh. Bản cũ dùng
+// `Map(branch -> data)` nên MỌI máy chạy agent đều ghi đè lên nhau mỗi 20 giây:
+// máy quầy báo "POS-80C", 20 giây sau máy văn phòng báo 3 máy in ảo của
+// Microsoft là danh sách kia biến mất. Triệu chứng thật: ô "Máy in hệ điều hành"
+// chỉ còn OneNote/XPS/Print to PDF, không thấy máy in nhiệt cắm USB — không phải
+// vì Windows không thấy nó, mà vì máy khác vừa ghi đè.
+const agentPrinters = new Map(); // branch -> Map(deviceId -> { at, deviceName, data })
 const AGENT_PRINTERS_TTL = 90_000;
 
-export function setAgentPrinters(branch = 'br1', list = []) {
+function deviceBucket(branch) {
+  if (!agentPrinters.has(branch)) agentPrinters.set(branch, new Map());
+  return agentPrinters.get(branch);
+}
+
+export function setAgentPrinters(branch = 'br1', list = [], { deviceId = '', deviceName = '' } = {}) {
   const data = Array.isArray(list) ? list.map(normalizePrinter).filter(Boolean) : [];
-  agentPrinters.set(branch, { at: Date.now(), data });
+  // Agent bản cũ chưa gửi định danh → gom vào một khoá chung, vẫn chạy như trước.
+  const key = String(deviceId || '').trim().slice(0, 120) || 'agent-khong-dinh-danh';
+  deviceBucket(branch).set(key, {
+    at: Date.now(),
+    deviceId: key,
+    deviceName: String(deviceName || '').trim().slice(0, 120),
+    data,
+  });
   return data;
 }
 
+/** Các máy còn "sống" (có báo cáo trong TTL), kèm máy in của từng máy. */
+export function getAgentDevices(branch = 'br1') {
+  const now = Date.now();
+  const out = [];
+  for (const e of deviceBucket(branch).values()) {
+    if (now - e.at >= AGENT_PRINTERS_TTL) continue;
+    out.push({
+      device_id: e.deviceId,
+      device_name: e.deviceName || e.deviceId,
+      last_seen_at: new Date(e.at).toISOString(),
+      printers: e.data,
+    });
+  }
+  return out.sort((a, b) => a.device_name.localeCompare(b.device_name));
+}
+
+/** Gộp máy in của mọi máy đang sống, mỗi máy in kèm thông tin MÁY NÀO đang cắm.
+ *  Trùng tên giữa hai máy thì giữ cả hai — chúng là hai thiết bị khác nhau. */
 export function getAgentPrinters(branch = 'br1') {
-  const e = agentPrinters.get(branch);
-  return e && Date.now() - e.at < AGENT_PRINTERS_TTL ? e.data : [];
+  const out = [];
+  const seen = new Set();
+  for (const d of getAgentDevices(branch)) {
+    for (const p of d.printers) {
+      const key = `${d.device_id}::${p.name}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push({ ...p, device_id: d.device_id, device_name: d.device_name });
+    }
+  }
+  return out;
 }
 
 export async function listSystemPrinters({ force = false, branch = '' } = {}) {

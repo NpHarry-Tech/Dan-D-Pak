@@ -22,7 +22,7 @@
 const net = require('node:net');
 const { execFile } = require('node:child_process');
 const { mkdtempSync, writeFileSync, rmSync, existsSync, openSync, closeSync, readFileSync, unlinkSync } = require('node:fs');
-const { tmpdir, platform } = require('node:os');
+const { tmpdir, platform, hostname } = require('node:os');
 const { join, dirname } = require('node:path');
 const { promisify } = require('node:util');
 
@@ -69,6 +69,11 @@ function loadConfig() {
     username: cfg.AGENT_USERNAME || '',
     pin: cfg.AGENT_PIN || '',
     branch: cfg.BRANCH_ID || 'br1',
+    // Định danh MÁY đang chạy agent. App truyền DEVICE_ID xuống (cùng giá trị
+    // với x-device-id của app) để server ghép "máy POS nào đang cắm máy in nào".
+    // Không có thì lấy tên máy — vẫn phân biệt được các máy với nhau.
+    deviceId: String(cfg.DEVICE_ID || '').trim() || `host_${hostname()}`,
+    deviceName: String(cfg.DEVICE_NAME || '').trim() || hostname(),
     pollMs: Number(cfg.AGENT_POLL_MS) || 1500,
     printersMs: Number(cfg.AGENT_PRINTERS_MS) || 20000,
     maxAttempts: Number(cfg.AGENT_MAX_ATTEMPTS) || 3,
@@ -268,7 +273,10 @@ async function handleJob(j, tried) {
 async function reportPrinters() {
   try {
     const list = await listLocalPrinters();
-    await apiFetch(`/api/agent/printers/report`, { method: 'POST', body: { printers: list } });
+    await apiFetch(`/api/agent/printers/report`, {
+      method: 'POST',
+      body: { printers: list, device_id: CFG.deviceId, device_name: CFG.deviceName },
+    });
   } catch (e) {
     log('không báo được danh sách máy in:', e.message);
   }
