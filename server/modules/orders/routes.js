@@ -20,6 +20,16 @@ api.get('/tables/:id', guardAny('sell', 'pay', 'kds', 'order.view'), wrap((req) 
     order: Orders.getOrder(Orders.getOpenOrderForTable(req.params.id, branch_id)?.id),
   };
 }));
+// Dọn sạch bàn — lối thoát hiểm khi bàn kẹt trạng thái sai.
+//
+// Chốt bằng QUYỀN 'void' của chính người đang đăng nhập, KHÔNG hỏi thêm PIN:
+// đây là thao tác sửa lỗi thường gặp giữa ca bận, bắt gọi quản lý mỗi lần thì
+// thu ngân sẽ tránh dùng và bàn cứ kẹt. Lớp an toàn thật nằm ở chỗ khác: nhấn
+// giữ 3 giây + hộp thoại xác nhận phía app, và service TỪ CHỐI mọi bill đã ghi
+// nhận tiền (phải đi đường Hoàn tiền để còn chứng từ). Mọi lần dọn đều ghi nhật
+// ký kèm người thực hiện và danh sách bill bị huỷ.
+api.post('/tables/:id/reset', guard('void'), wrap((req) =>
+  Orders.resetTable(req.params.id, branch(req), actor(req), req.body?.reason)));
 api.post('/tables/:id/move', guard('table.move'), wrap((req) => Orders.moveTable(req.params.id, req.body.to_table_id, branch(req), actor(req))));
 api.post('/tables/:id/merge', guard('table.move'), wrap((req) => Orders.mergeTables(req.params.id, req.body.target_table_id, branch(req), actor(req))));
 api.post('/settings/tables', guardAny('settings.tables'), wrap((req) => {

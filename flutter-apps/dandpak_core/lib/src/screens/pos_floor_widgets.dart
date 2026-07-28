@@ -8,6 +8,7 @@ class _FloorMap extends StatelessWidget {
     required this.selectedTable,
     required this.loading,
     required this.onSelect,
+    required this.onHoldToReset,
     required this.money,
     required this.isFree,
     required this.isPaying,
@@ -18,6 +19,9 @@ class _FloorMap extends StatelessWidget {
   final TableModel? selectedTable;
   final bool loading;
   final ValueChanged<TableModel> onSelect;
+
+  /// Nhấn giữ 3 giây vào một bàn — mở hộp thoại dọn sạch bàn đó.
+  final ValueChanged<TableModel> onHoldToReset;
   final String Function(num value) money;
   final bool Function(TableModel table) isFree;
   final bool Function(TableModel table) isPaying;
@@ -109,6 +113,7 @@ class _FloorMap extends StatelessWidget {
                 tables: entry.value,
                 selectedTable: selectedTable,
                 onSelect: onSelect,
+                onHoldToReset: onHoldToReset,
                 money: money,
                 isFree: isFree,
                 isPaying: isPaying,
@@ -127,6 +132,7 @@ class _ZoneSection extends StatelessWidget {
     required this.tables,
     required this.selectedTable,
     required this.onSelect,
+    required this.onHoldToReset,
     required this.money,
     required this.isFree,
     required this.isPaying,
@@ -137,6 +143,7 @@ class _ZoneSection extends StatelessWidget {
   final List<TableModel> tables;
   final TableModel? selectedTable;
   final ValueChanged<TableModel> onSelect;
+  final ValueChanged<TableModel> onHoldToReset;
   final String Function(num value) money;
   final bool Function(TableModel table) isFree;
   final bool Function(TableModel table) isPaying;
@@ -202,6 +209,7 @@ class _ZoneSection extends StatelessWidget {
                         table: table,
                         selected: selectedTable?.id == table.id,
                         onTap: () => onSelect(table),
+                        onHoldToReset: () => onHoldToReset(table),
                         money: money,
                         isFree: isFree(table),
                         isPaying: isPaying(table),
@@ -219,11 +227,12 @@ class _ZoneSection extends StatelessWidget {
   }
 }
 
-class _TableCard extends StatelessWidget {
+class _TableCard extends StatefulWidget {
   _TableCard({
     required this.table,
     required this.selected,
     required this.onTap,
+    required this.onHoldToReset,
     required this.money,
     required this.isFree,
     required this.isPaying,
@@ -233,10 +242,60 @@ class _TableCard extends StatelessWidget {
   final TableModel table;
   final bool selected;
   final VoidCallback onTap;
+
+  /// Gọi khi thu ngân NHẤN GIỮ đủ lâu — mở hộp thoại dọn sạch bàn.
+  final VoidCallback onHoldToReset;
   final String Function(num value) money;
   final bool isFree;
   final bool isPaying;
   final bool isCalling;
+
+  @override
+  State<_TableCard> createState() => _TableCardState();
+}
+
+/// Nhấn giữ 3 giây để dọn sạch bàn.
+///
+/// Vì sao phải giữ LÂU và có vòng tiến trình: đây là thao tác phá huỷ (huỷ hết
+/// món, trả bàn về trống). Chạm nhầm trong lúc bưng bê là chuyện thường, nên
+/// phải giữ đủ lâu và nhìn thấy rõ mình đang kích hoạt cái gì. Rung nhẹ lúc bắt
+/// đầu giữ và rung mạnh hơn khi đủ giờ — giống cảm giác nhấn giữ trên iPhone.
+class _TableCardState extends State<_TableCard>
+    with SingleTickerProviderStateMixin {
+  static const _holdDuration = Duration(seconds: 3);
+  late final AnimationController _hold = AnimationController(
+    vsync: this,
+    duration: _holdDuration,
+  )..addStatusListener((s) {
+      if (s == AnimationStatus.completed) {
+        HapticFeedback.heavyImpact(); // đủ giờ — báo bằng cú rung mạnh
+        widget.onHoldToReset();
+        _hold.reset();
+      }
+    });
+
+  @override
+  void dispose() {
+    _hold.dispose();
+    super.dispose();
+  }
+
+  void _startHold() {
+    HapticFeedback.selectionClick(); // chạm nhẹ báo "đang tính giờ"
+    _hold.forward(from: 0);
+  }
+
+  void _cancelHold() {
+    if (_hold.isAnimating) _hold.reverse();
+  }
+
+  TableModel get table => widget.table;
+  bool get selected => widget.selected;
+  VoidCallback get onTap => widget.onTap;
+  String Function(num value) get money => widget.money;
+  bool get isFree => widget.isFree;
+  bool get isPaying => widget.isPaying;
+  bool get isCalling => widget.isCalling;
 
   // Trạng thái tiến độ MÓN của bàn đang có khách (đơn mở):
   // chưa gọi món → đang chờ bếp x/y → đã lên đủ → đã in tạm tính (sắp tính
@@ -266,6 +325,15 @@ class _TableCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Vẽ lại theo tiến trình giữ để viền đỏ đậm dần — thu ngân thấy rõ mình đang
+    // kích hoạt thao tác phá huỷ chứ không phải chạm nhầm.
+    return AnimatedBuilder(
+      animation: _hold,
+      builder: (context, _) => _buildCard(context),
+    );
+  }
+
+  Widget _buildCard(BuildContext context) {
     final busy = !isFree && !isPaying && !isCalling;
     final border = selected
         ? DanColors.brand
@@ -284,9 +352,23 @@ class _TableCard extends StatelessWidget {
 
     return InkWell(
       onTap: onTap,
+      // Bắt trực tiếp sự kiện chạm thay vì onLongPress: cần biết CHÍNH XÁC lúc
+      // nhả tay để dừng đồng hồ, và cần vẽ vòng tiến trình trong lúc giữ.
+      onTapDown: (_) => _startHold(),
+      onTapUp: (_) => _cancelHold(),
+      onTapCancel: _cancelHold,
       borderRadius: BorderRadius.circular(12),
       child: Container(
         padding: EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+        foregroundDecoration: _hold.value > 0
+            ? BoxDecoration(
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                    color: DanColors.late.withValues(alpha: _hold.value),
+                    width: 2),
+                color: DanColors.late.withValues(alpha: _hold.value * .12),
+              )
+            : null,
         decoration: BoxDecoration(
           color: bg,
           borderRadius: BorderRadius.circular(12),

@@ -340,4 +340,16 @@ extension ApiServicePosApi on ApiService {
     await postJson('/api/orders/items/$itemId/kds-dismiss',
         errorMessage: 'Không xác nhận được');
   }
+
+  /// Dọn sạch một bàn — huỷ hết món, đưa bill về void, trả bàn về trống.
+  /// Cần quyền 'void' của chính người đang đăng nhập. Server TỪ CHỐI nếu bill đã
+  /// ghi nhận tiền (trường hợp đó phải đi đường Hoàn tiền để còn chứng từ).
+  Future<Map<String, dynamic>> resetTable(String tableId,
+      {String reason = ''}) async {
+    return mapFrom(await postJson(
+      '/api/tables/$tableId/reset',
+      body: {'reason': reason},
+      errorMessage: 'Không dọn được bàn',
+    ));
+  }
 }

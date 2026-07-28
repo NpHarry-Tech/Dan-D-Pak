@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show HapticFeedback;
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
@@ -815,6 +816,49 @@ class _PosScreenState extends State<PosScreen> {
     }
   }
 
+  /// Nhấn giữ 3 giây vào một bàn → dọn sạch bàn đó.
+  ///
+  /// Lối thoát hiểm khi bàn kẹt trạng thái sai (báo "Bill không tồn tại hoặc đã
+  /// đóng", món treo mãi ở "Chờ xác nhận"…) — thay vì phải gọi kỹ thuật vào sửa
+  /// tay trong CSDL. Là thao tác PHÁ HUỶ nên có ba lớp chặn: giữ đủ 3 giây, xác
+  /// nhận bằng hộp thoại, và PIN Quản lý/Admin. Server tự từ chối nếu bill đã
+  /// ghi nhận tiền — trường hợp đó phải đi đường Hoàn tiền để còn chứng từ.
+  Future<void> _confirmResetTable(TableModel table) async {
+    final dangDung = !_isFree(table);
+    final ok = await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: Text(t('Dọn sạch bàn ${table.code}?')),
+            content: Text(dangDung
+                ? t('Toàn bộ món đang có ở bàn ${table.code} sẽ bị huỷ và bàn trở về trống. '
+                    'Chỉ dùng khi bàn bị kẹt trạng thái. Thao tác này không lấy lại được.')
+                : t('Bàn ${table.code} đang trống. Dọn lại để chắc chắn không còn dữ liệu treo?')),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(false),
+                child: Text(t('Hủy')),
+              ),
+              FilledButton(
+                style: FilledButton.styleFrom(backgroundColor: DanColors.late),
+                onPressed: () => Navigator.of(ctx).pop(true),
+                child: Text(t('Xóa bàn')),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+    if (!ok || !mounted) return;
+
+    try {
+      await context.read<ApiService>().resetTable(table.id);
+      if (!mounted) return;
+      await context.read<PosProvider>().loadFloor();
+      if (mounted) _toast(t('Đã dọn sạch bàn ${table.code}.'));
+    } catch (e) {
+      if (mounted) _toast(t('Không dọn được bàn: ${_cleanError(e)}'));
+    }
+  }
+
   Future<void> _sendKitchen() async {
     final pos = context.read<PosProvider>();
     try {
@@ -987,6 +1031,7 @@ class _PosScreenState extends State<PosScreen> {
         selectedTable: sel.$2,
         loading: sel.$3,
         onSelect: _selectTable,
+        onHoldToReset: _confirmResetTable,
         money: _vnd,
         isFree: _isFree,
         isPaying: _isPaying,

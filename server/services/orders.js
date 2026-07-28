@@ -372,6 +372,66 @@ export function rejectPendingItems(order_id, item_ids = [], reason = '', branch_
   return full;
 }
 
+/** DỌN SẠCH MỘT BÀN — lối thoát hiểm khi bàn kẹt ở trạng thái sai.
+ *
+ *  Dùng khi bill của bàn rơi vào trạng thái không thao tác tiếp được (báo "Bill
+ *  không tồn tại hoặc đã đóng", món treo mãi ở "Chờ xác nhận"…). Thu ngân nhấn
+ *  giữ vào bàn để gọi, thay vì phải chờ kỹ thuật vào sửa tay trong DB.
+ *
+ *  AN TOÀN: TỪ CHỐI nếu bill đã ghi nhận tiền. Xoá trắng một bill đã thu tiền là
+ *  làm mất dấu khoản tiền đó — trường hợp ấy phải đi đường hoàn tiền (refund) để
+ *  còn chứng từ, không phải xoá âm thầm.
+ *
+ *  Xoá ở đây = huỷ toàn bộ món + đưa bill về 'void' + trả bàn về trống. KHÔNG
+ *  xoá dòng khỏi DB: bill vẫn nằm trong lịch sử và nhật ký để đối soát về sau. */
+export function resetTable(table_id, branch_id = 'br1', actor = 'system', reason = '') {
+  const table = db.prepare(`SELECT * FROM tables WHERE id=? AND branch_id=?`).get(table_id, branch_id);
+  if (!table) throw new Error('Bàn không tồn tại');
+
+  const orders = db.prepare(
+    `SELECT * FROM orders WHERE table_id=? AND branch_id=? AND status IN ('open','partially_paid')`,
+  ).all(table_id, branch_id);
+
+  for (const o of orders) {
+    const paid = db.prepare(`SELECT COALESCE(SUM(total),0) n FROM payments WHERE order_id=?`).get(o.id)?.n || 0;
+    if (paid > 0) {
+      throw Object.assign(
+        new Error(`Bill ${o.bill_no || o.id} đã ghi nhận ${Math.round(paid).toLocaleString('vi-VN')}đ. `
+          + 'Dùng chức năng Hoàn tiền / Đổi trả để còn chứng từ, không xoá trắng bàn.'),
+        { status: 409 });
+    }
+  }
+
+  db.prepare('BEGIN IMMEDIATE').run();
+  try {
+    let items = 0;
+    for (const o of orders) {
+      items += db.prepare(`UPDATE order_items SET status='cancelled' WHERE order_id=? AND status!='cancelled'`)
+        .run(o.id).changes || 0;
+      db.prepare(`UPDATE orders SET status='void', subtotal=0, goods_amount=0, vat_amount=0, total=0, discount=0 WHERE id=?`)
+        .run(o.id);
+    }
+    db.prepare(`UPDATE tables SET status='free' WHERE id=?`).run(table_id);
+    // Chuông gọi nhân viên còn treo ở bàn này cũng đóng luôn, nếu không bàn vừa
+    // dọn xong đã lại nhấp nháy đòi phục vụ.
+    db.prepare(`UPDATE staff_calls SET status='done' WHERE table_id=? AND status='open'`).run(table_id);
+    db.prepare('COMMIT').run();
+
+    for (const o of orders) archiveOrder(getOrder(o.id));
+    audit('table.reset', {
+      table: table_id, table_code: table.code || '',
+      orders: orders.map(o => o.bill_no || o.id), items, reason: String(reason || '').slice(0, 300),
+    }, branch_id, actor);
+    emit('table:updated', getTableState(table_id), branch_id);
+    for (const o of orders) emit('order:updated', getOrder(o.id), branch_id);
+    emit('stats:dirty', {}, branch_id);
+    return { ok: true, table_id, orders_voided: orders.length, items_cancelled: items };
+  } catch (err) {
+    db.prepare('ROLLBACK').run();
+    throw err;
+  }
+}
+
 export function moveTable(from_table_id, to_table_id, branch_id = 'br1', actor = 'system') {
   if (from_table_id === to_table_id) throw new Error('Bàn chuyển phải khác bàn hiện tại');
   const order = getOpenOrderForTable(from_table_id, branch_id);
