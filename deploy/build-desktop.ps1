@@ -51,7 +51,13 @@ if ($Clean) {
 # ── 3. Build qua môi trường MSVC ─────────────────────────────────────────────
 # CC/CXX ép rõ cl.exe phòng khi CMake vẫn cố dò lung tung.
 $cmd = "call `"$vcvars`" >nul && set CC=cl.exe && set CXX=cl.exe && cd /d `"$appDir`" && flutter build windows --release"
-cmd /c $cmd
+# vcvars64.bat và CMake ghi cảnh báo ra stderr (vd "vswhere.exe is not
+# recognized") NGAY CẢ KHI build thành công. Với $ErrorActionPreference='Stop',
+# PowerShell 5.1 biến mỗi dòng stderr của native command thành lỗi kết thúc và
+# bỏ ngang script. Hạ về 'Continue' quanh đúng lời gọi này rồi xét mã thoát thật.
+$prevEap = $ErrorActionPreference
+$ErrorActionPreference = 'Continue'
+try { cmd /c $cmd } finally { $ErrorActionPreference = $prevEap }
 if ($LASTEXITCODE -ne 0) { throw "flutter build windows that bai (ma loi $LASTEXITCODE)" }
 
 $exe = Join-Path $appDir 'build\windows\x64\runner\Release\dandpak_desktop.exe'
@@ -73,10 +79,13 @@ if (-not $iscc) {
 Write-Host "Inno Setup: $iscc" -ForegroundColor Cyan
 
 Push-Location $appDir
+$prevEap2 = $ErrorActionPreference
+$ErrorActionPreference = 'Continue'
 try {
   & $iscc 'setup.iss'
   if ($LASTEXITCODE -ne 0) { throw "Dong goi installer that bai (ma loi $LASTEXITCODE)" }
 } finally {
+  $ErrorActionPreference = $prevEap2
   Pop-Location
 }
 
