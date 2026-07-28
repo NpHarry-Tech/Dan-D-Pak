@@ -230,6 +230,12 @@ export function sanitizePrintConfig(raw = {}) {
       port: Math.max(1, Math.min(65535, parseInt(p?.port) || 9100)),
       cashDrawer: bool(p?.cashDrawer || p?.drawer, false),
       openDrawerOnPrint: bool(p?.openDrawerOnPrint, false),
+      // MÁY CHỦ TRÌ tuyến in này (device_id của máy POS). Khi hai máy POS cùng
+      // với tới một máy in bill, đây là máy được ưu tiên in — để phiếu luôn ra ở
+      // đúng một chỗ thay vì máy nào giành được thì in. Bỏ trống = máy nào đang
+      // cắm máy in đó cũng in được (hành vi cũ). Máy chủ trì offline thì tự
+      // chuyển cho máy khác, không để tắc bán hàng — xem pendingAgentJobs.
+      primaryDeviceId: str(p?.primaryDeviceId || p?.primary_device_id || '', 120),
     })),
     templates: {
       label: sanitizePrintTemplate(input.templates?.label || input.label_template),

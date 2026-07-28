@@ -133,6 +133,8 @@ class _ConnectionsPanelState extends State<ConnectionsPanel> {
   Map<String, dynamic> _printConfig = {};
   List<Map<String, dynamic>> _printers = [];
   List<Map<String, dynamic>> _systemPrinters = [];
+  /// Các máy đang chạy Hardware Agent — dùng cho ô "Máy chủ trì".
+  List<Map<String, dynamic>> _agentDevices = [];
   List<Map<String, dynamic>> _recentJobs = [];
   // Phép đo API server ĐO RIÊNG bằng /health (KHÔNG lấy wall-clock của cả cụm
   // getConnectionsStatus+settings+printers — cụm đó gồm dò máy in/internet phía
@@ -243,6 +245,7 @@ class _ConnectionsPanelState extends State<ConnectionsPanel> {
             .getSystemPrinters(force: force)
             .catchError((_) => <String, dynamic>{}),
         widget.api.getPrintJobs().catchError((_) => <dynamic>[]),
+        widget.api.getAgentDevices().catchError((_) => <dynamic>[]),
       ]);
       if (!mounted) return;
       setState(() {
@@ -256,6 +259,10 @@ class _ConnectionsPanelState extends State<ConnectionsPanel> {
             .whereType<Map>()
             .map((e) => Map<String, dynamic>.from(e))
             .take(20)
+            .toList();
+        _agentDevices = (results[3] as List)
+            .whereType<Map>()
+            .map((e) => Map<String, dynamic>.from(e))
             .toList();
         _probing = false;
       });
@@ -1049,16 +1056,80 @@ class _ConnectionsPanelState extends State<ConnectionsPanel> {
                     icon: Icon(Icons.arrow_drop_down),
                     onSelected: (val) =>
                         setState(() => ctrl.systemName.text = val),
-                    itemBuilder: (context) => _systemPrinters
-                        .map((sp) => PopupMenuItem<String>(
-                              value: asText(sp['name']),
-                              child: Text(asText(sp['name'])),
-                            ))
-                        .toList(),
+                    // Hiện kèm MÁY nào đang cắm và máy in đó còn sống không.
+                    // Nhiều máy POS thì tên máy in dễ trùng nhau, chỉ thấy mỗi
+                    // tên thì không biết đang chọn cái ở quầy hay ở văn phòng.
+                    itemBuilder: (context) => _systemPrinters.map((sp) {
+                      final ten = asText(sp['name']);
+                      final may = asText(sp['device_name']);
+                      final song = sp['online'] != false;
+                      final phu = [
+                        if (may.isNotEmpty) may,
+                        song ? t('đang sẵn sàng') : t('đang offline'),
+                      ].join(' · ');
+                      return PopupMenuItem<String>(
+                        value: ten,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(ten),
+                            Text(phu,
+                                style: TextStyle(
+                                    fontSize: 11,
+                                    color: song
+                                        ? DanColors.muted
+                                        : DanColors.late)),
+                          ],
+                        ),
+                      );
+                    }).toList(),
                   ),
           ),
         ),
       );
+
+  /// MÁY CHỦ TRÌ tuyến in này. Khi nhiều máy POS cùng với tới một máy in (máy in
+  /// LAN, hoặc máy in chia sẻ), chọn ở đây để phiếu LUÔN ra ở đúng một chỗ thay
+  /// vì máy nào giành được thì in. Máy chủ trì tắt thì server tự nhường cho máy
+  /// khác, không tắc bán hàng.
+  Widget _printerPrimaryDeviceField(Map<String, dynamic> p) {
+    final may = <Map<String, dynamic>>[
+      for (final d in _agentDevices) d,
+    ];
+    final hienTai = asText(p['primaryDeviceId']);
+    // Máy đã chọn nhưng giờ không thấy online — vẫn giữ trong danh sách để không
+    // âm thầm reset lựa chọn của cửa hàng.
+    final coTrongDs = may.any((d) => asText(d['device_id']) == hienTai);
+    return _printerField(
+      t('Máy chủ trì (máy in chính)'),
+      DropdownButtonFormField<String>(
+        initialValue: hienTai.isEmpty ? '' : hienTai,
+        isExpanded: true,
+        decoration: InputDecoration(
+          isDense: true,
+          helperText: t('Để trống = máy nào đang cắm cũng in được'),
+          helperMaxLines: 2,
+        ),
+        items: [
+          DropdownMenuItem(value: '', child: Text(t('— Không chỉ định —'))),
+          for (final d in may)
+            DropdownMenuItem(
+              value: asText(d['device_id']),
+              child: Text(asText(d['device_name']).isEmpty
+                  ? asText(d['device_id'])
+                  : asText(d['device_name'])),
+            ),
+          if (hienTai.isNotEmpty && !coTrongDs)
+            DropdownMenuItem(
+              value: hienTai,
+              child: Text('$hienTai (${t('đang offline')})'),
+            ),
+        ],
+        onChanged: (val) => setState(() => p['primaryDeviceId'] = val ?? ''),
+      ),
+    );
+  }
 
   /// Kết nối 'lan': máy in mạng — IP rộng gấp đôi Port.
   Widget _printerIpPortRow(PrinterControllers ctrl) => _printerFieldRow(
@@ -1156,6 +1227,8 @@ class _ConnectionsPanelState extends State<ConnectionsPanel> {
                   SizedBox(height: 12),
                 ],
                 _printerLabelLocationRow(ctrl),
+                SizedBox(height: 12),
+                _printerPrimaryDeviceField(p),
                 SizedBox(height: 14),
                 _printerToggles(p),
               ],
@@ -1250,6 +1323,7 @@ class _ConnectionsPanelState extends State<ConnectionsPanel> {
         'auto': p['auto'] == true,
         'cashDrawer': p['cashDrawer'] == true,
         'openDrawerOnPrint': p['openDrawerOnPrint'] == true,
+        'primaryDeviceId': asText(p['primaryDeviceId']),
       });
     }
 

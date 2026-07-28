@@ -234,7 +234,7 @@ const cooldown = new Map();
 async function pollJobs() {
   let res;
   try {
-    res = await apiFetch(`/api/agent/print/pending?limit=40`);
+    res = await apiFetch(`/api/agent/print/pending?limit=40&device_id=${encodeURIComponent(CFG.deviceId)}`);
   } catch (e) {
     log('không lấy được hàng đợi in:', e.message);
     return;

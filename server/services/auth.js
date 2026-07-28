@@ -75,13 +75,40 @@ function registerLoginFail(uname, branch_id, ip = '') {
 
 // Tự dọn các session quá hạn trong Map — tránh memory leak khi thiết bị tắt mà không logout.
 const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 ngày
+// Phiên KHÔNG DÙNG tới quá lâu thì coi như hết hạn, kể cả chưa tới hạn tuyệt đối.
+// Máy POS dùng hằng ngày nên 7 ngày im lặng gần như chắc chắn là máy đã nghỉ.
+const SESSION_IDLE_MS = 7 * 24 * 60 * 60 * 1000;
+
+/** Phiên còn hiệu lực không, xét theo tuổi tuyệt đối và thời gian im lặng. */
+function sessionRowExpired(row) {
+  if (!row) return true;
+  const created = new Date(row.created_at || 0).getTime();
+  const seen = new Date(row.last_seen_at || row.created_at || 0).getTime();
+  const nowMs = Date.now();
+  if (!Number.isFinite(created) || !Number.isFinite(seen)) return true;
+  return (nowMs - created) > SESSION_TTL_MS || (nowMs - seen) > SESSION_IDLE_MS;
+}
+
+// Dọn cả cache RAM lẫn BẢNG auth_sessions.
+//
+// Trước đây chỉ dọn Map trong RAM, còn bảng thì không ai đụng tới — và userFor()
+// cũng không kiểm tra tuổi dòng. Nghĩa là SESSION_TTL_MS 30 ngày CHƯA TỪNG có
+// hiệu lực: một token cấp từ nửa năm trước vẫn đăng nhập được, chỉ cần dòng còn
+// nằm trong bảng. Nay hết hạn được cưỡng chế ở cả hai nơi.
 function cleanupSessionMap() {
   const cutoff = Date.now() - SESSION_TTL_MS;
   for (const [token, entry] of sessions) {
     const entryMs = new Date(entry.at).getTime();
     if (Number.isNaN(entryMs) || entryMs < cutoff) sessions.delete(token);
   }
+  const absCutoff = new Date(Date.now() - SESSION_TTL_MS).toISOString();
+  const idleCutoff = new Date(Date.now() - SESSION_IDLE_MS).toISOString();
+  try {
+    db.prepare(`DELETE FROM auth_sessions WHERE created_at < ? OR COALESCE(last_seen_at, created_at) < ?`)
+      .run(absCutoff, idleCutoff);
+  } catch {}
 }
+cleanupSessionMap();
 setInterval(cleanupSessionMap, 6 * 60 * 60 * 1000).unref(); // chạy 6 tiếng/lần, không block shutdown
 
 const REPORT_PERMISSIONS = REPORTS.map(r => ({
@@ -586,19 +613,32 @@ export function userFor(token, deviceId = '') {
   if (cached) {
     const fresh = db.prepare(`SELECT * FROM users WHERE id=? AND active=1`).get(cached.user.id);
     if (!fresh) { sessions.delete(digest); return null; }
-    // Kiểm tra thiết bị NGAY CẢ khi trúng cache — nếu không, cache trong RAM sẽ
-    // trở thành đường vòng qua mặt ràng buộc.
-    const bound = db.prepare(`SELECT device_id FROM auth_sessions WHERE token=?`).get(digest)?.device_id;
-    if (!sessionDeviceGate(digest, bound, deviceId, fresh.username)) return null;
+    // Kiểm tra thiết bị VÀ HẠN DÙNG ngay cả khi trúng cache — nếu không, cache
+    // trong RAM trở thành đường vòng qua mặt cả hai ràng buộc.
+    const s = db.prepare(`SELECT device_id, created_at, last_seen_at FROM auth_sessions WHERE token=?`).get(digest);
+    if (!s || sessionRowExpired(s)) {
+      db.prepare(`DELETE FROM auth_sessions WHERE token=?`).run(digest);
+      sessions.delete(digest);
+      return null;
+    }
+    if (!sessionDeviceGate(digest, s.device_id, deviceId, fresh.username)) return null;
     cached.user = publicUser(fresh);
     db.prepare(`UPDATE auth_sessions SET last_seen_at=? WHERE token=?`).run(now(), digest);
     return cached.user;
   }
   const row = db.prepare(`
-    SELECT u.*, s.device_id AS session_device_id FROM auth_sessions s
-    JOIN users u ON u.id=s.user_id
-    WHERE s.token IN (?,?) AND u.active=1`).get(digest, token);
+    SELECT u.*, s.device_id AS session_device_id, s.created_at AS session_created_at,
+           s.last_seen_at AS session_last_seen_at
+      FROM auth_sessions s
+      JOIN users u ON u.id=s.user_id
+     WHERE s.token IN (?,?) AND u.active=1`).get(digest, token);
   if (!row) return null;
+  // Cưỡng chế hết hạn NGAY tại đường đọc, không chờ tác vụ dọn định kỳ.
+  if (sessionRowExpired({ created_at: row.session_created_at, last_seen_at: row.session_last_seen_at })) {
+    db.prepare(`DELETE FROM auth_sessions WHERE token IN (?,?)`).run(digest, token);
+    sessions.delete(digest);
+    return null;
+  }
   db.prepare(`UPDATE auth_sessions SET token=? WHERE token=?`).run(digest, token);
   if (!sessionDeviceGate(digest, row.session_device_id, deviceId, row.username)) return null;
   const user = publicUser(row);

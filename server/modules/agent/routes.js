@@ -5,8 +5,13 @@ import * as System from '../../services/system.js';
 
 export function registerAgentRoutes(api, { wrap, guardAny, branch }) {
 const printGuard = guardAny('module.printing', 'settings.printers', 'settings.print', 'pay');
+// device_id để server GIỮ CHỖ job cho đúng một máy và chỉ phát job của máy in
+// cắm-thẳng cho chính máy đang cắm nó — nếu không, nhiều agent cùng in một phiếu.
 api.get('/agent/print/pending', printGuard, wrap((req) => ({
-  jobs: Print.pendingAgentJobs(branch(req), { limit: parseInt(req.query.limit) || 40 }),
+  jobs: Print.pendingAgentJobs(branch(req), {
+    limit: parseInt(req.query.limit) || 40,
+    deviceId: req.query.device_id || req.headers['x-device-id'] || '',
+  }),
   serverTime: Date.now(),
 })));
 api.get('/agent/print/jobs/:id', printGuard, wrap((req) => {

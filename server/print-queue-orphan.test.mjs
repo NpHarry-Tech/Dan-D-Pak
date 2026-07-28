@@ -19,6 +19,7 @@ process.env.DATA_ENCRYPTION_KEY = process.env.DATA_ENCRYPTION_KEY
 
 const { db, migrate, now } = await import('./db.js');
 const Print = await import('./services/printing.js');
+const System = await import('./services/system.js');
 const AppSettings = await import('./services/settings.js');
 
 migrate();
@@ -62,6 +63,91 @@ test('job mồ côi bị huỷ hẳn để không quét lại mãi', () => {
   const conLai = db.prepare(
     `SELECT COUNT(*) n FROM print_jobs WHERE branch_id='br1' AND status IN ('queued','failed')`).get().n;
   assert.equal(conLai, 1, 'chỉ còn đúng job hợp lệ nằm chờ');
+});
+
+test('hai máy cùng hỏi thì CHỈ MỘT máy nhận job — không in trùng', () => {
+  System.setAgentPrinters('br1', [{ Name: 'POS-80C' }], { deviceId: 'dev_A', deviceName: 'A' });
+  System.setAgentPrinters('br1', [{ Name: 'POS-80C' }], { deviceId: 'dev_B', deviceName: 'B' });
+  queueJob('pj_dua', 'POS 2', now());
+
+  const a = Print.pendingAgentJobs('br1', { limit: 40, deviceId: 'dev_A' });
+  const b = Print.pendingAgentJobs('br1', { limit: 40, deviceId: 'dev_B' });
+  const idsA = a.map(j => j.id);
+  const idsB = b.map(j => j.id);
+  assert.ok(idsA.includes('pj_dua'), 'máy hỏi trước giữ được chỗ');
+  assert.ok(!idsB.includes('pj_dua'), 'máy hỏi sau KHÔNG được nhận lại job đó');
+});
+
+test('máy không cắm máy in đó thì không nhận job của máy in cắm thẳng', () => {
+  System.setAgentPrinters('br1', [{ Name: 'POS-80C' }], { deviceId: 'dev_co', deviceName: 'CO' });
+  System.setAgentPrinters('br1', [{ Name: 'Microsoft Print to PDF' }],
+    { deviceId: 'dev_khong', deviceName: 'KHONG' });
+  queueJob('pj_dungmay', 'POS 2', now());
+
+  const khong = Print.pendingAgentJobs('br1', { limit: 40, deviceId: 'dev_khong' });
+  assert.ok(!khong.map(j => j.id).includes('pj_dungmay'),
+    'máy không có POS-80C thì không được nhận — nếu nhận nó sẽ in lỗi rồi kéo job đã in về failed');
+
+  const co = Print.pendingAgentJobs('br1', { limit: 40, deviceId: 'dev_co' });
+  assert.ok(co.map(j => j.id).includes('pj_dungmay'), 'đúng máy đang cắm thì nhận được');
+});
+
+test('báo lỗi đến MUỘN không lật ngược job đã in xong', () => {
+  queueJob('pj_xong', 'POS 2', now());
+  Print.agentReportResult('pj_xong', 'br1', { ok: true });
+  assert.equal(db.prepare(`SELECT status FROM print_jobs WHERE id='pj_xong'`).get().status, 'printed');
+
+  // Máy thứ hai in lỗi và báo về muộn.
+  Print.agentReportResult('pj_xong', 'br1', { ok: false, error: 'Khong tim thay may in' });
+  assert.equal(
+    db.prepare(`SELECT status FROM print_jobs WHERE id='pj_xong'`).get().status,
+    'printed',
+    'job đã in xong phải GIỮ NGUYÊN — nếu về failed nó sẽ vào lại hàng đợi và in lần nữa');
+});
+
+test('MÁY CHỦ TRÌ: hai máy cùng với tới một máy in bill thì chỉ máy chính in', () => {
+  // Máy in bill LAN — cả hai máy POS đều với tới được.
+  AppSettings.updateSettings({
+    print_config: {
+      printers: [{
+        id: 'bill_lan', label: 'Máy in bill', output: 'receipt',
+        connection: 'lan', ip: '192.168.1.50', port: 9100, active: true,
+        primaryDeviceId: 'dev_pos1',
+      }],
+    },
+  }, 'br1');
+  System.setAgentPrinters('br1', [], { deviceId: 'dev_pos1', deviceName: 'POS 1' });
+  System.setAgentPrinters('br1', [], { deviceId: 'dev_pos2', deviceName: 'POS 2' });
+
+  queueJob('pj_bill1', 'bill_lan', now());
+  assert.equal(
+    Print.pendingAgentJobs('br1', { limit: 40, deviceId: 'dev_pos2' }).length, 0,
+    'POS 2 không phải máy chính thì không được in');
+  assert.ok(
+    Print.pendingAgentJobs('br1', { limit: 40, deviceId: 'dev_pos1' })
+      .map(j => j.id).includes('pj_bill1'),
+    'POS 1 là máy chính thì in');
+});
+
+test('MÁY CHỦ TRÌ nghỉ thì máy còn lại gánh, không tắc bán hàng', () => {
+  // Chỉ POS 2 còn báo cáo — POS 1 (máy chính) coi như đã tắt.
+  System.setAgentPrinters('br2', [], { deviceId: 'dev_pos2', deviceName: 'POS 2' });
+  AppSettings.updateSettings({
+    print_config: {
+      printers: [{
+        id: 'bill_lan', label: 'Máy in bill', output: 'receipt',
+        connection: 'lan', ip: '192.168.1.50', port: 9100, active: true,
+        primaryDeviceId: 'dev_pos1_da_tat',
+      }],
+    },
+  }, 'br2');
+  db.prepare(`INSERT INTO print_jobs (id,branch_id,printer,type,title,payload_json,status,created_at)
+    VALUES ('pj_bill2','br2','bill_lan','receipt','x','{}','queued',?)`).run(now());
+
+  assert.ok(
+    Print.pendingAgentJobs('br2', { limit: 40, deviceId: 'dev_pos2' })
+      .map(j => j.id).includes('pj_bill2'),
+    'máy chính offline thì máy còn lại phải in được');
 });
 
 test('tuyến in TẮT tạm thời thì giữ nguyên hàng đợi, không huỷ oan', () => {

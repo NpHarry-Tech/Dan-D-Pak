@@ -11,7 +11,7 @@ process.env.SQLITE_PATH = join(temp, 'store.db');
 process.env.STORAGE_PATH = join(temp, 'storage');
 
 const { db, migrate } = await import('./db.js');
-const { hashPin } = await import('./services/pin.js');
+const { hashPin, tokenDigest } = await import('./services/pin.js');
 const Auth = await import('./services/auth.js');
 
 migrate();
@@ -52,6 +52,37 @@ test('đăng nhập được bằng id lấy từ danh sách, không cần biế
   // Ô nhập thủ công (gõ username) vẫn chạy như cũ.
   const byName = Auth.login('thungan1', '5274', 'br1', { deviceId: 'dev_a' });
   assert.equal(byName.user.username, 'thungan1');
+});
+
+test('phiên quá hạn KHÔNG còn dùng được — TTL phải có hiệu lực thật', () => {
+  makeUser('u_hethan', 'hethan', 'cashier');
+  const { token } = Auth.login('hethan', '5274', 'br1', { deviceId: 'dev_h' });
+  const digest = tokenDigest(token);
+  assert.equal(Auth.userFor(token, 'dev_h')?.username, 'hethan');
+
+  // Đẩy phiên về quá hạn tuyệt đối (>30 ngày). Trước đây cleanupSessionMap chỉ
+  // dọn cache RAM còn userFor không xét tuổi dòng, nên token nửa năm trước vẫn
+  // vào được — TTL 30 ngày chưa từng có hiệu lực.
+  const qua30Ngay = new Date(Date.now() - 31 * 24 * 3600 * 1000).toISOString();
+  db.prepare(`UPDATE auth_sessions SET created_at=?, last_seen_at=? WHERE token=?`)
+    .run(qua30Ngay, qua30Ngay, digest);
+
+  assert.equal(Auth.userFor(token, 'dev_h'), null, 'token quá hạn phải bị từ chối');
+  assert.equal(
+    db.prepare(`SELECT COUNT(*) n FROM auth_sessions WHERE token=?`).get(digest).n, 0,
+    'và dòng phiên bị xoá luôn, không để rác');
+});
+
+test('phiên im lặng quá lâu cũng hết hạn dù chưa tới hạn tuyệt đối', () => {
+  makeUser('u_imlang', 'imlang', 'cashier');
+  const { token } = Auth.login('imlang', '5274', 'br1', { deviceId: 'dev_i' });
+  const digest = tokenDigest(token);
+
+  // Tạo hôm nay nhưng 8 ngày không dùng.
+  db.prepare(`UPDATE auth_sessions SET last_seen_at=? WHERE token=?`)
+    .run(new Date(Date.now() - 8 * 24 * 3600 * 1000).toISOString(), digest);
+
+  assert.equal(Auth.userFor(token, 'dev_i'), null, 'phiên bỏ quên 8 ngày phải hết hiệu lực');
 });
 
 test('app CŨ (đọc trường username) vẫn đăng nhập được với server MỚI', () => {

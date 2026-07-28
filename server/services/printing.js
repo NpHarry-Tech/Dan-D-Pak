@@ -10,7 +10,7 @@ import { db, uid, now, audit } from '../db.js';
 import { emit } from '../realtime.js';
 import { env } from '../config/env.js';
 import { getPrintConfig } from './settings.js';
-import { listSystemPrinters } from './system.js';
+import { listSystemPrinters, getAgentDevices } from './system.js';
 import { logSystem } from './systemLogs.js';
 import { receiptTaxNote } from './tax.js';
 
@@ -917,14 +917,20 @@ export async function dispatchJob(id, branch_id = 'br1', { force = false } = {})
 //      cuối) vì nó không bao giờ in được nữa. Tuyến còn nhưng đang TẮT thì giữ
 //      nguyên 'queued' — bật lại là in tiếp.
 const AGENT_SCAN_WINDOW = 300;
+// Giữ chỗ hết hạn sau 60s: agent chết giữa chừng thì job phải quay lại hàng đợi
+// cho máy khác, chứ không kẹt vĩnh viễn.
+const AGENT_CLAIM_TTL_MS = 60_000;
 
-export function pendingAgentJobs(branch_id = 'br1', { limit = 40 } = {}) {
+export function pendingAgentJobs(branch_id = 'br1', { limit = 40, deviceId = '' } = {}) {
   const want = Math.max(1, Math.min(100, limit));
+  const me = String(deviceId || '').trim().slice(0, 120);
+  const claimCutoff = new Date(Date.now() - AGENT_CLAIM_TTL_MS).toISOString();
   const rows = db.prepare(
     `SELECT * FROM print_jobs
       WHERE branch_id=? AND status IN ('queued','failed')
+        AND (claimed_by IS NULL OR claimed_by='' OR claimed_by=? OR COALESCE(claimed_at,'') < ?)
       ORDER BY created_at ASC LIMIT ?`,
-  ).all(branch_id, AGENT_SCAN_WINDOW).map(publicJob);
+  ).all(branch_id, me, claimCutoff, AGENT_SCAN_WINDOW).map(publicJob);
   // Nạp cấu hình in ĐÚNG 1 LẦN cho cả loạt job — trước đây resolveAgentJob() gọi
   // lại getPrintConfig() (đọc DB + JSON.parse + sanitize) cho TỪNG job, nên agent
   // hỏi hàng đợi mỗi 1.5s làm server lặp lại việc này tới ~40 lần/lần hỏi, tốn
@@ -940,10 +946,26 @@ export function pendingAgentJobs(branch_id = 'br1', { limit = 40 } = {}) {
       continue;
     }
     const resolved = resolveAgentJobFast(job, printers, printCfg);
-    if (resolved && (resolved.connection === 'lan' || resolved.connection === 'system')) {
-      out.push(resolved);
-      if (out.length >= want) break;
+    if (!resolved || (resolved.connection !== 'lan' && resolved.connection !== 'system')) continue;
+
+    // Máy in cắm THẲNG vào một máy (connection 'system') thì chỉ máy ĐÓ in được.
+    // Trước đây job được phát cho mọi agent: máy không có máy in đó sẽ in lỗi và
+    // báo 'failed', kéo job đã in thành công quay lại hàng đợi → in trùng.
+    // Máy in LAN thì máy nào trong mạng cũng in được nên không cần lọc.
+    if (resolved.connection === 'system' && me && !deviceHasPrinter(branch_id, me, resolved.systemName)) {
+      continue;
     }
+
+    // MÁY CHỦ TRÌ: khi nhiều máy POS cùng với tới một máy in (máy in LAN, hoặc
+    // máy in chia sẻ mà cả hai máy đều thấy), phiếu phải luôn ra ở ĐÚNG MỘT chỗ
+    // — không để "máy nào hỏi trước thì máy đó in", vì như vậy bill cùng một ca
+    // lúc ra máy này lúc ra máy kia. Máy chủ trì mà offline thì nhường lại cho
+    // máy khác để không tắc bán hàng.
+    if (!isEligibleForPrinter(branch_id, me, printers.find(p => p.id === job.printer))) continue;
+
+    if (me && !claimJob(job.id, me, claimCutoff)) continue; // máy khác vừa giữ chỗ
+    out.push(resolved);
+    if (out.length >= want) break;
   }
 
   if (orphans.length) {
@@ -956,6 +978,42 @@ export function pendingAgentJobs(branch_id = 'br1', { limit = 40 } = {}) {
   }
 
   return out;
+}
+
+/** Máy `deviceId` có đang cắm máy in tên `systemName` không (theo báo cáo agent).
+ *  Chưa biết gì về máy đó (agent bản cũ chưa gửi định danh) → cho qua, giữ hành
+ *  vi cũ thay vì chặn in. */
+function deviceHasPrinter(branch_id, deviceId, systemName) {
+  const want = String(systemName || '').trim().toLowerCase();
+  if (!want) return true;
+  const devices = getAgentDevices(branch_id);
+  const mine = devices.find(d => d.device_id === deviceId);
+  if (!mine) return true;
+  return mine.printers.some(p => String(p.name || '').trim().toLowerCase() === want);
+}
+
+/** Máy `me` có được phép in tuyến `printer` không, xét MÁY CHỦ TRÌ.
+ *
+ *  - Tuyến không đặt máy chủ trì → máy nào cũng in được (hành vi cũ).
+ *  - Có máy chủ trì và máy đó ĐANG ONLINE → chỉ mình nó in.
+ *  - Có máy chủ trì nhưng nó OFFLINE → nhường cho máy khác, tránh tắc bán hàng.
+ *  - Agent bản cũ chưa gửi định danh (`me` rỗng) → không chặn, giữ tương thích. */
+function isEligibleForPrinter(branch_id, me, printer) {
+  const primary = String(printer?.primaryDeviceId || '').trim();
+  if (!primary || !me) return true;
+  if (primary === me) return true;
+  const primaryOnline = getAgentDevices(branch_id).some(d => d.device_id === primary);
+  return !primaryOnline; // chủ trì nghỉ thì máy khác gánh
+}
+
+/** Giữ chỗ job cho đúng một máy. Trả false nếu máy khác vừa giữ trước. */
+function claimJob(id, deviceId, claimCutoff) {
+  const r = db.prepare(
+    `UPDATE print_jobs SET claimed_by=?, claimed_at=?
+      WHERE id=? AND status IN ('queued','failed')
+        AND (claimed_by IS NULL OR claimed_by='' OR claimed_by=? OR COALESCE(claimed_at,'') < ?)`,
+  ).run(deviceId, now(), id, deviceId, claimCutoff);
+  return r.changes > 0;
 }
 
 function resolveAgentJobFast(job, printers, printCfg) {
@@ -1012,6 +1070,19 @@ export function agentReportResult(id, branch_id, { ok, error } = {}) {
     emit('print:done', job, branch_id);
     audit('print.agent.printed', { job: id, printer: job?.printer, type: job?.type }, branch_id, 'agent');
     return job;
+  }
+  // KHÔNG lật ngược job đã in xong. Trước đây ghi 'failed' vô điều kiện, nên khi
+  // hai máy cùng chạy agent: máy A in xong (printed) → máy B không có máy in đó
+  // in lỗi → job bị kéo về 'failed' → vào lại hàng đợi → máy A in lần nữa → lặp
+  // vô hạn, giấy ra chồng chất. Báo lỗi đến muộn chỉ được ghi log.
+  if (existing.status === 'printed') {
+    logSystem({
+      level: 'warn', source: 'printer', eventType: 'print_late_failure',
+      title: `Bỏ qua báo lỗi muộn cho job đã in xong (tuyến ${existing.printer || '?'})`,
+      message: String(error || ''), branchId: branch_id, username: 'agent',
+      action: `print:${existing.type}`, extra: { job: id },
+    });
+    return existing;
   }
   const job = patchJob(id, { status: 'failed', error: String(error || 'Agent in lỗi') });
   emit('print:failed', job, branch_id);

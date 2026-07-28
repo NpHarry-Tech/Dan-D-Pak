@@ -1160,6 +1160,10 @@ export function migrate(targetDb = globalDb) {
     UNIQUE(shop_domain, resource)
   );
   `);
+  // Job in được GIỮ CHỖ cho đúng một máy. Không có hai cột này thì nhiều Hardware
+  // Agent cùng lấy một job và cùng in — mỗi phiếu ra hai lần. Xem pendingAgentJobs.
+  addColumnIfMissing('print_jobs', 'claimed_by', 'TEXT');
+  addColumnIfMissing('print_jobs', 'claimed_at', 'TEXT');
   // Đếm số lần đăng nhập sai — LƯU DB để không bị xoá sạch mỗi lần restart server,
   // và theo cả hai chiều (scope='user' | 'ip') để chặn kiểu rải đều qua nhiều tài khoản.
   db.exec(`

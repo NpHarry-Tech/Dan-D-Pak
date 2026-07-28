@@ -1,3 +1,5 @@
+import 'dart:io' show Platform;
+
 import 'package:flutter/foundation.dart';
 import '../primitives.dart';
 import '../models/pos_models.dart';
@@ -11,6 +13,14 @@ import '../services/system_log.dart';
 import '../utils/translation.dart';
 
 class AuthProvider extends ChangeNotifier {
+  /// Máy để bàn tại quầy (Windows/macOS/Linux) — KHÔNG giữ phiên qua các lần mở
+  /// app. Web/tablet/KDS thì giữ như cũ. Đặt riêng một cờ để chỗ lưu và chỗ đọc
+  /// token dùng CHUNG một quy tắc, tránh lệch nhau.
+  static bool get _desktopRequiresFreshLogin {
+    if (kIsWeb) return false;
+    return Platform.isWindows || Platform.isMacOS || Platform.isLinux;
+  }
+
   final ApiService apiService;
 
   bool _isLoading = false;
@@ -73,7 +83,18 @@ class AuthProvider extends ChangeNotifier {
       _selectedBranchId =
           await prefs.getString('branch_id') ?? DanDpakDefaults.branchId;
       _setLanguage(await prefs.getString('app_lang') ?? 'vi', notify: false);
-      _token = await prefs.getString('auth_token');
+      // MÁY DESKTOP TẠI QUẦY: đóng hẳn app rồi mở lại thì PHẢI đăng nhập lại.
+      // Máy quầy dùng chung nhiều ca, giữ phiên qua các lần khởi động đồng nghĩa
+      // người mở app sau đang thao tác dưới danh nghĩa người ca trước. Chi nhánh
+      // vẫn nhớ (đọc ở trên) nên thu ngân chỉ phải chọn tên + nhập PIN.
+      // Tablet/KDS thì giữ nguyên: chúng là màn treo tường, bắt đăng nhập lại sau
+      // mỗi lần chớp điện sẽ làm gián đoạn bếp.
+      if (_desktopRequiresFreshLogin) {
+        await prefs.remove('auth_token');
+        _token = null;
+      } else {
+        _token = await prefs.getString('auth_token');
+      }
 
       apiService.setBaseUrl(_serverUrl);
       apiService.setToken(_token);
@@ -210,7 +231,13 @@ class AuthProvider extends ChangeNotifier {
       _syncLogContext();
 
       final prefs = LocalStore.instance;
-      await prefs.setString('auth_token', _token!);
+      // Desktop: token chỉ sống trong bộ nhớ của phiên chạy này — đóng app là mất,
+      // mở lại phải đăng nhập. Xem _desktopRequiresFreshLogin.
+      if (_desktopRequiresFreshLogin) {
+        await prefs.remove('auth_token');
+      } else {
+        await prefs.setString('auth_token', _token!);
+      }
       await prefs.setString('branch_id', branchId);
       await prefs.setString('app_lang', _language);
 

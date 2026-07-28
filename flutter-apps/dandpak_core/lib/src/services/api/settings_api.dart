@@ -136,6 +136,14 @@ extension ApiServiceSettingsApi on ApiService {
         errorMessage: 'Không tải được trạng thái kết nối'));
   }
 
+  /// Máy in nhóm theo TỪNG MÁY đang chạy Hardware Agent, kèm last_seen_at.
+  /// Dùng cho ô "Máy chủ trì" và để biết máy in đang cắm ở máy nào.
+  Future<List<dynamic>> getAgentDevices() async {
+    final res = await getJson('/api/agent/devices',
+        errorMessage: 'Không tải được danh sách máy chạy agent');
+    return listFrom(mapFrom(res)['devices']);
+  }
+
   Future<Map<String, dynamic>> getSystemPrinters({bool force = false}) async {
     return mapFrom(await getJson(
         '/api/settings/system/printers${force ? '?force=1' : ''}',
