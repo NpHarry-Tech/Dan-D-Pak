@@ -1,5 +1,89 @@
-// GENERATED SPLIT of settings_ops_panels.dart — panel Kết nối/thiết bị + PrinterControllers (part of, cùng library).
-part of 'settings_ops_panels.dart';
+// Panel "Kết nối" trong màn Cài đặt — trạng thái thiết bị, máy in và đồng bộ cloud.
+//
+// Trước đây file này là "part of settings_ops_panels.dart" — mà file đó lại chứa
+// OperationsPanel của module Kế toán. Sửa panel Kết nối phải mở hai file, và file
+// kia mang tên chẳng liên quan. Nay là thư viện độc lập, mang theo đúng các helper
+// hiển thị thiết bị của riêng nó.
+import 'package:flutter/material.dart';
+
+import '../../services/api_service.dart';
+import '../../services/socket_service.dart';
+import '../../ui/app_theme.dart';
+import '../../utils/translation.dart';
+import 'management_widgets.dart';
+import 'settings_tab.dart';
+import 'settings_value_utils.dart';
+
+// Loại màn hình (device) → tên tiếng Việt để hiển thị ở t("Thiết bị đang kết nối").
+String _connDeviceLabel(String d) {
+  switch (d) {
+    case 'admin':
+      return t('Bảng quản lý');
+    case 'pos':
+      return t('POS nhà hàng');
+    case 'retail':
+      return t('Bán lẻ (Retail POS)');
+    case 'kds':
+      return t('Màn bếp (KDS)');
+    case 'ipad':
+      return t('iPad khách');
+    case 'online':
+      return t('Kênh online');
+    case 'warehouse':
+      return 'Kho';
+    default:
+      return d.isEmpty || d == 'unknown' ? t('Thiết bị') : d;
+  }
+}
+
+String _connRoleLabel(String r) {
+  switch (r) {
+    case 'owner':
+    case 'admin':
+      return 'Admin';
+    case 'manager':
+      return t('Quản lý');
+    case 'cashier':
+      return t('Thu ngân');
+    case 'kitchen':
+      return t('Bếp');
+    case 'warehouse':
+      return t('Thủ kho');
+    default:
+      return r;
+  }
+}
+
+// Ưu tiên hiện người đăng nhập thực; iPad công cộng thì hiện loại màn hình.
+String _connTitle(Map c) {
+  final name = asText(c['user_name']);
+  final role = asText(c['user_role']);
+  if (name.isNotEmpty) {
+    return role.isNotEmpty ? '$name · ${_connRoleLabel(role)}' : name;
+  }
+  return _connDeviceLabel(asText(c['device']));
+}
+
+String _cleanIp(String ip) => ip
+    .replaceFirst('::ffff:', '')
+    .replaceFirst(RegExp(r'^::1$'), 'localhost')
+    .replaceFirst(RegExp(r'^127\.0\.0\.1$'), 'localhost');
+
+IconData _connIcon(String device) {
+  switch (device) {
+    case 'admin':
+      return Icons.dashboard_outlined;
+    case 'kds':
+      return Icons.soup_kitchen_outlined;
+    case 'ipad':
+      return Icons.tablet_mac_outlined;
+    case 'retail':
+      return Icons.storefront_outlined;
+    default:
+      return Icons.point_of_sale_outlined;
+  }
+}
+
 
 class ConnectionsPanel extends StatefulWidget {
   final ApiService api;
@@ -123,12 +207,12 @@ class _ConnectionsPanelState extends State<ConnectionsPanel> {
         }
         _printerControllersList = _printers
             .map((p) => PrinterControllers(
-                  idVal: _s(p['id']),
-                  systemNameVal: _s(p['systemName'] ?? p['name']),
-                  ipVal: _s(p['ip']),
-                  portVal: _s(p['port'] ?? '9100'),
-                  labelVal: _s(p['label'] ?? p['type']),
-                  locationVal: _s(p['location']),
+                  idVal: asText(p['id']),
+                  systemNameVal: asText(p['systemName'] ?? p['name']),
+                  ipVal: asText(p['ip']),
+                  portVal: asText(p['port'] ?? '9100'),
+                  labelVal: asText(p['label'] ?? p['type']),
+                  locationVal: asText(p['location']),
                 ))
             .toList();
         _syncCardTerminal();
@@ -188,13 +272,13 @@ class _ConnectionsPanelState extends State<ConnectionsPanel> {
 
   void _syncCardTerminal() {
     final ct = _cardTerminal;
-    _ctMode = _s(ct['mode']).isNotEmpty ? _s(ct['mode']) : 'auto';
+    _ctMode = asText(ct['mode']).isNotEmpty ? asText(ct['mode']) : 'auto';
     _ctProvider.text =
-        _s(ct['provider']).isNotEmpty ? _s(ct['provider']) : 'vcb';
-    _ctName.text = _s(ct['terminalName']);
-    _ctIp.text = _s(ct['ip']).isNotEmpty ? _s(ct['ip']) : '127.0.0.1';
-    _ctPort.text = _s(ct['port']).isNotEmpty ? _s(ct['port']) : '25000';
-    _ctAutoPrint = ct['autoPrint'] == null ? true : _b(ct['autoPrint']);
+        asText(ct['provider']).isNotEmpty ? asText(ct['provider']) : 'vcb';
+    _ctName.text = asText(ct['terminalName']);
+    _ctIp.text = asText(ct['ip']).isNotEmpty ? asText(ct['ip']) : '127.0.0.1';
+    _ctPort.text = asText(ct['port']).isNotEmpty ? asText(ct['port']) : '25000';
+    _ctAutoPrint = ct['autoPrint'] == null ? true : asFlag(ct['autoPrint']);
   }
 
   Future<void> _saveCardTerminal() async {
@@ -299,24 +383,24 @@ class _ConnectionsPanelState extends State<ConnectionsPanel> {
   //     KHÔNG phải mất mạng; không kết nối được (statusCode=0) → mới là mất kết nối.
   //  3. Realtime (socket): SocketService().connected — tách hẳn khỏi API.
   Widget _networkPanel() {
-    final internet = _b(_status['internet']);
+    final internet = asFlag(_status['internet']);
     final wan = _status['internetCheck'] is Map
         ? Map<String, dynamic>.from(_status['internetCheck'])
         : {};
-    final wanMs = _i(wan['latency_ms']);
+    final wanMs = asInt(wan['latency_ms']);
     final ips = (_status['serverIps'] is List)
         ? (_status['serverIps'] as List)
-            .map(_s)
+            .map(asText)
             .where((e) => e.isNotEmpty)
             .toList()
         : <String>[];
 
-    final apiStatus = _i(_health['statusCode']);
-    final apiMs = _i(_health['durationMs']);
-    final apiOk = _b(_health['ok']);
+    final apiStatus = asInt(_health['statusCode']);
+    final apiMs = asInt(_health['durationMs']);
+    final apiOk = asFlag(_health['ok']);
     final apiReachable = apiStatus > 0; // server có TRẢ LỜI (kể cả 4xx/5xx)
-    final target = _s(_health['target']);
-    final exType = _s(_health['exceptionType']);
+    final target = asText(_health['target']);
+    final exType = asText(_health['exceptionType']);
 
     Widget apiPill;
     if (apiOk) {
@@ -384,12 +468,12 @@ class _ConnectionsPanelState extends State<ConnectionsPanel> {
     final st = _status['storage'] is Map
         ? Map<String, dynamic>.from(_status['storage'])
         : {};
-    final db = _s(st['database']).isNotEmpty ? _s(st['database']) : 'SQLite';
+    final db = asText(st['database']).isNotEmpty ? asText(st['database']) : 'SQLite';
     final dbMode =
-        _s(st['databaseMode']).isNotEmpty ? _s(st['databaseMode']) : 'WAL';
-    final rt = _s(st['realtime']).isNotEmpty ? _s(st['realtime']) : 'Socket.IO';
+        asText(st['databaseMode']).isNotEmpty ? asText(st['databaseMode']) : 'WAL';
+    final rt = asText(st['realtime']).isNotEmpty ? asText(st['realtime']) : 'Socket.IO';
     final lt =
-        _s(st['longTerm']).isNotEmpty ? _s(st['longTerm']) : 'Permanent JSON';
+        asText(st['longTerm']).isNotEmpty ? asText(st['longTerm']) : 'Permanent JSON';
     return Panel(
       title: t('Lưu trữ cục bộ'),
       child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
@@ -421,15 +505,15 @@ class _ConnectionsPanelState extends State<ConnectionsPanel> {
   }
 
   Widget _printerStatusRow(Map p) {
-    final label = _s(p['label']).isNotEmpty ? _s(p['label']) : _s(p['name']);
-    final location = _s(p['location']);
-    final connection = _s(p['connection']);
-    final ip = _s(p['ip']);
-    final port = _i(p['port']) > 0 ? _i(p['port']) : 9100;
-    final output = _outputLabels[_s(p['output'])] ?? _s(p['output']);
-    final state = _s(p['state']);
-    final statusText = _s(p['statusText']);
-    final online = _b(p['online']);
+    final label = asText(p['label']).isNotEmpty ? asText(p['label']) : asText(p['name']);
+    final location = asText(p['location']);
+    final connection = asText(p['connection']);
+    final ip = asText(p['ip']);
+    final port = asInt(p['port']) > 0 ? asInt(p['port']) : 9100;
+    final output = _outputLabels[asText(p['output'])] ?? asText(p['output']);
+    final state = asText(p['state']);
+    final statusText = asText(p['statusText']);
+    final online = asFlag(p['online']);
 
     final (statusLabel, statusColor) = switch (state) {
       'ok' => (t('Kết nối'), DanColors.done),
@@ -443,8 +527,8 @@ class _ConnectionsPanelState extends State<ConnectionsPanel> {
     final connDetail = connection == 'lan'
         ? (ip.isNotEmpty ? '$ip:$port' : t('Chưa có IP'))
         : connection == 'system'
-            ? (_s(p['systemName']).isNotEmpty
-                ? _s(p['systemName'])
+            ? (asText(p['systemName']).isNotEmpty
+                ? asText(p['systemName'])
                 : t('Máy in hệ thống'))
             : t('Trình duyệt');
 
@@ -599,16 +683,16 @@ class _ConnectionsPanelState extends State<ConnectionsPanel> {
                 ListTile(
                   contentPadding: EdgeInsets.zero,
                   dense: true,
-                  leading: Icon(_connIcon(_s(c['device'])),
+                  leading: Icon(_connIcon(asText(c['device'])),
                       color: DanColors.brand, size: 20),
                   title: Text(_connTitle(c),
                       style: TextStyle(fontWeight: FontWeight.w700)),
                   subtitle: Text(
                     [
-                      _connDeviceLabel(_s(c['device'])),
-                      _cleanIp(_s(c['ip'])),
-                      if (_fmtTime(_s(c['connectedAt'])).isNotEmpty)
-                        'kết nối ${_fmtTime(_s(c['connectedAt']))}',
+                      _connDeviceLabel(asText(c['device'])),
+                      _cleanIp(asText(c['ip'])),
+                      if (_fmtTime(asText(c['connectedAt'])).isNotEmpty)
+                        'kết nối ${_fmtTime(asText(c['connectedAt']))}',
                     ].where((e) => e.isNotEmpty).join(' · '),
                     style: TextStyle(fontSize: 11.5),
                   ),
@@ -667,7 +751,9 @@ class _ConnectionsPanelState extends State<ConnectionsPanel> {
                       'id': 'printer_${_printers.length + 1}',
                       'name': '',
                       'systemName': '',
-                      'connection': 'browser',
+                      // 'browser' chưa cài đặt thật (server luôn báo lỗi khi in) —
+                      // mặc định 'system' để máy in mới thêm in được ngay.
+                      'connection': 'system',
                       'ip': '',
                       'port': 9100,
                       'label': t('Nhãn in'),
@@ -796,10 +882,249 @@ class _ConnectionsPanelState extends State<ConnectionsPanel> {
     );
   }
 
+  // ── Thẻ sửa MỘT máy in ────────────────────────────────────────────────
+  // Trước đây cả thẻ là một hàm 377 dòng với các closure buildXxx() lồng bên
+  // trong LayoutBuilder. Nay tách theo đúng thứ tự nhìn thấy trên màn hình:
+  //   header      → tên máy + In thử + Xoá dòng
+  //   hàng 1      → ID · Kết nối · Định dạng in
+  //   hàng 2      → tuỳ đường kết nối: tên máy in OS  HOẶC  IP + Port
+  //   hàng 3      → Nhãn · Vị trí
+  //   công tắc    → Đang dùng / Tự động in / Có két / Mở két khi in
+
+  /// Mẫu chung "nhãn nhỏ + ô nhập" — lặp lại ở 7 trường của thẻ máy in.
+  Widget _printerField(String label, Widget input) => Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(label,
+              style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+          SizedBox(height: 6),
+          input,
+        ],
+      );
+
+  /// Màn rộng thì xếp ngang, màn hẹp thì xếp dọc. Gom lại vì cả 3 hàng trường
+  /// của thẻ máy in đều lặp y hệt khối LayoutBuilder + if/else này.
+  Widget _printerFieldRow(double breakpoint, List<Widget> fields,
+      {List<int>? flex}) {
+    return LayoutBuilder(builder: (context, constraints) {
+      if (constraints.maxWidth > breakpoint) {
+        final row = <Widget>[];
+        for (var i = 0; i < fields.length; i++) {
+          if (i > 0) row.add(SizedBox(width: 12));
+          row.add(Expanded(flex: flex?[i] ?? 1, child: fields[i]));
+        }
+        return Row(crossAxisAlignment: CrossAxisAlignment.start, children: row);
+      }
+      final col = <Widget>[];
+      for (var i = 0; i < fields.length; i++) {
+        if (i > 0) col.add(SizedBox(height: 12));
+        col.add(fields[i]);
+      }
+      return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch, children: col);
+    });
+  }
+
+  Widget _printerCardHeader(int index, PrinterControllers ctrl) {
+    return Container(
+      padding: EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      decoration: BoxDecoration(
+        color: DanColors.surface2,
+        borderRadius: BorderRadius.only(
+          topLeft: Radius.circular(11),
+          topRight: Radius.circular(11),
+        ),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            '${t('Máy in')} #${index + 1} (${ctrl.id.text.isNotEmpty ? ctrl.id.text : t("Chưa đặt tên")})',
+            style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13),
+          ),
+          Row(
+            children: [
+              if (ctrl.id.text.isNotEmpty)
+                TextButton.icon(
+                  onPressed: () => _testPrinter(ctrl.id.text.trim()),
+                  icon: Icon(Icons.print_outlined,
+                      size: 16, color: DanColors.brand),
+                  label: Text(t('In thử'),
+                      style: TextStyle(color: DanColors.brand, fontSize: 12)),
+                ),
+              SizedBox(width: 8),
+              TextButton.icon(
+                onPressed: () {
+                  setState(() {
+                    _printers.removeAt(index);
+                    _printerControllersList[index].dispose();
+                    _printerControllersList.removeAt(index);
+                  });
+                },
+                icon:
+                    Icon(Icons.delete_outline, size: 16, color: DanColors.late),
+                label: Text(t('Xóa dòng'),
+                    style: TextStyle(color: DanColors.late, fontSize: 12)),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _printerIdField(PrinterControllers ctrl) => _printerField(
+        t('Trạm/Tuyến in (ID)'),
+        TextField(
+          controller: ctrl.id,
+          decoration: InputDecoration(
+              isDense: true, hintText: 'VD: kitchen, bar, bill'),
+          // Tên hiện ở header thẻ lấy từ ô này → gõ tới đâu đổi tới đó.
+          onChanged: (val) => setState(() {}),
+        ),
+      );
+
+  Widget _printerConnField(Map<String, dynamic> p, String conn) =>
+      _printerField(
+        t('Kết nối'),
+        DropdownButtonFormField<String>(
+          // "Trình duyệt (Browser)" chưa được cài đặt thật (dispatchJob luôn báo
+          // lỗi khi gặp tuyến này) — trước đây lại là mặc định khi thêm máy in
+          // mới, khiến máy in thêm vào KHÔNG BAO GIỜ in được nếu không tự đổi
+          // tay. Đổi mặc định sang "Máy in hệ điều hành (OS)" — tuyến thật sự
+          // hoạt động trên desktop/tablet.
+          initialValue: conn.isEmpty ? 'system' : conn,
+          isExpanded: true,
+          decoration: InputDecoration(isDense: true),
+          items: [
+            DropdownMenuItem(
+                value: 'browser', child: Text(t('Trình duyệt (Browser)'))),
+            DropdownMenuItem(
+                value: 'lan', child: Text('Network Printer (LAN/IP)')),
+            DropdownMenuItem(
+                value: 'system', child: Text(t('Máy in hệ điều hành (OS)'))),
+          ],
+          onChanged: (val) => setState(() => p['connection'] = val),
+        ),
+      );
+
+  Widget _printerOutputField(Map<String, dynamic> p, String output) =>
+      _printerField(
+        t('Định dạng in'),
+        DropdownButtonFormField<String>(
+          initialValue: output.isEmpty ? 'custom' : output,
+          isExpanded: true,
+          decoration: InputDecoration(isDense: true),
+          items: [
+            DropdownMenuItem(
+                value: 'kitchen_ticket',
+                child: Text(t('Phiếu bếp (Kitchen ticket)'))),
+            DropdownMenuItem(
+                value: 'receipt', child: Text(t('Hóa đơn / Tạm tính'))),
+            DropdownMenuItem(
+                value: 'cup_label', child: Text('Tem ly (Cup label)')),
+            DropdownMenuItem(
+                value: 'product_label',
+                child: Text(t('Tem sản phẩm (Product label)'))),
+            DropdownMenuItem(
+                value: 'runner', child: Text(t('Phiếu chạy món (Runner)'))),
+            DropdownMenuItem(value: 'report', child: Text(t('Báo cáo (Report)'))),
+            DropdownMenuItem(value: 'custom', child: Text(t('Khác (Custom)'))),
+          ],
+          onChanged: (val) => setState(() => p['output'] = val),
+        ),
+      );
+
+  /// Kết nối 'system': chọn tên máy in do hệ điều hành báo về.
+  Widget _printerSystemNameField(PrinterControllers ctrl) => _printerField(
+        t('Máy in hệ điều hành (OS)'),
+        TextField(
+          controller: ctrl.systemName,
+          decoration: InputDecoration(
+            isDense: true,
+            hintText: t('Nhập hoặc chọn tên máy in thật (VD: EPSON TM-T82)'),
+            suffixIcon: _systemPrinters.isEmpty
+                ? null
+                : PopupMenuButton<String>(
+                    icon: Icon(Icons.arrow_drop_down),
+                    onSelected: (val) =>
+                        setState(() => ctrl.systemName.text = val),
+                    itemBuilder: (context) => _systemPrinters
+                        .map((sp) => PopupMenuItem<String>(
+                              value: asText(sp['name']),
+                              child: Text(asText(sp['name'])),
+                            ))
+                        .toList(),
+                  ),
+          ),
+        ),
+      );
+
+  /// Kết nối 'lan': máy in mạng — IP rộng gấp đôi Port.
+  Widget _printerIpPortRow(PrinterControllers ctrl) => _printerFieldRow(
+        500,
+        [
+          _printerField(
+            t('IP máy in (LAN)'),
+            TextField(
+              controller: ctrl.ip,
+              decoration: InputDecoration(
+                  isDense: true, hintText: 'VD: 192.168.1.50'),
+            ),
+          ),
+          _printerField(
+            'Port',
+            TextField(
+              controller: ctrl.port,
+              keyboardType: TextInputType.number,
+              decoration: InputDecoration(isDense: true, hintText: '9100'),
+            ),
+          ),
+        ],
+        flex: [2, 1],
+      );
+
+  Widget _printerLabelLocationRow(PrinterControllers ctrl) => _printerFieldRow(
+        500,
+        [
+          _printerField(
+            t('Nhãn sau tên'),
+            TextField(
+              controller: ctrl.label,
+              decoration: InputDecoration(
+                  isDense: true, hintText: t('VD: Bếp, Bar, Bill')),
+            ),
+          ),
+          _printerField(
+            t('Vị trí'),
+            TextField(
+              controller: ctrl.location,
+              decoration: InputDecoration(
+                  isDense: true, hintText: t('VD: Quầy, Bếp nóng, Bar')),
+            ),
+          ),
+        ],
+      );
+
+  Widget _printerToggles(Map<String, dynamic> p) => Wrap(
+        spacing: 16,
+        runSpacing: 10,
+        children: [
+          _switchRow(t('Đang sử dụng'), p['active'] != false,
+              (val) => setState(() => p['active'] = val)),
+          _switchRow(t('Tự động in'), p['auto'] == true,
+              (val) => setState(() => p['auto'] = val)),
+          _switchRow(t('Có két'), p['cashDrawer'] == true,
+              (val) => setState(() => p['cashDrawer'] = val)),
+          _switchRow(t('Mở két khi in'), p['openDrawerOnPrint'] == true,
+              (val) => setState(() => p['openDrawerOnPrint'] = val)),
+        ],
+      );
+
   Widget _printerEditorRow(
       int index, Map<String, dynamic> p, PrinterControllers ctrl) {
-    final conn = _s(p['connection']);
-    final output = _s(p['output']);
+    final conn = asText(p['connection']);
+    final output = asText(p['output']);
 
     return Container(
       margin: EdgeInsets.only(bottom: 16),
@@ -811,354 +1136,28 @@ class _ConnectionsPanelState extends State<ConnectionsPanel> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Container(
-            padding: EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-            decoration: BoxDecoration(
-              color: DanColors.surface2,
-              borderRadius: BorderRadius.only(
-                topLeft: Radius.circular(11),
-                topRight: Radius.circular(11),
-              ),
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  '${t('Máy in')} #${index + 1} (${ctrl.id.text.isNotEmpty ? ctrl.id.text : t("Chưa đặt tên")})',
-                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13),
-                ),
-                Row(
-                  children: [
-                    if (ctrl.id.text.isNotEmpty)
-                      TextButton.icon(
-                        onPressed: () => _testPrinter(ctrl.id.text.trim()),
-                        icon: Icon(Icons.print_outlined,
-                            size: 16, color: DanColors.brand),
-                        label: Text(t('In thử'),
-                            style: TextStyle(
-                                color: DanColors.brand, fontSize: 12)),
-                      ),
-                    SizedBox(width: 8),
-                    TextButton.icon(
-                      onPressed: () {
-                        setState(() {
-                          _printers.removeAt(index);
-                          _printerControllersList[index].dispose();
-                          _printerControllersList.removeAt(index);
-                        });
-                      },
-                      icon: Icon(Icons.delete_outline,
-                          size: 16, color: DanColors.late),
-                      label: Text(t('Xóa dòng'),
-                          style:
-                              TextStyle(color: DanColors.late, fontSize: 12)),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
+          _printerCardHeader(index, ctrl),
           Padding(
             padding: EdgeInsets.all(16),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                LayoutBuilder(builder: (context, constraints) {
-                  final isWide = constraints.maxWidth > 700;
-
-                  Widget buildIdField() => Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          Text(t('Trạm/Tuyến in (ID)'),
-                              style: TextStyle(
-                                  fontSize: 12, fontWeight: FontWeight.bold)),
-                          SizedBox(height: 6),
-                          TextField(
-                            controller: ctrl.id,
-                            decoration: InputDecoration(
-                                isDense: true,
-                                hintText: 'VD: kitchen, bar, bill'),
-                            onChanged: (val) => setState(() {}),
-                          ),
-                        ],
-                      );
-
-                  Widget buildConnField() => Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          Text(t('Kết nối'),
-                              style: TextStyle(
-                                  fontSize: 12, fontWeight: FontWeight.bold)),
-                          SizedBox(height: 6),
-                          DropdownButtonFormField<String>(
-                            initialValue: conn.isEmpty ? 'browser' : conn,
-                            isExpanded: true,
-                            decoration: InputDecoration(isDense: true),
-                            items: [
-                              DropdownMenuItem(
-                                  value: 'browser',
-                                  child: Text(t('Trình duyệt (Browser)'))),
-                              DropdownMenuItem(
-                                  value: 'lan',
-                                  child: Text('Network Printer (LAN/IP)')),
-                              DropdownMenuItem(
-                                  value: 'system',
-                                  child: Text(t('Máy in hệ điều hành (OS)'))),
-                            ],
-                            onChanged: (val) {
-                              setState(() {
-                                p['connection'] = val;
-                              });
-                            },
-                          ),
-                        ],
-                      );
-
-                  Widget buildOutputField() => Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          Text(t('Định dạng in'),
-                              style: TextStyle(
-                                  fontSize: 12, fontWeight: FontWeight.bold)),
-                          SizedBox(height: 6),
-                          DropdownButtonFormField<String>(
-                            initialValue: output.isEmpty ? 'custom' : output,
-                            isExpanded: true,
-                            decoration: InputDecoration(isDense: true),
-                            items: [
-                              DropdownMenuItem(
-                                  value: 'kitchen_ticket',
-                                  child: Text(t('Phiếu bếp (Kitchen ticket)'))),
-                              DropdownMenuItem(
-                                  value: 'receipt',
-                                  child: Text(t('Hóa đơn / Tạm tính'))),
-                              DropdownMenuItem(
-                                  value: 'cup_label',
-                                  child: Text('Tem ly (Cup label)')),
-                              DropdownMenuItem(
-                                  value: 'product_label',
-                                  child:
-                                      Text(t('Tem sản phẩm (Product label)'))),
-                              DropdownMenuItem(
-                                  value: 'runner',
-                                  child: Text(t('Phiếu chạy món (Runner)'))),
-                              DropdownMenuItem(
-                                  value: 'report',
-                                  child: Text(t('Báo cáo (Report)'))),
-                              DropdownMenuItem(
-                                  value: 'custom',
-                                  child: Text(t('Khác (Custom)'))),
-                            ],
-                            onChanged: (val) {
-                              setState(() {
-                                p['output'] = val;
-                              });
-                            },
-                          ),
-                        ],
-                      );
-
-                  if (isWide) {
-                    return Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Expanded(child: buildIdField()),
-                        SizedBox(width: 12),
-                        Expanded(child: buildConnField()),
-                        SizedBox(width: 12),
-                        Expanded(child: buildOutputField()),
-                      ],
-                    );
-                  } else {
-                    return Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        buildIdField(),
-                        SizedBox(height: 12),
-                        buildConnField(),
-                        SizedBox(height: 12),
-                        buildOutputField(),
-                      ],
-                    );
-                  }
-                }),
+                _printerFieldRow(700, [
+                  _printerIdField(ctrl),
+                  _printerConnField(p, conn),
+                  _printerOutputField(p, output),
+                ]),
                 SizedBox(height: 12),
                 if (conn == 'system') ...[
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Text(t('Máy in hệ điều hành (OS)'),
-                          style: TextStyle(
-                              fontSize: 12, fontWeight: FontWeight.bold)),
-                      SizedBox(height: 6),
-                      TextField(
-                        controller: ctrl.systemName,
-                        decoration: InputDecoration(
-                          isDense: true,
-                          hintText: t(
-                              'Nhập hoặc chọn tên máy in thật (VD: EPSON TM-T82)'),
-                          suffixIcon: _systemPrinters.isEmpty
-                              ? null
-                              : PopupMenuButton<String>(
-                                  icon: Icon(Icons.arrow_drop_down),
-                                  onSelected: (val) {
-                                    setState(() {
-                                      ctrl.systemName.text = val;
-                                    });
-                                  },
-                                  itemBuilder: (context) => _systemPrinters
-                                      .map((sp) => PopupMenuItem<String>(
-                                            value: _s(sp['name']),
-                                            child: Text(_s(sp['name'])),
-                                          ))
-                                      .toList(),
-                                ),
-                        ),
-                      ),
-                    ],
-                  ),
+                  _printerSystemNameField(ctrl),
                   SizedBox(height: 12),
                 ] else if (conn == 'lan') ...[
-                  LayoutBuilder(builder: (context, constraints) {
-                    final isWide = constraints.maxWidth > 500;
-
-                    Widget buildIpField() => Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            Text(t('IP máy in (LAN)'),
-                                style: TextStyle(
-                                    fontSize: 12, fontWeight: FontWeight.bold)),
-                            SizedBox(height: 6),
-                            TextField(
-                              controller: ctrl.ip,
-                              decoration: InputDecoration(
-                                  isDense: true, hintText: 'VD: 192.168.1.50'),
-                            ),
-                          ],
-                        );
-
-                    Widget buildPortField() => Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            Text('Port',
-                                style: TextStyle(
-                                    fontSize: 12, fontWeight: FontWeight.bold)),
-                            SizedBox(height: 6),
-                            TextField(
-                              controller: ctrl.port,
-                              keyboardType: TextInputType.number,
-                              decoration: InputDecoration(
-                                  isDense: true, hintText: '9100'),
-                            ),
-                          ],
-                        );
-
-                    if (isWide) {
-                      return Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Expanded(flex: 2, child: buildIpField()),
-                          SizedBox(width: 12),
-                          Expanded(flex: 1, child: buildPortField()),
-                        ],
-                      );
-                    } else {
-                      return Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          buildIpField(),
-                          SizedBox(height: 12),
-                          buildPortField(),
-                        ],
-                      );
-                    }
-                  }),
+                  _printerIpPortRow(ctrl),
                   SizedBox(height: 12),
                 ],
-                LayoutBuilder(builder: (context, constraints) {
-                  final isWide = constraints.maxWidth > 500;
-
-                  Widget buildLabelField() => Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          Text(t('Nhãn sau tên'),
-                              style: TextStyle(
-                                  fontSize: 12, fontWeight: FontWeight.bold)),
-                          SizedBox(height: 6),
-                          TextField(
-                            controller: ctrl.label,
-                            decoration: InputDecoration(
-                                isDense: true,
-                                hintText: t('VD: Bếp, Bar, Bill')),
-                          ),
-                        ],
-                      );
-
-                  Widget buildLocationField() => Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          Text(t('Vị trí'),
-                              style: TextStyle(
-                                  fontSize: 12, fontWeight: FontWeight.bold)),
-                          SizedBox(height: 6),
-                          TextField(
-                            controller: ctrl.location,
-                            decoration: InputDecoration(
-                                isDense: true,
-                                hintText: t('VD: Quầy, Bếp nóng, Bar')),
-                          ),
-                        ],
-                      );
-
-                  if (isWide) {
-                    return Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Expanded(child: buildLabelField()),
-                        SizedBox(width: 12),
-                        Expanded(child: buildLocationField()),
-                      ],
-                    );
-                  } else {
-                    return Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        buildLabelField(),
-                        SizedBox(height: 12),
-                        buildLocationField(),
-                      ],
-                    );
-                  }
-                }),
+                _printerLabelLocationRow(ctrl),
                 SizedBox(height: 14),
-                Wrap(
-                  spacing: 16,
-                  runSpacing: 10,
-                  children: [
-                    _switchRow(t('Đang sử dụng'), p['active'] != false, (val) {
-                      setState(() {
-                        p['active'] = val;
-                      });
-                    }),
-                    _switchRow(t('Tự động in'), p['auto'] == true, (val) {
-                      setState(() {
-                        p['auto'] = val;
-                      });
-                    }),
-                    _switchRow(t('Có két'), p['cashDrawer'] == true, (val) {
-                      setState(() {
-                        p['cashDrawer'] = val;
-                      });
-                    }),
-                    _switchRow(
-                        t('Mở két khi in'), p['openDrawerOnPrint'] == true,
-                        (val) {
-                      setState(() {
-                        p['openDrawerOnPrint'] = val;
-                      });
-                    }),
-                  ],
-                ),
+                _printerToggles(p),
               ],
             ),
           ),
@@ -1298,18 +1297,18 @@ class _ConnectionsPanelState extends State<ConnectionsPanel> {
   }
 
   Widget _jobRow(Map<String, dynamic> j) {
-    final type = _outputLabels[_s(j['type'])] ?? _s(j['type']);
-    final title = _s(j['title']);
-    final printer = _s(j['printer']);
+    final type = _outputLabels[asText(j['type'])] ?? asText(j['type']);
+    final title = asText(j['title']);
+    final printer = asText(j['printer']);
     final printerLabel = _printers.firstWhere(
-      (p) => _s(p['id']) == printer,
+      (p) => asText(p['id']) == printer,
       orElse: () => <String, dynamic>{},
     );
-    final printerName = _s(printerLabel['label']).isNotEmpty
-        ? _s(printerLabel['label'])
+    final printerName = asText(printerLabel['label']).isNotEmpty
+        ? asText(printerLabel['label'])
         : printer;
-    final status = _s(j['status']);
-    final createdAt = _fmtTime(_s(j['created_at']));
+    final status = asText(j['status']);
+    final createdAt = _fmtTime(asText(j['created_at']));
 
     final (statusLabel, statusColor) = switch (status) {
       'queued' => (t('Chờ in'), DanColors.doing),

@@ -1,90 +1,17 @@
+// Panel "Vận hành" của màn Kế toán (accounting_screen).
+//
+// Trước đây nằm trong screens/management/settings_ops_panels.dart — một file mang
+// tiền tố "settings_" nhưng KHÔNG thuộc màn Cài đặt, đồng thời là vỏ bọc
+// "part of" cho panel Kết nối. Chuyển về đúng module dùng nó.
 import 'package:flutter/material.dart';
 
 import '../../services/api_service.dart';
-import '../../services/socket_service.dart';
 import '../../ui/app_theme.dart';
 import '../../ui/format.dart';
-import 'management_widgets.dart';
-import 'settings_tab.dart';
 import '../../utils/translation.dart';
-
-part 'settings_connections_panel.dart';
-
-String _s(dynamic v) => v?.toString() ?? '';
-bool _b(dynamic v) => v == true || v == 1 || v == '1';
-int _i(dynamic v) => v is num ? v.toInt() : int.tryParse(_s(v)) ?? 0;
-
-// Loại màn hình (device) → tên tiếng Việt để hiển thị ở t("Thiết bị đang kết nối").
-String _connDeviceLabel(String d) {
-  switch (d) {
-    case 'admin':
-      return t('Bảng quản lý');
-    case 'pos':
-      return t('POS nhà hàng');
-    case 'retail':
-      return t('Bán lẻ (Retail POS)');
-    case 'kds':
-      return t('Màn bếp (KDS)');
-    case 'ipad':
-      return t('iPad khách');
-    case 'online':
-      return t('Kênh online');
-    case 'warehouse':
-      return 'Kho';
-    default:
-      return d.isEmpty || d == 'unknown' ? t('Thiết bị') : d;
-  }
-}
-
-String _connRoleLabel(String r) {
-  switch (r) {
-    case 'owner':
-    case 'admin':
-      return 'Admin';
-    case 'manager':
-      return t('Quản lý');
-    case 'cashier':
-      return t('Thu ngân');
-    case 'kitchen':
-      return t('Bếp');
-    case 'warehouse':
-      return t('Thủ kho');
-    default:
-      return r;
-  }
-}
-
-// Ưu tiên hiện người đăng nhập thực; iPad công cộng thì hiện loại màn hình.
-String _connTitle(Map c) {
-  final name = _s(c['user_name']);
-  final role = _s(c['user_role']);
-  if (name.isNotEmpty) {
-    return role.isNotEmpty ? '$name · ${_connRoleLabel(role)}' : name;
-  }
-  return _connDeviceLabel(_s(c['device']));
-}
-
-String _cleanIp(String ip) => ip
-    .replaceFirst('::ffff:', '')
-    .replaceFirst(RegExp(r'^::1$'), 'localhost')
-    .replaceFirst(RegExp(r'^127\.0\.0\.1$'), 'localhost');
-
-IconData _connIcon(String device) {
-  switch (device) {
-    case 'admin':
-      return Icons.dashboard_outlined;
-    case 'kds':
-      return Icons.soup_kitchen_outlined;
-    case 'ipad':
-      return Icons.tablet_mac_outlined;
-    case 'retail':
-      return Icons.storefront_outlined;
-    default:
-      return Icons.point_of_sale_outlined;
-  }
-}
-
-// ── Operations: Tài chính & Hóa đơn ──────────────────────────────────────
+import '../management/management_widgets.dart';
+import '../management/settings_tab.dart';
+import '../management/settings_value_utils.dart';
 
 class OperationsPanel extends StatefulWidget {
   final ApiService api;
@@ -103,6 +30,7 @@ class _OperationsPanelState extends State<OperationsPanel> {
   String? _error;
 
   final _bankName = TextEditingController();
+  final _bankCode = TextEditingController();
   final _bankAccount = TextEditingController();
   final _accountName = TextEditingController();
   final _transferPrefix = TextEditingController();
@@ -133,6 +61,7 @@ class _OperationsPanelState extends State<OperationsPanel> {
   @override
   void dispose() {
     _bankName.dispose();
+    _bankCode.dispose();
     _bankAccount.dispose();
     _accountName.dispose();
     _transferPrefix.dispose();
@@ -146,11 +75,11 @@ class _OperationsPanelState extends State<OperationsPanel> {
   void _initWizard() {
     final tp = _taxProfile;
     _wizStep = 1;
-    _wizTaxCode.text = _s(tp['taxCode']);
-    _wizBusinessName.text = _s(tp['businessName']);
-    _wizTransitionDate.text = _s(tp['transitionDate']).isEmpty
+    _wizTaxCode.text = asText(tp['taxCode']);
+    _wizBusinessName.text = asText(tp['businessName']);
+    _wizTransitionDate.text = asText(tp['transitionDate']).isEmpty
         ? DateTime.now().toIso8601String().split('T')[0]
-        : _s(tp['transitionDate']);
+        : asText(tp['transitionDate']);
 
     _wiz = {
       'locations':
@@ -162,19 +91,19 @@ class _OperationsPanelState extends State<OperationsPanel> {
                   final idx = entry.key;
                   final b = entry.value;
                   return {
-                    'id': _s(b['id']),
-                    'name': _s(b['name']),
-                    'address': _s(b['address']),
-                    'branchId': _s(b['id']),
+                    'id': asText(b['id']),
+                    'name': asText(b['name']),
+                    'address': asText(b['address']),
+                    'branchId': asText(b['id']),
                     'isHeadquarters': idx == 0
                   };
                 }).toList(),
-      'revenueGroup': _i(tp['revenueGroup'] ?? 1),
-      'productScope': _s(tp['productScope'] ?? 'all'),
+      'revenueGroup': asInt(tp['revenueGroup'] ?? 1),
+      'productScope': asText(tp['productScope'] ?? 'all'),
       'scopeValue': (tp['scopeValue'] is List)
           ? (tp['scopeValue'] as List).cast<String>().toList()
           : <String>[],
-      'confirmNoTax': _b(tp['confirmNoTax']),
+      'confirmNoTax': asFlag(tp['confirmNoTax']),
       'taxRates':
           (tp['taxRates'] is List && (tp['taxRates'] as List).isNotEmpty)
               ? (tp['taxRates'] as List)
@@ -261,18 +190,19 @@ class _OperationsPanelState extends State<OperationsPanel> {
         final shifts = opsMap['shifts'] is Map
             ? Map<String, dynamic>.from(opsMap['shifts'])
             : <String, dynamic>{};
-        _bankName.text = _s(pay['bankName']);
-        _bankAccount.text = _s(pay['bankAccount']);
-        _accountName.text = _s(pay['accountName']);
-        _transferPrefix.text = _s(pay['transferPrefix']);
+        _bankName.text = asText(pay['bankName']);
+        _bankCode.text = asText(pay['bankCode']);
+        _bankAccount.text = asText(pay['bankAccount']);
+        _accountName.text = asText(pay['accountName']);
+        _transferPrefix.text = asText(pay['transferPrefix']);
         _methods = (pay['methods'] is List)
             ? (pay['methods'] as List)
                 .whereType<Map>()
                 .map((e) => Map<String, dynamic>.from(e))
                 .toList()
             : [];
-        _requireOpenShift = _b(shifts['requireOpenShift']);
-        _origDrawerCash = _i(shifts['defaultDrawerCash']);
+        _requireOpenShift = asFlag(shifts['requireOpenShift']);
+        _origDrawerCash = asInt(shifts['defaultDrawerCash']);
         _drawerCash.text = _origDrawerCash.toString();
 
         _initWizard();
@@ -325,6 +255,7 @@ class _OperationsPanelState extends State<OperationsPanel> {
         ? Map<String, dynamic>.from(_ops['payment'])
         : <String, dynamic>{};
     pay['bankName'] = _bankName.text.trim();
+    pay['bankCode'] = _bankCode.text.trim().toUpperCase();
     pay['bankAccount'] = _bankAccount.text.trim();
     pay['accountName'] = _accountName.text.trim();
     pay['transferPrefix'] = _transferPrefix.text.trim();
@@ -502,13 +433,13 @@ class _OperationsPanelState extends State<OperationsPanel> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        _s(locs[idx]['name']),
+                        asText(locs[idx]['name']),
                         style: TextStyle(
                             fontWeight: FontWeight.bold, fontSize: 13.5),
                       ),
                       SizedBox(height: 8),
                       TextFormField(
-                        initialValue: _s(locs[idx]['address']),
+                        initialValue: asText(locs[idx]['address']),
                         decoration: InputDecoration(
                           hintText: t('Mã địa điểm kinh doanh...'),
                           isDense: true,
@@ -518,7 +449,7 @@ class _OperationsPanelState extends State<OperationsPanel> {
                       ),
                       SizedBox(height: 8),
                       RadioGroup<bool>(
-                        groupValue: _b(locs[idx]['isHeadquarters']),
+                        groupValue: asFlag(locs[idx]['isHeadquarters']),
                         onChanged: (v) {
                           setState(() {
                             for (var l in locs) {
@@ -549,7 +480,7 @@ class _OperationsPanelState extends State<OperationsPanel> {
           ),
         );
       case 4:
-        final currentGroup = _i(_wiz['revenueGroup']);
+        final currentGroup = asInt(_wiz['revenueGroup']);
         final groups = [
           {
             'id': 1,
@@ -607,7 +538,7 @@ class _OperationsPanelState extends State<OperationsPanel> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          _s(g['name']),
+                          asText(g['name']),
                           style: TextStyle(
                             fontWeight: FontWeight.bold,
                             fontSize: 13,
@@ -618,7 +549,7 @@ class _OperationsPanelState extends State<OperationsPanel> {
                         ),
                         SizedBox(height: 4),
                         Text(
-                          _s(g['desc']),
+                          asText(g['desc']),
                           style:
                               TextStyle(fontSize: 11.5, color: DanColors.muted),
                         ),
@@ -635,7 +566,7 @@ class _OperationsPanelState extends State<OperationsPanel> {
         );
       case 5:
         final rates = (_wiz['taxRates'] as List);
-        final scope = _s(_wiz['productScope']);
+        final scope = asText(_wiz['productScope']);
         return Panel(
           title: t('Phạm vi & Tỷ lệ thuế suất'),
           child: Column(
@@ -673,16 +604,16 @@ class _OperationsPanelState extends State<OperationsPanel> {
                   children: [
                     for (final cat in _categories) ...[
                       FilterChip(
-                        label: Text('${_s(cat['icon'])} ${_s(cat['name'])}'),
+                        label: Text('${asText(cat['icon'])} ${asText(cat['name'])}'),
                         selected: (_wiz['scopeValue'] as List)
-                            .contains(_s(cat['id'])),
+                            .contains(asText(cat['id'])),
                         onSelected: (selected) {
                           setState(() {
                             final list = (_wiz['scopeValue'] as List);
                             if (selected) {
-                              list.add(_s(cat['id']));
+                              list.add(asText(cat['id']));
                             } else {
-                              list.remove(_s(cat['id']));
+                              list.remove(asText(cat['id']));
                             }
                           });
                         },
@@ -694,7 +625,7 @@ class _OperationsPanelState extends State<OperationsPanel> {
                 Row(
                   children: [
                     Checkbox(
-                      value: _b(_wiz['confirmNoTax']),
+                      value: asFlag(_wiz['confirmNoTax']),
                       onChanged: (v) =>
                           setState(() => _wiz['confirmNoTax'] = v),
                     ),
@@ -747,7 +678,7 @@ class _OperationsPanelState extends State<OperationsPanel> {
                       children: [
                         Padding(
                           padding: EdgeInsets.symmetric(vertical: 6),
-                          child: Text(_s(rates[idx]['name']),
+                          child: Text(asText(rates[idx]['name']),
                               style: TextStyle(
                                   fontSize: 12.5, fontWeight: FontWeight.bold)),
                         ),
@@ -755,7 +686,7 @@ class _OperationsPanelState extends State<OperationsPanel> {
                           padding:
                               EdgeInsets.symmetric(vertical: 2, horizontal: 4),
                           child: TextFormField(
-                            initialValue: _s(rates[idx]['vat']),
+                            initialValue: asText(rates[idx]['vat']),
                             keyboardType:
                                 TextInputType.numberWithOptions(decimal: true),
                             textAlign: TextAlign.right,
@@ -770,7 +701,7 @@ class _OperationsPanelState extends State<OperationsPanel> {
                           padding:
                               EdgeInsets.symmetric(vertical: 2, horizontal: 4),
                           child: TextFormField(
-                            initialValue: _s(rates[idx]['pit']),
+                            initialValue: asText(rates[idx]['pit']),
                             keyboardType:
                                 TextInputType.numberWithOptions(decimal: true),
                             textAlign: TextAlign.right,
@@ -794,7 +725,7 @@ class _OperationsPanelState extends State<OperationsPanel> {
         Map<String, dynamic> hq = {};
         if (_wiz['locations'] is List) {
           for (final l in _wiz['locations'] as List) {
-            if (l is Map && _b(l['isHeadquarters'])) {
+            if (l is Map && asFlag(l['isHeadquarters'])) {
               hq = Map<String, dynamic>.from(l);
               break;
             }
@@ -836,7 +767,7 @@ class _OperationsPanelState extends State<OperationsPanel> {
                         t('Ngày bắt đầu kê khai'), _wizTransitionDate.text),
                     _confirmRow(t('Phân loại doanh thu'), revGroupName),
                     _confirmRow(t('Trụ sở chính'),
-                        '${_s(hq['name'])} - ${_s(hq['address']).isEmpty ? 'Chưa nhập' : _s(hq['address'])}'),
+                        '${asText(hq['name'])} - ${asText(hq['address']).isEmpty ? 'Chưa nhập' : asText(hq['address'])}'),
                   ],
                 ),
               ),
@@ -844,7 +775,7 @@ class _OperationsPanelState extends State<OperationsPanel> {
               Row(
                 children: [
                   Checkbox(
-                    value: _b(_wiz['confirmFinal']),
+                    value: asFlag(_wiz['confirmFinal']),
                     onChanged: (v) => setState(() => _wiz['confirmFinal'] = v),
                   ),
                   Expanded(
@@ -899,7 +830,7 @@ class _OperationsPanelState extends State<OperationsPanel> {
           SizedBox.shrink(),
         if (isFinish)
           FilledButton(
-            onPressed: _b(_wiz['confirmFinal']) ? _finishWizard : null,
+            onPressed: asFlag(_wiz['confirmFinal']) ? _finishWizard : null,
             child: Text(t('Hoàn thành & Kích hoạt')),
           )
         else
@@ -946,7 +877,7 @@ class _OperationsPanelState extends State<OperationsPanel> {
     Map<String, dynamic> hq = {};
     if (p['locations'] is List) {
       for (final l in p['locations'] as List) {
-        if (l is Map && _b(l['isHeadquarters'])) {
+        if (l is Map && asFlag(l['isHeadquarters'])) {
           hq = Map<String, dynamic>.from(l);
           break;
         }
@@ -987,12 +918,12 @@ class _OperationsPanelState extends State<OperationsPanel> {
                 ),
               ),
               SizedBox(height: 12),
-              _confirmRow('MST', _s(p['taxCode'])),
-              _confirmRow(t('Tên Hộ kinh doanh'), _s(p['businessName'])),
-              _confirmRow(t('Ngày bắt đầu kê khai'), _s(p['transitionDate'])),
+              _confirmRow('MST', asText(p['taxCode'])),
+              _confirmRow(t('Tên Hộ kinh doanh'), asText(p['businessName'])),
+              _confirmRow(t('Ngày bắt đầu kê khai'), asText(p['transitionDate'])),
               _confirmRow(t('Quy mô doanh thu'), revGroupName),
               _confirmRow(t('Trụ sở chính'),
-                  '${_s(hq['name'])} - ${_s(hq['address'])}'),
+                  '${asText(hq['name'])} - ${asText(hq['address'])}'),
             ],
           ),
         ),
@@ -1005,13 +936,13 @@ class _OperationsPanelState extends State<OperationsPanel> {
                   in (p['locations'] is List ? p['locations'] as List : []))
                 ListTile(
                   contentPadding: EdgeInsets.zero,
-                  title: Text(_s(loc['name']),
+                  title: Text(asText(loc['name']),
                       style: TextStyle(
                           fontWeight: FontWeight.bold, fontSize: 13.5)),
                   subtitle: Text(
-                      'Mã địa điểm: ${_s(loc['address']).isEmpty ? 'Chưa gán' : _s(loc['address'])}',
+                      'Mã địa điểm: ${asText(loc['address']).isEmpty ? 'Chưa gán' : asText(loc['address'])}',
                       style: TextStyle(fontSize: 11.5, color: DanColors.muted)),
-                  trailing: _b(loc['isHeadquarters'])
+                  trailing: asFlag(loc['isHeadquarters'])
                       ? Chip(
                           label: Text(t('Trụ sở chính'),
                               style: TextStyle(fontSize: 10)))
@@ -1056,19 +987,19 @@ class _OperationsPanelState extends State<OperationsPanel> {
                   children: [
                     Padding(
                       padding: EdgeInsets.symmetric(vertical: 6),
-                      child: Text(_s(tr['name']),
+                      child: Text(asText(tr['name']),
                           style: TextStyle(
                               fontSize: 12.5, fontWeight: FontWeight.bold)),
                     ),
                     Padding(
                       padding: EdgeInsets.symmetric(vertical: 6),
-                      child: Text('${_s(tr['vat'])}%',
+                      child: Text('${asText(tr['vat'])}%',
                           style: TextStyle(fontSize: 12.5),
                           textAlign: TextAlign.right),
                     ),
                     Padding(
                       padding: EdgeInsets.symmetric(vertical: 6),
-                      child: Text('${_s(tr['pit'])}%',
+                      child: Text('${asText(tr['pit'])}%',
                           style: TextStyle(fontSize: 12.5),
                           textAlign: TextAlign.right),
                     ),
@@ -1082,7 +1013,7 @@ class _OperationsPanelState extends State<OperationsPanel> {
   }
 
   Widget _buildTaxProfile() {
-    if (_b(_taxProfile['hasProfile'])) {
+    if (asFlag(_taxProfile['hasProfile'])) {
       return _buildTaxDashboard();
     }
     return Column(
@@ -1094,10 +1025,10 @@ class _OperationsPanelState extends State<OperationsPanel> {
   }
 
   Widget _buildEInvoiceConfig() {
-    final enabled = _b(_misaInteg['enabled']);
-    final username = _s(_misaInteg['username']);
-    final series = _s(_einvoice['series']);
-    final template = _s(_einvoice['template']);
+    final enabled = asFlag(_misaInteg['enabled']);
+    final username = asText(_misaInteg['username']);
+    final series = asText(_einvoice['series']);
+    final template = asText(_einvoice['template']);
 
     return Panel(
       title: t('Cấu hình kết nối Hóa đơn điện tử (MISA meInvoice)'),
@@ -1230,7 +1161,13 @@ class _OperationsPanelState extends State<OperationsPanel> {
                 child: Column(
                   children: [
                     _field(t('Tên ngân hàng'), _bankName),
-                    _field(t('Số tài khoản'), _bankAccount),
+                    _field(t('Mã ngân hàng (napas) — dùng để tạo mã QR'),
+                        _bankCode,
+                        hint: t(
+                            'VD: BIDV, VCB, MB, ACB... — PHẢI đúng ngân hàng thật, nếu không QR sẽ tạo sai ngân hàng và bị từ chối khi quét')),
+                    _field(t('Số tài khoản'), _bankAccount,
+                        hint: t(
+                            'Một số ngân hàng (BIDV...) yêu cầu Tài khoản ảo (VA) để tạo QR — không phải số tài khoản thường')),
                     _field(t('Tên chủ tài khoản'), _accountName),
                     _field(t('Tiền tố nội dung CK (memo)'), _transferPrefix,
                         hint: 'VD: DANBILL'),
@@ -1246,12 +1183,12 @@ class _OperationsPanelState extends State<OperationsPanel> {
                       SwitchListTile(
                         contentPadding: EdgeInsets.zero,
                         dense: true,
-                        value: _b(_methods[i]['enabled']),
+                        value: asFlag(_methods[i]['enabled']),
                         activeThumbColor: DanColors.done,
-                        title: Text(_s(_methods[i]['label']),
+                        title: Text(asText(_methods[i]['label']),
                             style: TextStyle(
                                 fontSize: 13.5, fontWeight: FontWeight.w700)),
-                        subtitle: Text(_kindLabel(_s(_methods[i]['kind'])),
+                        subtitle: Text(_kindLabel(asText(_methods[i]['kind'])),
                             style: TextStyle(
                                 fontSize: 11, color: DanColors.faint)),
                         onChanged: (v) =>
@@ -1350,4 +1287,3 @@ class _OperationsPanelState extends State<OperationsPanel> {
 }
 
 // ── Connections: Kết nối ─────────────────────────────────────────────────
-

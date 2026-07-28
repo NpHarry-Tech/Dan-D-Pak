@@ -1,39 +1,12 @@
-// GENERATED SPLIT of settings_more_panels.dart — panel In ấn + Thiết bị khách (part of, cùng library).
-part of 'settings_more_panels.dart';
+// Panel "Thiết bị khách" trong màn Cài đặt — mật khẩu mở khoá màn tự gọi món.
+import 'package:flutter/material.dart';
 
-class PrintSettingsPanel extends StatelessWidget {
-  final ApiService api;
-  PrintSettingsPanel({super.key, required this.api});
-
-  @override
-  Widget build(BuildContext context) {
-    return SettingsPanelScaffold(
-      title: t('Bill & Tem nhãn'),
-      child: ListView(
-        padding: EdgeInsets.all(18),
-        children: [
-          Panel(
-            title: t('Thiết kế mẫu in'),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(t('Cấu hình máy in, in thử và lịch sử lệnh in đã có trong module "Máy in" ở màn hình ứng dụng.'),
-                    style: TextStyle(
-                        fontSize: 13, color: DanColors.muted, height: 1.5)),
-                SizedBox(height: 10),
-                Text(t('Trình thiết kế trực quan mẫu hóa đơn & tem nhãn (kéo-thả) sẽ được bổ sung — hiện dùng mẫu mặc định của hệ thống.'),
-                    style: TextStyle(
-                        fontSize: 12.5, color: DanColors.faint, height: 1.5)),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// ── Devices (Thiết bị khách) ───────────────────────────────────────────────
+import '../../services/api_service.dart';
+import '../../ui/app_theme.dart';
+import '../../utils/translation.dart';
+import 'management_widgets.dart';
+import 'settings_tab.dart';
+import 'settings_value_utils.dart';
 
 class DevicesPanel extends StatefulWidget {
   final ApiService api;
@@ -76,7 +49,7 @@ class _DevicesPanelState extends State<DevicesPanel> {
       final s = await widget.api.getAppSettings();
       if (!mounted) return;
       setState(() {
-        _currentPin = _s(s['ipad_staff_pin']);
+        _currentPin = asText(s['ipad_staff_pin']);
         _isDefaultPin = s['ipad_pin_is_default'] == true;
         _loading = false;
         _error = null;

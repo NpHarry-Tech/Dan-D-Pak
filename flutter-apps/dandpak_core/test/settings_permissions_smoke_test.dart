@@ -3,12 +3,28 @@ import 'package:dandpak_core/src/services/api_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+/// Giả lập server ở tầng HTTP, KHÔNG override từng hàm nghiệp vụ.
+///
+/// Trước đây fake này `@override getSettingsUsers()` / `getPermissions()`. Cách
+/// đó ngừng hoạt động khi ApiService được tách thành các `extension` (xem
+/// services/api/*.dart): phương thức extension trong Dart được nối TĨNH theo
+/// kiểu khai báo, KHÔNG phải virtual — nên bản override không bao giờ được gọi,
+/// panel vẫn đi gọi HTTP thật (trong widget test luôn trả 400), màn hình rỗng và
+/// `find.text('Sửa')` không thấy gì → test chết bằng "Bad state: No element".
+///
+/// `getJson` là method thường của DanDpakApiClient nên override được. Chặn ở đó
+/// vừa đúng chỗ, vừa không phụ thuộc việc hàm nghiệp vụ nằm trong class hay
+/// extension — refactor sau này không làm test âm thầm mất tác dụng nữa.
 class _FakeApi extends ApiService {
   @override
-  Future<List<dynamic>> getSettingsUsers() async => [];
-
-  @override
-  Future<Map<String, dynamic>> getPermissions() async => {
+  Future<dynamic> getJson(
+    String path, {
+    Duration timeout = const Duration(seconds: 30),
+    String? errorMessage,
+  }) async {
+    if (path.startsWith('/api/settings/users')) return <dynamic>[];
+    if (path.startsWith('/api/settings/permissions')) {
+      return {
         'catalog': [
           {'key': 'module.pos'},
           {'key': 'sell'},
@@ -19,6 +35,9 @@ class _FakeApi extends ApiService {
           'manager': ['module.pos', 'sell'],
         },
       };
+    }
+    return <dynamic>[];
+  }
 }
 
 void main() {

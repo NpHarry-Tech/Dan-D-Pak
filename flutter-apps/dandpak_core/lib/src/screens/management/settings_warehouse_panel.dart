@@ -1,5 +1,12 @@
-// GENERATED SPLIT of settings_more_panels.dart — panel Cấu hình kho (part of, cùng library).
-part of 'settings_more_panels.dart';
+// Panel "Kho & kênh bán" trong màn Cài đặt.
+import 'package:flutter/material.dart';
+
+import '../../services/api_service.dart';
+import '../../ui/app_theme.dart';
+import '../../utils/translation.dart';
+import '../warehouse/warehouse_screen.dart';
+import 'settings_tab.dart';
+import 'settings_value_utils.dart';
 
 class WarehouseSettingsPanel extends StatefulWidget {
   final ApiService api;
@@ -95,13 +102,13 @@ class _WarehouseSettingsPanelState extends State<WarehouseSettingsPanel> {
 
         // If we had a selected ID, check if it still exists, otherwise clear selection
         if (_selectedId != null &&
-            !_warehouses.any((w) => _s(w['id']) == _selectedId)) {
+            !_warehouses.any((w) => asText(w['id']) == _selectedId)) {
           _selectedId = null;
         }
 
         // Set form baseline from selected warehouse or default to new
         if (_selectedId != null) {
-          final wh = _warehouses.firstWhere((w) => _s(w['id']) == _selectedId);
+          final wh = _warehouses.firstWhere((w) => asText(w['id']) == _selectedId);
           _selectWarehouse(wh);
         } else {
           _selectWarehouse(null);
@@ -127,16 +134,16 @@ class _WarehouseSettingsPanelState extends State<WarehouseSettingsPanel> {
         _active = true;
         _selectedChannels = {'retail'};
       } else {
-        _selectedId = _s(wh['id']);
-        _nameCtrl.text = _s(wh['name']);
-        _codeCtrl.text = _s(wh['code']);
-        _sortCtrl.text = wh['sort'] != null ? _s(wh['sort']) : '';
-        _type = _s(wh['type']) == 'kitchen' ? 'kitchen' : 'retail';
-        _active = _b(wh['active']);
+        _selectedId = asText(wh['id']);
+        _nameCtrl.text = asText(wh['name']);
+        _codeCtrl.text = asText(wh['code']);
+        _sortCtrl.text = wh['sort'] != null ? asText(wh['sort']) : '';
+        _type = asText(wh['type']) == 'kitchen' ? 'kitchen' : 'retail';
+        _active = asFlag(wh['active']);
 
         final channelsList = wh['sales_channels'] as List?;
         _selectedChannels = channelsList != null
-            ? channelsList.map((e) => _s(e)).toSet()
+            ? channelsList.map((e) => asText(e)).toSet()
             : <String>{};
       }
     });
@@ -226,7 +233,7 @@ class _WarehouseSettingsPanelState extends State<WarehouseSettingsPanel> {
       spacing: 4,
       runSpacing: 4,
       children: channelsList.map((c) {
-        final key = _s(c);
+        final key = asText(c);
         final found = _allChannels.firstWhere((ch) => ch.$1 == key,
             orElse: () => ('', key));
         return Container(
@@ -290,21 +297,21 @@ class _WarehouseSettingsPanelState extends State<WarehouseSettingsPanel> {
                       children: [
                         Expanded(
                           child: Text(
-                            _s(b['name']) +
-                                (_n(b['item_count']) > 0
-                                    ? ' · ${_n(b['item_count']).toInt()} giá riêng'
+                            asText(b['name']) +
+                                (asNum(b['item_count']) > 0
+                                    ? ' · ${asNum(b['item_count']).toInt()} giá riêng'
                                     : ''),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
                                 fontSize: 12.5,
                                 fontWeight: FontWeight.w700,
-                                color: _s(b['status']) == 'inactive'
+                                color: asText(b['status']) == 'inactive'
                                     ? DanColors.faint
                                     : DanColors.text),
                           ),
                         ),
-                        if (_b(b['builtin']))
+                        if (asFlag(b['builtin']))
                           Container(
                             padding: EdgeInsets.symmetric(
                                 horizontal: 7, vertical: 2),
@@ -328,7 +335,7 @@ class _WarehouseSettingsPanelState extends State<WarehouseSettingsPanel> {
                           SizedBox(
                             height: 24,
                             child: Switch(
-                              value: _s(b['status']) != 'inactive',
+                              value: asText(b['status']) != 'inactive',
                               activeThumbColor: DanColors.brand,
                               onChanged: (v) => _savePriceBook({
                                 'id': b['id'],
@@ -359,10 +366,10 @@ class _WarehouseSettingsPanelState extends State<WarehouseSettingsPanel> {
   // ── Cấu hình bán retail: kho + bảng giá cho Retail POS / Retail-F&B ──────
   Map<String, dynamic> _normalizeRetailCfg(Map<String, dynamic> raw) {
     Map<String, dynamic> sec(dynamic v) => {
-          'warehouse_id': _s(v is Map ? v['warehouse_id'] : ''),
-          'price_book_id': _s(v is Map ? v['price_book_id'] : '').isEmpty
+          'warehouse_id': asText(v is Map ? v['warehouse_id'] : ''),
+          'price_book_id': asText(v is Map ? v['price_book_id'] : '').isEmpty
               ? 'default'
-              : _s(v is Map ? v['price_book_id'] : 'default'),
+              : asText(v is Map ? v['price_book_id'] : 'default'),
         };
     return {
       'sync': raw['sync'] != false,
@@ -389,20 +396,20 @@ class _WarehouseSettingsPanelState extends State<WarehouseSettingsPanel> {
   Widget _retailConfigSection() {
     final sync = _retailCfg['sync'] != false;
     final retailWhs =
-        _warehouses.where((w) => _s(w['type']) != 'kitchen').toList();
+        _warehouses.where((w) => asText(w['type']) != 'kitchen').toList();
     final activeBooks = _priceBooks
         .where((b) =>
-            _s(b['status']) != 'inactive' || _b(b['builtin']))
+            asText(b['status']) != 'inactive' || asFlag(b['builtin']))
         .toList();
 
     Widget sectionRow(String label, String key, {required bool enabled}) {
       final sec = Map<String, dynamic>.from(_retailCfg[key] as Map? ?? {});
-      final whValue = retailWhs.any((w) => _s(w['id']) == _s(sec['warehouse_id']))
-          ? _s(sec['warehouse_id'])
+      final whValue = retailWhs.any((w) => asText(w['id']) == asText(sec['warehouse_id']))
+          ? asText(sec['warehouse_id'])
           : '';
       final bookValue =
-          activeBooks.any((b) => _s(b['id']) == _s(sec['price_book_id']))
-              ? _s(sec['price_book_id'])
+          activeBooks.any((b) => asText(b['id']) == asText(sec['price_book_id']))
+              ? asText(sec['price_book_id'])
               : 'default';
       void update(String field, String value) {
         sec[field] = value;
@@ -442,8 +449,8 @@ class _WarehouseSettingsPanelState extends State<WarehouseSettingsPanel> {
                           value: '', child: Text(t('Theo kênh bán'))),
                       for (final w in retailWhs)
                         DropdownMenuItem(
-                            value: _s(w['id']),
-                            child: Text(_s(w['name']),
+                            value: asText(w['id']),
+                            child: Text(asText(w['name']),
                                 overflow: TextOverflow.ellipsis)),
                     ],
                     onChanged: enabled
@@ -464,8 +471,8 @@ class _WarehouseSettingsPanelState extends State<WarehouseSettingsPanel> {
                     items: [
                       for (final b in activeBooks)
                         DropdownMenuItem(
-                            value: _s(b['id']),
-                            child: Text(_s(b['name']),
+                            value: asText(b['id']),
+                            child: Text(asText(b['name']),
                                 overflow: TextOverflow.ellipsis)),
                     ],
                     onChanged: enabled
@@ -541,7 +548,7 @@ class _WarehouseSettingsPanelState extends State<WarehouseSettingsPanel> {
   }
 
   Future<void> _editPriceBook({Map<String, dynamic>? existing}) async {
-    final ctrl = TextEditingController(text: _s(existing?['name']));
+    final ctrl = TextEditingController(text: asText(existing?['name']));
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -599,7 +606,7 @@ class _WarehouseSettingsPanelState extends State<WarehouseSettingsPanel> {
         title: Text(t('Xóa bảng giá'),
             style: TextStyle(fontWeight: FontWeight.w900, fontSize: 17)),
         content: Text(t(
-            'Xóa "${_s(b['name'])}"? Mọi giá riêng trong bảng này sẽ mất, sản phẩm quay về giá chung.')),
+            'Xóa "${asText(b['name'])}"? Mọi giá riêng trong bảng này sẽ mất, sản phẩm quay về giá chung.')),
         actions: [
           TextButton(
               onPressed: () => Navigator.of(ctx).pop(false),
@@ -613,7 +620,7 @@ class _WarehouseSettingsPanelState extends State<WarehouseSettingsPanel> {
     );
     if (ok != true) return;
     try {
-      await widget.api.deletePriceBook(_s(b['id']));
+      await widget.api.deletePriceBook(asText(b['id']));
       _load();
     } catch (e) {
       if (!mounted) return;
@@ -653,9 +660,9 @@ class _WarehouseSettingsPanelState extends State<WarehouseSettingsPanel> {
                 separatorBuilder: (_, __) => SizedBox(height: 8),
                 itemBuilder: (_, i) {
                   final w = _warehouses[i];
-                  final isSelected = _s(w['id']) == _selectedId;
-                  final kitchen = _s(w['type']) == 'kitchen';
-                  final active = _b(w['active']);
+                  final isSelected = asText(w['id']) == _selectedId;
+                  final kitchen = asText(w['type']) == 'kitchen';
+                  final active = asFlag(w['active']);
 
                   return InkWell(
                     onTap: () => _selectWarehouse(w),
@@ -694,7 +701,7 @@ class _WarehouseSettingsPanelState extends State<WarehouseSettingsPanel> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  _s(w['name']),
+                                  asText(w['name']),
                                   style: TextStyle(
                                     fontSize: 14,
                                     fontWeight: isSelected
@@ -705,7 +712,7 @@ class _WarehouseSettingsPanelState extends State<WarehouseSettingsPanel> {
                                 ),
                                 SizedBox(height: 3),
                                 Text(
-                                  '${kitchen ? t('Kho bếp') : t('Kho retail')} · ${_s(w['code']).isNotEmpty ? _s(w['code']) : _s(w['id'])}',
+                                  '${kitchen ? t('Kho bếp') : t('Kho retail')} · ${asText(w['code']).isNotEmpty ? asText(w['code']) : asText(w['id'])}',
                                   style: TextStyle(
                                       fontSize: 11.5, color: DanColors.faint),
                                 ),

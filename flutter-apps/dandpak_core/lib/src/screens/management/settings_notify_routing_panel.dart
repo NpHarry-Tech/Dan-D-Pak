@@ -9,9 +9,8 @@ import '../../ui/sound_player.dart';
 import 'management_widgets.dart';
 import 'settings_tab.dart';
 import '../../utils/translation.dart';
+import 'settings_value_utils.dart';
 
-String _s(dynamic v) => v?.toString() ?? '';
-bool _b(dynamic v) => v == true || v == 1 || v == '1';
 
 /// Notification categories that can be routed. [key, icon, label].
 List<List<String>> get _notifyCategories => [
@@ -128,11 +127,11 @@ class _NotificationSettingsPanelState extends State<NotificationSettingsPanel> {
       final evRaw = soundMap['events'] is Map
           ? Map<String, dynamic>.from(soundMap['events'])
           : <String, dynamic>{};
-      final catalogIds = catalog.map((c) => _s(c['id'])).toSet();
+      final catalogIds = catalog.map((c) => asText(c['id'])).toSet();
 
       _soundsCatalog = catalog;
       _soundEnabled =
-          soundMap['enabled'] == null ? true : _b(soundMap['enabled']);
+          soundMap['enabled'] == null ? true : asFlag(soundMap['enabled']);
       _soundVolume = (soundMap['volume'] is num)
           ? (soundMap['volume'] as num).toDouble().clamp(0.0, 1.0)
           : 1.0;
@@ -143,14 +142,14 @@ class _NotificationSettingsPanelState extends State<NotificationSettingsPanel> {
         final saved = evRaw[key] is Map
             ? Map<String, dynamic>.from(evRaw[key])
             : <String, dynamic>{};
-        var sound = _s(saved['sound']).isNotEmpty ? _s(saved['sound']) : e[3];
+        var sound = asText(saved['sound']).isNotEmpty ? asText(saved['sound']) : e[3];
         if (!catalogIds.contains(sound)) {
           sound = catalogIds.contains(e[3])
               ? e[3]
-              : (catalog.isNotEmpty ? _s(catalog.first['id']) : e[3]);
+              : (catalog.isNotEmpty ? asText(catalog.first['id']) : e[3]);
         }
         _soundEventsMap[key] = {
-          'enabled': saved['enabled'] == null ? true : _b(saved['enabled']),
+          'enabled': saved['enabled'] == null ? true : asFlag(saved['enabled']),
           'sound': sound,
         };
       }
@@ -169,7 +168,7 @@ class _NotificationSettingsPanelState extends State<NotificationSettingsPanel> {
         final key = c[0];
         final saved = rolesRaw[key];
         if (saved is List) {
-          _routingRoles[key] = saved.map(_s).where((e) => e.isNotEmpty).toSet();
+          _routingRoles[key] = saved.map(asText).where((e) => e.isNotEmpty).toSet();
         } else {
           _routingRoles[key] = {..._defaultRoleRouting[key]!};
         }
@@ -188,7 +187,7 @@ class _NotificationSettingsPanelState extends State<NotificationSettingsPanel> {
           if (raw == 1 || raw == '1') cleaned[c[0]] = true;
           if (raw == 0 || raw == '0') cleaned[c[0]] = false;
         }
-        if (cleaned.isNotEmpty) _routingOverrides[_s(uid)] = cleaned;
+        if (cleaned.isNotEmpty) _routingOverrides[asText(uid)] = cleaned;
       });
 
       _users = usersRaw
@@ -252,7 +251,7 @@ class _NotificationSettingsPanelState extends State<NotificationSettingsPanel> {
 
   String _soundName(String id) {
     for (final c in _soundsCatalog) {
-      if (_s(c['id']) == id) return _s(c['name']);
+      if (asText(c['id']) == id) return asText(c['name']);
     }
     return id;
   }
@@ -428,10 +427,10 @@ class _NotificationSettingsPanelState extends State<NotificationSettingsPanel> {
   Widget _eventRow(List<String> ev) {
     final key = ev[0];
     final e = _soundEventsMap[key] ?? {'enabled': true, 'sound': ev[3]};
-    final on = _b(e['enabled']) && _soundEnabled;
-    final sound = _s(e['sound']);
+    final on = asFlag(e['enabled']) && _soundEnabled;
+    final sound = asText(e['sound']);
     final validSound =
-        _soundsCatalog.any((c) => _s(c['id']) == sound) ? sound : null;
+        _soundsCatalog.any((c) => asText(c['id']) == sound) ? sound : null;
     return Row(
       children: [
         Text(ev[1], style: TextStyle(fontSize: 22)),
@@ -466,9 +465,9 @@ class _NotificationSettingsPanelState extends State<NotificationSettingsPanel> {
             items: [
               for (final c in _soundsCatalog)
                 DropdownMenuItem(
-                    value: _s(c['id']),
+                    value: asText(c['id']),
                     child:
-                        Text(_s(c['name']), overflow: TextOverflow.ellipsis)),
+                        Text(asText(c['name']), overflow: TextOverflow.ellipsis)),
             ],
             onChanged: on
                 ? (v) {
@@ -486,7 +485,7 @@ class _NotificationSettingsPanelState extends State<NotificationSettingsPanel> {
         ),
         SizedBox(width: 8),
         Switch(
-          value: _b(e['enabled']),
+          value: asFlag(e['enabled']),
           activeThumbColor: DanColors.done,
           onChanged: _soundEnabled
               ? (v) => setState(() => _soundEventsMap[key] = {
@@ -584,9 +583,9 @@ class _NotificationSettingsPanelState extends State<NotificationSettingsPanel> {
   }
 
   Widget _userOverrideTile(Map<String, dynamic> u) {
-    final uid = _s(u['id']).isNotEmpty ? _s(u['id']) : _s(u['username']);
-    final role = _s(u['role']);
-    final name = _s(u['name']).isNotEmpty ? _s(u['name']) : _s(u['username']);
+    final uid = asText(u['id']).isNotEmpty ? asText(u['id']) : asText(u['username']);
+    final role = asText(u['role']);
+    final name = asText(u['name']).isNotEmpty ? asText(u['name']) : asText(u['username']);
     final ovCount = _routingOverrides[uid]?.length ?? 0;
 
     return Theme(

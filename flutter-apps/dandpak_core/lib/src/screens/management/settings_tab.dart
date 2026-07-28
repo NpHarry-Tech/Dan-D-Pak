@@ -8,15 +8,18 @@ import '../../widgets/dan_top_bar.dart';
 import '../../widgets/manager_pin_dialog.dart';
 import 'management_widgets.dart';
 import 'menu_tab.dart';
+import 'settings_branches_panel.dart';
+import 'settings_connections_panel.dart';
 import 'settings_customer_display_panel.dart';
+import 'settings_devices_panel.dart';
+import 'settings_integrations_panel.dart';
 import 'settings_loyalty_panel.dart';
-import 'settings_more_panels.dart' hide PrintSettingsPanel;
 import 'settings_notify_routing_panel.dart';
-import 'settings_ops_panels.dart';
-import 'settings_panels.dart' hide UsersPanel;
 import 'settings_print_panel.dart';
+import 'settings_tables_panel.dart';
 import 'settings_promotions_panel.dart';
 import 'settings_users_panel.dart';
+import 'settings_warehouse_panel.dart';
 import '../../utils/translation.dart';
 
 /// Management → Cài đặt page. Left sub-nav (mirrors the web settings shell)

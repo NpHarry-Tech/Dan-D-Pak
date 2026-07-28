@@ -4,17 +4,9 @@ import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import '../../app_defaults.dart';
 import '../../services/api_service.dart';
 import '../../ui/app_theme.dart';
-import '../warehouse/warehouse_screen.dart';
-import 'management_widgets.dart';
 import 'settings_tab.dart';
+import 'settings_value_utils.dart';
 import '../../utils/translation.dart';
-
-part 'settings_warehouse_panel.dart';
-part 'settings_print_devices_panel.dart';
-
-String _s(dynamic v) => v?.toString() ?? '';
-bool _b(dynamic v) => v == true || v == 1 || v == '1';
-num _n(dynamic v) => v is num ? v : num.tryParse(_s(v)) ?? 0;
 
 String _prettyField(String key) {
   final withSpaces = key
@@ -570,24 +562,290 @@ class _IntegrationsPanelState extends State<IntegrationsPanel> {
     }
   }
 
+  /// Webhook mà đối tác sẽ gọi về. Mỗi nhóm kênh có đường dẫn riêng; các kênh
+  /// giao đồ ăn/website dùng chung cổng vào của module "Kênh online".
+  String _channelWebhookUrl(IntegrationDef def) {
+    final base = widget.api.baseUrl;
+    switch (def.key) {
+      case 'payos':
+      case 'vietqr':
+      case 'sepay':
+      case 'casso':
+        return '$base/api/${def.key}/webhook';
+      case 'haravan':
+        return '$base/webhooks/haravan';
+      default:
+        return '$base/api/online/webhook';
+    }
+  }
+
+  // ── Các khối của khung bên phải, theo đúng thứ tự hiển thị ────────────────
+
+  /// Logo + tên + mô tả + công tắc bật/tắt kênh.
+  Widget _buildChannelHeader(IntegrationDef def, Map conf, bool enabled) {
+    return Container(
+      padding: EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: DanColors.surface2,
+        border: Border.all(color: DanColors.border),
+        borderRadius: BorderRadius.circular(DanRadius.md),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 56,
+            height: 56,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: DanColors.surface,
+              borderRadius: BorderRadius.circular(DanRadius.md),
+              border: Border.all(color: DanColors.border),
+            ),
+            child: _integrationLogo(def, 38, 28),
+          ),
+          SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  def.name,
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                SizedBox(height: 4),
+                Text(
+                  def.desc,
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    color: DanColors.muted,
+                    height: 1.4,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          SizedBox(width: 16),
+          Switch(
+            value: enabled,
+            activeThumbColor: DanColors.done,
+            onChanged: (v) {
+              setState(() {
+                conf['enabled'] = v;
+              });
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Hộp Webhook URL + nút Copy. MISA phát hành hóa đơn theo chiều đi nên
+  /// không có webhook nhận về — khối này ẩn với kênh MISA.
+  Widget _buildWebhookBox(IntegrationDef def, String webhookUrl) {
+    return Container(
+      padding: EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Color(0xFFF1F5F9),
+        border: Border.all(color: DanColors.border),
+        borderRadius: BorderRadius.circular(DanRadius.md),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  webhookUrl,
+                  style: TextStyle(
+                    fontFamily: 'JetBrains Mono',
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF334155),
+                  ),
+                ),
+              ),
+              SizedBox(width: 10),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  padding: EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                  minimumSize: Size.zero,
+                  textStyle:
+                      TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                ),
+                onPressed: () {
+                  Clipboard.setData(ClipboardData(text: webhookUrl));
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content:
+                          Text(t('Đã sao chép Webhook URL vào bộ nhớ tạm')),
+                      backgroundColor: DanColors.text,
+                    ),
+                  );
+                },
+                child: Text('Copy'),
+              ),
+            ],
+          ),
+          SizedBox(height: 8),
+          Text(
+            _webhookHintText(def),
+            style: TextStyle(
+              fontSize: 11.5,
+              color: Color(0xFF64748B),
+              height: 1.4,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Lưới ô nhập "CẤU HÌNH CHI TIẾT" — danh sách field lấy từ _channelTextFields.
+  Widget _buildConfigFields(
+      IntegrationDef def, Map conf, List<String> fields) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _sectionLabel(t('CẤU HÌNH CHI TIẾT')),
+        SizedBox(height: 10),
+        GridView.builder(
+          shrinkWrap: true,
+          physics: NeverScrollableScrollPhysics(),
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 2,
+            crossAxisSpacing: 16,
+            mainAxisSpacing: 12,
+            mainAxisExtent: 68,
+          ),
+          itemCount: fields.length,
+          itemBuilder: (ctx, i) {
+            final field = fields[i];
+            final savedMask =
+                _isSecret(field) && _isMaskedSecretValue(asText(conf[field]))
+                    ? asText(conf[field]).trim()
+                    : null;
+            return TextField(
+              controller: _ctrls['${def.key}:$field'],
+              obscureText: _isSecret(field),
+              decoration: InputDecoration(
+                labelText: _fieldLabel(field),
+                // Secret đã lưu trên server: label luôn nổi + hiện mask
+                // thường trực để không bị tưởng nhầm là chưa điền
+                // (hint bị label che khi ô trống chưa focus).
+                hintText: savedMask,
+                floatingLabelBehavior:
+                    savedMask != null ? FloatingLabelBehavior.always : null,
+                suffixIcon: savedMask != null
+                    ? Tooltip(
+                        message: t(
+                            'Đã lưu trên server — để trống nếu giữ nguyên'),
+                        child: Icon(Icons.check_circle,
+                            size: 18, color: Color(0xFF10B981)),
+                      )
+                    : null,
+                isDense: true,
+              ),
+            );
+          },
+        ),
+      ],
+    );
+  }
+
+  /// Ô "GHI CHÚ NỘI BỘ" — không gửi cho đối tác, chỉ phục vụ đối soát nội bộ.
+  Widget _buildInternalNote(IntegrationDef def) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _sectionLabel(t('GHI CHÚ NỘI BỘ')),
+        SizedBox(height: 10),
+        TextField(
+          controller: _ctrls['${def.key}:note'],
+          maxLines: 2,
+          decoration: InputDecoration(
+            labelText: t('Ghi chú phục vụ đối soát, vận hành nội bộ...'),
+            isDense: true,
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// Nút "Kiểm tra cấu hình" — gọi POST /settings/integrations/:channel/test.
+  Widget _buildTestButton(IntegrationDef def) {
+    final testing = _testingKey == def.key;
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: OutlinedButton.icon(
+        style: OutlinedButton.styleFrom(
+          foregroundColor: DanColors.text,
+          side: BorderSide(color: DanColors.border),
+          padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        ),
+        onPressed: _testingKey != null ? null : () => _testConnection(def),
+        icon: testing
+            ? SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: DanColors.text,
+                ),
+              )
+            : Icon(Icons.bolt, size: 16),
+        label: Text(
+            testing ? t('Đang kiểm tra...') : t('Kiểm tra cấu hình')),
+      ),
+    );
+  }
+
+  /// Thanh đáy cố định với nút "Lưu kết nối đang chọn" (yêu cầu PIN Manager).
+  Widget _buildSaveBar() {
+    return Container(
+      padding: EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: DanColors.surface,
+        border: Border(top: BorderSide(color: DanColors.border)),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.end,
+        children: [
+          FilledButton.icon(
+            onPressed: _saving ? null : _save,
+            icon: _saving
+                ? SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(
+                        strokeWidth: 2, color: Colors.white))
+                : Icon(Icons.save, size: 18),
+            label: Text(t('Lưu kết nối đang chọn')),
+            style: FilledButton.styleFrom(minimumSize: Size(0, 44)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _sectionLabel(String text) => Text(
+        text,
+        style: TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w900,
+          letterSpacing: .5,
+          color: DanColors.faint,
+        ),
+      );
+
+  /// Khung bên phải: ghép các khối ở trên theo đúng thứ tự trên màn hình.
   Widget _buildDetailsPane() {
     final def = _integrationDefs.firstWhere((d) => d.key == _selectedKey);
     final conf = _channels[def.key] ?? {};
-    final enabled = _b(conf['enabled']);
-
-    String webhookUrl = '';
-    if (def.key == 'payos') {
-      webhookUrl = '${widget.api.baseUrl}/api/payos/webhook';
-    } else if (def.key == 'vietqr') {
-      webhookUrl = '${widget.api.baseUrl}/api/vietqr/webhook';
-    } else if (def.key == 'sepay' || def.key == 'casso') {
-      webhookUrl = '${widget.api.baseUrl}/api/${def.key}/webhook';
-    } else if (def.key == 'haravan') {
-      webhookUrl = '${widget.api.baseUrl}/webhooks/haravan';
-    } else {
-      webhookUrl = '${widget.api.baseUrl}/api/online/webhook';
-    }
-
+    final enabled = asFlag(conf['enabled']);
     final fields = _channelTextFields[def.key] ?? [];
 
     return Column(
@@ -599,256 +857,28 @@ class _IntegrationsPanelState extends State<IntegrationsPanel> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Container(
-                  padding: EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: DanColors.surface2,
-                    border: Border.all(color: DanColors.border),
-                    borderRadius: BorderRadius.circular(DanRadius.md),
-                  ),
-                  child: Row(
-                    children: [
-                      Container(
-                        width: 56,
-                        height: 56,
-                        alignment: Alignment.center,
-                        decoration: BoxDecoration(
-                          color: DanColors.surface,
-                          borderRadius: BorderRadius.circular(DanRadius.md),
-                          border: Border.all(color: DanColors.border),
-                        ),
-                        child: _integrationLogo(def, 38, 28),
-                      ),
-                      SizedBox(width: 16),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              def.name,
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w800,
-                              ),
-                            ),
-                            SizedBox(height: 4),
-                            Text(
-                              def.desc,
-                              style: TextStyle(
-                                fontSize: 12.5,
-                                color: DanColors.muted,
-                                height: 1.4,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      SizedBox(width: 16),
-                      Switch(
-                        value: enabled,
-                        activeThumbColor: DanColors.done,
-                        onChanged: (v) {
-                          setState(() {
-                            conf['enabled'] = v;
-                          });
-                        },
-                      ),
-                    ],
-                  ),
-                ),
+                _buildChannelHeader(def, conf, enabled),
                 SizedBox(height: 16),
                 if (def.type != 'misa') ...[
-                  Container(
-                    padding: EdgeInsets.all(14),
-                    decoration: BoxDecoration(
-                      color: Color(0xFFF1F5F9),
-                      border: Border.all(color: DanColors.border),
-                      borderRadius: BorderRadius.circular(DanRadius.md),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                webhookUrl,
-                                style: TextStyle(
-                                  fontFamily: 'JetBrains Mono',
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w700,
-                                  color: Color(0xFF334155),
-                                ),
-                              ),
-                            ),
-                            SizedBox(width: 10),
-                            ElevatedButton(
-                              style: ElevatedButton.styleFrom(
-                                padding: EdgeInsets.symmetric(
-                                    horizontal: 14, vertical: 8),
-                                minimumSize: Size.zero,
-                                textStyle: TextStyle(
-                                    fontSize: 12, fontWeight: FontWeight.bold),
-                              ),
-                              onPressed: () {
-                                Clipboard.setData(
-                                    ClipboardData(text: webhookUrl));
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text(t(
-                                        'Đã sao chép Webhook URL vào bộ nhớ tạm')),
-                                    backgroundColor: DanColors.text,
-                                  ),
-                                );
-                              },
-                              child: Text('Copy'),
-                            ),
-                          ],
-                        ),
-                        SizedBox(height: 8),
-                        Text(
-                          _webhookHintText(def),
-                          style: TextStyle(
-                            fontSize: 11.5,
-                            color: Color(0xFF64748B),
-                            height: 1.4,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
+                  _buildWebhookBox(def, _channelWebhookUrl(def)),
                   SizedBox(height: 16),
                 ],
                 if (fields.isNotEmpty) ...[
-                  Text(
-                    t('CẤU HÌNH CHI TIẾT'),
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w900,
-                      letterSpacing: .5,
-                      color: DanColors.faint,
-                    ),
-                  ),
-                  SizedBox(height: 10),
-                  GridView.builder(
-                    shrinkWrap: true,
-                    physics: NeverScrollableScrollPhysics(),
-                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: 2,
-                      crossAxisSpacing: 16,
-                      mainAxisSpacing: 12,
-                      mainAxisExtent: 68,
-                    ),
-                    itemCount: fields.length,
-                    itemBuilder: (ctx, i) {
-                      final field = fields[i];
-                      final savedMask =
-                          _isSecret(field) && _isMaskedSecretValue(_s(conf[field]))
-                              ? _s(conf[field]).trim()
-                              : null;
-                      return TextField(
-                        controller: _ctrls['${def.key}:$field'],
-                        obscureText: _isSecret(field),
-                        decoration: InputDecoration(
-                          labelText: _fieldLabel(field),
-                          // Secret đã lưu trên server: label luôn nổi + hiện mask
-                          // thường trực để không bị tưởng nhầm là chưa điền
-                          // (hint bị label che khi ô trống chưa focus).
-                          hintText: savedMask,
-                          floatingLabelBehavior:
-                              savedMask != null ? FloatingLabelBehavior.always : null,
-                          suffixIcon: savedMask != null
-                              ? Tooltip(
-                                  message: t('Đã lưu trên server — để trống nếu giữ nguyên'),
-                                  child: Icon(Icons.check_circle,
-                                      size: 18, color: Color(0xFF10B981)),
-                                )
-                              : null,
-                          isDense: true,
-                        ),
-                      );
-                    },
-                  ),
+                  _buildConfigFields(def, conf, fields),
                   SizedBox(height: 16),
                 ],
                 _buildAdditionalControls(def, conf),
                 _buildGuidePanel(def),
                 SizedBox(height: 16),
-                Text(
-                  t('GHI CHÚ NỘI BỘ'),
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: .5,
-                    color: DanColors.faint,
-                  ),
-                ),
-                SizedBox(height: 10),
-                TextField(
-                  controller: _ctrls['${def.key}:note'],
-                  maxLines: 2,
-                  decoration: InputDecoration(
-                    labelText:
-                        t('Ghi chú phục vụ đối soát, vận hành nội bộ...'),
-                    isDense: true,
-                  ),
-                ),
+                _buildInternalNote(def),
                 SizedBox(height: 20),
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: OutlinedButton.icon(
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: DanColors.text,
-                      side: BorderSide(color: DanColors.border),
-                      padding:
-                          EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                    ),
-                    onPressed:
-                        _testingKey != null ? null : () => _testConnection(def),
-                    icon: _testingKey == def.key
-                        ? SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: DanColors.text,
-                            ),
-                          )
-                        : Icon(Icons.bolt, size: 16),
-                    label: Text(_testingKey == def.key
-                        ? t('Đang kiểm tra...')
-                        : t('Kiểm tra cấu hình')),
-                  ),
-                ),
+                _buildTestButton(def),
                 SizedBox(height: 30),
               ],
             ),
           ),
         ),
-        Container(
-          padding: EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            color: DanColors.surface,
-            border: Border(top: BorderSide(color: DanColors.border)),
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.end,
-            children: [
-              FilledButton.icon(
-                onPressed: _saving ? null : _save,
-                icon: _saving
-                    ? SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(
-                            strokeWidth: 2, color: Colors.white))
-                    : Icon(Icons.save, size: 18),
-                label: Text(t('Lưu kết nối đang chọn')),
-                style: FilledButton.styleFrom(minimumSize: Size(0, 44)),
-              ),
-            ],
-          ),
-        ),
+        _buildSaveBar(),
       ],
     );
   }
@@ -974,7 +1004,7 @@ class _IntegrationsPanelState extends State<IntegrationsPanel> {
 
   Widget _buildCheckboxRow(
       Map<String, dynamic> conf, String field, String label) {
-    final val = _b(conf[field]);
+    final val = asFlag(conf[field]);
     return CheckboxListTile(
       contentPadding: EdgeInsets.zero,
       value: val,
@@ -1088,7 +1118,7 @@ class _IntegrationsPanelState extends State<IntegrationsPanel> {
                   final def = _integrationDefs[index];
                   final isSelected = def.key == _selectedKey;
                   final conf = _channels[def.key] ?? {};
-                  final enabled = _b(conf['enabled']);
+                  final enabled = asFlag(conf['enabled']);
 
                   return InkWell(
                     onTap: () {

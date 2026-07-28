@@ -16,7 +16,7 @@ extension _PrintDesignerMethods on _PrintTemplateDesignerState {
   void _loadKind(String kind) {
     _kind = kind;
     _template = _templateFor(kind);
-    _nameCtrl.text = _s(_template['name']);
+    _nameCtrl.text = asText(_template['name']);
     _syncRowControllers();
   }
 
@@ -56,8 +56,8 @@ extension _PrintDesignerMethods on _PrintTemplateDesignerState {
   /// Strip positioning, keep only what a flowing row needs.
   Map<String, dynamic> _normalizeRow(Map raw) {
     final e = Map<String, dynamic>.from(raw);
-    final type = _s(e['type']).isEmpty ? 'text' : _s(e['type']);
-    final id = _s(e['id']).isEmpty ? '${type}_${_rowSeq++}' : _s(e['id']);
+    final type = asText(e['type']).isEmpty ? 'text' : asText(e['type']);
+    final id = asText(e['id']).isEmpty ? '${type}_${_rowSeq++}' : asText(e['id']);
     switch (type) {
       case 'line':
         return {'id': id, 'type': 'line'};
@@ -66,8 +66,8 @@ extension _PrintDesignerMethods on _PrintTemplateDesignerState {
           'id': id,
           'type': 'qr',
           'qrText':
-              _s(e['qrText']).isEmpty ? '{invoiceLookupUrl}' : _s(e['qrText']),
-          'qrCaption': _s(e['qrCaption']),
+              asText(e['qrText']).isEmpty ? '{invoiceLookupUrl}' : asText(e['qrText']),
+          'qrCaption': asText(e['qrCaption']),
           'qrShowCaption': _b(e['qrShowCaption']),
         };
       case 'barcode':
@@ -75,21 +75,21 @@ extension _PrintDesignerMethods on _PrintTemplateDesignerState {
           'id': id,
           'type': 'barcode',
           'barcodeText':
-              _s(e['barcodeText']).isEmpty ? '{billNo}' : _s(e['barcodeText']),
+              asText(e['barcodeText']).isEmpty ? '{billNo}' : asText(e['barcodeText']),
         };
       case 'image':
         return {
           'id': id,
           'type': 'image',
-          'label': _s(e['label']).isEmpty ? 'Logo' : _s(e['label']),
-          'src': _s(e['src']),
+          'label': asText(e['label']).isEmpty ? 'Logo' : asText(e['label']),
+          'src': asText(e['src']),
         };
       default:
         return {
           'id': id,
           'type': 'text',
-          'text': _s(e['text']),
-          'align': _s(e['align']).isEmpty ? 'left' : _s(e['align']),
+          'text': asText(e['text']),
+          'align': asText(e['align']).isEmpty ? 'left' : asText(e['align']),
           'bold': _b(e['bold']),
           'fontSize': _d(e['fontSize'], 3.2),
         };
@@ -104,7 +104,7 @@ extension _PrintDesignerMethods on _PrintTemplateDesignerState {
       'version': 6,
       'standard': 'dan_payment_receipt',
       'name': t('Mẫu hóa đơn chuẩn'),
-      'paper': _s(_bill['paper']).isEmpty ? 'K80' : _s(_bill['paper']),
+      'paper': asText(_bill['paper']).isEmpty ? 'K80' : asText(_bill['paper']),
       'widthMm': width,
       'heightMm': height,
       'rows': [
@@ -259,9 +259,9 @@ extension _PrintDesignerMethods on _PrintTemplateDesignerState {
   void _syncRowControllers() {
     _disposeRowControllers();
     for (final row in _rows) {
-      if (_s(row['type']) != 'text') continue;
-      final id = _s(row['id']);
-      final ctrl = TextEditingController(text: _s(row['text']));
+      if (asText(row['type']) != 'text') continue;
+      final id = asText(row['id']);
+      final ctrl = TextEditingController(text: asText(row['text']));
       final focus = FocusNode();
       focus.addListener(() {
         if (focus.hasFocus) _activeRowId = id;
@@ -286,7 +286,7 @@ extension _PrintDesignerMethods on _PrintTemplateDesignerState {
   void _updateRow(String id, void Function(Map<String, dynamic>) fn) {
     final rows = _rows;
     for (final r in rows) {
-      if (_s(r['id']) == id) fn(r);
+      if (asText(r['id']) == id) fn(r);
     }
     _setRows(rows);
   }
@@ -302,7 +302,7 @@ extension _PrintDesignerMethods on _PrintTemplateDesignerState {
   void _deleteRow(String id) {
     _rowCtrls.remove(id)?.dispose();
     _rowFocus.remove(id)?.dispose();
-    _setRows(_rows.where((r) => _s(r['id']) != id).toList());
+    _setRows(_rows.where((r) => asText(r['id']) != id).toList());
   }
 
   void _addRow(String type) {
@@ -334,8 +334,8 @@ extension _PrintDesignerMethods on _PrintTemplateDesignerState {
           'fontSize': 3.2,
         },
     };
-    if (_s(row['type']) == 'text') {
-      final ctrl = TextEditingController(text: _s(row['text']));
+    if (asText(row['type']) == 'text') {
+      final ctrl = TextEditingController(text: asText(row['text']));
       final focus = FocusNode();
       focus.addListener(() {
         if (focus.hasFocus) _activeRowId = id;
@@ -376,7 +376,7 @@ extension _PrintDesignerMethods on _PrintTemplateDesignerState {
   void _restoreDefault() {
     _rebuild(() {
       _template = _kind == 'bill' ? _defaultBill() : _defaultLabel();
-      _nameCtrl.text = _s(_template['name']);
+      _nameCtrl.text = asText(_template['name']);
       _formRevision++;
       _syncRowControllers();
     });
@@ -570,7 +570,7 @@ extension _PrintDesignerMethods on _PrintTemplateDesignerState {
 
   Widget _paperDropdown() {
     final current =
-        _s(_template['paper']).isEmpty ? '—' : _s(_template['paper']);
+        asText(_template['paper']).isEmpty ? '—' : asText(_template['paper']);
     final presets = ['K80', 'K57', 'A5'];
     return SizedBox(
       width: 150,
@@ -685,7 +685,7 @@ extension _PrintDesignerMethods on _PrintTemplateDesignerState {
         padding: EdgeInsets.only(bottom: 8),
         child: TextFormField(
           key: ValueKey('store_${key}_$_formRevision'),
-          initialValue: _s(_bill[key]),
+          initialValue: asText(_bill[key]),
           maxLines: maxLines,
           decoration: InputDecoration(
               labelText: label, isDense: true, border: OutlineInputBorder()),
@@ -728,7 +728,7 @@ extension _PrintDesignerMethods on _PrintTemplateDesignerState {
           onReorderItem: _reorderRows,
           children: [
             for (int i = 0; i < rows.length; i++)
-              _rowTile(rows[i], i, key: ValueKey(_s(rows[i]['id']))),
+              _rowTile(rows[i], i, key: ValueKey(asText(rows[i]['id']))),
           ],
         ),
       SizedBox(height: 8),
@@ -763,7 +763,7 @@ extension _PrintDesignerMethods on _PrintTemplateDesignerState {
 
   /// Chọn nhanh PHIÊN BẢN bố cục bill. Đổi cả bộ dòng chỉ với 1 chạm.
   Widget _presetBar() {
-    final cur = _s(_template['preset']);
+    final cur = asText(_template['preset']);
     Widget card(String preset, IconData icon, String title, String desc) {
       final active = cur == preset;
       return Expanded(
@@ -825,8 +825,8 @@ extension _PrintDesignerMethods on _PrintTemplateDesignerState {
   }
 
   Widget _rowTile(Map<String, dynamic> row, int index, {required Key key}) {
-    final id = _s(row['id']);
-    final type = _s(row['type']);
+    final id = asText(row['id']);
+    final type = asText(row['type']);
     return Container(
       key: key,
       margin: EdgeInsets.only(bottom: 8),
@@ -892,7 +892,7 @@ extension _PrintDesignerMethods on _PrintTemplateDesignerState {
             SizedBox(height: 6),
             TextFormField(
               key: ValueKey('${type}_${id}_$_formRevision'),
-              initialValue: _s(isQr ? row['qrText'] : row['barcodeText']),
+              initialValue: asText(isQr ? row['qrText'] : row['barcodeText']),
               decoration:
                   InputDecoration(labelText: t('Dữ liệu'), isDense: true),
               onChanged: (v) =>
@@ -903,7 +903,7 @@ extension _PrintDesignerMethods on _PrintTemplateDesignerState {
       );
     }
     if (type == 'image') {
-      final src = _s(row['src']);
+      final src = asText(row['src']);
       final hasImage = src.startsWith('data:image/');
       return Padding(
         padding: EdgeInsets.symmetric(vertical: 2),
@@ -951,8 +951,8 @@ extension _PrintDesignerMethods on _PrintTemplateDesignerState {
             SizedBox(height: 4),
             Text(
               hasImage
-                  ? t('Máy in nhiệt in logo dạng chữ [${_s(row['label']).isEmpty ? 'Logo' : _s(row['label'])}]; ảnh dùng để xem/tham chiếu.')
-                  : 'Chưa có ảnh — sẽ in dòng chữ [${_s(row['label']).isEmpty ? 'Logo' : _s(row['label'])}].',
+                  ? t('Máy in nhiệt in logo dạng chữ [${asText(row['label']).isEmpty ? 'Logo' : asText(row['label'])}]; ảnh dùng để xem/tham chiếu.')
+                  : 'Chưa có ảnh — sẽ in dòng chữ [${asText(row['label']).isEmpty ? 'Logo' : asText(row['label'])}].',
               style: TextStyle(
                   fontSize: 10.5, color: DanColors.faint, height: 1.3),
             ),
@@ -961,7 +961,7 @@ extension _PrintDesignerMethods on _PrintTemplateDesignerState {
       );
     }
     // text row
-    final align = _s(row['align']).isEmpty ? 'left' : _s(row['align']);
+    final align = asText(row['align']).isEmpty ? 'left' : asText(row['align']);
     final bold = _b(row['bold']);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1164,7 +1164,7 @@ extension _PrintDesignerMethods on _PrintTemplateDesignerState {
     final vars = _kind == 'bill' ? _billSample : _labelSample;
     final widgets = <Widget>[];
     for (final row in _rows) {
-      final type = _s(row['type']);
+      final type = asText(row['type']);
       if (type == 'line') {
         widgets.add(Padding(
           padding: EdgeInsets.symmetric(vertical: 5),
@@ -1173,7 +1173,7 @@ extension _PrintDesignerMethods on _PrintTemplateDesignerState {
         continue;
       }
       if (type == 'image') {
-        final src = _s(row['src']);
+        final src = asText(row['src']);
         final scale = _d(row['logoScale'], 1.0).clamp(0.5, 2.0);
         widgets.add(Padding(
           padding: EdgeInsets.symmetric(vertical: 6),
@@ -1181,14 +1181,14 @@ extension _PrintDesignerMethods on _PrintTemplateDesignerState {
             child: src.startsWith('data:image/')
                 ? Image.memory(_dataUrlBytes(src),
                     height: (56 * scale).toDouble(), fit: BoxFit.contain)
-                : _pvLogoPlaceholder(_s(row['label'])),
+                : _pvLogoPlaceholder(asText(row['label'])),
           ),
         ));
         continue;
       }
       if (type == 'qr') {
         final data = _replaceVars(
-            _s(row['qrText']).isEmpty ? '{billNo}' : _s(row['qrText']), vars);
+            asText(row['qrText']).isEmpty ? '{billNo}' : asText(row['qrText']), vars);
         widgets.add(Padding(
           padding: EdgeInsets.symmetric(vertical: 8),
           child: Center(
@@ -1202,10 +1202,10 @@ extension _PrintDesignerMethods on _PrintTemplateDesignerState {
                   padding: EdgeInsets.zero,
                   backgroundColor: Colors.white,
                 ),
-                if (_b(row['qrShowCaption']) && _s(row['qrCaption']).isNotEmpty)
+                if (_b(row['qrShowCaption']) && asText(row['qrCaption']).isNotEmpty)
                   Padding(
                     padding: EdgeInsets.only(top: 4),
-                    child: _pvText(_replaceVars(_s(row['qrCaption']), vars),
+                    child: _pvText(_replaceVars(asText(row['qrCaption']), vars),
                         'center', false),
                   ),
               ],
@@ -1216,9 +1216,9 @@ extension _PrintDesignerMethods on _PrintTemplateDesignerState {
       }
       if (type == 'barcode') {
         final data = _replaceVars(
-            _s(row['barcodeText']).isEmpty
+            asText(row['barcodeText']).isEmpty
                 ? '{billNo}'
-                : _s(row['barcodeText']),
+                : asText(row['barcodeText']),
             vars);
         widgets.add(Padding(
           padding: EdgeInsets.symmetric(vertical: 8),
@@ -1236,8 +1236,8 @@ extension _PrintDesignerMethods on _PrintTemplateDesignerState {
         continue;
       }
       // text row — keep diacritics, apply per-row align + bold
-      final text = _replaceVars(_s(row['text']), vars);
-      final align = _s(row['align']).isEmpty ? 'left' : _s(row['align']);
+      final text = _replaceVars(asText(row['text']), vars);
+      final align = asText(row['align']).isEmpty ? 'left' : asText(row['align']);
       final bold = _b(row['bold']);
       for (final paragraph in text.split('\n')) {
         if (paragraph.trim().isEmpty) continue;
@@ -1294,24 +1294,24 @@ extension _PrintDesignerMethods on _PrintTemplateDesignerState {
   }
 
   Map<String, String> get _billSample => {
-        'storeName': _s(_bill['storeName']).isEmpty
+        'storeName': asText(_bill['storeName']).isEmpty
             ? 'Dan D Pak'
-            : _s(_bill['storeName']),
-        'storeNameC': _s(_bill['storeName']).isEmpty
+            : asText(_bill['storeName']),
+        'storeNameC': asText(_bill['storeName']).isEmpty
             ? 'Dan D Pak'
-            : _s(_bill['storeName']),
-        'storeSubtitle': _s(_bill['storeSubtitle']),
-        'storeSubtitleC': _s(_bill['storeSubtitle']),
-        'address': _s(_bill['address']).isEmpty
+            : asText(_bill['storeName']),
+        'storeSubtitle': asText(_bill['storeSubtitle']),
+        'storeSubtitleC': asText(_bill['storeSubtitle']),
+        'address': asText(_bill['address']).isEmpty
             ? t('Đường D9, KĐT Sala, TP.HCM')
-            : _s(_bill['address']),
-        'addressBlock': _s(_bill['address']).isEmpty
+            : asText(_bill['address']),
+        'addressBlock': asText(_bill['address']).isEmpty
             ? t('Đường D9, KĐT Sala, TP.HCM')
-            : _s(_bill['address']),
+            : asText(_bill['address']),
         'phone':
-            _s(_bill['phone']).isEmpty ? '0938 525 659' : _s(_bill['phone']),
-        'email': _s(_bill['email']),
-        'taxCode': _s(_bill['taxCode']),
+            asText(_bill['phone']).isEmpty ? '0938 525 659' : asText(_bill['phone']),
+        'email': asText(_bill['email']),
+        'taxCode': asText(_bill['taxCode']),
         'billNo': 'Dan0107260001',
         'number': 'Dan0107260001',
         'place': t('Bàn A01'),
@@ -1327,10 +1327,10 @@ extension _PrintDesignerMethods on _PrintTemplateDesignerState {
         'paidLine': t('Đã trả: 100.000đ'),
         'changeLine': t('Tiền thối: 10.000đ'),
         'method': t('Tiền mặt'),
-        'footer': _s(_bill['footer']).isEmpty
+        'footer': asText(_bill['footer']).isEmpty
             ? t('Xin cảm ơn và hẹn gặp lại')
-            : _s(_bill['footer']),
-        'footerC': _s(_bill['footer']),
+            : asText(_bill['footer']),
+        'footerC': asText(_bill['footer']),
         'invoiceLookupUrl': 'https://tracuu.dandpak.vn/Dan0107260001',
         'customerName': t('Khách lẻ'),
       };
@@ -1453,7 +1453,7 @@ extension _PrintDesignerMethods on _PrintTemplateDesignerState {
   ];
 
   String get _densityKey {
-    final k = _s(_bill['printDensity']);
+    final k = asText(_bill['printDensity']);
     return _densities.any((d) => d[0] == k) ? k : 'dark';
   }
 

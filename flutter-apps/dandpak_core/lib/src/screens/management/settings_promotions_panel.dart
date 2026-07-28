@@ -8,15 +8,15 @@ import '../../widgets/manager_pin_dialog.dart';
 import 'management_widgets.dart';
 import 'settings_tab.dart';
 import '../../utils/translation.dart';
+import 'settings_value_utils.dart';
 
-String _s(dynamic v) => v?.toString() ?? '';
 int _i(dynamic v, [int fallback = 0]) =>
-    v is num ? v.round() : int.tryParse(_s(v).trim()) ?? fallback;
+    v is num ? v.round() : int.tryParse(asText(v).trim()) ?? fallback;
 Map<String, dynamic> _m(dynamic v) =>
     v is Map ? Map<String, dynamic>.from(v) : <String, dynamic>{};
 
 String _joinList(dynamic v) => v is List
-    ? v.map((e) => _s(e).trim()).where((e) => e.isNotEmpty).join(', ')
+    ? v.map((e) => asText(e).trim()).where((e) => e.isNotEmpty).join(', ')
     : '';
 
 List<String> _csv(String value) =>
@@ -183,7 +183,7 @@ class _PromotionSettingsPanelState extends State<PromotionSettingsPanel> {
 
   void _loadIntoForm(RetailVoucher v) {
     final raw =
-        _rawRows.firstWhere((e) => _s(e['id']) == v.id, orElse: () => {});
+        _rawRows.firstWhere((e) => asText(e['id']) == v.id, orElse: () => {});
     final schedule = _m(raw['schedule']);
     final scopeConfig = _m(raw['scope_config']);
     setState(() {
@@ -672,7 +672,7 @@ class _PromotionSettingsPanelState extends State<PromotionSettingsPanel> {
     }
     final ids = _csv(controller.text).toSet();
     final rowById = {
-      for (final r in rows) _s(r[idKey]): r,
+      for (final r in rows) asText(r[idKey]): r,
     };
     final summary = ids.isEmpty
         ? emptyLabel
@@ -703,7 +703,7 @@ class _PromotionSettingsPanelState extends State<PromotionSettingsPanel> {
       {required String fallback}) {
     if (row == null) return fallback;
     for (final key in keys) {
-      final v = _s(row[key]).trim();
+      final v = asText(row[key]).trim();
       if (v.isNotEmpty) return v;
     }
     return fallback;
@@ -731,11 +731,11 @@ class _PromotionSettingsPanelState extends State<PromotionSettingsPanel> {
                 for (final row in rows)
                   CheckboxListTile(
                     dense: true,
-                    value: draft.contains(_s(row[idKey])),
+                    value: draft.contains(asText(row[idKey])),
                     title: Text(
-                        _scopeLabel(row, labelKeys, fallback: _s(row[idKey]))),
+                        _scopeLabel(row, labelKeys, fallback: asText(row[idKey]))),
                     onChanged: (on) => setLocal(() {
-                      final id = _s(row[idKey]);
+                      final id = asText(row[idKey]);
                       on == true ? draft.add(id) : draft.remove(id);
                     }),
                   ),

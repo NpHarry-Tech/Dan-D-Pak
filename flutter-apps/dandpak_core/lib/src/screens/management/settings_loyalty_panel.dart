@@ -5,14 +5,14 @@ import '../../ui/app_theme.dart';
 import 'management_widgets.dart';
 import 'settings_tab.dart';
 import '../../utils/translation.dart';
+import 'settings_value_utils.dart';
 
-String _s(dynamic v) => v?.toString() ?? '';
 bool _b(dynamic v, [bool fallback = false]) =>
     v == null ? fallback : (v == true || v == 1 || v == '1' || v == 'true');
 int _i(dynamic v, [int fallback = 0]) =>
-    v is num ? v.round() : int.tryParse(_s(v)) ?? fallback;
+    v is num ? v.round() : int.tryParse(asText(v)) ?? fallback;
 double _d(dynamic v, [double fallback = 0]) =>
-    v is num ? v.toDouble() : double.tryParse(_s(v)) ?? fallback;
+    v is num ? v.toDouble() : double.tryParse(asText(v)) ?? fallback;
 Map<String, dynamic> _m(dynamic v) =>
     v is Map ? Map<String, dynamic>.from(v) : <String, dynamic>{};
 List<Map<String, dynamic>> _lm(dynamic v) => v is List
@@ -123,14 +123,14 @@ class _LoyaltySettingsPanelState extends State<LoyaltySettingsPanel> {
     _orderMin.text = _i(order['minSpend'], 0).toString();
     _birthdayMultiplier.text = _d(birthday['multiplier'], 2).toString();
     _rounding = ['floor', 'round', 'ceil'].contains(amount['rounding'])
-        ? _s(amount['rounding'])
+        ? asText(amount['rounding'])
         : 'floor';
     _pointValue.text = _i(redeem['pointValue'], 1000).toString();
     _minPoints.text = _i(redeem['minPoints'], 10).toString();
     _maxPercent.text = _d(redeem['maxPercent'], 50).toString();
     _cashbackPercent.text = _d(cashback['percent'], 0).toString();
     _cashbackMin.text = _i(cashback['minSpend'], 0).toString();
-    _cashbackAs = _s(cashback['as']) == 'voucher' ? 'voucher' : 'points';
+    _cashbackAs = asText(cashback['as']) == 'voucher' ? 'voucher' : 'points';
     _tiers = _lm(cfg['tiers']);
     if (_tiers.isEmpty) {
       _tiers = [
@@ -424,7 +424,7 @@ class _LoyaltySettingsPanelState extends State<LoyaltySettingsPanel> {
     return Padding(
       padding: EdgeInsets.only(bottom: 10),
       child: Row(children: [
-        _textField(t('Tên hạng'), _s(tier['name']), (v) => tier['name'] = v,
+        _textField(t('Tên hạng'), asText(tier['name']), (v) => tier['name'] = v,
             width: 180),
         _inlineNum(t('Từ điểm'), tier['fromPoints'],
             (v) => tier['fromPoints'] = _i(v)),
@@ -474,7 +474,7 @@ class _LoyaltySettingsPanelState extends State<LoyaltySettingsPanel> {
         SizedBox(
           width: 140,
           child: DropdownButtonFormField<String>(
-            initialValue: _s(p['match']).isEmpty ? 'sku' : _s(p['match']),
+            initialValue: asText(p['match']).isEmpty ? 'sku' : asText(p['match']),
             decoration: InputDecoration(labelText: 'Match'),
             items: [
               DropdownMenuItem(value: 'sku', child: Text(t('Mã hàng'))),
@@ -485,7 +485,7 @@ class _LoyaltySettingsPanelState extends State<LoyaltySettingsPanel> {
             onChanged: (v) => setState(() => p['match'] = v ?? 'sku'),
           ),
         ),
-        _textField(t('Giá trị'), _s(p['value']), (v) => p['value'] = v,
+        _textField(t('Giá trị'), asText(p['value']), (v) => p['value'] = v,
             width: 220),
         _inlineNum(
             t('Nhân'), p['multiplier'], (v) => p['multiplier'] = _d(v, 1)),
@@ -526,8 +526,8 @@ class _LoyaltySettingsPanelState extends State<LoyaltySettingsPanel> {
         Switch(
             value: _b(a['enabled']),
             onChanged: (v) => setState(() => a['enabled'] = v)),
-        _textField(t('Mã'), _s(a['key']), (v) => a['key'] = v, width: 150),
-        _textField(t('Tên hành vi'), _s(a['label']), (v) => a['label'] = v,
+        _textField(t('Mã'), asText(a['key']), (v) => a['key'] = v, width: 150),
+        _textField(t('Tên hành vi'), asText(a['label']), (v) => a['label'] = v,
             width: 260),
         _inlineNum(t('Điểm'), a['points'], (v) => a['points'] = _i(v)),
         IconButton(
@@ -554,7 +554,7 @@ class _LoyaltySettingsPanelState extends State<LoyaltySettingsPanel> {
 
   Widget _inlineNum(
       String label, dynamic value, ValueChanged<String> onChanged) {
-    return _textField(label, _s(value), onChanged, width: 130, numeric: true);
+    return _textField(label, asText(value), onChanged, width: 130, numeric: true);
   }
 
   Widget _textField(String label, String value, ValueChanged<String> onChanged,

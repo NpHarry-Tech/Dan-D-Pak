@@ -9,17 +9,17 @@ import '../../services/api_service.dart';
 import '../../ui/app_theme.dart';
 import '../../ui/file_pick.dart';
 import '../../utils/translation.dart';
+import 'settings_value_utils.dart';
 
 part 'print_template_designer_methods.dart';
 
-String _s(dynamic v) => v?.toString() ?? '';
 
 double _d(dynamic v, [double fallback = 0]) {
   if (v is num) return v.toDouble();
-  return double.tryParse(_s(v).replaceAll(',', '.')) ?? fallback;
+  return double.tryParse(asText(v).replaceAll(',', '.')) ?? fallback;
 }
 
-bool _b(dynamic v) => v == true || _s(v) == '1' || _s(v) == 'true';
+bool _b(dynamic v) => v == true || asText(v) == '1' || asText(v) == 'true';
 
 /// KiotViet-style print-template editor: a two-pane layout where the LEFT pane
 /// edits the receipt/label content line-by-line (with insertable {token}s and a

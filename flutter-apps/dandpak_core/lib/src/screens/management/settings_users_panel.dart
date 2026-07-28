@@ -10,9 +10,8 @@ import '../../ui/file_pick.dart';
 import '../../widgets/side_sheet.dart';
 import 'settings_tab.dart';
 import '../../utils/translation.dart';
+import 'settings_value_utils.dart';
 
-String _s(dynamic v) => v?.toString() ?? '';
-bool _b(dynamic v) => v == true || v == 1 || v == '1';
 
 final _roleKeys = ['owner', 'manager', 'cashier', 'kitchen', 'warehouse'];
 Map<String, String> get _roleLabels => {
@@ -116,7 +115,7 @@ String _roleLabel(String role) => _roleLabels[role] ?? role;
 
 List<String> _stringList(dynamic value) {
   if (value is List) {
-    return value.map((e) => _s(e)).where((e) => e.isNotEmpty).toList();
+    return value.map((e) => asText(e)).where((e) => e.isNotEmpty).toList();
   }
   return [];
 }
@@ -125,7 +124,7 @@ Map<String, Set<String>> _rolePermMap(dynamic roles) {
   final out = <String, Set<String>>{};
   if (roles is List) {
     for (final r in roles.whereType<Map>()) {
-      final key = _s(r['key']);
+      final key = asText(r['key']);
       if (key.isNotEmpty) out[key] = _stringList(r['perms']).toSet();
     }
   }
@@ -238,10 +237,10 @@ class _UsersPanelState extends State<UsersPanel> {
 
   Future<void> _delete(Map<String, dynamic> user) async {
     final pin =
-        await settingsPin(context, 'Xóa nhân viên "${_s(user['name'])}".');
+        await settingsPin(context, 'Xóa nhân viên "${asText(user['name'])}".');
     if (pin == null) return;
     try {
-      await widget.api.deleteSettingsUser(_s(user['id']), pin);
+      await widget.api.deleteSettingsUser(asText(user['id']), pin);
       _toast(t('Đã xóa nhân viên'));
       _load();
     } catch (e) {
@@ -274,7 +273,7 @@ class _UsersPanelState extends State<UsersPanel> {
                 baseUrl: widget.api.baseUrl,
                 onEdit: () => _openForm(user),
                 onDelete:
-                    _s(user['role']) == 'owner' ? null : () => _delete(user),
+                    asText(user['role']) == 'owner' ? null : () => _delete(user),
               ),
               SizedBox(height: 8),
             ],
@@ -377,8 +376,8 @@ class _UserRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final active = _b(user['active']);
-    final custom = _b(user['customized']);
+    final active = asFlag(user['active']);
+    final custom = asFlag(user['customized']);
     return Container(
       padding: EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(
@@ -389,26 +388,26 @@ class _UserRow extends StatelessWidget {
       child: Row(
         children: [
           _Avatar(
-              name: _s(user['name']),
-              avatar: _s(user['avatar']),
+              name: asText(user['name']),
+              avatar: asText(user['avatar']),
               baseUrl: baseUrl),
           SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(_s(user['name']),
+                Text(asText(user['name']),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style:
                         TextStyle(fontSize: 14.5, fontWeight: FontWeight.w900)),
                 SizedBox(height: 2),
-                Text('@${_s(user['username'])}',
+                Text('@${asText(user['username'])}',
                     style: TextStyle(fontSize: 11.5, color: DanColors.faint)),
               ],
             ),
           ),
-          _Pill(_roleLabel(_s(user['role'])), DanColors.brand),
+          _Pill(_roleLabel(asText(user['role'])), DanColors.brand),
           SizedBox(width: 8),
           _Pill(active ? t('Hoạt động') : t('Đã khóa'),
               active ? DanColors.done : DanColors.muted),
@@ -465,21 +464,21 @@ class _UserFormDialogState extends State<_UserFormDialog> {
   void initState() {
     super.initState();
     final user = widget.user;
-    _name = TextEditingController(text: _s(user?['name']));
-    _username = TextEditingController(text: _s(user?['username']));
+    _name = TextEditingController(text: asText(user?['name']));
+    _username = TextEditingController(text: asText(user?['username']));
     _pin = TextEditingController();
-    final rawRole = _s(user?['role']);
+    final rawRole = asText(user?['role']);
     _role = _roleKeys.contains(rawRole) ? rawRole : 'cashier';
-    _lang = _s(user?['lang']) == 'en' ? 'en' : 'vi';
-    _avatar = _s(user?['avatar']);
-    _active = user == null ? true : _b(user['active']);
+    _lang = asText(user?['lang']) == 'en' ? 'en' : 'vi';
+    _avatar = asText(user?['avatar']);
+    _active = user == null ? true : asFlag(user['active']);
     _selectedPerms = _initialPerms(user, _role);
   }
 
   Set<String> _initialPerms(Map<String, dynamic>? user, String role) {
     if (role == 'owner') {
       return widget.catalog
-          .map((e) => _s(e['key']))
+          .map((e) => asText(e['key']))
           .where((e) => e.isNotEmpty)
           .toSet();
     }
@@ -519,7 +518,7 @@ class _UserFormDialogState extends State<_UserFormDialog> {
       );
       if (!mounted) return;
       setState(() {
-        _avatar = _s(res['url']);
+        _avatar = asText(res['url']);
         _uploadingAvatar = false;
       });
     } catch (e) {
@@ -572,7 +571,7 @@ class _UserFormDialogState extends State<_UserFormDialog> {
       'lang': _lang,
       'active': _active,
       'perms': _isOwner
-          ? widget.catalog.map((e) => _s(e['key'])).toList()
+          ? widget.catalog.map((e) => asText(e['key'])).toList()
           : _selectedPerms.toList()
         ..sort(),
       if (pinText.isNotEmpty) 'pin': pinText,
@@ -582,7 +581,7 @@ class _UserFormDialogState extends State<_UserFormDialog> {
     setState(() => _saving = true);
     try {
       if (_isEdit) {
-        await widget.api.updateSettingsUser(_s(widget.user!['id']), body);
+        await widget.api.updateSettingsUser(asText(widget.user!['id']), body);
       } else {
         await widget.api.createSettingsUser(body);
       }
@@ -802,7 +801,7 @@ class _UserFormDialogState extends State<_UserFormDialog> {
             for (final role in _roleKeys)
               DropdownMenuItem(value: role, child: Text(_roleLabel(role))),
           ],
-          onChanged: _isEdit && _s(widget.user?['role']) == 'owner'
+          onChanged: _isEdit && asText(widget.user?['role']) == 'owner'
               ? null
               : (v) {
                   if (v != null) _changeRole(v);
@@ -962,7 +961,7 @@ class _PermissionEditor extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final allKeys =
-        catalog.map((e) => _s(e['key'])).where((e) => e.isNotEmpty).toList();
+        catalog.map((e) => asText(e['key'])).where((e) => e.isNotEmpty).toList();
     final grouped = _groupCatalog();
     return Container(
       decoration: BoxDecoration(
@@ -1017,7 +1016,7 @@ class _PermissionEditor extends StatelessWidget {
                     entry.key == t('Bán hàng') || entry.key == t('Cài đặt'),
                 tilePadding: EdgeInsets.symmetric(horizontal: 14),
                 title: Text(
-                  '${entry.key} (${entry.value.where((p) => selected.contains(_s(p['key']))).length}/${entry.value.length})',
+                  '${entry.key} (${entry.value.where((p) => selected.contains(asText(p['key']))).length}/${entry.value.length})',
                   style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w900),
                 ),
                 children: [
@@ -1033,15 +1032,15 @@ class _PermissionEditor extends StatelessWidget {
                               width: itemWidth,
                               child: CheckboxListTile(
                                 dense: true,
-                                value: selected.contains(_s(perm['key'])),
+                                value: selected.contains(asText(perm['key'])),
                                 onChanged: locked
                                     ? null
                                     : (checked) {
                                         final next = Set<String>.of(selected);
                                         if (checked == true) {
-                                          next.add(_s(perm['key']));
+                                          next.add(asText(perm['key']));
                                         } else {
-                                          next.remove(_s(perm['key']));
+                                          next.remove(asText(perm['key']));
                                         }
                                         onChanged(next);
                                       },
@@ -1050,7 +1049,7 @@ class _PermissionEditor extends StatelessWidget {
                                     style: TextStyle(
                                         fontSize: 12.5,
                                         fontWeight: FontWeight.w700)),
-                                subtitle: Text(_s(perm['key']),
+                                subtitle: Text(asText(perm['key']),
                                     style: TextStyle(
                                         fontSize: 10.5,
                                         color: DanColors.faint)),
@@ -1069,7 +1068,7 @@ class _PermissionEditor extends StatelessWidget {
   }
 
   Map<String, List<Map<String, dynamic>>> _groupCatalog() {
-    final byKey = {for (final p in catalog) _s(p['key']): p};
+    final byKey = {for (final p in catalog) asText(p['key']): p};
     final used = <String>{};
     final out = <String, List<Map<String, dynamic>>>{};
 
@@ -1077,7 +1076,7 @@ class _PermissionEditor extends StatelessWidget {
       final list = <Map<String, dynamic>>[];
       if (entry.key == t('Báo cáo')) {
         for (final p in catalog) {
-          final key = _s(p['key']);
+          final key = asText(p['key']);
           if (entry.value.contains(key) || key.startsWith('report.')) {
             list.add(p);
             used.add(key);
@@ -1095,14 +1094,14 @@ class _PermissionEditor extends StatelessWidget {
       if (list.isNotEmpty) out[entry.key] = list;
     }
 
-    final other = catalog.where((p) => !used.contains(_s(p['key']))).toList()
-      ..sort((a, b) => _s(a['key']).compareTo(_s(b['key'])));
+    final other = catalog.where((p) => !used.contains(asText(p['key']))).toList()
+      ..sort((a, b) => asText(a['key']).compareTo(asText(b['key'])));
     if (other.isNotEmpty) out[t('Khác')] = other;
     return out;
   }
 
   String _permissionLabel(Map<String, dynamic> perm) {
-    final key = _s(perm['key']);
+    final key = asText(perm['key']);
     final labels = {
       'sell': t('Bán hàng, mở bàn, thêm món'),
       'pay': t('Thanh toán bill'),
@@ -1143,7 +1142,7 @@ class _PermissionEditor extends StatelessWidget {
       'settings.promotions': t('Khuyến mại / voucher'),
     };
     if (labels.containsKey(key)) return labels[key]!;
-    final raw = _s(perm['label']);
+    final raw = asText(perm['label']);
     return raw.isNotEmpty ? raw : key;
   }
 }

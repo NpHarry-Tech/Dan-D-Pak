@@ -5,7 +5,7 @@ import '../../providers/auth_provider.dart';
 import '../../services/api_service.dart';
 import '../../ui/app_theme.dart';
 import '../../widgets/dan_top_bar.dart';
-import '../management/settings_ops_panels.dart';
+import 'operations_panel.dart';
 import '../../utils/translation.dart';
 
 class AccountingScreen extends StatelessWidget {
