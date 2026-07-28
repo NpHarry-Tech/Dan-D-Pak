@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -6,6 +8,7 @@ import '../../providers/auth_provider.dart';
 import '../../providers/customer_display_controller.dart';
 import '../../providers/pos_provider.dart';
 import '../../services/api_service.dart';
+import '../../services/local_store.dart';
 import '../../services/socket_service.dart';
 import '../../ui/app_theme.dart';
 import '../../ui/debouncer.dart';
@@ -48,6 +51,10 @@ class _RetailScreenState extends State<RetailScreen> with WidgetsBindingObserver
 
   String _search = '';
   bool _inStockOnly = false;
+  // '' = mặc định (theo tên) | price_asc | price_desc | stock_asc | stock_desc.
+  // Lưu vĩnh viễn trên THIẾT BỊ này qua LocalStore (giống resizable_pane) — mỗi
+  // máy tự nhớ riêng, không đồng bộ qua server.
+  String _sortBy = '';
   bool _loading = true;
   String? _error;
 
@@ -153,6 +160,8 @@ class _RetailScreenState extends State<RetailScreen> with WidgetsBindingObserver
         limit: 40,
         q: query,
         channel: 'retail',
+        inStockOnly: _inStockOnly,
+        sort: _sortBy,
       );
 
       final itemsData = result['items'] as List? ?? [];
@@ -217,7 +226,98 @@ class _RetailScreenState extends State<RetailScreen> with WidgetsBindingObserver
     super.dispose();
   }
 
+  static const _kFilterInStockKey = 'retail_filter_in_stock';
+  static const _kFilterSortKey = 'retail_filter_sort';
+
+  Future<void> _loadFilterPrefs() async {
+    final inStock = await LocalStore.instance.getString(_kFilterInStockKey);
+    final sort = await LocalStore.instance.getString(_kFilterSortKey);
+    if (!mounted) return;
+    setState(() {
+      _inStockOnly = inStock == '1';
+      _sortBy = sort ?? '';
+    });
+  }
+
+  Future<void> _saveFilterPrefs() async {
+    await LocalStore.instance
+        .setString(_kFilterInStockKey, _inStockOnly ? '1' : '0');
+    await LocalStore.instance.setString(_kFilterSortKey, _sortBy);
+  }
+
+  List<MapEntry<String, String>> get _sortOptions => [
+        MapEntry('', t('Mặc định (theo tên)')),
+        MapEntry('price_desc', t('Giá: cao → thấp')),
+        MapEntry('price_asc', t('Giá: thấp → cao')),
+        MapEntry('stock_desc', t('Số lượng: nhiều → ít')),
+        MapEntry('stock_asc', t('Số lượng: ít → nhiều')),
+      ];
+
+  Future<void> _openFilterSheet() async {
+    var tempInStock = _inStockOnly;
+    var tempSort = _sortBy;
+    final applied = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setLocal) => AlertDialog(
+          title: Text(t('Lọc & sắp xếp')),
+          content: SizedBox(
+            width: 340,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: Text(t('Chỉ hiện còn hàng')),
+                    value: tempInStock,
+                    onChanged: (v) => setLocal(() => tempInStock = v),
+                  ),
+                  Divider(height: 20),
+                  Padding(
+                    padding: EdgeInsets.only(bottom: 4),
+                    child: Text(t('Sắp xếp theo'),
+                        style: TextStyle(
+                            fontWeight: FontWeight.w800, fontSize: 12.5)),
+                  ),
+                  for (final opt in _sortOptions)
+                    RadioListTile<String>(
+                      contentPadding: EdgeInsets.zero,
+                      dense: true,
+                      title: Text(opt.value),
+                      value: opt.key,
+                      groupValue: tempSort,
+                      onChanged: (v) => setLocal(() => tempSort = v ?? ''),
+                    ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: Text(t('Hủy')),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: Text(t('Áp dụng')),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (applied != true || !mounted) return;
+    setState(() {
+      _inStockOnly = tempInStock;
+      _sortBy = tempSort;
+    });
+    unawaited(_saveFilterPrefs());
+    _loadSkusNextPage(isRefresh: true);
+  }
+
   Future<void> _load() async {
+    await _loadFilterPrefs();
     setState(() {
       _loading = true;
       _error = null;
@@ -226,7 +326,13 @@ class _RetailScreenState extends State<RetailScreen> with WidgetsBindingObserver
       final api = context.read<ApiService>();
       final pos = context.read<PosProvider>();
       final results = await Future.wait<dynamic>([
-        api.getSkusPaginated(page: 1, limit: 40, q: _search, channel: 'retail'),
+        api.getSkusPaginated(
+            page: 1,
+            limit: 40,
+            q: _search,
+            channel: 'retail',
+            inStockOnly: _inStockOnly,
+            sort: _sortBy),
         api.getOperationsConfig().catchError((_) => <String, dynamic>{}),
         api.getRetailLots().catchError((_) => <dynamic>[]),
         api.getActiveVouchers().catchError((_) => <dynamic>[]),
@@ -306,7 +412,13 @@ class _RetailScreenState extends State<RetailScreen> with WidgetsBindingObserver
   Future<void> _reloadLight() async {
     final api = context.read<ApiService>();
     final results = await Future.wait([
-      api.getSkusPaginated(page: 1, limit: 40, q: _search, channel: 'retail'),
+      api.getSkusPaginated(
+          page: 1,
+          limit: 40,
+          q: _search,
+          channel: 'retail',
+          inStockOnly: _inStockOnly,
+          sort: _sortBy),
       api.getRetailLots().catchError((_) => <dynamic>[]),
       api.getActiveVouchers().catchError((_) => <dynamic>[]),
       api.getCustomers().catchError((_) => <dynamic>[]),
@@ -498,9 +610,11 @@ class _RetailScreenState extends State<RetailScreen> with WidgetsBindingObserver
   }
 
   List<Sku> get _filteredSkus {
+    // "Còn hàng" + sắp xếp đã lọc/sắp xếp phía SERVER (getSkusPaginated), TRƯỚC
+    // khi phân trang — không lọc lại ở đây nữa (list lọc-sau-khi-tải-trang từng
+    // gây thiếu hàng hiện trên màn dù server còn nhiều món khác thoả điều kiện).
     final q = foldSearch(_search);
     var list = _skus.toList();
-    if (_inStockOnly) list = list.where((s) => s.stock > 0).toList();
     if (q.isNotEmpty) {
       list = list
           .where((s) =>
@@ -1195,10 +1309,9 @@ class _RetailScreenState extends State<RetailScreen> with WidgetsBindingObserver
                       label: Text(t('Thêm')),
                     ),
               SizedBox(width: 8),
-              FilterChip(
-                label: Text(t('Còn hàng')),
-                selected: _inStockOnly,
-                onSelected: (v) => setState(() => _inStockOnly = v),
+              _FilterButton(
+                active: _inStockOnly || _sortBy.isNotEmpty,
+                onPressed: _openFilterSheet,
               ),
             ],
           ),
@@ -1471,6 +1584,29 @@ class _RetailScreenState extends State<RetailScreen> with WidgetsBindingObserver
           ),
         ],
       ),
+    );
+  }
+}
+
+/// Nút mở bảng "Lọc & sắp xếp" (thay cho FilterChip "Còn hàng" cũ) — tô màu
+/// khi có bộ lọc/sắp xếp đang áp dụng để thu ngân biết danh sách đang bị lọc.
+class _FilterButton extends StatelessWidget {
+  final bool active;
+  final VoidCallback onPressed;
+
+  const _FilterButton({required this.active, required this.onPressed});
+
+  @override
+  Widget build(BuildContext context) {
+    return OutlinedButton.icon(
+      onPressed: onPressed,
+      style: OutlinedButton.styleFrom(
+        backgroundColor: active ? DanColors.brand.withValues(alpha: 0.1) : null,
+        foregroundColor: active ? DanColors.brand : null,
+        side: active ? BorderSide(color: DanColors.brand) : null,
+      ),
+      icon: Icon(Icons.filter_list, size: 18),
+      label: Text(t('Lọc')),
     );
   }
 }

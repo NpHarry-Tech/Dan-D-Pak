@@ -4,6 +4,7 @@
 import fs from 'node:fs';
 import nodePath from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { sendPushForNewAppVersion } from './push.js';
 
 const __dirname = nodePath.dirname(fileURLToPath(import.meta.url));
 const ROOT = nodePath.join(__dirname, '..');
@@ -89,6 +90,18 @@ export function publishRelease(platform, buffer, { version, buildNumber, notes, 
     mandatory: mandatory === true || mandatory === 'true',
   };
   writeManifest(m);
+
+  // Đẩy thông báo tới thiết bị NGAY CẢ KHI ĐANG TẮT — trước đây chỉ báo khi
+  // mở app lên (thụ động, đúng vấn đề đã báo). Chỉ Android có FCM; không chờ
+  // gửi xong mới trả response (publish không được chậm vì việc này).
+  if (platform === 'android') {
+    sendPushForNewAppVersion('android', {
+      title: 'Dan D Pak POS — Bản cập nhật mới',
+      body: `Phiên bản ${m[platform].version} đã sẵn sàng. Mở app để cập nhật ngay.`,
+      data: { type: 'app_update', buildNumber: String(bn), version: m[platform].version },
+    }).catch(() => {});
+  }
+
   return { ok: true, platform, ...m[platform], bytes: buffer.length };
 }
 

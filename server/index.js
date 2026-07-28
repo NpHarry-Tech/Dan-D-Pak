@@ -27,6 +27,7 @@ import { requestContextMiddleware } from './core/requestContext.js';
 import { logSystem, maintainSystemLogs } from './services/systemLogs.js';
 import { maintainPrintJobs } from './services/printing.js';
 import { maintainRetailCarts } from './services/retailCart.js';
+import { maintainRetailDrafts } from './services/retail.js';
 import { rateLimit } from './core/rateLimit.js';
 
 // Gzip middleware dùng Node built-in zlib — không cần thêm npm package.
@@ -208,6 +209,10 @@ function maintainAudit() {
   if (pj.removedByAge || pj.removedByCount) logger.info('print_jobs pruned', pj);
   const rc = maintainRetailCarts();
   if (rc) logger.info('retail_carts pruned', { removed: rc });
+  // Đơn nháp bỏ quên (thu ngân đóng dialog chuyển khoản lúc mất mạng, app crash…):
+  // client đã tự hủy khi đóng dialog bình thường — đây chỉ là lưới an toàn.
+  const rd = maintainRetailDrafts();
+  if (rd) logger.info('retail draft orders voided (stale)', { voided: rd });
 }
 maintainAudit();
 setInterval(maintainAudit, 24 * 60 * 60 * 1000).unref();
@@ -216,7 +221,8 @@ setInterval(maintainAudit, 24 * 60 * 60 * 1000).unref();
 function runBackup() {
   try {
     const r = backupDatabase(env.BACKUP_RETENTION_DAYS);
-    if (r.ok) logger.info('database backup written', { path: r.path, bytes: r.bytes, pruned: r.pruned });
+    if (r.ok && r.skipped) logger.info('database backup skipped (already have one today)', { pruned: r.pruned });
+    else if (r.ok) logger.info('database backup written', { path: r.path, bytes: r.bytes, pruned: r.pruned });
     else logger.warn('database backup failed', { error: r.error });
   } catch (e) { logger.warn('database backup threw', { message: e.message }); }
 }

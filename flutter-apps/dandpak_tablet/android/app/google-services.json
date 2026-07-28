@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "414527662265",
+    "project_id": "dan-d-pak-pos",
+    "storage_bucket": "dan-d-pak-pos.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:414527662265:android:dd6c2133c87b412e165368",
+        "android_client_info": {
+          "package_name": "com.dandpak.dandpak_tablet"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyB44w7Ke9dyxFZvWhXdxnGEX3u7M7E54fQ"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -4,6 +4,7 @@ import * as AppRelease from '../../services/appRelease.js';
 import { raw } from 'express';
 import { errorPayload } from '../../core/errors.js';
 import fs from 'node:fs';
+import { pipeline } from 'node:stream/promises';
 import { rateLimit } from '../../core/rateLimit.js';
 
 const publishLimiter = rateLimit({ key: 'app-publish', windowMs: 60_000, max: 3 });
@@ -15,15 +16,16 @@ api.get('/app/version', wrap((req) => AppRelease.latestFor(
   String(req.query.platform || 'windows').toLowerCase())));
 // Download: PUBLIC — stream file cài đặt (exe/apk) cho client tự cập nhật.
 // KHÔNG dùng wrap() vì handler tự pipe vào res (wrap sẽ res.json sau khi đã gửi).
-api.get('/app/download/:platform', (req, res) => {
+api.get('/app/download/:platform', async (req, res) => {
   try {
     const { path: filePath, name } = AppRelease.releaseFilePath(
       String(req.params.platform || '').toLowerCase());
     res.setHeader('Content-Disposition', `attachment; filename="${name}"`);
     res.setHeader('Content-Type', 'application/octet-stream');
-    fs.createReadStream(filePath).pipe(res);
+    await pipeline(fs.createReadStream(filePath), res);
   } catch (e) {
     logRequestError(req, e);
+    if (res.headersSent) { res.destroy(); return; }
     res.status(e.status || 400).json(errorPayload(e));
   }
 });

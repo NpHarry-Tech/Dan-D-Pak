@@ -5,7 +5,7 @@ import { cleanText, headerVal, safeEqual } from '../core/util.js';
 import { emit } from '../realtime.js';
 import { getOrder, getTableState, recomputeTotals, resolveStaffCall } from './orders.js';
 import { deductForOrder } from './inventory.js';
-import { printReceipt } from './printing.js';
+import { printReceipt, printConfigForJob } from './printing.js';
 import { canonicalMethodKey, getIntegrations, getOperationsConfig, getPrintConfig } from './settings.js';
 import { getActiveShift } from './shifts.js';
 import { archiveOrder, archivePayment } from './archive.js';
@@ -66,9 +66,23 @@ function vietQrSafe(value = '', max = 23) {
     .slice(0, max);
 }
 
+// Số hoá đơn (billNoForSeq trong orders.js) luôn có dạng chữ+số: "Dan{ddMMyy}{seq}".
+// Phần CHỮ ("Dan") chỉ là quy ước đặt tên hoá đơn nội bộ — không liên quan gì tới
+// "Tiền tố nội dung CK" (transferPrefix) cấu hình ở Kế toán, vốn để phân biệt giao
+// dịch của CỬA HÀNG này trên sao kê ngân hàng dùng chung. Ghép thẳng cả hai (VD
+// "TEST" + "DAN270726004") ra "TESTDAN270726004" — thừa chữ "DAN" không cần thiết
+// và không đúng như người dùng cấu hình. Bỏ hẳn phần chữ đầu bill_no, chỉ lấy phần
+// số ({ddMMyy}{seq}) ghép sau tiền tố — dùng CHUNG một hàm để QR hiển thị và hàm
+// khớp webhook (findOpenOrderByContent) LUÔN tính ra cùng 1 giá trị.
+function billNoDigits(order) {
+  const raw = String(order?.bill_no || order?.id || Date.now());
+  const digits = raw.replace(/^\D+/, '');
+  return digits || vietQrSafe(raw, 23);
+}
+
 function paymentReferenceForOrder(order, ops, max = 23) {
   const prefix = vietQrSafe(ops.payment?.transferPrefix || 'DANBILL', 8) || 'DANBILL';
-  const code = vietQrSafe(order.bill_no || order.id || Date.now(), Math.max(1, max - prefix.length));
+  const code = vietQrSafe(billNoDigits(order), Math.max(1, max - prefix.length));
   return `${prefix}${code}`.slice(0, max);
 }
 
@@ -90,14 +104,25 @@ function vietQrBaseUrl(cfg = {}) {
     : 'https://dev.vietqr.org/vqr/api';
 }
 
+// img.vietqr.io/image/{bank}-{acc}-compact2.png chỉ chấp nhận SỐ TÀI KHOẢN THẬT
+// dạng số — một số ngân hàng (BIDV...) bắt buộc dùng Tài khoản ảo (VA, dạng chữ+số
+// như "96247MFSBR") để đối soát qua cổng như SePay, và img.vietqr.io từ chối VA này
+// ("Tài khoản hưởng không hợp lệ"). vietqr.app/img chấp nhận cả VA lẫn số tài khoản
+// thường — đổi sang endpoint này để QR luôn tạo được bất kể ngân hàng dùng VA hay không.
 function publicVietQrImage({ bankCode, bankAccount, accountName, amount, reference }) {
   if (!bankCode || !bankAccount) return '';
   const query = new URLSearchParams({
-    amount: String(Math.max(0, parseInt(amount) || 0)),
-    addInfo: reference,
-    accountName: accountName || '',
+    bank: bankCode,
+    acc: bankAccount,
+    template: '',
+    showinfo: 'true',
+    fullacc: 'true',
+    holder: accountName || '',
   });
-  return `https://img.vietqr.io/image/${encodeURIComponent(bankCode)}-${encodeURIComponent(bankAccount)}-compact2.png?${query.toString()}`;
+  const amt = Math.max(0, parseInt(amount) || 0);
+  if (amt > 0) query.set('amount', String(amt));
+  if (reference) query.set('des', reference);
+  return `https://vietqr.app/img?${query.toString()}`;
 }
 
 function normalizeQrImage(value) {
@@ -284,7 +309,7 @@ export function buildOrderDiscountPlan(order_id, {
   return { ...plan, lines, customer: cust };
 }
 
-function paidForOrder(order_id) {
+export function paidForOrder(order_id) {
   return Number(db.prepare(`
     SELECT COALESCE(SUM(pl.amount),0) paid
     FROM payment_lines pl JOIN payments p ON p.id=pl.payment_id
@@ -394,7 +419,17 @@ export function payOrder(order_id, lines, options = {}, branch_id = 'br1') {
 
     const paidBefore = paidForOrder(order_id);
     const remainingDue = fresh.total - paidBefore;
-    if (remainingDue <= 0) throw new Error('Order has no remaining balance');
+    if (remainingDue <= 0) {
+      // Đơn đã được đóng bởi một luồng khác (webhook SePay/Casso/payOS tự đối soát,
+      // hoặc thiết bị khác vừa xác nhận) trong lúc thu ngân còn đang thao tác trên
+      // dialog thanh toán — KHÔNG phải lỗi thao tác, chỉ là race giữa 2 nguồn đóng
+      // bill. status/code riêng để caller (processIncomingCredit, client) phân biệt
+      // được với lỗi thật, thay vì hiện nguyên văn tiếng Anh cho thu ngân.
+      const e = new Error('Hóa đơn này vừa được xác nhận thanh toán rồi (có thể do chuyển khoản tự động hoặc thiết bị khác) — không cần thu thêm.');
+      e.status = 409;
+      e.code = 'ALREADY_SETTLED';
+      throw e;
+    }
     const payment = settlePaymentLines(lines, remainingDue);
 
     const pid = uid('pay_');
@@ -464,7 +499,7 @@ export function payOrder(order_id, lines, options = {}, branch_id = 'br1') {
     receipt.fully_settled = true;
     receipt.paid_total = fresh.total;
     receipt.remaining_due = 0;
-    receipt.print_config = getPrintConfig(branch_id);
+    receipt.print_config = printConfigForJob(getPrintConfig(branch_id));
     receipt.branch_id = branch_id;
     archiveOrder(getOrder(order_id));
     archivePayment(receipt);
@@ -730,9 +765,19 @@ function payosOrderCode() {
 function recordBankTx({ provider, externalId, branch_id, amount, content, accountNumber, reference, order_id, status, raw }) {
   const id = uid('btx_');
   try {
-    const r = db.prepare(`INSERT OR IGNORE INTO bank_transactions
+    // UPSERT thay vì INSERT OR IGNORE: một external_id có thể được xử lý lại (SePay
+    // gửi lại, hoặc merchant tự bấm "Gửi lại" ở Lịch sử gửi) sau khi lần đầu ghi
+    // 'unmatched'/'error' — trước đây IGNORE khiến hàng cũ kẹt mãi ở 'unmatched'
+    // dù lần retry sau đó đã khớp và đóng bill thành công, gây hiểu lầm "hên xui".
+    // processIncomingCredit() đã chặn KHÔNG gọi tới đây nữa nếu externalId từng
+    // ở trạng thái paid/underpaid/already_paid, nên UPDATE ở đây luôn an toàn.
+    const r = db.prepare(`INSERT INTO bank_transactions
       (id,provider,external_id,branch_id,amount,content,account_number,reference,order_id,status,raw_json,created_at)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+      ON CONFLICT(provider,external_id) DO UPDATE SET
+        amount=excluded.amount, content=excluded.content, account_number=excluded.account_number,
+        reference=excluded.reference, order_id=excluded.order_id, status=excluded.status,
+        raw_json=excluded.raw_json, created_at=excluded.created_at`)
       .run(id, provider, externalId || id, branch_id || null, money(amount),
         cleanText(content, 400), cleanText(accountNumber, 60), cleanText(reference, 120),
         order_id || null, status, JSON.stringify(raw || {}).slice(0, 4000), now());
@@ -750,10 +795,13 @@ function findOpenOrderByContent(content) {
   // Lấy bill_no của tất cả đơn đang mở (chỉ 2 cột, không load items)
   const rows = db.prepare(`SELECT id, branch_id, bill_no, voucher_code FROM orders WHERE status IN ('open','partially_paid') ORDER BY created_at DESC LIMIT 500`).all();
   for (const row of rows) {
-    // Tính reference từ bill_no thay vì load toàn bộ order + items
+    // Tính reference từ bill_no thay vì load toàn bộ order + items — PHẢI dùng
+    // đúng cùng công thức với paymentReferenceForOrder() (billNoDigits + prefix),
+    // nếu không QR hiển thị 1 kiểu mà chỗ khớp webhook lại chờ 1 kiểu khác, không
+    // bao giờ khớp được dù nội dung chuyển khoản đúng y hệt QR.
     const ops = getOperationsConfig(row.branch_id || 'br1');
     const prefix = vietQrSafe(ops.payment?.transferPrefix || 'DANBILL', 8) || 'DANBILL';
-    const code = vietQrSafe(row.bill_no || row.id || '', Math.max(1, 23 - prefix.length));
+    const code = vietQrSafe(billNoDigits(row), Math.max(1, 23 - prefix.length));
     const ref = `${prefix}${code}`.slice(0, 23);
     if (ref && needle.includes(ref)) {
       // Chỉ gọi getOrder() khi đã khớp — thay vì 500 lần
@@ -767,7 +815,13 @@ function findOpenOrderByContent(content) {
 function processIncomingCredit(provider, { externalId, amount, content, accountNumber, raw } = {}) {
   const amt = money(amount);
   if (externalId) {
-    const dup = db.prepare(`SELECT id, status FROM bank_transactions WHERE provider=? AND external_id=? AND status IN ('paid','unmatched','underpaid','error','duplicate')`).get(provider, String(externalId));
+    // CHỈ chặn khi tiền ĐÃ THỰC SỰ được áp vào 1 đơn (paid/underpaid/already_paid) —
+    // trước đây chặn luôn cả 'unmatched'/'error' khiến 1 giao dịch từng không khớp
+    // được (VD do đơn chưa kịp tạo lúc khách chuyển quá nhanh) bị KHOÁ VĨNH VIỄN,
+    // dù SePay gửi lại (hoặc merchant tự bấm gửi lại ở "Lịch sử gửi") sau khi đơn đã
+    // sẵn sàng — đúng cảm giác "hên xui" đã gặp. Chưa áp tiền lần nào thì retry vẫn
+    // phải được thử khớp lại bình thường.
+    const dup = db.prepare(`SELECT id, status FROM bank_transactions WHERE provider=? AND external_id=? AND status IN ('paid','underpaid','already_paid')`).get(provider, String(externalId));
     if (dup) return { ok: true, status: 'duplicate', tx_id: dup.id };
   }
   const order = findOpenOrderByContent(content);
@@ -786,15 +840,22 @@ function processIncomingCredit(provider, { externalId, amount, content, accountN
       idempotency_key: externalId ? `${provider}:${externalId}` : null,
     }, order.branch_id || 'br1');
   } catch (e) {
-    recordBankTx({ provider, externalId, branch_id: order.branch_id, amount: amt, content, accountNumber, reference, order_id: order.id, status: 'error', raw: { ...(raw || {}), error: e.message } });
-    return { ok: true, status: 'error', message: e.message };
+    // ALREADY_SETTLED = tiền về đúng bill nhưng bill đã đóng trước đó (thu ngân xác
+    // nhận tay / thiết bị khác) → đây là tiền THỪA cần đối soát tay (hoàn khách),
+    // khác hẳn 'error' (webhook/DB lỗi thật) — tách status để không lẫn vào nhau.
+    const status = e.code === 'ALREADY_SETTLED' ? 'already_paid' : 'error';
+    recordBankTx({ provider, externalId, branch_id: order.branch_id, amount: amt, content, accountNumber, reference, order_id: order.id, status, raw: { ...(raw || {}), error: e.message } });
+    return { ok: true, status, message: e.message };
   }
   const txStatus = receipt.fully_settled === false ? 'underpaid' : 'paid';
   recordBankTx({ provider, externalId, branch_id: order.branch_id, amount: amt, content, accountNumber, reference, order_id: order.id, status: txStatus, raw });
   if (receipt.fully_settled !== false) recordLoyaltyFromOrder(order);
   audit('payment.auto_confirmed', { provider, order: order.id, amount: amt, reference }, order.branch_id || 'br1', `auto:${provider}`);
   emit('payment:auto', { order_id: order.id, provider, amount: amt, bill_no: order.bill_no || null }, order.branch_id || 'br1');
-  return { ok: true, status: receipt.status, order_id: order.id, bill_no: order.bill_no || null, amount: Math.min(amt, remainingDue), remaining_due: receipt.remaining_due };
+  // receipt.status chỉ có ở nhánh trả góp (payOrder không set field này khi
+  // đóng đủ, chỉ set fully_settled) — dùng txStatus vừa tính ở trên cho đúng,
+  // tránh trả 'undefined' cho caller (khiến báo cáo/webhook-test hiện sai).
+  return { ok: true, status: txStatus, order_id: order.id, bill_no: order.bill_no || null, amount: Math.min(amt, remainingDue), remaining_due: receipt.remaining_due };
 }
 
 

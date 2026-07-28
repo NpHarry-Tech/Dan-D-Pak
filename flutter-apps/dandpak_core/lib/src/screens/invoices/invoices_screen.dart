@@ -32,6 +32,7 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
   String _status = '';
   String _search = '';
   bool _loading = true;
+  bool _hasLoadedOnce = false;
   String? _error;
 
   @override
@@ -51,6 +52,7 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
             .map((e) => Map<String, dynamic>.from(e))
             .toList();
         _loading = false;
+        _hasLoadedOnce = true;
         _error = null;
       });
     } catch (e) {
@@ -58,6 +60,7 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
       setState(() {
         _error = e.toString().replaceFirst('Exception: ', '');
         _loading = false;
+        _hasLoadedOnce = true;
       });
     }
   }
@@ -200,10 +203,10 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
   }
 
   Widget _body() {
-    if (_loading && _invoices.isEmpty) {
+    if (_loading && !_hasLoadedOnce) {
       return Center(child: CircularProgressIndicator());
     }
-    if (_error != null && _invoices.isEmpty) {
+    if (_error != null && !_hasLoadedOnce) {
       return Padding(
         padding: EdgeInsets.all(40),
         child: InlineMessage(t('Không tải được hóa đơn ($_error)'),

@@ -3,6 +3,7 @@ import '../primitives.dart';
 import '../models/pos_models.dart';
 import '../services/api_service.dart';
 import '../services/app_log.dart';
+import '../services/hardware_agent_launcher.dart';
 import '../services/local_store.dart';
 import '../services/node_runner.dart';
 import '../services/socket_service.dart';
@@ -212,6 +213,17 @@ class AuthProvider extends ChangeNotifier {
       await prefs.setString('auth_token', _token!);
       await prefs.setString('branch_id', branchId);
       await prefs.setString('app_lang', _language);
+
+      // Máy Windows tại quầy: tự khởi động ngầm Hardware Agent (không cửa sổ)
+      // dùng LUÔN tài khoản/PIN vừa đăng nhập — để server (đặt trên VPS) in
+      // được lên máy in/két/máy quẹt thẻ cắm tại quầy. Tự bỏ qua nếu bản build
+      // này không kèm agent hoặc không phải Windows.
+      HardwareAgentLauncher.spawnIfNeeded(
+        centralUrl: _serverUrl,
+        username: username,
+        pin: pin,
+        branchId: branchId,
+      );
 
       _isLoading = false;
       notifyListeners();

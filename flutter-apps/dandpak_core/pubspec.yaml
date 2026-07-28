@@ -41,6 +41,11 @@ dependencies:
   file_picker: ^10.0.0
   # Đọc/ghi file Excel .xlsx thuần Dart (file mẫu kiểm kho/nhập/xuất hàng).
   excel: ^4.0.6
+  # Đẩy thông báo KỂ CẢ KHI APP ĐÃ TẮT (Firebase Cloud Messaging) — chỉ thật
+  # sự hoạt động trên Android (cần google-services.json ở app tablet/phone);
+  # desktop tự bỏ qua (Platform.isAndroid check ở nơi gọi), không cần cấu hình gì thêm.
+  firebase_core: ^3.8.0
+  firebase_messaging: ^15.1.5
 
 dev_dependencies:
   flutter_test:

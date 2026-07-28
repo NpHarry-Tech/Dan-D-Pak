@@ -277,8 +277,21 @@ export function listSkus(branch_id = 'br1', filters = {}) {
 
   // ponytail: in-memory fold handles Vietnamese and cross-field tokens; add a
   // normalized indexed column if a measured catalog above 100k rows needs it.
-  const matchedRows = db.prepare(sql).all(...params)
+  let matchedRows = db.prepare(sql).all(...params)
     .filter(s => matchesSearch([s.code, s.name, s.barcode, s.category, s.brand, s.unit], search));
+
+  // Lọc "Còn hàng" + sắp xếp — làm TRƯỚC phân trang (không phải lọc client-side sau
+  // khi đã cắt trang), nếu không mỗi trang 40 SKU lọc xong có thể chỉ còn vài dòng,
+  // và màn Bán lẻ không tự tải thêm trang bù vào → nhìn như "thiếu hàng" dù server
+  // còn rất nhiều SKU khác thoả điều kiện.
+  if (filters.in_stock === '1' || filters.in_stock === 'true' || filters.in_stock === true) {
+    matchedRows = matchedRows.filter(s => Number(s.stock) > 0);
+  }
+  const sortKey = String(filters.sort || '').trim();
+  if (sortKey === 'price_asc') matchedRows = [...matchedRows].sort((a, b) => Number(a.price) - Number(b.price));
+  else if (sortKey === 'price_desc') matchedRows = [...matchedRows].sort((a, b) => Number(b.price) - Number(a.price));
+  else if (sortKey === 'stock_asc') matchedRows = [...matchedRows].sort((a, b) => Number(a.stock) - Number(b.stock));
+  else if (sortKey === 'stock_desc') matchedRows = [...matchedRows].sort((a, b) => Number(b.stock) - Number(a.stock));
 
   const page = intOr(filters.page, null);
   const limit = intOr(filters.limit, 40);

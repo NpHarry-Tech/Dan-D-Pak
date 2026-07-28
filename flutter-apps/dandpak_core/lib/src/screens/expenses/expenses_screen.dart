@@ -39,6 +39,9 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
   late DateTime _from;
   late DateTime _to;
   bool _loading = true;
+  // Đổi bộ lọc (nguồn/danh mục/khoảng ngày) không được xoá cả sidebar+bảng để
+  // hiện spinner toàn màn khi bộ lọc đang chọn có sẵn 0 kết quả.
+  bool _hasLoadedOnce = false;
   String? _error;
 
   @override
@@ -83,6 +86,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
             ? Map<String, dynamic>.from(res['summary'])
             : {};
         _loading = false;
+        _hasLoadedOnce = true;
         _error = null;
       });
     } catch (e) {
@@ -90,6 +94,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
       setState(() {
         _error = e.toString().replaceFirst('Exception: ', '');
         _loading = false;
+        _hasLoadedOnce = true;
       });
     }
   }
@@ -250,10 +255,10 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
   }
 
   Widget _body() {
-    if (_loading && _expenses.isEmpty) {
+    if (_loading && !_hasLoadedOnce) {
       return Center(child: CircularProgressIndicator());
     }
-    if (_error != null && _expenses.isEmpty) {
+    if (_error != null && !_hasLoadedOnce) {
       return Padding(
         padding: EdgeInsets.all(40),
         child: InlineMessage(t('Không tải được chi phí ($_error)'),

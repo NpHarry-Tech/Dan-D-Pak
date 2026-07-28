@@ -1,5 +1,12 @@
 # Project-level configuration.
 cmake_minimum_required(VERSION 3.14)
+# firebase_core's bundled Windows C++ SDK ships a CMakeLists.txt that still
+# declares `cmake_minimum_required(VERSION <3.5)` — newer CMake (>=4) refuses
+# to configure that outright. This variable is inherited by every
+# add_subdirectory() below (including the plugin's), so it must be set before
+# them. Firebase itself is never actually used on Windows (Android-only
+# feature, gated by Platform.isAndroid in Dart) — this only unblocks the build.
+set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
 project(dandpak_desktop LANGUAGES CXX)
 
 # The name of the executable created for the application. Change this to change
@@ -41,6 +48,11 @@ function(APPLY_STANDARD_SETTINGS TARGET)
   target_compile_features(${TARGET} PUBLIC cxx_std_17)
   target_compile_options(${TARGET} PRIVATE /W4 /WX /wd4100)
   target_compile_options(${TARGET} PRIVATE /EHsc)
+  # Nguồn .cpp là UTF-8 KHÔNG BOM (VD windows/runner/main.cpp có literal tiếng Việt
+  # L"Màn hình phụ") — thiếu cờ này, MSVC đọc byte UTF-8 theo codepage ANSI hệ thống,
+  # làm hỏng ký tự có dấu NGAY LÚC BIÊN DỊCH (không phải lỗi runtime) → tiêu đề cửa
+  # sổ màn hình phụ hiện chữ lỗi trên taskbar dù code Dart hoàn toàn đúng.
+  target_compile_options(${TARGET} PRIVATE /utf-8)
   target_compile_definitions(${TARGET} PRIVATE "_HAS_EXCEPTIONS=0")
   target_compile_definitions(${TARGET} PRIVATE "$<$<CONFIG:Debug>:_DEBUG>")
 endfunction()

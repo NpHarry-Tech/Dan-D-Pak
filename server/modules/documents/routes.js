@@ -7,6 +7,7 @@ import { errorPayload } from '../../core/errors.js';
 import fs from 'node:fs';
 import nodePath from 'node:path';
 import { createHash } from 'node:crypto';
+import { pipeline } from 'node:stream/promises';
 import { rateLimit } from '../../core/rateLimit.js';
 import { storagePath } from '../../config/env.js';
 import { matchesSearch, searchTokens } from '../../core/search.js';
@@ -151,8 +152,12 @@ api.get('/documents/files/:id/download', async (req, res) => {
 
     res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(rec.original_name)}"`);
     res.setHeader('Content-Type', rec.mime_type || 'application/octet-stream');
-    fs.createReadStream(filePath).pipe(res);
-  } catch(e) { logRequestError(req, e); res.status(e.status || 400).json(errorPayload(e)); }
+    await pipeline(fs.createReadStream(filePath), res);
+  } catch(e) {
+    logRequestError(req, e);
+    if (res.headersSent) { res.destroy(); return; }
+    res.status(e.status || 400).json(errorPayload(e));
+  }
 });
 
 // ── Preview (inline) ─────────────────────────────────────────────────────────
@@ -167,8 +172,12 @@ api.get('/documents/files/:id/preview', async (req, res) => {
 
     res.setHeader('Content-Type', rec.mime_type || 'application/octet-stream');
     res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(rec.original_name)}"`);
-    fs.createReadStream(filePath).pipe(res);
-  } catch(e) { logRequestError(req, e); res.status(e.status || 400).json(errorPayload(e)); }
+    await pipeline(fs.createReadStream(filePath), res);
+  } catch(e) {
+    logRequestError(req, e);
+    if (res.headersSent) { res.destroy(); return; }
+    res.status(e.status || 400).json(errorPayload(e));
+  }
 });
 
 // ── Update metadata ───────────────────────────────────────────────────────────

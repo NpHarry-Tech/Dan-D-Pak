@@ -6,6 +6,11 @@ server/node_modules/
 .env.*
 !.env.example
 
+# Firebase Admin SDK service-account key — grants server-side push/admin
+# access to the Firebase project. Never commit; each deploy target keeps its
+# own local copy at the path FIREBASE_SERVICE_ACCOUNT_PATH points to.
+server/config/firebase-service-account*.json
+
 .next/
 dist/
 build/
@@ -48,6 +53,9 @@ scratch/
 *.apk
 *.tgz
 *.zip
+# Hardware Agent - binary DAU VAO can commit (khong phai build output) de
+# CMake copy vao ban cai Windows - xem windows/runner/CMakeLists.txt.
+!flutter-apps/dandpak_desktop/windows/hardware-agent/dandpak-agent.exe
 
 # Flutter temp
 **/.dart_tool/

@@ -37,6 +37,32 @@ function parsePayload(raw) {
   try { return JSON.parse(raw || '{}') || {}; } catch { return {}; }
 }
 
+// Bỏ bớt dữ liệu ảnh nhúng (logo base64, có thể ~250KB/ảnh) khỏi print_config
+// TRƯỚC KHI nhúng vào payload job/hóa đơn lưu trữ. renderEl() (bên dưới) chỉ in
+// placeholder "[LABEL]" cho phần tử type=image, KHÔNG BAO GIỜ đọc el.src/
+// originalSrc — nên giữ nguyên chỉ làm phình to mỗi dòng print_jobs/mỗi hóa đơn
+// lưu trữ mà không ích gì. Đây là nguyên nhân sự cố CPU 100% do agent poll mỗi
+// 1.5s phải JSON.parse hàng chục dòng, mỗi dòng cõng thêm một bản sao ảnh logo.
+function stripTemplateImages(tpl) {
+  if (!tpl || typeof tpl !== 'object') return tpl;
+  const stripEls = (arr) => Array.isArray(arr)
+    ? arr.map(el => (el && el.type === 'image') ? { ...el, src: '', originalSrc: '' } : el)
+    : arr;
+  return { ...tpl, elements: stripEls(tpl.elements), rows: stripEls(tpl.rows) };
+}
+export function printConfigForJob(cfg) {
+  if (!cfg || typeof cfg !== 'object') return cfg;
+  const templates = cfg.templates || {};
+  return {
+    ...cfg,
+    templates: {
+      ...templates,
+      bill: stripTemplateImages(templates.bill),
+      label: stripTemplateImages(templates.label),
+    },
+  };
+}
+
 function printerRows(branch_id = 'br1') {
   const cfg = getPrintConfig(branch_id);
   return Array.isArray(cfg.printers) ? cfg.printers : [];
@@ -669,7 +695,17 @@ export function createJob({ printer, type, title, payload, branch_id = 'br1', re
   // Hardware Agent tại cửa hàng nhận job và in trên máy in LAN/USB tại chỗ.
   if (env.PRINT_DISPATCH !== 'agent' &&
       p?.active !== false && p?.auto && p?.connection && p.connection !== 'browser') {
-    setTimeout(() => dispatchJob(id, branch_id).catch(() => {}), 25);
+    setTimeout(() => dispatchJob(id, branch_id).catch((e) => {
+      // Trước đây nuốt lỗi hoàn toàn — 1 job kẹt do lỗi dispatch (không phải lỗi
+      // in vật lý, cái đó đã có nhánh catch riêng ghi log/emit print:failed) sẽ
+      // không để lại dấu vết nào để biết mà kiểm tra.
+      logSystem({
+        level: 'warn', source: 'printer', eventType: 'print_dispatch_error',
+        title: `Không tự động gửi job in được: ${id}`,
+        message: e?.message || String(e), branchId: branch_id,
+        action: 'print:dispatch', extra: { job: id, printer },
+      });
+    }), 25);
   }
   return job;
 }
@@ -875,9 +911,34 @@ export function pendingAgentJobs(branch_id = 'br1', { limit = 40 } = {}) {
       WHERE branch_id=? AND status IN ('queued','failed')
       ORDER BY created_at ASC LIMIT ?`,
   ).all(branch_id, Math.max(1, Math.min(100, limit))).map(publicJob);
+  // Nạp cấu hình in ĐÚNG 1 LẦN cho cả loạt job — trước đây resolveAgentJob() gọi
+  // lại getPrintConfig() (đọc DB + JSON.parse + sanitize) cho TỪNG job, nên agent
+  // hỏi hàng đợi mỗi 1.5s làm server lặp lại việc này tới ~40 lần/lần hỏi, tốn
+  // gần 2 giây CPU liên tục 24/7 → nghẽn cứng cả server (đã gây sự cố thật).
+  const printCfg = getPrintConfig(branch_id);
+  const printers = Array.isArray(printCfg.printers) ? printCfg.printers : [];
   return rows
-    .map(job => resolveAgentJob(job, branch_id))
+    .map(job => resolveAgentJobFast(job, printers, printCfg))
     .filter(x => x && (x.connection === 'lan' || x.connection === 'system'));
+}
+
+function resolveAgentJobFast(job, printers, printCfg) {
+  if (!job) return null;
+  const printer = printers.find(p => p.id === job.printer) || null;
+  if (!printer || printer.active === false) return null;
+  const connection = printer.connection || 'browser';
+  return {
+    id: job.id,
+    type: job.type,
+    connection,
+    ip: printer.ip || '',
+    port: printer.port || 9100,
+    systemName: printer.systemName || printer.name || '',
+    drawer: !!(printer.openDrawerOnPrint && job.type === 'receipt') || job.type === 'cash_drawer',
+    text: renderJobText(job),
+    density: printCfg?.bill?.printDensity || '',
+    created_at: job.created_at,
+  };
 }
 
 // Gói mọi thứ agent cần để in 1 job: text đã render + đích + có mở két không.
@@ -943,7 +1004,7 @@ export function reprint(id, branch_id = 'br1') {
   if (j.branch_id !== branch_id) throw new Error('Print job không thuộc chi nhánh hiện tại');
   audit('print.reprint', { job: id }, branch_id);
   const payload = { ...(j.payload || {}), reprint: true };
-  if (j.type === 'receipt') payload.print_config = getPrintConfig(branch_id);
+  if (j.type === 'receipt') payload.print_config = printConfigForJob(getPrintConfig(branch_id));
   return createJob({ printer: j.printer, type: j.type, title: `${j.title || ''} (in lại)`.trim(), payload, branch_id, reprint_of: id });
 }
 
@@ -1067,7 +1128,7 @@ export function printReceipt(receipt, branch_id = 'br1') {
       printer: receipt.linked_printer_id || 'bill',
       type: 'receipt',
       title: `Receipt #${receipt.number}${copies > 1 ? ` (${i + 1}/${copies})` : ''}${reprint ? ' (in lại)' : ''}`,
-      payload: { ...receipt, print_config: cfg, reprint, copy_index: i + 1, copy_total: copies },
+      payload: { ...receipt, print_config: printConfigForJob(cfg), reprint, copy_index: i + 1, copy_total: copies },
       branch_id,
     }));
   }
@@ -1103,7 +1164,7 @@ export function printCupLabels(order, items = [], branch_id = 'br1') {
           note: item.note || '',
           qty: item.qty,
           copy: copies > 1 ? `${i + 1}/${copies}` : '',
-          print_config: cfg,
+          print_config: printConfigForJob(cfg),
         },
         branch_id,
       });

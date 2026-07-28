@@ -26,6 +26,7 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
   String _tab = 'in'; // in | return
   List<Map<String, dynamic>> _warehouses = [];
   bool _loading = true;
+  bool _hasLoadedOnce = false;
   String? _error;
 
   @override
@@ -46,12 +47,14 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
       setState(() {
         _warehouses = kvMapList(whs);
         _loading = false;
+        _hasLoadedOnce = true;
       });
     } catch (e) {
       if (!mounted) return;
       setState(() {
         _error = e.toString().replaceFirst('Exception: ', '');
         _loading = false;
+        _hasLoadedOnce = true;
       });
     }
   }
@@ -133,10 +136,10 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
   }
 
   Widget _body() {
-    if (_loading && _warehouses.isEmpty) {
+    if (_loading && !_hasLoadedOnce) {
       return Center(child: CircularProgressIndicator());
     }
-    if (_error != null && _warehouses.isEmpty) {
+    if (_error != null && !_hasLoadedOnce) {
       return Padding(
         padding: EdgeInsets.all(40),
         child: InlineMessage(t('Không tải được danh sách kho ($_error)'),

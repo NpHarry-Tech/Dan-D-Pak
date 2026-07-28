@@ -7,9 +7,18 @@ export function runBackupDatabase(db, root, retentionDays = 14) {
     const dir = join(root, 'backups');
     mkdirSync(dir, { recursive: true });
     const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    const today = stamp.slice(0, 10); // yyyy-mm-dd
     const plain = join(dir, `store-${stamp}.db`);
     const dest = `${plain}.enc`;
-    if (!existsSync(dest)) {
+    // VACUUM INTO + đọc lại toàn bộ file + mã hoá là công việc ĐỒNG BỘ, chặn
+    // toàn bộ event loop ~15-20s cho DB vài trăm MB. Trước đây chỉ chặn trùng
+    // giây (gần như không bao giờ khớp giữa 2 lần khởi động khác nhau) nên MỖI
+    // lần restart/deploy đều chạy lại toàn bộ, dù interval đặt 24h. Giờ chặn
+    // theo NGÀY: đã có bản sao lưu hôm nay thì bỏ qua, để restart/deploy không
+    // còn phải trả giá tạm-đứng-server mỗi lần.
+    const alreadyBackedUpToday = existsSync(dir) &&
+      readdirSync(dir).some(f => f.startsWith(`store-${today}`) && f.endsWith('.db.enc'));
+    if (!existsSync(dest) && !alreadyBackedUpToday) {
       db.exec(`VACUUM INTO '${plain.replace(/'/g, "''")}'`);
       writeFileSync(dest, encryptBytes(readFileSync(plain), `database-backup:${stamp}`), { mode: 0o600 });
       rmSync(plain, { force: true });
@@ -27,7 +36,7 @@ export function runBackupDatabase(db, root, retentionDays = 14) {
         }
       } catch { /* ignore */ }
     }
-    return { ok: true, path: dest, bytes: existsSync(dest) ? statSync(dest).size : 0, pruned };
+    return { ok: true, skipped: alreadyBackedUpToday, path: dest, bytes: existsSync(dest) ? statSync(dest).size : 0, pruned };
   } catch (e) {
     return { ok: false, error: e.message };
   }

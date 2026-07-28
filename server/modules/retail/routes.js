@@ -59,6 +59,18 @@ api.post('/retail/checkout', guard('pay'), wrap((req) => {
   }
   return receipt;
 }));
+// Đơn nháp cho chuyển khoản: tạo đơn 'open' THẬT ngay khi thu ngân chọn "Chuyển
+// khoản" (trước khi bấm Xác nhận), để webhook SePay/Casso/payOS có đơn để khớp và
+// tự đóng ngay khi tiền về — thay vì phải đợi thu ngân xác nhận tay. Xem thêm
+// comment ở Retail.createDraftOrder (services/retail.js).
+api.post('/retail/draft', guard('pay'), wrap((req) => Retail.createDraftOrder({
+  ...req.body,
+  client_request_id: req.body?.client_request_id || req.headers['idempotency-key'],
+  branch_id: branch(req),
+  cashier: req.user?.name || req.user?.username || '',
+})));
+api.post('/retail/draft/:id/void', guard('pay'), wrap((req) => Retail.voidDraftOrder(req.params.id, branch(req))));
+
 // --- Giỏ hàng bán lẻ CHIA SẺ (sync đa thiết bị) ---
 // POS/tablet/phone cùng chi nhánh thấy đúng cùng giỏ/khách/món trước khi thanh toán.
 // Đây là bản NHÁP (chưa phải đơn); trở thành đơn khi /retail/checkout. Chứa PII khách

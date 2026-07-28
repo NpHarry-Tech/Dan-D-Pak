@@ -44,7 +44,7 @@ Write-Host "  File   : $File  ($([math]::Round((Get-Item $File).Length/1MB,1)) M
 $loginBody = @{ username = $Username; pin = $Pin } | ConvertTo-Json
 $login = Invoke-RestMethod -Method Post -Uri "$Server/api/login" -ContentType 'application/json' -Body $loginBody
 $token = $login.token
-if (-not $token) { throw "Đăng nhập thất bại" }
+if (-not $token) { throw "Dang nhap that bai" }
 
 # 2) Upload binary (raw) kèm tham số qua query string
 $fileName = [System.IO.Path]::GetFileName($File)

@@ -39,6 +39,7 @@ class _KdsScreenState extends State<KdsScreen> {
   List<KdsTicket> _tickets = [];
   String _station = 'all';
   bool _loading = true;
+  bool _hasLoadedOnce = false;
   final bool _online = true;
   bool _disposed = false;
   String? _error;
@@ -108,12 +109,14 @@ class _KdsScreenState extends State<KdsScreen> {
             .toList();
         _error = null;
         _loading = false;
+        _hasLoadedOnce = true;
       });
     } catch (e) {
       if (!mounted) return;
       setState(() {
         _error = e.toString().replaceFirst('Exception: ', '');
         _loading = false;
+        _hasLoadedOnce = true;
       });
     }
   }
@@ -218,10 +221,10 @@ class _KdsScreenState extends State<KdsScreen> {
   }
 
   Widget _body(List<KdsTicket> visible) {
-    if (_loading && _tickets.isEmpty) {
+    if (_loading && !_hasLoadedOnce) {
       return Center(child: CircularProgressIndicator());
     }
-    if (_error != null && _tickets.isEmpty) {
+    if (_error != null && !_hasLoadedOnce) {
       return Padding(
         padding: EdgeInsets.all(40),
         child: InlineMessage(t('Không tải được phiếu bếp ($_error)'),

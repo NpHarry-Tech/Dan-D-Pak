@@ -50,6 +50,9 @@ class _DocumentsBodyState extends State<DocumentsBody> {
   List<Map<String, dynamic>> _files = [];
   String _search = '';
   bool _loading = true;
+  // Tìm kiếm ra 0 kết quả không được xoá luôn ô tìm kiếm để hiện spinner
+  // toàn màn — người dùng mất luôn chỗ sửa/xoá từ khoá vừa gõ.
+  bool _hasLoadedOnce = false;
   String? _error;
   String? _downloading;
   final _searchDebouncer = Debouncer(delay: Duration(milliseconds: 220));
@@ -83,6 +86,7 @@ class _DocumentsBodyState extends State<DocumentsBody> {
                 .toList()
             : [];
         _loading = false;
+        _hasLoadedOnce = true;
         _error = null;
       });
     } catch (e) {
@@ -90,6 +94,7 @@ class _DocumentsBodyState extends State<DocumentsBody> {
       setState(() {
         _error = e.toString().replaceFirst('Exception: ', '');
         _loading = false;
+        _hasLoadedOnce = true;
       });
     }
   }
@@ -170,10 +175,10 @@ class _DocumentsBodyState extends State<DocumentsBody> {
   }
 
   Widget _body() {
-    if (_loading && _files.isEmpty) {
+    if (_loading && !_hasLoadedOnce) {
       return Center(child: CircularProgressIndicator());
     }
-    if (_error != null && _files.isEmpty) {
+    if (_error != null && !_hasLoadedOnce) {
       return Padding(
         padding: EdgeInsets.all(40),
         child: InlineMessage(t('Không tải được tài liệu ($_error)'),

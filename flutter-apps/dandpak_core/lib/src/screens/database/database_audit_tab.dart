@@ -42,6 +42,7 @@ class _AuditLogTabState extends State<_AuditLogTab> {
 
   String _filter = 'all';
   bool _loading = true;
+  bool _hasLoadedOnce = false;
   bool _loadingMore = false;
   bool _hasMoreAudit = false;
   bool _hasMoreSys = false;
@@ -217,6 +218,7 @@ class _AuditLogTabState extends State<_AuditLogTab> {
         _hasMoreSys = includeSys && sysRows.length >= _pageSize;
         if (!silent) {
           _loading = false;
+          _hasLoadedOnce = true;
           _loadingMore = false;
           _error = null;
         }
@@ -227,6 +229,7 @@ class _AuditLogTabState extends State<_AuditLogTab> {
         setState(() {
           _error = e.toString().replaceFirst('Exception: ', '');
           _loading = false;
+          _hasLoadedOnce = true;
           _loadingMore = false;
         });
       }
@@ -329,12 +332,12 @@ class _AuditLogTabState extends State<_AuditLogTab> {
           SizedBox(height: 14),
           _filterBar(),
           SizedBox(height: 16),
-          if (_loading && _rows.isEmpty)
+          if (_loading && !_hasLoadedOnce)
             SizedBox(
               height: 260,
               child: Center(child: CircularProgressIndicator()),
             )
-          else if (_error != null && _rows.isEmpty)
+          else if (_error != null && !_hasLoadedOnce)
             InlineMessage(
               t('Không tải được nhật ký hoạt động ($_error)'),
               error: true,

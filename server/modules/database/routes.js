@@ -8,6 +8,17 @@ import { logger } from '../../core/logger.js';
 export function registerDatabaseRoutes(api, { wrap, guardAny, branch }) {
 // --- Database Management & Documentation APIs ---
 
+// Đo độ trễ event loop thật (không phải CPU% hệ điều hành — Node đơn luồng
+// nên "event loop lag" là chỉ số phản ánh sát nhất việc server có đang bị một
+// tác vụ đồng bộ nào đó (như vụ backup/print-job phình to hôm nay) chặn mất
+// hay không, dùng ngay được trên VPS không cần cài thêm gì.
+function measureEventLoopLag() {
+  return new Promise((resolve) => {
+    const started = Date.now();
+    setImmediate(() => resolve(Date.now() - started));
+  });
+}
+
 // GET /api/database/status
 api.get('/database/status', guardAny('settings.manage'), wrap(async () => {
   const fs = await import('node:fs');
@@ -16,6 +27,26 @@ api.get('/database/status', guardAny('settings.manage'), wrap(async () => {
   let dbSize = 0;
   try {
     dbSize = fs.statSync(DB_PATH).size;
+  } catch {}
+
+  let walSize = 0;
+  try {
+    walSize = fs.statSync(`${DB_PATH}-wal`).size;
+  } catch {}
+
+  const eventLoopLagMs = await measureEventLoopLag();
+  const mem = process.memoryUsage();
+
+  let printQueue = { queued: 0, failed: 0 };
+  try {
+    const rows = db.prepare(`SELECT status, COUNT(*) n FROM print_jobs WHERE status IN ('queued','failed') GROUP BY status`).all();
+    for (const r of rows) printQueue[r.status] = r.n;
+  } catch {}
+
+  let recentErrors5m = 0;
+  try {
+    const cutoff = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+    recentErrors5m = db.prepare(`SELECT COUNT(*) n FROM system_logs WHERE level='error' AND timestamp >= ?`).get(cutoff).n;
   } catch {}
 
   const configTables = [
@@ -67,11 +98,23 @@ api.get('/database/status', guardAny('settings.manage'), wrap(async () => {
     dbType: 'SQLite (node:sqlite)',
     dbPath: DB_PATH,
     dbSize,
+    walSize,
     sqliteVersion,
     journalMode,
     configCounts,
     transactionCounts,
     pendingSyncCount,
+    // Sự sống thật của tiến trình NGAY LÚC NÀY — dùng để phát hiện sớm kiểu sự
+    // cố hôm nay (agent poll làm nghẽn CPU): lag cao bất thường + queue in tồn
+    // đọng lớn là dấu hiệu trực tiếp, không cần chờ người dùng báo "app treo".
+    live: {
+      checkedAt: new Date().toISOString(),
+      uptimeSec: Math.round(process.uptime()),
+      eventLoopLagMs,
+      memory: { rssMb: Math.round(mem.rss / 1048576), heapUsedMb: Math.round(mem.heapUsed / 1048576), heapTotalMb: Math.round(mem.heapTotal / 1048576) },
+      printQueue,
+      recentErrors5m,
+    },
     // Báo cáo TRUNG THỰC: trạng thái sao lưu/đồng bộ phản ánh đúng thực tế hệ thống.
     backups: (() => {
       const list = listBackups();

@@ -8,6 +8,7 @@ import '../models/app_models.dart';
 import '../providers/auth_provider.dart';
 import '../services/api_service.dart';
 import '../services/app_updater.dart';
+import '../services/push_notifications.dart';
 import '../ui/app_theme.dart';
 import '../utils/translation.dart';
 import '../widgets/dan_tile_grid.dart';
@@ -104,6 +105,9 @@ class _LauncherScreenState extends State<LauncherScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _load();
       _checkUpdate();
+      // Đăng ký nhận thông báo đẩy KỂ CẢ KHI APP ĐÃ TẮT (trước đây app chỉ
+      // biết có bản cập nhật mới khi tự mở lên — thụ động, đúng vấn đề đã báo).
+      PushNotifications.register(context.read<ApiService>());
     });
   }
 

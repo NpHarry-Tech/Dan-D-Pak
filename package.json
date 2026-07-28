@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "express": "^4.21.2",
+    "firebase-admin": "^14.2.0",
     "pdfkit": "^0.19.1",
     "socket.io": "^4.8.1",
     "write-excel-file": "^4.1.1"

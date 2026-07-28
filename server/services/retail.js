@@ -3,8 +3,8 @@
 import { db, uid, now, audit } from '../db.js';
 import { parseJson } from '../core/util.js';
 import { emit } from '../realtime.js';
-import { createOrUpdateOrder, getOrder } from './orders.js';
-import { payOrder } from './payments.js';
+import { createOrUpdateOrder, getOrder, recomputeTotals } from './orders.js';
+import { payOrder, paidForOrder } from './payments.js';
 import { returnSku, applyChannelPrice } from './inventory.js';
 import { buildDiscountPlan } from './vouchers.js';
 import { getCustomer, recordPurchase } from './customers.js';
@@ -117,6 +117,90 @@ export function checkout({ items, payments, voucher_id = null, customer = null, 
     db.prepare('ROLLBACK').run();
     throw err;
   }
+}
+
+// ===========================================================================
+// Đơn NHÁP cho thanh toán chuyển khoản (SePay/Casso/payOS tự đối soát)
+// TRƯỚC ĐÂY: đơn retail chỉ được tạo trên server lúc bấm "Xác nhận" cuối cùng
+// → lúc thu ngân đang hiện QR cho khách quét, đơn CHƯA TỒN TẠI, nên webhook tìm
+// "đơn đang mở" để khớp nội dung chuyển khoản sẽ KHÔNG THẤY GÌ (unmatched) — tiền
+// về thật nhưng bill không tự đóng được. Hàm này tạo đơn 'open' THẬT ngay khi thu
+// ngân chọn "Chuyển khoản", để webhook có đơn để khớp và tự đóng ngay khi tiền về
+// (findOpenOrderByContent/processIncomingCredit trong payments.js đã có sẵn logic
+// này — chỉ thiếu đơn để khớp). CHƯA trừ kho, CHƯA tính là doanh thu — chỉ trở
+// thành thật khi payOrder() settle (qua webhook hoặc bấm Xác nhận).
+export function createDraftOrder({ items, customer = null, customer_id = null, voucher_id = null, manual_discount = 0, branch_id = 'br1', cashier = '', client_request_id = null }) {
+  const lines = normalizeCheckoutItems(items, branch_id);
+
+  let cust = null;
+  if (customer_id) cust = getCustomer(customer_id, branch_id);
+  else if (customer?.id) cust = getCustomer(customer.id, branch_id) || customer;
+  else if (customer && (customer.name || customer.tax_code)) cust = customer;
+
+  const discountPlan = buildDiscountPlan(lines, { voucher_id, customer: cust, manual_discount, branch_id });
+  const orderItems = lines.map((line, idx) => {
+    const promo = discountPlan.appliedSkuPromos.find(p => p.line_index === idx);
+    return {
+      sku_id: line.sku_id,
+      qty: line.qty,
+      lot_id: line.lot_id || null,
+      promo: promo ? {
+        voucher_id: promo.voucher_id, code: promo.code, name: promo.name,
+        amount: promo.amount, type: promo.type, value: promo.value,
+        free_units: promo.free_units, free_product_name: promo.free_product_name,
+        description: promo.description,
+      } : null,
+    };
+  });
+
+  const requestId = String(client_request_id || '').trim();
+  if (requestId) {
+    const existing = db.prepare(`SELECT id FROM orders WHERE branch_id=? AND client_request_id=? AND status IN ('open','partially_paid')`)
+      .get(branch_id, requestId);
+    if (existing) return getOrder(existing.id); // đã tạo nháp cho request này rồi — không tạo trùng.
+  }
+
+  const order = createOrUpdateOrder({ branch_id, table_id: null, channel: 'retail', items: orderItems, actor: cashier || 'system' });
+  if (requestId) db.prepare(`UPDATE orders SET client_request_id=? WHERE id=?`).run(requestId, order.id);
+  const snap = snapshotCustomer(cust);
+  db.prepare(`UPDATE orders SET voucher_id=?, voucher_code=?, discount=?, customer_json=COALESCE(?,customer_json) WHERE id=?`)
+    .run(discountPlan.orderVoucher?.id || null, discountPlan.orderVoucher?.code || null, discountPlan.discount || 0,
+      snap ? JSON.stringify(snap) : null, order.id);
+  recomputeTotals(order.id);
+  return getOrder(order.id);
+}
+
+// Hủy đơn nháp khi thu ngân đóng dialog/đổi phương thức mà chưa có tiền về —
+// KHÔNG dùng cho đơn đã có thanh toán (dùng Retail.refund cho trường hợp đó).
+export function voidDraftOrder(order_id, branch_id = 'br1') {
+  const order = db.prepare(`SELECT * FROM orders WHERE id=? AND branch_id=?`).get(order_id, branch_id);
+  if (!order || order.status === 'void') return { ok: true };
+  if (!['open', 'partially_paid'].includes(order.status)) {
+    throw new Error('Đơn đã đóng, không thể hủy nháp.');
+  }
+  if (paidForOrder(order_id) > 0) {
+    throw new Error('Đơn đã có thanh toán — không thể hủy nháp, dùng chức năng Hoàn trả.');
+  }
+  db.prepare(`UPDATE orders SET status='void' WHERE id=?`).run(order_id);
+  audit('retail.draft_voided', { order: order_id }, branch_id, 'system');
+  emit('stats:dirty', {}, branch_id);
+  return { ok: true };
+}
+
+// Dọn đơn nháp bị bỏ quên (mất mạng đúng lúc đóng dialog, app crash, tab bị đóng
+// cứng…) — lưới an toàn cho voidDraftOrder() phía client; chỉ đụng đơn retail
+// 'open' CHƯA có bất kỳ thanh toán nào và đã đủ cũ để chắc chắn không phải phiên
+// đang thao tác thật.
+export function maintainRetailDrafts({ minutes = 30 } = {}) {
+  const cutoff = new Date(Date.now() - minutes * 60_000).toISOString();
+  const rows = db.prepare(`SELECT id FROM orders WHERE channel='retail' AND status='open' AND created_at < ?`).all(cutoff);
+  let voided = 0;
+  for (const r of rows) {
+    if (paidForOrder(r.id) > 0) continue;
+    db.prepare(`UPDATE orders SET status='void' WHERE id=?`).run(r.id);
+    voided++;
+  }
+  return voided;
 }
 
 export function listRetailSales(branch_id = 'br1', limit = 40) {

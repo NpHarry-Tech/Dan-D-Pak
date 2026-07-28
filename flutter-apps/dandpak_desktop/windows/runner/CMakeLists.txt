@@ -38,3 +38,14 @@ target_include_directories(${BINARY_NAME} PRIVATE "${CMAKE_SOURCE_DIR}")
 
 # Run the Flutter tool portions of the build. This must not be removed.
 add_dependencies(${BINARY_NAME} flutter_assemble)
+
+# Kèm sẵn Hardware Agent (dandpak-agent.exe, đóng gói Node SEA — không cần cài
+# Node.js riêng) ngay cạnh app chính. App tự khởi động ngầm file này khi thu
+# ngân đăng nhập (xem hardware_agent_launcher.dart trong dandpak_core) — dùng
+# cho các máy POS đặt tại quầy khi server chạy trên VPS (không chung LAN).
+add_custom_command(TARGET ${BINARY_NAME} POST_BUILD
+  COMMAND ${CMAKE_COMMAND} -E copy_if_different
+    "${CMAKE_CURRENT_SOURCE_DIR}/../hardware-agent/dandpak-agent.exe"
+    "$<TARGET_FILE_DIR:${BINARY_NAME}>/dandpak-agent.exe"
+  COMMENT "Copying Hardware Agent (dandpak-agent.exe) next to the app"
+)

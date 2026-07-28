@@ -281,15 +281,28 @@ class _DatabaseTabState extends State<_DatabaseTab> {
   bool _loading = true;
   bool _busy = false;
   String? _error;
+  Timer? _liveTimer;
 
   @override
   void initState() {
     super.initState();
     _load();
+    // Sự sống thật của server (độ trễ event loop, queue in tồn đọng, lỗi gần
+    // đây) đổi liên tục — tự làm mới mỗi 5s như tab Nhật ký hoạt động, không
+    // cần bấm kéo-làm-mới mới thấy số mới.
+    _liveTimer = Timer.periodic(Duration(seconds: 5), (_) {
+      if (mounted && !_loading && !_busy) _load(silent: true);
+    });
   }
 
-  Future<void> _load() async {
-    setState(() => _loading = true);
+  @override
+  void dispose() {
+    _liveTimer?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _load({bool silent = false}) async {
+    if (!silent) setState(() => _loading = true);
     try {
       final status = await context.read<ApiService>().getDatabaseStatus();
       if (!mounted) return;
@@ -300,6 +313,7 @@ class _DatabaseTabState extends State<_DatabaseTab> {
       });
     } catch (e) {
       if (!mounted) return;
+      if (silent) return; // đừng để 1 lần làm mới ngầm lỗi mạng che mất màn đang xem
       setState(() {
         _error = e.toString().replaceFirst('Exception: ', '');
         _loading = false;
@@ -365,6 +379,7 @@ class _DatabaseTabState extends State<_DatabaseTab> {
     final configRows =
         config.values.fold<num>(0, (sum, value) => sum + _n(value));
     final txnRows = txn.values.fold<num>(0, (sum, value) => sum + _n(value));
+    final live = _map(status['live']);
 
     return RefreshIndicator(
       onRefresh: _load,
@@ -413,6 +428,8 @@ class _DatabaseTabState extends State<_DatabaseTab> {
               );
             },
           ),
+          SizedBox(height: 16),
+          _liveHealthPanel(live),
           SizedBox(height: 16),
           LayoutBuilder(
             builder: (context, constraints) {
@@ -540,6 +557,91 @@ class _DatabaseTabState extends State<_DatabaseTab> {
   Map<String, dynamic> _map(dynamic value) {
     if (value is Map) return Map<String, dynamic>.from(value);
     return <String, dynamic>{};
+  }
+
+  // Panel "sự sống" của server NGAY LÚC NÀY — tự làm mới mỗi 5s (xem
+  // _liveTimer). Khác với các số bên dưới (đếm bảng/dòng, gần như không đổi),
+  // 4 ô này phản ánh server có đang xử lý mượt hay không, kiểu sự cố hôm
+  // 2026-07-27 (Agent poll làm nghẽn CPU) sẽ hiện rõ ở đây trước khi ai kịp báo.
+  Widget _liveHealthPanel(Map<String, dynamic> live) {
+    final lagMs = _n(live['eventLoopLagMs']);
+    final mem = _map(live['memory']);
+    final rssMb = _n(mem['rssMb']);
+    final queue = _map(live['printQueue']);
+    final queueDepth = _n(queue['queued']) + _n(queue['failed']);
+    final recentErrors = _n(live['recentErrors5m']);
+    final checkedAt = DateTime.tryParse(_s(live['checkedAt']))?.toLocal();
+
+    Color lagColor = lagMs >= 300
+        ? DanColors.late
+        : lagMs >= 50
+            ? DanColors.doing
+            : DanColors.done;
+    Color queueColor = queueDepth >= 100
+        ? DanColors.late
+        : queueDepth >= 20
+            ? DanColors.doing
+            : DanColors.done;
+    Color errColor = recentErrors > 0 ? DanColors.late : DanColors.done;
+
+    final tiles = [
+      KpiCard(
+        label: t('Độ trễ xử lý (event loop)'),
+        value: live.isEmpty ? '-' : '${lagMs.round()} ms',
+        valueColor: live.isEmpty ? DanColors.faint : lagColor,
+      ),
+      KpiCard(
+        label: t('Bộ nhớ đang dùng'),
+        value: live.isEmpty ? '-' : '${rssMb.round()} MB',
+      ),
+      KpiCard(
+        label: t('Hàng đợi in tồn đọng'),
+        value: live.isEmpty ? '-' : '${queueDepth.round()}',
+        valueColor: live.isEmpty ? DanColors.faint : queueColor,
+      ),
+      KpiCard(
+        label: t('Lỗi trong 5 phút qua'),
+        value: live.isEmpty ? '-' : '${recentErrors.round()}',
+        valueColor: live.isEmpty ? DanColors.faint : errColor,
+      ),
+    ];
+
+    return Panel(
+      title: t('Sự sống của server (tự làm mới mỗi 5s)'),
+      trailing: checkedAt == null
+          ? null
+          : Text(
+              t('Kiểm tra lúc ${_hm(checkedAt)}'),
+              style: TextStyle(color: DanColors.faint, fontSize: 11),
+            ),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final wide = constraints.maxWidth >= 760;
+          if (!wide) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                for (var i = 0; i < tiles.length; i++) ...[
+                  tiles[i],
+                  if (i < tiles.length - 1) SizedBox(height: 10),
+                ],
+              ],
+            );
+          }
+          return IntrinsicHeight(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                for (var i = 0; i < tiles.length; i++) ...[
+                  Expanded(child: tiles[i]),
+                  if (i < tiles.length - 1) SizedBox(width: 10),
+                ],
+              ],
+            ),
+          );
+        },
+      ),
+    );
   }
 
   Widget _infoLine(String label, String value, {Color? valueColor}) {

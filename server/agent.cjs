@@ -1,34 +1,69 @@
 // ─────────────────────────────────────────────────────────────────────────
-// Dan D Pak — Hardware Agent (chạy TẠI CỬA HÀNG)
+// Dan D Pak — Hardware Agent (chạy TẠI CỬA HÀNG, do chính app Dan D Pak POS
+// tự khởi động ngầm — KHÔNG cần mở tay, KHÔNG hiện cửa sổ đen).
 //
 // Vì sao cần: khi database nằm trên VPS (datacenter), server KHÔNG thể với tới
-// máy in LAN 192.168.x.x, két tiền hay máy quẹt thẻ cắm trong cửa hàng. Agent
-// này là "cánh tay nối dài" của server: nó chạy trên một máy trong cửa hàng
-// (thường chính máy POS quầy), hỏi server xem có phiếu nào cần in không, rồi
-// IN THẬT trên máy in/ két tại chỗ và báo kết quả về.
+// máy in USB/LAN, két tiền hay máy quẹt thẻ cắm trong cửa hàng. Agent này là
+// "cánh tay nối dài" của server: chạy ngay trên máy POS, hỏi server xem có
+// phiếu nào cần in không, rồi IN THẬT trên máy in/két tại chỗ và báo kết quả về.
 //
-// Cách chạy:
-//   CENTRAL_URL=http://42.96.18.70:3000 AGENT_USERNAME=warehouse \
-//   AGENT_PIN=5555 BRANCH_ID=br1 node server/agent.js
-// hoặc copy deploy/company-server/agent.env.example -> server/.env.agent,
-// điền thông tin rồi chạy: node server/agent.js
+// File này là CommonJS (.cjs) — để đóng gói được thành 1 file .exe độc lập
+// bằng Node SEA (Single Executable Application), máy POS không cần cài Node.js
+// riêng. App desktop (windows/runner) tự spawn file .exe này ẩn (không cửa sổ)
+// ngay khi thu ngân đăng nhập, dùng LUÔN tài khoản/PIN vừa đăng nhập — không
+// cần cấu hình file .env.agent riêng nữa.
+//
+// Chạy tay (khi cần gỡ lỗi): CENTRAL_URL=... AGENT_USERNAME=... AGENT_PIN=...
+// BRANCH_ID=... node server/agent.cjs
 //
 // Zero dependency: chỉ dùng fetch (Node 18+) + net + child_process có sẵn.
 // ─────────────────────────────────────────────────────────────────────────
-import net from 'node:net';
-import { execFile } from 'node:child_process';
-import { mkdtempSync, writeFileSync, rmSync, readFileSync, existsSync } from 'node:fs';
-import { tmpdir, platform } from 'node:os';
-import { join, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { promisify } from 'node:util';
+'use strict';
+const net = require('node:net');
+const { execFile } = require('node:child_process');
+const { mkdtempSync, writeFileSync, rmSync, existsSync, openSync, closeSync, readFileSync, unlinkSync } = require('node:fs');
+const { tmpdir, platform } = require('node:os');
+const { join, dirname } = require('node:path');
+const { promisify } = require('node:util');
 
 const execFileAsync = promisify(execFile);
-const __dirname = dirname(fileURLToPath(import.meta.url));
 
-// ── Nạp cấu hình: ưu tiên biến môi trường, sau đó server/.env.agent ──────────
+// Đóng gói SEA: process.execPath là chính file .exe này (không có "module file"
+// thật trên đĩa để suy ra thư mục từ đường dẫn source như file .js thường).
+const __basedir = dirname(process.execPath);
+
+// ── Chỉ 1 tiến trình agent chạy tại 1 thời điểm ─────────────────────────────
+// App desktop có thể spawn agent mỗi lần mở app/đăng nhập lại — nếu bản cũ vẫn
+// còn sống (app tắt đột ngột, treo máy...), tự thoát ngay thay vì chạy chồng
+// nhiều bản cùng lúc (vừa lãng phí vừa có thể tranh nhau in trùng 1 phiếu).
+// Lock ghi kèm PID — nếu file lock còn sót lại nhưng tiến trình đó ĐÃ CHẾT
+// (máy mất điện, agent bị kill cứng...), tự dọn lock cũ rồi giành lại, tránh
+// bị khoá vĩnh viễn bởi 1 lock mồ côi.
+const LOCK_PATH = join(tmpdir(), 'dandpak-agent.lock');
+function pidAlive(pid) {
+  try { process.kill(pid, 0); return true; }
+  catch { return false; }
+}
+function acquireSingletonLock() {
+  try {
+    const existingPid = parseInt(readFileSync(LOCK_PATH, 'utf8').trim(), 10);
+    if (existingPid && pidAlive(existingPid)) return false;
+    try { unlinkSync(LOCK_PATH); } catch {} // lock mồ côi — dọn rồi giành lại bên dưới
+  } catch {} // chưa có lock nào — bình thường
+  try {
+    const fd = openSync(LOCK_PATH, 'w');
+    writeFileSync(fd, String(process.pid));
+    closeSync(fd);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// ── Nạp cấu hình: ưu tiên biến môi trường (app desktop truyền vào lúc spawn),
+//    sau đó file .env.agent nằm cạnh .exe (chạy tay/gỡ lỗi) ─────────────────
 function loadConfig() {
-  const cfg = { ...loadEnvFile(join(__dirname, '.env.agent')), ...process.env };
+  const cfg = { ...loadEnvFile(join(__basedir, '.env.agent')), ...process.env };
   const c = {
     central: String(cfg.CENTRAL_URL || 'http://127.0.0.1:3000').replace(/\/+$/, ''),
     username: cfg.AGENT_USERNAME || '',
@@ -40,7 +75,7 @@ function loadConfig() {
     cooldownMs: Number(cfg.AGENT_COOLDOWN_MS) || 20000,
   };
   if (!c.username || !c.pin) {
-    console.error('[agent] Thiếu AGENT_USERNAME / AGENT_PIN. Xem hướng dẫn đầu file agent.js.');
+    console.error('[agent] Thiếu AGENT_USERNAME / AGENT_PIN (truyền qua biến môi trường hoặc .env.agent).');
     process.exit(1);
   }
   return c;
@@ -50,7 +85,7 @@ function loadEnvFile(path) {
   const out = {};
   try {
     if (!existsSync(path)) return out;
-    for (const line of readFileSync(path, 'utf8').split(/\r?\n/)) {
+    for (const line of require('node:fs').readFileSync(path, 'utf8').split(/\r?\n/)) {
       const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*)\s*$/i);
       if (m) out[m[1]] = m[2].replace(/^["']|["']$/g, '');
     }
@@ -58,7 +93,7 @@ function loadEnvFile(path) {
   return out;
 }
 
-const CFG = loadConfig();
+let CFG;
 let token = '';
 
 const log = (...a) => console.log(new Date().toISOString(), '[agent]', ...a);
@@ -103,14 +138,12 @@ const ESC_CUT = Buffer.from([0x1d, 0x56, 0x42, 0x00]);
 const ESC_DRAWER = Buffer.from([0x1b, 0x70, 0x00, 0x19, 0xfa]);
 
 function ascii(s) {
-  return String(s ?? '')
+  return String(s == null ? '' : s)
     .normalize('NFD').replace(/[̀-ͯ]/g, '')
     .replace(/đ/g, 'd').replace(/Đ/g, 'D')
     .replace(/[^\x09\x0a\x0d\x20-\x7e]/g, '');
 }
 
-// Độ đậm bản in (khớp densityPrefix ở services/printing.js): ESC G 1 = double-strike,
-// ESC E 1 = emphasized. Máy không hỗ trợ sẽ bỏ qua, không hỏng.
 function densityPrefix(density) {
   const on = (cmd) => Buffer.from([0x1b, cmd, 0x01]);
   switch (String(density || '').toLowerCase()) {
@@ -120,7 +153,11 @@ function densityPrefix(density) {
   }
 }
 
-function escposBuffer(text, { cut = true, drawer = false, density = '' } = {}) {
+function escposBuffer(text, opts) {
+  opts = opts || {};
+  const cut = opts.cut !== false;
+  const drawer = !!opts.drawer;
+  const density = opts.density || '';
   return Buffer.concat([
     ESC_INIT,
     densityPrefix(density),
@@ -130,7 +167,8 @@ function escposBuffer(text, { cut = true, drawer = false, density = '' } = {}) {
   ]);
 }
 
-function writeLan(host, port, buffer, timeoutMs = 4500) {
+function writeLan(host, port, buffer, timeoutMs) {
+  timeoutMs = timeoutMs || 4500;
   return new Promise((resolve, reject) => {
     const socket = net.createConnection({ host, port: Number(port) || 9100 });
     let done = false;
@@ -172,7 +210,7 @@ async function printJob(j) {
   const drawer = !!j.drawer;
   if (j.connection === 'lan') {
     if (!j.ip) throw new Error('Máy in LAN thiếu IP');
-    await writeLan(j.ip, j.port || 9100, escposBuffer(j.text, { drawer, density: j.density }));
+    await writeLan(j.ip, j.port || 9100, escposBuffer(j.text, { drawer: drawer, density: j.density }));
   } else if (j.connection === 'system') {
     if (!j.systemName) throw new Error('Thiếu tên máy in hệ điều hành');
     await writeSystemPrinter(j.systemName, j.text);
@@ -185,8 +223,8 @@ async function printJob(j) {
 
 // ── Vòng lặp: nhận job → in → báo kết quả ───────────────────────────────────
 const inFlight = new Set();
-const attempts = new Map();   // id -> số lần đã thử
-const cooldown = new Map();   // id -> mốc thời gian được thử lại
+const attempts = new Map();
+const cooldown = new Map();
 
 async function pollJobs() {
   let res;
@@ -202,7 +240,7 @@ async function pollJobs() {
     const cd = cooldown.get(j.id) || 0;
     if (Date.now() < cd) continue;
     const tried = attempts.get(j.id) || 0;
-    if (tried >= CFG.maxAttempts) continue; // hết lượt tự thử — chờ in lại thủ công
+    if (tried >= CFG.maxAttempts) continue;
     inFlight.add(j.id);
     handleJob(j, tried).finally(() => inFlight.delete(j.id));
   }
@@ -248,7 +286,7 @@ async function listLocalPrinters() {
     }
     const { stdout } = await execFileAsync('lpstat', ['-p', '-d'], { timeout: 3000 });
     return String(stdout).split(/\r?\n/)
-      .map(l => l.match(/^printer\s+(\S+)/i)).filter(Boolean)
+      .map((l) => l.match(/^printer\s+(\S+)/i)).filter(Boolean)
       .map(([, name]) => ({ Name: name }));
   } catch {
     return [];
@@ -256,7 +294,14 @@ async function listLocalPrinters() {
 }
 
 // ── Khởi động ────────────────────────────────────────────────────────────────
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
 async function main() {
+  if (!acquireSingletonLock()) {
+    log('đã có 1 bản agent khác đang chạy trên máy này — tự thoát.');
+    process.exit(0);
+  }
+  CFG = loadConfig();
   log(`kết nối server trung tâm ${CFG.central} (branch=${CFG.branch})`);
   while (true) {
     try { await login(); break; }
@@ -267,7 +312,5 @@ async function main() {
   setInterval(() => reportPrinters().catch(() => {}), CFG.printersMs);
   log('sẵn sàng — đang chờ phiếu in.');
 }
-
-const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
 main().catch((e) => { console.error('[agent] lỗi nghiêm trọng:', e); process.exit(1); });
