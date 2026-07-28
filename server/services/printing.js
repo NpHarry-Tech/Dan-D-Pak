@@ -905,21 +905,57 @@ export async function dispatchJob(id, branch_id = 'br1', { force = false } = {})
 
 // Các job cần agent in (tuyến lan/system, chưa in xong). Bao gồm cả 'failed'
 // gần đây để agent tự thử lại sau khi máy in bị kẹt/tắt rồi bật lại.
+// Hàng đợi agent TỪNG BỊ TẮC VĨNH VIỄN: quét cũ-nhất-trước rồi mới lọc, nên job
+// trỏ tới tuyến in ĐÃ BỊ XOÁ khỏi cấu hình không giải được nhưng vẫn nằm
+// 'queued' và chiếm hết cửa sổ quét. Gặp thật: 96 job cũ trỏ tuyến kitchen/bill/
+// bar/runner (đã xoá khi cửa hàng đổi sang 1 tuyến "POS 2") che mất 2 job in thử
+// mới nhất → thu ngân bấm "In thử" thấy báo đã gửi mà máy in im lặng cả tháng.
+//
+// Hai lớp chống tắc:
+//   1. Quét rộng hơn số job cần trả, để vài job hỏng không bịt được đường.
+//   2. Job có tuyến in KHÔNG CÒN trong cấu hình → chuyển 'cancelled' (trạng thái
+//      cuối) vì nó không bao giờ in được nữa. Tuyến còn nhưng đang TẮT thì giữ
+//      nguyên 'queued' — bật lại là in tiếp.
+const AGENT_SCAN_WINDOW = 300;
+
 export function pendingAgentJobs(branch_id = 'br1', { limit = 40 } = {}) {
+  const want = Math.max(1, Math.min(100, limit));
   const rows = db.prepare(
     `SELECT * FROM print_jobs
       WHERE branch_id=? AND status IN ('queued','failed')
       ORDER BY created_at ASC LIMIT ?`,
-  ).all(branch_id, Math.max(1, Math.min(100, limit))).map(publicJob);
+  ).all(branch_id, AGENT_SCAN_WINDOW).map(publicJob);
   // Nạp cấu hình in ĐÚNG 1 LẦN cho cả loạt job — trước đây resolveAgentJob() gọi
   // lại getPrintConfig() (đọc DB + JSON.parse + sanitize) cho TỪNG job, nên agent
   // hỏi hàng đợi mỗi 1.5s làm server lặp lại việc này tới ~40 lần/lần hỏi, tốn
   // gần 2 giây CPU liên tục 24/7 → nghẽn cứng cả server (đã gây sự cố thật).
   const printCfg = getPrintConfig(branch_id);
   const printers = Array.isArray(printCfg.printers) ? printCfg.printers : [];
-  return rows
-    .map(job => resolveAgentJobFast(job, printers, printCfg))
-    .filter(x => x && (x.connection === 'lan' || x.connection === 'system'));
+
+  const out = [];
+  const orphans = [];
+  for (const job of rows) {
+    if (!printers.some(p => p.id === job.printer)) {
+      orphans.push(job.id); // tuyến in đã bị xoá → job này không bao giờ in được
+      continue;
+    }
+    const resolved = resolveAgentJobFast(job, printers, printCfg);
+    if (resolved && (resolved.connection === 'lan' || resolved.connection === 'system')) {
+      out.push(resolved);
+      if (out.length >= want) break;
+    }
+  }
+
+  if (orphans.length) {
+    const upd = db.prepare(
+      `UPDATE print_jobs SET status='cancelled', error=? WHERE id=? AND status IN ('queued','failed')`);
+    for (const id of orphans) {
+      upd.run('Tuyến in không còn trong cấu hình — job đã huỷ tự động', id);
+    }
+    audit('print.jobs_cancelled_orphan', { count: orphans.length }, branch_id, 'system');
+  }
+
+  return out;
 }
 
 function resolveAgentJobFast(job, printers, printCfg) {
