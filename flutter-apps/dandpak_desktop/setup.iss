@@ -1,11 +1,11 @@
 [Setup]
 AppId={{DANDPAK-POS-DESKTOP-APP}}
 AppName=Dan D Pak POS
-AppVersion=2026.07.25.1
+AppVersion=2026.07.28.01
 DefaultDirName={commonpf}\DanDPakPOS
 DefaultGroupName=Dan D Pak POS
 OutputDir=..\..\artifacts\releases
-OutputBaseFilename=dan-d-pak-pos-setup-2026-07-25-1
+OutputBaseFilename=dan-d-pak-pos-setup-2026-07-28-01
 Compression=lzma
 SolidCompression=yes
 SetupIconFile=windows\runner\resources\app_icon.ico
@@ -28,6 +28,8 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 [Files]
 Source: "build\windows\x64\runner\Release\dandpak_desktop.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "build\windows\x64\runner\Release\*.dll"; DestDir: "{app}"; Flags: ignoreversion
+; Hardware Agent (in bill/mo ket khi server dat tren VPS) - xem hardware_agent_launcher.dart.
+Source: "build\windows\x64\runner\Release\dandpak-agent.exe"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
 ; native_assets.json không còn được Flutter mới sinh ra — bỏ qua nếu thiếu.
 Source: "build\windows\x64\runner\Release\native_assets.json"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
 Source: "build\windows\x64\runner\Release\data\*"; DestDir: "{app}\data"; Flags: ignoreversion recursesubdirs createallsubdirs
