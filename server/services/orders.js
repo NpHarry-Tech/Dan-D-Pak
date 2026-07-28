@@ -87,7 +87,43 @@ function requireOpenShiftForSales(branch_id = 'br1') {
   }
 }
 
-// items: [{menu_item_id, qty, note, mods:[{group,name,price}]}] or [{sku_id, qty}]
+// BẢO MẬT: giá tuỳ chọn/topping PHẢI lấy từ thực đơn trên server.
+//
+// Trước đây server cộng thẳng `m.price` do client gửi và chỉ chặn số âm
+// (Math.max(0, …)). Chặn số âm ngăn được việc kéo đơn giá xuống 0, nhưng KHÔNG
+// ngăn được chiều ngược lại: một request tự chế (hoặc app đã bị hook) khai báo
+// topping có tính phí với price=0 vẫn được server chấp nhận → khách trả giá món
+// gốc mà vẫn có topping. Đây là lỗ tiền thật, khai thác được chỉ bằng token hợp
+// lệ + HTTP, không cần can thiệp bộ nhớ.
+//
+// Giờ giá client gửi CHỈ dùng để đối chiếu, không dùng để tính tiền: mỗi mod
+// phải khớp một mục trong menu_items.modifiers_json (theo group + name) và lấy
+// `sale_price` mà server tự tính. Mod không có trong thực đơn bị từ chối thẳng.
+function resolveOrderMods(rawMods, mi) {
+  const mods = Array.isArray(rawMods) ? rawMods : [];
+  if (!mods.length) return [];
+  const catalogue = Array.isArray(mi.modifiers) ? mi.modifiers : [];
+  const label = (g, n) => `${g ? `${g} / ` : ''}${n || '(trống)'}`;
+  return mods.map(m => {
+    const group = String(m?.group ?? '').trim();
+    const name = String(m?.name ?? '').trim();
+    const def = catalogue.find(d =>
+      String(d?.name ?? '').trim() === name &&
+      String(d?.group ?? '').trim() === group);
+    if (!def) {
+      throw new Error(`Tuỳ chọn không có trong thực đơn của "${mi.name}": ${label(group, name)}`);
+    }
+    return {
+      group: String(def.group ?? ''),
+      name: String(def.name ?? ''),
+      // sale_price do catalog.js tính từ mod.price + VAT của món — nguồn giá duy nhất.
+      price: Math.max(0, Math.round(Number(def.sale_price) || 0)),
+    };
+  });
+}
+
+// items: [{menu_item_id, qty, note, mods:[{group,name}]}] or [{sku_id, qty}]
+// Lưu ý: `price` trong mods (nếu client gửi) bị BỎ QUA — xem resolveOrderMods.
 export function createOrUpdateOrder(options) {
   // order_id: nối món vào ĐÚNG đơn đang mở này (dùng khi GỘP giỏ Retail vào bill F&B,
   // kể cả bill mang về không có bàn). Không truyền thì giữ nguyên hành vi cũ: tìm đơn
@@ -105,9 +141,28 @@ export function createOrUpdateOrder(options) {
   try {
     const needsStaffConfirm = source === 'customer_ipad' || require_confirm === true || (source === 'staff_pos' && !!table_id);
 
+    // BẢO MẬT — thiết bị tự gọi món nằm trong tay KHÁCH, phải coi mọi trường
+    // trong body là do khách kiểm soát (app có thể bị hook, hoặc gọi thẳng API
+    // bằng token rút từ máy). Ba thứ dưới đây là thao tác của NHÂN VIÊN, không
+    // được phép đi vào từ nguồn customer_ipad:
+    //   - order_id : gộp món vào một bill đang mở BẤT KỲ → khách tự đẩy món của
+    //                mình sang bill bàn khác trả hộ.
+    //   - sku_id   : thêm hàng retail tuỳ ý vào bill (khách chỉ được gọi món
+    //                trong thực đơn, qua menu_item_id).
+    //   - linked_* : trỏ bill sang máy POS/máy in khác.
+    if (source === 'customer_ipad') {
+      if (order_id) throw new Error('Thiết bị tự gọi món không được gộp vào bill có sẵn.');
+      if (items.some(line => line?.sku_id)) {
+        throw new Error('Thiết bị tự gọi món chỉ được gọi món trong thực đơn.');
+      }
+      if (linked_pos_device || linked_printer_id) {
+        throw new Error('Thiết bị tự gọi món không được chỉ định máy POS/máy in.');
+      }
+    }
+
     let order = null;
     if (order_id) {
-      order = db.prepare(`SELECT * FROM orders WHERE id=? AND branch_id=? AND status='open'`)
+      order = db.prepare(`SELECT * FROM orders WHERE id=? AND branch_id=? AND status IN ('open','partially_paid')`)
         .get(order_id, branch_id);
       if (!order) throw new Error('Bill cần gộp không tồn tại hoặc đã đóng.');
     } else if (table_id) {
@@ -161,10 +216,8 @@ export function createOrUpdateOrder(options) {
           needsStaffConfirm ? 'pending_confirm' : 'served', lotId, line.promo ? JSON.stringify(line.promo) : null, now());
       } else {
         const mi = getMenuItemForOrder(line.menu_item_id);
-        const mods = Array.isArray(line.mods) ? line.mods : [];
-        // BẢO MẬT: giá modifier do client gửi — chỉ cho phép CỘNG THÊM (>=0), không
-        // bao giờ trừ. Nếu không, khách tự gửi mod giá âm để hạ đơn giá về 0/âm.
-        const modSum = mods.reduce((s, m) => s + Math.max(0, parseInt(m?.price) || 0), 0);
+        const mods = resolveOrderMods(line.mods, mi);
+        const modSum = mods.reduce((s, m) => s + m.price, 0);
         const unitPrice = salePrice(mi.price, mi.vat_rate, mi.price_includes_vat) + modSum;
         insItem.run(id, order.id, mi.id, null, mi.name, mi.emoji, qty, unitPrice, Number(mi.vat_rate) || 0, mi.station, mi.sla_minutes,
           line.note || null, JSON.stringify(mods), needsStaffConfirm ? 'pending_confirm' : 'new', null, null, now());
@@ -268,7 +321,7 @@ export function listPendingConfirmations(branch_id = 'br1') {
 }
 
 export function confirmPendingItems(order_id, item_ids = [], branch_id = 'br1', actor = 'system') {
-  const order = db.prepare(`SELECT * FROM orders WHERE id=? AND branch_id=? AND status='open'`).get(order_id, branch_id);
+  const order = db.prepare(`SELECT * FROM orders WHERE id=? AND branch_id=? AND status IN ('open','partially_paid')`).get(order_id, branch_id);
   if (!order) throw new Error('Bill không tồn tại hoặc đã đóng');
   const ids = new Set(Array.isArray(item_ids) && item_ids.length ? item_ids : []);
   const pending = db.prepare(`SELECT * FROM order_items WHERE order_id=? AND status='pending_confirm' ORDER BY created_at`).all(order_id)
@@ -294,7 +347,7 @@ export function confirmPendingItems(order_id, item_ids = [], branch_id = 'br1', 
 }
 
 export function rejectPendingItems(order_id, item_ids = [], reason = '', branch_id = 'br1', actor = 'system') {
-  const order = db.prepare(`SELECT * FROM orders WHERE id=? AND branch_id=? AND status='open'`).get(order_id, branch_id);
+  const order = db.prepare(`SELECT * FROM orders WHERE id=? AND branch_id=? AND status IN ('open','partially_paid')`).get(order_id, branch_id);
   if (!order) throw new Error('Bill không tồn tại hoặc đã đóng');
   const cleanReason = String(reason || '').trim();
   if (!cleanReason) throw new Error('Cần nhập lý do từ chối');
@@ -387,7 +440,7 @@ export function mergeTables(source_table_id, target_table_id, branch_id = 'br1',
 }
 
 export function splitOrderItems(order_id, item_ids = [], branch_id = 'br1', actor = 'system') {
-  const order = db.prepare(`SELECT * FROM orders WHERE id=? AND branch_id=? AND status='open'`).get(order_id, branch_id);
+  const order = db.prepare(`SELECT * FROM orders WHERE id=? AND branch_id=? AND status IN ('open','partially_paid')`).get(order_id, branch_id);
   if (!order) throw new Error('Bill không tồn tại hoặc đã đóng');
   const ids = [...new Set(Array.isArray(item_ids) ? item_ids : [])];
   if (!ids.length) throw new Error('Chọn ít nhất một dòng để tách bill');

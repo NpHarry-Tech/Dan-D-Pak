@@ -42,6 +42,31 @@ test('shared search stays consistent across catalog, inventory and contacts', ()
   assert.equal(contacts[0].name, 'Nguyễn An');
 });
 
+test('retail SKU listing filters "in stock" and sorts BEFORE pagination, not after', () => {
+  // Trước đây "Còn hàng" lọc phía app SAU KHI đã cắt trang 40 SKU — nếu phần lớn
+  // hết hàng, trang hiện ra rất ít món dù server còn nhiều món khác thoả điều
+  // kiện, và app không tự tải bù. Khoá lại: lọc + sắp xếp phải xảy ra TRƯỚC khi
+  // cắt trang, để mỗi trang trả về luôn đủ (tối đa) limit món thật sự thoả điều kiện.
+  Inventory.createSku({ id: 'sku_filter_out1', name: 'Filter Out SKU 1', price: 50000, stock: 0 }, 'br1');
+  Inventory.createSku({ id: 'sku_filter_out2', name: 'Filter Out SKU 2', price: 10000, stock: 0 }, 'br1');
+  Inventory.createSku({ id: 'sku_filter_in1', name: 'Filter In SKU 1', price: 30000, stock: 5 }, 'br1');
+  Inventory.createSku({ id: 'sku_filter_in2', name: 'Filter In SKU 2', price: 20000, stock: 2 }, 'br1');
+
+  const onlyInStock = Inventory.listSkus('br1', { q: 'filter', page: 1, limit: 1, in_stock: '1' });
+  // total phải phản ánh SỐ ĐÃ LỌC (2 món còn hàng), không phải tổng 4 món ban đầu —
+  // nếu không app sẽ tưởng còn trang tiếp theo trong khi thực chất trang 1 (limit=1)
+  // đã bỏ sót 1 món còn hàng nữa chưa hiện.
+  assert.equal(onlyInStock.total, 2);
+  assert.ok(onlyInStock.items.every(s => s.stock > 0));
+
+  const priceDesc = Inventory.listSkus('br1', { q: 'filter', page: 1, limit: 10, sort: 'price_desc' });
+  const prices = priceDesc.items.map(s => s.price);
+  assert.deepEqual(prices, [...prices].sort((a, b) => b - a));
+
+  const stockAsc = Inventory.listSkus('br1', { q: 'filter', page: 1, limit: 10, in_stock: '1', sort: 'stock_asc' });
+  assert.deepEqual(stockAsc.items.map(s => s.id), ['sku_filter_in2', 'sku_filter_in1']);
+});
+
 test('retail checkout separates change and deduplicates retries', () => {
   const shiftId = 'shift_test';
   db.prepare(`INSERT INTO shifts (id,branch_id,user_name,shift_key,shift_label,opening_cash,status,opened_at) VALUES (?,?,?,?,?,?,?,?)`)
@@ -213,6 +238,84 @@ test('F&B VAT is added from the authoritative menu setting', () => {
   const receipt = Payments.payOrder(order.id, [{ method: 'cash', amount: 108000 }], { cashier: 'Tester' }, 'br1');
   assert.equal(receipt.total, 108000);
   assert.equal(receipt.vat_amount, 8000);
+});
+
+test('modifier prices come from the menu, not from what the client claims', () => {
+  db.prepare(`INSERT INTO menu_items (id,category_id,name,price,price_includes_vat,vat_rate,station,modifiers_json) VALUES (?,?,?,?,?,?,?,?)`)
+    .run('menu_mods', 'cat_test', 'Trà Sữa', 50000, 1, 8, 'bar',
+      JSON.stringify([{ group: 'Size', name: 'Lớn', price: 20000 }]));
+
+  // Client (đã bị hook / request tự chế) khai topping tính phí với giá 0.
+  const order = Orders.createOrUpdateOrder({
+    branch_id: 'br1',
+    channel: 'takeaway',
+    items: [{
+      menu_item_id: 'menu_mods',
+      qty: 1,
+      mods: [{ group: 'Size', name: 'Lớn', price: 0 }],
+    }],
+    actor: 'Tester',
+  });
+  // Server phải tính theo giá thực đơn (50000 + 20000), bỏ qua price=0 của client.
+  assert.equal(order.subtotal, 70000);
+  const line = order.items[0];
+  assert.equal(JSON.parse(line.mods_json)[0].price, 20000);
+
+  // Giá bịa cao hơn cũng không được chấp nhận — luôn lấy giá thực đơn.
+  const inflated = Orders.createOrUpdateOrder({
+    branch_id: 'br1',
+    channel: 'takeaway',
+    items: [{
+      menu_item_id: 'menu_mods',
+      qty: 1,
+      mods: [{ group: 'Size', name: 'Lớn', price: 999000 }],
+    }],
+    actor: 'Tester',
+  });
+  assert.equal(inflated.subtotal, 70000);
+
+  // Topping không có trong thực đơn bị từ chối, không âm thầm tính giá 0.
+  assert.throws(() => Orders.createOrUpdateOrder({
+    branch_id: 'br1',
+    channel: 'takeaway',
+    items: [{
+      menu_item_id: 'menu_mods',
+      qty: 1,
+      mods: [{ group: 'Size', name: 'Khổng Lồ', price: 0 }],
+    }],
+    actor: 'Tester',
+  }), /không có trong thực đơn/);
+});
+
+test('a self-order tablet cannot reach staff-only order actions', () => {
+  db.prepare(`INSERT INTO menu_items (id,category_id,name,price,price_includes_vat,vat_rate,station) VALUES (?,?,?,?,?,?,?)`)
+    .run('menu_kiosk', 'cat_test', 'Cà Phê', 40000, 1, 8, 'bar');
+  const base = {
+    branch_id: 'br1',
+    channel: 'dine_in',
+    source: 'customer_ipad',
+    actor: 'Khách',
+    items: [{ menu_item_id: 'menu_kiosk', qty: 1 }],
+  };
+
+  // Đơn hợp lệ từ iPad vẫn chạy, và luôn phải chờ nhân viên xác nhận.
+  const ok = Orders.createOrUpdateOrder({ ...base });
+  assert.equal(ok.items[0].status, 'pending_confirm');
+
+  // Không được đẩy món sang bill đang mở của bàn khác.
+  assert.throws(
+    () => Orders.createOrUpdateOrder({ ...base, order_id: ok.id }),
+    /không được gộp vào bill có sẵn/);
+
+  // Không được tự thêm hàng retail vào bill.
+  assert.throws(
+    () => Orders.createOrUpdateOrder({ ...base, items: [{ sku_id: 'sku_search', qty: 1 }] }),
+    /chỉ được gọi món trong thực đơn/);
+
+  // Không được trỏ bill sang máy POS/máy in khác.
+  assert.throws(
+    () => Orders.createOrUpdateOrder({ ...base, linked_printer_id: 'bill' }),
+    /không được chỉ định máy POS/);
 });
 
 test('legacy overpayments are corrected once during migration', () => {
