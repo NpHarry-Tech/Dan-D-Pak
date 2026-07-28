@@ -6,5 +6,32 @@
         -Server
     }
 
+    # ── Đường realtime (Socket.IO) tách riêng ────────────────────────────────
+    # Vì sao không để chung với reverse_proxy bên dưới:
+    #
+    #  1. `encode zstd gzip` ở trên áp cho MỌI phản hồi. Với transport "polling"
+    #     của Socket.IO (đường lui khi WebSocket chập chờn), nén một phản hồi
+    #     dạng dòng chảy khiến gói tin bị giữ trong bộ đệm nén thay vì đẩy đi
+    #     ngay — client chờ mãi không thấy dữ liệu rồi tự coi là rớt.
+    #     Khối handle này KHÔNG kế thừa encode, nên đường realtime không bị nén.
+    #
+    #  2. flush_interval -1 TẮT hẳn việc đệm phía proxy, đẩy từng byte ra ngay.
+    #     Đây là thiết lập bắt buộc cho long-polling / SSE khi chạy sau Caddy.
+    #
+    #  3. Proxy phải chịu im lặng LÂU HƠN nhịp ping của Socket.IO (ping 20s, cho
+    #     im lặng tới 40s — xem server/realtime.js). Nếu proxy cắt sớm hơn thì
+    #     chính proxy là thứ làm rớt kết nối chứ không phải mạng.
+    handle /socket.io/* {
+        reverse_proxy app:3000 {
+            flush_interval -1
+            transport http {
+                dial_timeout 10s
+                response_header_timeout 60s
+                read_timeout 0
+                write_timeout 0
+            }
+        }
+    }
+
     reverse_proxy app:3000
 }

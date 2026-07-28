@@ -925,45 +925,68 @@ export function pendingAgentJobs(branch_id = 'br1', { limit = 40, deviceId = '' 
   const want = Math.max(1, Math.min(100, limit));
   const me = String(deviceId || '').trim().slice(0, 120);
   const claimCutoff = new Date(Date.now() - AGENT_CLAIM_TTL_MS).toISOString();
+
+  // CHỈ LẤY CỘT ĐỦ ĐỂ LỌC. Agent hỏi mỗi 1.5s và cửa sổ quét là 300 dòng — nếu
+  // dựng job đầy đủ cho cả cửa sổ (JSON.parse payload + jobMeta cho từng dòng)
+  // thì mỗi máy agent ngốn 300 lần phân tích JSON mỗi 1.5 giây. Trên VPS 1 nhân,
+  // đó là chặn vòng lặp sự kiện đủ lâu để Socket.IO trượt nhịp ping → app rớt
+  // kết nối liên tục. Job đầy đủ chỉ dựng cho những job THỰC SỰ trả về (tối đa
+  // `want`). Cùng bài học với sự cố CPU 100% do getPrintConfig() gọi trong vòng lặp.
   const rows = db.prepare(
-    `SELECT * FROM print_jobs
+    `SELECT id, printer FROM print_jobs
       WHERE branch_id=? AND status IN ('queued','failed')
         AND (claimed_by IS NULL OR claimed_by='' OR claimed_by=? OR COALESCE(claimed_at,'') < ?)
       ORDER BY created_at ASC LIMIT ?`,
-  ).all(branch_id, me, claimCutoff, AGENT_SCAN_WINDOW).map(publicJob);
+  ).all(branch_id, me, claimCutoff, AGENT_SCAN_WINDOW);
+
   // Nạp cấu hình in ĐÚNG 1 LẦN cho cả loạt job — trước đây resolveAgentJob() gọi
   // lại getPrintConfig() (đọc DB + JSON.parse + sanitize) cho TỪNG job, nên agent
   // hỏi hàng đợi mỗi 1.5s làm server lặp lại việc này tới ~40 lần/lần hỏi, tốn
   // gần 2 giây CPU liên tục 24/7 → nghẽn cứng cả server (đã gây sự cố thật).
   const printCfg = getPrintConfig(branch_id);
   const printers = Array.isArray(printCfg.printers) ? printCfg.printers : [];
+  const printerById = new Map(printers.map(p => [p.id, p]));
+
+  // Trạng thái các máy chạy agent cũng lấy ĐÚNG 1 LẦN, không hỏi lại theo từng job.
+  const devices = getAgentDevices(branch_id);
+  const onlineDeviceIds = new Set(devices.map(d => d.device_id));
+  const myPrinterNames = new Set(
+    (devices.find(d => d.device_id === me)?.printers || [])
+      .map(p => String(p.name || '').trim().toLowerCase()));
+  const meIsKnown = !!me && onlineDeviceIds.has(me);
 
   const out = [];
   const orphans = [];
-  for (const job of rows) {
-    if (!printers.some(p => p.id === job.printer)) {
-      orphans.push(job.id); // tuyến in đã bị xoá → job này không bao giờ in được
+  for (const row of rows) {
+    const printer = printerById.get(row.printer);
+    if (!printer) {
+      orphans.push(row.id); // tuyến in đã bị xoá → job này không bao giờ in được
       continue;
     }
-    const resolved = resolveAgentJobFast(job, printers, printCfg);
-    if (!resolved || (resolved.connection !== 'lan' && resolved.connection !== 'system')) continue;
+    if (printer.active === false) continue;
+    const connection = printer.connection || 'browser';
+    if (connection !== 'lan' && connection !== 'system') continue;
 
     // Máy in cắm THẲNG vào một máy (connection 'system') thì chỉ máy ĐÓ in được.
-    // Trước đây job được phát cho mọi agent: máy không có máy in đó sẽ in lỗi và
-    // báo 'failed', kéo job đã in thành công quay lại hàng đợi → in trùng.
-    // Máy in LAN thì máy nào trong mạng cũng in được nên không cần lọc.
-    if (resolved.connection === 'system' && me && !deviceHasPrinter(branch_id, me, resolved.systemName)) {
-      continue;
+    // Máy khác nhận sẽ in lỗi rồi kéo job đã in thành công về 'failed' → in trùng.
+    // Máy in LAN thì máy nào trong mạng cũng in được nên không lọc.
+    if (connection === 'system' && meIsKnown) {
+      const canName = String(printer.systemName || printer.name || '').trim().toLowerCase();
+      if (canName && !myPrinterNames.has(canName)) continue;
     }
 
-    // MÁY CHỦ TRÌ: khi nhiều máy POS cùng với tới một máy in (máy in LAN, hoặc
-    // máy in chia sẻ mà cả hai máy đều thấy), phiếu phải luôn ra ở ĐÚNG MỘT chỗ
-    // — không để "máy nào hỏi trước thì máy đó in", vì như vậy bill cùng một ca
-    // lúc ra máy này lúc ra máy kia. Máy chủ trì mà offline thì nhường lại cho
-    // máy khác để không tắc bán hàng.
-    if (!isEligibleForPrinter(branch_id, me, printers.find(p => p.id === job.printer))) continue;
+    // MÁY CHỦ TRÌ: nhiều máy POS cùng với tới một máy in thì phiếu phải luôn ra ở
+    // ĐÚNG MỘT chỗ, không để "máy nào hỏi trước máy đó in". Chủ trì offline thì
+    // nhường cho máy khác để không tắc bán hàng.
+    const primary = String(printer.primaryDeviceId || '').trim();
+    if (primary && me && primary !== me && onlineDeviceIds.has(primary)) continue;
 
-    if (me && !claimJob(job.id, me, claimCutoff)) continue; // máy khác vừa giữ chỗ
+    if (me && !claimJob(row.id, me, claimCutoff)) continue; // máy khác vừa giữ chỗ
+
+    // Tới đây job chắc chắn được trả về — giờ mới dựng đầy đủ (parse payload,
+    // render text). Tối đa `want` lần thay vì cả cửa sổ quét.
+    const resolved = resolveAgentJobFast(getJob(row.id), printers, printCfg);
+    if (!resolved) continue;
     out.push(resolved);
     if (out.length >= want) break;
   }
@@ -980,31 +1003,6 @@ export function pendingAgentJobs(branch_id = 'br1', { limit = 40, deviceId = '' 
   return out;
 }
 
-/** Máy `deviceId` có đang cắm máy in tên `systemName` không (theo báo cáo agent).
- *  Chưa biết gì về máy đó (agent bản cũ chưa gửi định danh) → cho qua, giữ hành
- *  vi cũ thay vì chặn in. */
-function deviceHasPrinter(branch_id, deviceId, systemName) {
-  const want = String(systemName || '').trim().toLowerCase();
-  if (!want) return true;
-  const devices = getAgentDevices(branch_id);
-  const mine = devices.find(d => d.device_id === deviceId);
-  if (!mine) return true;
-  return mine.printers.some(p => String(p.name || '').trim().toLowerCase() === want);
-}
-
-/** Máy `me` có được phép in tuyến `printer` không, xét MÁY CHỦ TRÌ.
- *
- *  - Tuyến không đặt máy chủ trì → máy nào cũng in được (hành vi cũ).
- *  - Có máy chủ trì và máy đó ĐANG ONLINE → chỉ mình nó in.
- *  - Có máy chủ trì nhưng nó OFFLINE → nhường cho máy khác, tránh tắc bán hàng.
- *  - Agent bản cũ chưa gửi định danh (`me` rỗng) → không chặn, giữ tương thích. */
-function isEligibleForPrinter(branch_id, me, printer) {
-  const primary = String(printer?.primaryDeviceId || '').trim();
-  if (!primary || !me) return true;
-  if (primary === me) return true;
-  const primaryOnline = getAgentDevices(branch_id).some(d => d.device_id === primary);
-  return !primaryOnline; // chủ trì nghỉ thì máy khác gánh
-}
 
 /** Giữ chỗ job cho đúng một máy. Trả false nếu máy khác vừa giữ trước. */
 function claimJob(id, deviceId, claimCutoff) {

@@ -51,15 +51,23 @@ class DanDpakRealtimeClient {
         .setTimeout(20000)
         .disableAutoConnect();
     if (enableReconnection) {
-      // KHÔNG BAO GIỜ bỏ cuộc, nhưng lùi dần theo cấp số nhân
-      // (~1s → 2s → 4s → 8s → 16s → 30s): mạng chớp tắt thì nối lại gần như
-      // ngay, còn server chết hẳn thì không dội request mỗi giây làm nặng
-      // thêm thiết bị yếu lẫn server đang gượng dậy.
+      // KHÔNG BAO GIỜ bỏ cuộc, nhưng lùi dần để server chết hẳn thì không bị dội
+      // request mỗi giây.
+      //
+      // ĐO THỰC TẾ trên nhật ký socket_reconnect của cửa hàng: trong 45 lần nối
+      // lại, 19 lần rơi vào dải 6–30 giây — đúng bằng các nấc 4s/8s/16s của thang
+      // lùi cũ (1s → 2s → 4s → 8s → 16s → 30s). Tức mạng chỉ chớp 1–2 giây nhưng
+      // client TỰ BẮT MÌNH chờ thêm cả chục giây, nhân viên thấy "MẤT KẾT NỐI"
+      // lâu hơn sự cố thật nhiều lần.
+      //
+      // Máy POS nằm trong cửa hàng, không phải điện thoại chạy pin ngoài đường:
+      // thử lại dày hơn không hại gì. Nấc đầu 400ms và trần 8s → sự cố chớp tắt
+      // gần như không kịp thấy, mà server sập hẳn vẫn chỉ bị hỏi ~8s một lần.
       options = options
           .enableReconnection()
           .setReconnectionAttempts(1 << 30)
-          .setReconnectionDelay(1000)
-          .setReconnectionDelayMax(30000)
+          .setReconnectionDelay(400)
+          .setReconnectionDelayMax(8000)
           .setRandomizationFactor(0.5);
     }
 
