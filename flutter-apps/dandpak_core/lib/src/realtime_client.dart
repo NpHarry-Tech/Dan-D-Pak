@@ -6,11 +6,17 @@ class DanDpakRealtimeClient {
 
   bool isConnected = false;
 
+  /// Định danh thiết bị dùng cho ràng buộc phiên phía server. Nối ở bootstrap
+  /// (cùng chỗ với DanDpakApiClient.deviceMetadataProvider) để mọi màn hình gọi
+  /// connect() đều gửi kèm mà không phải tự truyền — cùng cách làm với REST.
+  static String Function()? deviceIdProvider;
+
   void connect({
     required String url,
     required String token,
     required String branchId,
     required String device,
+    String? deviceId,
     required Iterable<String> events,
     void Function(bool isConnected)? onConnectionChanged,
     void Function(String event, dynamic data)? onEvent,
@@ -19,7 +25,21 @@ class DanDpakRealtimeClient {
   }) {
     disconnect();
 
-    final auth = {'branch': branchId, 'device': device, 'token': token};
+    // deviceId: server ràng buộc phiên với thiết bị đã đăng nhập (xem
+    // sessionDeviceGate trong services/auth.js). Thiếu trường này thì WebSocket
+    // trở thành đường vòng cho token bị sao chép sang máy khác.
+    String resolvedDeviceId = deviceId ?? '';
+    if (resolvedDeviceId.isEmpty) {
+      try {
+        resolvedDeviceId = deviceIdProvider?.call() ?? '';
+      } catch (_) {}
+    }
+    final auth = {
+      'branch': branchId,
+      'device': device,
+      'token': token,
+      if (resolvedDeviceId.isNotEmpty) 'deviceId': resolvedDeviceId,
+    };
     var options = io.OptionBuilder()
         // WebSocket trước cho độ trễ thấp, NHƯNG cho phép TỤT XUỐNG polling khi
         // ws chập chờn (WiFi yếu / mạng qua proxy) — trước đây ép ws-only nên chỉ

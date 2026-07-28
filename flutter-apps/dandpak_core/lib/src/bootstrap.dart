@@ -90,6 +90,8 @@ Future<void> _mainImpl(List<String> args) async {
 
   await SystemLog.attach(apiService);
   DanDpakApiClient.deviceMetadataProvider = SystemLog.requestHeaders;
+  // Cùng định danh thiết bị cho WebSocket — server ràng buộc phiên theo máy.
+  DanDpakRealtimeClient.deviceIdProvider = () => SystemLog.deviceId;
   _logUpdateSuccessIfJustUpdated();
 
   PerfMode.init();

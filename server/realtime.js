@@ -118,7 +118,13 @@ export function initRealtime(httpServer) {
         return next(new Error('Xác thực thất bại: Thiếu token truy cập.'));
       }
 
-      const user = userFor(token);
+      // Truyền device id để WebSocket chịu cùng ràng buộc thiết bị như REST —
+      // nếu không, token bị sao chép vẫn nghe được realtime của cửa hàng.
+      const deviceId = socket.handshake.auth?.deviceId
+        || socket.handshake.query?.deviceId
+        || socket.handshake.headers?.['x-device-id']
+        || '';
+      const user = userFor(token, deviceId);
       if (!user) {
         return next(new Error('Xác thực thất bại: Phiên làm việc không hợp lệ hoặc đã hết hạn.'));
       }

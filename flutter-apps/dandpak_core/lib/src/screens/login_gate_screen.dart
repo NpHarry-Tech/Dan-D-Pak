@@ -73,7 +73,11 @@ class _LoginGateScreenState extends State<LoginGateScreen> {
       builder: (_) => _PinDialog(user: user),
     );
     if (res == null || !mounted) return;
-    await _login(user.username, res['pin'] ?? '', lang: auth.language);
+    // Danh sách trên màn đăng nhập KHÔNG còn chứa username thật (server chỉ trả
+    // ảnh + tên + id — xem listLoginUsers), nên gửi `id` làm định danh. Server
+    // chấp nhận cả hai, `username` chỉ còn dùng cho ô đăng nhập thủ công.
+    final identifier = user.username.isNotEmpty ? user.username : user.id;
+    await _login(identifier, res['pin'] ?? '', lang: auth.language);
   }
 
   Future<void> _openAdminLogin() async {

@@ -57,6 +57,10 @@ class SystemLog {
     _flushTimer = Timer.periodic(const Duration(seconds: 15), (_) => _flush());
   }
 
+  /// Định danh thiết bị bền vững (sinh lần chạy đầu, lưu trong LocalStore).
+  /// Server dùng để ràng buộc phiên đăng nhập với đúng máy đã đăng nhập.
+  static String get deviceId => _deviceId;
+
   static Map<String, String> requestHeaders() {
     String safe(String value) =>
         value.replaceAll(RegExp(r'[^\x20-\x7E]'), '?').trim();

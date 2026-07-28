@@ -9,7 +9,11 @@ import { clientIp } from '../../core/util.js';
 
 export function registerAuthRoutes(api, { wrap, guard, guardAny, branch, visibleBranch, publicBranch }) {
 api.get('/branches', wrap(() => Branches.listBranches()));
-api.post('/login', wrap((req) => Auth.login(req.body.username, req.body.pin, req.body.branch_id || publicBranch(req), { ip: clientIp(req) })));
+api.post('/login', wrap((req) => Auth.login(req.body.username, req.body.pin, req.body.branch_id || publicBranch(req), {
+  ip: clientIp(req),
+  // Gắn phiên với thiết bị: token bị sao chép sang máy khác sẽ bị từ chối.
+  deviceId: req.headers['x-device-id'],
+})));
 // Cổng PIN Quản lý/Admin để đổi sang chi nhánh khác (chỉ xác minh, KHÔNG tạo session).
 // Phát từ trạng thái đang đăng nhập nên dùng guard(); verifyManagerOwnerPin yêu cầu
 // owner/manager có quyền vào chi nhánh đích.
@@ -30,7 +34,12 @@ api.post('/me/lang', guard(), wrap((req) => Auth.updateOwnLang(req.user.id, req.
 // Đổi PIN của chính mình (tự xác thực bằng PIN hiện tại). Nền cho luồng ép-đổi
 // PIN mặc định lần đầu — xem security_warning='default_admin_pin' ở /login.
 api.post('/me/pin', guard(), wrap((req) => Auth.changeOwnPin(req.user.id, req.body.current_pin, req.body.new_pin, branch(req))));
-api.get('/users', wrap((req) => Auth.listUsers(visibleBranch(req))));
+// Server quyết định trả gì theo trạng thái đăng nhập: đã đăng nhập → hồ sơ đầy
+// đủ cho các màn quản lý; chưa đăng nhập → chỉ ảnh + tên + id để chọn người trên
+// màn đăng nhập (xem listLoginUsers, không lộ username/vai trò).
+api.get('/users', wrap((req) => (req.user
+  ? Auth.listUsers(visibleBranch(req))
+  : Auth.listLoginUsers(publicBranch(req)))));
 api.get('/ping', wrap(() => ({ ok: true, serverTime: Date.now() })));
 
 // --- ERP module registry ---

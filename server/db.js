@@ -1160,6 +1160,21 @@ export function migrate(targetDb = globalDb) {
     UNIQUE(shop_domain, resource)
   );
   `);
+  // Đếm số lần đăng nhập sai — LƯU DB để không bị xoá sạch mỗi lần restart server,
+  // và theo cả hai chiều (scope='user' | 'ip') để chặn kiểu rải đều qua nhiều tài khoản.
+  db.exec(`
+  CREATE TABLE IF NOT EXISTS login_failures (
+    scope TEXT NOT NULL,
+    key TEXT NOT NULL,
+    count INTEGER NOT NULL DEFAULT 0,
+    last_fail_ms INTEGER NOT NULL DEFAULT 0,
+    until_ms INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (scope, key)
+  );
+  `);
+  // Phiên đăng nhập gắn với THIẾT BỊ: token bị copy sang máy khác sẽ bị từ chối.
+  // Cột rỗng = phiên cũ (tạo trước bản này) → gắn thiết bị ở lần dùng đầu tiên.
+  addColumnIfMissing('auth_sessions', 'device_id', 'TEXT');
   // DB tạo external_*/sync_logs ở thời v2 (chưa multi-shop) sẽ thiếu shop_domain.
   addColumnIfMissing('external_orders', 'shop_domain', "TEXT NOT NULL DEFAULT ''");
   addColumnIfMissing('external_customers', 'shop_domain', "TEXT NOT NULL DEFAULT ''");
@@ -1178,6 +1193,23 @@ export function migrate(targetDb = globalDb) {
   CREATE INDEX IF NOT EXISTS idx_sync_logs_provider_shop_created  ON sync_logs(provider, shop_domain, created_at DESC);
   CREATE INDEX IF NOT EXISTS idx_sync_logs_webhook_dedupe         ON sync_logs(provider, shop_domain, topic, external_id, created_at DESC);
   CREATE INDEX IF NOT EXISTS idx_haravan_sync_state_shop_resource ON haravan_sync_state(shop_domain, resource);
+  `);
+
+  // Token đẩy thông báo (Firebase Cloud Messaging) — 1 dòng/thiết bị (khớp
+  // device_id đã dùng ở system_logs/request headers). Token đổi (app cài lại,
+  // xoá dữ liệu…) thì UPSERT theo device_id, không tích luỹ rác.
+  db.exec(`
+  CREATE TABLE IF NOT EXISTS device_tokens (
+    id         TEXT PRIMARY KEY,
+    branch_id  TEXT NOT NULL,
+    device_id  TEXT NOT NULL,
+    user_id    TEXT,
+    platform   TEXT NOT NULL,
+    fcm_token  TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    UNIQUE(device_id)
+  );
+  CREATE INDEX IF NOT EXISTS idx_device_tokens_branch ON device_tokens(branch_id);
   `);
 
   if (isMaster) {

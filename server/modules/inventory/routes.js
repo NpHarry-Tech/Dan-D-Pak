@@ -17,7 +17,8 @@ function verifyWarehouseConfigAccess(req, branch) {
 }
 
 export function registerInventoryRoutes(api, { wrap, guard, guardAny, branch, visibleBranch }) {
-  api.get('/warehouses', wrap((req) => Inv.listWarehouses(visibleBranch(req), req.query)));
+  // Danh sách kho là thông tin vận hành nội bộ — chỉ trả cho người đã đăng nhập.
+  api.get('/warehouses', guard(), wrap((req) => Inv.listWarehouses(visibleBranch(req), req.query)));
   api.post('/warehouses', guardAny('warehouse.create', 'warehouse.manage'), wrap((req) => {
     const { branch_id, approvedBy } = verifyWarehouseConfigAccess(req, branch);
     audit('warehouse.config.reauth', { action: 'create', approved_by: approvedBy.username }, branch_id, approvedBy.username);

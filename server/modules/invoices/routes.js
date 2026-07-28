@@ -12,7 +12,13 @@ export function registerInvoiceRoutes(api, {
   actor,
   assertBillEditable,
 }) {
-  api.post('/orders/:id/customer-invoice', wrap((req) => {
+  // BẢO MẬT: trước đây route này MỞ (không cần đăng nhập) và chỉ định danh bằng
+  // order_id. Cộng với uid() cũ đoán được (xem db/ids.js), kẻ tấn công có thể ghi
+  // mã số thuế của mình lên hoá đơn của bill người khác — khấu trừ VAT đầu vào
+  // không phải của mình, còn khách thật thì mất hoá đơn. Cũng có thể 'decline'
+  // hàng loạt. Client hợp lệ DUY NHẤT là màn thanh toán self-order, và màn đó đã
+  // dựng ApiService kèm staffToken, nên yêu cầu đăng nhập không phá luồng nào.
+  api.post('/orders/:id/customer-invoice', guard(), wrap((req) => {
     assertBillEditable(req.params.id, req, 'customer_invoice');
     if (req.body) delete req.body.security_pin;
     return Einvoices.customerRequest(req.params.id, req.body || {}, visibleBranch(req));

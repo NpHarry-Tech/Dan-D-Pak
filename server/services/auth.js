@@ -9,22 +9,68 @@ import { hashPin, verifyPin, newToken, tokenDigest } from './pin.js';
 
 const sessions = new Map(); // token -> { user, at }
 
-// Chống dò PIN: khóa đăng nhập tạm thời sau nhiều lần sai liên tiếp (theo username).
-const loginFails = new Map(); // username -> { count, until }
-const LOGIN_MAX_FAILS = 5;
-const LOGIN_LOCK_MS = 5 * 60 * 1000; // khóa 5 phút sau khi vượt ngưỡng
-function loginLockState(uname) {
-  const e = loginFails.get(uname);
-  if (!e) return null;
-  if (e.until && e.until <= Date.now()) { loginFails.delete(uname); return null; }
-  return e;
+// Chống dò PIN.
+//
+// Bản cũ đếm trong RAM và CHỈ theo username. Hai lỗ:
+//   - Khởi động lại server là bộ đếm về 0 → kẻ tấn công chỉ cần chờ (hoặc ép)
+//     một lần restart là được thêm 5 lượt, khoá gần như vô nghĩa với tấn công dài.
+//   - Không đếm theo IP → một máy có thể xoay vòng qua toàn bộ nhân sự, mỗi
+//     người 5 lượt, mà không bao giờ chạm ngưỡng của ai.
+// Nay đếm trong DB (bền qua restart) và theo CẢ hai chiều: định danh + IP.
+const LOGIN_MAX_FAILS = 5;         // theo từng tài khoản
+const LOGIN_MAX_FAILS_IP = 20;     // theo IP — chặn kiểu rải đều qua nhiều tài khoản
+const LOGIN_LOCK_MS = 5 * 60 * 1000;
+const LOGIN_WINDOW_MS = 15 * 60 * 1000; // quá cũ thì bỏ qua, tránh khoá oan người quên PIN hôm trước
+
+function loginFailRow(scope, key) {
+  return db.prepare(`SELECT * FROM login_failures WHERE scope=? AND key=?`).get(scope, key);
 }
+
+/** Trả { until } nếu đang bị khoá, null nếu không. */
+function lockStateFor(scope, key, maxFails) {
+  if (!key) return null;
+  const row = loginFailRow(scope, key);
+  if (!row) return null;
+  const until = Number(row.until_ms) || 0;
+  if (until > Date.now()) return { count: row.count, until };
+  // Hết hạn khoá, hoặc chuỗi sai đã quá cũ → coi như làm lại từ đầu.
+  if (until || (Date.now() - (Number(row.last_fail_ms) || 0)) > LOGIN_WINDOW_MS) {
+    db.prepare(`DELETE FROM login_failures WHERE scope=? AND key=?`).run(scope, key);
+    return null;
+  }
+  return row.count >= maxFails ? { count: row.count, until: 0 } : null;
+}
+
+function loginLockState(uname, ip = '') {
+  return lockStateFor('user', uname, LOGIN_MAX_FAILS)
+    || lockStateFor('ip', String(ip || ''), LOGIN_MAX_FAILS_IP);
+}
+
+function bumpFail(scope, key, maxFails) {
+  if (!key) return 0;
+  const nowMs = Date.now();
+  const row = loginFailRow(scope, key);
+  const stale = row && (nowMs - (Number(row.last_fail_ms) || 0)) > LOGIN_WINDOW_MS;
+  const count = (stale ? 0 : (row?.count || 0)) + 1;
+  const untilMs = count >= maxFails ? nowMs + LOGIN_LOCK_MS : 0;
+  db.prepare(`INSERT INTO login_failures (scope,key,count,last_fail_ms,until_ms) VALUES (?,?,?,?,?)
+    ON CONFLICT(scope,key) DO UPDATE SET count=excluded.count, last_fail_ms=excluded.last_fail_ms, until_ms=excluded.until_ms`)
+    .run(scope, key, count, nowMs, untilMs);
+  return count;
+}
+
+function clearLoginFails(uname, ip = '') {
+  db.prepare(`DELETE FROM login_failures WHERE (scope='user' AND key=?) OR (scope='ip' AND key=?)`)
+    .run(uname, String(ip || ''));
+}
+
 function registerLoginFail(uname, branch_id, ip = '') {
-  const e = loginFails.get(uname) || { count: 0, until: 0 };
-  e.count += 1;
-  if (e.count >= LOGIN_MAX_FAILS) e.until = Date.now() + LOGIN_LOCK_MS;
-  loginFails.set(uname, e);
-  audit('auth.login.failed', { user: uname, attempts: e.count, locked: !!e.until, ip }, branch_id, uname || 'unknown');
+  const count = bumpFail('user', uname, LOGIN_MAX_FAILS);
+  const ipCount = bumpFail('ip', String(ip || ''), LOGIN_MAX_FAILS_IP);
+  audit('auth.login.failed', {
+    user: uname, attempts: count, ip, ip_attempts: ipCount,
+    locked: count >= LOGIN_MAX_FAILS || ipCount >= LOGIN_MAX_FAILS_IP,
+  }, branch_id, uname || 'unknown');
 }
 
 // Tự dọn các session quá hạn trong Map — tránh memory leak khi thiết bị tắt mà không logout.
@@ -405,18 +451,21 @@ function normalizeBranchAccess(body = {}, role = 'cashier', homeBranch = 'br1') 
 export function login(username, pin, branch_id = 'br1', meta = {}) {
   const ip = String(meta?.ip || '').slice(0, 64);
   const uname = String(username || '').toLowerCase();
-  const lock = loginLockState(uname);
+  const lock = loginLockState(uname, ip);
   if (lock && lock.until && lock.until > Date.now()) {
     const mins = Math.max(1, Math.ceil((lock.until - Date.now()) / 60000));
     audit('auth.login.locked', { user: uname, ip }, branchExists(branch_id) ? branch_id : 'br1', uname || 'unknown');
     throw new Error(`Đăng nhập tạm khóa do nhập sai nhiều lần. Thử lại sau ~${mins} phút.`);
   }
-  const u = db.prepare(`SELECT * FROM users WHERE username=? AND active=1`).get(uname);
+  // Màn đăng nhập gửi `id` (từ listLoginUsers) thay vì username thật — chấp nhận
+  // cả hai để máy đã cập nhật lẫn máy bản cũ đều đăng nhập được.
+  const u = db.prepare(`SELECT * FROM users WHERE (username=? OR id=?) AND active=1`)
+    .get(uname, String(username || '').trim());
   if (!u || !verifyPin(pin, u.pin)) {
     registerLoginFail(uname, branchExists(branch_id) ? branch_id : 'br1', ip);
     throw new Error('Sai tài khoản hoặc mã PIN');
   }
-  loginFails.delete(uname);
+  clearLoginFails(uname, ip);
   const selectedBranch = branchExists(branch_id) ? branch_id : (u.branch_id || 'br1');
   if (!canAccessBranch(u, selectedBranch)) throw new Error('Tài khoản này chưa được cấp quyền vào chi nhánh đã chọn.');
   const token = newToken();
@@ -424,8 +473,10 @@ export function login(username, pin, branch_id = 'br1', meta = {}) {
   const user = publicUser(u);
   const ts = now();
   sessions.set(digest, { user, at: ts });
-  db.prepare(`INSERT INTO auth_sessions (token,user_id,branch_id,created_at,last_seen_at) VALUES (?,?,?,?,?)`)
-    .run(digest, u.id, selectedBranch, ts, ts);
+  // Gắn phiên với thiết bị đăng nhập ngay từ đầu (xem sessionDeviceGate).
+  const deviceId = String(meta?.deviceId || '').trim().slice(0, 120) || null;
+  db.prepare(`INSERT INTO auth_sessions (token,user_id,branch_id,created_at,last_seen_at,device_id) VALUES (?,?,?,?,?,?)`)
+    .run(digest, u.id, selectedBranch, ts, ts, deviceId);
   audit('auth.login', { user: u.username, role: u.role, ip }, selectedBranch, u.username);
   // Cảnh báo bảo mật: tài khoản Admin còn dùng PIN mặc định '1234' (từ lần khởi tạo
   // DB rỗng). Trả cờ để app nhắc chủ cửa hàng đổi PIN — không chặn đăng nhập.
@@ -500,23 +551,56 @@ export function logout(token) {
   db.prepare(`DELETE FROM auth_sessions WHERE token IN (?,?)`).run(digest, token);
 }
 
-export function userFor(token) {
+// BẢO MẬT — phiên gắn với THIẾT BỊ.
+//
+// Token đăng nhập nằm trên đĩa máy khách (máy thu ngân Windows, tablet Android)
+// nên phải coi là có thể bị rút ra: máy root, máy bị chiếm, hoặc app bị hook.
+// Trước đây token rút được dùng lại ở BẤT KỲ máy nào trong 30 ngày.
+//
+// Nay mỗi phiên nhớ x-device-id đã tạo ra nó. Trình bày token đúng nhưng từ
+// thiết bị khác → từ chối và ghi nhật ký. Ba trường hợp cần giữ chạy được:
+//   - Phiên cũ (device_id NULL, tạo trước bản này) → gắn ở lần dùng đầu (TOFU),
+//     không đá người đang làm việc ra ngoài lúc nâng cấp.
+//   - Client chưa gửi header (bản app cũ) → cho qua, KHÔNG gắn, để bản mới gắn sau.
+//   - Ràng buộc chỉ siết khi CẢ HAI phía đều có giá trị.
+function sessionDeviceGate(digest, storedDeviceId, requestDeviceId, username = '') {
+  const incoming = String(requestDeviceId || '').trim().slice(0, 120);
+  const bound = String(storedDeviceId || '').trim();
+  if (!incoming) return true;              // app cũ chưa gửi header
+  if (!bound) {                            // TOFU: gắn thiết bị đầu tiên nhìn thấy
+    db.prepare(`UPDATE auth_sessions SET device_id=? WHERE token=?`).run(incoming, digest);
+    return true;
+  }
+  if (bound === incoming) return true;
+  // Token đúng nhưng sai thiết bị → gần như chắc chắn token đã bị sao chép.
+  db.prepare(`DELETE FROM auth_sessions WHERE token=?`).run(digest);
+  sessions.delete(digest);
+  audit('auth.session.device_mismatch', { bound_device: bound, seen_device: incoming }, 'br1', username || 'unknown');
+  return false;
+}
+
+export function userFor(token, deviceId = '') {
   if (!token) return null;
   const digest = tokenDigest(token);
   const cached = sessions.get(digest);
   if (cached) {
     const fresh = db.prepare(`SELECT * FROM users WHERE id=? AND active=1`).get(cached.user.id);
     if (!fresh) { sessions.delete(digest); return null; }
+    // Kiểm tra thiết bị NGAY CẢ khi trúng cache — nếu không, cache trong RAM sẽ
+    // trở thành đường vòng qua mặt ràng buộc.
+    const bound = db.prepare(`SELECT device_id FROM auth_sessions WHERE token=?`).get(digest)?.device_id;
+    if (!sessionDeviceGate(digest, bound, deviceId, fresh.username)) return null;
     cached.user = publicUser(fresh);
     db.prepare(`UPDATE auth_sessions SET last_seen_at=? WHERE token=?`).run(now(), digest);
     return cached.user;
   }
   const row = db.prepare(`
-    SELECT u.* FROM auth_sessions s
+    SELECT u.*, s.device_id AS session_device_id FROM auth_sessions s
     JOIN users u ON u.id=s.user_id
     WHERE s.token IN (?,?) AND u.active=1`).get(digest, token);
   if (!row) return null;
   db.prepare(`UPDATE auth_sessions SET token=? WHERE token=?`).run(digest, token);
+  if (!sessionDeviceGate(digest, row.session_device_id, deviceId, row.username)) return null;
   const user = publicUser(row);
   sessions.set(digest, { user, at: now() });
   db.prepare(`UPDATE auth_sessions SET last_seen_at=? WHERE token=?`).run(now(), digest);
@@ -527,6 +611,38 @@ export function listUsers(branch_id = 'br1') {
   return db.prepare(`SELECT * FROM users WHERE active=1 ORDER BY role,name`).all()
     .filter(u => canAccessBranch(u, branch_id))
     .map(publicUser);
+}
+
+/** Danh sách cho MÀN ĐĂNG NHẬP (chưa đăng nhập nên không được xem gì thừa).
+ *
+ *  BẢO MẬT: trước đây /users trả nguyên `publicUser` cho cả request ẩn danh —
+ *  gồm `username`, `role` và `branch_ids` của TOÀN BỘ nhân sự, trên một domain
+ *  công khai. Ai cũng lấy được danh sách tài khoản và biết chính xác ai là
+ *  owner/manager để nhắm PIN vào đúng người.
+ *
+ *  Màn đăng nhập chỉ cần ĐỦ ĐỂ NHẬN MẶT: ảnh + tên hiển thị, và một định danh
+ *  để gửi kèm PIN. Định danh đó là `id` — chuỗi ngẫu nhiên mật mã (xem
+ *  db/ids.js), lộ ra cũng không dùng lại được ở hệ thống khác và không suy ra
+ *  được quy tắc đặt tên tài khoản. VAI TRÒ thì không trả về: kẻ tấn công không
+ *  biết nên nhắm vào ai.
+ *
+ *  TƯƠNG THÍCH NGƯỢC — phần này quan trọng khi lên bản:
+ *  App đang cài trên máy khách đọc trường `username` để gửi kèm PIN. Nếu bỏ hẳn
+ *  trường đó, mọi máy CHƯA kịp cập nhật sẽ gửi chuỗi rỗng và KHÔNG ĐĂNG NHẬP
+ *  ĐƯỢC ngay khi server mới lên — hỏng cả cửa hàng dù app chưa đổi gì.
+ *  Nên `username` vẫn còn, nhưng mang GIÁ TRỊ CỦA `id` chứ không phải tên tài
+ *  khoản thật. App cũ lẫn app mới đều gửi đúng thứ server nhận (login() chấp
+ *  nhận cả username lẫn id), còn tên tài khoản thật thì không bao giờ rời server. */
+export function listLoginUsers(branch_id = 'br1') {
+  return db.prepare(`SELECT * FROM users WHERE active=1 ORDER BY name`).all()
+    .filter(u => canAccessBranch(u, branch_id))
+    .map(u => ({
+      id: u.id,
+      username: u.id, // định danh đăng nhập, KHÔNG phải username thật
+      name: u.name,
+      avatar: u.avatar || '',
+      lang: u.lang || 'vi',
+    }));
 }
 
 // ---- User management (settings.manage) ----
@@ -677,7 +793,9 @@ export function requirePermission(req, perm) {
 // Lets unguarded routes (POS/iPad) record who acted in the activity log.
 export function attachUser() {
   return (req, _res, next) => {
-    if (!req.user) req.user = userFor(tokenFromReq(req)) || null;
+    if (!req.user) {
+      req.user = userFor(tokenFromReq(req), req.headers?.['x-device-id']) || null;
+    }
     next();
   };
 }
