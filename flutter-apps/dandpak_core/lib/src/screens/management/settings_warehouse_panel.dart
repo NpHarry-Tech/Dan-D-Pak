@@ -422,66 +422,76 @@ class _WarehouseSettingsPanelState extends State<WarehouseSettingsPanel> {
         _saveRetailCfg();
       }
 
+      // Ô nhập dùng chung cho cả hai dropdown — trước đây mỗi cái tự khai
+      // decoration riêng với contentPadding dọc 6px, khiến NHÃN NỔI ("Kho",
+      // "Bảng giá") đè lên giá trị bên dưới, nhìn như chữ bị dính vào nhau.
+      InputDecoration deco(String labelText) => InputDecoration(
+            labelText: labelText,
+            isDense: true,
+            contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+          );
+
+      final khoField = DropdownButtonFormField<String>(
+        initialValue: whValue,
+        isExpanded: true,
+        decoration: deco(t('Kho')),
+        items: [
+          DropdownMenuItem(value: '', child: Text(t('Theo kênh bán'))),
+          for (final w in retailWhs)
+            DropdownMenuItem(
+                value: asText(w['id']),
+                child:
+                    Text(asText(w['name']), overflow: TextOverflow.ellipsis)),
+        ],
+        onChanged: enabled ? (v) => update('warehouse_id', v ?? '') : null,
+      );
+
+      final bangGiaField = DropdownButtonFormField<String>(
+        initialValue: bookValue,
+        isExpanded: true,
+        decoration: deco(t('Bảng giá')),
+        items: [
+          for (final b in activeBooks)
+            DropdownMenuItem(
+                value: asText(b['id']),
+                child:
+                    Text(asText(b['name']), overflow: TextOverflow.ellipsis)),
+        ],
+        onChanged:
+            enabled ? (v) => update('price_book_id', v ?? 'default') : null,
+      );
+
       return Padding(
-        padding: EdgeInsets.only(bottom: 8),
+        padding: EdgeInsets.only(bottom: 14),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(label,
                 style: TextStyle(
-                    fontSize: 11.5,
+                    fontSize: 12,
                     fontWeight: FontWeight.w800,
                     color: enabled ? DanColors.muted : DanColors.faint)),
-            SizedBox(height: 5),
-            Row(
-              children: [
-                Expanded(
-                  child: DropdownButtonFormField<String>(
-                    initialValue: whValue,
-                    isExpanded: true,
-                    decoration: InputDecoration(
-                        labelText: t('Kho'),
-                        isDense: true,
-                        contentPadding: EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 6)),
-                    items: [
-                      DropdownMenuItem(
-                          value: '', child: Text(t('Theo kênh bán'))),
-                      for (final w in retailWhs)
-                        DropdownMenuItem(
-                            value: asText(w['id']),
-                            child: Text(asText(w['name']),
-                                overflow: TextOverflow.ellipsis)),
-                    ],
-                    onChanged: enabled
-                        ? (v) => update('warehouse_id', v ?? '')
-                        : null,
-                  ),
-                ),
-                SizedBox(width: 8),
-                Expanded(
-                  child: DropdownButtonFormField<String>(
-                    initialValue: bookValue,
-                    isExpanded: true,
-                    decoration: InputDecoration(
-                        labelText: t('Bảng giá'),
-                        isDense: true,
-                        contentPadding: EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 6)),
-                    items: [
-                      for (final b in activeBooks)
-                        DropdownMenuItem(
-                            value: asText(b['id']),
-                            child: Text(asText(b['name']),
-                                overflow: TextOverflow.ellipsis)),
-                    ],
-                    onChanged: enabled
-                        ? (v) => update('price_book_id', v ?? 'default')
-                        : null,
-                  ),
-                ),
-              ],
-            ),
+            SizedBox(height: 8),
+            // Cột trái của màn Cài đặt chỉ rộng ~340px. Ép hai dropdown nằm
+            // NGANG ở khổ đó thì mỗi ô chỉ còn ~150px, tên bảng giá bị cắt cụt
+            // thành "Bảng giá chu..." — người dùng không đọc được mình đang
+            // chọn gì. Đủ rộng mới xếp ngang, không thì xếp dọc cho dễ đọc.
+            LayoutBuilder(builder: (context, c) {
+              if (c.maxWidth >= 420) {
+                return Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(child: khoField),
+                    SizedBox(width: 10),
+                    Expanded(child: bangGiaField),
+                  ],
+                );
+              }
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [khoField, SizedBox(height: 10), bangGiaField],
+              );
+            }),
           ],
         ),
       );
@@ -509,9 +519,10 @@ class _WarehouseSettingsPanelState extends State<WarehouseSettingsPanel> {
               ],
             ],
           ),
-          SizedBox(height: 4),
+          SizedBox(height: 10),
           // Tick đồng bộ: Retail POS và Retail-trong-F&B dùng chung cấu hình.
           InkWell(
+            borderRadius: BorderRadius.circular(6),
             onTap: () {
               setState(() {
                 final next = !(_retailCfg['sync'] != false);
@@ -523,22 +534,27 @@ class _WarehouseSettingsPanelState extends State<WarehouseSettingsPanel> {
               });
               _saveRetailCfg();
             },
-            child: Row(
-              children: [
-                Icon(sync ? Icons.check_box : Icons.check_box_outline_blank,
-                    size: 17,
-                    color: sync ? DanColors.brand : DanColors.faint),
-                SizedBox(width: 6),
-                Expanded(
-                  child: Text(
-                      t('Đồng bộ cả 2 (F&B dùng y cấu hình Retail POS)'),
-                      style: TextStyle(
-                          fontSize: 12, fontWeight: FontWeight.w700)),
-                ),
-              ],
+            // Vùng chạm cao hơn: dòng tick trước đây sát rạt, ngón tay trên
+            // màn cảm ứng rất dễ trượt sang dropdown ngay bên dưới.
+            child: Padding(
+              padding: EdgeInsets.symmetric(vertical: 6),
+              child: Row(
+                children: [
+                  Icon(sync ? Icons.check_box : Icons.check_box_outline_blank,
+                      size: 18,
+                      color: sync ? DanColors.brand : DanColors.faint),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                        t('Đồng bộ cả 2 (F&B dùng y cấu hình Retail POS)'),
+                        style: TextStyle(
+                            fontSize: 12.5, fontWeight: FontWeight.w700)),
+                  ),
+                ],
+              ),
             ),
           ),
-          SizedBox(height: 10),
+          SizedBox(height: 12),
           sectionRow(t('RETAIL POS (bán lẻ)'), 'standalone', enabled: true),
           sectionRow(t('RETAIL TRONG F&B (thêm retail ở POS nhà hàng)'), 'fnb',
               enabled: !sync),

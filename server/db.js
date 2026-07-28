@@ -12,13 +12,14 @@ import {
   bootstrapWarehouseDefaults, bootstrapTableDefaults,
 } from './db/bootstrap.js';
 import { backupDatabase, listBackups } from './db/maintenance.js';
+import { inTransaction } from './db/transaction.js';
 
 export {
   db, DB_PATH, DB_WAS_EMPTY, ROOT, now, uid, audit, encryptCompress, decryptDecompress,
   reconcileAuditFromArchive, compactAuditToMonthly, rehydrateAuditMonths, rehydrateAuditForQuery,
   purgeAuditBeyondRetention, defaultWarehouseIds, defaultWarehouseId,
   bootstrapBranchDefaults, bootstrapWarehouseDefaults, bootstrapTableDefaults,
-  backupDatabase, listBackups,
+  backupDatabase, listBackups, inTransaction,
 };
 const globalDb = db;
 export function migrate(targetDb = globalDb) {

@@ -3,7 +3,7 @@
 import { readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { db, uid, now, audit, defaultWarehouseId } from '../db.js';
+import { db, uid, now, audit, defaultWarehouseId, inTransaction } from '../db.js';
 import { emit } from '../realtime.js';
 import { matchesSearch, searchTokens } from '../core/search.js';
 import { getRetailConfig } from './settings.js';
@@ -676,6 +676,10 @@ export function transferStock(body, branch_id = 'br1') {
     return { stockType, item, item_id: r.item_id, qty, lot_id: r.lot_id || null, lot_no: r.lot_no, expiry_date: r.expiry_date, supplier: r.supplier };
   });
 
+  // Từ đây là GHI: phiếu + trừ lô kho nguồn + cộng lô kho đích + nhật ký chuyển
+  // động. Phải nằm trọn trong một giao dịch, nếu không một lỗi giữa chừng để lại
+  // phiếu áp nửa vời — hàng đã rời kho nguồn mà chưa vào kho đích.
+  return inTransaction(() => {
   const doc = createDocument(branch_id, {
     type: 'transfer',
     warehouse_id: from,
@@ -713,6 +717,7 @@ export function transferStock(body, branch_id = 'br1') {
   audit('stock.transfer', { document: doc.code || doc.id, from, to, lines: lines.map(l => ({ item: l.item_id, qty: l.qty })) }, branch_id, body.created_by);
   emit('inventory:updated', { ids: touchedIds }, branch_id);
   return { ok: true, document_id: doc.id, code: doc.code };
+  });
 }
 
 // Xuất kho NHIỀU dòng gom một phiếu (dùng cho Xuất dùng nội bộ + Trả hàng nhập).
@@ -735,6 +740,8 @@ export function issueLinesDocumented({ type, warehouse_id, lines = [], reason = 
     checked.push({ stockType, item_id: r.item_id, qty, lot_id: r.lot_id || null, note: r.note || null });
   }
   if (!checked.length) throw new Error('Chưa có dòng hàng để xuất');
+  // Phiếu xuất nhiều dòng — trọn gói, không để trừ được vài dòng rồi hỏng.
+  return inTransaction(() => {
   const doc = createDocument(branch_id, { type, warehouse_id, reason, ref, note, created_by });
   const touched = [];
   for (const ln of checked) {
@@ -752,6 +759,7 @@ export function issueLinesDocumented({ type, warehouse_id, lines = [], reason = 
   checkAlerts(branch_id, touched);
   emit('inventory:updated', { ids: touched.map(t => t.id) }, branch_id);
   return doc;
+  });
 }
 
 // Xuất dùng nội bộ (KiotViet "Xuất dùng nội bộ" — Mới): xuất hàng cho cửa hàng
@@ -773,6 +781,9 @@ export function issueInternalUse(body = {}, branch_id = 'br1', user = {}) {
 export function applyStocktake({ warehouse_id, name, mode = 'partial', lines = [] }, branch_id = 'br1') {
   if (!warehouse_id) throw new Error('Thiếu kho kiểm');
   if (!Array.isArray(lines) || !lines.length) throw new Error('Chưa có dòng kiểm kho');
+  // Kiểm kho cân bằng nhiều dòng cùng lúc — phải trọn gói. Hỏng giữa chừng mà
+  // không rollback thì phiên kiểm ghi một đằng, tồn thực tế một nẻo.
+  return inTransaction(() => {
   const sid = uid('st_');
   db.prepare(`INSERT INTO stocktake_sessions (id,branch_id,warehouse_id,name,mode,status,created_at,approved_at)
     VALUES (?,?,?,?,?,'approved',?,?)`).run(sid, branch_id, warehouse_id, name || 'Kiểm kho', mode, now(), now());
@@ -813,6 +824,7 @@ export function applyStocktake({ warehouse_id, name, mode = 'partial', lines = [
   audit('stocktake.approve', { session: sid, warehouse_id, changed }, branch_id);
   emit('inventory:updated', {}, branch_id);
   return { ok: true, session_id: sid, changed };
+  });
 }
 
 // ---- Kiểm kho theo phiếu (KiotViet StockTakes) -----------------------------
@@ -909,6 +921,9 @@ export function approveStocktakeSession(id, branch_id = 'br1', user = {}) {
   const rawLines = db.prepare(`SELECT * FROM stocktake_lines WHERE session_id=? ORDER BY rowid`).all(id);
   if (!rawLines.length) throw new Error('Phiếu kiểm chưa có dòng hàng');
   const actorName = user?.name || user?.username || null;
+  // Cân bằng phiếu kiểm chạm nhiều lô cùng lúc — trọn gói để tồn và phiếu luôn
+  // khớp nhau, không có trạng thái "đã cân bằng một nửa".
+  return inTransaction(() => {
   const doc = createDocument(branch_id, {
     type: 'stocktake', warehouse_id: s.warehouse_id,
     ref: s.code || s.id, reason: 'stocktake_balance', note: s.note, created_by: actorName,
@@ -956,6 +971,7 @@ export function approveStocktakeSession(id, branch_id = 'br1', user = {}) {
   audit('stocktake.approve', { session: id, code: s.code, changed, document: doc.id }, branch_id, actorName);
   emit('inventory:updated', { stocktake: id }, branch_id);
   return getStocktakeSession(id, branch_id);
+  });
 }
 
 export function cancelStocktakeSession(id, branch_id = 'br1', user = {}) {
