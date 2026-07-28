@@ -12,11 +12,12 @@ import '../../ui/format.dart';
 import '../../ui/debouncer.dart';
 import '../../widgets/address_fields.dart';
 import '../../widgets/dan_top_bar.dart';
+import '../../widgets/side_sheet.dart';
 import '../../widgets/tax_lookup.dart';
 import '../management/management_widgets.dart';
 import '../../utils/translation.dart';
 
-part 'contacts_legacy_widgets.dart';
+part 'contacts_shared_widgets.dart';
 part 'contacts_partner_form.dart';
 
 String _s(dynamic v) => v?.toString() ?? '';
@@ -38,13 +39,6 @@ String _mimeForFileName(String name) {
   if (lower.endsWith('.gif')) return 'image/gif';
   return 'image/jpeg';
 }
-
-List<List<String>> get _types => [
-      ['all', t('Tất cả')],
-      ['customer', t('Khách hàng')],
-      ['supplier', t('Nhà cung cấp')],
-      ['staff', t('Nhân viên')],
-    ];
 
 /// Native port of the web Liên hệ (contacts.html): shared customer/supplier/
 /// staff directory with type tabs, search and a contact editor.
@@ -289,12 +283,32 @@ class _KiotCustomerScreenState extends State<ContactsScreen> {
             error: true, onRetry: _load),
       );
     }
-    return Row(
-      children: [
-        SizedBox(width: 290, child: _sidebar()),
-        VerticalDivider(width: 1, color: DanColors.border),
-        Expanded(child: _mainPanel()),
-      ],
+    // Máy POS của cửa hàng chạy 1024x768. Cột lọc cố định 290px ăn mất 28% bề
+    // ngang, phần bảng chỉ còn ~733px trong khi bảng cần 1180px — thu ngân phải
+    // cuộn ngang liên tục và thanh công cụ bị đẩy tràn ra ngoài.
+    // Từ 1100px trở xuống: giấu cột lọc, đưa vào side-sheet mở bằng nút "Bộ lọc"
+    // trên thanh công cụ (cùng cách các màn Cài đặt/Báo cáo đã làm).
+    return LayoutBuilder(builder: (context, constraints) {
+      final wide = constraints.maxWidth >= 1100;
+      if (!wide) return _mainPanel(showFilterButton: true);
+      return Row(
+        children: [
+          SizedBox(width: 290, child: _sidebar()),
+          VerticalDivider(width: 1, color: DanColors.border),
+          Expanded(child: _mainPanel()),
+        ],
+      );
+    });
+  }
+
+  void _openFilterSheet() {
+    showSideSheet<void>(
+      context,
+      width: 320,
+      builder: (_) => SideSheetScaffold(
+        title: t('Bộ lọc'),
+        child: _sidebar(),
+      ),
     );
   }
 
@@ -365,7 +379,7 @@ class _KiotCustomerScreenState extends State<ContactsScreen> {
     );
   }
 
-  Widget _mainPanel() {
+  Widget _mainPanel({bool showFilterButton = false}) {
     final rows = _filteredPartners;
     final canCreate =
         context.watch<AuthProvider>().hasPermission('contacts.create');
@@ -376,26 +390,49 @@ class _KiotCustomerScreenState extends State<ContactsScreen> {
           padding: EdgeInsets.fromLTRB(18, 14, 18, 10),
           child: Row(
             children: [
-              Text(t('Khách hàng'),
-                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900)),
-              SizedBox(width: 18),
-              SizedBox(
-                width: dialogWidth(context, 420),
-                child: TextField(
-                  decoration: InputDecoration(
-                    hintText: t('Theo mã, tên, số điện thoại'),
-                    prefixIcon: Icon(Icons.search),
-                    suffixIcon: Icon(Icons.tune_outlined),
-                    isDense: true,
+              if (showFilterButton) ...[
+                Tooltip(
+                  message: t('Bộ lọc'),
+                  child: IconButton.outlined(
+                    onPressed: _openFilterSheet,
+                    icon: Icon(Icons.filter_list),
                   ),
-                  onChanged: (v) {
-                    _search = v;
-                    _searchDebouncer(_load);
-                  },
-                  onSubmitted: (_) => _load(),
+                ),
+                SizedBox(width: 10),
+              ],
+              Flexible(
+                child: Text(t('Khách hàng'),
+                    overflow: TextOverflow.ellipsis,
+                    style:
+                        TextStyle(fontSize: 20, fontWeight: FontWeight.w900)),
+              ),
+              SizedBox(width: 18),
+              // Ô tìm kiếm CO GIÃN theo chỗ còn lại. Trước đây cố định theo
+              // dialogWidth(context, 420) — mà hàm đó đo BỀ NGANG TOÀN MÀN HÌNH,
+              // không biết cột lọc đã ăn mất 290px, nên ở 1024x768 nó vẫn lấy đủ
+              // 420px và đẩy các nút bên phải tràn ra khỏi màn hình.
+              Expanded(
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(maxWidth: 420),
+                    child: TextField(
+                      decoration: InputDecoration(
+                        hintText: t('Theo mã, tên, số điện thoại'),
+                        prefixIcon: Icon(Icons.search),
+                        suffixIcon: Icon(Icons.tune_outlined),
+                        isDense: true,
+                      ),
+                      onChanged: (v) {
+                        _search = v;
+                        _searchDebouncer(_load);
+                      },
+                      onSubmitted: (_) => _load(),
+                    ),
+                  ),
                 ),
               ),
-              Spacer(),
+              SizedBox(width: 12),
               if (canCreate)
                 OutlinedButton.icon(
                   onPressed: () => _openForm(),

@@ -27,10 +27,19 @@ class DanColors {
   static const paying = Color(0xFFB58CFF);
 }
 
-/// Bề rộng hộp thoại/khối THEO MÀN HÌNH — quy tắc chung cho cả 3 app.
+/// Bề rộng HỘP THOẠI theo màn hình — quy tắc chung cho cả 3 app.
 /// Giữ đúng [preferred] khi màn đủ rộng; tự CO LẠI khi màn hẹp (điện thoại,
 /// tablet mini) để KHÔNG tràn ngang. [margin] là phần chừa hai bên.
-/// Dùng thay cho `width: <số cứng>` ở mọi dialog/panel.
+///
+/// ⚠️ CHỈ dùng cho thứ phủ TOÀN màn hình (AlertDialog, side-sheet, overlay).
+///
+/// KHÔNG dùng bên trong một panel đã bị thu hẹp — hàm này đo `MediaQuery` tức
+/// BỀ NGANG TOÀN MÀN HÌNH, nó không biết cha đã bị cột bên/sidebar ăn mất bao
+/// nhiêu. Từng gây tràn thật: thanh công cụ màn Khách hàng nằm cạnh cột lọc
+/// 290px, ở máy POS 1024x768 nó vẫn xin đủ 420px và đẩy các nút ra ngoài màn.
+///
+/// Bên trong panel hãy dùng `LayoutBuilder`/`Expanded` để lấy bề rộng THẬT còn
+/// lại, ví dụ: `Expanded(child: ConstrainedBox(maxWidth: 420, child: …))`.
 double dialogWidth(BuildContext context, double preferred,
     {double margin = 32}) {
   final avail = MediaQuery.sizeOf(context).width - margin;
