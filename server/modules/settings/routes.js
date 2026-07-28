@@ -12,6 +12,7 @@ import * as System from '../../services/system.js';
 import * as Print from '../../services/printing.js';
 import * as BookMenu from '../../services/bookMenu.js';
 import * as Customers from '../../services/customers.js';
+import { registerDeviceToken } from '../../services/push.js';
 import { audit, now } from '../../db.js';
 import { emit, getActiveConnections } from '../../realtime.js';
 import { notImplemented } from '../../core/http.js';
@@ -312,4 +313,13 @@ api.get('/device/ipad/setup-options', wrap((req) => {
     printers: printers
   };
 }));
+// Đăng ký token FCM của thiết bị — cho phép server đẩy thông báo (bản cập
+// nhật app, sau này có thể mở rộng gọi phục vụ/đơn mới…) KỂ CẢ KHI APP ĐÃ TẮT.
+// Gọi mỗi khi app khởi động/đăng nhập và mỗi khi Firebase phát token mới.
+api.post('/device/push-token', guard(), wrap((req) => registerDeviceToken({
+  device_id: req.body?.device_id,
+  fcm_token: req.body?.fcm_token,
+  platform: req.body?.platform,
+  user_id: req.user?.id,
+}, visibleBranch(req))));
 }
