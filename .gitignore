@@ -93,3 +93,6 @@ server/scripts/*.csv
 .antigravitycli/
 .gemini/
 .mcp.json
+
+# Bao cao QA sinh tu dong (~87MB) - khong dua vao lich su git
+qa-artifacts/
