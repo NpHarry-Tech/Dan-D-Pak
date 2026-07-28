@@ -263,6 +263,10 @@ class _PromotionSettingsPanelState extends State<PromotionSettingsPanel> {
           ? t('Tạo chương trình khuyến mại.')
           : t('Lưu chỉnh sửa chương trình khuyến mại.'),
       label: t('PIN tài khoản đang đăng nhập / Admin'),
+      // Khuyến mại ảnh hưởng trực tiếp tới doanh thu nên người thao tác PHẢI tự
+      // nhập PIN của chính mình, kể cả khi đang đăng nhập bằng tài khoản Quản lý
+      // — đây là dấu vết trách nhiệm, không phải bước kiểm tra quyền.
+      selfPinOnly: true,
     );
     if (pin == null) return;
     setState(() => _saving = true);
@@ -289,6 +293,10 @@ class _PromotionSettingsPanelState extends State<PromotionSettingsPanel> {
           ? t('Tắt chương trình "${v.name}".')
           : t('Bật chương trình "${v.name}".'),
       label: t('PIN tài khoản đang đăng nhập / Admin'),
+      // Khuyến mại ảnh hưởng trực tiếp tới doanh thu nên người thao tác PHẢI tự
+      // nhập PIN của chính mình, kể cả khi đang đăng nhập bằng tài khoản Quản lý
+      // — đây là dấu vết trách nhiệm, không phải bước kiểm tra quyền.
+      selfPinOnly: true,
     );
     if (pin == null) return;
     try {

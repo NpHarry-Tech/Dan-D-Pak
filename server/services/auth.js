@@ -6,6 +6,7 @@ import { archiveStaff } from './archive.js';
 import { MODULE_PERMISSIONS } from './modules.js';
 import { REPORTS } from './reportCenter.js';
 import { hashPin, verifyPin, newToken, tokenDigest } from './pin.js';
+import { currentRequestUser, setRequestUser } from '../core/requestContext.js';
 
 const sessions = new Map(); // token -> { user, at }
 
@@ -511,7 +512,36 @@ export function login(username, pin, branch_id = 'br1', meta = {}) {
   return { token, user, perms: effectivePermsForUser(u), ...(usingDefaultPin ? { security_warning: 'default_admin_pin' } : {}) };
 }
 
+const APPROVER_ROLES = ['owner', 'manager'];
+
+/** Người ĐANG ĐĂNG NHẬP có tự duyệt được không (đã là Quản lý/Admin).
+ *  Đọc từ ngữ cảnh request nên mọi nơi gọi verifyManagerOwnerPin đều được hưởng,
+ *  không phải sửa 30 điểm gọi rải khắp các module. */
+function selfApprover(branch_id) {
+  const ctx = currentRequestUser();
+  if (!ctx?.id) return null;
+  // Nạp lại từ DB để áp ĐÚNG các điều kiện của đường PIN (còn hoạt động, đúng
+  // vai trò, có quyền vào chi nhánh) — không tin dữ liệu đã nằm trong phiên.
+  const row = db.prepare(
+    `SELECT * FROM users WHERE id=? AND active=1 AND role IN ('owner','manager')`).get(ctx.id);
+  if (!row || !canAccessBranch(row, branch_id)) return null;
+  return publicUser(row);
+}
+
+/** Xác nhận thao tác nhạy cảm bằng PIN Quản lý/Admin.
+ *
+ *  Nếu CHÍNH người đang đăng nhập đã là Quản lý/Admin thì họ là người duyệt —
+ *  không bắt gõ lại PIN của chính mình. Trước đây quản lý phải nhập PIN của
+ *  mình cho từng thao tác, vừa chậm giữa ca bận vừa khiến PIN bị gõ ra màn hình
+ *  nhiều lần trước mặt người khác.
+ *
+ *  Lợi thêm về hiệu năng: đường PIN phải scrypt (đồng bộ, cố tình chậm ~80ms)
+ *  lần lượt từng tài khoản quản lý cho tới khi khớp — chặn vòng lặp sự kiện.
+ *  Trường hợp phổ biến nhất (quản lý tự thao tác) nay tốn 0 lần scrypt. */
 export function verifyManagerOwnerPin(pin, branch_id = 'br1') {
+  const self = selfApprover(branch_id);
+  if (self) return self;
+
   const clean = String(pin || '').trim();
   if (!clean) return null;
   // PIN nay duoc bam (scrypt) nen khong the tra theo `WHERE pin=?`: nap ung vien
@@ -836,6 +866,9 @@ export function attachUser() {
     if (!req.user) {
       req.user = userFor(tokenFromReq(req), req.headers?.['x-device-id']) || null;
     }
+    // Đưa vào ngữ cảnh request để tầng service biết ai đang thao tác mà không
+    // phải luồn `req` qua từng hàm — xem selfApprover().
+    setRequestUser(req.user);
     next();
   };
 }

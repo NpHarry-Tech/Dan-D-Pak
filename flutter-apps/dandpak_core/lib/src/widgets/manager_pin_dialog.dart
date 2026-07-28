@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:provider/provider.dart';
+
+import '../providers/auth_provider.dart';
 
 import '../ui/app_theme.dart';
 import '../utils/translation.dart';
@@ -8,8 +11,23 @@ import '../utils/translation.dart';
 /// Returns the entered PIN, or null if cancelled. Mirrors the web
 /// `requestManagerOwnerPin(reason)` flow. [label] customises the field label
 /// (e.g. vouchers require the CURRENT user's own PIN, not any manager's).
+///
+/// BỎ QUA HỘP THOẠI khi người đang đăng nhập ĐÃ là Quản lý/Admin: chính họ là
+/// người có thẩm quyền duyệt, bắt gõ lại PIN của chính mình chỉ làm chậm thao
+/// tác giữa ca bận và khiến PIN bị gõ ra màn hình nhiều lần trước mặt người
+/// khác. Server nhận diện quyền qua PHIÊN ĐĂNG NHẬP (xem selfApprover trong
+/// services/auth.js) nên chuỗi rỗng gửi lên vẫn được duyệt đúng người.
+///
+/// [selfPinOnly] = true cho các luồng bắt buộc người thao tác tự nhập PIN của
+/// CHÍNH MÌNH (voucher) — những chỗ đó không được bỏ qua.
 Future<String?> requestManagerPin(BuildContext context, String reason,
-    {String label = 'PIN Manager / Admin'}) {
+    {String label = 'PIN Manager / Admin', bool selfPinOnly = false}) {
+  if (!selfPinOnly) {
+    final me = context.read<AuthProvider>().currentUser;
+    if (me != null && (me.role == 'owner' || me.role == 'manager')) {
+      return Future<String?>.value('');
+    }
+  }
   final controller = TextEditingController();
   return showDialog<String>(
     context: context,
