@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io' show Platform;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:provider/provider.dart';
 import 'package:local_notifier/local_notifier.dart';
@@ -51,6 +52,22 @@ Future<void> runDandpakApp({
 
 Future<void> _mainImpl(List<String> args) async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // ĐIỆN THOẠI KHOÁ DỌC, chỉ một hướng duy nhất.
+  //
+  // Bản phone dựng theo ngôn ngữ một tay: thanh điều hướng đáy, thao tác chính
+  // trong tầm ngón cái. Xoay ngang là bố cục đó vỡ hết.
+  //
+  // Khoá ở CẢ HAI tầng: AndroidManifest (`screenOrientation="portrait"`) và ở
+  // đây. Manifest một mình là chưa đủ — nhiều máy POS cầm tay có màn hình gắn
+  // ngang theo phần cứng và bỏ qua thuộc tính đó; SystemChrome thì Flutter tự
+  // ép ở tầng engine nên máy nào cũng nghe.
+  //
+  // Tablet và desktop KHÔNG đụng tới: chúng cần xoay được, và POS bán hàng chạy
+  // ngang là chuyện bình thường.
+  if (AppFlavor.current.isHandset) {
+    await SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
+  }
 
   if (Platform.isWindows) {
     try {
