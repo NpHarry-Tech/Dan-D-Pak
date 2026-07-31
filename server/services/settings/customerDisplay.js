@@ -27,6 +27,6 @@ export function sanitizeCustomerDisplay(input = {}) {
   };
 }
 
-export function getCustomerDisplayConfig(branch_id = 'br1') {
+export function getCustomerDisplayConfig(branch_id = 'sala') {
   return readJsonSetting(branch_id, CUSTOMER_DISPLAY_KEY, sanitizeCustomerDisplay, DEFAULT_CUSTOMER_DISPLAY);
 }

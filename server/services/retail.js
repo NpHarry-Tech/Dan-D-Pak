@@ -23,7 +23,7 @@ function snapshotCustomer(c) {
   };
 }
 // lines (cart): [{sku_id, qty, lot_id}]; payments: [{method, amount, reference}]
-export function checkout({ items, payments, voucher_id = null, customer = null, customer_id = null, invoice_customer = null, manual_discount = 0, branch_id = 'br1', cashier = '', client_request_id = null }) {
+export function checkout({ items, payments, voucher_id = null, customer = null, customer_id = null, invoice_customer = null, note = '', manual_discount = 0, branch_id = 'sala', cashier = '', client_request_id = null }) {
   if (!items?.length) throw new Error('Giỏ hàng trống');
   const requestId = String(client_request_id || '').trim();
   if (requestId.length > 128) throw new Error('client_request_id tối đa 128 ký tự');
@@ -97,6 +97,7 @@ export function checkout({ items, payments, voucher_id = null, customer = null, 
       cashier,
       customer: snap,
       invoice_customer,
+      note,
       skipTransaction: true,
       discount_breakdown: discountBreakdown,
       voucher: discountPlan.orderVoucher,
@@ -129,7 +130,7 @@ export function checkout({ items, payments, voucher_id = null, customer = null, 
 // (findOpenOrderByContent/processIncomingCredit trong payments.js đã có sẵn logic
 // này — chỉ thiếu đơn để khớp). CHƯA trừ kho, CHƯA tính là doanh thu — chỉ trở
 // thành thật khi payOrder() settle (qua webhook hoặc bấm Xác nhận).
-export function createDraftOrder({ items, customer = null, customer_id = null, voucher_id = null, manual_discount = 0, branch_id = 'br1', cashier = '', client_request_id = null }) {
+export function createDraftOrder({ items, customer = null, customer_id = null, voucher_id = null, note = '', manual_discount = 0, branch_id = 'sala', cashier = '', client_request_id = null }) {
   const lines = normalizeCheckoutItems(items, branch_id);
 
   let cust = null;
@@ -163,16 +164,16 @@ export function createDraftOrder({ items, customer = null, customer_id = null, v
   const order = createOrUpdateOrder({ branch_id, table_id: null, channel: 'retail', items: orderItems, actor: cashier || 'system' });
   if (requestId) db.prepare(`UPDATE orders SET client_request_id=? WHERE id=?`).run(requestId, order.id);
   const snap = snapshotCustomer(cust);
-  db.prepare(`UPDATE orders SET voucher_id=?, voucher_code=?, discount=?, customer_json=COALESCE(?,customer_json) WHERE id=?`)
+  db.prepare(`UPDATE orders SET voucher_id=?, voucher_code=?, discount=?, customer_json=COALESCE(?,customer_json), note=? WHERE id=?`)
     .run(discountPlan.orderVoucher?.id || null, discountPlan.orderVoucher?.code || null, discountPlan.discount || 0,
-      snap ? JSON.stringify(snap) : null, order.id);
+      snap ? JSON.stringify(snap) : null, String(note || '').trim().slice(0, 500) || null, order.id);
   recomputeTotals(order.id);
   return getOrder(order.id);
 }
 
 // Hủy đơn nháp khi thu ngân đóng dialog/đổi phương thức mà chưa có tiền về —
 // KHÔNG dùng cho đơn đã có thanh toán (dùng Retail.refund cho trường hợp đó).
-export function voidDraftOrder(order_id, branch_id = 'br1') {
+export function voidDraftOrder(order_id, branch_id = 'sala') {
   const order = db.prepare(`SELECT * FROM orders WHERE id=? AND branch_id=?`).get(order_id, branch_id);
   if (!order || order.status === 'void') return { ok: true };
   if (!['open', 'partially_paid'].includes(order.status)) {
@@ -203,7 +204,7 @@ export function maintainRetailDrafts({ minutes = 30 } = {}) {
   return voided;
 }
 
-export function listRetailSales(branch_id = 'br1', limit = 40) {
+export function listRetailSales(branch_id = 'sala', limit = 40) {
   const rows = db.prepare(`SELECT * FROM orders WHERE branch_id=? AND channel='retail' AND status='paid' ORDER BY paid_at DESC LIMIT ?`)
     .all(branch_id, limit);
   return rows.map(o => ({ ...o, number: o.bill_no || o.id.slice(-6).toUpperCase(),
@@ -215,7 +216,7 @@ export function listRetailSales(branch_id = 'br1', limit = 40) {
       .map(i => ({ ...i, promo: parseJson(i.promo_json, null) })) }));
 }
 
-export function refund(order_id, reason, branch_id = 'br1') {
+export function refund(order_id, reason, branch_id = 'sala') {
   const order = getOrder(order_id);
   if (!order) throw new Error('Đơn không tồn tại');
   if (order.status === 'void') throw new Error('Đơn đã hoàn trước đó');

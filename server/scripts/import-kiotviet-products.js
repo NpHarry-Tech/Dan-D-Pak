@@ -23,7 +23,7 @@ import { inflateRawSync } from 'node:zlib';
 import { db, migrate, now, audit, backupDatabase } from '../db.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const BRANCH_ID = 'br1';
+const BRANCH_ID = 'sala';
 const WAREHOUSE_ID = 'wh_retail';
 
 const args = process.argv.slice(2);

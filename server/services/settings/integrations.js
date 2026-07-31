@@ -34,7 +34,16 @@ function mapIntegrationSecrets(value, branchId, encrypt, path = []) {
     const nextPath = [...path, key];
     const context = `settings:${branchId}:${nextPath.join('.')}`;
     if (SECRET_SETTING_KEYS.test(key) && typeof item === 'string' && item) {
-      out[key] = encrypt ? encryptSecret(item, context) : decryptSecret(item, context);
+      if (encrypt) {
+        out[key] = encryptSecret(item, context);
+      } else {
+        try {
+          out[key] = decryptSecret(item, context);
+        } catch (error) {
+          if (branchId !== 'sala') throw error;
+          out[key] = decryptSecret(item, `settings:br1:${nextPath.join('.')}`);
+        }
+      }
     } else {
       out[key] = mapIntegrationSecrets(item, branchId, encrypt, nextPath);
     }
@@ -279,7 +288,7 @@ function sanitizeIntegrations(raw = {}) {
 /** Merge body client gửi lên với cấu hình đang lưu. Field bí mật bị bỏ trống
  *  hoặc còn ở dạng che sẽ lấy lại giá trị cũ — client không cần biết secret
  *  thật vẫn lưu được các field khác của cùng kênh. */
-function mergeIntegrationsForSave(body = {}, branch_id = 'br1') {
+function mergeIntegrationsForSave(body = {}, branch_id = 'sala') {
   const input = plainObject(body);
   const current = getIntegrations(branch_id);
   const channels = {};
@@ -302,7 +311,7 @@ function mergeIntegrationsForSave(body = {}, branch_id = 'br1') {
 }
 
 /** Bản dùng cho MỘT kênh (nút "Kiểm tra cấu hình" gửi config chưa lưu). */
-export function mergeIntegrationChannelSecrets(channel, input = {}, branch_id = 'br1') {
+export function mergeIntegrationChannelSecrets(channel, input = {}, branch_id = 'sala') {
   const key = String(channel || '').trim();
   const def = DEFAULT_INTEGRATIONS.channels[key];
   if (!def) return plainObject(input);
@@ -319,7 +328,7 @@ export function mergeIntegrationChannelSecrets(channel, input = {}, branch_id = 
 
 // ── 5. Đọc / ghi ────────────────────────────────────────────────────────────
 /** Bản GIẢI MÃ, dùng NỘI BỘ (gọi API đối tác). Không trả thẳng ra client. */
-export function getIntegrations(branch_id = 'br1') {
+export function getIntegrations(branch_id = 'sala') {
   const row = db.prepare(`SELECT value FROM app_settings WHERE branch_id=? AND key=?`)
     .get(branch_id, INTEGRATIONS_KEY);
   if (!row?.value) return sanitizeIntegrations(DEFAULT_INTEGRATIONS);
@@ -337,36 +346,20 @@ export function getIntegrations(branch_id = 'br1') {
 }
 
 /** Bản ĐÃ CHE secret — đây là thứ API GET /settings/integrations trả về. */
-export function getPublicIntegrations(branch_id = 'br1') {
+export function getPublicIntegrations(branch_id = 'sala') {
   return maskIntegrations(getIntegrations(branch_id));
 }
 
-function hasConfiguredChannel(channel = {}) {
-  const c = plainObject(channel);
-  return bool(c.enabled)
-    || !!str(c.shopDomain || c.publicUrl || c.apiKey || c.accessToken || c.webhookSecret || c.clientSecret || c.checksumKey);
-}
-
-/** Lấy cấu hình MỘT kênh. Nếu chi nhánh hiện tại chưa khai báo thì dò sang
- *  chi nhánh khác — kênh online/Haravan là cấu hình cấp cửa hàng, một lần khai
- *  báo dùng chung, không bắt nhập lại cho từng chi nhánh. */
-export function getIntegrationChannel(channel, branch_id = 'br1') {
+/** Lấy cấu hình MỘT kênh của đúng chi nhánh. Chi nhánh chưa cấu hình thì
+ *  trả mặc định, tuyệt đối không mượn API key/secret từ chi nhánh khác. */
+export function getIntegrationChannel(channel, branch_id = 'sala') {
   const key = String(channel || '').trim();
-  const direct = getIntegrations(branch_id).channels?.[key];
-  if (hasConfiguredChannel(direct)) return direct;
-  const rows = db.prepare(`SELECT branch_id,value FROM app_settings WHERE key=? ORDER BY updated_at DESC`)
-    .all(INTEGRATIONS_KEY);
-  for (const row of rows) {
-    try {
-      const found = sanitizeIntegrations(
-        mapIntegrationSecrets(JSON.parse(row.value), row.branch_id, false)).channels?.[key];
-      if (hasConfiguredChannel(found)) return found;
-    } catch {}
-  }
-  return direct || DEFAULT_INTEGRATIONS.channels[key] || {};
+  return getIntegrations(branch_id).channels?.[key]
+    || DEFAULT_INTEGRATIONS.channels[key]
+    || {};
 }
 
-export function updateIntegrations(body = {}, branch_id = 'br1') {
+export function updateIntegrations(body = {}, branch_id = 'sala') {
   const clean = sanitizeIntegrations(mergeIntegrationsForSave(body, branch_id));
   writeJsonSetting(branch_id, INTEGRATIONS_KEY, mapIntegrationSecrets(clean, branch_id, true));
   const enabled = Object.entries(clean.channels).filter(([, c]) => c.enabled).map(([k]) => k);

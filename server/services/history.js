@@ -33,7 +33,7 @@ function moneyToWords(n) {
   return words.charAt(0).toUpperCase() + words.slice(1) + ' đồng';
 }
 
-export function listOrderHistory(branch_id = 'br1', { limit = 60, q = '', channel = '', from = '', to = '' } = {}) {
+export function listOrderHistory(branch_id = 'sala', { limit = 60, q = '', channel = '', from = '', to = '' } = {}) {
   const params = [branch_id];
   const search = searchTokens(String(q || '').replace(/^#/, ''));
   let sql = `SELECT o.id, o.bill_no, o.channel, o.status, o.total, o.subtotal, o.discount, o.created_at, o.paid_at,
@@ -70,7 +70,7 @@ export function listOrderHistory(branch_id = 'br1', { limit = 60, q = '', channe
 
 // Trạng thái ca của bill theo payment mới nhất: 'open' | 'closed' | null (chưa có payment/ca).
 // Dùng cho cổng khóa thay đổi sau bán: ca 'closed' → cần PIN Quản lý mới sửa được.
-export function billShiftStatus(order_id, branch_id = 'br1') {
+export function billShiftStatus(order_id, branch_id = 'sala') {
   const row = db.prepare(`SELECT s.status FROM payments p
     JOIN shifts s ON s.id=p.shift_id
     JOIN orders o ON o.id=p.order_id
@@ -78,7 +78,7 @@ export function billShiftStatus(order_id, branch_id = 'br1') {
   return row?.status || null;
 }
 
-export function orderReceipt(order_id, branch_id = 'br1') {
+export function orderReceipt(order_id, branch_id = 'sala') {
   const o = db.prepare(`SELECT * FROM orders WHERE id=? AND branch_id=?`).get(order_id, branch_id);
   if (!o) throw new Error('Đơn không tồn tại');
   const cfg = getPrintConfig(branch_id);
@@ -130,6 +130,7 @@ export function orderReceipt(order_id, branch_id = 'br1') {
     locked: cashierRow?.shift_status === 'closed',   // ca đã kết → khóa thay đổi sau bán
     table_code: table?.code, channel: o.channel, online_channel: o.online_channel, online_ref: o.online_ref,
     status: o.status,
+    note: o.note || '',
     items,
     subtotal: o.subtotal, discount: o.discount, total,
     vat_rate: vatRate, goods_amount: goods, vat_amount: vat, total_words: moneyToWords(total),

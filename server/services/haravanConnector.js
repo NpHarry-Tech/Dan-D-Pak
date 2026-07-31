@@ -354,7 +354,7 @@ function upsertCustomer(payload, shopDomain = '', branch_id = defaultBranch(shop
   return internalId;
 }
 
-function skuForLine(line, shopDomain = '') {
+function skuForLine(line, shopDomain = '', branch_id) {
   const variantId = cleanId(line.variant_id);
   const productId = cleanId(line.product_id);
   const mapped = db.prepare(`SELECT internal_variant_id FROM external_products
@@ -363,7 +363,8 @@ function skuForLine(line, shopDomain = '') {
   if (mapped?.internal_variant_id) return mapped.internal_variant_id;
   const sku = cleanId(line.sku);
   if (!sku) return null;
-  return db.prepare(`SELECT id FROM skus WHERE barcode=? OR id=? ORDER BY active DESC LIMIT 1`).get(sku, sku)?.id || null;
+  return db.prepare(`SELECT id FROM skus WHERE branch_id=? AND (barcode=? OR id=?) ORDER BY active DESC LIMIT 1`)
+    .get(branch_id, sku, sku)?.id || null;
 }
 
 export function syncHaravanOrder(payload, topic = 'orders/create', shopDomain = '') {
@@ -412,7 +413,7 @@ export function syncHaravanOrder(payload, topic = 'orders/create', shopDomain = 
       (id,order_id,menu_item_id,sku_id,name,emoji,qty,unit_price,station,sla_minutes,note,mods_json,status,created_at)
       VALUES (?,?,?,?,?,?,?,?,?,?,?,'[]','served',?)`);
     for (const line of lines) {
-      ins.run(uid('oi_'), internalId, null, skuForLine(line, shop), line.name || line.title || 'Haravan item', null,
+      ins.run(uid('oi_'), internalId, null, skuForLine(line, shop, branch_id), line.name || line.title || 'Haravan item', null,
         Math.max(1, Number(line.quantity || 1)), money(line.price), 'retail', 0, line.sku || null, now());
     }
 
@@ -452,9 +453,9 @@ export function syncHaravanProduct(payload, shopDomain = '') {
   for (const variant of variants) {
     const variantId = cleanId(variant.id || variant.variant_id || productId);
     const skuCode = cleanId(variant.sku || product.sku || variant.barcode || variantId);
-    const generatedSkuId = `hvn_${variantId}`.replace(/[^a-zA-Z0-9_]/g, '_').slice(0, 80);
+    const generatedSkuId = `hvn_${shop}_${variantId}`.replace(/[^a-zA-Z0-9_]/g, '_').slice(0, 80);
     const catalogMatch = skuCode ? db.prepare(`SELECT id FROM skus
-      WHERE active=1 AND barcode=? AND id NOT LIKE 'hvn_%' ORDER BY id LIMIT 1`).get(skuCode) : null;
+      WHERE branch_id=? AND active=1 AND barcode=? AND id NOT LIKE 'hvn_%' ORDER BY id LIMIT 1`).get(branch_id, skuCode) : null;
     const mapped = db.prepare(`SELECT internal_variant_id FROM external_products
       WHERE provider=? AND shop_domain=? AND external_product_id=? AND external_variant_id=?`)
       .get(PROVIDER, shop, productId, variantId);
@@ -512,12 +513,13 @@ export function syncHaravanInventory(payload, shopDomain = '') {
   const mapped = variantId
     ? db.prepare(`SELECT internal_variant_id FROM external_products WHERE provider=? AND shop_domain=? AND external_variant_id=?`).get(PROVIDER, shop, variantId)
     : null;
-  const skuId = mapped?.internal_variant_id || (sku ? db.prepare(`SELECT id FROM skus WHERE barcode=? OR id=? LIMIT 1`).get(sku, sku)?.id : null);
+  const branch_id = defaultBranch(shop);
+  const skuId = mapped?.internal_variant_id || (sku ? db.prepare(`SELECT id FROM skus WHERE branch_id=? AND (barcode=? OR id=?) LIMIT 1`).get(branch_id, sku, sku)?.id : null);
   if (!skuId) return { ignored: true };
   // BR-STOCK-001: POS la Inventory Source of Truth. Ton gui tu Haravan la
   // OBSERVATION/RECONCILIATION INPUT, khong duoc am tham ghi de ton chinh thuc
   // cua POS. Chi ghi nhan lech de doi chieu/kiem tra thu cong; KHONG UPDATE skus.stock.
-  const posQty = Number(db.prepare(`SELECT stock FROM skus WHERE id=?`).get(skuId)?.stock) || 0;
+  const posQty = Number(db.prepare(`SELECT stock FROM skus WHERE id=? AND branch_id=?`).get(skuId, branch_id)?.stock) || 0;
   const discrepancy = qty - posQty;
   if (discrepancy !== 0) {
     audit('haravan.inventory.discrepancy', {

@@ -8,7 +8,7 @@ import {
   sanitizeTaxFilingProfile as sanitizeTaxProfile,
 } from '../tax.js';
 
-export function getTaxFilingProfile(branch_id = 'br1') {
+export function getTaxFilingProfile(branch_id = 'sala') {
   return readJsonSetting(branch_id, TAX_FILING_PROFILE_KEY, sanitizeTaxProfile, TAX_DEFAULT_PROFILE);
 }
 

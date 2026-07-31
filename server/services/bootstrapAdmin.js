@@ -3,7 +3,7 @@ import { hashPin } from './pin.js';
 
 const ADMIN_USER = {
   id: 'u_admin',
-  branch_id: 'br1',
+  branch_id: 'sala',
   username: 'admin',
   name: 'Admin',
   pin: '1234',        // chỉ dùng cho lần tạo đầu tiên (DB rỗng) — KHÔNG ép lại sau đó
@@ -21,7 +21,7 @@ function requestedAdminResetPin() {
 
 export function bootstrapDefaultAdmin() {
   db.prepare(`INSERT OR IGNORE INTO branches (id,name,address,code,active,sort) VALUES (?,?,?,?,1,?)`)
-    .run('br1', 'Dan D Pak Sala', 'Sala, TP.HCM', 'SALA', 1);
+    .run('sala', 'Dan D Pak Sala', 'Sala, TP.HCM', 'SALA', 1);
 
   const hasAdmin = db.prepare(`SELECT 1 FROM users WHERE username=?`).get(ADMIN_USER.username);
   const activeOwners = db.prepare(`SELECT COUNT(*) n FROM users WHERE role='owner' AND active=1`).get().n;

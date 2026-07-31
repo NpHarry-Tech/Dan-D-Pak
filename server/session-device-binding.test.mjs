@@ -20,13 +20,13 @@ migrate();
 function makeUser(username) {
   const id = `u_${username}`;
   db.prepare(`INSERT INTO users (id,branch_id,username,name,pin,role,active) VALUES (?,?,?,?,?,?,1)`)
-    .run(id, 'br1', username, username, hashPin('4821'), 'cashier');
+    .run(id, 'sala', username, username, hashPin('4821'), 'cashier');
   return id;
 }
 
 test('a token copied to another device is rejected and the session is killed', () => {
   makeUser('binder');
-  const { token } = Auth.login('binder', '4821', 'br1', { deviceId: 'dev_till_01' });
+  const { token } = Auth.login('binder', '4821', 'sala', { deviceId: 'dev_till_01' });
 
   // Đúng máy → dùng bình thường.
   assert.equal(Auth.userFor(token, 'dev_till_01')?.username, 'binder');
@@ -46,7 +46,7 @@ test('sessions created before this change bind to the first device that uses the
   const digest = tokenDigest(token);
   const ts = now();
   db.prepare(`INSERT INTO auth_sessions (token,user_id,branch_id,created_at,last_seen_at,device_id) VALUES (?,?,?,?,?,NULL)`)
-    .run(digest, userId, 'br1', ts, ts);
+    .run(digest, userId, 'sala', ts, ts);
 
   // Lần dùng đầu tiên gắn thiết bị — nhân viên đang làm việc không bị đá ra.
   assert.equal(Auth.userFor(token, 'dev_till_02')?.username, 'legacy');
@@ -60,7 +60,7 @@ test('sessions created before this change bind to the first device that uses the
 
 test('a client that sends no device id still works and does not bind the session', () => {
   makeUser('oldapp');
-  const { token } = Auth.login('oldapp', '4821', 'br1', { deviceId: 'dev_till_03' });
+  const { token } = Auth.login('oldapp', '4821', 'sala', { deviceId: 'dev_till_03' });
 
   // Bản app cũ chưa gửi header → không chặn (tránh làm hỏng máy chưa cập nhật).
   assert.equal(Auth.userFor(token, '')?.username, 'oldapp');

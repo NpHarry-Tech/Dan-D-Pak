@@ -9,6 +9,7 @@ import { FIREBASE_SERVICE_ACCOUNT_KEY } from './shared.js';
 import { getPrintConfig, sanitizePrintConfig } from './print.js';
 import { getOperationsConfig, sanitizeOperationsConfig } from './operations.js';
 import { getRetailConfig, sanitizeRetailConfig } from './retail.js';
+import { getSalesModules, sanitizeSalesModules } from './salesModules.js';
 import { getLoyaltyConfig, sanitizeLoyaltyConfig } from './loyalty.js';
 import { getCustomerDisplayConfig, sanitizeCustomerDisplay } from './customerDisplay.js';
 import { getNotificationSoundConfig } from './notifications.js';
@@ -31,7 +32,7 @@ const WEAK_IPAD_PINS = new Set([
   '1234', '4321', '2345', '3456', '4567', '5678', '6789', '0123', '1212', '2580',
 ]);
 
-export function getSettings(branch_id = 'br1') {
+export function getSettings(branch_id = 'sala') {
   const rows = db.prepare(`SELECT key,value FROM app_settings WHERE branch_id=?`).all(branch_id);
   const out = { ...DEFAULTS, ...Object.fromEntries(rows.map(r => [r.key, r.value])) };
   out.ipad_staff_pin = storedFourDigitPin(out.ipad_staff_pin);
@@ -44,6 +45,7 @@ export function getSettings(branch_id = 'br1') {
   out.customer_display = getCustomerDisplayConfig(branch_id);
   out.loyalty_config = getLoyaltyConfig(branch_id);
   out.retail_config = getRetailConfig(branch_id);
+  out.sales_modules = getSalesModules(branch_id);
   // Khoá dịch vụ Firebase (đẩy thông báo) — MÃ HOÁ trong DB, không bao giờ trả
   // nguyên văn qua API. Chỉ báo đã cấu hình hay chưa (xem setFirebaseServiceAccount).
   delete out[FIREBASE_SERVICE_ACCOUNT_KEY];
@@ -51,7 +53,7 @@ export function getSettings(branch_id = 'br1') {
   return out;
 }
 
-export function updateSettings(body = {}, branch_id = 'br1') {
+export function updateSettings(body = {}, branch_id = 'sala') {
   const current = getSettings(branch_id);
   const next = {};
   if (body.ipad_staff_pin !== undefined) {
@@ -83,6 +85,9 @@ export function updateSettings(body = {}, branch_id = 'br1') {
   if (body.retail_config !== undefined) {
     next.retail_config = sanitizeRetailConfig(body.retail_config);
   }
+  if (body.sales_modules !== undefined) {
+    next.sales_modules = sanitizeSalesModules(body.sales_modules);
+  }
   // Mã hoá + lưu riêng qua setFirebaseServiceAccount (không đi qua vòng lặp
   // ins bên dưới) — key này PHẢI luôn ở dạng enc:v1:..., không bao giờ JSON thô.
   if (body.firebase_service_account !== undefined) {
@@ -102,6 +107,6 @@ export function updateSettings(body = {}, branch_id = 'br1') {
   return { ...current, ...next, firebase_configured: firebaseConfigured(branch_id) };
 }
 
-export function verifyIpadStaffPin(pin, branch_id = 'br1') {
+export function verifyIpadStaffPin(pin, branch_id = 'sala') {
   return String(pin || '') === getSettings(branch_id).ipad_staff_pin;
 }

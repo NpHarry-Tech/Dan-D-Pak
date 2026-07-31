@@ -24,7 +24,7 @@ function billNoForSeq(seq) {
 // seq kế tiếp = MAX(seq đã có TRONG NGÀY) + 1. Tách đúng phần seq SAU tiền tố ngày
 // (Dan{ddMMyy}) — KHÔNG dùng \d+$ vì sẽ nuốt luôn 6 chữ số ngày. Dùng MAX (không COUNT)
 // để chịu được khoảng trống do xóa, và để retry-chống-trùng tăng dần khi đụng UNIQUE.
-function nextBillSeq(branch_id = 'br1') {
+function nextBillSeq(branch_id = 'sala') {
   const ddMMyy = todayDdMMyy();
   const d = new Date();
   const start = new Date(d); start.setHours(0, 0, 0, 0);
@@ -41,7 +41,7 @@ function nextBillSeq(branch_id = 'br1') {
 }
 // Tạo 1 order mở với bill_no duy nhất. Chịu được race/đa-server: nếu chỉ mục UNIQUE
 // (branch_id,bill_no) bị đụng (server khác vừa chèn cùng seq), tăng seq và thử lại.
-function insertOpenOrder({ branch_id = 'br1', table_id = null, channel = 'dine_in' }) {
+function insertOpenOrder({ branch_id = 'sala', table_id = null, channel = 'dine_in' }) {
   const id = uid('o_');
   let seq = nextBillSeq(branch_id);
   const ins = db.prepare(`INSERT INTO orders (id,branch_id,table_id,channel,status,bill_no,created_at) VALUES (?,?,?,?,'open',?,?)`);
@@ -57,7 +57,7 @@ function insertOpenOrder({ branch_id = 'br1', table_id = null, channel = 'dine_i
   return db.prepare(`SELECT * FROM orders WHERE id=?`).get(id);
 }
 
-export function getOpenOrderForTable(table_id, branch_id = 'br1') {
+export function getOpenOrderForTable(table_id, branch_id = 'sala') {
   if (!table_id) return undefined;
   return db.prepare(`SELECT * FROM orders WHERE table_id=? AND branch_id=? AND status IN ('open','partially_paid') ORDER BY created_at DESC LIMIT 1`)
     .get(table_id, branch_id);
@@ -73,14 +73,14 @@ export function recomputeTotals(order_id) {
   return { ...totals, discount };
 }
 
-function setTableByOpenOrders(table_id, branch_id = 'br1') {
+function setTableByOpenOrders(table_id, branch_id = 'sala') {
   if (!table_id) return;
   const open = getOpenOrderForTable(table_id, branch_id);
   db.prepare(`UPDATE tables SET status=? WHERE id=?`).run(open ? 'busy' : 'free', table_id);
   emit('table:updated', getTableState(table_id), branch_id);
 }
 
-function requireOpenShiftForSales(branch_id = 'br1') {
+function requireOpenShiftForSales(branch_id = 'sala') {
   const ops = getOperationsConfig(branch_id);
   if (ops.shifts?.requireOpenShift !== false && !getActiveShift(branch_id)) {
     throw new Error('Cần mở ca làm việc trước khi bán hàng.');
@@ -128,7 +128,7 @@ export function createOrUpdateOrder(options) {
   // order_id: nối món vào ĐÚNG đơn đang mở này (dùng khi GỘP giỏ Retail vào bill F&B,
   // kể cả bill mang về không có bàn). Không truyền thì giữ nguyên hành vi cũ: tìm đơn
   // mở theo bàn, không có thì tạo đơn mới.
-  const { branch_id = 'br1', table_id, order_id = null, channel = 'dine_in', source = 'staff_pos', require_confirm = false, items, actor = 'system', skipTransaction = false, linked_pos_device, linked_printer_id } = options;
+  const { branch_id = 'sala', table_id, order_id = null, channel = 'dine_in', source = 'staff_pos', require_confirm = false, items, actor = 'system', skipTransaction = false, linked_pos_device, linked_printer_id } = options;
   if (!items?.length) throw new Error('Order trống');
   requireOpenShiftForSales(branch_id);
 
@@ -215,7 +215,7 @@ export function createOrUpdateOrder(options) {
         insItem.run(id, order.id, null, sku.id, sku.name, sku.emoji, qty, priced.price, Number(sku.vat) || 0, 'retail', 0, null, '[]',
           needsStaffConfirm ? 'pending_confirm' : 'served', lotId, line.promo ? JSON.stringify(line.promo) : null, now());
       } else {
-        const mi = getMenuItemForOrder(line.menu_item_id);
+        const mi = getMenuItemForOrder(line.menu_item_id, branch_id);
         const mods = resolveOrderMods(line.mods, mi);
         const modSum = mods.reduce((s, m) => s + m.price, 0);
         const unitPrice = salePrice(mi.price, mi.vat_rate, mi.price_includes_vat) + modSum;
@@ -265,7 +265,7 @@ export function getOrder(order_id) {
   const skuIds = [...new Set(rawItems.filter(i => !i.menu_item_id && i.sku_id).map(i => i.sku_id))];
   const miImg = new Map();
   if (miIds.length) {
-    for (const r of db.prepare(`SELECT id,image FROM menu_items WHERE id IN (${miIds.map(() => '?').join(',')})`).all(...miIds)) miImg.set(r.id, r.image || null);
+    for (const r of db.prepare(`SELECT id,image FROM menu_items WHERE branch_id=? AND id IN (${miIds.map(() => '?').join(',')})`).all(order.branch_id, ...miIds)) miImg.set(r.id, r.image || null);
   }
   const skuImg = new Map();
   if (skuIds.length) {
@@ -285,7 +285,7 @@ export function getOrder(order_id) {
   return order;
 }
 
-export function listPendingConfirmations(branch_id = 'br1') {
+export function listPendingConfirmations(branch_id = 'sala') {
   const rows = db.prepare(`
     SELECT oi.*, o.created_at AS order_created, o.table_id, o.channel, t.code AS table_code, t.zone AS zone
     FROM order_items oi
@@ -320,7 +320,7 @@ export function listPendingConfirmations(branch_id = 'br1') {
   }));
 }
 
-export function confirmPendingItems(order_id, item_ids = [], branch_id = 'br1', actor = 'system') {
+export function confirmPendingItems(order_id, item_ids = [], branch_id = 'sala', actor = 'system') {
   const order = db.prepare(`SELECT * FROM orders WHERE id=? AND branch_id=? AND status IN ('open','partially_paid')`).get(order_id, branch_id);
   if (!order) throw new Error('Bill không tồn tại hoặc đã đóng');
   const ids = new Set(Array.isArray(item_ids) && item_ids.length ? item_ids : []);
@@ -346,7 +346,7 @@ export function confirmPendingItems(order_id, item_ids = [], branch_id = 'br1', 
   return full;
 }
 
-export function rejectPendingItems(order_id, item_ids = [], reason = '', branch_id = 'br1', actor = 'system') {
+export function rejectPendingItems(order_id, item_ids = [], reason = '', branch_id = 'sala', actor = 'system') {
   const order = db.prepare(`SELECT * FROM orders WHERE id=? AND branch_id=? AND status IN ('open','partially_paid')`).get(order_id, branch_id);
   if (!order) throw new Error('Bill không tồn tại hoặc đã đóng');
   const cleanReason = String(reason || '').trim();
@@ -384,7 +384,7 @@ export function rejectPendingItems(order_id, item_ids = [], reason = '', branch_
  *
  *  Xoá ở đây = huỷ toàn bộ món + đưa bill về 'void' + trả bàn về trống. KHÔNG
  *  xoá dòng khỏi DB: bill vẫn nằm trong lịch sử và nhật ký để đối soát về sau. */
-export function resetTable(table_id, branch_id = 'br1', actor = 'system', reason = '') {
+export function resetTable(table_id, branch_id = 'sala', actor = 'system', reason = '') {
   const table = db.prepare(`SELECT * FROM tables WHERE id=? AND branch_id=?`).get(table_id, branch_id);
   if (!table) throw new Error('Bàn không tồn tại');
 
@@ -432,7 +432,7 @@ export function resetTable(table_id, branch_id = 'br1', actor = 'system', reason
   }
 }
 
-export function moveTable(from_table_id, to_table_id, branch_id = 'br1', actor = 'system') {
+export function moveTable(from_table_id, to_table_id, branch_id = 'sala', actor = 'system') {
   if (from_table_id === to_table_id) throw new Error('Bàn chuyển phải khác bàn hiện tại');
   const order = getOpenOrderForTable(from_table_id, branch_id);
   if (!order) throw new Error('Bàn hiện tại chưa có bill để chuyển');
@@ -461,7 +461,7 @@ export function moveTable(from_table_id, to_table_id, branch_id = 'br1', actor =
   return getOrder(order.id);
 }
 
-export function mergeTables(source_table_id, target_table_id, branch_id = 'br1', actor = 'system') {
+export function mergeTables(source_table_id, target_table_id, branch_id = 'sala', actor = 'system') {
   if (source_table_id === target_table_id) throw new Error('Không thể gộp cùng một bàn');
   const source = getOpenOrderForTable(source_table_id, branch_id);
   if (!source) throw new Error('Bàn nguồn chưa có bill');
@@ -499,7 +499,7 @@ export function mergeTables(source_table_id, target_table_id, branch_id = 'br1',
   return getOrder(target.id);
 }
 
-export function splitOrderItems(order_id, item_ids = [], branch_id = 'br1', actor = 'system') {
+export function splitOrderItems(order_id, item_ids = [], branch_id = 'sala', actor = 'system') {
   const order = db.prepare(`SELECT * FROM orders WHERE id=? AND branch_id=? AND status IN ('open','partially_paid')`).get(order_id, branch_id);
   if (!order) throw new Error('Bill không tồn tại hoặc đã đóng');
   const ids = [...new Set(Array.isArray(item_ids) ? item_ids : [])];
@@ -577,7 +577,7 @@ export function getTableState(table_id) {
 // PERF: trước đây gọi getTableState cho TỪNG bàn → ~4 query/bàn (50 bàn ≈ 200 query mỗi lần
 // refresh sơ đồ). Giờ nạp theo LÔ: 1 query bàn + 1 đơn mở + 1 gọi NV + 1 tổng hợp món, rồi
 // ghép trong JS bằng cùng buildTableState → kết quả y hệt bản 1-bàn, số truy vấn cố định.
-export function listTables(branch_id = 'br1') {
+export function listTables(branch_id = 'sala') {
   const tables = db.prepare(`SELECT * FROM tables WHERE branch_id=? ORDER BY code`).all(branch_id);
   if (!tables.length) return [];
 
@@ -604,7 +604,7 @@ export function listTables(branch_id = 'br1') {
   });
 }
 
-export function getStationTickets(station, branch_id = 'br1') {
+export function getStationTickets(station, branch_id = 'sala') {
   const where = station === 'all' ? "AND oi.station!='retail'" : 'AND oi.station=?';
   const params = station === 'all' ? [branch_id] : [branch_id, station];
   const rows = db.prepare(`
@@ -617,7 +617,7 @@ export function getStationTickets(station, branch_id = 'br1') {
   return rows.map(r => ({ ...r, mods: JSON.parse(r.mods_json || '[]') }));
 }
 
-export function setItemStatus(item_id, status, branch_id = 'br1', actor = 'system') {
+export function setItemStatus(item_id, status, branch_id = 'sala', actor = 'system') {
   const valid = ['new', 'accepted', 'preparing', 'ready', 'served', 'cancelled'];
   if (!valid.includes(status)) throw new Error('Trạng thái không hợp lệ');
   const item = db.prepare(`SELECT * FROM order_items WHERE id=?`).get(item_id);
@@ -639,7 +639,7 @@ export function setItemStatus(item_id, status, branch_id = 'br1', actor = 'syste
   return db.prepare(`SELECT * FROM order_items WHERE id=?`).get(item_id);
 }
 
-export function cancelItem(item_id, reason, branch_id = 'br1', actor = 'system') {
+export function cancelItem(item_id, reason, branch_id = 'sala', actor = 'system') {
   setItemStatus(item_id, 'cancelled', branch_id, actor);
   const item = db.prepare(`SELECT order_id FROM order_items WHERE id=?`).get(item_id);
   recomputeTotals(item.order_id);
@@ -664,7 +664,7 @@ export function cancelItem(item_id, reason, branch_id = 'br1', actor = 'system')
   return order;
 }
 
-export function createStaffCall(table_id, reason, branch_id = 'br1') {
+export function createStaffCall(table_id, reason, branch_id = 'sala') {
   const id = uid('sc_');
   db.prepare(`INSERT INTO staff_calls (id,branch_id,table_id,reason,status,created_at) VALUES (?,?,?,?,'open',?)`)
     .run(id, branch_id, table_id, reason, now());
@@ -674,17 +674,17 @@ export function createStaffCall(table_id, reason, branch_id = 'br1') {
   return { id };
 }
 
-export function resolveStaffCall(table_id, branch_id = 'br1') {
+export function resolveStaffCall(table_id, branch_id = 'sala') {
   db.prepare(`UPDATE staff_calls SET status='done' WHERE table_id=? AND status='open'`).run(table_id);
   emit('table:updated', getTableState(table_id), branch_id);
 }
 
-export function listStaffCalls(branch_id = 'br1') {
+export function listStaffCalls(branch_id = 'sala') {
   return db.prepare(`SELECT sc.*, t.code AS table_code FROM staff_calls sc
     JOIN tables t ON t.id=sc.table_id WHERE sc.branch_id=? AND sc.status='open' ORDER BY sc.created_at`).all(branch_id);
 }
 
-export function createTable({ branch_id = 'br1', zone, code, seats = 4 }) {
+export function createTable({ branch_id = 'sala', zone, code, seats = 4 }) {
   if (!zone || !code) throw new Error('Thiếu khu vực hoặc số bàn');
   const cleanZone = String(zone).trim();
   const cleanCode = String(code).trim();
@@ -704,7 +704,7 @@ export function createTable({ branch_id = 'br1', zone, code, seats = 4 }) {
   return state;
 }
 
-export function updateTable(id, { zone, code, seats }, branch_id = 'br1') {
+export function updateTable(id, { zone, code, seats }, branch_id = 'sala') {
   const table = db.prepare(`SELECT * FROM tables WHERE id=? AND branch_id=?`).get(id, branch_id);
   if (!table) throw new Error('Bàn không tồn tại');
 
@@ -729,7 +729,7 @@ export function updateTable(id, { zone, code, seats }, branch_id = 'br1') {
   return state;
 }
 
-export function deleteTable(id, branch_id = 'br1') {
+export function deleteTable(id, branch_id = 'sala') {
   const table = db.prepare(`SELECT * FROM tables WHERE id=? AND branch_id=?`).get(id, branch_id);
   if (!table) throw new Error('Bàn không tồn tại');
 

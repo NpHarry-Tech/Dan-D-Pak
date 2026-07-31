@@ -25,7 +25,7 @@ function taxAuthorityCode() {
 }
 
 // customer: { name, tax_code, address, email }
-export async function issue(order_id, customer = {}, branch_id = 'br1') {
+export async function issue(order_id, customer = {}, branch_id = 'sala') {
   const order = getOrder(order_id);
   if (!order) throw new Error('Đơn không tồn tại');
   if (order.status !== 'paid') throw new Error('Chỉ xuất hóa đơn cho bill đã thanh toán');
@@ -63,7 +63,7 @@ export async function issue(order_id, customer = {}, branch_id = 'br1') {
 // Khách tự phục vụ chọn xuất hóa đơn VAT hoặc bán cho người tiêu dùng sau thanh toán QR (iPad).
 // decision: 'issue' → phát hành hóa đơn theo thông tin khách nhập (MST/SĐT/email);
 //           'decline' → bán cho người tiêu dùng. Cả hai đều lưu orders.invoice_choice + ghi nhật ký để báo cáo.
-export async function customerRequest(order_id, { decision = 'issue', customer = {} } = {}, branch_id = 'br1') {
+export async function customerRequest(order_id, { decision = 'issue', customer = {} } = {}, branch_id = 'sala') {
   const order = getOrder(order_id);
   if (!order) throw new Error('Đơn không tồn tại');
   if (order.status !== 'paid') throw new Error('Chỉ xuất hóa đơn cho bill đã thanh toán');
@@ -110,14 +110,14 @@ export function byOrder(order_id, branch_id = null) {
   return i ? get(i.id) : null;
 }
 
-export function list(branch_id = 'br1', limit = 50) {
+export function list(branch_id = 'sala', limit = 50) {
   return db.prepare(`SELECT i.*, o.table_id FROM invoices i JOIN orders o ON o.id=i.order_id
     WHERE i.branch_id=? ORDER BY i.issued_at DESC LIMIT ?`).all(branch_id, limit)
     .map(i => ({ ...i, customer: JSON.parse(i.customer_json || '{}') }));
 }
 
 // Adjustment/replacement per regulation: do not delete, mark cancelled + audit.
-export function cancel(id, reason, branch_id = 'br1') {
+export function cancel(id, reason, branch_id = 'sala') {
   const inv = get(id);
   if (!inv) throw new Error('Hóa đơn không tồn tại');
   db.prepare(`UPDATE invoices SET status='cancelled' WHERE id=?`).run(id);

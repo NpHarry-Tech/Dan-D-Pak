@@ -161,7 +161,7 @@ function branchRowsFor(ids = []) {
   const map = new Map(rows.map(r => [r.id, { id: r.id, name: r.name || r.code || r.id, code: r.code || r.id }]));
   return clean.map(id => map.get(id) || { id, name: id, code: id });
 }
-function normalizeScope(scope = 'br1') {
+function normalizeScope(scope = 'sala') {
   if (typeof scope === 'string') {
     const branches = branchRowsFor([scope]);
     return { branch_ids: [scope], branches, label: branches[0]?.name || scope };
@@ -1063,19 +1063,19 @@ function buildStaff(branch_id, query) {
   return report;
 }
 
-export function products(branch_id = 'br1') {
+export function products(branch_id = 'sala') {
   return [
-    ...db.prepare(`SELECT id, name, 'menu' type FROM menu_items WHERE hidden=0 AND deleted_at IS NULL ORDER BY name`).all(),
+    ...db.prepare(`SELECT id, name, 'menu' type FROM menu_items WHERE branch_id=? AND hidden=0 AND deleted_at IS NULL ORDER BY name`).all(branch_id),
     ...db.prepare(`SELECT id, name, 'sku' type FROM skus WHERE branch_id=? AND active=1 ORDER BY name`).all(branch_id),
   ];
 }
-export function warehouses(branch_id = 'br1') {
+export function warehouses(branch_id = 'sala') {
   return db.prepare(`SELECT id, name, type FROM warehouses WHERE branch_id=? AND active=1 ORDER BY sort,name`).all(branch_id);
 }
-export function catalog(branch_id = 'br1') {
+export function catalog(branch_id = 'sala') {
   return { groups: REPORT_GROUPS, reports: REPORTS, products: products(branch_id), warehouses: warehouses(branch_id) };
 }
-function buildSingleReport(type = 'sales_overview', branch_id = 'br1', query = {}) {
+function buildSingleReport(type = 'sales_overview', branch_id = 'sala', query = {}) {
   if (['sales_fnb', 'sales_retail', 'sales_by_product'].includes(type)) type = 'sales_overview';
   let report;
   if (['sales_overview', 'sales_online'].includes(type)) report = buildSales(type, branch_id, query);
@@ -1097,9 +1097,9 @@ function buildSingleReport(type = 'sales_overview', branch_id = 'br1', query = {
   report.branch_id = branch_id;
   return report;
 }
-export function buildReport(type = 'sales_overview', scopeInput = 'br1', query = {}) {
+export function buildReport(type = 'sales_overview', scopeInput = 'sala', query = {}) {
   const scope = normalizeScope(scopeInput);
-  const branchIds = scope.branch_ids.length ? scope.branch_ids : ['br1'];
+  const branchIds = scope.branch_ids.length ? scope.branch_ids : ['sala'];
   if (branchIds.length === 1) return withScope(buildSingleReport(type, branchIds[0], query), normalizeScope(branchIds[0]));
   return combineBranchReports(type, scope, query, branchIds.map(id => buildSingleReport(type, id, query)));
 }

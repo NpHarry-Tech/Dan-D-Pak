@@ -25,7 +25,7 @@ function publicEntry(row) {
     linked_expense_amount: Number(row.linked_expense_amount) || 0,
   };
 }
-function activeShift(branch_id = 'br1') {
+function activeShift(branch_id = 'sala') {
   return db.prepare(`SELECT * FROM shifts WHERE branch_id=? AND status='open' ORDER BY opened_at DESC LIMIT 1`).get(branch_id);
 }
 function entryTitle(row = {}) {
@@ -118,7 +118,7 @@ export function expectedCashForShift(shift = {}, shift_id = shift?.id) {
   const mv = movementTotalsForShift(shift_id);
   return opening + cashSales - mv.expenses + mv.reimbursements;
 }
-export function summaryForShift(shift_id, branch_id = 'br1') {
+export function summaryForShift(shift_id, branch_id = 'sala') {
   if (!shift_id) return null;
   const sh = db.prepare(`SELECT * FROM shifts WHERE id=? AND branch_id=?`).get(shift_id, branch_id);
   if (!sh) return null;
@@ -138,7 +138,7 @@ export function summaryForShift(shift_id, branch_id = 'br1') {
     movement_count: mv.count,
   };
 }
-export function defaultOpeningCash(branch_id = 'br1', cfg = {}) {
+export function defaultOpeningCash(branch_id = 'sala', cfg = {}) {
   const last = db.prepare(`
     SELECT closing_cash, opening_cash FROM shifts
     WHERE branch_id=? AND status='closed'
@@ -159,7 +159,7 @@ export function entriesForShift(shift_id, limit = 40) {
     ORDER BY occurred_at DESC, created_at DESC
     LIMIT ?`).all(shift_id, Math.max(1, Math.min(200, parseInt(limit) || 40))).map(decorateEntry);
 }
-export function reimbursableExpenses(branch_id = 'br1', limit = 80) {
+export function reimbursableExpenses(branch_id = 'sala', limit = 80) {
   const rows = db.prepare(`
     SELECT e.*, s.shift_label,
       (SELECT COALESCE(SUM(a.amount),0)
@@ -187,7 +187,7 @@ export function reimbursableExpenses(branch_id = 'br1', limit = 80) {
     }).filter(x => x.outstanding_amount > 0);
   return rows.slice(0, Math.max(1, Math.min(200, parseInt(limit) || 80)));
 }
-export function currentDrawer(branch_id = 'br1', limit = 40) {
+export function currentDrawer(branch_id = 'sala', limit = 40) {
   const sh = activeShift(branch_id);
   if (!sh) return { shift: null, summary: null, entries: [], reimbursable_expenses: reimbursableExpenses(branch_id, 80) };
   return {
@@ -197,7 +197,7 @@ export function currentDrawer(branch_id = 'br1', limit = 40) {
     reimbursable_expenses: reimbursableExpenses(branch_id, 80),
   };
 }
-export function listEntries(branch_id = 'br1', query = {}) {
+export function listEntries(branch_id = 'sala', query = {}) {
   const limit = Math.max(1, Math.min(500, parseInt(query.limit) || 100));
   const params = [branch_id];
   let where = 'branch_id=?';
@@ -211,7 +211,7 @@ export function listEntries(branch_id = 'br1', query = {}) {
     ORDER BY occurred_at DESC, created_at DESC
     LIMIT ?`).all(...params, limit).map(decorateEntry);
 }
-export function createEntry(kind, body = {}, user = {}, branch_id = 'br1') {
+export function createEntry(kind, body = {}, user = {}, branch_id = 'sala') {
   if (!['expense', 'reimbursement'].includes(kind)) throw new Error('Loại giao dịch két không hợp lệ');
   const sh = activeShift(branch_id);
   if (!sh) throw new Error('Cần mở ca trước khi ghi nhận thu/chi tiền két');

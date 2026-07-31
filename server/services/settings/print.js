@@ -76,6 +76,11 @@ const DEFAULT_PRINT_CONFIG = {
     qrNote: 'Scan the QR code to let us know how you enjoyed meals with us',
     unitPriceMode: 'vat_included',
     autoPrint: '1',
+    // Độ đậm bản in nhiệt (trình thiết kế mẫu in cho chọn light/medium/dark/max).
+    // TỪNG THIẾU Ở ĐÂY: không có mặc định nên densityPrefix() nhận '' và không
+    // gửi lệnh làm đậm nào, máy in chạy theo mặc định của nó — bản in rất mờ.
+    // 'dark' khớp với giá trị trình thiết kế hiển thị khi chưa ai chỉnh.
+    printDensity: 'dark',
   },
   printers: [
     { id: 'kitchen', name: '', systemName: '', label: 'Phiếu bếp', type: 'Phiếu bếp', output: 'kitchen_ticket', location: 'Bếp', active: true, auto: true, connection: 'browser', ip: '', port: 9100, cashDrawer: false, openDrawerOnPrint: false },
@@ -99,7 +104,7 @@ function defaultDanBillTemplate(bill = DEFAULT_PRINT_CONFIG.bill) {
   const heightMm = requestedHeight >= 300 && requestedHeight <= 500 ? requestedHeight : DEFAULT_PRINT_CONFIG.bill.heightMm;
   return {
     kind: 'bill',
-    version: 6,
+    version: 7,
     standard: 'dan_payment_receipt',
     paper: bill.paper || 'K80',
     widthMm,
@@ -119,7 +124,7 @@ function defaultDanBillTemplate(bill = DEFAULT_PRINT_CONFIG.bill) {
       { id: 'line_3', type: 'line', x: 4, y: 60, w: 92, h: 0.5 },
       { id: 'bill_totals', type: 'text', x: 4, y: 62, w: 92, h: 14, text: '{subtotalLine}\n{vatLine}\n{orderPromoLine}\n{grandTotalLine}\n{paymentLines}\n{paidLine}\n{changeLine}', fontSize: 3.6, bold: false, align: 'left' },
       { id: 'line_4', type: 'line', x: 4, y: 77, w: 92, h: 0.5 },
-      { id: 'bill_footer', type: 'text', x: 4, y: 79, w: 92, h: 10, text: '{taxNoteC}\n{footerBrandC}\n{footerC}', fontSize: 3.5, bold: false, align: 'center' },
+      { id: 'bill_footer', type: 'text', x: 4, y: 79, w: 92, h: 10, text: '{noteBlock}\n{taxNoteC}\n{footerBrandC}\n{footerC}', fontSize: 3.5, bold: false, align: 'center' },
       { id: 'bill_qr', type: 'qr', x: 35, y: 90, w: 30, h: 8, qrMode: 'lookup', qrText: '{invoiceLookupUrl}', qrCaption: 'Quét QR tra cứu hóa đơn', qrShowCaption: true },
     ],
   };
@@ -184,6 +189,12 @@ function sanitizeBillTemplate(tpl, bill) {
   if (!clean || clean.kind !== 'bill' || clean.standard !== 'dan_payment_receipt' || Number(clean.version || 0) < 6) {
     return defaultDanBillTemplate(bill);
   }
+  if (Number(clean.version || 0) < 7) {
+    clean.version = 7;
+    clean.elements = clean.elements.map(el => el.id === 'bill_footer' && !String(el.text || '').includes('{noteBlock}')
+      ? { ...el, text: `{noteBlock}\n${el.text || ''}` }
+      : el);
+  }
   return clean;
 }
 
@@ -245,13 +256,13 @@ export function sanitizePrintConfig(raw = {}) {
 }
 
 // ── 4. Đọc / ghi ────────────────────────────────────────────────────────────
-export function getPrintConfig(branch_id = 'br1') {
+export function getPrintConfig(branch_id = 'sala') {
   return readJsonSetting(branch_id, PRINT_CONFIG_KEY, sanitizePrintConfig, DEFAULT_PRINT_CONFIG);
 }
 
 /** Trình thiết kế mẫu in tự lưu sau mỗi thao tác — ghi thẳng print_config,
  *  không đi qua updateSettings để tránh đụng các nhóm cấu hình khác. */
-export function autoSaveTemplate(body = {}, branch_id = 'br1') {
+export function autoSaveTemplate(body = {}, branch_id = 'sala') {
   const kind = body.kind === 'label' ? 'label' : 'bill';
   const current = getPrintConfig(branch_id);
   const next = sanitizePrintConfig({

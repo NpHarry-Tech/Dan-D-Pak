@@ -58,6 +58,7 @@ export function migrate(targetDb = globalDb) {
 
   CREATE TABLE IF NOT EXISTS categories (
     id TEXT PRIMARY KEY,
+    branch_id TEXT NOT NULL DEFAULT 'sala',
     name TEXT NOT NULL,
     icon TEXT,
     sort INTEGER DEFAULT 0
@@ -76,6 +77,7 @@ export function migrate(targetDb = globalDb) {
 
   CREATE TABLE IF NOT EXISTS menu_items (
     id TEXT PRIMARY KEY,
+    branch_id TEXT NOT NULL DEFAULT 'sala',
     category_id TEXT NOT NULL,
     name TEXT NOT NULL,
     emoji TEXT,
@@ -740,6 +742,9 @@ export function migrate(targetDb = globalDb) {
   addColumnIfMissing('order_items', 'promo_json', 'TEXT');
   addColumnIfMissing('order_items', 'reject_reason', 'TEXT');
   addColumnIfMissing('menu_items', 'image', 'TEXT');
+  addColumnIfMissing('menu_items', 'branch_id', "TEXT NOT NULL DEFAULT 'sala'");
+  addColumnIfMissing('categories', 'branch_id', "TEXT NOT NULL DEFAULT 'sala'");
+  addColumnIfMissing('orders', 'note', 'TEXT');
   addColumnIfMissing('menu_items', 'description', 'TEXT');
   addColumnIfMissing('menu_items', 'hidden', 'INTEGER NOT NULL DEFAULT 0');
   addColumnIfMissing('menu_items', 'deleted_at', 'TEXT');
@@ -930,7 +935,7 @@ export function migrate(targetDb = globalDb) {
   db.exec(`
     CREATE TABLE IF NOT EXISTS price_books (
       id TEXT PRIMARY KEY,
-      branch_id TEXT NOT NULL DEFAULT 'br1',
+      branch_id TEXT NOT NULL DEFAULT 'sala',
       name TEXT NOT NULL,
       status TEXT NOT NULL DEFAULT 'active',
       created_at TEXT NOT NULL,
@@ -949,7 +954,7 @@ export function migrate(targetDb = globalDb) {
   const customerBranches = db.prepare(`SELECT DISTINCT branch_id FROM customers`).all();
   const codeUpd = db.prepare(`UPDATE customers SET code=? WHERE id=? AND branch_id=?`);
   for (const b of customerBranches) {
-    const branchId = b.branch_id || 'br1';
+    const branchId = b.branch_id || 'sala';
     let seq = Number(db.prepare(`
       SELECT COALESCE(MAX(CAST(SUBSTR(code, 3) AS INTEGER)), 0) AS n
       FROM customers WHERE branch_id=? AND code GLOB 'DC[0-9]*'`).get(branchId)?.n) || 0;
@@ -1219,15 +1224,144 @@ export function migrate(targetDb = globalDb) {
 
   if (isMaster) {
     dropSyncTriggers(db);
+    migrateLegacySalaBranch(db);
+    cleanupLegacyBranchSamples(db);
+    initScopeGuards(db);
     ensurePermanentStorage();
     bootstrapBranchDefaults();
-    for (const b of db.prepare(`SELECT id FROM branches WHERE active=1 ORDER BY sort,name`).all()) {
-      bootstrapWarehouseDefaults(b.id);
-      bootstrapTableDefaults(b.id);
-    }
+    // Chỉ chi nhánh gốc có dữ liệu mẫu; mọi chi nhánh tạo sau phải bắt đầu trống.
+    bootstrapWarehouseDefaults('sala');
+    bootstrapTableDefaults('sala');
     initSyncTriggers(db);
   }
 }
+
+function migrateLegacySalaBranch(targetDb) {
+  if (!targetDb.prepare(`SELECT 1 FROM branches WHERE id='br1'`).get()) return;
+  if (targetDb.prepare(`SELECT 1 FROM branches WHERE id='sala'`).get()) {
+    throw new Error(`Không thể đổi branch_id br1 thành sala vì ID sala đã tồn tại.`);
+  }
+
+  targetDb.exec('BEGIN IMMEDIATE');
+  try {
+    const tables = targetDb.prepare(`
+      SELECT name FROM sqlite_master
+      WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name!='branches'
+    `).all();
+    for (const { name } of tables) {
+      const columns = targetDb.prepare(`PRAGMA table_info("${String(name).replaceAll('"', '""')}")`).all();
+      if (!columns.some(column => column.name === 'branch_id')) continue;
+      targetDb.prepare(`UPDATE "${String(name).replaceAll('"', '""')}" SET branch_id='sala' WHERE branch_id='br1'`).run();
+    }
+    targetDb.prepare(`UPDATE branches SET id='sala', code='SALA' WHERE id='br1'`).run();
+
+    for (const user of targetDb.prepare(`SELECT id,branch_access_json FROM users WHERE branch_access_json LIKE '%br1%'`).all()) {
+      let access;
+      try { access = JSON.parse(user.branch_access_json || '[]'); } catch { continue; }
+      if (!Array.isArray(access)) continue;
+      const migrated = [...new Set(access.map(id => id === 'br1' ? 'sala' : id))];
+      targetDb.prepare(`UPDATE users SET branch_access_json=? WHERE id=?`).run(JSON.stringify(migrated), user.id);
+    }
+    targetDb.exec('COMMIT');
+  } catch (error) {
+    targetDb.exec('ROLLBACK');
+    throw error;
+  }
+}
+
+function cleanupLegacyBranchSamples(targetDb) {
+  for (const { id: branchId } of targetDb.prepare(`SELECT id FROM branches WHERE id!='sala'`).all()) {
+    const prefix = String(branchId).replace(/[^a-zA-Z0-9_]/g, '_').toLowerCase();
+    targetDb.prepare(`
+      DELETE FROM tables
+      WHERE branch_id=? AND id LIKE ?
+        AND NOT EXISTS (SELECT 1 FROM orders o WHERE o.table_id=tables.id)
+        AND NOT EXISTS (SELECT 1 FROM staff_calls s WHERE s.table_id=tables.id)`)
+      .run(branchId, `${prefix}_t_%`);
+
+    for (const warehouseId of [
+      `${prefix}_wh_kitchen`,
+      `${prefix}_wh_retail`,
+      `${prefix}_wh_showroom_bcm`,
+    ]) {
+      const used = targetDb.prepare(`
+        SELECT
+          EXISTS(SELECT 1 FROM inventory_items WHERE warehouse_id=?) OR
+          EXISTS(SELECT 1 FROM skus WHERE warehouse_id=?) OR
+          EXISTS(SELECT 1 FROM stock_lots WHERE warehouse_id=?) OR
+          EXISTS(SELECT 1 FROM stock_movements WHERE warehouse_id=?) OR
+          EXISTS(SELECT 1 FROM inventory_documents WHERE warehouse_id=? OR to_warehouse_id=?) OR
+          EXISTS(SELECT 1 FROM stocktake_sessions WHERE warehouse_id=?) used`)
+        .get(warehouseId, warehouseId, warehouseId, warehouseId, warehouseId, warehouseId, warehouseId).used;
+      if (!used) targetDb.prepare(`DELETE FROM warehouses WHERE id=? AND branch_id=?`).run(warehouseId, branchId);
+    }
+  }
+}
+
+function initScopeGuards(targetDb) {
+  const orphanBranches = targetDb.prepare(`
+    SELECT DISTINCT m.branch_id
+    FROM menu_items m
+    LEFT JOIN categories c ON c.id=m.category_id AND c.branch_id=m.branch_id
+    WHERE c.id IS NULL`).all();
+  for (const { branch_id } of orphanBranches) {
+    const categoryId = `uncategorized_${String(branch_id).replace(/[^a-zA-Z0-9_]/g, '_')}`;
+    targetDb.prepare(`INSERT OR IGNORE INTO categories (id,branch_id,name,icon,sort) VALUES (?,?,?,'🍽️',9999)`)
+      .run(categoryId, branch_id, 'Chưa phân loại');
+    targetDb.prepare(`
+      UPDATE menu_items SET category_id=?
+      WHERE branch_id=? AND NOT EXISTS (
+        SELECT 1 FROM categories c WHERE c.id=menu_items.category_id AND c.branch_id=menu_items.branch_id)`)
+      .run(categoryId, branch_id);
+  }
+  const guards = [
+    ['menu_items_category', 'menu_items',
+      `NEW.category_id IS NOT NULL AND NOT EXISTS (
+        SELECT 1 FROM categories c WHERE c.id=NEW.category_id AND c.branch_id=NEW.branch_id)`],
+    ['skus_warehouse', 'skus',
+      `NEW.warehouse_id IS NOT NULL AND NOT EXISTS (
+        SELECT 1 FROM warehouses w WHERE w.id=NEW.warehouse_id AND w.branch_id=NEW.branch_id AND w.type='retail')`],
+    ['inventory_items_warehouse', 'inventory_items',
+      `NEW.warehouse_id IS NOT NULL AND NOT EXISTS (
+        SELECT 1 FROM warehouses w WHERE w.id=NEW.warehouse_id AND w.branch_id=NEW.branch_id AND w.type='kitchen')`],
+    ['stock_lots_warehouse', 'stock_lots',
+      `NOT EXISTS (
+        SELECT 1 FROM warehouses w WHERE w.id=NEW.warehouse_id AND w.branch_id=NEW.branch_id)`],
+    ['inventory_documents_warehouse', 'inventory_documents',
+      `(NEW.warehouse_id IS NOT NULL AND NOT EXISTS (
+          SELECT 1 FROM warehouses w WHERE w.id=NEW.warehouse_id AND w.branch_id=NEW.branch_id))
+       OR (NEW.to_warehouse_id IS NOT NULL AND NOT EXISTS (
+          SELECT 1 FROM warehouses w WHERE w.id=NEW.to_warehouse_id AND w.branch_id=NEW.branch_id))`],
+    ['stocktake_sessions_warehouse', 'stocktake_sessions',
+      `NOT EXISTS (
+        SELECT 1 FROM warehouses w WHERE w.id=NEW.warehouse_id AND w.branch_id=NEW.branch_id)`],
+    ['orders_table', 'orders',
+      `NEW.table_id IS NOT NULL AND NOT EXISTS (
+        SELECT 1 FROM tables t WHERE t.id=NEW.table_id AND t.branch_id=NEW.branch_id)`],
+  ];
+  for (const [name, table, condition] of guards) {
+    for (const operation of ['INSERT', 'UPDATE']) {
+      const suffix = operation === 'INSERT' ? 'ins' : 'upd';
+      targetDb.exec(`
+        CREATE TRIGGER IF NOT EXISTS trg_scope_${suffix}_${name}
+        BEFORE ${operation} ON ${table}
+        WHEN ${condition}
+        BEGIN
+          SELECT RAISE(ABORT, 'Dữ liệu không thuộc cùng chi nhánh');
+        END;
+      `);
+    }
+  }
+  targetDb.exec(`
+    CREATE UNIQUE INDEX IF NOT EXISTS uniq_warehouses_branch_code ON warehouses(branch_id, code);
+    CREATE UNIQUE INDEX IF NOT EXISTS uniq_tables_branch_code ON tables(branch_id, code);
+    CREATE INDEX IF NOT EXISTS idx_stock_lots_branch_warehouse_item
+      ON stock_lots(branch_id, warehouse_id, item_type, item_id);
+    CREATE INDEX IF NOT EXISTS idx_stock_movements_branch_warehouse_item
+      ON stock_movements(branch_id, warehouse_id, item_type, inventory_item_id);
+  `);
+}
+
 function dropSyncTriggers(targetDb) {
   const triggers = targetDb
     .prepare(`SELECT name FROM sqlite_master WHERE type='trigger' AND name LIKE 'trg_sync_%'`)
@@ -1294,20 +1428,20 @@ function initSyncTriggers(targetDb) {
       hasBranchCol = cols.some(c => c.name === 'branch_id');
     } catch {}
 
-    let branchSql = 'COALESCE(NEW.branch_id, \'br1\')';
+    let branchSql = 'COALESCE(NEW.branch_id, \'sala\')';
     if (t.name === 'branches') {
       branchSql = 'NEW.id';
     } else if (t.hasBranch === false || !hasBranchCol) {
       if (t.orderRef) {
-        branchSql = `COALESCE((SELECT branch_id FROM orders WHERE id = NEW.${t.orderRef}), 'br1')`;
+        branchSql = `COALESCE((SELECT branch_id FROM orders WHERE id = NEW.${t.orderRef}), 'sala')`;
       } else if (t.paymentRef) {
-        branchSql = `COALESCE((SELECT branch_id FROM orders WHERE id = (SELECT order_id FROM payments WHERE id = NEW.${t.paymentRef})), 'br1')`;
+        branchSql = `COALESCE((SELECT branch_id FROM orders WHERE id = (SELECT order_id FROM payments WHERE id = NEW.${t.paymentRef})), 'sala')`;
       } else if (t.poRef) {
-        branchSql = `COALESCE((SELECT branch_id FROM purchase_orders WHERE id = NEW.${t.poRef}), 'br1')`;
+        branchSql = `COALESCE((SELECT branch_id FROM purchase_orders WHERE id = NEW.${t.poRef}), 'sala')`;
       } else if (t.prRef) {
-        branchSql = `COALESCE((SELECT branch_id FROM purchase_returns WHERE id = NEW.${t.prRef}), 'br1')`;
+        branchSql = `COALESCE((SELECT branch_id FROM purchase_returns WHERE id = NEW.${t.prRef}), 'sala')`;
       } else {
-        branchSql = `'br1'`;
+        branchSql = `'sala'`;
       }
     }
 

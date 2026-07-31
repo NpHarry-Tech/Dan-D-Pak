@@ -14,7 +14,7 @@ const MAX_ATTEMPTS = 10;
  * Creates an e-invoice request in the queue (NOT_CREATED -> QUEUED)
  * Enforces business rules: consumer-sale mode still gets an invoice.
  */
-export function createInvoiceRequest(order_id, customer_mode = 'WALK_IN', buyer_info = {}, branch_id = 'br1', actor = 'system', allocation = {}) {
+export function createInvoiceRequest(order_id, customer_mode = 'WALK_IN', buyer_info = {}, branch_id = 'sala', actor = 'system', allocation = {}) {
   const order = getOrder(order_id);
   if (!order) throw new Error('Đơn hàng không tồn tại');
   if (order.status !== 'paid') throw new Error('Chỉ xuất hóa đơn cho đơn hàng đã thanh toán');
@@ -194,7 +194,7 @@ export function createInvoiceRequest(order_id, customer_mode = 'WALK_IN', buyer_
  * Backfill: khi bật MISA, đẩy toàn bộ hóa đơn đã ghi nhận lúc MISA off
  * (PENDING_PROVIDER) vào hàng đợi để phát hành thật. Idempotent.
  */
-export function requeuePendingProvider(branch_id = 'br1', actor = 'system') {
+export function requeuePendingProvider(branch_id = 'sala', actor = 'system') {
   const misaCfg = getIntegrations(branch_id).channels?.misa || {};
   if (!misaCfg.enabled) return { requeued: 0 };
   const provider = Misa.isLive(misaCfg) ? 'misa' : 'local';
@@ -584,7 +584,7 @@ export function getInvoiceByOrder(order_id) {
  * tuyệt đối không tạo hóa đơn thứ hai cho một giao dịch. Đã phát hành rồi
  * thì phải đi đường hủy/thay thế theo NĐ 70.
  */
-export function upgradeBuyer(order_id, customer = {}, branch_id = 'br1', actor = 'staff') {
+export function upgradeBuyer(order_id, customer = {}, branch_id = 'sala', actor = 'staff') {
   const inv = getInvoiceByOrder(order_id);
   if (!inv) throw new Error('Chưa có bản ghi HĐĐT cho bill này');
   if (inv.invoice_status === 'ISSUED') {
@@ -644,7 +644,7 @@ export function upgradeBuyer(order_id, customer = {}, branch_id = 'br1', actor =
 /**
  * Reconciliation dashboard query for accountants
  */
-export function getReconciliation(branch_id = 'br1', filters = {}) {
+export function getReconciliation(branch_id = 'sala', filters = {}) {
   const limit = Math.max(1, Math.min(200, parseInt(filters.limit) || 100));
   let query = `
     SELECT 
@@ -707,7 +707,7 @@ export function getReconciliation(branch_id = 'br1', filters = {}) {
 /**
  * Returns summary of e-invoices for the shift before closing
  */
-export function getShiftInvoiceSummary(branch_id = 'br1', shift_id) {
+export function getShiftInvoiceSummary(branch_id = 'sala', shift_id) {
   // If MISA integration is disabled, do not block closing shift
   const misaCfg = getIntegrations(branch_id).channels?.misa || {};
   if (!misaCfg.enabled) {
@@ -768,7 +768,7 @@ export function getShiftInvoiceSummary(branch_id = 'br1', shift_id) {
 /**
  * Customer self-service request (from iPad or QR checkout)
  */
-export function customerRequest(order_id, { decision = 'issue', customer = {} } = {}, branch_id = 'br1') {
+export function customerRequest(order_id, { decision = 'issue', customer = {} } = {}, branch_id = 'sala') {
   const order = getOrder(order_id);
   if (!order) throw new Error('Đơn hàng không tồn tại');
   if (order.status !== 'paid') throw new Error('Chỉ xuất hóa đơn cho đơn hàng đã thanh toán');

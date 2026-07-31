@@ -109,6 +109,6 @@ export function sanitizeLoyaltyConfig(input = {}) {
   };
 }
 
-export function getLoyaltyConfig(branch_id = 'br1') {
+export function getLoyaltyConfig(branch_id = 'sala') {
   return readJsonSetting(branch_id, LOYALTY_CONFIG_KEY, sanitizeLoyaltyConfig, DEFAULT_LOYALTY_CONFIG);
 }

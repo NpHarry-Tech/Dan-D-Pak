@@ -21,19 +21,20 @@ const Payments = await import('./services/payments.js');
 
 migrate();
 
+db.prepare(`INSERT INTO categories (id,branch_id,name) VALUES ('cat_t','sala','Test')`).run();
 db.prepare(`INSERT INTO menu_items (id,category_id,name,price,price_includes_vat,vat_rate,station) VALUES (?,?,?,?,?,?,?)`)
   .run('mi_pho', 'cat_t', 'Pho Bo', 60000, 1, 8, 'kitchen');
 db.prepare(`INSERT INTO shifts (id,branch_id,user_name,shift_key,shift_label,opening_cash,status,opened_at) VALUES (?,?,?,?,?,?,?,?)`)
-  .run('shift_reset', 'br1', 'Tester', 'test', 'Test', 0, 'open', now());
+  .run('shift_reset', 'sala', 'Tester', 'test', 'Test', 0, 'open', now());
 
 function makeTable(id, code) {
   db.prepare(`INSERT INTO tables (id,branch_id,zone,code,seats,status) VALUES (?,?,?,?,?,?)`)
-    .run(id, 'br1', 'Tầng trệt', code, 4, 'free');
+    .run(id, 'sala', 'Tầng trệt', code, 4, 'free');
 }
 
 function orderAt(tableId) {
   return Orders.createOrUpdateOrder({
-    branch_id: 'br1', channel: 'dine_in', source: 'staff_pos', table_id: tableId,
+    branch_id: 'sala', channel: 'dine_in', source: 'staff_pos', table_id: tableId,
     actor: 'Thu ngan', items: [{ menu_item_id: 'mi_pho', qty: 2 }],
   });
 }
@@ -43,7 +44,7 @@ test('dọn bàn: huỷ hết món, đưa bill về void, trả bàn về trốn
   const order = orderAt('t_R1');
   assert.equal(db.prepare(`SELECT status FROM tables WHERE id='t_R1'`).get().status, 'busy');
 
-  const res = Orders.resetTable('t_R1', 'br1', 'quanly', 'ban ket trang thai');
+  const res = Orders.resetTable('t_R1', 'sala', 'quanly', 'ban ket trang thai');
   assert.equal(res.orders_voided, 1);
   assert.ok(res.items_cancelled >= 1);
 
@@ -59,12 +60,12 @@ test('dọn bàn: huỷ hết món, đưa bill về void, trả bàn về trốn
 test('TỪ CHỐI dọn bàn khi bill đã ghi nhận tiền — tiền không được mất dấu', () => {
   makeTable('t_R2', 'R2');
   const order = orderAt('t_R2');
-  Orders.confirmPendingItems(order.id, [], 'br1', 'Thu ngan');
+  Orders.confirmPendingItems(order.id, [], 'sala', 'Thu ngan');
   // Khách trả trước một phần.
-  Payments.payOrder(order.id, [{ method: 'cash', amount: 20000 }], { cashier: 'Thu ngan' }, 'br1');
+  Payments.payOrder(order.id, [{ method: 'cash', amount: 20000 }], { cashier: 'Thu ngan' }, 'sala');
 
   assert.throws(
-    () => Orders.resetTable('t_R2', 'br1', 'quanly'),
+    () => Orders.resetTable('t_R2', 'sala', 'quanly'),
     /đã ghi nhận|Hoàn tiền/,
     'bill có tiền phải đi đường hoàn tiền, không xoá trắng');
 
@@ -75,18 +76,18 @@ test('TỪ CHỐI dọn bàn khi bill đã ghi nhận tiền — tiền không �
 
 test('dọn bàn trống thì không sao, và bàn không tồn tại thì báo lỗi rõ', () => {
   makeTable('t_R3', 'R3');
-  const res = Orders.resetTable('t_R3', 'br1', 'quanly');
+  const res = Orders.resetTable('t_R3', 'sala', 'quanly');
   assert.equal(res.orders_voided, 0);
-  assert.throws(() => Orders.resetTable('t_khong_co', 'br1', 'quanly'), /Bàn không tồn tại/);
+  assert.throws(() => Orders.resetTable('t_khong_co', 'sala', 'quanly'), /Bàn không tồn tại/);
 });
 
 test('chuông gọi nhân viên đang treo cũng được đóng khi dọn bàn', () => {
   makeTable('t_R4', 'R4');
   orderAt('t_R4');
   db.prepare(`INSERT INTO staff_calls (id,branch_id,table_id,reason,status,created_at) VALUES (?,?,?,?,?,?)`)
-    .run('sc_1', 'br1', 't_R4', 'Goi nhan vien', 'open', now());
+    .run('sc_1', 'sala', 't_R4', 'Goi nhan vien', 'open', now());
 
-  Orders.resetTable('t_R4', 'br1', 'quanly');
+  Orders.resetTable('t_R4', 'sala', 'quanly');
   assert.equal(
     db.prepare(`SELECT status FROM staff_calls WHERE id='sc_1'`).get().status, 'done',
     'bàn vừa dọn xong không được nhấp nháy đòi phục vụ');

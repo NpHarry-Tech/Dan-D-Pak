@@ -94,6 +94,36 @@ api.get('/database/status', guardAny('settings.manage'), wrap(async () => {
     pendingSyncCount = row.n;
   } catch {}
 
+  const scopeRouting = {
+    branches: db.prepare(`
+      SELECT b.id, b.name,
+        (SELECT COUNT(*) FROM warehouses w WHERE w.branch_id=b.id) warehouses,
+        (SELECT COUNT(*) FROM tables t WHERE t.branch_id=b.id) tables,
+        (SELECT COUNT(*) FROM categories c WHERE c.branch_id=b.id) categories,
+        (SELECT COUNT(*) FROM menu_items m WHERE m.branch_id=b.id) menu_items,
+        (SELECT COUNT(*) FROM inventory_items i WHERE i.branch_id=b.id) inventory_items,
+        (SELECT COUNT(*) FROM skus s WHERE s.branch_id=b.id) skus,
+        (SELECT COUNT(*) FROM orders o WHERE o.branch_id=b.id) orders
+      FROM branches b ORDER BY b.sort,b.name`).all(),
+    violations: {
+      menuCategory: db.prepare(`SELECT COUNT(*) n FROM menu_items m
+        LEFT JOIN categories c ON c.id=m.category_id AND c.branch_id=m.branch_id
+        WHERE c.id IS NULL`).get().n,
+      skuWarehouse: db.prepare(`SELECT COUNT(*) n FROM skus s
+        LEFT JOIN warehouses w ON w.id=s.warehouse_id AND w.branch_id=s.branch_id
+        WHERE s.warehouse_id IS NOT NULL AND w.id IS NULL`).get().n,
+      inventoryWarehouse: db.prepare(`SELECT COUNT(*) n FROM inventory_items i
+        LEFT JOIN warehouses w ON w.id=i.warehouse_id AND w.branch_id=i.branch_id
+        WHERE i.warehouse_id IS NOT NULL AND w.id IS NULL`).get().n,
+      lotWarehouse: db.prepare(`SELECT COUNT(*) n FROM stock_lots l
+        LEFT JOIN warehouses w ON w.id=l.warehouse_id AND w.branch_id=l.branch_id
+        WHERE w.id IS NULL`).get().n,
+      orderTable: db.prepare(`SELECT COUNT(*) n FROM orders o
+        LEFT JOIN tables t ON t.id=o.table_id AND t.branch_id=o.branch_id
+        WHERE o.table_id IS NOT NULL AND t.id IS NULL`).get().n,
+    },
+  };
+
   return {
     dbType: 'SQLite (node:sqlite)',
     dbPath: DB_PATH,
@@ -104,6 +134,7 @@ api.get('/database/status', guardAny('settings.manage'), wrap(async () => {
     configCounts,
     transactionCounts,
     pendingSyncCount,
+    scopeRouting,
     // Sự sống thật của tiến trình NGAY LÚC NÀY — dùng để phát hiện sớm kiểu sự
     // cố hôm nay (agent poll làm nghẽn CPU): lag cao bất thường + queue in tồn
     // đọng lớn là dấu hiệu trực tiếp, không cần chờ người dùng báo "app treo".

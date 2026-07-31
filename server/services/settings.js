@@ -41,6 +41,13 @@ export {
 
 export { getRetailConfig, sanitizeRetailConfig } from './settings/retail.js';
 
+export {
+  getSalesModules,
+  isSalesModuleEnabled,
+  assertSalesModuleEnabled,
+  sanitizeSalesModules,
+} from './settings/salesModules.js';
+
 export { getLoyaltyConfig } from './settings/loyalty.js';
 
 export { getCustomerDisplayConfig } from './settings/customerDisplay.js';

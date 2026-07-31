@@ -16,6 +16,15 @@ export function registerPaymentRoutes(api, {
   fileCashDrawerReceipt,
   logRequestError,
 }) {
+  const webhookBranch = (req) => {
+    if (!req.headers['x-branch-id'] && !req.query?.branch_id) {
+      const e = new Error('Webhook thanh toán phải chỉ rõ branch_id để định tuyến đúng chi nhánh.');
+      e.status = 400;
+      throw e;
+    }
+    return visibleBranch(req);
+  };
+
   api.post('/orders/:id/pay', guard('pay'), wrap((req) => {
     const branch_id = branch(req);
     // Giảm giá TAY + tự chọn voucher/CTKM đều cần quyền 'discount' (owner luôn qua).
@@ -61,8 +70,13 @@ export function registerPaymentRoutes(api, {
       promotions: plan.appliedSkuPromos,
       customer: req.body.customer || null,
       invoice_customer: req.body.invoice_customer || null,
+      note: req.body.note || '',
       cashier: req.user?.name || req.user?.username || '',
       idempotency_key: req.body.idempotency_key || req.headers['idempotency-key'] || null,
+      // MÁY đang thanh toán → bill ra ở máy in cắm vào chính máy đó. Trước đây
+      // không truyền, nên tuyến in luôn phân giải giống nhau cho mọi máy POS
+      // (thu ngân POS 2 phải chạy qua POS 1 lấy bill).
+      device_id: String(req.headers['x-device-id'] || req.body.device_id || '').trim(),
     }, branch_id);
     if (manual) for (const tx of manual.txIds) Pay.markBankTxClaimed(tx, req.params.id, manual.approver.username, branch_id);
     if (receipt.fully_settled !== false && (req.body.customer?.id || req.body.customer?.phone)) {
@@ -73,10 +87,10 @@ export function registerPaymentRoutes(api, {
     return receipt;
   }));
 
-  api.post('/vietqr/webhook', wrap((req) => Pay.handleVietqrWebhook(req.body || {}, req.headers, 'br1')));
-  api.post('/sepay/webhook', wrap((req) => Pay.handleSepayWebhook(req.body || {}, req.headers, 'br1')));
-  api.post('/casso/webhook', wrap((req) => Pay.handleCassoWebhook(req.body || {}, req.headers, 'br1')));
-  api.post('/payos/webhook', wrap((req) => Pay.handlePayosWebhook(req.body || {}, req.headers, 'br1')));
+  api.post('/vietqr/webhook', wrap((req) => Pay.handleVietqrWebhook(req.body || {}, req.headers, webhookBranch(req))));
+  api.post('/sepay/webhook', wrap((req) => Pay.handleSepayWebhook(req.body || {}, req.headers, webhookBranch(req))));
+  api.post('/casso/webhook', wrap((req) => Pay.handleCassoWebhook(req.body || {}, req.headers, webhookBranch(req))));
+  api.post('/payos/webhook', wrap((req) => Pay.handlePayosWebhook(req.body || {}, req.headers, webhookBranch(req))));
   api.get('/payments/bank-transactions', guardAny('reports', 'pay', 'settings.integrations'), wrap((req) => Pay.listBankTransactions(branch(req), req.query)));
   api.get('/payos/payment-status/:orderCode', wrap((req) => Pay.getPayosPaymentStatus(req.params.orderCode, visibleBranch(req))));
   api.post('/payments', guard('pay'), wrap(() => {

@@ -180,6 +180,6 @@ export function sanitizeOperationsConfig(raw = {}) {
   };
 }
 
-export function getOperationsConfig(branch_id = 'br1') {
+export function getOperationsConfig(branch_id = 'sala') {
   return readJsonSetting(branch_id, OPERATIONS_CONFIG_KEY, sanitizeOperationsConfig, DEFAULT_OPERATIONS_CONFIG);
 }

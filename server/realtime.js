@@ -129,7 +129,7 @@ export function initRealtime(httpServer) {
         return next(new Error('Xác thực thất bại: Phiên làm việc không hợp lệ hoặc đã hết hạn.'));
       }
 
-      const branch = socket.handshake.auth?.branch || socket.handshake.query?.branch || 'br1';
+      const branch = socket.handshake.auth?.branch || socket.handshake.query?.branch || 'sala';
       if (!canAccessBranch(user, branch)) {
         return next(new Error('Xác thực thất bại: Không có quyền truy cập chi nhánh này.'));
       }
@@ -143,7 +143,7 @@ export function initRealtime(httpServer) {
 
   io.on('connection', (socket) => {
     try {
-      const branch = socket.handshake.auth?.branch || socket.handshake.query?.branch || 'br1';
+      const branch = socket.handshake.auth?.branch || socket.handshake.query?.branch || 'sala';
       const device = socket.handshake.auth?.device || socket.handshake.query?.device || 'unknown';
       // Kiosk khách (device='ipad', không token) → phòng công khai đã lọc PII.
       // Thiết bị nhân viên đã xác thực → phòng đầy đủ.
@@ -169,7 +169,7 @@ export function initRealtime(httpServer) {
 }
 
 // Broadcast an event to everyone in a branch.
-export function emit(event, payload, branch = 'br1') {
+export function emit(event, payload, branch = 'sala') {
   try {
     if (!io) return;
     // Nhân viên: đầy đủ, nguyên vẹn.
@@ -201,7 +201,7 @@ function emitPresence(branch) {
   }
 }
 
-export function getActiveConnections(branch = 'br1') {
+export function getActiveConnections(branch = 'sala') {
   try {
     if (!io) return [];
     return socketsInBranch(branch).map(s => {

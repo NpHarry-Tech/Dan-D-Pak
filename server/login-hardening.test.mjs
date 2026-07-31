@@ -18,14 +18,14 @@ migrate();
 
 function makeUser(id, username, role) {
   db.prepare(`INSERT INTO users (id,branch_id,username,name,pin,role,active) VALUES (?,?,?,?,?,?,1)`)
-    .run(id, 'br1', username, `Ten ${username}`, hashPin('5274'), role);
+    .run(id, 'sala', username, `Ten ${username}`, hashPin('5274'), role);
 }
 
 test('danh sách cho màn đăng nhập không lộ username hay vai trò', () => {
   makeUser('u_boss', 'chusohuu', 'owner');
   makeUser('u_cash', 'thungan1', 'cashier');
 
-  const list = Auth.listLoginUsers('br1');
+  const list = Auth.listLoginUsers('sala');
   assert.equal(list.length, 2);
   const boss = list.find(u => u.id === 'u_boss');
   for (const u of list) {
@@ -41,22 +41,22 @@ test('danh sách cho màn đăng nhập không lộ username hay vai trò', () =
   assert.ok(!list.some(u => u.username === 'chusohuu' || u.username === 'thungan1'));
 
   // Bản đầy đủ (chỉ trả cho request ĐÃ đăng nhập) vẫn giữ nguyên các trường cũ.
-  const full = Auth.listUsers('br1');
+  const full = Auth.listUsers('sala');
   assert.ok(full.every(u => u.username && u.role));
 });
 
 test('đăng nhập được bằng id lấy từ danh sách, không cần biết username', () => {
-  const byId = Auth.login('u_cash', '5274', 'br1', { deviceId: 'dev_a' });
+  const byId = Auth.login('u_cash', '5274', 'sala', { deviceId: 'dev_a' });
   assert.equal(byId.user.username, 'thungan1');
 
   // Ô nhập thủ công (gõ username) vẫn chạy như cũ.
-  const byName = Auth.login('thungan1', '5274', 'br1', { deviceId: 'dev_a' });
+  const byName = Auth.login('thungan1', '5274', 'sala', { deviceId: 'dev_a' });
   assert.equal(byName.user.username, 'thungan1');
 });
 
 test('phiên quá hạn KHÔNG còn dùng được — TTL phải có hiệu lực thật', () => {
   makeUser('u_hethan', 'hethan', 'cashier');
-  const { token } = Auth.login('hethan', '5274', 'br1', { deviceId: 'dev_h' });
+  const { token } = Auth.login('hethan', '5274', 'sala', { deviceId: 'dev_h' });
   const digest = tokenDigest(token);
   assert.equal(Auth.userFor(token, 'dev_h')?.username, 'hethan');
 
@@ -75,7 +75,7 @@ test('phiên quá hạn KHÔNG còn dùng được — TTL phải có hiệu l�
 
 test('phiên im lặng quá lâu cũng hết hạn dù chưa tới hạn tuyệt đối', () => {
   makeUser('u_imlang', 'imlang', 'cashier');
-  const { token } = Auth.login('imlang', '5274', 'br1', { deviceId: 'dev_i' });
+  const { token } = Auth.login('imlang', '5274', 'sala', { deviceId: 'dev_i' });
   const digest = tokenDigest(token);
 
   // Tạo hôm nay nhưng 8 ngày không dùng.
@@ -89,17 +89,17 @@ test('app CŨ (đọc trường username) vẫn đăng nhập được với ser
   // Kịch bản lên bản thật: server mới lên trước, máy khách còn bản cũ vài ngày.
   // App cũ lấy `username` từ danh sách rồi gửi kèm PIN — nếu server bỏ trường đó,
   // app cũ gửi chuỗi rỗng và cả cửa hàng không đăng nhập được.
-  const fromOldApp = Auth.listLoginUsers('br1').find(u => u.id === 'u_cash');
+  const fromOldApp = Auth.listLoginUsers('sala').find(u => u.id === 'u_cash');
   assert.ok(fromOldApp.username, 'app cũ phải có gì đó để gửi');
-  assert.equal(Auth.login(fromOldApp.username, '5274', 'br1', { deviceId: 'dev_cu' }).user.username, 'thungan1');
+  assert.equal(Auth.login(fromOldApp.username, '5274', 'sala', { deviceId: 'dev_cu' }).user.username, 'thungan1');
 });
 
 test('khoá sau 5 lần sai và KHÔNG bị reset khi server khởi động lại', () => {
   makeUser('u_lock', 'bikhoa', 'cashier');
   for (let i = 0; i < 5; i++) {
-    assert.throws(() => Auth.login('bikhoa', '0000', 'br1', { ip: '10.0.0.9' }), /Sai tài khoản/);
+    assert.throws(() => Auth.login('bikhoa', '0000', 'sala', { ip: '10.0.0.9' }), /Sai tài khoản/);
   }
-  assert.throws(() => Auth.login('bikhoa', '5274', 'br1', { ip: '10.0.0.9' }), /tạm khóa/);
+  assert.throws(() => Auth.login('bikhoa', '5274', 'sala', { ip: '10.0.0.9' }), /tạm khóa/);
 
   // Bộ đếm nằm trong DB, không phải RAM → restart không xoá được nó.
   // KHÔNG so until_ms với Date.now(): mỗi lần login chạy scrypt, khi máy đang
@@ -117,22 +117,22 @@ test('một IP rải đều qua nhiều tài khoản vẫn bị chặn', () => {
   // Mỗi tài khoản chỉ sai 2 lần — không tài khoản nào chạm ngưỡng 5 của riêng nó…
   for (let i = 0; i < 12; i++) {
     for (let k = 0; k < 2; k++) {
-      try { Auth.login(`nhanvien${i}`, '1111', 'br1', { ip }); } catch {}
+      try { Auth.login(`nhanvien${i}`, '1111', 'sala', { ip }); } catch {}
     }
   }
   // …nhưng tổng 24 lần từ cùng một IP thì vượt ngưỡng IP.
   const ipRow = db.prepare(`SELECT * FROM login_failures WHERE scope='ip' AND key=?`).get(ip);
   assert.ok(ipRow.count >= 20);
   makeUser('u_sach', 'tuoisach', 'cashier');
-  assert.throws(() => Auth.login('tuoisach', '5274', 'br1', { ip }), /tạm khóa/);
+  assert.throws(() => Auth.login('tuoisach', '5274', 'sala', { ip }), /tạm khóa/);
 
   // IP khác không bị vạ lây.
-  assert.ok(Auth.login('tuoisach', '5274', 'br1', { ip: '10.0.0.5', deviceId: 'dev_b' }).token);
+  assert.ok(Auth.login('tuoisach', '5274', 'sala', { ip: '10.0.0.5', deviceId: 'dev_b' }).token);
 });
 
 test('đăng nhập đúng sẽ xoá bộ đếm sai của chính mình', () => {
   makeUser('u_ok', 'binhthuong', 'cashier');
-  try { Auth.login('binhthuong', '0000', 'br1', { ip: '10.0.0.6' }); } catch {}
-  assert.ok(Auth.login('binhthuong', '5274', 'br1', { ip: '10.0.0.6', deviceId: 'dev_c' }).token);
+  try { Auth.login('binhthuong', '0000', 'sala', { ip: '10.0.0.6' }); } catch {}
+  assert.ok(Auth.login('binhthuong', '5274', 'sala', { ip: '10.0.0.6', deviceId: 'dev_c' }).token);
   assert.equal(db.prepare(`SELECT * FROM login_failures WHERE scope='user' AND key=?`).get('binhthuong'), undefined);
 });

@@ -64,18 +64,25 @@ function isUsableModule(module) {
   return module.status === 'active' || module.status === 'core';
 }
 
-export function listModules(perms = []) {
+export function listModules(perms = [], salesModules = null) {
   const set = new Set(perms || []);
   const all = set.has('*');
   const hasSettings = [...set].some(p => p === 'settings.manage' || p.startsWith('settings.') || p === 'warehouse.manage');
   return MODULES.map(m => ({
     ...m,
+    status: salesModules?.fnb === false && ['pos', 'ipad', 'online'].includes(m.key)
+      ? 'disabled'
+      : salesModules?.retail === false && m.key === 'retail'
+        ? 'disabled'
+        : salesModules?.kds === false && m.key === 'kds'
+          ? 'disabled'
+          : m.status,
     visible: all
       || (m.key === 'settings' ? hasSettings : false)
       || (m.key !== 'settings' && (!m.perm || set.has(m.perm))),
   }));
 }
 
-export function visibleModules(perms = []) {
-  return listModules(perms).filter(m => m.visible && isUsableModule(m));
+export function visibleModules(perms = [], salesModules = null) {
+  return listModules(perms, salesModules).filter(m => m.visible && isUsableModule(m));
 }

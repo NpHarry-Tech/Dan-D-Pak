@@ -23,7 +23,7 @@ export function recordLoyaltyFromOrder(order) {
   try {
     const cust = JSON.parse(order?.customer_json || 'null');
     if (cust && (cust.id || cust.phone)) {
-      recordPurchase(cust, order.total, order.branch_id || 'br1', order.id);
+      recordPurchase(cust, order.total, order.branch_id || 'sala', order.id);
     }
   } catch { /* khách không hợp lệ → bỏ qua, không chặn thanh toán */ }
 }
@@ -283,7 +283,7 @@ export function buildOrderDiscountPlan(order_id, {
   line_vouchers = null,
   manual_discount = 0,
   customer = null,
-  branch_id = 'br1',
+  branch_id = 'sala',
 } = {}) {
   const order = getOrder(order_id);
   if (!order) throw new Error('Order không tồn tại');
@@ -345,7 +345,7 @@ function settlePaymentLines(lines, total) {
   return { lines: settled, paid, applied, fullySettled };
 }
 
-export function payOrder(order_id, lines, options = {}, branch_id = 'br1') {
+export function payOrder(order_id, lines, options = {}, branch_id = 'sala') {
   const {
     discount,
     cashier,
@@ -356,6 +356,8 @@ export function payOrder(order_id, lines, options = {}, branch_id = 'br1') {
     voucher = null,
     promotions = null,
     idempotency_key = null,
+    device_id = '',
+    note = '',
   } = options;
 
   let inTx = false;
@@ -394,6 +396,8 @@ export function payOrder(order_id, lines, options = {}, branch_id = 'br1') {
     if (wasPartiallyPaid) order.status = 'open';
     if (!order) throw new Error('Order không tồn tại');
     if (order.status !== 'open') throw new Error('Order đã đóng');
+    db.prepare(`UPDATE orders SET note=? WHERE id=? AND branch_id=?`)
+      .run(String(note || '').trim().slice(0, 500) || null, order_id, branch_id);
 
     if (order.status === 'open' && !wasPartiallyPaid && typeof discount === 'number') {
       db.prepare(`UPDATE orders SET discount=? WHERE id=?`).run(discount, order_id);
@@ -503,7 +507,7 @@ export function payOrder(order_id, lines, options = {}, branch_id = 'br1') {
     receipt.branch_id = branch_id;
     archiveOrder(getOrder(order_id));
     archivePayment(receipt);
-    printReceipt(receipt, branch_id);
+    printReceipt(receipt, branch_id, { deviceId: device_id });
     emit('payment:done', { order_id, receipt }, branch_id);
     emit('stats:dirty', {}, branch_id);
 
@@ -554,12 +558,12 @@ export function payOrder(order_id, lines, options = {}, branch_id = 'br1') {
   }
 }
 
-export function requestPayment(table_id, branch_id = 'br1') {
+export function requestPayment(table_id, branch_id = 'sala') {
   db.prepare(`UPDATE tables SET status='paying' WHERE id=? AND status='busy'`).run(table_id);
   emit('table:updated', getTableState(table_id), branch_id);
 }
 
-export async function generateCustomerPaymentQr(order_id, { method = 'qrcode' } = {}, branch_id = 'br1') {
+export async function generateCustomerPaymentQr(order_id, { method = 'qrcode' } = {}, branch_id = 'sala') {
   const order = getOrder(order_id);
   if (!order) throw new Error('Order khong ton tai');
   if (order.branch_id && branch_id && order.branch_id !== branch_id) throw new Error('Order khong thuoc chi nhanh hien tai');
@@ -573,7 +577,7 @@ export async function generateCustomerPaymentQr(order_id, { method = 'qrcode' } 
 }
 
 // Retail/standalone: chưa tạo order khi hiển thị QR → client gửi amount + reference.
-export async function buildStandalonePaymentQr({ amount, reference, method = 'qrcode' } = {}, branch_id = 'br1') {
+export async function buildStandalonePaymentQr({ amount, reference, method = 'qrcode' } = {}, branch_id = 'sala') {
   const amt = Math.max(0, money(amount));
   if (!amt) throw new Error('Thieu so tien tao QR');
   const ref = vietQrSafe(reference || '', 23) || `DANBILL${vietQrSafe(String(Date.now()), 13)}`;
@@ -582,7 +586,7 @@ export async function buildStandalonePaymentQr({ amount, reference, method = 'qr
 
 // Lõi dùng chung cho iPad/POS/Retail: chọn nguồn QR theo Settings → Thanh toán (qrProvider:
 // vietqr_public | vietqr_api | payos) và trả về QR + thông tin nhận tiền thật.
-async function buildPaymentQr({ amount, reference, orderId, method = 'qrcode', orderRefId = null, branch_id = 'br1' }) {
+async function buildPaymentQr({ amount, reference, orderId, method = 'qrcode', orderRefId = null, branch_id = 'sala' }) {
   const chosen = CUSTOMER_QR_METHODS.includes(method) ? method : 'qrcode';
   const ops = getOperationsConfig(branch_id);
   const methodCfg = (ops.payment?.methods || []).find(m => m.key === chosen);
@@ -711,7 +715,7 @@ async function buildPaymentQr({ amount, reference, orderId, method = 'qrcode', o
   }
 }
 
-export function customerQrPay(order_id, { method = 'qrcode', reference = '' } = {}, branch_id = 'br1') {
+export function customerQrPay(order_id, { method = 'qrcode', reference = '' } = {}, branch_id = 'sala') {
   const chosen = CUSTOMER_QR_METHODS.includes(method) ? method : 'qrcode';
   const order = getOrder(order_id);
   if (!order) throw new Error('Order khong ton tai');
@@ -799,7 +803,7 @@ function findOpenOrderByContent(content) {
     // đúng cùng công thức với paymentReferenceForOrder() (billNoDigits + prefix),
     // nếu không QR hiển thị 1 kiểu mà chỗ khớp webhook lại chờ 1 kiểu khác, không
     // bao giờ khớp được dù nội dung chuyển khoản đúng y hệt QR.
-    const ops = getOperationsConfig(row.branch_id || 'br1');
+    const ops = getOperationsConfig(row.branch_id || 'sala');
     const prefix = vietQrSafe(ops.payment?.transferPrefix || 'DANBILL', 8) || 'DANBILL';
     const code = vietQrSafe(billNoDigits(row), Math.max(1, 23 - prefix.length));
     const ref = `${prefix}${code}`.slice(0, 23);
@@ -829,7 +833,7 @@ function processIncomingCredit(provider, { externalId, amount, content, accountN
     recordBankTx({ provider, externalId, amount: amt, content, accountNumber, status: 'unmatched', raw });
     return { ok: true, status: 'unmatched', message: 'Khong khop bill nao dang mo. Da ghi nhan de doi soat thu cong.' };
   }
-  const ops = getOperationsConfig(order.branch_id || 'br1');
+  const ops = getOperationsConfig(order.branch_id || 'sala');
   const reference = paymentReferenceForOrder(order, ops);
   const remainingDue = Math.max(0, money(order.total) - paidForOrder(order.id));
   const method = AUTO_PAY_METHOD[provider] || 'bank';
@@ -838,7 +842,7 @@ function processIncomingCredit(provider, { externalId, amount, content, accountN
     receipt = payOrder(order.id, [{ method, amount: Math.min(amt, remainingDue), reference: `${provider}:${externalId || ''}`.slice(0, 120) }], {
       cashier: `Auto ${provider.toUpperCase()}`,
       idempotency_key: externalId ? `${provider}:${externalId}` : null,
-    }, order.branch_id || 'br1');
+    }, order.branch_id || 'sala');
   } catch (e) {
     // ALREADY_SETTLED = tiền về đúng bill nhưng bill đã đóng trước đó (thu ngân xác
     // nhận tay / thiết bị khác) → đây là tiền THỪA cần đối soát tay (hoàn khách),
@@ -850,8 +854,7 @@ function processIncomingCredit(provider, { externalId, amount, content, accountN
   const txStatus = receipt.fully_settled === false ? 'underpaid' : 'paid';
   recordBankTx({ provider, externalId, branch_id: order.branch_id, amount: amt, content, accountNumber, reference, order_id: order.id, status: txStatus, raw });
   if (receipt.fully_settled !== false) recordLoyaltyFromOrder(order);
-  audit('payment.auto_confirmed', { provider, order: order.id, amount: amt, reference }, order.branch_id || 'br1', `auto:${provider}`);
-  emit('payment:auto', { order_id: order.id, provider, amount: amt, bill_no: order.bill_no || null }, order.branch_id || 'br1');
+  emit('payment:auto', { order_id: order.id, provider, amount: amt, bill_no: order.bill_no || null }, order.branch_id || 'sala');
   // receipt.status chỉ có ở nhánh trả góp (payOrder không set field này khi
   // đóng đủ, chỉ set fully_settled) — dùng txStatus vừa tính ở trên cho đúng,
   // tránh trả 'undefined' cho caller (khiến báo cáo/webhook-test hiện sai).
@@ -862,7 +865,7 @@ function processIncomingCredit(provider, { externalId, amount, content, accountN
 // --- Đường B: SePay -------------------------------------------------------
 // SePay POST: { id, accountNumber, content, transferType:'in'|'out', transferAmount, referenceCode, ... }
 // Xác thực: header  Authorization: Apikey <apiKey>
-export function handleSepayWebhook(body = {}, headers = {}, branch_id = 'br1') {
+export function handleSepayWebhook(body = {}, headers = {}, branch_id = 'sala') {
   const cfg = getIntegrations(branch_id).channels?.sepay || {};
   if (!cfg.enabled) return { ok: true, status: 'disabled' };
   // BẢO MẬT (fail-closed): webhook này TỰ ĐÓNG BILL khi có "tiền về" nên bắt buộc xác thực.
@@ -891,7 +894,7 @@ export function handleSepayWebhook(body = {}, headers = {}, branch_id = 'br1') {
 // --- Đường B: Casso -------------------------------------------------------
 // Casso POST: { error, data:[ { id, tid, description, amount, subAccId, ... } ] } (amount > 0 = tiền vào)
 // Xác thực: header  secure-token: <webhookSecret>
-export function handleCassoWebhook(body = {}, headers = {}, branch_id = 'br1') {
+export function handleCassoWebhook(body = {}, headers = {}, branch_id = 'sala') {
   const cfg = getIntegrations(branch_id).channels?.casso || {};
   if (!cfg.enabled) return { ok: true, status: 'disabled' };
   // BẢO MẬT (fail-closed): bắt buộc secure-token. Bật Casso mà chưa đặt secret → từ chối.
@@ -923,7 +926,7 @@ export function handleCassoWebhook(body = {}, headers = {}, branch_id = 'br1') {
 // Nhiều gói VietQR (api.vietqr.org) tự POST giao dịch về URL đăng ký khi khách
 // trả tiền. transType 'C' = tiền vào. Xác thực bằng Basic Auth = username/password
 // VietQR đã cấu hình (nếu VietQR gửi kèm).
-export function handleVietqrWebhook(body = {}, headers = {}, branch_id = 'br1') {
+export function handleVietqrWebhook(body = {}, headers = {}, branch_id = 'sala') {
   const cfg = getIntegrations(branch_id).channels?.vietqr || {};
   if (!cfg.enabled) return { ok: true, status: 'disabled' };
   // BẢO MẬT (fail-closed): webhook tự đóng bill → bắt buộc Basic Auth khớp username/password
@@ -969,7 +972,7 @@ function payosVerifySignature(body = {}, checksumKey = '') {
   catch { return false; }
 }
 
-export function handlePayosWebhook(body = {}, headers = {}, branch_id = 'br1') {
+export function handlePayosWebhook(body = {}, headers = {}, branch_id = 'sala') {
   const cfg = getIntegrations(branch_id).channels?.payos || {};
   if (!cfg.enabled) return { ok: true, status: 'disabled' };
   // payOS gửi ping xác thực khi đăng ký webhook (data rỗng) — cứ ACK 200.
@@ -1010,7 +1013,7 @@ export async function createPayosPaymentLink(cfg = {}, { orderCode, amount, desc
 
 // Hỏi trạng thái 1 đơn payOS (chiều ĐI RA → chạy được cả ở localhost, không cần webhook).
 // Dùng cho auto-detect: màn thanh toán poll endpoint này tới khi status='PAID'.
-export async function getPayosPaymentStatus(orderCode, branch_id = 'br1') {
+export async function getPayosPaymentStatus(orderCode, branch_id = 'sala') {
   const cfg = getIntegrations(branch_id).channels?.payos || {};
   if (!cfg.enabled || !cleanText(cfg.clientId) || !cleanText(cfg.apiKey)) {
     return { ok: false, status: 'not_configured', paid: false };
@@ -1032,7 +1035,7 @@ export async function getPayosPaymentStatus(orderCode, branch_id = 'br1') {
 // Đối soát: danh sách giao dịch webhook gần đây (cho UI + audit).
 // Hỗ trợ lọc cho màn xác nhận thủ công: ?status=unmatched,underpaid&minutes=240
 // (khách quét QR CŨ → tiền về nhưng 'unmatched' → thu ngân đối chiếu tại đây).
-export function listBankTransactions(branch_id = 'br1', { limit = 50, status = '', minutes = 0 } = {}) {
+export function listBankTransactions(branch_id = 'sala', { limit = 50, status = '', minutes = 0 } = {}) {
   const rows = db.prepare(`SELECT id,provider,external_id,amount,content,reference,order_id,status,created_at
     FROM bank_transactions WHERE (branch_id=? OR branch_id IS NULL) ORDER BY created_at DESC LIMIT ?`)
     .all(branch_id, Math.max(1, Math.min(200, parseInt(limit) || 50)));
@@ -1095,7 +1098,7 @@ function buildReceipt(order_id, payment_id, lines, paid, { cashier = '', discoun
   };
 }
 
-function lookupVoucher(id, branch_id = 'br1') {
+function lookupVoucher(id, branch_id = 'sala') {
   if (!id) return null;
   const v = db.prepare(`SELECT id,code,name,type,value,scope FROM vouchers WHERE id=? AND branch_id=?`).get(id, branch_id);
   return v || null;
@@ -1112,7 +1115,7 @@ function lookupVoucher(id, branch_id = 'br1') {
 // ===========================================================================
 
 // Gắn 1 giao dịch chưa khớp vào bill vừa thanh toán (đóng vòng đối soát).
-export function markBankTxClaimed(txId, order_id, byUser = '', branch_id = 'br1') {
+export function markBankTxClaimed(txId, order_id, byUser = '', branch_id = 'sala') {
   if (!txId) return { ok: false };
   const r = db.prepare(`UPDATE bank_transactions SET status='claimed', order_id=? WHERE id=? AND status IN ('unmatched','underpaid')`)
     .run(order_id || null, String(txId));

@@ -16,7 +16,10 @@ function verifyWarehouseConfigAccess(req, branch) {
   return { branch_id, approvedBy };
 }
 
-export function registerInventoryRoutes(api, { wrap, guard, guardAny, branch, visibleBranch }) {
+export function registerInventoryRoutes(api, {
+  wrap, guard, guardAny, branch, visibleBranch, saveBase64Image,
+  PRODUCT_UPLOADS_DIR,
+}) {
   // Danh sách kho là thông tin vận hành nội bộ — chỉ trả cho người đã đăng nhập.
   api.get('/warehouses', guard(), wrap((req) => Inv.listWarehouses(visibleBranch(req), req.query)));
   api.post('/warehouses', guardAny('warehouse.create', 'warehouse.manage'), wrap((req) => {
@@ -39,9 +42,11 @@ export function registerInventoryRoutes(api, { wrap, guard, guardAny, branch, vi
   api.post('/inventory/:id/adjust', guardAny('warehouse.item', 'inventory.adjust'), wrap((req) => Inv.adjustStock(req.params.id, parseFloat(req.body.stock), branch(req), req.body)));
 
   api.get('/skus', guard(), wrap((req) => Inv.listSkus(visibleBranch(req), req.query)));
+  api.post('/skus/image-upload', guardAny('warehouse.item', 'inventory.adjust'), wrap((req) =>
+    saveBase64Image(req, { dir: PRODUCT_UPLOADS_DIR, urlBase: '/uploads/products', prefix: 'product_', auditAction: 'sku.image_upload' })));
   api.post('/skus', guardAny('warehouse.item', 'inventory.adjust'), wrap((req) => Inv.createSku(req.body, branch(req))));
   api.post('/skus/:id/update', guardAny('warehouse.item', 'inventory.adjust'), wrap((req) => Inv.updateSku(req.params.id, req.body, branch(req))));
-  api.post('/skus/:id/delete', guardAny('warehouse.delete', 'inventory.adjust'), wrap((req) => Inv.deleteSku(req.params.id, branch(req))));
+  api.post('/skus/:id/delete', guard('warehouse.delete'), wrap((req) => Inv.deleteSku(req.params.id, branch(req))));
   api.get('/skus/barcode/:code', guard(), wrap((req) => {
     const s = Inv.findSkuByBarcode(req.params.code, visibleBranch(req), req.query);
     if (!s) throw new Error('Khong tim thay ma vach ' + req.params.code);

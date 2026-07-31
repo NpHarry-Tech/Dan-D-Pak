@@ -39,6 +39,7 @@ export function listMenu(options = {}) {
     q = '',
     category_id = '',
     lang = 'vi',
+    branch_id = 'sala',
   } = options;
   const menuLang = normalizeMenuLang(lang);
 
@@ -46,10 +47,10 @@ export function listMenu(options = {}) {
   const parsedLimit = parseInt(limit) || 40;
 
   if (parsedPage !== null && parsedPage > 0) {
-    const categories = db.prepare(`SELECT * FROM categories ORDER BY sort`).all();
+    const categories = db.prepare(`SELECT * FROM categories WHERE branch_id=? ORDER BY sort`).all(branch_id);
 
-    let sql = `SELECT * FROM menu_items WHERE 1=1`;
-    const params = [];
+    let sql = `SELECT * FROM menu_items WHERE branch_id=?`;
+    const params = [branch_id];
 
     if (!includeDeleted) {
       sql += ` AND deleted_at IS NULL`;
@@ -85,11 +86,11 @@ export function listMenu(options = {}) {
     };
   }
 
-  const cacheKey = `menu:${forCustomer ? 'pub' : 'adm'}:${includeDeleted ? 'all' : 'live'}:${menuLang}`;
+  const cacheKey = `menu:${branch_id}:${forCustomer ? 'pub' : 'adm'}:${includeDeleted ? 'all' : 'live'}:${menuLang}`;
   const cached = cacheGet(cacheKey);
   if (cached) return cached;
-  const categories = db.prepare(`SELECT * FROM categories ORDER BY sort`).all();
-  const rows = db.prepare(`SELECT * FROM menu_items ORDER BY sort`).all()
+  const categories = db.prepare(`SELECT * FROM categories WHERE branch_id=? ORDER BY sort`).all(branch_id);
+  const rows = db.prepare(`SELECT * FROM menu_items WHERE branch_id=? ORDER BY sort`).all(branch_id)
     .filter(r => includeDeleted || !r.deleted_at)
     .filter(r => !forCustomer || !r.hidden);
   return cacheSet(cacheKey, { categories, items: rows.map(r => normalizeMenuItem(r, { forCustomer, includeRecipe: !forCustomer, lang: menuLang })) }, MENU_TTL);
@@ -104,13 +105,13 @@ function menuSearchValues(row) {
   ].filter(Boolean);
 }
 
-export function getMenuItem(id, opts = {}) {
-  const row = db.prepare(`SELECT * FROM menu_items WHERE id=?`).get(id);
+export function getMenuItem(id, opts = {}, branch_id = 'sala') {
+  const row = db.prepare(`SELECT * FROM menu_items WHERE id=? AND branch_id=?`).get(id, branch_id);
   return row ? normalizeMenuItem(row, opts) : null;
 }
 
-export function getMenuItemForOrder(id) {
-  const item = getMenuItem(id, { forCustomer: true });
+export function getMenuItemForOrder(id, branch_id = 'sala') {
+  const item = getMenuItem(id, { forCustomer: true }, branch_id);
   if (!item || item.deleted_at || item.hidden) throw new Error('Món không tồn tại hoặc đã ẩn: ' + id);
   if (!item.available_flag) throw new Error('Món tạm hết: ' + item.name);
   if (!item.schedule_available) throw new Error('Món chưa tới khung giờ bán: ' + item.name);
@@ -141,7 +142,7 @@ export function normalizeMenuItem(row, { forCustomer = false, includeRecipe = fa
       ...mod,
       sale_price: salePrice(mod.price, vatRate, priceIncludesVat),
     })),
-    addons: enrichAddons(row.addons_json),
+    addons: enrichAddons(row.addons_json, row.branch_id),
     ingredients: ingredients.length ? ingredients : (recipe || []).map(r => r.name),
     allergens: safeJson(row.allergens_json, []),
     schedule,
@@ -281,8 +282,8 @@ export function normalizeAddons(addons) {
   })).filter(a => a.name || a.ref_item_id);
 }
 
-function refAvailability(ref_item_id) {
-  const r = db.prepare(`SELECT name,emoji,image,price,available,hidden,deleted_at,schedule_json FROM menu_items WHERE id=?`).get(ref_item_id);
+function refAvailability(ref_item_id, branch_id = 'sala') {
+  const r = db.prepare(`SELECT name,emoji,image,price,available,hidden,deleted_at,schedule_json FROM menu_items WHERE id=? AND branch_id=?`).get(ref_item_id, branch_id);
   if (!r) return { exists: false, available: false };
   const sched = safeJson(r.schedule_json, { mode: 'always' });
   // Add-on availability ignores `hidden`: an item can be hidden from the main menu
@@ -293,7 +294,7 @@ function refAvailability(ref_item_id) {
 }
 
 // Returns add-ons with live availability + effective price resolved.
-export function enrichAddons(addonsRaw) {
+export function enrichAddons(addonsRaw, branch_id = 'sala') {
   const list = safeJson(addonsRaw, []) || [];
   return (Array.isArray(list) ? list : []).map(a => {
     const out = {
@@ -303,7 +304,7 @@ export function enrichAddons(addonsRaw) {
       emoji: a.emoji || null, available: a.available !== false,
     };
     if (a.ref_item_id) {
-      const ref = refAvailability(a.ref_item_id);
+      const ref = refAvailability(a.ref_item_id, branch_id);
       out.available = ref.exists ? ref.available : false;
       out.ref_exists = ref.exists;
       if (ref.exists) {
@@ -345,7 +346,7 @@ export function getRecipe(menu_item_id) {
     ORDER BY i.name`).all(menu_item_id);
 }
 
-export function replaceRecipe(menu_item_id, recipe = [], branch_id = 'br1') {
+export function replaceRecipe(menu_item_id, recipe = [], branch_id = 'sala') {
   db.prepare(`DELETE FROM recipes WHERE menu_item_id=?`).run(menu_item_id);
   const ins = db.prepare(`INSERT INTO recipes (menu_item_id,inventory_item_id,qty) VALUES (?,?,?)`);
   const seen = new Set();
@@ -361,59 +362,59 @@ export function replaceRecipe(menu_item_id, recipe = [], branch_id = 'br1') {
 }
 
 // ---- Categories CRUD ----
-export function listCategories() {
-  return db.prepare(`SELECT * FROM categories ORDER BY sort,name`).all();
+export function listCategories(branch_id = 'sala') {
+  return db.prepare(`SELECT * FROM categories WHERE branch_id=? ORDER BY sort,name`).all(branch_id);
 }
-export function createCategory(body, branch_id = 'br1') {
+export function createCategory(body, branch_id = 'sala') {
   const name = String(body.name || '').trim();
   if (!name) throw new Error('Thiếu tên danh mục');
   const id = 'c_' + Math.random().toString(36).slice(2, 8);
-  const sort = (db.prepare(`SELECT COALESCE(MAX(sort),0)+1 n FROM categories`).get().n) || 1;
-  db.prepare(`INSERT INTO categories (id,name,icon,sort) VALUES (?,?,?,?)`).run(id, name, body.icon || '🍽️', sort);
+  const sort = (db.prepare(`SELECT COALESCE(MAX(sort),0)+1 n FROM categories WHERE branch_id=?`).get(branch_id).n) || 1;
+  db.prepare(`INSERT INTO categories (id,branch_id,name,icon,sort) VALUES (?,?,?,?,?)`).run(id, branch_id, name, body.icon || '🍽️', sort);
   cacheBust('menu:');
   audit('category.create', { id, name }, branch_id);
-  return db.prepare(`SELECT * FROM categories WHERE id=?`).get(id);
+  return db.prepare(`SELECT * FROM categories WHERE id=? AND branch_id=?`).get(id, branch_id);
 }
-export function updateCategory(id, body, branch_id = 'br1') {
-  const cur = db.prepare(`SELECT * FROM categories WHERE id=?`).get(id);
+export function updateCategory(id, body, branch_id = 'sala') {
+  const cur = db.prepare(`SELECT * FROM categories WHERE id=? AND branch_id=?`).get(id, branch_id);
   if (!cur) throw new Error('Danh mục không tồn tại');
-  db.prepare(`UPDATE categories SET name=?, icon=? WHERE id=?`).run(
-    String(body.name || '').trim() || cur.name, body.icon || cur.icon, id);
+  db.prepare(`UPDATE categories SET name=?, icon=? WHERE id=? AND branch_id=?`).run(
+    String(body.name || '').trim() || cur.name, body.icon || cur.icon, id, branch_id);
   cacheBust('menu:');
   audit('category.update', { id }, branch_id);
-  return db.prepare(`SELECT * FROM categories WHERE id=?`).get(id);
+  return db.prepare(`SELECT * FROM categories WHERE id=? AND branch_id=?`).get(id, branch_id);
 }
-export function deleteCategory(id, branch_id = 'br1') {
-  const cur = db.prepare(`SELECT * FROM categories WHERE id=?`).get(id);
+export function deleteCategory(id, branch_id = 'sala') {
+  const cur = db.prepare(`SELECT * FROM categories WHERE id=? AND branch_id=?`).get(id, branch_id);
   if (!cur) throw new Error('Danh mục không tồn tại');
-  const used = db.prepare(`SELECT COUNT(*) n FROM menu_items WHERE category_id=? AND deleted_at IS NULL`).get(id).n;
+  const used = db.prepare(`SELECT COUNT(*) n FROM menu_items WHERE category_id=? AND branch_id=? AND deleted_at IS NULL`).get(id, branch_id).n;
   if (used) throw new Error(`Không thể xóa: còn ${used} món trong danh mục này. Hãy chuyển/xóa món trước.`);
-  db.prepare(`DELETE FROM categories WHERE id=?`).run(id);
+  db.prepare(`DELETE FROM categories WHERE id=? AND branch_id=?`).run(id, branch_id);
   cacheBust('menu:');
   audit('category.delete', { id, name: cur.name }, branch_id);
   return { ok: true };
 }
 
-export function hideMenuItem(id, hidden = true, branch_id = 'br1') {
-  const row = db.prepare(`SELECT * FROM menu_items WHERE id=?`).get(id);
+export function hideMenuItem(id, hidden = true, branch_id = 'sala') {
+  const row = db.prepare(`SELECT * FROM menu_items WHERE id=? AND branch_id=?`).get(id, branch_id);
   if (!row) throw new Error('Món không tồn tại');
-  db.prepare(`UPDATE menu_items SET hidden=? WHERE id=?`).run(hidden ? 1 : 0, id);
+  db.prepare(`UPDATE menu_items SET hidden=? WHERE id=? AND branch_id=?`).run(hidden ? 1 : 0, id, branch_id);
   cacheBust('menu:');
   audit(hidden ? 'menu.hide' : 'menu.unhide', { id, name: row.name }, branch_id);
-  return getMenuItem(id);
+  return getMenuItem(id, {}, branch_id);
 }
 
-export function deleteMenuItem(id, branch_id = 'br1') {
-  const row = db.prepare(`SELECT * FROM menu_items WHERE id=?`).get(id);
+export function deleteMenuItem(id, branch_id = 'sala') {
+  const row = db.prepare(`SELECT * FROM menu_items WHERE id=? AND branch_id=?`).get(id, branch_id);
   if (!row) throw new Error('Món không tồn tại');
   const used = db.prepare(`SELECT COUNT(*) n FROM order_items WHERE menu_item_id=?`).get(id).n;
   if (used) {
-    db.prepare(`UPDATE menu_items SET deleted_at=datetime('now'), hidden=1, available=0 WHERE id=?`).run(id);
+    db.prepare(`UPDATE menu_items SET deleted_at=datetime('now'), hidden=1, available=0 WHERE id=? AND branch_id=?`).run(id, branch_id);
     audit('menu.archive', { id, name: row.name, reason: 'has_orders' }, branch_id);
     return { ok: true, archived: true };
   }
   db.prepare(`DELETE FROM recipes WHERE menu_item_id=?`).run(id);
-  db.prepare(`DELETE FROM menu_items WHERE id=?`).run(id);
+  db.prepare(`DELETE FROM menu_items WHERE id=? AND branch_id=?`).run(id, branch_id);
   audit('menu.delete', { id, name: row.name }, branch_id);
   return { ok: true, deleted: true };
 }

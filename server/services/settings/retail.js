@@ -29,7 +29,7 @@ export function sanitizeRetailConfig(raw = {}) {
   };
 }
 
-export function getRetailConfig(branch_id = 'br1') {
+export function getRetailConfig(branch_id = 'sala') {
   return readJsonSetting(
     branch_id,
     RETAIL_CONFIG_KEY,

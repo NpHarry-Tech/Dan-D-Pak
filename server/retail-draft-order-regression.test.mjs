@@ -24,14 +24,14 @@ const Settings = await import('./services/settings.js');
 
 migrate();
 db.prepare(`INSERT INTO shifts (id,branch_id,user_name,shift_key,shift_label,opening_cash,status,opened_at) VALUES (?,?,?,?,?,?,?,?)`)
-  .run('shift_draft', 'br1', 'Tester', 'test', 'Test', 0, 'open', now());
-Settings.updateIntegrations({ channels: { sepay: { enabled: true, apiKey: 'test-sepay-key' } } }, 'br1');
+  .run('shift_draft', 'sala', 'Tester', 'test', 'Test', 0, 'open', now());
+Settings.updateIntegrations({ channels: { sepay: { enabled: true, apiKey: 'test-sepay-key' } } }, 'sala');
 
 test('draft order is created open, unpaid, without deducting stock', () => {
-  Inventory.createSku({ id: 'sku_draft_a', name: 'Draft SKU A', price: 20000, stock: 5 }, 'br1');
+  Inventory.createSku({ id: 'sku_draft_a', name: 'Draft SKU A', price: 20000, stock: 5 }, 'sala');
   const order = Retail.createDraftOrder({
     items: [{ sku_id: 'sku_draft_a', qty: 2 }],
-    branch_id: 'br1',
+    branch_id: 'sala',
     cashier: 'Tester',
   });
   assert.equal(order.status, 'open');
@@ -40,10 +40,10 @@ test('draft order is created open, unpaid, without deducting stock', () => {
 });
 
 test('SePay webhook auto-settles a draft order it can find (no manual confirm needed)', () => {
-  Inventory.createSku({ id: 'sku_draft_b', name: 'Draft SKU B', price: 15000, stock: 3 }, 'br1');
+  Inventory.createSku({ id: 'sku_draft_b', name: 'Draft SKU B', price: 15000, stock: 3 }, 'sala');
   const order = Retail.createDraftOrder({
     items: [{ sku_id: 'sku_draft_b', qty: 1 }],
-    branch_id: 'br1',
+    branch_id: 'sala',
     cashier: 'Tester',
   });
   // billNoDigits() bên server bỏ hẳn chữ "Dan" đầu bill_no — chỉ ghép phần số vào
@@ -54,7 +54,7 @@ test('SePay webhook auto-settles a draft order it can find (no manual confirm ne
     transferType: 'in',
     transferAmount: 15000,
     content: `NGUYEN VAN A CHUYEN KHOAN ${ref} THANH TOAN`,
-  }, { authorization: 'Apikey test-sepay-key' }, 'br1');
+  }, { authorization: 'Apikey test-sepay-key' }, 'sala');
 
   assert.equal(result.status, 'paid');
   assert.equal(result.order_id, order.id);
@@ -68,10 +68,10 @@ test('ALREADY_SETTLED: settling an order whose recorded payments already cover t
   // chuyển 'paid') nhưng tổng tiền đã ghi nhận qua payment_lines đã đủ — dựng thẳng
   // trạng thái DB này để khoá đúng nhánh code payments.js vừa sửa (trước đây ném
   // nguyên văn tiếng Anh "Order has no remaining balance" cho thu ngân).
-  Inventory.createSku({ id: 'sku_draft_c', name: 'Draft SKU C', price: 10000, stock: 2 }, 'br1');
+  Inventory.createSku({ id: 'sku_draft_c', name: 'Draft SKU C', price: 10000, stock: 2 }, 'sala');
   const order = Retail.createDraftOrder({
     items: [{ sku_id: 'sku_draft_c', qty: 1 }],
-    branch_id: 'br1',
+    branch_id: 'sala',
     cashier: 'Tester',
   });
   db.prepare(`UPDATE orders SET status='partially_paid' WHERE id=?`).run(order.id);
@@ -81,7 +81,7 @@ test('ALREADY_SETTLED: settling an order whose recorded payments already cover t
     .run('pl_sim_1', 'pay_sim_1', 'cash', order.total, order.total);
 
   assert.throws(
-    () => Payments.payOrder(order.id, [{ method: 'cash', amount: order.total }], { cashier: 'Tester' }, 'br1'),
+    () => Payments.payOrder(order.id, [{ method: 'cash', amount: order.total }], { cashier: 'Tester' }, 'sala'),
     (err) => {
       assert.equal(err.code, 'ALREADY_SETTLED');
       assert.equal(err.status, 409);
@@ -92,10 +92,10 @@ test('ALREADY_SETTLED: settling an order whose recorded payments already cover t
 });
 
 test('a late webhook credit for a bill that already closed is parked as unmatched, not silently applied twice', () => {
-  Inventory.createSku({ id: 'sku_draft_c2', name: 'Draft SKU C2', price: 10000, stock: 2 }, 'br1');
+  Inventory.createSku({ id: 'sku_draft_c2', name: 'Draft SKU C2', price: 10000, stock: 2 }, 'sala');
   const order = Retail.createDraftOrder({
     items: [{ sku_id: 'sku_draft_c2', qty: 1 }],
-    branch_id: 'br1',
+    branch_id: 'sala',
     cashier: 'Tester',
   });
   // billNoDigits() bên server bỏ hẳn chữ "Dan" đầu bill_no — chỉ ghép phần số vào
@@ -103,52 +103,52 @@ test('a late webhook credit for a bill that already closed is parked as unmatche
   const ref = 'DANBILL' + order.bill_no.replace(/^\D+/, '');
   // Thu ngân xác nhận tay TRƯỚC khi webhook kịp về (race thật ngoài đời) — order
   // rời khỏi tập 'open'/'partially_paid' nên webhook không còn gì để khớp nữa.
-  Payments.payOrder(order.id, [{ method: 'cash', amount: 10000 }], { cashier: 'Tester' }, 'br1');
+  Payments.payOrder(order.id, [{ method: 'cash', amount: 10000 }], { cashier: 'Tester' }, 'sala');
 
   const late = Payments.handleSepayWebhook({
     id: 'sepay_tx_late',
     transferType: 'in',
     transferAmount: 10000,
     content: `KHACH CHUYEN NHAM ${ref} SAU KHI DA TRA TIEN MAT`,
-  }, { authorization: 'Apikey test-sepay-key' }, 'br1');
+  }, { authorization: 'Apikey test-sepay-key' }, 'sala');
 
   assert.equal(late.status, 'unmatched');
   assert.equal(db.prepare(`SELECT stock FROM skus WHERE id='sku_draft_c2'`).get().stock, 1);
 });
 
 test('voidDraftOrder cancels an unpaid draft but refuses once payment exists', () => {
-  Inventory.createSku({ id: 'sku_draft_d', name: 'Draft SKU D', price: 5000, stock: 1 }, 'br1');
+  Inventory.createSku({ id: 'sku_draft_d', name: 'Draft SKU D', price: 5000, stock: 1 }, 'sala');
   const draft = Retail.createDraftOrder({
     items: [{ sku_id: 'sku_draft_d', qty: 1 }],
-    branch_id: 'br1',
+    branch_id: 'sala',
     cashier: 'Tester',
   });
-  Retail.voidDraftOrder(draft.id, 'br1');
+  Retail.voidDraftOrder(draft.id, 'sala');
   assert.equal(db.prepare(`SELECT status FROM orders WHERE id=?`).get(draft.id).status, 'void');
   // Kho không bị đụng tới vì đơn nháp chưa bao giờ settle.
   assert.equal(db.prepare(`SELECT stock FROM skus WHERE id='sku_draft_d'`).get().stock, 1);
 
   // Đơn đã đóng đủ (status='paid') → chặn ở kiểm tra trạng thái trước tiên.
-  Inventory.createSku({ id: 'sku_draft_e', name: 'Draft SKU E', price: 5000, stock: 1 }, 'br1');
+  Inventory.createSku({ id: 'sku_draft_e', name: 'Draft SKU E', price: 5000, stock: 1 }, 'sala');
   const paid = Retail.createDraftOrder({
     items: [{ sku_id: 'sku_draft_e', qty: 1 }],
-    branch_id: 'br1',
+    branch_id: 'sala',
     cashier: 'Tester',
   });
-  Payments.payOrder(paid.id, [{ method: 'cash', amount: 5000 }], { cashier: 'Tester' }, 'br1');
-  assert.throws(() => Retail.voidDraftOrder(paid.id, 'br1'), /đã đóng/);
+  Payments.payOrder(paid.id, [{ method: 'cash', amount: 5000 }], { cashier: 'Tester' }, 'sala');
+  assert.throws(() => Retail.voidDraftOrder(paid.id, 'sala'), /đã đóng/);
 
   // Đã trả một phần (vẫn 'partially_paid') → chặn ở kiểm tra đã có thanh toán,
   // để không "hủy" một đơn mà khách đã thật sự chuyển tiền vào.
-  Inventory.createSku({ id: 'sku_draft_f', name: 'Draft SKU F', price: 20000, stock: 1 }, 'br1');
+  Inventory.createSku({ id: 'sku_draft_f', name: 'Draft SKU F', price: 20000, stock: 1 }, 'sala');
   const partial = Retail.createDraftOrder({
     items: [{ sku_id: 'sku_draft_f', qty: 1 }],
-    branch_id: 'br1',
+    branch_id: 'sala',
     cashier: 'Tester',
   });
-  Payments.payOrder(partial.id, [{ method: 'cash', amount: 5000 }], { cashier: 'Tester' }, 'br1');
+  Payments.payOrder(partial.id, [{ method: 'cash', amount: 5000 }], { cashier: 'Tester' }, 'sala');
   assert.equal(db.prepare(`SELECT status FROM orders WHERE id=?`).get(partial.id).status, 'partially_paid');
-  assert.throws(() => Retail.voidDraftOrder(partial.id, 'br1'), /đã có thanh toán/);
+  assert.throws(() => Retail.voidDraftOrder(partial.id, 'sala'), /đã có thanh toán/);
 });
 
 test('a webhook redelivery for a previously-unmatched external_id gets a real second chance once the order exists', () => {
@@ -162,13 +162,13 @@ test('a webhook redelivery for a previously-unmatched external_id gets a real se
     transferType: 'in',
     transferAmount: 15000,
     content: 'CHUYEN KHOAN NHAM LUC DON CHUA SAN SANG KHONG KHOP BILL NAO',
-  }, { authorization: 'Apikey test-sepay-key' }, 'br1');
+  }, { authorization: 'Apikey test-sepay-key' }, 'sala');
   assert.equal(first.status, 'unmatched');
 
-  Inventory.createSku({ id: 'sku_retry_a', name: 'Retry SKU A', price: 15000, stock: 2 }, 'br1');
+  Inventory.createSku({ id: 'sku_retry_a', name: 'Retry SKU A', price: 15000, stock: 2 }, 'sala');
   const order = Retail.createDraftOrder({
     items: [{ sku_id: 'sku_retry_a', qty: 1 }],
-    branch_id: 'br1',
+    branch_id: 'sala',
     cashier: 'Tester',
   });
   // billNoDigits() bên server bỏ hẳn chữ "Dan" đầu bill_no — chỉ ghép phần số vào
@@ -180,7 +180,7 @@ test('a webhook redelivery for a previously-unmatched external_id gets a real se
     transferType: 'in',
     transferAmount: 15000,
     content: `NGUYEN VAN A CHUYEN KHOAN ${ref} THANH TOAN LAN 2`,
-  }, { authorization: 'Apikey test-sepay-key' }, 'br1');
+  }, { authorization: 'Apikey test-sepay-key' }, 'sala');
 
   assert.equal(retry.status, 'paid');
   assert.equal(retry.order_id, order.id);
@@ -195,16 +195,16 @@ test('a custom transfer prefix (e.g. "TEST") never carries the bill_no\'s own "D
   // Người dùng đổi "Tiền tố nội dung CK" thành "TEST" và mong mã đối soát ra
   // "TEST270726004" — trước đây ra "TESTDAN270726004" (thừa "DAN" của chính số
   // hoá đơn "Dan270726004", không liên quan gì tới tiền tố cấu hình riêng).
-  Settings.updateIntegrations({ channels: { sepay: { enabled: true, apiKey: 'test-sepay-key' } } }, 'br1');
+  Settings.updateIntegrations({ channels: { sepay: { enabled: true, apiKey: 'test-sepay-key' } } }, 'sala');
   const opsBefore = Settings.updateSettings({
     operations_config: { payment: { transferPrefix: 'TEST' } },
-  }, 'br1').operations_config;
+  }, 'sala').operations_config;
   assert.equal(opsBefore.payment.transferPrefix, 'TEST');
 
-  Inventory.createSku({ id: 'sku_prefix_a', name: 'Prefix SKU A', price: 12000, stock: 2 }, 'br1');
+  Inventory.createSku({ id: 'sku_prefix_a', name: 'Prefix SKU A', price: 12000, stock: 2 }, 'sala');
   const order = Retail.createDraftOrder({
     items: [{ sku_id: 'sku_prefix_a', qty: 1 }],
-    branch_id: 'br1',
+    branch_id: 'sala',
     cashier: 'Tester',
   });
   const digitsOnly = order.bill_no.replace(/^\D+/, '');
@@ -217,7 +217,7 @@ test('a custom transfer prefix (e.g. "TEST") never carries the bill_no\'s own "D
     transferType: 'in',
     transferAmount: 12000,
     content: `NGUYEN VAN A CHUYEN KHOAN TEST${digitsOnly} THANH TOAN`,
-  }, { authorization: 'Apikey test-sepay-key' }, 'br1');
+  }, { authorization: 'Apikey test-sepay-key' }, 'sala');
 
   assert.equal(result.status, 'paid');
   assert.equal(result.order_id, order.id);
@@ -225,5 +225,5 @@ test('a custom transfer prefix (e.g. "TEST") never carries the bill_no\'s own "D
   // Đặt lại tiền tố mặc định để không ảnh hưởng các test khác chạy sau trong file này.
   Settings.updateSettings({
     operations_config: { payment: { transferPrefix: 'DANBILL' } },
-  }, 'br1');
+  }, 'sala');
 });

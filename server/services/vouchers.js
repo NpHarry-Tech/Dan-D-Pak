@@ -15,7 +15,7 @@ const BIRTHDAY_MODES = ['off', 'day', 'month'];
 const USAGE_LIMITS = ['unlimited', 'once'];
 const WEEKDAY_LABEL = { 1: 'T2', 2: 'T3', 3: 'T4', 4: 'T5', 5: 'T6', 6: 'T7', 7: 'CN' };
 
-export function listVouchers(branch_id = 'br1') {
+export function listVouchers(branch_id = 'sala') {
   return db.prepare(`
     SELECT v.*, s.name AS sku_name, s.emoji AS sku_emoji
     FROM vouchers v
@@ -23,11 +23,11 @@ export function listVouchers(branch_id = 'br1') {
     WHERE v.branch_id=?
     ORDER BY v.active DESC, v.created_at DESC`).all(branch_id).map(normalizeRow);
 }
-export function listActiveVouchers(branch_id = 'br1') {
+export function listActiveVouchers(branch_id = 'sala') {
   return listVouchers(branch_id).filter(v => isUsableNow(v, { ignoreCustomer: true }));
 }
 
-export function createVoucher(body, branch_id = 'br1') {
+export function createVoucher(body, branch_id = 'sala') {
   const v = normalizeInput(body);
   ensureSku(v, branch_id);
   ensureUniqueCode(v.code, branch_id);
@@ -43,7 +43,7 @@ export function createVoucher(body, branch_id = 'br1') {
   return getVoucher(id, branch_id);
 }
 
-export function updateVoucher(id, body, branch_id = 'br1') {
+export function updateVoucher(id, body, branch_id = 'sala') {
   const cur = db.prepare(`SELECT * FROM vouchers WHERE id=? AND branch_id=?`).get(id, branch_id);
   if (!cur) throw new Error('Voucher khong ton tai');
   const v = normalizeInput(body, cur);
@@ -61,7 +61,7 @@ export function updateVoucher(id, body, branch_id = 'br1') {
   return getVoucher(id, branch_id);
 }
 
-export function toggleVoucher(id, active, branch_id = 'br1') {
+export function toggleVoucher(id, active, branch_id = 'sala') {
   const cur = db.prepare(`SELECT * FROM vouchers WHERE id=? AND branch_id=?`).get(id, branch_id);
   if (!cur) throw new Error('Voucher khong ton tai');
   const on = active === undefined ? (cur.active ? 0 : 1) : (active ? 1 : 0);
@@ -71,7 +71,7 @@ export function toggleVoucher(id, active, branch_id = 'br1') {
   return getVoucher(id, branch_id);
 }
 
-export function getVoucher(id, branch_id = 'br1') {
+export function getVoucher(id, branch_id = 'sala') {
   const row = db.prepare(`
     SELECT v.*, s.name AS sku_name, s.emoji AS sku_emoji
     FROM vouchers v
@@ -80,7 +80,7 @@ export function getVoucher(id, branch_id = 'br1') {
   return row ? normalizeRow(row) : null;
 }
 
-export function calculateRetailDiscount(lines, voucher_id = null, branch_id = 'br1', opts = {}) {
+export function calculateRetailDiscount(lines, voucher_id = null, branch_id = 'sala', opts = {}) {
   const active = listVouchers(branch_id).filter(v => isUsableNow(v, { customer: opts.customer }));
   const skuVouchers = active.filter(v => v.scope === 'sku' || v.scope === 'all_sku');
   // CTKM cấp SẢN PHẨM (scope 'sku' và 'all_sku', gồm cả "mua X tặng 1") CHỈ được áp
@@ -211,7 +211,7 @@ export function buildDiscountPlan(lines, {
   voucher_id = null,
   customer = null,
   manual_discount = 0,
-  branch_id = 'br1',
+  branch_id = 'sala',
 } = {}) {
   // Lượt 1: biết phần còn lại SAU khuyến mại sản phẩm + voucher đơn để tính perk đúng gốc.
   const pre = calculateRetailDiscount(lines, voucher_id, branch_id, { customer });
@@ -506,7 +506,7 @@ function parseBirthday(value) {
   return { month: parseInt(m[2]), day: parseInt(m[1]) };
 }
 
-function hasCustomerUsedVoucher(customer, voucherId, branch_id = 'br1') {
+function hasCustomerUsedVoucher(customer, voucherId, branch_id = 'sala') {
   if (!customer || !voucherId) return false;
   const needles = [];
   if (customer.id) needles.push(`%"id":"${likeEscape(customer.id)}"%`);

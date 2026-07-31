@@ -12,7 +12,10 @@ import { notImplemented } from '../../core/http.js';
 
 export function registerOrderRoutes(api, { wrap, guard, guardAny, branch, visibleBranch, actor }) {
 // --- Tables ---
-api.get('/tables', wrap((req) => Orders.listTables(visibleBranch(req))));
+api.get('/tables', wrap((req) => {
+  AppSettings.assertSalesModuleEnabled('fnb', visibleBranch(req));
+  return Orders.listTables(visibleBranch(req));
+}));
 api.get('/tables/:id', guardAny('sell', 'pay', 'kds', 'order.view'), wrap((req) => {
   const branch_id = visibleBranch(req);
   return {
@@ -60,7 +63,10 @@ api.post('/settings/tables/:id/delete', guardAny('settings.tables'), wrap((req) 
 // --- Orders ---
 // POST /orders: yêu cầu đăng nhập + quyền 'sell'. Tất cả thiết bị (POS, tablet)
 // phải đăng nhập trước khi tạo/thêm món vào đơn hàng.
-api.post('/orders', guard('sell'), wrap((req) => Orders.createOrUpdateOrder({ ...req.body, branch_id: visibleBranch(req), actor: actor(req) })));
+api.post('/orders', guard('sell'), wrap((req) => {
+  AppSettings.assertSalesModuleEnabled('fnb', visibleBranch(req));
+  return Orders.createOrUpdateOrder({ ...req.body, branch_id: visibleBranch(req), actor: actor(req) });
+}));
 api.get('/orders', guard('pay'), wrap(() => notImplemented('Order list endpoint is planned. Use /api/orders/history or table-specific order reads in the current app.')));
 api.get('/orders/pending-confirmation', guard('sell'), wrap((req) => Orders.listPendingConfirmations(branch(req))));
 api.get('/orders/history', guard('pay'), wrap((req) => History.listOrderHistory(branch(req), req.query)));
@@ -164,7 +170,10 @@ api.post('/orders/items/:id/kds-dismiss', guard('kds'), wrap((req) => {
 // --- KDS ---
 api.get('/kds/tickets', wrap(() => notImplemented('Generic KDS tickets endpoint is planned. Current app uses /api/kds/:station.')));
 api.patch('/kds/tickets/:id', wrap(() => notImplemented('Generic KDS ticket patch is planned. Current app uses /api/orders/items/:id/status.')));
-api.get('/kds/:station', wrap((req) => Orders.getStationTickets(req.params.station, visibleBranch(req))));
+api.get('/kds/:station', wrap((req) => {
+  AppSettings.assertSalesModuleEnabled('kds', visibleBranch(req));
+  return Orders.getStationTickets(req.params.station, visibleBranch(req));
+}));
 
 // --- Staff calls (gọi nhân viên từ iPad/khách; POST/GET mở, resolve cần 'sell') ---
 api.post('/calls', wrap((req) => Orders.createStaffCall(req.body.table_id, req.body.reason, visibleBranch(req))));

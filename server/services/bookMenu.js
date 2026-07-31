@@ -99,13 +99,13 @@ function sanitizeConfig(cfg = {}) {
   return { enabled: cfg.enabled !== false, activeBookId: active, books: fallback };
 }
 
-function readConfig(branch_id = 'br1') {
+function readConfig(branch_id = 'sala') {
   const row = db.prepare(`SELECT value FROM app_settings WHERE branch_id=? AND key=?`).get(branch_id, MENU_BOOK_KEY);
   if (!row?.value) return defaultConfig();
   try { return sanitizeConfig(JSON.parse(row.value)); } catch { return defaultConfig(); }
 }
 
-function writeConfig(cfg, branch_id = 'br1') {
+function writeConfig(cfg, branch_id = 'sala') {
   const clean = sanitizeConfig(cfg);
   db.prepare(`INSERT OR REPLACE INTO app_settings (branch_id,key,value,updated_at) VALUES (?,?,?,?)`)
     .run(branch_id, MENU_BOOK_KEY, JSON.stringify(clean), now());
@@ -113,17 +113,17 @@ function writeConfig(cfg, branch_id = 'br1') {
   return clean;
 }
 
-export function getBookConfig(branch_id = 'br1') {
+export function getBookConfig(branch_id = 'sala') {
   return readConfig(branch_id);
 }
 
-export function getPublicBookConfig(branch_id = 'br1') {
+export function getPublicBookConfig(branch_id = 'sala') {
   const cfg = readConfig(branch_id);
   const book = cfg.books.find(b => b.id === cfg.activeBookId) || cfg.books[0];
   return { enabled: cfg.enabled !== false, activeBookId: book?.id || null, book };
 }
 
-export function saveBookConfig(body = {}, branch_id = 'br1') {
+export function saveBookConfig(body = {}, branch_id = 'sala') {
   return writeConfig(body, branch_id);
 }
 
@@ -146,7 +146,7 @@ async function downloadFile(url, file) {
   writeFileSync(file, buf);
 }
 
-export async function importPubhtml5(rawUrl, title, branch_id = 'br1') {
+export async function importPubhtml5(rawUrl, title, branch_id = 'sala') {
   const base = normalizedPubhtml5Base(rawUrl);
   const configUrl = new URL('javascript/config.js', base);
   const res = await fetch(configUrl);

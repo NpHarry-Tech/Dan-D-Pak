@@ -111,7 +111,7 @@ export async function issueInvoice(order, customer = {}, items = [], cfg = {}) {
   // Cấu hình thuế lấy từ Cài đặt → HĐĐT (không hardcode): giá bán trên POS
   // mặc định là giá ĐÃ GỒM VAT → phải TÁCH ngược ra tiền hàng + tiền thuế,
   // không được cộng thuế chồng lên (làm tổng hóa đơn ≠ tổng bill).
-  const einvCfg = (getPrintConfig(order.branch_id || 'br1')?.einvoice) || {};
+  const einvCfg = (getPrintConfig(order.branch_id || 'sala')?.einvoice) || {};
   const defaultRate = parseFloat(einvCfg.defaultVatRate) || 8;
 
   const qtyOf = (it) => String(it.qty ?? '1');

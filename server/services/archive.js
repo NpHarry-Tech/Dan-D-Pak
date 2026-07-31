@@ -60,7 +60,7 @@ export function archiveEntity(kind, entity = {}, opts = {}) {
   try {
     if (!ENTITY_KINDS.has(kind) || !entity) return null;
     ensurePermanentStorage();
-    const branch = safePart(opts.branch_id || entity.branch_id || 'br1');
+    const branch = safePart(opts.branch_id || entity.branch_id || 'sala');
     const id = safePart(opts.id || entity.id || entity.order_id || entity.payment_id);
     const ts = opts.timestamp || entity.updated_at || entity.paid_at || entity.issued_at || entity.created_at || new Date().toISOString();
     const payload = {
@@ -108,7 +108,7 @@ export function archiveCashDrawerEntry(entry) {
   try {
     if (!entry) return base;
     ensurePermanentStorage();
-    const branch = safePart(entry.branch_id || 'br1');
+    const branch = safePart(entry.branch_id || 'sala');
     const id = safePart(entry.id || entry.entry_id);
     const parts = localDateParts(entry.occurred_at || entry.created_at);
     const dayFolder = `${parts.yyyy}-${parts.mm}-${parts.dd}`;
@@ -133,7 +133,7 @@ export function archiveCashDrawerEntry(entry) {
   }
 }
 
-export function archiveDashboardReport(report = {}, branch_id = 'br1') {
+export function archiveDashboardReport(report = {}, branch_id = 'sala') {
   try {
     ensurePermanentStorage();
     const branch = safePart(branch_id);
@@ -156,7 +156,7 @@ export function appendAuditArchive(entry = {}) {
   let fd;
   try {
     ensurePermanentStorage();
-    const branch = safePart(entry.branch_id || 'br1');
+    const branch = safePart(entry.branch_id || 'sala');
     const day = isoDate(entry.created_at);
     const file = join(PERMANENT_ROOT, 'audit', branch, `${day}.ndjson`);
     ensureDir(dirname(file));
@@ -214,14 +214,14 @@ export function readRecentAuditArchive(days = 2) {
   return out;
 }
 
-export function readArchivedEntity(kind, id, branch_id = 'br1') {
+export function readArchivedEntity(kind, id, branch_id = 'sala') {
   if (!ENTITY_KINDS.has(kind)) throw new Error('Archive kind khong hop le');
   const file = join(PERMANENT_ROOT, kind, safePart(branch_id), 'by-id', `${safePart(id)}.json`);
   if (!existsSync(file)) return null;
   return JSON.parse(readFileSync(file, 'utf8'));
 }
 
-export function latestDashboardReport(branch_id = 'br1') {
+export function latestDashboardReport(branch_id = 'sala') {
   const file = join(PERMANENT_ROOT, 'reports', safePart(branch_id), 'dashboard-latest.json');
   if (!existsSync(file)) return null;
   return JSON.parse(readFileSync(file, 'utf8'));

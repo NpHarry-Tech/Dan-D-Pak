@@ -22,22 +22,24 @@ const Customers = await import('./services/customers.js');
 const Einvoices = await import('./services/einvoice.js');
 
 migrate();
+db.prepare(`INSERT OR IGNORE INTO categories (id,branch_id,name) VALUES ('cat_test','sala','Test')`).run();
 
 test('shared search stays consistent across catalog, inventory and contacts', () => {
   Inventory.createSku({
     id: 'sku_search', name: 'Sữa Hạnh Nhân', barcode: '893-search',
     category: 'Đồ uống', price: 10000, stock: 1,
-  }, 'br1');
-  const skuPage = Inventory.listSkus('br1', { q: 'sua uong', page: 1, limit: 40 });
+  }, 'sala');
+  const skuPage = Inventory.listSkus('sala', { q: 'sua uong', page: 1, limit: 40 });
   assert.deepEqual(skuPage.items.map(row => row.id), ['sku_search']);
 
+  db.prepare(`INSERT INTO categories (id,branch_id,name) VALUES ('cat_search','sala','Search')`).run();
   db.prepare(`INSERT INTO menu_items (id,category_id,name,description,price,station) VALUES (?,?,?,?,?,?)`)
     .run('menu_search', 'cat_search', 'Cà Phê Sữa', 'Đá lạnh', 30000, 'bar');
   const menuPage = Catalog.listMenu({ page: 1, q: 'ca lanh' });
   assert.deepEqual(menuPage.items.map(row => row.id), ['menu_search']);
 
-  Customers.upsertCustomer({ name: 'Nguyễn An', company: 'Công ty Hạt Việt', phone: '0900000000' }, 'br1');
-  const contacts = Customers.listCustomers('br1', 'nguyen hat');
+  Customers.upsertCustomer({ name: 'Nguyễn An', company: 'Công ty Hạt Việt', phone: '0900000000' }, 'sala');
+  const contacts = Customers.listCustomers('sala', 'nguyen hat');
   assert.equal(contacts.length, 1);
   assert.equal(contacts[0].name, 'Nguyễn An');
 });
@@ -47,37 +49,37 @@ test('retail SKU listing filters "in stock" and sorts BEFORE pagination, not aft
   // hết hàng, trang hiện ra rất ít món dù server còn nhiều món khác thoả điều
   // kiện, và app không tự tải bù. Khoá lại: lọc + sắp xếp phải xảy ra TRƯỚC khi
   // cắt trang, để mỗi trang trả về luôn đủ (tối đa) limit món thật sự thoả điều kiện.
-  Inventory.createSku({ id: 'sku_filter_out1', name: 'Filter Out SKU 1', price: 50000, stock: 0 }, 'br1');
-  Inventory.createSku({ id: 'sku_filter_out2', name: 'Filter Out SKU 2', price: 10000, stock: 0 }, 'br1');
-  Inventory.createSku({ id: 'sku_filter_in1', name: 'Filter In SKU 1', price: 30000, stock: 5 }, 'br1');
-  Inventory.createSku({ id: 'sku_filter_in2', name: 'Filter In SKU 2', price: 20000, stock: 2 }, 'br1');
+  Inventory.createSku({ id: 'sku_filter_out1', name: 'Filter Out SKU 1', price: 50000, stock: 0 }, 'sala');
+  Inventory.createSku({ id: 'sku_filter_out2', name: 'Filter Out SKU 2', price: 10000, stock: 0 }, 'sala');
+  Inventory.createSku({ id: 'sku_filter_in1', name: 'Filter In SKU 1', price: 30000, stock: 5 }, 'sala');
+  Inventory.createSku({ id: 'sku_filter_in2', name: 'Filter In SKU 2', price: 20000, stock: 2 }, 'sala');
 
-  const onlyInStock = Inventory.listSkus('br1', { q: 'filter', page: 1, limit: 1, in_stock: '1' });
+  const onlyInStock = Inventory.listSkus('sala', { q: 'filter', page: 1, limit: 1, in_stock: '1' });
   // total phải phản ánh SỐ ĐÃ LỌC (2 món còn hàng), không phải tổng 4 món ban đầu —
   // nếu không app sẽ tưởng còn trang tiếp theo trong khi thực chất trang 1 (limit=1)
   // đã bỏ sót 1 món còn hàng nữa chưa hiện.
   assert.equal(onlyInStock.total, 2);
   assert.ok(onlyInStock.items.every(s => s.stock > 0));
 
-  const priceDesc = Inventory.listSkus('br1', { q: 'filter', page: 1, limit: 10, sort: 'price_desc' });
+  const priceDesc = Inventory.listSkus('sala', { q: 'filter', page: 1, limit: 10, sort: 'price_desc' });
   const prices = priceDesc.items.map(s => s.price);
   assert.deepEqual(prices, [...prices].sort((a, b) => b - a));
 
-  const stockAsc = Inventory.listSkus('br1', { q: 'filter', page: 1, limit: 10, in_stock: '1', sort: 'stock_asc' });
+  const stockAsc = Inventory.listSkus('sala', { q: 'filter', page: 1, limit: 10, in_stock: '1', sort: 'stock_asc' });
   assert.deepEqual(stockAsc.items.map(s => s.id), ['sku_filter_in2', 'sku_filter_in1']);
 });
 
 test('retail checkout separates change and deduplicates retries', () => {
   const shiftId = 'shift_test';
   db.prepare(`INSERT INTO shifts (id,branch_id,user_name,shift_key,shift_label,opening_cash,status,opened_at) VALUES (?,?,?,?,?,?,?,?)`)
-    .run(shiftId, 'br1', 'Tester', 'test', 'Test', 0, 'open', now());
-  Inventory.createSku({ id: 'sku_paid', name: 'Paid SKU', price: 30000, stock: 3 }, 'br1');
+    .run(shiftId, 'sala', 'Tester', 'test', 'Test', 0, 'open', now());
+  Inventory.createSku({ id: 'sku_paid', name: 'Paid SKU', price: 30000, stock: 3 }, 'sala');
 
   const payload = {
     items: [{ sku_id: 'sku_paid', qty: 1 }],
     payments: [{ method: 'cash', amount: 100000 }],
     client_request_id: 'checkout_retry_1',
-    branch_id: 'br1',
+    branch_id: 'sala',
     cashier: 'Tester',
   };
   const first = Retail.checkout(payload);
@@ -101,12 +103,12 @@ test('retail checkout separates change and deduplicates retries', () => {
 });
 
 test('partial payments are idempotent and deduct stock only when fully settled', () => {
-  Inventory.createSku({ id: 'sku_partial', name: 'Partial SKU', price: 10000, stock: 1 }, 'br1');
+  Inventory.createSku({ id: 'sku_partial', name: 'Partial SKU', price: 10000, stock: 1 }, 'sala');
   const first = Retail.checkout({
     items: [{ sku_id: 'sku_partial', qty: 1 }],
     payments: [{ method: 'cash', amount: 4000 }],
     client_request_id: 'partial_pay_1',
-    branch_id: 'br1',
+    branch_id: 'sala',
     cashier: 'Tester',
   });
   assert.equal(first.status, 'partially_paid');
@@ -117,7 +119,7 @@ test('partial payments are idempotent and deduct stock only when fully settled',
     items: [{ sku_id: 'sku_partial', qty: 1 }],
     payments: [{ method: 'cash', amount: 4000 }],
     client_request_id: 'partial_pay_1',
-    branch_id: 'br1',
+    branch_id: 'sala',
     cashier: 'Tester',
   });
   assert.equal(replay.idempotent_replay, true);
@@ -126,7 +128,7 @@ test('partial payments are idempotent and deduct stock only when fully settled',
   const final = Payments.payOrder(first.order_id, [{ method: 'cash', amount: 6000 }], {
     cashier: 'Tester',
     idempotency_key: 'partial_pay_2',
-  }, 'br1');
+  }, 'sala');
   assert.equal(final.fully_settled, true);
   assert.equal(db.prepare(`SELECT status FROM orders WHERE id=?`).get(first.order_id).status, 'paid');
   assert.equal(db.prepare(`SELECT stock FROM skus WHERE id='sku_partial'`).get().stock, 0);
@@ -136,12 +138,12 @@ test('partial payments are idempotent and deduct stock only when fully settled',
 });
 
 test('one paid order can be allocated across multiple active e-invoices', () => {
-  Inventory.createSku({ id: 'sku_invoice_split', name: 'Invoice Split SKU', price: 30000, stock: 1 }, 'br1');
+  Inventory.createSku({ id: 'sku_invoice_split', name: 'Invoice Split SKU', price: 30000, stock: 1 }, 'sala');
   const receipt = Retail.checkout({
     items: [{ sku_id: 'sku_invoice_split', qty: 1 }],
     payments: [{ method: 'cash', amount: 30000 }],
     client_request_id: 'invoice_split_checkout',
-    branch_id: 'br1',
+    branch_id: 'sala',
     cashier: 'Tester',
   });
   assert.equal(db.prepare(`SELECT COUNT(*) n FROM e_invoices WHERE order_id=?`).get(receipt.order_id).n, 1);
@@ -149,7 +151,7 @@ test('one paid order can be allocated across multiple active e-invoices', () => 
     receipt.order_id,
     'COMPANY_TAX_INFO',
     { company: 'Dan D Pak', tax_code: '0312345678', email: 'invoice@example.com' },
-    'br1',
+    'sala',
     'Tester',
     { amount: 12000, idempotency_key: 'invoice_split_2' },
   );
@@ -160,7 +162,7 @@ test('one paid order can be allocated across multiple active e-invoices', () => 
     receipt.order_id,
     'COMPANY_TAX_INFO',
     { company: 'Dan D Pak', tax_code: '0312345678', email: 'invoice@example.com' },
-    'br1',
+    'sala',
     'Tester',
     { amount: 12000, idempotency_key: 'invoice_split_2' },
   );
@@ -172,7 +174,7 @@ test('one paid order can be allocated across multiple active e-invoices', () => 
     receipt.order_id,
     'NO_BUYER_INFO',
     {},
-    'br1',
+    'sala',
     'Tester',
     { amount: 5000, idempotency_key: 'invoice_split_3' },
   );
@@ -184,32 +186,32 @@ test('one paid order can be allocated across multiple active e-invoices', () => 
     receipt.order_id,
     'NO_BUYER_INFO',
     {},
-    'br1',
+    'sala',
     'Tester',
     { amount: 20000, idempotency_key: 'invoice_split_overflow' },
   ), /exceeds remaining/);
 });
 
 test('sellable SKU without a price is blocked', () => {
-  Inventory.createSku({ id: 'sku_free', name: 'Unpriced SKU', price: 0, stock: 1 }, 'br1');
+  Inventory.createSku({ id: 'sku_free', name: 'Unpriced SKU', price: 0, stock: 1 }, 'sala');
   assert.throws(() => Retail.checkout({
     items: [{ sku_id: 'sku_free', qty: 1 }],
     payments: [],
     client_request_id: 'checkout_unpriced_1',
-    branch_id: 'br1',
+    branch_id: 'sala',
   }), /SKU chưa có giá bán/);
   assert.equal(db.prepare(`SELECT stock FROM skus WHERE id='sku_free'`).get().stock, 1);
   assert.equal(db.prepare(`SELECT COUNT(*) n FROM orders WHERE client_request_id='checkout_unpriced_1'`).get().n, 0);
 });
 
 test('retail VAT supports tax-exclusive and tax-inclusive prices', () => {
-  Inventory.createSku({ id: 'sku_net', name: 'Net SKU', price: 100000, vat: 10, price_includes_vat: false, stock: 1 }, 'br1');
-  Inventory.createSku({ id: 'sku_gross', name: 'Gross SKU', price: 108000, vat: 8, price_includes_vat: true, stock: 1 }, 'br1');
+  Inventory.createSku({ id: 'sku_net', name: 'Net SKU', price: 100000, vat: 10, price_includes_vat: false, stock: 1 }, 'sala');
+  Inventory.createSku({ id: 'sku_gross', name: 'Gross SKU', price: 108000, vat: 8, price_includes_vat: true, stock: 1 }, 'sala');
   const receipt = Retail.checkout({
     items: [{ sku_id: 'sku_net', qty: 1 }, { sku_id: 'sku_gross', qty: 1 }],
     payments: [{ method: 'cash', amount: 218000 }],
     client_request_id: 'checkout_vat_1',
-    branch_id: 'br1',
+    branch_id: 'sala',
     cashier: 'Tester',
   });
   assert.equal(receipt.subtotal, 218000);
@@ -227,7 +229,7 @@ test('F&B VAT is added from the authoritative menu setting', () => {
     .run('menu_net', 'cat_test', 'Net Menu Item', 100000, 0, 8, 'kitchen');
   assert.equal(Catalog.getMenuItem('menu_net').sale_price, 108000);
   const order = Orders.createOrUpdateOrder({
-    branch_id: 'br1',
+    branch_id: 'sala',
     channel: 'takeaway',
     items: [{ menu_item_id: 'menu_net', qty: 1 }],
     actor: 'Tester',
@@ -235,7 +237,7 @@ test('F&B VAT is added from the authoritative menu setting', () => {
   assert.equal(order.subtotal, 108000);
   assert.equal(order.goods_amount, 100000);
   assert.equal(order.vat_amount, 8000);
-  const receipt = Payments.payOrder(order.id, [{ method: 'cash', amount: 108000 }], { cashier: 'Tester' }, 'br1');
+  const receipt = Payments.payOrder(order.id, [{ method: 'cash', amount: 108000 }], { cashier: 'Tester' }, 'sala');
   assert.equal(receipt.total, 108000);
   assert.equal(receipt.vat_amount, 8000);
 });
@@ -247,7 +249,7 @@ test('modifier prices come from the menu, not from what the client claims', () =
 
   // Client (đã bị hook / request tự chế) khai topping tính phí với giá 0.
   const order = Orders.createOrUpdateOrder({
-    branch_id: 'br1',
+    branch_id: 'sala',
     channel: 'takeaway',
     items: [{
       menu_item_id: 'menu_mods',
@@ -263,7 +265,7 @@ test('modifier prices come from the menu, not from what the client claims', () =
 
   // Giá bịa cao hơn cũng không được chấp nhận — luôn lấy giá thực đơn.
   const inflated = Orders.createOrUpdateOrder({
-    branch_id: 'br1',
+    branch_id: 'sala',
     channel: 'takeaway',
     items: [{
       menu_item_id: 'menu_mods',
@@ -276,7 +278,7 @@ test('modifier prices come from the menu, not from what the client claims', () =
 
   // Topping không có trong thực đơn bị từ chối, không âm thầm tính giá 0.
   assert.throws(() => Orders.createOrUpdateOrder({
-    branch_id: 'br1',
+    branch_id: 'sala',
     channel: 'takeaway',
     items: [{
       menu_item_id: 'menu_mods',
@@ -291,7 +293,7 @@ test('a self-order tablet cannot reach staff-only order actions', () => {
   db.prepare(`INSERT INTO menu_items (id,category_id,name,price,price_includes_vat,vat_rate,station) VALUES (?,?,?,?,?,?,?)`)
     .run('menu_kiosk', 'cat_test', 'Cà Phê', 40000, 1, 8, 'bar');
   const base = {
-    branch_id: 'br1',
+    branch_id: 'sala',
     channel: 'dine_in',
     source: 'customer_ipad',
     actor: 'Khách',

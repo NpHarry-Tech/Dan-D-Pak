@@ -21,7 +21,7 @@ const TECHNICAL_ONLY_ACTIONS = new Set([
   'settings.template_autosave',
 ]);
 
-export function audit(action, detail, branch_id = 'br1', actor = 'system') {
+export function audit(action, detail, branch_id = 'sala', actor = 'system') {
   if (TECHNICAL_ONLY_ACTIONS.has(action)) return null;
   const id = uid('a_');
   const created_at = now();
@@ -62,7 +62,7 @@ export function reconcileAuditFromArchive(days = 2) {
     for (const e of entries) {
       if (TECHNICAL_ONLY_ACTIONS.has(e.action)) continue;
       const detail = typeof e.detail === 'string' ? e.detail : JSON.stringify(e.detail ?? null);
-      const r = stmt.run(e.id, e.branch_id ?? 'br1', e.actor ?? 'system', e.action, detail, e.created_at);
+      const r = stmt.run(e.id, e.branch_id ?? 'sala', e.actor ?? 'system', e.action, detail, e.created_at);
       if (r.changes > 0) restored++;
     }
   } catch (e) {

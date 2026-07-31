@@ -11,7 +11,7 @@ const DONE_MAX_ROWS = 1000;
 const PRUNE_INTERVAL_MS = 60 * 60 * 1000;
 let lastPruneMs = 0;
 
-export function syncBatch(branch_id = 'br1') {
+export function syncBatch(branch_id = 'sala') {
   if (state.offline) return 0;
 
   let pending;
@@ -46,7 +46,7 @@ export function syncBatch(branch_id = 'br1') {
   return pending.length;
 }
 
-function pendingCount(branch_id = 'br1') {
+function pendingCount(branch_id = 'sala') {
   try {
     return db.prepare(`SELECT COUNT(*) c FROM sync_queue WHERE status = 'pending'`).get().c;
   } catch {
@@ -103,7 +103,7 @@ function maybePruneDoneQueue(force = false) {
   }
 }
 
-function pendingEvents(branch_id = 'br1', limit = 12) {
+function pendingEvents(branch_id = 'sala', limit = 12) {
   try {
     // Show recent events from sync_queue (both pending and completed) so the user gets real feedback
     return db.prepare(`SELECT kind as action, ref as detail, created_at FROM sync_queue ORDER BY created_at DESC LIMIT ?`).all(limit);
@@ -112,7 +112,7 @@ function pendingEvents(branch_id = 'br1', limit = 12) {
   }
 }
 
-export function status(branch_id = 'br1') {
+export function status(branch_id = 'sala') {
   return {
     online: !state.offline,
     pending: pendingCount(branch_id),
@@ -122,14 +122,14 @@ export function status(branch_id = 'br1') {
   };
 }
 
-export function setOffline(offline, branch_id = 'br1') {
+export function setOffline(offline, branch_id = 'sala') {
   state.offline = !!offline;
   emit('sync:status', status(branch_id), branch_id);
   return status(branch_id);
 }
 
 // Flush the local queue marker. No external DB is written.
-export function syncNow(branch_id = 'br1') {
+export function syncNow(branch_id = 'sala') {
   if (state.offline) throw new Error('Đang offline - chi nhánh sẽ đồng bộ bù khi có mạng lại');
   
   let totalSynced = 0;
@@ -147,7 +147,7 @@ export function syncNow(branch_id = 'br1') {
 
 // Background local queue cleanup.
 let timer = null;
-export function startSyncEngine(branch_id = 'br1') {
+export function startSyncEngine(branch_id = 'sala') {
   if (timer) return;
 
   try {

@@ -28,7 +28,7 @@ const CHANNEL_INTEGRATION = {
   website: 'website',
 };
 
-export function listChannels(branch_id = 'br1') {
+export function listChannels(branch_id = 'sala') {
   const cfg = getIntegrations(branch_id);
   const out = {};
   for (const [key, name] of Object.entries(CHANNELS)) {
@@ -38,7 +38,7 @@ export function listChannels(branch_id = 'br1') {
   return out;
 }
 
-function assertChannelEnabled(channel, branch_id = 'br1') {
+function assertChannelEnabled(channel, branch_id = 'sala') {
   if (!CHANNELS[channel]) throw new Error('Kenh online khong hop le: ' + channel);
   const available = listChannels(branch_id);
   if (!available[channel]) throw new Error('Kenh ' + CHANNELS[channel] + ' chua duoc bat trong Cai dat ket noi.');
@@ -46,7 +46,7 @@ function assertChannelEnabled(channel, branch_id = 'br1') {
 
 // Enabled online channels must be authenticated. Missing or wrong webhookSecret
 // rejects the request; public order intake should not fail open.
-function assertWebhookSecret(channel, headers = {}, branch_id = 'br1') {
+function assertWebhookSecret(channel, headers = {}, branch_id = 'sala') {
   const integKey = CHANNEL_INTEGRATION[channel] || channel;
   const cfg = getIntegrations(branch_id).channels?.[integKey] || {};
   const secret = String(cfg.webhookSecret || '').trim();
@@ -77,7 +77,7 @@ function resolveItemMapping(line, branch_id) {
   }
   // 2. Try by direct menu_item_id
   if (line.menu_item_id) {
-    const exists = db.prepare(`SELECT id FROM menu_items WHERE id=?`).get(line.menu_item_id);
+    const exists = db.prepare(`SELECT id FROM menu_items WHERE id=? AND branch_id=?`).get(line.menu_item_id, branch_id);
     if (exists) return { menu_item_id: line.menu_item_id, qty };
   }
   // 3. Try mapping by barcode / sku code
@@ -92,7 +92,7 @@ function resolveItemMapping(line, branch_id) {
     const sku = db.prepare(`SELECT id FROM skus WHERE LOWER(name)=LOWER(?) AND branch_id=?`).get(name, branch_id);
     if (sku) return { sku_id: sku.id, qty };
 
-    const mi = db.prepare(`SELECT id FROM menu_items WHERE LOWER(name)=LOWER(?)`).get(name);
+    const mi = db.prepare(`SELECT id FROM menu_items WHERE LOWER(name)=LOWER(?) AND branch_id=?`).get(name, branch_id);
     if (mi) return { menu_item_id: mi.id, qty };
   }
 
@@ -229,7 +229,7 @@ export function normalizeWebhookPayload(payload) {
 }
 
 // payload: { channel, ref?, customer?, items:[{menu_item_id|sku_id, name, qty, price, note}] }
-export function receive(payload, branch_id = 'br1', headers = {}) {
+export function receive(payload, branch_id = 'sala', headers = {}) {
   // Xác thực + chuẩn hoá NGOÀI transaction để audit từ chối không bị rollback theo.
   const norm = normalizeWebhookPayload(payload);
   const channel = norm.channel;
@@ -314,12 +314,12 @@ function listOne(order_id) {
     customer: JSON.parse(o.customer_json || '{}'), payments };
 }
 
-export function listOnline(branch_id = 'br1', limit = 40) {
+export function listOnline(branch_id = 'sala', limit = 40) {
   return db.prepare(`SELECT id FROM orders WHERE branch_id=? AND channel='online' ORDER BY created_at DESC LIMIT ?`)
     .all(branch_id, limit).map(r => listOne(r.id));
 }
 
-export function setStatus(order_id, status, branch_id = 'br1') {
+export function setStatus(order_id, status, branch_id = 'sala') {
   if (!FLOW.includes(status)) throw new Error('Trạng thái online không hợp lệ');
   db.prepare(`UPDATE orders SET online_status=? WHERE id=?`).run(status, order_id);
   audit('online.status', { order: order_id, status }, branch_id);
@@ -328,7 +328,7 @@ export function setStatus(order_id, status, branch_id = 'br1') {
   return full;
 }
 
-export function confirmPayment(order_id, branch_id = 'br1') {
+export function confirmPayment(order_id, branch_id = 'sala') {
   db.prepare(`UPDATE orders SET status='paid', paid_at=? WHERE id=?`).run(now(), order_id);
   const order = getOrder(order_id);
   const shift = getActiveShift(branch_id);
@@ -346,7 +346,7 @@ export function confirmPayment(order_id, branch_id = 'br1') {
   return full;
 }
 
-export function confirmDelivery(order_id, branch_id = 'br1') {
+export function confirmDelivery(order_id, branch_id = 'sala') {
   db.prepare(`UPDATE orders SET online_status='completed' WHERE id=?`).run(order_id);
   audit('online.confirm_delivery', { order: order_id }, branch_id);
   const full = listOne(order_id);
@@ -354,7 +354,7 @@ export function confirmDelivery(order_id, branch_id = 'br1') {
   return full;
 }
 
-export function returnOrder(order_id, branch_id = 'br1') {
+export function returnOrder(order_id, branch_id = 'sala') {
   db.prepare(`UPDATE orders SET status='void' WHERE id=?`).run(order_id);
   audit('online.return', { order: order_id }, branch_id);
   const full = listOne(order_id);

@@ -54,7 +54,7 @@ try {
 
   assert.equal(db.prepare(`SELECT COUNT(*) n FROM orders WHERE online_channel='haravan' AND online_ref='123'`).get().n, 1);
   assert.equal(db.prepare(`SELECT COUNT(*) n FROM order_items`).get().n, 2);
-  assert.equal(db.prepare(`SELECT branch_id FROM orders WHERE online_ref='123'`).get().branch_id, 'br1');
+  assert.equal(db.prepare(`SELECT branch_id FROM orders WHERE online_ref='123'`).get().branch_id, 'sala');
   assert.equal(db.prepare(`SELECT status FROM orders WHERE online_ref='123'`).get().status, 'waiting_assignment');
 
   const duplicate = Haravan.handleHaravanWebhook(body, {
@@ -117,7 +117,7 @@ try {
   // it's an external observation to reconcile, not an authoritative write.
   assert.equal(db.prepare(`SELECT stock FROM skus WHERE id='hvn_22'`).get().stock, 4);
   assert.equal(db.prepare(`SELECT COUNT(*) n FROM stock_movements`).get().n, movementsBeforeInbound);
-  assert.equal(db.prepare(`SELECT branch_id FROM skus WHERE id='hvn_22'`).get().branch_id, 'br1');
+  assert.equal(db.prepare(`SELECT branch_id FROM skus WHERE id='hvn_22'`).get().branch_id, 'sala');
   assert.equal(
     db.prepare(`SELECT COUNT(*) n FROM audit_log WHERE action='haravan.inventory.discrepancy'`).get().n,
     1,
@@ -208,13 +208,13 @@ try {
   const insertMovement = db.prepare(`INSERT INTO stock_movements
     (id,branch_id,inventory_item_id,type,qty,created_at,item_type,reason)
     VALUES (?,?,?,?,?,?,?,?)`);
-  insertMovement.run('sm_old', 'br1', 'hvn_22', 'adjust', 1, new Date().toISOString(), 'sku', 'test');
+  insertMovement.run('sm_old', 'sala', 'hvn_22', 'adjust', 1, new Date().toISOString(), 'sku', 'test');
   const initialized = await Haravan.pushPendingInventoryChanges();
   assert.equal(initialized.pushed, 0);
   assert.equal(initialized.results[0].initialized, true);
   assert.equal(fetchCalls, 0);
 
-  insertMovement.run('sm_new', 'br1', 'hvn_22', 'sale', -1, new Date().toISOString(), 'sku', 'pos');
+  insertMovement.run('sm_new', 'sala', 'hvn_22', 'sale', -1, new Date().toISOString(), 'sku', 'pos');
   const pending = await Haravan.pushPendingInventoryChanges();
   assert.equal(pending.pushed, 1);
   assert.equal(fetchCalls, 1);
@@ -230,7 +230,7 @@ try {
 
   const logsBeforeMissingLocation = db.prepare(`SELECT COUNT(*) n FROM sync_logs`).get().n;
   Settings.updateIntegrations({ channels: { haravan: { locationId: '' } } }, 'sala');
-  insertMovement.run('sm_no_location', 'br1', 'hvn_22', 'sale', -1, new Date().toISOString(), 'sku', 'pos');
+  insertMovement.run('sm_no_location', 'sala', 'hvn_22', 'sale', -1, new Date().toISOString(), 'sku', 'pos');
   const missingLocation = await Haravan.pushPendingInventoryChanges();
   assert.equal(missingLocation.pushed, 0);
   assert.equal(db.prepare(`SELECT COUNT(*) n FROM sync_logs`).get().n, logsBeforeMissingLocation);

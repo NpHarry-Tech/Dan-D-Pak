@@ -187,9 +187,10 @@ api.post('/settings/integrations/:channel/test', guardAny('settings.integrations
   }
   if (!cfg) throw new Error('Kênh không hợp lệ hoặc thiếu cấu hình: ' + channel);
   const base = `${req.protocol}://${req.get('host')}`;
+  const routedWebhook = (name) => `${base}/api/${name}/webhook?branch_id=${encodeURIComponent(branch(req))}`;
   if (channel === 'misa') return { channel, ...(await Misa.testConnection(cfg)) };
   if (channel === 'payos') {
-    const payosWebhook = `${base}/api/payos/webhook`;
+    const payosWebhook = routedWebhook('payos');
     if (!cfg.enabled) return { channel, ok: false, mode: 'disabled', message: 'payOS đang tắt. Bật kết nối trước khi kiểm tra.', webhookUrl: payosWebhook };
     const ok = !!(cfg.clientId && cfg.apiKey && cfg.checksumKey);
     return {
@@ -200,7 +201,7 @@ api.post('/settings/integrations/:channel/test', guardAny('settings.integrations
     };
   }
   if (channel === 'sepay' || channel === 'casso') {
-    return { channel, ...Pay.testBankWebhook(channel, cfg, `${base}/api/${channel}/webhook`) };
+    return { channel, ...Pay.testBankWebhook(channel, cfg, routedWebhook(channel)) };
   }
   // Delivery / website channels: orders arrive at our webhook → Kênh online module.
   if (channel === 'haravan') {
@@ -246,7 +247,7 @@ api.get('/settings/connections/status', guardAny('settings.connections'), wrap(a
   const [internetCheck, systemPrinters, printerStatuses] = await Promise.all([
     System.checkInternet({ force }),
     System.listSystemPrinters({ force, branch: branch(req) }),
-    Print.listPrinters(branch(req), { force }).catch(() => []),
+    Print.listPrinters(branch(req), { live: true, force }).catch(() => []),
   ]);
   return {
     serverIps,

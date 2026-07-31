@@ -1,4 +1,6 @@
-import { db, audit, bootstrapWarehouseDefaults, bootstrapTableDefaults } from '../db.js';
+import { db, audit } from '../db.js';
+import { DEFAULT_SALES_MODULES, SALES_MODULES_KEY, getSalesModules, sanitizeSalesModules } from './settings/salesModules.js';
+import { emit } from '../realtime.js';
 
 const normalizeCode = (v) => String(v || '')
   .trim()
@@ -7,24 +9,28 @@ const normalizeCode = (v) => String(v || '')
   .replace(/^_+|_+$/g, '')
   .slice(0, 24);
 
-const branchIdFromCode = (code) => 'br_' + String(code || '')
+const branchIdFromCode = (code) => String(code || '')
   .toLowerCase()
   .replace(/[^a-z0-9]+/g, '_')
   .replace(/^_+|_+$/g, '')
-  .slice(0, 28);
+  .slice(0, 31);
 
 function mapBranch(row) {
-  return row ? { ...row, active: row.active !== 0 } : null;
+  return row ? {
+    ...row,
+    active: row.active !== 0,
+    sales_modules: getSalesModules(row.id),
+  } : null;
 }
 
 function addressFields(body = {}, cur = {}) {
   return {
-    address: body.address !== undefined ? (body.address || null) : cur.address,
-    address_detail: body.address_detail !== undefined ? (body.address_detail || null) : cur.address_detail,
-    address_ward: body.address_ward !== undefined ? (body.address_ward || null) : cur.address_ward,
-    address_province: body.address_province !== undefined ? (body.address_province || null) : cur.address_province,
-    ward_code: body.ward_code !== undefined ? (body.ward_code || null) : cur.ward_code,
-    province_code: body.province_code !== undefined ? (body.province_code || null) : cur.province_code,
+    address: body.address !== undefined ? (body.address || null) : (cur.address || null),
+    address_detail: body.address_detail !== undefined ? (body.address_detail || null) : (cur.address_detail || null),
+    address_ward: body.address_ward !== undefined ? (body.address_ward || null) : (cur.address_ward || null),
+    address_province: body.address_province !== undefined ? (body.address_province || null) : (cur.address_province || null),
+    ward_code: body.ward_code !== undefined ? (body.ward_code || null) : (cur.ward_code || null),
+    province_code: body.province_code !== undefined ? (body.province_code || null) : (cur.province_code || null),
   };
 }
 
@@ -52,8 +58,10 @@ export function createBranch(body = {}, actor = 'system') {
   const addr = addressFields(body);
   db.prepare(`INSERT INTO branches (id,name,address,address_detail,address_ward,address_province,ward_code,province_code,code,phone,active,sort,note) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`)
     .run(id, name, addr.address, addr.address_detail, addr.address_ward, addr.address_province, addr.ward_code, addr.province_code, code, body.phone || null, body.active === false ? 0 : 1, sort, body.note || null);
-  bootstrapWarehouseDefaults(id);
-  bootstrapTableDefaults(id);
+  db.prepare(`INSERT INTO app_settings (branch_id,key,value,updated_at) VALUES (?,?,?,?)`)
+    .run(id, 'print_config', JSON.stringify({ printers: [] }), new Date().toISOString());
+  db.prepare(`INSERT INTO app_settings (branch_id,key,value,updated_at) VALUES (?,?,?,?)`)
+    .run(id, SALES_MODULES_KEY, JSON.stringify(sanitizeSalesModules(body.sales_modules || DEFAULT_SALES_MODULES)), new Date().toISOString());
   audit('branch.create', { id, name, code }, id, actor);
   return getBranch(id);
 }
@@ -82,9 +90,10 @@ export function updateBranch(id, body = {}, actor = 'system') {
       body.note !== undefined ? (body.note || null) : cur.note,
       id,
     );
-  if (body.active !== false) {
-    bootstrapWarehouseDefaults(id);
-    bootstrapTableDefaults(id);
+  if (body.sales_modules !== undefined) {
+    db.prepare(`INSERT OR REPLACE INTO app_settings (branch_id,key,value,updated_at) VALUES (?,?,?,?)`)
+      .run(id, SALES_MODULES_KEY, JSON.stringify(sanitizeSalesModules(body.sales_modules)), new Date().toISOString());
+    emit('settings:updated', { keys: ['sales_modules'] }, id);
   }
   audit('branch.update', { id, name, code, active: body.active !== false }, id, actor);
   return getBranch(id);

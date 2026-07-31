@@ -5,10 +5,10 @@ import * as Auth from '../../services/auth.js';
 import { db, uid, audit } from '../../db.js';
 import { emit } from '../../realtime.js';
 
-export function registerCatalogRoutes(api, { wrap, guard, branch, actor, saveBase64Image, MENU_UPLOADS_DIR }) {
+export function registerCatalogRoutes(api, { wrap, guard, branch, visibleBranch, actor, saveBase64Image, MENU_UPLOADS_DIR }) {
 // --- Catalog / Menu ---
-api.get('/menu', wrap((req) => Catalog.listMenu({ forCustomer: true, ...req.query })));
-api.get('/menu/manage', guard('menu.manage'), wrap((req) => Catalog.listMenu({ forCustomer: false, ...req.query })));
+api.get('/menu', wrap((req) => Catalog.listMenu({ forCustomer: true, ...req.query, branch_id: visibleBranch(req) })));
+api.get('/menu/manage', guard('menu.manage'), wrap((req) => Catalog.listMenu({ forCustomer: false, ...req.query, branch_id: branch(req) })));
 
 api.post('/menu/image-upload', guard('menu.manage'), wrap((req) =>
   saveBase64Image(req, { dir: MENU_UPLOADS_DIR, urlBase: '/uploads/menu', prefix: 'menu_', auditAction: 'menu.image_upload' })));
@@ -25,17 +25,19 @@ api.post('/menu', guard('menu.manage'), wrap(async (req) => {
 
   const b = req.body;
   if (!b.name || !b.category_id) throw new Error('Thiếu tên món hoặc nhóm');
+  if (!db.prepare(`SELECT 1 FROM categories WHERE id=? AND branch_id=?`).get(b.category_id, branch_id)) throw new Error('Nhóm món không thuộc chi nhánh');
   const id = uid('m_');
-  const sort = (db.prepare(`SELECT COALESCE(MAX(sort),0)+1 n FROM menu_items`).get().n) || 1;
+  const sort = (db.prepare(`SELECT COALESCE(MAX(sort),0)+1 n FROM menu_items WHERE branch_id=?`).get(branch_id).n) || 1;
   const translations = await Catalog.completeMenuTranslations({
     name: b.name,
     description: b.description,
     translations: b.translations,
   });
   db.prepare(`INSERT INTO menu_items
-    (id,category_id,name,emoji,image,description,price,price_includes_vat,vat_rate,station,sla_minutes,available,hidden,ingredients_json,allergens_json,schedule_json,modifiers_json,addons_json,translations_json,sort)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
+    (id,branch_id,category_id,name,emoji,image,description,price,price_includes_vat,vat_rate,station,sla_minutes,available,hidden,ingredients_json,allergens_json,schedule_json,modifiers_json,addons_json,translations_json,sort)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
     id,
+    branch_id,
     b.category_id,
     b.name,
     b.emoji || '🍽️',
@@ -59,7 +61,7 @@ api.post('/menu', guard('menu.manage'), wrap(async (req) => {
   audit('menu.create', { id, name: b.name }, branch_id, actor(req));
   Catalog.cacheBust('menu:');
   emit('menu:updated', { id, created: true }, branch_id);
-  return Catalog.getMenuItem(id, { includeRecipe: true });
+  return Catalog.getMenuItem(id, { includeRecipe: true }, branch_id);
 }));
 
 api.post('/menu/:id/update', guard('menu.manage'), wrap(async (req) => {
@@ -70,8 +72,9 @@ api.post('/menu/:id/update', guard('menu.manage'), wrap(async (req) => {
   if (!approvedBy) throw new Error('Cần nhập PIN của Manager hoặc Admin để xác nhận cập nhật món ăn.');
 
   const b = req.body;
-  const cur = db.prepare(`SELECT * FROM menu_items WHERE id=?`).get(req.params.id);
+  const cur = db.prepare(`SELECT * FROM menu_items WHERE id=? AND branch_id=?`).get(req.params.id, branch_id);
   if (!cur) throw new Error('Món không tồn tại');
+  if (b.category_id && !db.prepare(`SELECT 1 FROM categories WHERE id=? AND branch_id=?`).get(b.category_id, branch_id)) throw new Error('Nhóm món không thuộc chi nhánh');
   const v = (k, fallback) => (b[k] !== undefined && b[k] !== null && b[k] !== '') ? b[k] : fallback;
   const nextName = v('name', cur.name);
   const nextDescription = b.description !== undefined ? (b.description || '') : (cur.description || '');
@@ -83,7 +86,7 @@ api.post('/menu/:id/update', guard('menu.manage'), wrap(async (req) => {
   db.prepare(`UPDATE menu_items SET
       name=?, emoji=?, image=?, description=?, price=?, price_includes_vat=?, vat_rate=?, category_id=?, station=?, sla_minutes=?,
       ingredients_json=?, allergens_json=?, schedule_json=?, hidden=?, addons_json=?, translations_json=?
-    WHERE id=?`).run(
+    WHERE id=? AND branch_id=?`).run(
     nextName,
     v('emoji', cur.emoji),
     b.image !== undefined ? (b.image || null) : cur.image,
@@ -100,19 +103,20 @@ api.post('/menu/:id/update', guard('menu.manage'), wrap(async (req) => {
     b.hidden !== undefined ? (b.hidden ? 1 : 0) : cur.hidden,
     b.addons !== undefined ? JSON.stringify(Catalog.normalizeAddons(b.addons)) : (cur.addons_json || '[]'),
     JSON.stringify(translations),
-    req.params.id);
+    req.params.id, branch_id);
   if (Array.isArray(b.recipe)) Catalog.replaceRecipe(req.params.id, b.recipe || [], branch_id);
   audit('menu.update', { id: req.params.id }, branch_id, actor(req));
   Catalog.cacheBust('menu:');
   emit('menu:updated', { id: req.params.id, updated: true }, branch_id);
-  return Catalog.getMenuItem(req.params.id, { includeRecipe: true });
+  return Catalog.getMenuItem(req.params.id, { includeRecipe: true }, branch_id);
 }));
 
 api.post('/menu/:id/availability', guard('menu.manage'), wrap((req) => {
   const branch_id = branch(req);
   const { available } = req.body;
-  db.prepare(`UPDATE menu_items SET available=? WHERE id=?`).run(available ? 1 : 0, req.params.id);
-  const item = Catalog.getMenuItem(req.params.id);
+  db.prepare(`UPDATE menu_items SET available=? WHERE id=? AND branch_id=?`).run(available ? 1 : 0, req.params.id, branch_id);
+  const item = Catalog.getMenuItem(req.params.id, {}, branch_id);
+  if (!item) throw new Error('Món không tồn tại');
   audit('menu.availability', { id: item.id, available: !!item.available }, branch_id, actor(req));
   emit('menu:updated', { id: item.id, available: !!item.available, name: item.name }, branch_id);
   return { id: item.id, available: !!item.available };
@@ -125,9 +129,9 @@ api.post('/menu/:id/price', guard('menu.manage'), wrap((req) => {
   if (!Auth.verifyManagerOwnerPin(pin, branch_id)) throw new Error('Cần nhập PIN của Manager hoặc Admin để xác nhận đổi giá món.');
   const price = parseInt(req.body.price);
   if (!Number.isFinite(price) || price < 0) throw new Error('Giá không hợp lệ');
-  const cur = db.prepare(`SELECT price FROM menu_items WHERE id=?`).get(req.params.id);
+  const cur = db.prepare(`SELECT price FROM menu_items WHERE id=? AND branch_id=?`).get(req.params.id, branch_id);
   if (!cur) throw new Error('Món không tồn tại');
-  db.prepare(`UPDATE menu_items SET price=? WHERE id=?`).run(price, req.params.id);
+  db.prepare(`UPDATE menu_items SET price=? WHERE id=? AND branch_id=?`).run(price, req.params.id, branch_id);
   audit('menu.price', { id: req.params.id, from: cur.price, to: price }, branch_id, actor(req));
   emit('menu:updated', { id: req.params.id, price }, branch_id);
   return { id: req.params.id, price };
@@ -152,7 +156,7 @@ api.post('/menu/:id/delete', guard('menu.manage'), wrap((req) => {
 }));
 
 // --- Categories ---
-api.get('/categories', wrap(() => Catalog.listCategories()));
+api.get('/categories', wrap((req) => Catalog.listCategories(visibleBranch(req))));
 api.post('/categories', guard('menu.manage'), wrap((req) => {
   const b = branch(req);
   const pin = req.body?.security_pin;

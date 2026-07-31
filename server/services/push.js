@@ -38,7 +38,7 @@ async function getMessaging(branch_id) {
 /** Lưu/cập nhật token FCM của 1 thiết bị (gọi khi app khởi động/đăng nhập
  *  và mỗi khi Firebase phát token mới). UPSERT theo device_id — 1 thiết bị chỉ
  *  giữ 1 dòng, token cũ tự bị ghi đè. */
-export function registerDeviceToken(body = {}, branch_id = 'br1') {
+export function registerDeviceToken(body = {}, branch_id = 'sala') {
   const deviceId = String(body.device_id || '').trim();
   const fcmToken = String(body.fcm_token || '').trim();
   if (!deviceId || !fcmToken) throw new Error('Thiếu device_id hoặc fcm_token');
@@ -107,15 +107,15 @@ export async function sendPushToBranch(branch_id, { title, body, data = {}, plat
 
 /** Gửi tới MỌI thiết bị đã đăng ký của 1 nền tảng, BẤT KỂ chi nhánh — dùng
  *  cho thông báo mang tính toàn hệ thống (bản cập nhật app mới). Nhiều chi
- *  nhánh thường dùng chung 1 project Firebase nên chỉ cần khoá của 'br1'. */
+ *  nhánh thường dùng chung 1 project Firebase nên chỉ cần khoá của 'sala'. */
 export async function sendPushForNewAppVersion(platform, { title, body, data = {} } = {}) {
   try {
-    const messaging = await getMessaging('br1');
+    const messaging = await getMessaging('sala');
     if (!messaging) return { sent: 0, failed: 0, reason: 'not_configured' };
     const rows = db.prepare(`SELECT * FROM device_tokens WHERE platform=?`).all(platform);
     if (!rows.length) return { sent: 0, failed: 0, reason: 'no_devices' };
     const result = await deliver(messaging, rows, { title, body, data });
-    audit('push.sent', { title, ...result, total: rows.length, scope: 'all_branches' }, 'br1');
+    audit('push.sent', { title, ...result, total: rows.length, scope: 'all_branches' }, 'sala');
     return result;
   } catch (e) {
     logger.warn('sendPushForNewAppVersion failed', { message: e?.message });

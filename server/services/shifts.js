@@ -36,11 +36,11 @@ function publicShift(row) {
   };
 }
 
-export function getActiveShift(branch_id = 'br1') {
+export function getActiveShift(branch_id = 'sala') {
   return publicShift(db.prepare(`SELECT * FROM shifts WHERE branch_id=? AND status='open' ORDER BY opened_at DESC LIMIT 1`).get(branch_id));
 }
 
-export function openShift(body = {}, user = {}, branch_id = 'br1') {
+export function openShift(body = {}, user = {}, branch_id = 'sala') {
   const current = getActiveShift(branch_id);
   if (current) throw new Error('Dang co ca dang mo. Hay ket ca hien tai truoc khi mo ca moi.');
   const cfg = getOperationsConfig(branch_id);
@@ -60,7 +60,7 @@ export function openShift(body = {}, user = {}, branch_id = 'br1') {
   return { shift: getActiveShift(branch_id), config: cfg };
 }
 
-export function closeShift(body = {}, user = {}, branch_id = 'br1') {
+export function closeShift(body = {}, user = {}, branch_id = 'sala') {
   const shift = getActiveShift(branch_id);
   if (!shift) throw new Error('Chua co ca dang mo de ket ca.');
 
@@ -106,7 +106,7 @@ export function closeShift(body = {}, user = {}, branch_id = 'br1') {
   return { shift: publicShift(db.prepare(`SELECT * FROM shifts WHERE id=?`).get(shift.id)), report: { ...report, closing_cash }, day_report };
 }
 
-export function currentShift(branch_id = 'br1') {
+export function currentShift(branch_id = 'sala') {
   const shift = getActiveShift(branch_id);
   const config = getOperationsConfig(branch_id);
   return {
@@ -119,12 +119,12 @@ export function currentShift(branch_id = 'br1') {
   };
 }
 
-export function listShifts(branch_id = 'br1', limit = 40) {
+export function listShifts(branch_id = 'sala', limit = 40) {
   return db.prepare(`SELECT * FROM shifts WHERE branch_id=? ORDER BY opened_at DESC LIMIT ?`).all(branch_id, limit)
     .map(publicShift);
 }
 
-export function shiftReport(shift_id, branch_id = 'br1') {
+export function shiftReport(shift_id, branch_id = 'sala') {
   const shift = publicShift(db.prepare(`SELECT * FROM shifts WHERE id=? AND branch_id=?`).get(shift_id, branch_id));
   if (!shift) throw new Error('Ca lam viec khong ton tai.');
   const payments = db.prepare(`
@@ -175,7 +175,7 @@ export function shiftReport(shift_id, branch_id = 'br1') {
   };
 }
 
-export function operationDayReport(branch_id = 'br1', endAt = null) {
+export function operationDayReport(branch_id = 'sala', endAt = null) {
   const ref = endAt ? new Date(endAt) : new Date();
   const bounds = dayBounds(ref);
   const firstShift = db.prepare(`

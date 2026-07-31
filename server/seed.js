@@ -4,7 +4,7 @@ import { db, migrate, bootstrapWarehouseDefaults } from './db.js';
 
 migrate();
 
-const BR = 'br1';
+const BR = 'sala';
 const WH_KITCHEN = 'wh_kitchen';
 const WH_RETAIL = 'wh_retail';
 const ALWAYS = JSON.stringify({ mode: 'always' });

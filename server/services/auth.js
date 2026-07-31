@@ -351,7 +351,7 @@ export function grantablePermSet(actor) {
   return new Set(effectivePermsForUser(actor).filter(p => p !== '*'));
 }
 
-export function setUserPerms(user_id, perms, branch_id = 'br1', actor = null) {
+export function setUserPerms(user_id, perms, branch_id = 'sala', actor = null) {
   const u = db.prepare(`SELECT * FROM users WHERE id=?`).get(user_id);
   if (!u) throw new Error('Người dùng không tồn tại');
   if (u.role === 'owner') {
@@ -397,7 +397,7 @@ export function permMatrix() {
     locked: r.key === 'owner',
   }));
 }
-export function setRolePerms(role, perms, branch_id = 'br1', actor = null) {
+export function setRolePerms(role, perms, branch_id = 'sala', actor = null) {
   if (role === 'owner') throw new Error('Vai trò Admin luôn toàn quyền, không thể chỉnh');
   if (!ROLES.some(r => r.key === role)) throw new Error('Vai trò không hợp lệ');
   // Same scoped-delegation rule as users: the actor can only toggle permissions
@@ -440,11 +440,11 @@ function branchExists(id, { includeInactive = false } = {}) {
 }
 
 export function userBranchIds(user) {
-  if (!user) return ['br1'];
+  if (!user) return ['sala'];
   if (user.role === 'owner') return listBranches().map(b => b.id);
   const access = parseBranchAccess(user.branch_access_json || user.branch_access || user.branch_ids);
   if (access.includes('*')) return listBranches().map(b => b.id);
-  const ids = new Set([user.branch_id || 'br1', ...access]);
+  const ids = new Set([user.branch_id || 'sala', ...access]);
   return [...ids].filter(id => branchExists(id));
 }
 
@@ -454,20 +454,25 @@ export function canAccessBranch(user, branch_id) {
 }
 
 export function publicBranch(req) {
-  const requested = String(req?.headers?.['x-branch-id'] || req?.query?.branch_id || req?.body?.branch_id || 'br1');
-  return branchExists(requested) ? requested : 'br1';
+  const raw = req?.headers?.['x-branch-id'] || req?.query?.branch_id || req?.body?.branch_id;
+  if (!raw) return 'sala';
+  const requested = String(raw);
+  if (!branchExists(requested)) throw new Error('Chi nhánh được yêu cầu không tồn tại hoặc đã ngừng hoạt động.');
+  return requested;
 }
 
 export function resolveBranch(req) {
-  const requested = String(req?.headers?.['x-branch-id'] || req?.query?.branch_id || req?.body?.branch_id || req?.user?.branch_id || 'br1');
+  const raw = req?.headers?.['x-branch-id'] || req?.query?.branch_id || req?.body?.branch_id;
+  const requested = String(raw || req?.user?.branch_id || '');
   if (!req?.user) return publicBranch(req);
   if (canAccessBranch(req.user, requested)) return requested;
-  const fallback = req.user.branch_id || userBranchIds(req.user)[0] || 'br1';
+  if (raw) throw new Error('Tài khoản này không có quyền truy cập chi nhánh đã chọn.');
+  const fallback = req.user.branch_id || userBranchIds(req.user)[0] || 'sala';
   if (canAccessBranch(req.user, fallback)) return fallback;
   throw new Error('Tài khoản này không có quyền truy cập chi nhánh đã chọn.');
 }
 
-function normalizeBranchAccess(body = {}, role = 'cashier', homeBranch = 'br1') {
+function normalizeBranchAccess(body = {}, role = 'cashier', homeBranch = 'sala') {
   if (role === 'owner') return ['*'];
   const raw = body.branch_access || body.branch_ids || body.branchAccess || [];
   const ids = Array.isArray(raw) ? raw : [];
@@ -476,13 +481,13 @@ function normalizeBranchAccess(body = {}, role = 'cashier', homeBranch = 'br1') 
   return clean.length ? clean : [homeBranch];
 }
 
-export function login(username, pin, branch_id = 'br1', meta = {}) {
+export function login(username, pin, branch_id = 'sala', meta = {}) {
   const ip = String(meta?.ip || '').slice(0, 64);
   const uname = String(username || '').toLowerCase();
   const lock = loginLockState(uname, ip);
   if (lock && lock.until && lock.until > Date.now()) {
     const mins = Math.max(1, Math.ceil((lock.until - Date.now()) / 60000));
-    audit('auth.login.locked', { user: uname, ip }, branchExists(branch_id) ? branch_id : 'br1', uname || 'unknown');
+    audit('auth.login.locked', { user: uname, ip }, branchExists(branch_id) ? branch_id : 'sala', uname || 'unknown');
     throw new Error(`Đăng nhập tạm khóa do nhập sai nhiều lần. Thử lại sau ~${mins} phút.`);
   }
   // Màn đăng nhập gửi `id` (từ listLoginUsers) thay vì username thật — chấp nhận
@@ -490,11 +495,11 @@ export function login(username, pin, branch_id = 'br1', meta = {}) {
   const u = db.prepare(`SELECT * FROM users WHERE (username=? OR id=?) AND active=1`)
     .get(uname, String(username || '').trim());
   if (!u || !verifyPin(pin, u.pin)) {
-    registerLoginFail(uname, branchExists(branch_id) ? branch_id : 'br1', ip);
+    registerLoginFail(uname, branchExists(branch_id) ? branch_id : 'sala', ip);
     throw new Error('Sai tài khoản hoặc mã PIN');
   }
   clearLoginFails(uname, ip);
-  const selectedBranch = branchExists(branch_id) ? branch_id : (u.branch_id || 'br1');
+  const selectedBranch = branchExists(branch_id) ? branch_id : (u.branch_id || 'sala');
   if (!canAccessBranch(u, selectedBranch)) throw new Error('Tài khoản này chưa được cấp quyền vào chi nhánh đã chọn.');
   const token = newToken();
   const digest = tokenDigest(token);
@@ -538,7 +543,7 @@ function selfApprover(branch_id) {
  *  Lợi thêm về hiệu năng: đường PIN phải scrypt (đồng bộ, cố tình chậm ~80ms)
  *  lần lượt từng tài khoản quản lý cho tới khi khớp — chặn vòng lặp sự kiện.
  *  Trường hợp phổ biến nhất (quản lý tự thao tác) nay tốn 0 lần scrypt. */
-export function verifyManagerOwnerPin(pin, branch_id = 'br1') {
+export function verifyManagerOwnerPin(pin, branch_id = 'sala') {
   const self = selfApprover(branch_id);
   if (self) return self;
 
@@ -559,7 +564,7 @@ export function verifyManagerOwnerPin(pin, branch_id = 'br1') {
 // Voucher: nguoi thao tac phai TU nhap PIN cua CHINH MINH — PIN cua nguoi khac
 // (ke ca Manager) bi tu choi. Ngoai le duy nhat: PIN cua Admin/Owner van duyet duoc
 // (Admin ho tro tai quay). Tra ve publicUser cua nguoi duyet, hoac null.
-export function verifySelfOrOwnerPin(pin, currentUserId, branch_id = 'br1') {
+export function verifySelfOrOwnerPin(pin, currentUserId, branch_id = 'sala') {
   const clean = String(pin || '').trim();
   if (!clean) return null;
   // 1) PIN cua chinh nguoi dang dang nhap
@@ -576,7 +581,7 @@ export function verifySelfOrOwnerPin(pin, currentUserId, branch_id = 'br1') {
   return row ? publicUser(row) : null;
 }
 
-export function verifyWarehouseConfigPin(pin, branch_id = 'br1') {
+export function verifyWarehouseConfigPin(pin, branch_id = 'sala') {
   const clean = String(pin || '').trim();
   if (!clean) return null;
   const rows = db.prepare(`
@@ -592,7 +597,7 @@ export function verifyWarehouseConfigPin(pin, branch_id = 'br1') {
 // Xác nhận PIN thuộc về một user CÓ quyền `perm` (dùng cho phân quyền nhiều cấp:
 // nếu người đang thao tác không đủ quyền, quản lý/người có quyền nhập PIN duyệt).
 // Owner/Admin luôn qua (canUser owner=true). Trả publicUser người duyệt hoặc null.
-export function verifyPinHasPerm(pin, perm, branch_id = 'br1') {
+export function verifyPinHasPerm(pin, perm, branch_id = 'sala') {
   const clean = String(pin || '').trim();
   if (!clean) return null;
   const rows = db.prepare(`SELECT * FROM users WHERE active=1 LIMIT 500`).all();
@@ -632,7 +637,7 @@ function sessionDeviceGate(digest, storedDeviceId, requestDeviceId, username = '
   // Token đúng nhưng sai thiết bị → gần như chắc chắn token đã bị sao chép.
   db.prepare(`DELETE FROM auth_sessions WHERE token=?`).run(digest);
   sessions.delete(digest);
-  audit('auth.session.device_mismatch', { bound_device: bound, seen_device: incoming }, 'br1', username || 'unknown');
+  audit('auth.session.device_mismatch', { bound_device: bound, seen_device: incoming }, 'sala', username || 'unknown');
   return false;
 }
 
@@ -677,7 +682,7 @@ export function userFor(token, deviceId = '') {
   return user;
 }
 
-export function listUsers(branch_id = 'br1') {
+export function listUsers(branch_id = 'sala') {
   return db.prepare(`SELECT * FROM users WHERE active=1 ORDER BY role,name`).all()
     .filter(u => canAccessBranch(u, branch_id))
     .map(publicUser);
@@ -703,7 +708,7 @@ export function listUsers(branch_id = 'br1') {
  *  Nên `username` vẫn còn, nhưng mang GIÁ TRỊ CỦA `id` chứ không phải tên tài
  *  khoản thật. App cũ lẫn app mới đều gửi đúng thứ server nhận (login() chấp
  *  nhận cả username lẫn id), còn tên tài khoản thật thì không bao giờ rời server. */
-export function listLoginUsers(branch_id = 'br1') {
+export function listLoginUsers(branch_id = 'sala') {
   return db.prepare(`SELECT * FROM users WHERE active=1 ORDER BY name`).all()
     .filter(u => canAccessBranch(u, branch_id))
     .map(u => ({
@@ -716,13 +721,13 @@ export function listLoginUsers(branch_id = 'br1') {
 }
 
 // ---- User management (settings.manage) ----
-export function listAllUsers(branch_id = 'br1') {
+export function listAllUsers(branch_id = 'sala') {
   return db.prepare(`SELECT * FROM users ORDER BY active DESC, role, name`).all()
     .filter(u => canAccessBranch(u, branch_id))
     .map(u => ({ ...publicUser(u), active: !!u.active, lang: u.lang || 'vi', ...userPermDetails(u) }));
 }
 function validRole(r) { return ROLES.some(x => x.key === r); }
-export function createUser(body, branch_id = 'br1', actor = null) {
+export function createUser(body, branch_id = 'sala', actor = null) {
   const username = String(body.username || '').trim().toLowerCase();
   const name = String(body.name || '').trim();
   const pin = String(body.pin || '').trim();
@@ -744,7 +749,7 @@ export function createUser(body, branch_id = 'br1', actor = null) {
   archiveStaff(out);
   return out;
 }
-export function updateUser(id, body, branch_id = 'br1', actor = null) {
+export function updateUser(id, body, branch_id = 'sala', actor = null) {
   const cur = db.prepare(`SELECT * FROM users WHERE id=?`).get(id);
   if (!cur) throw new Error('Người dùng không tồn tại');
   const name = body.name !== undefined ? String(body.name).trim() || cur.name : cur.name;
@@ -770,7 +775,7 @@ export function updateUser(id, body, branch_id = 'br1', actor = null) {
   return out;
 }
 
-export function updateOwnLang(user_id, lang, branch_id = 'br1') {
+export function updateOwnLang(user_id, lang, branch_id = 'sala') {
   const clean = lang === 'en' ? 'en' : 'vi';
   const cur = db.prepare(`SELECT * FROM users WHERE id=? AND active=1`).get(user_id);
   if (!cur) throw new Error('Người dùng không tồn tại');
@@ -793,7 +798,7 @@ export const WEAK_PINS = new Set([
 // quản lý khác). Dùng cho luồng ép-đổi-PIN-mặc-định lần đầu (owner còn dùng 1234)
 // và cho việc đổi PIN chủ động. Chặn PIN yếu để không đổi từ mặc định này sang mặc
 // định khác.
-export function changeOwnPin(user_id, currentPin, newPin, branch_id = 'br1') {
+export function changeOwnPin(user_id, currentPin, newPin, branch_id = 'sala') {
   const cur = db.prepare(`SELECT * FROM users WHERE id=? AND active=1`).get(user_id);
   if (!cur) throw new Error('Người dùng không tồn tại');
   if (!verifyPin(String(currentPin ?? ''), cur.pin)) throw new Error('Mã PIN hiện tại không đúng.');
@@ -805,7 +810,7 @@ export function changeOwnPin(user_id, currentPin, newPin, branch_id = 'br1') {
   audit('user.pin.self_change', { username: cur.username, role: cur.role }, branch_id, cur.username);
   return { ok: true };
 }
-export function deleteUser(id, branch_id = 'br1') {
+export function deleteUser(id, branch_id = 'sala') {
   const cur = db.prepare(`SELECT * FROM users WHERE id=?`).get(id);
   if (!cur) throw new Error('Người dùng không tồn tại');
   if (cur.role === 'owner' && db.prepare(`SELECT COUNT(*) n FROM users WHERE role='owner'`).get().n <= 1)
@@ -832,7 +837,7 @@ function publicUser(u) {
     role: u.role,
     username: u.username,
     lang: u.lang || 'vi',
-    branch_id: u.branch_id || branch_ids[0] || 'br1',
+    branch_id: u.branch_id || branch_ids[0] || 'sala',
     branch_ids,
     branch_access: parseBranchAccess(u.branch_access_json || u.branch_access || u.branch_ids),
   };
@@ -877,4 +882,3 @@ export function attachUser() {
 export function actorName(req) {
   return req?.user?.name || req?.user?.username || 'system';
 }
-

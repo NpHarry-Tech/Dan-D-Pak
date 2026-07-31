@@ -19,6 +19,9 @@ function resolveDbPath() {
 }
 
 export const DB_PATH = resolveDbPath();
+if (env.isProduction && env.DEPLOYMENT_TARGET === 'vps' && resolve(DB_PATH) !== resolve('/app/server-data/store.db')) {
+  throw new Error(`VPS production chỉ được dùng DB duy nhất tại /app/server-data/store.db (đang cấu hình: ${DB_PATH})`);
+}
 export const DB_WAS_EMPTY = !existsSync(DB_PATH) || statSync(DB_PATH).size === 0;
 mkdirSync(dirname(DB_PATH), { recursive: true });
 

@@ -6,7 +6,7 @@ import { archiveDashboardReport } from './archive.js';
 const todayStart = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return d.toISOString(); };
 const tomorrowStart = () => { const d = new Date(); d.setHours(24, 0, 0, 0); return d.toISOString(); };
 
-function businessWindow(branch_id = 'br1') {
+function businessWindow(branch_id = 'sala') {
   const calendarStart = todayStart();
   const calendarEnd = tomorrowStart();
   const firstShift = db.prepare(`
@@ -30,7 +30,7 @@ function businessWindow(branch_id = 'br1') {
   };
 }
 
-export function dashboard(branch_id = 'br1') {
+export function dashboard(branch_id = 'sala') {
   const window = businessWindow(branch_id);
   const paid = db.prepare(`SELECT * FROM orders WHERE branch_id=? AND status='paid' AND paid_at>=? AND paid_at<=?`).all(branch_id, window.start, window.end);
   const revenue = paid.reduce((s, o) => s + o.total, 0);
@@ -77,7 +77,7 @@ export function dashboard(branch_id = 'br1') {
 
 // Revenue trends across calendar periods (day / week / month / quarter / year),
 // bucketed in server local time so labels match the dashboard clock.
-export function revenueTrends(branch_id = 'br1') {
+export function revenueTrends(branch_id = 'sala') {
   const pad = (n) => String(n).padStart(2, '0');
   const now = new Date();
   // earliest data we need is for the 5-year series
@@ -130,7 +130,7 @@ export function revenueTrends(branch_id = 'br1') {
 // from / to: khoảng thời gian cụ thể (ISO, nửa mở [from, to)) do client tính theo
 //   múi giờ trình duyệt — dùng cho bộ lọc Ngày/Tuần/Tháng/Quý/Năm cụ thể. Khi có
 //   from/to thì `period` (mốc tương đối) không cần thiết nữa.
-export function recentAudit(branch_id = 'br1', limit = 30, before = null, period = null, search = '', from = null, to = null) {
+export function recentAudit(branch_id = 'sala', limit = 30, before = null, period = null, search = '', from = null, to = null) {
   const lim = Math.min(Math.max(parseInt(limit) || 30, 1), 1000);
   let timeCutoff = null;
   const now = new Date();

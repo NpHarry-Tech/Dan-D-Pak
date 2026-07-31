@@ -7,8 +7,17 @@ import * as Orders from '../../services/orders.js';
 import * as Pay from '../../services/payments.js';
 import * as Auth from '../../services/auth.js';
 import { audit } from '../../db.js';
+import { assertSalesModuleEnabled } from '../../services/settings.js';
 
 export function registerRetailRoutes(api, { wrap, guard, guardAny, branch, visibleBranch, applyManualConfirm, assertBillEditable }) {
+api.use('/retail', (req, _res, next) => {
+  try {
+    assertSalesModuleEnabled('retail', visibleBranch(req));
+    next();
+  } catch (error) {
+    next(error);
+  }
+});
 // --- Retail / vouchers ---
 api.get('/vouchers', guardAny('discount', 'settings.promotions'), wrap((req) => Vouchers.listVouchers(branch(req))));
 api.get('/vouchers/active', wrap((req) => Vouchers.listActiveVouchers(visibleBranch(req))));

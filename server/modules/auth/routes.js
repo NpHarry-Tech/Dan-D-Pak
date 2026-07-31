@@ -4,6 +4,7 @@
 import * as Auth from '../../services/auth.js';
 import * as Branches from '../../services/branches.js';
 import * as Modules from '../../services/modules.js';
+import { getSalesModules } from '../../services/settings.js';
 import { audit } from '../../db.js';
 import { clientIp } from '../../core/util.js';
 
@@ -43,6 +44,13 @@ api.get('/users', wrap((req) => (req.user
 api.get('/ping', wrap(() => ({ ok: true, serverTime: Date.now() })));
 
 // --- ERP module registry ---
-api.get('/modules', guard(), wrap((req) => ({ groups: Modules.MODULE_GROUPS, modules: Modules.visibleModules(Auth.effectivePermsForUser(req.user.id)) })));
+api.get('/modules', guard(), wrap((req) => ({
+  groups: Modules.MODULE_GROUPS,
+  modules: Modules.visibleModules(
+    Auth.effectivePermsForUser(req.user.id),
+    getSalesModules(branch(req)),
+  ),
+  sales_modules: getSalesModules(branch(req)),
+})));
 api.get('/modules/all', guardAny('settings.perms'), wrap(() => ({ groups: Modules.MODULE_GROUPS, modules: Modules.listModules(Auth.ALL_PERMS) })));
 }

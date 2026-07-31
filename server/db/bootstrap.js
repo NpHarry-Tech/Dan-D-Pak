@@ -1,10 +1,10 @@
 import { db } from './connection.js';
 import { now, uid } from './ids.js';
-export function defaultWarehouseIds(branch_id = 'br1') {
-  if (branch_id === 'br1') {
+export function defaultWarehouseIds(branch_id = 'sala') {
+  if (branch_id === 'sala') {
     return { kitchen: 'wh_kitchen', retail: 'wh_retail', showroom: 'wh_showroom_bcm' };
   }
-  const clean = String(branch_id || 'br1').replace(/[^a-zA-Z0-9_]/g, '_').toLowerCase();
+  const clean = String(branch_id || 'sala').replace(/[^a-zA-Z0-9_]/g, '_').toLowerCase();
   return {
     kitchen: `${clean}_wh_kitchen`,
     retail: `${clean}_wh_retail`,
@@ -12,20 +12,20 @@ export function defaultWarehouseIds(branch_id = 'br1') {
   };
 }
 
-export function defaultWarehouseId(branch_id = 'br1', stockType = 'inventory') {
+export function defaultWarehouseId(branch_id = 'sala', stockType = 'inventory') {
   const ids = defaultWarehouseIds(branch_id);
   return stockType === 'sku' || stockType === 'retail' ? ids.retail : ids.kitchen;
 }
 
 export function bootstrapBranchDefaults() {
   db.prepare(`INSERT OR IGNORE INTO branches (id,name,address,code,active,sort) VALUES (?,?,?,?,1,?)`)
-    .run('br1', 'Dan D Pak Sala', 'Sala, TP.HCM', 'SALA', 1);
+    .run('sala', 'Dan D Pak Sala', 'Sala, TP.HCM', 'SALA', 1);
   db.prepare(`UPDATE branches
     SET name=CASE WHEN name IN ('District 1 - HCMC','Dan D Pak') THEN 'Dan D Pak Sala' ELSE name END,
         code=COALESCE(NULLIF(code,''),'SALA'),
         active=COALESCE(active,1),
         sort=COALESCE(sort,1)
-    WHERE id='br1'`).run();
+    WHERE id='sala'`).run();
   db.prepare(`UPDATE users SET branch_access_json='["*"]' WHERE role='owner' AND (branch_access_json IS NULL OR branch_access_json='' OR branch_access_json='[]')`).run();
 }
 
@@ -35,7 +35,7 @@ export function bootstrapBranchDefaults() {
 // still has them. INSERT OR IGNORE on the primary key makes this idempotent, so it
 // only restores rows that are genuinely missing. Returns how many were restored.
 
-export function bootstrapWarehouseDefaults(branch_id = 'br1') {
+export function bootstrapWarehouseDefaults(branch_id = 'sala') {
   const ids = defaultWarehouseIds(branch_id);
   db.prepare(`INSERT OR IGNORE INTO warehouses (id,branch_id,code,name,type,sort) VALUES (?,?,?,?,?,?)`)
     .run(ids.kitchen, branch_id, 'KITCHEN', 'Kho bếp / nguyên liệu & vật dụng', 'kitchen', 1);
@@ -64,10 +64,10 @@ export function bootstrapWarehouseDefaults(branch_id = 'br1') {
   bootstrapVoucherDefaults(branch_id);
 }
 
-export function bootstrapTableDefaults(branch_id = 'br1') {
+export function bootstrapTableDefaults(branch_id = 'sala') {
   const existing = db.prepare(`SELECT COUNT(*) n FROM tables WHERE branch_id=?`).get(branch_id).n;
   if (existing) return;
-  const prefix = branch_id === 'br1' ? '' : `${String(branch_id).replace(/[^a-zA-Z0-9_]/g, '_').toLowerCase()}_`;
+  const prefix = branch_id === 'sala' ? '' : `${String(branch_id).replace(/[^a-zA-Z0-9_]/g, '_').toLowerCase()}_`;
   const rows = [
     ['Tầng trệt', ['A01', 'A02', 'A03', 'A04', 'A05', 'A06', 'A07', 'A08', 'A09', 'A10']],
     ['Tầng 1', ['A11', 'A12', 'A13', 'A14', 'A15', 'A16', 'A17', 'A18', 'A19']],
@@ -115,7 +115,7 @@ function bootstrapVoucherDefaults(branch_id) {
   const choco = db.prepare(`SELECT id FROM skus WHERE branch_id=? AND id='s_choco' AND active=1`).get(branch_id)
     || db.prepare(`SELECT id FROM skus WHERE branch_id=? AND active=1 ORDER BY name LIMIT 1`).get(branch_id);
   const ts = now();
-  const prefix = branch_id === 'br1' ? '' : `${String(branch_id).replace(/[^a-zA-Z0-9_]/g, '_').toLowerCase()}_`;
+  const prefix = branch_id === 'sala' ? '' : `${String(branch_id).replace(/[^a-zA-Z0-9_]/g, '_').toLowerCase()}_`;
   db.prepare(`INSERT OR IGNORE INTO vouchers
     (id,branch_id,code,name,type,value,scope,sku_id,min_total,active,note,created_at,updated_at)
     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`)

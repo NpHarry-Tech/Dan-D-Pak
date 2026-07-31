@@ -37,7 +37,7 @@ function isEmpty(snap) {
   return lines.length === 0 && !snap?.customer && !snap?.order_voucher_id;
 }
 
-export function listCarts(branch_id = 'br1') {
+export function listCarts(branch_id = 'sala') {
   return db.prepare(`SELECT slot, snapshot_json, updated_at, updated_by, device
       FROM retail_carts WHERE branch_id=? ORDER BY slot`).all(branch_id)
     .map(r => ({ slot: r.slot, updated_at: r.updated_at, updated_by: r.updated_by, device: r.device, ...safeSnap(r.snapshot_json) }));

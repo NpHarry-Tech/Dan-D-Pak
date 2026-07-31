@@ -31,32 +31,32 @@ test('Firebase service-account is stored encrypted, never leaks plaintext via ge
   assert.throws(() => Settings.setFirebaseServiceAccount({ project_id: 'x' }),
     /Thiếu trường/);
 
-  const saved = Settings.setFirebaseServiceAccount(FAKE_SERVICE_ACCOUNT, 'br1');
+  const saved = Settings.setFirebaseServiceAccount(FAKE_SERVICE_ACCOUNT, 'sala');
   assert.equal(saved.project_id, 'dan-d-pak-pos');
 
   const row = db.prepare(
-    `SELECT value FROM app_settings WHERE branch_id='br1' AND key='firebase_service_account'`
+    `SELECT value FROM app_settings WHERE branch_id='sala' AND key='firebase_service_account'`
   ).get();
   assert.ok(row.value.startsWith('enc:v1:'), 'must be encrypted at rest');
   assert.equal(row.value.includes('FAKEKEYFORTEST'), false, 'ciphertext must not contain the raw key');
 
-  const decoded = Settings.getFirebaseServiceAccount('br1');
+  const decoded = Settings.getFirebaseServiceAccount('sala');
   assert.deepEqual(decoded, FAKE_SERVICE_ACCOUNT);
-  assert.equal(Settings.firebaseConfigured('br1'), true);
+  assert.equal(Settings.firebaseConfigured('sala'), true);
 
-  const publicSettings = Settings.getSettings('br1');
+  const publicSettings = Settings.getSettings('sala');
   assert.equal(publicSettings.firebase_configured, true);
   assert.equal(publicSettings.firebase_service_account, undefined,
     'raw/encrypted secret must never appear in the settings payload sent to clients');
 
-  // Chi nhánh khác chưa cấu hình → không nhìn thấy khoá của br1.
+  // Chi nhánh khác chưa cấu hình → không nhìn thấy khoá của sala.
   assert.equal(Settings.firebaseConfigured('br2'), false);
   assert.equal(Settings.getFirebaseServiceAccount('br2'), null);
 });
 
 test('device token registration upserts by device_id, and push never throws when unconfigured', async () => {
   const first = Push.registerDeviceToken(
-    { device_id: 'dev_tablet_1', fcm_token: 'token-A', platform: 'android' }, 'br1');
+    { device_id: 'dev_tablet_1', fcm_token: 'token-A', platform: 'android' }, 'sala');
   assert.ok(first.ok);
   const rowsAfterFirst = db.prepare(`SELECT * FROM device_tokens WHERE device_id='dev_tablet_1'`).all();
   assert.equal(rowsAfterFirst.length, 1);
@@ -64,12 +64,12 @@ test('device token registration upserts by device_id, and push never throws when
 
   // Token đổi (cài lại app) → UPSERT, không tích luỹ dòng thứ 2.
   Push.registerDeviceToken(
-    { device_id: 'dev_tablet_1', fcm_token: 'token-B', platform: 'android' }, 'br1');
+    { device_id: 'dev_tablet_1', fcm_token: 'token-B', platform: 'android' }, 'sala');
   const rowsAfterUpdate = db.prepare(`SELECT * FROM device_tokens WHERE device_id='dev_tablet_1'`).all();
   assert.equal(rowsAfterUpdate.length, 1);
   assert.equal(rowsAfterUpdate[0].fcm_token, 'token-B');
 
-  assert.throws(() => Push.registerDeviceToken({ device_id: '', fcm_token: 'x' }, 'br1'),
+  assert.throws(() => Push.registerDeviceToken({ device_id: '', fcm_token: 'x' }, 'sala'),
     /Thiếu device_id hoặc fcm_token/);
 
   // Chi nhánh 'br2' chưa cấu hình Firebase → gửi push phải trả về gọn gàng,

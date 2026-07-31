@@ -7,11 +7,11 @@ import { audit } from '../../db.js';
 import { emit } from '../../realtime.js';
 import { NOTIFICATION_SOUND_KEY, readJsonSetting, writeJsonSetting } from './shared.js';
 
-export function getNotificationSoundConfig(branch_id = 'br1') {
+export function getNotificationSoundConfig(branch_id = 'sala') {
   return readJsonSetting(branch_id, NOTIFICATION_SOUND_KEY, (x) => x, null);
 }
 
-export function updateNotificationSoundConfig(body = {}, branch_id = 'br1') {
+export function updateNotificationSoundConfig(body = {}, branch_id = 'sala') {
   writeJsonSetting(branch_id, NOTIFICATION_SOUND_KEY, body);
   audit('settings.update', { keys: [NOTIFICATION_SOUND_KEY] }, branch_id);
   emit('settings:updated', { keys: [NOTIFICATION_SOUND_KEY] }, branch_id);

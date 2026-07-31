@@ -15,7 +15,7 @@ function firebaseSecretContext(branch_id) {
 
 /** Đọc + giải mã service-account (dùng NỘI BỘ để khởi tạo firebase-admin và
  *  gửi push) — KHÔNG BAO GIỜ gọi hàm này từ một route trả thẳng ra client. */
-export function getFirebaseServiceAccount(branch_id = 'br1') {
+export function getFirebaseServiceAccount(branch_id = 'sala') {
   const row = db.prepare(`SELECT value FROM app_settings WHERE branch_id=? AND key=?`)
     .get(branch_id, FIREBASE_SERVICE_ACCOUNT_KEY);
   if (!row?.value) return null;
@@ -26,14 +26,14 @@ export function getFirebaseServiceAccount(branch_id = 'br1') {
   }
 }
 
-export function firebaseConfigured(branch_id = 'br1') {
+export function firebaseConfigured(branch_id = 'sala') {
   return !!getFirebaseServiceAccount(branch_id);
 }
 
 /** Nhận object HOẶC chuỗi JSON của file service-account tải từ Firebase
  *  Console, xác thực đủ trường bắt buộc, mã hoá rồi lưu — 1 dòng trong
  *  app_settings, không phải file trên đĩa. */
-export function setFirebaseServiceAccount(raw, branch_id = 'br1') {
+export function setFirebaseServiceAccount(raw, branch_id = 'sala') {
   let obj;
   try {
     obj = typeof raw === 'string' ? JSON.parse(raw) : raw;

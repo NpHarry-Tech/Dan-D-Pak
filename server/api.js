@@ -34,6 +34,7 @@ import nodePath from 'node:path';
 import { storagePath } from './config/env.js';
 const AVATAR_UPLOADS_DIR = storagePath('uploads', 'avatars');
 const MENU_UPLOADS_DIR = storagePath('uploads', 'menu');
+const PRODUCT_UPLOADS_DIR = storagePath('uploads', 'products');
 const AVATAR_ALLOWED_MIME = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);
 const AVATAR_MAX_BYTES = 20 * 1024 * 1024;
 
@@ -137,8 +138,8 @@ function logRequestError(req, e) {
   try {
     const status = e?.status || 400;
     if (status < 500 && !isUnexpectedSystemError(e)) return;
-    let branch_id = 'br1';
-    try { branch_id = branch(req) || 'br1'; } catch { /* unresolved branch */ }
+    let branch_id = 'sala';
+    try { branch_id = branch(req) || 'sala'; } catch { /* unresolved branch */ }
     const actor = req?.user?.name || req?.user?.username || 'system';
     const path = req?.originalUrl || req?.url || '';
     logSystem({
@@ -203,7 +204,10 @@ function saveBase64Image(req, { dir, urlBase, prefix, auditAction }) {
 }
 
 registerTaxRoutes(api, { wrap, guard });
-registerInventoryRoutes(api, { wrap, guard, guardAny, branch, visibleBranch });
+registerInventoryRoutes(api, {
+  wrap, guard, guardAny, branch, visibleBranch, saveBase64Image,
+  PRODUCT_UPLOADS_DIR,
+});
 registerPaymentRoutes(api, {
   wrap,
   guard,
@@ -252,7 +256,7 @@ registerPrintingRoutes(api, { wrap, guardAny, branch, actor });
 registerRetailRoutes(api, { wrap, guard, guardAny, branch, visibleBranch, applyManualConfirm, assertBillEditable });
 registerContactRoutes(api, { wrap, guard, guardAny, branch, requireContactMutationPermission, saveBase64Image, AVATAR_UPLOADS_DIR });
 // Catalog / Menu + Categories — pass saveBase64Image + MENU_UPLOADS_DIR.
-registerCatalogRoutes(api, { wrap, guard, branch, actor, saveBase64Image, MENU_UPLOADS_DIR });
+registerCatalogRoutes(api, { wrap, guard, branch, visibleBranch, actor, saveBase64Image, MENU_UPLOADS_DIR });
 // Hardware Agent / Auto-update / Cloud Sync.
 registerAgentRoutes(api, { wrap, guardAny, branch });
 registerAppReleaseRoutes(api, { wrap, guardAny, logRequestError });

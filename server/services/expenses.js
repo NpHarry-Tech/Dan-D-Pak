@@ -21,7 +21,7 @@ function parseDate(v) {
 }
 
 // ---------- categories ----------
-export function listCategories(branch_id = 'br1') {
+export function listCategories(branch_id = 'sala') {
   let rows = db.prepare(`SELECT * FROM expense_categories WHERE branch_id=? AND active=1 ORDER BY sort, name`).all(branch_id);
   if (!rows.length) {
     const ins = db.prepare(`INSERT INTO expense_categories (id,branch_id,name,sort,active,created_at) VALUES (?,?,?,?,1,?)`);
@@ -31,7 +31,7 @@ export function listCategories(branch_id = 'br1') {
   return rows;
 }
 
-export function upsertCategory(body = {}, branch_id = 'br1') {
+export function upsertCategory(body = {}, branch_id = 'sala') {
   const name = str(body.name, 120);
   if (!name) throw new Error('Thiếu tên danh mục');
   if (body.id) {
@@ -46,7 +46,7 @@ export function upsertCategory(body = {}, branch_id = 'br1') {
   return db.prepare(`SELECT * FROM expense_categories WHERE id=?`).get(id);
 }
 
-export function deleteCategory(id, branch_id = 'br1') {
+export function deleteCategory(id, branch_id = 'sala') {
   db.prepare(`UPDATE expense_categories SET active=0 WHERE id=? AND branch_id=?`).run(id, branch_id);
   emit('expenses:updated', { category: id, deleted: true }, branch_id);
   return { ok: true };
@@ -65,7 +65,7 @@ function expenseOut(r) {
   return { ...r, amount: intval(r.amount), source: SOURCES.includes(r.source) ? r.source : 'direct' };
 }
 
-export function listExpenses(branch_id = 'br1', filters = {}) {
+export function listExpenses(branch_id = 'sala', filters = {}) {
   const params = [branch_id];
   let where = 'branch_id=?';
   if (filters.category_id) { where += ' AND category_id=?'; params.push(String(filters.category_id)); }
@@ -98,7 +98,7 @@ function resolvePayee(payee_id, branch_id) {
   return { id: p.id, name: p.company || p.name };
 }
 
-export function createExpense(body = {}, branch_id = 'br1', user = {}) {
+export function createExpense(body = {}, branch_id = 'sala', user = {}) {
   const amount = intval(body.amount);
   if (amount <= 0) throw new Error('Số tiền chi phải lớn hơn 0');
   const source = SOURCES.includes(body.source) ? body.source : 'direct';
@@ -139,7 +139,7 @@ export function createExpense(body = {}, branch_id = 'br1', user = {}) {
   return expenseOut(db.prepare(`SELECT * FROM expenses WHERE id=?`).get(id));
 }
 
-export function updateExpense(id, body = {}, branch_id = 'br1', user = {}) {
+export function updateExpense(id, body = {}, branch_id = 'sala', user = {}) {
   const e = db.prepare(`SELECT * FROM expenses WHERE id=? AND branch_id=?`).get(id, branch_id);
   if (!e) throw new Error('Khoản chi không tồn tại');
   if (e.drawer_entry_id) throw new Error('Khoản chi này đã trừ vào két — chỉnh sửa trong sổ quỹ/ca để không lệch tiền mặt');
@@ -152,7 +152,7 @@ export function updateExpense(id, body = {}, branch_id = 'br1', user = {}) {
   return expenseOut(db.prepare(`SELECT * FROM expenses WHERE id=?`).get(id));
 }
 
-export function deleteExpense(id, branch_id = 'br1', user = {}) {
+export function deleteExpense(id, branch_id = 'sala', user = {}) {
   const e = db.prepare(`SELECT * FROM expenses WHERE id=? AND branch_id=?`).get(id, branch_id);
   if (!e) throw new Error('Khoản chi không tồn tại');
   if (e.drawer_entry_id) throw new Error('Khoản chi này đã trừ vào két — không xóa từ Chi phí để tránh lệch quỹ');

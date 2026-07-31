@@ -46,7 +46,7 @@ const DATA_URL_EXT = {
 // to the drawer entry. Returns the document record, or null when there is no
 // (valid) attachment. Never throws to the caller — failures are swallowed so a
 // bad photo can't block recording the expense itself.
-export function fileCashDrawerReceipt(entry = {}, branch_id = 'br1', user = {}) {
+export function fileCashDrawerReceipt(entry = {}, branch_id = 'sala', user = {}) {
   const raw = String(entry?.invoice_image || '');
   const m = raw.match(/^data:([^;]+);base64,(.+)$/s);
   if (!m) return null;

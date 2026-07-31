@@ -29,7 +29,7 @@ const DEVICE_HEADERS = {
   'x-build-number': '35',
   'x-platform': 'android',
   'x-os-version': 'Android 13',
-  'x-branch-id': 'br1',
+  'x-branch-id': 'sala',
 };
 
 function fakeRes() {

@@ -60,7 +60,7 @@ function decoratePO(po) {
   };
 }
 
-export function listPurchaseOrders(branch_id = 'br1', filters = {}) {
+export function listPurchaseOrders(branch_id = 'sala', filters = {}) {
   const params = [branch_id];
   let where = 'branch_id=?';
   if (filters.status && STATUSES.includes(filters.status)) { where += ' AND status=?'; params.push(filters.status); }
@@ -78,7 +78,7 @@ export function listPurchaseOrders(branch_id = 'br1', filters = {}) {
 }
 
 // Outstanding payable per supplier across all non-cancelled POs.
-export function supplierDebtSummary(branch_id = 'br1') {
+export function supplierDebtSummary(branch_id = 'sala') {
   const rows = db.prepare(`
     SELECT supplier_id, supplier_name,
       COALESCE(SUM(total),0) total, COALESCE(SUM(amount_paid),0) paid, COUNT(*) orders
@@ -102,7 +102,7 @@ export function supplierDebtSummary(branch_id = 'br1') {
 // giá khi tạo đơn mua. Khớp theo TÊN (chuẩn hoá thường) nên dùng được cho cả hàng kho lẫn
 // hàng ngoài kho. Cần supplier_id (NCC trong danh bạ) HOẶC supplier_name (mua chợ).
 // Trả về map: { "<tên thường>": { unit_cost, date, supplier_name } }.
-export function lastPurchasePrices(branch_id = 'br1', { supplier_id = '', supplier_name = '' } = {}) {
+export function lastPurchasePrices(branch_id = 'sala', { supplier_id = '', supplier_name = '' } = {}) {
   const params = [branch_id];
   let supWhere = '';
   if (str(supplier_id, 80)) { supWhere = ' AND po.supplier_id = ?'; params.push(str(supplier_id, 80)); }
@@ -125,7 +125,7 @@ export function lastPurchasePrices(branch_id = 'br1', { supplier_id = '', suppli
   return byName;
 }
 
-export function getPurchaseOrder(id, branch_id = 'br1') {
+export function getPurchaseOrder(id, branch_id = 'sala') {
   return decoratePO(db.prepare(`SELECT * FROM purchase_orders WHERE id=? AND branch_id=?`).get(id, branch_id));
 }
 
@@ -157,6 +157,7 @@ function buildLines(rawLines = []) {
       item_id,
       name,
       unit: str(r.unit, 40),
+      uom: str(r.uom || r.unit, 40),
       qty,
       unit_cost,
       line_total: Math.round(qty * unit_cost),
@@ -170,7 +171,7 @@ function buildLines(rawLines = []) {
 }
 
 // Create or update a DRAFT purchase order. Confirmed/received POs are locked.
-export function savePurchaseOrder(body = {}, branch_id = 'br1', user = {}) {
+export function savePurchaseOrder(body = {}, branch_id = 'sala', user = {}) {
   const supplier = resolveSupplier(str(body.supplier_id, 80), branch_id);
   const supplierName = supplier.name || str(body.supplier_name_manual, 200) || 'Không có NCC';
   const lines = buildLines(body.lines);
@@ -219,7 +220,7 @@ function insertLines(po_id, lines) {
   for (const l of lines) ins.run(uid('pol_'), po_id, l.item_type, l.item_id, l.name, l.unit, l.qty, l.unit_cost, l.line_total, l.lot_no, l.expiry_date);
 }
 
-export function confirmPurchaseOrder(id, branch_id = 'br1', user = {}) {
+export function confirmPurchaseOrder(id, branch_id = 'sala', user = {}) {
   const po = db.prepare(`SELECT * FROM purchase_orders WHERE id=? AND branch_id=?`).get(id, branch_id);
   if (!po) throw new Error('Đơn mua không tồn tại');
   if (po.status !== 'draft') throw new Error('Chỉ xác nhận được đơn ở trạng thái nháp');
@@ -231,7 +232,7 @@ export function confirmPurchaseOrder(id, branch_id = 'br1', user = {}) {
 
 // Receive goods (full or partial). Each received line flows through the existing
 // inventory receiving functions → updates stock, lots and stock_movements.
-export function receivePurchaseOrder(id, body = {}, branch_id = 'br1', user = {}) {
+export function receivePurchaseOrder(id, body = {}, branch_id = 'sala', user = {}) {
   const po = db.prepare(`SELECT * FROM purchase_orders WHERE id=? AND branch_id=?`).get(id, branch_id);
   if (!po) throw new Error('Đơn mua không tồn tại');
   if (!['confirmed', 'received'].includes(po.status)) throw new Error('Cần xác nhận đơn trước khi nhận hàng');
@@ -255,6 +256,7 @@ export function receivePurchaseOrder(id, body = {}, branch_id = 'br1', user = {}
       ref: po.code,
       supplier: po.supplier_name || null,
       unit_cost: Number(line.unit_cost) || 0,
+      uom: line.unit,
       warehouse_id,
       // Lô/HSD: ưu tiên giá trị nhập lúc nhận; không có thì lấy khai báo trên dòng phiếu.
       lot_no: str(r.lot_no, 80) || line.lot_no || undefined,
@@ -281,7 +283,7 @@ export function receivePurchaseOrder(id, body = {}, branch_id = 'br1', user = {}
 
 // "Hoàn thành" kiểu KiotViet: từ phiếu nháp -> xác nhận -> nhận đủ toàn bộ dòng
 // hàng vào kho trong MỘT bước (lô/HSD lấy từ khai báo trên dòng phiếu).
-export function completePurchaseOrder(id, body = {}, branch_id = 'br1', user = {}) {
+export function completePurchaseOrder(id, body = {}, branch_id = 'sala', user = {}) {
   const po = db.prepare(`SELECT * FROM purchase_orders WHERE id=? AND branch_id=?`).get(id, branch_id);
   if (!po) throw new Error('Đơn mua không tồn tại');
   if (po.status === 'cancelled') throw new Error('Đơn đã hủy');
@@ -295,7 +297,7 @@ export function completePurchaseOrder(id, body = {}, branch_id = 'br1', user = {
   return receivePurchaseOrder(id, { warehouse_id: body.warehouse_id, receipts }, branch_id, user);
 }
 
-export function recordPurchasePayment(id, body = {}, branch_id = 'br1', user = {}) {
+export function recordPurchasePayment(id, body = {}, branch_id = 'sala', user = {}) {
   const po = db.prepare(`SELECT * FROM purchase_orders WHERE id=? AND branch_id=?`).get(id, branch_id);
   if (!po) throw new Error('Đơn mua không tồn tại');
   if (po.status === 'cancelled') throw new Error('Đơn đã hủy, không ghi nhận thanh toán');
@@ -333,7 +335,7 @@ export function recordPurchasePayment(id, body = {}, branch_id = 'br1', user = {
   return getPurchaseOrder(id, branch_id);
 }
 
-export function cancelPurchaseOrder(id, branch_id = 'br1', user = {}) {
+export function cancelPurchaseOrder(id, branch_id = 'sala', user = {}) {
   const po = db.prepare(`SELECT * FROM purchase_orders WHERE id=? AND branch_id=?`).get(id, branch_id);
   if (!po) throw new Error('Đơn mua không tồn tại');
   if (po.status === 'received') throw new Error('Đơn đã nhận hàng, không thể hủy');
@@ -345,7 +347,7 @@ export function cancelPurchaseOrder(id, branch_id = 'br1', user = {}) {
   return getPurchaseOrder(id, branch_id);
 }
 
-export function deletePurchaseOrder(id, branch_id = 'br1', user = {}) {
+export function deletePurchaseOrder(id, branch_id = 'sala', user = {}) {
   const po = db.prepare(`SELECT * FROM purchase_orders WHERE id=? AND branch_id=?`).get(id, branch_id);
   if (!po) throw new Error('Đơn mua không tồn tại');
   if (po.status !== 'draft') throw new Error('Chỉ xóa được đơn ở trạng thái nháp');
@@ -406,7 +408,7 @@ function buildReturnLines(rawLines = []) {
   return lines;
 }
 
-export function listPurchaseReturns(branch_id = 'br1', filters = {}) {
+export function listPurchaseReturns(branch_id = 'sala', filters = {}) {
   const params = [branch_id];
   let where = 'branch_id=?';
   if (filters.status && RETURN_STATUSES.includes(filters.status)) { where += ' AND status=?'; params.push(filters.status); }
@@ -417,14 +419,14 @@ export function listPurchaseReturns(branch_id = 'br1', filters = {}) {
   return out.filter(pr => matchesSearch([pr.code, pr.supplier_name, pr.note], term));
 }
 
-export function getPurchaseReturn(id, branch_id = 'br1') {
+export function getPurchaseReturn(id, branch_id = 'sala') {
   const pr = decorateReturn(db.prepare(`SELECT * FROM purchase_returns WHERE id=? AND branch_id=?`).get(id, branch_id));
   if (!pr) throw new Error('Phiếu trả hàng không tồn tại');
   return pr;
 }
 
 // Tạo/sửa phiếu trả hàng NHÁP. body.id => update (chỉ khi còn draft).
-export function savePurchaseReturn(body = {}, branch_id = 'br1', user = {}) {
+export function savePurchaseReturn(body = {}, branch_id = 'sala', user = {}) {
   const supplier = resolveSupplier(str(body.supplier_id, 80), branch_id);
   const supplierName = supplier.name || str(body.supplier_name_manual, 200) || 'Không có NCC';
   const lines = buildReturnLines(body.lines);
@@ -474,7 +476,7 @@ function insertReturnLines(pr_id, lines) {
 
 // "Hoàn thành" phiếu trả: xuất kho các dòng hàng trong kho (adhoc bỏ qua) rồi
 // chốt trạng thái returned. refund_received = tiền NCC đã hoàn (mặc định = total).
-export function completePurchaseReturn(id, body = {}, branch_id = 'br1', user = {}) {
+export function completePurchaseReturn(id, body = {}, branch_id = 'sala', user = {}) {
   const pr = db.prepare(`SELECT * FROM purchase_returns WHERE id=? AND branch_id=?`).get(id, branch_id);
   if (!pr) throw new Error('Phiếu trả hàng không tồn tại');
   if (pr.status !== 'draft') throw new Error('Phiếu đã trả hàng hoặc đã hủy');
@@ -505,7 +507,7 @@ export function completePurchaseReturn(id, body = {}, branch_id = 'br1', user = 
   return getPurchaseReturn(id, branch_id);
 }
 
-export function cancelPurchaseReturn(id, branch_id = 'br1', user = {}) {
+export function cancelPurchaseReturn(id, branch_id = 'sala', user = {}) {
   const pr = db.prepare(`SELECT * FROM purchase_returns WHERE id=? AND branch_id=?`).get(id, branch_id);
   if (!pr) throw new Error('Phiếu trả hàng không tồn tại');
   if (pr.status !== 'draft') throw new Error('Chỉ hủy được phiếu ở trạng thái Phiếu tạm');
@@ -515,7 +517,7 @@ export function cancelPurchaseReturn(id, branch_id = 'br1', user = {}) {
   return getPurchaseReturn(id, branch_id);
 }
 
-export function deletePurchaseReturn(id, branch_id = 'br1', user = {}) {
+export function deletePurchaseReturn(id, branch_id = 'sala', user = {}) {
   const pr = db.prepare(`SELECT * FROM purchase_returns WHERE id=? AND branch_id=?`).get(id, branch_id);
   if (!pr) throw new Error('Phiếu trả hàng không tồn tại');
   if (pr.status !== 'draft') throw new Error('Chỉ xóa được phiếu ở trạng thái Phiếu tạm');
