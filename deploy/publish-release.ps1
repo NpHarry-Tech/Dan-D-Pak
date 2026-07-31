@@ -25,7 +25,15 @@ $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 # 3 app giờ là vỏ mỏng trên dandpak_core; chọn app_version.dart theo platform.
 # (windows/linux/macos = desktop; android/ios = tablet.)
-$appDir = if ($Platform -in @('android', 'ios')) { 'dandpak_tablet' } else { 'dandpak_desktop' }
+# Khe phat hanh -> app doc so build tu do. Truoc day dien thoai va tablet dung
+# CHUNG khe 'android' nen publish ban nay la de ban kia, va script luon doc so
+# build cua MOT app du dang day file cua app kia. Gio map tuong minh.
+$appDir = switch ($Platform) {
+  'android-phone' { 'dandpak_phone' }
+  'android'       { 'dandpak_tablet' }
+  'ios'           { 'dandpak_tablet' }
+  default         { 'dandpak_desktop' }
+}
 $verFile = Join-Path $root "flutter-apps\$appDir\lib\app_version.dart"
 
 if (-not (Test-Path $File)) { throw "Không thấy file cài đặt: $File" }

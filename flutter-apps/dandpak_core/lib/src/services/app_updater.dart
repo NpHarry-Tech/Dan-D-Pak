@@ -37,9 +37,18 @@ class AppUpdater {
   static final Set<int> _notifiedBuilds = {};
 
   /// Nền tảng gửi cho server. iOS/khác → null (chưa hỗ trợ tự cập nhật).
+  ///
+  /// ĐIỆN THOẠI VÀ TABLET LÀ HAI BẢN KHÁC NHAU, phải có khe phát hành riêng.
+  /// Trước đây cả hai đều báo 'android' nên dùng chung một khe: publish bản này
+  /// là đè bản kia, và máy tablet có thể tải nhầm APK điện thoại.
+  ///
+  /// Tablet GIỮ NGUYÊN 'android' — đổi khe của tablet thì mọi máy đang chạy sẽ
+  /// hỏi một khe chưa có gì và im lặng không thấy bản cập nhật nào nữa.
   static String? get _platform {
     if (Platform.isWindows) return 'windows';
-    if (Platform.isAndroid) return 'android';
+    if (Platform.isAndroid) {
+      return AppFlavor.current.isHandset ? 'android-phone' : 'android';
+    }
     return null;
   }
 
@@ -110,11 +119,14 @@ class AppUpdater {
       );
       if (bytes.isEmpty) return 'Bản cập nhật tải về rỗng';
 
-      final ext = platform == 'android' ? 'apk' : 'exe';
+      // Bám vào HỆ ĐIỀU HÀNH, không so chuỗi nền tảng: khe phát hành của điện
+      // thoại là 'android-phone', so `== 'android'` sẽ trượt và app tải bản .apk
+      // về rồi đặt tên .exe, lưu sai thư mục, cài không nổi.
+      final ext = Platform.isAndroid ? 'apk' : 'exe';
       // Android: PHẢI nằm trong getCacheDir() (path_provider) vì FileProvider
       // chỉ chia sẻ được cache-path (systemTemp trỏ vào code_cache — không share
       // được). Dùng thư mục cố định để bản sau ghi đè bản trước, không rác máy.
-      final base = platform == 'android'
+      final base = Platform.isAndroid
           ? (await getTemporaryDirectory()).path
           : Directory.systemTemp.path;
       final dir = Directory('$base/dandpak_update')
