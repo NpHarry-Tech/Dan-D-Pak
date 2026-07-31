@@ -1,5 +1,115 @@
 # Changelog Workflow
 
+## 2026-07-31 Phone Printers Screen
+
+- Summary: Replaces the desktop `PrintersScreen` on handsets with a phone-native one. Printer cards carry the real live status, print history is filterable by status, tapping a job shows the server's verbatim failure reason with a reprint action, and the cash drawer sits on the pinned action bar.
+- Data: `GET /api/print/printers?live=1`, `GET /api/print/jobs`, `POST /api/print/printers/:id/test`, `POST /api/print/jobs/:id/reprint`, `POST /api/print/cash-drawer/open`.
+- Regression guards: this screen sits directly on top of the printer fixes from 2026-07-30, and both are easy to undo from the app side, so they are now locked by test. Status is read from `state`/`statusText`/`online` — never from `active`, which is only the "Đang sử dụng" checkbox and stays true while the POS app is closed. A printer that is not ready has its "In thử" button disabled, because queueing a job that only prints once someone turns the printer on is what made staff believe a receipt had printed. The list always requests `live=1`; without it the server reports `ready` unconditionally.
+- Server-side scoping still applies unchanged: staff without printer-management permission receive only the printers plugged into their own device plus shared LAN printers, and a 403 with a Vietnamese message if they aim at another POS's printer. The card marks the device's own printer with a "Máy này" badge so cross-machine mistakes are visible.
+- Files changed: `screens/phone/phone_printers_screen.dart` (new), `phone_shell.dart`, `test/phone_printers_test.dart` (new).
+- Database / API contract / realtime impact: none.
+- Manual tests: Flutter 62 pass, `flutter analyze` clean apart from 2 pre-existing deprecations. The 9 new tests assert the disabled test-print button, the `live=1` query, the verbatim server message, and that each action hits the right endpoint.
+- Deployment impact: phone APK only. Desktop and tablet keep the original `PrintersScreen`.
+- Rollback plan: revert the listed files; `phone_shell.dart` falls back to `PrintersScreen`.
+- Warning: `protected-read` plus test-print and drawer-open commands. Not yet run against a real printer from a handset.
+
+## 2026-07-31 Phone Document Forms (product, purchase, transfer)
+
+- Summary: Completes the phone write paths. Adds "Hàng hóa mới", "Phiếu nhập mới" and "Phiếu chuyển mới", each reachable from the `+` button on its own list screen, sharing one SKU picker sheet.
+- Data: `POST /api/skus`, `POST /api/purchase`, `POST /api/warehouse/transfer`. Request bodies were written against the server functions, not guessed — `createSku` requires `name`; `savePurchaseOrder` requires at least one line with `item_id` and `qty > 0`; `transferStock` requires `from_warehouse_id != to_warehouse_id`.
+- API client gap closed: `createSku` did not exist on the client although `/api/skus` has been live on the server. Products could only be created from desktop. Added to `warehouse_api.dart`.
+- Deliberate choices: the phone never sends `total`/`subtotal` on a purchase order — the server recomputes both from the lines, and sending our own figure only creates a way for them to disagree. New product stock goes through `opening_stock` so the server writes an `OPENING` lot, rather than setting the `stock` column directly, which would leave the lot ledger and the stock count out of step.
+- Files changed: `screens/phone/phone_doc_form_screens.dart` (new), `phone_catalog_screens.dart`, `phone_ops_screens.dart`, `services/api/warehouse_api.dart`, `test/phone_doc_form_test.dart` (new).
+- Database / API contract / realtime impact: none. Existing endpoints only.
+- Manual tests: Flutter 53 pass, server 102 pass, `flutter analyze` clean apart from 2 pre-existing deprecations. The write tests assert the exact request body and that invalid documents never reach the server: a product without a name, an empty purchase order, a transfer with no warehouses, and a transfer whose source equals its destination.
+- Deployment impact: phone APK only.
+- Rollback plan: revert the listed files.
+- Warning: `protected-write` — these forms create SKUs, purchase orders and stock transfers against real inventory. Server-side guards still apply (transfer refuses the whole document if any line exceeds source stock), but none of this has been exercised against a live server or a physical handset yet. Test one of each on a non-critical warehouse before letting staff use them.
+
+## 2026-07-31 Phone Field Mapping Audit, Forms and Reports
+
+- Summary: Audited every field the phone screens read against the actual server services and SQLite schema, and fixed the mismatches. Added the first write-capable phone screens (expense, customer/supplier) plus the reports catalog and preview.
+- Why this mattered: the phone screens rendered fine and threw no errors, but most of the field names had been guessed. They would have shipped showing zeros and blanks to the shop. Every mapping below is now taken from server code, not inferred.
+- Field corrections: dashboard returns `bills`/`avg`/`openOrders`/`topItems` (not `orders`/`top_products`) and has **no refunds field** — that tile was invented and always read 0. Cash drawer nests its money under `summary` (`opening_cash`, `cash_sales`, `expenses`, `expected_cash`), not at the root. The `customers` table has **no `debt` column**; totals are `total_spent`, `total_orders`, `loyalty_points`. Expenses use `payee_name`/`category_name`/`expense_date`/`source`. Purchase orders expose `amount_due`/`amount_paid`. Warehouse transfer rows name the source warehouse `warehouse_name`. Order history has no `customer_name` and does not include line items — invoice detail now fetches `/api/orders/:id/receipt`.
+- Permission corrections: menu tiles were gated on permissions the routes do not check, so a user could see a tile and then get 403. Now each tile uses the route's real guard — `module.contacts` for partners, `module.expenses`, `module.purchase`, `warehouse.manage`, `inventory.adjust`. Module `admin` declares `perm: null` in `modules.js`, so Tổng quan is visible to any signed-in user exactly as on desktop; the earlier test expectation was the thing that was wrong.
+- API client: `getMovements` gained `itemId`/`itemType`. The server has always supported these filters (`inventory.listMovements`), but the client never sent them, so the stock card was pulling hundreds of rows and filtering on the device. It now filters server-side.
+- New screens: expense create/edit, customer & supplier create/edit, reports catalog, report preview with period selector.
+- Files changed: `screens/phone/phone_form_screens.dart` (new), `phone_overview_screens.dart`, `phone_catalog_screens.dart`, `phone_ops_screens.dart`, `phone_shell.dart`, `phone_scaffolds.dart`, `services/api/warehouse_api.dart`, `test/phone_form_test.dart` (new), `test/phone_shell_test.dart`.
+- Database / API contract / realtime impact: none. Existing endpoints and payloads only.
+- Manual tests: Flutter 46 pass, server 102 pass, `flutter analyze` clean apart from 2 pre-existing deprecations. Test fakes now mirror the real server envelopes (`{partners:…}`, `{expenses:…}`, `{shift:…}`, `{summary:…}`) so a future rename on either side turns the suite red instead of silently zeroing a screen. Write-path tests assert the exact request body: an expense of 0đ and a nameless partner never reach the server, and `partner_type` distinguishes customer from supplier.
+- Deployment impact: phone APK only.
+- Rollback plan: revert the listed files.
+- Warning: `protected-write` — expense and partner creation write real records. Not yet exercised against a live server or a physical handset.
+
+## 2026-07-31 Phone Navigation Shell and Module Screens
+
+- Summary: Handsets now boot straight into a phone shell with a 5-item bottom bar (Tổng quan · Bán lẻ · Hàng hóa · Hóa đơn · Nhiều hơn) instead of the desktop launcher grid. Adds phone screens for dashboard, shift/cash drawer, products, product detail, stock card, invoices, invoice detail (with reprint), customers, suppliers, expenses, purchases, transfers and stocktakes.
+- Architecture: three reusable scaffolds in `phone_scaffolds.dart` (list / info-card detail / form field) carry most screens, so a new module screen is ~40 lines of business wiring rather than a fresh copy of the layout. `PhonePartnersScreen` serves both customers and suppliers off the one `/api/partners` endpoint so the two cannot drift apart.
+- Data: real only, no sample data. `/api/dashboard`, `/api/shifts/current`, `/api/cash-drawer/current`, `/api/skus`, `/api/movements`, `/api/orders/history`, `/api/partners`, `/api/expenses`, `/api/purchase`, `/api/warehouse/documents`, `/api/warehouse/stocktakes`.
+- Permissions: the bottom bar and the "Nhiều hơn" grid are both gated on `AuthProvider.hasPermission` plus `AppFlavor.showsModule`, matching desktop. Covered by tests for the real cashier and manager permission sets, and for a user with no permissions at all.
+- Files changed: `screens/phone/phone_scaffolds.dart`, `phone_overview_screens.dart`, `phone_catalog_screens.dart`, `phone_ops_screens.dart`, `phone_shell.dart` (all new), `bootstrap.dart`, `test/phone_shell_test.dart` (new).
+- Database / API contract / realtime impact: none. Read-only against existing endpoints, except invoice reprint which reuses the existing print-job path.
+- Deployment impact: phone APK only.
+- Manual tests: `flutter analyze` clean, phone screen tests pass at 393x852 including overflow checks on every new screen.
+- Bug found while testing: `PhoneMetricStrip` used `CrossAxisAlignment.stretch` inside a `Column`, which forces infinite height and threw during layout on every screen that showed metrics. Fixed with `IntrinsicHeight` so the cells stay equal-height without unbounded constraints.
+- Known gaps: `/api/movements` has no sku filter, so the stock card fetches 400 rows and filters on the client — fine at current volumes, but it should move server-side. Create/edit forms (new product, new customer, new expense, new purchase/transfer, printer setup) are not built yet; those modules are read-only on the phone and still edited from desktop.
+- Rollback plan: revert the listed files; `bootstrap.dart` falls back to `LauncherScreen` for handsets.
+- Warning: `protected-read` for the new screens. Still not verified on a physical handset — no Android device has been reachable over ADB.
+
+## 2026-07-31 Phone Retail Selling Flow (one-handed)
+
+- Summary: First slice of the phone-native UI. Handsets now open a one-handed retail flow — product grid → cart → payment → done — instead of the shrunken desktop layout. Desktop and tablet are untouched; the branch is on `AppFlavor.current.isHandset` at the single `retail` launcher route.
+- Scope: this is 4 of the 53 screens in the `Dan D Pak POS Mobile` design project. The rest (products, invoices, warehouse, purchase, transfers, reports, supplier/customer detail, printer/label setup) are not built yet. F&B was explicitly deferred by the owner.
+- Data: real only. `GET /api/skus` (paged, retail channel), `GET /api/shifts/current`, `POST /api/retail/checkout`, plus the existing background `forcePrintReceiptJob`. No sample data ships in the app; the design file's mock arrays were used for layout reference only.
+- Files changed: `screens/phone/phone_kit.dart` (new), `screens/phone/phone_sell_screen.dart` (new), `screens/launcher_screen.dart`, `services/app_notifier.dart`, `test/phone_sell_flow_test.dart` (new), `dandpak_phone` version + `android/gradle.properties`.
+- Protected domains touched: retail checkout is called with the same contract the desktop uses, including `client_request_id` for idempotency. No new server behaviour, no schema change, no migration.
+- API contract impact: none. Existing endpoints only.
+- Realtime event impact: none.
+- Deployment impact: phone APK only (build 14, `2026.07.31.01`). Backend unchanged. `kotlin.incremental=false` added to the phone's `gradle.properties` — the tablet already carried this for the same Windows cross-drive cache failure; the phone lacked it, which is why phone APK builds failed while tablet builds succeeded.
+- Manual tests: 28 Flutter tests pass (9 new), `flutter analyze` clean apart from 2 pre-existing deprecations, release APK builds (104 MB). Guard rails covered by test: out-of-stock items cannot enter the cart, short payment cannot complete, and a closed shift blocks checkout entirely.
+- Bugs found and fixed while testing: (1) `AppNotifier._osNotification` wrapped an **async** `LocalNotification.show()` in a **sync** try/catch, so a notification failure escaped as an unhandled async error — this could knock over any screen, desktop included, and it did knock over the phone sell screen while reporting a print failure; (2) the post-payment print branch could throw back into the sell screen after money was already taken — now contained and logged to the black box.
+- Rollback plan: revert the listed files. Handsets fall back to `RetailScreen` immediately; nothing persists.
+- Warning: `protected-write` via the existing checkout endpoint. Not yet verified on a physical handset — no Android device was reachable over ADB during this session, so the flow has only been exercised in widget tests at 393x852. It must be run against a real device and a real shift before any cashier uses it.
+
+## 2026-07-30 Thermal RAW Printing and Test-Slip Layout
+
+- Summary: Thermal printers attached to a POS now receive raw ESC/POS bytes through the Windows spooler instead of driver-rendered text, which fixes the extremely faint output and restores density, auto-cut, and drawer pulses. The test slip no longer dumps raw JSON and is laid out to the configured paper width.
+- Root cause (faint print): for `connection: 'system'` the agent called `Out-Printer`, so the Windows **driver** rasterised the text as an anti-aliased greyscale bitmap. A thermal head can only fire dots, so it dithered that bitmap — hence very faint, smeared output — and every ESC/POS command (density, cut, drawer) was swallowed as literal text. Only the LAN path ever sent real ESC/POS.
+- Root cause (wrong format): `renderGeneric()` ended with `JSON.stringify(payload, null, 2).slice(0, 1200)`, so the test slip printed the whole printer config object. It also rendered at a fixed 40 columns regardless of paper width.
+- Files changed: `server/services/printing.js`, `server/agent.cjs`, `server/services/settings/print.js`, `deploy/build-agent.ps1` (new), `server/receipt-printer-routing.test.mjs`, `flutter-apps/dandpak_desktop/windows/hardware-agent/dandpak-agent.exe` (rebuilt).
+- Protected domains touched: print output only. No order, payment, inventory, or customer data is read or written.
+- Database impact: none. `bill.printDensity` gains a default of `dark`; it is an additive key in an existing JSON setting and older code ignores it.
+- API contract impact: agent job payloads gain `raw` (boolean). Older agents ignore it and keep the previous driver path, so a partial rollout is safe.
+- Realtime event impact: none.
+- Deployment impact: the Hardware Agent binary changed, so the desktop installer must be reinstalled/updated on each POS — a backend-only deploy will not fix the faint print. `deploy/build-agent.ps1` now rebuilds the SEA binary reproducibly; previously it was hand-built with no script, so agent changes could silently ship stale.
+- Manual tests: 94/94 Node tests pass. The RAW spooler script was verified twice on this machine — it fails cleanly with "Khong mo duoc may in" for a non-existent printer (proving the P/Invoke compiles) and returns exit 0 after writing 14 bytes to a real installed printer. Rendering was dumped at both K80 and K58 to confirm no line exceeds the paper width and that the slip reports the same paper size it renders at.
+- Rollback plan: revert the listed files and restore the previous `dandpak-agent.exe` from git, then rebuild and reinstall the desktop app. No data migration is involved.
+- Warning: `protected-read`. Raw ESC/POS is sent only to routes whose `output` is not `report`, so an A4 driver printer keeps the text path — sending ESC/POS to a laser printer would print garbage. Real paper output on the store's POS-80C has not been verified by the author; it needs a physical test print after the update.
+
+## 2026-07-30 Receipt Auto-Print, Real Printer Status, Per-Device Printer Scope
+
+- Summary: Receipts, kitchen tickets, cup labels, and runner slips now resolve a **real** printer route by output type instead of hard-coded route ids, so bills print automatically again. The Máy in screen reports true printer liveness instead of a config flag. Each POS prints to the printer plugged into itself, and staff without printer-management permission only see and control the printers they may actually use.
+- Root cause: every print hook wrote a fixed route id (`bill`, `kitchen`, `bar`, `label`, `runner`). The store replaced the default routes with its own ids (`POS-80C`, `AP-250`, `BEP`), so every receipt job pointed at a route that no longer existed; `pendingAgentJobs` classified it as orphaned and set it to `cancelled`. Symptom: payment completed, print history showed "Hóa đơn / Tạm tính — cancelled", printer silent.
+- Files changed: `server/services/printing.js`, `server/services/system.js`, `server/services/payments.js`, `server/modules/printing/routes.js`, `server/modules/payments/routes.js`, `flutter-apps/dandpak_core/lib/src/services/api/printing_api.dart`, `flutter-apps/dandpak_core/lib/src/screens/printers/printers_screen.dart`, `server/receipt-printer-routing.test.mjs`.
+- Protected domains touched: print jobs and printer configuration reads. Orders, payments, payment lines, inventory, and archives are untouched.
+- Database impact: none. No schema change and no migration; only `print_jobs` rows created/updated through existing columns.
+- API contract impact: `GET /api/print/printers` accepts `live=1` and now scopes its result by the caller's `x-device-id` unless the caller manages printers; each row adds `owner_device_id`, `owner_device_name`, `attached_to_me`. `POST /api/print/printers/:id/test` and `POST /api/print/cash-drawer/open` return 403 when the target printer is plugged into a different POS and the caller is not Admin/Manager. `POST /api/orders/:id/pay` reads `x-device-id` to choose the receipt printer.
+- Realtime event impact: none added. `POST /api/print/jobs/:id/print` now emits `print:new` (re-queue) instead of attempting a server-side print in agent mode.
+- Deployment impact: deploy backend and apps together, then restart the backend. Agent liveness TTL drops 90s → 60s so a closed POS app is reflected within one minute.
+- Manual tests: 88/88 Node tests pass; the 16 new routing/permission tests were verified to fail 15/15 against the previous code before the fix. `flutter analyze` clean (2 pre-existing deprecation infos), `flutter test` 19 pass / 1 skipped. Printer suites `agent-printers-per-device` and `print-queue-orphan` still pass unchanged.
+- Rollback plan: revert the listed files. No data migration to undo; queued print jobs stay in SQLite and older code reads them normally.
+- Warning: `protected-read` only. Note the intentional deviation from a literal reading of the request — LAN printers stay visible to non-privileged staff because they are shared network devices and `assertPrinterUsableBy` permits them; hiding them would create routes that are usable but invisible. Only another machine's directly-attached (USB/`system`) printers are hidden.
+
+## 2026-07-29 Warehouse Product Editing and Unit Conversion
+
+- Summary: Authorized warehouse users can edit retail product identity, image, VAT, purchase/sale prices, and alternate units from the expanded stock row. Purchase documents accept an alternate unit and convert received quantity and cost back to the base unit.
+- Files changed: Flutter warehouse/purchase UI and API client; inventory/purchase backend services and routes; inventory regression test.
+- Protected domains touched: SKU master data, purchase lines, stock lots, stock movements, and warehouse documents.
+- Data impact: extends the existing `skus.units_json` objects; no destructive migration. Product deletion is now a soft delete (`active=0`) so stock lots and movement history remain intact.
+- API impact: `POST /api/skus/image-upload`; existing SKU create/update accepts unit objects containing `name`, `factor`, `barcode`, `cost`, `price`, `price_includes_vat`, and `vat`. Purchase line `unit` is used as the receive UOM.
+- Validation: focused Flutter analysis, Node syntax checks, inventory conversion regression test, and existing inventory/retail regression suites.
+- Rollback: revert application code; the additional JSON keys are ignored safely by older code. Uploaded images may remain as harmless unreferenced files.
+
 Last updated: 2026-06-18
 
 For every meaningful change, append a changelog entry in the PR/commit notes or a future `CHANGELOG.md`.
