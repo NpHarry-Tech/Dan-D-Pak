@@ -1,218 +1,176 @@
-# Mục Cài đặt — Đặc tả bàn giao thiết kế lại cho điện thoại / POS cầm tay
+# Cài đặt trên máy POS cầm tay — Đặc tả bàn giao thiết kế
 
-Tài liệu này mô tả **toàn bộ** mục Cài đặt hiện có: từng phần làm gì, có những nút
-nào, bấm vào ra gì, và luồng thao tác. Mục đích là bàn giao cho người thiết kế lại
-giao diện cho màn hình nhỏ.
+Tài liệu bàn giao cho người thiết kế lại giao diện Cài đặt cho **máy POS cầm tay
+Sunmi V2** (và điện thoại nói chung).
 
 Mã nguồn: `flutter-apps/dandpak_core/lib/src/screens/management/`
-Cửa vào: `settings_screen.dart` → `settings_tab.dart` → 12 panel con.
+Cửa vào: `settings_screen.dart` → `settings_tab.dart` → các panel con.
 
 ---
 
-## 0. Vì sao phải thiết kế lại
+## 1. Bối cảnh thiết bị
 
-Cài đặt hiện được **bê nguyên từ desktop/tablet** xuống điện thoại. Không phải nó
-xấu — nó được dựng cho màn rộng, và trên màn 6 inch thì các giả định đó vỡ:
+| | |
+|---|---|
+Máy | Sunmi V2 — POS cầm tay Android, có máy in nhiệt gắn liền ở đầu máy |
+Hướng màn hình | **Khoá dọc, một hướng duy nhất** (không xoay được) |
+Bề ngang | ~393dp — mọi thứ rộng hơn con số này đều tràn |
+Người dùng | Nhân viên bán hàng, đứng, **cầm một tay**, có thể đeo găng hoặc tay ướt |
+Bối cảnh dùng | Giữa ca bán, ánh sáng cửa hàng, thao tác nhanh |
 
-**Điều hướng hai cột.** `settings_tab.dart` dòng 113 có ngưỡng:
+Vì đây là máy cầm tay dùng khi đang đứng bán, mọi thao tác chính nên nằm trong
+**tầm ngón cái** — nghĩa là nửa dưới màn hình.
+
+---
+
+## 2. Vì sao phải thiết kế lại
+
+Cài đặt hiện được **bê nguyên từ desktop/tablet**. Nó không xấu — nó được dựng cho
+màn rộng, và trên màn 5.45 inch thì các giả định đó vỡ. Bằng chứng lấy từ mã nguồn:
+
+**Điều hướng vỡ ở ngưỡng 820px.** `settings_tab.dart` dòng 113:
 
 ```dart
 final wide = constraints.maxWidth >= 820;
 if (wide)  → cột trái 270px + nội dung bên phải
-else       → một dải ngang cao 64px chứa 12 mục, cuộn ngang
+else       → dải ngang cao 64px chứa hết các mục, cuộn ngang
 ```
 
-Màn điện thoại luôn rơi vào nhánh `else`: **12 mục dồn vào một dải cuộn ngang cao
+Máy cầm tay luôn rơi vào nhánh dưới: **các mục dồn vào một dải cuộn ngang cao
 64px**. Người dùng không thấy được có bao nhiêu mục, phải quẹt mò để tìm.
 
-**Hộp thoại rộng cố định.** Trong các panel có 20 chỗ đặt `width:` cứng —
-`330`, `380`, `340`, `310`, `300`, `220`, `180`, `150`. Trên màn rộng 393px thì
-những hộp 330–380px chiếm gần trọn bề ngang hoặc tràn.
+**20 chỗ đặt bề rộng cứng** trong các panel: `330`, `380`, `340`, `310`, `300`,
+`220`, `180`, `150`. Màn rộng 393px — những hộp 330–380px chiếm gần trọn bề ngang
+hoặc tràn.
 
-**Hàng nhiều cột.** Nhiều panel xếp nhãn + ô nhập + nút trên cùng một `Row`. Màn
-hẹp thì hoặc bị bóp méo, hoặc tràn khung.
-
-**Mật độ dày.** Một số panel (Kết nối, Liên kết, Khuyến mại) có hàng chục ô nhập
-trên một trang, vốn để xem trên màn 15 inch.
+**Hàng nhiều cột.** Nhiều panel xếp nhãn + ô nhập + nút trên cùng một hàng ngang.
 
 ---
 
-## 1. Bố cục tổng thể hiện tại
+## 3. Ba mục đã gỡ khỏi bản điện thoại
 
-```
-SettingsScreen
- ├── DanModuleTopBar      tên chi nhánh · "Cài đặt" · tên+vai trò người dùng
- │                        nút Quay lại · nút Đăng xuất
- └── SettingsTab
-      ├── Điều hướng      12 mục (cột trái 270px nếu ≥820px, else dải ngang 64px)
-      └── Nội dung        panel của mục đang chọn
-```
+Đã bỏ trong `settings_tab.dart`, **không cần thiết kế lại**:
 
-Mỗi mục điều hướng có: **biểu tượng · nhãn · mô tả một dòng**.
-
----
-
-## 2. Mười hai mục
-
-| # | Mục | Mô tả hiện có | Biểu tượng |
-|---|---|---|---|
-| 1 | **Nhân sự & Phân quyền** | Tài khoản, vai trò và quyền truy cập của nhân viên | `groups_2` |
-| 2 | **Chi nhánh** | Thiết lập chi nhánh, kho và phân vùng bán hàng | `store` |
-| 3 | **Cấu hình bàn** | Thiết lập bàn, khu vực và sơ đồ phòng bán | `table_restaurant` |
-| 4 | **Thực đơn (Menu)** | Danh mục, món ăn, recipe trừ kho và lịch bán | `restaurant_menu` |
-| 5 | **Liên kết** | Hóa đơn điện tử, kế toán và nền tảng bán hàng | `hub` |
-| 6 | **Kết nối** | Trạng thái thiết bị, máy in và đồng bộ cloud | `cable` |
-| 7 | **Kho & kênh bán** | Quản lý kho hàng và liên kết kênh bán | `warehouse` |
-| 8 | **Bill & Tem nhãn** | Thiết kế mẫu in hóa đơn và tem sản phẩm | `print` |
-| 9 | **Thiết bị khách** | Màn hình self-order và thiết bị cho khách | `devices_other` |
-| 10 | **Màn hình phụ** | Quảng cáo khi rảnh, hiển thị đơn & QR cho màn thứ 2 | `desktop_windows` |
-| 11 | **Tích điểm & Khuyến mại** | Điểm theo SĐT, hạng thành viên, CTKM, voucher | `loyalty` |
-| 12 | **Cấu hình thông báo** | Âm thanh và định tuyến thông báo sự kiện | `notifications_active` |
-
----
-
-## 3. Chi tiết từng mục
-
-### 1. Nhân sự & Phân quyền
-`settings_users_panel.dart` — 39 KB, **panel phức tạp thứ ba**
-
-**Danh sách nhân viên**: ảnh đại diện, họ tên, tên đăng nhập, vai trò, trạng thái
-hoạt động.
-
-**Thêm / Sửa nhân viên** (hộp thoại):
-- Họ tên · Tên đăng nhập · Vai trò · Ngôn ngữ (Tiếng Việt / English)
-- **Chọn ảnh** đại diện (hiện "Chưa có ảnh" khi trống)
-- Công tắc **Cho phép đăng nhập**
-- **Chi nhánh & phân vùng** — nhân viên được vào chi nhánh nào
-- Kiểm tra: "Cần nhập tên và tên đăng nhập"
-
-**Bảng phân quyền** — phần nặng nhất của panel. Quyền chia theo nhóm:
-
-| Nhóm | Ví dụ quyền bên trong |
+| Mục | Lý do gỡ |
 |---|---|
-| Bán hàng | Bán hàng, mở bàn, thêm món · Giảm giá và voucher · Chuyển / gộp bàn · Hủy bill / hủy món |
-| Ca, thanh toán, vận hành | Hoàn tiền và đổi trả · Hóa đơn |
-| Kho | Chuyển hàng giữa các kho · Cân bằng tồn sau kiểm kho |
-| Bếp & online | (món, KDS) |
-| Danh bạ | (khách hàng, NCC) |
-| Báo cáo | |
-| Hệ thống & module | Cấu hình menu · Bill & tem nhãn · Hóa đơn điện tử |
+| Bill & Tem nhãn | Canvas kéo thả, không dùng nổi bằng ngón tay |
+| Nhân sự & Phân quyền | Ma trận nhóm × quyền, hàng chục ô đánh dấu |
+| Kết nối | Đã chuyển việc nối máy in ra **Nhiều hơn → Máy in** |
 
-Có nút **Chọn tất cả** / **Bỏ chọn** cho từng nhóm.
-Ghi chú cố định: *"Admin luôn có toàn quyền, không cần chỉnh."*
+Desktop và tablet **vẫn giữ đủ 12 mục** — đây là bỏ bớt trên màn nhỏ, không phải
+xóa tính năng.
 
-> **Vấn đề trên màn nhỏ**: bảng quyền là ma trận nhóm × quyền với hàng chục ô
-> đánh dấu. Đây là phần khó nhất phải thiết kế lại.
+**Nối máy in giờ nằm ở Nhiều hơn → Máy in** (đã làm xong, có thể xem làm mẫu):
+bảng trượt từ đáy, một cột — Tên máy in · Địa chỉ IP · Cổng · Loại phiếu · công
+tắc "Có nối ngăn kéo đựng tiền". Tệp `screens/phone/phone_printer_setup.dart`.
 
 ---
 
-### 2. Chi nhánh
-`settings_branches_panel.dart` — 13 KB
+## 4. Chín mục cần thiết kế lại
 
-Danh sách chi nhánh: tên, mã, trạng thái (**Đang mở** / **Đã đóng**).
+Xếp theo **tần suất dùng thật ngoài cửa hàng** — quan trọng cho việc quyết định
+mục nào lên trên.
 
-**Thêm / Sửa chi nhánh**: Tên chi nhánh · Mã chi nhánh · công tắc Đang hoạt động.
-
-**Module bán hàng tại chi nhánh** — bật/tắt từng module cho chi nhánh đó:
-- POS nhà hàng — *Sơ đồ bàn, gọi món và thanh toán F&B*
-- Bán lẻ — *Bán hàng mã vạch và thêm hàng retail vào bill F&B*
-- Màn hình bếp KDS
-
-Nút: **Thêm chi nhánh** · **Sửa** · **Tạo** · **Lưu** · **Hủy**
-
----
-
-### 3. Cấu hình bàn
-`settings_tables_panel.dart` — 12 KB
-
-Danh sách bàn nhóm theo khu vực, mỗi bàn hiện `Bàn <mã>` và `<n> chỗ`, trạng thái
-**Trống**.
-
-**Thêm / Sửa bàn**: Khu vực (gợi ý *"VD: Tầng 1, Sân vườn"*) · Số bàn / Mã bàn ·
-Số chỗ ngồi.
-
-Có khối **XEM TRƯỚC TRÊN SƠ ĐỒ BÀN**.
-
-Nút: **Thêm bàn** · **Sửa** · **Xóa** · **Tạo** · **Lưu** · **Hủy**
+| # | Mục | Tần suất | Độ khó |
+|---|---|---|---|
+| 1 | **Thực đơn (Menu)** | Hằng ngày | Khó |
+| 2 | **Tích điểm & Khuyến mại** | Hằng tuần | Khó |
+| 3 | **Kho & kênh bán** | Hằng tuần | Vừa |
+| 4 | **Cấu hình bàn** | Thỉnh thoảng | Dễ |
+| 5 | **Cấu hình thông báo** | Thỉnh thoảng | Vừa |
+| 6 | **Liên kết** | Hiếm — lúc lắp đặt | Khó |
+| 7 | **Chi nhánh** | Hiếm | Dễ |
+| 8 | **Màn hình phụ** | Hiếm | Dễ |
+| 9 | **Thiết bị khách** | Hiếm | Rất dễ |
 
 ---
 
-### 4. Thực đơn (Menu)
-`menu_tab.dart` + `menu_item_dialogs.dart` (48 KB) + `book_menu_panel.dart` (32 KB)
-— **cụm phức tạp nhất**
+### 1. Thực đơn (Menu) — dùng hằng ngày
 
-Hai chế độ: **Thực đơn FnB** và **Menu quyển**.
+`menu_tab.dart` · `menu_item_dialogs.dart` (48 KB) · `book_menu_panel.dart` (32 KB)
 
-Danh sách món: tìm kiếm (*"Tìm món..."*), lọc theo **Danh mục** (Tất cả nhóm,
-Salad/Lạnh, Bếp...), trạng thái **Đang bán** / **Tạm hết** / **Ngoài lịch**.
+**Đây là mục nhân viên mở nhiều nhất** — báo hết món, bật lại món, sửa giá.
 
-Thao tác mỗi món: **Sửa** · **Xóa** · ẩn/hiện · bật/tắt.
-Thông báo: "Đã bật món", "Đã tắt món", "Đã ẩn món", "Đã hiện món", "Đã xóa món",
-**"Đã lưu trữ món (đã có order)"** — món đã phát sinh đơn thì lưu trữ chứ không xóa.
+**Danh sách món**
+- Ô tìm kiếm: *"Tìm món..."*
+- Lọc theo nhóm: Tất cả nhóm · Salad/Lạnh · Bếp · …
+- Mỗi món hiện: ảnh, tên, giá, nhóm, trạng thái
+- Trạng thái: **Đang bán** · **Tạm hết** · **Ngoài lịch**
+- Hai chế độ: **Thực đơn FnB** và **Menu quyển**
 
-`menu_item_dialogs.dart` chứa hộp thoại thêm/sửa món: giá, nhóm, recipe trừ kho,
-lịch bán, tuyến in.
+**Thao tác nhanh trên từng món** — cái này quan trọng nhất, nhân viên cần làm
+trong hai giây giữa lúc bán:
+- Bật / tắt món → *"Đã bật món"* / *"Đã tắt món"*
+- Ẩn / hiện món → *"Đã ẩn món"* / *"Đã hiện món"*
+- **Sửa** · **Xóa** → *"Đã xóa món"*
+- Món đã có đơn thì lưu trữ chứ không xóa → *"Đã lưu trữ món (đã có order)"*
 
----
+**Hộp thoại Sửa món** — nhiều trường, nên chia bước hoặc nhóm gập lại:
 
-### 5. Liên kết
-`settings_integrations_panel.dart` — 40 KB, **phức tạp thứ hai**
+| Nhóm | Trường |
+|---|---|
+| Cơ bản | Tên món (bắt buộc) · Nhóm (bắt buộc) · Giá · Mô tả |
+| Ảnh | Chọn ảnh món · Bỏ ảnh · hoặc dán đường dẫn `/uploads/menu/...` |
+| Bếp | SLA phút (thời gian cam kết ra món) |
+| Công thức trừ kho | Danh sách nguyên liệu · Nguyên liệu (hiển thị cho khách) |
+| Dị ứng | Allergen / dị ứng |
+| Món kèm | **Món ăn kèm & Extra** · **Mua thêm** · trống thì *"Chưa có món kèm / extra."* |
+| Lịch bán | **Bán cả ngày** / **Theo giờ mỗi ngày** / **Theo ngày trong tuần** / **Chỉ một ngày** (Ngày bán YYYY-MM-DD) |
+| Bản dịch | **Bản dịch món** → **Lưu bản dịch** |
 
-Mỗi đối tác là một thẻ có trạng thái **Chưa kết nối** / **Kết nối thành công!** /
-**Kết nối thất bại**, và ba khối: **CẤU HÌNH CHI TIẾT**, **THIẾT LẬP TÍNH NĂNG**,
-**GHI CHÚ NỘI BỘ**.
+Kiểm tra: *"Cần nhập tên món và chọn nhóm"*
 
-Các đối tác:
-- **Hóa đơn điện tử** — Mã số thuế · Tên công ty · Tài khoản / Username ·
-  Mật khẩu / Token
-- **SePay** — tự đối soát chuyển khoản
-- **Casso** — tự đối soát chuyển khoản
-- **VietQR / PayOS** — Số tài khoản nhận tiền · Mã ngân hàng (VCB, MB, ACB...) ·
-  Return URL (Thành công) · Cancel URL (Hủy thanh toán)
-- **Kênh online** (Grab, Shopee...) — **Cách nhận đơn**: *Tự nhận đơn hợp lệ* /
-  *Nhân viên xác nhận* · công tắc **Tự in khi có đơn mới**
-- **Kế toán (MISA)** — Chi nhánh mặc định
-
-Nút: **Kiểm tra cấu hình** (→ *Kiểm tra thành công* / *Kiểm tra thất bại*) ·
-**Lưu kết nối đang chọn** · **Copy**
-
-Panel còn hiện các endpoint đang dùng để đối chiếu kỹ thuật, ví dụ
-`Tạo QR động: POST /qr/generate-customer`.
+> **Gợi ý**: tách "thao tác nhanh" (bật/tắt/hết món) khỏi "sửa đầy đủ". Nhân viên
+> bán hàng chỉ cần cái đầu; cái sau là việc của quản lý và có thể để trên máy bàn.
 
 ---
 
-### 6. Kết nối
-`settings_connections_panel.dart` — **56 KB, panel lớn nhất**
+### 2. Tích điểm & Khuyến mại — dùng hằng tuần
 
-**CHẾ ĐỘ HOẠT ĐỘNG**: Bình thường / Chậm / Cảnh báo / Lỗi / *Không ra được internet*
+`settings_loyalty_panel.dart` (19 KB) + `settings_promotions_panel.dart` (30 KB)
 
-**Kết nối phần cứng**:
-- **IP MÁY POS THẺ (TETHERING/LAN)** + **CỔNG (PORT)** → nút **Lưu cấu hình máy POS thẻ**
-- **IP máy in (LAN)** (hiện *"Chưa có IP"* khi trống)
-- **Có két** — máy in có nối ngăn kéo đựng tiền không
+Panel có **hai thẻ con**. Trên màn nhỏ nên tách thành hai mục riêng.
 
-**Danh mục in** — bản đồ loại phiếu → tuyến in:
-Hóa đơn · Hóa đơn / Tạm tính · Bếp · Màn bếp (KDS) · Bán lẻ (Retail POS) ·
-Báo cáo (Report) · Kênh online · Khác (Custom) → nút **Lưu danh mục in**
+#### 2a. Tích điểm
 
-**Job in gần đây**: danh sách lệnh in, trạng thái **Chờ in** / **Lỗi**, nút **In thử**.
-Trống thì hiện *"Chưa có job in nào"*.
+| Nhóm | Trường |
+|---|---|
+| Cách tích | **Chi tiêu** · **Giới thiệu bạn bè** · **Hoàn tiền / cashback** |
+| Quy đổi | **1 điểm = … VND** · **Làm tròn** · **Hóa đơn tối thiểu** |
+| Đổi điểm | công tắc **Cho phép đổi điểm thành giảm giá** · **Quy đổi**: Thành voucher / Thành điểm |
+| Sinh nhật | **Nhân điểm trong ngày sinh nhật** · **Hệ số nhân** |
+| Hạng thành viên | danh sách: Mã · **Chi tiêu tối thiểu** · **% ưu đãi** · **Hệ số nhân** → nút **Thêm hạng** |
+| Hành vi | nút **Thêm hành vi** (thêm quy tắc tích điểm) |
 
-**Thiết bị đang kết nối**: trống thì *"Chưa có thiết bị nào kết nối"*.
+#### 2b. CTKM / Voucher
 
-**Lưu trữ**: Lưu trữ cục bộ · Lưu trữ lâu dài · Cơ sở dữ liệu
+- **Danh sách chương trình** — trống thì *"Chưa có chương trình khuyến mại"*
+- **Hình thức**: Giảm theo % / Giảm số tiền → **Giá trị**
+- **Khuyến mại theo**: Hóa đơn / toàn bill · Hàng hóa / mọi SKU ·
+  Hàng hóa / SKU cụ thể (→ **Chọn SKU áp dụng**) · Nhóm hàng
+- **Điều kiện**: Bill tối thiểu · **Chỉ 1 lần** / Không giới hạn ·
+  Lot/Date áp dụng · Không ràng buộc
+- **Hiệu lực & lịch chạy**: Giờ bắt đầu · Giờ kết thúc · Chi nhánh
+- **Ghi chú nội bộ / mô tả cách chạy CTKM**
+- Nút: **Lưu CTKM** · **Chỉnh sửa chương trình** · bật/tắt từng chương trình
+
+> **Gợi ý**: form CTKM nhiều nhánh phụ thuộc nhau (chọn "theo SKU" mới hiện nút
+> chọn SKU). Trên màn nhỏ nên đi theo **từng bước**, mỗi bước một câu hỏi.
 
 ---
 
-### 7. Kho & kênh bán
-`settings_warehouse_panel.dart` — 41 KB
+### 3. Kho & kênh bán — dùng hằng tuần
 
-**Danh sách kho**: tên, mã, loại, trạng thái **Bật** / **Tắt**, cột **Mặc định**.
+`settings_warehouse_panel.dart` (41 KB)
 
-**Tạo / Sửa kho**: Tên kho · Mã kho · **Loại kho** (Kho retail / showroom · Kho
-bếp / vật dụng) · **Sắp xếp**
+**Danh sách kho**: tên · mã · loại · trạng thái **Bật**/**Tắt** · nhãn **Mặc định**
 
-**Kênh bán hàng đang nối với kho này** — mỗi kho nối tới:
+**Tạo / Sửa kho**
+- Tên kho (bắt buộc — *"Nhập tên kho"*) · Mã kho
+- **Loại kho**: Kho retail / showroom · Kho bếp / vật dụng
+- **Sắp xếp** (thứ tự hiển thị)
+
+**Kênh bán hàng đang nối với kho này** — mỗi kho nối tới một hoặc nhiều kênh:
 - RETAIL POS (bán lẻ)
 - RETAIL TRONG F&B (thêm retail ở POS nhà hàng)
 - POS nhà hàng
@@ -220,81 +178,32 @@ bếp / vật dụng) · **Sắp xếp**
 
 Trống thì hiện *"Chưa nối kênh bán hàng"*.
 
-**Bảng giá**: danh sách, **Tạo bảng giá**, Tên bảng giá, áp **Theo kênh bán**.
+**Bảng giá**: danh sách · **Tạo bảng giá** · Tên bảng giá · áp **Theo kênh bán**
 
-Nút: **Tạo kho** · **Tạo kho mới** · **Lưu cấu hình kho** · **Tắt kho** ·
-**Mở màn Kho**
-
----
-
-### 8. Bill & Tem nhãn
-`settings_print_panel.dart` (2 KB, chỉ là vỏ) →
-`print_template_designer.dart` + `print_template_designer_methods.dart` (54 KB)
-
-**Bộ thiết kế mẫu in trực quan** — kéo thả phần tử lên mẫu bill/tem, có xem trước
-đúng như bản in thật.
-
-Chọn khổ giấy có sẵn: **K80** (80×320mm) · **K57** (57×320mm) · **A5** (148×210mm).
-Bề ngang bill chỉnh được 48–120mm; tem 20–120mm.
-
-Phần tử đặt được: chữ, đường kẻ, ảnh/logo, mã QR, mã vạch, bảng dòng hàng.
-
-> **Vấn đề trên màn nhỏ**: đây là công cụ kéo thả trên canvas. Gần như không dùng
-> được bằng ngón tay trên màn 6 inch. Cân nhắc: trên điện thoại chỉ cho **xem** và
-> **chọn mẫu có sẵn**, còn thiết kế thì để trên máy để bàn.
+Nút: **Tạo kho** · **Lưu cấu hình kho** · **Tắt kho** · **Mở màn Kho**
+Thông báo: *"Tạo kho …"* / *"Cập nhật kho …"*
 
 ---
 
-### 9. Thiết bị khách
-`settings_devices_panel.dart` — 7 KB, **panel đơn giản nhất**
+### 4. Cấu hình bàn — thỉnh thoảng
 
-**Màn hình tự order (iPad / máy khách)**:
-- Hiện `PIN hiện tại: ...` (hoặc *(chưa đặt)*)
-- Ô **PIN mới (4 số)** → nút **Đổi PIN**
-- Kiểm tra: *"PIN phải đúng 4 chữ số"* → báo *"Đã đổi PIN thiết bị khách"*
+`settings_tables_panel.dart` (12 KB)
 
----
+- Danh sách bàn **nhóm theo khu vực**
+- Mỗi bàn: `Bàn <mã>` · `<n> chỗ` · trạng thái **Trống**
+- Khối **XEM TRƯỚC TRÊN SƠ ĐỒ BÀN**
 
-### 10. Màn hình phụ
-`settings_customer_display_panel.dart` — 12 KB
+**Thêm / Sửa bàn**: Khu vực (gợi ý *"VD: Tầng 1, Sân vườn"*) · Số bàn / Mã bàn ·
+Số chỗ ngồi
 
-- Công tắc **Kích hoạt**
-- **Ảnh quảng cáo**: nút **Thêm ảnh**, tối đa N ảnh/video
-- **Thời gian mỗi ảnh**: 15 / 20 / 25 / 30 giây
-- Khối **Cách sử dụng** hướng dẫn
-- Nút **Lưu** → *"Đã lưu màn hình phụ"*
+Kiểm tra: *"Cần nhập khu vực và số bàn"*
+Nút: **Thêm bàn** · **Sửa** · **Xóa** · **Tạo** · **Lưu** · **Hủy**
 
 ---
 
-### 11. Tích điểm & Khuyến mại
-`settings_loyalty_panel.dart` (19 KB) + `settings_promotions_panel.dart` (30 KB)
+### 5. Cấu hình thông báo — thỉnh thoảng
 
-Panel này có **hai thẻ con**: **Tích điểm** và **CTKM / Voucher**.
-
-#### Tích điểm
-- **Cách tích điểm tự động**: Chi tiêu · Giới thiệu bạn bè · Hoàn tiền/cashback
-- **1 điểm = ... VND** · **Làm tròn** · **Hóa đơn tối thiểu**
-- Công tắc **Cho phép đổi điểm thành giảm giá** · **Quy đổi**: Thành voucher /
-  Thành điểm
-- **Nhân điểm trong ngày sinh nhật** — Hệ số nhân
-- **Hạng thành viên**: Mã · Chi tiêu tối thiểu · % ưu đãi · Hệ số nhân điểm →
-  **Thêm hạng**
-- **Thêm hành vi** — thêm quy tắc tích điểm
-
-#### CTKM / Voucher
-- **Danh sách chương trình** (trống: *"Chưa có chương trình khuyến mại"*)
-- **Hình thức khuyến mại**: Giảm theo % / Giảm số tiền
-- **Khuyến mại theo**: Hóa đơn / toàn bill · Hàng hóa / mọi SKU ·
-  Hàng hóa / SKU cụ thể (→ **Chọn SKU áp dụng**) · Nhóm hàng
-- **Điều kiện**: Bill tối thiểu · **Chỉ 1 lần** / Không giới hạn · Lot/Date áp dụng
-- **Hiệu lực & lịch chạy**: Giờ bắt đầu · Giờ kết thúc · Chi nhánh áp dụng
-- **Ghi chú nội bộ / mô tả cách chạy CTKM**
-- Nút: **Lưu CTKM** · **Chỉnh sửa chương trình** · bật/tắt từng chương trình
-
----
-
-### 12. Cấu hình thông báo
-`settings_notify_routing_panel.dart` — 25 KB
+`settings_notify_routing_panel.dart` (25 KB)
 
 - Công tắc **Bật âm thanh thông báo**
 - **Âm riêng cho từng sự kiện** + nút **Nghe thử**
@@ -303,101 +212,190 @@ Panel này có **hai thẻ con**: **Tích điểm** và **CTKM / Voucher**.
 Món mới lên màn hình bếp (KDS) · Thanh toán thành công · Khách gọi nhân viên ·
 Khách tự gọi món (iPad) · Kho / Tồn thấp · Hóa đơn & Thanh toán
 
-**Định tuyến — ai nhận thông báo nào**:
-- **Theo vai trò**: Quản lý · Thu ngân · Bếp → Nhận / Không nhận
-- **Ghi đè theo nhân viên**: tìm nhân viên (*"Tìm nhân viên..."*), đặt
-  **Luôn nhận** / **Không nhận** cho từng người
-- Hiện `<n> người có ghi đè`
+**Định tuyến — ai nhận thông báo nào**
+- **Theo vai trò**: Quản lý · Thu ngân · Bếp → **Nhận** / **Không nhận**
+- **Ghi đè theo nhân viên**: tìm nhân viên (*"Tìm nhân viên..."*) → **Luôn nhận** /
+  **Không nhận** · hiện `<n> người có ghi đè`
 
 Nút **Lưu thay đổi**
 
+> Đây là **ma trận loại thông báo × vai trò**. Nhỏ hơn bảng phân quyền nhiều
+> (6 × 3) nên vẫn làm được trên màn nhỏ, nhưng cần cách trình bày khác bảng.
+
 ---
 
-## 4. Mẫu tương tác lặp lại
+### 6. Liên kết — hiếm, chỉ lúc lắp đặt
 
-Hầu hết panel theo cùng một khuôn:
+`settings_integrations_panel.dart` (40 KB)
+
+Mỗi đối tác là một thẻ, có **trạng thái**: Chưa kết nối · Kết nối thành công! ·
+Kết nối thất bại · Lỗi kết nối
+
+Mỗi thẻ có ba khối: **CẤU HÌNH CHI TIẾT** · **THIẾT LẬP TÍNH NĂNG** ·
+**GHI CHÚ NỘI BỘ**
+
+| Đối tác | Trường |
+|---|---|
+| Hóa đơn điện tử | Mã số thuế · Tên công ty · Tài khoản / Username · Mật khẩu / Token |
+| SePay | tự đối soát chuyển khoản |
+| Casso | tự đối soát chuyển khoản |
+| VietQR / PayOS | Số tài khoản nhận tiền · Mã ngân hàng (VCB, MB, ACB...) · Return URL · Cancel URL |
+| Kênh online | **Cách nhận đơn**: Tự nhận đơn hợp lệ / Nhân viên xác nhận · công tắc **Tự in khi có đơn mới** |
+| Kế toán (MISA) | Chi nhánh mặc định |
+
+Nút: **Kiểm tra cấu hình** (→ *Kiểm tra thành công* / *Kiểm tra thất bại*) ·
+**Lưu kết nối đang chọn** · **Copy**
+
+> **Gợi ý**: đây là việc làm **một lần lúc lắp đặt**, thường do kỹ thuật làm trên
+> máy bàn. Trên máy cầm tay có thể chỉ cần **xem trạng thái kết nối** và nút
+> **Kiểm tra lại** — còn nhập token thì để máy bàn. Việc gõ token dài trên bàn
+> phím ảo giữa ca bán là không thực tế.
+
+---
+
+### 7. Chi nhánh — hiếm
+
+`settings_branches_panel.dart` (13 KB)
+
+- Danh sách: tên · mã · trạng thái **Đang mở** / **Đã đóng**
+- **Thêm / Sửa**: Tên chi nhánh (bắt buộc) · Mã chi nhánh · công tắc **Đang hoạt động**
+- **Module bán hàng tại chi nhánh** — bật/tắt từng cái:
+  - POS nhà hàng — *Sơ đồ bàn, gọi món và thanh toán F&B*
+  - Bán lẻ — *Bán hàng mã vạch và thêm hàng retail vào bill F&B*
+  - Màn hình bếp KDS
+
+Kiểm tra: *"Cần nhập tên chi nhánh"*
+
+---
+
+### 8. Màn hình phụ — hiếm
+
+`settings_customer_display_panel.dart` (12 KB)
+
+- Công tắc **Kích hoạt**
+- **Ảnh quảng cáo**: **Thêm ảnh** · tối đa N ảnh/video
+- **Thời gian mỗi ảnh**: 15 / 20 / 25 / 30 giây
+- Khối **Cách sử dụng**
+- **Lưu** → *"Đã lưu màn hình phụ"*
+
+> Mục này **đã tự ẩn trên Android/iOS** (`settings_tab.dart` dòng 106) vì màn phụ
+> là tính năng riêng của máy để bàn. Ghi ở đây cho đủ, **không cần thiết kế**.
+
+---
+
+### 9. Thiết bị khách — hiếm, đơn giản nhất
+
+`settings_devices_panel.dart` (7 KB)
+
+**Màn hình tự order (iPad / máy khách)**
+- Hiện `PIN hiện tại: …` (hoặc *(chưa đặt)*)
+- Ô **PIN mới (4 số)** → nút **Đổi PIN**
+- Kiểm tra: *"PIN phải đúng 4 chữ số"* → *"Đã đổi PIN thiết bị khách"*
+
+Cả mục chỉ có **một ô nhập và một nút**.
+
+---
+
+## 5. Mẫu tương tác lặp lại
+
+Gần như mọi mục theo cùng một khuôn:
 
 ```
-[Tiêu đề phần]                          [Nút Thêm/Tạo]
-┌──────────────────────────────────────────────────┐
-│ Danh sách                                        │
-│  • mục 1                          [Sửa] [Xóa]   │
-│  • mục 2                          [Sửa] [Xóa]   │
-└──────────────────────────────────────────────────┘
+[Tiêu đề phần]                              [+ Thêm]
+┌────────────────────────────────────────────────────┐
+│ • mục 1                              [Sửa] [Xóa]  │
+│ • mục 2                              [Sửa] [Xóa]  │
+└────────────────────────────────────────────────────┘
 
-Bấm Thêm/Sửa → HỘP THOẠI:
-   ô nhập, công tắc, ô chọn
-   [Hủy]  [Tạo / Lưu]
+Bấm Thêm/Sửa → biểu mẫu:
+    ô nhập · công tắc · ô chọn
+    [Hủy]              [Tạo / Lưu]
 ```
 
-Nhãn nút dùng lại xuyên suốt: **Thêm** · **Tạo** · **Sửa** · **Xóa** ·
-**Lưu** · **Hủy** · **Bật** / **Tắt**
+Nhãn nút dùng lại xuyên suốt:
+**Thêm** · **Tạo** · **Sửa** · **Xóa** · **Lưu** · **Hủy** · **Bật** / **Tắt**
 
-Sau khi lưu, hệ thống hiện thông báo ngắn xác nhận, ví dụ
-*"Cập nhật nhân viên …"*, *"Tạo kho …"*, *"Đã xóa bàn"*.
+Sau khi lưu luôn có thông báo ngắn xác nhận: *"Tạo kho …"*, *"Cập nhật món …"*,
+*"Đã xóa bàn"*.
 
 ---
 
-## 5. Xếp hạng độ khó khi thiết kế lại
+## 6. Bộ giao diện điện thoại đã có — nên dùng lại
 
-| Mức | Mục | Vì sao |
+Bản điện thoại đã có sẵn hệ widget riêng. Dùng lại để Cài đặt trông giống phần còn
+lại của app, thay vì tạo ngôn ngữ thứ hai.
+
+`screens/phone/phone_kit.dart` và `phone_scaffolds.dart`:
+
+| Widget | Dùng cho |
+|---|---|
+| `PhoneHeader` | Thanh tiêu đề có nút quay lại + nút hành động |
+| `PhoneListScaffold` | Màn danh sách có tìm kiếm, lọc, kéo tải lại, trạng thái rỗng |
+| `PhoneListRow` | Một dòng trong danh sách |
+| `PhoneField` | Ô nhập một cột — nhãn trên, ô dưới |
+| `PhoneSwitchRow` | Hàng công tắc — **chạm cả hàng** là đổi, không bắt trúng cái công tắc bé |
+| `PhonePickList` | Danh sách chọn trong bảng trượt |
+| `PhoneCta` | Nút chính, có trạng thái đang bận |
+| `PhoneActionBar` | Thanh ghim đáy chứa nút chính |
+| `PhoneSectionTitle` | Tiêu đề nhóm |
+| `PhoneInfoCard` | Thẻ hiện các cặp nhãn–giá trị |
+| `PhoneEmpty` | Trạng thái rỗng có biểu tượng và lời gợi ý |
+| `PhoneBadge`, `PhoneChip` | Nhãn trạng thái, chip lọc |
+| `PhoneNumPad` | Bàn phím số cho ô tiền |
+
+Hàm trợ giúp: `showPhoneSheet()` (bảng trượt từ đáy) · `phoneMoney()` ·
+`phoneInt()` · `appToast()`
+
+**Xem làm mẫu**: `phone_printer_setup.dart` — vừa làm xong theo đúng khuôn này,
+là ví dụ gần nhất cho một biểu mẫu cài đặt trên máy cầm tay.
+
+---
+
+## 7. Nguyên tắc đề xuất
+
+Đây là gợi ý, người thiết kế quyết định.
+
+**Điều hướng**: bỏ dải cuộn ngang 64px. Thay bằng **danh sách dọc toàn màn** —
+bấm một mục thì đẩy sang màn con có nút quay lại. Giống hệt cách màn "Nhiều hơn"
+đang làm.
+
+**Một cột, luôn luôn**: nhãn trên, ô nhập dưới. Không xếp nhãn và ô nhập cạnh nhau.
+
+**Biểu mẫu là bảng trượt từ đáy hoặc màn đầy đủ**, không phải hộp thoại rộng cố định.
+
+**Nút chính ghim đáy** bằng `PhoneActionBar` + `PhoneCta`, để **Lưu** luôn trong
+tầm ngón cái.
+
+**Vùng chạm tối thiểu 44dp** — người dùng có thể đeo găng hoặc tay ướt.
+
+**Biểu mẫu dài thì chia bước** thay vì cuộn dài. Đặc biệt: Sửa món và CTKM.
+
+**Được phép để một số việc lại cho máy bàn.** Không phải tính năng nào cũng cần
+đủ trên màn 5.45 inch. Nếu một việc hiếm khi làm và cần gõ nhiều (ví dụ nhập token
+liên kết), thì trên máy cầm tay chỉ cần **xem trạng thái** kèm dòng nhắc *"Chỉnh
+sửa trên máy để bàn"*. Điều tệ nhất là giả vờ dùng được rồi để người ta bấm nhầm
+giữa ca bán.
+
+---
+
+## 8. Tệp mã nguồn liên quan
+
+| Tệp | KB | Mục |
 |---|---|---|
-| **Rất khó** | Bill & Tem nhãn | Canvas kéo thả, gần như không dùng được bằng ngón tay |
-| **Rất khó** | Nhân sự & Phân quyền | Ma trận nhóm × quyền, hàng chục ô đánh dấu |
-| **Khó** | Kết nối (56 KB) | Nhiều khối rời rạc: mạng, máy in, tuyến in, lịch sử, lưu trữ |
-| **Khó** | Liên kết (40 KB) | 6 đối tác, mỗi cái một bộ ô nhập riêng |
-| **Khó** | Thực đơn | Danh sách lớn + hộp thoại nhiều tầng (recipe, lịch bán) |
-| **Vừa** | Kho & kênh bán · Tích điểm & Khuyến mại | Nhiều trường nhưng chia nhóm rõ |
-| **Dễ** | Chi nhánh · Cấu hình bàn · Màn hình phụ · Cấu hình thông báo | Danh sách + biểu mẫu đơn giản |
-| **Rất dễ** | Thiết bị khách | Đúng một ô PIN và một nút |
-
----
-
-## 6. Gợi ý cho người thiết kế
-
-Đây là gợi ý, không phải yêu cầu bắt buộc.
-
-**Điều hướng**: thay dải cuộn ngang 64px bằng **danh sách dọc toàn màn hình** —
-bấm một mục thì đẩy sang màn con, có nút quay lại. Cùng khuôn với màn "Nhiều hơn"
-của bản điện thoại (`phone_shell.dart`).
-
-**Hộp thoại**: đổi mọi hộp thoại rộng cố định thành **bảng trượt từ đáy** hoặc
-**màn hình đầy đủ**. Bản điện thoại đã có sẵn `showPhoneSheet()` và `PhoneField`
-trong `screens/phone/phone_kit.dart` — dùng lại để nhất quán.
-
-**Một cột**: mọi `Row` nhãn + ô nhập nên xếp dọc — nhãn trên, ô nhập dưới.
-
-**Nút chính ghim đáy**: dùng `PhoneActionBar` + `PhoneCta` như các màn điện thoại
-khác, để nút **Lưu** luôn trong tầm ngón cái.
-
-**Cân nhắc ẩn bớt trên điện thoại**: bộ thiết kế mẫu in và bảng phân quyền chi tiết
-có thể chỉ cho **xem**, kèm dòng nhắc *"Chỉnh sửa trên máy để bàn"*. Không phải
-tính năng nào cũng cần đủ trên màn 6 inch — quan trọng là không giả vờ dùng được
-rồi để người ta bấm nhầm.
-
----
-
-## 7. Tệp mã nguồn liên quan
-
-| Tệp | KB | Nội dung |
-|---|---|---|
-| `settings_screen.dart` | 2 | Vỏ ngoài, thanh trên cùng |
-| `settings_tab.dart` | 13 | Điều hướng 12 mục + chọn panel |
-| `settings_connections_panel.dart` | 56 | Kết nối |
-| `print_template_designer_methods.dart` | 54 | Thiết kế mẫu in |
+| `settings_tab.dart` | 13 | Điều hướng + lọc mục theo thiết bị |
 | `menu_item_dialogs.dart` | 48 | Hộp thoại món ăn |
 | `settings_warehouse_panel.dart` | 41 | Kho & kênh bán |
 | `settings_integrations_panel.dart` | 40 | Liên kết |
-| `settings_users_panel.dart` | 39 | Nhân sự & Phân quyền |
 | `book_menu_panel.dart` | 32 | Menu quyển |
 | `settings_promotions_panel.dart` | 30 | Khuyến mại |
 | `settings_notify_routing_panel.dart` | 25 | Thông báo |
 | `settings_loyalty_panel.dart` | 19 | Tích điểm |
+| `menu_tab.dart` | 14 | Danh sách món |
 | `settings_branches_panel.dart` | 13 | Chi nhánh |
-| `settings_customer_display_panel.dart` | 12 | Màn hình phụ |
+| `settings_customer_display_panel.dart` | 12 | Màn hình phụ (đã ẩn trên mobile) |
 | `settings_tables_panel.dart` | 12 | Cấu hình bàn |
 | `settings_devices_panel.dart` | 7 | Thiết bị khách |
-| `settings_print_panel.dart` | 2 | Vỏ cho bộ thiết kế mẫu in |
 
-Bộ widget dùng chung của bản điện thoại — nên dùng lại khi thiết kế:
-`screens/phone/phone_kit.dart` · `phone_scaffolds.dart`
+Đã gỡ khỏi bản điện thoại, không cần thiết kế:
+`settings_users_panel.dart` · `settings_connections_panel.dart` ·
+`print_template_designer*.dart`
