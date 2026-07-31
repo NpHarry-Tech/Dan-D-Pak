@@ -24,6 +24,7 @@ import 'services/api_service.dart';
 import 'services/black_box.dart';
 import 'services/client_log.dart';
 import 'services/connectivity_status.dart';
+import 'services/local_print_agent.dart';
 import 'services/local_store.dart';
 import 'services/perf_mode.dart';
 import 'services/system_log.dart';
@@ -314,6 +315,10 @@ class _DandpakPosAppState extends State<DandpakPosApp>
             // Hàng hóa · Hóa đơn · Nhiều hơn). Lưới module của LauncherScreen
             // là bố cục cho máy POS/tablet — trên màn 6 inch nó biến thành một
             // danh sách ô dài phải cuộn, và không có đường tắt tới màn bán.
+            // Máy POS cầm tay có máy in gắn liền (Sunmi V2...) thì bật agent
+            // in ngay trong app — Hardware Agent trên Windows không với tới máy
+            // Android được, nên không có bước này bill sẽ xếp hàng rồi nằm im.
+            LocalPrintAgent.khoiDongNeuCo(context.read<ApiService>());
             if (AppFlavor.current.isHandset) return const PhoneShell();
             return LauncherScreen();
           }

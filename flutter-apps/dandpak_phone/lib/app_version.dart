@@ -4,5 +4,5 @@
 /// QUY TRÌNH PHÁT HÀNH: mỗi lần ra bản mới → TĂNG kAppBuildNumber (và đổi
 /// kAppVersionName cho dễ đọc) → build .exe → publish lên VPS với ĐÚNG số build
 /// này (script deploy/publish-release.ps1 tự đọc 2 hằng số dưới đây).
-const int kAppBuildNumber = 21;
-const String kAppVersionName = '2026.07.31.08';
+const int kAppBuildNumber = 22;
+const String kAppVersionName = '2026.08.01.01';

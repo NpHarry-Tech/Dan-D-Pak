@@ -128,4 +128,40 @@ extension ApiServicePrintingApi on ApiService {
     }
     return <dynamic>[];
   }
+
+  // ── AGENT IN CHẠY TRONG APP (máy POS cầm tay có máy in gắn liền) ──────────
+  // Dùng CHÍNH các endpoint mà Hardware Agent trên Windows vẫn dùng, nên toàn bộ
+  // phần phân giải tuyến / chống job mồ côi / giữ chỗ theo máy ở server áp dụng
+  // y nguyên. Các route này gác bằng quyền thường của phiên đăng nhập
+  // (guardAny 'module.printing','settings.printers','settings.print','pay')
+  // — thu ngân có 'pay' là gọi được, không cần token riêng.
+
+  /// Báo máy in của MÁY NÀY lên server. Không báo đều đặn thì server coi máy đã
+  /// tắt app và ngừng phát job cho nó.
+  Future<void> reportAgentPrinters(List<Map<String, dynamic>> printers) async {
+    await postJson('/api/agent/printers/report',
+        body: {'printers': printers},
+        errorMessage: 'Không báo được máy in lên máy chủ');
+  }
+
+  /// Lấy các phiếu đang chờ in DÀNH CHO MÁY NÀY. Server tự lọc theo device id
+  /// (gửi kèm trong header) nên hai máy không giành nhau một phiếu.
+  Future<List<Map<String, dynamic>>> getAgentPendingJobs({int limit = 20}) async {
+    final res = await getJson('/api/agent/print/pending?limit=$limit',
+        errorMessage: 'Không lấy được hàng đợi in');
+    final raw = res is Map ? res['jobs'] : null;
+    return (raw as List? ?? const [])
+        .whereType<Map>()
+        .map((e) => Map<String, dynamic>.from(e))
+        .toList();
+  }
+
+  /// Báo phiếu đã in xong hay hỏng. PHẢI gọi kể cả khi hỏng — không báo thì
+  /// server để job treo mãi ở trạng thái đang in.
+  Future<void> reportAgentJobResult(String id,
+      {required bool ok, String? error}) async {
+    await postJson('/api/agent/print/jobs/$id/result',
+        body: {'ok': ok, if (error != null) 'error': error},
+        errorMessage: 'Không báo được kết quả in');
+  }
 }

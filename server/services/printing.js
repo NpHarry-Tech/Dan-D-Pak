@@ -187,13 +187,14 @@ function rebuildImplicit(printerId, devices = []) {
   const deviceId = rest.slice(0, sep);
   const name = rest.slice(sep + 1);
   const device = devices.find(d => d.device_id === deviceId);
-  const still = (device?.printers || [])
-    .some(p => String(p.name || '').trim() === name);
-  if (!still) return null;
+  const hit = (device?.printers || [])
+    .find(p => String(p.name || '').trim() === name);
+  if (!hit) return null;
   return {
     id, name, systemName: name, label: name,
     output: 'receipt', connection: 'system', active: true, auto: true,
-    primaryDeviceId: deviceId, implicit: true,
+    primaryDeviceId: deviceId, widthMm: Number(hit.widthMm) || null,
+    implicit: true,
   };
 }
 
@@ -211,6 +212,7 @@ function implicitDevicePrinter(branch_id, deviceId, output) {
   const first = (device?.printers || [])[0];
   const name = String(first?.name || '').trim();
   if (!name) return null;
+  const widthMm = Number(first?.widthMm) || null;
   return {
     id: `${IMPLICIT_PREFIX}${device.device_id}:${name}`,
     name,
@@ -221,6 +223,8 @@ function implicitDevicePrinter(branch_id, deviceId, output) {
     active: true,
     auto: true,
     primaryDeviceId: device.device_id,
+    // Bề ngang do CHÍNH MÁY khai (Sunmi V2 = 58mm). Null thì theo chi nhánh.
+    widthMm,
     // Đánh dấu để màn Máy in hiện "Tự nhận" thay vì giả vờ đây là tuyến đã khai.
     implicit: true,
   };
@@ -476,8 +480,11 @@ function renderEl(el = {}, vars = {}, W = 40, out = []) {
 }
 
 // Legacy positioned template: sort elements by y then x before rendering.
-function renderTemplateText(tpl = {}, vars = {}, { title = 'PRINT' } = {}) {
-  const W = templateWidthChars(tpl);
+function renderTemplateText(tpl = {}, vars = {}, { title = 'PRINT', widthChars = 0 } = {}) {
+  // [widthChars] ép bề ngang theo MÁY IN THẬT sẽ in phiếu này. Mẫu bill do cửa
+  // hàng thiết kế mang sẵn widthMm của nó (thường 80mm); in mẫu đó ra máy cầm
+  // tay 58mm mà không ép lại thì chữ tràn khỏi mép giấy.
+  const W = widthChars || templateWidthChars(tpl);
   const rows = [];
   const elements = [...(Array.isArray(tpl.elements) ? tpl.elements : [])]
     .sort((a, b) => (Number(a.y) || 0) - (Number(b.y) || 0) || (Number(a.x) || 0) - (Number(b.x) || 0));
@@ -487,8 +494,9 @@ function renderTemplateText(tpl = {}, vars = {}, { title = 'PRINT' } = {}) {
 }
 
 // New KiotViet-style template: render `rows` in list order (no positioning).
-function renderTemplateRows(tpl = {}, vars = {}, { title = 'PRINT' } = {}) {
-  const W = templateWidthChars(tpl);
+function renderTemplateRows(tpl = {}, vars = {}, { title = 'PRINT', widthChars = 0 } = {}) {
+  // Xem chú thích ở renderTemplateText.
+  const W = widthChars || templateWidthChars(tpl);
   const rows = [];
   for (const el of Array.isArray(tpl.rows) ? tpl.rows : []) renderEl(el, vars, W, rows);
   const body = rows.filter(row => String(row).trim() !== '').join('\n');
@@ -665,71 +673,81 @@ function danItemRow(i = {}) {
   return [...nameLines, figures, ...promoLines].join('\n');
 }
 
-function renderReceipt(p = {}) {
+// [W] = số ký tự/dòng của ĐÚNG máy in sẽ in phiếu này. Mặc định 40 giữ nguyên
+// hành vi cũ. Máy POS cầm tay (Sunmi 58mm) truyền 32 vào, máy để bàn K80 truyền
+// 48 — hai máy cùng chi nhánh nhưng khác khổ giấy, không thể dùng chung một số.
+function renderReceipt(p = {}, W = 40) {
+  // HAI CỘT TIỀN chia theo bề ngang thật, không cắm cứng 22+18.
+  // Cắm cứng thì khổ nào cũng ra đúng 40 ký tự: giấy 58mm (32 ký tự) bị tràn,
+  // giấy K80 (48 ký tự) thì bỏ phí 8 ký tự bên phải.
+  const cotPhai = Math.max(10, Math.round(W * 0.45)); // W=40 -> 18, giữ như cũ
+  const cotTrai = Math.max(8, W - cotPhai);
   const tpl = p.print_config?.templates?.bill;
-  if (tpl?.rows?.length) return renderTemplateRows(tpl, receiptVars(p), { title: 'HOA DON' });
-  if (tpl?.elements?.length) return renderTemplateText(tpl, receiptVars(p), { title: 'HOA DON' });
+  // Mẫu do cửa hàng thiết kế cũng phải co theo khổ giấy THẬT của máy in.
+  const opt = { title: 'HOA DON', widthChars: W };
+  if (tpl?.rows?.length) return renderTemplateRows(tpl, receiptVars(p), opt);
+  if (tpl?.elements?.length) return renderTemplateText(tpl, receiptVars(p), opt);
   const cfg = p.print_config?.bill || {};
   const rows = [];
   
   if (cfg.storeName || p.branch || 'DAN D PAK') {
-    const wrapped = wrap(cfg.storeName || p.branch || 'DAN D PAK', 40);
+    const wrapped = wrap(cfg.storeName || p.branch || 'DAN D PAK', W);
     for (const lineText of wrapped) {
-      rows.push(center(lineText, 40));
+      rows.push(center(lineText, W));
     }
   }
   
   if (cfg.address) {
-    const wrapped = wrap(cfg.address, 40);
+    const wrapped = wrap(cfg.address, W);
     for (const lineText of wrapped) {
-      rows.push(center(lineText, 40));
+      rows.push(center(lineText, W));
     }
   }
   
-  rows.push(line());
+  rows.push(line('-', W));
   if (p.preview) {
-    rows.push(center('HOA DON TAM TINH', 40));
+    rows.push(center('HOA DON TAM TINH', W));
   } else {
-    rows.push(center(`HOA DON #${p.number || ''}`, 40));
+    rows.push(center(`HOA DON #${p.number || ''}`, W));
   }
   if (p.table_code) {
-    rows.push(center(`Ban ${p.table_code}`, 40));
+    rows.push(center(`Ban ${p.table_code}`, W));
   }
-  rows.push(line());
+  rows.push(line('-', W));
   
   for (const i of p.items || []) {
     const qty = Number(i.qty) || 1;
     const price = Number(i.unit_price) || 0;
-    rows.push(...wrap(`${qty}x ${i.name || ''}`, 30));
-    rows.push(`${money(price)} x ${qty}`.padEnd(22) + money(price * qty).padStart(18));
+    rows.push(...wrap(`${qty}x ${i.name || ''}`, Math.max(12, W - 10)));
+    rows.push(`${money(price)} x ${qty}`.padEnd(cotTrai) + money(price * qty).padStart(cotPhai));
     const promo = promoText(i.promo);
-    if (promo) rows.push(...wrap(`  KM: ${promo}`, 40));
+    if (promo) rows.push(...wrap(`  KM: ${promo}`, W));
   }
   
-  rows.push(line());
+  rows.push(line('-', W));
   const vatAmount = Number(p.vat_amount ?? p.tax?.vat_amount) || 0;
-  rows.push('THANH TIEN'.padEnd(22) + money(p.subtotal || 0).padStart(18));
-  if (vatAmount > 0) rows.push('TRONG DO VAT'.padEnd(22) + money(vatAmount).padStart(18));
+  rows.push('THANH TIEN'.padEnd(cotTrai) + money(p.subtotal || 0).padStart(cotPhai));
+  if (vatAmount > 0) rows.push('TRONG DO VAT'.padEnd(cotTrai) + money(vatAmount).padStart(cotPhai));
   const orderDiscount = orderWideDiscount(p);
   if (orderDiscount > 0) {
     const label = p.voucher?.name || p.voucher_code || 'KM TOAN BILL';
-    rows.push(...wrap(label, 22).map((x, idx) => idx === 0
-      ? x.padEnd(22) + ('-' + money(orderDiscount)).padStart(18)
+    rows.push(...wrap(label, Math.max(10, W - 18)).map((x, idx) => idx === 0
+      ? x.padEnd(cotTrai) + ('-' + money(orderDiscount)).padStart(cotPhai)
       : x));
   }
-  rows.push('TONG CONG'.padEnd(22) + money(p.total || 0).padStart(18));
+  rows.push('TONG CONG'.padEnd(cotTrai) + money(p.total || 0).padStart(cotPhai));
   if (Array.isArray(p.lines) && p.lines.length) {
     for (const l of p.lines) {
-      rows.push(`${methodLabel(l.method)}`.padEnd(22) + money(l.amount).padStart(18));
+      rows.push(`${methodLabel(l.method)}`.padEnd(cotTrai) + money(l.amount).padStart(cotPhai));
     }
   }
-  rows.push(line());
-  if (p.note) rows.push(...wrap(`Ghi chu: ${p.note}`, 40));
+  rows.push(line('-', W));
+  if (p.note) rows.push(...wrap(`Ghi chu: ${p.note}`, W));
   
   const footerText = cfg.footer || 'Cam on quy khach';
-  const wrappedFooter = wrap(footerText, 40);
+  const wrappedFooter = wrap(footerText, W);
   for (const lineText of wrappedFooter) {
-    rows.push(center(lineText, 40));
+    rows.push(center(lineText, W));
   }
   
   return rows.join('\n');
@@ -813,12 +831,16 @@ function renderTest(job, W = 48, billCfg = {}) {
   return rows.filter(r => r !== null && r !== undefined).join('\n');
 }
 
-export function renderJobText(job, branch_id = 'sala') {
+export function renderJobText(job, branch_id = 'sala', printer = null) {
   const p = job.payload || {};
   if (job.type === 'kitchen_ticket') return renderTicket(p);
   if (job.type === 'runner') return renderRunner(p);
   if (job.type === 'receipt') {
-    let text = renderReceipt(p);
+    const billCfg = getPrintConfig(job.branch_id || branch_id)?.bill || {};
+    const Wr = Number(printer?.widthMm)
+      ? paperWidthCharsFrom({ widthMm: Number(printer.widthMm) })
+      : paperWidthCharsFrom(billCfg);
+    let text = renderReceipt(p, Wr);
     if (isReprintPayload(p, job)) text = markReceiptReprint(text);
     return text;
   }
@@ -833,7 +855,11 @@ export function renderJobText(job, branch_id = 'sala') {
   // Phiếu do server tự dựng thì trải đúng bề ngang khổ giấy đã cấu hình. Đọc
   // cấu hình ĐÚNG MỘT LẦN rồi dùng chung cho cả bề ngang lẫn phần chữ hiển thị.
   const bill = getPrintConfig(job.branch_id || branch_id)?.bill || {};
-  const W = paperWidthCharsFrom(bill);
+  // Máy in TỰ KHAI bề ngang thì tin nó (máy cầm tay Sunmi 58mm nằm cùng chi
+  // nhánh với máy để bàn K80). Không khai thì theo cấu hình chi nhánh như cũ.
+  const W = Number(printer?.widthMm)
+    ? paperWidthCharsFrom({ widthMm: Number(printer.widthMm) })
+    : paperWidthCharsFrom(bill);
   if (job.type === 'test') return renderTest(job, W, bill);
   return renderGeneric(job, W);
 }
@@ -1513,7 +1539,7 @@ function resolveAgentJobFast(job, printers, printCfg, devices = []) {
     port: printer.port || 9100,
     systemName: printer.systemName || printer.name || '',
     drawer: !!(printer.openDrawerOnPrint && job.type === 'receipt') || job.type === 'cash_drawer',
-    text: renderJobText(job, job.branch_id),
+    text: renderJobText(job, job.branch_id, printer),
     density: printCfg?.bill?.printDensity || 'dark',
     // Máy in nhiệt cắm USB phải nhận NGUYÊN BYTE ESC/POS, không đi qua driver
     // Windows (driver vẽ chữ thành ảnh xám → bản in rất mờ, mất lệnh cắt giấy).
@@ -1537,7 +1563,9 @@ function resolveAgentJob(job, branch_id) {
     port: printer.port || 9100,
     systemName: printer.systemName || printer.name || '',
     drawer: !!(printer.openDrawerOnPrint && job.type === 'receipt') || job.type === 'cash_drawer',
-    text: renderJobText(job, branch_id),
+    // Truyền máy in vào để phiếu dựng theo ĐÚNG khổ giấy của nó (máy cầm tay
+    // 58mm khác máy để bàn K80 dù cùng chi nhánh).
+    text: renderJobText(job, branch_id, printer),
     density: getPrintConfig(branch_id)?.bill?.printDensity || 'dark',
     raw: isThermal(printer),
     created_at: job.created_at,

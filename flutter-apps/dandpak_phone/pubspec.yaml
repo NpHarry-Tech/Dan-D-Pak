@@ -1,7 +1,7 @@
 name: dandpak_phone
 description: "Dan D Pak Phone POS Application."
 publish_to: 'none'
-version: 2026.7.31+21
+version: 2026.7.31+22
 
 environment:
   sdk: '>=3.3.0 <4.0.0'
@@ -13,6 +13,7 @@ dependencies:
     sdk: flutter
   dandpak_core:
     path: ../dandpak_core
+  sunmi_printer_plus: ^4.1.1
 
 dev_dependencies:
   flutter_test:

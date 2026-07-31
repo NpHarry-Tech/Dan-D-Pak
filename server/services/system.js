@@ -33,6 +33,14 @@ function normalizePrinter(p = {}) {
     port: String(p.PortName || p.port || '').trim(),
     share: String(p.ShareName || p.share || '').trim(),
     rawStatus: p.PrinterStatus ?? p.Status ?? '',
+    // KHỔ GIẤY THEO TỪNG MÁY IN, không theo chi nhánh.
+    //
+    // Máy POS cầm tay (Sunmi V2) có đầu in 58mm gắn liền, trong khi máy để bàn
+    // cùng chi nhánh dùng K80. Bề ngang trước đây chỉ đọc từ cấu hình chi nhánh
+    // nên máy cầm tay sẽ dựng 48 ký tự rồi tràn khỏi mép giấy 58mm. Máy nào tự
+    // khai bề ngang của nó thì phiếu dựng theo đúng con số đó.
+    // Máy in Windows không gửi trường này -> null -> vẫn theo cấu hình chi nhánh.
+    widthMm: Number(p.widthMm || p.WidthMm) || null,
   };
 }
 
