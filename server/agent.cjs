@@ -142,6 +142,17 @@ const ESC_INIT = Buffer.from([0x1b, 0x40]);
 const ESC_CUT = Buffer.from([0x1d, 0x56, 0x42, 0x00]);
 const ESC_DRAWER = Buffer.from([0x1b, 0x70, 0x00, 0x19, 0xfa]);
 
+// EP MAY IN VE TRANG THAI CHUAN truoc moi phieu - xem chu thich day du o
+// server/services/printing.js. Tom tat: `ESC @` khong reset co chu tren nhieu
+// may in clone, nen phieu ra mot cot hep giua to K80 vi chu con ket o che do
+// phong to. ESC ! 0 + GS ! 0 ep ve 1x1, ESC a 0 canh trai, ESC 2 gian dong.
+const ESC_RESET = Buffer.from([
+  0x1b, 0x21, 0x00,
+  0x1d, 0x21, 0x00,
+  0x1b, 0x61, 0x00,
+  0x1b, 0x32,
+]);
+
 function ascii(s) {
   return String(s == null ? '' : s)
     .normalize('NFD').replace(/[̀-ͯ]/g, '')
@@ -165,6 +176,7 @@ function escposBuffer(text, opts) {
   const density = opts.density || '';
   return Buffer.concat([
     ESC_INIT,
+    ESC_RESET,
     densityPrefix(density),
     Buffer.from(ascii(text) + '\n\n', 'utf8'),
     drawer ? ESC_DRAWER : Buffer.alloc(0),

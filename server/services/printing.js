@@ -20,6 +20,21 @@ const ESC_INIT = Buffer.from([0x1b, 0x40]);
 const ESC_CUT = Buffer.from([0x1d, 0x56, 0x42, 0x00]);
 const ESC_DRAWER = Buffer.from([0x1b, 0x70, 0x00, 0x19, 0xfa]);
 
+// ÉP MÁY IN VỀ TRẠNG THÁI CHUẨN trước mỗi phiếu. `ESC @` trên lý thuyết đã reset
+// hết, nhưng rất nhiều máy in nhiệt hàng clone KHÔNG reset cỡ chữ và canh lề —
+// máy giữ nguyên trạng thái của job trước (hoặc của phần mềm khác vừa in). Đó là
+// lý do phiếu ra một cột hẹp giữa tờ K80: chữ còn kẹt ở chế độ phóng to.
+//   ESC ! 0  chế độ in: font A, không đậm, KHÔNG nhân đôi cao/rộng
+//   GS  ! 0  cỡ ký tự 1x1 (đây mới là lệnh gỡ phóng to 2x/4x)
+//   ESC a 0  canh trái (server tự căn giữa bằng dấu cách, máy canh giữa nữa là lệch)
+//   ESC 2    giãn dòng mặc định
+const ESC_RESET = Buffer.from([
+  0x1b, 0x21, 0x00,
+  0x1d, 0x21, 0x00,
+  0x1b, 0x61, 0x00,
+  0x1b, 0x32,
+]);
+
 const TYPE_LABEL = {
   kitchen_ticket: 'Lên món / Phiếu bếp',
   receipt: 'Hóa đơn / Tạm tính',
@@ -141,9 +156,74 @@ export function resolvePrinterForOutput(output, branch_id = 'sala', {
 
   // Tuyến in được thật (lan/system) đứng trước tuyến 'browser' — tuyến browser
   // cần người bấm trong hộp thoại nên không bao giờ tự ra giấy.
-  return sameOutput.find(p => p.connection === 'lan' || p.connection === 'system')
-    || sameOutput[0]
-    || null;
+  const configured = sameOutput.find(p => p.connection === 'lan' || p.connection === 'system')
+    || sameOutput[0];
+  if (configured) return configured;
+
+  // CHƯA AI CẤU HÌNH TUYẾN NÀO → dùng thẳng máy in đang cắm vào máy này.
+  //
+  // Cấu hình tuyến là tính năng NÂNG CAO, dành cho cửa hàng có nhiều máy in
+  // (bill/bếp/bar/tem) cần chia phiếu về đúng chỗ. Cửa hàng bình thường chỉ cắm
+  // một máy in vào máy POS và mong nó in ngay. Bắt họ vào Cài đặt khai báo tuyến
+  // trước khi in được cái bill đầu tiên là chặn nhầm chỗ — máy đã cắm máy in,
+  // agent đã báo tên máy in đó lên, hệ thống thừa thông tin để tự in.
+  return implicitDevicePrinter(branch_id, deviceId, output);
+}
+
+/** Tiền tố của tuyến in ngầm — dùng chung để dựng và để nhận lại. */
+const IMPLICIT_PREFIX = 'auto:';
+
+/**
+ * Dựng lại tuyến ngầm từ chính id của nó (`auto:<device_id>:<tên máy in>`).
+ * Chỉ chấp nhận khi máy in ĐÓ vẫn đang được máy ĐÓ báo lên — máy POS rút máy in
+ * ra hoặc tắt app thì job phải rơi về mồ côi như thường, không in mò.
+ */
+function rebuildImplicit(printerId, devices = []) {
+  const id = String(printerId || '');
+  if (!id.startsWith(IMPLICIT_PREFIX)) return null;
+  const rest = id.slice(IMPLICIT_PREFIX.length);
+  const sep = rest.indexOf(':');
+  if (sep < 0) return null;
+  const deviceId = rest.slice(0, sep);
+  const name = rest.slice(sep + 1);
+  const device = devices.find(d => d.device_id === deviceId);
+  const still = (device?.printers || [])
+    .some(p => String(p.name || '').trim() === name);
+  if (!still) return null;
+  return {
+    id, name, systemName: name, label: name,
+    output: 'receipt', connection: 'system', active: true, auto: true,
+    primaryDeviceId: deviceId, implicit: true,
+  };
+}
+
+/**
+ * Tuyến in NGẦM dựng từ máy in vật lý mà agent của máy này đã báo lên.
+ * Không ghi vào print_config — cửa hàng vẫn thấy danh sách tuyến trống, và
+ * ngày họ khai tuyến thật thì tuyến đó thắng ngay (nhánh trên chạy trước).
+ */
+function implicitDevicePrinter(branch_id, deviceId, output) {
+  const devices = getAgentDevices(branch_id);
+  const me = String(deviceId || '').trim();
+  // Ưu tiên máy in của CHÍNH máy đang thao tác; không xác định được máy nào thì
+  // lấy máy in của một máy bất kỳ đang chạy app, còn hơn là không in gì cả.
+  const device = (me && devices.find(d => d.device_id === me)) || devices[0];
+  const first = (device?.printers || [])[0];
+  const name = String(first?.name || '').trim();
+  if (!name) return null;
+  return {
+    id: `${IMPLICIT_PREFIX}${device.device_id}:${name}`,
+    name,
+    systemName: name,
+    label: name,
+    output,
+    connection: 'system',
+    active: true,
+    auto: true,
+    primaryDeviceId: device.device_id,
+    // Đánh dấu để màn Máy in hiện "Tự nhận" thay vì giả vờ đây là tuyến đã khai.
+    implicit: true,
+  };
 }
 
 /** Tuyến in hóa đơn cho máy đang thanh toán. */
@@ -737,6 +817,7 @@ function densityPrefix(density) {
 function escposBuffer(text, { cut = true, drawer = false, density = '' } = {}) {
   return Buffer.concat([
     ESC_INIT,
+    ESC_RESET,
     densityPrefix(density),
     Buffer.from(ascii(text) + '\n\n', 'utf8'),
     drawer ? ESC_DRAWER : Buffer.alloc(0),
@@ -1318,7 +1399,11 @@ export function pendingAgentJobs(branch_id = 'sala', { limit = 40, deviceId = ''
   const out = [];
   const orphans = [];
   for (const row of rows) {
-    const printer = printerById.get(row.printer);
+    // Tuyến 'auto:<device>:<tên máy in>' là tuyến NGẦM do hệ thống tự dựng từ
+    // máy in cắm sẵn ở máy POS (xem implicitDevicePrinter). Nó không nằm trong
+    // print_config nên phải dựng lại ở đây, nếu không job vừa tạo đã bị coi là
+    // mồ côi và huỷ ngay — đúng lỗi cũ, chỉ khác nguyên nhân.
+    const printer = printerById.get(row.printer) || rebuildImplicit(row.printer, devices);
     if (!printer) {
       orphans.push(row.id); // tuyến in đã bị xoá → job này không bao giờ in được
       continue;
@@ -1345,7 +1430,7 @@ export function pendingAgentJobs(branch_id = 'sala', { limit = 40, deviceId = ''
 
     // Tới đây job chắc chắn được trả về — giờ mới dựng đầy đủ (parse payload,
     // render text). Tối đa `want` lần thay vì cả cửa sổ quét.
-    const resolved = resolveAgentJobFast(getJob(row.id), printers, printCfg);
+    const resolved = resolveAgentJobFast(getJob(row.id), printers, printCfg, devices);
     if (!resolved) continue;
     out.push(resolved);
     if (out.length >= want) break;
@@ -1374,9 +1459,13 @@ function claimJob(id, deviceId, claimCutoff) {
   return r.changes > 0;
 }
 
-function resolveAgentJobFast(job, printers, printCfg) {
+function resolveAgentJobFast(job, printers, printCfg, devices = []) {
   if (!job) return null;
-  const printer = printers.find(p => p.id === job.printer) || null;
+  // Tuyến ngầm (máy in cắm sẵn, chưa ai khai tuyến) không nằm trong print_config
+  // nên phải dựng lại ở ĐÂY NỮA — vòng quét ngoài đã nhận nó, tới bước dựng job
+  // mà tra lại danh sách cấu hình thì lại rơi về null và job im lặng biến mất.
+  const printer = printers.find(p => p.id === job.printer)
+    || rebuildImplicit(job.printer, devices);
   if (!printer || printer.active === false) return null;
   const connection = printer.connection || 'browser';
   return {
