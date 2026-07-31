@@ -96,3 +96,7 @@ server/scripts/*.csv
 
 # Bao cao QA sinh tu dong (~87MB) - khong dua vao lich su git
 qa-artifacts/
+
+# Rac build cua Gradle va thu muc test tam - khong bao gio commit
+.gradle/
+.tmp-tests/

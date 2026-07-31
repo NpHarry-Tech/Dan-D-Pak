@@ -29,23 +29,23 @@ const mayVanPhong = [
 ];
 
 test('hai máy báo cáo thì KHÔNG máy nào xoá máy in của máy kia', () => {
-  System.setAgentPrinters('br1', mayQuay, { deviceId: 'dev_quay', deviceName: 'POS-QUAY' });
-  System.setAgentPrinters('br1', mayVanPhong, { deviceId: 'dev_vp', deviceName: 'MAY-VAN-PHONG' });
+  System.setAgentPrinters('sala', mayQuay, { deviceId: 'dev_quay', deviceName: 'POS-QUAY' });
+  System.setAgentPrinters('sala', mayVanPhong, { deviceId: 'dev_vp', deviceName: 'MAY-VAN-PHONG' });
 
-  const ten = System.getAgentPrinters('br1').map(p => p.name);
+  const ten = System.getAgentPrinters('sala').map(p => p.name);
   assert.ok(ten.includes('POS-80C'), 'máy in nhiệt ở quầy phải còn trong danh sách');
   assert.ok(ten.includes('Microsoft Print to PDF'));
   assert.equal(ten.length, 3);
 });
 
 test('mỗi máy in nói rõ đang cắm ở MÁY NÀO', () => {
-  const pos80 = System.getAgentPrinters('br1').find(p => p.name === 'POS-80C');
+  const pos80 = System.getAgentPrinters('sala').find(p => p.name === 'POS-80C');
   assert.equal(pos80.device_id, 'dev_quay');
   assert.equal(pos80.device_name, 'POS-QUAY');
 });
 
 test('danh sách nhóm theo máy để màn Kết nối hiển thị', () => {
-  const devices = System.getAgentDevices('br1');
+  const devices = System.getAgentDevices('sala');
   assert.equal(devices.length, 2);
   const quay = devices.find(d => d.device_id === 'dev_quay');
   assert.equal(quay.device_name, 'POS-QUAY');
@@ -54,14 +54,14 @@ test('danh sách nhóm theo máy để màn Kết nối hiển thị', () => {
 });
 
 test('báo cáo mới của CÙNG một máy thì thay danh sách của chính nó', () => {
-  System.setAgentPrinters('br1', [{ Name: 'POS-80C' }, { Name: 'May in tem' }],
+  System.setAgentPrinters('sala', [{ Name: 'POS-80C' }, { Name: 'May in tem' }],
     { deviceId: 'dev_quay', deviceName: 'POS-QUAY' });
 
-  const quay = System.getAgentDevices('br1').find(d => d.device_id === 'dev_quay');
+  const quay = System.getAgentDevices('sala').find(d => d.device_id === 'dev_quay');
   assert.equal(quay.printers.length, 2, 'máy quầy giờ có 2 máy in');
   // Máy kia không bị ảnh hưởng.
   assert.equal(
-    System.getAgentDevices('br1').find(d => d.device_id === 'dev_vp').printers.length, 2);
+    System.getAgentDevices('sala').find(d => d.device_id === 'dev_vp').printers.length, 2);
 });
 
 test('agent bản cũ chưa gửi định danh vẫn chạy được', () => {

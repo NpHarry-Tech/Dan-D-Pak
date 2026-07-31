@@ -68,13 +68,13 @@ function loadConfig() {
     central: String(cfg.CENTRAL_URL || 'http://127.0.0.1:3000').replace(/\/+$/, ''),
     username: cfg.AGENT_USERNAME || '',
     pin: cfg.AGENT_PIN || '',
-    branch: cfg.BRANCH_ID || 'br1',
+    branch: cfg.BRANCH_ID || 'sala',
     // Định danh MÁY đang chạy agent. App truyền DEVICE_ID xuống (cùng giá trị
     // với x-device-id của app) để server ghép "máy POS nào đang cắm máy in nào".
     // Không có thì lấy tên máy — vẫn phân biệt được các máy với nhau.
     deviceId: String(cfg.DEVICE_ID || '').trim() || `host_${hostname()}`,
     deviceName: String(cfg.DEVICE_NAME || '').trim() || hostname(),
-    pollMs: Number(cfg.AGENT_POLL_MS) || 1500,
+    pollMs: Number(cfg.AGENT_POLL_MS) || 200,
     printersMs: Number(cfg.AGENT_PRINTERS_MS) || 20000,
     maxAttempts: Number(cfg.AGENT_MAX_ATTEMPTS) || 3,
     cooldownMs: Number(cfg.AGENT_COOLDOWN_MS) || 20000,
@@ -192,8 +192,92 @@ function writeLan(host, port, buffer, timeoutMs) {
   });
 }
 
-async function writeSystemPrinter(name, text) {
+// Gửi NGUYÊN BYTE (datatype RAW) xuống spooler Windows — xem chú thích dài ở
+// server/services/printing.js. Tóm tắt: Out-Printer để DRIVER Windows vẽ chữ
+// thành ảnh xám khử răng cưa, máy in nhiệt rải hạt ảnh đó ra nên chữ RẤT MỜ và
+// mọi lệnh ESC/POS (đậm, cắt giấy, mở két) bị nuốt. RAW đi thẳng vào firmware.
+const RAW_PRINT_PS = `
+$ErrorActionPreference='Stop'
+Add-Type -Namespace DanDPak -Name Spool -MemberDefinition @'
+[DllImport("winspool.drv", CharSet=CharSet.Unicode, SetLastError=true)]
+public static extern bool OpenPrinter(string src, out IntPtr hPrinter, IntPtr pd);
+[DllImport("winspool.drv", SetLastError=true)]
+public static extern bool ClosePrinter(IntPtr hPrinter);
+[DllImport("winspool.drv", CharSet=CharSet.Unicode, SetLastError=true)]
+public static extern bool StartDocPrinter(IntPtr hPrinter, int level, [In] ref DOCINFO di);
+[DllImport("winspool.drv", SetLastError=true)]
+public static extern bool EndDocPrinter(IntPtr hPrinter);
+[DllImport("winspool.drv", SetLastError=true)]
+public static extern bool StartPagePrinter(IntPtr hPrinter);
+[DllImport("winspool.drv", SetLastError=true)]
+public static extern bool EndPagePrinter(IntPtr hPrinter);
+[DllImport("winspool.drv", SetLastError=true)]
+public static extern bool WritePrinter(IntPtr hPrinter, byte[] buf, int count, out int written);
+[StructLayout(LayoutKind.Sequential, CharSet=CharSet.Unicode)]
+public struct DOCINFO { [MarshalAs(UnmanagedType.LPWStr)] public string pDocName;
+  [MarshalAs(UnmanagedType.LPWStr)] public string pOutputFile;
+  [MarshalAs(UnmanagedType.LPWStr)] public string pDataType; }
+'@
+$bytes = [System.IO.File]::ReadAllBytes($env:DDP_JOB_FILE)
+$h = [IntPtr]::Zero
+if (-not [DanDPak.Spool]::OpenPrinter($env:DDP_PRINTER, [ref]$h, [IntPtr]::Zero)) {
+  throw "Khong mo duoc may in: $env:DDP_PRINTER" }
+try {
+  $di = New-Object DanDPak.Spool+DOCINFO
+  $di.pDocName = 'Dan D Pak'
+  $di.pDataType = 'RAW'
+  if (-not [DanDPak.Spool]::StartDocPrinter($h, 1, [ref]$di)) { throw 'StartDocPrinter that bai' }
+  try {
+    [void][DanDPak.Spool]::StartPagePrinter($h)
+    $written = 0
+    if (-not [DanDPak.Spool]::WritePrinter($h, $bytes, $bytes.Length, [ref]$written)) {
+      throw 'WritePrinter that bai' }
+    if ($written -ne $bytes.Length) { throw "Chi gui duoc $written/$($bytes.Length) byte" }
+    [void][DanDPak.Spool]::EndPagePrinter($h)
+  } finally { [void][DanDPak.Spool]::EndDocPrinter($h) }
+} finally { [void][DanDPak.Spool]::ClosePrinter($h) }
+`;
+
+async function writeSystemPrinterRaw(name, buffer) {
+  const dir = mkdtempSync(join(tmpdir(), 'dandpak-agent-raw-'));
+  const file = join(dir, 'job.bin');
+  writeFileSync(file, buffer);
+  try {
+    await execFileAsync('powershell.exe',
+      ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', RAW_PRINT_PS],
+      {
+        timeout: 15000, windowsHide: true,
+        env: Object.assign({}, process.env, {
+          DDP_JOB_FILE: file, DDP_PRINTER: String(name || ''),
+        }),
+      });
+  } finally {
+    try { rmSync(dir, { recursive: true, force: true }); } catch {}
+  }
+}
+
+async function writeSystemPrinter(name, text, opts) {
+  opts = opts || {};
   const safeName = String(name || '').replace(/[^a-zA-Z0-9\s\-_\\]/g, '');
+
+  if (opts.raw) {
+    const buffer = escposBuffer(text, { drawer: opts.drawer, density: opts.density });
+    if (platform() === 'win32') {
+      // Tên máy in Windows có thể có dấu — RAW dùng tên GỐC, không lọc ký tự.
+      await writeSystemPrinterRaw(name, buffer);
+      return;
+    }
+    const rawDir = mkdtempSync(join(tmpdir(), 'dandpak-agent-raw-'));
+    const rawFile = join(rawDir, 'job.bin');
+    writeFileSync(rawFile, buffer);
+    try {
+      await execFileAsync('lp', ['-d', safeName, '-o', 'raw', rawFile], { timeout: 12000 });
+    } finally {
+      try { rmSync(rawDir, { recursive: true, force: true }); } catch {}
+    }
+    return;
+  }
+
   const dir = mkdtempSync(join(tmpdir(), 'dandpak-agent-'));
   const file = join(dir, 'job.txt');
   writeFileSync(file, ascii(text) + '\n', 'utf8');
@@ -218,9 +302,14 @@ async function printJob(j) {
     await writeLan(j.ip, j.port || 9100, escposBuffer(j.text, { drawer: drawer, density: j.density }));
   } else if (j.connection === 'system') {
     if (!j.systemName) throw new Error('Thiếu tên máy in hệ điều hành');
-    await writeSystemPrinter(j.systemName, j.text);
-    // Máy in hệ điều hành in qua spooler → không gửi được xung mở két kèm theo.
-    // Nếu là job mở két thuần thì đây coi như bỏ qua (cần tuyến LAN để mở két).
+    // j.raw = máy in nhiệt → gửi nguyên byte ESC/POS qua spooler (datatype RAW),
+    // nhờ vậy độ đậm, cắt giấy và xung mở két đều tới được máy in. Server bản cũ
+    // không gửi cờ này thì rơi về đường driver như trước, không vỡ gì.
+    await writeSystemPrinter(j.systemName, j.text, {
+      raw: j.raw === true,
+      drawer: drawer,
+      density: j.density,
+    });
   } else {
     throw new Error(`Tuyến "${j.connection}" không thuộc phạm vi agent`);
   }
@@ -316,6 +405,7 @@ async function main() {
     catch (e) { log('chờ server / sai tài khoản:', e.message); await sleep(4000); }
   }
   await reportPrinters();
+  await pollJobs();
   setInterval(() => pollJobs().catch(() => {}), CFG.pollMs);
   setInterval(() => reportPrinters().catch(() => {}), CFG.printersMs);
   log('sẵn sàng — đang chờ phiếu in.');

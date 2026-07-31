@@ -1,4 +1,4 @@
-﻿import { execFile } from 'child_process';
+import { execFile } from 'child_process';
 import { promisify } from 'util';
 import os from 'os';
 import dns from 'dns/promises';
@@ -89,14 +89,17 @@ async function listLpstatPrinters() {
 // chỉ còn OneNote/XPS/Print to PDF, không thấy máy in nhiệt cắm USB — không phải
 // vì Windows không thấy nó, mà vì máy khác vừa ghi đè.
 const agentPrinters = new Map(); // branch -> Map(deviceId -> { at, deviceName, data })
-const AGENT_PRINTERS_TTL = 90_000;
+// Agent báo cáo mỗi 20s (AGENT_PRINTERS_MS) → 60s cho phép trượt 2 nhịp trước khi
+// coi là máy đã tắt. Trước đây 90s: máy POS tắt app rồi mà màn Máy in vẫn báo còn
+// kết nối tới một phút rưỡi. Không hạ thấp hơn nữa để mạng chậm không nháy offline oan.
+const AGENT_PRINTERS_TTL = 60_000;
 
 function deviceBucket(branch) {
   if (!agentPrinters.has(branch)) agentPrinters.set(branch, new Map());
   return agentPrinters.get(branch);
 }
 
-export function setAgentPrinters(branch = 'br1', list = [], { deviceId = '', deviceName = '' } = {}) {
+export function setAgentPrinters(branch = 'sala', list = [], { deviceId = '', deviceName = '' } = {}) {
   const data = Array.isArray(list) ? list.map(normalizePrinter).filter(Boolean) : [];
   // Agent bản cũ chưa gửi định danh → gom vào một khoá chung, vẫn chạy như trước.
   const key = String(deviceId || '').trim().slice(0, 120) || 'agent-khong-dinh-danh';
@@ -110,7 +113,7 @@ export function setAgentPrinters(branch = 'br1', list = [], { deviceId = '', dev
 }
 
 /** Các máy còn "sống" (có báo cáo trong TTL), kèm máy in của từng máy. */
-export function getAgentDevices(branch = 'br1') {
+export function getAgentDevices(branch = 'sala') {
   const now = Date.now();
   const out = [];
   for (const e of deviceBucket(branch).values()) {
@@ -127,7 +130,7 @@ export function getAgentDevices(branch = 'br1') {
 
 /** Gộp máy in của mọi máy đang sống, mỗi máy in kèm thông tin MÁY NÀO đang cắm.
  *  Trùng tên giữa hai máy thì giữ cả hai — chúng là hai thiết bị khác nhau. */
-export function getAgentPrinters(branch = 'br1') {
+export function getAgentPrinters(branch = 'sala') {
   const out = [];
   const seen = new Set();
   for (const d of getAgentDevices(branch)) {
