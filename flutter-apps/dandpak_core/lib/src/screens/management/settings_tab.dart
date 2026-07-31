@@ -2,6 +2,7 @@ import 'dart:io' show Platform;
 
 import 'package:flutter/material.dart';
 
+import '../../app_flavor.dart';
 import '../../services/api_service.dart';
 import '../../ui/app_theme.dart';
 import '../../widgets/dan_top_bar.dart';
@@ -105,7 +106,23 @@ class _SettingsTabState extends State<SettingsTab> {
   bool get _isMobile => Platform.isAndroid || Platform.isIOS;
   List<_SettingsSection> get _visibleSections => _sections
       .where((s) => !(_isMobile && s.key == 'customer_display'))
+      .where((s) =>
+          !(AppFlavor.current.isHandset && _anTrenDienThoai.contains(s.key)))
       .toList();
+
+  /// Mục KHÔNG hiện trên bản điện thoại / POS cầm tay.
+  ///
+  /// Ba mục này dựng cho màn rộng và không thu nhỏ được một cách tử tế:
+  ///   - 'print'       bộ thiết kế mẫu in là canvas kéo thả, không dùng nổi bằng
+  ///                   ngón tay trên màn 6 inch
+  ///   - 'users'       bảng phân quyền là ma trận nhóm × quyền, hàng chục ô đánh dấu
+  ///   - 'connections' đã chuyển việc nối máy in ra màn Máy in (Nhiều hơn → Máy in),
+  ///                   nơi người dùng thật sự đi tìm nó
+  ///
+  /// Desktop và tablet GIỮ NGUYÊN đủ 12 mục — đây chỉ là bỏ bớt trên màn nhỏ, không
+  /// phải xoá tính năng.
+  static const _anTrenDienThoai = {'print', 'users', 'connections'};
+
 
   @override
   Widget build(BuildContext context) {

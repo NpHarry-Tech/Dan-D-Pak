@@ -704,3 +704,54 @@ class PhoneEmpty extends StatelessWidget {
     );
   }
 }
+
+/// Hàng có công tắc bật/tắt. Chạm vào CẢ HÀNG là đổi, không bắt trúng đúng cái
+/// công tắc bé xíu — ngón tay trên máy POS cầm tay thường đeo găng hoặc ướt.
+class PhoneSwitchRow extends StatelessWidget {
+  final String label;
+  final String? hint;
+  final bool value;
+  final ValueChanged<bool> onChanged;
+
+  const PhoneSwitchRow({
+    super.key,
+    required this.label,
+    required this.value,
+    required this.onChanged,
+    this.hint,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: () => onChanged(!value),
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(16, 12, 12, 12),
+        decoration: const BoxDecoration(
+          border: Border(bottom: BorderSide(color: DanColors.border)),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(label,
+                      style: const TextStyle(
+                          fontSize: 13.5, fontWeight: FontWeight.w700)),
+                  if (hint != null && hint!.isNotEmpty) ...[
+                    const SizedBox(height: 3),
+                    Text(hint!,
+                        style: const TextStyle(
+                            fontSize: 11, color: DanColors.faint)),
+                  ],
+                ],
+              ),
+            ),
+            Switch(value: value, onChanged: onChanged),
+          ],
+        ),
+      ),
+    );
+  }
+}

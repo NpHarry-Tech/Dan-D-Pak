@@ -6,6 +6,7 @@ import '../../ui/app_theme.dart';
 import '../../utils/translation.dart';
 import '../management/management_widgets.dart';
 import 'phone_kit.dart';
+import 'phone_printer_setup.dart';
 import 'phone_scaffolds.dart';
 
 /// MÀN MÁY IN bản điện thoại.
@@ -130,6 +131,16 @@ class _PhonePrintersScreenState extends State<PhonePrintersScreen> {
     }
   }
 
+  /// Mở bảng nối máy in. [p] = null là thêm mới.
+  Future<void> _moCaiDat(Map<String, dynamic>? p) async {
+    final luu = await showPhoneSheet<bool>(
+      context: context,
+      title: t(p == null ? 'Thêm máy in mạng' : 'Sửa máy in'),
+      builder: (_) => PhonePrinterSetupSheet(printer: p),
+    );
+    if (luu == true) _load();
+  }
+
   Future<void> _openDrawer() async {
     try {
       await context.read<ApiService>().openCashDrawer();
@@ -171,6 +182,9 @@ class _PhonePrintersScreenState extends State<PhonePrintersScreen> {
                   : '${_printers.length} ${t('máy in')}',
               onBack: () => Navigator.of(context).maybePop(),
               actions: [
+                // NỐI MÁY IN đặt ngay đây, không bắt vào Cài đặt → Kết nối nữa:
+                // người đi tìm cách nối máy in thì vào mục "Máy in" là tự nhiên.
+                PhoneIconButton(icon: Icons.add, onTap: () => _moCaiDat(null)),
                 PhoneIconButton(icon: Icons.refresh, onTap: _load),
               ],
             ),
@@ -204,6 +218,12 @@ class _PhonePrintersScreenState extends State<PhonePrintersScreen> {
                                     printer: p,
                                     label: _label(p),
                                     onTest: () => _test(p),
+                                    // Chỉ máy in LAN mới sửa được ở đây: máy in
+                                    // cắm USB vào máy POS khác do máy đó khai,
+                                    // sửa từ xa chỉ tạo cấu hình ma.
+                                    onEdit: _s(p['connection']) == 'lan'
+                                        ? () => _moCaiDat(p)
+                                        : null,
                                   ),
                               PhoneSectionTitle(
                                 t('Lịch sử lệnh in'),
@@ -349,9 +369,13 @@ class _PrinterCard extends StatelessWidget {
   final Map<String, dynamic> printer;
   final String label;
   final VoidCallback onTest;
+  final VoidCallback? onEdit;
 
   const _PrinterCard(
-      {required this.printer, required this.label, required this.onTest});
+      {required this.printer,
+      required this.label,
+      required this.onTest,
+      this.onEdit});
 
   @override
   Widget build(BuildContext context) {
@@ -390,6 +414,8 @@ class _PrinterCard extends StatelessWidget {
               ),
               if (p['attached_to_me'] == true)
                 PhoneBadge(t('Máy này'), tone: PhoneTone.ok),
+              if (onEdit != null)
+                PhoneIconButton(icon: Icons.edit_outlined, onTap: onEdit!),
             ],
           ),
           const SizedBox(height: 4),
