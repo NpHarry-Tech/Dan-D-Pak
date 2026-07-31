@@ -26,18 +26,23 @@ test('danh sách cho màn đăng nhập không lộ username hay vai trò', () =
   makeUser('u_cash', 'thungan1', 'cashier');
 
   const list = Auth.listLoginUsers('sala');
-  assert.equal(list.length, 2);
-  const boss = list.find(u => u.id === 'u_boss');
+  // CHỦ QUÁN KHÔNG CÒN TRONG LƯỚI: họ vào bằng nút "Đăng nhập quản trị viên".
+  // Trước đây chủ vẫn hiện thành một ô bấm-một-chạm ngay cạnh nút đó — vừa thừa
+  // vừa chỉ thẳng cho người lạ biết ai là chủ.
+  assert.equal(list.length, 1);
+  assert.ok(!list.some(u => u.id === 'u_boss'), 'chu quan phai bi an khoi luoi');
+  const thungan = list.find(u => u.id === 'u_cash');
+  assert.ok(thungan, 'thu ngan van phai hien de bam chon');
   for (const u of list) {
     // Đủ để nhận mặt và bấm chọn…
     assert.ok(u.id && u.name);
-    // …nhưng không đủ để nhắm mục tiêu: không biết ai là chủ.
+    // …nhưng không đủ để nhắm mục tiêu: không biết ai giữ quyền gì.
     assert.equal(u.role, undefined);
     assert.equal(u.branch_ids, undefined);
   }
   // Tên tài khoản THẬT không bao giờ rời server. Trường `username` vẫn còn (app
-  // đang cài đọc nó) nhưng mang giá trị của `id`, không phải 'chusohuu'.
-  assert.equal(boss.username, 'u_boss');
+  // đang cài đọc nó) nhưng mang giá trị của `id`, không phải 'thungan1'.
+  assert.equal(thungan.username, 'u_cash');
   assert.ok(!list.some(u => u.username === 'chusohuu' || u.username === 'thungan1'));
 
   // Bản đầy đủ (chỉ trả cho request ĐÃ đăng nhập) vẫn giữ nguyên các trường cũ.

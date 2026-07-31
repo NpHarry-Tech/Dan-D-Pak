@@ -708,9 +708,25 @@ export function listUsers(branch_id = 'sala') {
  *  Nên `username` vẫn còn, nhưng mang GIÁ TRỊ CỦA `id` chứ không phải tên tài
  *  khoản thật. App cũ lẫn app mới đều gửi đúng thứ server nhận (login() chấp
  *  nhận cả username lẫn id), còn tên tài khoản thật thì không bao giờ rời server. */
+/**
+ * Tài khoản quản trị KHÔNG hiện trong lưới chọn nhân viên — họ vào bằng nút
+ * "Đăng nhập quản trị viên" (gõ tài khoản + PIN).
+ *
+ * PHẢI lọc Ở ĐÂY chứ không phải ở client. Client từng tự lọc bằng
+ * `u.role == 'owner' || u.username == 'admin'`, nhưng payload này CỐ Ý không
+ * gửi `role` và ô `username` thực chất chứa `id` — nên cả hai vế đều luôn sai và
+ * ô "Admin" vẫn hiện ngay cạnh nút đăng nhập quản trị. Chỉ server mới biết vai
+ * trò thật, và cũng chỉ server mới giấu được nó.
+ */
+function laTaiKhoanQuanTri(u) {
+  return u.role === 'owner'
+    || String(u.username || '').trim().toLowerCase() === 'admin';
+}
+
 export function listLoginUsers(branch_id = 'sala') {
   return db.prepare(`SELECT * FROM users WHERE active=1 ORDER BY name`).all()
     .filter(u => canAccessBranch(u, branch_id))
+    .filter(u => !laTaiKhoanQuanTri(u))
     .map(u => ({
       id: u.id,
       username: u.id, // định danh đăng nhập, KHÔNG phải username thật

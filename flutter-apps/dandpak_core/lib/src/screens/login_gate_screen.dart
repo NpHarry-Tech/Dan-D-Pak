@@ -346,6 +346,10 @@ class _EmployeeGridTile extends StatelessWidget {
               textAlign: TextAlign.center,
               style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12.5),
             ),
+            // Vai trò CHỈ hiện khi server thật sự gửi. Màn đăng nhập là màn công
+            // khai (chưa có phiên) nên listLoginUsers cố ý không trả `role` —
+            // đừng dựng một dòng trắng dưới mỗi cái tên.
+            if (user.role.trim().isNotEmpty)
             Text(
               _roleLabels[user.role] ?? user.role,
               maxLines: 1,
