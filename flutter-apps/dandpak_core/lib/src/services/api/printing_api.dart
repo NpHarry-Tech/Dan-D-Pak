@@ -1,9 +1,14 @@
 part of '../api_service.dart';
 
 extension ApiServicePrintingApi on ApiService {
-  Future<List<dynamic>> getPrinters() async {
-    return listFrom(await getJson('/api/print/printers',
-        timeout: const Duration(seconds: 3),
+  /// [live] = soi trạng thái THẬT (máy POS đang cắm máy in có đang chạy app
+  /// không, máy in LAN có trả lời không). Thiếu cờ này server trả 'ready' vô
+  /// điều kiện — đúng nguyên nhân màn Máy in từng báo "Sẵn sàng" khi máy POS
+  /// còn chưa mở app. Timeout nới ra vì có thể phải dò TCP máy in LAN.
+  Future<List<dynamic>> getPrinters({bool live = true}) async {
+    return listFrom(await getJson(
+        '/api/print/printers${live ? '?live=1' : ''}',
+        timeout: Duration(seconds: live ? 8 : 3),
         errorMessage: 'Không tải được máy in'));
   }
 

@@ -560,8 +560,7 @@ extension _WarehouseScreenMethods on _WarehouseScreenState {
     // Bấm dòng để mở/đóng panel chi tiết ngay dưới (kiểu KiotViet) — panel
     // mới chứa nút [In tem mã] [Nhập hàng]; trạng thái đóng KHÔNG có nút.
     final row = InkWell(
-      onTap: () =>
-          _rebuild(() => _expandedSku = expanded ? '' : _s(s['id'])),
+      onTap: () => _rebuild(() => _expandedSku = expanded ? '' : _s(s['id'])),
       child: Container(
         color: expanded ? DanColors.brandDim : DanColors.surface,
         padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -708,14 +707,31 @@ extension _WarehouseScreenMethods on _WarehouseScreenState {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(_s(s['name']),
-                        style: TextStyle(
-                            fontSize: 15.5, fontWeight: FontWeight.w900)),
+                    Row(children: [
+                      Expanded(
+                        child: Text(_s(s['name']),
+                            style: TextStyle(
+                                fontSize: 15.5, fontWeight: FontWeight.w900)),
+                      ),
+                      if (context
+                              .read<AuthProvider>()
+                              .hasPermission('warehouse.item') ||
+                          context
+                              .read<AuthProvider>()
+                              .hasPermission('inventory.adjust'))
+                        IconButton.filledTonal(
+                          tooltip: t('Chỉnh sửa sản phẩm'),
+                          onPressed: () => _editSku(s),
+                          icon: Icon(Icons.settings_outlined, size: 19),
+                          style: IconButton.styleFrom(
+                              backgroundColor: Colors.white,
+                              foregroundColor: DanColors.brand),
+                        ),
+                    ]),
                     SizedBox(height: 3),
                     Text(
                         '${t('Nhóm hàng')}: ${_s(s['group_path']).isEmpty ? (_s(s['category']).isEmpty ? '—' : _s(s['category'])) : _s(s['group_path'])}',
-                        style:
-                            TextStyle(fontSize: 12, color: DanColors.muted)),
+                        style: TextStyle(fontSize: 12, color: DanColors.muted)),
                     SizedBox(height: 12),
                     Wrap(
                       spacing: 26,
@@ -725,21 +741,19 @@ extension _WarehouseScreenMethods on _WarehouseScreenState {
                         if (_isRetailWh) field(t('Mã vạch'), _s(s['barcode'])),
                         field(t('Tồn kho'),
                             '${Fmt.int0(_n(s['stock']))} ${_s(s['unit'])}'),
-                        field(t('Định mức tồn'),
-                            Fmt.int0(_n(s['min_stock']))),
+                        field(t('Định mức tồn'), Fmt.int0(_n(s['min_stock']))),
                         if (_isRetailWh)
                           field(t('Giá bán trước thuế'),
                               Fmt.money(_n(s['price_pre_tax']))),
                         if (_isRetailWh)
                           field(t('VAT hàng bán'), _vatLabel(s['vat'])),
                         if (_isRetailWh)
-                          field(t('Giá bán sau thuế'),
-                              Fmt.money(_n(s['price']))),
+                          field(
+                              t('Giá bán sau thuế'), Fmt.money(_n(s['price']))),
                         if (_isRetailWh && _s(s['brand']).isNotEmpty)
                           field(t('Thương hiệu'), _s(s['brand'])),
                         if (_s(s['created_at']).isNotEmpty)
-                          field(t('Ngày tạo'),
-                              _shortDate(_s(s['created_at']))),
+                          field(t('Ngày tạo'), _shortDate(_s(s['created_at']))),
                       ],
                     ),
                   ],
@@ -759,8 +773,7 @@ extension _WarehouseScreenMethods on _WarehouseScreenState {
                       onPressed: () => _printSkuLabel(s),
                       icon: Icon(Icons.print_outlined, size: 18),
                       label: Text(t('In tem mã')),
-                      style:
-                          OutlinedButton.styleFrom(minimumSize: Size(0, 42)),
+                      style: OutlinedButton.styleFrom(minimumSize: Size(0, 42)),
                     ),
                     SizedBox(width: 10),
                     FilledButton.icon(
@@ -791,6 +804,18 @@ extension _WarehouseScreenMethods on _WarehouseScreenState {
         ],
       ),
     );
+  }
+
+  Future<void> _editSku(Map<String, dynamic> sku) async {
+    final changed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => _SkuEditDialog(sku: sku),
+    );
+    if (changed == true) {
+      _rebuild(() => _expandedSku = '');
+      await _loadWarehouseData();
+    }
   }
 
   /// Nút "In tem mã": hỏi số tem rồi đẩy job ra máy in tem đã cấu hình.
@@ -1279,5 +1304,347 @@ extension _WarehouseScreenMethods on _WarehouseScreenState {
         );
       },
     );
+  }
+}
+
+class _SkuEditDialog extends StatefulWidget {
+  final Map<String, dynamic> sku;
+  const _SkuEditDialog({required this.sku});
+
+  @override
+  State<_SkuEditDialog> createState() => _SkuEditDialogState();
+}
+
+class _SkuEditDialogState extends State<_SkuEditDialog> {
+  late final TextEditingController name, code, barcode, brand, category, unit;
+  late final TextEditingController cost, price, vat;
+  final units = <_SkuUnitCtrls>[];
+  bool includesVat = true;
+  bool busy = false;
+  String image = '';
+
+  @override
+  void initState() {
+    super.initState();
+    final s = widget.sku;
+    TextEditingController c(dynamic v) =>
+        TextEditingController(text: v?.toString() ?? '');
+    name = c(s['name']);
+    code = c(s['code']);
+    barcode = c(s['barcode']);
+    brand = c(s['brand']);
+    category = c(s['category']);
+    unit = c(s['unit']);
+    cost = c(s['cost']);
+    price = c(s['price']);
+    vat = c(s['vat']);
+    includesVat = s['price_includes_vat'] != 0;
+    image = s['image']?.toString() ?? '';
+    final raw = s['units'];
+    if (raw is List) {
+      units.addAll(raw.whereType<Map>().map(_SkuUnitCtrls.new));
+    }
+  }
+
+  @override
+  void dispose() {
+    for (final c in [
+      name,
+      code,
+      barcode,
+      brand,
+      category,
+      unit,
+      cost,
+      price,
+      vat
+    ]) {
+      c.dispose();
+    }
+    for (final u in units) {
+      u.dispose();
+    }
+    super.dispose();
+  }
+
+  num _num(TextEditingController c) =>
+      num.tryParse(c.text.trim().replaceAll(',', '.')) ?? 0;
+
+  Future<void> _pickImage() async {
+    final path = await pickImagePathCross(title: 'Chọn ảnh sản phẩm');
+    if (path == null) return;
+    final file = File(path);
+    final bytes = await file.readAsBytes();
+    if (!mounted || bytes.isEmpty) return;
+    setState(() => busy = true);
+    try {
+      final ext = path.toLowerCase();
+      final mime = ext.endsWith('.png')
+          ? 'image/png'
+          : ext.endsWith('.webp')
+              ? 'image/webp'
+              : ext.endsWith('.gif')
+                  ? 'image/gif'
+                  : 'image/jpeg';
+      final out = await context.read<ApiService>().uploadSkuImage(
+          originalName: file.uri.pathSegments.last,
+          mimeType: mime,
+          data: base64Encode(bytes));
+      if (mounted) setState(() => image = out['url']?.toString() ?? image);
+    } catch (e) {
+      if (mounted)
+        appToast(context, e.toString().replaceFirst('Exception: ', ''),
+            isError: true);
+    } finally {
+      if (mounted) setState(() => busy = false);
+    }
+  }
+
+  Future<void> _save() async {
+    if (name.text.trim().isEmpty || unit.text.trim().isEmpty) {
+      appToast(context, t('Tên sản phẩm và đơn vị gốc là bắt buộc'),
+          isError: true);
+      return;
+    }
+    final seen = <String>{unit.text.trim().toLowerCase()};
+    for (final u in units) {
+      final key = u.name.text.trim().toLowerCase();
+      if (key.isEmpty || _num(u.factor) <= 0 || !seen.add(key)) {
+        appToast(context,
+            t('Tên đơn vị phải khác nhau và hệ số quy đổi phải lớn hơn 0'),
+            isError: true);
+        return;
+      }
+    }
+    setState(() => busy = true);
+    try {
+      await context.read<ApiService>().updateSku(
+        widget.sku['id'].toString(),
+        {
+          'name': name.text.trim(),
+          'code': code.text.trim(),
+          'barcode': barcode.text.trim(),
+          'brand': brand.text.trim(),
+          'category': category.text.trim(),
+          'unit': unit.text.trim(),
+          'cost': _num(cost),
+          'price': _num(price),
+          'price_includes_vat': includesVat,
+          'vat': vat.text.trim().isEmpty ? null : _num(vat),
+          'image': image,
+          'units': [
+            for (final u in units)
+              {
+                'name': u.name.text.trim(),
+                'factor': _num(u.factor),
+                'barcode': u.barcode.text.trim(),
+                'cost': _num(u.cost),
+                'price': _num(u.price),
+                'price_includes_vat': u.includesVat,
+                'vat': u.vat.text.trim().isEmpty ? null : _num(u.vat),
+              }
+          ],
+        },
+      );
+      if (mounted) Navigator.of(context).pop(true);
+    } catch (e) {
+      if (mounted) {
+        setState(() => busy = false);
+        appToast(context, e.toString().replaceFirst('Exception: ', ''),
+            isError: true);
+      }
+    }
+  }
+
+  Future<void> _delete() async {
+    final auth = context.read<AuthProvider>();
+    if (!auth.hasPermission('warehouse.delete') &&
+        !auth.hasPermission('inventory.adjust')) {
+      appToast(context, t('Bạn không có quyền xóa sản phẩm'), isError: true);
+      return;
+    }
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(t('Xóa sản phẩm?')),
+        content: Text(t(
+            'Sản phẩm sẽ được ẩn khỏi danh sách bán và kho; lịch sử tồn vẫn được giữ lại.')),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: Text(t('Hủy'))),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: DanColors.late),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(t('Xóa')),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    setState(() => busy = true);
+    try {
+      await context.read<ApiService>().deleteSku(widget.sku['id'].toString());
+      if (mounted) Navigator.of(context).pop(true);
+    } catch (e) {
+      if (mounted) {
+        setState(() => busy = false);
+        appToast(context, e.toString().replaceFirst('Exception: ', ''),
+            isError: true);
+      }
+    }
+  }
+
+  Widget _field(String label, TextEditingController c,
+      {double width = 205, bool number = false}) {
+    return SizedBox(
+      width: width,
+      child: TextField(
+        controller: c,
+        keyboardType: number ? TextInputType.number : TextInputType.text,
+        decoration: InputDecoration(labelText: t(label), isDense: true),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final vatRate = _num(vat);
+    final salePrice = _num(price);
+    final preTax = includesVat && vatRate > 0
+        ? salePrice / (1 + vatRate / 100)
+        : salePrice;
+    return AlertDialog(
+      title: Row(children: [
+        Expanded(child: Text(t('Cập nhật sản phẩm'))),
+        IconButton(
+            onPressed: busy ? null : _pickImage,
+            tooltip: t('Chỉnh sửa hình ảnh'),
+            icon: Icon(Icons.add_photo_alternate_outlined)),
+      ]),
+      content: SizedBox(
+        width: 920,
+        height: 650,
+        child: ListView(children: [
+          Wrap(spacing: 12, runSpacing: 12, children: [
+            _field('Tên sản phẩm', name, width: 422),
+            _field('Mã sản phẩm', code),
+            _field('Mã vạch', barcode),
+            _field('Thương hiệu', brand),
+            _field('Nhóm hàng', category),
+            _field('Đơn vị gốc', unit),
+            _field('Giá nhập', cost, number: true),
+            _field(includesVat ? 'Giá bán sau VAT' : 'Giá bán trước VAT', price,
+                number: true),
+            _field('VAT (%)', vat, number: true),
+          ]),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            value: includesVat,
+            onChanged: (v) => setState(() => includesVat = v),
+            title: Text(t('Giá bán đã gồm VAT')),
+            subtitle: Text(
+                '${t('Đơn giá trước VAT')}: ${Fmt.money(preTax)} · ${t('Đơn giá sau VAT')}: ${Fmt.money(includesVat ? salePrice : salePrice * (1 + vatRate / 100))}'),
+          ),
+          Divider(),
+          Row(children: [
+            Expanded(
+                child: Text(t('Biến thể / đơn vị quy đổi'),
+                    style: TextStyle(fontWeight: FontWeight.w900))),
+            TextButton.icon(
+              onPressed: () => setState(() => units.add(_SkuUnitCtrls({}))),
+              icon: Icon(Icons.add),
+              label: Text(t('Thêm đơn vị')),
+            ),
+          ]),
+          Text(
+              t('Hệ số là số đơn vị gốc trong 1 đơn vị này, ví dụ 1 lốc = 6 chai; 1 thùng = 24 chai.'),
+              style: TextStyle(fontSize: 12, color: DanColors.muted)),
+          SizedBox(height: 8),
+          for (var i = 0; i < units.length; i++)
+            Card(
+              child: Padding(
+                padding: EdgeInsets.all(10),
+                child: Wrap(
+                  spacing: 10,
+                  runSpacing: 10,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    _field('Tên đơn vị', units[i].name, width: 145),
+                    _field('Số đơn vị gốc', units[i].factor,
+                        width: 130, number: true),
+                    _field('Mã vạch', units[i].barcode, width: 150),
+                    _field('Giá nhập', units[i].cost, width: 125, number: true),
+                    _field('Giá bán', units[i].price, width: 125, number: true),
+                    _field('VAT (%)', units[i].vat, width: 100, number: true),
+                    SizedBox(
+                      width: 125,
+                      child: CheckboxListTile(
+                        dense: true,
+                        contentPadding: EdgeInsets.zero,
+                        value: units[i].includesVat,
+                        title: Text(t('Giá gồm VAT'),
+                            style: TextStyle(fontSize: 11.5)),
+                        onChanged: (v) =>
+                            setState(() => units[i].includesVat = v ?? true),
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: t('Xóa đơn vị'),
+                      onPressed: () =>
+                          setState(() => units.removeAt(i).dispose()),
+                      icon: Icon(Icons.delete_outline, color: DanColors.late),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+        ]),
+      ),
+      actions: [
+        if (context.read<AuthProvider>().hasPermission('warehouse.delete'))
+          TextButton(
+            onPressed: busy ? null : _delete,
+            style: TextButton.styleFrom(foregroundColor: DanColors.late),
+            child: Text(t('Xóa sản phẩm')),
+          ),
+        TextButton(
+            onPressed: busy ? null : () => Navigator.pop(context),
+            child: Text(t('Hủy'))),
+        FilledButton(
+            onPressed: busy ? null : _save,
+            child: Text(t('Cập nhật sản phẩm'))),
+      ],
+    );
+  }
+}
+
+class _SkuUnitCtrls {
+  final name = TextEditingController();
+  final factor = TextEditingController();
+  final barcode = TextEditingController();
+  final cost = TextEditingController();
+  final price = TextEditingController();
+  final vat = TextEditingController();
+  bool includesVat = true;
+
+  _SkuUnitCtrls(Map raw) {
+    name.text = raw['name']?.toString() ?? '';
+    factor.text = raw['factor']?.toString() ?? '';
+    barcode.text = raw['barcode']?.toString() ?? '';
+    cost.text = raw['cost']?.toString() ?? '';
+    price.text = raw['price']?.toString() ?? '';
+    vat.text = raw['vat']?.toString() ?? '';
+    includesVat =
+        raw['price_includes_vat'] != false && raw['price_includes_vat'] != 0;
+  }
+
+  void dispose() {
+    name.dispose();
+    factor.dispose();
+    barcode.dispose();
+    cost.dispose();
+    price.dispose();
+    vat.dispose();
   }
 }

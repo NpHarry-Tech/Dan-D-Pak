@@ -22,6 +22,7 @@ import 'kds/kds_screen.dart';
 import 'management/management_screen.dart';
 import 'management/settings_screen.dart';
 import 'online/online_screen.dart';
+import 'phone/phone_sell_screen.dart';
 import 'pos_screen.dart';
 import 'printers/printers_screen.dart';
 import 'purchase/purchase_screen.dart';
@@ -169,8 +170,14 @@ class _LauncherScreenState extends State<LauncherScreen> {
       return;
     }
     if (module.key == 'retail') {
-      Navigator.of(context)
-          .push(MaterialPageRoute(builder: (_) => RetailScreen()));
+      // Điện thoại dùng luồng bán lẻ MỘT TAY riêng (chọn hàng → giỏ → thanh
+      // toán → hoàn tất). Màn RetailScreen là bố cục nhiều cột cho máy POS/
+      // tablet, bóp vào màn 6 inch thì nút bé hơn tầm ngón cái. Cùng API, cùng
+      // dữ liệu — chỉ khác cách bày.
+      Navigator.of(context).push(MaterialPageRoute(
+          builder: (_) => AppFlavor.current.isHandset
+              ? const PhoneSellScreen()
+              : RetailScreen()));
       return;
     }
     if (module.key == 'ipad') {
@@ -376,9 +383,11 @@ class _LauncherScreenState extends State<LauncherScreen> {
     // trên tablet; desktop Windows ẩn đi như trước (webview không hỗ trợ).
     // Ngoài ra lọc theo BỘ MODULE của vị máy (desktop = tất cả, tablet/phone =
     // bộ riêng) — đây là chỗ t("khác số lượng module") thành hiện thực.
+    final auth = context.watch<AuthProvider>();
     final visible = catalog.modules
         .where((m) => m.visible)
         .where((m) => m.isActive)
+        .where((m) => auth.moduleEnabled(m.key))
         .where((m) => m.key != 'ipad' || Platform.isAndroid || Platform.isIOS)
         .where((m) => AppFlavor.current.showsModule(m.key))
         .toList();

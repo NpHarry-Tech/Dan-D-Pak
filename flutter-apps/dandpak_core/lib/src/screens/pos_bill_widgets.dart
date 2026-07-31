@@ -29,7 +29,7 @@ class _BillPane extends StatelessWidget {
   final bool Function(TableModel table) isPaying;
   final bool Function(TableModel table) isCalling;
   final VoidCallback onAddFood;
-  final VoidCallback onAddRetail;
+  final VoidCallback? onAddRetail;
   final VoidCallback onMove;
   final VoidCallback onMerge;
   final VoidCallback onSplit;
@@ -111,16 +111,20 @@ class _BillPane extends StatelessWidget {
                 spacing: 8,
                 runSpacing: 8,
                 children: [
-                  halfButton(_BillOpButton(
-                    icon: Icons.add,
-                    label: t('Thêm món FnB'),
-                    onTap: onAddFood,
-                  )),
-                  halfButton(_BillOpButton(
-                    icon: Icons.shopping_cart_outlined,
-                    label: t('Thêm retail'),
-                    onTap: onAddRetail,
-                  )),
+                  SizedBox(
+                    width: onAddRetail == null ? constraints.maxWidth : half,
+                    child: _BillOpButton(
+                      icon: Icons.add,
+                      label: t('Thêm món FnB'),
+                      onTap: onAddFood,
+                    ),
+                  ),
+                  if (onAddRetail != null)
+                    halfButton(_BillOpButton(
+                      icon: Icons.shopping_cart_outlined,
+                      label: t('Thêm retail'),
+                      onTap: onAddRetail!,
+                    )),
                   if (hasSavedItems) ...[
                     halfButton(_BillOpButton(
                       icon: Icons.subdirectory_arrow_right,

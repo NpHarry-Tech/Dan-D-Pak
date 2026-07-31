@@ -35,7 +35,8 @@ class RetailScreen extends StatefulWidget {
   State<RetailScreen> createState() => _RetailScreenState();
 }
 
-class _RetailScreenState extends State<RetailScreen> with WidgetsBindingObserver {
+class _RetailScreenState extends State<RetailScreen>
+    with WidgetsBindingObserver {
   final _searchCtrl = TextEditingController();
   final _barcodeFocus = FocusNode();
 
@@ -138,9 +139,8 @@ class _RetailScreenState extends State<RetailScreen> with WidgetsBindingObserver
     if (_loadingSkus && !isRefresh) return;
     if (!isRefresh && !_hasMoreSkus) return;
 
-    final generation = isRefresh
-        ? _skuSearchGuard.next()
-        : _skuSearchGuard.current;
+    final generation =
+        isRefresh ? _skuSearchGuard.next() : _skuSearchGuard.current;
     final query = _search;
     final page = isRefresh ? 1 : _skuPage;
 
@@ -281,15 +281,21 @@ class _RetailScreenState extends State<RetailScreen> with WidgetsBindingObserver
                         style: TextStyle(
                             fontWeight: FontWeight.w800, fontSize: 12.5)),
                   ),
-                  for (final opt in _sortOptions)
-                    RadioListTile<String>(
-                      contentPadding: EdgeInsets.zero,
-                      dense: true,
-                      title: Text(opt.value),
-                      value: opt.key,
-                      groupValue: tempSort,
-                      onChanged: (v) => setLocal(() => tempSort = v ?? ''),
+                  RadioGroup<String>(
+                    groupValue: tempSort,
+                    onChanged: (v) => setLocal(() => tempSort = v ?? ''),
+                    child: Column(
+                      children: [
+                        for (final opt in _sortOptions)
+                          RadioListTile<String>(
+                            contentPadding: EdgeInsets.zero,
+                            dense: true,
+                            title: Text(opt.value),
+                            value: opt.key,
+                          ),
+                      ],
                     ),
+                  ),
                 ],
               ),
             ),

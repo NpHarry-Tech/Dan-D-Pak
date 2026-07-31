@@ -12,7 +12,6 @@ import 'settings_tab.dart';
 import '../../utils/translation.dart';
 import 'settings_value_utils.dart';
 
-
 final _roleKeys = ['owner', 'manager', 'cashier', 'kitchen', 'warehouse'];
 Map<String, String> get _roleLabels => {
       'owner': 'Admin',
@@ -51,6 +50,15 @@ Map<String, List<String>> get _permissionGroups => {
         'menu.manage',
         'inventory.adjust',
         'warehouse.manage',
+        'warehouse.item',
+        'warehouse.receive',
+        'warehouse.issue',
+        'warehouse.transfer',
+        'warehouse.stocktake',
+        'warehouse.stocktake.balance',
+        'warehouse.pricebook',
+        'warehouse.create',
+        'warehouse.delete',
         'settings.warehouse',
       ],
       t('Tài chính'): [
@@ -272,8 +280,9 @@ class _UsersPanelState extends State<UsersPanel> {
                 user: user,
                 baseUrl: widget.api.baseUrl,
                 onEdit: () => _openForm(user),
-                onDelete:
-                    asText(user['role']) == 'owner' ? null : () => _delete(user),
+                onDelete: asText(user['role']) == 'owner'
+                    ? null
+                    : () => _delete(user),
               ),
               SizedBox(height: 8),
             ],
@@ -960,8 +969,10 @@ class _PermissionEditor extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final allKeys =
-        catalog.map((e) => asText(e['key'])).where((e) => e.isNotEmpty).toList();
+    final allKeys = catalog
+        .map((e) => asText(e['key']))
+        .where((e) => e.isNotEmpty)
+        .toList();
     final grouped = _groupCatalog();
     return Container(
       decoration: BoxDecoration(
@@ -1094,7 +1105,9 @@ class _PermissionEditor extends StatelessWidget {
       if (list.isNotEmpty) out[entry.key] = list;
     }
 
-    final other = catalog.where((p) => !used.contains(asText(p['key']))).toList()
+    final other = catalog
+        .where((p) => !used.contains(asText(p['key'])))
+        .toList()
       ..sort((a, b) => asText(a['key']).compareTo(asText(b['key'])));
     if (other.isNotEmpty) out[t('Khác')] = other;
     return out;
@@ -1116,6 +1129,15 @@ class _PermissionEditor extends StatelessWidget {
       'menu.manage': t('Quản lý thực đơn'),
       'inventory.adjust': t('Điều chỉnh tồn kho'),
       'warehouse.manage': t('Quản lý kho'),
+      'warehouse.item': t('Thêm và sửa sản phẩm kho'),
+      'warehouse.receive': t('Nhập hàng vào kho'),
+      'warehouse.issue': t('Xuất kho và xuất dùng nội bộ'),
+      'warehouse.transfer': t('Chuyển hàng giữa các kho'),
+      'warehouse.stocktake': t('Tạo và sửa phiếu kiểm kho'),
+      'warehouse.stocktake.balance': t('Cân bằng tồn sau kiểm kho'),
+      'warehouse.pricebook': t('Thiết lập giá và bảng giá'),
+      'warehouse.create': t('Tạo và sửa kho hàng'),
+      'warehouse.delete': t('Xóa dữ liệu kho'),
       'invoice': t('Xuất hóa đơn'),
       'online': t('Xử lý đơn online'),
       'kds': t('Màn hình bếp'),

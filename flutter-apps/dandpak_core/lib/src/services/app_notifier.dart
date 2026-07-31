@@ -48,7 +48,15 @@ class AppNotifier {
         return;
       }
       if (!Platform.isWindows && !Platform.isMacOS && !Platform.isLinux) return;
-      LocalNotification(title: title, body: body.isEmpty ? title : body).show();
+      // show() là BẤT ĐỒNG BỘ: try/catch đồng bộ ở đây KHÔNG bắt được lỗi của
+      // nó, lỗi sẽ nổi lên thành unhandled async error và có thể quật ngược vào
+      // luồng đang chạy (bắt được lần đầu khi màn bán hàng trên điện thoại văng
+      // lúc báo "chưa in được"). Nuốt lỗi ngay trên chính future đó.
+      unawaited(
+        LocalNotification(title: title, body: body.isEmpty ? title : body)
+            .show()
+            .catchError((_) {/* thông báo KHÔNG được phá luồng chính */}),
+      );
     } catch (_) {/* thông báo KHÔNG được phá luồng chính */}
   }
 

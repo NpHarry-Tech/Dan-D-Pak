@@ -41,11 +41,25 @@ extension ApiServiceWarehouseApi on ApiService {
         errorMessage: 'Không tải được lô hàng'));
   }
 
-  Future<List<dynamic>> getMovements(
-      {int limit = 80, String? warehouseId}) async {
+  /// [itemId] + [itemType] = THẺ KHO của đúng một mặt hàng. Server đã hỗ trợ lọc
+  /// này từ đầu (inventory.listMovements đọc filters.item_id / item_type) nhưng
+  /// client chưa bao giờ gửi lên, nên nơi cần thẻ kho phải tải cả trăm dòng rồi
+  /// tự lọc. Gửi thẳng để server lọc bằng chỉ mục.
+  Future<List<dynamic>> getMovements({
+    int limit = 80,
+    String? warehouseId,
+    String? itemId,
+    String? itemType,
+  }) async {
     final q = <String>['limit=$limit'];
     if (warehouseId != null && warehouseId.isNotEmpty) {
       q.add('warehouse_id=${Uri.encodeComponent(warehouseId)}');
+    }
+    if (itemId != null && itemId.isNotEmpty) {
+      q.add('item_id=${Uri.encodeComponent(itemId)}');
+    }
+    if (itemType != null && itemType.isNotEmpty) {
+      q.add('item_type=${Uri.encodeComponent(itemType)}');
     }
     return listFrom(await getJson('/api/movements?${q.join('&')}',
         errorMessage: 'Không tải được lịch sử kho'));
@@ -81,9 +95,19 @@ extension ApiServiceWarehouseApi on ApiService {
         body: body, errorMessage: 'Không tạo được mặt hàng'));
   }
 
+  /// Tạo SKU bán lẻ. Server (inventory.createSku) bắt buộc `name`; `opening_stock`
+  /// được ghi thành một lô 'OPENING' chứ không set thẳng cột stock, nên sổ lô và
+  /// tồn kho luôn khớp. Route `/api/skus` đã có sẵn từ trước — client chỉ thiếu
+  /// hàm gọi, nên trước đây chỉ tạo được hàng hóa từ bản desktop.
+  Future<Map<String, dynamic>> createSku(Map<String, dynamic> body) async {
+    return mapFrom(await postJson('/api/skus',
+        body: body, errorMessage: 'Không tạo được hàng hóa'));
+  }
+
   // ── Thiết lập giá (PriceBook) ──────────────────────────────────────────
   /// [bookId] ≠ 'default' → mỗi dòng kèm `book_price` (null = dùng giá chung).
-  Future<List<dynamic>> getPriceBook({String? warehouseId, String? bookId}) async {
+  Future<List<dynamic>> getPriceBook(
+      {String? warehouseId, String? bookId}) async {
     final qs = <String>[
       if (warehouseId != null && warehouseId.isNotEmpty)
         'warehouse_id=${Uri.encodeComponent(warehouseId)}',
@@ -127,6 +151,26 @@ extension ApiServiceWarehouseApi on ApiService {
       String id, Map<String, dynamic> body) async {
     return mapFrom(await postJson('/api/skus/$id/update',
         body: body, errorMessage: 'Không cập nhật được sản phẩm'));
+  }
+
+  Future<void> deleteSku(String id) async {
+    await postJson('/api/skus/$id/delete',
+        errorMessage: 'Không xóa được sản phẩm');
+  }
+
+  Future<Map<String, dynamic>> uploadSkuImage({
+    required String originalName,
+    required String mimeType,
+    required String data,
+  }) async {
+    return mapFrom(await postJson('/api/skus/image-upload',
+        body: {
+          'original_name': originalName,
+          'mime_type': mimeType,
+          'data': data,
+        },
+        timeout: const Duration(seconds: 30),
+        errorMessage: 'Không tải được ảnh sản phẩm'));
   }
 
   /// In tem mã sản phẩm ra máy in tem (Cài đặt máy in loại "Tem nhãn").

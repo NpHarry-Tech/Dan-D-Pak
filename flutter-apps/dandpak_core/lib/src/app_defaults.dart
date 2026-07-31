@@ -18,6 +18,6 @@ class DanDpakDefaults {
     return DanDpakApiClient.defaultBaseUrl;
   }
 
-  static const branchId = 'br1';
+  static const branchId = 'sala';
   static const username = '';
 }

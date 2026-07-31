@@ -566,16 +566,19 @@ class _IntegrationsPanelState extends State<IntegrationsPanel> {
   /// giao đồ ăn/website dùng chung cổng vào của module "Kênh online".
   String _channelWebhookUrl(IntegrationDef def) {
     final base = widget.api.baseUrl;
+    final branch =
+        Uri.encodeQueryComponent(widget.api.branchId?.trim() ?? '');
+    final scope = branch.isEmpty ? '' : '?branch_id=$branch';
     switch (def.key) {
       case 'payos':
       case 'vietqr':
       case 'sepay':
       case 'casso':
-        return '$base/api/${def.key}/webhook';
+        return '$base/api/${def.key}/webhook$scope';
       case 'haravan':
-        return '$base/webhooks/haravan';
+        return '$base/webhooks/haravan$scope';
       default:
-        return '$base/api/online/webhook';
+        return '$base/api/online/webhook$scope';
     }
   }
 
@@ -655,6 +658,15 @@ class _IntegrationsPanelState extends State<IntegrationsPanel> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          Text(
+            '${t('Chi nhánh')}: ${widget.api.branchId ?? ''}',
+            style: TextStyle(
+              fontSize: 11.5,
+              fontWeight: FontWeight.w800,
+              color: DanColors.brand,
+            ),
+          ),
+          SizedBox(height: 8),
           Row(
             children: [
               Expanded(

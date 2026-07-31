@@ -104,6 +104,16 @@ class _BranchesPanelState extends State<BranchesPanel> {
                               overflow: TextOverflow.ellipsis,
                               style: TextStyle(
                                   fontSize: 11.5, color: DanColors.faint)),
+                        SizedBox(height: 5),
+                        Wrap(
+                          spacing: 6,
+                          runSpacing: 4,
+                          children: [
+                            _ModulePill('F&B', _moduleOn(b, 'fnb')),
+                            _ModulePill('Retail', _moduleOn(b, 'retail')),
+                            _ModulePill('KDS', _moduleOn(b, 'kds')),
+                          ],
+                        ),
                       ],
                     ),
                   ),
@@ -140,6 +150,9 @@ class _BranchFormDialogState extends State<_BranchFormDialog> {
   late final TextEditingController _wardCode;
   late final TextEditingController _provinceCode;
   late bool _active;
+  late bool _fnb;
+  late bool _retail;
+  late bool _kds;
   bool _saving = false;
 
   bool get _isEdit => widget.branch != null;
@@ -153,10 +166,17 @@ class _BranchFormDialogState extends State<_BranchFormDialog> {
     _address = TextEditingController(text: asText(b?['address']));
     _addressDetail = TextEditingController(text: asText(b?['address_detail']));
     _addressWard = TextEditingController(text: asText(b?['address_ward']));
-    _addressProvince = TextEditingController(text: asText(b?['address_province']));
+    _addressProvince =
+        TextEditingController(text: asText(b?['address_province']));
     _wardCode = TextEditingController(text: asText(b?['ward_code']));
     _provinceCode = TextEditingController(text: asText(b?['province_code']));
     _active = b == null ? true : asFlag(b['active']);
+    final modules = b?['sales_modules'] is Map
+        ? Map<String, dynamic>.from(b!['sales_modules'])
+        : const <String, dynamic>{};
+    _fnb = modules['fnb'] != false;
+    _retail = modules['retail'] != false;
+    _kds = modules['kds'] != false;
   }
 
   @override
@@ -189,6 +209,7 @@ class _BranchFormDialogState extends State<_BranchFormDialog> {
       'ward_code': _wardCode.text.trim(),
       'province_code': _provinceCode.text.trim(),
       'active': _active,
+      'sales_modules': {'fnb': _fnb, 'retail': _retail, 'kds': _kds},
     };
     setState(() => _saving = true);
     try {
@@ -255,10 +276,98 @@ class _BranchFormDialogState extends State<_BranchFormDialog> {
                 style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700)),
             onChanged: (v) => setState(() => _active = v),
           ),
+          Divider(height: 28, color: DanColors.border),
+          Text(t('Module bán hàng tại chi nhánh'),
+              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w900)),
+          SizedBox(height: 4),
+          Text(
+            t('Chỉ bật những luồng chi nhánh thực sự sử dụng. Thay đổi áp dụng cho mọi thiết bị của chi nhánh.'),
+            style: TextStyle(fontSize: 12, color: DanColors.faint),
+          ),
+          SizedBox(height: 8),
+          _ModuleSwitch(
+            value: _fnb,
+            icon: Icons.restaurant_outlined,
+            title: 'F&B POS',
+            subtitle: t('Sơ đồ bàn, gọi món và thanh toán F&B'),
+            onChanged: (v) => setState(() {
+              _fnb = v;
+              if (!v) _kds = false;
+            }),
+          ),
+          _ModuleSwitch(
+            value: _retail,
+            icon: Icons.shopping_cart_outlined,
+            title: 'Retail POS',
+            subtitle: t('Bán hàng mã vạch và thêm hàng retail vào bill F&B'),
+            onChanged: (v) => setState(() => _retail = v),
+          ),
+          _ModuleSwitch(
+            value: _kds,
+            icon: Icons.soup_kitchen_outlined,
+            title: t('Màn hình bếp KDS'),
+            subtitle: t(
+                'Theo dõi trạng thái chế biến; vẫn có thể in phiếu bếp khi tắt'),
+            onChanged: _fnb ? (v) => setState(() => _kds = v) : null,
+          ),
         ],
       ),
     );
   }
+}
+
+bool _moduleOn(Map<String, dynamic> branch, String key) {
+  final modules = branch['sales_modules'];
+  return modules is! Map || modules[key] != false;
+}
+
+class _ModulePill extends StatelessWidget {
+  final String label;
+  final bool enabled;
+  const _ModulePill(this.label, this.enabled);
+
+  @override
+  Widget build(BuildContext context) => Container(
+        padding: EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+        decoration: BoxDecoration(
+          color: (enabled ? DanColors.done : DanColors.muted)
+              .withValues(alpha: .10),
+          borderRadius: BorderRadius.circular(5),
+        ),
+        child: Text(label,
+            style: TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.w800,
+                color: enabled ? DanColors.done : DanColors.muted)),
+      );
+}
+
+class _ModuleSwitch extends StatelessWidget {
+  final bool value;
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final ValueChanged<bool>? onChanged;
+  const _ModuleSwitch({
+    required this.value,
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) => SwitchListTile(
+        contentPadding: EdgeInsets.zero,
+        value: value,
+        onChanged: onChanged,
+        activeThumbColor: DanColors.done,
+        secondary: Icon(icon, color: value ? DanColors.brand : DanColors.muted),
+        title: Text(title,
+            style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w800)),
+        subtitle: Text(subtitle,
+            style: TextStyle(fontSize: 11.5, color: DanColors.faint)),
+      );
 }
 
 // Nhãn trạng thái nhỏ của thẻ chi nhánh (Đang mở / Đã đóng).

@@ -87,7 +87,8 @@ class _PurchaseDocFormPageState extends State<PurchaseDocFormPage> {
                 ? kvs(widget.warehouses.first['id'])
                 : null));
     if (ex != null) {
-      _supplierId = kvs(ex['supplier_id']).isEmpty ? null : kvs(ex['supplier_id']);
+      _supplierId =
+          kvs(ex['supplier_id']).isEmpty ? null : kvs(ex['supplier_id']);
       _note.text = kvs(ex['note']);
       _invoiceNo.text = kvs(ex['invoice_no']);
       final vat = kvn(ex[_isReturn ? 'vat_refund' : 'vat_amount']);
@@ -146,9 +147,8 @@ class _PurchaseDocFormPageState extends State<PurchaseDocFormPage> {
   }
 
   bool get _isRetailWh {
-    final wh = widget.warehouses
-        .where((w) => kvs(w['id']) == _warehouseId)
-        .toList();
+    final wh =
+        widget.warehouses.where((w) => kvs(w['id']) == _warehouseId).toList();
     return wh.isEmpty || kvs(wh.first['type']) == 'retail';
   }
 
@@ -192,6 +192,7 @@ class _PurchaseDocFormPageState extends State<PurchaseDocFormPage> {
         _lines.add(KvDocLine(item, kvs(l['item_type']),
             initialQty: kvn(l['qty']),
             initialCost: kvn(l['unit_cost']),
+            initialUnit: kvs(l['unit']),
             lot: kvs(l['lot_no']),
             exp: kvs(l['expiry_date'])));
       }
@@ -209,9 +210,7 @@ class _PurchaseDocFormPageState extends State<PurchaseDocFormPage> {
   }
 
   num get _subtotal => _lines.fold<num>(0, (s, l) => s + l.lineTotal);
-  num get _vatAmount => !_vatOn
-      ? 0
-      : (kvParseNum(_vatCtrl.text) ?? 0);
+  num get _vatAmount => !_vatOn ? 0 : (kvParseNum(_vatCtrl.text) ?? 0);
   num get _total => _subtotal + _vatAmount;
 
   static String _normalizeDate(String v) {
@@ -233,6 +232,7 @@ class _PurchaseDocFormPageState extends State<PurchaseDocFormPage> {
         'item_id': l.id,
         'name': l.name,
         'unit': l.unit,
+        'uom': l.unit,
         'qty': l.qtyNum,
         'unit_cost': l.costNum,
         if (!_isReturn && l.lotNo.text.trim().isNotEmpty)
@@ -299,206 +299,207 @@ class _PurchaseDocFormPageState extends State<PurchaseDocFormPage> {
         if (!didPop) _confirmExit();
       },
       child: Scaffold(
-      backgroundColor: DanColors.bg,
-      body: SafeArea(
-        child: Column(
-          children: [
-            Container(
-              color: DanColors.surface,
-              // Chừa góc phải trên cho nút cửa sổ — không đặt nút ở hàng này.
-              padding: EdgeInsets.fromLTRB(16, 12, 160, 10),
-              child: Row(
-                children: [
-                  IconButton(
-                      onPressed: () => Navigator.of(context).maybePop(),
-                      icon: Icon(Icons.arrow_back)),
-                  SizedBox(width: 4),
-                  Text(
-                      isEdit
-                          ? '$title ${kvs(widget.existing!['code'])}'
-                          : title,
-                      style: TextStyle(
-                          fontSize: 17, fontWeight: FontWeight.w900)),
-                  SizedBox(width: 18),
-                  SizedBox(
-                    width: 250,
-                    child: DropdownButtonFormField<String>(
-                      initialValue: _warehouseId,
-                      isExpanded: true,
-                      decoration: InputDecoration(
-                          labelText:
-                              _isReturn ? t('Kho xuất hàng') : t('Kho nhận hàng'),
-                          isDense: true,
-                          contentPadding: EdgeInsets.symmetric(
-                              horizontal: 10, vertical: 8)),
-                      items: [
-                        for (final w in widget.warehouses)
-                          DropdownMenuItem(
-                              value: kvs(w['id']),
-                              child: Text(kvs(w['name']),
-                                  overflow: TextOverflow.ellipsis)),
-                      ],
-                      onChanged: _lines.isNotEmpty
-                          ? null
-                          : (v) {
-                              setState(() => _warehouseId = v);
-                              _loadRefs();
-                            },
+        backgroundColor: DanColors.bg,
+        body: SafeArea(
+          child: Column(
+            children: [
+              Container(
+                color: DanColors.surface,
+                // Chừa góc phải trên cho nút cửa sổ — không đặt nút ở hàng này.
+                padding: EdgeInsets.fromLTRB(16, 12, 160, 10),
+                child: Row(
+                  children: [
+                    IconButton(
+                        onPressed: () => Navigator.of(context).maybePop(),
+                        icon: Icon(Icons.arrow_back)),
+                    SizedBox(width: 4),
+                    Text(
+                        isEdit
+                            ? '$title ${kvs(widget.existing!['code'])}'
+                            : title,
+                        style: TextStyle(
+                            fontSize: 17, fontWeight: FontWeight.w900)),
+                    SizedBox(width: 18),
+                    SizedBox(
+                      width: 250,
+                      child: DropdownButtonFormField<String>(
+                        initialValue: _warehouseId,
+                        isExpanded: true,
+                        decoration: InputDecoration(
+                            labelText: _isReturn
+                                ? t('Kho xuất hàng')
+                                : t('Kho nhận hàng'),
+                            isDense: true,
+                            contentPadding: EdgeInsets.symmetric(
+                                horizontal: 10, vertical: 8)),
+                        items: [
+                          for (final w in widget.warehouses)
+                            DropdownMenuItem(
+                                value: kvs(w['id']),
+                                child: Text(kvs(w['name']),
+                                    overflow: TextOverflow.ellipsis)),
+                        ],
+                        onChanged: _lines.isNotEmpty
+                            ? null
+                            : (v) {
+                                setState(() => _warehouseId = v);
+                                _loadRefs();
+                              },
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
-            Divider(height: 1, color: DanColors.border),
-            Expanded(
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Expanded(
-                    child: Column(
+              Divider(height: 1, color: DanColors.border),
+              Expanded(
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Expanded(
+                      child: Column(
+                        children: [
+                          Padding(
+                            padding: EdgeInsets.fromLTRB(20, 16, 20, 0),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: KvItemSearchField(
+                                    items: _items,
+                                    onPick: _addItem,
+                                    hint:
+                                        t('Tìm hàng hóa theo mã hoặc tên (F3)'),
+                                  ),
+                                ),
+                                SizedBox(width: 10),
+                                OutlinedButton.icon(
+                                  onPressed: _importFromExcel,
+                                  icon:
+                                      Icon(Icons.file_copy_outlined, size: 18),
+                                  label: Text(t('Chọn file dữ liệu')),
+                                  style: OutlinedButton.styleFrom(
+                                      minimumSize: Size(0, 42)),
+                                ),
+                              ],
+                            ),
+                          ),
+                          SizedBox(height: 10),
+                          KvTableHeader(cells: [
+                            kvHeaderCell('#', width: 30),
+                            kvHeaderCell(t('Mã hàng'), width: 104),
+                            SizedBox(width: 8),
+                            kvHeaderCell(t('Tên hàng'), flex: 1),
+                            kvHeaderCell(t('ĐVT'), width: 52),
+                            kvHeaderCell(t('Số lượng'), width: 78),
+                            SizedBox(width: 8),
+                            kvHeaderCell(t('Đơn giá'), width: 96),
+                            if (!_isReturn) ...[
+                              SizedBox(width: 8),
+                              kvHeaderCell(t('Lô'), width: 78),
+                              SizedBox(width: 8),
+                              kvHeaderCell('HSD', width: 106),
+                            ],
+                            kvHeaderCell(t('Thành tiền'),
+                                width: 104, align: TextAlign.right),
+                            SizedBox(width: 40),
+                          ]),
+                          Divider(height: 1, color: DanColors.border),
+                          Expanded(
+                            child: _loadingItems
+                                ? Center(child: CircularProgressIndicator())
+                                : _lines.isEmpty
+                                    ? KvExcelEmptyImport(
+                                        message:
+                                            t('Thêm sản phẩm từ file excel'),
+                                        templateKind: _isReturn
+                                            ? KvTemplateKind.issue
+                                            : KvTemplateKind.purchaseIn,
+                                        onPick: _importFromExcel)
+                                    : ListView.separated(
+                                        itemCount: _lines.length,
+                                        separatorBuilder: (_, __) => Divider(
+                                            height: 1, color: DanColors.border),
+                                        itemBuilder: (_, i) => _lineRow(i),
+                                      ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    KvDocMetaPanel(
+                      userName: auth.currentUser?.name ?? '—',
+                      codeHint: _isReturn
+                          ? t('Mã trả hàng nhập')
+                          : t('Mã phiếu nhập'),
+                      statusLabel: t('Phiếu tạm'),
+                      noteCtrl: _note,
+                      busy: _busy,
+                      onSaveDraft: () => _save(complete: false),
+                      onComplete: () => _save(complete: true),
+                      completeLabel: t('Hoàn thành'),
                       children: [
+                        _supplierPicker(),
+                        if (!_isReturn) ...[
+                          SizedBox(height: 8),
+                          TextField(
+                            controller: _invoiceNo,
+                            decoration: InputDecoration(
+                                labelText: t('Số hóa đơn đầu vào'),
+                                hintText: t('Nhập số hóa đơn'),
+                                isDense: true,
+                                contentPadding: EdgeInsets.symmetric(
+                                    horizontal: 10, vertical: 8)),
+                          ),
+                        ],
+                        SizedBox(height: 10),
+                        KvMetaTotalRow(
+                            label: '${t('Tổng tiền hàng')} (${_lines.length})',
+                            value: Fmt.money(_subtotal)),
                         Padding(
-                          padding: EdgeInsets.fromLTRB(20, 16, 20, 0),
+                          padding: EdgeInsets.symmetric(vertical: 4),
                           child: Row(
                             children: [
                               Expanded(
-                                child: KvItemSearchField(
-                                  items: _items,
-                                  onPick: _addItem,
-                                  hint:
-                                      t('Tìm hàng hóa theo mã hoặc tên (F3)'),
-                                ),
+                                child: Text(
+                                    _isReturn
+                                        ? t('VAT hoàn lại')
+                                        : t('VAT nhập hàng'),
+                                    style: TextStyle(
+                                        fontSize: 12.5,
+                                        color: DanColors.muted)),
                               ),
-                              SizedBox(width: 10),
-                              OutlinedButton.icon(
-                                onPressed: _importFromExcel,
-                                icon: Icon(Icons.file_copy_outlined, size: 18),
-                                label: Text(t('Chọn file dữ liệu')),
-                                style: OutlinedButton.styleFrom(
-                                    minimumSize: Size(0, 42)),
+                              if (_vatOn)
+                                KvCellInput(
+                                    controller: _vatCtrl,
+                                    width: 96,
+                                    hint: 'đ',
+                                    onChanged: (_) => setState(() {})),
+                              SizedBox(width: 6),
+                              SizedBox(
+                                height: 26,
+                                child: Switch(
+                                  value: _vatOn,
+                                  activeThumbColor: DanColors.brand,
+                                  onChanged: (v) => setState(() => _vatOn = v),
+                                ),
                               ),
                             ],
                           ),
                         ),
-                        SizedBox(height: 10),
-                        KvTableHeader(cells: [
-                          kvHeaderCell('#', width: 30),
-                          kvHeaderCell(t('Mã hàng'), width: 104),
-                          SizedBox(width: 8),
-                          kvHeaderCell(t('Tên hàng'), flex: 1),
-                          kvHeaderCell(t('ĐVT'), width: 52),
-                          kvHeaderCell(t('Số lượng'), width: 78),
-                          SizedBox(width: 8),
-                          kvHeaderCell(t('Đơn giá'), width: 96),
-                          if (!_isReturn) ...[
-                            SizedBox(width: 8),
-                            kvHeaderCell(t('Lô'), width: 78),
-                            SizedBox(width: 8),
-                            kvHeaderCell('HSD', width: 106),
-                          ],
-                          kvHeaderCell(t('Thành tiền'),
-                              width: 104, align: TextAlign.right),
-                          SizedBox(width: 40),
-                        ]),
-                        Divider(height: 1, color: DanColors.border),
-                        Expanded(
-                          child: _loadingItems
-                              ? Center(child: CircularProgressIndicator())
-                              : _lines.isEmpty
-                                  ? KvExcelEmptyImport(
-                                      message:
-                                          t('Thêm sản phẩm từ file excel'),
-                                      templateKind: _isReturn
-                                          ? KvTemplateKind.issue
-                                          : KvTemplateKind.purchaseIn,
-                                      onPick: _importFromExcel)
-                                  : ListView.separated(
-                                      itemCount: _lines.length,
-                                      separatorBuilder: (_, __) => Divider(
-                                          height: 1, color: DanColors.border),
-                                      itemBuilder: (_, i) => _lineRow(i),
-                                    ),
-                        ),
+                        Divider(height: 16, color: DanColors.border),
+                        KvMetaTotalRow(
+                            label: _isReturn
+                                ? t('NCC cần hoàn trả')
+                                : t('Cần trả nhà cung cấp'),
+                            value: Fmt.money(_total),
+                            big: true,
+                            accent: DanColors.brand),
                       ],
                     ),
-                  ),
-                  KvDocMetaPanel(
-                    userName: auth.currentUser?.name ?? '—',
-                    codeHint: _isReturn
-                        ? t('Mã trả hàng nhập')
-                        : t('Mã phiếu nhập'),
-                    statusLabel: t('Phiếu tạm'),
-                    noteCtrl: _note,
-                    busy: _busy,
-                    onSaveDraft: () => _save(complete: false),
-                    onComplete: () => _save(complete: true),
-                    completeLabel: t('Hoàn thành'),
-                    children: [
-                      _supplierPicker(),
-                      if (!_isReturn) ...[
-                        SizedBox(height: 8),
-                        TextField(
-                          controller: _invoiceNo,
-                          decoration: InputDecoration(
-                              labelText: t('Số hóa đơn đầu vào'),
-                              hintText: t('Nhập số hóa đơn'),
-                              isDense: true,
-                              contentPadding: EdgeInsets.symmetric(
-                                  horizontal: 10, vertical: 8)),
-                        ),
-                      ],
-                      SizedBox(height: 10),
-                      KvMetaTotalRow(
-                          label:
-                              '${t('Tổng tiền hàng')} (${_lines.length})',
-                          value: Fmt.money(_subtotal)),
-                      Padding(
-                        padding: EdgeInsets.symmetric(vertical: 4),
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                  _isReturn
-                                      ? t('VAT hoàn lại')
-                                      : t('VAT nhập hàng'),
-                                  style: TextStyle(
-                                      fontSize: 12.5,
-                                      color: DanColors.muted)),
-                            ),
-                            if (_vatOn)
-                              KvCellInput(
-                                  controller: _vatCtrl,
-                                  width: 96,
-                                  hint: 'đ',
-                                  onChanged: (_) => setState(() {})),
-                            SizedBox(width: 6),
-                            SizedBox(
-                              height: 26,
-                              child: Switch(
-                                value: _vatOn,
-                                activeThumbColor: DanColors.brand,
-                                onChanged: (v) => setState(() => _vatOn = v),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      Divider(height: 16, color: DanColors.border),
-                      KvMetaTotalRow(
-                          label: _isReturn
-                              ? t('NCC cần hoàn trả')
-                              : t('Cần trả nhà cung cấp'),
-                          value: Fmt.money(_total),
-                          big: true,
-                          accent: DanColors.brand),
-                    ],
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
-      ),
       ),
     );
   }
@@ -577,8 +578,7 @@ class _PurchaseDocFormPageState extends State<PurchaseDocFormPage> {
               TextField(
                   controller: name,
                   autofocus: true,
-                  decoration:
-                      InputDecoration(labelText: '${t('Tên NCC')} *')),
+                  decoration: InputDecoration(labelText: '${t('Tên NCC')} *')),
               SizedBox(height: 12),
               TextField(
                   controller: phone,
@@ -709,9 +709,19 @@ class _PurchaseDocFormPageState extends State<PurchaseDocFormPage> {
                     fontSize: 12.5, fontWeight: FontWeight.w600, height: 1.2)),
           ),
           SizedBox(
-              width: 52,
-              child: Text(l.unit,
-                  style: TextStyle(fontSize: 12, color: DanColors.muted))),
+            width: 92,
+            child: DropdownButton<String>(
+              value: l.unit,
+              isDense: true,
+              isExpanded: true,
+              underline: SizedBox.shrink(),
+              items: [
+                for (final u in l.availableUnits)
+                  DropdownMenuItem(value: u, child: Text(u)),
+              ],
+              onChanged: (v) => setState(() => l.selectUnit(v ?? l.unit)),
+            ),
+          ),
           KvCellInput(
               controller: l.qty, width: 78, onChanged: (_) => setState(() {})),
           SizedBox(width: 8),

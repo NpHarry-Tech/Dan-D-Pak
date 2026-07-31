@@ -56,7 +56,10 @@ class KvSidebar extends StatelessWidget {
   final VoidCallback? onClear;
   final bool showClear;
   const KvSidebar(
-      {super.key, required this.children, this.onClear, this.showClear = false});
+      {super.key,
+      required this.children,
+      this.onClear,
+      this.showClear = false});
 
   @override
   Widget build(BuildContext context) {
@@ -90,7 +93,8 @@ class KvSidebar extends StatelessWidget {
             ),
           ),
           Divider(height: 1, color: DanColors.border),
-          Expanded(child: ListView(padding: EdgeInsets.zero, children: children)),
+          Expanded(
+              child: ListView(padding: EdgeInsets.zero, children: children)),
         ],
       ),
     );
@@ -272,9 +276,7 @@ class KvToolbar extends StatelessWidget {
 
 /// Ô tiêu đề cột — dùng chung để header và dòng thẳng hàng theo width cố định.
 Widget kvHeaderCell(String label,
-    {double? width,
-    int flex = 0,
-    TextAlign align = TextAlign.left}) {
+    {double? width, int flex = 0, TextAlign align = TextAlign.left}) {
   final text = Text(label,
       textAlign: align,
       style: TextStyle(
@@ -354,8 +356,7 @@ class KvEmptyState extends StatelessWidget {
             height: 96,
             decoration: BoxDecoration(
                 color: DanColors.brandDim, shape: BoxShape.circle),
-            child: Icon(Icons.inbox_outlined,
-                size: 44, color: DanColors.brand),
+            child: Icon(Icons.inbox_outlined, size: 44, color: DanColors.brand),
           ),
           SizedBox(height: 14),
           Text(message,
@@ -382,22 +383,54 @@ class KvDocLine {
   final TextEditingController cost;
   final TextEditingController lotNo;
   final TextEditingController expiry;
+  late String selectedUnit;
 
   KvDocLine(this.item, this.stockType,
-      {num? initialQty, num? initialCost, String? lot, String? exp})
+      {num? initialQty,
+      num? initialCost,
+      String? initialUnit,
+      String? lot,
+      String? exp})
       : qty = TextEditingController(
             text: initialQty == null ? '1' : kvNumText(initialQty)),
         cost = TextEditingController(
             text: initialCost == null ? '' : kvNumText(initialCost)),
         lotNo = TextEditingController(text: lot ?? ''),
-        expiry = TextEditingController(text: exp ?? '');
+        expiry = TextEditingController(text: exp ?? '') {
+    selectedUnit = (initialUnit == null || initialUnit.isEmpty)
+        ? (kvs(item['_picked_unit']).isEmpty
+            ? kvs(item['unit'])
+            : kvs(item['_picked_unit']))
+        : initialUnit;
+    if (initialCost == null) selectUnit(selectedUnit);
+  }
 
   String get id => kvs(item['id']);
   String get code => kvs(item['code']).isEmpty
       ? (kvs(item['barcode']).isEmpty ? id : kvs(item['barcode']))
       : kvs(item['code']);
   String get name => kvs(item['name']);
-  String get unit => kvs(item['unit']);
+  String get unit => selectedUnit;
+  List<String> get availableUnits => {
+        selectedUnit,
+        kvs(item['unit']),
+        if (item['units'] is List)
+          for (final u in (item['units'] as List).whereType<Map>())
+            if (kvs(u['name']).isNotEmpty) kvs(u['name']),
+      }.where((u) => u.isNotEmpty).toList();
+
+  void selectUnit(String value) {
+    selectedUnit = value;
+    if (item['units'] is! List) return;
+    for (final u in (item['units'] as List).whereType<Map>()) {
+      if (kvs(u['name']) == value && kvn(u['cost']) > 0) {
+        cost.text = kvNumText(kvn(u['cost']));
+        return;
+      }
+    }
+    if (value == kvs(item['unit'])) cost.text = kvNumText(kvn(item['cost']));
+  }
+
   num get stock => kvn(item['stock']);
   num get qtyNum => kvParseNum(qty.text) ?? 0;
   num get costNum => kvParseNum(cost.text) ?? 0;
@@ -418,10 +451,7 @@ class KvItemSearchField extends StatefulWidget {
   final ValueChanged<Map<String, dynamic>> onPick;
   final String hint;
   const KvItemSearchField(
-      {super.key,
-      required this.items,
-      required this.onPick,
-      this.hint = ''});
+      {super.key, required this.items, required this.onPick, this.hint = ''});
 
   @override
   State<KvItemSearchField> createState() => _KvItemSearchFieldState();
@@ -430,6 +460,23 @@ class KvItemSearchField extends StatefulWidget {
 class _KvItemSearchFieldState extends State<KvItemSearchField> {
   final _ctrl = TextEditingController();
   String _q = '';
+
+  bool _hasCode(Map<String, dynamic> item, String code) =>
+      kvs(item['barcode']).toLowerCase() == code ||
+      kvs(item['code']).toLowerCase() == code ||
+      (item['units'] is List &&
+          (item['units'] as List)
+              .whereType<Map>()
+              .any((u) => kvs(u['barcode']).toLowerCase() == code));
+
+  String _unitForCode(Map<String, dynamic> item, String code) {
+    if (item['units'] is List) {
+      for (final u in (item['units'] as List).whereType<Map>()) {
+        if (kvs(u['barcode']).toLowerCase() == code) return kvs(u['name']);
+      }
+    }
+    return kvs(item['unit']);
+  }
 
   @override
   void dispose() {
@@ -458,9 +505,8 @@ class _KvItemSearchFieldState extends State<KvItemSearchField> {
     final c = code.trim().toLowerCase();
     if (c.isEmpty) return;
     for (final s in widget.items) {
-      if (kvs(s['barcode']).toLowerCase() == c ||
-          kvs(s['code']).toLowerCase() == c) {
-        _pick(s);
+      if (_hasCode(s, c)) {
+        _pick({...s, '_picked_unit': _unitForCode(s, c)});
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
             content: Text('${t('Đã thêm')}: ${kvs(s['name'])}'),
             duration: Duration(seconds: 1),
@@ -486,8 +532,9 @@ class _KvItemSearchFieldState extends State<KvItemSearchField> {
           child: TextField(
             controller: _ctrl,
             decoration: InputDecoration(
-              hintText:
-                  widget.hint.isEmpty ? t('Tìm hàng hóa theo mã hoặc tên (F3)') : widget.hint,
+              hintText: widget.hint.isEmpty
+                  ? t('Tìm hàng hóa theo mã hoặc tên (F3)')
+                  : widget.hint,
               prefixIcon: Icon(Icons.search, size: 20),
               // Tablet/phone: nút camera quét mã → tự thêm dòng.
               // Desktop: icon gợi ý ô nhập máy quét USB (không bấm).
@@ -510,9 +557,8 @@ class _KvItemSearchFieldState extends State<KvItemSearchField> {
               // barcode/mã; không có thì lấy kết quả tìm đầu tiên.
               final c = _q.trim().toLowerCase();
               for (final s in widget.items) {
-                if (kvs(s['barcode']).toLowerCase() == c ||
-                    kvs(s['code']).toLowerCase() == c) {
-                  _pick(s);
+                if (_hasCode(s, c)) {
+                  _pick({...s, '_picked_unit': _unitForCode(s, c)});
                   return;
                 }
               }
@@ -546,8 +592,7 @@ class _KvItemSearchFieldState extends State<KvItemSearchField> {
                 return InkWell(
                   onTap: () => _pick(s),
                   child: Padding(
-                    padding:
-                        EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                     child: Row(
                       children: [
                         SizedBox(
@@ -570,8 +615,7 @@ class _KvItemSearchFieldState extends State<KvItemSearchField> {
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: TextStyle(
-                                  fontSize: 12.5,
-                                  fontWeight: FontWeight.w600)),
+                                  fontSize: 12.5, fontWeight: FontWeight.w600)),
                         ),
                         SizedBox(width: 10),
                         Text(
@@ -644,8 +688,7 @@ class KvDocMetaPanel extends StatelessWidget {
                               fontSize: 13, fontWeight: FontWeight.w700)),
                     ),
                     Text(nowTxt,
-                        style:
-                            TextStyle(fontSize: 12, color: DanColors.muted)),
+                        style: TextStyle(fontSize: 12, color: DanColors.muted)),
                   ],
                 ),
                 SizedBox(height: 12),
@@ -657,8 +700,7 @@ class KvDocMetaPanel extends StatelessWidget {
                               fontSize: 12.5, color: DanColors.muted)),
                     ),
                     Text(t('Mã phiếu tự động'),
-                        style:
-                            TextStyle(fontSize: 12, color: DanColors.faint)),
+                        style: TextStyle(fontSize: 12, color: DanColors.faint)),
                   ],
                 ),
                 if (statusLabel.isNotEmpty) ...[

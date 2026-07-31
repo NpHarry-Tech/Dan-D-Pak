@@ -536,11 +536,15 @@ class _PosScreenState extends State<PosScreen> {
     var searching = false;
     final debouncer = Debouncer(delay: Duration(milliseconds: 300));
     final searchGuard = SearchRequestGuard();
-    Future<void> runSearch(String query, void Function(void Function()) setModalState) async {
+    Future<void> runSearch(
+        String query, void Function(void Function()) setModalState) async {
       final trimmed = query.trim();
       if (trimmed.isEmpty) {
         searchGuard.invalidate();
-        setModalState(() { liveResults = customers; searching = false; });
+        setModalState(() {
+          liveResults = customers;
+          searching = false;
+        });
         return;
       }
       final generation = searchGuard.next();
@@ -551,16 +555,23 @@ class _PosScreenState extends State<PosScreen> {
             .map((e) => Map<String, dynamic>.from(e))
             .toList();
         if (!searchGuard.isCurrent(generation)) return;
-        setModalState(() { liveResults = rows; searching = false; });
+        setModalState(() {
+          liveResults = rows;
+          searching = false;
+        });
       } catch (e) {
         if (!searchGuard.isCurrent(generation)) return;
-        setModalState(() { liveResults = []; searching = false; });
+        setModalState(() {
+          liveResults = [];
+          searching = false;
+        });
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-              content: Text('${t('Không tìm được khách hàng')}: $e')));
+          ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('${t('Không tìm được khách hàng')}: $e')));
         }
       }
     }
+
     return showDialog<Object>(
       context: context,
       builder: (dialogContext) => StatefulBuilder(
@@ -1052,8 +1063,9 @@ class _PosScreenState extends State<PosScreen> {
         isCalling: _isCalling,
         onAddFood: () =>
             _showMenuPicker(title: t('Thêm món FnB'), isRetail: false),
-        onAddRetail: () =>
-            _showMenuPicker(title: t('Thêm retail'), isRetail: true),
+        onAddRetail: context.read<AuthProvider>().moduleEnabled('retail')
+            ? () => _showMenuPicker(title: t('Thêm retail'), isRetail: true)
+            : null,
         onMove: _moveTable,
         onMerge: _mergeTable,
         onSplit: _splitBill,

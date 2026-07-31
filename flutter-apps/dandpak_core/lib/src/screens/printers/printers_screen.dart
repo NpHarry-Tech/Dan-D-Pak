@@ -59,9 +59,14 @@ String _target(Map<String, dynamic> p) {
     case 'lan':
       return '${_s(p['ip']).isEmpty ? 'chưa có IP' : _s(p['ip'])}:${_s(p['port']).isEmpty ? '9100' : _s(p['port'])}';
     case 'system':
-      return _s(p['systemName']).isNotEmpty
+      final name = _s(p['systemName']).isNotEmpty
           ? _s(p['systemName'])
           : (_s(p['name']).isNotEmpty ? _s(p['name']) : t('chưa chọn driver'));
+      // Quản lý/Admin thấy máy in của mọi máy POS → phải biết cái nào của máy nào,
+      // nếu không lại rơi vào cảnh thao tác nhầm máy như trước.
+      final owner = _s(p['owner_device_name']);
+      if (owner.isNotEmpty && p['attached_to_me'] != true) return '$name · $owner';
+      return name;
     default:
       return t('Trình duyệt');
   }
@@ -203,7 +208,11 @@ class _PrintersScreenState extends State<PrintersScreen> {
                         child: _printers.isEmpty
                             ? Padding(
                                 padding: EdgeInsets.symmetric(vertical: 14),
-                                child: Text(t('Chưa cấu hình máy in nào'),
+                                // Người không có quyền quản lý máy in chỉ thấy máy in
+                                // cắm thẳng vào máy mình — rỗng nghĩa là máy này chưa
+                                // cắm máy in nào, KHÔNG phải hệ thống chưa cấu hình.
+                                child: Text(
+                                    t('Máy này chưa cắm máy in nào. Máy in của máy POS khác do Quản lý/Admin xem và thiết lập.'),
                                     style: TextStyle(color: DanColors.faint)))
                             : Wrap(
                                 spacing: 12,
@@ -335,7 +344,23 @@ class _PrinterCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final p = printer;
-    final active = _s(p['active']) != 'false' && p['active'] != false;
+    // Trạng thái phải theo SỰ THẬT do server soi (state/statusText/online), KHÔNG
+    // theo cờ cấu hình 'active'. Trước đây card đọc 'active' — đó chỉ là ô "Đang
+    // sử dụng" trong Cài đặt, nên máy POS tắt app vẫn hiện "Sẵn sàng" và thu ngân
+    // bấm In thử tưởng đã in, thực tế lệnh nằm chờ.
+    final state = _s(p['state']);
+    final online = p['online'] == true;
+    final ready = state.isEmpty ? online : state == 'ok';
+    final warn = state == 'warn';
+    final dotColor = ready
+        ? DanColors.done
+        : (warn ? DanColors.doing : DanColors.late);
+    final textColor = ready
+        ? const Color(0xFF047857)
+        : (warn ? DanColors.doing : DanColors.late);
+    final label = _s(p['statusText']).isNotEmpty
+        ? _s(p['statusText'])
+        : (ready ? t('Sẵn sàng') : t('Không sẵn sàng'));
     return Container(
       width: 220,
       padding: EdgeInsets.all(14),
@@ -375,23 +400,29 @@ class _PrinterCard extends StatelessWidget {
                   color: DanColors.muted)),
           SizedBox(height: 4),
           Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               Container(
                 width: 7,
                 height: 7,
-                decoration: BoxDecoration(
-                    color: active ? DanColors.done : DanColors.faint,
-                    shape: BoxShape.circle),
+                decoration:
+                    BoxDecoration(color: dotColor, shape: BoxShape.circle),
               ),
               SizedBox(width: 5),
-              Text(active ? t('Sẵn sàng') : t('Tắt'),
-                  style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
-                      color: active ? Color(0xFF047857) : DanColors.faint)),
-              Spacer(),
+              Expanded(
+                child: Text(label,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        color: textColor)),
+              ),
+              SizedBox(width: 6),
+              // Máy in không sẵn sàng thì KHÔNG cho bấm In thử — trước đây bấm được
+              // và lệnh nằm chờ tới lúc mở máy in mới ra giấy, người dùng tưởng hỏng.
               OutlinedButton(
-                onPressed: onTest,
+                onPressed: ready ? onTest : null,
                 style: OutlinedButton.styleFrom(
                     minimumSize: Size(0, 30),
                     padding: EdgeInsets.symmetric(horizontal: 10)),

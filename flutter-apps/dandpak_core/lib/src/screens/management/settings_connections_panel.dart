@@ -246,10 +246,12 @@ class _ConnectionsPanelState extends State<ConnectionsPanel> {
             .catchError((_) => <String, dynamic>{}),
         widget.api.getPrintJobs().catchError((_) => <dynamic>[]),
         widget.api.getAgentDevices().catchError((_) => <dynamic>[]),
+        widget.api.getPrinters().catchError((_) => <dynamic>[]),
       ]);
       if (!mounted) return;
       setState(() {
         _status = Map<String, dynamic>.from(results[0] as Map);
+        _status['printerStatuses'] = results[4];
         final systemPrintersData = results[1] as Map;
         _systemPrinters = (systemPrintersData['printers'] as List? ?? [])
             .whereType<Map>()

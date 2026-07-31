@@ -15,6 +15,7 @@ import 'screens/branch_select_screen.dart';
 import 'screens/customer_display/second_screen.dart';
 import 'screens/force_change_pin_screen.dart';
 import 'screens/launcher_screen.dart';
+import 'screens/phone/phone_shell.dart';
 import 'services/second_window_fullscreen.dart';
 import 'screens/login_gate_screen.dart';
 import 'screens/splash_screen.dart';
@@ -292,6 +293,11 @@ class _DandpakPosAppState extends State<DandpakPosApp>
           if (auth.isLoggedIn) {
             // Chặn cứng: tài khoản còn PIN mặc định phải đổi trước khi vào app.
             if (auth.mustChangePin) return const ForceChangePinScreen();
+            // Điện thoại vào thẳng vỏ điều hướng đáy (Tổng quan · Bán lẻ ·
+            // Hàng hóa · Hóa đơn · Nhiều hơn). Lưới module của LauncherScreen
+            // là bố cục cho máy POS/tablet — trên màn 6 inch nó biến thành một
+            // danh sách ô dài phải cuộn, và không có đường tắt tới màn bán.
+            if (AppFlavor.current.isHandset) return const PhoneShell();
             return LauncherScreen();
           }
           if (!auth.branchConfirmed) return BranchSelectScreen();

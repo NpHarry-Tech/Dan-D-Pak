@@ -120,7 +120,16 @@ class _MenuTabState extends State<MenuTab> {
       _toast(r['archived'] == true
           ? t('Đã lưu trữ món (đã có order)')
           : t('Đã xóa món'));
-      _load();
+      if (!mounted) return;
+      final data = _data;
+      if (data != null) {
+        setState(() {
+          _data = MenuManageData(
+            data.categories,
+            data.items.where((x) => x.id != item.id).toList(),
+          );
+        });
+      }
     } catch (e) {
       _toast(e.toString().replaceFirst('Exception: ', ''), error: true);
     }
@@ -452,4 +461,3 @@ class _Chip extends StatelessWidget {
 }
 
 // ── Item create/edit form ───────────────────────────────────────────────
-

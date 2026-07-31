@@ -78,6 +78,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
   final _provinceCodeCtrl = TextEditingController();
   final _emailCtrl = TextEditingController();
   final _phoneCtrl = TextEditingController();
+  final _noteCtrl = TextEditingController();
 
   final List<PaymentLine> _lines = [];
   String _method = 'cash';
@@ -101,6 +102,8 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
   // làm gì được nữa (tưởng lỗi trong khi hệ thống tự động vẫn đang chạy đúng).
   // Sau thời gian chờ mà vẫn chưa tự khớp mới hiện nút này như phương án dự phòng.
   Timer? _autoWaitTimer;
+  Timer? _paymentStatusTimer;
+  bool _checkingPaymentStatus = false;
   bool _autoConfirmGraceElapsed = false;
 
   String? get _effectiveOrderId => widget.orderId ?? _draftOrderId;
@@ -179,13 +182,46 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
     final receipt = map?['receipt'] is Map
         ? Map<String, dynamic>.from(map!['receipt'] as Map)
         : <String, dynamic>{'total': widget.total.round()};
-    _toast(t('Hoá đơn đã được thanh toán (chuyển khoản tự động hoặc thiết bị khác)'));
+    _toast(t(
+        'Hoá đơn đã được thanh toán (chuyển khoản tự động hoặc thiết bị khác)'));
     Navigator.of(context).pop(receipt);
+  }
+
+  void _startPaymentStatusPolling() {
+    _paymentStatusTimer?.cancel();
+    if (_effectiveOrderId == null) return;
+    _paymentStatusTimer =
+        Timer.periodic(const Duration(seconds: 3), (_) => _pollPaymentStatus());
+  }
+
+  Future<void> _pollPaymentStatus() async {
+    final orderId = _effectiveOrderId;
+    if (!mounted ||
+        _settledExternally ||
+        _checkingPaymentStatus ||
+        orderId == null) {
+      return;
+    }
+    _checkingPaymentStatus = true;
+    try {
+      final order = await widget.api.getOrderById(orderId);
+      if (!mounted || order['status']?.toString() != 'paid') return;
+      _settledExternally = true;
+      _paymentStatusTimer?.cancel();
+      _toast(t('Hóa đơn đã được thanh toán tự động'));
+      Navigator.of(context)
+          .pop({'total': order['total'] ?? widget.total.round()});
+    } catch (_) {
+      // WebSocket vẫn là đường chính; polling chỉ là dự phòng khi mạng chập chờn.
+    } finally {
+      _checkingPaymentStatus = false;
+    }
   }
 
   @override
   void dispose() {
     _autoWaitTimer?.cancel();
+    _paymentStatusTimer?.cancel();
     SocketService().removeListener(_onSocketEvent);
     // KHÔNG tự hủy đơn nháp ở đây nữa — dù server chặn hủy đơn đã có payment_line
     // (paidForOrder>0), nó KHÔNG biết được tiền đã về ngân hàng thật nhưng webhook
@@ -209,6 +245,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
     _provinceCodeCtrl.dispose();
     _emailCtrl.dispose();
     _phoneCtrl.dispose();
+    _noteCtrl.dispose();
     super.dispose();
   }
 
@@ -405,18 +442,19 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
         'customer': widget.customer?.toCheckoutCustomer(),
         'customer_id': widget.customer?.id,
         'manual_discount': _adjustment.round(),
+        'note': _noteCtrl.text.trim(),
         'client_request_id': _clientRequestId,
       });
       if (!mounted) return;
       setState(() {
-        _draftOrderId = order['id']?.toString() ?? order['order_id']?.toString();
+        _draftOrderId =
+            order['id']?.toString() ?? order['order_id']?.toString();
         _draftBillNo = order['bill_no']?.toString();
         // Mã đối soát tạm (dựa nhãn tab) không còn đúng nữa — xoá để tạo lại
         // đúng theo bill_no thật vừa có.
         _refCtrl.clear();
         _applyDefaultRef();
       });
-      if (_isQr) _refreshQr();
     } catch (e) {
       if (!mounted) return;
       // Không chặn thanh toán — cashier vẫn dùng "Khách đã chuyển? Xác nhận thủ
@@ -619,6 +657,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
       'customer_id': widget.customer?.id,
       'invoice_customer': invoiceCustomer,
       'manual_discount': _adjustment.round(),
+      'note': _noteCtrl.text.trim(),
       'client_request_id': _clientRequestId,
       if (_manualPin != null && _manualPin!.isNotEmpty)
         'security_pin': _manualPin,
@@ -643,6 +682,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                 'manual_discount': _adjustment.round(),
                 'customer': widget.customer?.toCheckoutCustomer(),
                 'invoice_customer': invoiceCustomer,
+                'note': _noteCtrl.text.trim(),
                 'idempotency_key': _clientRequestId,
                 if (_manualPin != null && _manualPin!.isNotEmpty)
                   'security_pin': _manualPin,
@@ -679,7 +719,9 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
       // 409 ALREADY_SETTLED: bill vua bi webhook SePay/Casso/payOS hoac thiet bi
       // khac dong truoc khi request nay toi kip (thua vai giay) — khong phai loi
       // thao tac cua thu ngan, chi can dong dialog nhu da thanh toan xong.
-      if (effectiveOrderId != null && e is ApiException && e.statusCode == 409) {
+      if (effectiveOrderId != null &&
+          e is ApiException &&
+          e.statusCode == 409) {
         try {
           final order = await widget.api.getOrderById(effectiveOrderId.trim());
           if (!mounted) return;
@@ -719,6 +761,16 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                     _customerBox(),
                     SizedBox(height: 12),
                     _summaryBox(),
+                    SizedBox(height: 12),
+                    TextField(
+                      controller: _noteCtrl,
+                      maxLength: 500,
+                      maxLines: 2,
+                      decoration: InputDecoration(
+                        labelText: t('Ghi chú'),
+                        hintText: t('Nội dung sẽ được in trên bill'),
+                      ),
+                    ),
                     SizedBox(height: 14),
                     _methodBox(),
                     SizedBox(height: 12),
@@ -969,7 +1021,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                   labelStyle: TextStyle(
                       color: _method == m.key ? Colors.white : DanColors.text,
                       fontWeight: FontWeight.w800),
-                  onSelected: (_) {
+                  onSelected: (_) async {
                     setState(() {
                       _method = m.key;
                       _refCtrl.clear();
@@ -978,8 +1030,10 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                       _applyDefaultRef();
                     });
                     if (_isQr) {
-                      _refreshQr();
-                      _ensureDraftOrder();
+                      await _ensureDraftOrder();
+                      if (!mounted || _effectiveOrderId == null) return;
+                      await _refreshQr();
+                      _startPaymentStatusPolling();
                     }
                   },
                 ),

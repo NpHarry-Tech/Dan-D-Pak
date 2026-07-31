@@ -1,3 +1,6 @@
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -5,6 +8,7 @@ import '../../providers/auth_provider.dart';
 import '../../services/api_service.dart';
 import '../../ui/app_theme.dart';
 import '../../ui/format.dart';
+import '../../ui/file_pick.dart';
 import '../../widgets/dan_top_bar.dart';
 import '../../widgets/scan_button.dart';
 import '../contacts/contacts_screen.dart';
@@ -126,5 +130,4 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
   // ── Điều hướng 2 tầng: (1) chọn KHO → (2) chọn TÍNH NĂNG ────────────────
   // Gộp menu Hàng hóa/Mua hàng cũ + 4 tab Kho/Lô/Lịch sử/Phiếu vào MỘT dải
   // tab nhóm (giống thanh module KiotViet nhưng phẳng, không dropdown).
-
 }

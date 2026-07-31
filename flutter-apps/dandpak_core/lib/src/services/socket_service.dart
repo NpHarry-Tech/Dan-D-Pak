@@ -229,6 +229,8 @@ class SocketService {
               'Bàn $table${bill.isEmpty ? '' : ' · HĐ $bill'} — ${s(r['total'])}đ'
         );
       case 'order:new':
+        final order = p['order'] is Map ? p['order'] as Map : p;
+        if (s(order['channel']) == 'retail') return null;
         return (
           category: 'fnb_order',
           title: 'Đơn mới tại bàn / POS',
@@ -316,6 +318,14 @@ class SocketService {
   void _handleSoundNotification(String event, dynamic payload) {
     final cfg = _soundConfig;
     if (cfg == null) return;
+    if (event == 'order:new' &&
+        payload is Map &&
+        (payload['order'] is Map
+                ? payload['order']['channel']
+                : payload['channel']) ==
+            'retail') {
+      return;
+    }
 
     final globalEnabled = cfg['enabled'] ?? true;
     if (!globalEnabled) return;

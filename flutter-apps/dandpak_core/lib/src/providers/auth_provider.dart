@@ -33,12 +33,23 @@ class AuthProvider extends ChangeNotifier {
   String? _token;
   List<Branch> _branches = [];
   List<User> _loginUsers = [];
+  Set<String> _enabledBranchModules = {};
   // Server báo tài khoản vừa đăng nhập còn dùng PIN mặc định (owner/1234) →
   // app phải ép đổi PIN NGAY trước khi cho dùng tiếp (chặn ở login gate).
   bool _mustChangePin = false;
 
   AuthProvider({required this.apiService}) {
+    SocketService().addListener(_onSocketEvent);
     _loadPreferences();
+  }
+
+  void _onSocketEvent(String event, dynamic payload) {
+    if (event != 'settings:updated' || !isLoggedIn) return;
+    final keys = payload is Map && payload['keys'] is List
+        ? (payload['keys'] as List).map((e) => e.toString())
+        : const <String>[];
+    if (keys.isNotEmpty && !keys.contains('sales_modules')) return;
+    _loadBranchModules().then((_) => notifyListeners()).catchError((_) {});
   }
 
   bool get isLoading => _isLoading;
@@ -53,6 +64,8 @@ class AuthProvider extends ChangeNotifier {
   bool get mustChangePin => _mustChangePin;
   List<Branch> get branches => _branches;
   List<User> get loginUsers => _loginUsers;
+  bool moduleEnabled(String key) =>
+      _enabledBranchModules.isEmpty || _enabledBranchModules.contains(key);
   Branch get selectedBranch => _branches.firstWhere(
         (b) => b.id == _selectedBranchId,
         orElse: () => Branch(
@@ -113,6 +126,7 @@ class AuthProvider extends ChangeNotifier {
           final me = await apiService.getMe();
           _currentUser = User.fromJson(me);
           _setLanguage(_currentUser!.lang, notify: false);
+          await _loadBranchModules();
         } catch (e) {
           dlog("Failed to auto-login: $e");
           _token = null;
@@ -228,6 +242,7 @@ class AuthProvider extends ChangeNotifier {
         });
       }
       _setLanguage(_currentUser!.lang, notify: false);
+      await _loadBranchModules();
       _syncLogContext();
 
       final prefs = LocalStore.instance;
@@ -316,5 +331,16 @@ class AuthProvider extends ChangeNotifier {
     if (user.role == 'owner') return true;
     return user.permissions.contains('*') ||
         user.permissions.contains(permission);
+  }
+
+  @override
+  void dispose() {
+    SocketService().removeListener(_onSocketEvent);
+    super.dispose();
+  }
+
+  Future<void> _loadBranchModules() async {
+    final catalog = await apiService.getModules();
+    _enabledBranchModules = catalog.modules.map((m) => m.key).toSet();
   }
 }
