@@ -18,6 +18,11 @@ process.env.SQLITE_PATH = join(temp, 'store.db');
 process.env.STORAGE_PATH = join(temp, 'storage');
 process.env.DATA_ENCRYPTION_KEY = process.env.DATA_ENCRYPTION_KEY
   || '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
+// PHAI tro RELEASES_DIR vao thu muc tam. Thieu dong nay, publishRelease() ghi
+// thang vao server/releases/ CUA REPO: manifest.json that bi thay bang du lieu
+// gia cua test (setup.exe / tablet2.apk / phone.apk), tro toi cac file khong ton
+// tai. Da xay ra that ngay 2026-07-31 — phat hien khi ra soat file chua commit.
+process.env.RELEASES_DIR = join(temp, 'releases');
 
 const { migrate } = await import('./db.js');
 const Rel = await import('./services/appRelease.js');

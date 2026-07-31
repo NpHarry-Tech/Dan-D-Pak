@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
+import '../../app_flavor.dart';
 import '../../services/system_log.dart';
 import '../../ui/app_theme.dart';
 import '../../utils/translation.dart';
@@ -110,10 +111,12 @@ class _BarcodeScannerScreenState extends State<_BarcodeScannerScreen> {
   void dispose() {
     _controller.dispose();
     // Trả app về khoá landscape như cũ khi rời màn quét.
-    SystemChrome.setPreferredOrientations([
-      DeviceOrientation.landscapeLeft,
-      DeviceOrientation.landscapeRight,
-    ]);
+    SystemChrome.setPreferredOrientations(AppFlavor.current.isHandset
+        ? [DeviceOrientation.portraitUp]
+        : [
+            DeviceOrientation.landscapeLeft,
+            DeviceOrientation.landscapeRight,
+          ]);
     super.dispose();
   }
 
