@@ -13,6 +13,7 @@ import 'phone_ops_screens.dart';
 import 'phone_printers_screen.dart';
 import 'phone_overview_screens.dart';
 import 'phone_scaffolds.dart';
+import 'phone_update_row.dart';
 import 'phone_sell_screen.dart';
 
 /// VỎ ĐIỀU HƯỚNG bản điện thoại — thanh đáy 5 mục theo bản thiết kế:
@@ -223,6 +224,9 @@ class PhoneMoreScreen extends StatelessWidget {
                 padding: const EdgeInsets.only(bottom: 20),
                 children: [
                   PhoneModuleGrid(items),
+                  // Cập nhật đặt NGAY TRÊN phần Tài khoản: người dùng cuộn tới
+                  // cuối màn là thấy, không phải đi tìm trong Thiết lập.
+                  const PhoneUpdateRow(),
                   PhoneSectionTitle(t('Tài khoản')),
                   PhoneRow(
                     icon: Icons.logout,

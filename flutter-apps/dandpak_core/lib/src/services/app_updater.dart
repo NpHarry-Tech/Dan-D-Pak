@@ -74,7 +74,20 @@ class AppUpdater {
         url: url,
         mandatory: decoded['mandatory'] == true,
       );
-      await _notifyAvailableOnce(info);
+      // Gửi thông báo là VIỆC PHỤ — không được để nó nuốt mất bản cập nhật.
+      // Trước đây lời gọi này nằm thẳng trong try chung: máy nào chặn quyền
+      // thông báo, hoặc plugin lỗi, là cả hàm rơi vào catch và trả null — người
+      // dùng không bao giờ thấy có bản mới, mà nhật ký cũng chỉ ghi một dòng
+      // "checkForUpdate failed" chẳng liên quan gì tới cập nhật.
+      // CÓ HẠN GIỜ, không chỉ try/catch: kênh thông báo của hệ điều hành có thể
+      // KHÔNG ném lỗi mà treo luôn — lúc đó cả hàm đứng im, màn Cập nhật kẹt mãi
+      // ở "Đang kiểm tra..." và người dùng không bao giờ thấy nút tải.
+      try {
+        await _notifyAvailableOnce(info)
+            .timeout(const Duration(seconds: 3));
+      } catch (e) {
+        dlog('khong gui duoc thong bao cap nhat (bo qua): $e');
+      }
       return info;
     } catch (e) {
       dlog('checkForUpdate failed: $e');
