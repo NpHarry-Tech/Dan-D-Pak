@@ -1,4 +1,4 @@
-# ============================================================
+﻿# ============================================================
 # Phát hành bản cập nhật lên VPS để các máy tự động cập nhật.
 #
 # Dùng sau khi đã build xong installer:
@@ -16,12 +16,30 @@ param(
   [Parameter(Mandatory = $true)][string]$Username,
   [Parameter(Mandatory = $true)][string]$Pin,
   [Parameter(Mandatory = $true)][string]$File,
+  [ValidateSet('windows', 'android', 'android-phone', 'ios')]
   [string]$Platform = 'windows',
   [string]$Notes = '',
-  [switch]$Mandatory
+  [switch]$Mandatory,
+  # Hung moi doi so thua. KHONG co tham so nay thi mot doi so lac (vi du copy
+  # nham `$P` con la placeholder) se roi vao -Notes theo thu tu vi tri, va
+  # "<PIN_CUA_BAN>" hien thanh ghi chu ban cap nhat tren may cua nhan vien.
+  # Da xay ra that ngay 2026-07-31 voi ca ban desktop lan tablet.
+  [Parameter(ValueFromRemainingArguments = $true)]$ThuaKhongDung
 )
 
 $ErrorActionPreference = 'Stop'
+
+if ($ThuaKhongDung) {
+  throw "Co doi so thua khong hieu: $($ThuaKhongDung -join ' ')`n" +
+        "Moi tham so deu phai goi ten (-Server -Username -Pin -Platform -File)."
+}
+
+# Placeholder trong huong dan chua duoc thay -> dung ngay, dung de no len may that.
+foreach ($cap in @(@('Pin', $Pin), @('Notes', $Notes), @('Username', $Username))) {
+  if ($cap[1] -match '^<.*>$') {
+    throw "-$($cap[0]) van con la placeholder '$($cap[1])' - thay bang gia tri that."
+  }
+}
 $root = Split-Path -Parent $PSScriptRoot
 # 3 app giờ là vỏ mỏng trên dandpak_core; chọn app_version.dart theo platform.
 # (windows/linux/macos = desktop; android/ios = tablet.)
@@ -43,6 +61,33 @@ $verText = Get-Content $verFile -Raw
 $build = [int]([regex]::Match($verText, 'kAppBuildNumber\s*=\s*(\d+)').Groups[1].Value)
 $version = [regex]::Match($verText, "kAppVersionName\s*=\s*'([^']+)'").Groups[1].Value
 if ($build -le 0) { throw "kAppBuildNumber không hợp lệ trong app_version.dart" }
+
+# ── CHOT: file dem publish phai THAT SU chua so build dang khai ────────────
+# Vi sao: script doc so build tu MA NGUON, con file thi da build tu truoc. Neu
+# ai do tang kAppBuildNumber sau khi build, server se khai build moi trong khi
+# app cai xong bao build cu -> may tai ve, cai, van thay co ban moi, tai lai...
+# VONG LAP VO TAN, moi vong 100+ MB. Suyt xay ra ngay 2026-07-31 (khai 18, file
+# la 17), chi thoat vi mot loi khac chan lai.
+$duoiFile = [IO.Path]::GetExtension($File).ToLower()
+$duoiCho = if ($Platform -eq 'windows') { '.exe' } else { '.apk' }
+if ($duoiFile -ne $duoiCho) {
+  throw "Khe '$Platform' can file $duoiCho nhung dang day file $duoiFile - nham file roi."
+}
+
+# So build nam trong file duoi dang chuoi UTF-16 cua app_version.dart da bien
+# dich. Doc nhi phan roi tim chuoi phien ban la du de bat nham lan, khong can
+# giai nen APK.
+$noiDung = [IO.File]::ReadAllBytes($File)
+$chuoi = [Text.Encoding]::ASCII.GetString($noiDung)
+if ($chuoi -notmatch [regex]::Escape($version)) {
+  Write-Host ""
+  Write-Host "  CANH BAO: khong tim thay chuoi phien ban '$version' trong file." -ForegroundColor Yellow
+  Write-Host "  Rat co the file nay build TRUOC khi tang so build trong app_version.dart." -ForegroundColor Yellow
+  Write-Host "  Neu publish, may se roi vao vong lap cap nhat vo tan." -ForegroundColor Yellow
+  Write-Host ""
+  $tra = Read-Host "  Van muon publish? Go 'CO' de tiep tuc"
+  if ($tra -ne 'CO') { throw "Da dung. Hay build lai roi publish." }
+}
 
 Write-Host "  Server : $Server"
 Write-Host "  Build  : $build ($version)  |  Platform: $Platform"
