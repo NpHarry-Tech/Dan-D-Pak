@@ -343,19 +343,36 @@ function renderRunner(p = {}) {
   ].filter(Boolean).join('\n');
 }
 
-function renderLabel(p = {}) {
-  const tpl = p.print_config?.templates?.label;
+function renderLabel(p = {}, cfg = null) {
+  // Cấu hình chi nhánh là NGUỒN CHÍNH; payload chỉ dùng khi job cũ có nhúng sẵn.
+  const conf = cfg || p.print_config || {};
+  const tpl = conf.templates?.label || p.print_config?.templates?.label;
   if (tpl?.rows?.length) return renderTemplateRows(tpl, labelVars(p), { title: 'TEM NHAN' });
   if (tpl?.elements?.length) return renderTemplateText(tpl, labelVars(p), { title: 'TEM NHAN' });
+
+  // CHƯA THIẾT KẾ MẪU TEM → vẫn phải theo KÍCH THƯỚC TEM đã cài, không cắm cứng
+  // 40 ký tự. Tem 35mm mà dựng 40 ký tự thì chữ tràn ra ngoài mép tem.
+  const W = labelWidthCharsFrom(conf.labels || conf.label || {});
   return [
-    center('TEM'),
-    line(),
-    ...wrap(p.itemName || p.name || '', 40),
-    p.options ? `+ ${ascii(p.options)}` : '',
-    p.note ? `NOTE: ${ascii(p.note)}` : '',
-    line(),
-    `${p.order_no || ''} ${p.table || ''} ${p.time || ''}`.trim(),
+    center('TEM', W),
+    line('-', W),
+    ...wrap(p.itemName || p.name || '', W),
+    ...(p.options ? wrap(`+ ${ascii(p.options)}`, W) : []),
+    ...(p.note ? wrap(`NOTE: ${ascii(p.note)}`, W) : []),
+    line('-', W),
+    ...wrap(`${p.order_no || ''} ${p.table || ''} ${p.time || ''}`.trim(), W),
   ].filter(Boolean).join('\n');
+}
+
+// Số ký tự/dòng của TEM. Tem hẹp hơn bill nhiều nên có thang riêng: tem dán ly
+// hay dùng 35–50mm, tem sản phẩm 50–80mm. Font A 12 dot => 8 dot/mm / 12 ≈
+// 0.66 ký tự mỗi mm, trừ hao mép dán.
+function labelWidthCharsFrom(labels = {}) {
+  const mm = Number(labels.widthMm) || 50;
+  if (mm <= 30) return 16;
+  if (mm <= 40) return 24;
+  if (mm <= 60) return 32;
+  return 40;
 }
 
 function methodLabel(m) {
@@ -403,10 +420,23 @@ function templateWidthChars(tpl = {}) {
 // Dùng cho phiếu do server tự dựng (in thử, phiếu kho...) để chữ trải đúng bề
 // ngang tờ giấy. KHÔNG dùng cho mẫu bill — mẫu đó người dùng tự thiết kế theo
 // templateWidthChars/DAN_W, đổi bề ngang sẽ phá bố cục họ đã căn.
+// MÃ GIẤY đứng trước số mm, vì hai chỗ ghi `widthMm` theo hai nghĩa khác nhau:
+// bộ thiết kế mẫu lưu BỀ NGANG TỜ GIẤY (K80 -> 80, K57 -> 57) còn cấu hình cũ
+// lưu BỀ NGANG IN ĐƯỢC (72 / 48). Đọc mã giấy thì không phải đoán.
+//
+// Trước đây chỉ so mm với ngưỡng 50: chọn K57 -> widthMm 57 -> 57 > 50 -> vẫn
+// dựng 48 ký tự rồi tràn giấy. Và mã giấy đem so với 'K58' trong khi bộ thiết kế
+// ghi 'K57' nên không bao giờ khớp.
+const PAPER_CHARS = { K57: 32, K58: 32, K80: 48 };
+
 function paperWidthCharsFrom(bill = {}) {
-  const mm = Number(bill.widthMm) || (String(bill.paper || '').toUpperCase() === 'K58' ? 48 : 72);
-  if (mm <= 34) return 24;
-  if (mm <= 50) return 32;
+  const code = String(bill.paper || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  if (PAPER_CHARS[code]) return PAPER_CHARS[code];
+
+  const mm = Number(bill.widthMm) || 72;
+  if (mm <= 35) return 24;
+  // Ngưỡng 60 phủ CẢ HAI cách ghi của khổ nhỏ: 48mm (in được) và 57/58mm (tờ giấy).
+  if (mm <= 60) return 32;
   return 48;
 }
 
@@ -792,7 +822,14 @@ export function renderJobText(job, branch_id = 'sala') {
     if (isReprintPayload(p, job)) text = markReceiptReprint(text);
     return text;
   }
-  if (job.type === 'cup_label' || job.type === 'product_label') return renderLabel(p);
+  // Tem phải đọc cấu hình theo CHI NHÁNH, không chờ payload mang sẵn: job tem do
+  // printProductLabel/printCupLabels tạo ra KHÔNG nhúng print_config (cố ý — mẫu
+  // tem kèm logo base64 làm phình mỗi dòng print_jobs). Trước đây renderLabel chỉ
+  // nhận payload nên mẫu tem đã thiết kế và kích thước tem đã cài đều bị bỏ qua,
+  // mọi tem in ra đều là bản dự phòng cắm cứng 40 ký tự.
+  if (job.type === 'cup_label' || job.type === 'product_label') {
+    return renderLabel(p, getPrintConfig(job.branch_id || branch_id));
+  }
   // Phiếu do server tự dựng thì trải đúng bề ngang khổ giấy đã cấu hình. Đọc
   // cấu hình ĐÚNG MỘT LẦN rồi dùng chung cho cả bề ngang lẫn phần chữ hiển thị.
   const bill = getPrintConfig(job.branch_id || branch_id)?.bill || {};
