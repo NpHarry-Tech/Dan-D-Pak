@@ -141,10 +141,31 @@ export function resolvePrinterForOutput(output, branch_id = 'sala', {
   const usable = rows.filter(p => p && p.active !== false);
   const sameOutput = usable.filter(p => p.output === output);
 
+  // MÁY IN CẮM VÀO CHÍNH MÁY NÀY ĐƯỢC ƯU TIÊN TRƯỚC MỌI TUYẾN KHÁC.
+  //
+  // Trước đây máy in cắm sẵn chỉ được xét SAU CÙNG, khi không còn tuyến nào khác.
+  // Hậu quả: cửa hàng khai một tuyến hóa đơn ở quầy, rồi nhân viên cầm máy POS
+  // cầm tay đi thu tiền tại bàn — bill chạy ra máy in NGOÀI QUẦY thay vì in ngay
+  // trên tay khách. Máy in gắn liền của máy cầm tay không bao giờ nằm trong
+  // print_config (nó do agent báo lên), nên nó luôn thua.
+  //
+  // Thứ tự đúng: máy in của CHÍNH MÁY ĐANG THAO TÁC trước, rồi mới tới tuyến
+  // chung. Ai muốn ép ra một máy in cụ thể thì khai primaryDeviceId cho tuyến đó.
   if (preferDevice && deviceId) {
     const ownNames = deviceOwnPrinterNames(branch_id, deviceId);
+
+    // 1. Tuyến ĐÃ KHAI mà trỏ đúng máy in cắm vào máy này — tôn trọng cấu hình
+    //    của cửa hàng trước, vì nó mang thêm thiết lập (két tiền, độ đậm...).
     const attached = sameOutput.find(p => isAttachedTo(p, ownNames));
     if (attached) return attached;
+
+    // 2. Máy in cắm vào máy này nhưng CHƯA AI KHAI TUYẾN. Đây là chỗ máy POS cầm
+    //    tay rơi vào: đầu in gắn liền, agent có báo lên, nhưng không nằm trong
+    //    print_config.
+    const cuaMayNay = implicitDevicePrinter(branch_id, deviceId, output, true);
+    if (cuaMayNay) return cuaMayNay;
+
+    // 3. Tuyến khai đích danh cho máy này.
     const primary = sameOutput.find(p => String(p.primaryDeviceId || '').trim() === String(deviceId).trim());
     if (primary) return primary;
   }
@@ -203,12 +224,19 @@ function rebuildImplicit(printerId, devices = []) {
  * Không ghi vào print_config — cửa hàng vẫn thấy danh sách tuyến trống, và
  * ngày họ khai tuyến thật thì tuyến đó thắng ngay (nhánh trên chạy trước).
  */
-function implicitDevicePrinter(branch_id, deviceId, output) {
+function implicitDevicePrinter(branch_id, deviceId, output, chiMayNay = false) {
   const devices = getAgentDevices(branch_id);
   const me = String(deviceId || '').trim();
   // Ưu tiên máy in của CHÍNH máy đang thao tác; không xác định được máy nào thì
   // lấy máy in của một máy bất kỳ đang chạy app, còn hơn là không in gì cả.
-  const device = (me && devices.find(d => d.device_id === me)) || devices[0];
+  // [chiMayNay] = chỉ chấp nhận máy in của ĐÚNG máy đang thao tác.
+  //
+  // Lúc xét ưu tiên "máy in cắm vào chính máy này" mà lại rơi về máy đầu tiên bất
+  // kỳ là sai nặng: máy không cắm máy in nào sẽ chiếm máy in gắn liền của máy POS
+  // cầm tay, và bill in ra trong tay người khác. Chỉ ở bước CUỐI CÙNG (không còn
+  // tuyến nào) mới được vơ tạm một máy in bất kỳ, còn hơn không in gì.
+  const cuaToi = me ? devices.find(d => d.device_id === me) : null;
+  const device = chiMayNay ? cuaToi : (cuaToi || devices[0]);
   const first = (device?.printers || [])[0];
   const name = String(first?.name || '').trim();
   if (!name) return null;
