@@ -72,64 +72,37 @@ List<Map> _tuyen(_FakeApi api) =>
         .toList();
 
 void main() {
-  testWidgets('thieu ten may in thi KHONG luu', (tester) async {
-    final api = await _pump(tester);
-    await tester.enterText(find.byType(TextField).at(1), '192.168.1.50');
+  // Bo cuc moi: [Kieu ket noi] (cham) - [May in cua may nay] (cham, chi khi
+  // system) - [Ten hien thi] - [IP] [Cong] (chi khi LAN) - [Loai phieu] (cham).
+  // Cac test dung che do SUA mot may in LAN co san cho tat de xac dinh.
+  Map<String, dynamic> lanCoSan() => {
+        'id': 'bep', 'name': 'BEP', 'label': 'BEP', 'ip': '192.168.1.50',
+        'port': 9100, 'output': 'kitchen_ticket', 'connection': 'lan',
+      };
+
+  testWidgets('may in LAN thieu ten thi KHONG luu', (tester) async {
+    final api = await _pump(tester, printer: lanCoSan());
+    await tester.enterText(find.byType(TextField).at(0), '');
     await tester.pump();
-    await tester.tap(find.text('Thêm máy in'));
+    await tester.tap(find.text('Lưu máy in'));
     await tester.pump();
     expect(api.daLuu, isNull);
   });
 
-  testWidgets('IP sai dinh dang thi KHONG luu', (tester) async {
-    final api = await _pump(tester);
-    await tester.enterText(find.byType(TextField).at(0), 'May in bep');
+  testWidgets('may in LAN IP sai dinh dang thi KHONG luu', (tester) async {
+    final api = await _pump(tester, printer: lanCoSan());
     await tester.enterText(find.byType(TextField).at(1), '192.168.1');
     await tester.pump();
-    await tester.tap(find.text('Thêm máy in'));
+    await tester.tap(find.text('Lưu máy in'));
     await tester.pump();
     expect(api.daLuu, isNull,
         reason: 'IP sai thi job xep hang roi het gio, thu ngan chi thay '
             '"khong in duoc" — phai chan tu day');
   });
 
-  testWidgets('IP co so ngoai 0-255 thi KHONG luu', (tester) async {
-    final api = await _pump(tester);
-    await tester.enterText(find.byType(TextField).at(0), 'May in bep');
-    await tester.enterText(find.byType(TextField).at(1), '192.168.1.999');
-    await tester.pump();
-    await tester.tap(find.text('Thêm máy in'));
-    await tester.pump();
-    expect(api.daLuu, isNull);
-  });
-
-  testWidgets('them may in MOI khong xoa cac tuyen da co', (tester) async {
-    final api = await _pump(tester);
-    await tester.enterText(find.byType(TextField).at(0), 'May in tem');
-    await tester.enterText(find.byType(TextField).at(1), '192.168.1.77');
-    await tester.pump();
-    await tester.tap(find.text('Thêm máy in'));
-    await tester.pumpAndSettle();
-
-    final ds = _tuyen(api);
-    expect(ds.length, 3, reason: 'phai con nguyen 2 tuyen cu + 1 tuyen moi');
-    expect(ds.map((e) => e['id']), containsAll(['bep', 'quay']));
-    final moi = ds.firstWhere((e) => e['name'] == 'May in tem');
-    expect(moi['ip'], '192.168.1.77');
-    expect(moi['port'], 9100);
-    expect(moi['connection'], 'lan');
-  });
-
-  testWidgets('SUA may in co san thi ghi de dung tuyen do', (tester) async {
-    final api = await _pump(tester, printer: {
-      'id': 'bep',
-      'name': 'BEP',
-      'label': 'BEP',
-      'ip': '192.168.1.50',
-      'port': 9100,
-      'output': 'kitchen_ticket',
-      'connection': 'lan',
-    });
+  testWidgets('SUA may in LAN thi ghi de dung tuyen do, khong de ra tuyen moi',
+      (tester) async {
+    final api = await _pump(tester, printer: lanCoSan());
     await tester.enterText(find.byType(TextField).at(1), '192.168.1.51');
     await tester.pump();
     await tester.tap(find.text('Lưu máy in'));
@@ -141,16 +114,37 @@ void main() {
     expect(ds.any((e) => e['id'] == 'quay'), true, reason: 'tuyen kia phai con');
   });
 
-  testWidgets('giu nguyen phan cau hinh khac cua print_config', (tester) async {
-    final api = await _pump(tester);
-    await tester.enterText(find.byType(TextField).at(0), 'X');
-    await tester.enterText(find.byType(TextField).at(1), '10.0.0.5');
-    await tester.pump();
-    await tester.tap(find.text('Thêm máy in'));
+  testWidgets('XOA may in chi bo dung tuyen do', (tester) async {
+    final api = await _pump(tester, printer: lanCoSan());
+    await tester.tap(find.text('Xoá máy in này'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Xoá máy in'));
     await tester.pumpAndSettle();
 
+    final ds = _tuyen(api);
+    expect(ds.any((e) => e['id'] == 'bep'), false, reason: 'phai xoa duoc');
+    expect(ds.any((e) => e['id'] == 'quay'), true,
+        reason: 'xoa mot may in KHONG duoc keo theo may in khac');
+  });
+
+  testWidgets('giu nguyen phan cau hinh khac cua print_config', (tester) async {
+    final api = await _pump(tester, printer: lanCoSan());
+    await tester.enterText(find.byType(TextField).at(1), '10.0.0.5');
+    await tester.pump();
+    await tester.tap(find.text('Lưu máy in'));
+    await tester.pumpAndSettle();
     final cfg = api.daLuu!['print_config'] as Map;
     expect((cfg['bill'] as Map)['paper'], 'K80',
-        reason: 'kho giay bill khong lien quan gi toi viec them may in');
+        reason: 'kho giay bill khong lien quan gi toi viec sua may in');
+  });
+
+  testWidgets('THEM MOI mac dinh la may in cua may nay, KHONG hoi IP',
+      (tester) async {
+    await _pump(tester);
+    // Day chinh la loi da bao: ban dau bat nhap IP nen may in gan lien va may in
+    // cam USB deu khong noi duoc.
+    expect(find.text('Địa chỉ IP'), findsNothing,
+        reason: 'may in gan lien khong co IP — khong duoc hoi');
+    expect(find.textContaining('Máy in của máy này'), findsWidgets);
   });
 }

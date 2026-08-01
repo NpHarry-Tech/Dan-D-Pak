@@ -131,6 +131,67 @@ class _PhonePrintersScreenState extends State<PhonePrintersScreen> {
     }
   }
 
+  /// Chạm vào một máy in → xem thông tin đầy đủ, rồi sửa hoặc xoá.
+  Future<void> _moChiTiet(Map<String, dynamic> p) async {
+    final tuNhan = p['implicit'] == true;
+    await showPhoneSheet<void>(
+      context: context,
+      title: _label(p),
+      builder: (c) => ListView(
+        shrinkWrap: true,
+        children: [
+          PhoneInfoCard(rows: [
+            (t('Kiểu kết nối'), _s(p['connection']) == 'lan'
+                ? t('Máy in mạng (LAN)')
+                : t('Máy in của máy này')),
+            if (_s(p['systemName']).isNotEmpty)
+              (t('Tên hệ điều hành'), _s(p['systemName'])),
+            if (_s(p['ip']).isNotEmpty)
+              (t('Địa chỉ IP'), '${_s(p['ip'])}:${_s(p['port'])}'),
+            (t('Loại phiếu'), t(_typeLabels[_s(p['output'])] ?? _s(p['output']))),
+            (t('Ngăn kéo tiền'),
+                p['cashDrawer'] == true ? t('Có') : t('Không')),
+            (t('Trạng thái'), _s(p['statusText']).isNotEmpty
+                ? _s(p['statusText'])
+                : (p['online'] == true ? t('Sẵn sàng') : t('Không rõ'))),
+            if (tuNhan) (t('Nguồn'), t('Tự nhận từ máy này')),
+          ]),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+            child: Column(
+              children: [
+                PhoneSecondaryButton(
+                  label: t('In thử'),
+                  icon: Icons.print_outlined,
+                  onPressed: () {
+                    Navigator.of(c).pop();
+                    _test(p);
+                  },
+                ),
+                if (!tuNhan) ...[
+                  const SizedBox(height: 8),
+                  PhoneCta(
+                    label: t('Sửa máy in'),
+                    onPressed: () {
+                      Navigator.of(c).pop();
+                      _moCaiDat(p);
+                    },
+                  ),
+                ] else ...[
+                  const SizedBox(height: 10),
+                  Text(
+                      t('Máy in này được máy tự nhận, không nằm trong cấu hình nên không sửa hay xoá được. Rút máy in ra là nó tự biến mất.'),
+                      style: const TextStyle(
+                          fontSize: 11.5, height: 1.5, color: DanColors.faint)),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   /// Mở bảng nối máy in. [p] = null là thêm mới.
   Future<void> _moCaiDat(Map<String, dynamic>? p) async {
     final luu = await showPhoneSheet<bool>(
@@ -221,9 +282,12 @@ class _PhonePrintersScreenState extends State<PhonePrintersScreen> {
                                     // Chỉ máy in LAN mới sửa được ở đây: máy in
                                     // cắm USB vào máy POS khác do máy đó khai,
                                     // sửa từ xa chỉ tạo cấu hình ma.
-                                    onEdit: _s(p['connection']) == 'lan'
-                                        ? () => _moCaiDat(p)
-                                        : null,
+                                    // Chạm CẢ THẺ để xem chi tiết. Tuyến tự
+                                    // nhận (implicit) không sửa được — nó không
+                                    // nằm trong cấu hình, sửa chỉ tạo tuyến ma.
+                                    onEdit: p['implicit'] == true
+                                        ? null
+                                        : () => _moChiTiet(p),
                                   ),
                               PhoneSectionTitle(
                                 t('Lịch sử lệnh in'),
