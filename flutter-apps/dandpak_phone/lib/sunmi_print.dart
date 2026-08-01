@@ -15,8 +15,17 @@ class SunmiPrint {
   /// agent không được bật — không có gì hỏng, chỉ là không in tại chỗ.
   static Future<bool> coMayIn() async {
     try {
-      final tt = await SunmiConfig.getStatus();
-      return tt != null && tt.trim().isNotEmpty;
+      // Gọi được dịch vụ in của Sunmi = máy này CÓ máy in gắn liền.
+      //
+      // KHÔNG đòi chuỗi trạng thái phải khác rỗng. Nhiều máy Sunmi trả về chuỗi
+      // rỗng khi mọi thứ bình thường — bắt buộc phải có nội dung thì máy đang
+      // chạy tốt vẫn bị coi là "không có máy in", agent không bao giờ khởi động,
+      // và bill chẳng bao giờ ra giấy.
+      //
+      // Chỉ khi lời gọi NÉM LỖI mới là không có dịch vụ in (máy điện thoại
+      // thường), lúc đó agent không bật — đúng như mong muốn.
+      await SunmiConfig.getStatus();
+      return true;
     } catch (_) {
       return false; // không phải máy Sunmi, hoặc dịch vụ in chưa chạy
     }
@@ -30,7 +39,13 @@ class SunmiPrint {
   static Future<bool> sanSang() async {
     try {
       final tt = (await SunmiConfig.getStatus() ?? '').toLowerCase();
-      if (tt.isEmpty) return false;
+      // Chuỗi rỗng = máy in KHÔNG báo lỗi gì = SẴN SÀNG.
+      //
+      // Trước đây coi rỗng là chưa sẵn sàng, nên màn Máy in báo "không kết nối"
+      // trong khi máy in gắn liền đang nằm ngay trên đầu máy và in được. Nói sai
+      // sự thật theo hướng bi quan cũng tệ như nói sai theo hướng lạc quan:
+      // người dùng đi tìm lỗi ở chỗ không có lỗi.
+      if (tt.isEmpty) return true;
       const dauHieuLoi = ['error', 'abnormal', 'out of paper', 'nopaper',
                           'cover', 'overheat', 'fault'];
       return !dauHieuLoi.any(tt.contains);

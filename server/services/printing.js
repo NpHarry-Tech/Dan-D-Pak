@@ -188,7 +188,16 @@ export function resolvePrinterForOutput(output, branch_id = 'sala', {
   // một máy in vào máy POS và mong nó in ngay. Bắt họ vào Cài đặt khai báo tuyến
   // trước khi in được cái bill đầu tiên là chặn nhầm chỗ — máy đã cắm máy in,
   // agent đã báo tên máy in đó lên, hệ thống thừa thông tin để tự in.
-  return implicitDevicePrinter(branch_id, deviceId, output);
+  // CHỈ máy in của CHÍNH máy đang thao tác. KHÔNG vơ máy in của máy khác.
+  //
+  // Bản trước ở đây rơi về `devices[0]` — máy in của một máy bất kỳ. Hậu quả:
+  // thu ngân bấm thanh toán, hệ thống báo in xong, còn tờ bill chui ra ở máy in
+  // của người khác trong cửa hàng. In nhầm chỗ tệ hơn không in: không ai biết
+  // để đi tìm, và khách đứng chờ một tờ giấy không bao giờ tới.
+  //
+  // Không có máy in nào của máy này thì TRẢ VỀ NULL, để printReceipt ghi nhật ký
+  // và báo lỗi rõ ràng.
+  return implicitDevicePrinter(branch_id, deviceId, output, true);
 }
 
 /** Tiền tố của tuyến in ngầm — dùng chung để dựng và để nhận lại. */
@@ -1842,11 +1851,25 @@ export function printReceipt(receipt, branch_id = 'sala', { deviceId = '' } = {}
     // Không có tuyến in hóa đơn nào → nói rõ ra thay vì xếp job chết im lặng.
     logSystem({
       level: 'error', source: 'printer', eventType: 'receipt_printer_missing',
-      title: 'Không tìm được máy in hóa đơn — bill không tự in',
-      message: 'Chưa có máy in nào đặt loại phiếu "Hóa đơn" (output=receipt) và đang bật. '
-        + 'Vào Cài đặt → Kết nối → danh mục máy in để thêm/bật một máy in hóa đơn.',
+      title: 'Không tìm được máy in hóa đơn — bill KHÔNG tự in',
+      // Nói rõ ĐÃ TÌM Ở ĐÂU và máy này đang có gì, thay vì một câu chung chung
+      // rồi bảo người ta vào Cài đặt mò. Kèm luôn danh sách máy in mà chính máy
+      // đang thanh toán báo lên — để phân biệt "máy không cắm máy in" với "có
+      // máy in nhưng không tuyến nào nhận".
+      message: [
+        'Đã tìm: tuyến in đã khai cho máy này, máy in cắm sẵn của máy này, rồi tuyến chung.',
+        `Máy in mà máy này (${deviceId || 'không rõ định danh'}) đang báo lên: `
+          + (deviceOwnPrinterNames(branch_id, deviceId).size
+              ? [...deviceOwnPrinterNames(branch_id, deviceId)].join(', ')
+              : 'KHÔNG CÓ máy in nào'),
+        'Bill KHÔNG được in ra máy in của máy khác — in nhầm chỗ thì không ai biết để đi tìm.',
+      ].join(' | '),
       branchId: branch_id, action: 'print:receipt',
-      extra: { bill_no: receipt.bill_no || receipt.number || '', device: deviceId || '' },
+      extra: {
+        bill_no: receipt.bill_no || receipt.number || '',
+        device: deviceId || '',
+        may_in_cua_may_nay: [...deviceOwnPrinterNames(branch_id, deviceId)],
+      },
     });
     return jobs;
   }
