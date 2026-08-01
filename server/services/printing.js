@@ -194,6 +194,10 @@ export function resolvePrinterForOutput(output, branch_id = 'sala', {
 /** Tiền tố của tuyến in ngầm — dùng chung để dựng và để nhận lại. */
 const IMPLICIT_PREFIX = 'auto:';
 
+/// Khoá giữ chỗ cho agent bản cũ không gửi định danh máy. PHẢI khớp với
+/// system.js — đây không phải một máy thật và không được coi là chủ trì tuyến in.
+const KHOA_MAY_KHONG_DINH_DANH = 'agent-khong-dinh-danh';
+
 /**
  * Dựng lại tuyến ngầm từ chính id của nó (`auto:<device_id>:<tên máy in>`).
  * Chỉ chấp nhận khi máy in ĐÓ vẫn đang được máy ĐÓ báo lên — máy POS rút máy in
@@ -1514,8 +1518,19 @@ export function pendingAgentJobs(branch_id = 'sala', { limit = 40, deviceId = ''
     // MÁY CHỦ TRÌ: nhiều máy POS cùng với tới một máy in thì phiếu phải luôn ra ở
     // ĐÚNG MỘT chỗ, không để "máy nào hỏi trước máy đó in". Chủ trì offline thì
     // nhường cho máy khác để không tắc bán hàng.
+    // 'agent-khong-dinh-danh' KHÔNG PHẢI một máy thật.
+    //
+    // Agent bản cũ không gửi định danh máy, server gom hết vào khoá giữ chỗ này
+    // (xem system.js). Nếu coi nó là chủ trì thì luật "phiếu chỉ ra ở đúng một
+    // chỗ" khoá tuyến vào một cái máy không tồn tại: mọi máy khác bị chặn không
+    // nhận được phiếu, còn chính agent cũ thì in hỏng. Cửa hàng thấy "đã thanh
+    // toán" mà giấy không ra.
+    //
+    // Đây đúng là tình huống ở chi nhánh sala ngày 2026-08-01: cả hai tuyến hóa
+    // đơn đều mang primaryDeviceId = 'agent-khong-dinh-danh'.
     const primary = String(printer.primaryDeviceId || '').trim();
-    if (primary && me && primary !== me && onlineDeviceIds.has(primary)) continue;
+    const chuTriThat = primary && primary !== KHOA_MAY_KHONG_DINH_DANH;
+    if (chuTriThat && me && primary !== me && onlineDeviceIds.has(primary)) continue;
 
     if (me && !claimJob(row.id, me, claimCutoff)) continue; // máy khác vừa giữ chỗ
 
