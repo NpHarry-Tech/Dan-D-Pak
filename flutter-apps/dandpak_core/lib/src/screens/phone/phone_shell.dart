@@ -5,7 +5,7 @@ import '../../app_flavor.dart';
 import '../../providers/auth_provider.dart';
 import '../../ui/app_theme.dart';
 import '../../utils/translation.dart';
-import '../management/settings_screen.dart';
+
 import 'phone_catalog_screens.dart';
 import 'phone_form_screens.dart';
 import 'phone_kit.dart';
@@ -13,6 +13,7 @@ import 'phone_ops_screens.dart';
 import 'phone_printers_screen.dart';
 import 'phone_overview_screens.dart';
 import 'phone_scaffolds.dart';
+import 'phone_settings_screen.dart';
 import 'phone_update_row.dart';
 import 'phone_sell_screen.dart';
 
@@ -205,7 +206,7 @@ class PhoneMoreScreen extends StatelessWidget {
       (
         'Thiết lập',
         Icons.settings_outlined,
-        gate('settings', 'settings.manage', () => SettingsScreen())
+        gate('settings', 'settings.manage', () => const PhoneSettingsScreen())
       ),
     ];
 
