@@ -102,3 +102,17 @@ test('may chu tri THAT van khoa duoc tuyen cua no', () => {
   assert.ok(!cuaKhac.some(j => j.type === 'receipt'),
     'may chu tri that dang online thi may khac KHONG duoc gianh — chong in trung');
 });
+
+test('thanh toan tren MAY CAM TAY thi in tren may in CUA NO, khong dinh gi toi POS 1/POS 2',
+    () => {
+  // Day la yeu cau go gon cua chu cua hang: "toi thanh toan tren handy thi in
+  // tren may in tren handy, chu lien quan gi POS 1 va POS 2".
+  // POS 1 va POS 2 la may in cua hai may de ban — chung PHAI duoc giu nguyen cho
+  // hai may do, va cung khong duoc gianh bill cua may cam tay.
+  Print.printReceipt(bill('Dan0108260104'), 'sala', { deviceId: 'dev_camtay' });
+  const jobs = Print.pendingAgentJobs('sala', { limit: 10, deviceId: 'dev_camtay' });
+  const r = jobs.find(j => j.type === 'receipt');
+  assert.ok(r, 'may cam tay phai nhan duoc phieu cua chinh no');
+  assert.equal(r.systemName, 'May in tich hop',
+    `bill dang chay ra "${r.systemName}" — phai ra may in gan lien cua may cam tay`);
+});
