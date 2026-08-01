@@ -177,9 +177,26 @@ export function resolvePrinterForOutput(output, branch_id = 'sala', {
 
   // Tuyến in được thật (lan/system) đứng trước tuyến 'browser' — tuyến browser
   // cần người bấm trong hộp thoại nên không bao giờ tự ra giấy.
-  const configured = sameOutput.find(p => p.connection === 'lan' || p.connection === 'system')
-    || sameOutput[0];
-  if (configured) return configured;
+  // KHÔNG VỚI SANG MÁY IN CẮM Ở MÁY KHÁC.
+  //
+  // Máy in LAN là hạ tầng dùng chung — máy nào in cũng được, giấy ra ở chỗ ai
+  // cũng biết. Nhưng máy in cắm USB vào một máy POS khác (connection 'system')
+  // thì thuộc về máy đó: đẩy bill sang đấy là tờ giấy chui ra ở quầy khác, thu
+  // ngân đứng chờ mà không biết nó ở đâu.
+  //
+  // Nên: LAN trước, và chỉ nhận máy in 'system' khi nó KHÔNG thuộc về một máy
+  // khác đang chạy. Không còn gì hợp lệ thì trả null để báo lỗi rõ ràng, hơn là
+  // in bừa sang máy người khác.
+  const lan = sameOutput.find(p => p.connection === 'lan');
+  if (lan) return lan;
+
+  const systemDungChung = sameOutput.find((p) => {
+    if (p.connection !== 'system') return false;
+    const chu = String(p.primaryDeviceId || '').trim();
+    if (!chu || chu === KHOA_MAY_KHONG_DINH_DANH) return true; // không của riêng ai
+    return !deviceId || chu === String(deviceId).trim();
+  });
+  if (systemDungChung) return systemDungChung;
 
   // CHƯA AI CẤU HÌNH TUYẾN NÀO → dùng thẳng máy in đang cắm vào máy này.
   //
