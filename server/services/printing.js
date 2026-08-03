@@ -405,16 +405,19 @@ function renderRunner(p = {}) {
   ].filter(Boolean).join('\n');
 }
 
-function renderLabel(p = {}, cfg = null) {
+function renderLabel(p = {}, cfg = null, printer = null) {
   // Cấu hình chi nhánh là NGUỒN CHÍNH; payload chỉ dùng khi job cũ có nhúng sẵn.
   const conf = cfg || p.print_config || {};
   const tpl = conf.templates?.label || p.print_config?.templates?.label;
-  if (tpl?.rows?.length) return renderTemplateRows(tpl, labelVars(p), { title: 'TEM NHAN' });
-  if (tpl?.elements?.length) return renderTemplateText(tpl, labelVars(p), { title: 'TEM NHAN' });
+  const W = Number(printer?.widthMm)
+    ? labelWidthCharsFrom({ widthMm: Number(printer.widthMm) })
+    : labelWidthCharsFrom(conf.labels || conf.label || {});
+
+  if (tpl?.rows?.length) return renderTemplateRows(tpl, labelVars(p), { title: 'TEM NHAN', widthChars: W });
+  if (tpl?.elements?.length) return renderTemplateText(tpl, labelVars(p), { title: 'TEM NHAN', widthChars: W });
 
   // CHƯA THIẾT KẾ MẪU TEM → vẫn phải theo KÍCH THƯỚC TEM đã cài, không cắm cứng
   // 40 ký tự. Tem 35mm mà dựng 40 ký tự thì chữ tràn ra ngoài mép tem.
-  const W = labelWidthCharsFrom(conf.labels || conf.label || {});
   return [
     center('TEM', W),
     line('-', W),
@@ -561,9 +564,12 @@ function renderTemplateRows(tpl = {}, vars = {}, { title = 'PRINT', widthChars =
   return body || center(title, W);
 }
 
-function receiptVars(p = {}) {
+function receiptVars(p = {}, widthOverride = 0) {
   const tpl = p.print_config?.templates?.bill || {};
-  const W = templateWidthChars(tpl);
+  // widthOverride = bề ngang THẬT của máy in sẽ in phiếu. Trước đây luôn dùng
+  // templateWidthChars nên K57 (32 ký tự) vẫn format ở 40 → dòng dài hơn giấy,
+  // máy in tự bẻ dòng ở vị trí bất kỳ và nội dung co cụm bên trái ~42mm.
+  const W = widthOverride || templateWidthChars(tpl);
   const cfg = p.print_config?.bill || {};
   const d = p.paid_at || p.created_at ? new Date(p.paid_at || p.created_at) : new Date();
   const pad = (n) => String(n).padStart(2, '0');
@@ -743,8 +749,8 @@ function renderReceipt(p = {}, W = 40) {
   const tpl = p.print_config?.templates?.bill;
   // Mẫu do cửa hàng thiết kế cũng phải co theo khổ giấy THẬT của máy in.
   const opt = { title: 'HOA DON', widthChars: W };
-  if (tpl?.rows?.length) return renderTemplateRows(tpl, receiptVars(p), opt);
-  if (tpl?.elements?.length) return renderTemplateText(tpl, receiptVars(p), opt);
+  if (tpl?.rows?.length) return renderTemplateRows(tpl, receiptVars(p, W), opt);
+  if (tpl?.elements?.length) return renderTemplateText(tpl, receiptVars(p, W), opt);
   const cfg = p.print_config?.bill || {};
   const rows = [];
   
@@ -823,9 +829,9 @@ function renderGeneric(job, W = 40) {
   ];
   if (job.title) rows.push(...wrap(job.title, W));
   const fields = [
-    ['Ban', p.table],
-    ['Ma', p.ref],
-    ['Ghi chu', p.note],
+    ['Bàn', p.table],
+    ['Mã', p.ref],
+    ['Ghi chú', p.note],
   ];
   for (const [label, value] of fields) {
     if (value) rows.push(...wrap(`${label}: ${value}`, W));
@@ -908,7 +914,7 @@ export function renderJobText(job, branch_id = 'sala', printer = null) {
   // nhận payload nên mẫu tem đã thiết kế và kích thước tem đã cài đều bị bỏ qua,
   // mọi tem in ra đều là bản dự phòng cắm cứng 40 ký tự.
   if (job.type === 'cup_label' || job.type === 'product_label') {
-    return renderLabel(p, getPrintConfig(job.branch_id || branch_id));
+    return renderLabel(p, getPrintConfig(job.branch_id || branch_id), printer);
   }
   // Phiếu do server tự dựng thì trải đúng bề ngang khổ giấy đã cấu hình. Đọc
   // cấu hình ĐÚNG MỘT LẦN rồi dùng chung cho cả bề ngang lẫn phần chữ hiển thị.
@@ -928,11 +934,14 @@ export function renderJobText(job, branch_id = 'sala', printer = null) {
 // max bật cả hai. Khớp 4 mức "sắc tố đen" ở trình thiết kế mẫu in.
 function densityPrefix(density) {
   const on = (cmd) => Buffer.from([0x1b, cmd, 0x01]);
-  switch (String(density || '').toLowerCase()) {
-    case 'dark': return on(0x47);                                  // ESC G 1
-    case 'max': return Buffer.concat([on(0x47), on(0x45)]);        // ESC G 1 + ESC E 1
-    default: return Buffer.alloc(0);                               // light / medium
+  const s = String(density || '').toLowerCase().trim();
+  if (s === 'max' || s.includes('rat') || s.includes('very') || s.includes('max')) {
+    return Buffer.concat([on(0x47), on(0x45)]);
   }
+  if (s === 'dark' || s.includes('dam') || s.includes('bold')) {
+    return on(0x47);
+  }
+  return Buffer.alloc(0);
 }
 
 function escposBuffer(text, { cut = true, drawer = false, density = '' } = {}) {
@@ -1556,7 +1565,15 @@ export function pendingAgentJobs(branch_id = 'sala', { limit = 40, deviceId = ''
     // đơn đều mang primaryDeviceId = 'agent-khong-dinh-danh'.
     const primary = String(printer.primaryDeviceId || '').trim();
     const chuTriThat = primary && primary !== KHOA_MAY_KHONG_DINH_DANH;
-    if (chuTriThat && me && primary !== me && onlineDeviceIds.has(primary)) continue;
+    if ((row.printer || '').startsWith('auto:')) {
+      const parts = row.printer.split(':');
+      const targetDevice = parts[1] || '';
+      if (targetDevice && me && targetDevice !== me) continue;
+    }
+    if (chuTriThat && me && primary !== me) {
+      if (connection === 'system' || (printer.id || '').startsWith('auto:')) continue;
+      if (onlineDeviceIds.has(primary)) continue;
+    }
 
     if (me && !claimJob(row.id, me, claimCutoff)) continue; // máy khác vừa giữ chỗ
 
@@ -1641,16 +1658,25 @@ function resolveAgentJob(job, branch_id) {
   };
 }
 
-export function agentJob(id, branch_id = 'sala') {
+export function agentJob(id, branch_id = 'sala', { deviceId = '' } = {}) {
   const job = getJobForBranch(id, branch_id);
+  if (!job) return null;
+  const dev = String(deviceId || '').trim();
+  if (dev && job.claimed_by && String(job.claimed_by).trim() !== dev) {
+    throw new Error('Lệnh in không thuộc về thiết bị này');
+  }
   return resolveAgentJob(job, branch_id);
 }
 
 // Agent gọi khi đã in xong / in lỗi trên máy in vật lý tại cửa hàng.
-export function agentReportResult(id, branch_id, { ok, error } = {}) {
+export function agentReportResult(id, branch_id, { ok, error, deviceId = '' } = {}) {
   const existing = getJob(id);
   if (!existing) throw new Error('Print job không tồn tại');
   if (existing.branch_id !== branch_id) throw new Error('Print job không thuộc chi nhánh hiện tại');
+  const dev = String(deviceId || '').trim();
+  if (dev && existing.claimed_by && String(existing.claimed_by).trim() !== dev) {
+    throw new Error('Thiết bị không giữ chỗ lệnh in này');
+  }
   if (ok) {
     const job = patchJob(id, { status: 'printed', printed_at: now(), printed_by: 'agent', error: null });
     emit('print:done', job, branch_id);
@@ -1704,6 +1730,9 @@ export function reprint(id, branch_id = 'sala') {
 export async function testPrinter(printerId, branch_id = 'sala') {
   const p = printerById(printerId, branch_id);
   if (!p) throw new Error('Máy in chưa được cấu hình');
+  if ((p.connection || 'browser') === 'system' && (!p.primaryDeviceId || p.primaryDeviceId === KHOA_MAY_KHONG_DINH_DANH)) {
+    throw new Error('Tuyến máy in chưa gắn với thiết bị cụ thể');
+  }
   const bill = getPrintConfig(branch_id)?.bill || {};
   const job = createJob({
     printer: printerId,

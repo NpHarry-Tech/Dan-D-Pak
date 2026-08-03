@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'api_service.dart';
 import 'system_log.dart';
@@ -133,7 +134,8 @@ class LocalPrintAgent {
         if (id.isEmpty || _dangIn.contains(id)) continue;
         if ((_soLanThu[id] ?? 0) >= _toiDaThu) continue;
         _dangIn.add(id);
-        unawaited(_inMotJob(api, inRa, id, j).whenComplete(() => _dangIn.remove(id)));
+        unawaited(
+            _inMotJob(api, inRa, id, j).whenComplete(() => _dangIn.remove(id)));
       }
     } catch (_) {
       // Hỏng mạng giữa ca bán hàng là chuyện thường — vòng sau thử lại.
@@ -152,7 +154,8 @@ class LocalPrintAgent {
     try {
       final text = '${job['text'] ?? ''}';
       if (text.isEmpty) throw Exception('Job không có nội dung để in');
-      await inRa(_escpos(text, drawer: job['drawer'] == true));
+      await inRa(await _escpos(text,
+          drawer: job['drawer'] == true, density: job['density']));
       await api.reportAgentJobResult(id, ok: true);
       _soLanThu.remove(id);
     } catch (e) {
@@ -184,45 +187,33 @@ class LocalPrintAgent {
   ///   ESC a 0    canh trái (server tự căn giữa bằng dấu cách)
   ///   ESC 2      giãn dòng mặc định
   ///   ESC G 1    in đậm (double-strike) cho nét rõ trên giấy nhiệt
-  List<int> _escpos(String text, {bool drawer = false}) {
-    return [
-      0x1b, 0x40,
-      0x1b, 0x21, 0x00,
-      0x1d, 0x21, 0x00,
-      0x1b, 0x61, 0x00,
-      0x1b, 0x32,
-      0x1b, 0x47, 0x01,
-      ..._ascii(text).codeUnits,
-      0x0a, 0x0a, 0x0a,
-      if (drawer) ...[0x1b, 0x70, 0x00, 0x19, 0xfa],
-      0x1d, 0x56, 0x42, 0x00, // cắt giấy
-    ];
-  }
+  Future<List<int>> _escpos(String text,
+      {bool drawer = false, dynamic density = ''}) async {
+    final d = '$density'.toLowerCase().trim();
+    final isMax = d == 'max' || d.contains('rat') || d.contains('very');
+    final isDark =
+        isMax || d == 'dark' || d.contains('dam') || d.contains('bold');
 
-  /// Máy in nhiệt chỉ in được ASCII. Bỏ dấu GIỐNG HỆT server (`ascii()` trong
-  /// printing.js) — lệch một chút là cùng một bill in ở hai đường ra chữ khác
-  /// nhau.
-  String _ascii(String s) {
-    const co = 'àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡ'
-        'ùúụủũưừứựửữỳýỵỷỹ';
-    const khong = 'aaaaaaaaaaaaaaaaaeeeeeeeeeeeiiiiiooooooooooooooooo'
-        'uuuuuuuuuuuyyyyy';
-    final b = StringBuffer();
-    for (final ch in s.split('')) {
-      final thuong = ch.toLowerCase();
-      final i = co.indexOf(thuong);
-      if (i >= 0) {
-        final thay = khong[i];
-        b.write(ch == thuong ? thay : thay.toUpperCase());
-      } else if (thuong == 'đ') {
-        b.write(ch == 'đ' ? 'd' : 'D');
-      } else if (ch.codeUnitAt(0) >= 0x20 && ch.codeUnitAt(0) <= 0x7e ||
-          ch == '\n' || ch == '\r' || ch == '\t') {
-        b.write(ch);
-      }
-      // Ký tự lạ khác thì bỏ — máy in sẽ ra ô vuông vô nghĩa.
+    final bytes = <int>[];
+    // ESC @ (Init)
+    bytes.addAll([0x1b, 0x40]);
+    // ESC ! 0, GS ! 0, ESC a 0, ESC 2 (Reset)
+    bytes.addAll([0x1b, 0x21, 0x00, 0x1d, 0x21, 0x00, 0x1b, 0x61, 0x00, 0x1b, 0x32]);
+    // Double-strike / Bold density prefix
+    if (isMax) {
+      bytes.addAll([0x1b, 0x47, 0x01, 0x1b, 0x45, 0x01]);
+    } else if (isDark) {
+      bytes.addAll([0x1b, 0x47, 0x01]);
     }
-    return b.toString();
+
+    bytes.addAll(utf8.encode('$text\n\n'));
+
+    if (drawer) {
+      bytes.addAll([0x1b, 0x70, 0x00, 0x19, 0xfa]);
+    }
+    bytes.addAll([0x1d, 0x56, 0x42, 0x00]);
+
+    return bytes;
   }
 
   /// Máy in có thật sự sẵn sàng không (hết giấy, nắp mở...). Dùng cho màn Máy in.

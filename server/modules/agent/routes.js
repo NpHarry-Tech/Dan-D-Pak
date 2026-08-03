@@ -15,7 +15,8 @@ api.get('/agent/print/pending', printGuard, wrap((req) => ({
   serverTime: Date.now(),
 })));
 api.get('/agent/print/jobs/:id', printGuard, wrap((req) => {
-  const j = Print.agentJob(req.params.id, branch(req));
+  const deviceId = req.query.device_id || req.headers['x-device-id'] || '';
+  const j = Print.agentJob(req.params.id, branch(req), { deviceId });
   if (!j) throw new Error('Job không cần agent in (browser/không tồn tại)');
   return j;
 }));
@@ -23,6 +24,7 @@ api.post('/agent/print/jobs/:id/result', printGuard, wrap((req) =>
   Print.agentReportResult(req.params.id, branch(req), {
     ok: req.body.ok === true || req.body.ok === 'true',
     error: req.body.error,
+    deviceId: req.body.device_id || req.headers['x-device-id'] || '',
   })));
 // Agent gửi kèm định danh MÁY của nó — server lưu máy in theo từng máy thay vì
 // theo chi nhánh, nếu không nhiều máy chạy agent sẽ ghi đè danh sách của nhau.
@@ -32,6 +34,8 @@ api.post('/agent/printers/report', printGuard, wrap((req) => ({
   count: System.setAgentPrinters(branch(req), req.body.printers || [], {
     deviceId: req.body.device_id || req.headers['x-device-id'] || '',
     deviceName: req.body.device_name || req.headers['x-device-name'] || '',
+    agentVersion: req.body.agent_version || '',
+    capabilities: req.body.capabilities || [],
   }).length,
 })));
 // Máy in thấy được, nhóm theo MÁY đang cắm — cho màn Cài đặt → Kết nối.

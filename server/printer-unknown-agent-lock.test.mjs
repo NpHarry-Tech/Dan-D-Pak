@@ -103,6 +103,61 @@ test('may chu tri THAT van khoa duoc tuyen cua no', () => {
     'may chu tri that dang online thi may khac KHONG duoc gianh — chong in trung');
 });
 
+test('may chu tri offline thi may khac cung ten KHONG duoc tiep quan', async () => {
+  AppSettings.updateSettings({
+    print_config: {
+      printers: [{
+        id: 'handy_2', name: 'May in tich hop', systemName: 'May in tich hop',
+        label: 'Handy 2', output: 'receipt', connection: 'system', active: true,
+        primaryDeviceId: 'dev_handy_2',
+      }],
+    },
+  }, 'br10');
+  System.setAgentPrinters('br10', [{ Name: 'May in tich hop' }], {
+    deviceId: 'dev_handy_1', deviceName: 'Handy 1',
+  });
+
+  const job = await Print.testPrinter('handy_2', 'br10');
+  const jobs = Print.pendingAgentJobs('br10', { limit: 10, deviceId: 'dev_handy_1' });
+  assert.ok(!jobs.some(j => j.id === job.id),
+    'Handy 2 tat thi phieu phai cho Handy 2, khong duoc chay sang Handy 1');
+});
+
+test('tuyen system chua gan thiet bi thi tu choi in thu thay vi in bua', async () => {
+  AppSettings.updateSettings({
+    print_config: {
+      printers: [{
+        id: 'handy_chua_gan', name: 'May in tich hop', systemName: 'May in tich hop',
+        label: 'Handy chua gan', output: 'receipt', connection: 'system', active: true,
+      }],
+    },
+  }, 'br11');
+  await assert.rejects(() => Print.testPrinter('handy_chua_gan', 'br11'),
+    /chưa gắn với thiết bị cụ thể/i);
+});
+
+test('may khac khong duoc bao ket qua thay may dang giu job', async () => {
+  AppSettings.updateSettings({
+    print_config: {
+      printers: [{
+        id: 'handy_claim', name: 'May in tich hop', systemName: 'May in tich hop',
+        output: 'receipt', connection: 'system', active: true,
+        primaryDeviceId: 'dev_claim_1',
+      }],
+    },
+  }, 'br12');
+  System.setAgentPrinters('br12', [{ Name: 'May in tich hop' }], {
+    deviceId: 'dev_claim_1', deviceName: 'Handy claim 1',
+  });
+  const queued = await Print.testPrinter('handy_claim', 'br12');
+  const jobs = Print.pendingAgentJobs('br12', { limit: 10, deviceId: 'dev_claim_1' });
+  assert.ok(jobs.some(j => j.id === queued.id));
+  assert.throws(
+    () => Print.agentReportResult(queued.id, 'br12', { ok: true, deviceId: 'dev_claim_2' }),
+    /không giữ chỗ lệnh in/i,
+  );
+});
+
 test('thanh toan tren MAY CAM TAY thi in tren may in CUA NO, khong dinh gi toi POS 1/POS 2',
     () => {
   // Day la yeu cau go gon cua chu cua hang: "toi thanh toan tren handy thi in

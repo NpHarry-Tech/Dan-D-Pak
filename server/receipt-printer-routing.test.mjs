@@ -120,6 +120,10 @@ test('tuyến gắn sẵn trên đơn được tôn trọng, nhưng tuyến đã
     { ...receiptMau('Dan3007260005'), linked_printer_id: 'ap250' }, 'sala', { deviceId: 'dev_pos1' });
   assert.equal(gan[0].printer, 'ap250', 'tuyến gắn sẵn phải được dùng');
 
+  const khongCoLocal = Print.printReceipt(
+    { ...receiptMau('Dan3007260005B'), linked_printer_id: 'ap250' }, 'sala', { deviceId: 'dev_khong_may_in' });
+  assert.equal(khongCoLocal[0].printer, 'ap250', 'không có máy local thì mới dùng tuyến gắn sẵn');
+
   // Đơn cũ còn trỏ tuyến đã bị xoá khỏi cấu hình → phải phân giải lại, không mồ côi.
   const cu = Print.printReceipt(
     { ...receiptMau('Dan3007260006'), linked_printer_id: 'bill' }, 'sala', { deviceId: 'dev_pos2' });
