@@ -1837,7 +1837,7 @@ export async function openCashDrawer(branch_id = 'sala', printerId = '', { devic
 }
 
 // ---- Hooks used by order/payment flows ----
-export function printKitchenTickets(order, items, branch_id = 'sala', staff = '') {
+export function printKitchenTickets(order, items, branch_id = 'sala', staff = '', { deviceId = '' } = {}) {
   const kitchenItems = items.filter(it => it && it.station !== 'retail');
   if (!kitchenItems.length) return;
 
@@ -1846,15 +1846,18 @@ export function printKitchenTickets(order, items, branch_id = 'sala', staff = ''
   const perUnit = k.perUnit !== '0' && k.perUnit !== false;
   const showStaff = k.showStaff !== '0' && k.showStaff !== false;
 
-  // Trạm (kitchen/bar) → tuyến in THẬT. Cùng lỗi với hóa đơn: ghi cứng id
-  // 'kitchen'/'bar' nên cửa hàng đặt tên tuyến khác là phiếu bếp mồ côi rồi bị
-  // huỷ. Phân giải MỘT LẦN cho cả loạt món, không gọi lại theo từng món.
+  // Trạm (kitchen/bar) → tuyến in THẬT. Tôn trọng máy in cắm tại thiết bị trước (preferDevice).
   const rows = printerRows(branch_id);
   const resolvedStation = new Map();
   const stationPrinterId = (station) => {
     const legacyId = STATION_PRINTER[station] || 'kitchen';
     if (!resolvedStation.has(legacyId)) {
-      const found = resolvePrinterForOutput('kitchen_ticket', branch_id, { legacyId, printers: rows });
+      const found = resolvePrinterForOutput('kitchen_ticket', branch_id, {
+        deviceId: deviceId || order.linked_pos_device || '',
+        legacyId,
+        preferDevice: true,
+        printers: rows,
+      });
       resolvedStation.set(legacyId, found ? found.id : '');
     }
     return resolvedStation.get(legacyId);
@@ -1936,10 +1939,6 @@ export function printReceipt(receipt, branch_id = 'sala', { deviceId = '' } = {}
     logSystem({
       level: 'error', source: 'printer', eventType: 'receipt_printer_missing',
       title: 'Không tìm được máy in hóa đơn — bill KHÔNG tự in',
-      // Nói rõ ĐÃ TÌM Ở ĐÂU và máy này đang có gì, thay vì một câu chung chung
-      // rồi bảo người ta vào Cài đặt mò. Kèm luôn danh sách máy in mà chính máy
-      // đang thanh toán báo lên — để phân biệt "máy không cắm máy in" với "có
-      // máy in nhưng không tuyến nào nhận".
       message: [
         'Đã tìm: tuyến in đã khai cho máy này, máy in cắm sẵn của máy này, rồi tuyến chung.',
         `Máy in mà máy này (${deviceId || 'không rõ định danh'}) đang báo lên: `
@@ -1975,13 +1974,17 @@ function shouldPrintCupLabels(order, cfg) {
   return ['takeaway', 'delivery'].includes(order?.channel) || !!order?.online_channel;
 }
 
-export function printCupLabels(order, items = [], branch_id = 'sala') {
+export function printCupLabels(order, items = [], branch_id = 'sala', { deviceId = '' } = {}) {
   const cfg = getPrintConfig(branch_id);
   if (!shouldPrintCupLabels(order, cfg)) return;
   const printable = items.filter(i => i && i.station !== 'retail' && i.status !== 'cancelled');
   if (!printable.length) return;
-  // Không ghi cứng id 'label' — cửa hàng đặt tên tuyến tem khác thì job mồ côi.
-  const labelPrinter = resolvePrinterForOutput('cup_label', branch_id, { legacyId: 'label' });
+  // Ưu tiên máy in gắn tại thiết bị hiện tại (preferDevice).
+  const labelPrinter = resolvePrinterForOutput('cup_label', branch_id, {
+    deviceId: deviceId || order.linked_pos_device || '',
+    legacyId: 'label',
+    preferDevice: true,
+  });
   if (!labelPrinter) {
     logSystem({
       level: 'warn', source: 'printer', eventType: 'label_printer_missing',
@@ -2020,10 +2023,14 @@ export function printCupLabels(order, items = [], branch_id = 'sala') {
   }
 }
 
-export function printRunnerSlip(item, order, branch_id = 'sala') {
+export function printRunnerSlip(item, order, branch_id = 'sala', { deviceId = '' } = {}) {
   if (!item || item.station === 'retail') return;
-  // Không ghi cứng id 'runner' — cùng lý do với hóa đơn/bếp/tem.
-  const runnerPrinter = resolvePrinterForOutput('runner', branch_id, { legacyId: 'runner' });
+  // Ưu tiên máy in gắn tại thiết bị hiện tại (preferDevice).
+  const runnerPrinter = resolvePrinterForOutput('runner', branch_id, {
+    deviceId: deviceId || order?.linked_pos_device || '',
+    legacyId: 'runner',
+    preferDevice: true,
+  });
   if (!runnerPrinter) {
     logSystem({
       level: 'warn', source: 'printer', eventType: 'runner_printer_missing',
