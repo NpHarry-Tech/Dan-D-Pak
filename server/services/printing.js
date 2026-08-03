@@ -10,13 +10,14 @@ import { db, uid, now, audit } from '../db.js';
 import { emit } from '../realtime.js';
 import { env } from '../config/env.js';
 import { getPrintConfig } from './settings.js';
+import { moneyToWords } from './history.js';
 import { listSystemPrinters, getAgentDevices } from './system.js';
 import { logSystem } from './systemLogs.js';
 import { receiptTaxNote } from './tax.js';
 
 const execFileAsync = promisify(execFile);
 const STATION_PRINTER = { kitchen: 'kitchen', salad: 'kitchen', bar: 'bar', beverage: 'bar' };
-const ESC_INIT = Buffer.from([0x1b, 0x40]);
+const ESC_INIT = Buffer.from([0x1b, 0x40, 0x1c, 0x2e]);
 const ESC_CUT = Buffer.from([0x1d, 0x56, 0x42, 0x00]);
 const ESC_DRAWER = Buffer.from([0x1b, 0x70, 0x00, 0x19, 0xfa]);
 
@@ -307,7 +308,7 @@ function ascii(s) {
 }
 
 function center(text, width = 40) {
-  const s = ascii(text).slice(0, width);
+  const s = String(text ?? '').trim().slice(0, width);
   const pad = Math.max(0, Math.floor((width - s.length) / 2));
   return ' '.repeat(pad) + s;
 }
@@ -317,7 +318,7 @@ function line(ch = '-', width = 40) {
 }
 
 function wrap(text, width = 40) {
-  const words = ascii(text).replace(/\s+/g, ' ').trim().split(' ').filter(Boolean);
+  const words = String(text ?? '').replace(/\s+/g, ' ').trim().split(' ').filter(Boolean);
   const rows = [];
   let cur = '';
   for (const w of words) {
@@ -340,7 +341,7 @@ function promoText(promo, { thermal = false } = {}) {
   const amount = Math.max(0, Math.round(Number(promo.amount) || 0));
   const freeUnits = Math.max(0, Math.round(Number(promo.free_units) || 0));
   const parts = [];
-  if (amount > 0) parts.push(`giam ${thermal ? danMoney(amount) : money(amount)}`);
+  if (amount > 0) parts.push(`giam ${money(amount)}`);
   if (freeUnits > 0) {
     const product = promo.free_product_name || 'san pham';
     parts.push(`tang ${freeUnits} ${product}`);
@@ -456,19 +457,27 @@ function reprintMarkFor() {
   return ' (in lại)';
 }
 
-function markReceiptReprint(text = '') {
+export function markReceiptReprint(text = '') {
   const rows = String(text || '').split('\n');
   let marked = false;
   for (let i = 0; i < rows.length; i++) {
-    const key = ascii(rows[i]).toUpperCase();
-    if (!marked && key.includes('HOA DON') && !key.includes('SO HOA DON') && !key.includes('IN LAI')) {
-      rows[i] += reprintMarkFor(rows[i]);
+    const raw = rows[i];
+    const key = ascii(raw).toUpperCase();
+    if (key.includes('IN LAI')) {
       marked = true;
+      break;
+    }
+    if (!marked && key.includes('HOA DON') && !key.includes('SO HOA DON') && !key.includes('MA HD') && !key.includes('CONG TY') && !key.includes('CÔNG TY')) {
+      const label = (raw.includes('HÓA ĐƠN') || raw.includes('Thanh toán')) ? ' (IN LẠI)' : ' (IN LAI)';
+      rows[i] = raw + label;
+      marked = true;
+      break;
     }
   }
   if (!marked) {
-    const i = rows.findIndex(row => ascii(row).trim());
-    if (i >= 0 && !ascii(rows[i]).toUpperCase().includes('IN LAI')) rows[i] += reprintMarkFor(rows[i]);
+    const dashIdx = rows.findIndex(r => r.includes('---') || r.includes('==='));
+    const insertAt = dashIdx >= 0 ? dashIdx + 1 : 1;
+    rows.splice(insertAt, 0, center('HÓA ĐƠN THANH TOÁN (IN LẠI)', 40));
   }
   return rows.join('\n');
 }
@@ -582,8 +591,8 @@ function receiptVars(p = {}, widthOverride = 0) {
     const nameLines = wrap(i.name || '', W);
     const figures = ' '.repeat(Math.max(0, nameW))
       + ' ' + String(qty).padStart(2)
-      + ' ' + danMoney(price).padStart(9)
-      + ' ' + danMoney(price * qty).padStart(10);
+      + ' ' + money(price).padStart(11)
+      + ' ' + money(price * qty).padStart(12);
     const promo = promoText(i.promo, { thermal: true });
     const promoLines = promo ? wrap(`  KM: ${promo}`, W) : [];
     return [...nameLines, figures, ...promoLines].join('\n');
@@ -610,7 +619,7 @@ function receiptVars(p = {}, widthOverride = 0) {
   const billNo = p.bill_no || p.number || '';
 
   const paymentLines = lines.length
-    ? lines.map(l => rightPad(`${danMethod(l.method)}(VND) - ${danMoney(l.amount)}`, W)).join('\n')
+    ? lines.map(l => rightPad(`${danMethod(l.method)}(VND) - ${money(l.amount)}`, W)).join('\n')
     : '';
 
   const customer = p.customer || {};
@@ -656,19 +665,19 @@ function receiptVars(p = {}, widthOverride = 0) {
     timeOut: p.paid_at ? danDateTime(p.paid_at) : '',
     items,
     subtotal: money(subtotal),
-    subtotalLine: labelValue('THANH TIEN:', danMoney(subtotal), W),
+    subtotalLine: labelValue('THANH TIEN:', money(subtotal), W),
     vatAmount: money(vatAmount),
-    vatLine: vatAmount > 0 ? labelValue('TRONG DO VAT:', danMoney(vatAmount), W) : '',
+    vatLine: vatAmount > 0 ? labelValue('TRONG DO VAT:', money(vatAmount), W) : '',
     orderPromoName,
     orderPromoAmount: money(orderDiscount),
-    orderPromoLine: orderDiscount > 0 ? labelValue(`${orderPromoName}:`, `-${danMoney(orderDiscount)}`, W) : '',
+    orderPromoLine: orderDiscount > 0 ? labelValue(`${orderPromoName}:`, `-${money(orderDiscount)}`, W) : '',
     total: money(total),
     grandTotal: money(total),
-    totalLine: labelValue('TONG TIEN:', danMoney(total), W),
-    grandTotalLine: labelValue('TONG CONG:', danMoney(total), W),
+    totalLine: labelValue('TONG TIEN:', money(total), W),
+    grandTotalLine: labelValue('TONG CONG:', money(total), W),
     paymentLines,
-    paidLine: labelValue('Tien khach dua:', danMoney(paid), W),
-    changeLine: labelValue('Tien tra khach:', danMoney(change), W),
+    paidLine: labelValue('Tien khach dua:', money(paid), W),
+    changeLine: labelValue('Tien tra khach:', money(change), W),
     method: lines.map(l => methodLabel(l.method)).join(', '),
     footer,
     footerC: center(footer, W),
@@ -707,7 +716,6 @@ function labelVars(p = {}) {
 
 // ---- Dan "HÓA ĐƠN THANH TOÁN" thermal receipt (42-col, ESC/POS ASCII) ----
 const DAN_W = 42, DAN_NAME = 17, DAN_QTY = 2, DAN_PRICE = 9, DAN_AMT = 10;
-function danMoney(n) { return (Math.round(Number(n) || 0)).toLocaleString('en-US').replace(/,/g, ' '); }
 function danMethod(m) {
   return { cash: 'TIEN MAT', card: 'THE', visa: 'THE', qrcode: 'TRANSFER', qr: 'TRANSFER', bank_transfer: 'TRANSFER', internet_banking: 'TRANSFER', momo: 'MOMO', zalopay: 'ZALOPAY', voucher: 'VOUCHER' }[m] || (m ? String(m).toUpperCase() : 'TIEN MAT');
 }
@@ -730,8 +738,8 @@ function danItemRow(i = {}) {
   const nameLines = wrap(i.name || '', DAN_W);
   const figures = ' '.repeat(DAN_NAME)
     + ' ' + String(qty).padStart(DAN_QTY)
-    + ' ' + danMoney(price).padStart(DAN_PRICE)
-    + ' ' + danMoney(price * qty).padStart(DAN_AMT);
+    + ' ' + money(price).padStart(DAN_PRICE + 2)
+    + ' ' + money(price * qty).padStart(DAN_AMT + 2);
   const promo = promoText(i.promo, { thermal: true });
   const promoLines = promo ? wrap(`  KM: ${promo}`, DAN_W) : [];
   return [...nameLines, figures, ...promoLines].join('\n');
@@ -741,74 +749,98 @@ function danItemRow(i = {}) {
 // hành vi cũ. Máy POS cầm tay (Sunmi 58mm) truyền 32 vào, máy để bàn K80 truyền
 // 48 — hai máy cùng chi nhánh nhưng khác khổ giấy, không thể dùng chung một số.
 function renderReceipt(p = {}, W = 40) {
-  // HAI CỘT TIỀN chia theo bề ngang thật, không cắm cứng 22+18.
-  // Cắm cứng thì khổ nào cũng ra đúng 40 ký tự: giấy 58mm (32 ký tự) bị tràn,
-  // giấy K80 (48 ký tự) thì bỏ phí 8 ký tự bên phải.
-  const cotPhai = Math.max(10, Math.round(W * 0.45)); // W=40 -> 18, giữ như cũ
+  const cotPhai = Math.max(12, Math.round(W * 0.45));
   const cotTrai = Math.max(8, W - cotPhai);
   const tpl = p.print_config?.templates?.bill;
-  // Mẫu do cửa hàng thiết kế cũng phải co theo khổ giấy THẬT của máy in.
-  const opt = { title: 'HOA DON', widthChars: W };
+  const opt = { title: 'HÓA ĐƠN THANH TOÁN', widthChars: W };
   if (tpl?.rows?.length) return renderTemplateRows(tpl, receiptVars(p, W), opt);
   if (tpl?.elements?.length) return renderTemplateText(tpl, receiptVars(p, W), opt);
   const cfg = p.print_config?.bill || {};
   const rows = [];
   
-  if (cfg.storeName || p.branch || 'DAN D PAK') {
-    const wrapped = wrap(cfg.storeName || p.branch || 'DAN D PAK', W);
-    for (const lineText of wrapped) {
+  const storeName = p.company?.name || cfg.storeName || p.branch || 'DAN D PAK';
+  if (storeName) {
+    for (const lineText of wrap(storeName, W)) {
       rows.push(center(lineText, W));
     }
   }
   
-  if (cfg.address) {
-    const wrapped = wrap(cfg.address, W);
-    for (const lineText of wrapped) {
+  const address = p.company?.address || cfg.address;
+  if (address) {
+    for (const lineText of wrap(address, W)) {
       rows.push(center(lineText, W));
     }
   }
   
   rows.push(line('-', W));
   if (p.preview) {
-    rows.push(center('HOA DON TAM TINH', W));
+    rows.push(center('HÓA ĐƠN TẠM TÍNH', W));
   } else {
-    rows.push(center(`HOA DON #${p.number || ''}`, W));
+    let titleText = 'HÓA ĐƠN THANH TOÁN';
+    if (isReprintPayload(p)) titleText += ' (IN LẠI)';
+    rows.push(center(titleText, W));
+    const billNo = p.number || p.bill_no;
+    if (billNo) {
+      rows.push(center(`Mã HD: #${billNo}`, W));
+    }
   }
   if (p.table_code) {
-    rows.push(center(`Ban ${p.table_code}`, W));
+    rows.push(center(`Bàn ${p.table_code}`, W));
   }
   rows.push(line('-', W));
   
+  const wQty = 4;
+  const wPrice = Math.max(10, Math.floor((W - wQty) / 2));
+  const wTotal = W - wQty - wPrice;
+  rows.push('SL'.padEnd(wQty) + 'ĐƠN GIÁ'.padStart(wPrice) + 'THÀNH TIỀN'.padStart(wTotal));
+  
   for (const i of p.items || []) {
     const qty = Number(i.qty) || 1;
-    const price = Number(i.unit_price) || 0;
-    rows.push(...wrap(`${qty}x ${i.name || ''}`, Math.max(12, W - 10)));
-    rows.push(`${money(price)} x ${qty}`.padEnd(cotTrai) + money(price * qty).padStart(cotPhai));
+    const price = Number(i.unit_price ?? i.price) || 0;
+    rows.push(...wrap(i.name || '', W));
+    rows.push(String(qty).padEnd(wQty) + money(price).padStart(wPrice) + money(price * qty).padStart(wTotal));
     const promo = promoText(i.promo);
     if (promo) rows.push(...wrap(`  KM: ${promo}`, W));
   }
   
   rows.push(line('-', W));
+  const subtotal = Number(p.subtotal ?? p.total) || 0;
   const vatAmount = Number(p.vat_amount ?? p.tax?.vat_amount) || 0;
-  rows.push('THANH TIEN'.padEnd(cotTrai) + money(p.subtotal || 0).padStart(cotPhai));
-  if (vatAmount > 0) rows.push('TRONG DO VAT'.padEnd(cotTrai) + money(vatAmount).padStart(cotPhai));
+  rows.push('TỔNG CỘNG:'.padEnd(cotTrai) + money(subtotal).padStart(cotPhai));
+  if (vatAmount > 0) rows.push('VAT:'.padEnd(cotTrai) + money(vatAmount).padStart(cotPhai));
   const orderDiscount = orderWideDiscount(p);
   if (orderDiscount > 0) {
-    const label = p.voucher?.name || p.voucher_code || 'KM TOAN BILL';
+    const label = p.voucher?.name || p.voucher_code || 'GIẢM GIÁ:';
     rows.push(...wrap(label, Math.max(10, W - 18)).map((x, idx) => idx === 0
       ? x.padEnd(cotTrai) + ('-' + money(orderDiscount)).padStart(cotPhai)
       : x));
   }
-  rows.push('TONG CONG'.padEnd(cotTrai) + money(p.total || 0).padStart(cotPhai));
+  rows.push('TỔNG TIỀN:'.padEnd(cotTrai) + money(p.total || 0).padStart(cotPhai));
   if (Array.isArray(p.lines) && p.lines.length) {
     for (const l of p.lines) {
-      rows.push(`${methodLabel(l.method)}`.padEnd(cotTrai) + money(l.amount).padStart(cotPhai));
+      rows.push(`${methodLabel(l.method)}:`.padEnd(cotTrai) + money(l.amount).padStart(cotPhai));
     }
   }
-  rows.push(line('-', W));
-  if (p.note) rows.push(...wrap(`Ghi chu: ${p.note}`, W));
+  const change = Number(p.change) || 0;
+  if (change > 0) {
+    rows.push('TIỀN THỪA:'.padEnd(cotTrai) + money(change).padStart(cotPhai));
+  }
   
-  const footerText = cfg.footer || 'Cam on quy khach';
+  const totalAmount = Number(p.total) || 0;
+  const words = p.total_words || moneyToWords(totalAmount);
+  if (words) {
+    rows.push(line('-', W));
+    rows.push('Bằng chữ:');
+    const cleanWords = words.endsWith('.') ? words : `${words}.`;
+    for (const wordLine of wrap(cleanWords, W)) {
+      rows.push(wordLine);
+    }
+  }
+
+  rows.push(line('-', W));
+  if (p.note) rows.push(...wrap(`Ghi chú: ${p.note}`, W));
+  
+  const footerText = cfg.footer || 'Cảm ơn quý khách và hẹn gặp lại';
   const wrappedFooter = wrap(footerText, W);
   for (const lineText of wrappedFooter) {
     rows.push(center(lineText, W));
@@ -834,7 +866,7 @@ function renderGeneric(job, W = 40) {
     ['Ghi chú', p.note],
   ];
   for (const [label, value] of fields) {
-    if (value) rows.push(...wrap(`${label}: ${value}`, W));
+    if (value) rows.push(...wrap(`${ascii(label)}: ${ascii(value)}`, W));
   }
   return rows.join('\n');
 }

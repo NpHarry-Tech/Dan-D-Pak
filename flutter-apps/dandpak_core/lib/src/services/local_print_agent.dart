@@ -195,8 +195,8 @@ class LocalPrintAgent {
         isMax || d == 'dark' || d.contains('dam') || d.contains('bold');
 
     final bytes = <int>[];
-    // ESC @ (Init)
-    bytes.addAll([0x1b, 0x40]);
+    // ESC @ (Init) & FS . (Cancel Kanji Mode - prevent Chinese characters)
+    bytes.addAll([0x1b, 0x40, 0x1c, 0x2e]);
     // ESC ! 0, GS ! 0, ESC a 0, ESC 2 (Reset)
     bytes.addAll([0x1b, 0x21, 0x00, 0x1d, 0x21, 0x00, 0x1b, 0x61, 0x00, 0x1b, 0x32]);
     // Double-strike / Bold density prefix
