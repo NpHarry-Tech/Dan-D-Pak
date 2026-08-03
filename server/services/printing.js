@@ -794,7 +794,13 @@ function renderReceipt(p = {}, W = 40) {
   const wTotal = W - wQty - wPrice;
   rows.push('SL'.padEnd(wQty) + 'ĐƠN GIÁ'.padStart(wPrice) + 'THÀNH TIỀN'.padStart(wTotal));
   
-  for (const i of p.items || []) {
+  const items = p.items || [];
+  const itemDivider = center('-'.repeat(Math.max(10, Math.floor(W * 0.5))), W);
+  for (let idx = 0; idx < items.length; idx++) {
+    if (idx > 0) {
+      rows.push(itemDivider);
+    }
+    const i = items[idx];
     const qty = Number(i.qty) || 1;
     const price = Number(i.unit_price ?? i.price) || 0;
     rows.push(...wrap(i.name || '', W));

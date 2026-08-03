@@ -64,6 +64,9 @@ test('Golden Receipt Parity & Formatter Validation', () => {
   // Verify Amount in Words line
   assert.ok(receiptText.includes('Bằng chữ:'));
   assert.ok(receiptText.includes('Một trăm nghìn đồng.'));
+
+  // Verify centered item divider line between items
+  assert.ok(receiptText.includes('----------------'));
 });
 
 test('markReceiptReprint does not append (IN LẠI) to store or company name', () => {
