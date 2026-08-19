@@ -1,9 +1,16 @@
 import 'package:flutter/material.dart';
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:flutter/services.dart' show Clipboard, ClipboardData;
+import 'package:provider/provider.dart';
 
 import '../../app_defaults.dart';
+import '../../providers/auth_provider.dart';
 import '../../services/api_service.dart';
+import '../../ui/file_pick.dart';
 import '../../ui/app_theme.dart';
+import 'settings_erp_panel.dart';
 import 'settings_tab.dart';
 import 'settings_value_utils.dart';
 import '../../utils/translation.dart';
@@ -21,7 +28,8 @@ bool _isSecret(String key) =>
     RegExp(r'password|secret|apikey|checksum|token', caseSensitive: false)
         .hasMatch(key);
 bool _isMaskedSecretValue(String value) =>
-    value.trim().startsWith('********') || RegExp(r'^•{4,}').hasMatch(value.trim());
+    value.trim().startsWith('********') ||
+    RegExp(r'^•{4,}').hasMatch(value.trim());
 
 // ── Integrations ─────────────────────────────────────────────────────────
 
@@ -57,6 +65,13 @@ List<IntegrationDef> get _integrationDefs => [
           type: 'misa',
           imageAsset: 'assets/brand/MISA.jpg'),
       IntegrationDef(
+          key: 'erp',
+          icon: '🧩',
+          name: 'Business Central',
+          desc: t(
+              'Đồng bộ bán hàng sang Microsoft Dynamics 365 Business Central.'),
+          type: 'erp'),
+      IntegrationDef(
           key: 'payos',
           icon: '💳',
           name: 'payOS',
@@ -74,6 +89,17 @@ List<IntegrationDef> get _integrationDefs => [
           type: 'vietqr',
           channel: 'vietqr',
           imageAsset: 'assets/brand/vietqr.png'),
+      // QR TINH — phuong an TAM khi chua dau noi cong thanh toan theo phap
+      // nhan. Dat canh VietQR vi cung tra loi mot cau hoi "khach quet gi de
+      // chuyen khoan", chi khac: QR dong sinh theo tung bill va tu doi soat,
+      // QR tinh thi KHONG — cua hang doi soat bang mat.
+      IntegrationDef(
+          key: 'static_qr',
+          icon: '🧾',
+          name: t('Mã QR tĩnh (đối soát tay)'),
+          desc: t(
+              'Ảnh QR cố định của cửa hàng, hiện trên màn khách catalogue khi chưa đấu nối được cổng thanh toán. Không tự đối soát.'),
+          type: 'static_qr'),
       IntegrationDef(
           key: 'sepay',
           icon: '🏦',
@@ -140,10 +166,69 @@ List<IntegrationDef> get _integrationDefs => [
           key: 'haravan',
           icon: 'H',
           name: 'Haravan',
-          desc: t('Haravan: đồng bộ khách hàng, sản phẩm và tồn kho. Đơn hàng được quản lý trực tiếp trên Haravan.'),
+          desc: t(
+              'Haravan: đồng bộ khách hàng, sản phẩm và tồn kho. Đơn hàng được quản lý trực tiếp trên Haravan.'),
           type: 'haravan',
           channel: 'haravan',
           imageAsset: 'assets/brand/Haravan.png'),
+      // ── Sàn TMĐT (Dan D Pak Omni) — kết nối đơn/hàng/tồn qua Open Platform ──
+      IntegrationDef(
+          key: 'shopee',
+          icon: '🛍️',
+          name: 'Shopee',
+          desc: t(
+              'Shopee Open Platform: nhận đơn, đồng bộ hàng hóa và tồn kho. Cần Partner ID + Shop được ủy quyền.'),
+          type: 'marketplace',
+          channel: 'shopee'),
+      IntegrationDef(
+          key: 'tiktokshop',
+          icon: '🎵',
+          name: 'TikTok Shop',
+          desc: t(
+              'TikTok Shop Partner: nhận đơn, đồng bộ hàng và tồn. Cần app được ủy quyền và shop cipher.'),
+          type: 'marketplace',
+          channel: 'tiktokshop'),
+      IntegrationDef(
+          key: 'lazada',
+          icon: '🛒',
+          name: 'Lazada',
+          desc: t(
+              'Lazada Open Platform: nhận đơn và đồng bộ sản phẩm/tồn kho. Cần App Key/Secret và seller token.'),
+          type: 'marketplace',
+          channel: 'lazada'),
+      IntegrationDef(
+          key: 'tiki',
+          icon: '🔷',
+          name: 'Tiki',
+          desc: t(
+              'Tiki Integration: nhận đơn và đồng bộ hàng hóa/tồn. Cần Client ID/Secret của seller.'),
+          type: 'marketplace',
+          channel: 'tiki'),
+      // ── Mạng xã hội — hội thoại đa kênh Dan D Pak Omni ─────────────────────
+      IntegrationDef(
+          key: 'facebook',
+          icon: '📘',
+          name: 'Facebook Messenger',
+          desc: t(
+              'Nhận tin nhắn Trang qua Meta webhook (X-Hub-Signature-256). Cần Meta App, Page token và Advanced Access.'),
+          type: 'social',
+          channel: 'facebook'),
+      IntegrationDef(
+          key: 'instagram',
+          icon: '📷',
+          name: 'Instagram',
+          desc: t(
+              'Nhận tin nhắn Instagram Professional qua Meta webhook. Cần tài khoản Professional và Advanced Access.'),
+          type: 'social',
+          channel: 'instagram'),
+      IntegrationDef(
+          key: 'zalooa',
+          icon: '💬',
+          name: 'Zalo OA',
+          desc: t(
+              'Zalo Official Account OpenAPI + webhook. Cần OA App, access token và webhook secret được cấp.'),
+          type: 'social',
+          channel: 'zalooa'),
     ];
 
 Map<String, List<String>> _channelTextFields = {
@@ -217,6 +302,70 @@ Map<String, List<String>> _channelTextFields = {
     'apiBase',
     'defaultBranchId'
   ],
+  'shopee': [
+    'partnerId',
+    'shopId',
+    'secretKey',
+    'accessToken',
+    'refreshToken',
+    'webhookSecret',
+    'apiBase'
+  ],
+  'tiktokshop': [
+    'appId',
+    'shopId',
+    'shopCipher',
+    'secretKey',
+    'accessToken',
+    'refreshToken',
+    'webhookSecret',
+    'apiBase'
+  ],
+  'lazada': [
+    'appId',
+    'sellerId',
+    'secretKey',
+    'accessToken',
+    'refreshToken',
+    'webhookSecret',
+    'apiBase'
+  ],
+  'tiki': [
+    'sellerId',
+    'clientId',
+    'clientSecret',
+    'accessToken',
+    'refreshToken',
+    'webhookSecret',
+    'apiBase'
+  ],
+  'facebook': [
+    'appId',
+    'pageId',
+    'clientSecret',
+    'accessToken',
+    'verifyToken',
+    'apiBase'
+  ],
+  'instagram': [
+    'appId',
+    'igUserId',
+    'pageId',
+    'clientSecret',
+    'accessToken',
+    'verifyToken',
+    'apiBase'
+  ],
+  'zalooa': [
+    'oaId',
+    'appId',
+    'secretKey',
+    'accessToken',
+    'refreshToken',
+    'webhookSecret',
+    'verifyToken',
+    'apiBase'
+  ],
 };
 
 String _fieldLabel(String key) {
@@ -251,6 +400,22 @@ String _fieldLabel(String key) {
       return 'Webhook Verify Token';
     case 'accessToken':
       return 'Access Token';
+    case 'refreshToken':
+      return 'Refresh Token';
+    case 'partnerId':
+      return 'Partner ID';
+    case 'shopId':
+      return 'Shop ID';
+    case 'shopCipher':
+      return 'Shop Cipher';
+    case 'sellerId':
+      return 'Seller ID';
+    case 'pageId':
+      return 'Page ID';
+    case 'igUserId':
+      return 'Instagram User ID';
+    case 'oaId':
+      return 'Zalo OA ID';
     case 'locationId':
       return 'Haravan Location ID';
     case 'shopDomain':
@@ -270,12 +435,13 @@ String _fieldLabel(String key) {
     case 'clientSecret':
       return 'Client Secret';
     default:
-  return _prettyField(key);
-}
+      return _prettyField(key);
+  }
 }
 
 Widget _integrationLogo(IntegrationDef def, double size, double fallbackSize) {
-  final url = def.imageUrl == null ? null : '${DanDpakDefaults.baseUrl}${def.imageUrl}';
+  final url =
+      def.imageUrl == null ? null : '${DanDpakDefaults.baseUrl}${def.imageUrl}';
   Widget fallback() => Text(def.icon, style: TextStyle(fontSize: fallbackSize));
   if (url != null) {
     return ClipRRect(
@@ -320,11 +486,25 @@ class _IntegrationsPanelState extends State<IntegrationsPanel> {
   String? _testingKey;
   String? _error;
   String _selectedKey = 'misa';
+  bool _haravanBusy = false;
+
+  /// Mẫu hóa đơn MISA trả về ở lần "Kiểm tra kết nối" gần nhất.
+  /// KHÔNG hard-code danh sách này — mẫu là do doanh nghiệp khai trên MISA.
+  List<Map<String, dynamic>> _misaTemplates = const [];
+  String _misaStatus = '';
+
+  /// Cấu hình màn khách catalogue — chỉ dùng cho mục "Mã QR tĩnh". Nằm ở
+  /// endpoint riêng (/settings/catalogue) chứ không thuộc bảng liên kết, vì nó
+  /// không phải một cổng thanh toán có khoá API và webhook.
+  Map<String, dynamic> _catalogueCfg = const {};
+  final _qrNoteCtrl = TextEditingController();
+  bool _uploadingQr = false;
 
   @override
   void initState() {
     super.initState();
     _load();
+    _loadCatalogueCfg();
   }
 
   @override
@@ -332,7 +512,89 @@ class _IntegrationsPanelState extends State<IntegrationsPanel> {
     for (final c in _ctrls.values) {
       c.dispose();
     }
+    _qrNoteCtrl.dispose();
     super.dispose();
+  }
+
+  /// QR tĩnh nằm trong CẤU HÌNH THANH TOÁN, không phải cấu hình catalogue.
+  ///
+  /// Nó là một phương thức thanh toán của cửa hàng: bật lên là hiện ở màn phụ,
+  /// iPad self-order, catalogue và POS. Cất riêng trong catalogue thì ba màn kia
+  /// không thấy, và người đi tìm chỗ cấu hình thanh toán cũng không nghĩ tới đó.
+  Future<void> _loadCatalogueCfg() async {
+    try {
+      final app = Map<String, dynamic>.from(await widget.api.getAppSettings());
+      final ops = app['operations_config'];
+      final pay = (ops is Map && ops['payment'] is Map)
+          ? Map<String, dynamic>.from(ops['payment'] as Map)
+          : <String, dynamic>{};
+      if (!mounted) return;
+      setState(() {
+        _catalogueCfg = pay;
+        _qrNoteCtrl.text = asText(pay['staticQrNote']);
+      });
+    } catch (_) {
+      // Chưa đọc được thì thôi — mục QR tĩnh vẫn mở được để tải ảnh lên.
+    }
+  }
+
+  /// Ghi một khoá vào operations_config.payment mà KHÔNG đụng các khoá khác.
+  Future<void> _luuThanhToan(Map<String, dynamic> patch) async {
+    final app = Map<String, dynamic>.from(await widget.api.getAppSettings());
+    final ops = app['operations_config'] is Map
+        ? Map<String, dynamic>.from(app['operations_config'] as Map)
+        : <String, dynamic>{};
+    final pay = ops['payment'] is Map
+        ? Map<String, dynamic>.from(ops['payment'] as Map)
+        : <String, dynamic>{};
+    ops['payment'] = {...pay, ...patch};
+    await widget.api.saveAppSettings({'operations_config': ops});
+  }
+
+  Future<void> _uploadStaticQr() async {
+    final path =
+        await pickImagePathCross(title: t('Chọn ảnh mã QR'), context: context);
+    if (path == null || path.isEmpty) return;
+    setState(() => _uploadingQr = true);
+    try {
+      final bytes = await File(path).readAsBytes();
+      final name = path.split(RegExp(r'[\/]')).last;
+      final n = name.toLowerCase();
+      await widget.api.uploadCatalogueQr(
+        originalName: name,
+        mimeType: n.endsWith('.png')
+            ? 'image/png'
+            : (n.endsWith('.webp') ? 'image/webp' : 'image/jpeg'),
+        base64Data: base64Encode(bytes),
+      );
+      if (!mounted) return;
+      setState(() => _uploadingQr = false);
+      await _loadCatalogueCfg();
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _uploadingQr = false);
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(e.toString().replaceFirst('Exception: ', '')),
+        backgroundColor: DanColors.late,
+      ));
+    }
+  }
+
+  Future<void> _saveQrNote() async {
+    setState(() => _uploadingQr = true);
+    try {
+      await _luuThanhToan({'staticQrNote': _qrNoteCtrl.text.trim()});
+      if (!mounted) return;
+      setState(() => _uploadingQr = false);
+      await _loadCatalogueCfg();
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _uploadingQr = false);
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(e.toString().replaceFirst('Exception: ', '')),
+        backgroundColor: DanColors.late,
+      ));
+    }
   }
 
   Future<void> _load() async {
@@ -377,7 +639,7 @@ class _IntegrationsPanelState extends State<IntegrationsPanel> {
           conf['syncInvoices'] ??= true;
           conf['syncCustomers'] ??= true;
         } else if (key == 'haravan') {
-          conf['syncOrders'] ??= false;
+          conf['syncOrders'] ??= true;
           conf['syncCustomers'] ??= true;
           conf['syncProducts'] ??= true;
           conf['syncInventory'] ??= true;
@@ -506,6 +768,29 @@ class _IntegrationsPanelState extends State<IntegrationsPanel> {
       final res = await widget.api.testIntegration(def.key, testCfg);
       if (!mounted) return;
 
+      // MISA: kiểm tra kết nối cũng chính là lúc TẢI VỀ danh sách mẫu hóa đơn
+      // và thông tin doanh nghiệp. Giữ lại để người dùng chọn mẫu ngay, không
+      // phải bấm thêm nút nào nữa.
+      if (def.key == 'misa') {
+        setState(() {
+          _misaTemplates = (res['templates'] as List?)
+                  ?.whereType<Map>()
+                  .map((e) => Map<String, dynamic>.from(e))
+                  .toList() ??
+              const [];
+          final c = res['company'];
+          if (c is Map) {
+            _channels['misa']?['companyName'] = c['name'] ?? '';
+            final coMa = c['invoiceWithCode'];
+            if (coMa is bool) {
+              _channels['misa']?['invoiceCodeType'] =
+                  coMa ? 'WITH_CODE' : 'WITHOUT_CODE';
+            }
+          }
+          _misaStatus = '${res['status'] ?? ''}';
+        });
+      }
+
       final ok = res['ok'] != false;
       final msg = res['message'] ??
           (ok ? t('Kết nối thành công!') : t('Kết nối thất bại.'));
@@ -566,8 +851,7 @@ class _IntegrationsPanelState extends State<IntegrationsPanel> {
   /// giao đồ ăn/website dùng chung cổng vào của module "Kênh online".
   String _channelWebhookUrl(IntegrationDef def) {
     final base = widget.api.baseUrl;
-    final branch =
-        Uri.encodeQueryComponent(widget.api.branchId?.trim() ?? '');
+    final branch = Uri.encodeQueryComponent(widget.api.branchId?.trim() ?? '');
     final scope = branch.isEmpty ? '' : '?branch_id=$branch';
     switch (def.key) {
       case 'payos':
@@ -717,8 +1001,7 @@ class _IntegrationsPanelState extends State<IntegrationsPanel> {
   }
 
   /// Lưới ô nhập "CẤU HÌNH CHI TIẾT" — danh sách field lấy từ _channelTextFields.
-  Widget _buildConfigFields(
-      IntegrationDef def, Map conf, List<String> fields) {
+  Widget _buildConfigFields(IntegrationDef def, Map conf, List<String> fields) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -753,8 +1036,8 @@ class _IntegrationsPanelState extends State<IntegrationsPanel> {
                     savedMask != null ? FloatingLabelBehavior.always : null,
                 suffixIcon: savedMask != null
                     ? Tooltip(
-                        message: t(
-                            'Đã lưu trên server — để trống nếu giữ nguyên'),
+                        message:
+                            t('Đã lưu trên server — để trống nếu giữ nguyên'),
                         child: Icon(Icons.check_circle,
                             size: 18, color: Color(0xFF10B981)),
                       )
@@ -769,6 +1052,184 @@ class _IntegrationsPanelState extends State<IntegrationsPanel> {
   }
 
   /// Ô "GHI CHÚ NỘI BỘ" — không gửi cho đối tác, chỉ phục vụ đối soát nội bộ.
+  /// KHỐI ĐIỀU KHIỂN RIÊNG CỦA MISA.
+  ///
+  /// Những mục ở đây đều là ĐIỀU KIỆN BẮT BUỘC để được phép phát hành hóa đơn
+  /// (xem `activationBlockers` phía server). Trước đây chúng có trong lược đồ
+  /// cấu hình nhưng KHÔNG có ô nhập nào trên màn hình, nên người dùng điền đủ
+  /// tài khoản mà hệ thống vẫn không bao giờ phát hành được — và không báo lỗi,
+  /// vì đó không phải lỗi, chỉ là "chưa cấu hình xong".
+  Widget _buildMisaControls(Map<String, dynamic> conf) {
+    Widget chon(String key, String nhan, Map<String, String> luaChon,
+        {String? goiY}) {
+      final hienTai = asText(conf[key]);
+      final hopLe = luaChon.containsKey(hienTai) ? hienTai : null;
+      return Padding(
+        padding: EdgeInsets.only(bottom: 12),
+        child: DropdownButtonFormField<String>(
+          initialValue: hopLe,
+          isExpanded: true,
+          decoration: InputDecoration(
+              labelText: t(nhan),
+              isDense: true,
+              helperText: goiY == null ? null : t(goiY),
+              helperMaxLines: 3),
+          items: [
+            for (final e in luaChon.entries)
+              DropdownMenuItem(value: e.key, child: Text(t(e.value))),
+          ],
+          onChanged: (v) => setState(() => conf[key] = v),
+        ),
+      );
+    }
+
+    final mauDaTai = _misaTemplates;
+    final mauDangChon = asText(conf['templateId']);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(t('CẤU HÌNH HÓA ĐƠN'),
+            style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w900,
+                letterSpacing: .5,
+                color: DanColors.faint)),
+        SizedBox(height: 10),
+
+        chon(
+            'environment',
+            'Môi trường',
+            {
+              'sandbox': 'Sandbox / Thử nghiệm',
+              'production': 'Production / Chính thức',
+            },
+            goiY:
+                'Để trống Địa chỉ API thì hệ thống tự dùng đúng máy chủ của môi trường đã chọn.'),
+
+        chon('integrationType', 'Loại API MISA', {
+          'MISA_API_V3': 'meInvoice API v3',
+          'UNCONFIRMED': 'Chưa xác nhận',
+        }),
+
+        chon(
+            'invoiceType',
+            'Loại nghiệp vụ hóa đơn',
+            {
+              'CASH_REGISTER': 'Hóa đơn khởi tạo từ máy tính tiền',
+              'VAT': 'Hóa đơn GTGT',
+              'SALES': 'Hóa đơn bán hàng',
+            },
+            goiY: 'Phải khớp với đăng ký của doanh nghiệp với cơ quan thuế.'),
+
+        chon(
+            'taxMethod',
+            'Phương pháp tính thuế',
+            {
+              'CREDIT_METHOD': 'Khấu trừ',
+              'DIRECT_METHOD': 'Trực tiếp',
+              'UNCONFIRMED': 'Chưa xác nhận',
+            },
+            goiY: 'Kế toán phải xác nhận trước khi phát hành hóa đơn thật.'),
+
+        chon('roundingPolicy', 'Quy tắc làm tròn', {
+          'PER_INVOICE': 'Làm tròn theo hóa đơn',
+          'PER_LINE': 'Làm tròn theo từng dòng',
+          'UNCONFIRMED': 'Chưa xác nhận',
+        }),
+
+        // Hình thức có mã / không mã LẤY TỪ MISA và khóa lại — chọn sai là hóa
+        // đơn bị cơ quan thuế từ chối.
+        Padding(
+          padding: EdgeInsets.only(bottom: 12),
+          child: TextField(
+            readOnly: true,
+            controller: TextEditingController(
+                text: asText(conf['invoiceCodeType']) == 'WITHOUT_CODE'
+                    ? t('Không có mã CQT')
+                    : asText(conf['invoiceCodeType']) == 'WITH_CODE'
+                        ? t('Có mã CQT')
+                        : t('Chưa xác định — bấm Kiểm tra kết nối')),
+            decoration: InputDecoration(
+                labelText: t('Hình thức hóa đơn'),
+                isDense: true,
+                helperText: t(
+                    'Lấy tự động từ MISA theo doanh nghiệp, không chỉnh tay.')),
+          ),
+        ),
+
+        // Mẫu hóa đơn: chỉ hiện những mẫu MISA THẬT SỰ trả về.
+        if (mauDaTai.isEmpty)
+          Container(
+            padding: EdgeInsets.all(12),
+            margin: EdgeInsets.only(bottom: 12),
+            decoration: BoxDecoration(
+              color: DanColors.surface2,
+              border: Border.all(color: DanColors.border),
+              borderRadius: BorderRadius.circular(DanRadius.md),
+            ),
+            child: Text(
+                mauDangChon.isEmpty
+                    ? t(
+                        'Chưa có mẫu hóa đơn. Bấm "Kiểm tra kết nối" để tải danh sách mẫu từ MISA.')
+                    : '${t('Đang dùng mẫu')} $mauDangChon · ${t('bấm "Kiểm tra kết nối" để tải lại danh sách')}',
+                style: TextStyle(
+                    fontSize: 12.5, color: DanColors.muted, height: 1.45)),
+          )
+        else
+          Padding(
+            padding: EdgeInsets.only(bottom: 12),
+            child: DropdownButtonFormField<String>(
+              initialValue: mauDaTai.any((m) => asText(m['id']) == mauDangChon)
+                  ? mauDangChon
+                  : null,
+              isExpanded: true,
+              decoration: InputDecoration(
+                  labelText: t('Mẫu hóa đơn'),
+                  isDense: true,
+                  helperText: t(
+                      'Lấy trực tiếp từ MISA. Ký hiệu đi kèm mẫu, không nhập tay.'),
+                  helperMaxLines: 2),
+              items: [
+                for (final m in mauDaTai)
+                  DropdownMenuItem(
+                    value: asText(m['id']),
+                    child: Text('${asText(m['name'])} · ${asText(m['series'])}',
+                        overflow: TextOverflow.ellipsis),
+                  ),
+              ],
+              onChanged: (v) => setState(() {
+                conf['templateId'] = v;
+                // Ký hiệu LUÔN đi theo mẫu — không để hai thứ lệch nhau.
+                final m = mauDaTai.firstWhere((e) => asText(e['id']) == v,
+                    orElse: () => const {});
+                conf['series'] = asText(m['series']);
+              }),
+            ),
+          ),
+
+        if (asText(conf['series']).isNotEmpty)
+          Padding(
+            padding: EdgeInsets.only(bottom: 12),
+            child: Text('${t('Ký hiệu hóa đơn')}: ${asText(conf['series'])}',
+                style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800)),
+          ),
+
+        if (_misaStatus.isNotEmpty)
+          Padding(
+            padding: EdgeInsets.only(bottom: 4),
+            child: Text('${t('Trạng thái cấu hình')}: $_misaStatus',
+                style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                    color: _misaStatus == 'READY'
+                        ? DanColors.done
+                        : DanColors.doing)),
+          ),
+      ],
+    );
+  }
+
   Widget _buildInternalNote(IntegrationDef def) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -809,11 +1270,131 @@ class _IntegrationsPanelState extends State<IntegrationsPanel> {
                 ),
               )
             : Icon(Icons.bolt, size: 16),
-        label: Text(
-            testing ? t('Đang kiểm tra...') : t('Kiểm tra cấu hình')),
+        label: Text(testing ? t('Đang kiểm tra...') : t('Kiểm tra cấu hình')),
       ),
     );
   }
+
+  Future<void> _syncHaravanNow() async {
+    setState(() => _haravanBusy = true);
+    try {
+      final result = await widget.api.syncHaravanNow();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(
+              '${t('Đồng bộ Haravan hoàn tất')}: ${result['queued'] ?? 0} ${t('bản ghi')}')));
+    } catch (e) {
+      if (mounted)
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('$e')));
+    } finally {
+      if (mounted) setState(() => _haravanBusy = false);
+    }
+  }
+
+  Future<void> _showHaravanSessions() async {
+    final sessions = await widget.api.getHaravanSyncSessions();
+    if (!mounted) return;
+    await showDialog<void>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+              title: Text(t('Phiên đồng bộ Haravan')),
+              content: SizedBox(
+                  width: 720,
+                  height: 480,
+                  child: sessions.isEmpty
+                      ? Center(child: Text(t('Chưa có phiên đồng bộ')))
+                      : ListView.separated(
+                          itemCount: sessions.length,
+                          separatorBuilder: (_, __) => Divider(height: 1),
+                          itemBuilder: (_, index) {
+                            final row = Map<String, dynamic>.from(
+                                sessions[index] as Map);
+                            final failed =
+                                (row['failed'] as num?)?.toInt() ?? 0;
+                            final pending =
+                                (row['pending'] as num?)?.toInt() ?? 0;
+                            return ListTile(
+                              leading: Icon(
+                                  failed > 0
+                                      ? Icons.error_outline
+                                      : pending > 0
+                                          ? Icons.sync
+                                          : Icons.check_circle_outline,
+                                  color: failed > 0
+                                      ? Colors.red
+                                      : pending > 0
+                                          ? Colors.orange
+                                          : Colors.green),
+                              title: Text(
+                                  '${row['direction'] == 'outbound' ? t('Gửi lên Haravan') : t('Nhận từ Haravan')} • ${row['total'] ?? 0}'),
+                              subtitle: Text(
+                                  '${row['started_at'] ?? ''}\n${row['topics'] ?? ''}'),
+                              isThreeLine: true,
+                              trailing: failed > 0
+                                  ? Text('$failed ${t('lỗi')}',
+                                      style: TextStyle(color: Colors.red))
+                                  : null,
+                              onTap: () async {
+                                final details = await widget.api
+                                    .getHaravanSyncSessionDetails(
+                                        '${row['id']}');
+                                if (!dialogContext.mounted) return;
+                                await showDialog<void>(
+                                    context: dialogContext,
+                                    builder: (_) => AlertDialog(
+                                          title:
+                                              Text(t('Chi tiết phiên Haravan')),
+                                          content: SizedBox(
+                                              width: 760,
+                                              height: 480,
+                                              child: ListView.builder(
+                                                  itemCount: details.length,
+                                                  itemBuilder: (_, i) {
+                                                    final d = Map<String,
+                                                            dynamic>.from(
+                                                        details[i] as Map);
+                                                    return ListTile(
+                                                        dense: true,
+                                                        title: Text(
+                                                            '${d['topic']} • ${d['status']}'),
+                                                        subtitle: Text(
+                                                            '${d['external_id'] ?? ''}${d['error_message'] == null ? '' : '\n${d['error_message']}'}'));
+                                                  })),
+                                          actions: [
+                                            TextButton(
+                                                onPressed: () => Navigator.pop(
+                                                    dialogContext),
+                                                child: Text(t('Đóng')))
+                                          ],
+                                        ));
+                              },
+                            );
+                          })),
+              actions: [
+                TextButton(
+                    onPressed: () => Navigator.pop(dialogContext),
+                    child: Text(t('Đóng')))
+              ],
+            ));
+  }
+
+  Widget _buildHaravanActions() => Wrap(spacing: 10, runSpacing: 10, children: [
+        FilledButton.icon(
+            onPressed: _haravanBusy ? null : _syncHaravanNow,
+            icon: _haravanBusy
+                ? SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2))
+                : Icon(Icons.sync),
+            label:
+                Text(_haravanBusy ? t('Đang đồng bộ...') : t('Đồng bộ ngay'))),
+        OutlinedButton.icon(
+            onPressed: _showHaravanSessions,
+            icon: Icon(Icons.history),
+            label: Text(t('Xem các phiên đồng bộ'))),
+      ]);
 
   /// Thanh đáy cố định với nút "Lưu kết nối đang chọn" (yêu cầu PIN Manager).
   Widget _buildSaveBar() {
@@ -853,8 +1434,124 @@ class _IntegrationsPanelState extends State<IntegrationsPanel> {
         ),
       );
 
+  /// MÃ QR TĨNH — ảnh cố định của cửa hàng, hiện trên màn khách catalogue.
+  ///
+  /// Cố ý KHÔNG gộp vào luồng VietQR động: QR động sinh theo TỪNG BILL và tự
+  /// đối soát khi tiền về; QR tĩnh thì mọi khách quét cùng một mã, không mang
+  /// số tiền và không có gì để đối chiếu tự động. Trộn hai thứ vào một chỗ là
+  /// sớm muộn có người tưởng đơn đã tự khớp rồi giao hàng nhầm.
+  Widget _buildStaticQrBox() {
+    final url = asText(_catalogueCfg['staticQrUrl']);
+    final base =
+        context.read<AuthProvider>().serverUrl.replaceFirst(RegExp(r'/$'), '');
+    return Container(
+      padding: EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: DanColors.surface,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: DanColors.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (url.isNotEmpty)
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: Image.network(
+                      url.startsWith('http') ? url : '$base$url',
+                      width: 170,
+                      height: 170,
+                      fit: BoxFit.contain,
+                      errorBuilder: (_, __, ___) =>
+                          Icon(Icons.qr_code_2, size: 60)),
+                )
+              else
+                Container(
+                  width: 170,
+                  height: 170,
+                  decoration: BoxDecoration(
+                    color: DanColors.surface2,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child:
+                      Icon(Icons.qr_code_2, size: 52, color: DanColors.faint),
+                ),
+              SizedBox(width: 18),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(t('Khách quét mã này để chuyển khoản, sau đó nhân viên đối soát bằng mắt rồi mới xác nhận đơn.'),
+                        style: TextStyle(
+                            fontSize: 12.5,
+                            color: DanColors.muted,
+                            height: 1.5)),
+                    SizedBox(height: 12),
+                    OutlinedButton.icon(
+                      onPressed: _uploadingQr ? null : _uploadStaticQr,
+                      icon: Icon(Icons.upload_outlined, size: 18),
+                      label: Text(
+                          url.isEmpty ? t('Tải ảnh QR lên') : t('Đổi ảnh QR')),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          SizedBox(height: 14),
+          TextField(
+            controller: _qrNoteCtrl,
+            maxLines: 2,
+            decoration: InputDecoration(
+                labelText: t('Ghi chú hiện dưới mã QR trên màn khách'),
+                isDense: true),
+          ),
+          SizedBox(height: 6),
+          Divider(),
+          // CÔNG TẮC TẮT QR NGÂN HÀNG.
+          //
+          // Không thể tắt bằng cách xoá trống số tài khoản: cấu hình luôn rơi về
+          // giá trị mặc định khi để trống, nên xoá xong QR ngân hàng vẫn chạy.
+          // Tắt ở đây + không bật cổng nào thì QR TĨNH tự lên thay ở MỌI màn:
+          // màn phụ, iPad self-order, catalogue, POS.
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            value: _catalogueCfg['bankQrEnabled'] != false,
+            onChanged: _uploadingQr
+                ? null
+                : (v) async {
+                    setState(() {
+                      _catalogueCfg = {..._catalogueCfg, 'bankQrEnabled': v};
+                    });
+                    await _luuThanhToan({'bankQrEnabled': v});
+                    await _loadCatalogueCfg();
+                  },
+            title: Text(t('Dùng QR ngân hàng (VietQR)')),
+            subtitle: Text(
+                t('Tắt đi và không bật cổng nào thì mã QR tĩnh ở trên được dùng cho mọi màn hình thanh toán.'),
+                style: TextStyle(fontSize: 11.5)),
+          ),
+          SizedBox(height: 12),
+          Align(
+            alignment: Alignment.centerRight,
+            child: FilledButton(
+              onPressed: _uploadingQr ? null : _saveQrNote,
+              child: Text(t('Lưu')),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   /// Khung bên phải: ghép các khối ở trên theo đúng thứ tự trên màn hình.
   Widget _buildDetailsPane() {
+    // ERP — Business Central dùng backend riêng (/erp/*), không theo hệ field
+    // của các cổng thanh toán → render UI riêng, vẫn nằm trong khung "Liên kết".
+    if (_selectedKey == 'erp') return ErpConfigView(api: widget.api);
     final def = _integrationDefs.firstWhere((d) => d.key == _selectedKey);
     final conf = _channels[def.key] ?? {};
     final enabled = asFlag(conf['enabled']);
@@ -871,21 +1568,37 @@ class _IntegrationsPanelState extends State<IntegrationsPanel> {
               children: [
                 _buildChannelHeader(def, conf, enabled),
                 SizedBox(height: 16),
-                if (def.type != 'misa') ...[
-                  _buildWebhookBox(def, _channelWebhookUrl(def)),
+                // QR tĩnh không có webhook/khoá API — nó chỉ là một tấm ảnh.
+                // Dựng khối riêng và dừng ở đây, không mượn bộ khung của các
+                // cổng thanh toán thật (webhook, test kết nối… đều vô nghĩa).
+                if (def.key == 'static_qr') ...[
+                  _buildStaticQrBox(),
+                  SizedBox(height: 30),
+                ] else ...[
+                  if (def.type != 'misa') ...[
+                    _buildWebhookBox(def, _channelWebhookUrl(def)),
+                    SizedBox(height: 16),
+                  ],
+                  if (fields.isNotEmpty) ...[
+                    _buildConfigFields(def, conf, fields),
+                    SizedBox(height: 16),
+                  ],
+                  if (def.key == 'misa') ...[
+                    _buildMisaControls(conf),
+                    SizedBox(height: 16),
+                  ],
+                  _buildAdditionalControls(def, conf),
+                  if (def.key == 'haravan') ...[
+                    SizedBox(height: 14),
+                    _buildHaravanActions(),
+                  ],
+                  _buildGuidePanel(def),
                   SizedBox(height: 16),
+                  _buildInternalNote(def),
+                  SizedBox(height: 20),
+                  _buildTestButton(def),
+                  SizedBox(height: 30),
                 ],
-                if (fields.isNotEmpty) ...[
-                  _buildConfigFields(def, conf, fields),
-                  SizedBox(height: 16),
-                ],
-                _buildAdditionalControls(def, conf),
-                _buildGuidePanel(def),
-                SizedBox(height: 16),
-                _buildInternalNote(def),
-                SizedBox(height: 20),
-                _buildTestButton(def),
-                SizedBox(height: 30),
               ],
             ),
           ),
@@ -913,7 +1626,8 @@ class _IntegrationsPanelState extends State<IntegrationsPanel> {
           'Dán URL này vào Casso → Cấu hình Webhook. Casso gửi kèm header secure-token = secret bên dưới. Khi tiền về khớp nội dung DANBILL+mã bill và đủ tiền, hệ thống tự đóng bill + in hoá đơn.');
     }
     if (def.key == 'haravan') {
-      return t('Webhook Haravan dùng URL /webhooks/haravan. Token và webhook secret chỉ lưu trên server, không đưa xuống POS.');
+      return t(
+          'Webhook Haravan dùng URL /webhooks/haravan. Token và webhook secret chỉ lưu trên server, không đưa xuống POS.');
     }
     if (def.key == 'website') {
       return t(
@@ -928,7 +1642,10 @@ class _IntegrationsPanelState extends State<IntegrationsPanel> {
     final checkboxes = <Widget>[];
 
     Widget? dropdown;
-    if (def.key == 'website' || def.type == 'delivery' || def.type == 'mart') {
+    if (def.key == 'website' ||
+        def.type == 'delivery' ||
+        def.type == 'mart' ||
+        def.type == 'marketplace') {
       dropdown = Padding(
         padding: EdgeInsets.only(bottom: 16),
         child: DropdownButtonFormField<String>(
@@ -962,7 +1679,10 @@ class _IntegrationsPanelState extends State<IntegrationsPanel> {
       ]);
     } else if (def.key == 'haravan') {
       checkboxes.addAll([
-        _buildCheckboxRow(conf, 'syncCustomers', t('Đồng bộ thông tin khách hàng')),
+        _buildCheckboxRow(conf, 'syncOrders',
+            t('Đồng bộ đơn hàng và gửi thông báo khách mua tại POS')),
+        _buildCheckboxRow(
+            conf, 'syncCustomers', t('Đồng bộ thông tin khách hàng')),
         _buildCheckboxRow(conf, 'syncProducts', t('Đồng bộ sản phẩm')),
         _buildCheckboxRow(conf, 'syncInventory', t('Đồng bộ tồn kho')),
       ]);

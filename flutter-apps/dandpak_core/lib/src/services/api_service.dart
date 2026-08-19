@@ -16,10 +16,12 @@ part 'api/contacts_api.dart';
 part 'api/purchase_api.dart';
 part 'api/expenses_api.dart';
 part 'api/online_api.dart';
+part 'api/omni_api.dart';
 part 'api/documents_api.dart';
 part 'api/database_api.dart';
 part 'api/printing_api.dart';
 part 'api/self_order_api.dart';
+part 'api/catalogue_api.dart';
 part 'api/warehouse_api.dart';
 part 'api/invoice_api.dart';
 

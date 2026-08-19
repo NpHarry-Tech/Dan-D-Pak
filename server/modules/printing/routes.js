@@ -3,7 +3,6 @@
 import * as Print from '../../services/printing.js';
 import * as AppSettings from '../../services/settings.js';
 import * as Auth from '../../services/auth.js';
-import { notImplemented } from '../../core/http.js';
 
 export function registerPrintingRoutes(api, { wrap, guardAny, branch, actor }) {
 // --- Printing ---
@@ -43,11 +42,22 @@ api.post('/print/product-label',
     sku_id: req.body.sku_id || '',
     copies: req.body.copies || 1,
   })));
+// In TEM VẬN ĐƠN (waybill 100×150/76×130) cho đơn Retail Online. Người xử lý đơn
+// online (online.order.manage) in được mà không cần quyền quản lý máy in.
+api.post('/print/shipping-label',
+  guardAny('online.order.manage', 'online', 'module.printing', 'settings.printers', 'pay'),
+  wrap((req) => Print.printShippingLabel(branch(req), {
+    order_id: req.body.order_id || '',
+    size: req.body.size || '100x150',
+    copies: req.body.copies || 1,
+    deviceId: deviceOf(req),
+  })));
 api.get('/print/jobs', printGuard, wrap((req) => Print.listJobs(branch(req), req.query)));
 api.get('/print/jobs/:id', printGuard, wrap((req) => Print.getJobForBranch(req.params.id, branch(req))));
 api.get('/print/jobs/:id/text', printGuard, wrap((req) => ({ text: Print.renderJobText(Print.getJobForBranch(req.params.id, branch(req)) || {}) })));
-api.post('/print/reprint', printGuard, wrap(() => notImplemented('Generic print reprint endpoint is planned. Current app uses /api/print/jobs/:id/reprint.')));
 api.post('/print/jobs/:id/print', printGuard, wrap((req) => Print.dispatchJob(req.params.id, branch(req), { force: true })));
 api.post('/print/jobs/:id/printed', printGuard, wrap((req) => Print.markPrinted(req.params.id, branch(req), actor(req))));
-api.post('/print/jobs/:id/reprint', printGuard, wrap((req) => Print.reprint(req.params.id, branch(req))));
+// In lại phải ra ở MÁY ĐANG BẤM — truyền định danh máy xuống để service phân
+// giải lại tuyến, thay vì sao chép tuyến của bản in gốc (có thể là máy khác).
+api.post('/print/jobs/:id/reprint', printGuard, wrap((req) => Print.reprint(req.params.id, branch(req), { deviceId: deviceOf(req) })));
 }

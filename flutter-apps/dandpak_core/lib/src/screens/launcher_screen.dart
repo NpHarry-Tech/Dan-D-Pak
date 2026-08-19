@@ -21,11 +21,12 @@ import 'invoices/invoices_screen.dart';
 import 'kds/kds_screen.dart';
 import 'management/management_screen.dart';
 import 'management/settings_screen.dart';
-import 'online/online_screen.dart';
+import 'online/online_shell.dart';
 import 'phone/phone_sell_screen.dart';
 import 'pos_screen.dart';
 import 'printers/printers_screen.dart';
 import 'purchase/purchase_screen.dart';
+import 'catalogue/retail_catalogue_screen.dart';
 import 'retail/retail_screen.dart';
 import 'self_order/self_order_table_screen.dart';
 import 'warehouse/warehouse_screen.dart';
@@ -51,8 +52,9 @@ String _moduleLabel(AppModule module) {
     'contacts': 'Khách hàng',
     'pos': 'POS FnB',
     'retail': 'Bán lẻ',
+    'catalogue': 'Catalogue khách',
     'kds': 'Màn hình bếp',
-    'online': 'Kênh online',
+    'online': 'Bán hàng online',
     'warehouse': 'Kho hàng',
     'inventory': 'Tồn kho',
     'purchase': 'Mua hàng',
@@ -72,8 +74,9 @@ String _moduleDescription(AppModule module) {
     'contacts': 'Danh bạ khách hàng, nhà cung cấp, điện thoại, MST và địa chỉ.',
     'pos': 'Bàn, order, giảm giá, thanh toán, in bill và realtime với bếp.',
     'retail': 'Bán lẻ, mã vạch, lô/HSD, voucher và đổi trả.',
+    'catalogue': 'Màn khách ngoài quầy: khách tự lật catalogue, chọn hàng và gọi thanh toán.',
     'kds': 'Màn hình bếp/bar, SLA và trạng thái món realtime.',
-    'online': 'Nhận đơn GrabFood/ShopeeFood/Website và điều phối hoàn tất đơn.',
+    'online': 'Đơn Shopee/TikTok/Lazada/Tiki/Haravan, hàng hóa, đối soát, chat đa kênh và thiết lập kênh (Dan D Pak Omni).',
     'warehouse': 'Quản lý kho BCM/showroom/bếp, SKU, lô/HSD và tồn tối thiểu.',
     'purchase': 'Đơn mua, nhập kho và công nợ nhà cung cấp.',
     'expenses': 'Sổ chi phí theo danh mục, quỹ két và đối soát.',
@@ -180,6 +183,14 @@ class _LauncherScreenState extends State<LauncherScreen> {
               : RetailScreen()));
       return;
     }
+    if (module.key == 'catalogue') {
+      // Màn KHÁCH: mở toàn màn hình rồi đưa máy cho khách. Thoát bằng bấm logo
+      // 3 lần + mật khẩu (xem RetailCatalogueScreen) — không có nút Back.
+      Navigator.of(context).push(MaterialPageRoute(
+          builder: (_) => const RetailCatalogueScreen(),
+          fullscreenDialog: true));
+      return;
+    }
     if (module.key == 'ipad') {
       // Man NHAN VIEN chon ban cho khach tu goi mon (native Flutter kiosk).
       final auth = context.read<AuthProvider>();
@@ -215,7 +226,7 @@ class _LauncherScreenState extends State<LauncherScreen> {
     }
     if (module.key == 'online') {
       Navigator.of(context)
-          .push(MaterialPageRoute(builder: (_) => OnlineScreen()));
+          .push(MaterialPageRoute(builder: (_) => const OnlineShell()));
       return;
     }
     if (module.key == 'invoice') {
@@ -614,6 +625,7 @@ class _ModuleCard extends StatelessWidget {
       'contacts': '👥',
       'pos': '💳',
       'retail': '🛒',
+      'catalogue': '📖',
       'kds': '👨‍🍳',
       'online': '🌐',
       'warehouse': '📦',
@@ -686,6 +698,7 @@ class NativeModulePlaceholder extends StatelessWidget {
     if (module.key == 'admin') return '📊';
     if (module.key == 'contacts') return '👥';
     if (module.key == 'retail') return '🛒';
+    if (module.key == 'catalogue') return '📖';
     if (module.key == 'kds') return '👨‍🍳';
     return module.icon.isEmpty ? '•' : module.icon;
   }

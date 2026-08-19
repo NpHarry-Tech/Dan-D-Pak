@@ -52,47 +52,54 @@ function money(n) {
 function qty(n) {
   return Number(n || 0).toLocaleString('vi-VN', { maximumFractionDigits: 3 });
 }
+// GIỜ VIỆT NAM (+7, không DST). Container chạy UTC nên nếu dùng getHours()/local
+// sẽ lệch 7h → báo cáo sai giờ (sự cố 07/08/2026). Mọi định dạng giờ + mốc ngày
+// của báo cáo phải quy về VN để khớp với bill thực tế.
+const VN_OFFSET_MS = 7 * 3600 * 1000;
+const _p2 = n => String(n).padStart(2, '0');
+const _vn = d => new Date(new Date(d).getTime() + VN_OFFSET_MS); // dùng getUTC* sau đó
 function dateOnly(d) {
-  const x = new Date(d);
-  return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}`;
+  const x = _vn(d);
+  return `${x.getUTCFullYear()}-${_p2(x.getUTCMonth() + 1)}-${_p2(x.getUTCDate())}`;
 }
 function dateTime(d) {
   if (!d) return '';
-  const x = new Date(d);
+  const x = _vn(d);
   if (isNaN(x)) return String(d);
-  const p = n => String(n).padStart(2, '0');
-  return `${p(x.getDate())}/${p(x.getMonth() + 1)}/${x.getFullYear()} ${p(x.getHours())}:${p(x.getMinutes())}`;
+  return `${_p2(x.getUTCDate())}/${_p2(x.getUTCMonth() + 1)}/${x.getUTCFullYear()} ${_p2(x.getUTCHours())}:${_p2(x.getUTCMinutes())}`;
 }
 function dMy(d) {
   if (!d) return '';
   const parts = String(d).slice(0, 10).split('-');
   if (parts.length === 3) return `${parts[2]}/${parts[1]}/${parts[0]}`;
-  const x = new Date(d);
+  const x = _vn(d);
   if (isNaN(x.getTime())) return String(d);
-  const p = n => String(n).padStart(2, '0');
-  return `${p(x.getDate())}/${p(x.getMonth() + 1)}/${x.getFullYear()}`;
+  return `${_p2(x.getUTCDate())}/${_p2(x.getUTCMonth() + 1)}/${x.getUTCFullYear()}`;
 }
+// Mốc ngày theo VN: 00:00 và 23:59:59 giờ VN → quy ra UTC để so với paid_at (UTC).
 function dayStart(s) {
   if (!s) return null;
-  return new Date(String(s) + 'T00:00:00').toISOString();
+  return new Date(String(s) + 'T00:00:00+07:00').toISOString();
 }
 function dayEnd(s) {
   if (!s) return null;
-  return new Date(String(s) + 'T23:59:59.999').toISOString();
+  return new Date(String(s) + 'T23:59:59.999+07:00').toISOString();
 }
 function rangeFromQuery(q = {}) {
-  const nowDt = new Date();
+  const vnNow = _vn(Date.now());
   let from = dayStart(q.from);
   let to = dayEnd(q.to);
   if (!from || !to) {
-    const d = new Date(nowDt.getFullYear(), nowDt.getMonth(), nowDt.getDate());
+    // "Hôm nay/tuần/tháng…" tính theo NGÀY VN, không theo ngày UTC của container.
+    const d = new Date(Date.UTC(vnNow.getUTCFullYear(), vnNow.getUTCMonth(), vnNow.getUTCDate()));
     const period = q.period || 'day';
-    if (period === 'week') d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
-    if (period === 'month') d.setDate(1);
-    if (period === 'quarter') d.setMonth(Math.floor(d.getMonth() / 3) * 3, 1);
-    if (period === 'year') d.setMonth(0, 1);
-    from = from || d.toISOString();
-    to = to || nowDt.toISOString();
+    if (period === 'week') d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7));
+    if (period === 'month') d.setUTCDate(1);
+    if (period === 'quarter') d.setUTCMonth(Math.floor(d.getUTCMonth() / 3) * 3, 1);
+    if (period === 'year') d.setUTCMonth(0, 1);
+    const dStr = `${d.getUTCFullYear()}-${_p2(d.getUTCMonth() + 1)}-${_p2(d.getUTCDate())}`;
+    from = from || dayStart(dStr);
+    to = to || new Date().toISOString();
   }
   return {
     from,
@@ -268,22 +275,44 @@ function saleRows(branch_id, query = {}, kind = 'all') {
       params.push(...ids);
     }
   }
-  return db.prepare(`
-    SELECT o.id order_id, o.bill_no, o.channel, o.online_channel, o.online_ref, o.paid_at,
+  const raw = db.prepare(`
+    SELECT o.id order_id, o.bill_no, o.channel, o.online_channel, o.online_ref, o.paid_at, o.note order_note, o.pay_ref,
       t.code table_code, oi.menu_item_id, oi.sku_id, oi.name item_name, oi.station,
-      oi.qty, oi.unit_price, oi.qty * oi.unit_price amount
+      oi.qty, oi.unit_price, oi.vat_rate, oi.qty * oi.unit_price gross, oi.promo_json,
+      oi.item_code sku_code, oi.item_barcode sku_barcode,
+      COALESCE(oi.unit_snapshot,CASE WHEN oi.sku_id IS NOT NULL THEN 'cái' ELSE 'phần' END) unit
     FROM order_items oi
     JOIN orders o ON o.id=oi.order_id
     LEFT JOIN tables t ON t.id=o.table_id
     WHERE ${w.sql} AND oi.status!='cancelled' ${itemFilter}
     ORDER BY o.paid_at DESC, oi.created_at DESC`).all(...params);
+  // NET = tiền hàng gốc TRỪ khuyến mãi/combo (promo_json.amount). Trước đây báo cáo
+  // cộng giá GỐC nên combo 2corn 100k đổ ra 80k/bịch (sự cố 07/08/2026). Kèm tên
+  // CTKM + ghi chú để báo cáo khớp bill thực tế.
+  return raw.map(r => {
+    let promo = null;
+    try { promo = JSON.parse(r.promo_json || 'null'); } catch { /* bỏ qua */ }
+    // KHÔNG kẹp về 0: combo bán-kèm tăng giá có amount ÂM → net phải CAO hơn gốc.
+    const promoAmount = Math.round(Number(promo?.amount) || 0);
+    return {
+      ...r,
+      amount: (Number(r.gross) || 0) - promoAmount, // NET
+      effective_unit_price: Number(r.qty)
+        ? ((Number(r.gross) || 0) - promoAmount) / Number(r.qty)
+        : 0,
+      promo_name: promo?.name || promo?.code || '',
+    };
+  });
 }
 function buildSales(type, branch_id, query) {
   const report = reportShell(type, query);
   const kind = type === 'sales_fnb' ? 'all' : type === 'sales_retail' ? 'retail' : type === 'sales_online' ? 'online' : 'all';
   const rows = saleRows(branch_id, query, type === 'sales_by_product' ? 'all' : kind);
-  const bills = new Set(rows.map(r => r.order_id));
-  const revenue = rowsSum(rows, 'amount');
+  const range = rangeFromQuery(query);
+  const w = paidOrderWhere(branch_id, range, type === 'sales_online' ? `AND COALESCE(o.online_channel,'')!=''` : '');
+  const orders = db.prepare(`SELECT id, paid_at, total FROM orders o WHERE ${w.sql} ORDER BY paid_at DESC`).all(...w.params);
+  const bills = new Set(orders.map(r => r.id));
+  const revenue = rowsSum(orders, 'total');
   const quantity = rowsSum(rows, 'qty');
   report.summary = [
     stat('Doanh thu', money(revenue), revenue),
@@ -291,14 +320,30 @@ function buildSales(type, branch_id, query) {
     stat('Số lượng', qty(quantity), quantity),
     stat('Bình quân/bill', money(bills.size ? revenue / bills.size : 0), bills.size ? revenue / bills.size : 0),
   ];
+  const byDay = new Map();
+  for (const order of orders) {
+    const date = dateOnly(order.paid_at); // ngày VN, không phải UTC
+    const day = byDay.get(date) || { date, bills: 0, revenue: 0 };
+    day.bills += 1;
+    day.revenue += Number(order.total) || 0;
+    byDay.set(date, day);
+  }
+  report.sections.push(section('Doanh thu theo ngày', [
+    { key: 'date_fmt', label: 'Ngày' },
+    { key: 'bills', label: 'Hóa đơn', align: 'right' },
+    { key: 'revenue_fmt', label: 'Doanh thu', align: 'right' },
+  ], [...byDay.values()].sort((a, b) => b.date.localeCompare(a.date))
+    .map(day => ({ ...day, date_fmt: dMy(day.date), revenue_fmt: money(day.revenue) }))));
   const byProduct = new Map();
   for (const r of rows) {
     const k = r.menu_item_id || r.sku_id || r.item_name;
-    const cur = byProduct.get(k) || { item_name: r.item_name, qty: 0, amount: 0 };
+    const cur = byProduct.get(k) || { item_name: r.item_name, sku_code: r.sku_code || '', sku_barcode: r.sku_barcode || '', qty: 0, amount: 0 };
     cur.qty += Number(r.qty) || 0; cur.amount += Number(r.amount) || 0;
     byProduct.set(k, cur);
   }
   report.sections.push(section('Tổng hợp theo sản phẩm', [
+    { key: 'sku_code', label: 'Mã hàng' },
+    { key: 'sku_barcode', label: 'Mã vạch' },
     { key: 'item_name', label: 'Sản phẩm / món' },
     { key: 'qty_fmt', label: 'SL', align: 'right' },
     { key: 'amount_fmt', label: 'Doanh thu', align: 'right' },
@@ -343,19 +388,31 @@ function buildSales(type, branch_id, query) {
     { key: 'bill', label: 'Bill' },
     { key: 'channel_label', label: 'Kênh' },
     { key: 'method_label', label: 'Thanh toán' },
+    { key: 'sku_code', label: 'Mã hàng' },
+    { key: 'sku_barcode', label: 'Mã vạch' },
     { key: 'item_name', label: 'Sản phẩm / món' },
     { key: 'qty_fmt', label: 'SL', align: 'right' },
     { key: 'price_fmt', label: 'Đơn giá', align: 'right' },
     { key: 'amount_fmt', label: 'Thành tiền', align: 'right' },
+    { key: 'promo_name', label: 'CTKM' },
+    { key: 'order_note', label: 'Ghi chú' },
+    { key: 'pay_ref', label: 'Nội dung CK' },
   ], rows.map(r => ({
     ...r,
     time_fmt: dateTime(r.paid_at),
     bill: r.bill_no || String(r.order_id).slice(-6).toUpperCase(),
     channel_label: r.online_channel || channelLabel(r.channel),
     method_label: orderMethodLabel(r.order_id),
+    sku_code: r.sku_code || '',
+    sku_barcode: r.sku_barcode || '',
     qty_fmt: qty(r.qty),
-    price_fmt: money(r.unit_price),
+    // Báo cáo phải hiện đúng giá thực thu trên dòng. Giá gốc vẫn nằm trong dữ
+    // liệu order_item/promo để audit, nhưng không được trình bày như giá bán.
+    price_fmt: money(r.effective_unit_price),
     amount_fmt: money(r.amount),
+    promo_name: r.promo_name || '',
+    order_note: r.order_note || '',
+    pay_ref: r.pay_ref || '',
   }))));
   return report;
 }
@@ -367,7 +424,10 @@ function movementRows(branch_id, query, mode) {
   if (mode === 'issue') typeSql = `AND m.type IN ('issue','sale','recipe','transfer_out','stocktake') AND m.qty<0`;
   if (query.warehouse_id) { typeSql += ` AND m.warehouse_id=?`; params.push(query.warehouse_id); }
   return db.prepare(`
-    SELECT m.*, COALESCE(i.name, s.name) item_name, COALESCE(i.unit, s.unit) unit,
+    SELECT m.*, COALESCE(m.item_name, i.name, s.name) item_name,
+      COALESCE(m.unit_snapshot, i.unit, s.unit) unit,
+      COALESCE(m.item_code, s.code) item_code,
+      COALESCE(m.item_barcode, i.barcode, s.barcode) item_barcode,
       COALESCE(i.item_type, CASE WHEN s.id IS NOT NULL THEN 'retail' ELSE m.item_type END) item_kind,
       w.name warehouse_name, l.lot_no, l.expiry_date
     FROM stock_movements m
@@ -421,23 +481,42 @@ function buildStock(branch_id, query) {
   ];
   report.sections.push(section('Tồn kho hiện tại', [
     { key: 'warehouse_name', label: 'Kho' },
-    { key: 'name', label: 'Mặt hàng' },
+    { key: 'sku_code', label: 'Mã hàng' },
+    { key: 'sku_barcode', label: 'Mã vạch' },
+    { key: 'name', label: 'Sản phẩm / SKU' },
     { key: 'stock_type_label', label: 'Nhóm' },
-    { key: 'stock_fmt', label: 'Tồn', align: 'right' },
+    { key: 'category', label: 'Danh mục' },
+    { key: 'stock_fmt', label: 'Tồn kho', align: 'right' },
     { key: 'min_stock_fmt', label: 'Tồn min', align: 'right' },
     { key: 'unit', label: 'ĐVT' },
-    { key: 'cost_fmt', label: 'Giá vốn', align: 'right' },
-    { key: 'value_fmt', label: 'Giá trị', align: 'right' },
-    { key: 'category', label: 'Danh mục' },
+    { key: 'cost_fmt', label: 'Giá nhập (vốn)', align: 'right' },
+    { key: 'pretax_fmt', label: 'Giá bán trước VAT', align: 'right' },
+    { key: 'vat_fmt', label: '% VAT', align: 'right' },
+    { key: 'price_fmt', label: 'Giá bán sau VAT', align: 'right' },
+    { key: 'value_fmt', label: 'Giá trị tồn (vốn)', align: 'right' },
     { key: 'supplier', label: 'Supplier' },
-  ], rows.map(r => ({
-    ...r,
-    stock_type_label: r.stock_type === 'sku' ? 'Retail' : (r.item_type === 'supply' ? 'Vật dụng' : 'Nguyên liệu'),
-    stock_fmt: qty(r.stock),
-    min_stock_fmt: qty(r.min_stock),
-    cost_fmt: money(r.cost || 0),
-    value_fmt: money((Number(r.stock) || 0) * (Number(r.cost) || 0)),
-  }))));
+  ], rows.map(r => {
+    const vatRate = Number(r.vat) || 0;
+    const includesVat = r.price_includes_vat !== 0 && r.price_includes_vat !== undefined;
+    const price = Number(r.price) || 0;
+    // Giá SAU VAT (giá khách trả): nếu giá đã gồm VAT thì chính là price; nếu chưa
+    // thì cộng thêm VAT. Giá TRƯỚC VAT lấy price_pre_tax (hoặc suy từ price).
+    const preTax = Number(r.price_pre_tax) || (includesVat && vatRate > 0 ? Math.round(price / (1 + vatRate / 100)) : price);
+    const afterVat = includesVat ? price : (vatRate > 0 ? Math.round(price * (1 + vatRate / 100)) : price);
+    return {
+      ...r,
+      sku_code: r.stock_type === 'sku' ? (r.code || '') : '',
+      sku_barcode: r.stock_type === 'sku' ? (r.barcode || '') : '',
+      stock_type_label: r.stock_type === 'sku' ? 'Retail' : (r.item_type === 'supply' ? 'Vật dụng' : 'Nguyên liệu'),
+      stock_fmt: qty(r.stock),
+      min_stock_fmt: qty(r.min_stock),
+      cost_fmt: money(r.cost || 0),
+      pretax_fmt: r.stock_type === 'sku' ? money(preTax) : '',
+      vat_fmt: r.stock_type === 'sku' ? `${vatRate}%` : '',
+      price_fmt: r.stock_type === 'sku' ? money(afterVat) : '',
+      value_fmt: money((Number(r.stock) || 0) * (Number(r.cost) || 0)),
+    };
+  })));
   const lots = db.prepare(`
     SELECT l.*, COALESCE(i.name, s.name) item_name, COALESCE(i.unit, s.unit) unit, w.name warehouse_name
     FROM stock_lots l
@@ -702,7 +781,8 @@ function buildPurchasePriceAnalysis(branch_id, query) {
   `).all(branch_id, range.fromDate, range.toDate);
 
   const idocRows = db.prepare(`
-    SELECT COALESCE(i.name, s.name, idl.item_id) AS item_name, COALESCE(i.unit, s.unit, '') AS unit,
+    SELECT COALESCE(idl.item_name, i.name, s.name, idl.item_id) AS item_name,
+      COALESCE(idl.unit_snapshot, i.unit, s.unit, '') AS unit,
       ABS(idl.qty) AS qty, idl.unit_cost, idoc.supplier AS supplier_name,
       SUBSTR(idoc.created_at, 1, 10) AS date, 'Nhập kho' AS source
     FROM inventory_document_lines idl
@@ -938,17 +1018,30 @@ function buildCashDrawer(branch_id, query) {
     FROM shifts s
     WHERE s.branch_id=? AND s.opened_at<=? AND COALESCE(s.closed_at,?)>=?
     ORDER BY s.opened_at DESC`).all(branch_id, range.to, range.to, range.from)
-    .map(s => ({
-      ...s,
-      expected_cash: (Number(s.opening_cash) || 0) + (Number(s.cash_sales) || 0) - (Number(s.drawer_expenses) || 0) + (Number(s.drawer_reimbursements) || 0),
-    }));
+    .map(s => {
+      // Tồn quỹ DỰ KIẾN cuối ca = tiền đầu ca + tiền mặt bán hàng − chi từ két
+      // + hoàn vào két. Đây là số tiền LẼ RA phải có trong két khi kết ca.
+      const expected_cash = (Number(s.opening_cash) || 0) + (Number(s.cash_sales) || 0) - (Number(s.drawer_expenses) || 0) + (Number(s.drawer_reimbursements) || 0);
+      // Chỉ ca ĐÃ kết mới có tiền đếm thực tế (closing_cash) để đối chiếu. Ca
+      // đang mở thì CHƯA có "lệch" — để null, KHÔNG coi bằng 0 (0 = khớp quỹ).
+      const counted = !!s.closed_at && s.closing_cash !== null && s.closing_cash !== undefined;
+      const actual_cash = counted ? Number(s.closing_cash) || 0 : null;
+      const variance = counted ? actual_cash - expected_cash : null; // + thừa, − thiếu
+      return { ...s, expected_cash, actual_cash, variance };
+    });
   const expenseTotal = entries.filter(e => e.kind === 'expense').reduce((s, e) => s + (Number(e.amount) || 0), 0);
   const reimbursementTotal = entries.filter(e => e.kind === 'reimbursement').reduce((s, e) => s + (Number(e.amount) || 0), 0);
+  // LỆCH QUỸ = tiền đếm thực tế − tồn quỹ dự kiến, cộng dồn các ca ĐÃ kết trong
+  // kỳ. Dương = thừa quỹ, âm = thiếu quỹ. Đây mới là "lệch" thật của két —
+  // KHÁC hẳn hiệu (hoàn − chi) cũ vốn dễ hiểu nhầm là "chênh lệch thu/chi".
+  const closedShifts = shifts.filter(s => s.variance !== null);
+  const totalVariance = closedShifts.reduce((sum, s) => sum + (Number(s.variance) || 0), 0);
+  const signed = (n) => (Number(n) > 0 ? '+' : '') + money(n);
   report.summary = [
-    { label: 'Số khoản chi/hoàn', value: entries.length },
+    { label: 'Số khoản chi/hoàn từ két', value: entries.length },
     { label: 'Tổng chi từ két', value: money(expenseTotal) },
-    { label: 'Tổng hoàn chi', value: money(reimbursementTotal) },
-    { label: 'Chênh lệch thu/chi', value: money(reimbursementTotal - expenseTotal) },
+    { label: 'Tổng hoàn chi vào két', value: money(reimbursementTotal) },
+    { label: 'Lệch quỹ cuối kỳ (thực tế − dự kiến)', value: closedShifts.length ? signed(totalVariance) : '—' },
   ];
   report.sections.push(section('Tổng hợp theo ca', [
     { key: 'opened_at', label: 'Mở ca' },
@@ -956,9 +1049,11 @@ function buildCashDrawer(branch_id, query) {
     { key: 'shift_label', label: 'Ca' },
     { key: 'opening_fmt', label: 'Đầu ca', align: 'right' },
     { key: 'cash_sales_fmt', label: 'Tiền mặt bán hàng', align: 'right' },
-    { key: 'expense_fmt', label: 'Chi két', align: 'right' },
-    { key: 'reimburse_fmt', label: 'Hoàn chi', align: 'right' },
-    { key: 'expected_fmt', label: 'Số dư dự kiến', align: 'right' },
+    { key: 'expense_fmt', label: 'Chi từ két', align: 'right' },
+    { key: 'reimburse_fmt', label: 'Hoàn vào két', align: 'right' },
+    { key: 'expected_fmt', label: 'Tồn quỹ cuối ca (dự kiến)', align: 'right' },
+    { key: 'actual_fmt', label: 'Tiền đếm thực tế', align: 'right' },
+    { key: 'variance_fmt', label: 'Lệch (thực tế − dự kiến)', align: 'right' },
   ], shifts.map(s => ({
     ...s,
     opening_fmt: money(s.opening_cash),
@@ -966,6 +1061,9 @@ function buildCashDrawer(branch_id, query) {
     expense_fmt: money(s.drawer_expenses),
     reimburse_fmt: money(s.drawer_reimbursements),
     expected_fmt: money(s.expected_cash),
+    // Ca đang mở chưa đếm tiền → hiển thị "—" thay vì 0đ (0 nghĩa là khớp quỹ).
+    actual_fmt: s.actual_cash === null ? '—' : money(s.actual_cash),
+    variance_fmt: s.variance === null ? 'Chưa kết ca' : signed(s.variance),
   }))));
   report.sections.push(section('Chi tiết chi / hoàn tiền két', [
     { key: 'occurred_at', label: 'Ngày giờ' },

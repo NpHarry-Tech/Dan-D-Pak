@@ -67,6 +67,36 @@ const DEFAULT_INTEGRATIONS = {
     misa: {
       enabled: false,
       environment: 'sandbox',
+      integrationType: 'UNCONFIRMED',
+      taxMethod: 'UNCONFIRMED',
+      roundingPolicy: 'UNCONFIRMED',
+      templateId: '',
+      // Ký hiệu hóa đơn — LUÔN lấy theo mẫu đã chọn (đồng bộ từ MISA), không
+      // gõ tay: sai ký hiệu là phát hành dưới ký hiệu chưa đăng ký với cơ quan
+      // thuế.
+      series: '',
+      invoiceType: '',
+      invoiceCodeType: '',
+      defaultTaxRate: '8',
+      priceIncludesVat: true,
+      configurationTestPassed: false,
+      lastTestedAt: '',
+      // Kết quả lần kiểm tra kết nối gần nhất — để màn Cài đặt nói được đang
+      // hỏng ở khâu nào thay vì chỉ "không kết nối được".
+      lastTestError: '',
+      lastTestStatus: '',
+      // Danh sách mẫu MISA trả về ở lần kiểm tra gần nhất (JSON), để chọn mẫu
+      // không phải gọi lại MISA.
+      availableTemplates: '',
+      // Ghi đè đường dẫn API theo hợp đồng riêng của doanh nghiệp. Để trống là
+      // dùng mặc định API v3. Có ô này thì lệch hợp đồng chỉ cần sửa Cài đặt,
+      // KHÔNG phải sửa code và build lại.
+      endpointAuth: '',
+      endpointCompany: '',
+      endpointTemplates: '',
+      endpointPublish: '',
+      endpointStatus: '',
+      endpointCancel: '',
       apiBase: '',
       taxCode: '',
       companyName: '',
@@ -218,6 +248,119 @@ const DEFAULT_INTEGRATIONS = {
       printOnReceive: true,
       note: '',
     },
+    // ── Sàn TMĐT — kết nối đơn/hàng/tồn qua Open Platform từng sàn ──────────────
+    // Secret field name PHẢI khớp SECRET_SETTING_KEYS (anchored) để được mã hoá:
+    // password|secretKey|apiKey|checksumKey|clientSecret|accessToken|refreshToken|
+    // webhookSecret|verifyToken. Vì vậy "partner key/app secret" đều lưu ở secretKey.
+    shopee: {
+      enabled: false,
+      environment: 'sandbox',
+      region: 'VN',
+      partnerId: '',
+      shopId: '',
+      secretKey: '',      // Shopee partner key
+      accessToken: '',
+      refreshToken: '',
+      webhookSecret: '',
+      apiBase: 'https://partner.shopeemobile.com',
+      orderMode: 'manual_confirm',
+      syncOrders: true,
+      syncProducts: true,
+      syncInventory: true,
+      printOnReceive: false,
+      note: '',
+    },
+    tiktokshop: {
+      enabled: false,
+      environment: 'sandbox',
+      region: 'VN',
+      appId: '',          // TikTok Shop app_key
+      shopId: '',
+      shopCipher: '',
+      secretKey: '',      // app_secret
+      accessToken: '',
+      refreshToken: '',
+      webhookSecret: '',
+      apiBase: 'https://open-api.tiktokglobalshop.com',
+      orderMode: 'manual_confirm',
+      syncOrders: true,
+      syncProducts: true,
+      syncInventory: true,
+      printOnReceive: false,
+      note: '',
+    },
+    lazada: {
+      enabled: false,
+      environment: 'sandbox',
+      region: 'VN',
+      appId: '',          // Lazada app_key
+      sellerId: '',
+      secretKey: '',      // app_secret
+      accessToken: '',
+      refreshToken: '',
+      webhookSecret: '',
+      apiBase: 'https://api.lazada.vn/rest',
+      orderMode: 'manual_confirm',
+      syncOrders: true,
+      syncProducts: true,
+      syncInventory: true,
+      printOnReceive: false,
+      note: '',
+    },
+    tiki: {
+      enabled: false,
+      environment: 'sandbox',
+      sellerId: '',
+      clientId: '',
+      clientSecret: '',
+      accessToken: '',
+      refreshToken: '',
+      webhookSecret: '',
+      apiBase: 'https://api.tiki.vn/integration',
+      orderMode: 'manual_confirm',
+      syncOrders: true,
+      syncProducts: true,
+      syncInventory: true,
+      printOnReceive: false,
+      note: '',
+    },
+    // ── Mạng xã hội — hội thoại đa kênh Dan D Pak Omni ─────────────────────────
+    facebook: {
+      enabled: false,
+      environment: 'production',
+      appId: '',
+      pageId: '',
+      clientSecret: '',   // Meta App Secret (ký X-Hub-Signature-256)
+      accessToken: '',    // Page access token
+      verifyToken: '',
+      apiBase: 'https://graph.facebook.com/v21.0',
+      note: '',
+    },
+    instagram: {
+      enabled: false,
+      environment: 'production',
+      appId: '',
+      igUserId: '',
+      pageId: '',
+      clientSecret: '',
+      accessToken: '',
+      verifyToken: '',
+      apiBase: 'https://graph.facebook.com/v21.0',
+      note: '',
+    },
+    zalooa: {
+      enabled: false,
+      environment: 'production',
+      oaId: '',
+      appId: '',
+      secretKey: '',      // Zalo app secret (ký webhook mac)
+      accessToken: '',    // OA access token
+      refreshToken: '',
+      webhookSecret: '',
+      verifyToken: '',
+      apiBase: 'https://openapi.zalo.me/v3.0',
+      note: '',
+    },
   },
 };
 
@@ -254,7 +397,7 @@ function maskIntegrations(clean = {}) {
 
 // ── 4. Chuẩn hoá & merge ────────────────────────────────────────────────────
 function pickEnv(v) {
-  return 'production';
+  return String(v).toLowerCase() === 'production' ? 'production' : 'sandbox';
 }
 
 function pickOrderMode(v) {

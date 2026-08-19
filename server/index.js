@@ -11,9 +11,11 @@ import { api } from './api.js';
 import { startSyncEngine } from './services/sync.js';
 import {
   handleHaravanWebhook, verifyHaravanSubscribe, installUrl as haravanInstallUrl,
-  oauthCallback as haravanOauthCallback, startHaravanWorker,
+  oauthCallback as haravanOauthCallback, startHaravanWorker, maintainHaravanLogs,
 } from './services/haravanConnector.js';
-import { processInvoiceQueue } from './services/einvoice.js';
+import { handleShopeePush, shopeeExchangeToken } from './services/shopeeConnector.js';
+import { backfillPaidBills, processInvoiceQueue } from './services/einvoice.js';
+import { startErpWorker } from './integrations/erp/outbox.js';
 import { ensureStorageDirectories } from './services/enterpriseStorage.js';
 import { bootstrapDefaultAdmin } from './services/bootstrapAdmin.js';
 import { migratePlaintextPins } from './services/pin.js';
@@ -25,10 +27,11 @@ import { logger } from './core/logger.js';
 import { requestLogger } from './core/requestLogger.js';
 import { requestContextMiddleware } from './core/requestContext.js';
 import { logSystem, maintainSystemLogs } from './services/systemLogs.js';
-import { maintainPrintJobs } from './services/printing.js';
+import { maintainPrintJobs, processReceiptPrintOutbox } from './services/printing.js';
 import { maintainRetailCarts } from './services/retailCart.js';
 import { maintainRetailDrafts } from './services/retail.js';
 import { rateLimit } from './core/rateLimit.js';
+import { buildInfo } from './core/buildInfo.js';
 
 // Gzip middleware dùng Node built-in zlib — không cần thêm npm package.
 // Với 50 thiết bị, menu JSON ~50KB → ~8KB sau nén, giảm tải mạng LAN 80%.
@@ -123,7 +126,36 @@ app.post('/webhooks/haravan', haravanWebhookRateLimit, express.raw({ type: '*/*'
     res.status(err.status || 400).send(err.message || 'Haravan webhook failed');
   }
 });
+// Shopee Push — ký trên URL|body nên PHẢI đọc raw body TRƯỚC express.json. Trả 200
+// nhanh (Shopee timeout ngắn); đồng bộ đơn chạy trong handler (idempotent).
+const shopeeWebhookRateLimit = rateLimit({ key: 'shopee-webhook', windowMs: 60_000, max: 600, message: 'rate_limited' });
+app.post('/webhooks/shopee', shopeeWebhookRateLimit, express.raw({ type: '*/*', limit: '10mb' }), async (req, res) => {
+  const raw = Buffer.isBuffer(req.body) ? req.body : Buffer.from(req.body || '');
+  const host = req.get('host');
+  const candidates = [
+    `https://${host}/webhooks/shopee`,
+    `http://${host}/webhooks/shopee`,
+    `${req.protocol}://${host}${req.originalUrl}`,
+  ];
+  try {
+    await handleShopeePush(raw, req.headers, candidates);
+    res.status(200).send('OK');
+  } catch (err) {
+    res.status(err.status || 400).send(err.message || 'Shopee push failed');
+  }
+});
 app.use(express.json({ limit: '35mb' })); // DMS cho phép file 25MB → base64 phình ~33MB
+
+// Shopee OAuth redirect: shop authorize xong → Shopee gọi kèm ?code=&shop_id=.
+app.get('/auth/shopee/callback', async (req, res) => {
+  try {
+    const branchId = req.query.branch_id || req.query.branch || req.query.state || 'sala';
+    const out = await shopeeExchangeToken(branchId, req.query.code, req.query.shop_id);
+    res.status(200).send(`Shopee đã kết nối shop ${out.shop_id}. Có thể đóng cửa sổ này.`);
+  } catch (err) {
+    res.status(err.status || 400).send(err.message || 'Shopee OAuth failed');
+  }
+});
 
 app.get('/auth/haravan/install', (req, res) => {
   try {
@@ -141,6 +173,22 @@ app.get('/auth/haravan/callback', async (req, res) => {
   }
 });
 
+// LIVENESS: tiến trình còn sống? Không đụng DB/integration — luôn 200 nếu process
+// chạy. Dùng cho orchestrator restart. READINESS ở /health/ready. (mission #54)
+app.get('/health/live', (req, res) =>
+  res.status(200).json({ ok: true, live: true, time: new Date().toISOString() }));
+
+// READINESS: sẵn sàng nhận traffic? CHỈ phụ thuộc DB (thành phần lõi). Integration
+// ngoài (MISA/NAV/Haravan) down KHÔNG được làm readiness fail — POS vẫn phải bán.
+app.get('/health/ready', (req, res) => {
+  let dbOk = true; let message;
+  try { db.prepare('SELECT 1 AS ok').get(); } catch (error) { dbOk = false; message = error.message; }
+  return res.status(dbOk ? 200 : 503).json({
+    ok: dbOk, ready: dbOk, database: { ok: dbOk, provider: env.DATABASE_PROVIDER, message },
+    time: new Date().toISOString(),
+  });
+});
+
 app.get('/health', (req, res) => {
   const mem = process.memoryUsage();
   const health = {
@@ -154,6 +202,7 @@ app.get('/health', (req, res) => {
       rssMb: Math.round(mem.rss / 1048576),
     },
     ...runtimeSnapshot(),
+    build: buildInfo(db.prepare('PRAGMA user_version').get()?.user_version),
     database: { ok: true, provider: env.DATABASE_PROVIDER },
   };
   try {
@@ -178,6 +227,7 @@ const server = createServer(app);
 initRealtime(server);
 startSyncEngine();
 startHaravanWorker();
+startErpWorker();   // ERP outbox → Business Central (no-op khi chưa cấu hình/tắt)
 
 // Vòng đời nhật ký hoạt động (giữ tối đa 3 năm / 36 tháng):
 //  • Hot: các tháng gần nhất (3 tháng) nằm trong SQLite → tra cứu tức thì.
@@ -209,6 +259,8 @@ function maintainAudit() {
   if (pj.removedByAge || pj.removedByCount) logger.info('print_jobs pruned', pj);
   const rc = maintainRetailCarts();
   if (rc) logger.info('retail_carts pruned', { removed: rc });
+  const hl = maintainHaravanLogs();
+  if (hl.compacted || hl.removed) logger.info('haravan sync logs pruned', hl);
   // Đơn nháp bỏ quên (thu ngân đóng dialog chuyển khoản lúc mất mạng, app crash…):
   // client đã tự hủy khi đóng dialog bình thường — đây chỉ là lưới an toàn.
   const rd = maintainRetailDrafts();
@@ -218,9 +270,9 @@ maintainAudit();
 setInterval(maintainAudit, 24 * 60 * 60 * 1000).unref();
 
 // Sao lưu local định kỳ: snapshot store.db ra backups/ để có thể copy ra ổ ngoài/VPS.
-function runBackup() {
+async function runBackup() {
   try {
-    const r = backupDatabase(env.BACKUP_RETENTION_DAYS);
+    const r = await backupDatabase(env.BACKUP_RETENTION_DAYS);
     if (r.ok && r.skipped) logger.info('database backup skipped (already have one today)', { pruned: r.pruned });
     else if (r.ok) logger.info('database backup written', { path: r.path, bytes: r.bytes, pruned: r.pruned });
     else logger.warn('database backup failed', { error: r.error });
@@ -231,6 +283,15 @@ setInterval(runBackup, 24 * 60 * 60 * 1000).unref();
 
 // E-invoice queue processor worker: runs every 10 seconds to issue and retry invoices
 function runInvoiceWorker() {
+  // Paid bills can arrive after startup through Store Edge replication. The old
+  // one-shot backfill below ran too early and those bills never entered HĐĐT.
+  // Reconcile idempotently on every worker cycle before sending provider jobs.
+  try {
+    const repaired = backfillPaidBills(100);
+    if (repaired.created > 0) logger.info('created missing e-invoice requests', repaired);
+  } catch (err) {
+    logger.error('Invoice backfill worker error', { message: err.message, stack: err.stack });
+  }
   processInvoiceQueue().catch(err => {
     logger.error('Invoice worker error', { message: err.message, stack: err.stack });
     logSystem({
@@ -240,8 +301,22 @@ function runInvoiceWorker() {
     });
   });
 }
+backfillPaidBills();
 runInvoiceWorker();
 setInterval(runInvoiceWorker, 10000).unref();
+
+// Durable receipt outbox: payment commits the intent first; printer failures or
+// a process restart cannot lose it. Print-job semantic keys make replay safe.
+function runReceiptPrintWorker() {
+  try {
+    const result = processReceiptPrintOutbox({ limit: 20 });
+    if (result.failed) logger.warn('receipt print outbox retry pending', result);
+  } catch (err) {
+    logger.error('Receipt print outbox worker error', { message: err.message, stack: err.stack });
+  }
+}
+runReceiptPrintWorker();
+setInterval(runReceiptPrintWorker, 5000).unref();
 
 server.on('error', (err) => {
   if (err.code === 'EADDRINUSE') {
