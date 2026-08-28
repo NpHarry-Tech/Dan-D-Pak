@@ -22,21 +22,17 @@ import 'screens/login_gate_screen.dart';
 import 'screens/splash_screen.dart';
 import 'services/api_service.dart';
 import 'services/black_box.dart';
+import 'services/ring_controller.dart';
 import 'services/client_log.dart';
 import 'services/connectivity_status.dart';
 import 'services/local_print_agent.dart';
 import 'services/local_store.dart';
 import 'services/perf_mode.dart';
 import 'services/system_log.dart';
-import 'services/node_runner.dart';
 import 'ui/app_theme.dart';
 import 'widgets/window_controls.dart';
 
 final Map<String, DateTime> _lastApiNetworkLogs = <String, DateTime>{};
-
-Future<bool> _shouldRunLocalEngine() async {
-  return false;
-}
 
 Future<void> runDandpakApp({
   required List<String> args,
@@ -93,17 +89,9 @@ Future<void> _mainImpl(List<String> args) async {
     MediaKit.ensureInitialized();
   } catch (_) {}
 
-  final localEngine = await _shouldRunLocalEngine();
-  if (localEngine) {
-    // window paints in <1s. The first API calls await NodeRunner.ready.
-    NodeRunner.startServer();
-
-    DanDpakApiClient.onConnectionRefused = NodeRunner.recover;
-  }
-
   final apiService = ApiService();
-  // Every uncaught error is shipped to the local engine's log stream
-  // (POST /api/client-log) so client + server logs live in one place.
+  // Every uncaught error is shipped to the selected server's log stream
+  // (Store Edge or VPS) so client + server logs live in one place.
   ClientLog.attach(apiService);
   ClientLog.installGlobalHooks();
 
@@ -176,11 +164,14 @@ Future<void> _logUpdateSuccessIfJustUpdated() async {
   try {
     final build = AppFlavor.current.buildNumber;
     final versionName = AppFlavor.current.versionName;
-    final prev = await LocalStore.instance.getString('last_run_build');
+    final key = 'last_run_build::${AppFlavor.current.appId}';
+    final prev = await LocalStore.instance.getString(key) ??
+        await LocalStore.instance.getString('last_run_build');
     if (prev == '$build') return;
     final prevBuild = int.tryParse(prev ?? '');
     if (prevBuild == null) {
-      await LocalStore.instance.setString('last_run_build', '$build');
+      await LocalStore.instance.setString(key, '$build');
+      await LocalStore.instance.remove('last_run_build');
       return;
     }
     if (build < prevBuild) {
@@ -196,7 +187,8 @@ Future<void> _logUpdateSuccessIfJustUpdated() async {
       );
       return;
     }
-    await LocalStore.instance.setString('last_run_build', '$build');
+    await LocalStore.instance.setString(key, '$build');
+    await LocalStore.instance.remove('last_run_build');
     SystemLog.log(
       level: 'info',
       source: 'updater',
@@ -232,12 +224,12 @@ class _DandpakPosAppState extends State<DandpakPosApp>
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!mounted) return;
       final display = context.read<CustomerDisplayController>();
-      await NodeRunner.ready;
       await display.loadConfig();
       if (!mounted) return;
       _secondaryDisplayAutoOpenQueued = false;
       _secondaryDisplayAutoOpenBranch = branchId;
-      if (!display.enabled) return;
+      if (await LocalStore.instance.getString('customer_display_enabled') !=
+          'true') return;
 
       // A native crash cannot be caught by Dart. Never recreate the secondary
       // engine automatically on the first recovery launch: this breaks the
@@ -257,7 +249,6 @@ class _DandpakPosAppState extends State<DandpakPosApp>
     if (state == AppLifecycleState.detached) {
       BlackBox.markCleanExit();
       unawaited(SecondScreen.instance.close());
-      NodeRunner.stopServer();
     }
   }
 
@@ -266,7 +257,6 @@ class _DandpakPosAppState extends State<DandpakPosApp>
     WidgetsBinding.instance.removeObserver(this);
     BlackBox.markCleanExit();
     unawaited(SecondScreen.instance.close());
-    NodeRunner.stopServer();
     super.dispose();
   }
 
@@ -283,6 +273,9 @@ class _DandpakPosAppState extends State<DandpakPosApp>
       debugShowCheckedModeBanner: false,
       // Messenger toàn cục để AppNotifier hiện banner thông báo trong-app trên MỌI màn.
       scaffoldMessengerKey: appMessengerKey,
+      // Navigator toàn cục để modal xác nhận quyền LUÔN mở được (không phụ thuộc
+      // context nơi gọi — sửa lỗi modal PIN đôi lúc không hiện, §16).
+      navigatorKey: appNavigatorKey,
       title: 'Dan D Pak POS',
       theme: DanTheme.light(lowEnd: lowEnd),
       builder: (context, child) {
@@ -296,7 +289,9 @@ class _DandpakPosAppState extends State<DandpakPosApp>
             child: WindowChrome(
               child: SafeArea(
                 top: false,
-                child: child ?? const SizedBox(),
+                // Overlay CHUÔNG toàn cục: có món self-order chưa xem thì nút
+                // chuông đổ nổi trên mọi màn tới khi bấm xem.
+                child: RingOverlay(child: child ?? const SizedBox()),
               ),
             ),
           ),

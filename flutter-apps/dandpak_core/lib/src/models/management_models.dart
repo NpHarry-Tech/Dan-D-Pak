@@ -267,6 +267,79 @@ class MenuAddon {
       );
 }
 
+// Một tùy chọn trong nhóm (size/topping/combo). ref_item_id != '' = combo (trỏ món khác).
+class MenuOptionItem {
+  final String key;
+  final String name;
+  final String type; // paid | free
+  final num price;
+  final String refItemId;
+  final num salePrice;
+  const MenuOptionItem({
+    required this.key,
+    required this.name,
+    required this.type,
+    required this.price,
+    required this.refItemId,
+    this.salePrice = 0,
+  });
+  factory MenuOptionItem.fromJson(Map<String, dynamic> j) => MenuOptionItem(
+        key: _str(j['key']),
+        name: _str(j['name']),
+        type: _str(j['type']) == 'free' ? 'free' : 'paid',
+        price: _num(j['price']),
+        refItemId: _str(j['ref_item_id']),
+        salePrice: _num(j['sale_price'] ?? j['price']),
+      );
+  Map<String, dynamic> toJson() => {
+        'key': key,
+        'name': name,
+        'type': type,
+        'price': price,
+        if (refItemId.isNotEmpty) 'ref_item_id': refItemId,
+      };
+}
+
+// Nhóm tùy chọn: tên + vị trí (trên/dưới) + số lượng chọn (min/max, max 0 = vô hạn).
+class MenuOptionGroup {
+  final String key;
+  final String name;
+  final String position; // top | bottom
+  final int min;
+  final int max;
+  final List<MenuOptionItem> options;
+  const MenuOptionGroup({
+    required this.key,
+    required this.name,
+    required this.position,
+    required this.min,
+    required this.max,
+    required this.options,
+  });
+  factory MenuOptionGroup.fromJson(Map<String, dynamic> j) => MenuOptionGroup(
+        key: _str(j['key']),
+        name: _str(j['name']),
+        position: _str(j['position']) == 'bottom' ? 'bottom' : 'top',
+        min: _int(j['min'] ?? 0),
+        max: _int(j['max'] ?? 0),
+        options: (j['options'] is List)
+            ? (j['options'] as List)
+                .whereType<Map>()
+                .map((e) =>
+                    MenuOptionItem.fromJson(Map<String, dynamic>.from(e)))
+                .toList()
+            : <MenuOptionItem>[],
+      );
+  Map<String, dynamic> toJson() => {
+        'key': key,
+        'name': name,
+        'position': position,
+        'min': min,
+        'max': max,
+        'options': options.map((o) => o.toJson()).toList(),
+      };
+}
+
 class AdminMenuItem {
   final String id;
   final String name;
@@ -287,6 +360,8 @@ class AdminMenuItem {
   final List<RecipeLine> recipe;
   final MenuSchedule schedule;
   final List<MenuAddon> addons;
+  final List<MenuOptionGroup> optionGroups;
+  final bool selfOrderHidden;
   final Map<String, Map<String, String>> translations;
 
   const AdminMenuItem({
@@ -309,6 +384,8 @@ class AdminMenuItem {
     required this.recipe,
     required this.schedule,
     required this.addons,
+    this.optionGroups = const [],
+    this.selfOrderHidden = false,
     required this.translations,
   });
 
@@ -349,6 +426,15 @@ class AdminMenuItem {
               .map((e) => MenuAddon.fromJson(Map<String, dynamic>.from(e)))
               .toList()
           : <MenuAddon>[],
+      optionGroups: (j['option_groups'] is List)
+          ? (j['option_groups'] as List)
+              .whereType<Map>()
+              .map(
+                  (e) => MenuOptionGroup.fromJson(Map<String, dynamic>.from(e)))
+              .toList()
+          : <MenuOptionGroup>[],
+      selfOrderHidden:
+          j['self_order_hidden'] == 1 || j['self_order_hidden'] == true,
       translations: _translations(j['translations']),
     );
   }
@@ -466,9 +552,13 @@ class ReportColumn {
   final String key;
   final String label;
   final bool right;
-  const ReportColumn(this.key, this.label, this.right);
+  final String format;
+  const ReportColumn(this.key, this.label, this.right, this.format);
   factory ReportColumn.fromJson(Map<String, dynamic> j) => ReportColumn(
-      _str(j['key']), _str(j['label']), _str(j['align']) == 'right');
+      _str(j['key']),
+      _str(j['label']),
+      _str(j['align']) == 'right',
+      _str(j['format']));
 }
 
 class ReportSection {

@@ -1,8 +1,10 @@
-import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, rmSync, statSync } from 'node:fs';
+import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { backup } from 'node:sqlite';
 import { encryptBytes } from '../core/crypto.js';
 
-export function runBackupDatabase(db, root, retentionDays = 14) {
+export async function runBackupDatabase(db, root, retentionDays = 14) {
   try {
     const dir = join(root, 'backups');
     mkdirSync(dir, { recursive: true });
@@ -16,11 +18,17 @@ export function runBackupDatabase(db, root, retentionDays = 14) {
     // lần restart/deploy đều chạy lại toàn bộ, dù interval đặt 24h. Giờ chặn
     // theo NGÀY: đã có bản sao lưu hôm nay thì bỏ qua, để restart/deploy không
     // còn phải trả giá tạm-đứng-server mỗi lần.
-    const alreadyBackedUpToday = existsSync(dir) &&
-      readdirSync(dir).some(f => f.startsWith(`store-${today}`) && f.endsWith('.db.enc'));
+    const existingToday = existsSync(dir)
+      ? readdirSync(dir).find(f => f.startsWith(`store-${today}`) && f.endsWith('.db.enc'))
+      : null;
+    const alreadyBackedUpToday = !!existingToday;
     if (!existsSync(dest) && !alreadyBackedUpToday) {
-      db.exec(`VACUUM INTO '${plain.replace(/'/g, "''")}'`);
-      writeFileSync(dest, encryptBytes(readFileSync(plain), `database-backup:${stamp}`), { mode: 0o600 });
+      // Online Backup API sao chép theo từng page và nhường event loop, không dùng
+      // VACUUM INTO đồng bộ làm API đứng 15–20 giây khi DB production lớn.
+      await backup(db, plain, { rate: 256 });
+      await writeFile(dest,
+        encryptBytes(await readFile(plain), `database-backup:${stamp}`),
+        { mode: 0o600 });
       rmSync(plain, { force: true });
     }
 
@@ -36,7 +44,11 @@ export function runBackupDatabase(db, root, retentionDays = 14) {
         }
       } catch { /* ignore */ }
     }
-    return { ok: true, skipped: alreadyBackedUpToday, path: dest, bytes: existsSync(dest) ? statSync(dest).size : 0, pruned };
+    const actualPath = existingToday ? join(dir, existingToday) : dest;
+    return {
+      ok: true, skipped: alreadyBackedUpToday, path: actualPath,
+      bytes: existsSync(actualPath) ? statSync(actualPath).size : 0, pruned,
+    };
   } catch (e) {
     return { ok: false, error: e.message };
   }

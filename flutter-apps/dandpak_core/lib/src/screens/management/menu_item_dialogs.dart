@@ -44,6 +44,8 @@ class _ItemFormDialogState extends State<_ItemFormDialog> {
   late Set<String> _days;
   late List<_RecipeRow> _recipe;
   late List<_AddonRow> _addons;
+  late bool _selfOrderHidden;
+  late List<_OptGroupRow> _optionGroups;
   late Map<String, Map<String, String>> _translations;
 
   bool _saving = false;
@@ -91,6 +93,25 @@ class _ItemFormDialogState extends State<_ItemFormDialog> {
               refItemId: a.refItemId,
               name: a.name,
               available: a.available,
+            ))
+        .toList();
+    _selfOrderHidden = i?.selfOrderHidden ?? false;
+    _optionGroups = (i?.optionGroups ?? [])
+        .map((g) => _OptGroupRow(
+              key: g.key,
+              name: g.name,
+              position: g.position == 'bottom' ? 'bottom' : 'top',
+              min: g.min.toString(),
+              max: g.max.toString(),
+              options: g.options
+                  .map((o) => _OptItemRow(
+                        key: o.key,
+                        name: o.name,
+                        type: o.type == 'free' ? 'free' : 'paid',
+                        price: o.price.round().toString(),
+                        refItemId: o.refItemId,
+                      ))
+                  .toList(),
             ))
         .toList();
     _translations = _copyTranslations(i?.translations);
@@ -228,6 +249,34 @@ class _ItemFormDialogState extends State<_ItemFormDialog> {
               'available': a.available,
             },
       ],
+      'self_order_hidden': _selfOrderHidden,
+      'option_groups': [
+        for (final g in _optionGroups)
+          if (g.name.trim().isNotEmpty &&
+              g.options.any(
+                  (o) => o.name.trim().isNotEmpty || o.refItemId.isNotEmpty))
+            {
+              'key': g.key,
+              'name': g.name.trim(),
+              'position': g.position,
+              'min': int.tryParse(g.min.trim()) ?? 0,
+              'max': int.tryParse(g.max.trim()) ?? 0,
+              'options': [
+                for (final o in g.options)
+                  if (o.name.trim().isNotEmpty || o.refItemId.isNotEmpty)
+                    {
+                      'key': o.key,
+                      'name': o.name.trim(),
+                      'type': o.type == 'free' ? 'free' : 'paid',
+                      'price': o.type == 'free'
+                          ? 0
+                          : (int.tryParse(o.price.trim()) ?? 0),
+                      'ref_item_id':
+                          o.refItemId.isNotEmpty ? o.refItemId : null,
+                    },
+              ],
+            },
+      ],
       'security_pin': pin,
     };
 
@@ -343,16 +392,33 @@ class _ItemFormDialogState extends State<_ItemFormDialog> {
                         SizedBox(height: 14),
                         _addonsEditor(),
                         SizedBox(height: 14),
+                        _optionGroupsEditor(),
+                        SizedBox(height: 14),
                         _scheduleEditor(),
                         SizedBox(height: 10),
                         SwitchListTile(
                           contentPadding: EdgeInsets.zero,
                           value: _hidden,
                           activeThumbColor: DanColors.brand,
-                          title: Text(t('Ẩn khỏi iPad / POS'),
+                          title: Text(t('Ẩn khỏi thực đơn (cả POS lẫn khách)'),
                               style: TextStyle(
                                   fontSize: 13.5, fontWeight: FontWeight.w700)),
                           onChanged: (v) => setState(() => _hidden = v),
+                        ),
+                        SwitchListTile(
+                          contentPadding: EdgeInsets.zero,
+                          value: !_selfOrderHidden,
+                          activeThumbColor: DanColors.brand,
+                          title: Text(t('Hiện ở Tablet Self-Order'),
+                              style: TextStyle(
+                                  fontSize: 13.5, fontWeight: FontWeight.w700)),
+                          subtitle: Text(
+                              t(
+                                  'Tắt = ẩn khỏi màn khách tự gọi, vẫn hiện ở F&B POS.'),
+                              style: TextStyle(
+                                  fontSize: 11.5, color: DanColors.faint)),
+                          onChanged: (v) =>
+                              setState(() => _selfOrderHidden = !v),
                         ),
                       ],
                     ),
@@ -634,8 +700,9 @@ class _ItemFormDialogState extends State<_ItemFormDialog> {
     // Tablet/điện thoại: chọn ảnh món từ thư viện ảnh (image_picker trả về
     // đường dẫn đọc được ngay bằng File(path)).
     if (Platform.isAndroid || Platform.isIOS) {
-      final x = await ImagePicker()
-          .pickImage(source: ImageSource.gallery, imageQuality: 90);
+      final source = await pickImageSource(context);
+      if (source == null) return null;
+      final x = await ImagePicker().pickImage(source: source, imageQuality: 90);
       return x?.path;
     }
     final script = r'''
@@ -865,6 +932,213 @@ if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
           ),
         ),
       ],
+    );
+  }
+
+  Widget _segLabel(String s) => Text(s,
+      style: TextStyle(
+          fontSize: 11.5, color: DanColors.muted, fontWeight: FontWeight.w700));
+
+  Widget _optionGroupsEditor() {
+    final otherItems =
+        widget.items.where((m) => m.id != widget.item?.id).toList();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(t('Nhóm tùy chọn (size / topping / combo)'),
+            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
+        SizedBox(height: 2),
+        Text(
+            t('Khách chọn khi đặt ở Self-Order. "Chọn 1" cho size; "Nhiều" cho topping. Bật 🔗 để lựa chọn là một món (combo).'),
+            style: TextStyle(fontSize: 10.5, color: DanColors.faint)),
+        SizedBox(height: 8),
+        for (var gi = 0; gi < _optionGroups.length; gi++)
+          _optionGroupCard(gi, otherItems),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: OutlinedButton.icon(
+            onPressed: () => setState(() => _optionGroups.add(_OptGroupRow())),
+            icon: Icon(Icons.add, size: 18),
+            label: Text(t('Thêm nhóm tùy chọn')),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _optionGroupCard(int gi, List<AdminMenuItem> otherItems) {
+    final g = _optionGroups[gi];
+    final single = g.min == '1' && g.max == '1';
+    return Container(
+      key: ValueKey('optg_${g.key}'),
+      margin: EdgeInsets.only(bottom: 10),
+      padding: EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        border: Border.all(color: DanColors.border),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(children: [
+            Expanded(
+              child: TextFormField(
+                key: ValueKey('optgname_${g.key}'),
+                initialValue: g.name,
+                decoration: InputDecoration(
+                    isDense: true,
+                    labelText: t('Tên nhóm'),
+                    hintText: t('vd Size, Topping')),
+                onChanged: (v) => g.name = v,
+              ),
+            ),
+            IconButton(
+              onPressed: () => setState(() => _optionGroups.removeAt(gi)),
+              icon: Icon(Icons.delete_outline, size: 20, color: DanColors.late),
+            ),
+          ]),
+          SizedBox(height: 8),
+          Wrap(
+            spacing: 10,
+            runSpacing: 6,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              _segLabel(t('Vị trí')),
+              SegmentedButton<String>(
+                style: const ButtonStyle(visualDensity: VisualDensity.compact),
+                segments: [
+                  ButtonSegment(value: 'top', label: Text(t('Trên'))),
+                  ButtonSegment(value: 'bottom', label: Text(t('Dưới'))),
+                ],
+                selected: {g.position},
+                showSelectedIcon: false,
+                onSelectionChanged: (s) => setState(() => g.position = s.first),
+              ),
+              _segLabel(t('Kiểu chọn')),
+              SegmentedButton<bool>(
+                style: const ButtonStyle(visualDensity: VisualDensity.compact),
+                segments: [
+                  ButtonSegment(value: true, label: Text(t('Chọn 1'))),
+                  ButtonSegment(value: false, label: Text(t('Nhiều'))),
+                ],
+                selected: {single},
+                showSelectedIcon: false,
+                onSelectionChanged: (s) => setState(() {
+                  if (s.first) {
+                    g.min = '1';
+                    g.max = '1';
+                  } else {
+                    g.min = '0';
+                    g.max = '0';
+                  }
+                }),
+              ),
+            ],
+          ),
+          SizedBox(height: 8),
+          for (var oi = 0; oi < g.options.length; oi++)
+            _optionRow(g, oi, otherItems),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton.icon(
+              onPressed: () => setState(() => g.options.add(_OptItemRow())),
+              icon: Icon(Icons.add, size: 16),
+              label: Text(t('Thêm lựa chọn')),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _optionRow(_OptGroupRow g, int oi, List<AdminMenuItem> otherItems) {
+    final o = g.options[oi];
+    final isCombo = o.refItemId.isNotEmpty;
+    return Padding(
+      key: ValueKey('opti_${o.key}'),
+      padding: EdgeInsets.only(bottom: 6),
+      child: Row(children: [
+        Expanded(
+          child: isCombo
+              ? DropdownButtonFormField<String>(
+                  initialValue: otherItems.any((m) => m.id == o.refItemId)
+                      ? o.refItemId
+                      : null,
+                  isExpanded: true,
+                  decoration: InputDecoration(
+                      isDense: true, hintText: t('Chọn món combo')),
+                  items: [
+                    for (final m in otherItems)
+                      DropdownMenuItem(
+                          value: m.id,
+                          child: Text(m.name, overflow: TextOverflow.ellipsis)),
+                  ],
+                  onChanged: (v) => setState(() {
+                    o.refItemId = v ?? '';
+                    final m = otherItems.firstWhere((x) => x.id == v,
+                        orElse: () => otherItems.first);
+                    o.name = m.name;
+                  }),
+                )
+              : TextFormField(
+                  key: ValueKey('optiname_${o.key}'),
+                  initialValue: o.name,
+                  decoration: InputDecoration(
+                      isDense: true, hintText: t('Tên (vd Lớn, Trân châu)')),
+                  onChanged: (v) => o.name = v,
+                ),
+        ),
+        IconButton(
+          tooltip: t('Lựa chọn là một món (combo)'),
+          visualDensity: VisualDensity.compact,
+          onPressed: () => setState(() {
+            if (isCombo) {
+              o.refItemId = '';
+            } else if (otherItems.isNotEmpty) {
+              o.refItemId = otherItems.first.id;
+              if (o.name.isEmpty) o.name = otherItems.first.name;
+            }
+          }),
+          icon: Icon(Icons.link,
+              size: 18, color: isCombo ? DanColors.brand : DanColors.faint),
+        ),
+        SizedBox(
+          width: 96,
+          child: DropdownButtonFormField<String>(
+            initialValue: o.type,
+            isExpanded: true,
+            decoration: InputDecoration(isDense: true),
+            items: [
+              DropdownMenuItem(value: 'paid', child: Text(t('Tính phí'))),
+              DropdownMenuItem(value: 'free', child: Text(t('Miễn phí'))),
+            ],
+            onChanged: (v) => setState(() {
+              o.type = v ?? 'paid';
+              if (o.type == 'free') o.price = '0';
+            }),
+          ),
+        ),
+        SizedBox(width: 6),
+        SizedBox(
+          width: 80,
+          child: TextFormField(
+            key: ValueKey('optiprice_${o.key}'),
+            enabled: o.type != 'free',
+            initialValue: o.price,
+            keyboardType: TextInputType.number,
+            decoration: InputDecoration(isDense: true, suffixText: 'đ'),
+            onChanged: (v) => o.price = v,
+          ),
+        ),
+        IconButton(
+          visualDensity: VisualDensity.compact,
+          onPressed: () => setState(() {
+            g.options.removeAt(oi);
+            if (g.options.isEmpty) g.options.add(_OptItemRow());
+          }),
+          icon: Icon(Icons.close, size: 16, color: DanColors.faint),
+        ),
+      ]),
     );
   }
 

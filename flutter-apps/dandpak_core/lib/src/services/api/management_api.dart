@@ -96,10 +96,13 @@ extension ApiServiceManagementApi on ApiService {
         body: body, errorMessage: 'Không lưu được menu quyền'));
   }
 
-  Future<Map<String, dynamic>> importBookMenuPubhtml5(
-      String url, String title) async {
+  /// [kind] 'fnb' cho menu quyển nhà hàng, 'retail' cho catalogue bán lẻ —
+  /// thiếu tham số này thì quyển import về luôn thành menu nhà hàng và bật
+  /// nhầm lên iPad khách.
+  Future<Map<String, dynamic>> importBookMenuPubhtml5(String url, String title,
+      {String kind = 'fnb'}) async {
     return mapFrom(await postJson('/api/settings/book-menu/import-pubhtml5',
-        body: {'url': url, 'title': title},
+        body: {'url': url, 'title': title, 'kind': kind},
         timeout: const Duration(seconds: 60),
         errorMessage: 'Không import được menu quyền'));
   }

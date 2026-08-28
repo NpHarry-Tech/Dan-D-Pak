@@ -43,18 +43,41 @@ export function vatFromGross(amount, vatRate = 0) {
   return rate ? gross - netFromGross(gross, rate) : 0;
 }
 
+function allocateLines(amount, weights) {
+  const result = weights.map(() => 0);
+  let remaining = amount;
+  let remainingWeight = weights.reduce((sum, value) => sum + value, 0);
+  weights.forEach((weight, index) => {
+    if (weight <= 0 || remainingWeight <= 0) return;
+    const share = index === weights.length - 1
+      ? remaining
+      : Math.min(remaining, allocateProportion(remaining, weight, remainingWeight));
+    result[index] = share;
+    remaining -= share;
+    remainingWeight -= weight;
+  });
+  return result;
+}
+
 export function orderVatTotals(items = [], discount = 0) {
   const active = items.filter(item => item.status !== 'cancelled' && Number(item.qty) > 0 && Number(item.unit_price) > 0);
   const lineGrosses = active.map(item => multiplyMoney(Math.max(0, Number(item.unit_price) || 0), Math.max(0, Number(item.qty) || 0)));
   const subtotal = lineGrosses.reduce((sum, value) => sum + value, 0);
-  const total = Math.max(0, subtotal - Math.max(0, money(discount)));
+  const totalDiscount = Math.min(subtotal, Math.max(0, money(discount)));
+  const total = subtotal - totalDiscount;
   if (!subtotal || !total) return { subtotal, goods_amount: total, vat_amount: 0, total };
-  let allocated = 0;
+  const linePromos = active.map((item, index) =>
+    Math.min(lineGrosses[index], Math.max(0, money(item?.promo?.amount || 0))));
+  const promoTotal = linePromos.reduce((sum, value) => sum + value, 0);
+  const specificDiscount = Math.min(totalDiscount, promoTotal);
+  const specific = allocateLines(specificDiscount, linePromos);
+  const remainingDiscount = totalDiscount - specific.reduce((sum, value) => sum + value, 0);
+  const remainingShares = allocateLines(remainingDiscount,
+    lineGrosses.map((value, index) => linePromos[index] ? 0 : value));
   let vat_amount = 0;
   active.forEach((item, index) => {
     const lineGross = lineGrosses[index];
-    const discountedGross = index === active.length - 1 ? total - allocated : allocateProportion(total, lineGross, subtotal);
-    allocated += discountedGross;
+    const discountedGross = lineGross - specific[index] - remainingShares[index];
     vat_amount += vatFromGross(discountedGross, item.vat_rate);
   });
   return { subtotal, goods_amount: total - vat_amount, vat_amount, total };

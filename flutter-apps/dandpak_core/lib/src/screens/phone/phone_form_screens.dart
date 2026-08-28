@@ -3,7 +3,9 @@ import 'package:provider/provider.dart';
 
 import '../../services/api_service.dart';
 import '../../ui/app_theme.dart';
+import '../../ui/open_file.dart';
 import '../../utils/translation.dart';
+import '../../utils/business_datetime.dart';
 import '../management/management_widgets.dart';
 import 'phone_kit.dart';
 import 'phone_scaffolds.dart';
@@ -19,7 +21,8 @@ import 'phone_scaffolds.dart';
 
 num _n(dynamic v) {
   if (v is num) return v;
-  return num.tryParse('${v ?? ''}'.replaceAll('.', '').replaceAll(',', '')) ?? 0;
+  return num.tryParse('${v ?? ''}'.replaceAll('.', '').replaceAll(',', '')) ??
+      0;
 }
 
 String _s(dynamic v) => '${v ?? ''}';
@@ -192,13 +195,12 @@ class _PhoneExpenseFormScreenState extends State<PhoneExpenseFormScreen> {
                     context: context,
                     title: t('Danh mục chi phí'),
                     builder: (c) => PhonePickList(
-                      options:
-                          _categories.map((e) => _s(e['name'])).toList(),
+                      options: _categories.map((e) => _s(e['name'])).toList(),
                       selected: _categoryName,
                       onPick: (v) {
                         Navigator.of(c).pop();
-                        final hit = _categories
-                            .firstWhere((e) => _s(e['name']) == v);
+                        final hit =
+                            _categories.firstWhere((e) => _s(e['name']) == v);
                         setState(() {
                           _categoryName = v;
                           _categoryId = _s(hit['id']);
@@ -232,7 +234,8 @@ class _PhoneExpenseFormScreenState extends State<PhoneExpenseFormScreen> {
         Padding(
           padding: const EdgeInsets.all(16),
           child: Text(
-              t('Chọn "Chi từ két" sẽ trừ thẳng vào tiền mặt của ca đang mở và hiện trong đối chiếu cuối ca.'),
+              t(
+                  'Chọn "Chi từ két" sẽ trừ thẳng vào tiền mặt của ca đang mở và hiện trong đối chiếu cuối ca.'),
               style: const TextStyle(
                   fontSize: 11.5, height: 1.5, color: DanColors.faint)),
         ),
@@ -282,7 +285,13 @@ class _PhonePartnerFormScreenState extends State<PhonePartnerFormScreen> {
   @override
   void dispose() {
     for (final c in [
-      _name, _phone, _email, _company, _taxCode, _address, _note
+      _name,
+      _phone,
+      _email,
+      _company,
+      _taxCode,
+      _address,
+      _note
     ]) {
       c.dispose();
     }
@@ -290,8 +299,10 @@ class _PhonePartnerFormScreenState extends State<PhonePartnerFormScreen> {
   }
 
   Future<void> _save() async {
-    if (_name.text.trim().isEmpty) {
-      appToast(context, t('Thiếu tên liên hệ'), isError: true);
+    if ([_name, _company, _taxCode, _phone, _email]
+        .every((c) => c.text.trim().isEmpty)) {
+      appToast(context, t('Cần ít nhất tên, công ty, MST, SĐT hoặc email'),
+          isError: true);
       return;
     }
     setState(() => _saving = true);
@@ -347,37 +358,14 @@ class _PhonePartnerFormScreenState extends State<PhonePartnerFormScreen> {
 }
 
 // ── BÁO CÁO ─────────────────────────────────────────────────────────────────
-/// Danh mục báo cáo lấy từ server (`/api/reports/catalog`) rồi xem trước từng
-/// báo cáo — KHÔNG cắm cứng danh sách báo cáo ở client, vì server mới là nơi
-/// quyết định người dùng được xem báo cáo nào.
+/// Đi thẳng vào báo cáo bán hàng như thiết kế mobile; dữ liệu vẫn do Report
+/// Center trên server tính và trả về.
 class PhoneReportsScreen extends StatelessWidget {
   const PhoneReportsScreen({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    return PhoneListScaffold<Map<String, dynamic>>(
-      title: 'Báo cáo',
-      emptyTitle: 'Không có báo cáo nào',
-      emptyHint: 'Tài khoản của bạn chưa được cấp báo cáo nào',
-      emptyIcon: Icons.bar_chart_outlined,
-      fetch: (_) async {
-        final res = await context.read<ApiService>().getReportsCatalog();
-        final raw = (res['reports'] ?? res['items'] ?? res['catalog']) as List?;
-        return (raw ?? const [])
-            .whereType<Map>()
-            .map((e) => Map<String, dynamic>.from(e))
-            .toList();
-      },
-      rowBuilder: (ctx, r, _) => PhoneListRow(
-        title: _s(r['label']).isEmpty ? _s(r['name']) : _s(r['label']),
-        subtitle: _s(r['description']),
-        onTap: () => Navigator.of(ctx).push(MaterialPageRoute(
-            builder: (_) => PhoneReportPreviewScreen(
-                type: _s(r['type']).isEmpty ? _s(r['key']) : _s(r['type']),
-                title: _s(r['label']).isEmpty ? _s(r['name']) : _s(r['label'])))),
-      ),
-    );
-  }
+  Widget build(BuildContext context) =>
+      const PhoneReportPreviewScreen(type: 'sales_overview', title: 'Báo cáo');
 }
 
 class PhoneReportPreviewScreen extends StatefulWidget {
@@ -394,14 +382,16 @@ class PhoneReportPreviewScreen extends StatefulWidget {
 class _PhoneReportPreviewScreenState extends State<PhoneReportPreviewScreen> {
   Map<String, dynamic>? _data;
   bool _loading = true;
+  bool _exporting = false;
   String? _error;
-  String _period = 'today';
+  String _period = 'month';
 
   static const _periods = {
-    'today': 'Hôm nay',
-    'yesterday': 'Hôm qua',
-    'week': 'Tuần này',
-    'month': 'Tháng này',
+    'day': 'Ngày',
+    'week': 'Tuần',
+    'month': 'Tháng',
+    'quarter': 'Quý',
+    'year': 'Năm',
   };
 
   @override
@@ -431,10 +421,40 @@ class _PhoneReportPreviewScreenState extends State<PhoneReportPreviewScreen> {
     }
   }
 
+  Future<void> _export() async {
+    if (_exporting) return;
+    setState(() => _exporting = true);
+    try {
+      final bytes = await context
+          .read<ApiService>()
+          .exportReport(widget.type, 'pdf', period: _period);
+      await openBytes(bytes, 'baocao_${widget.type}.pdf');
+    } catch (e) {
+      if (mounted) {
+        appToast(context, e.toString().replaceFirst('Exception: ', ''),
+            isError: true);
+      }
+    } finally {
+      if (mounted) setState(() => _exporting = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    final rows = (_data?['rows'] ?? _data?['items']) as List? ?? const [];
-    final columns = (_data?['columns'] ?? _data?['headers']) as List? ?? const [];
+    final sections = (_data?['sections'] as List?)?.whereType<Map>().toList() ??
+        const <Map>[];
+    final firstSection = sections.cast<Map?>().firstWhere(
+        (s) => (s?['rows'] as List?)?.isNotEmpty == true,
+        orElse: () => null);
+    final rows =
+        (_data?['rows'] ?? _data?['items'] ?? firstSection?['rows']) as List? ??
+            const [];
+    final columns = (_data?['columns'] ??
+            _data?['headers'] ??
+            firstSection?['columns']) as List? ??
+        const [];
+    final summary = (_data?['summary'] as List?)?.whereType<Map>().toList() ??
+        const <Map>[];
     return Scaffold(
       backgroundColor: DanColors.bg,
       body: SafeArea(
@@ -449,6 +469,8 @@ class _PhoneReportPreviewScreenState extends State<PhoneReportPreviewScreen> {
                     title: widget.title,
                     onBack: () => Navigator.of(context).maybePop(),
                     actions: [
+                      PhoneIconButton(
+                          icon: Icons.download_outlined, onTap: _export),
                       PhoneIconButton(icon: Icons.refresh, onTap: _load),
                     ],
                   ),
@@ -502,11 +524,28 @@ class _PhoneReportPreviewScreenState extends State<PhoneReportPreviewScreen> {
                           : ListView(
                               padding: const EdgeInsets.only(bottom: 20),
                               children: [
+                                PhoneMetricStrip([
+                                  for (final item in summary.take(4))
+                                    (
+                                      t(_s(item['label'])),
+                                      _s(item['value']),
+                                      _s(item['label']).contains('Trả')
+                                          ? DanColors.late
+                                          : null
+                                    ),
+                                ]),
                                 for (final raw in rows.whereType<Map>())
                                   _reportRow(
                                       Map<String, dynamic>.from(raw), columns),
                               ],
                             ),
+            ),
+            PhoneActionBar(
+              child: PhoneCta(
+                label: t('Xuất báo cáo PDF'),
+                busy: _exporting,
+                onPressed: _exporting ? null : _export,
+              ),
             ),
           ],
         ),
@@ -518,17 +557,24 @@ class _PhoneReportPreviewScreenState extends State<PhoneReportPreviewScreen> {
   /// thay vì đoán tên trường. Không có `columns` thì hiện hai trường đầu.
   Widget _reportRow(Map<String, dynamic> row, List columns) {
     if (columns.isNotEmpty) {
-      final keys = columns
-          .map((c) => c is Map ? _s(c['key'] ?? c['field']) : _s(c))
-          .where((k) => k.isNotEmpty)
+      final defs = columns
+          .map((c) => c is Map
+              ? Map<String, dynamic>.from(c)
+              : <String, dynamic>{'key': _s(c)})
+          .where((c) => _s(c['key'] ?? c['field']).isNotEmpty)
           .toList();
-      if (keys.isNotEmpty) {
+      if (defs.isNotEmpty) {
+        String value(Map<String, dynamic> c) {
+          final key = _s(c['key'] ?? c['field']);
+          return BusinessDateTime.reportValue(_s(c['format']), row[key]);
+        }
+
         return PhoneListRow(
-          title: _s(row[keys.first]),
-          subtitle: keys.length > 2
-              ? keys.sublist(1, keys.length - 1).map((k) => _s(row[k])).join(' · ')
+          title: value(defs.first),
+          subtitle: defs.length > 2
+              ? defs.sublist(1, defs.length - 1).map(value).join(' · ')
               : '',
-          amount: keys.length > 1 ? _s(row[keys.last]) : null,
+          amount: defs.length > 1 ? value(defs.last) : null,
         );
       }
     }

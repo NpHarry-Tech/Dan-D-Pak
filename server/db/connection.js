@@ -19,19 +19,30 @@ function resolveDbPath() {
 }
 
 export const DB_PATH = resolveDbPath();
-if (env.isProduction && env.DEPLOYMENT_TARGET === 'vps' && resolve(DB_PATH) !== resolve('/app/server-data/store.db')) {
-  throw new Error(`VPS production chỉ được dùng DB duy nhất tại /app/server-data/store.db (đang cấu hình: ${DB_PATH})`);
+// Trên VPS mỗi stack bị khoá vào ĐÚNG một file DB để không thể vô tình trỏ nhầm
+// sang DB của stack khác. Production → store.db; stack Shopee Review → review.db
+// (dữ liệu synthetic, tách hẳn). Guard này chặn review đọc/ghi nhầm DB thật.
+const CANONICAL_DB = env.isReview ? '/app/server-data/review.db' : '/app/server-data/store.db';
+if (env.isProduction && env.DEPLOYMENT_TARGET === 'vps' && resolve(DB_PATH) !== resolve(CANONICAL_DB)) {
+  throw new Error(`VPS ${env.isReview ? 'review' : 'production'} chỉ được dùng DB duy nhất tại ${CANONICAL_DB} (đang cấu hình: ${DB_PATH})`);
 }
 export const DB_WAS_EMPTY = !existsSync(DB_PATH) || statSync(DB_PATH).size === 0;
 mkdirSync(dirname(DB_PATH), { recursive: true });
 
-export const db = new DatabaseSync(DB_PATH);
+export const DB_READ_ONLY = process.env.DATABASE_READ_ONLY === 'true';
+export const db = new DatabaseSync(DB_PATH, { readOnly: DB_READ_ONLY });
 
-db.exec('PRAGMA journal_mode = WAL;');
-db.exec('PRAGMA foreign_keys = ON;');
-db.exec('PRAGMA busy_timeout = 5000;');
-db.exec('PRAGMA synchronous = NORMAL;');
-db.exec('PRAGMA cache_size = -65536;');
-db.exec('PRAGMA temp_store = MEMORY;');
-db.exec('PRAGMA mmap_size = 134217728;');
-db.exec('PRAGMA wal_autocheckpoint = 1000;');
+if (DB_READ_ONLY) {
+  db.exec('PRAGMA query_only = ON;');
+  db.exec('PRAGMA busy_timeout = 5000;');
+} else {
+  db.exec('PRAGMA journal_mode = WAL;');
+  db.exec('PRAGMA foreign_keys = ON;');
+  db.exec('PRAGMA busy_timeout = 5000;');
+  // Tiền, kho và hoá đơn là dữ liệu production: ưu tiên durability khi mất điện.
+  db.exec('PRAGMA synchronous = FULL;');
+  db.exec('PRAGMA cache_size = -65536;');
+  db.exec('PRAGMA temp_store = MEMORY;');
+  db.exec('PRAGMA mmap_size = 134217728;');
+  db.exec('PRAGMA wal_autocheckpoint = 1000;');
+}

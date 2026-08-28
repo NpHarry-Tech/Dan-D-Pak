@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -10,11 +11,32 @@ import '../../services/api_service.dart';
 import '../../ui/app_theme.dart';
 import 'management_widgets.dart';
 import '../../utils/translation.dart';
+import '../../ui/file_pick.dart';
 
+/// Trình dựng QUYỂN — dùng chung cho HAI loại:
+///   kind 'fnb'    — Menu quyển nhà hàng, chấm điểm trỏ tới MÓN (menu_items)
+///   kind 'retail' — Catalogue bán lẻ,   chấm điểm trỏ tới HÀNG HOÁ (skus)
+///
+/// Cùng một trình dựng vì thao tác giống hệt nhau: thêm trang (ảnh hoặc import
+/// PubHTML5), đặt chấm điểm lên trang, gắn chấm điểm với một mặt hàng, bấm Lưu.
+/// Tách thành hai panel thì mọi sửa lỗi phải làm hai lần và chúng sẽ trôi khác
+/// nhau dần — đó là lý do bản catalogue rút gọn trước đây thiếu import PubHTML5,
+/// thiếu nút Lưu và không gắn được hàng hoá vào trang.
 class BookMenuPanel extends StatefulWidget {
   final ApiService api;
   final Widget? moduleSwitcher;
-  BookMenuPanel({super.key, required this.api, this.moduleSwitcher});
+
+  /// 'fnb' | 'retail'
+  final String kind;
+
+  BookMenuPanel({
+    super.key,
+    required this.api,
+    this.moduleSwitcher,
+    this.kind = 'fnb',
+  });
+
+  bool get laRetail => kind == 'retail';
 
   @override
   State<BookMenuPanel> createState() => _BookMenuPanelState();
@@ -23,8 +45,37 @@ class BookMenuPanel extends StatefulWidget {
 class _BookMenuPanelState extends State<BookMenuPanel> {
   Map<String, dynamic>? _cfg;
   List<AdminMenuItem> _items = [];
+
+  /// Khoá trong chấm điểm chứa mã mặt hàng — khác nhau giữa hai loại quyển.
+  String get _khoaHang => widget.laRetail ? 'sku_id' : 'menu_item_id';
+
+  /// Khoá trong cấu hình lưu "quyển đang dùng" — hai loại có hai khoá riêng để
+  /// bật catalogue bán lẻ không làm đổi menu đang chạy trên iPad nhà hàng.
+  String get _khoaQuyen =>
+      widget.laRetail ? 'activeRetailBookId' : 'activeBookId';
+
+  /// Chỉ hiện những quyển ĐÚNG LOẠI — trộn hai loại vào một danh sách thì rất
+  /// dễ gắn nhầm catalogue bán lẻ làm menu nhà hàng.
+  List<Map<String, dynamic>> get _quyenCungLoai => _books()
+      .where((b) => ('${b['kind'] ?? 'fnb'}' == 'retail') == widget.laRetail)
+      .toList();
+
+  /// Khoá bật/tắt cũng riêng: tắt catalogue bán lẻ không được tắt menu iPad.
+  String get _khoaBat => widget.laRetail ? 'retailEnabled' : 'enabled';
+
+  /// Menu FnB mặc định BẬT (cửa hàng nào cũng có menu), catalogue bán lẻ mặc
+  /// định TẮT — chưa dựng quyển mà bật là màn khách hiện trang trắng.
+  bool get _dangBat {
+    final v = _cfg?[_khoaBat];
+    return widget.laRetail ? v == true : v != false;
+  }
+
   bool _loading = true;
   bool _saving = false;
+
+  /// Vì sao không tra được mặt hàng nào (kho chưa nối / kho được chọn chưa có
+  /// hàng). Không có hàng thì không gắn được chấm điểm nào — phải nói ra.
+  String _lyDoTrong = '';
   String? _error;
   String? _bookId;
   int _pageIdx = 0;
@@ -42,18 +93,45 @@ class _BookMenuPanelState extends State<BookMenuPanel> {
       _error = null;
     });
     try {
-      final results = await Future.wait([
-        widget.api.getBookMenuConfig(),
-        widget.api.getMenuManage(),
-      ]);
-      final cfg = Map<String, dynamic>.from(results[0] as Map);
-      final menu =
-          MenuManageData.fromJson(Map<String, dynamic>.from(results[1] as Map));
+      final cfg = Map<String, dynamic>.from(
+          await widget.api.getBookMenuConfig() as Map);
+
+      // NGUỒN MẶT HÀNG khác nhau: catalogue bán lẻ gắn HÀNG HOÁ trong kho, menu
+      // quyển gắn MÓN của nhà hàng. Dùng nhầm nguồn thì chấm điểm trỏ vào mã
+      // không tồn tại và màn khách chạm vào không ra gì.
+      final List<AdminMenuItem> hang;
+      if (widget.laRetail) {
+        // KÊNH 'retail' = đúng cái kho đã nối với mục bán lẻ. Chấm điểm chỉ
+        // được gắn vào hàng mà quầy thật sự bán được; lấy toàn bộ kho rồi gắn
+        // bừa thì khách bấm ra một mặt hàng POS không tính tiền được.
+        final res = await widget.api.getSkusPaginated(
+            page: 1, limit: 500, q: '', channel: 'retail', inStockOnly: false);
+        _lyDoTrong = '${(res['empty_reason'] as Map?)?['message'] ?? ''}';
+        // Dựng qua fromJson để khỏi phải điền tay hàng chục trường của món ăn
+        // (công thức, dị ứng, lịch bán…) mà hàng hoá bán lẻ không có.
+        hang = (res['items'] as List? ?? const [])
+            .whereType<Map>()
+            .map((e) => AdminMenuItem.fromJson({
+                  'id': '${e['id'] ?? ''}',
+                  'name': '${e['name'] ?? ''}',
+                  'price': e['price'] ?? 0,
+                  'image': '${e['image'] ?? ''}',
+                }))
+            .where((x) => x.id.isNotEmpty)
+            .toList();
+      } else {
+        final menu = MenuManageData.fromJson(
+            Map<String, dynamic>.from(await widget.api.getMenuManage() as Map));
+        hang = menu.items;
+      }
       if (!mounted) return;
       setState(() {
         _cfg = cfg;
-        _items = menu.items;
-        _bookId = (cfg['activeBookId'] ?? '').toString();
+        _items = hang;
+        _bookId = (widget.laRetail
+                ? (cfg['activeRetailBookId'] ?? '')
+                : (cfg['activeBookId'] ?? ''))
+            .toString();
         _pageIdx = 0;
         _hotspotId = null;
         _loading = false;
@@ -79,10 +157,10 @@ class _BookMenuPanelState extends State<BookMenuPanel> {
   }
 
   Map<String, dynamic>? _book() {
-    final books = _books();
+    final books = _quyenCungLoai;
     if (books.isEmpty) return null;
     return books.firstWhere(
-      (b) => b['id'] == (_bookId ?? _cfg?['activeBookId']),
+      (b) => b['id'] == (_bookId ?? _cfg?[_khoaQuyen]),
       orElse: () => books.first,
     );
   }
@@ -118,7 +196,7 @@ class _BookMenuPanelState extends State<BookMenuPanel> {
     for (final item in _items) {
       if (item.id == id) return item.name;
     }
-    return t('Chưa gán món');
+    return widget.laRetail ? t('Chưa gán hàng hoá') : t('Chưa gán món');
   }
 
   String _assetUrl(String src) {
@@ -134,17 +212,20 @@ class _BookMenuPanelState extends State<BookMenuPanel> {
   Future<void> _save({bool reload = true}) async {
     final cfg = _cfg;
     if (cfg == null) return;
-    cfg['activeBookId'] = _book()?['id'] ?? cfg['activeBookId'];
+    cfg[_khoaQuyen] = _book()?['id'] ?? cfg[_khoaQuyen];
     setState(() => _saving = true);
     try {
       final saved = await widget.api.saveBookMenuConfig(_copyCfg());
       if (!mounted) return;
       setState(() {
         _cfg = saved;
-        _bookId = (saved['activeBookId'] ?? _bookId ?? '').toString();
+        _bookId = (saved[_khoaQuyen] ?? _bookId ?? '').toString();
         _saving = false;
       });
-      if (reload) _toast(t('Đã lưu menu quyển'));
+      if (reload) {
+        _toast(
+            widget.laRetail ? t('Đã lưu catalogue') : t('Đã lưu menu quyển'));
+      }
     } catch (e) {
       if (!mounted) return;
       setState(() => _saving = false);
@@ -163,19 +244,28 @@ class _BookMenuPanelState extends State<BookMenuPanel> {
     final id = _id('book_');
     final book = {
       'id': id,
-      'title': t('Menu mới'),
+      'kind': widget.kind,
+      'title': widget.laRetail ? t('Catalogue bán lẻ') : t('Menu mới'),
       'pageWidth': 566.929016,
       'pageHeight': 850.394043,
-      'pages': [
-        {'id': 'p_1', 'src': '/assets/menu-book/01.webp', 'label': 'Trang 1'}
-      ],
+      // Quyển bán lẻ mở ra RỖNG — ảnh mẫu của menu nhà hàng không liên quan gì
+      // tới hàng hoá trong kho, để sẵn chỉ tổ phải xoá đi.
+      'pages': widget.laRetail
+          ? <Map<String, dynamic>>[]
+          : [
+              {
+                'id': 'p_1',
+                'src': '/assets/menu-book/01.webp',
+                'label': 'Trang 1'
+              }
+            ],
       'hotspots': <Map<String, dynamic>>[],
       'created_at': DateTime.now().toIso8601String(),
       'updated_at': DateTime.now().toIso8601String(),
     };
     setState(() {
       books.add(book);
-      _cfg?['activeBookId'] = id;
+      _cfg?[_khoaQuyen] = id;
       _bookId = id;
       _pageIdx = 0;
       _hotspotId = null;
@@ -183,7 +273,7 @@ class _BookMenuPanelState extends State<BookMenuPanel> {
   }
 
   void _deleteBook() {
-    final books = _books();
+    final books = _quyenCungLoai;
     final book = _book();
     if (book == null) return;
     if (books.length <= 1) {
@@ -191,9 +281,9 @@ class _BookMenuPanelState extends State<BookMenuPanel> {
       return;
     }
     setState(() {
-      books.removeWhere((b) => b['id'] == book['id']);
-      _bookId = (books.first['id'] ?? '').toString();
-      _cfg?['activeBookId'] = _bookId;
+      _books().removeWhere((b) => b['id'] == book['id']);
+      _bookId = (_quyenCungLoai.first['id'] ?? '').toString();
+      _cfg?[_khoaQuyen] = _bookId;
       _pageIdx = 0;
       _hotspotId = null;
     });
@@ -240,11 +330,12 @@ class _BookMenuPanelState extends State<BookMenuPanel> {
     if (values == null || values.first.isEmpty) return;
     setState(() => _saving = true);
     try {
-      final cfg = await widget.api.importBookMenuPubhtml5(values[0], values[1]);
+      final cfg = await widget.api
+          .importBookMenuPubhtml5(values[0], values[1], kind: widget.kind);
       if (!mounted) return;
       setState(() {
         _cfg = cfg;
-        _bookId = (cfg['activeBookId'] ?? '').toString();
+        _bookId = (cfg[_khoaQuyen] ?? '').toString();
         _pageIdx = 0;
         _hotspotId = null;
         _saving = false;
@@ -257,40 +348,84 @@ class _BookMenuPanelState extends State<BookMenuPanel> {
     }
   }
 
+  /// THÊM TRANG = TẢI ẢNH THẬT lên máy chủ.
+  ///
+  /// Bản cũ chỉ hỏi một đường dẫn kiểu `/assets/menu-book/03.webp` — cửa hàng
+  /// không có cách nào đưa ảnh của mình vào, gõ đường dẫn không tồn tại thì
+  /// trang hiện ra ô trống. Ảnh đi thẳng lên máy chủ nên mọi máy đều thấy.
   Future<void> _addPage() async {
-    final src = await _askText(t('Thêm trang'), t('URL ảnh trang menu'),
-        initial:
-            '/assets/menu-book/${(_pages(_book() ?? {}).length + 1).toString().padLeft(2, '0')}.webp');
     final book = _book();
-    if (book == null || src == null || src.trim().isEmpty) return;
-    final pages = _pages(book);
-    setState(() {
-      pages.add({
-        'id': _id('p_'),
-        'src': src.trim(),
-        'label': 'Trang ${pages.length + 1}',
+    if (book == null) return;
+    final path =
+        await pickImagePathCross(title: t('Chọn ảnh trang'), context: context);
+    if (path == null) return;
+    setState(() => _saving = true);
+    try {
+      final bytes = await File(path).readAsBytes();
+      if (bytes.isEmpty) throw Exception(t('Không đọc được ảnh'));
+      final name = path.split(RegExp(r'[\/]')).last;
+      // Lưu cấu hình đang sửa TRƯỚC khi tải trang lên: máy chủ ghi trang mới
+      // vào bản trên đĩa rồi trả về cả cấu hình, nếu chưa lưu thì chấm điểm và
+      // tên quyển vừa sửa sẽ bị bản trả về ghi đè mất.
+      await _save(reload: false);
+      final cfg = await widget.api.addCataloguePage(
+        originalName: name,
+        mimeType: _mimeOf(name),
+        base64Data: base64Encode(bytes),
+        bookId: '${book['id'] ?? ''}',
+        kind: widget.kind,
+      );
+      if (!mounted) return;
+      setState(() {
+        _cfg = cfg;
+        _saving = false;
+        _pageIdx = math.max(0, _pages(_book() ?? {}).length - 1);
+        _hotspotId = null;
       });
-      _pageIdx = pages.length - 1;
-      _hotspotId = null;
-    });
+      _toast(t('Đã thêm trang'));
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _saving = false);
+      _toast(e.toString().replaceFirst('Exception: ', ''), error: true);
+    }
   }
 
-  void _deletePage() {
+  String _mimeOf(String name) {
+    final n = name.toLowerCase();
+    if (n.endsWith('.png')) return 'image/png';
+    if (n.endsWith('.webp')) return 'image/webp';
+    if (n.endsWith('.gif')) return 'image/gif';
+    return 'image/jpeg';
+  }
+
+  Future<void> _deletePage() async {
     final book = _book();
     if (book == null) return;
     final pages = _pages(book);
     if (pages.isEmpty) return;
-    setState(() {
-      pages.removeAt(_pageIdx);
-      final hotspots = _hotspots(book);
-      hotspots.removeWhere((h) => (h['page'] as num?)?.round() == _pageIdx);
-      for (final h in hotspots) {
-        final p = (h['page'] as num?)?.round() ?? 0;
-        if (p > _pageIdx) h['page'] = p - 1;
-      }
-      _pageIdx = _pageIdx.clamp(0, (pages.length - 1).clamp(0, 999));
-      _hotspotId = null;
-    });
+    final page = pages[_pageIdx.clamp(0, pages.length - 1)];
+    setState(() => _saving = true);
+    try {
+      // Xoá trên máy chủ để nó dọn luôn ảnh và dồn số trang của chấm điểm —
+      // xoá tại chỗ rồi lưu đè sẽ để lại ảnh mồ côi trong thư mục uploads.
+      await _save(reload: false);
+      final cfg = await widget.api.removeCataloguePage(
+        bookId: '${book['id'] ?? ''}',
+        pageId: '${page['id'] ?? ''}',
+      );
+      if (!mounted) return;
+      setState(() {
+        _cfg = cfg;
+        _saving = false;
+        final con = _pages(_book() ?? {}).length;
+        _pageIdx = con == 0 ? 0 : _pageIdx.clamp(0, con - 1).toInt();
+        _hotspotId = null;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _saving = false);
+      _toast(e.toString().replaceFirst('Exception: ', ''), error: true);
+    }
   }
 
   void _newHotspot({double x = 50, double y = 50}) {
@@ -302,7 +437,7 @@ class _BookMenuPanelState extends State<BookMenuPanel> {
       'x': x,
       'y': y,
       'angle': 0,
-      'menu_item_id': _items.first.id,
+      _khoaHang: _items.first.id,
       'label': '',
       'enabled': true,
       'color': '#0891b2',
@@ -340,33 +475,6 @@ class _BookMenuPanelState extends State<BookMenuPanel> {
     });
   }
 
-  Future<String?> _askText(String title, String label, {String initial = ''}) {
-    return showDialog<String>(
-      context: context,
-      builder: (ctx) {
-        final c = TextEditingController(text: initial);
-        return AlertDialog(
-          backgroundColor: DanColors.surface,
-          title: Text(title),
-          content: TextField(
-            controller: c,
-            autofocus: true,
-            decoration: InputDecoration(labelText: label),
-            onSubmitted: (_) => Navigator.of(ctx).pop(c.text.trim()),
-          ),
-          actions: [
-            TextButton(
-                onPressed: () => Navigator.of(ctx).pop(),
-                child: Text(t('Hủy'))),
-            FilledButton(
-                onPressed: () => Navigator.of(ctx).pop(c.text.trim()),
-                child: Text('OK')),
-          ],
-        );
-      },
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     if (_loading) return Center(child: CircularProgressIndicator());
@@ -376,9 +484,35 @@ class _BookMenuPanelState extends State<BookMenuPanel> {
         child: InlineMessage(_error!, error: true, onRetry: _load),
       );
     }
+    if (widget.laRetail && _items.isEmpty && _lyDoTrong.isNotEmpty) {
+      return Padding(
+        padding: EdgeInsets.all(40),
+        child: InlineMessage(_lyDoTrong, error: true, onRetry: _load),
+      );
+    }
     final book = _book();
     if (book == null) {
-      return Center(child: Text(t('Chưa có cấu hình menu quyển')));
+      // Catalogue bán lẻ bắt đầu từ con số 0 (menu nhà hàng có sẵn quyển mẫu),
+      // nên phải có lối tạo quyển đầu tiên ngay tại đây.
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(widget.laRetail
+                ? t('Chưa có quyển catalogue nào')
+                : t('Chưa có cấu hình menu quyển')),
+            SizedBox(height: 12),
+            FilledButton.icon(
+              onPressed: () {
+                _newBook();
+                _save();
+              },
+              icon: Icon(Icons.add, size: 16),
+              label: Text(t('Tạo quyển mới')),
+            ),
+          ],
+        ),
+      );
     }
 
     return LayoutBuilder(builder: (context, c) {
@@ -422,7 +556,7 @@ class _BookMenuPanelState extends State<BookMenuPanel> {
   }
 
   Widget _topControls(Map<String, dynamic> book, {required bool compact}) {
-    final books = _books();
+    final books = _quyenCungLoai;
     return Container(
       padding: EdgeInsets.all(compact ? 10 : 14),
       decoration: BoxDecoration(
@@ -453,10 +587,10 @@ class _BookMenuPanelState extends State<BookMenuPanel> {
                 ),
               ),
               Switch(
-                value: _cfg?['enabled'] != false,
+                value: _dangBat,
                 activeThumbColor: DanColors.brand,
                 onChanged: (v) {
-                  setState(() => _cfg?['enabled'] = v);
+                  setState(() => _cfg?[_khoaBat] = v);
                   _save(reload: false);
                 },
               ),
@@ -485,7 +619,7 @@ class _BookMenuPanelState extends State<BookMenuPanel> {
                   ],
                   onChanged: (v) => setState(() {
                     _bookId = v;
-                    _cfg?['activeBookId'] = v;
+                    _cfg?[_khoaQuyen] = v;
                     _pageIdx = 0;
                     _hotspotId = null;
                   }),
@@ -692,6 +826,27 @@ class _BookMenuPanelState extends State<BookMenuPanel> {
               ),
             ],
           ),
+          // DANH MỤC CỦA TRANG.
+          //
+          // Quyển catalogue dày vài chục trang thì khách không lật hết để tìm.
+          // Gán mục cho trang ở đây, màn khách dựng thanh danh mục và bấm là
+          // nhảy thẳng tới trang đầu của mục đó. Nhiều trang cùng một mục thì
+          // gõ y hệt tên mục — mục nhận trang ĐẦU TIÊN mang tên ấy.
+          if (pages.isNotEmpty) ...[
+            SizedBox(height: 10),
+            TextFormField(
+              key: ValueKey('cat_${pages[currentPage]['id']}'),
+              initialValue: pages[currentPage]['category']?.toString() ?? '',
+              decoration: InputDecoration(
+                labelText: t('Danh mục của trang'),
+                hintText: t('VD: Hạt dinh dưỡng'),
+                helperText: t('Để trống nếu trang này không mở đầu mục nào'),
+                isDense: true,
+              ),
+              onChanged: (v) =>
+                  setState(() => pages[currentPage]['category'] = v.trim()),
+            ),
+          ],
           SizedBox(height: 8),
           _pageStrip(pages, currentPage: currentPage, compact: compact),
         ],
@@ -855,7 +1010,7 @@ class _BookMenuPanelState extends State<BookMenuPanel> {
                                   : null,
                             ),
                             child: Text(
-                              '${h['label']?.toString().isNotEmpty == true ? h['label'] : _menuName(h['menu_item_id']?.toString() ?? '')}  ·  x ${((h['x'] as num?) ?? 0).toStringAsFixed(1)}% y ${((h['y'] as num?) ?? 0).toStringAsFixed(1)}%',
+                              '${h['label']?.toString().isNotEmpty == true ? h['label'] : _menuName(h[_khoaHang]?.toString() ?? '')}  ·  x ${((h['x'] as num?) ?? 0).toStringAsFixed(1)}% y ${((h['y'] as num?) ?? 0).toStringAsFixed(1)}%',
                               overflow: TextOverflow.ellipsis,
                             ),
                           ),
@@ -876,8 +1031,8 @@ class _BookMenuPanelState extends State<BookMenuPanel> {
   }
 
   Widget _hotspotEditor(Map<String, dynamic> hs) {
-    final selectedItem = _items.any((i) => i.id == hs['menu_item_id'])
-        ? hs['menu_item_id']?.toString()
+    final selectedItem = _items.any((i) => i.id == hs[_khoaHang])
+        ? hs[_khoaHang]?.toString()
         : null;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -893,7 +1048,7 @@ class _BookMenuPanelState extends State<BookMenuPanel> {
                   value: item.id,
                   child: Text(item.name, overflow: TextOverflow.ellipsis)),
           ],
-          onChanged: (v) => setState(() => hs['menu_item_id'] = v ?? ''),
+          onChanged: (v) => setState(() => hs[_khoaHang] = v ?? ''),
         ),
         SizedBox(height: 10),
         TextFormField(

@@ -7,6 +7,7 @@
 #include <variant>
 
 #include "flutter/generated_plugin_registrant.h"
+#include "windows_print_bridge.h"
 
 FlutterWindow::FlutterWindow(const flutter::DartProject& project)
     : project_(project) {}
@@ -30,6 +31,9 @@ bool FlutterWindow::OnCreate() {
   }
   RegisterPlugins(flutter_controller_->engine());
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
+
+  windows_print_bridge_ = std::make_unique<WindowsPrintBridge>(
+      GetHandle(), flutter_controller_->engine()->messenger());
 
   // Custom window-chrome channel: the Flutter top bar acts as the title bar
   // (drag, minimize, maximize/restore, close) since the native frame is removed.
@@ -102,6 +106,7 @@ bool FlutterWindow::OnCreate() {
 }
 
 void FlutterWindow::OnDestroy() {
+  windows_print_bridge_.reset();
   if (flutter_controller_) {
     flutter_controller_ = nullptr;
   }

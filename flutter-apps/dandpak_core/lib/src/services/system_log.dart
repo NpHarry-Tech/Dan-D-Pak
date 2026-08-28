@@ -160,6 +160,47 @@ class SystemLog {
   }
 
   // ── Correlation id: xuyên suốt 1 flow nghiệp vụ (thanh toán, gửi bếp…) ────
+  static String _secureSanitize(String value, [int max = 4000]) {
+    var out = sanitize(value, max * 2);
+    out = out
+        .replaceAll(
+            RegExp(
+                r'-----BEGIN (?:[A-Z0-9]+ )?PRIVATE KEY-----[\s\S]*?-----END (?:[A-Z0-9]+ )?PRIVATE KEY-----',
+                caseSensitive: false),
+            '[REDACTED_PRIVATE_KEY]')
+        .replaceAllMapped(
+            RegExp(r'\b(Bearer|Apikey|Basic)\s+[^\s,;]+', caseSensitive: false),
+            (m) => '${m[1]} [REDACTED]')
+        .replaceAllMapped(
+            RegExp(
+                r'((?:token|authorization|api[_-]?key|access[_-]?token|secret|password|pin)\s*[:=]\s*)[^\s,;}&]+',
+                caseSensitive: false),
+            (m) => '${m[1]}[REDACTED]');
+    return out.length > max ? '${out.substring(0, max)}…' : out;
+  }
+
+  static dynamic _sanitizeExtra(dynamic value, [int depth = 0]) {
+    if (depth > 5) return '[REDACTED_DEPTH]';
+    if (value is List) {
+      return value.map((item) => _sanitizeExtra(item, depth + 1)).toList();
+    }
+    if (value is Map) {
+      return value.map((key, child) {
+        final name = key.toString();
+        final sensitive = RegExp(
+                r'authorization|token|secret|password|pin|api[_-]?key|private[_-]?key',
+                caseSensitive: false)
+            .hasMatch(name);
+        return MapEntry(
+            name, sensitive ? '[REDACTED]' : _sanitizeExtra(child, depth + 1));
+      });
+    }
+    return value is String ? _secureSanitize(value) : value;
+  }
+
+  static String redactDiagnostic(String text, [int max = 4000]) =>
+      _secureSanitize(text, max);
+
   static const Symbol _zoneKey = #dandpakCorrelationId;
   static final Random _rand = Random();
 
@@ -212,8 +253,8 @@ class SystemLog {
       'level': level,
       'source': source,
       'eventType': eventType,
-      'title': sanitize(title, 300),
-      'message': sanitize(message, 3000),
+      'title': _secureSanitize(title, 300),
+      'message': _secureSanitize(message, 3000),
       'username': username,
       'userId': userId,
       'branchId': branchId,
@@ -226,7 +267,7 @@ class SystemLog {
       'osVersion': Platform.operatingSystemVersion,
       'screen': screen ?? BlackBox.screen,
       if (action != null) 'action': action,
-      if (endpoint != null) 'endpoint': endpoint,
+      if (endpoint != null) 'endpoint': _secureSanitize(endpoint, 1000),
       if (method != null) 'method': method,
       if (statusCode != null) 'statusCode': statusCode,
       if (durationMs != null) 'durationMs': durationMs,
@@ -236,8 +277,8 @@ class SystemLog {
       if (tableId != null) 'tableId': tableId,
       if (paymentId != null) 'paymentId': paymentId,
       if (exceptionType != null) 'exceptionType': exceptionType,
-      if (stackTrace != null) 'stackTrace': sanitize(stackTrace, 6000),
-      if (extra != null) 'extra': extra,
+      if (stackTrace != null) 'stackTrace': _secureSanitize(stackTrace, 6000),
+      if (extra != null) 'extra': _sanitizeExtra(extra),
     };
   }
 
@@ -351,7 +392,9 @@ class SystemLog {
       _deviceId = id;
       _deviceName = Platform.localHostname;
     } catch (_) {
-      _deviceId = 'dev_unknown';
+      _deviceId =
+          'dev_${DateTime.now().microsecondsSinceEpoch.toRadixString(36)}'
+          '${_rand.nextInt(0xFFFFFF).toRadixString(36)}';
     }
   }
 

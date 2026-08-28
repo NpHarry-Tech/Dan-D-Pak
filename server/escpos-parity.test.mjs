@@ -22,11 +22,12 @@ import test from 'node:test';
 const here = dirname(fileURLToPath(import.meta.url));
 const server = readFileSync(join(here, 'services', 'printing.js'), 'utf8');
 const agent = readFileSync(join(here, 'agent.cjs'), 'utf8');
+const setup = readFileSync(join(here, '..', 'flutter-apps', 'dandpak_desktop', 'setup.iss'), 'utf8');
 
 /** Mọi `const TEN = Buffer.from([...])` trong file → { TEN: 'byte,byte,...' }. */
 function hangLenh(src) {
   const out = {};
-  const re = /const\s+(ESC_[A-Z_]+)\s*=\s*Buffer\.from\(\[([^\]]*)\]/g;
+  const re = /const\s+(ESC_[A-Z0-9_]+)\s*=\s*Buffer\.from\(\[([^\]]*)\]/g;
   let m;
   while ((m = re.exec(src))) out[m[1]] = m[2].replace(/\s+/g, '');
   return out;
@@ -73,4 +74,75 @@ test('moi phieu deu di qua ESC_INIT roi ESC_RESET, dung thu tu', () => {
     const m = src.match(/Buffer\.concat\(\[\s*ESC_INIT,\s*ESC_RESET,/);
     assert.ok(m, `${ten}: escposBuffer phai bat dau bang ESC_INIT roi ESC_RESET`);
   }
+});
+
+test('receipt raster has safe spooler driver, and setup replaces stale agents', () => {
+  assert.match(agent, /WritePrinter/);
+  assert.match(setup, /taskkill \/F \/IM dandpak-agent\.exe/i);
+});
+
+// ── BA DUONG IN PHAI RA CUNG MOT KIEU CHU ──────────────────────────────────
+// server/services/printing.js  : may in LAN + may in Windows do chinh server in
+// server/agent.cjs             : Hardware Agent tren may POS Windows
+// local_print_agent.dart       : agent chay trong app (may POS cam tay Sunmi)
+//
+// Truoc day moi noi tu quyet: server/agent bo dau bang ascii(), con ban Dart
+// gui thang UTF-8. Cung mot cua hang in ra cho co dau cho khong — dung trieu
+// chung nguoi dung bao. Ba file phai dung CUNG bang ma va CUNG danh dau kieu chu.
+const dart = readFileSync(join(here, '..', 'flutter-apps', 'dandpak_core', 'lib',
+  'src', 'services', 'local_print_agent.dart'), 'utf8');
+
+test('khong con noi nao tu y bo dau truoc khi gui ra may in', () => {
+  // ascii() van duoc phep TON TAI (bang ma 'ascii' la lua chon cuoi cho may in
+  // doi cu), nhung KHONG duoc goi vo dieu kien trong buoc dung byte.
+  for (const [ten, src] of [['services/printing.js', server], ['agent.cjs', agent]]) {
+    assert.doesNotMatch(src, /Buffer\.from\(ascii\(text\)\s*\+/,
+      `${ten}: dang bo dau vo dieu kien khi dung byte ESC/POS`);
+  }
+  assert.doesNotMatch(dart, /utf8\.encode\('\$text/,
+    'local_print_agent.dart: phai di qua _encodeMarked de ton trong bang ma');
+});
+
+test('bang ma CP1258 khai giong nhau o server va agent', () => {
+  const lay = (src) => {
+    const m = src.match(/CP1258_MAP[\s\S]*?\}\)\.map/);
+    assert.ok(m, 'khong tim thay bang ma CP1258');
+    return (m[0].match(/'0x[0-9a-f]{4}':\s*0x[0-9a-f]{2}/g) || []).join('|');
+  };
+  assert.equal(lay(agent), lay(server),
+    'bang ma lech nhau — cung mot bill in ra hai kieu chu');
+  assert.match(server, /CP1258_PAGE = 30/);
+  assert.match(agent, /CP1258_PAGE = 30/);
+});
+
+test('danh dau kieu chu [[B]]/[[S]] duoc ca ba duong in hieu giong nhau', () => {
+  for (const [ten, src] of [
+    ['services/printing.js', server], ['agent.cjs', agent], ['local_print_agent.dart', dart],
+  ]) {
+    assert.match(src, /B\[01\]\|S\[0-3\]/, `${ten}: thieu bo bat danh dau kieu chu`);
+    assert.match(src, /0x1b,\s*0x45,\s*0x01/, `${ten}: thieu lenh in dam ESC E 1`);
+  }
+  // Bang co chu phai giong het nhau: chi nhan BE CAO (0x01/0x02) o ba muc dau,
+  // muc cuoi 0x11 moi nhan ca hai chieu. Lech bang nay la K80 tu nhien con 24 cot.
+  const bang = (src, ten) => {
+    const m = src.match(/(?:FONT_SCALE|_fontScale)\s*=\s*\{([\s\S]*?)\}/);
+    assert.ok(m, `${ten}: khong tim thay bang co chu`);
+    return (m[1].match(/\d\s*:\s*0x[0-9a-f]{2}/g) || [])
+      .map(x => x.replace(/\s+/g, '')).join(',');
+  };
+  const chuan = '0:0x00,1:0x01,2:0x02,3:0x11';
+  for (const [ten, src] of [
+    ['services/printing.js', server], ['agent.cjs', agent], ['local_print_agent.dart', dart],
+  ]) {
+    assert.equal(bang(src, ten), chuan, `${ten}: bang co chu da lech`);
+  }
+});
+
+test('do dam gui lenh chinh NHIET, khong chi in de them luot', () => {
+  // ESC G / ESC E chi in de, khong lam giay nhiet den hon — do la ly do cua hang
+  // de "rat dam" ma bill van mo. ESC 7 moi la lenh chinh nhiet dau in.
+  for (const [ten, src] of [['services/printing.js', server], ['agent.cjs', agent]]) {
+    assert.match(src, /0x1b,\s*0x37,/, `${ten}: thieu lenh ESC 7 chinh nhiet dau in`);
+  }
+  assert.match(dart, /0x1b, 0x37,/, 'local_print_agent.dart: thieu lenh ESC 7');
 });

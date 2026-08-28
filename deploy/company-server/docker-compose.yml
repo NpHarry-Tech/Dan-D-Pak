@@ -11,6 +11,9 @@ services:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config
+    networks:
+      - default
+      - dandpak-ingress
     depends_on:
       app:
         condition: service_healthy
@@ -27,6 +30,11 @@ services:
       NODE_ENV: production
       DEPLOYMENT_TARGET: vps
       DISABLE_DEMO_SEED: "true"
+      # MÚI GIỜ NGHIỆP VỤ. Container mặc định chạy UTC, lệch 7 tiếng so với giờ
+      # cửa hàng. Mọi chỗ dựng ngày/giờ bằng giờ máy (phiếu in thử, phiếu bếp,
+      # ngày lập hóa đơn điện tử) sẽ ghi giờ UTC mà gắn nhãn như giờ VN — bill
+      # lúc 00:10 đêm bị đẩy về NGÀY HÔM TRƯỚC, sai kỳ kê khai thuế.
+      TZ: Asia/Ho_Chi_Minh
     volumes:
       # SQLite database — dữ liệu bền vững, không mất khi update
       - app_sqlite:/app/server-data
@@ -81,3 +89,8 @@ volumes:
   app_uploads:
   app_product_images:
   app_backups:
+
+networks:
+  dandpak-ingress:
+    external: true
+    name: dandpak-ingress

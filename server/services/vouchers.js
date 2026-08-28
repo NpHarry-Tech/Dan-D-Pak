@@ -5,12 +5,43 @@ import { db, uid, now, audit } from '../db.js';
 import { parseJson } from '../core/util.js';
 import { emit } from '../realtime.js';
 import { perkDiscount } from './customers.js';
+import { businessParts } from '../core/businessClock.js';
+import {
+  promotionAdvisory, advisoryThresholdPct, complianceAuditMeta, classifyPromotion,
+} from './promotionAdvisory.js';
+
+// §9 ADVISORY (owner: KHÔNG enforce cap). Đánh giá CTKM lúc tạo/sửa CHỈ để:
+//  • trả cờ advise cho UI cảnh báo (mức ưu đãi cao theo ngưỡng cấu hình);
+//  • ghi audit metadata (taxonomy + note/reference nhập tay) — KHÔNG legal=true.
+// TUYỆT ĐỐI KHÔNG sửa value/type/scope, KHÔNG chặn lưu. Với pct → % chính là value;
+// type khác (amount/fixed) không có % nếu chưa có giỏ → không cảnh báo theo ngưỡng.
+function evalAdvisory(v, body, actor) {
+  const adv = v.type === 'pct'
+    ? promotionAdvisory(v.value, 100)
+    : { advise: false, discount_pct: null, threshold_pct: advisoryThresholdPct() };
+  const meta = complianceAuditMeta({
+    id: body.id, name: v.name, type: v.type, scope: v.scope, value: v.value,
+    branch_id: body.branch_id,
+    is_internal_use: body.is_internal_use === true || body.is_internal_use === 1,
+    program_type: body.program_type || null,
+    compliance_note: body.compliance_note || null,
+    legal_basis_reference: body.legal_basis_reference || null,
+    approval_reference: body.approval_reference || null,
+    internal_reason: body.internal_reason || null,
+  }, actor);
+  return { advisory: adv, compliance: meta, taxonomy: classifyPromotion(v) };
+}
 
 const TYPES = ['pct', 'amount', 'buy_x_get_1'];
 // order    = toan bill
 // sku      = one SKU, optionally one lot/date
 // all_sku  = every product, calculated per cart line
-const SCOPES = ['order', 'sku', 'all_sku'];
+// combo    = mua đủ N món BẤT KỲ trong tập (skus[] + groups[]) -> ưu đãi. Cấu
+//            hình combo nằm trong scope_config {skus,groups,qty}; kiểu ưu đãi ở
+//            `type` (fixed = N món giá cố định X / amount = giảm X / pct = giảm %),
+//            giá trị ở `value`.
+const SCOPES = ['order', 'sku', 'all_sku', 'combo'];
+const COMBO_REWARDS = ['fixed', 'amount', 'pct'];
 const BIRTHDAY_MODES = ['off', 'day', 'month'];
 const USAGE_LIMITS = ['unlimited', 'once'];
 const WEEKDAY_LABEL = { 1: 'T2', 2: 'T3', 3: 'T4', 4: 'T5', 5: 'T6', 6: 'T7', 7: 'CN' };
@@ -38,9 +69,14 @@ export function createVoucher(body, branch_id = 'sala') {
     id, branch_id, v.code, v.name, v.type, v.value, v.scope, v.sku_id, v.lot_no, v.min_total,
     v.active, v.starts_at, v.ends_at, JSON.stringify(v.schedule), JSON.stringify(v.scope_config),
     v.note, now(), now());
-  audit('voucher.create', { id, name: v.name, scope: v.scope, sku_id: v.sku_id, lot_no: v.lot_no }, branch_id);
+  const adv = evalAdvisory(v, { ...body, id, branch_id }, body.actor);
+  // Audit ghi chi tiết CTKM + compliance metadata (KHÔNG kết luận legal=true).
+  audit('voucher.create', {
+    id, name: v.name, scope: v.scope, sku_id: v.sku_id, lot_no: v.lot_no,
+    taxonomy: adv.taxonomy, advisory: adv.advisory, compliance: adv.compliance,
+  }, branch_id);
   emit('vouchers:updated', { id, created: true }, branch_id);
-  return getVoucher(id, branch_id);
+  return { ...getVoucher(id, branch_id), advisory: adv.advisory };
 }
 
 export function updateVoucher(id, body, branch_id = 'sala') {
@@ -56,9 +92,12 @@ export function updateVoucher(id, body, branch_id = 'sala') {
     v.code, v.name, v.type, v.value, v.scope, v.sku_id, v.lot_no, v.min_total,
     v.active, v.starts_at, v.ends_at, JSON.stringify(v.schedule), JSON.stringify(v.scope_config),
     v.note, now(), id, branch_id);
-  audit('voucher.update', { id, name: v.name }, branch_id);
+  const adv = evalAdvisory(v, { ...body, id, branch_id }, body.actor);
+  audit('voucher.update', {
+    id, name: v.name, taxonomy: adv.taxonomy, advisory: adv.advisory, compliance: adv.compliance,
+  }, branch_id);
   emit('vouchers:updated', { id, updated: true }, branch_id);
-  return getVoucher(id, branch_id);
+  return { ...getVoucher(id, branch_id), advisory: adv.advisory };
 }
 
 export function toggleVoucher(id, active, branch_id = 'sala') {
@@ -69,6 +108,18 @@ export function toggleVoucher(id, active, branch_id = 'sala') {
   audit(on ? 'voucher.enable' : 'voucher.disable', { id, name: cur.name }, branch_id);
   emit('vouchers:updated', { id, active: !!on }, branch_id);
   return getVoucher(id, branch_id);
+}
+
+// XOÁ HẲN CTKM. Đơn cũ đã chụp lại voucher_code/tên + promo trên từng dòng, nên
+// xoá voucher KHÔNG làm hỏng lịch sử/hoá đơn đã in. Admin cần xoá được chứ không
+// chỉ bật/tắt (yêu cầu vận hành 06/08/2026).
+export function deleteVoucher(id, branch_id = 'sala') {
+  const cur = db.prepare(`SELECT * FROM vouchers WHERE id=? AND branch_id=?`).get(id, branch_id);
+  if (!cur) throw new Error('Voucher khong ton tai');
+  db.prepare(`DELETE FROM vouchers WHERE id=? AND branch_id=?`).run(id, branch_id);
+  audit('voucher.delete', { id, name: cur.name, code: cur.code || '' }, branch_id);
+  emit('vouchers:updated', { id, deleted: true }, branch_id);
+  return { ok: true, deleted: id, name: cur.name };
 }
 
 export function getVoucher(id, branch_id = 'sala') {
@@ -83,6 +134,26 @@ export function getVoucher(id, branch_id = 'sala') {
 export function calculateRetailDiscount(lines, voucher_id = null, branch_id = 'sala', opts = {}) {
   const active = listVouchers(branch_id).filter(v => isUsableNow(v, { customer: opts.customer }));
   const skuVouchers = active.filter(v => v.scope === 'sku' || v.scope === 'all_sku');
+  // Pricing runs for every preview and checkout. Load cart metadata once instead
+  // of querying SKU for every combo×line and lot for every line (N+1/C×N).
+  const skuIds = [...new Set(lines.map(line => line.sku_id).filter(Boolean))];
+  const lotIds = [...new Set(lines.map(line => line.lot_id).filter(Boolean))];
+  const skuMeta = new Map();
+  const lotNoById = new Map();
+  if (skuIds.length) {
+    const slots = skuIds.map(() => '?').join(',');
+    for (const row of db.prepare(`SELECT id,category,group_path FROM skus
+      WHERE branch_id=? AND id IN (${slots})`).all(branch_id, ...skuIds)) {
+      skuMeta.set(row.id, row);
+    }
+  }
+  if (lotIds.length) {
+    const slots = lotIds.map(() => '?').join(',');
+    for (const row of db.prepare(`SELECT id,lot_no FROM stock_lots
+      WHERE branch_id=? AND id IN (${slots})`).all(branch_id, ...lotIds)) {
+      lotNoById.set(row.id, row.lot_no);
+    }
+  }
   // CTKM cấp SẢN PHẨM (scope 'sku' và 'all_sku', gồm cả "mua X tặng 1") CHỈ được áp
   // cho dòng HÀNG RETAIL THẬT (có sku_id). Món F&B (menu_item, không có sku_id) TUYỆT
   // ĐỐI không dính — không thể có chuyện "mua 5 tặng 1" cho món ăn. Giảm giá cấp BILL
@@ -96,18 +167,83 @@ export function calculateRetailDiscount(lines, voucher_id = null, branch_id = 's
   const appliedSkuPromos = [];
   let lineDiscount = 0;
 
+  // ── COMBO trước tiên ──────────────────────────────────────────────────────
+  // Mua đủ N món BẤT KỲ trong tập (skus[] + groups[]) → ưu đãi. Dòng đã dính
+  // combo thì KHÔNG áp thêm CTKM sản phẩm / voucher đơn (tránh giảm chồng).
+  // selectedCombos = null → áp mọi combo (catalogue/F&B auto); mảng → chỉ combo
+  // được thu ngân CHỌN ở POS (opt-in bằng icon hộp quà).
+  const selectedCombos = opts.selectedCombos;
+  const comboVouchers = active.filter(v => v.scope === 'combo'
+    && (selectedCombos == null || (Array.isArray(selectedCombos) && selectedCombos.includes(v.id))));
+  const comboConsumed = new Set();
+  for (const combo of comboVouchers) {
+    const cfg = combo.scope_config || {};
+    const skuSet = new Set(cfg.skus || []);
+    const groupSet = new Set(cfg.groups || []);
+    const N = Math.max(1, parseInt(cfg.qty) || 1);
+    // Đơn vị đủ điều kiện: mỗi unit = 1 sản phẩm của dòng khớp (sku hoặc nhóm).
+    const units = [];
+    for (const [line_index, line] of lines.entries()) {
+      if (!line.sku_id || line.price <= 0) continue;
+      let ok = skuSet.has(line.sku_id);
+      if (!ok && groupSet.size) {
+        // "Nhóm hàng" = field category (nhóm phẳng, vd "Hạt Điều"); vẫn khớp cả
+        // group_path phân cấp nếu có, cho linh hoạt.
+        const row = skuMeta.get(line.sku_id) || {};
+        const cat = row.category || '', gp = row.group_path || '';
+        ok = [...groupSet].some(g => cat === g || gp === g || (gp && gp.startsWith(g + '/')));
+      }
+      if (!ok) continue;
+      for (let i = 0; i < (Number(line.qty) || 0); i++) units.push({ line_index, price: line.price });
+    }
+    units.sort((a, b) => b.price - a.price); // combo phủ các món GIÁ CAO nhất
+    const numCombos = Math.floor(units.length / N);
+    if (numCombos <= 0) continue;
+    const perLine = new Map(); // line_index -> tổng giảm
+    for (let c = 0; c < numCombos; c++) {
+      const group = units.slice(c * N, c * N + N);
+      const groupValue = group.reduce((s, u) => s + u.price, 0);
+      let disc = 0;
+      // fixed: N món = combo.value → phần chênh = tổng lẻ − giá combo. CÓ THỂ ÂM
+      // (combo bán-kèm/hộp quà đắt hơn tổng lẻ) — vẫn phải áp để KHÁCH TRẢ ĐÚNG GIÁ
+      // COMBO, không rớt về giá lẻ (sự cố "granola+sữa 500K tự về 450K" 07/08/2026).
+      if (combo.type === 'fixed') disc = groupValue - combo.value;
+      else if (combo.type === 'amount') disc = Math.min(groupValue, combo.value); // giảm value
+      else if (combo.type === 'pct') disc = Math.round(groupValue * combo.value / 100);
+      // amount/pct chỉ áp khi CÓ giảm; fixed LUÔN áp (giá combo là chuẩn).
+      if (combo.type !== 'fixed' && disc <= 0) continue;
+      // Rải phần chênh lên các unit theo tỉ lệ giá; unit cuối nhận phần dư.
+      // KHÔNG kẹp Math.min vì disc có thể ÂM (combo tăng giá).
+      let left = disc;
+      for (let i = 0; i < group.length; i++) {
+        const u = group[i];
+        const a = i === group.length - 1 ? left : Math.round(disc * u.price / groupValue);
+        left -= a;
+        perLine.set(u.line_index, (perLine.get(u.line_index) || 0) + a);
+      }
+    }
+    for (const [line_index, amt] of perLine) {
+      if (combo.type !== 'fixed' && amt <= 0) continue; // fixed: consume kể cả chênh 0/âm
+      comboConsumed.add(line_index);
+      lineDiscount += amt;
+      appliedSkuPromos.push({
+        line_index, sku_id: lines[line_index].sku_id, voucher_id: combo.id, code: combo.code || '',
+        name: combo.name, amount: Math.round(amt), type: 'combo', value: combo.value,
+        free_units: 0, free_product_name: '',
+        description: `${combo.name}: combo ${N} món${combo.type === 'fixed' ? ` = ${formatVnd(combo.value)}` : ''}`,
+      });
+    }
+  }
+
   for (const [line_index, line] of lines.entries()) {
+    if (comboConsumed.has(line_index)) continue; // đã dính combo → bỏ qua CTKM sp
     const base = line.qty * line.price;
     let amount = 0;
     let freeUnits = 0;
     const usedNames = new Set();
     const descParts = [];
 
-    let lineLotNo = null;
-    if (line.lot_id) {
-      const lot = db.prepare(`SELECT lot_no FROM stock_lots WHERE id=?`).get(line.lot_id);
-      if (lot) lineLotNo = lot.lot_no;
-    }
+    const lineLotNo = line.lot_id ? (lotNoById.get(line.lot_id) || null) : null;
 
     const selectedVoucherId = line.voucher_id || null;
     const lineSkuVouchers = selectedVoucherId
@@ -173,19 +309,53 @@ export function calculateRetailDiscount(lines, voucher_id = null, branch_id = 's
     });
   }
 
+  const promotedLines = new Set(appliedSkuPromos.map(p => p.line_index));
+  const eligibleLines = lines
+    .map((line, line_index) => ({ line_index, base: Math.max(0, line.qty * line.price) }))
+    .filter(line => line.base > 0 && !promotedLines.has(line.line_index));
   const baseAfterLinePromos = Math.max(0, subtotal - lineDiscount);
+  const eligibleSubtotal = eligibleLines.reduce((sum, line) => sum + line.base, 0);
   let orderDiscount = 0;
   let orderVoucher = null;
   if (voucher_id) {
     const v = active.find(x => x.id === voucher_id && x.scope === 'order');
     if (!v) throw new Error('Voucher khong kha dung hoac da tat');
     if (baseAfterLinePromos < (v.min_total || 0)) throw new Error('Chua dat gia tri toi thieu cua voucher');
-    orderDiscount = Math.min(baseAfterLinePromos, voucherAmount(v, baseAfterLinePromos, 1));
+    orderDiscount = Math.min(eligibleSubtotal, voucherAmount(v, eligibleSubtotal, 1));
     orderVoucher = brief(v, orderDiscount);
   }
 
-  const remainAfterVoucher = Math.max(0, baseAfterLinePromos - orderDiscount);
-  const extraDiscount = Math.min(remainAfterVoucher, Math.max(0, Math.round(Number(opts.extraDiscount) || 0)));
+  const remainAfterVoucher = Math.max(0, eligibleSubtotal - orderDiscount);
+  // GIẢM TAY + ưu đãi khách kẹp theo TỔNG CÒN PHẢI TRẢ (sau CTKM sản phẩm + voucher
+  // đơn), KHÔNG chỉ theo phần chưa-khuyến-mãi. Trước đây kẹp remainAfterVoucher nên
+  // đơn có combo/CTKM thì giảm tay bị cắt mất (bấm giảm 70k mà vẫn thu đủ), và giảm
+  // 100% không về 0 (sự cố 07/08/2026). Kẹp theo tổng còn phải trả áp được cả bill.
+  const owedBeforeExtra = Math.max(0, subtotal - lineDiscount - orderDiscount);
+  const extraDiscount = Math.min(owedBeforeExtra, Math.max(0, Math.round(Number(opts.extraDiscount) || 0)));
+
+  const orderLevelDiscount = orderDiscount + extraDiscount;
+  let remainingDiscount = orderLevelDiscount;
+  let remainingBase = eligibleSubtotal;
+  for (const [index, line] of eligibleLines.entries()) {
+    const amount = index === eligibleLines.length - 1
+      ? remainingDiscount
+      : Math.min(remainingDiscount, Math.round(remainingDiscount * line.base / remainingBase));
+    remainingDiscount -= amount;
+    remainingBase -= line.base;
+    if (amount <= 0) continue;
+    appliedSkuPromos.push({
+      line_index: line.line_index,
+      voucher_id: orderVoucher?.id || null,
+      code: orderVoucher?.code || '',
+      name: orderVoucher?.name || 'Khuyen mai toan bill',
+      amount,
+      type: 'order',
+      value: orderVoucher?.value || 0,
+      free_units: 0,
+      free_product_name: '',
+      description: orderVoucher?.name || 'Khuyen mai toan bill',
+    });
+  }
 
   const discount = Math.min(subtotal, Math.round(lineDiscount + orderDiscount + extraDiscount));
   return {
@@ -197,6 +367,7 @@ export function calculateRetailDiscount(lines, voucher_id = null, branch_id = 's
     total: Math.max(0, subtotal - discount),
     appliedSkuPromos,
     orderVoucher,
+    eligibleAfterOrder: remainAfterVoucher,
   };
 }
 
@@ -212,15 +383,17 @@ export function buildDiscountPlan(lines, {
   customer = null,
   manual_discount = 0,
   branch_id = 'sala',
+  selected_combos = null,   // null = áp mọi combo (catalogue/F&B); mảng = CHỈ combo được chọn (POS opt-in)
 } = {}) {
   // Lượt 1: biết phần còn lại SAU khuyến mại sản phẩm + voucher đơn để tính perk đúng gốc.
-  const pre = calculateRetailDiscount(lines, voucher_id, branch_id, { customer });
-  const baseForExtra = Math.max(0, pre.subtotal - pre.lineDiscount - pre.orderDiscount);
+  const pre = calculateRetailDiscount(lines, voucher_id, branch_id, { customer, selectedCombos: selected_combos });
+  const baseForExtra = pre.eligibleAfterOrder;
   const customerPerk = customer ? perkDiscount(customer, baseForExtra) : 0;
   const manual = Math.max(0, Math.round(Number(manual_discount) || 0));
   const plan = calculateRetailDiscount(lines, voucher_id, branch_id, {
     customer,
     extraDiscount: customerPerk + manual,
+    selectedCombos: selected_combos,
   });
   return {
     ...plan,
@@ -236,16 +409,25 @@ export function buildDiscountPlan(lines, {
 }
 
 function normalizeInput(body = {}, cur = {}) {
-  const type = body.type !== undefined ? normalizeType(body.type) : (cur.type || 'pct');
   const scope = body.scope !== undefined || body.applies_to !== undefined
     ? normalizeScope(body.scope ?? body.applies_to)
     : (cur.scope || 'order');
+  // Combo: `type` là kiểu ưu đãi (fixed/amount/pct), validate theo COMBO_REWARDS.
+  const type = scope === 'combo'
+    ? normalizeComboReward(body.type ?? body.comboReward ?? cur.type)
+    : (body.type !== undefined ? normalizeType(body.type) : (cur.type || 'pct'));
   const name = pickText(body.name, cur.name);
   if (!name) throw new Error('Thieu ten chuong trinh');
   const value = pickInt(body.value, cur.value ?? cur.val ?? 0);
   if (type === 'pct' && (value <= 0 || value > 100)) throw new Error('Giam theo % phai tu 1 den 100');
   if (type === 'amount' && value <= 0) throw new Error('So tien giam phai lon hon 0');
+  if (type === 'fixed' && value <= 0) throw new Error('Gia combo phai lon hon 0');
   if (type === 'buy_x_get_1' && value <= 0) throw new Error('So luong mua X phai lon hon 0');
+  if (scope === 'combo') {
+    const cfg = normalizeScopeConfig(body, cur);
+    if (!cfg.skus.length && !cfg.groups.length) throw new Error('Combo can chon it nhat 1 SKU hoac 1 nhom hang');
+    if (cfg.qty < 1) throw new Error('So luong combo (N) phai >= 1');
+  }
   const starts_at = pickDateTime(body.starts_at, cur.starts_at);
   const ends_at = pickDateTime(body.ends_at, cur.ends_at);
   if (starts_at && ends_at && compareDateTime(starts_at, ends_at) > 0) {
@@ -315,11 +497,25 @@ function normalizeScopeConfig(body = {}, cur = {}) {
       };
   const hasRaw = Object.values(raw).some(v => v !== undefined);
   const src = hasRaw ? raw : curScope;
+  // Combo config: gộp từ body (comboSkus/comboGroups/comboQty) hoặc scope_config.
+  const comboSrc = (body.scope_config && typeof body.scope_config === 'object') ? body.scope_config : body;
+  const skus = textList(comboSrc.skus ?? comboSrc.comboSkus ?? comboSrc.combo_skus ?? curScope.skus);
+  const groups = textList(comboSrc.groups ?? comboSrc.comboGroups ?? comboSrc.combo_groups ?? curScope.groups);
+  const qtyRaw = comboSrc.qty ?? comboSrc.comboQty ?? comboSrc.combo_qty ?? curScope.qty;
   return {
     customerGroups: textList(src.customerGroups ?? src.customer_groups),
     staffIds: textList(src.staffIds ?? src.staff_ids),
     branches: textList(src.branches),
+    skus,
+    groups,
+    qty: Math.max(0, parseInt(qtyRaw) || 0),
   };
+}
+
+function normalizeComboReward(v) {
+  const s = String(v || 'fixed').toLowerCase();
+  if (COMBO_REWARDS.includes(s)) return s;
+  throw new Error('Kieu uu dai combo khong hop le');
 }
 
 function ensureSku(v, branch_id) {
@@ -411,9 +607,10 @@ function isUsableNow(v, { customer = null, ignoreCustomer = false, at = new Date
   if (v.ends_at && dateTimeMs(v.ends_at, true) < t) return false;
 
   const schedule = v.schedule || normalizeSchedule({}, v);
-  const month = at.getMonth() + 1;
-  const day = at.getDate();
-  const weekday = at.getDay() === 0 ? 7 : at.getDay();
+  const storeAt = businessParts(at);
+  const month = storeAt.month;
+  const day = storeAt.day;
+  const weekday = storeAt.weekday === 0 ? 7 : storeAt.weekday;
   if (schedule.months?.length && !schedule.months.includes(month)) return false;
   if (schedule.monthDays?.length && !schedule.monthDays.includes(day)) return false;
   if (schedule.weekdays?.length && !schedule.weekdays.includes(weekday)) return false;
@@ -435,7 +632,8 @@ function timeAllowed(schedule = {}, at = new Date()) {
   const start = minutesOfDay(schedule.timeStart);
   const end = minutesOfDay(schedule.timeEnd);
   if (start == null && end == null) return true;
-  const cur = at.getHours() * 60 + at.getMinutes();
+  const p = businessParts(at);
+  const cur = p.hour * 60 + p.minute;
   if (start != null && end != null) {
     if (start <= end) return cur >= start && cur <= end;
     return cur >= start || cur <= end;

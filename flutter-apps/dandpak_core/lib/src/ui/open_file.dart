@@ -44,7 +44,8 @@ Future<String> openBytes(List<int> bytes, String filename) async {
       exceptionType: e.runtimeType.toString(),
       extra: {'file': safe},
     );
-    throw Exception('Đã lưu file nhưng không mở được ($safe). File nằm ở: $path');
+    throw Exception(
+        'Đã lưu file nhưng không mở được ($safe). File nằm ở: $path');
   }
   return path;
 }

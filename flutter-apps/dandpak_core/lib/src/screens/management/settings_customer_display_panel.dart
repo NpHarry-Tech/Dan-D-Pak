@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 
 import '../../providers/customer_display_controller.dart';
 import '../../services/api_service.dart';
+import '../../services/local_store.dart';
 import '../../ui/app_theme.dart';
 import '../../ui/file_pick.dart';
 import '../customer_display/second_screen.dart';
@@ -13,8 +14,7 @@ import 'management_widgets.dart';
 import 'settings_tab.dart';
 import '../../utils/translation.dart';
 
-/// Settings → t("Màn hình phụ"): manage the ad slideshow images (stored inline
-/// as data URLs) and the seconds-per-image interval used by the 2nd screen.
+/// Ảnh mới được upload thành file; settings chỉ giữ URL để không phình DB.
 class CustomerDisplaySettingsPanel extends StatefulWidget {
   final ApiService api;
   CustomerDisplaySettingsPanel({super.key, required this.api});
@@ -50,10 +50,13 @@ class _CustomerDisplaySettingsPanelState
     try {
       final s = await widget.api.getAppSettings();
       final cd = s['customer_display'];
+      final localEnabled =
+          await LocalStore.instance.getString('customer_display_enabled') ==
+              'true';
       if (!mounted) return;
       setState(() {
         if (cd is Map) {
-          _enabled = cd['enabled'] == true;
+          _enabled = localEnabled;
           _seconds = (cd['secondsPerImage'] is num)
               ? (cd['secondsPerImage'] as num).toInt()
               : 20;
@@ -78,9 +81,12 @@ class _CustomerDisplaySettingsPanelState
   Future<void> _save() async {
     setState(() => _saving = true);
     try {
+      await LocalStore.instance
+          .setString('customer_display_enabled', _enabled ? 'true' : 'false');
       await widget.api.saveAppSettings({
         'customer_display': {
-          'enabled': _enabled,
+          // Chỉ nội dung trình chiếu dùng chung; bật/tắt thuộc máy đang thao tác.
+          'enabled': true,
           'secondsPerImage': _seconds,
           'images': _images,
         },
@@ -111,7 +117,25 @@ class _CustomerDisplaySettingsPanelState
     if (dataUrl == null) return;
     if (!dataUrl.startsWith('data:image/') &&
         !dataUrl.startsWith('data:video/')) return;
-    setState(() => _images = [..._images, dataUrl]);
+    try {
+      final comma = dataUrl.indexOf(',');
+      if (comma <= 5) throw Exception(t('Dữ liệu ảnh không hợp lệ'));
+      final mime = dataUrl.substring(5, comma).split(';').first;
+      if (!mime.startsWith('image/')) {
+        throw Exception(t('Hiện chỉ hỗ trợ ảnh cho màn hình phụ'));
+      }
+      final response = await widget.api.uploadCustomerDisplayImage(
+        data: dataUrl.substring(comma + 1),
+        mimeType: mime,
+        originalName:
+            'customer-display-${DateTime.now().millisecondsSinceEpoch}.${mime.split('/').last}',
+      );
+      final url = '${response['url'] ?? ''}'.trim();
+      if (url.isEmpty) throw Exception(t('Server không trả về đường dẫn ảnh'));
+      if (mounted) setState(() => _images = [..._images, url]);
+    } catch (e) {
+      _toast(e.toString().replaceFirst('Exception: ', ''), error: true);
+    }
   }
 
   void _removeImage(int i) {
@@ -300,7 +324,10 @@ class _CustomerDisplaySettingsPanelState
                         cacheWidth: 300,
                         errorBuilder: (_, __, ___) =>
                             Icon(Icons.broken_image_outlined))
-                    : Image.network(src, fit: BoxFit.contain, cacheWidth: 300)),
+                    : Image.network(
+                        src.startsWith('/') ? '${widget.api.baseUrl}$src' : src,
+                        fit: BoxFit.contain,
+                        cacheWidth: 300)),
           ),
         ),
         Positioned(

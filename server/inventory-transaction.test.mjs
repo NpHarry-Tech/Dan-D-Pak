@@ -29,6 +29,8 @@ function warehouse(id, name) {
 }
 warehouse('wh_a', 'Kho A');
 warehouse('wh_b', 'Kho B');
+db.prepare(`INSERT OR IGNORE INTO warehouses (id,branch_id,name,code,type,active,sort)
+  VALUES ('wh_k','sala','Kho bếp','WH-K','kitchen',1,0)`).run();
 
 function tonKho(itemId, wh) {
   return db.prepare(
@@ -48,6 +50,63 @@ test('helper giao dịch: lỗi thì hoàn tác sạch', () => {
 
   assert.equal(db.prepare(`SELECT COUNT(*) n FROM skus`).get().n, truoc,
     'dòng vừa chèn phải bị hoàn tác');
+});
+
+test('tạo SKU sinh mã tự động và chặn trùng mã/mã vạch trong chi nhánh', () => {
+  const first = Inv.createSku({ id: 'sku_auto_code', name: 'Hàng tự sinh mã', barcode: '893000001' }, 'sala');
+  assert.match(first.code, /^SP[A-Z0-9]+$/);
+  assert.throws(() => Inv.createSku({ id: 'sku_dup_barcode', name: 'Hàng trùng', barcode: '893000001' }, 'sala'), /đã tồn tại/);
+  assert.throws(() => Inv.createSku({ id: 'sku_dup_code', name: 'Hàng trùng mã', code: first.code }, 'sala'), /đã tồn tại/);
+});
+
+test('nhập lại cộng đúng lot/date; cùng mã lot khác HSD phải tách riêng', () => {
+  Inv.createSku({ id: 'sku_lot_date', name: 'Hàng theo lô', price: 1000,
+    stock: 0, warehouse_id: 'wh_a', track_lot: true }, 'sala');
+  Inv.receiveSku('sku_lot_date', 5, 'sala', {
+    warehouse_id: 'wh_a', lot_no: 'LOT-A', expiry_date: '2027-10-15',
+  });
+  Inv.receiveSku('sku_lot_date', 7, 'sala', {
+    warehouse_id: 'wh_a', lot_no: 'LOT-A', expiry_date: '2027-10-15',
+  });
+  Inv.receiveSku('sku_lot_date', 3, 'sala', {
+    warehouse_id: 'wh_a', lot_no: 'LOT-A', expiry_date: '2028-10-15',
+  });
+  const lots = db.prepare(`SELECT expiry_date,qty_on_hand FROM stock_lots
+    WHERE item_id='sku_lot_date' ORDER BY expiry_date`).all();
+  assert.deepEqual(lots.map(x => ({ expiry_date: x.expiry_date, qty_on_hand: x.qty_on_hand })), [
+    { expiry_date: '2027-10-15', qty_on_hand: 12 },
+    { expiry_date: '2028-10-15', qty_on_hand: 3 },
+  ]);
+  assert.equal(db.prepare(`SELECT stock FROM skus WHERE id='sku_lot_date'`).get().stock, 15);
+});
+
+test('không nhập mã lot thì cùng HSD dùng AUTO lot ổn định để cộng dồn', () => {
+  Inv.createSku({ id: 'sku_auto_lot', name: 'Hàng auto lot', price: 1000,
+    stock: 0, warehouse_id: 'wh_a', track_lot: true }, 'sala');
+  Inv.receiveSku('sku_auto_lot', 2, 'sala', { warehouse_id: 'wh_a', expiry_date: '2029-01-02' });
+  Inv.receiveSku('sku_auto_lot', 4, 'sala', { warehouse_id: 'wh_a', expiry_date: '2029-01-02' });
+  const lots = db.prepare(`SELECT lot_no,qty_on_hand FROM stock_lots WHERE item_id='sku_auto_lot'`).all();
+  assert.equal(lots.length, 1);
+  assert.equal(lots[0].lot_no, 'AUTO-20290102');
+  assert.equal(lots[0].qty_on_hand, 6);
+});
+
+test('xóa danh mục kho chỉ ngừng sử dụng, không xóa chứng từ và lịch sử đã phát sinh', () => {
+  Inv.createInventoryItem({ id: 'inv_history', name: 'Nguyên liệu lúc nhập', unit: 'kg',
+    barcode: 'INV-HISTORY', warehouse_id: 'wh_k', opening_stock: 0 }, 'sala');
+  Inv.receiveStock('inv_history', 3, 'sala', { warehouse_id: 'wh_k', unit_cost: 42000,
+    lot_no: 'HIST-1', movementType: 'receipt' });
+  const beforeMovements = Inv.listMovements('sala', { item_id: 'inv_history', limit: 20 });
+  assert.ok(beforeMovements.length > 0);
+  assert.equal(beforeMovements[0].item_name, 'Nguyên liệu lúc nhập');
+  assert.equal(beforeMovements[0].unit, 'kg');
+
+  Inv.deleteInventoryItem('inv_history', 'sala');
+  assert.equal(db.prepare(`SELECT active FROM inventory_items WHERE id='inv_history'`).get().active, 0);
+  const afterMovements = Inv.listMovements('sala', { item_id: 'inv_history', limit: 20 });
+  assert.equal(afterMovements.length, beforeMovements.length);
+  assert.equal(afterMovements[0].item_name, 'Nguyên liệu lúc nhập');
+  assert.equal(db.prepare(`SELECT COUNT(*) n FROM inventory_document_lines WHERE item_id='inv_history'`).get().n > 0, true);
 });
 
 test('helper giao dịch gọi LỒNG nhau không làm vỡ giao dịch cha', () => {
@@ -185,4 +244,23 @@ test('DB từ chối gắn SKU sang kho của chi nhánh khác', () => {
     VALUES ('wh_other','br_other','Kho khác','OTHER','retail',1,0)`).run();
   assert.throws(() => db.prepare(`UPDATE skus SET warehouse_id='wh_other' WHERE id='sku_route'`).run(),
     /không thuộc cùng chi nhánh/);
+});
+
+test('bán hàng không được làm tồn SKU xuống âm và phải rollback sạch', () => {
+  Inv.createSku({ id: 'sku_no_negative', name: 'Hàng sát tồn', price: 1000, stock: 0, warehouse_id: 'wh_a' }, 'sala');
+  Inv.receiveSku('sku_no_negative', 1, 'sala', { warehouse_id: 'wh_a', lot_no: 'BOUNDARY' });
+  const movementsBefore = db.prepare(`SELECT COUNT(*) n FROM stock_movements WHERE inventory_item_id='sku_no_negative'`).get().n;
+
+  assert.throws(() => inTransaction(() => Inv.deductForOrder({
+    id: 'order_no_negative',
+    channel: 'retail',
+    items: [{ sku_id: 'sku_no_negative', qty: 2, status: 'served' }],
+  }, 'sala')), /Không đủ tồn/);
+
+  assert.equal(tonKho('sku_no_negative', 'wh_a'), 1, 'tồn phải giữ nguyên sau sale bị từ chối');
+  assert.equal(
+    db.prepare(`SELECT COUNT(*) n FROM stock_movements WHERE inventory_item_id='sku_no_negative'`).get().n,
+    movementsBefore,
+    'không được để lại movement sale khi transaction thất bại',
+  );
 });

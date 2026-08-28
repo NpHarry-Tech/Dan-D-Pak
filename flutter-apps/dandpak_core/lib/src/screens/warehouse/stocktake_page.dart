@@ -215,7 +215,8 @@ class _StocktakePageState extends State<StocktakePage> {
                 SizedBox(width: 10),
                 kvHeaderCell(t('Thời gian'), width: 118),
                 kvHeaderCell(t('Ngày cân bằng'), width: 118),
-                kvHeaderCell(t('SL thực tế'), width: 84, align: TextAlign.right),
+                kvHeaderCell(t('SL thực tế'),
+                    width: 84, align: TextAlign.right),
                 kvHeaderCell(t('Tổng chênh lệch'),
                     width: 108, align: TextAlign.right),
                 kvHeaderCell(t('SL lệch tăng'),
@@ -454,8 +455,8 @@ class _StocktakePageState extends State<StocktakePage> {
                       ),
                       for (final l in kvMapList(d['lines']))
                         Container(
-                          padding: EdgeInsets.symmetric(
-                              horizontal: 12, vertical: 7),
+                          padding:
+                              EdgeInsets.symmetric(horizontal: 12, vertical: 7),
                           decoration: BoxDecoration(
                               border: Border(
                                   top: BorderSide(color: DanColors.border))),

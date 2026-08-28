@@ -125,9 +125,8 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
                     style: TextStyle(
                         fontSize: 13.5,
                         fontWeight: FontWeight.w800,
-                        color: _tab == tb[0]
-                            ? DanColors.brand
-                            : DanColors.muted)),
+                        color:
+                            _tab == tb[0] ? DanColors.brand : DanColors.muted)),
               ),
             ),
         ],

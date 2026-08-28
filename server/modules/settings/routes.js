@@ -2,10 +2,11 @@
 // connections/devices, book-menu, self-order checkin. NHẠY CẢM (PIN/user/config).
 // Nghiệp vụ ở services/settings.js + auth.js (+ nhiều service). Giữ NGUYÊN hành vi.
 import * as Auth from '../../services/auth.js';
+import * as QrProvider from '../../services/qrProvider.js';
 import * as Branches from '../../services/branches.js';
 import * as AppSettings from '../../services/settings.js';
 import * as Einvoices from '../../services/einvoice.js';
-import * as Misa from '../../services/misa.js';
+import * as Misa from '../../services/misa/index.js';
 import * as Haravan from '../../services/haravanConnector.js';
 import * as Pay from '../../services/payments.js';
 import * as System from '../../services/system.js';
@@ -15,16 +16,16 @@ import * as Customers from '../../services/customers.js';
 import { registerDeviceToken } from '../../services/push.js';
 import { audit, now } from '../../db.js';
 import { emit, getActiveConnections } from '../../realtime.js';
-import { notImplemented } from '../../core/http.js';
 import { rateLimit } from '../../core/rateLimit.js';
 import { logSystem } from '../../services/systemLogs.js';
+import { buildLiveDeviceRegistry } from '../../core/deviceRegistry.js';
 
 // Chống brute-force PIN 4 số của màn khóa iPad + chống dò SĐT khách ở self-order —
 // khóa theo IP nguồn (2 endpoint này CÔNG KHAI, không có token để khóa theo user).
 const ipadUnlockLimiter = rateLimit({ key: 'ipad-unlock', windowMs: 60_000, max: 20, message: 'Nhập sai quá nhiều lần. Vui lòng đợi một phút rồi thử lại.' });
 const selfCheckinLimiter = rateLimit({ key: 'self-checkin', windowMs: 60_000, max: 30 });
 
-export function registerSettingsRoutes(api, { wrap, guard, guardAny, branch, visibleBranch, actor, scopedUserBody, saveBase64Image, AVATAR_UPLOADS_DIR }) {
+export function registerSettingsRoutes(api, { wrap, guard, guardAny, branch, visibleBranch, actor, scopedUserBody, saveBase64Image, AVATAR_UPLOADS_DIR, CUSTOMER_DISPLAY_UPLOADS_DIR }) {
 api.get('/settings/permissions', guardAny('settings.perms', 'settings.users'), wrap((req) => {
   // A granter can only see (and thus assign) permissions they personally hold —
   // everything they lack is hidden from the editor. Admin/owner sees the full set.
@@ -41,9 +42,28 @@ api.post('/settings/roles/:role/permissions', guardAny('settings.perms'), wrap((
   if (!approvedBy) throw new Error('Cần nhập PIN của Manager hoặc Admin để xác nhận thay đổi phân quyền vai trò.');
   return Auth.setRolePerms(req.params.role, req.body.perms, branch_id, req.user);
 }));
+// Tạo vai trò tùy chỉnh (gate bằng PIN Manager/Admin như sửa quyền).
+api.post('/settings/roles', guardAny('settings.perms'), wrap((req) => {
+  const branch_id = branch(req);
+  const pin = req.body?.security_pin;
+  if (req.body) delete req.body.security_pin;
+  if (!Auth.verifyManagerOwnerPin(pin, branch_id)) throw new Error('Cần nhập PIN của Manager hoặc Admin để tạo vai trò.');
+  return Auth.createCustomRole({ key: req.body.key, label: req.body.label, note: req.body.note }, req.user);
+}));
+api.delete('/settings/roles/:role', guardAny('settings.perms'), wrap((req) => {
+  const branch_id = branch(req);
+  const pin = req.query.security_pin || req.body?.security_pin;
+  if (!Auth.verifyManagerOwnerPin(pin, branch_id)) throw new Error('Cần nhập PIN của Manager hoặc Admin để xóa vai trò.');
+  return Auth.deleteCustomRole(req.params.role, req.user);
+}));
 api.get('/settings/users', guardAny('settings.users'), wrap((req) => Auth.listAllUsers(branch(req))));
 api.post('/settings/users/avatar-upload', guardAny('settings.users'), wrap((req) =>
   saveBase64Image(req, { dir: AVATAR_UPLOADS_DIR, urlBase: '/uploads/avatars', prefix: 'av_', auditAction: 'user.avatar_upload' })));
+api.post('/settings/customer-display/image-upload', guardAny('settings.manage', 'settings.branch'), wrap((req) =>
+  saveBase64Image(req, {
+    dir: CUSTOMER_DISPLAY_UPLOADS_DIR, urlBase: '/uploads/customer-display',
+    prefix: 'display_', auditAction: 'customer_display.image_upload',
+  })));
 api.post('/settings/users', guardAny('settings.users'), wrap((req) => {
   const branch_id = branch(req);
   const pin = req.body?.security_pin;
@@ -126,7 +146,22 @@ api.post('/settings/app', guardAny('settings.sync', 'settings.operations', 'sett
     delete req.body.owner_pin;
     delete req.body.password;
   }
-  return AppSettings.updateSettings(req.body, branch_id);
+  const out = AppSettings.updateSettings(req.body, branch_id);
+  // BÁO CHO MỌI MÁY KHÁC BIẾT NGAY.
+  //
+  // Trước đây lưu cấu hình KHÔNG phát event nào: máy A thêm một máy in, máy B
+  // đang mở đúng màn Kết nối vẫn thấy danh sách cũ cho tới khi bấm tải lại hoặc
+  // chuyển tab. Người dùng tưởng thao tác không ăn nên khai lại lần nữa — sinh
+  // ra tuyến in trùng.
+  //
+  // Gửi kèm danh sách KHOÁ vừa đổi để mỗi màn tự quyết có cần tải lại không:
+  // màn Kết nối chỉ quan tâm 'print_config', không việc gì phải giật mình vì
+  // ai đó sửa cấu hình thuế.
+  emit('settings:updated', {
+    keys: Object.keys(req.body || {}),
+    by: actor(req),
+  }, branch_id);
+  return out;
 }));
 api.post('/templates/auto-save', guardAny('settings.print'), wrap((req) => AppSettings.autoSaveTemplate(req.body, branch(req))));
 api.get('/settings/integrations', guardAny('settings.integrations'), wrap((req) => AppSettings.getPublicIntegrations(branch(req))));
@@ -136,7 +171,45 @@ api.post('/settings/integrations', guardAny('settings.integrations'), wrap((req)
   if (req.body) delete req.body.security_pin;
   const approvedBy = Auth.verifyManagerOwnerPin(pin, branch_id);
   if (!approvedBy) throw new Error('Cần nhập PIN của Manager hoặc Admin để xác nhận thay đổi cấu hình liên kết đối tác.');
+  const incomingMisa = req.body?.channels?.misa;
+  if (incomingMisa?.enabled === true) {
+    const cfg = AppSettings.mergeIntegrationChannelSecrets('misa', incomingMisa, branch_id);
+    const blockers = Misa.activationBlockers(cfg);
+    if (blockers.length) throw new Error(`Chưa thể kích hoạt MISA: ${blockers.join('; ')}.`);
+  }
+  // ÉP LOẠI TRỪ ĐƯỜNG NHẬN CHUYỂN KHOẢN.
+  //
+  // Bật hai cổng QR cùng lúc thì khách quét mã của cổng này, hệ thống lại chờ
+  // tiền về theo cổng kia — tiền vào rồi mà bill không tự đóng. Chốt ở SERVER
+  // chứ không chỉ ở giao diện: cửa hàng có nhiều máy, người này bật SePay ở máy
+  // A trong khi người kia bật payOS ở máy B thì giao diện không cản được.
+  const vuaBat = ['payos', 'vietqr', 'sepay', 'casso']
+    .find(k => req.body?.channels?.[k]?.enabled === true);
+  if (vuaBat && req.body?.channels) {
+    req.body.channels = QrProvider.epLoaiTruQr(req.body.channels, vuaBat);
+  }
+
+  const haravanWasEnabled = AppSettings.getIntegrationChannel('haravan', branch_id)?.enabled === true;
   const saved = AppSettings.updateIntegrations(req.body, branch_id);
+  const haravanIsEnabled = saved?.channels?.haravan?.enabled === true;
+  if (haravanWasEnabled !== haravanIsEnabled) {
+    audit(
+      haravanIsEnabled ? 'integration.haravan.enabled' : 'integration.haravan.disabled',
+      {
+        status: haravanIsEnabled ? 'active' : 'inactive',
+        detail_source: 'haravan_sync_logs',
+        message: haravanIsEnabled
+          ? 'Haravan đang hoạt động. Bấm xem chi tiết tại màn Liên kết.'
+          : 'Haravan đã tắt.',
+      },
+      branch_id,
+      approvedBy.username,
+    );
+  }
+  // Đổi cổng thanh toán là MỌI màn khách phải đổi theo NGAY: màn phụ đang hiện
+  // QR cũ, iPad self-order đang ở bước chuyển khoản, catalogue ngoài quầy...
+  // Không phát thì khách vẫn quét mã của cổng vừa bị tắt.
+  emit('payment:config', { by: approvedBy.username }, branch_id);
   // Vừa bật MISA → phát hành bù toàn bộ HĐ đầu ra đã ghi nhận trong lúc
   // MISA tắt (PENDING_PROVIDER). NĐ 70: không bỏ sót hóa đơn nào.
   if (saved?.channels?.misa?.enabled) {
@@ -188,7 +261,45 @@ api.post('/settings/integrations/:channel/test', guardAny('settings.integrations
   if (!cfg) throw new Error('Kênh không hợp lệ hoặc thiếu cấu hình: ' + channel);
   const base = `${req.protocol}://${req.get('host')}`;
   const routedWebhook = (name) => `${base}/api/${name}/webhook?branch_id=${encodeURIComponent(branch(req))}`;
-  if (channel === 'misa') return { channel, ...(await Misa.testConnection(cfg)) };
+  if (channel === 'misa') {
+    const kq = await Misa.testConnection(cfg);
+    // GHI KẾT QUẢ XUỐNG DB — đây là mắt xích từng đứt hẳn.
+    //
+    // `configurationTestPassed` là một trong các điều kiện bắt buộc để MISA
+    // được phép phát hành, nhưng TRƯỚC ĐÂY KHÔNG DÒNG CODE NÀO GHI nó thành
+    // true. Nó mặc định false, chỉ được đọc, nên điều kiện kích hoạt không bao
+    // giờ đủ → mọi hóa đơn nằm im ở PENDING_PROVIDER và không có gì báo lỗi,
+    // vì đó không phải lỗi mà là "chưa cấu hình xong".
+    //
+    // Cùng lúc lưu luôn tên doanh nghiệp, loại hóa đơn có mã/không mã và danh
+    // sách mẫu MISA vừa trả về, để màn Cài đặt có cái mà hiển thị và người
+    // dùng chọn mẫu ngay được — không phải gọi lại MISA lần nữa.
+    const patch = {
+      configurationTestPassed: kq.ok === true,
+      lastTestedAt: new Date().toISOString(),
+      lastTestError: kq.ok ? '' : String(kq.message || '').slice(0, 500),
+      lastTestStatus: kq.status || '',
+    };
+    if (kq.company) {
+      patch.companyName = kq.company.name || cfg.companyName || '';
+      if (kq.company.invoiceWithCode !== null && kq.company.invoiceWithCode !== undefined) {
+        patch.invoiceCodeType = kq.company.invoiceWithCode ? 'WITH_CODE' : 'WITHOUT_CODE';
+      }
+    }
+    if (Array.isArray(kq.templates)) {
+      patch.availableTemplates = JSON.stringify(
+        kq.templates.map((t) => ({ id: t.id, name: t.name, series: t.series })),
+      ).slice(0, 20000);
+    }
+    // Ký hiệu hóa đơn LUÔN đi theo mẫu đã chọn, không cho lệch nhau.
+    if (kq.selectedTemplate?.series) patch.series = kq.selectedTemplate.series;
+
+    AppSettings.updateIntegrations(
+      { channels: { misa: { ...cfg, ...patch } } },
+      branch(req),
+    );
+    return { channel, ...kq };
+  }
   if (channel === 'payos') {
     const payosWebhook = routedWebhook('payos');
     if (!cfg.enabled) return { channel, ok: false, mode: 'disabled', message: 'payOS đang tắt. Bật kết nối trước khi kiểm tra.', webhookUrl: payosWebhook };
@@ -277,9 +388,17 @@ api.get('/settings/system/printers', guardAny('settings.connections', 'settings.
   printers: await System.listSystemPrinters({ force: req.query.force === '1', branch: visibleBranch(req) }),
   checkedAt: new Date().toISOString(),
 })));
-api.get('/devices', guardAny('settings.devices', 'settings.connections'), wrap(() => notImplemented('Device registry endpoint is planned but not implemented yet. Current live device visibility is available through /api/settings/connections/status.')));
-api.post('/devices/pair', wrap(() => notImplemented()));
-api.patch('/devices/:id/approve', guardAny('settings.devices'), wrap(() => notImplemented()));
+// One live registry derived from the same Socket.IO and print-agent authorities
+// used by the Connections screen. Staff device trust remains in auth_sessions;
+// do not create a second, stale pairing/approval state machine here.
+api.get('/devices', guardAny('settings.devices', 'settings.connections'), wrap((req) => {
+  const branchId = branch(req);
+  return {
+    devices: buildLiveDeviceRegistry(
+      getActiveConnections(branchId), System.getAgentDevices(branchId)),
+    checked_at: new Date().toISOString(),
+  };
+}));
 api.get('/operations/config', wrap((req) => AppSettings.getOperationsConfig(visibleBranch(req))));
 api.get('/book-menu', wrap((req) => BookMenu.getPublicBookConfig(visibleBranch(req))));
 // Cấu hình âm thanh thông báo cho các màn hình không có quyền Cài đặt (KDS bếp, iPad...).
@@ -293,7 +412,7 @@ api.post('/settings/book-menu', guardAny('settings.bookmenu'), wrap((req) => {
 }));
 api.post('/settings/book-menu/import-pubhtml5', guardAny('settings.bookmenu'), wrap(async (req) => {
   const b = branch(req);
-  const out = await BookMenu.importPubhtml5(req.body.url, req.body.title, b);
+  const out = await BookMenu.importPubhtml5(req.body.url, req.body.title, b, req.body.kind);
   emit('book-menu:updated', { activeBookId: out.activeBookId }, b);
   return out;
 }));

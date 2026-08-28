@@ -1,9 +1,35 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../services/system_log.dart';
+
+/// Trên điện thoại/tablet: hỏi CHỤP MỚI hay CHỌN TỪ ALBUM trước khi lấy ảnh.
+/// Trả null nếu người dùng đóng. Desktop không dùng (đã có hộp thoại file OS).
+Future<ImageSource?> pickImageSource(BuildContext context) {
+  return showModalBottomSheet<ImageSource>(
+    context: context,
+    builder: (c) => SafeArea(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          ListTile(
+            leading: const Icon(Icons.photo_camera_outlined),
+            title: const Text('Chụp ảnh'),
+            onTap: () => Navigator.pop(c, ImageSource.camera),
+          ),
+          ListTile(
+            leading: const Icon(Icons.photo_library_outlined),
+            title: const Text('Chọn từ album'),
+            onTap: () => Navigator.pop(c, ImageSource.gallery),
+          ),
+        ],
+      ),
+    ),
+  );
+}
 
 // Plugin chọn ảnh/file lỗi → trả null (lỗi nghiệp vụ, app không chết) nhưng
 // PHẢI để lại dấu vết trong nhật ký hệ thống để truy ra máy nào hỏng plugin gì.
@@ -43,11 +69,19 @@ Future<String?> _pickImageMobileAsDataUrl(
 /// KHÔNG có phản ứng gì (Process.run('powershell') fail lặng lẽ). Giờ:
 /// Android/iOS đi qua image_picker (thư viện ảnh), desktop giữ hộp thoại hệ
 /// điều hành. Trả null nếu người dùng hủy hoặc plugin lỗi (đã ghi nhật ký).
-Future<String?> pickImagePathCross({String title = 'Chọn ảnh'}) async {
+Future<String?> pickImagePathCross(
+    {String title = 'Chọn ảnh', BuildContext? context}) async {
   try {
     if (Platform.isAndroid || Platform.isIOS) {
-      final x = await ImagePicker()
-          .pickImage(source: ImageSource.gallery, imageQuality: 88);
+      // Có context → cho CHỌN chụp mới hay album. Không có → giữ hành vi cũ
+      // (mở album) để không vỡ các chỗ gọi chưa truyền context.
+      ImageSource source = ImageSource.gallery;
+      if (context != null && context.mounted) {
+        final picked = await pickImageSource(context);
+        if (picked == null) return null; // người dùng đóng bảng chọn
+        source = picked;
+      }
+      final x = await ImagePicker().pickImage(source: source, imageQuality: 88);
       return x?.path;
     }
     if (Platform.isWindows) {

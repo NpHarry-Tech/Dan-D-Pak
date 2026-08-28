@@ -7,14 +7,12 @@ import '../../providers/auth_provider.dart';
 import '../../services/api_service.dart';
 import '../../ui/app_theme.dart';
 import '../../utils/translation.dart';
-import '../management/settings_branches_panel.dart';
-import '../management/settings_notify_routing_panel.dart';
-import '../management/settings_tables_panel.dart';
-import '../management/settings_warehouse_panel.dart';
+import 'phone_bill_template_screen.dart';
 import 'phone_kit.dart';
 import 'phone_scaffolds.dart';
 import 'phone_printers_screen.dart';
 import 'phone_sell_settings_screen.dart';
+import 'phone_settings_panels.dart';
 
 /// MÀN CÀI ĐẶT bản điện thoại / POS cầm tay.
 ///
@@ -74,10 +72,18 @@ class _PhoneSettingsScreenState extends State<PhoneSettingsScreen> {
         final cfg = await api.getAppSettings();
         final rc = (cfg['retail_config'] as Map?) ?? const {};
         final st = (rc['standalone'] as Map?) ?? const {};
-        final ten = '${st['price_list_name'] ?? st['priceListName'] ?? ''}';
-        return ten.isEmpty
-            ? t('Bảng giá · quét mã · thanh toán')
-            : '${t('Bảng giá')} $ten · ${t('quét mã')} · ${t('thanh toán')}';
+        // Khoá THẬT là price_book_id; đổi tên bảng giá phải tra trong danh sách
+        // bảng giá chứ retail_config không lưu sẵn tên.
+        final id = '${st['price_book_id'] ?? 'default'}';
+        String ten = t('Bảng giá chung');
+        if (id != 'default') {
+          final books =
+              await api.getPriceBooks().catchError((_) => <dynamic>[]);
+          for (final b in books.whereType<Map>()) {
+            if ('${b['id']}' == id) ten = '${b['name']}';
+          }
+        }
+        return '$ten · ${t('quét mã')} · ${t('thanh toán')}';
       }),
       lay('warehouse', () async {
         final ds = await api.getWarehouses();
@@ -113,12 +119,8 @@ class _PhoneSettingsScreenState extends State<PhoneSettingsScreen> {
       lay('integrations', () async {
         final cfg = await api.getIntegrations();
         final ds = cfg.entries.where((e) => e.value is Map).toList();
-        final noi = ds
-            .where((e) => (e.value as Map)['enabled'] == true)
-            .length;
-        return ds.isEmpty
-            ? ''
-            : '$noi/${ds.length} ${t('đối tác đã nối')}';
+        final noi = ds.where((e) => (e.value as Map)['enabled'] == true).length;
+        return ds.isEmpty ? '' : '$noi/${ds.length} ${t('đối tác đã nối')}';
       }),
     ]);
     if (mounted) setState(() => _dangNap = false);
@@ -138,23 +140,23 @@ class _PhoneSettingsScreenState extends State<PhoneSettingsScreen> {
       ]),
       _Nhom('HẰNG TUẦN', [
         _Muc('warehouse', 'Kho & kênh bán', Icons.warehouse_outlined,
-            () => mo(_KhungPanel('Kho & kênh bán',
-                (api) => WarehouseSettingsPanel(api: api)))),
+            () => mo(const PhoneWarehouseSettingsScreen())),
       ]),
       _Nhom('THỈNH THOẢNG', [
         _Muc('tables', 'Cấu hình bàn', Icons.table_restaurant_outlined,
-            () => mo(_KhungPanel('Cấu hình bàn',
-                (api) => TablesPanel(api: api)))),
+            () => mo(const PhoneTablesSettingsScreen())),
         _Muc('notify', 'Cấu hình thông báo', Icons.notifications_outlined,
-            () => mo(_KhungPanel('Cấu hình thông báo',
-                (api) => NotificationSettingsPanel(api: api)))),
+            () => mo(const PhoneNotifySettingsScreen())),
       ]),
       _Nhom('LÚC LẮP ĐẶT', [
         _Muc('printing', 'Máy in', Icons.print_outlined,
             () => mo(const PhonePrintersScreen())),
+        // Khổ giấy phải đổi được TRÊN MÁY CẦM TAY: máy Sunmi in giấy 57mm còn
+        // mặc định hệ thống là K80 — sai khổ thì bill tràn ra ngoài giấy.
+        _Muc('bill', 'Mẫu bill', Icons.receipt_outlined,
+            () => mo(const PhoneBillTemplateScreen())),
         _Muc('branches', 'Chi nhánh', Icons.store_outlined,
-            () => mo(_KhungPanel('Chi nhánh',
-                (api) => BranchesPanel(api: api)))),
+            () => mo(const PhoneBranchesSettingsScreen())),
       ]),
     ];
   }
@@ -162,13 +164,13 @@ class _PhoneSettingsScreenState extends State<PhoneSettingsScreen> {
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
-    final q = _timKiem.text.trim().toLowerCase();
+    final q = _timKiem.text.trim();
 
     final nhom = _nhom(context)
         .map((n) => _Nhom(
             n.tieuDe,
             n.mucs
-                .where((m) => q.isEmpty || t(m.ten).toLowerCase().contains(q))
+                .where((m) => q.isEmpty || searchMatches(t(m.ten), q))
                 .toList()))
         .where((n) => n.mucs.isNotEmpty)
         .toList();
@@ -254,42 +256,14 @@ class _GhiChuChiCoTrenMayBan extends StatelessWidget {
                   color: DanColors.faint)),
           const SizedBox(height: 6),
           Text(
-              t('Thiết kế bill & tem nhãn · Nhân sự & phân quyền · Màn hình phụ. '
-                  'Ba mục này cần canvas kéo thả hoặc ma trận quyền nên đã gỡ khỏi '
-                  'bản điện thoại — desktop và tablet vẫn giữ đủ 12 mục.'),
+              t(
+                  'Canvas kéo thả bố cục bill & tem nhãn · Nhân sự & phân quyền · '
+                  'Màn hình phụ. Ba mục này cần canvas kéo thả hoặc ma trận quyền '
+                  'nên đã gỡ khỏi bản điện thoại — desktop và tablet vẫn giữ đủ '
+                  '12 mục. Khổ giấy và phần chữ của bill đổi được ở mục "Mẫu bill".'),
               style: const TextStyle(
                   fontSize: 11.5, height: 1.5, color: DanColors.faint)),
         ],
-      ),
-    );
-  }
-}
-
-/// Bọc panel của desktop trong khung điện thoại.
-///
-/// Các panel này chưa được thiết kế lại cho màn nhỏ — bọc lại để chúng có thanh
-/// tiêu đề và nút quay lại đúng kiểu điện thoại, còn ruột giữ nguyên. Thà vào
-/// được và hơi chật còn hơn không vào được.
-class _KhungPanel extends StatelessWidget {
-  final String tieuDe;
-  final Widget Function(ApiService api) dung;
-  const _KhungPanel(this.tieuDe, this.dung);
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: DanColors.bg,
-      body: SafeArea(
-        bottom: false,
-        child: Column(
-          children: [
-            PhoneHeader(
-              title: t(tieuDe),
-              onBack: () => Navigator.of(context).maybePop(),
-            ),
-            Expanded(child: dung(context.read<ApiService>())),
-          ],
-        ),
       ),
     );
   }

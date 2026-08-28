@@ -7,7 +7,8 @@ class KdsTicket {
   final String name;
   final String emoji;
   final int qty;
-  final String status; // new | accepted | preparing | ready | served | cancelled
+  final String
+      status; // new | accepted | preparing | ready | served | cancelled
   final int slaMinutes;
   final String note;
   final List<String> mods;
@@ -63,14 +64,18 @@ class KdsTicket {
       station: s(j['station']).isEmpty ? 'kitchen' : s(j['station']),
       name: s(j['name']),
       emoji: s(j['emoji']),
-      qty: (j['qty'] is num) ? (j['qty'] as num).toInt() : int.tryParse(s(j['qty'])) ?? 1,
+      qty: (j['qty'] is num)
+          ? (j['qty'] as num).toInt()
+          : int.tryParse(s(j['qty'])) ?? 1,
       status: s(j['status']).isEmpty ? 'new' : s(j['status']),
       slaMinutes: (j['sla_minutes'] is num)
           ? (j['sla_minutes'] as num).toInt()
           : int.tryParse(s(j['sla_minutes'])) ?? 10,
       note: s(j['note']),
       mods: mods,
-      tableCode: s(j['table_path']).isNotEmpty ? s(j['table_path']) : s(j['table_code']),
+      tableCode: s(j['table_path']).isNotEmpty
+          ? s(j['table_path'])
+          : s(j['table_code']),
       createdAt: DateTime.tryParse(s(j['created_at']))?.toLocal(),
     );
   }

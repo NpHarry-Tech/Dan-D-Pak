@@ -7,6 +7,7 @@ list(APPEND FLUTTER_PLUGIN_LIST
   firebase_core
   local_notifier
   media_kit_libs_windows_audio
+  printing
   share_plus
   url_launcher_windows
   video_player_win

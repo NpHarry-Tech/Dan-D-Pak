@@ -6,6 +6,10 @@ const PROJECT_ROOT = fileURLToPath(new URL('../../', import.meta.url));
 const DEFAULTS = {
   PORT: 3000,
   NODE_ENV: 'development',
+  // Môi trường nghiệp vụ, KHÁC NODE_ENV. 'review' = stack Shopee Review/Staging
+  // (dữ liệu synthetic, DB riêng, sandbox) — dùng để cách ly production. '' hoặc
+  // 'production' = vận hành thật. Cho phép nới guard DB + chạy demo seed an toàn.
+  APP_ENV: '',
   DEPLOYMENT_TARGET: 'local',
   DATABASE_PROVIDER: 'sqlite',
   REALTIME_PROVIDER: 'socketio',
@@ -38,6 +42,14 @@ function asList(value) {
 export function loadEnv(source = process.env) {
   const env = {
     NODE_ENV: clean(source.NODE_ENV) || DEFAULTS.NODE_ENV,
+    APP_ENV: clean(source.APP_ENV) || DEFAULTS.APP_ENV,
+    // Chốt an toàn dữ liệu review: chỉ TRUE khi cố ý cho phép dữ liệu thật vào
+    // stack review. Mặc định FALSE — review chỉ được chạy dữ liệu synthetic.
+    ALLOW_PRODUCTION_DATA: source.ALLOW_PRODUCTION_DATA === 'true' || source.ALLOW_PRODUCTION_DATA === '1',
+    // Sàn Shopee: 'test'/'sandbox' cho stack review, 'live' cho production.
+    SHOPEE_ENV: clean(source.SHOPEE_ENV) || '',
+    // PIN đăng nhập tài khoản reviewer (stack review). Đặt tại VPS, KHÔNG commit.
+    SHOPEE_REVIEWER_PIN: clean(source.SHOPEE_REVIEWER_PIN) || '',
     PORT: asInt(source.PORT, DEFAULTS.PORT),
     APP_URL: clean(source.APP_URL) || '',
     API_BASE_URL: clean(source.API_BASE_URL) || '',
@@ -51,6 +63,20 @@ export function loadEnv(source = process.env) {
     CORS_ORIGIN: clean(source.CORS_ORIGIN) || DEFAULTS.CORS_ORIGIN,
     LOG_LEVEL: clean(source.LOG_LEVEL) || DEFAULTS.LOG_LEVEL,
     BACKUP_RETENTION_DAYS: asInt(source.BACKUP_RETENTION_DAYS, DEFAULTS.BACKUP_RETENTION_DAYS),
+    EDGE_HUB_ID: clean(source.EDGE_HUB_ID) || '',
+    EDGE_SYNC_UPSTREAM_URL: clean(source.EDGE_SYNC_UPSTREAM_URL) || '',
+    EDGE_SYNC_SHARED_SECRET: clean(source.EDGE_SYNC_SHARED_SECRET) || '',
+    EDGE_SYNC_ALLOWED_HUBS_JSON: clean(source.EDGE_SYNC_ALLOWED_HUBS_JSON) || '',
+    // ONLINE-ONLY (quyết định owner 2026-08-26): offline-first Edge/Hub
+    // replication BỊ NGƯNG mặc định. Server là source of truth duy nhất. KHÔNG
+    // drop bảng/dữ liệu — legacy tables giữ inert để rollback. Đặt
+    // OFFLINE_DECOMMISSIONED=false để bật lại edge sync runtime (không khuyến nghị).
+    OFFLINE_DECOMMISSIONED: !(source.OFFLINE_DECOMMISSIONED === 'false'
+      || source.OFFLINE_DECOMMISSIONED === '0'),
+    // §8 HARDENING: legacy /auth/{shopee,lazada}/callback (branch từ client query,
+    // KHÔNG state machine) fail-closed mặc định. Bật lại chỉ khi bắt buộc migrate.
+    SHOPEE_LEGACY_CALLBACK: source.SHOPEE_LEGACY_CALLBACK === 'true'
+      || source.SHOPEE_LEGACY_CALLBACK === '1',
     DATA_ENCRYPTION_KEY: clean(source.DATA_ENCRYPTION_KEY) || '',
     DISABLE_DEMO_SEED: source.DISABLE_DEMO_SEED === 'true' || source.DISABLE_DEMO_SEED === '1',
     DISABLE_WEB_UI: source.DISABLE_WEB_UI !== undefined ? (source.DISABLE_WEB_UI === 'true' || source.DISABLE_WEB_UI === '1') : DEFAULTS.DISABLE_WEB_UI,
@@ -75,6 +101,9 @@ export function loadEnv(source = process.env) {
   env.CORS_ORIGINS = asList(env.CORS_ORIGIN);
   env.isProduction = env.NODE_ENV === 'production';
   env.isLocal = env.DEPLOYMENT_TARGET === 'local';
+  // Stack Shopee Review/Staging: cách ly hoàn toàn với production (DB riêng, dữ
+  // liệu synthetic, sandbox sàn). NODE_ENV vẫn 'production' để bật HTTPS/mã hoá.
+  env.isReview = env.APP_ENV === 'review';
   env.warnings = validateEnv(env);
 
   return env;
@@ -94,12 +123,35 @@ function validateEnv(env) {
   if ((env.HARAVAN_CLIENT_ID || env.HARAVAN_CLIENT_SECRET) && (!env.HARAVAN_CLIENT_ID || !env.HARAVAN_CLIENT_SECRET || !env.APP_URL)) {
     warnings.push('Haravan OAuth requires HARAVAN_CLIENT_ID, HARAVAN_CLIENT_SECRET and APP_URL.');
   }
+  const senderRequested = !!(env.EDGE_HUB_ID || env.EDGE_SYNC_UPSTREAM_URL);
+  if (senderRequested) {
+    if (!env.EDGE_HUB_ID || !env.EDGE_SYNC_UPSTREAM_URL || env.EDGE_SYNC_SHARED_SECRET.length < 32) {
+      warnings.push('Edge sender requires EDGE_HUB_ID, EDGE_SYNC_UPSTREAM_URL and a 32+ character EDGE_SYNC_SHARED_SECRET.');
+    } else {
+      try {
+        if (new URL(env.EDGE_SYNC_UPSTREAM_URL).protocol !== 'https:') warnings.push('EDGE_SYNC_UPSTREAM_URL must use HTTPS.');
+      } catch { warnings.push('EDGE_SYNC_UPSTREAM_URL is invalid.'); }
+    }
+  }
+  if (env.EDGE_SYNC_ALLOWED_HUBS_JSON) {
+    try {
+      const hubs = JSON.parse(env.EDGE_SYNC_ALLOWED_HUBS_JSON);
+      if (!hubs || Array.isArray(hubs) || typeof hubs !== 'object') throw new Error('not an object');
+      if (env.EDGE_SYNC_SHARED_SECRET.length < 32) warnings.push('Edge receiver requires a 32+ character EDGE_SYNC_SHARED_SECRET.');
+    } catch { warnings.push('EDGE_SYNC_ALLOWED_HUBS_JSON must be a JSON object mapping hub IDs to branch arrays.'); }
+  }
   return warnings;
 }
 
 export const env = loadEnv();
 
 export function assertSecureProductionEnv(config = env) {
+  if (config.isReview && config.ALLOW_PRODUCTION_DATA) {
+    throw new Error('APP_ENV=review cấm ALLOW_PRODUCTION_DATA=true. Review chỉ được dùng dữ liệu synthetic.');
+  }
+  if (config.isReview && ['production', 'live'].includes(String(config.SHOPEE_ENV || '').toLowerCase())) {
+    throw new Error('APP_ENV=review không được dùng SHOPEE_ENV=production/live.');
+  }
   if (!config.isProduction) return;
   const key = String(config.DATA_ENCRYPTION_KEY || '');
   const validKey = /^[0-9a-f]{64}$/i.test(key) ||
@@ -133,6 +185,10 @@ export function publicEnvSnapshot() {
     },
     corsConfigured: env.CORS_ORIGINS.length > 0,
     backupRetentionDays: env.BACKUP_RETENTION_DAYS,
+    edgeSyncConfigured: !!(
+      (env.EDGE_HUB_ID && env.EDGE_SYNC_UPSTREAM_URL && env.EDGE_SYNC_SHARED_SECRET.length >= 32) ||
+      (env.EDGE_SYNC_ALLOWED_HUBS_JSON && env.EDGE_SYNC_SHARED_SECRET.length >= 32)
+    ),
     warnings: env.warnings,
   };
 }

@@ -23,7 +23,8 @@ const Map<String, ProviderMeta> kProviderMeta = {
   'haravan': ProviderMeta('Haravan', Color(0xFF2E7D32), Icons.public),
   'website': ProviderMeta('Website', Color(0xFF0891B2), Icons.language),
   'shopee': ProviderMeta('Shopee', Color(0xFFEE4D2D), Icons.storefront),
-  'tiktokshop': ProviderMeta('TikTok Shop', Color(0xFF111111), Icons.music_note),
+  'tiktokshop':
+      ProviderMeta('TikTok Shop', Color(0xFF111111), Icons.music_note),
   'lazada': ProviderMeta('Lazada', Color(0xFF0F146D), Icons.shopping_bag),
   'tiki': ProviderMeta('Tiki', Color(0xFF1A94FF), Icons.local_mall),
   'grabfood': ProviderMeta('GrabFood', Color(0xFF00B14F), Icons.fastfood),
@@ -35,7 +36,8 @@ const Map<String, ProviderMeta> kProviderMeta = {
 
 ProviderMeta providerMeta(String key) =>
     kProviderMeta[key.toLowerCase()] ??
-    ProviderMeta(key.isEmpty ? 'Kênh khác' : key, DanColors.muted, Icons.public);
+    ProviderMeta(
+        key.isEmpty ? 'Kênh khác' : key, DanColors.muted, Icons.public);
 
 // ── Trạng thái workflow đơn online ────────────────────────────────────────
 class WorkflowMeta {
@@ -56,7 +58,8 @@ const Map<String, WorkflowMeta> kWorkflowMeta = {
 };
 
 WorkflowMeta workflowMeta(String key) =>
-    kWorkflowMeta[key] ?? WorkflowMeta(key.isEmpty ? '—' : key, DanColors.muted);
+    kWorkflowMeta[key] ??
+    WorkflowMeta(key.isEmpty ? '—' : key, DanColors.muted);
 
 /// Các tab đơn hàng theo KiotViet. Mỗi tab ánh xạ tới một bucket của summary.
 class OnlineOrderTab {
@@ -68,12 +71,14 @@ class OnlineOrderTab {
 
 const List<OnlineOrderTab> kOrderTabs = [
   OnlineOrderTab('pending', 'Chờ xử lý', ['pending']),
-  OnlineOrderTab('processed', 'Đã xử lý', ['processed', 'preparing', 'ready_to_ship']),
+  OnlineOrderTab(
+      'processed', 'Đã xử lý', ['processed', 'preparing', 'ready_to_ship']),
   OnlineOrderTab('shipping', 'Đang giao', ['shipping']),
   OnlineOrderTab('delivered', 'Đã giao', ['delivered']),
   OnlineOrderTab('cancelled', 'Đơn hủy', ['cancelled']),
   OnlineOrderTab('return_refund', 'Trả hàng/Hoàn tiền', ['return_refund']),
-  OnlineOrderTab('product_attention', 'Cần xử lý hàng hóa', ['product_attention']),
+  OnlineOrderTab(
+      'product_attention', 'Cần xử lý hàng hóa', ['product_attention']),
 ];
 
 // ── Widget dùng chung ─────────────────────────────────────────────────────
@@ -122,7 +127,8 @@ class ProviderBadge extends StatelessWidget {
 class OnlineEmpty extends StatelessWidget {
   final IconData icon;
   final String message;
-  const OnlineEmpty(this.message, {this.icon = Icons.inbox_outlined, super.key});
+  const OnlineEmpty(this.message,
+      {this.icon = Icons.inbox_outlined, super.key});
 
   @override
   Widget build(BuildContext context) {

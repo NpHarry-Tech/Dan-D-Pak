@@ -1,4 +1,4 @@
-﻿import 'dart:convert';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -88,7 +88,10 @@ class _SelfOrderTableScreenState extends State<SelfOrderTableScreen> {
   // trong khi sơ đồ bàn bên POS Cashier vẫn hiện "Đang gọi" — 2 máy nhìn
   // cùng 1 trạng thái nhưng lệch nhau, đúng lỗi khách báo.
   bool _isBusy(String status) =>
-      status == 'busy' || status == 'serving' || status == 'paying' || status == 'calling';
+      status == 'busy' ||
+      status == 'serving' ||
+      status == 'paying' ||
+      status == 'calling';
 
   Future<void> _load() async {
     setState(() {
@@ -132,7 +135,8 @@ class _SelfOrderTableScreenState extends State<SelfOrderTableScreen> {
       return;
     }
 
-    Navigator.of(context).push(PageRouteBuilder(
+    Navigator.of(context)
+        .push(PageRouteBuilder(
       settings: RouteSettings(name: '/so-lang'),
       pageBuilder: (_, __, ___) => SelfOrderWelcomeScreen(
         serverUrl: widget.serverUrl,
@@ -143,7 +147,8 @@ class _SelfOrderTableScreenState extends State<SelfOrderTableScreen> {
       transitionsBuilder: (_, anim, __, child) =>
           FadeTransition(opacity: anim, child: child),
       transitionDuration: Duration(milliseconds: 350),
-    )).then((_) {
+    ))
+        .then((_) {
       if (mounted) _reloadTablesSilent();
     });
   }
@@ -183,7 +188,8 @@ class _SelfOrderTableScreenState extends State<SelfOrderTableScreen> {
     }
     if (!mounted) return;
 
-    Navigator.of(context).push(PageRouteBuilder(
+    Navigator.of(context)
+        .push(PageRouteBuilder(
       settings: RouteSettings(name: '/so-menu'),
       pageBuilder: (_, __, ___) => SelfOrderMenuScreen(
         serverUrl: widget.serverUrl,
@@ -198,7 +204,8 @@ class _SelfOrderTableScreenState extends State<SelfOrderTableScreen> {
       transitionsBuilder: (_, anim, __, child) =>
           FadeTransition(opacity: anim, child: child),
       transitionDuration: Duration(milliseconds: 350),
-    )).then((_) {
+    ))
+        .then((_) {
       if (mounted) _reloadTablesSilent();
     });
   }
@@ -270,61 +277,102 @@ class _SelfOrderTableScreenState extends State<SelfOrderTableScreen> {
                       fontSize: 13,
                       letterSpacing: 1)),
             ),
-            GridView.builder(
-              shrinkWrap: true,
-              physics: NeverScrollableScrollPhysics(),
-              gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
-                maxCrossAxisExtent: 150,
-                crossAxisSpacing: 10,
-                mainAxisSpacing: 10,
-                childAspectRatio: 1.4,
-              ),
-              itemCount: zoneTables.length,
-              itemBuilder: (_, ti) {
-                final table = zoneTables[ti];
-                final busy = _isBusy(table.status);
-                return InkWell(
-                  onTap: () => _pickTable(table),
-                  borderRadius: BorderRadius.circular(12),
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: busy
-                          ? Color(0xFFFFC24D).withValues(alpha: 0.15)
-                          : Colors.white,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                        color: busy ? Color(0xFFFFC24D) : Color(0xFFE7EAEE),
-                      ),
-                    ),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Text(table.name,
-                            style: TextStyle(
-                                fontWeight: FontWeight.w800,
-                                fontSize: 16,
-                                color: Color(0xFF1A2230))),
-                        SizedBox(height: 2),
-                        Text(
-                            table.status == 'calling'
-                                ? t('Đang gọi')
-                                : (busy ? t('Đang phục vụ') : t('Trống')),
-                            style: TextStyle(
-                                fontSize: 11,
-                                color: busy
-                                    ? Color(0xFFB8860B)
-                                    : Color(0xFF49D17F),
-                                fontWeight: FontWeight.w600)),
-                      ],
-                    ),
-                  ),
-                );
-              },
-            ),
+            _zoneTablesLayout(zoneTables),
             SizedBox(height: 14),
           ],
         );
       },
+    );
+  }
+
+  // Bàn ĐÃ XẾP VỊ TRÍ → đặt đúng ô lưới đã dựng ở Cài đặt (không kẻ lưới); bàn
+  // chưa xếp → lưới đều như cũ. Khách nhìn sơ đồ giống thật để chọn đúng bàn.
+  Widget _zoneTablesLayout(List<SoTableModel> zoneTables) {
+    final placed = zoneTables.where((tb) => tb.posX >= 0).toList();
+    final loose = zoneTables.where((tb) => tb.posX < 0).toList();
+
+    Widget looseGrid() => GridView.builder(
+          shrinkWrap: true,
+          physics: NeverScrollableScrollPhysics(),
+          gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
+            maxCrossAxisExtent: 150,
+            crossAxisSpacing: 10,
+            mainAxisSpacing: 10,
+            childAspectRatio: 1.4,
+          ),
+          itemCount: loose.length,
+          itemBuilder: (_, ti) => _soTableCard(loose[ti]),
+        );
+
+    if (placed.isEmpty) return looseGrid();
+    return LayoutBuilder(builder: (context, c) {
+      const cols = 12;
+      const gap = 10.0;
+      final cell = c.maxWidth / cols;
+      final rowH = cell * 0.78;
+      var maxY = 0.0;
+      for (final tb in placed) {
+        if (tb.posY > maxY) maxY = tb.posY;
+      }
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          SizedBox(
+            width: double.infinity,
+            height: (maxY + 1) * rowH,
+            child: Stack(children: [
+              for (final tb in placed)
+                Positioned(
+                  left: tb.posX.clamp(0, cols - 1) * cell,
+                  top: tb.posY * rowH,
+                  width: cell - gap,
+                  height: rowH - gap,
+                  child: _soTableCard(tb),
+                ),
+            ]),
+          ),
+          if (loose.isNotEmpty) ...[const SizedBox(height: 10), looseGrid()],
+        ],
+      );
+    });
+  }
+
+  Widget _soTableCard(SoTableModel table) {
+    final busy = _isBusy(table.status);
+    return InkWell(
+      onTap: () => _pickTable(table),
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        decoration: BoxDecoration(
+          color:
+              busy ? Color(0xFFFFC24D).withValues(alpha: 0.15) : Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: busy ? Color(0xFFFFC24D) : Color(0xFFE7EAEE),
+          ),
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text(table.name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 16,
+                    color: Color(0xFF1A2230))),
+            SizedBox(height: 2),
+            Text(
+                table.status == 'calling'
+                    ? t('Đang gọi')
+                    : (busy ? t('Đang phục vụ') : t('Trống')),
+                style: TextStyle(
+                    fontSize: 11,
+                    color: busy ? Color(0xFFB8860B) : Color(0xFF49D17F),
+                    fontWeight: FontWeight.w600)),
+          ],
+        ),
+      ),
     );
   }
 }

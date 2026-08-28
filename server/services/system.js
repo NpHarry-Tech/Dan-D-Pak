@@ -107,7 +107,9 @@ function deviceBucket(branch) {
   return agentPrinters.get(branch);
 }
 
-export function setAgentPrinters(branch = 'sala', list = [], { deviceId = '', deviceName = '' } = {}) {
+export function setAgentPrinters(branch = 'sala', list = [], {
+  deviceId = '', deviceName = '', agentVersion = '', capabilities = [],
+} = {}) {
   const data = Array.isArray(list) ? list.map(normalizePrinter).filter(Boolean) : [];
   // Agent bản cũ chưa gửi định danh → gom vào một khoá chung, vẫn chạy như trước.
   const key = String(deviceId || '').trim().slice(0, 120) || 'agent-khong-dinh-danh';
@@ -115,6 +117,10 @@ export function setAgentPrinters(branch = 'sala', list = [], { deviceId = '', de
     at: Date.now(),
     deviceId: key,
     deviceName: String(deviceName || '').trim().slice(0, 120),
+    agentVersion: String(agentVersion || '').trim().slice(0, 40),
+    capabilities: Array.isArray(capabilities)
+      ? capabilities.map(String).map(x => x.trim()).filter(Boolean).slice(0, 20)
+      : [],
     data,
   });
   return data;
@@ -129,6 +135,8 @@ export function getAgentDevices(branch = 'sala') {
     out.push({
       device_id: e.deviceId,
       device_name: e.deviceName || e.deviceId,
+      agent_version: e.agentVersion || '',
+      capabilities: e.capabilities || [],
       last_seen_at: new Date(e.at).toISOString(),
       printers: e.data,
     });

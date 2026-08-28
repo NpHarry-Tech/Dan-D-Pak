@@ -1,8 +1,19 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { db } from './db.js';
-import * as Print from './services/printing.js';
-import * as System from './services/system.js';
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
+const temp = mkdtempSync(join(tmpdir(), 'dandpak-handy-routing-'));
+process.env.SQLITE_PATH = join(temp, 'store.db');
+process.env.STORAGE_PATH = join(temp, 'storage');
+process.env.DATA_ENCRYPTION_KEY = process.env.DATA_ENCRYPTION_KEY
+  || '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
+
+const { db, migrate } = await import('./db.js');
+const Print = await import('./services/printing.js');
+const System = await import('./services/system.js');
+migrate();
 
 function xoaJob() {
   db.prepare("DELETE FROM print_jobs WHERE branch_id='sala'").run();

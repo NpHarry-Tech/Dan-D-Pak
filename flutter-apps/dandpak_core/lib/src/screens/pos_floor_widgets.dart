@@ -5,6 +5,9 @@ part of 'pos_screen.dart';
 class _FloorMap extends StatelessWidget {
   _FloorMap({
     required this.tables,
+    required this.zones,
+    required this.selectedZoneId,
+    required this.onSelectZone,
     required this.selectedTable,
     required this.loading,
     required this.onSelect,
@@ -16,6 +19,10 @@ class _FloorMap extends StatelessWidget {
   });
 
   final List<TableModel> tables;
+  final List<Zone> zones;
+  // '' hoặc 'all' = xem TẤT CẢ (danh sách); còn lại = tên khu vực đang chọn.
+  final String selectedZoneId;
+  final ValueChanged<String> onSelectZone;
   final TableModel? selectedTable;
   final bool loading;
   final ValueChanged<TableModel> onSelect;
@@ -27,23 +34,113 @@ class _FloorMap extends StatelessWidget {
   final bool Function(TableModel table) isPaying;
   final bool Function(TableModel table) isCalling;
 
+  bool get _allMode => selectedZoneId.isEmpty || selectedZoneId == 'all';
+
+  Widget _zoneRailButton(
+      {required String label,
+      required bool active,
+      required VoidCallback onTap}) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Material(
+        color: active ? DanColors.brandDim : DanColors.surface,
+        borderRadius: BorderRadius.circular(9),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(9),
+          onTap: onTap,
+          child: Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(9),
+              border: Border.all(
+                  color: active ? DanColors.brand : DanColors.border),
+            ),
+            child: Text(label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: active ? FontWeight.w800 : FontWeight.w600,
+                    color: active ? DanColors.brand : DanColors.text)),
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     if (loading && tables.isEmpty) {
       return Center(child: CircularProgressIndicator(color: DanColors.brand));
     }
 
+    // Gom theo ĐỊNH DANH khu vực (zoneId) nhưng HIỂN THỊ theo tên (zoneName).
     final grouped = <String, List<TableModel>>{};
+    final zoneNames = <String, String>{};
     for (final table in tables) {
-      grouped.putIfAbsent(
-          table.zoneId.isEmpty ? t('Khu vực') : table.zoneId, () => []);
-      grouped[table.zoneId.isEmpty ? t('Khu vực') : table.zoneId]!.add(table);
+      final key = table.zoneId;
+      grouped.putIfAbsent(key, () => []).add(table);
+      zoneNames[key] = table.zoneName.isEmpty ? t('Khu vực') : table.zoneName;
     }
 
     final total = tables.length;
     final open = tables.where((table) => !isFree(table)).length;
     final paying = tables.where(isPaying).length;
     final calling = tables.where(isCalling).length;
+
+    // NỘI DUNG: "Tất cả" → mọi khu vực dạng DANH SÁCH; chọn khu vực → LAYOUT khu đó.
+    final Widget content;
+    if (grouped.isEmpty) {
+      content = _EmptyBlock(
+        title: t('Chưa có bàn'),
+        sub: t('Vào Cài đặt để cấu hình sơ đồ bàn.'),
+        minHeight: 300,
+      );
+    } else if (_allMode) {
+      content = Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          for (final entry in grouped.entries)
+            _ZoneSection(
+              listMode: true,
+              name: zoneNames[entry.key] ?? t('Khu vực'),
+              tables: entry.value,
+              selectedTable: selectedTable,
+              onSelect: onSelect,
+              onHoldToReset: onHoldToReset,
+              money: money,
+              isFree: isFree,
+              isPaying: isPaying,
+              isCalling: isCalling,
+            ),
+        ],
+      );
+    } else {
+      final zoneTables = tables
+          .where((tb) =>
+              (tb.zoneName.isEmpty ? t('Khu vực') : tb.zoneName) ==
+              selectedZoneId)
+          .toList();
+      content = zoneTables.isEmpty
+          ? _EmptyBlock(
+              title: t('Khu vực này chưa có bàn'),
+              sub: t('Chọn "Tất cả" để xem toàn bộ, hoặc thêm bàn ở Cài đặt.'),
+              minHeight: 300,
+            )
+          : _ZoneSection(
+              listMode: false,
+              name: selectedZoneId,
+              tables: zoneTables,
+              selectedTable: selectedTable,
+              onSelect: onSelect,
+              onHoldToReset: onHoldToReset,
+              money: money,
+              isFree: isFree,
+              isPaying: isPaying,
+              isCalling: isCalling,
+            );
+    }
 
     return SingleChildScrollView(
       child: Column(
@@ -100,26 +197,33 @@ class _FloorMap extends StatelessWidget {
             ),
           ),
           SizedBox(height: 12),
-          if (grouped.isEmpty)
-            _EmptyBlock(
-              title: t('Chưa có bàn'),
-              sub: t('Vào Cài đặt để cấu hình sơ đồ bàn.'),
-              minHeight: 300,
-            )
-          else
-            ...grouped.entries.map(
-              (entry) => _ZoneSection(
-                name: entry.key,
-                tables: entry.value,
-                selectedTable: selectedTable,
-                onSelect: onSelect,
-                onHoldToReset: onHoldToReset,
-                money: money,
-                isFree: isFree,
-                isPaying: isPaying,
-                isCalling: isCalling,
+          // THANH KHU VỰC BÊN TRÁI + nội dung bên phải.
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SizedBox(
+                width: 138,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    _zoneRailButton(
+                      label: t('Tất cả'),
+                      active: _allMode,
+                      onTap: () => onSelectZone('all'),
+                    ),
+                    for (final z in zones)
+                      _zoneRailButton(
+                        label: z.name,
+                        active: !_allMode && selectedZoneId == z.id,
+                        onTap: () => onSelectZone(z.id),
+                      ),
+                  ],
+                ),
               ),
-            ),
+              SizedBox(width: 12),
+              Expanded(child: content),
+            ],
+          ),
         ],
       ),
     );
@@ -137,8 +241,12 @@ class _ZoneSection extends StatelessWidget {
     required this.isFree,
     required this.isPaying,
     required this.isCalling,
+    this.listMode = false,
   });
 
+  // listMode = xem "Tất cả": mọi bàn xếp dạng LƯỚI DANH SÁCH (bỏ vị trí đã setup).
+  // false = xem một khu vực: bàn đặt đúng LAYOUT đã dựng ở Cài đặt.
+  final bool listMode;
   final String name;
   final List<TableModel> tables;
   final TableModel? selectedTable;
@@ -186,38 +294,94 @@ class _ZoneSection extends StatelessWidget {
           LayoutBuilder(
             builder: (context, constraints) {
               final gap = 9.0;
-              final minTileWidth = constraints.maxWidth < 1180 ? 88.0 : 104.0;
-              final columns = math.max(
-                1,
-                ((constraints.maxWidth + gap) / (minTileWidth + gap)).floor(),
-              );
-              final tileWidth =
-                  (constraints.maxWidth - (columns - 1) * gap) / columns;
+              Widget card(TableModel table) => _TableCard(
+                    table: table,
+                    selected: selectedTable?.id == table.id,
+                    onTap: () => onSelect(table),
+                    onHoldToReset: () => onHoldToReset(table),
+                    money: money,
+                    isFree: isFree(table),
+                    isPaying: isPaying(table),
+                    isCalling: isCalling(table),
+                  );
 
-              return SizedBox(
-                width: double.infinity,
-                child: Wrap(
+              // BÀN ĐÃ XẾP VỊ TRÍ → đặt đúng ô lưới (như đã dựng ở Cài đặt) nhưng
+              // KHÔNG kẻ lưới. Bàn chưa xếp → xếp lần lượt bên dưới (Wrap).
+              // listMode ("Tất cả"): coi MỌI bàn là chưa xếp → ra danh sách lưới.
+              final placed = listMode
+                  ? <TableModel>[]
+                  : tables.where((tb) => tb.posX >= 0).toList();
+              final loose = listMode
+                  ? tables
+                  : tables.where((tb) => tb.posX < 0).toList();
+
+              Widget looseWrap() {
+                if (loose.isEmpty) return const SizedBox.shrink();
+                final minTileWidth = constraints.maxWidth < 1180 ? 88.0 : 104.0;
+                final columns = math.max(
+                    1,
+                    ((constraints.maxWidth + gap) / (minTileWidth + gap))
+                        .floor());
+                final tileWidth =
+                    (constraints.maxWidth - (columns - 1) * gap) / columns;
+                return Wrap(
                   spacing: gap,
                   runSpacing: gap,
-                  alignment: WrapAlignment.start,
-                  runAlignment: WrapAlignment.start,
-                  children: tables.map((table) {
-                    return SizedBox(
-                      width: tileWidth,
-                      height: constraints.maxWidth < 1180 ? 82 : 90,
-                      child: _TableCard(
-                        table: table,
-                        selected: selectedTable?.id == table.id,
-                        onTap: () => onSelect(table),
-                        onHoldToReset: () => onHoldToReset(table),
-                        money: money,
-                        isFree: isFree(table),
-                        isPaying: isPaying(table),
-                        isCalling: isCalling(table),
+                  children: loose
+                      .map((table) => SizedBox(
+                          width: tileWidth,
+                          height: constraints.maxWidth < 1180 ? 82 : 90,
+                          child: card(table)))
+                      .toList(),
+                );
+              }
+
+              if (placed.isEmpty) {
+                return SizedBox(width: double.infinity, child: looseWrap());
+              }
+              // KHỚP HỆT trình thiết kế (floor_plan_editor): CÙNG lưới kFloorCols
+              // cột, ô VUÔNG (cao = rộng), thẻ bàn rộng kTableCells ô — nhờ vậy
+              // KHOẢNG CÁCH & VỊ TRÍ bàn ở POS giống y lúc thiết kế (chỉ khác: POS
+              // KHÔNG vẽ lưới "+"). Trước đây POS tự tính số cột động + ô chữ nhật
+              // (rowH=cell*0.9) nên bàn dãn ra khác hẳn Cài đặt. Ô có bề rộng TỐI
+              // THIỂU để màn nhỏ không bóp chữ → tràn thì CUỘN NGANG.
+              var maxY = 0.0;
+              for (final tb in placed) {
+                if (tb.posY > maxY) maxY = tb.posY;
+              }
+              const minCell = 60.0;
+              final cellW =
+                  math.max(constraints.maxWidth / kFloorCols, minCell);
+              final cellH = cellW; // ô VUÔNG như editor
+              final canvasW = kFloorCols * cellW;
+              final stack = SizedBox(
+                width: canvasW,
+                height: (maxY + 1) * cellH,
+                child: Stack(
+                  children: [
+                    for (final tb in placed)
+                      Positioned(
+                        left: tb.posX * cellW,
+                        top: tb.posY * cellH,
+                        width: cellW * kTableCells - gap,
+                        height: cellH - gap,
+                        child: card(tb),
                       ),
-                    );
-                  }).toList(),
+                  ],
                 ),
+              );
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  canvasW > constraints.maxWidth + 1
+                      ? SingleChildScrollView(
+                          scrollDirection: Axis.horizontal, child: stack)
+                      : stack,
+                  if (loose.isNotEmpty) ...[
+                    const SizedBox(height: 10),
+                    looseWrap(),
+                  ],
+                ],
               );
             },
           ),
@@ -571,4 +735,3 @@ class _CustomerRow extends StatelessWidget {
     );
   }
 }
-

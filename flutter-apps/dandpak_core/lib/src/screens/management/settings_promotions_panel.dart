@@ -26,12 +26,14 @@ Map<String, String> get _scopeLabels => {
       'order': t('Hóa đơn / toàn bill'),
       'sku': t('Hàng hóa / SKU cụ thể'),
       'all_sku': t('Hàng hóa / mọi SKU'),
+      'combo': t('Combo (mua N món bất kỳ trong tập)'),
     };
 
 Map<String, String> get _typeLabels => {
       'pct': t('Giảm theo %'),
       'amount': t('Giảm số tiền'),
       'buy_x_get_1': t('Mua X tặng 1'),
+      'fixed': t('Giá combo cố định (N món = X đ)'),
     };
 
 class PromotionSettingsPanel extends StatefulWidget {
@@ -55,6 +57,24 @@ class _PromotionSettingsPanelState extends State<PromotionSettingsPanel> {
   final _branches = TextEditingController();
   final _customerGroups = TextEditingController();
   final _staffIds = TextEditingController();
+  // Combo: danh sách sku_id (multi-picker), nhóm hàng (category, cách nhau phẩy),
+  // và số lượng cần mua N.
+  final _comboSkus = TextEditingController();
+  final _comboGroups = TextEditingController();
+  final _comboQty = TextEditingController(text: '2');
+  // §9 COMPLIANCE ADVISORY (owner: KHÔNG enforce cap). Metadata truy vết do người
+  // có quyền nhập tay — KHÔNG ảnh hưởng giá/checkout/tồn/thanh toán.
+  final _complianceNote = TextEditingController();
+  final _approvalRef = TextEditingController();
+  bool _isInternalUse = false;
+  String _programType = 'PRODUCTION_USE';
+
+  // Cấu hình advisory từ SERVER (operationsConfig.promotions) — KHÔNG hardcode:
+  //  advisoryThresholdPct: ngưỡng CẢNH BÁO % (null = không cảnh báo);
+  //  legalNoteText/legalNoteUrl: "Lưu ý pháp lý" + link tài liệu quy định.
+  num? _advisoryThresholdPct;
+  String _legalNoteText = '';
+  String _legalNoteUrl = '';
 
   List<Map<String, dynamic>> _rawRows = [];
   List<Map<String, dynamic>> _branchRows = [];
@@ -99,6 +119,11 @@ class _PromotionSettingsPanelState extends State<PromotionSettingsPanel> {
       _branches,
       _customerGroups,
       _staffIds,
+      _comboSkus,
+      _comboGroups,
+      _comboQty,
+      _complianceNote,
+      _approvalRef,
     ]) {
       c.dispose();
     }
@@ -117,7 +142,14 @@ class _PromotionSettingsPanelState extends State<PromotionSettingsPanel> {
         widget.api.getRetailLots().catchError((_) => <dynamic>[]),
         widget.api.getBranches().catchError((_) => <dynamic>[]),
         widget.api.getUsers().catchError((_) => <dynamic>[]),
+        widget.api.getOperationsConfig().catchError((_) => <String, dynamic>{}),
       ]);
+      final ops = (results[5] is Map)
+          ? Map<String, dynamic>.from(results[5] as Map)
+          : <String, dynamic>{};
+      final promoCfg = ops['promotions'] is Map
+          ? Map<String, dynamic>.from(ops['promotions'] as Map)
+          : <String, dynamic>{};
       final raw = (results[0] as List)
           .whereType<Map>()
           .map((e) => Map<String, dynamic>.from(e))
@@ -142,6 +174,14 @@ class _PromotionSettingsPanelState extends State<PromotionSettingsPanel> {
             .whereType<Map>()
             .map((e) => Map<String, dynamic>.from(e))
             .toList();
+        final thr = promoCfg['advisoryThresholdPct'] ??
+            promoCfg['advisory_threshold_pct'];
+        _advisoryThresholdPct =
+            (thr is num) ? thr : num.tryParse('${thr ?? ''}');
+        _legalNoteText =
+            '${promoCfg['legalNoteText'] ?? promoCfg['legal_note_text'] ?? ''}';
+        _legalNoteUrl =
+            '${promoCfg['legalNoteUrl'] ?? promoCfg['legal_note_url'] ?? ''}';
         _loading = false;
       });
     } catch (e) {
@@ -168,6 +208,13 @@ class _PromotionSettingsPanelState extends State<PromotionSettingsPanel> {
       _branches.clear();
       _customerGroups.clear();
       _staffIds.clear();
+      _comboSkus.clear();
+      _comboGroups.clear();
+      _comboQty.text = '2';
+      _complianceNote.clear();
+      _approvalRef.clear();
+      _isInternalUse = false;
+      _programType = 'PRODUCTION_USE';
       _scope = 'order';
       _type = 'pct';
       _skuId = '';
@@ -215,6 +262,15 @@ class _PromotionSettingsPanelState extends State<PromotionSettingsPanel> {
           scopeConfig['customerGroups'] ?? scopeConfig['customer_groups']);
       _staffIds.text =
           _joinList(scopeConfig['staffIds'] ?? scopeConfig['staff_ids']);
+      _comboSkus.text = _joinList(scopeConfig['skus']);
+      _comboGroups.text = _joinList(scopeConfig['groups']);
+      final q = scopeConfig['qty'];
+      _comboQty.text = (q == null || '$q'.isEmpty) ? '2' : '$q';
+      _isInternalUse =
+          raw['is_internal_use'] == true || raw['is_internal_use'] == 1;
+      _programType = '${raw['program_type'] ?? 'PRODUCTION_USE'}';
+      _complianceNote.text = '${raw['compliance_note'] ?? ''}';
+      _approvalRef.text = '${raw['approval_reference'] ?? ''}';
     });
   }
 
@@ -244,7 +300,17 @@ class _PromotionSettingsPanelState extends State<PromotionSettingsPanel> {
           'branches': _csv(_branches.text),
           'customerGroups': _csv(_customerGroups.text),
           'staffIds': _csv(_staffIds.text),
+          if (_scope == 'combo') 'skus': _csv(_comboSkus.text),
+          if (_scope == 'combo') 'groups': _csv(_comboGroups.text),
+          if (_scope == 'combo') 'qty': _i(_comboQty.text),
         },
+        // §9 compliance metadata (audit-only; server KHÔNG dùng để đổi giá/chặn).
+        'is_internal_use': _isInternalUse,
+        if (_isInternalUse) 'program_type': _programType,
+        if (_complianceNote.text.trim().isNotEmpty)
+          'compliance_note': _complianceNote.text.trim(),
+        if (_approvalRef.text.trim().isNotEmpty)
+          'approval_reference': _approvalRef.text.trim(),
         'security_pin': pin,
       };
 
@@ -255,6 +321,12 @@ class _PromotionSettingsPanelState extends State<PromotionSettingsPanel> {
     }
     if (_scope == 'sku' && _skuId.isEmpty) {
       _toast(t('Chọn SKU áp dụng'), error: true);
+      return;
+    }
+    if (_scope == 'combo' &&
+        _csv(_comboSkus.text).isEmpty &&
+        _csv(_comboGroups.text).isEmpty) {
+      _toast(t('Combo cần chọn ít nhất 1 SKU hoặc 1 nhóm hàng'), error: true);
       return;
     }
     final pin = await requestManagerPin(
@@ -302,6 +374,26 @@ class _PromotionSettingsPanelState extends State<PromotionSettingsPanel> {
     try {
       await widget.api.toggleVoucher(v.id, !v.active, pin: pin);
       await _load();
+    } catch (e) {
+      _toast(e.toString().replaceFirst('Exception: ', ''), error: true);
+    }
+  }
+
+  // XÓA HẲN CTKM — admin cần xóa được, không chỉ bật/tắt. PIN vừa là xác nhận vừa
+  // là dấu vết trách nhiệm (giống _toggle). Đơn cũ đã chụp mã/tên nên không hỏng.
+  Future<void> _delete(RetailVoucher v) async {
+    final pin = await requestManagerPin(
+      context,
+      t('XÓA HẲN chương trình "${v.name}"? Không thể hoàn tác.'),
+      label: t('PIN tài khoản đang đăng nhập / Admin'),
+      selfPinOnly: true,
+    );
+    if (pin == null) return;
+    try {
+      await widget.api.deleteVoucher(v.id, pin: pin);
+      if (_editing?.id == v.id) _reset();
+      await _load();
+      if (mounted) _toast(t('Đã xóa "${v.name}"'));
     } catch (e) {
       _toast(e.toString().replaceFirst('Exception: ', ''), error: true);
     }
@@ -358,11 +450,13 @@ class _PromotionSettingsPanelState extends State<PromotionSettingsPanel> {
   }
 
   Widget _formPanel() {
-    final typeOptions = [
-      'pct',
-      'amount',
-      if (_scope != 'order') 'buy_x_get_1',
-    ];
+    final typeOptions = _scope == 'combo'
+        ? const ['fixed', 'amount', 'pct']
+        : [
+            'pct',
+            'amount',
+            if (_scope != 'order') 'buy_x_get_1',
+          ];
     return Panel(
       title: _editing == null
           ? t('Tạo chương trình')
@@ -393,6 +487,12 @@ class _PromotionSettingsPanelState extends State<PromotionSettingsPanel> {
                   _lotNo = '';
                 }
                 if (_scope == 'order' && _type == 'buy_x_get_1') _type = 'pct';
+                // Đồng bộ kiểu ưu đãi hợp lệ theo scope.
+                if (_scope == 'combo' &&
+                    !const ['fixed', 'amount', 'pct'].contains(_type)) {
+                  _type = 'fixed';
+                }
+                if (_scope != 'combo' && _type == 'fixed') _type = 'pct';
               }),
             ),
             _dropdown(
@@ -401,8 +501,10 @@ class _PromotionSettingsPanelState extends State<PromotionSettingsPanel> {
               items: {for (final key in typeOptions) key: _typeLabels[key]!},
               onChanged: (v) => setState(() => _type = v ?? 'pct'),
             ),
-            _field(_value, _type == 'buy_x_get_1' ? 'Mua X' : t('Giá trị'),
-                keyboardType: TextInputType.number),
+            _field(_value, _valueLabel(),
+                keyboardType: TextInputType.number,
+                // Rebuild để banner advisory cập nhật LIVE theo % vừa nhập.
+                onChanged: (_) => setState(() {})),
             _field(_minTotal, t('Bill tối thiểu'),
                 keyboardType: TextInputType.number),
           ]),
@@ -412,6 +514,46 @@ class _PromotionSettingsPanelState extends State<PromotionSettingsPanel> {
               _skuDropdown(),
               _lotDropdown(),
             ]),
+          ],
+          if (_scope == 'combo') ...[
+            SizedBox(height: 12),
+            _grid([
+              _scopePicker(
+                _comboSkus,
+                t('SKU trong combo'),
+                [
+                  for (final s in _skus)
+                    {'id': s.id, 'name': s.name, 'barcode': s.barcode}
+                ],
+                idKey: 'id',
+                labelKeys: ['name', 'barcode'],
+                emptyLabel: t('Chọn 1 hoặc nhiều SKU'),
+              ),
+              _scopePicker(
+                _comboGroups,
+                t('Nhóm hàng trong combo'),
+                [
+                  for (final c in {
+                    for (final s in _skus)
+                      if (s.category.trim().isNotEmpty) s.category.trim()
+                  })
+                    {'cat': c}
+                ],
+                idKey: 'cat',
+                labelKeys: ['cat'],
+                emptyLabel: t('Chọn nhóm hàng (tùy chọn)'),
+              ),
+              _field(_comboQty, t('Số lượng cần mua (N)'),
+                  keyboardType: TextInputType.number),
+            ]),
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Text(
+                  t(
+                      'Khách mua đủ N món BẤT KỲ trong tập (SKU + nhóm hàng) → áp ưu đãi. Mua 2N món = 2 combo.'),
+                  style: const TextStyle(
+                      fontSize: 11.5, color: DanColors.muted, height: 1.4)),
+            ),
           ],
           SizedBox(height: 18),
           _SectionTitle(t('Hiệu lực & lịch chạy')),
@@ -498,6 +640,8 @@ class _PromotionSettingsPanelState extends State<PromotionSettingsPanel> {
             ),
           ),
           SizedBox(height: 16),
+          _complianceSection(),
+          SizedBox(height: 16),
           Row(
             mainAxisAlignment: MainAxisAlignment.end,
             children: [
@@ -519,6 +663,126 @@ class _PromotionSettingsPanelState extends State<PromotionSettingsPanel> {
           ),
         ],
       ),
+    );
+  }
+
+  // §9 CẢNH BÁO advisory (KHÔNG chặn lưu): CTKM % vượt ngưỡng CẤU HÌNH từ server
+  // (không hardcode). Chỉ nhắc kiểm tra quy định — không sửa value, không cản.
+  bool get _advisoryTriggered =>
+      _type == 'pct' &&
+      _advisoryThresholdPct != null &&
+      _i(_value.text) > _advisoryThresholdPct!;
+
+  Widget _advisoryBanner() {
+    if (!_advisoryTriggered) return const SizedBox.shrink();
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.amber.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: Colors.amber.shade700.withValues(alpha: 0.5)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.info_outline, size: 18, color: Colors.amber.shade800),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              t('Chương trình này có mức ưu đãi cao (${_i(_value.text)}% > ngưỡng ${_advisoryThresholdPct!.round()}%). Vui lòng kiểm tra quy định khuyến mại hiện hành và hồ sơ chương trình trước khi áp dụng. Đây chỉ là nhắc nhở — không chặn lưu.'),
+              style: const TextStyle(fontSize: 12.5, height: 1.4),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // "Lưu ý pháp lý" + metadata truy vết (audit-only). Nội dung/link lấy từ CẤU
+  // HÌNH server (operationsConfig.promotions) — KHÔNG hardcode luật vào app.
+  Widget _complianceSection() {
+    final hasLegalNote = _legalNoteText.isNotEmpty || _legalNoteUrl.isNotEmpty;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _advisoryBanner(),
+        _SectionTitle(t('Lưu ý pháp lý & tuân thủ')),
+        if (hasLegalNote)
+          Container(
+            width: double.infinity,
+            margin: const EdgeInsets.only(bottom: 12),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: DanColors.surface2,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: DanColors.border),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (_legalNoteText.isNotEmpty)
+                  Text(_legalNoteText,
+                      style: const TextStyle(fontSize: 12.5, height: 1.4)),
+                if (_legalNoteUrl.isNotEmpty) ...[
+                  if (_legalNoteText.isNotEmpty) const SizedBox(height: 6),
+                  Row(
+                    children: [
+                      Icon(Icons.link, size: 15, color: DanColors.brand),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: SelectableText(_legalNoteUrl,
+                            style: TextStyle(
+                                fontSize: 12.5,
+                                color: DanColors.brand,
+                                decoration: TextDecoration.underline)),
+                      ),
+                    ],
+                  ),
+                ],
+              ],
+            ),
+          )
+        else
+          Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: Text(
+              t('Chưa cấu hình tài liệu quy định. Người quản trị có thể thêm link hướng dẫn ở Cấu hình vận hành (promotions.legalNoteUrl).'),
+              style: TextStyle(fontSize: 12, color: DanColors.faint),
+            ),
+          ),
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          title: Text(t('Chương trình dùng NỘI BỘ (không bán cho khách)')),
+          subtitle: Text(
+              t('QA / dùng bếp / dùng sản xuất — tách khỏi CTKM tiêu dùng trong báo cáo & đối soát.'),
+              style: TextStyle(fontSize: 11.5, color: DanColors.faint)),
+          value: _isInternalUse,
+          onChanged: (v) => setState(() => _isInternalUse = v),
+        ),
+        if (_isInternalUse) ...[
+          const SizedBox(height: 8),
+          DropdownButtonFormField<String>(
+            initialValue: _programType,
+            decoration: InputDecoration(labelText: t('Loại sử dụng nội bộ')),
+            items: const [
+              DropdownMenuItem(
+                  value: 'QA_TESTING', child: Text('QA / kiểm thử')),
+              DropdownMenuItem(value: 'KITCHEN_USE', child: Text('Dùng bếp')),
+              DropdownMenuItem(
+                  value: 'PRODUCTION_USE', child: Text('Dùng sản xuất')),
+            ],
+            onChanged: (v) =>
+                setState(() => _programType = v ?? 'PRODUCTION_USE'),
+          ),
+        ],
+        const SizedBox(height: 8),
+        _field(_complianceNote, t('Ghi chú tuân thủ (compliance note)'),
+            hint: t('VD: CT đã khai báo Sở Công Thương / căn cứ nội bộ')),
+        const SizedBox(height: 8),
+        _field(_approvalRef, t('Mã phê duyệt (approval reference)'),
+            hint: t('VD: QĐ-123 / số công văn')),
+      ],
     );
   }
 
@@ -612,10 +876,22 @@ class _PromotionSettingsPanelState extends State<PromotionSettingsPanel> {
                 onChanged: (_) => _toggle(v),
                 activeThumbColor: DanColors.brand,
               ),
-              IconButton(
-                onPressed: () => _loadIntoForm(v),
-                icon: Icon(Icons.edit_outlined),
-                tooltip: t('Sửa'),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  IconButton(
+                    onPressed: () => _loadIntoForm(v),
+                    icon: Icon(Icons.edit_outlined),
+                    tooltip: t('Sửa'),
+                    visualDensity: VisualDensity.compact,
+                  ),
+                  IconButton(
+                    onPressed: () => _delete(v),
+                    icon: Icon(Icons.delete_outline, color: DanColors.late),
+                    tooltip: t('Xóa'),
+                    visualDensity: VisualDensity.compact,
+                  ),
+                ],
               ),
             ],
           ),
@@ -665,6 +941,17 @@ class _PromotionSettingsPanelState extends State<PromotionSettingsPanel> {
       ],
       onChanged: (v) => setState(() => _lotNo = v ?? ''),
     );
+  }
+
+  String _valueLabel() {
+    if (_scope == 'combo') {
+      if (_type == 'fixed') return t('Giá combo (đ)');
+      if (_type == 'amount') return t('Giảm (đ)');
+      return t('Giảm (%)');
+    }
+    if (_type == 'buy_x_get_1') return 'Mua X';
+    if (_type == 'pct') return t('Giảm (%)');
+    return t('Giá trị');
   }
 
   Widget _scopePicker(
@@ -740,8 +1027,8 @@ class _PromotionSettingsPanelState extends State<PromotionSettingsPanel> {
                   CheckboxListTile(
                     dense: true,
                     value: draft.contains(asText(row[idKey])),
-                    title: Text(
-                        _scopeLabel(row, labelKeys, fallback: asText(row[idKey]))),
+                    title: Text(_scopeLabel(row, labelKeys,
+                        fallback: asText(row[idKey]))),
                     onChanged: (on) => setLocal(() {
                       final id = asText(row[idKey]);
                       on == true ? draft.add(id) : draft.remove(id);
@@ -767,10 +1054,13 @@ class _PromotionSettingsPanelState extends State<PromotionSettingsPanel> {
   }
 
   Widget _field(TextEditingController controller, String label,
-      {String? hint, TextInputType? keyboardType}) {
+      {String? hint,
+      TextInputType? keyboardType,
+      ValueChanged<String>? onChanged}) {
     return TextField(
       controller: controller,
       keyboardType: keyboardType,
+      onChanged: onChanged,
       decoration: InputDecoration(labelText: label, hintText: hint),
     );
   }

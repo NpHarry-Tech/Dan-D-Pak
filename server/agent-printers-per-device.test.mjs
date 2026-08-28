@@ -69,3 +69,13 @@ test('agent bản cũ chưa gửi định danh vẫn chạy được', () => {
   const ten = System.getAgentPrinters('br2').map(p => p.name);
   assert.deepEqual(ten, ['May in cu']);
 });
+
+test('server exposes the live print-agent version and capabilities', () => {
+  System.setAgentPrinters('meta', mayQuay, {
+    deviceId: 'dev_pos2', deviceName: 'POS 2',
+    agentVersion: '2026.08.03.06', capabilities: ['receipt-raster-v2'],
+  });
+  const device = System.getAgentDevices('meta')[0];
+  assert.equal(device.agent_version, '2026.08.03.06');
+  assert.deepEqual(device.capabilities, ['receipt-raster-v2']);
+});

@@ -3,7 +3,6 @@
 part of 'print_template_designer.dart';
 
 extension _PrintDesignerMethods on _PrintTemplateDesignerState {
-
   // ── Hydration / template model ────────────────────────────────────────────
 
   void _hydrate(Map<String, dynamic> config) {
@@ -23,8 +22,18 @@ extension _PrintDesignerMethods on _PrintTemplateDesignerState {
   Map<String, dynamic> _templateFor(String kind) {
     final templates = _copyMap(_printConfig['templates']);
     var tpl = _copyMap(templates[kind]);
-    if (tpl.isEmpty) tpl = kind == 'bill' ? _defaultBill() : _defaultLabel();
+    if (tpl.isEmpty) tpl = _defaultFor(kind);
     _ensureRows(tpl, kind);
+    // Phiếu bếp CŨ (bản clone của tem: chỉ {itemName}+QR, KHÔNG có bảng món) chưa
+    // từng in đúng vì server bỏ qua. Nâng thẳng lên mẫu phiếu bếp chuẩn để designer
+    // luôn có bảng món — không mất gì vì mẫu cũ vốn không dùng được.
+    if (kind == 'kitchen_ticket' &&
+        asText(tpl['standard']) != 'dan_kitchen_template') {
+      final rows = tpl['rows'];
+      final hasItems = rows is List &&
+          rows.any((r) => r is Map && asText(r['type']) == 'items');
+      if (!hasItems) tpl = _defaultKitchen();
+    }
     return tpl;
   }
 
@@ -50,14 +59,21 @@ extension _PrintDesignerMethods on _PrintTemplateDesignerState {
       tpl['rows'] = sorted.map(_normalizeRow).toList();
       return;
     }
-    tpl['rows'] = (kind == 'bill' ? _defaultBill() : _defaultLabel())['rows'];
+    tpl['rows'] = _defaultFor(kind)['rows'];
   }
+
+  Map<String, dynamic> _defaultFor(String kind) => switch (kind) {
+        'bill' => _defaultBill(),
+        'kitchen_ticket' => _defaultKitchen(),
+        _ => _defaultLabel(kind),
+      };
 
   /// Strip positioning, keep only what a flowing row needs.
   Map<String, dynamic> _normalizeRow(Map raw) {
     final e = Map<String, dynamic>.from(raw);
     final type = asText(e['type']).isEmpty ? 'text' : asText(e['type']);
-    final id = asText(e['id']).isEmpty ? '${type}_${_rowSeq++}' : asText(e['id']);
+    final id =
+        asText(e['id']).isEmpty ? '${type}_${_rowSeq++}' : asText(e['id']);
     switch (type) {
       case 'line':
         return {'id': id, 'type': 'line'};
@@ -65,8 +81,9 @@ extension _PrintDesignerMethods on _PrintTemplateDesignerState {
         return {
           'id': id,
           'type': 'qr',
-          'qrText':
-              asText(e['qrText']).isEmpty ? '{invoiceLookupUrl}' : asText(e['qrText']),
+          'qrText': asText(e['qrText']).isEmpty
+              ? '{invoiceLookupUrl}'
+              : asText(e['qrText']),
           'qrCaption': asText(e['qrCaption']),
           'qrShowCaption': _b(e['qrShowCaption']),
         };
@@ -74,8 +91,9 @@ extension _PrintDesignerMethods on _PrintTemplateDesignerState {
         return {
           'id': id,
           'type': 'barcode',
-          'barcodeText':
-              asText(e['barcodeText']).isEmpty ? '{billNo}' : asText(e['barcodeText']),
+          'barcodeText': asText(e['barcodeText']).isEmpty
+              ? '{billNo}'
+              : asText(e['barcodeText']),
         };
       case 'image':
         return {
@@ -83,6 +101,15 @@ extension _PrintDesignerMethods on _PrintTemplateDesignerState {
           'type': 'image',
           'label': asText(e['label']).isEmpty ? 'Logo' : asText(e['label']),
           'src': asText(e['src']),
+        };
+      case 'items':
+        // Công tắc mặc định BẬT (thiếu khoá => true), khớp kitchenTableLines server.
+        return {
+          'id': id,
+          'type': 'items',
+          'showQty': e['showQty'] != false && e['showQty'] != '0',
+          'showMods': e['showMods'] != false && e['showMods'] != '0',
+          'showNote': e['showNote'] != false && e['showNote'] != '0',
         };
       default:
         return {
@@ -101,7 +128,7 @@ extension _PrintDesignerMethods on _PrintTemplateDesignerState {
     final height = _d(_bill['heightMm'], 320).clamp(120, 520).toDouble();
     return {
       'kind': 'bill',
-      'version': 6,
+      'version': 10,
       'standard': 'dan_payment_receipt',
       'name': t('Mẫu hóa đơn chuẩn'),
       'paper': asText(_bill['paper']).isEmpty ? 'K80' : asText(_bill['paper']),
@@ -110,54 +137,110 @@ extension _PrintDesignerMethods on _PrintTemplateDesignerState {
       'rows': [
         _tRow(t('{storeName}\n{address}\nĐT: {phone}'),
             align: 'center', bold: true),
-        _lineRow(),
-        _tRow(t('HÓA ĐƠN THANH TOÁN'), align: 'center', bold: true),
+        _lineRow(solid: true),
+        _tRow('{billTitle}', align: 'center', bold: true),
         _tRow(
             t('Số bill: {billNo}\n{place}\nThu ngân: {cashier}\nNgày: {time}')),
-        _lineRow(),
+        _lineRow(solid: true),
         _tRow('{items}'),
-        _lineRow(),
         _tRow(
-            '{subtotalLine}\n{vatLine}\n{orderPromoLine}\n{grandTotalLine}\n{paymentLines}\n{paidLine}\n{changeLine}'),
-        _tRow('{footer}', align: 'center'),
-        _qrRow('{invoiceLookupUrl}'),
+            '{subtotalLine}\n{vatLine}\n{grandTotalLine}\n{totalWordsLine}\n{methodLine}'),
+        _lineRow(solid: true),
+        _tRow('{noteBlock}\n{solidLine}\n{thanksC}'),
       ],
     };
   }
 
-  Map<String, dynamic> _defaultLabel() {
+  Map<String, dynamic> _defaultLabel([String kind = 'label']) {
     final width = _d(_labels['widthMm'], 50).clamp(20, 120).toDouble();
     final height = _d(_labels['heightMm'], 30).clamp(10, 100).toDouble();
+    // TEM MÃ VẠCH sản phẩm (product_label / tab "Mã vạch"): TÊN sản phẩm ở TRÊN,
+    // MÃ VẠCH của sản phẩm ({barcode}, quét được) ở DƯỚI. Trước đây mẫu mặc định
+    // dùng nhầm {options}/{note}/{orderNo} + QR mã đơn (của tem ly) nên in ra sai.
+    final rows = kind == 'product_label'
+        ? [
+            _tRow('{itemName}', align: 'center', bold: true),
+            _tRow('{price}', align: 'center'),
+            _barcodeRow('{barcode}'),
+          ]
+        : [
+            // Tem ly / phiếu: tên món + yêu cầu thêm + ghi chú + mã đơn (QR để tra).
+            _tRow('{itemName}', align: 'center', bold: true),
+            _tRow('{options}', align: 'center'),
+            _tRow('{note}', align: 'center'),
+            _tRow('#{orderNo} {copy}'),
+            _qrRow('{orderNo}'),
+          ];
     return {
-      'kind': 'label',
+      'kind': kind,
       'version': 1,
       'standard': 'dan_label_template',
       'name': t('Mẫu tem chuẩn'),
       'widthMm': width,
       'heightMm': height,
-      'rows': [
-        _tRow('{itemName}', align: 'center', bold: true),
-        _tRow('{options}', align: 'center'),
-        _tRow('{note}', align: 'center'),
-        _tRow('#{orderNo} {copy}'),
-        _qrRow('{orderNo}'),
-      ],
+      'rows': rows,
     };
   }
 
+  Map<String, dynamic> _barcodeRow(String data) => {
+        'id': 'barcode_${_rowSeq++}',
+        'type': 'barcode',
+        'barcodeText': data,
+      };
+
   Map<String, dynamic> _tRow(String text,
-          {String align = 'left', bool bold = false}) =>
+          {String align = 'left', bool bold = false, double fontSize = 3.2}) =>
       {
         'id': 'text_${_rowSeq++}',
         'type': 'text',
         'text': text,
         'align': align,
         'bold': bold,
-        'fontSize': 3.2,
+        'fontSize': fontSize,
       };
 
-  Map<String, dynamic> _lineRow() =>
-      {'id': 'line_${_rowSeq++}', 'type': 'line'};
+  // Phần tử BẢNG MÓN của phiếu bếp: server dựng bảng "Tên món | SL" có viền kèm
+  // yêu cầu thêm/ghi chú (xem kitchenTableLines ở printing.js). Các công tắc quyết
+  // định hiện cột SL, yêu cầu thêm, ghi chú.
+  Map<String, dynamic> _itemsRow() => {
+        'id': 'items_${_rowSeq++}',
+        'type': 'items',
+        'showQty': true,
+        'showMods': true,
+        'showNote': true,
+      };
+
+  // MẪU PHIẾU BẾP chuẩn: header khu vực + bàn CHỮ TO ĐẬM, giờ/ngày, nhân viên,
+  // số TT, rồi BẢNG MÓN. Khác hẳn mẫu tem (bản clone cũ chỉ có 1 món + QR): phiếu
+  // bếp cần bảng nhiều món để bếp làm. Server đọc đúng mẫu này (templates.kitchen_ticket)
+  // khi có phần tử 'items', không thì rơi về bản dựng sẵn renderTicket.
+  Map<String, dynamic> _defaultKitchen() {
+    final width = _d(_labels['widthMm'], 80).clamp(48, 120).toDouble();
+    final height = _d(_labels['heightMm'], 200).clamp(80, 520).toDouble();
+    return {
+      'kind': 'kitchen_ticket',
+      'version': 1,
+      'standard': 'dan_kitchen_template',
+      'name': t('Mẫu phiếu bếp chuẩn'),
+      'paper': 'K80',
+      'widthMm': width,
+      'heightMm': height,
+      'rows': [
+        _tRow('{zone}', align: 'center', bold: true, fontSize: 7),
+        _tRow('- BÀN {table}', align: 'center', bold: true, fontSize: 7),
+        _tRow('Giờ: {time}    Ngày: {date}', bold: true),
+        _tRow('Nhân viên: {staff}', bold: true),
+        _tRow('Số TT: {seq}', bold: true),
+        _itemsRow(),
+      ],
+    };
+  }
+
+  Map<String, dynamic> _lineRow({bool solid = false}) => {
+        'id': 'line_${_rowSeq++}',
+        'type': 'line',
+        if (solid) 'lineStyle': 'solid'
+      };
 
   Map<String, dynamic> _qrRow(String data,
           {String caption = '', bool showCaption = false}) =>
@@ -198,13 +281,13 @@ extension _PrintDesignerMethods on _PrintTemplateDesignerState {
         _tRow('{storeSubtitle}', align: 'center'),
         _tRow(t('{address}\nĐT: {phone} · MST: {taxCode}'), align: 'center'),
         _lineRow(),
-        _tRow(t('HÓA ĐƠN THANH TOÁN'), align: 'center', bold: true),
+        _tRow('{billTitle}', align: 'center', bold: true),
         _tRow(t(
             'Số bill: {billNo}\n{place}\nThu ngân: {cashier}\nNgày: {time}\nKhách: {customerName}')),
         _lineRow(),
         _tRow('{items}'),
         _lineRow(),
-        _tRow('{subtotalLine}\n{vatLine}\n{orderPromoLine}'),
+        _tRow('{subtotalLine}\n{vatLine}'),
         _tRow('{grandTotalLine}', bold: true),
         _tRow('{paymentLines}\n{paidLine}\n{changeLine}'),
         _lineRow(),
@@ -317,14 +400,25 @@ extension _PrintDesignerMethods on _PrintTemplateDesignerState {
           'qrCaption': '',
           'qrShowCaption': false,
         },
-      'items' => {
-          'id': id,
-          'type': 'text',
-          'text': '{items}',
-          'align': 'left',
-          'bold': false,
-          'fontSize': 3.2,
-        },
+      // Bill: bảng món là biến {items} chèn vào dòng chữ (server dựng cột SL/giá/
+      // thành tiền, không đánh dấu in đậm nên không vỡ căn cột). Phiếu bếp: phần tử
+      // 'items' RIÊNG — server đẩy thẳng bảng đã đánh dấu in đậm, không qua bẻ dòng.
+      'items' => _kind == 'bill'
+          ? {
+              'id': id,
+              'type': 'text',
+              'text': '{items}',
+              'align': 'left',
+              'bold': false,
+              'fontSize': 3.2,
+            }
+          : {
+              'id': id,
+              'type': 'items',
+              'showQty': true,
+              'showMods': true,
+              'showNote': true,
+            },
       _ => {
           'id': id,
           'type': 'text',
@@ -375,7 +469,7 @@ extension _PrintDesignerMethods on _PrintTemplateDesignerState {
 
   void _restoreDefault() {
     _rebuild(() {
-      _template = _kind == 'bill' ? _defaultBill() : _defaultLabel();
+      _template = _defaultFor(_kind);
       _nameCtrl.text = asText(_template['name']);
       _formRevision++;
       _syncRowControllers();
@@ -496,7 +590,6 @@ extension _PrintDesignerMethods on _PrintTemplateDesignerState {
     }
   }
 
-
   Widget _topBar() {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.center,
@@ -522,7 +615,10 @@ extension _PrintDesignerMethods on _PrintTemplateDesignerState {
                 ),
               ),
               _modeButton('bill', 'Bill', Icons.receipt_long_outlined),
-              _modeButton('label', t('Tem nhãn'), Icons.label_outline),
+              _modeButton('kitchen_ticket', t('Phiếu bếp'),
+                  Icons.soup_kitchen_outlined),
+              _modeButton('cup_label', t('Tem nhãn'), Icons.label_outline),
+              _modeButton('product_label', t('Mã vạch'), Icons.qr_code_2),
               _paperDropdown(),
               IconButton(
                 onPressed: _showTokenList,
@@ -610,6 +706,10 @@ extension _PrintDesignerMethods on _PrintTemplateDesignerState {
             _section(t('KHỔ IN'), _paperControls()),
             if (_kind == 'bill')
               _section(t('THÔNG TIN CỬA HÀNG'), _storeInfo()),
+            // "TINH CHỈNH CỘT TIỀN" tạm ẩn: server (printing.js) hiện chia cột
+            // đều tự động, KHÔNG đọc itemQtyWidth/itemPriceWidth/itemAmountWidth,
+            // nên các ô này không đổi được bill in ra → ẩn cho đỡ hiểu lầm. Bật
+            // lại khi nối các khóa đó vào danhSachHang().
             _section(t('NỘI DUNG MẪU'), _rowsEditor()),
             _section(t('CHÈN DỮ LIỆU'), _tokenPalette()),
           ],
@@ -658,7 +758,7 @@ extension _PrintDesignerMethods on _PrintTemplateDesignerState {
             child: _numberField(t('Số bản'), _d(_media['copies'], 1),
                 (v) => _setMediaValue('copies', v.round().toString()))),
       ]),
-      if (_kind == 'label') ...[
+      if (_kind != 'bill') ...[
         SizedBox(height: 8),
         Row(children: [
           Expanded(
@@ -707,6 +807,7 @@ extension _PrintDesignerMethods on _PrintTemplateDesignerState {
       field(t('Lời cảm ơn (footer)'), 'footer', maxLines: 2),
       SizedBox(height: 4),
       _densityPicker(),
+      _fontScalePicker(),
     ];
   }
 
@@ -738,8 +839,9 @@ extension _PrintDesignerMethods on _PrintTemplateDesignerState {
         children: [
           _addBtn(Icons.text_fields, t('Dòng chữ'), () => _addRow('text')),
           _addBtn(Icons.horizontal_rule, t('Đường kẻ'), () => _addRow('line')),
-          _addBtn(
-              Icons.table_rows_outlined, t('Bảng món'), () => _addRow('items')),
+          if (_kind == 'bill' || _kind == 'kitchen_ticket')
+            _addBtn(Icons.table_rows_outlined, t('Bảng món'),
+                () => _addRow('items')),
           _addBtn(Icons.image_outlined, t('Logo/Ảnh'), () => _addRow('image')),
           _addBtn(Icons.qr_code_2, t('Mã QR'), () => _addRow('qr')),
           OutlinedButton.icon(
@@ -809,17 +911,17 @@ extension _PrintDesignerMethods on _PrintTemplateDesignerState {
     // SingleChildScrollView (nếu không sẽ crash "BoxConstraints forces infinite height").
     return IntrinsicHeight(
       child: Row(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        card('compact', Icons.short_text, t('Gọn'),
-            t('Tối giản, tiết kiệm giấy')),
-        SizedBox(width: 8),
-        card('standard', Icons.receipt_long_outlined, t('Chuẩn'),
-            t('Đủ dùng hằng ngày')),
-        SizedBox(width: 8),
-        card('detailed', Icons.article_outlined, t('Chi tiết'),
-            t('Logo + thuế + QR tra cứu')),
-      ],
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          card('compact', Icons.short_text, t('Gọn'),
+              t('Tối giản, tiết kiệm giấy')),
+          SizedBox(width: 8),
+          card('standard', Icons.receipt_long_outlined, t('Chuẩn'),
+              t('Đủ dùng hằng ngày')),
+          SizedBox(width: 8),
+          card('detailed', Icons.article_outlined, t('Chi tiết'),
+              t('Logo + thuế + QR tra cứu')),
+        ],
       ),
     );
   }
@@ -960,6 +1062,48 @@ extension _PrintDesignerMethods on _PrintTemplateDesignerState {
         ),
       );
     }
+    if (type == 'items') {
+      bool on(String k) => row[k] != false && row[k] != '0';
+      Widget sw(String k, String label) => Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Switch(
+                value: on(k),
+                onChanged: (v) => _updateRow(id, (r) => r[k] = v),
+                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+              Text(label, style: TextStyle(fontSize: 12.5)),
+            ],
+          );
+      return Padding(
+        padding: EdgeInsets.symmetric(vertical: 2),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(children: [
+              Icon(Icons.table_rows_outlined, size: 16, color: DanColors.muted),
+              SizedBox(width: 6),
+              Text(t('Bảng món'),
+                  style: TextStyle(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w700,
+                      color: DanColors.muted)),
+            ]),
+            SizedBox(height: 2),
+            Wrap(spacing: 10, runSpacing: 0, children: [
+              sw('showQty', t('Cột SL')),
+              sw('showMods', t('Yêu cầu thêm')),
+              sw('showNote', t('Ghi chú')),
+            ]),
+            Text(
+              t('Bảng "Tên món | SL" có viền, tự liệt kê mọi món của phiếu.'),
+              style: TextStyle(
+                  fontSize: 10.5, color: DanColors.faint, height: 1.3),
+            ),
+          ],
+        ),
+      );
+    }
     // text row
     final align = asText(row['align']).isEmpty ? 'left' : asText(row['align']);
     final bold = _b(row['bold']);
@@ -990,6 +1134,25 @@ extension _PrintDesignerMethods on _PrintTemplateDesignerState {
           SizedBox(width: 6),
           _alignBtn(Icons.format_bold, bold,
               () => _updateRow(id, (r) => r['bold'] = !bold)),
+          if (_kind != 'bill') ...[
+            SizedBox(width: 8),
+            _alignBtn(
+                Icons.text_decrease,
+                false,
+                () => _updateRow(
+                    id,
+                    (r) => r['fontSize'] =
+                        (_d(r['fontSize'], 3.2) - .5).clamp(2, 8))),
+            Text('${_d(row['fontSize'], 3.2).toStringAsFixed(1)}',
+                style: TextStyle(fontSize: 11, color: DanColors.muted)),
+            _alignBtn(
+                Icons.text_increase,
+                false,
+                () => _updateRow(
+                    id,
+                    (r) => r['fontSize'] =
+                        (_d(r['fontSize'], 3.2) + .5).clamp(2, 8))),
+          ],
         ]),
       ],
     );
@@ -1030,29 +1193,42 @@ extension _PrintDesignerMethods on _PrintTemplateDesignerState {
               ['{items}', t('Bảng món')],
               ['{subtotalLine}', t('Thành tiền')],
               ['{vatLine}', 'VAT'],
-              ['{orderPromoLine}', t('KM toàn bill')],
               ['{grandTotalLine}', t('Tổng cộng')],
-              ['{totalLine}', t('Tổng')],
-              ['{paymentLines}', t('Thanh toán')],
-              ['{paidLine}', t('Đã trả')],
-              ['{changeLine}', t('Tiền thối')],
+              ['{totalWordsLine}', t('Tổng tiền bằng chữ')],
+              ['{methodLine}', t('Hình thức thanh toán')],
             ],
             t('Khác'): [
+              ['{noteBlock}', t('Ghi chú đơn hàng')],
+              ['{solidLine}', t('Đường kẻ liền')],
+              ['{thanksC}', t('Lời cảm ơn chuẩn')],
               ['{footer}', t('Lời cảm ơn')],
               ['{invoiceLookupUrl}', t('Link tra cứu')],
             ],
           }
-        : {
-            t('Tem nhãn'): [
-              ['{itemName}', t('Tên món')],
-              ['{options}', t('Tùy chọn')],
-              ['{note}', t('Ghi chú')],
-              ['{orderNo}', t('Mã đơn')],
-              ['{copy}', t('Bản')],
-              ['{time}', t('Giờ')],
-              ['{table}', t('Bàn')],
-            ],
-          };
+        : _kind == 'kitchen_ticket'
+            ? {
+                t('Phiếu bếp'): [
+                  ['{zone}', t('Khu vực')],
+                  ['{table}', t('Bàn')],
+                  ['{station}', t('Trạm')],
+                  ['{seq}', t('Số TT')],
+                  ['{staff}', t('Nhân viên')],
+                  ['{time}', t('Giờ')],
+                  ['{date}', t('Ngày')],
+                  ['{orderNo}', t('Mã đơn')],
+                ],
+              }
+            : {
+                t('Tem nhãn'): [
+                  ['{itemName}', t('Tên món')],
+                  ['{options}', t('Tùy chọn')],
+                  ['{note}', t('Ghi chú')],
+                  ['{orderNo}', t('Mã đơn')],
+                  ['{copy}', t('Bản')],
+                  ['{time}', t('Giờ')],
+                  ['{table}', t('Bàn')],
+                ],
+              };
     return [
       for (final entry in groups.entries)
         Padding(
@@ -1161,10 +1337,20 @@ extension _PrintDesignerMethods on _PrintTemplateDesignerState {
   /// Visual receipt mockup: real logo image, real QR/barcode, item lines and
   /// Vietnamese diacritics preserved (unlike the raw thermal ASCII printout).
   List<Widget> _previewWidgets() {
-    final vars = _kind == 'bill' ? _billSample : _labelSample;
+    final vars = _kind == 'bill'
+        ? _billSample
+        : _kind == 'kitchen_ticket'
+            ? _kitchenSample
+            : _labelSample;
     final widgets = <Widget>[];
     for (final row in _rows) {
       final type = asText(row['type']);
+      if (type == 'items') {
+        for (final ln in _kitchenItemsSample(row).split('\n')) {
+          widgets.add(_pvText(ln, 'left', false, monospace: true));
+        }
+        continue;
+      }
       if (type == 'line') {
         widgets.add(Padding(
           padding: EdgeInsets.symmetric(vertical: 5),
@@ -1188,7 +1374,8 @@ extension _PrintDesignerMethods on _PrintTemplateDesignerState {
       }
       if (type == 'qr') {
         final data = _replaceVars(
-            asText(row['qrText']).isEmpty ? '{billNo}' : asText(row['qrText']), vars);
+            asText(row['qrText']).isEmpty ? '{billNo}' : asText(row['qrText']),
+            vars);
         widgets.add(Padding(
           padding: EdgeInsets.symmetric(vertical: 8),
           child: Center(
@@ -1202,7 +1389,8 @@ extension _PrintDesignerMethods on _PrintTemplateDesignerState {
                   padding: EdgeInsets.zero,
                   backgroundColor: Colors.white,
                 ),
-                if (_b(row['qrShowCaption']) && asText(row['qrCaption']).isNotEmpty)
+                if (_b(row['qrShowCaption']) &&
+                    asText(row['qrCaption']).isNotEmpty)
                   Padding(
                     padding: EdgeInsets.only(top: 4),
                     child: _pvText(_replaceVars(asText(row['qrCaption']), vars),
@@ -1237,11 +1425,19 @@ extension _PrintDesignerMethods on _PrintTemplateDesignerState {
       }
       // text row — keep diacritics, apply per-row align + bold
       final text = _replaceVars(asText(row['text']), vars);
-      final align = asText(row['align']).isEmpty ? 'left' : asText(row['align']);
+      final align =
+          asText(row['align']).isEmpty ? 'left' : asText(row['align']);
       final bold = _b(row['bold']);
+      final moneyColumns = asText(row['text']).contains('{items}') ||
+          asText(row['text']).contains('{subtotalLine}') ||
+          asText(row['text']).contains('{vatLine}') ||
+          asText(row['text']).contains('{grandTotalLine}') ||
+          asText(row['text']).contains('{totalWordsLine}') ||
+          asText(row['text']).contains('{methodLine}') ||
+          asText(row['text']).contains('{totalLine}');
       for (final paragraph in text.split('\n')) {
         if (paragraph.trim().isEmpty) continue;
-        widgets.add(_pvText(paragraph, align, bold));
+        widgets.add(_pvText(paragraph, align, bold, monospace: moneyColumns));
       }
     }
     if (widgets.isEmpty)
@@ -1249,25 +1445,39 @@ extension _PrintDesignerMethods on _PrintTemplateDesignerState {
     return widgets;
   }
 
-  Widget _pvText(String s, String align, bool bold) {
+  Widget _pvText(String s, String align, bool bold, {bool monospace = false}) {
     final ta = switch (align) {
       'center' => TextAlign.center,
       'right' => TextAlign.right,
       _ => TextAlign.left,
     };
+    final text = Text(
+      s,
+      maxLines: monospace ? 1 : null,
+      softWrap: !monospace,
+      overflow: monospace ? TextOverflow.visible : TextOverflow.clip,
+      textAlign: ta,
+      style: TextStyle(
+        fontFamily: monospace ? 'JetBrains Mono' : 'Be Vietnam Pro',
+        fontSize: 12.5,
+        height: 1.36,
+        color: _inkColor(bold),
+        fontWeight: bold ? FontWeight.w800 : FontWeight.w500,
+      ),
+    );
     return Padding(
       padding: EdgeInsets.symmetric(vertical: 1.5),
-      child: Text(
-        s,
-        textAlign: ta,
-        style: TextStyle(
-          fontFamily: 'Be Vietnam Pro',
-          fontSize: 12.5,
-          height: 1.36,
-          color: _inkColor(bold),
-          fontWeight: bold ? FontWeight.w800 : FontWeight.w500,
-        ),
-      ),
+      child: monospace
+          ? FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: align == 'right'
+                  ? Alignment.centerRight
+                  : align == 'center'
+                      ? Alignment.center
+                      : Alignment.centerLeft,
+              child: text,
+            )
+          : text,
     );
   }
 
@@ -1293,6 +1503,58 @@ extension _PrintDesignerMethods on _PrintTemplateDesignerState {
     );
   }
 
+  int get _sampleWidth => _d(_template['widthMm'], 80) < 70 ? 32 : 40;
+
+  String _sampleMoneyLine(String label, String amount) {
+    final room = (_sampleWidth - amount.length).clamp(0, _sampleWidth);
+    final clipped =
+        label.substring(0, label.length < room ? label.length : room);
+    return '${clipped.padRight(room)}$amount';
+  }
+
+  int _visibleLength(String value) => value.replaceAll('\u0336', '').length;
+
+  String _fitPreview(String value, int width, {bool right = false}) {
+    final spaces = ' ' * (width - _visibleLength(value)).clamp(0, width);
+    return right ? '$spaces$value' : '$value$spaces';
+  }
+
+  String _sampleNumericRow(String price, Object qty, String amount) {
+    final priceWidth = (_sampleWidth * .42).floor();
+    final qtyWidth = (_sampleWidth * .18).floor().clamp(3, _sampleWidth);
+    final amountWidth = _sampleWidth - priceWidth - qtyWidth;
+    return _fitPreview(price, priceWidth) +
+        _fitPreview(qty.toString(), qtyWidth, right: true) +
+        _fitPreview(amount, amountWidth, right: true);
+  }
+
+  String _samplePromoNumericRow(
+      String before, String after, Object qty, String amount) {
+    final beforeWidth = (_sampleWidth * .24).floor();
+    final afterWidth = (_sampleWidth * .22).floor();
+    final qtyWidth = (_sampleWidth * .14).floor().clamp(3, _sampleWidth);
+    final amountWidth = _sampleWidth - beforeWidth - afterWidth - qtyWidth;
+    return _fitPreview(before, beforeWidth) +
+        _fitPreview(after, afterWidth) +
+        _fitPreview(qty.toString(), qtyWidth, right: true) +
+        _fitPreview(amount, amountWidth, right: true);
+  }
+
+  String get _sampleItems {
+    final divider = '-' * _sampleWidth;
+    return [
+      _sampleNumericRow(t('Đơn giá'), t('SL'), t('T.Tiền')),
+      divider,
+      t('Trà đào (ly)'),
+      _sampleNumericRow('30,000', 2, '60,000'),
+      '',
+      t('Bánh cookie'),
+      t('CTKM: Giảm giá sản phẩm'),
+      _samplePromoNumericRow('2̶3̶,̶3̶3̶3̶', '20,000', 1, '20,000'),
+      divider,
+    ].join('\n');
+  }
+
   Map<String, String> get _billSample => {
         'storeName': asText(_bill['storeName']).isEmpty
             ? 'Dan D Pak'
@@ -1308,8 +1570,9 @@ extension _PrintDesignerMethods on _PrintTemplateDesignerState {
         'addressBlock': asText(_bill['address']).isEmpty
             ? t('Đường D9, KĐT Sala, TP.HCM')
             : asText(_bill['address']),
-        'phone':
-            asText(_bill['phone']).isEmpty ? '0938 525 659' : asText(_bill['phone']),
+        'phone': asText(_bill['phone']).isEmpty
+            ? '0938 525 659'
+            : asText(_bill['phone']),
         'email': asText(_bill['email']),
         'taxCode': asText(_bill['taxCode']),
         'billNo': 'Dan0107260001',
@@ -1319,13 +1582,22 @@ extension _PrintDesignerMethods on _PrintTemplateDesignerState {
         'date': '01/07/2026',
         'timeOnly': '19:28',
         'time': '01/07/2026 19:28',
-        'items': t('2x Trà đào 60.000đ\n1x Bánh cookie 30.000đ'),
-        'total': t('90.000đ'),
-        'grandTotal': t('90.000đ'),
-        'totalLine': t('TỔNG: 90.000đ'),
+        'items': _sampleItems,
+        'subtotalLine': _sampleMoneyLine(t('Tổng tiền hàng:'), '83,333'),
+        'vatLine': _sampleMoneyLine(t('VAT (8%):'), '6,667'),
+        'grandTotalLine': _sampleMoneyLine(t('Tổng thanh toán:'), '90,000'),
+        'totalWordsLine': t('Bằng chữ: Chín mươi nghìn đồng'),
+        'methodLine':
+            _sampleMoneyLine(t('Hình thức thanh toán:'), t('Tiền mặt')),
+        'total': t('90,000'),
+        'grandTotal': t('90,000'),
+        'totalLine': _sampleMoneyLine(t('Tổng thanh toán:'), '90,000'),
         'paymentLines': t('Tiền mặt: 100.000đ'),
         'paidLine': t('Đã trả: 100.000đ'),
         'changeLine': t('Tiền thối: 10.000đ'),
+        'noteBlock': '${t('Ghi chú')}: ABC123456XYZ\n\n\n',
+        'solidLine': List.filled(_sampleWidth, '_').join(),
+        'thanksC': t('Dan-D Pak Xin Cảm Ơn!'),
         'method': t('Tiền mặt'),
         'footer': asText(_bill['footer']).isEmpty
             ? t('Xin cảm ơn và hẹn gặp lại')
@@ -1334,6 +1606,58 @@ extension _PrintDesignerMethods on _PrintTemplateDesignerState {
         'invoiceLookupUrl': 'https://tracuu.dandpak.vn/Dan0107260001',
         'customerName': t('Khách lẻ'),
       };
+
+  Map<String, String> get _kitchenSample => {
+        'zone': t('TẦNG TRỆT'),
+        'table': 'A04',
+        'station': t('BẾP'),
+        'time': '10:15',
+        'date': '12/8/2026',
+        'staff': t('Nguyễn Phúc Huy'),
+        'seq': '69c',
+        'orderNo': 'Dan1208260069',
+        'copy': '1/1',
+      };
+
+  // Bản xem trước BẢNG MÓN — dựng đúng như kitchenTableLines ở server để "setting"
+  // khớp "bản in". Danh sách món là mẫu cố định cho dễ hình dung.
+  String _kitchenItemsSample(Map row) {
+    final showQty = row['showQty'] != false && row['showQty'] != '0';
+    final showMods = row['showMods'] != false && row['showMods'] != '0';
+    final showNote = row['showNote'] != false && row['showNote'] != '0';
+    final width = _sampleWidth;
+    const slW = 3;
+    final nameW = (showQty ? width - slW - 3 : width - 2).clamp(8, 60);
+    String bar() =>
+        showQty ? '+${'-' * nameW}+${'-' * slW}+' : '+${'-' * nameW}+';
+    String cell(String name, String sl) {
+      final nm =
+          name.length > nameW ? name.substring(0, nameW) : name.padRight(nameW);
+      if (!showQty) return '|$nm|';
+      final s = sl.length > slW ? sl.substring(0, slW) : sl.padLeft(slW);
+      return '|$nm|$s|';
+    }
+
+    final sample = [
+      {
+        'name': t('Trà đào cam sả'),
+        'qty': '2',
+        'mods': t('Ít đá, 50% đường'),
+        'note': t('không ống hút'),
+      },
+      {'name': t('Mì Bò Kho Việt Nam'), 'qty': '1', 'mods': '', 'note': ''},
+    ];
+    final lines = <String>[bar(), cell('Tên món', showQty ? 'SL' : ''), bar()];
+    for (final it in sample) {
+      lines.add(cell(' ${it['name']}', showQty ? (it['qty'] ?? '') : ''));
+      if (showMods && (it['mods'] ?? '').isNotEmpty)
+        lines.add(cell('   + ${it['mods']}', ''));
+      if (showNote && (it['note'] ?? '').isNotEmpty)
+        lines.add(cell('   Ghi chú: ${it['note']}', ''));
+      lines.add(bar());
+    }
+    return lines.join('\n');
+  }
 
   Map<String, String> get _labelSample => {
         'orderNo': 'A01-023',
@@ -1361,8 +1685,9 @@ extension _PrintDesignerMethods on _PrintTemplateDesignerState {
             t('Đơn hàng'):
                 '{billNo} {place} {cashier} {time} {timeOnly} {customerName}',
             t('Món & tiền'):
-                '{items} {subtotalLine} {vatLine} {orderPromoLine} {grandTotalLine} {totalLine} {paymentLines} {paidLine} {changeLine} {grandTotal}',
-            t('Khác'): '{footer} {invoiceLookupUrl}',
+                '{items} {subtotalLine} {vatLine} {grandTotalLine} {totalWordsLine} {methodLine} {grandTotal}',
+            t('Khác'):
+                '{noteBlock} {solidLine} {thanksC} {footer} {invoiceLookupUrl}',
           }
         : {
             t('Tem nhãn'):
@@ -1473,9 +1798,9 @@ extension _PrintDesignerMethods on _PrintTemplateDesignerState {
           Text(t('Độ đậm bản in (sắc tố đen)'),
               style: TextStyle(fontSize: 12.5, color: DanColors.muted)),
           SizedBox(height: 2),
-          Text(
-              t('Chỉnh độ đậm/nhạt mực khi in. Bản in càng đậm càng rõ nhưng tốn giấy nhiệt & mòn đầu in hơn.'),
-              style: TextStyle(fontSize: 10.5, color: DanColors.faint, height: 1.3)),
+          Text(t('Chỉnh độ đậm/nhạt mực khi in. Bản in càng đậm càng rõ nhưng tốn giấy nhiệt & mòn đầu in hơn.'),
+              style: TextStyle(
+                  fontSize: 10.5, color: DanColors.faint, height: 1.3)),
           SizedBox(height: 8),
           Wrap(
             spacing: 8,
@@ -1525,13 +1850,62 @@ extension _PrintDesignerMethods on _PrintTemplateDesignerState {
     );
   }
 
+  // CỠ CHỮ TOÀN PHIẾU. Máy in nhiệt chỉ phóng to theo bội số nguyên, và phóng
+  // BỀ NGANG thì số cột giảm một nửa (K80 từ 48 xuống 24 ký tự) — bố cục cột
+  // tiền vỡ hết. Nên các mức dưới đây chỉ nhân BỀ CAO: chữ cao lên rõ rệt mà
+  // vẫn đúng 48 (hoặc 32) ký tự mỗi dòng. Mức "2x cả hai chiều" có cảnh báo vì
+  // nó thật sự làm mất một nửa số cột.
+  static const _fontScales = <List<Object>>[
+    [0, 'Chuẩn'],
+    [1, 'To (2x cao)'],
+    [2, 'Rất to (3x cao)'],
+    [3, 'Cực to (2x cả hai chiều)'],
+  ];
+
+  int get _fontScaleKey {
+    final raw = _bill['fontScale'];
+    final v = raw is int ? raw : int.tryParse(asText(raw));
+    // Mặc định "Chuẩn" — khớp với fontScaleFor() ở server. Mức "To" từng là mặc
+    // định nhưng in ra giấy thật thì chữ quá khổ, cửa hàng yêu cầu hạ về.
+    return v == null ? 0 : v.clamp(0, 3);
+  }
+
+  Widget _fontScalePicker() {
+    return Padding(
+      padding: EdgeInsets.only(bottom: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(t('Cỡ chữ bản in'),
+              style: TextStyle(fontSize: 12.5, color: DanColors.muted)),
+          SizedBox(height: 2),
+          Text(t('Chữ to hơn dễ đọc và tốn thêm giấy. Ba mức đầu giữ nguyên số cột nên bố cục bill không đổi; mức cuối làm số cột giảm một nửa.'),
+              style: TextStyle(
+                  fontSize: 10.5, color: DanColors.faint, height: 1.3)),
+          SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final f in _fontScales)
+                _segCell(t(f[1] as String), _fontScaleKey == f[0],
+                    () => _setBillField('fontScale', '${f[0]}')),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
   /// Chọn cỡ logo cho dòng ảnh (Nhỏ/Vừa/Lớn → hệ số 0.7/1.0/1.4). Preview áp
   /// tức thì; máy in dùng hệ số này cho bitmap logo thật.
   Widget _logoSizeRow(String id, double scale) {
     Widget cell(String label, double s) {
       final active = (scale - s).abs() < 0.05;
-      return _segCell(label, active, () => _updateRow(id, (r) => r['logoScale'] = s));
+      return _segCell(
+          label, active, () => _updateRow(id, (r) => r['logoScale'] = s));
     }
+
     return Padding(
       padding: EdgeInsets.only(top: 8),
       child: Row(children: [

@@ -21,7 +21,8 @@ import 'phone_scaffolds.dart';
 
 num _n(dynamic v) {
   if (v is num) return v;
-  return num.tryParse('${v ?? ''}'.replaceAll('.', '').replaceAll(',', '')) ?? 0;
+  return num.tryParse('${v ?? ''}'.replaceAll('.', '').replaceAll(',', '')) ??
+      0;
 }
 
 String _s(dynamic v) => '${v ?? ''}';
@@ -96,7 +97,8 @@ class _SkuPickerSheetState extends State<_SkuPickerSheet> {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      padding:
+          EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
       child: SafeArea(
         top: false,
         child: SizedBox(
@@ -134,8 +136,7 @@ class _SkuPickerSheetState extends State<_SkuPickerSheet> {
                               subtitle:
                                   '${_items[i].barcode} · ${t('Tồn')} ${phoneInt(_items[i].stock)} ${_items[i].unit}',
                               amount: phoneMoney(_items[i].price),
-                              onTap: () =>
-                                  Navigator.of(context).pop(_items[i]),
+                              onTap: () => Navigator.of(context).pop(_items[i]),
                             ),
                           ),
               ),
@@ -254,17 +255,39 @@ class PhoneProductFormScreen extends StatefulWidget {
 
 class _PhoneProductFormScreenState extends State<PhoneProductFormScreen> {
   final _name = TextEditingController();
+  final _code = TextEditingController();
   final _barcode = TextEditingController();
+  final _category = TextEditingController();
+  final _brand = TextEditingController();
   final _price = TextEditingController();
   final _cost = TextEditingController();
   final _unit = TextEditingController(text: 'cái');
   final _opening = TextEditingController();
+  final _minStock = TextEditingController();
   final _vat = TextEditingController(text: '8');
+  bool _trackLot = false;
+  bool _expiryRequired = false;
   bool _saving = false;
+
+  /// HSD của lô tồn đầu kỳ — server bắt buộc khi hàng quản lý hạn sử dụng mà
+  /// có tồn đầu kỳ. Thiếu ô này thì bấm Lưu chỉ nhận lại câu báo lỗi.
+  DateTime? _expiryDate;
 
   @override
   void dispose() {
-    for (final c in [_name, _barcode, _price, _cost, _unit, _opening, _vat]) {
+    for (final c in [
+      _name,
+      _code,
+      _barcode,
+      _category,
+      _brand,
+      _price,
+      _cost,
+      _unit,
+      _opening,
+      _minStock,
+      _vat
+    ]) {
       c.dispose();
     }
     super.dispose();
@@ -275,11 +298,20 @@ class _PhoneProductFormScreenState extends State<PhoneProductFormScreen> {
       appToast(context, t('Thiếu tên hàng hóa'), isError: true);
       return;
     }
+    if (_expiryRequired && _n(_opening.text) > 0 && _expiryDate == null) {
+      appToast(context,
+          t('Hàng bắt buộc hạn sử dụng: phải chọn HSD cho lô tồn đầu kỳ'),
+          isError: true);
+      return;
+    }
     setState(() => _saving = true);
     try {
       await context.read<ApiService>().createSku({
         'name': _name.text.trim(),
+        'code': _code.text.trim(),
         'barcode': _barcode.text.trim(),
+        'category': _category.text.trim(),
+        'brand': _brand.text.trim(),
         'price': _n(_price.text).round(),
         'cost': _n(_cost.text).round(),
         'unit': _unit.text.trim().isEmpty ? 'cái' : _unit.text.trim(),
@@ -289,6 +321,11 @@ class _PhoneProductFormScreenState extends State<PhoneProductFormScreen> {
         // createSku() nhận opening_stock rồi tự tạo lô 'OPENING' — không tự ghi
         // thẳng vào cột stock, nếu không tồn sẽ lệch với sổ lô.
         'opening_stock': _n(_opening.text),
+        'min_stock': _n(_minStock.text),
+        'track_lot': _trackLot,
+        'expiry_required': _expiryRequired,
+        if (_expiryDate != null)
+          'expiry_date': _expiryDate!.toIso8601String().split('T').first,
       });
       if (!mounted) return;
       Navigator.of(context).pop(true);
@@ -321,7 +358,15 @@ class _PhoneProductFormScreenState extends State<PhoneProductFormScreen> {
                       hint: 'Bắt buộc',
                       controller: _name),
                   PhoneField(
-                      label: 'Mã vạch', hint: 'Quét hoặc gõ', controller: _barcode),
+                      label: 'Mã hàng',
+                      hint: 'Để trống để tạo tự động',
+                      controller: _code),
+                  PhoneField(
+                      label: 'Mã vạch',
+                      hint: 'Quét hoặc gõ',
+                      controller: _barcode),
+                  PhoneField(label: 'Nhóm hàng', controller: _category),
+                  PhoneField(label: 'Thương hiệu', controller: _brand),
                   PhoneField(
                       label: 'Giá bán',
                       hint: '0',
@@ -341,11 +386,61 @@ class _PhoneProductFormScreenState extends State<PhoneProductFormScreen> {
                       label: 'Tồn đầu kỳ',
                       hint: '0',
                       controller: _opening,
+                      keyboardType: TextInputType.number,
+                      // Ô HSD bên dưới chỉ hiện khi tồn đầu kỳ > 0.
+                      onChanged: (_) => setState(() {})),
+                  PhoneField(
+                      label: 'Định mức tồn thấp nhất',
+                      hint: '0',
+                      controller: _minStock,
                       keyboardType: TextInputType.number),
+                  SwitchListTile(
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+                    title: Text(t('Quản lý theo lô')),
+                    value: _trackLot,
+                    onChanged: (v) => setState(() {
+                      _trackLot = v;
+                      if (!v) _expiryRequired = false;
+                    }),
+                  ),
+                  if (_trackLot)
+                    SwitchListTile(
+                      contentPadding:
+                          const EdgeInsets.symmetric(horizontal: 16),
+                      title: Text(t('Bắt buộc hạn sử dụng')),
+                      value: _expiryRequired,
+                      onChanged: (v) => setState(() => _expiryRequired = v),
+                    ),
+                  if (_expiryRequired && _n(_opening.text) > 0)
+                    ListTile(
+                      contentPadding:
+                          const EdgeInsets.symmetric(horizontal: 16),
+                      title: Text(t('Hạn sử dụng lô tồn đầu kỳ')),
+                      subtitle: Text(_expiryDate == null
+                          ? t('Chưa chọn — bắt buộc')
+                          : '${_expiryDate!.day.toString().padLeft(2, '0')}/'
+                              '${_expiryDate!.month.toString().padLeft(2, '0')}/'
+                              '${_expiryDate!.year}'),
+                      trailing: const Icon(Icons.event_outlined),
+                      onTap: () async {
+                        final now = DateTime.now();
+                        final picked = await showDatePicker(
+                          context: context,
+                          initialDate:
+                              _expiryDate ?? now.add(const Duration(days: 180)),
+                          firstDate: now,
+                          lastDate: DateTime(now.year + 10),
+                        );
+                        if (picked != null) {
+                          setState(() => _expiryDate = picked);
+                        }
+                      },
+                    ),
                   Padding(
                     padding: const EdgeInsets.all(16),
                     child: Text(
-                        t('Tồn đầu kỳ được ghi thành một lô "OPENING" để sổ lô và tồn kho luôn khớp nhau.'),
+                        t(
+                            'Tồn đầu kỳ được ghi thành một lô "OPENING" để sổ lô và tồn kho luôn khớp nhau.'),
                         style: const TextStyle(
                             fontSize: 11.5,
                             height: 1.5,
@@ -409,8 +504,7 @@ class _PhonePurchaseFormScreenState extends State<PhonePurchaseFormScreen> {
     } catch (_) {/* không có NCC vẫn lập được phiếu */}
   }
 
-  num get _subtotal =>
-      _lines.fold<num>(0, (a, l) => a + l.qty * l.unitCost);
+  num get _subtotal => _lines.fold<num>(0, (a, l) => a + l.qty * l.unitCost);
 
   Future<void> _save() async {
     if (_lines.isEmpty) {
@@ -466,8 +560,8 @@ class _PhonePurchaseFormScreenState extends State<PhonePurchaseFormScreen> {
                   onTap: () async {
                     final sku = await _pickSku(context);
                     if (sku != null) {
-                      setState(() => _lines.add(_DocLine(sku,
-                          unitCost: sku.price)));
+                      setState(
+                          () => _lines.add(_DocLine(sku, unitCost: sku.price)));
                     }
                   },
                 ),
@@ -494,8 +588,8 @@ class _PhonePurchaseFormScreenState extends State<PhonePurchaseFormScreen> {
                                 selected: _supplierName,
                                 onPick: (v) {
                                   Navigator.of(c).pop();
-                                  final hit = _suppliers.firstWhere(
-                                      (e) => _s(e['name']) == v);
+                                  final hit = _suppliers
+                                      .firstWhere((e) => _s(e['name']) == v);
                                   setState(() {
                                     _supplierName = v;
                                     _supplierId = _s(hit['id']);
@@ -523,8 +617,8 @@ class _PhonePurchaseFormScreenState extends State<PhonePurchaseFormScreen> {
                       ),
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 16),
-                      child: PhoneKv(t('TỔNG TIỀN HÀNG'),
-                          phoneMoney(_subtotal), big: true),
+                      child: PhoneKv(t('TỔNG TIỀN HÀNG'), phoneMoney(_subtotal),
+                          big: true),
                     ),
                   ],
                 ],
@@ -699,7 +793,8 @@ class _PhoneTransferFormScreenState extends State<PhoneTransferFormScreen> {
                   Padding(
                     padding: const EdgeInsets.all(16),
                     child: Text(
-                        t('Số lượng chuyển không được vượt tồn thực tế ở kho xuất — máy chủ sẽ từ chối cả phiếu nếu có một dòng vượt.'),
+                        t(
+                            'Số lượng chuyển không được vượt tồn thực tế ở kho xuất — máy chủ sẽ từ chối cả phiếu nếu có một dòng vượt.'),
                         style: const TextStyle(
                             fontSize: 11.5,
                             height: 1.5,

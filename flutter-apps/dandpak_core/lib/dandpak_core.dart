@@ -9,6 +9,7 @@ library dandpak_core;
 export 'src/app_flavor.dart';
 // Agent in chay trong app — cho may POS cam tay co may in gan lien.
 export 'src/services/local_print_agent.dart';
+export 'src/services/local_store.dart' show LocalStore;
 export 'src/services/api_service.dart' show ApiService;
 export 'src/bootstrap.dart' show runDandpakApp;
 

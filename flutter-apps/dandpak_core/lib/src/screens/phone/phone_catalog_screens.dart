@@ -1,13 +1,17 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../models/retail_models.dart';
+import '../../providers/auth_provider.dart';
 import '../../services/api_service.dart';
 import '../../ui/app_theme.dart';
 import '../../utils/translation.dart';
+import '../../utils/business_datetime.dart';
 import '../management/management_widgets.dart';
 import 'phone_doc_form_screens.dart';
 import 'phone_kit.dart';
+import 'phone_return_screen.dart';
 import 'phone_scaffolds.dart';
 
 /// NHÓM HÀNG HÓA + HÓA ĐƠN bản điện thoại.
@@ -33,6 +37,8 @@ class _PhoneProductsScreenState extends State<PhoneProductsScreen> {
   final _key = GlobalKey<PhoneListScaffoldState<Sku>>();
   bool _inStockOnly = false;
   String _sort = '';
+  String _category = '';
+  List<String> _categories = const [];
 
   @override
   Widget build(BuildContext context) {
@@ -40,15 +46,16 @@ class _PhoneProductsScreenState extends State<PhoneProductsScreen> {
       key: _key,
       title: 'Hàng hóa',
       actions: [
-        PhoneIconButton(
-          icon: Icons.add,
-          onTap: () async {
-            final saved = await Navigator.of(context).push<bool>(
-                MaterialPageRoute(
-                    builder: (_) => const PhoneProductFormScreen()));
-            if (saved == true) _key.currentState?.reload();
-          },
-        ),
+        if (context.watch<AuthProvider>().hasPermission('warehouse.item'))
+          PhoneIconButton(
+            icon: Icons.add,
+            onTap: () async {
+              final saved = await Navigator.of(context).push<bool>(
+                  MaterialPageRoute(
+                      builder: (_) => const PhoneProductFormScreen()));
+              if (saved == true) _key.currentState?.reload();
+            },
+          ),
       ],
       searchHint: 'Tên, mã hàng hoặc mã vạch',
       emptyTitle: 'Không tìm thấy hàng hóa',
@@ -63,10 +70,24 @@ class _PhoneProductsScreenState extends State<PhoneProductsScreen> {
               sort: _sort,
             );
         final raw = (res['items'] ?? res['skus'] ?? res['data']) as List? ?? [];
-        return raw
+        final skus = raw
             .whereType<Map>()
             .map((e) => Sku.fromJson(Map<String, dynamic>.from(e)))
             .toList();
+        final categories = skus
+            .map((s) => s.category.trim())
+            .where((name) => name.isNotEmpty)
+            .toSet()
+            .toList()
+          ..sort();
+        if (!listEquals(categories, _categories)) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) setState(() => _categories = categories);
+          });
+        }
+        return _category.isEmpty
+            ? skus
+            : skus.where((s) => s.category == _category).toList();
       },
       metrics: (list) => [
         (t('Số mặt hàng'), phoneInt(list.length), null),
@@ -77,6 +98,27 @@ class _PhoneProductsScreenState extends State<PhoneProductsScreen> {
         ),
       ],
       filters: (ctx) => [
+        PhoneChip(
+          label: _category.isEmpty ? t('Tất cả loại hàng') : _category,
+          active: _category.isNotEmpty,
+          caret: true,
+          onTap: () async {
+            await showPhoneSheet<void>(
+              context: ctx,
+              title: t('Loại hàng'),
+              builder: (c) => PhonePickList(
+                options: [t('Tất cả loại hàng'), ..._categories],
+                selected: _category.isEmpty ? t('Tất cả loại hàng') : _category,
+                onPick: (value) {
+                  Navigator.of(c).pop();
+                  setState(() =>
+                      _category = value == t('Tất cả loại hàng') ? '' : value);
+                  _key.currentState?.reload();
+                },
+              ),
+            );
+          },
+        ),
         PhoneChip(
           label: t('Còn hàng'),
           active: _inStockOnly,
@@ -168,8 +210,7 @@ class PhoneProductDetailScreen extends StatelessWidget {
                   PhoneInfoCard(
                     title: t('TỒN KHO'),
                     rows: [
-                      (t('Tồn khả dụng'),
-                          '${phoneInt(sku.stock)} ${sku.unit}'),
+                      (t('Tồn khả dụng'), '${phoneInt(sku.stock)} ${sku.unit}'),
                       (t('Giá trị tồn'), phoneMoney(sku.price * sku.stock)),
                       if (sku.category.isNotEmpty)
                         (t('Nhóm hàng'), sku.category),
@@ -224,7 +265,8 @@ class PhoneStockCardScreen extends StatelessWidget {
         return PhoneListRow(
           title: _s(m['type']).isEmpty ? t('Giao dịch kho') : _s(m['type']),
           subtitle: [
-            _s(m['created_at']).replaceFirst('T', ' ').split('.').first,
+            BusinessDateTime.dateTime(m['created_at'],
+                fallback: _s(m['created_at'])),
             _s(m['warehouse_name']),
             if (_s(m['lot_no']).isNotEmpty) '${t('Lô')} ${_s(m['lot_no'])}',
           ].where((e) => e.isNotEmpty).join(' · '),
@@ -250,13 +292,30 @@ class PhoneInvoicesScreen extends StatelessWidget {
       emptyHint: 'Hóa đơn đã thanh toán sẽ hiện ở đây',
       emptyIcon: Icons.receipt_long_outlined,
       fetch: (q) async {
-        final rows =
-            await context.read<ApiService>().getOrderHistory(limit: 80, q: q);
+        final response = await context
+            .read<ApiService>()
+            .getInvoicePage(page: 1, limit: 100, q: q);
+        final rows = response['items'] is List
+            ? List<dynamic>.from(response['items'] as List)
+            : <dynamic>[];
         return rows
             .whereType<Map>()
             .map((e) => Map<String, dynamic>.from(e))
             .toList();
       },
+      fetchMore: (q, page) async {
+        final response = await context
+            .read<ApiService>()
+            .getInvoicePage(page: page, limit: 100, q: q);
+        final rows = response['items'] is List
+            ? List<dynamic>.from(response['items'] as List)
+            : <dynamic>[];
+        return rows
+            .whereType<Map>()
+            .map((e) => Map<String, dynamic>.from(e))
+            .toList();
+      },
+      pageSize: 100,
       metrics: (list) => [
         (t('Số hóa đơn'), phoneInt(list.length), null),
         (
@@ -270,25 +329,29 @@ class PhoneInvoicesScreen extends StatelessWidget {
       // table_code, invoice_no, methods[], item_count, locked.
       // KHÔNG có customer_name — đừng dựng cột khách hàng ở đây.
       rowBuilder: (ctx, m, _) {
-        final status = _s(m['status']);
+        final status = _s(m['einvoice_status']).isNotEmpty
+            ? _s(m['einvoice_status'])
+            : _s(m['status']);
         final when = _s(m['paid_at']).isNotEmpty
             ? _s(m['paid_at'])
             : _s(m['created_at']);
         return PhoneListRow(
-          title: _s(m['number']).isNotEmpty
-              ? _s(m['number'])
-              : _s(m['bill_no']),
+          title: _s(m['bill_code']).isNotEmpty
+              ? _s(m['bill_code'])
+              : (_s(m['number']).isNotEmpty
+                  ? _s(m['number'])
+                  : _s(m['bill_no'])),
           subtitle: [
-            when.replaceFirst('T', ' ').split('.').first,
-            if (_s(m['table_code']).isNotEmpty)
-              '${t('Bàn')} ${_s(m['table_code'])}',
-            '${phoneInt(_n(m['item_count']))} ${t('món')}',
+            BusinessDateTime.dateTime(when, fallback: when),
+            _s(m['invoice_no']).isEmpty
+                ? t('Chưa có số HĐĐT')
+                : 'HĐ ${_s(m['invoice_no'])}',
           ].where((e) => e.isNotEmpty).join(' · '),
           amount: phoneMoney(_n(m['total'])),
           badge: status.isEmpty ? null : _statusLabel(status),
           badgeTone: switch (status) {
-            'paid' => PhoneTone.ok,
-            'void' => PhoneTone.bad,
+            'ISSUED' => PhoneTone.ok,
+            'FAILED' => PhoneTone.bad,
             _ => PhoneTone.warn,
           },
           onTap: () => Navigator.of(ctx).push(MaterialPageRoute(
@@ -299,6 +362,10 @@ class PhoneInvoicesScreen extends StatelessWidget {
   }
 
   static String _statusLabel(String s) => switch (s) {
+        'ISSUED' => t('Đã phát hành'),
+        'PROCESSING' => t('Đang xử lý'),
+        'NOT_ISSUED' => t('Chưa phát hành'),
+        'FAILED' => t('Phát hành lỗi'),
         'paid' => t('Đã thanh toán'),
         'open' => t('Đang mở'),
         'partially_paid' => t('Trả một phần'),
@@ -312,7 +379,10 @@ class PhoneInvoicesScreen extends StatelessWidget {
 String _methodLabel(String m) => switch (m) {
       'cash' => t('Tiền mặt'),
       'card' || 'visa' => t('Thẻ'),
-      'qrcode' || 'qr' || 'bank_transfer' || 'internet_banking' =>
+      'qrcode' ||
+      'qr' ||
+      'bank_transfer' ||
+      'internet_banking' =>
         t('Chuyển khoản'),
       'momo' => 'MoMo',
       'zalopay' => 'ZaloPay',
@@ -333,6 +403,17 @@ class PhoneInvoiceDetailScreen extends StatefulWidget {
 class _PhoneInvoiceDetailScreenState extends State<PhoneInvoiceDetailScreen> {
   bool _printing = false;
 
+  /// Cho phép Trả hàng: bill còn hiệu lực (không hủy) và là hóa đơn bán lẻ.
+  /// Màn Hóa đơn phone chỉ liệt kê hóa đơn bán lẻ (getInvoicePage) nên khi
+  /// history không kèm `channel` vẫn coi là retail. Quyền refund + duyệt Quản
+  /// lý được enforce ở màn Trả hàng, không gate cứng tại đây.
+  bool get _canReturn {
+    final st = _s(widget.order['status']);
+    if (st == 'void' || st == 'cancelled') return false;
+    final ch = _s(widget.order['channel']);
+    return ch.isEmpty || ch == 'retail';
+  }
+
   /// Dòng lịch sử KHÔNG kèm mặt hàng (listOrderHistory chỉ trả phần đầu đơn).
   /// Phải gọi `/api/orders/:id/receipt` mới có items + lines thanh toán.
   Map<String, dynamic>? _full;
@@ -346,13 +427,32 @@ class _PhoneInvoiceDetailScreenState extends State<PhoneInvoiceDetailScreen> {
   }
 
   Future<void> _load() async {
-    final id = _s(widget.order['id']);
+    final id = _s(widget.order['order_id'] ?? widget.order['id']);
     if (id.isEmpty) {
       setState(() => _loading = false);
       return;
     }
     try {
-      final r = await context.read<ApiService>().getOrderReceipt(id);
+      final detail = await context.read<ApiService>().getInvoiceDetail(id);
+      final r = Map<String, dynamic>.from((detail['bill'] as Map?) ?? const {});
+      final totals = (detail['totals'] as Map?) ?? const {};
+      final buyer = (detail['buyer_snapshot'] as Map?) ?? const {};
+      r.addAll({
+        'id': id,
+        'number': r['bill_code'],
+        'subtotal': totals['gross'],
+        'discount': totals['discount'],
+        'surcharge': totals['surcharge'],
+        'vat_amount': totals['vat'],
+        'total': totals['total'],
+        'customer_name': buyer['name'],
+        'tax_code': buyer['tax_code'],
+        // item_snapshot: name/sku_id/item_barcode/qty/unit_price/vat_rate/
+        // vat_amount/line_total/returned_qty (đã enrich ở ledgerDetail).
+        'items': detail['item_snapshot'],
+        'lines': detail['payment_history'],
+        'returns': detail['returns'],
+      });
       if (!mounted) return;
       setState(() {
         _full = r;
@@ -371,12 +471,14 @@ class _PhoneInvoiceDetailScreenState extends State<PhoneInvoiceDetailScreen> {
   Future<void> _reprint() async {
     setState(() => _printing = true);
     try {
-      final id = _s(widget.order['id'] ?? widget.order['order_id']);
-      final billNo =
-          _s(widget.order['bill_no'] ?? widget.order['number']);
+      final id = _s(widget.order['order_id'] ?? widget.order['id']);
+      final billNo = _s(widget.order['bill_code'] ?? widget.order['bill_no']);
+      // PHẢI tạo lệnh in MỚI. forcePrintReceiptJob() thấy lệnh cũ đã 'printed'
+      // là trả về null ngay — nút này khi đó báo "Đã gửi lệnh in lại" mà máy in
+      // không hề nhúc nhích.
       final err = await context
           .read<ApiService>()
-          .forcePrintReceiptJob(orderId: id, billNo: billNo, wait: Duration.zero);
+          .reprintReceiptForOrder(orderId: id, billNo: billNo);
       if (!mounted) return;
       setState(() => _printing = false);
       appToast(
@@ -400,9 +502,8 @@ class _PhoneInvoiceDetailScreenState extends State<PhoneInvoiceDetailScreen> {
     final o = _full ?? widget.order;
     final items = (o['items'] as List?) ?? const [];
     final payLines = (o['lines'] as List?) ?? const [];
-    final when = _s(o['paid_at']).isNotEmpty
-        ? _s(o['paid_at'])
-        : _s(o['created_at']);
+    final when =
+        _s(o['paid_at']).isNotEmpty ? _s(o['paid_at']) : _s(o['created_at']);
     return Scaffold(
       backgroundColor: DanColors.bg,
       body: SafeArea(
@@ -413,64 +514,142 @@ class _PhoneInvoiceDetailScreenState extends State<PhoneInvoiceDetailScreen> {
               title: _s(o['number']).isNotEmpty
                   ? _s(o['number'])
                   : _s(o['bill_no']),
-              subtitle: when.replaceFirst('T', ' ').split('.').first,
+              subtitle: BusinessDateTime.dateTime(when, fallback: when),
               onBack: () => Navigator.of(context).maybePop(),
             ),
             Expanded(
               child: _loading && _full == null
                   ? const Center(child: CircularProgressIndicator())
                   : ListView(
-                padding: const EdgeInsets.only(top: 12, bottom: 20),
-                children: [
-                  if (_error != null)
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-                      child: InlineMessage(
-                          '${t('Không tải được chi tiết')}: $_error',
-                          error: true,
-                          onRetry: _load),
-                    ),
-                  PhoneInfoCard(
-                    title: t('TỔNG KẾT'),
-                    rows: [
-                      (t('Tạm tính'), phoneMoney(_n(o['subtotal']))),
-                      if (_n(o['discount']) > 0)
-                        (t('Giảm giá'), '-${phoneMoney(_n(o['discount']))}'),
-                      if (_n(o['vat_amount']) > 0)
-                        (t('Trong đó VAT'), phoneMoney(_n(o['vat_amount']))),
-                      (t('TỔNG CỘNG'), phoneMoney(_n(o['total']))),
-                      if (_s(o['cashier']).isNotEmpty)
-                        (t('Thu ngân'), _s(o['cashier'])),
-                    ],
-                  ),
-                  if (payLines.isNotEmpty)
-                    PhoneInfoCard(
-                      title: t('THANH TOÁN'),
-                      rows: [
-                        for (final l in payLines.whereType<Map>())
-                          (_methodLabel(_s(l['method'])),
-                              phoneMoney(_n(l['amount']))),
+                      padding: const EdgeInsets.only(top: 12, bottom: 20),
+                      children: [
+                        if (_error != null)
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                            child: InlineMessage(
+                                '${t('Không tải được chi tiết')}: $_error',
+                                error: true,
+                                onRetry: _load),
+                          ),
+                        PhoneInfoCard(
+                          title: t('TỔNG KẾT'),
+                          rows: [
+                            if (_s(o['customer_name']).isNotEmpty)
+                              (t('Khách hàng'), _s(o['customer_name'])),
+                            if (_s(o['tax_code']).isNotEmpty)
+                              ('MST', _s(o['tax_code'])),
+                            (t('Tạm tính'), phoneMoney(_n(o['subtotal']))),
+                            if (_n(o['discount']) > 0)
+                              (
+                                t('Giảm giá'),
+                                '-${phoneMoney(_n(o['discount']))}'
+                              ),
+                            if (_n(o['surcharge']) > 0)
+                              (t('Phụ thu'), phoneMoney(_n(o['surcharge']))),
+                            if (_n(o['vat_amount']) > 0)
+                              (
+                                t('Trong đó VAT'),
+                                phoneMoney(_n(o['vat_amount']))
+                              ),
+                            (t('TỔNG CỘNG'), phoneMoney(_n(o['total']))),
+                            if (_s(o['cashier']).isNotEmpty)
+                              (t('Thu ngân'), _s(o['cashier'])),
+                            if (_s(o['einvoice_status']).isNotEmpty)
+                              (
+                                t('Trạng thái HĐĐT'),
+                                PhoneInvoicesScreen._statusLabel(
+                                    _s(o['einvoice_status']))
+                              ),
+                          ],
+                        ),
+                        if (payLines.isNotEmpty)
+                          PhoneInfoCard(
+                            title: t('THANH TOÁN'),
+                            rows: [
+                              for (final l in payLines.whereType<Map>())
+                                (
+                                  _methodLabel(_s(l['method'])),
+                                  phoneMoney(_n(l['amount']))
+                                ),
+                            ],
+                          ),
+                        if (items.isNotEmpty) ...[
+                          PhoneSectionTitle(t('Mặt hàng')),
+                          // item_snapshot: name/sku_id/item_barcode/qty/
+                          // unit_price/vat_rate/line_total/returned_qty.
+                          for (final raw in items.whereType<Map>())
+                            Builder(builder: (_) {
+                              final code = _s(raw['item_barcode']).isNotEmpty
+                                  ? _s(raw['item_barcode'])
+                                  : _s(raw['sku_id']);
+                              final vr = _n(raw['vat_rate']);
+                              final ret = _n(raw['returned_qty']);
+                              final sub = [
+                                if (code.isNotEmpty) code,
+                                '${phoneInt(_n(raw['qty']))} × ${phoneMoney(_n(raw['unit_price']))}',
+                                if (vr > 0) 'VAT ${phoneInt(vr)}%',
+                              ].join(' · ');
+                              return PhoneListRow(
+                                title: _s(raw['name']),
+                                subtitle: sub,
+                                amount: phoneMoney(_n(raw['line_total'])),
+                                badge: ret > 0
+                                    ? '${t('Đã trả')} ${phoneInt(ret)}'
+                                    : null,
+                                badgeTone: PhoneTone.warn,
+                              );
+                            }),
+                        ],
+                        // TRẢ HÀNG liên quan (order_returns) — đọc thẳng từ
+                        // ledgerDetail, cùng nguồn với desktop.
+                        if (((o['returns'] as List?) ?? const [])
+                            .isNotEmpty) ...[
+                          PhoneSectionTitle(t('Trả hàng')),
+                          for (final r
+                              in (o['returns'] as List).whereType<Map>())
+                            PhoneListRow(
+                              title:
+                                  '${t('Phiếu trả')} · ${((r['items'] as List?) ?? const []).length} ${t('món')}',
+                              subtitle: [
+                                BusinessDateTime.dateTime(r['created_at'],
+                                    fallback: _s(r['created_at'])),
+                                _methodLabel(_s(r['refund_method'])),
+                              ].where((e) => e.isNotEmpty).join(' · '),
+                              amount: '-${phoneMoney(_n(r['refund_total']))}',
+                            ),
+                        ],
                       ],
                     ),
-                  if (items.isNotEmpty) ...[
-                    PhoneSectionTitle(t('Mặt hàng')),
-                    // order_items: name, qty, unit_price, line_total, mods.
-                    for (final raw in items.whereType<Map>())
-                      PhoneListRow(
-                        title: _s(raw['name']),
-                        subtitle:
-                            '${phoneInt(_n(raw['qty']))} × ${phoneMoney(_n(raw['unit_price']))}',
-                        amount: phoneMoney(_n(raw['line_total'])),
-                      ),
-                  ],
-                ],
-              ),
             ),
             PhoneActionBar(
-              child: PhoneCta(
-                label: t('In lại hóa đơn'),
-                busy: _printing,
-                onPressed: _printing ? null : _reprint,
+              child: Row(
+                children: [
+                  // Trả hàng: chỉ cho bill bán lẻ còn hiệu lực (không hủy).
+                  // Quyền refund do server + duyệt Quản lý enforce ở màn trả.
+                  if (_canReturn) ...[
+                    Expanded(
+                      child: PhoneSecondaryButton(
+                        label: t('Trả hàng'),
+                        icon: Icons.assignment_return_outlined,
+                        onPressed: () async {
+                          final done = await Navigator.of(context).push<bool>(
+                              MaterialPageRoute(
+                                  builder: (_) => PhoneReturnScreen(order: o)));
+                          // Trả xong → tải lại chi tiết để cập nhật "đã trả".
+                          if (done == true && mounted) _load();
+                        },
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                  ],
+                  Expanded(
+                    child: PhoneCta(
+                      label: t('In lại hóa đơn'),
+                      busy: _printing,
+                      onPressed: _printing ? null : _reprint,
+                    ),
+                  ),
+                ],
               ),
             ),
           ],

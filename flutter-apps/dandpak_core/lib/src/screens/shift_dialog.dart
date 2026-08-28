@@ -10,6 +10,8 @@ import '../providers/pos_provider.dart';
 import '../ui/app_theme.dart';
 import '../ui/file_pick.dart';
 import '../utils/translation.dart';
+import '../utils/business_datetime.dart';
+import '../widgets/dan_datetime_picker.dart';
 
 part 'shift_cash_dialogs.dart';
 
@@ -35,20 +37,11 @@ Map<String, String> get _methodLabels => {
 String _methodLabel(String m) => _methodLabels[m] ?? m;
 
 String _fmtDateTime(dynamic iso) {
-  try {
-    return DateFormat('dd/MM/yyyy HH:mm')
-        .format(DateTime.parse(_s(iso)).toLocal());
-  } catch (_) {
-    return _s(iso);
-  }
+  return BusinessDateTime.dateTime(iso, fallback: _s(iso));
 }
 
 String _fmtTime(dynamic iso) {
-  try {
-    return DateFormat('HH:mm:ss').format(DateTime.parse(_s(iso)).toLocal());
-  } catch (_) {
-    return _s(iso);
-  }
+  return BusinessDateTime.timeSeconds(iso, fallback: _s(iso));
 }
 
 // ── Shared shift + cash-drawer panel (used by both F&B POS and Retail POS) ──
@@ -841,4 +834,3 @@ class _Spinner extends StatelessWidget {
       height: 18,
       child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white));
 }
-

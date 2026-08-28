@@ -81,6 +81,12 @@ const DEFAULT_PRINT_CONFIG = {
     // gửi lệnh làm đậm nào, máy in chạy theo mặc định của nó — bản in rất mờ.
     // 'dark' khớp với giá trị trình thiết kế hiển thị khi chưa ai chỉnh.
     printDensity: 'dark',
+    // Cỡ chữ toàn phiếu: 0 = chuẩn, 1 = cao gấp đôi, 2 = gấp ba, 3 = to cả hai
+    // chiều (số cột giảm một nửa). Chỉ nhân BỀ CAO nên số ký tự mỗi dòng không
+    // đổi, bố cục cột tiền giữ nguyên. Xem fontScaleFor().
+    // Mặc định 1 (cao gấp đôi): cỡ chuẩn quá nhỏ để đọc nhanh ở quầy. Chỉ
+    // nhân BỀ CAO nên số ký tự mỗi dòng không đổi.
+    fontScale: 1,
   },
   printers: [
     { id: 'kitchen', name: '', systemName: '', label: 'Phiếu bếp', type: 'Phiếu bếp', output: 'kitchen_ticket', location: 'Bếp', active: true, auto: true, connection: 'browser', ip: '', port: 9100, cashDrawer: false, openDrawerOnPrint: false },
@@ -93,6 +99,9 @@ const DEFAULT_PRINT_CONFIG = {
   templates: {
     label: null,
     bill: null,
+    kitchen_ticket: null,
+    cup_label: null,
+    product_label: null,
   },
 };
 
@@ -104,7 +113,7 @@ function defaultDanBillTemplate(bill = DEFAULT_PRINT_CONFIG.bill) {
   const heightMm = requestedHeight >= 300 && requestedHeight <= 500 ? requestedHeight : DEFAULT_PRINT_CONFIG.bill.heightMm;
   return {
     kind: 'bill',
-    version: 7,
+    version: 10,
     standard: 'dan_payment_receipt',
     paper: bill.paper || 'K80',
     widthMm,
@@ -116,23 +125,37 @@ function defaultDanBillTemplate(bill = DEFAULT_PRINT_CONFIG.bill) {
     elements: [
       { id: 'bill_logo', type: 'image', x: 38, y: 3, w: 24, h: 8, src: '', originalSrc: '', imgMode: 'threshold', threshold: 150, contrast: 1 },
       { id: 'bill_header', type: 'text', x: 4, y: 12, w: 92, h: 14, text: '{storeNameC}\n{storeSubtitleC}\n{addressBlock}\nTel: {phone}', fontSize: 3.5, bold: false, align: 'center' },
-      { id: 'line_1', type: 'line', x: 4, y: 27, w: 92, h: 0.5 },
-      { id: 'bill_title', type: 'text', x: 4, y: 29, w: 92, h: 4, text: 'HÓA ĐƠN THANH TOÁN', fontSize: 4.5, bold: true, align: 'center' },
-      { id: 'bill_info', type: 'text', x: 4, y: 34, w: 92, h: 12, text: 'Số Hóa Đơn: {billNo}  {place}\n{customerInfoBlock}\nThu ngân: {cashier}\nNgày/Giờ vào: {timeIn}\nNgày/Giờ ra: {timeOut}', fontSize: 3.5, bold: false, align: 'left' },
-      { id: 'line_2', type: 'line', x: 4, y: 45, w: 92, h: 0.5 },
-      { id: 'bill_items', type: 'text', x: 4, y: 47, w: 92, h: 12, text: 'Tên món             SL     Đ.Giá     T.Tiền\n{items}', fontSize: 3.5, bold: false, align: 'left' },
-      { id: 'line_3', type: 'line', x: 4, y: 60, w: 92, h: 0.5 },
-      { id: 'bill_totals', type: 'text', x: 4, y: 62, w: 92, h: 14, text: '{subtotalLine}\n{vatLine}\n{orderPromoLine}\n{grandTotalLine}\n{paymentLines}\n{paidLine}\n{changeLine}', fontSize: 3.6, bold: false, align: 'left' },
-      { id: 'line_4', type: 'line', x: 4, y: 77, w: 92, h: 0.5 },
-      { id: 'bill_footer', type: 'text', x: 4, y: 79, w: 92, h: 10, text: '{noteBlock}\n{taxNoteC}\n{footerBrandC}\n{footerC}', fontSize: 3.5, bold: false, align: 'center' },
-      { id: 'bill_qr', type: 'qr', x: 35, y: 90, w: 30, h: 8, qrMode: 'lookup', qrText: '{invoiceLookupUrl}', qrCaption: 'Quét QR tra cứu hóa đơn', qrShowCaption: true },
+      { id: 'line_1', type: 'line', lineStyle: 'solid', x: 4, y: 27, w: 92, h: 0.5 },
+      { id: 'bill_title', type: 'text', x: 4, y: 29, w: 92, h: 4, text: '{billTitle}', fontSize: 4.5, bold: true, align: 'center' },
+      { id: 'bill_info', type: 'text', x: 4, y: 34, w: 92, h: 12, text: 'Số Hóa Đơn: {billNo}\n{place}\n{customerInfoBlock}\nThu ngân: {cashier}\nNgày/Giờ vào: {timeIn}\nNgày/Giờ ra: {timeOut}', fontSize: 3.5, bold: false, align: 'left' },
+      { id: 'line_2', type: 'line', lineStyle: 'solid', x: 4, y: 45, w: 92, h: 0.5 },
+      { id: 'bill_items', type: 'text', x: 4, y: 47, w: 92, h: 12, text: '{items}', fontSize: 3.5, bold: false, align: 'left' },
+      { id: 'line_3', type: 'line', lineStyle: 'solid', hidden: true, x: 4, y: 60, w: 92, h: 0.5 },
+      { id: 'bill_totals', type: 'text', x: 4, y: 62, w: 92, h: 14, text: '{subtotalLine}\n{vatLine}\n{grandTotalLine}\n{totalWordsLine}\n{methodLine}', fontSize: 3.6, bold: false, align: 'left' },
+      { id: 'line_4', type: 'line', lineStyle: 'solid', x: 4, y: 77, w: 92, h: 0.5 },
+      { id: 'bill_footer', type: 'text', x: 4, y: 79, w: 92, h: 10, text: '{noteBlock}\n{solidLine}\n{thanksC}', fontSize: 3.5, bold: false, align: 'center' },
+      { id: 'bill_qr', type: 'qr', hidden: true, x: 35, y: 90, w: 30, h: 8, qrMode: 'lookup', qrText: '{invoiceLookupUrl}', qrCaption: 'Quét QR tra cứu hóa đơn', qrShowCaption: true },
     ],
   };
 }
 
 // ── 3. Chuẩn hoá ────────────────────────────────────────────────────────────
-/** Cửa hàng từng chạy tên/địa chỉ của BCM. Giá trị legacy được thay bằng mặc
- *  định Dan khi đọc, nên không cần migrate DB thủ công. */
+/**
+ * Cửa hàng từng chạy tên/địa chỉ của BCM. Giá trị legacy được thay bằng mặc
+ * định Dan khi đọc, nên không cần migrate DB thủ công.
+ *
+ * CHỈ CHẠY KHI CHỦ CỬA HÀNG CHƯA TỰ LƯU CẤU HÌNH BAO GIỜ.
+ *
+ * SỰ CỐ THẬT (04/08/2026): hàm này chạy ở MỌI lần đọc. Chủ cửa hàng vào Cài đặt
+ * đổi tên công ty thành "CÔNG TY TNHH DỊCH VỤ TIẾP THỊ BCM" hoặc xoá trống, sửa
+ * lại địa chỉ — lưu xong, đọc lại là bị thay về mặc định 'Dan' ngay, vì đúng
+ * chuỗi đó nằm trong danh sách legacy (và chuỗi rỗng cũng bị coi là legacy).
+ * Người dùng sửa mãi không ăn mà không hiểu vì sao.
+ *
+ * Migrate là việc DỌN DỮ LIỆU CŨ MỘT LẦN, không phải luật áp vĩnh viễn. Cấu
+ * hình đã có `updated_at` nghĩa là người dùng đã tự lưu — từ đó trở đi giá trị
+ * họ nhập là chân lý, kể cả khi trùng chuỗi legacy hay để trống.
+ */
 function migrateBcmBillDefaults(bill = {}) {
   const D = DEFAULT_PRINT_CONFIG.bill;
   const legacyNames = ['District 1 - HCMC', 'CONG TY TNHH DICH VU TIEP THI BCM', 'CÔNG TY TNHH DỊCH VỤ TIẾP THỊ BCM'];
@@ -195,6 +218,43 @@ function sanitizeBillTemplate(tpl, bill) {
       ? { ...el, text: `{noteBlock}\n${el.text || ''}` }
       : el);
   }
+  if (Number(clean.version || 0) < 8) {
+    clean.version = 8;
+    clean.elements = clean.elements.map(el => el.id === 'bill_items'
+      ? { ...el, text: '{items}' }
+      : el);
+  }
+  if (Number(clean.version || 0) < 9) {
+    clean.version = 9;
+    clean.elements = clean.elements.map(el => el.id === 'bill_title'
+      ? { ...el, text: '{billTitle}' }
+      : el);
+    if (Array.isArray(clean.rows)) clean.rows = clean.rows.map(el => el.id === 'bill_title'
+      || /HÓA ĐƠN THANH TOÁN|HOA DON THANH TOAN/i.test(String(el.text || ''))
+      ? { ...el, text: '{billTitle}' }
+      : el);
+  }
+  if (Number(clean.version || 0) < 10) {
+    clean.version = 10;
+    clean.elements = clean.elements.map(el => {
+      if (/^line_[124]$/.test(el.id)) return { ...el, lineStyle: 'solid' };
+      if (el.id === 'line_3') return { ...el, lineStyle: 'solid', hidden: true };
+      if (el.id === 'bill_info') return { ...el, text: 'Số Hóa Đơn: {billNo}\n{place}\n{customerInfoBlock}\nThu ngân: {cashier}\nNgày/Giờ vào: {timeIn}\nNgày/Giờ ra: {timeOut}' };
+      if (el.id === 'bill_totals') return { ...el, text: '{subtotalLine}\n{vatLine}\n{grandTotalLine}\n{totalWordsLine}\n{methodLine}' };
+      if (el.id === 'bill_footer') return { ...el, text: '{noteBlock}\n{solidLine}\n{thanksC}' };
+      if (el.id === 'bill_qr') return { ...el, hidden: true };
+      return el;
+    });
+    if (Array.isArray(clean.rows)) clean.rows = clean.rows.map(el => {
+      if (el.id === 'line_3') return { ...el, lineStyle: 'solid', hidden: true };
+      if (el.type === 'line') return { ...el, lineStyle: 'solid' };
+      if (el.id === 'bill_info') return { ...el, text: 'Số Hóa Đơn: {billNo}\n{place}\n{customerInfoBlock}\nThu ngân: {cashier}\nNgày/Giờ vào: {timeIn}\nNgày/Giờ ra: {timeOut}' };
+      if (el.id === 'bill_totals') return { ...el, text: '{subtotalLine}\n{vatLine}\n{grandTotalLine}\n{totalWordsLine}\n{methodLine}' };
+      if (el.id === 'bill_footer') return { ...el, text: '{noteBlock}\n{solidLine}\n{thanksC}' };
+      if (el.id === 'bill_qr') return { ...el, hidden: true };
+      return el;
+    });
+  }
   return clean;
 }
 
@@ -217,7 +277,10 @@ function inferPrinterConnection(p = {}) {
 
 export function sanitizePrintConfig(raw = {}) {
   const input = plainObject(raw);
-  const bill = migrateBcmBillDefaults(mergePlain(DEFAULT_PRINT_CONFIG.bill, input.bill));
+  const daTuLuu = !!input.updated_at;
+  const bill = daTuLuu
+    ? mergePlain(DEFAULT_PRINT_CONFIG.bill, input.bill)
+    : migrateBcmBillDefaults(mergePlain(DEFAULT_PRINT_CONFIG.bill, input.bill));
   const printers = Array.isArray(input.printers) ? input.printers : DEFAULT_PRINT_CONFIG.printers;
   return {
     version: 1,
@@ -241,16 +304,46 @@ export function sanitizePrintConfig(raw = {}) {
       port: Math.max(1, Math.min(65535, parseInt(p?.port) || 9100)),
       cashDrawer: bool(p?.cashDrawer || p?.drawer, false),
       openDrawerOnPrint: bool(p?.openDrawerOnPrint, false),
+      // Khổ giấy thuộc từng máy in; bill chỉ là mặc định cho tuyến cũ.
+      paper: ['K57', 'K58', 'K80'].includes(str(p?.paper || '', 10).toUpperCase())
+        ? str(p?.paper, 10).toUpperCase()
+        : '',
+      widthMm: Number(p?.widthMm) >= 35 && Number(p?.widthMm) <= 120
+        ? Number(p.widthMm)
+        : null,
       // MÁY CHỦ TRÌ tuyến in này (device_id của máy POS). Khi hai máy POS cùng
       // với tới một máy in bill, đây là máy được ưu tiên in — để phiếu luôn ra ở
       // đúng một chỗ thay vì máy nào giành được thì in. Bỏ trống = máy nào đang
       // cắm máy in đó cũng in được (hành vi cũ). Máy chủ trì offline thì tự
       // chuyển cho máy khác, không để tắc bán hàng — xem pendingAgentJobs.
       primaryDeviceId: str(p?.primaryDeviceId || p?.primary_device_id || '', 120),
+      // THỨ TỰ ƯU TIÊN khi máy in đứng trước không in được (số nhỏ = ưu tiên
+      // cao). Máy in cắm thẳng vào máy đang thao tác LUÔN đứng đầu bất kể số
+      // này — đây chỉ xếp hạng các tuyến còn lại. 0 = chưa đặt, xếp theo thứ tự
+      // trong danh sách Kết nối như trước. Xem resolvePrinterChain.
+      priority: Math.max(0, Math.min(99, parseInt(p?.priority) || 0)),
+      // Bộ mã ký tự máy in hiểu được. Xem PRINTER_CHARSETS ở printing.js —
+      // để 'auto' thì hệ thống gửi UTF-8 (đúng với máy in gắn liền Sunmi và
+      // phần lớn máy đời mới); máy cũ in ra ký tự lạ thì đổi sang 'ascii'.
+      charset: ['auto', 'utf8', 'cp1258', 'ascii'].includes(str(p?.charset || '', 10).toLowerCase())
+        ? str(p.charset, 10).toLowerCase()
+        : 'auto',
+      // KIỂU DỰNG BILL: 'escpos' (mặc định) = byte ESC/POS font ROM máy in nhiệt,
+      // siêu ổn định, dùng cho bếp/bar/LAN. 'driver' = WindowsDriverBackend: gửi
+      // TEXT + font TrueType qua driver Windows (GDI), driver raster hoá ở tầng
+      // thiết bị — bill đẹp + tiếng Việt chuẩn, KHÔNG tạo ảnh tầng app. Chỉ áp cho
+      // máy in bill 'system' trên Windows. Xem services/receipt_doc.js.
+      renderMode: ['escpos', 'driver'].includes(str(p?.renderMode || '', 10).toLowerCase())
+        ? str(p.renderMode, 10).toLowerCase() : 'escpos',
+      // Font TrueType cho renderMode 'driver' (phải cài sẵn trên máy Windows in bill).
+      driverFont: str(p?.driverFont || '', 40) || 'Segoe UI',
     })),
     templates: {
       label: sanitizePrintTemplate(input.templates?.label || input.label_template),
       bill: sanitizeBillTemplate(input.templates?.bill || input.bill_template, bill),
+      kitchen_ticket: sanitizePrintTemplate(input.templates?.kitchen_ticket),
+      cup_label: sanitizePrintTemplate(input.templates?.cup_label || input.templates?.label || input.label_template),
+      product_label: sanitizePrintTemplate(input.templates?.product_label),
     },
   };
 }
@@ -263,7 +356,8 @@ export function getPrintConfig(branch_id = 'sala') {
 /** Trình thiết kế mẫu in tự lưu sau mỗi thao tác — ghi thẳng print_config,
  *  không đi qua updateSettings để tránh đụng các nhóm cấu hình khác. */
 export function autoSaveTemplate(body = {}, branch_id = 'sala') {
-  const kind = body.kind === 'label' ? 'label' : 'bill';
+  const allowed = new Set(['bill', 'label', 'kitchen_ticket', 'cup_label', 'product_label']);
+  const kind = allowed.has(body.kind) ? body.kind : 'bill';
   const current = getPrintConfig(branch_id);
   const next = sanitizePrintConfig({
     ...current,

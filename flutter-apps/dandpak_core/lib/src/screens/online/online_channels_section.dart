@@ -4,10 +4,10 @@ import 'package:provider/provider.dart';
 import '../../services/api_service.dart';
 import '../management/settings_integrations_panel.dart';
 
-/// Thiết lập kênh — KHÔNG dựng form riêng. Tái sử dụng đúng panel "Liên kết"
-/// trong Cài đặt (IntegrationsPanel): cùng một cấu hình, cùng một DB. Các kênh
-/// sàn/mạng xã hội (Shopee, TikTok, Lazada, Tiki, Facebook, Instagram, Zalo OA)
-/// được khai trong _integrationDefs của panel đó nên hiện ở cả hai nơi.
+/// Thiết lập kênh = ĐÚNG MỘT màn "Liên kết" dùng chung (IntegrationsPanel), y hệt
+/// Cài đặt → Liên kết. Sàn Shopee/Lazada nằm TRONG danh sách này; khi chọn sẽ hiện
+/// nút kết nối "1 chạm" (không nhập Partner ID/Key) ngay trong khung detail — không
+/// dựng UI kết nối riêng để tránh trùng đường kết nối.
 class OnlineChannelsSection extends StatelessWidget {
   const OnlineChannelsSection({super.key});
 

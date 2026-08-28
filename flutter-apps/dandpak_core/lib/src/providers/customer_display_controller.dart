@@ -76,7 +76,11 @@ class CustomerDisplayController extends ChangeNotifier {
       final cd = await api.getCustomerDisplaySettings();
       final imgs = (cd['images'] is List)
           ? (cd['images'] as List)
-              .map((e) => e.toString())
+              .map((e) {
+                final value = e.toString();
+                if (value.startsWith('/')) return '${api.baseUrl}$value';
+                return value;
+              })
               .where((e) => e.isNotEmpty)
               .toList()
           : <String>[];

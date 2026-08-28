@@ -454,7 +454,7 @@ async function run() {
     return;
   }
 
-  const backup = backupDatabase();
+  const backup = await backupDatabase();
   console.log(`\n🛡️  Đã sao lưu database: ${backup?.path || backup}`);
   console.log(`\n📥 Đang kiểm tra và tải hình ảnh sản phẩm về thư mục local...`);
   const imageCandidates = localImageCandidates();

@@ -77,7 +77,7 @@ extension ApiServiceDatabaseApi on ApiService {
   }
 
   // ── Client log sink ────────────────────────────────────────────────────
-  /// Ship a client-side error to the local engine so it lands in the same
+  /// Ship a client-side error to the selected server so it lands in the same
   /// log stream as the server's request logs (one place to look).
   Future<void> postClientLog(Map<String, dynamic> body) async {
     await postJson('/api/client-log',

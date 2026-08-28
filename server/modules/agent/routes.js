@@ -3,8 +3,8 @@
 import * as Print from '../../services/printing.js';
 import * as System from '../../services/system.js';
 
-export function registerAgentRoutes(api, { wrap, guardAny, branch }) {
-const printGuard = guardAny('module.printing', 'settings.printers', 'settings.print', 'pay');
+export function registerAgentRoutes(api, { wrap, guard, guardAny, branch }) {
+const printGuard = guard();
 // device_id để server GIỮ CHỖ job cho đúng một máy và chỉ phát job của máy in
 // cắm-thẳng cho chính máy đang cắm nó — nếu không, nhiều agent cùng in một phiếu.
 api.get('/agent/print/pending', printGuard, wrap((req) => ({

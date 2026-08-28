@@ -5,11 +5,16 @@ import { env } from '../config/env.js';
 import { emit } from '../realtime.js';
 import { getIntegrationChannel } from './settings.js';
 import { decryptSecret, encryptSecret, isEncrypted } from '../core/crypto.js';
+import { recordPurchase, reversePurchase } from './customers.js';
+import { payOrder } from './payments.js';
 
 const PROVIDER = 'haravan';
 const AUTH_BASE = 'https://accounts.haravan.com';
 const WEBHOOK_BASE = 'https://webhook.haravan.com';
-const DEFAULT_SCOPES = 'openid org profile userinfo grant_service wh_api com.read_orders com.write_orders com.read_products com.write_products com.read_customers com.write_customers com.read_inventories com.write_inventories';
+// Scope PHẢI khớp scope app đã đăng ký ở Haravan Partners, nếu không Haravan
+// trả invalid_scope. Quyền tài nguyên (com.read_orders…) KHÔNG nằm trong scope
+// OAuth mà được cấp qua `grant_service` + scope đã cấu hình của app.
+const DEFAULT_SCOPES = 'openid profile address email phone org userinfo grant_service wh_api';
 const SUPPORTED_TOPICS = new Set([
   'orders/create', 'orders/updated', 'orders/update', 'orders/cancelled', 'orders/cancel', 'orders/paid',
   'customers/create', 'customers/update',
@@ -18,6 +23,7 @@ const SUPPORTED_TOPICS = new Set([
 ]);
 
 let workerRunning = false;
+let outboundWorkerRunning = false;
 let timer = null;
 let inventoryTimer = null;
 let recoveryTimer = null;
@@ -148,13 +154,13 @@ function externalIdFor(topic, payload) {
   return cleanId(payload.id);
 }
 
-export function writeSyncLog({ shop_domain = '', topic, external_id, status, error_message = '', raw_payload = null, retry_count = 0, next_retry_at = null }) {
+export function writeSyncLog({ shop_domain = '', topic, external_id, status, error_message = '', raw_payload = null, retry_count = 0, next_retry_at = null, direction = 'inbound', session_id = null }) {
   const id = uid('sl_');
   db.prepare(`INSERT INTO sync_logs
-    (id,provider,shop_domain,topic,external_id,status,error_message,raw_payload,retry_count,next_retry_at,created_at)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?)`)
+    (id,provider,shop_domain,topic,external_id,status,error_message,raw_payload,retry_count,next_retry_at,created_at,direction,session_id)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`)
     .run(id, PROVIDER, normShop(shop_domain), topic || null, external_id || null, status, error_message || null,
-      raw_payload == null ? null : json(raw_payload), retry_count, next_retry_at, now());
+      raw_payload == null ? null : json(raw_payload), retry_count, next_retry_at, now(), direction, session_id);
   return id;
 }
 
@@ -378,14 +384,34 @@ export function syncHaravanOrder(payload, topic = 'orders/create', shopDomain = 
   const customerId = payload.customer ? upsertCustomer(payload.customer, shop, branch_id) : null;
   const lines = Array.isArray(payload.line_items) ? payload.line_items : [];
 
+  // Webhook phản hồi của chính đơn POS vừa đẩy lên Haravan chỉ xác nhận mapping.
+  // Không được biến đơn POS đã thanh toán thành đơn online hoặc xoá/ghi lại các dòng hàng.
+  const ownMapping = db.prepare(`SELECT eo.internal_order_id,o.channel FROM external_orders eo
+    JOIN orders o ON o.id=eo.internal_order_id
+    WHERE eo.provider=? AND eo.shop_domain=? AND eo.external_order_id=?`).get(PROVIDER, shop, externalId);
+  if (ownMapping && ownMapping.channel !== 'online') {
+    db.prepare(`UPDATE external_orders SET external_order_code=?,sync_status='success',raw_payload=?,updated_at=?
+      WHERE provider=? AND shop_domain=? AND external_order_id=?`)
+      .run(externalCode, json(payload), now(), PROVIDER, shop, externalId);
+    return { internal_order_id: ownMapping.internal_order_id, external_order_id: externalId, own_outbound: true };
+  }
+
   db.prepare('BEGIN IMMEDIATE').run();
   try {
     let internalId = db.prepare(`SELECT internal_order_id FROM external_orders WHERE provider=? AND shop_domain=? AND external_order_id=?`)
       .get(PROVIDER, shop, externalId)?.internal_order_id;
+    const priorState = internalId
+      ? db.prepare(`SELECT locked_at FROM online_order_state WHERE order_id=?`).get(internalId)
+      : null;
     const subtotal = lines.reduce((sum, line) => sum + money(line.price) * Math.max(1, Number(line.quantity || 1)), 0);
     const discount = money(payload.total_discounts || payload.discount);
     const total = money(payload.total_price || payload.total || Math.max(0, subtotal - discount));
-    const status = payload.cancelled_at || topic === 'orders/cancelled' || topic === 'orders/cancel' ? 'void' : 'waiting_assignment';
+    const paid = topic === 'orders/paid' || cleanId(payload.financial_status).toLowerCase() === 'paid';
+    // Never mark an inbound order paid here. A paid web order must cross the
+    // canonical payment boundary after this import transaction commits; that is
+    // where stock, bill number, sale snapshot, reports and e-invoice are created.
+    const status = payload.cancelled_at || topic === 'orders/cancelled' || topic === 'orders/cancel'
+      ? 'void' : 'open';
     const customerJson = json({
       id: customerId,
       name: payload.customer?.name || [payload.customer?.first_name, payload.customer?.last_name].filter(Boolean).join(' '),
@@ -404,17 +430,32 @@ export function syncHaravanOrder(payload, topic = 'orders/create', shopDomain = 
         .run(internalId, branch_id, status, subtotal, discount, total, payload.created_at || now(),
           PROVIDER, externalId, topic, customerJson);
     } else {
-      db.prepare(`UPDATE orders SET status=?, subtotal=?, discount=?, total=?, online_status=?, customer_json=? WHERE id=?`)
-        .run(status, subtotal, discount, total, topic, customerJson, internalId);
-      db.prepare(`DELETE FROM order_items WHERE order_id=?`).run(internalId);
+      if (!priorState?.locked_at) db.prepare(`DELETE FROM order_items WHERE order_id=?`).run(internalId);
+      if (priorState?.locked_at) {
+        db.prepare(`UPDATE orders SET status=?,online_status=?,customer_json=?,
+          paid_at=CASE WHEN ?='paid' THEN COALESCE(paid_at,?) ELSE paid_at END WHERE id=?`)
+          .run(status, topic, customerJson, status, now(), internalId);
+      } else {
+        db.prepare(`UPDATE orders SET status=?,subtotal=?,discount=?,total=?,online_status=?,customer_json=?,
+          paid_at=CASE WHEN ?='paid' THEN COALESCE(paid_at,?) ELSE paid_at END WHERE id=?`)
+          .run(status, subtotal, discount, total, topic, customerJson, status, now(), internalId);
+      }
+      // Once the order has crossed the confirmation/payment boundary, its sale
+      // lines are immutable snapshots. Later product edits or webhook retries may
+      // update fulfillment metadata, but must never rewrite historical line data.
     }
 
     const ins = db.prepare(`INSERT INTO order_items
-      (id,order_id,menu_item_id,sku_id,name,emoji,qty,unit_price,station,sla_minutes,note,mods_json,status,created_at)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,'[]','served',?)`);
-    for (const line of lines) {
-      ins.run(uid('oi_'), internalId, null, skuForLine(line, shop, branch_id), line.name || line.title || 'Haravan item', null,
-        Math.max(1, Number(line.quantity || 1)), money(line.price), 'retail', 0, line.sku || null, now());
+      (id,order_id,menu_item_id,sku_id,item_code,item_barcode,unit_snapshot,name,emoji,qty,unit_price,vat_rate,station,sla_minutes,note,mods_json,status,created_at)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'[]','served',?)`);
+    for (const line of priorState?.locked_at ? [] : lines) {
+      const skuId = skuForLine(line, shop, branch_id);
+      const sku = skuId ? db.prepare(`SELECT code,barcode,unit,vat FROM skus WHERE id=?`).get(skuId) : null;
+      ins.run(uid('oi_'), internalId, null, skuId, line.sku || sku?.code || null,
+        line.barcode || sku?.barcode || null, line.unit || sku?.unit || 'cái',
+        line.name || line.title || 'Haravan item', null,
+        Math.max(1, Number(line.quantity || 1)), money(line.price), Number(sku?.vat) || 0,
+        'retail', 0, line.note || null, now());
     }
 
     db.prepare(`INSERT INTO external_orders
@@ -425,11 +466,58 @@ export function syncHaravanOrder(payload, topic = 'orders/create', shopDomain = 
         sync_status=excluded.sync_status,raw_payload=excluded.raw_payload,updated_at=excluded.updated_at`)
       .run(uid('eo_'), PROVIDER, shop, externalId, internalId, externalCode, 'success', json(payload), now(), now());
 
+    const financialStatus = cleanId(payload.financial_status).toLowerCase();
+    const fulfillmentStatus = cleanId(payload.fulfillment_status).toLowerCase();
+    const sourceWorkflowStatus = payload.cancelled_at || topic === 'orders/cancelled' || topic === 'orders/cancel'
+      ? 'cancelled'
+      : ['refunded', 'partially_refunded'].includes(financialStatus) || (Array.isArray(payload.refunds) && payload.refunds.length)
+        ? 'return_refund'
+        : fulfillmentStatus === 'fulfilled' || payload.closed_at
+          ? 'delivered'
+          : Array.isArray(payload.fulfillments) && payload.fulfillments.some(x => !['cancelled', 'failure'].includes(cleanId(x.status).toLowerCase()))
+            ? 'shipping'
+            : paid || payload.confirmed_at || payload.confirmed === true
+              ? 'processed'
+              : 'pending';
+    const sourceLocked = sourceWorkflowStatus !== 'pending';
+    db.prepare(`INSERT INTO online_order_state
+      (order_id,workflow_status,locked_at,created_at,updated_at)
+      VALUES (?,?,?,?,?) ON CONFLICT(order_id) DO UPDATE SET
+        workflow_status=CASE
+          WHEN excluded.workflow_status IN ('shipping','delivered','cancelled','return_refund') THEN excluded.workflow_status
+          WHEN online_order_state.workflow_status IN ('preparing','ready_to_ship') THEN online_order_state.workflow_status
+          ELSE excluded.workflow_status END,
+        locked_at=COALESCE(online_order_state.locked_at,excluded.locked_at),updated_at=excluded.updated_at`)
+      .run(internalId, sourceWorkflowStatus, sourceLocked ? now() : null, now(), now());
     db.prepare('COMMIT').run();
+    let settlement = null;
+    if (paid) {
+      const canonical = db.prepare(`SELECT status FROM orders WHERE id=?`).get(internalId);
+      const hasPayment = db.prepare(`SELECT 1 FROM payments WHERE order_id=? LIMIT 1`).get(internalId);
+      // Repair an order imported by the older shortcut only when it has no
+      // payment evidence. This is safe because the canonical payment key below
+      // is unique and stock deduction is guarded by the sale document.
+      if (canonical?.status === 'paid' && !hasPayment) {
+        db.prepare(`UPDATE orders SET status='open',paid_at=NULL WHERE id=?`).run(internalId);
+      }
+      if (canonical?.status !== 'paid' || !hasPayment) {
+        settlement = payOrder(internalId, total > 0 ? [{
+          method: 'online', amount: total, reference: `${shop}:${externalCode}`.slice(0, 250),
+        }] : [], {
+          cashier: `haravan:${shop}`.slice(0, 120),
+          customer: customerId ? { id: customerId } : null,
+          idempotency_key: `connector:haravan:${shop}:${externalId}:paid`.slice(0, 128),
+          external_settlement: true,
+          skip_channel_outbound: true,
+          note: payload.note || '',
+        }, branch_id);
+      }
+    }
+    if (status === 'void') reversePurchase(internalId, branch_id);
     audit('haravan.order.sync', { shop_domain: shop, external_order_id: externalId, order_id: internalId, topic }, branch_id, 'haravan');
     emit('online:new', { id: internalId, provider: PROVIDER, ref: externalId, branch_id }, branch_id);
     emit('stats:dirty', {}, branch_id);
-    return { internal_order_id: internalId, external_order_id: externalId };
+    return { internal_order_id: internalId, external_order_id: externalId, settlement };
   } catch (err) {
     db.prepare('ROLLBACK').run();
     throw err;
@@ -548,7 +636,7 @@ export function processHaravanQueue(limit = 20) {
   let processed = 0;
   try {
     const rows = db.prepare(`SELECT * FROM sync_logs
-      WHERE provider=? AND status IN ('received','retrying')
+      WHERE provider=? AND COALESCE(direction,'inbound')='inbound' AND status IN ('received','retrying')
         AND (next_retry_at IS NULL OR next_retry_at <= ?)
       ORDER BY created_at ASC LIMIT ?`).all(PROVIDER, now(), limit);
     for (const row of rows) {
@@ -572,6 +660,209 @@ export function processHaravanQueue(limit = 20) {
   }
 }
 
+function customerFromOrder(order) {
+  try { return order?.customer_json ? JSON.parse(order.customer_json) : null; } catch { return null; }
+}
+
+export function enqueuePaidPosOrder(orderId) {
+  const order = db.prepare(`SELECT id,branch_id,bill_no,status,total,customer_json FROM orders WHERE id=?`).get(orderId);
+  if (!order || order.status !== 'paid') return { queued: false, reason: 'not_paid' };
+  const cfg = legacyConfig();
+  if (!cfg.enabled || !cfg.syncOrders) return { queued: false, reason: 'haravan_disabled' };
+  const customer = customerFromOrder(order);
+  if (!cleanId(customer?.phone) || !cleanId(customer?.name)) return { queued: false, reason: 'customer_incomplete' };
+  // Bảo đảm điểm đã được chốt trước khi worker dựng nội dung Zalo. recordPurchase
+  // có ledger UNIQUE theo order nên các đường thanh toán khác gọi lại cũng không cộng đôi.
+  recordPurchase(customer, order.total, order.branch_id || 'sala', orderId);
+  const eventKey = `purchase_success:${orderId}`;
+  const existing = db.prepare(`SELECT id,status FROM sync_logs WHERE provider=? AND direction='outbound'
+    AND topic='pos/order/paid' AND external_id=? AND status IN ('received','retrying','success') ORDER BY created_at DESC LIMIT 1`)
+    .get(PROVIDER, eventKey);
+  if (existing) return { queued: false, duplicate: true, log_id: existing.id, status: existing.status };
+  const sessionId = uid('hvs_');
+  const id = writeSyncLog({ shop_domain: cfg.shopDomain, topic: 'pos/order/paid', external_id: eventKey,
+    status: 'received', raw_payload: { order_id: orderId }, direction: 'outbound', session_id: sessionId });
+  setImmediate(() => processHaravanOutboundQueue());
+  return { queued: true, log_id: id, session_id: sessionId };
+}
+
+export function enqueueIssuedInvoice(invoiceId) {
+  const invoice = db.prepare(`SELECT id,order_id,branch_id,invoice_status FROM e_invoices WHERE id=?`).get(invoiceId);
+  if (!invoice || invoice.invoice_status !== 'ISSUED') return { queued: false, reason: 'invoice_not_issued' };
+  const cfg = legacyConfig();
+  if (!cfg.enabled || !cfg.syncOrders) return { queued: false, reason: 'haravan_disabled' };
+  const eventKey = `invoice_issued:${invoiceId}`;
+  const existing = db.prepare(`SELECT id,status FROM sync_logs WHERE provider=? AND direction='outbound'
+    AND topic='pos/invoice/issued' AND external_id=? AND status IN ('received','retrying','success') ORDER BY created_at DESC LIMIT 1`)
+    .get(PROVIDER, eventKey);
+  if (existing) return { queued: false, duplicate: true, log_id: existing.id, status: existing.status };
+  const sessionId = uid('hvs_');
+  const id = writeSyncLog({ shop_domain: cfg.shopDomain, topic: 'pos/invoice/issued', external_id: eventKey,
+    status: 'received', raw_payload: { invoice_id: invoiceId, order_id: invoice.order_id },
+    direction: 'outbound', session_id: sessionId });
+  setImmediate(() => processHaravanOutboundQueue());
+  return { queued: true, log_id: id, session_id: sessionId };
+}
+
+async function findOrCreateHaravanCustomer(order, shop) {
+  const customer = customerFromOrder(order) || {};
+  const phone = cleanId(customer.phone).replace(/\s+/g, '');
+  const mapped = customer.id ? db.prepare(`SELECT external_customer_id FROM external_customers
+    WHERE provider=? AND shop_domain=? AND internal_customer_id=? ORDER BY updated_at DESC LIMIT 1`)
+    .get(PROVIDER, shop, customer.id) : null;
+  if (mapped?.external_customer_id) return mapped.external_customer_id;
+  const search = await haravanRequest(`/com/customers/search.json?query=${encodeURIComponent(phone)}`, { shopDomain: shop });
+  let remote = (search.customers || search.customer || [])[0];
+  if (!remote) {
+    const names = cleanId(customer.name).split(/\s+/);
+    remote = (await haravanRequest('/com/customers.json', { shopDomain: shop, method: 'POST', body: { customer: {
+      first_name: names.slice(0, -1).join(' ') || names[0], last_name: names.length > 1 ? names.at(-1) : '',
+      phone, email: cleanId(customer.email) || undefined, note: 'Đồng bộ từ Dan D Pak POS',
+    } } })).customer;
+  }
+  if (!remote?.id) throw new Error('Haravan customer response missing id');
+  if (customer.id) db.prepare(`INSERT INTO external_customers
+    (id,provider,shop_domain,external_customer_id,internal_customer_id,raw_payload,created_at,updated_at)
+    VALUES (?,?,?,?,?,?,?,?) ON CONFLICT(provider,shop_domain,external_customer_id) DO UPDATE SET
+    internal_customer_id=excluded.internal_customer_id,raw_payload=excluded.raw_payload,updated_at=excluded.updated_at`)
+    .run(uid('ec_'), PROVIDER, shop, cleanId(remote.id), customer.id, json(remote), now(), now());
+  return cleanId(remote.id);
+}
+
+async function pushPaidPosOrder(orderId, shopDomain = '') {
+  const shop = normShop(shopDomain || config().shopDomain);
+  const order = db.prepare(`SELECT * FROM orders WHERE id=?`).get(orderId);
+  if (!order || order.status !== 'paid') return { ignored: true, reason: 'not_paid' };
+  const already = db.prepare(`SELECT external_order_id FROM external_orders WHERE provider=? AND shop_domain=? AND internal_order_id=?`)
+    .get(PROVIDER, shop, orderId);
+  if (already) return { duplicate: true, external_order_id: already.external_order_id };
+  const customerId = await findOrCreateHaravanCustomer(order, shop);
+  const customer = customerFromOrder(order) || {};
+  const ledger = db.prepare(`SELECT points FROM customer_purchase_ledger WHERE branch_id=? AND source_order_id=? AND reversed_at IS NULL`)
+    .get(order.branch_id, order.id);
+  const currentCustomer = customer.id
+    ? db.prepare(`SELECT loyalty_points FROM customers WHERE id=? AND branch_id=?`).get(customer.id, order.branch_id)
+    : (customer.phone ? db.prepare(`SELECT loyalty_points FROM customers WHERE phone=? AND branch_id=? ORDER BY updated_at DESC LIMIT 1`).get(customer.phone, order.branch_id) : null);
+  const items = db.prepare(`SELECT oi.*,ep.external_variant_id FROM order_items oi LEFT JOIN external_products ep
+    ON ep.provider=? AND ep.shop_domain=? AND ep.internal_variant_id=COALESCE(oi.sku_id,oi.menu_item_id)
+    WHERE oi.order_id=? ORDER BY oi.created_at,oi.id`).all(PROVIDER, shop, orderId);
+  const lineItems = items.map(i => ({
+    ...(i.external_variant_id ? { variant_id: Number(i.external_variant_id) || i.external_variant_id } : {}),
+    title: i.name, sku: i.sku_id || i.menu_item_id || undefined, quantity: Math.max(1, Number(i.qty || 1)), price: money(i.unit_price),
+  }));
+  const bill = cleanId(order.bill_no || order.id);
+  const orderNote = cleanId(order.note);
+  const earnedPoints = Number(ledger?.points || 0);
+  const totalPoints = Number(currentCustomer?.loyalty_points || 0);
+  const messageLines = [
+    'Mua hàng thành công',
+    `Cảm ơn ${cleanId(customer.name)} đã mua hàng tại Dan D Pak.`,
+    `Mã đơn: ${bill}`,
+    `Giá trị đơn: ${money(order.total).toLocaleString('vi-VN')}đ`,
+    `Điểm vừa nhận: ${earnedPoints.toLocaleString('vi-VN')}`,
+    `Tổng điểm hiện tại: ${totalPoints.toLocaleString('vi-VN')}`,
+    ...(orderNote ? [`Ghi chú: ${orderNote}`] : []),
+  ];
+  const response = await haravanRequest('/com/orders.json', { shopDomain: shop, method: 'POST', body: { order: {
+    customer: { id: Number(customerId) || customerId }, line_items: lineItems,
+    financial_status: 'paid', fulfillment_status: 'fulfilled', source_name: 'Dan D Pak POS',
+    note: messageLines.join('\n'), tags: `DanDPakPOS,DDP_PURCHASE_SUCCESS,${bill}`,
+    note_attributes: [
+      { name: 'ddp_event', value: 'purchase_success' },
+      { name: 'ddp_event_key', value: `purchase_success:${order.id}` },
+      { name: 'bill_no', value: bill },
+      { name: 'customer_name', value: cleanId(customer.name) },
+      { name: 'order_value', value: String(money(order.total)) },
+      { name: 'points_earned', value: String(earnedPoints) },
+      { name: 'points_total', value: String(totalPoints) },
+      ...(orderNote ? [{ name: 'customer_note', value: orderNote }] : []),
+    ],
+    transactions: [{ kind: 'capture', status: 'success', amount: money(order.total) }],
+  } } });
+  const remote = response.order || response;
+  if (!remote?.id) throw new Error('Haravan order response missing id');
+  db.prepare(`INSERT INTO external_orders
+    (id,provider,shop_domain,external_order_id,internal_order_id,external_order_code,sync_status,raw_payload,created_at,updated_at)
+    VALUES (?,?,?,?,?,?,?,?,?,?) ON CONFLICT(provider,shop_domain,external_order_id) DO UPDATE SET
+    internal_order_id=excluded.internal_order_id,external_order_code=excluded.external_order_code,sync_status='success',raw_payload=excluded.raw_payload,updated_at=excluded.updated_at`)
+    .run(uid('eo_'), PROVIDER, shop, cleanId(remote.id), orderId, cleanId(remote.order_number || remote.name || bill), 'success', json(remote), now(), now());
+  return { external_order_id: cleanId(remote.id), bill_no: bill };
+}
+
+async function pushIssuedInvoice(invoiceId, shopDomain = '') {
+  const shop = normShop(shopDomain || config().shopDomain);
+  const invoice = db.prepare(`SELECT e.*,o.bill_no,o.total,o.note order_note FROM e_invoices e
+    JOIN orders o ON o.id=e.order_id WHERE e.id=? AND e.invoice_status='ISSUED'`).get(invoiceId);
+  if (!invoice) return { ignored: true, reason: 'invoice_not_issued' };
+  const mapping = db.prepare(`SELECT external_order_id,raw_payload FROM external_orders
+    WHERE provider=? AND shop_domain=? AND internal_order_id=? ORDER BY updated_at DESC LIMIT 1`)
+    .get(PROVIDER, shop, invoice.order_id);
+  if (!mapping?.external_order_id) throw new Error('haravan_order_not_synced_yet');
+  const raw = parseJsonText(mapping.raw_payload || '{}');
+  const bill = cleanId(invoice.bill_no || invoice.order_id);
+  const invoiceNo = cleanId(invoice.invoice_no);
+  const template = cleanId(invoice.invoice_template);
+  const series = cleanId(invoice.invoice_series);
+  const lookupUrl = cleanId(invoice.lookup_url);
+  const lines = [
+    'Hóa đơn VAT đã phát hành',
+    `Mã đơn: ${bill}`,
+    `Số hóa đơn VAT: ${invoiceNo}`,
+    ...(template || series ? [`Mẫu số/ký hiệu: ${[template, series].filter(Boolean).join(' / ')}`] : []),
+    `Giá trị: ${money(invoice.total).toLocaleString('vi-VN')}đ`,
+  ];
+  const currentTags = cleanId(raw.tags);
+  const tags = [...new Set([...currentTags.split(',').map(x => x.trim()).filter(Boolean),
+    'DanDPakPOS', 'DDP_INVOICE_ISSUED', bill])].join(',');
+  const response = await haravanRequest(`/com/orders/${encodeURIComponent(mapping.external_order_id)}.json`, {
+    shopDomain: shop, method: 'PUT', body: { order: {
+      id: Number(mapping.external_order_id) || mapping.external_order_id,
+      note: lines.join('\n'), tags,
+      note_attributes: [
+        { name: 'ddp_event', value: 'invoice_issued' },
+        { name: 'ddp_event_key', value: `invoice_issued:${invoice.id}` },
+        { name: 'bill_no', value: bill },
+        { name: 'invoice_no', value: invoiceNo },
+        ...(template ? [{ name: 'invoice_template', value: template }] : []),
+        ...(series ? [{ name: 'invoice_series', value: series }] : []),
+        { name: 'invoice_value', value: String(money(invoice.total)) },
+        ...(lookupUrl ? [{ name: 'invoice_url', value: lookupUrl }] : []),
+      ],
+    } },
+  });
+  db.prepare(`UPDATE external_orders SET raw_payload=?,updated_at=? WHERE provider=? AND shop_domain=? AND external_order_id=?`)
+    .run(json(response.order || response), now(), PROVIDER, shop, mapping.external_order_id);
+  return { external_order_id: mapping.external_order_id, invoice_no: invoiceNo, lookup_url: lookupUrl || null };
+}
+
+export async function processHaravanOutboundQueue(limit = 10) {
+  if (outboundWorkerRunning) return { skipped: true };
+  outboundWorkerRunning = true;
+  let processed = 0;
+  try {
+    const rows = db.prepare(`SELECT * FROM sync_logs WHERE provider=? AND direction='outbound'
+      AND status IN ('received','retrying') AND (next_retry_at IS NULL OR next_retry_at<=?) ORDER BY created_at LIMIT ?`)
+      .all(PROVIDER, now(), limit);
+    for (const row of rows) {
+      try {
+        const payload = parseJsonText(row.raw_payload || '{}');
+        if (row.topic === 'pos/order/paid') await pushPaidPosOrder(payload.order_id, row.shop_domain);
+        else if (row.topic === 'pos/invoice/issued') await pushIssuedInvoice(payload.invoice_id, row.shop_domain);
+        else throw new Error(`unsupported outbound topic: ${row.topic}`);
+        db.prepare(`UPDATE sync_logs SET status='success',processed_at=?,error_message=NULL WHERE id=?`).run(now(), row.id);
+        processed++;
+      } catch (err) {
+        const retries = Number(row.retry_count || 0) + 1;
+        const failed = retries >= 8;
+        const nextRetry = failed ? null : new Date(Date.now() + Math.min(900000, 5000 * (2 ** retries))).toISOString();
+        db.prepare(`UPDATE sync_logs SET status=?,retry_count=?,next_retry_at=?,error_message=? WHERE id=?`)
+          .run(failed ? 'failed' : 'retrying', retries, nextRetry, cleanId(err?.message || err), row.id);
+      }
+    }
+    return { processed };
+  } finally { outboundWorkerRunning = false; }
+}
+
 function resourcePath(resource, page, updatedAtMin = '') {
   const params = new URLSearchParams({ limit: '50', page: String(page) });
   if (updatedAtMin) params.set('updated_at_min', updatedAtMin);
@@ -585,7 +876,7 @@ function resourcePath(resource, page, updatedAtMin = '') {
   throw new Error('unsupported_haravan_resource');
 }
 
-async function pullHaravanResource(resource, { shopDomain = '', delta = true, maxPages = 200 } = {}) {
+async function pullHaravanResource(resource, { shopDomain = '', delta = true, maxPages = 200, sessionId = uid('hvs_') } = {}) {
   const shop = normShop(shopDomain || config().shopDomain);
   const since = delta ? getState(shop, `${resource}.updated_at_min`) : '';
   let queued = 0;
@@ -596,7 +887,7 @@ async function pullHaravanResource(resource, { shopDomain = '', delta = true, ma
     const rows = Array.isArray(data[spec.listKey]) ? data[spec.listKey] : [];
     for (const row of rows) {
       if (delta && since && row.updated_at && String(row.updated_at) <= since) continue;
-      writeSyncLog({ shop_domain: shop, topic: spec.topic, external_id: cleanId(row.id), status: 'received', raw_payload: { shop, payload: row } });
+      writeSyncLog({ shop_domain: shop, topic: spec.topic, external_id: cleanId(row.id), status: 'received', raw_payload: { shop, payload: row }, session_id: sessionId });
       if (row.updated_at && (!newest || String(row.updated_at) > newest)) newest = row.updated_at;
     }
     queued += rows.length;
@@ -604,11 +895,10 @@ async function pullHaravanResource(resource, { shopDomain = '', delta = true, ma
   }
   if (newest) upsertState(shop, `${resource}.updated_at_min`, newest);
   processHaravanQueue();
-  audit(`haravan.${resource}.pull`, { shop_domain: shop, queued, delta }, defaultBranch(shop), 'admin');
-  return { shopDomain: shop, resource, queued };
+  return { shopDomain: shop, resource, queued, session_id: sessionId };
 }
 
-async function pullHaravanInventory({ shopDomain = '', delta = true } = {}) {
+async function pullHaravanInventory({ shopDomain = '', delta = true, sessionId = uid('hvs_') } = {}) {
   const shop = normShop(shopDomain || config().shopDomain);
   const cfg = config(shop);
   if (!cfg.syncInventory) return { shopDomain: shop, resource: 'inventory', queued: 0 };
@@ -633,15 +923,14 @@ async function pullHaravanInventory({ shopDomain = '', delta = true } = {}) {
     for (const row of rows) {
       if (delta && since && row.updated_at && String(row.updated_at) <= since) continue;
       writeSyncLog({ shop_domain: shop, topic: 'inventorylocationbalances/update',
-        external_id: cleanId(row.id || row.variant_id), status: 'received', raw_payload: { shop, payload: row } });
+        external_id: cleanId(row.id || row.variant_id), status: 'received', raw_payload: { shop, payload: row }, session_id: sessionId });
       if (row.updated_at && (!newest || String(row.updated_at) > newest)) newest = row.updated_at;
       queued++;
     }
   }
   if (newest) upsertState(shop, stateKey, newest);
   processHaravanQueue(500);
-  audit('haravan.inventory.pull', { shop_domain: shop, queued, delta }, defaultBranch(shop), 'admin');
-  return { shopDomain: shop, resource: 'inventory', queued };
+  return { shopDomain: shop, resource: 'inventory', queued, session_id: sessionId };
 }
 
 function shopsToSync(shopDomain = '') {
@@ -689,19 +978,20 @@ export async function syncAllHaravan({ shopDomain = '', delta = true, subscribe 
   try {
     const results = [];
     for (const shop of shopsToSync(shopDomain)) {
+      const sessionId = uid('hvs_');
       const cfg = config(shop);
       if (!cfg.enabled || !cfg.accessToken) continue;
       if (subscribe) await subscribeWebhook(shop).catch(err =>
         writeWorkerFailureOnce('webhook/subscribe', err));
-      if (cfg.syncProducts) results.push(await pullHaravanResource('products', { shopDomain: shop, delta }));
+      if (cfg.syncProducts) results.push(await pullHaravanResource('products', { shopDomain: shop, delta, sessionId }));
       drainHaravanQueue();
-      if (cfg.syncInventory) results.push(await pullHaravanInventory({ shopDomain: shop, delta }));
+      if (cfg.syncInventory) results.push(await pullHaravanInventory({ shopDomain: shop, delta, sessionId }));
       if (cfg.syncCustomers) {
-        results.push(await pullHaravanResource('customers', { shopDomain: shop, delta }));
+        results.push(await pullHaravanResource('customers', { shopDomain: shop, delta, sessionId }));
         drainHaravanQueue();
       }
       if (cfg.syncOrders) {
-        results.push(await pullHaravanResource('orders', { shopDomain: shop, delta }));
+        results.push(await pullHaravanResource('orders', { shopDomain: shop, delta, sessionId }));
       }
       drainHaravanQueue();
     }
@@ -795,13 +1085,205 @@ export function status() {
     defaultBranchId: defaultBranch(),
     shops,
     counts,
+    capabilities: haravanCapabilities(),
   };
 }
 
+export function haravanCapabilities(branch_id = '') {
+  // Trạng thái THẬT: có shop Haravan đã cài (active + còn access_token) cho chi
+  // nhánh này không. Trước đây trả rỗng nên overview luôn hiện "Chờ cấp quyền"
+  // dù đã kết nối.
+  const shop = branch_id
+    ? db.prepare(`SELECT 1 FROM haravan_shops WHERE active=1 AND access_token IS NOT NULL AND access_token!=''
+        AND (branch_id=? OR branch_id='' OR branch_id IS NULL) LIMIT 1`).get(branch_id)
+    : db.prepare(`SELECT 1 FROM haravan_shops WHERE active=1 AND access_token IS NOT NULL AND access_token!='' LIMIT 1`).get();
+  const connected = !!shop;
+  return {
+    active: connected,
+    connected,
+    inbound: connected,
+    orders: { read: true, write: true, webhooks: true },
+    products: { read: true, write: true, inventory_reconciliation: true },
+    customers: { read: true, write: true },
+    refunds: { read: true, write: true },
+    conversations: {
+      read: false,
+      write: false,
+      reason: 'Haravan Web Order API không cung cấp hội thoại. Dan D Pak Omni cần connector Harasocial Partner API riêng.',
+    },
+  };
+}
+
+export function listHaravanProductMappings({ branchId = 'sala', shopDomain = '', status = 'all', q = '', limit = 50, offset = 0 } = {}) {
+  const shop = normShop(shopDomain);
+  const take = Math.max(1, Math.min(200, Number(limit) || 50));
+  const skip = Math.max(0, Number(offset) || 0);
+  const query = cleanId(q).toLowerCase();
+  const where = [`ep.provider=?`, `s.branch_id=?`];
+  const params = [PROVIDER, branchId];
+  if (shop) { where.push(`ep.shop_domain=?`); params.push(shop); }
+  if (status === 'catalog_linked') where.push(`ep.internal_variant_id IS NOT NULL AND ep.internal_variant_id NOT LIKE 'hvn_%'`);
+  if (status === 'shadow_import') where.push(`ep.internal_variant_id LIKE 'hvn_%'`);
+  if (query) {
+    where.push(`LOWER(COALESCE(ep.sku,'')||' '||COALESCE(s.name,'')||' '||ep.external_product_id||' '||ep.external_variant_id) LIKE ?`);
+    params.push(`%${query}%`);
+  }
+  const from = `FROM external_products ep JOIN skus s ON s.id=ep.internal_variant_id WHERE ${where.join(' AND ')}`;
+  const rows = db.prepare(`SELECT ep.shop_domain,ep.external_product_id,ep.external_variant_id,ep.sku,
+      ep.internal_variant_id sku_id,s.name,s.barcode,s.stock,s.price,s.active,
+      CASE WHEN ep.internal_variant_id LIKE 'hvn_%' THEN 'shadow_import' ELSE 'catalog_linked' END mapping_status
+    ${from} ORDER BY ep.updated_at DESC LIMIT ? OFFSET ?`).all(...params, take, skip);
+  const total = Number(db.prepare(`SELECT COUNT(*) n ${from}`).get(...params)?.n || 0);
+  return { rows, total, limit: take, offset: skip };
+}
+
+export function linkHaravanProduct({ branchId = 'sala', shopDomain = '', externalProductId, externalVariantId, skuId, actor = 'system' } = {}) {
+  const shop = normShop(shopDomain);
+  const productId = cleanId(externalProductId);
+  const variantId = cleanId(externalVariantId);
+  const targetSku = cleanId(skuId);
+  const mapping = db.prepare(`SELECT internal_variant_id FROM external_products
+    WHERE provider=? AND shop_domain=? AND external_product_id=? AND external_variant_id=?`)
+    .get(PROVIDER, shop, productId, variantId);
+  if (!mapping) throw new Error('Không tìm thấy biến thể Haravan cần liên kết.');
+  const sku = db.prepare(`SELECT id FROM skus WHERE id=? AND branch_id=? AND active=1`).get(targetSku, branchId);
+  if (!sku) throw new Error('Sản phẩm POS không tồn tại trong chi nhánh này.');
+  db.prepare(`UPDATE external_products SET internal_product_id=?,internal_variant_id=?,updated_at=?
+    WHERE provider=? AND shop_domain=? AND external_product_id=? AND external_variant_id=?`)
+    .run(targetSku, targetSku, now(), PROVIDER, shop, productId, variantId);
+  const previous = cleanId(mapping.internal_variant_id);
+  if (previous && previous !== targetSku && previous.startsWith('hvn_')) {
+    const used = db.prepare(`SELECT 1 FROM order_items WHERE sku_id=? LIMIT 1`).get(previous);
+    if (!used) db.prepare(`UPDATE skus SET active=0 WHERE id=? AND branch_id=?`).run(previous, branchId);
+  }
+  audit('haravan.product.link', { shop_domain: shop, external_product_id: productId,
+    external_variant_id: variantId, previous_sku_id: previous || null, sku_id: targetSku }, branchId, actor);
+  return { shop_domain: shop, external_product_id: productId, external_variant_id: variantId, sku_id: targetSku };
+}
+
+export function listHaravanInventoryReconciliation({ branchId = 'sala', onlyDifferent = true, limit = 100 } = {}) {
+  const take = Math.max(1, Math.min(500, Number(limit) || 100));
+  const actions = onlyDifferent === false || String(onlyDifferent) === 'false'
+    ? `('haravan.inventory.discrepancy','haravan.inventory.reconciled')`
+    : `('haravan.inventory.discrepancy')`;
+  const rows = db.prepare(`WITH ranked AS (
+      SELECT detail,created_at,ROW_NUMBER() OVER (
+        PARTITION BY json_extract(detail,'$.shop_domain'),json_extract(detail,'$.sku_id') ORDER BY created_at DESC
+      ) rn FROM audit_log WHERE branch_id=? AND action IN ${actions}
+    ) SELECT json_extract(detail,'$.shop_domain') shop_domain,
+      json_extract(detail,'$.sku_id') sku_id,
+      CAST(json_extract(detail,'$.pos_qty') AS REAL) pos_qty,
+      CAST(json_extract(detail,'$.haravan_qty') AS REAL) haravan_qty,
+      CAST(COALESCE(json_extract(detail,'$.discrepancy'),0) AS REAL) discrepancy,
+      created_at observed_at FROM ranked WHERE rn=1 ORDER BY ABS(COALESCE(json_extract(detail,'$.discrepancy'),0)) DESC,created_at DESC LIMIT ?`)
+    .all(branchId, take);
+  return { rows, total: rows.length, source_of_truth: 'pos', automatic_overwrite: false };
+}
+
+export async function performHaravanOrderAction({ internalOrderId, action, input = {}, branchId = '' } = {}) {
+  const orderId = cleanId(internalOrderId);
+  const mapping = db.prepare(`SELECT eo.*,o.branch_id,o.total FROM external_orders eo
+    JOIN orders o ON o.id=eo.internal_order_id
+    WHERE eo.provider=? AND eo.internal_order_id=? ORDER BY eo.updated_at DESC LIMIT 1`)
+    .get(PROVIDER, orderId);
+  if (!mapping) throw new Error('Đơn chưa được liên kết với connector đơn web Haravan.');
+  if (branchId && mapping.branch_id !== branchId) {
+    const error = new Error('Đơn không thuộc chi nhánh đang thao tác.');
+    error.status = 403;
+    throw error;
+  }
+  const externalId = cleanId(mapping.external_order_id);
+  const shop = normShop(mapping.shop_domain);
+  const allowed = new Set(['confirm', 'cancel', 'close', 'reopen', 'refund']);
+  if (!allowed.has(action)) throw new Error(`Haravan không hỗ trợ thao tác đơn: ${action}`);
+
+  let path = `/com/orders/${encodeURIComponent(externalId)}/${action === 'reopen' ? 'open' : action}.json`;
+  let body = {};
+  if (action === 'cancel') {
+    // Haravan chỉ nhận reason trong enum. Lý do người dùng gõ tự do → map về
+    // 'other' và GIỮ nguyên chữ gốc vào ghi chú, KHÔNG chặn thao tác hủy.
+    const HARAVAN_REASONS = ['customer', 'inventory', 'fraud', 'declined', 'other'];
+    const rawReason = cleanId(input.reason);
+    const reason = HARAVAN_REASONS.includes(rawReason.toLowerCase()) ? rawReason.toLowerCase() : 'other';
+    const freeTextNote = reason === 'other' && rawReason && !HARAVAN_REASONS.includes(rawReason.toLowerCase()) ? rawReason : '';
+    const amount = input.amount == null ? null : money(input.amount);
+    if (amount != null && (amount < 0 || amount > money(mapping.total))) {
+      throw new Error('Số tiền hoàn khi hủy vượt quá giá trị đơn.');
+    }
+    body = {
+      reason,
+      restock: input.restock === true,
+      email: input.email === true,
+      note: [freeTextNote, cleanId(input.note)].filter(Boolean).join(' — '),
+      ...(amount == null ? {} : { amount: String(amount) }),
+      ...(input.ignore_cancel_fulfillment === true ? { ignore_cancel_fulfillment: true } : {}),
+    };
+  } else if (action === 'refund') {
+    const lines = Array.isArray(input.refund_line_items) ? input.refund_line_items : [];
+    if (!lines.length) throw new Error('Hoàn tiền cần ít nhất một dòng hàng.');
+    const normalizedLines = lines.map(line => {
+      const lineItemId = cleanId(line.line_item_id);
+      const quantity = Number(line.quantity);
+      if (!/^\d+$/.test(lineItemId) || !Number.isInteger(quantity) || quantity <= 0) {
+        throw new Error('Dòng hoàn tiền Haravan không hợp lệ.');
+      }
+      return { line_item_id: Number(lineItemId), quantity };
+    });
+    const amount = money(input.amount);
+    if (amount <= 0 || amount > money(mapping.total)) throw new Error('Số tiền hoàn không hợp lệ.');
+    path = `/com/orders/${encodeURIComponent(externalId)}/refunds.json`;
+    body = { refund: {
+      restock: input.restock === true,
+      notify: input.notify === true,
+      note: cleanId(input.note),
+      refund_line_items: normalizedLines,
+      transactions: [{ amount, kind: 'refund' }],
+    } };
+  }
+
+  const response = await haravanRequest(path, { shopDomain: shop, method: 'POST', body });
+  const remote = response.order || response.refund || response;
+  db.prepare(`UPDATE external_orders SET raw_payload=?,updated_at=?
+    WHERE provider=? AND shop_domain=? AND external_order_id=?`)
+    .run(json(response.order || parseJsonText(mapping.raw_payload || '{}')), now(), PROVIDER, shop, externalId);
+  audit('haravan.order.action', { order_id: orderId, external_order_id: externalId, action }, mapping.branch_id, 'haravan');
+  return { action, internal_order_id: orderId, external_order_id: externalId, remote };
+}
+
 export function listSyncLogs(limit = 100) {
-  return db.prepare(`SELECT id,shop_domain,topic,external_id,status,error_message,retry_count,created_at,processed_at
+  return db.prepare(`SELECT id,shop_domain,topic,external_id,status,error_message,retry_count,created_at,processed_at,direction,session_id
     FROM sync_logs WHERE provider=? ORDER BY created_at DESC LIMIT ?`)
     .all(PROVIDER, Math.max(1, Math.min(500, Number(limit) || 100)));
+}
+
+export function listSyncSessions(limit = 50) {
+  return db.prepare(`SELECT COALESCE(session_id,id) id,shop_domain,direction,
+    MIN(created_at) started_at,MAX(COALESCE(processed_at,created_at)) updated_at,COUNT(*) total,
+    SUM(status='success') success,SUM(status='failed') failed,SUM(status IN ('received','retrying')) pending,
+    GROUP_CONCAT(DISTINCT topic) topics
+    FROM sync_logs WHERE provider=? GROUP BY COALESCE(session_id,id),shop_domain,direction
+    ORDER BY started_at DESC LIMIT ?`).all(PROVIDER, Math.max(1, Math.min(200, Number(limit) || 50)));
+}
+
+export function syncSessionDetails(sessionId, limit = 200) {
+  return db.prepare(`SELECT id,shop_domain,topic,external_id,status,error_message,retry_count,created_at,processed_at,direction
+    FROM sync_logs WHERE provider=? AND COALESCE(session_id,id)=? ORDER BY created_at,id LIMIT ?`)
+    .all(PROVIDER, cleanId(sessionId), Math.max(1, Math.min(1000, Number(limit) || 200)));
+}
+
+// Payload webhook thành công chỉ hữu ích ngắn hạn để chẩn đoán/dedupe. Giữ row
+// metadata lâu hơn payload; failures giữ nguyên payload để điều tra. Hai bước có
+// giới hạn tuổi rõ ràng, chạy idempotent trong maintenance hằng ngày.
+export function maintainHaravanLogs({ payloadDays = 7, rowDays = 90 } = {}) {
+  const payloadCutoff = new Date(Date.now() - Math.max(1, payloadDays) * 86400000).toISOString();
+  const rowCutoff = new Date(Date.now() - Math.max(payloadDays + 1, rowDays) * 86400000).toISOString();
+  const compacted = db.prepare(`UPDATE sync_logs SET raw_payload=NULL
+    WHERE provider=? AND status IN ('success','ignored') AND raw_payload IS NOT NULL AND created_at<?`)
+    .run(PROVIDER, payloadCutoff).changes;
+  const removed = db.prepare(`DELETE FROM sync_logs
+    WHERE provider=? AND status IN ('success','ignored') AND created_at<?`)
+    .run(PROVIDER, rowCutoff).changes;
+  return { compacted, removed };
 }
 
 export function startHaravanWorker() {
@@ -809,7 +1291,7 @@ export function startHaravanWorker() {
     WHERE provider=? AND topic='inventory/push' AND status='failed'
       AND error_message='HARAVAN_LOCATION_ID is not set'`).run(PROVIDER);
   if (!timer) {
-    timer = setInterval(() => processHaravanQueue(), 30000);
+    timer = setInterval(() => { processHaravanQueue(); processHaravanOutboundQueue().catch(err => writeWorkerFailureOnce('outbound/worker', err)); }, 30000);
     timer.unref?.();
   }
   if (!inventoryTimer) {

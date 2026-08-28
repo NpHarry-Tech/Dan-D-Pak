@@ -205,6 +205,21 @@ export function maintainSystemLogs({ days = 60, maxRows = 200_000 } = {}) {
         FROM system_logs
       ) WHERE duplicate_number > 1
     )`).run().changes;
+    // A historical invoice retry loop emitted the same missing-printer warning
+    // thousands of times per day. Preserve one operational trace per
+    // branch/device/day (and per order when available) instead of hiding every
+    // other event in the activity log and growing SQLite indefinitely.
+    const collapsedPrinterWarnings = db.prepare(`DELETE FROM system_logs WHERE rowid IN (
+      SELECT rowid FROM (
+        SELECT rowid, ROW_NUMBER() OVER (
+          PARTITION BY branch_id, COALESCE(device_id,''), COALESCE(order_id,''),
+            substr(created_at,1,10)
+          ORDER BY rowid DESC
+        ) AS duplicate_number
+        FROM system_logs
+        WHERE event_type='receipt_printer_missing'
+      ) WHERE duplicate_number > 1
+    )`).run().changes;
     const cutoff = new Date(Date.now() - days * 86_400_000).toISOString();
     const byAge = db.prepare(`DELETE FROM system_logs WHERE timestamp < ?`).run(cutoff).changes;
     let byCount = 0;
@@ -218,6 +233,7 @@ export function maintainSystemLogs({ days = 60, maxRows = 200_000 } = {}) {
     return {
       removedRedundant: redundant,
       removedExactDuplicates: exactDuplicates,
+      collapsedPrinterWarnings,
       removedByAge: byAge,
       removedByCount: byCount,
     };
@@ -226,6 +242,7 @@ export function maintainSystemLogs({ days = 60, maxRows = 200_000 } = {}) {
     return {
       removedRedundant: 0,
       removedExactDuplicates: 0,
+      collapsedPrinterWarnings: 0,
       removedByAge: 0,
       removedByCount: 0,
     };

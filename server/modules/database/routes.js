@@ -3,7 +3,7 @@
 // route dời NGUYÊN VĂN, không đổi logic.
 import * as Auth from '../../services/auth.js';
 import { db, audit, decryptDecompress, listBackups } from '../../db.js';
-import { logger } from '../../core/logger.js';
+import { scanCriticalOrphans } from '../../db/integrity.js';
 
 export function registerDatabaseRoutes(api, { wrap, guardAny, branch }) {
 // --- Database Management & Documentation APIs ---
@@ -176,7 +176,10 @@ api.post('/database/integrity-check', guardAny('settings.manage'), wrap(async ()
   } catch (e) {
     result = e.message;
   }
-  return { ok: result === 'ok', result };
+  const logical = result === 'ok'
+    ? scanCriticalOrphans(db)
+    : { ok: false, checkedRelations: 0, orphanCount: null, findings: [] };
+  return { ok: result === 'ok' && logical.ok, result, logical };
 }));
 
 // POST /api/database/reset-transactions
@@ -190,26 +193,22 @@ api.post('/database/reset-transactions', guardAny('settings.manage'), wrap(async
   }
 
   const transactionTables = [
-    'orders', 'order_items', 'payments', 'payment_lines', 'shifts',
-    'cash_drawer_entries', 'cash_drawer_reimbursement_allocations',
-    'purchase_orders', 'purchase_order_lines', 'purchase_payments',
-    'expenses', 'print_jobs', 'invoices', 'bank_transactions', 'sync_queue',
-    'audit_log', 'staff_calls'
+    'payment_lines', 'payments', 'order_items',
+    'invoice_allocations', 'invoice_audit_logs', 'e_invoices', 'invoices',
+    'bank_transactions', 'print_jobs', 'staff_calls', 'orders',
+    'cash_drawer_reimbursement_allocations', 'cash_drawer_entries', 'shifts',
+    'purchase_order_lines', 'purchase_payments', 'purchase_orders',
+    'purchase_return_lines', 'purchase_returns',
+    'expenses', 'sync_queue', 'audit_log'
   ];
 
   // node:sqlite (DatabaseSync) không có .transaction() — dùng BEGIN/COMMIT/ROLLBACK.
   db.exec('BEGIN');
   try {
     for (const table of transactionTables) {
-      try {
-        db.exec(`DELETE FROM ${table}`);
-      } catch (e) {
-        logger.error('database reset-transactions table cleanup failed', { table, message: e.message });
-      }
+      db.exec(`DELETE FROM ${table}`);
     }
-    try {
-      db.exec(`UPDATE tables SET status = 'free'`);
-    } catch {}
+    db.exec(`UPDATE tables SET status = 'free'`);
     db.exec('COMMIT');
   } catch (e) {
     db.exec('ROLLBACK');
@@ -263,7 +262,7 @@ api.get('/database/docs/:file', guardAny('settings.manage'), wrap(async (req) =>
   }
 
   const __dirname = path.dirname(fileURLToPath(import.meta.url));
-  const ROOT = path.join(__dirname, '..');
+  const ROOT = path.resolve(__dirname, '..', '..', '..');
   const targetPath = path.resolve(ROOT, reqFile);
 
   let content = '';

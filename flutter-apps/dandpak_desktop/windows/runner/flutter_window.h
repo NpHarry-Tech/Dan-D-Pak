@@ -10,6 +10,8 @@
 
 #include "win32_window.h"
 
+class WindowsPrintBridge;
+
 // A window that does nothing but host a Flutter view.
 class FlutterWindow : public Win32Window {
  public:
@@ -34,6 +36,9 @@ class FlutterWindow : public Win32Window {
   // Channel for custom window-chrome commands (minimize/maximize/close/drag).
   std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>>
       window_channel_;
+
+  // Native Windows modern printing contract (PrintManager + PrintDocument).
+  std::unique_ptr<WindowsPrintBridge> windows_print_bridge_;
 };
 
 #endif  // RUNNER_FLUTTER_WINDOW_H_

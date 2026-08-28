@@ -278,17 +278,35 @@ class _UpdateChip extends StatefulWidget {
 class _UpdateChipState extends State<_UpdateChip> {
   UpdateInfo? _info;
   bool _busy = false;
+  int _requestSerial = 0;
 
   @override
   void initState() {
     super.initState();
+    AppUpdater.contextRevision.addListener(_serverChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) => _check());
   }
 
+  void _serverChanged() {
+    if (!mounted) return;
+    setState(() {
+      _info = null;
+      _busy = false;
+    });
+    _check();
+  }
+
+  @override
+  void dispose() {
+    AppUpdater.contextRevision.removeListener(_serverChanged);
+    super.dispose();
+  }
+
   Future<void> _check() async {
+    final request = ++_requestSerial;
     try {
       final info = await AppUpdater.checkForUpdate(context.read<ApiService>());
-      if (mounted) setState(() => _info = info);
+      if (mounted && request == _requestSerial) setState(() => _info = info);
     } catch (_) {}
   }
 

@@ -19,6 +19,7 @@ import '../widgets/dan_top_bar.dart';
 import '../widgets/manager_pin_dialog.dart';
 import '../widgets/resizable_pane.dart';
 import '../widgets/scan_button.dart';
+import 'floor_layout.dart'; // kFloorCols, kTableCells — khớp sơ đồ với Cài đặt
 import 'order_history_dialog.dart';
 import 'retail/checkout_dialog.dart';
 import 'shift_dialog.dart';
@@ -53,6 +54,8 @@ class _PosScreenState extends State<PosScreen> {
   void initState() {
     super.initState();
     BlackBox.screen = 'pos';
+    // A1: bấm "Xem" trên banner thông báo khách → mở thẳng mục xác nhận món.
+    AppNotifier.onOpenRequested = _openPendingConfirmDialog;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final pos = context.read<PosProvider>();
       final auth = context.read<AuthProvider>();
@@ -137,6 +140,9 @@ class _PosScreenState extends State<PosScreen> {
 
   @override
   void dispose() {
+    if (AppNotifier.onOpenRequested == _openPendingConfirmDialog) {
+      AppNotifier.onOpenRequested = null;
+    }
     _socketRefresh.dispose();
     _socketService.removeListener(_onSocketEvent);
     super.dispose();
@@ -866,7 +872,85 @@ class _PosScreenState extends State<PosScreen> {
       await context.read<PosProvider>().loadFloor();
       if (mounted) _toast(t('Đã dọn sạch bàn ${table.code}.'));
     } catch (e) {
-      if (mounted) _toast(t('Không dọn được bàn: ${_cleanError(e)}'));
+      final loi = _cleanError(e);
+      // Bàn kẹt vì bill ĐÃ nhận tiền. Trước đây tới đây là hết đường: không
+      // thanh toán tiếp được (bill hết món), không hoàn trả được (đường hoàn trả
+      // đòi đơn đã 'paid'), mà dọn thì bị chặn — bàn nằm chết kể cả với admin.
+      // Giờ mở tiếp đường hoàn tiền CÓ CHỨNG TỪ ngay tại đây.
+      if (loi.contains('đã ghi nhận')) {
+        if (mounted) await _refundAndResetTable(table, loi);
+        return;
+      }
+      if (mounted) _toast(t('Không dọn được bàn: $loi'));
+    }
+  }
+
+  /// Hoàn tiền rồi dọn bàn. Server ghi một khoản thu ÂM đối ứng nên khoản tiền
+  /// cũ KHÔNG bị xoá dấu vết — sổ sách còn cả hai chiều để đối soát.
+  Future<void> _refundAndResetTable(TableModel table, String lyDoKet) async {
+    final lyDoCtrl = TextEditingController();
+    final ok = await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: Text(t('Hoàn tiền và dọn bàn ${table.code}?')),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(lyDoKet,
+                    style: TextStyle(fontSize: 13, color: DanColors.late)),
+                SizedBox(height: 12),
+                Text(
+                    t('Hệ thống sẽ ghi một khoản thu ÂM đối ứng đúng số tiền đã '
+                        'nhận, huỷ bill và trả bàn về trống. Khoản tiền cũ KHÔNG '
+                        'bị xoá — cả hai chiều đều còn trong sổ để đối soát.'),
+                    style: TextStyle(fontSize: 12.5, height: 1.45)),
+                SizedBox(height: 12),
+                TextField(
+                  controller: lyDoCtrl,
+                  autofocus: true,
+                  decoration: InputDecoration(
+                    labelText: t('Lý do hoàn tiền'),
+                    hintText: t('VD: khách bỏ về, bill lỗi không còn món'),
+                    isDense: true,
+                  ),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                  onPressed: () => Navigator.of(ctx).pop(false),
+                  child: Text(t('Hủy'))),
+              FilledButton(
+                style: FilledButton.styleFrom(backgroundColor: DanColors.late),
+                onPressed: () => Navigator.of(ctx).pop(true),
+                child: Text(t('Hoàn tiền và dọn bàn')),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+    final lyDo = lyDoCtrl.text.trim();
+    lyDoCtrl.dispose();
+    if (!ok || !mounted) return;
+    if (lyDo.length < 3) {
+      _toast(t('Nhập lý do hoàn tiền trước khi dọn bàn.'));
+      return;
+    }
+
+    final pin = await requestManagerPin(
+        context, t('Hoàn tiền ${table.code} và dọn bàn: $lyDo'));
+    if (pin == null || !mounted) return;
+
+    try {
+      await context
+          .read<ApiService>()
+          .refundAndResetTable(table.id, reason: lyDo, pin: pin);
+      if (!mounted) return;
+      await context.read<PosProvider>().loadFloor();
+      if (mounted) _toast(t('Đã hoàn tiền và dọn bàn ${table.code}.'));
+    } catch (e) {
+      if (mounted) _toast(t('Không hoàn tiền được: ${_cleanError(e)}'));
     }
   }
 
@@ -925,6 +1009,102 @@ class _PosScreenState extends State<PosScreen> {
       if (mounted) _toast(t('Đã hủy món.'));
     } catch (e) {
       if (mounted) _toast(t('Không hủy được món: ${_cleanError(e)}'));
+    }
+  }
+
+  // GHI CHÚ DÒNG + CHỈNH GIÁ DÒNG (đồng bộ với Retail). Bấm vào một món trong bill
+  // để mở. Chỉ sửa món NHÁP (chưa gửi bếp) — món đã gửi phải hủy rồi thêm lại,
+  // tránh lệch với bill đã lưu trên server.
+  Future<void> _editCartItem(CartItem item) async {
+    final pos = context.read<PosProvider>();
+    // Món đã gửi bếp: CHỈ cho sửa ghi chú (qua API, không đụng tiền). Chỉnh giá chỉ
+    // áp cho món NHÁP chưa gửi — tránh lệch tiền trên bill đã lưu.
+    final sent = item.persisted;
+    final action = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: DanColors.surface,
+      builder: (_) => SafeArea(
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 4),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Text('${item.qty}× ${item.item.name}',
+                  style: const TextStyle(fontWeight: FontWeight.w800)),
+            ),
+          ),
+          ListTile(
+            leading: const Icon(Icons.edit_note),
+            title: Text(t('Ghi chú món')),
+            subtitle: item.notes.isEmpty ? null : Text(item.notes),
+            onTap: () => Navigator.pop(context, 'note'),
+          ),
+          if (!sent) ...[
+            ListTile(
+              leading: const Icon(Icons.sell_outlined),
+              title: Text(t('Chỉnh giá / giảm giá món')),
+              subtitle: Text(item.hasPriceOverride
+                  ? '${_vnd(item.unitPrice)}  (${t('gốc')} ${_vnd(item.listedUnitPrice)})'
+                  : _vnd(item.listedUnitPrice)),
+              onTap: () => Navigator.pop(context, 'price'),
+            ),
+            if (item.hasPriceOverride)
+              ListTile(
+                leading: const Icon(Icons.restart_alt),
+                title: Text(t('Về giá gốc')),
+                onTap: () => Navigator.pop(context, 'reset'),
+              ),
+          ] else
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 6),
+              child: Text(
+                  t('Món đã gửi bếp — chỉ đổi được ghi chú. Chỉnh giá thì hủy rồi thêm lại.'),
+                  style: TextStyle(fontSize: 11.5, color: DanColors.faint)),
+            ),
+          const SizedBox(height: 8),
+        ]),
+      ),
+    );
+    if (action == null || !mounted) return;
+    if (action == 'note') {
+      final note = await _promptText(
+        title: t('Ghi chú "${item.item.name}"'),
+        label: t('Ví dụ: ít cay, không hành…'),
+        initial: item.notes,
+      );
+      if (note == null || !mounted) return;
+      if (sent) {
+        // Món đã gửi → lưu qua server rồi tải lại đơn để đồng bộ mọi thiết bị.
+        try {
+          await context
+              .read<ApiService>()
+              .updateItemNote(item.orderItemId, note);
+          await pos.reloadActiveOrder();
+        } catch (e) {
+          if (mounted) _toast(t('Không lưu được ghi chú: ${_cleanError(e)}'));
+        }
+      } else {
+        pos.setLineNote(item, note);
+      }
+    } else if (action == 'reset') {
+      pos.setLinePrice(item, null);
+    } else if (action == 'price') {
+      final pin = await requestManagerPin(
+          context, t('Chỉnh giá món "${item.item.name}".'));
+      if (pin == null || !mounted) return;
+      final raw = await _promptText(
+        title: t('Giá bán mới mỗi phần'),
+        label: '${t('Giá niêm yết')}: ${_vnd(item.listedUnitPrice)}',
+        initial: item.unitPrice.round().toString(),
+        keyboardType: TextInputType.number,
+      );
+      if (raw == null) return;
+      final v = double.tryParse(raw.replaceAll(RegExp(r'[.,\s]'), ''));
+      if (v == null || v < 0) {
+        if (mounted) _toast(t('Giá không hợp lệ.'));
+        return;
+      }
+      pos.setLinePrice(item, v, pin: pin);
     }
   }
 
@@ -1035,12 +1215,22 @@ class _PosScreenState extends State<PosScreen> {
   /// flag change. Cart edits (qty, add/remove) leave these identical, so the
   /// (potentially large) grid of table cards is not re-laid-out on every tap.
   Widget _floorMap() {
-    return Selector<PosProvider, (List<TableModel>, TableModel?, bool)>(
-      selector: (_, p) => (p.tables, p.selectedTable, p.isLoadingFloor),
+    return Selector<PosProvider,
+        (List<TableModel>, List<Zone>, String, TableModel?, bool)>(
+      selector: (_, p) => (
+        p.tables,
+        p.zones,
+        p.selectedZoneId,
+        p.selectedTable,
+        p.isLoadingFloor
+      ),
       builder: (_, sel, __) => _FloorMap(
         tables: sel.$1,
-        selectedTable: sel.$2,
-        loading: sel.$3,
+        zones: sel.$2,
+        selectedZoneId: sel.$3,
+        onSelectZone: (id) => context.read<PosProvider>().selectZone(id),
+        selectedTable: sel.$4,
+        loading: sel.$5,
         onSelect: _selectTable,
         onHoldToReset: _confirmResetTable,
         money: _vnd,
@@ -1074,6 +1264,7 @@ class _PosScreenState extends State<PosScreen> {
         onPrint: _printTempBill,
         onSendKitchen: _sendKitchen,
         onCancelItem: _cancelItem,
+        onEditItem: _editCartItem,
         onPayment: _openCheckoutDialog,
         openingPayment: _openingPayment,
       ),

@@ -1,7 +1,9 @@
 name: dandpak_phone
 description: "Dan D Pak Phone POS Application."
 publish_to: 'none'
-version: 2026.7.31+27
+# Public/updater release name: 2026.08.26.01 (see lib/app_version.dart).
+# Pub accepts SemVer's three numeric components only.
+version: 2026.8.28+85
 
 environment:
   sdk: '>=3.3.0 <4.0.0'
@@ -35,6 +37,12 @@ flutter:
     - assets/brand/shopeefoodlogo.png
     - assets/brand/befoodlogo.png
     - assets/brand/Haravan.png
+    - assets/brand/shopee.png
+    - assets/brand/tiktok.png
+    - assets/brand/Lazada.png
+    - assets/brand/Facebook_Logo.png
+    - assets/brand/Instagram_Glyph_Gradient.png
+    - assets/brand/Zalo_logo.png
     - assets/brand/sounds/notifications/catalog.json
     - assets/data/vn_admin_units_2026.json
   fonts:

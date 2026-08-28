@@ -18,6 +18,10 @@ class _CashExpenseDialogState extends State<CashExpenseDialog> {
   DateTime _at = DateTime.now();
   String? _image;
   bool _busy = false;
+  // Sinh MỘT lần cho mỗi dialog và GIỮ NGUYÊN khi bấm lại → server chỉ ghi một
+  // bản ghi dù request bị retry sau khi "có vẻ lỗi" (chống double chi tiền).
+  final String _idemKey =
+      'ce_${DateTime.now().microsecondsSinceEpoch}_${Object().hashCode}';
 
   @override
   void dispose() {
@@ -33,18 +37,9 @@ class _CashExpenseDialogState extends State<CashExpenseDialog> {
       appToast(context, msg, isError: error);
 
   Future<void> _pickAt() async {
-    final d = await showDatePicker(
-      context: context,
-      initialDate: _at,
-      firstDate: DateTime(2020),
-      lastDate: DateTime(2100),
-    );
-    if (d == null || !mounted) return;
-    final t = await showTimePicker(
-        context: context, initialTime: TimeOfDay.fromDateTime(_at));
-    if (!mounted) return;
-    setState(() => _at = DateTime(
-        d.year, d.month, d.day, t?.hour ?? _at.hour, t?.minute ?? _at.minute));
+    final picked = await pickDanDateTime(context, initial: _at);
+    if (picked == null || !mounted) return;
+    setState(() => _at = picked);
   }
 
   Future<void> _pickImage() async {
@@ -65,12 +60,13 @@ class _CashExpenseDialogState extends State<CashExpenseDialog> {
     try {
       await context.read<PosProvider>().createCashExpense({
         'amount': amount,
-        'occurred_at': _at.toIso8601String(),
+        'occurred_at': _at.toUtc().toIso8601String(),
         'counterparty': _counterparty.text.trim(),
         'reason': _reason.text.trim(),
         'product': _product.text.trim(),
         'invoice_image': _image ?? '',
         'note': _note.text.trim(),
+        'idempotency_key': _idemKey,
       });
       if (mounted) {
         Navigator.of(context).pop(true);
@@ -256,6 +252,9 @@ class _CashReimbursementDialogState extends State<CashReimbursementDialog> {
   final _counterparty = TextEditingController();
   final _note = TextEditingController();
   DateTime _at = DateTime.now();
+  // Xem CashExpenseDialog: giữ nguyên key khi bấm lại → chống double hoàn chi.
+  final String _idemKey =
+      'cr_${DateTime.now().microsecondsSinceEpoch}_${Object().hashCode}';
 
   List<int> _denoms = [];
   List<Map<String, dynamic>> _expenses = [];
@@ -342,10 +341,11 @@ class _CashReimbursementDialogState extends State<CashReimbursementDialog> {
     try {
       await context.read<PosProvider>().createCashReimbursement({
         'amount': amount,
-        'occurred_at': _at.toIso8601String(),
+        'occurred_at': _at.toUtc().toIso8601String(),
         'counterparty': _counterparty.text.trim(),
         'note': _note.text.trim(),
         'reimburses_entry_ids': _selected.toList(),
+        'idempotency_key': _idemKey,
       });
       if (mounted) {
         Navigator.of(context).pop(true);
@@ -570,17 +570,9 @@ class _CashReimbursementDialogState extends State<CashReimbursementDialog> {
   }
 
   Future<void> _pickAt() async {
-    final d = await showDatePicker(
-        context: context,
-        initialDate: _at,
-        firstDate: DateTime(2020),
-        lastDate: DateTime(2100));
-    if (d == null || !mounted) return;
-    final t = await showTimePicker(
-        context: context, initialTime: TimeOfDay.fromDateTime(_at));
-    if (!mounted) return;
-    setState(() => _at = DateTime(
-        d.year, d.month, d.day, t?.hour ?? _at.hour, t?.minute ?? _at.minute));
+    final picked = await pickDanDateTime(context, initial: _at);
+    if (picked == null || !mounted) return;
+    setState(() => _at = picked);
   }
 
   Widget _expenseRow(Map<String, dynamic> e) {

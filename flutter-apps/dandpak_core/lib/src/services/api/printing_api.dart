@@ -6,8 +6,7 @@ extension ApiServicePrintingApi on ApiService {
   /// điều kiện — đúng nguyên nhân màn Máy in từng báo "Sẵn sàng" khi máy POS
   /// còn chưa mở app. Timeout nới ra vì có thể phải dò TCP máy in LAN.
   Future<List<dynamic>> getPrinters({bool live = true}) async {
-    return listFrom(await getJson(
-        '/api/print/printers${live ? '?live=1' : ''}',
+    return listFrom(await getJson('/api/print/printers${live ? '?live=1' : ''}',
         timeout: Duration(seconds: live ? 8 : 3),
         errorMessage: 'Không tải được máy in'));
   }
@@ -40,18 +39,10 @@ extension ApiServicePrintingApi on ApiService {
         errorMessage: 'Không gửi được lệnh in'));
   }
 
-  Future<String?> forcePrintReceiptJob({
-    String orderId = '',
-    String billNo = '',
-    Duration wait = const Duration(milliseconds: 500),
-  }) async {
-    final order = orderId.trim();
-    final bill = billNo.trim();
-    if (order.isEmpty && bill.isEmpty) return 'Thiếu mã bill để tìm lệnh in';
-    if (wait > Duration.zero) await Future.delayed(wait);
-
+  /// Tìm lệnh in HÓA ĐƠN của một đơn trong hàng đợi gần đây.
+  Future<Map<String, dynamic>?> _timLenhInBill(
+      String order, String bill) async {
     final jobs = await getPrintJobs();
-    Map<String, dynamic>? found;
     for (final raw in jobs.whereType<Map>()) {
       final job = Map<String, dynamic>.from(raw);
       if ('${job['type']}' != 'receipt') continue;
@@ -65,22 +56,76 @@ extension ApiServicePrintingApi on ApiService {
           bill.isNotEmpty && (jobBill == bill || title.contains(bill));
       final orderMatch =
           order.isNotEmpty && (jobOrder == order || title.contains(order));
-      if (billMatch || orderMatch) {
-        found = job;
-        break;
+      if (billMatch || orderMatch) return job;
+    }
+    return null;
+  }
+
+  /// IN LẠI bill của một hóa đơn — tạo lệnh in MỚI.
+  ///
+  /// KHÁC hẳn [forcePrintReceiptJob]: hàm kia dùng ngay sau thanh toán, thấy
+  /// lệnh cũ đã 'printed' là coi như xong. Dùng nó cho nút "In lại" thì bấm bao
+  /// nhiêu lần cũng chỉ báo "đã gửi" mà máy in đứng im — đúng lỗi người dùng
+  /// gặp ở màn Hóa đơn. In lại BẮT BUỘC phải sinh job mới
+  /// (`POST /print/jobs/:id/reprint`).
+  Future<String?> reprintReceiptForOrder({
+    String orderId = '',
+    String billNo = '',
+  }) async {
+    final order = orderId.trim();
+    final bill = billNo.trim();
+    if (order.isEmpty && bill.isEmpty) return 'Thiếu mã bill để in lại';
+    if (order.isNotEmpty) {
+      try {
+        // Server dựng lại receipt từ DB và định tuyến theo x-device-id hiện tại.
+        // Không phụ thuộc lịch sử 50 job và không clone tuyến máy in cũ.
+        await printOrderReceipt(order);
+        return null;
+      } catch (e) {
+        return e.toString().replaceFirst('Exception: ', '');
       }
     }
+    try {
+      final found = await _timLenhInBill(order, bill);
+      if (found == null) {
+        return 'Không thấy lệnh in của hóa đơn này trong lịch sử in';
+      }
+      final id = '${found['id'] ?? ''}';
+      if (id.isEmpty) return 'Lệnh in thiếu ID';
+      await reprintJob(id);
+      return null;
+    } catch (e) {
+      return e.toString().replaceFirst('Exception: ', '');
+    }
+  }
 
+  Future<String?> forcePrintReceiptJob({
+    String orderId = '',
+    String billNo = '',
+    Duration wait = const Duration(milliseconds: 500),
+  }) async {
+    final order = orderId.trim();
+    final bill = billNo.trim();
+    if (order.isEmpty && bill.isEmpty) return 'Thiếu mã bill để tìm lệnh in';
+    if (wait > Duration.zero) await Future.delayed(wait);
+
+    final found = await _timLenhInBill(order, bill);
     if (found == null) return 'Không thấy lệnh in bill vừa thanh toán';
     final status = '${found['status']}';
-    if (status == 'printed' || status == 'printing') return null;
+    // `queued` is the successful durable state when PRINT_DISPATCH=agent: the
+    // store agent will claim and print it asynchronously. It is not a failure.
+    if (status == 'queued' || status == 'printed' || status == 'printing') {
+      return null;
+    }
     final id = '${found['id'] ?? ''}';
     if (id.isEmpty) return 'Lệnh in thiếu ID';
 
     try {
       final job = await printJobNow(id);
       final nextStatus = '${job['status']}';
-      if (nextStatus == 'printed' || nextStatus == 'printing') return null;
+      if (nextStatus == 'queued' ||
+          nextStatus == 'printed' ||
+          nextStatus == 'printing') return null;
       return '${job['error'] ?? 'Chưa in được bill'}';
     } catch (e) {
       return e.toString().replaceFirst('Exception: ', '');
@@ -146,7 +191,8 @@ extension ApiServicePrintingApi on ApiService {
 
   /// Lấy các phiếu đang chờ in DÀNH CHO MÁY NÀY. Server tự lọc theo device id
   /// (gửi kèm trong header) nên hai máy không giành nhau một phiếu.
-  Future<List<Map<String, dynamic>>> getAgentPendingJobs({int limit = 20}) async {
+  Future<List<Map<String, dynamic>>> getAgentPendingJobs(
+      {int limit = 20}) async {
     final res = await getJson('/api/agent/print/pending?limit=$limit',
         errorMessage: 'Không lấy được hàng đợi in');
     final raw = res is Map ? res['jobs'] : null;

@@ -207,8 +207,7 @@ class PhoneChip extends StatelessWidget {
                   style: TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.w800,
-                      color:
-                          active ? DanColors.brandHover : DanColors.muted)),
+                      color: active ? DanColors.brandHover : DanColors.muted)),
             ),
             if (caret) ...[
               const SizedBox(width: 5),
@@ -331,8 +330,8 @@ class PhoneRow extends StatelessWidget {
             Icon(icon, size: 18, color: DanColors.muted),
             const SizedBox(width: 11),
             Text(label,
-                style: const TextStyle(
-                    fontSize: 13, fontWeight: FontWeight.w700)),
+                style:
+                    const TextStyle(fontSize: 13, fontWeight: FontWeight.w700)),
             const Spacer(),
             Flexible(
               child: Text(value,
@@ -403,12 +402,17 @@ class PhoneCta extends StatelessWidget {
   final VoidCallback? onPressed;
   final bool busy;
 
+  /// Màu nền. Để trống = màu thương hiệu. Chỉ đổi cho hành động KẾT THÚC/HUỶ
+  /// (kết ca, xoá) — người dùng phải thấy ngay đây không phải nút bấm hằng ngày.
+  final Color? color;
+
   const PhoneCta(
       {super.key,
       required this.label,
       this.trailing,
       this.onPressed,
-      this.busy = false});
+      this.busy = false,
+      this.color});
 
   @override
   Widget build(BuildContext context) {
@@ -416,7 +420,7 @@ class PhoneCta extends StatelessWidget {
     return Opacity(
       opacity: enabled ? 1 : .5,
       child: Material(
-        color: DanColors.brand,
+        color: color ?? DanColors.brand,
         borderRadius: BorderRadius.circular(10),
         child: InkWell(
           onTap: enabled ? onPressed : null,
@@ -454,6 +458,122 @@ class PhoneCta extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// NÚT LƯU ở góc phải thanh tiêu đề — CHỈ hiện khi có thay đổi chưa lưu.
+///
+/// Vì sao cần: các màn Cài đặt trước đây để nút lưu ở đáy màn, dưới một danh
+/// sách dài. Người dùng gạt công tắc ở nửa trên, thấy nó nhảy sang, tưởng xong
+/// rồi bấm quay lại — thay đổi mất sạch mà không có một lời cảnh báo nào. Nút
+/// nằm ngay cạnh nút quay lại thì không thể bỏ sót, và việc nó XUẤT HIỆN chính
+/// là dấu hiệu "đang có thứ chưa lưu".
+class PhoneSaveAction extends StatelessWidget {
+  final bool dirty;
+  final bool busy;
+  final VoidCallback onSave;
+  final String label;
+
+  const PhoneSaveAction({
+    super.key,
+    required this.dirty,
+    required this.onSave,
+    this.busy = false,
+    this.label = 'Lưu',
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (!dirty && !busy) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4),
+      child: Material(
+        color: DanColors.brand,
+        borderRadius: BorderRadius.circular(8),
+        child: InkWell(
+          onTap: busy ? null : onSave,
+          borderRadius: BorderRadius.circular(8),
+          child: Container(
+            height: 36,
+            constraints: const BoxConstraints(minWidth: 62),
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            alignment: Alignment.center,
+            child: busy
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(
+                        strokeWidth: 2, color: Colors.white))
+                : Text(t(label),
+                    style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w800,
+                        color: Colors.white)),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Chặn thoát khi còn thay đổi chưa lưu — chặn CẢ nút back của hệ thống lẫn
+/// nút ← trên thanh tiêu đề (cả hai đều đi qua `maybePop`).
+///
+/// [onSave] trả về `true` nếu lưu thành công; lưu hỏng thì Ở LẠI màn để người
+/// dùng thấy lỗi, không được lặng lẽ thoát và mất dữ liệu.
+class PhoneUnsavedGuard extends StatelessWidget {
+  final bool dirty;
+  final Future<bool> Function() onSave;
+  final Widget child;
+
+  const PhoneUnsavedGuard({
+    super.key,
+    required this.dirty,
+    required this.onSave,
+    required this.child,
+  });
+
+  Future<void> _hoi(BuildContext context) async {
+    final chon = await showPhoneSheet<String>(
+      context: context,
+      title: t('Còn thay đổi chưa lưu'),
+      builder: (c) => Padding(
+        padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            PhoneCta(
+                label: t('Lưu rồi thoát'),
+                onPressed: () => Navigator.of(c).pop('save')),
+            const SizedBox(height: 8),
+            PhoneSecondaryButton(
+                label: t('Thoát, bỏ thay đổi'),
+                onPressed: () => Navigator.of(c).pop('drop')),
+            const SizedBox(height: 8),
+            PhoneSecondaryButton(
+                label: t('Ở lại'), onPressed: () => Navigator.of(c).pop()),
+          ],
+        ),
+      ),
+    );
+    if (chon == null || !context.mounted) return;
+    if (chon == 'drop') {
+      Navigator.of(context).pop();
+      return;
+    }
+    final ok = await onSave();
+    if (ok && context.mounted) Navigator.of(context).pop();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return PopScope(
+      canPop: !dirty,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _hoi(context);
+      },
+      child: child,
     );
   }
 }
@@ -593,8 +713,7 @@ class PhonePickList extends StatelessWidget {
                   child: Text(o,
                       style: TextStyle(
                           fontSize: 14,
-                          fontWeight:
-                              on ? FontWeight.w800 : FontWeight.w600)),
+                          fontWeight: on ? FontWeight.w800 : FontWeight.w600)),
                 ),
                 if (on)
                   const Icon(Icons.check, size: 19, color: DanColors.brand),
@@ -622,8 +741,18 @@ class PhoneNumPad extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final keys = <String>[
-      '1', '2', '3', '4', '5', '6', '7', '8', '9',
-      big ? '' : extraKey, '0', 'del',
+      '1',
+      '2',
+      '3',
+      '4',
+      '5',
+      '6',
+      '7',
+      '8',
+      '9',
+      big ? '' : extraKey,
+      '0',
+      'del',
     ];
     return GridView.count(
       shrinkWrap: true,
@@ -697,8 +826,7 @@ class PhoneEmpty extends StatelessWidget {
           const SizedBox(height: 4),
           Text(t(hint),
               textAlign: TextAlign.center,
-              style:
-                  const TextStyle(fontSize: 12, color: DanColors.faint)),
+              style: const TextStyle(fontSize: 12, color: DanColors.faint)),
         ],
       ),
     );

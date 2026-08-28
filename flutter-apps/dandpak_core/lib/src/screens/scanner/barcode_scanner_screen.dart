@@ -2,12 +2,40 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
-import '../../app_flavor.dart';
 import '../../services/system_log.dart';
 import '../../ui/app_theme.dart';
 import '../../utils/translation.dart';
 
-/// Mở trình quét mã vạch/QR bằng camera và trả về chuỗi mã quét được, hoặc
+const _retailBarcodeFormats = <BarcodeFormat>[
+  BarcodeFormat.ean13,
+  BarcodeFormat.ean8,
+  BarcodeFormat.upcA,
+  BarcodeFormat.upcE,
+  BarcodeFormat.code128,
+  BarcodeFormat.code39,
+];
+
+@visibleForTesting
+MobileScannerController createRetailBarcodeController() =>
+    MobileScannerController(
+      autoStart: true,
+      detectionSpeed: DetectionSpeed.normal,
+      // Default 250ms chỉ phân tích khoảng 4 frame/giây. 120ms vẫn giữ
+      // throttling bảo vệ máy yếu nhưng phản hồi nhanh hơn rõ rệt khi người dùng
+      // vừa đưa mã vào nét hoặc camera đang tự lấy nét lại.
+      detectionTimeoutMs: 120,
+      facing: CameraFacing.back,
+      formats: _retailBarcodeFormats,
+      returnImage: false,
+    );
+
+@visibleForTesting
+bool isUsableRetailBarcode(BarcodeFormat format, String? rawValue) {
+  if (!_retailBarcodeFormats.contains(format)) return false;
+  return (rawValue?.trim().length ?? 0) >= 6;
+}
+
+/// Mở trình quét mã vạch bán lẻ bằng camera và trả về chuỗi mã quét được, hoặc
 /// null nếu người dùng thoát. CHỈ gọi trên tablet/điện thoại (xem
 /// [kCameraScanSupported]); desktop dùng máy quét USB (gõ thẳng vào ô tìm).
 Future<String?> scanBarcode(BuildContext context, {String? title}) {
@@ -29,37 +57,15 @@ class _BarcodeScannerScreen extends StatefulWidget {
 
 class _BarcodeScannerScreenState extends State<_BarcodeScannerScreen> {
   // Chỉ nhận các định dạng mã vạch hay gặp trong bán lẻ/kho → ML Kit khỏi dò
-  // thừa nên NHANH và ÍT nhận nhầm hơn. noDuplicates để không bắn lặp một mã.
+  // thừa nên NHANH và ÍT nhận nhầm hơn.
   // KHÔNG ép cameraResolution: để plugin tự chọn độ phân giải hợp lệ theo máy
   // (ép 1080p làm CameraX bind lỗi NPE trên một số máy Samsung).
-  final MobileScannerController _controller = MobileScannerController(
-    detectionSpeed: DetectionSpeed.noDuplicates,
-    // Camera SAU (không gương). Camera trước mới bị lật gương — ép back để
-    // hình quét đúng chiều, không soi gương trên tablet.
-    facing: CameraFacing.back,
-    formats: [
-      BarcodeFormat.ean13,
-      BarcodeFormat.ean8,
-      BarcodeFormat.upcA,
-      BarcodeFormat.upcE,
-      BarcodeFormat.code128,
-      BarcodeFormat.code39,
-      BarcodeFormat.code93,
-      BarcodeFormat.itf,
-      BarcodeFormat.codabar,
-      BarcodeFormat.qrCode,
-      BarcodeFormat.dataMatrix,
-    ],
-  );
+  final MobileScannerController _controller = createRetailBarcodeController();
+  // Không dùng `noDuplicates`: nếu frame đầu là một mảnh chưa hợp lệ, scanner
+  // phải phát lại mã đó khi camera lấy nét. `_handled` vẫn chặn pop hai lần.
 
   bool _handled = false;
   bool _errorLogged = false;
-  // FIX "quét xoay mãi": nhiều tablet khoá landscape ở manifest nên yêu cầu xoay
-  // portrait KHÔNG có hiệu lực → MediaQuery.orientation mãi không phải portrait →
-  // camera không bao giờ mount, vòng xoay quay vô tận. Sau tối đa 900ms mà chưa
-  // portrait thì MOUNT camera luôn (thà preview hơi lệch còn hơn treo cứng).
-  bool _forceMount = false;
-
   // Camera/scanner lỗi → app KHÔNG chết (errorBuilder hiện màn lỗi nghiệp vụ)
   // nhưng phải ghi nhật ký để biết máy nào camera hỏng/bị chặn quyền.
   Widget _buildError(BuildContext context, MobileScannerException error) {
@@ -75,30 +81,25 @@ class _BarcodeScannerScreenState extends State<_BarcodeScannerScreen> {
         exceptionType: 'MobileScannerException',
       );
     }
-    return _ScannerError(error: error, onClose: _close);
+    return _ScannerError(error: error, onRetry: _retry, onClose: _close);
   }
 
-  @override
-  void initState() {
-    super.initState();
-    // App khoá landscape (manifest sensorLandscape). Ở landscape, mobile_scanner
-    // trên nhiều máy Samsung render hình camera XOAY 90° (mã vạch nằm ngang →
-    // không đọc được / hình bị lệch). ÉP màn quét về DỌC (portrait) — đúng chiều
-    // tự nhiên của cảm biến camera → hình thẳng, quét chuẩn. Người dùng cầm máy
-    // dọc để quét (tự nhiên). Khôi phục landscape khi thoát.
-    SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
-    // Chốt an toàn: nếu máy không xoay được sang portrait (bị khoá landscape), sau
-    // 900ms vẫn mount camera để không treo màn quét.
-    Future.delayed(const Duration(milliseconds: 900), () {
-      if (mounted && !_forceMount) setState(() => _forceMount = true);
-    });
+  Future<void> _retry() async {
+    if (!mounted) return;
+    setState(() => _errorLogged = false);
+    // start() requests/binds the camera again and clears the controller error
+    // on success. stop() is harmless when initialization never completed.
+    await _controller.stop();
+    await _controller.start();
   }
 
   void _onDetect(BarcodeCapture capture) {
     if (_handled || !mounted) return;
     for (final b in capture.barcodes) {
+      // Chốt an toàn: dù đã giới hạn format, vẫn BỎ QUA mã 2D (QR/DataMatrix…) và
+      // mã quá ngắn — tránh nhận nhầm QR hay mảnh mã lỗi.
       final code = b.rawValue?.trim();
-      if (code != null && code.isNotEmpty) {
+      if (isUsableRetailBarcode(b.format, code)) {
         _handled = true;
         HapticFeedback.mediumImpact();
         Navigator.of(context).pop(code);
@@ -110,56 +111,38 @@ class _BarcodeScannerScreenState extends State<_BarcodeScannerScreen> {
   @override
   void dispose() {
     _controller.dispose();
-    // Trả app về khoá landscape như cũ khi rời màn quét.
-    SystemChrome.setPreferredOrientations(AppFlavor.current.isHandset
-        ? [DeviceOrientation.portraitUp]
-        : [
-            DeviceOrientation.landscapeLeft,
-            DeviceOrientation.landscapeRight,
-          ]);
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     final size = MediaQuery.sizeOf(context);
-    // Khung ngắm vuông ở giữa; quét trong khung này cho nhanh và có chủ đích.
-    final side = (size.shortestSide * 0.72).clamp(220.0, 460.0);
+    // Mã vạch bán lẻ là dải ngang dài. Khung chữ nhật rộng giúp ML Kit nhận đủ
+    // hai mép mã và vẫn hoạt động đúng ở cả tablet landscape lẫn phone portrait.
+    final width = (size.width * 0.88).clamp(260.0, 760.0);
+    final height = (size.height * 0.42).clamp(180.0, 360.0);
     final window = Rect.fromCenter(
       center: Offset(size.width / 2, size.height / 2),
-      width: side,
-      height: side,
+      width: width,
+      height: height,
     );
-
-    // CHỜ MÀN XOAY DỌC XONG rồi mới mount camera: initState ép portrait nhưng
-    // Android xoay activity mất vài frame — nếu MobileScanner khởi tạo NGAY
-    // khi còn landscape, CameraX bind với rotation ngang và trên nhiều máy
-    // Samsung KHÔNG cập nhật lại sau khi xoay → hình camera nằm ngang vĩnh
-    // viễn. Đợi MediaQuery báo portrait (build chạy lại tự nhiên khi xoay)
-    // thì camera bind đúng chiều ngay từ đầu.
-    final isPortrait =
-        MediaQuery.orientationOf(context) == Orientation.portrait;
 
     return Scaffold(
       backgroundColor: Colors.black,
       body: Stack(
         fit: StackFit.expand,
         children: [
-          if (isPortrait || _forceMount)
-            MobileScanner(
-              controller: _controller,
-              onDetect: _onDetect,
-              scanWindow: window,
-              fit: BoxFit.cover,
-              errorBuilder: (context, error, child) =>
-                  _buildError(context, error),
-              placeholderBuilder: (context, child) =>
-                  ColoredBox(color: Colors.black),
-            )
-          else
-            Center(
-              child: CircularProgressIndicator(color: Colors.white54),
-            ),
+          MobileScanner(
+            controller: _controller,
+            onDetect: _onDetect,
+            scanWindow: window,
+            scanWindowUpdateThreshold: 4,
+            fit: BoxFit.cover,
+            errorBuilder: (context, error, child) =>
+                _buildError(context, error),
+            placeholderBuilder: (context, child) =>
+                ColoredBox(color: Colors.black),
+          ),
           // Lớp phủ tối + ô khoét sáng giữa màn.
           CustomPaint(
             size: Size.infinite,
@@ -217,7 +200,7 @@ class _BarcodeScannerScreenState extends State<_BarcodeScannerScreen> {
             top: window.bottom + 24,
             child: Center(
               child: Text(
-                t('Đưa mã vạch / QR vào khung để quét'),
+                t('Đưa mã vạch vào khung để quét'),
                 style: TextStyle(
                   color: Colors.white,
                   fontSize: 13.5,
@@ -329,8 +312,13 @@ class _BracketPainter extends CustomPainter {
 
 class _ScannerError extends StatelessWidget {
   final MobileScannerException error;
+  final Future<void> Function() onRetry;
   final VoidCallback onClose;
-  _ScannerError({required this.error, required this.onClose});
+  _ScannerError({
+    required this.error,
+    required this.onRetry,
+    required this.onClose,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -353,7 +341,18 @@ class _ScannerError extends StatelessWidget {
             style: TextStyle(color: Colors.white, fontSize: 14, height: 1.5),
           ),
           SizedBox(height: 22),
-          FilledButton(onPressed: onClose, child: Text(t('Đóng'))),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              OutlinedButton(onPressed: onClose, child: Text(t('Đóng'))),
+              SizedBox(width: 10),
+              FilledButton.icon(
+                onPressed: onRetry,
+                icon: Icon(Icons.refresh),
+                label: Text(t('Thử lại')),
+              ),
+            ],
+          ),
         ],
       ),
     );

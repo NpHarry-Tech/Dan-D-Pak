@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../services/api_service.dart';
 import '../../ui/app_theme.dart';
 import '../../utils/translation.dart';
+import '../../utils/business_datetime.dart';
 import 'phone_doc_form_screens.dart';
 import 'phone_form_screens.dart';
 import 'phone_kit.dart';
@@ -24,8 +25,13 @@ List<Map<String, dynamic>> _rows(dynamic raw) {
   final list = raw is List
       ? raw
       : (raw is Map
-          ? (raw['items'] ?? raw['data'] ?? raw['rows'] ?? raw['partners'] ??
-              raw['expenses'] ?? raw['orders'] ?? const [])
+          ? (raw['items'] ??
+              raw['data'] ??
+              raw['rows'] ??
+              raw['partners'] ??
+              raw['expenses'] ??
+              raw['orders'] ??
+              const [])
           : const []);
   return (list as List? ?? const [])
       .whereType<Map>()
@@ -97,9 +103,8 @@ class _PhonePartnersScreenState extends State<PhonePartnersScreen> {
           _s(m['code']),
           _s(m['phone']),
         ].where((e) => e.isNotEmpty).join(' · '),
-        amount: _n(m['total_spent']) > 0
-            ? phoneMoney(_n(m['total_spent']))
-            : null,
+        amount:
+            _n(m['total_spent']) > 0 ? phoneMoney(_n(m['total_spent'])) : null,
         onTap: () => Navigator.of(ctx).push(MaterialPageRoute(
             builder: (_) =>
                 PhonePartnerDetailScreen(partner: m, isCustomer: _isCustomer))),
@@ -154,8 +159,7 @@ class PhonePartnerDetailScreen extends StatelessWidget {
                       ),
                       (t('Số đơn'), phoneInt(_n(p['total_orders']))),
                       if (isCustomer)
-                        (t('Điểm tích lũy'),
-                            phoneInt(_n(p['loyalty_points']))),
+                        (t('Điểm tích lũy'), phoneInt(_n(p['loyalty_points']))),
                       if (isCustomer && _s(p['loyalty_tier']).isNotEmpty)
                         (t('Hạng'), _s(p['loyalty_tier'])),
                       if (_s(p['last_visit_at']).isNotEmpty)
@@ -222,7 +226,7 @@ class _PhoneExpensesScreenState extends State<PhoneExpensesScreen> {
                 .firstWhere((e) => e.isNotEmpty),
         subtitle: [
           _s(m['category_name']),
-          _s(m['expense_date']).split('T').first,
+          BusinessDateTime.date(m['expense_date']),
           _s(m['source']) == 'drawer' ? t('Chi từ két') : t('Chi trực tiếp'),
         ].where((e) => e.isNotEmpty).join(' · '),
         amount: phoneMoney(_n(m['amount'])),
@@ -242,6 +246,8 @@ class PhonePurchaseScreen extends StatefulWidget {
 
 class _PhonePurchaseScreenState extends State<PhonePurchaseScreen> {
   final _key = GlobalKey<PhoneListScaffoldState<Map<String, dynamic>>>();
+  String _status = '';
+  bool _thisMonth = true;
 
   @override
   Widget build(BuildContext context) {
@@ -263,14 +269,31 @@ class _PhonePurchaseScreenState extends State<PhonePurchaseScreen> {
       emptyTitle: 'Chưa có phiếu nhập',
       emptyHint: 'Kéo xuống để tải lại',
       emptyIcon: Icons.local_shipping_outlined,
-      fetch: (q) async =>
-          _rows(await context.read<ApiService>().getPurchaseOrders(q: q)),
+      fetch: (q) async {
+        var rows =
+            _rows(await context.read<ApiService>().getPurchaseOrders(q: q));
+        if (_status.isNotEmpty) {
+          rows = rows.where((m) => _s(m['status']) == _status).toList();
+        }
+        if (_thisMonth) {
+          final now = BusinessDateTime.now();
+          rows = rows.where((m) {
+            final date =
+                BusinessDateTime.parseApi(m['order_date'] ?? m['created_at']);
+            return date != null &&
+                date.year == now.year &&
+                date.month == now.month;
+          }).toList();
+        }
+        return rows;
+      },
       // decoratePO() trả: code, supplier_name, status, subtotal, vat_amount,
       // total, amount_paid, amount_due, received_value, fully_received, lines,
       // payments, created_at.
       metrics: (list) => [
+        (t('Số phiếu'), phoneInt(list.length), null),
         (
-          t('Tổng giá trị'),
+          t('Tổng tiền nhập'),
           phoneMoney(list.fold<num>(0, (a, m) => a + _n(m['total']))),
           null
         ),
@@ -280,11 +303,37 @@ class _PhonePurchaseScreenState extends State<PhonePurchaseScreen> {
           DanColors.late
         ),
       ],
+      metricColumns: 3,
+      filters: (ctx) => [
+        PhoneChip(
+          label: t(_thisMonth ? 'Tháng này' : 'Tất cả thời gian'),
+          active: _thisMonth,
+          onTap: () {
+            setState(() => _thisMonth = !_thisMonth);
+            _key.currentState?.reload();
+          },
+        ),
+        for (final entry in const {
+          '': 'Tất cả',
+          'draft': 'Phiếu tạm',
+          'confirmed': 'Đã xác nhận',
+          'received': 'Đã nhập',
+          'cancelled': 'Đã hủy',
+        }.entries)
+          PhoneChip(
+            label: t(entry.value),
+            active: _status == entry.key,
+            onTap: () {
+              setState(() => _status = entry.key);
+              _key.currentState?.reload();
+            },
+          ),
+      ],
       rowBuilder: (ctx, m, _) => PhoneListRow(
         title: _s(m['code']).isEmpty ? _s(m['id']) : _s(m['code']),
         subtitle: [
           _s(m['supplier_name']),
-          _s(m['created_at']).split('T').first,
+          BusinessDateTime.date(m['created_at'], fallback: _s(m['created_at'])),
         ].where((e) => e.isNotEmpty).join(' · '),
         amount: phoneMoney(_n(m['total'])),
         badge: _n(m['amount_due']) > 0
@@ -371,27 +420,74 @@ class _PhoneTransferScreenState extends State<PhoneTransferScreen> {
 }
 
 /// KIỂM KHO.
-class PhoneStocktakeScreen extends StatelessWidget {
+class PhoneStocktakeScreen extends StatefulWidget {
   const PhoneStocktakeScreen({super.key});
+
+  @override
+  State<PhoneStocktakeScreen> createState() => _PhoneStocktakeScreenState();
+}
+
+class _PhoneStocktakeScreenState extends State<PhoneStocktakeScreen> {
+  final _key = GlobalKey<PhoneListScaffoldState<Map<String, dynamic>>>();
+  bool _thisMonth = true;
 
   @override
   Widget build(BuildContext context) {
     return PhoneListScaffold<Map<String, dynamic>>(
+      key: _key,
       title: 'Kiểm kho',
       searchHint: 'Mã phiếu kiểm',
       emptyTitle: 'Chưa có phiếu kiểm kho',
       emptyHint: 'Kéo xuống để tải lại',
       emptyIcon: Icons.fact_check_outlined,
-      fetch: (q) async =>
-          _rows(await context.read<ApiService>().getStocktakes(q: q)),
+      fetch: (q) async {
+        var rows = _rows(await context.read<ApiService>().getStocktakes(q: q));
+        if (_thisMonth) {
+          final now = BusinessDateTime.now();
+          rows = rows.where((m) {
+            final date =
+                BusinessDateTime.parseApi(m['created_at'] ?? m['date']);
+            return date != null &&
+                date.year == now.year &&
+                date.month == now.month;
+          }).toList();
+        }
+        return rows;
+      },
       metrics: (list) => [
         (t('Số phiếu'), phoneInt(list.length), null),
+        (
+          t('Tổng đơn vị đã đếm'),
+          phoneInt(list.fold<num>(
+              0,
+              (a, m) =>
+                  a +
+                  _n(m['total_counted'] ??
+                      m['counted_qty'] ??
+                      m['total_qty']))),
+          null
+        ),
+      ],
+      filters: (_) => [
+        PhoneChip(
+          label: t(_thisMonth ? 'Tháng này' : 'Tất cả thời gian'),
+          active: _thisMonth,
+          onTap: () {
+            setState(() => _thisMonth = !_thisMonth);
+            _key.currentState?.reload();
+          },
+        ),
       ],
       rowBuilder: (ctx, m, _) => PhoneListRow(
         title: _s(m['code'] ?? m['id']),
         subtitle: [
+          if (_n(m['line_count'] ?? m['item_count']) > 0)
+            '${phoneInt(_n(m['line_count'] ?? m['item_count']))} ${t('mặt hàng')}',
           _s(m['warehouse_name']),
-          _s(m['created_at'] ?? m['date']),
+          BusinessDateTime.date(m['created_at'] ?? m['date'],
+              fallback: _s(m['created_at'] ?? m['date'])),
+          if (_n(m['difference_count'] ?? m['difference']) != 0)
+            '${t('Dòng lệch')}: ${phoneInt(_n(m['difference_count'] ?? m['difference']))}',
         ].where((e) => e.isNotEmpty).join(' · '),
         badge: _s(m['status']).isEmpty ? null : _s(m['status']),
         badgeTone: switch (_s(m['status'])) {
@@ -446,10 +542,14 @@ class PhoneDocDetailScreen extends StatelessWidget {
                       if (_s(doc['status']).isNotEmpty)
                         (t('Trạng thái'), _s(doc['status'])),
                       if (_s(doc['created_at'] ?? doc['date']).isNotEmpty)
-                        (t('Ngày lập'), _s(doc['created_at'] ?? doc['date'])),
+                        (
+                          t('Ngày lập'),
+                          BusinessDateTime.dateTime(
+                              doc['created_at'] ?? doc['date'],
+                              fallback: _s(doc['created_at'] ?? doc['date']))
+                        ),
                       if (_s(doc['created_by'] ?? doc['staff']).isNotEmpty)
-                        (t('Người lập'),
-                            _s(doc['created_by'] ?? doc['staff'])),
+                        (t('Người lập'), _s(doc['created_by'] ?? doc['staff'])),
                       if (_n(doc['total']) > 0)
                         (t('Tổng giá trị'), phoneMoney(_n(doc['total']))),
                       if (_s(doc['note']).isNotEmpty)
@@ -464,8 +564,7 @@ class PhoneDocDetailScreen extends StatelessWidget {
                         subtitle:
                             '${phoneInt(_n(raw['qty'] ?? raw['quantity']))} ${_s(raw['unit'])}',
                         amount: _n(raw['total'] ?? raw['line_total']) > 0
-                            ? phoneMoney(
-                                _n(raw['total'] ?? raw['line_total']))
+                            ? phoneMoney(_n(raw['total'] ?? raw['line_total']))
                             : null,
                       ),
                   ] else

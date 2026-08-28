@@ -1,5 +1,7 @@
+import 'dart:async';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 
@@ -9,6 +11,7 @@ import 'app_notifier.dart';
 import 'app_log.dart';
 import 'black_box.dart';
 import 'local_store.dart';
+import 'release_scope.dart';
 import 'system_log.dart';
 
 /// Thông tin một bản cập nhật khả dụng trên server.
@@ -18,12 +21,16 @@ class UpdateInfo {
   final String notes;
   final String url; // đường dẫn tương đối, vd /api/app/download/windows
   final bool mandatory;
+  final String scopeKey;
+  final String serverOrigin;
   const UpdateInfo({
     required this.buildNumber,
     required this.version,
     required this.notes,
     required this.url,
     required this.mandatory,
+    required this.scopeKey,
+    required this.serverOrigin,
   });
 }
 
@@ -34,7 +41,8 @@ class UpdateInfo {
 /// - Android: tải apk → FileProvider → mở trình cài đặt hệ thống; lần đầu có
 ///   thể phải cấp quyền "Cài ứng dụng từ nguồn này" (app tự dẫn tới màn đó).
 class AppUpdater {
-  static final Set<int> _notifiedBuilds = {};
+  static final Set<String> _notifiedBuilds = {};
+  static final ValueNotifier<int> contextRevision = ValueNotifier<int>(0);
 
   /// Nền tảng gửi cho server. iOS/khác → null (chưa hỗ trợ tự cập nhật).
   ///
@@ -53,9 +61,15 @@ class AppUpdater {
   }
 
   /// Trả về bản cập nhật nếu server có build MỚI HƠN bản đang chạy, else null.
-  static Future<UpdateInfo?> checkForUpdate(ApiService api) async {
-    final platform = _platform;
+  static Future<UpdateInfo?> checkForUpdate(
+    ApiService api, {
+    String? platformOverride,
+    int? currentBuildOverride,
+  }) async {
+    final platform = platformOverride ?? _platform;
     if (platform == null) return null;
+    final scope = ReleaseScope.forServer(api.baseUrl, platform);
+    final currentBuild = currentBuildOverride ?? AppFlavor.current.buildNumber;
     try {
       final decoded = await api.getJson(
         '/api/app/version?platform=$platform',
@@ -65,14 +79,36 @@ class AppUpdater {
       final build = (decoded['buildNumber'] as num?)?.toInt() ?? 0;
       final available = decoded['available'] == true;
       final url = (decoded['url'] ?? '').toString();
-      if (!available || url.isEmpty || build <= AppFlavor.current.buildNumber)
+      // The request may have completed after the operator switched server.
+      // Never apply Review data to the now-active Production context.
+      if (ReleaseScope.forServer(api.baseUrl, platform).key != scope.key) {
         return null;
+      }
+      // Cache is scoped telemetry/restart context, never the source of the
+      // current decision. Do not make UI correctness depend on disk latency.
+      final cacheManifest = Map<dynamic, dynamic>.from(decoded);
+      if (!isDownloadUrlSafeForScope(url, scope)) cacheManifest['url'] = '';
+      unawaited(_persistManifest(scope, cacheManifest).catchError((Object e) {
+        dlog('khong luu duoc release cache da scope (bo qua): $e');
+      }));
+      final decision = evaluateRelease(
+        currentBuild: currentBuild,
+        serverBuild: build,
+        serverMandatory: decoded['mandatory'] == true,
+      );
+      if (!available ||
+          !decision.updateAvailable ||
+          !isDownloadUrlSafeForScope(url, scope)) {
+        return null;
+      }
       final info = UpdateInfo(
         buildNumber: build,
         version: (decoded['version'] ?? '').toString(),
         notes: (decoded['notes'] ?? '').toString(),
         url: url,
-        mandatory: decoded['mandatory'] == true,
+        mandatory: decision.mandatoryGate,
+        scopeKey: scope.key,
+        serverOrigin: scope.serverOrigin,
       );
       // Gửi thông báo là VIỆC PHỤ — không được để nó nuốt mất bản cập nhật.
       // Trước đây lời gọi này nằm thẳng trong try chung: máy nào chặn quyền
@@ -82,12 +118,13 @@ class AppUpdater {
       // CÓ HẠN GIỜ, không chỉ try/catch: kênh thông báo của hệ điều hành có thể
       // KHÔNG ném lỗi mà treo luôn — lúc đó cả hàm đứng im, màn Cập nhật kẹt mãi
       // ở "Đang kiểm tra..." và người dùng không bao giờ thấy nút tải.
-      try {
-        await _notifyAvailableOnce(info)
-            .timeout(const Duration(seconds: 3));
-      } catch (e) {
+      // Notification is a side effect. It must never delay the update decision
+      // or leave the mandatory-update UI stuck in "checking".
+      unawaited(_notifyAvailableOnce(info)
+          .timeout(const Duration(seconds: 3))
+          .catchError((Object e) {
         dlog('khong gui duoc thong bao cap nhat (bo qua): $e');
-      }
+      }));
       return info;
     } catch (e) {
       dlog('checkForUpdate failed: $e');
@@ -103,9 +140,14 @@ class AppUpdater {
   }
 
   static Future<void> _notifyAvailableOnce(UpdateInfo info) async {
-    if (!_notifiedBuilds.add(info.buildNumber)) return;
+    final notificationIdentity = '${info.scopeKey}|${info.buildNumber}';
+    if (!_notifiedBuilds.add(notificationIdentity)) return;
     try {
-      const key = 'notified_update_build';
+      final scope = ReleaseScope.forServer(
+        info.serverOrigin,
+        info.scopeKey.split('|').last,
+      );
+      final key = scope.storageKey('notified_build');
       final store = LocalStore.instance;
       if (await store.getString(key) == '${info.buildNumber}') return;
       await store.setString(key, '${info.buildNumber}');
@@ -124,9 +166,15 @@ class AppUpdater {
       ApiService api, UpdateInfo info) async {
     final platform = _platform;
     if (platform == null) return 'Nền tảng này chưa hỗ trợ tự cập nhật';
+    final activeScope = ReleaseScope.forServer(api.baseUrl, platform);
+    if (activeScope.key != info.scopeKey ||
+        activeScope.serverOrigin != info.serverOrigin ||
+        !isDownloadUrlSafeForScope(info.url, activeScope)) {
+      return 'Máy chủ đã thay đổi. Hãy kiểm tra lại bản cập nhật từ máy chủ hiện tại.';
+    }
     try {
       final bytes = await api.getBytes(
-        info.url,
+        _downloadPath(info.url),
         timeout: const Duration(minutes: 8),
         errorMessage: 'Tải bản cập nhật thất bại',
       );
@@ -142,7 +190,8 @@ class AppUpdater {
       final base = Platform.isAndroid
           ? (await getTemporaryDirectory()).path
           : Directory.systemTemp.path;
-      final dir = Directory('$base/dandpak_update')
+      final dir = Directory('${Directory(base).path}/dandpak_update/'
+          '${_safeScopeDirectory(activeScope)}')
         ..createSync(recursive: true);
       final file = File('${dir.path}/dan-d-pak-update.$ext');
       await file.writeAsBytes(bytes, flush: true);
@@ -214,5 +263,77 @@ class AppUpdater {
       message: message,
       action: 'app_update',
     );
+  }
+
+  static Future<void> prepareForServerOriginChange({
+    required String fromBaseUrl,
+    required String toBaseUrl,
+  }) async {
+    final platform = _platform;
+    if (platform == null) return;
+    final from = ReleaseScope.forServer(fromBaseUrl, platform);
+    final to = ReleaseScope.forServer(toBaseUrl, platform);
+    if (from.key == to.key) return;
+    // Invalidate both the origin being left and the destination before the
+    // switch. Namespacing is the safety boundary; invalidation guarantees the
+    // next view is recomputed from the destination server, never stale disk.
+    await LocalStore.instance.removeWhere((key) =>
+        key.startsWith(from.storagePrefix) ||
+        key.startsWith(to.storagePrefix));
+    await _deleteDownloadedArtifactForScope(from);
+    await _deleteDownloadedArtifactForScope(to);
+    _notifiedBuilds.removeWhere((identity) =>
+        identity.startsWith('${from.key}|') ||
+        identity.startsWith('${to.key}|'));
+    // Clear mounted update widgets before bootstrap. AuthProvider sends a
+    // second revision after the new origin is active; request serials discard
+    // any response still arriving from the previous origin.
+    contextRevision.value++;
+  }
+
+  static void notifyServerOriginChanged() {
+    contextRevision.value++;
+  }
+
+  static Future<void> _persistManifest(
+      ReleaseScope scope, Map<dynamic, dynamic> decoded) async {
+    final store = LocalStore.instance;
+    await store.setString(scope.storageKey('latest_build'),
+        '${(decoded['buildNumber'] as num?)?.toInt() ?? 0}');
+    await store.setString(scope.storageKey('mandatory'),
+        decoded['mandatory'] == true ? 'true' : 'false');
+    await store.setString(
+        scope.storageKey('version'), (decoded['version'] ?? '').toString());
+    await store.setString(
+        scope.storageKey('notes'), (decoded['notes'] ?? '').toString());
+    await store.setString(
+        scope.storageKey('download_url'), (decoded['url'] ?? '').toString());
+    await store.setString(scope.storageKey('checked_at_utc'),
+        DateTime.now().toUtc().toIso8601String());
+  }
+
+  static String _downloadPath(String rawUrl) {
+    final uri = Uri.parse(rawUrl);
+    return uri.hasScheme
+        ? '${uri.path}${uri.hasQuery ? '?${uri.query}' : ''}'
+        : rawUrl;
+  }
+
+  static String _safeScopeDirectory(ReleaseScope scope) =>
+      scope.key.replaceAll(RegExp(r'[^a-zA-Z0-9._-]'), '_');
+
+  static Future<void> _deleteDownloadedArtifactForScope(
+      ReleaseScope scope) async {
+    try {
+      final base = Platform.isAndroid
+          ? (await getTemporaryDirectory()).path
+          : Directory.systemTemp.path;
+      final dir = Directory('${Directory(base).path}/dandpak_update/'
+          '${_safeScopeDirectory(scope)}');
+      if (await dir.exists()) await dir.delete(recursive: true);
+    } catch (_) {
+      // Cache invalidation must not prevent a safe endpoint switch. Scope
+      // validation still blocks using any stale artifact.
+    }
   }
 }

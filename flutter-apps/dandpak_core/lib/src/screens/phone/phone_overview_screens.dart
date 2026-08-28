@@ -4,10 +4,12 @@ import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/api_service.dart';
 import '../../ui/app_theme.dart';
+import '../../utils/business_datetime.dart';
 import '../../utils/translation.dart';
 import '../management/management_widgets.dart';
 import 'phone_kit.dart';
 import 'phone_scaffolds.dart';
+import 'phone_shift_screen.dart';
 
 /// NHÓM TỔNG QUAN bản điện thoại: Tổng quan, Doanh thu, Ca & két tiền.
 /// Dữ liệu thật: `GET /api/dashboard`, `/api/dashboard/trends`,
@@ -143,8 +145,7 @@ class _PhoneHomeScreenState extends State<PhoneHomeScreen> {
                                 padding:
                                     const EdgeInsets.fromLTRB(16, 16, 16, 16),
                                 child: Column(
-                                  crossAxisAlignment:
-                                      CrossAxisAlignment.start,
+                                  crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Text(t('DOANH THU'),
                                         style: const TextStyle(
@@ -162,8 +163,7 @@ class _PhoneHomeScreenState extends State<PhoneHomeScreen> {
                                               FontFeature.tabularFigures()
                                             ])),
                                     const SizedBox(height: 8),
-                                    Text(
-                                        '${phoneInt(bills)} ${t('hóa đơn')}',
+                                    Text('${phoneInt(bills)} ${t('hóa đơn')}',
                                         style: const TextStyle(
                                             fontSize: 11.5,
                                             fontWeight: FontWeight.w600,
@@ -173,8 +173,11 @@ class _PhoneHomeScreenState extends State<PhoneHomeScreen> {
                               ),
                               const SizedBox(height: 1),
                               PhoneMetricStrip([
-                                (t('Trung bình / hóa đơn'), phoneMoney(avg),
-                                    null),
+                                (
+                                  t('Trung bình / hóa đơn'),
+                                  phoneMoney(avg),
+                                  null
+                                ),
                                 (
                                   t('Bill đang mở'),
                                   phoneInt(openOrders),
@@ -246,9 +249,8 @@ class _PhoneShiftScreenState extends State<PhoneShiftScreen> {
       final api = context.read<ApiService>();
       // Két tiền hỏng KHÔNG được che mất thông tin ca — hai lời gọi độc lập.
       final shift = await api.getCurrentShift();
-      final drawer = await api
-          .getCashDrawer()
-          .catchError((_) => <String, dynamic>{});
+      final drawer =
+          await api.getCashDrawer().catchError((_) => <String, dynamic>{});
       if (!mounted) return;
       setState(() {
         _shift = shift;
@@ -282,8 +284,7 @@ class _PhoneShiftScreenState extends State<PhoneShiftScreen> {
             PhoneHeader(
               title: t('Ca & két tiền'),
               subtitle: open ? t('Ca đang mở') : t('Chưa mở ca'),
-              subtitleColor:
-                  open ? const Color(0xFF047857) : DanColors.late,
+              subtitleColor: open ? const Color(0xFF047857) : DanColors.late,
               onBack: () => Navigator.of(context).maybePop(),
               actions: [
                 PhoneIconButton(icon: Icons.refresh, onTap: _load),
@@ -307,8 +308,8 @@ class _PhoneShiftScreenState extends State<PhoneShiftScreen> {
                                 Padding(
                                   padding:
                                       const EdgeInsets.fromLTRB(16, 0, 16, 12),
-                                  child: InlineMessage(
-                                      t('Chưa có ca nào đang mở. Mở ca ở bản desktop hoặc tablet trước khi bán.')),
+                                  child: InlineMessage(t(
+                                      'Chưa có ca nào đang mở. Bấm "Mở ca" bên dưới để bắt đầu.')),
                                 ),
                               // Cột ca: shifts.opened_at / opening_cash
                               // (server/services/shifts.js publicShift).
@@ -318,13 +319,17 @@ class _PhoneShiftScreenState extends State<PhoneShiftScreen> {
                                   rows: [
                                     (t('Mã ca'), _s(s['id'])),
                                     if (_s(s['opened_at']).isNotEmpty)
-                                      (t('Mở lúc'), _s(s['opened_at'])),
+                                      (
+                                        t('Mở lúc'),
+                                        BusinessDateTime.dateTime(
+                                            s['opened_at'])
+                                      ),
                                     if (_s(s['opened_by']).isNotEmpty)
                                       (t('Người mở'), _s(s['opened_by'])),
                                     (
                                       t('Tiền đầu ca'),
-                                      phoneMoney(_pick(
-                                          s, ['opening_cash', 'opening_balance']))
+                                      phoneMoney(_pick(s,
+                                          ['opening_cash', 'opening_balance']))
                                     ),
                                   ],
                                 ),
@@ -335,24 +340,43 @@ class _PhoneShiftScreenState extends State<PhoneShiftScreen> {
                                 PhoneInfoCard(
                                   title: t('KÉT TIỀN'),
                                   rows: [
-                                    (t('Tiền đầu ca'),
-                                        phoneMoney(_n(_drawer['opening_cash']))),
-                                    (t('Tiền mặt bán được'),
-                                        phoneMoney(_n(_drawer['cash_sales']))),
-                                    (t('Chi từ két'),
-                                        phoneMoney(_n(_drawer['expenses']))),
-                                    (t('Hoàn ứng'),
-                                        phoneMoney(
-                                            _n(_drawer['reimbursements']))),
-                                    (t('TIỀN MẶT PHẢI CÓ'),
-                                        phoneMoney(
-                                            _n(_drawer['expected_cash']))),
+                                    (
+                                      t('Tiền đầu ca'),
+                                      phoneMoney(_n(_drawer['opening_cash']))
+                                    ),
+                                    (
+                                      t('Tiền mặt bán được'),
+                                      phoneMoney(_n(_drawer['cash_sales']))
+                                    ),
+                                    (
+                                      t('Chi từ két'),
+                                      phoneMoney(_n(_drawer['expenses']))
+                                    ),
+                                    (
+                                      t('Hoàn ứng'),
+                                      phoneMoney(_n(_drawer['reimbursements']))
+                                    ),
+                                    (
+                                      t('TIỀN MẶT PHẢI CÓ'),
+                                      phoneMoney(_n(_drawer['expected_cash']))
+                                    ),
                                   ],
                                 ),
                             ],
                           ),
                         ),
             ),
+            if (!_loading && _error == null)
+              PhoneActionBar(
+                child: PhoneCta(
+                  label: t(open ? 'Kết ca' : 'Mở ca'),
+                  color: open ? DanColors.late : null,
+                  onPressed: () async {
+                    final doi = await moManCa(context);
+                    if (doi && mounted) _load();
+                  },
+                ),
+              ),
           ],
         ),
       ),

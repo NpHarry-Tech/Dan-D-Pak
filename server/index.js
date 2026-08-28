@@ -6,6 +6,8 @@ import { dirname, join } from 'node:path';
 import { mkdirSync } from 'node:fs';
 import zlib from 'node:zlib';
 import { db, DB_WAS_EMPTY, migrate, reconcileAuditFromArchive, compactAuditToMonthly, purgeAuditBeyondRetention, backupDatabase } from './db.js';
+import { seedShopeeReview } from './db/reviewSeed.js';
+import { tenantMiddleware } from './services/tenantContext.js';
 import { initRealtime } from './realtime.js';
 import { api } from './api.js';
 import { startSyncEngine } from './services/sync.js';
@@ -13,7 +15,12 @@ import {
   handleHaravanWebhook, verifyHaravanSubscribe, installUrl as haravanInstallUrl,
   oauthCallback as haravanOauthCallback, startHaravanWorker, maintainHaravanLogs,
 } from './services/haravanConnector.js';
-import { handleShopeePush, shopeeExchangeToken } from './services/shopeeConnector.js';
+import { receiveShopeePush, startShopeePushWorker, shopeeExchangeToken } from './services/shopeeConnector.js';
+import { handleCallback as handleMarketplaceCallback } from './services/connectionPlatform.js';
+import { handleLazadaPush, lazadaExchangeToken } from './services/lazadaConnector.js';
+import { handleTiktokWebhook, tiktokExchangeToken } from './services/tiktokConnector.js';
+import { verifyMetaSubscribe, handleMetaWebhook } from './services/metaConnector.js';
+import { handleZaloWebhook } from './services/zaloConnector.js';
 import { backfillPaidBills, processInvoiceQueue } from './services/einvoice.js';
 import { startErpWorker } from './integrations/erp/outbox.js';
 import { ensureStorageDirectories } from './services/enterpriseStorage.js';
@@ -76,23 +83,36 @@ try {
 // (Cơ chế config-seed.json / CONFIG_SEED_URL thời server free không có disk
 // đã GỠ BỎ 2026-07-16 — dữ liệu thật giờ sống bền trong SQLite + backup.)
 if (DB_WAS_EMPTY) {
-  if (env.DISABLE_DEMO_SEED) {
+  if (env.isReview) {
+    // Tenant review KHÔNG BAO GIỜ chạy demo seed chung (nhân sự/kho/bàn/máy in
+    // production-like). Review chỉ có reviewSeed tối thiểu bên dưới. Đây là bất
+    // biến cách ly tenant (§16/§42) — không phụ thuộc cờ DISABLE_DEMO_SEED.
+    logger.warn('review env: skipping common demo seed (minimal review seed only)');
+  } else if (env.DISABLE_DEMO_SEED) {
     logger.warn('empty database detected; DISABLE_DEMO_SEED=true — skipping demo seed');
   } else {
     logger.warn('empty catalog detected; running demo seed');
     await import('./seed.js');
   }
 }
-// Băm mọi PIN còn ở dạng plaintext (DB cũ / sau seed demo) trước khi bootstrap admin.
+// Băm mọi PIN legacy còn plaintext trước khi mở HTTP server.
 try {
   const migratedPins = migratePlaintextPins(db);
   if (migratedPins > 0) logger.warn('hashed legacy plaintext PINs', { count: migratedPins });
 } catch (err) {
   logger.warn('PIN migration skipped', { message: err.message });
 }
-const adminBootstrap = bootstrapDefaultAdmin();
-if (adminBootstrap.created) logger.warn('default admin account created', { username: adminBootstrap.username });
-if (adminBootstrap.pinReset) logger.warn('admin PIN reset via DANDPAK_ADMIN_RESET_PIN env (remove the env var after this run)', { username: adminBootstrap.username });
+
+if (env.isReview) {
+  // Review public internet-facing: seed failure là STARTUP FAILURE, không được tiếp
+  // tục chạy với account mặc định/demo. seedShopeeReview cũng vô hiệu user khác.
+  const r = seedShopeeReview();
+  logger.warn('Shopee review env seeded', r);
+} else {
+  const adminBootstrap = bootstrapDefaultAdmin();
+  if (adminBootstrap.created) logger.warn('default admin account created', { username: adminBootstrap.username });
+  if (adminBootstrap.pinReset) logger.warn('admin PIN reset via DANDPAK_ADMIN_RESET_PIN env (remove the env var after this run)', { username: adminBootstrap.username });
+}
 
 const app = express();
 app.disable('x-powered-by');
@@ -107,6 +127,10 @@ app.use((req, res, next) => {
   next();
 });
 app.use(createCorsMiddleware(env));
+// TenantContext + chặn Host giả mạo cho data-plane /api (§8/§38). Chỉ enforce khi
+// tenant đã khai host (API_BASE_URL/APP_URL/TENANT_ALLOWED_HOSTS); dev/LAN bỏ qua.
+// /health và /webhooks không đi qua đây (health dùng localhost; webhook có chữ ký).
+app.use('/api', tenantMiddleware());
 app.use(compressionMiddleware);              // gzip trước mọi API response
 app.use('/api', rateLimit({ key: 'api', windowMs: 60_000, max: 6000 }));
 // Rate-limit webhook Haravan (300/phút/IP) bằng limiter DÙNG CHUNG ở core/rateLimit.js.
@@ -126,10 +150,10 @@ app.post('/webhooks/haravan', haravanWebhookRateLimit, express.raw({ type: '*/*'
     res.status(err.status || 400).send(err.message || 'Haravan webhook failed');
   }
 });
-// Shopee Push — ký trên URL|body nên PHẢI đọc raw body TRƯỚC express.json. Trả 200
-// nhanh (Shopee timeout ngắn); đồng bộ đơn chạy trong handler (idempotent).
+// Shopee Push: verify chữ ký + durable enqueue rồi ACK ngay. Worker xử lý nghiệp vụ
+// sau ACK để không phụ thuộc latency Shopee API/SQLite trong cửa sổ timeout webhook.
 const shopeeWebhookRateLimit = rateLimit({ key: 'shopee-webhook', windowMs: 60_000, max: 600, message: 'rate_limited' });
-app.post('/webhooks/shopee', shopeeWebhookRateLimit, express.raw({ type: '*/*', limit: '10mb' }), async (req, res) => {
+app.post('/webhooks/shopee', shopeeWebhookRateLimit, express.raw({ type: '*/*', limit: '10mb' }), (req, res) => {
   const raw = Buffer.isBuffer(req.body) ? req.body : Buffer.from(req.body || '');
   const host = req.get('host');
   const candidates = [
@@ -138,18 +162,107 @@ app.post('/webhooks/shopee', shopeeWebhookRateLimit, express.raw({ type: '*/*', 
     `${req.protocol}://${host}${req.originalUrl}`,
   ];
   try {
-    await handleShopeePush(raw, req.headers, candidates);
+    receiveShopeePush(raw, req.headers, candidates);
     res.status(200).send('OK');
   } catch (err) {
     res.status(err.status || 400).send(err.message || 'Shopee push failed');
   }
 });
+// Lazada Push — ký body HMAC(app_secret); đọc raw TRƯỚC express.json.
+const lazadaWebhookRateLimit = rateLimit({ key: 'lazada-webhook', windowMs: 60_000, max: 600, message: 'rate_limited' });
+app.post('/webhooks/lazada', lazadaWebhookRateLimit, express.raw({ type: '*/*', limit: '10mb' }), async (req, res) => {
+  const raw = Buffer.isBuffer(req.body) ? req.body : Buffer.from(req.body || '');
+  try {
+    await handleLazadaPush(raw, req.headers);
+    res.status(200).send('OK');
+  } catch (err) {
+    res.status(err.status || 400).send(err.message || 'Lazada push failed');
+  }
+});
+// TikTok Shop webhook — Authorization = HMAC(app_secret, app_key+body); raw body.
+const tiktokWebhookRateLimit = rateLimit({ key: 'tiktok-webhook', windowMs: 60_000, max: 600, message: 'rate_limited' });
+app.post('/webhooks/tiktok', tiktokWebhookRateLimit, express.raw({ type: '*/*', limit: '10mb' }), async (req, res) => {
+  try { await handleTiktokWebhook(Buffer.isBuffer(req.body) ? req.body : Buffer.from(req.body || ''), req.headers); res.status(200).send('OK'); }
+  catch (err) { res.status(err.status || 400).send(err.message || 'TikTok webhook failed'); }
+});
+// Meta (Facebook Page + Instagram) — GET verify + POST X-Hub-Signature-256; raw body.
+const metaWebhookRateLimit = rateLimit({ key: 'meta-webhook', windowMs: 60_000, max: 600, message: 'rate_limited' });
+app.get('/webhooks/meta', (req, res) => {
+  try { res.status(200).send(verifyMetaSubscribe(req.query, req.query.branch_id || 'sala')); }
+  catch (err) { res.status(err.status || 403).send(err.message || 'Meta verify failed'); }
+});
+app.post('/webhooks/meta', metaWebhookRateLimit, express.raw({ type: '*/*', limit: '10mb' }), (req, res) => {
+  try { handleMetaWebhook(Buffer.isBuffer(req.body) ? req.body : Buffer.from(req.body || ''), req.headers); res.status(200).send('EVENT_RECEIVED'); }
+  catch (err) { res.status(err.status || 400).send(err.message || 'Meta webhook failed'); }
+});
+// Zalo OA — X-ZEvent-Signature = mac=SHA256(appId+body+timestamp+OASecret); raw body.
+const zaloWebhookRateLimit = rateLimit({ key: 'zalo-webhook', windowMs: 60_000, max: 600, message: 'rate_limited' });
+app.post('/webhooks/zalo', zaloWebhookRateLimit, express.raw({ type: '*/*', limit: '10mb' }), (req, res) => {
+  try { handleZaloWebhook(Buffer.isBuffer(req.body) ? req.body : Buffer.from(req.body || ''), req.headers); res.status(200).send('OK'); }
+  catch (err) { res.status(err.status || 400).send(err.message || 'Zalo webhook failed'); }
+});
 app.use(express.json({ limit: '35mb' })); // DMS cho phép file 25MB → base64 phình ~33MB
+
+// TikTok Shop OAuth redirect: seller authorize xong → kèm ?code= (auth_code).
+app.get('/auth/tiktok/callback', async (req, res) => {
+  try {
+    const branchId = req.query.branch_id || req.query.branch || req.query.state || 'sala';
+    await tiktokExchangeToken(branchId, req.query.code || req.query.auth_code);
+    res.status(200).send('TikTok Shop đã kết nối. Có thể đóng cửa sổ này.');
+  } catch (err) { res.status(err.status || 400).send(err.message || 'TikTok OAuth failed'); }
+});
+
+// Trang xác nhận kết nối (đóng lại, app tự cập nhật qua poll).
+function connectedHtml(name, shop) {
+  return `<html><body style="font-family:sans-serif;text-align:center;padding:40px">` +
+    `<h2>✓ Đã kết nối ${name}${shop ? ` (shop ${shop})` : ''}</h2>` +
+    `<p>Quay lại ứng dụng Dan D Pak — kết nối sẽ tự cập nhật. Có thể đóng cửa sổ này.</p></body></html>`;
+}
+
+// Lazada OAuth redirect: seller authorize xong → Lazada gọi kèm ?code=.
+app.get('/auth/lazada/callback', async (req, res) => {
+  try {
+    const state = String(req.query.state || '');
+    if (state.startsWith('mpatt_')) {
+      const out = await handleMarketplaceCallback('lazada', req.query);
+      return res.status(200).send(connectedHtml('Lazada', out.shop_id));
+    }
+    // §8 HARDENING: legacy fallback (branch từ client query, không state machine)
+    // fail-closed mặc định; chỉ bật qua SHOPEE_LEGACY_CALLBACK=1.
+    if (!env.SHOPEE_LEGACY_CALLBACK) {
+      const e = new Error('Phiên kết nối Lazada không hợp lệ. Hãy kết nối lại bằng nút "Kết nối" 1-chạm.');
+      e.status = 400;
+      throw e;
+    }
+    const branchId = req.query.branch_id || req.query.branch || 'sala';
+    const out = await lazadaExchangeToken(branchId, req.query.code);
+    res.status(200).send(`Lazada đã kết nối seller ${out.seller_id}. Có thể đóng cửa sổ này.`);
+  } catch (err) {
+    res.status(err.status || 400).send(err.message || 'Lazada OAuth failed');
+  }
+});
 
 // Shopee OAuth redirect: shop authorize xong → Shopee gọi kèm ?code=&shop_id=.
 app.get('/auth/shopee/callback', async (req, res) => {
   try {
-    const branchId = req.query.branch_id || req.query.branch || req.query.state || 'sala';
+    const state = String(req.query.state || '');
+    // Flow MỚI (Connection Platform 1-chạm): state = marketplace_auth_attempt id.
+    // ĐÂY là đường canonical — có state one-shot + TTL + branch bind server-side +
+    // anti-replay + token mã hoá.
+    if (state.startsWith('mpatt_')) {
+      const out = await handleMarketplaceCallback('shopee', req.query);
+      return res.status(200).send(connectedHtml('Shopee', out.shop_id));
+    }
+    // §8 HARDENING: đường LEGACY (per-branch settings) KHÔNG có state machine và
+    // lấy branch_id TỪ CLIENT QUERY để cấp token → bypass được cổng bảo mật. NGƯNG
+    // mặc định (fail-closed). Chỉ bật khi bắt buộc tương thích migrate cũ, qua cờ
+    // tường minh SHOPEE_LEGACY_CALLBACK=1 (chấp nhận rủi ro, ghi rõ technical debt).
+    if (!env.SHOPEE_LEGACY_CALLBACK) {
+      const e = new Error('Phiên kết nối Shopee không hợp lệ. Hãy kết nối lại bằng nút "Kết nối" 1-chạm trong mục Kết nối sàn.');
+      e.status = 400;
+      throw e;
+    }
+    const branchId = req.query.branch_id || req.query.branch || 'sala';
     const out = await shopeeExchangeToken(branchId, req.query.code, req.query.shop_id);
     res.status(200).send(`Shopee đã kết nối shop ${out.shop_id}. Có thể đóng cửa sổ này.`);
   } catch (err) {
@@ -225,8 +338,17 @@ app.use(errorHandler);
 
 const server = createServer(app);
 initRealtime(server);
-startSyncEngine();
+// ONLINE-ONLY: KHÔNG khởi động engine đồng bộ offline Edge→Hub khi đã ngưng
+// offline-first. Bảng/dữ liệu sync giữ nguyên (inert) cho rollback. Các worker
+// tích hợp ONLINE (Haravan/Shopee/ERP outbox) và outbox durability KHÔNG bị ảnh
+// hưởng — chúng không phải "offline feature".
+if (env.OFFLINE_DECOMMISSIONED) {
+  logger.warn('online-only mode: Edge offline sync engine NOT started (OFFLINE_DECOMMISSIONED=true)');
+} else {
+  startSyncEngine();
+}
 startHaravanWorker();
+startShopeePushWorker();
 startErpWorker();   // ERP outbox → Business Central (no-op khi chưa cấu hình/tắt)
 
 // Vòng đời nhật ký hoạt động (giữ tối đa 3 năm / 36 tháng):

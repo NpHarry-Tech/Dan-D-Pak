@@ -3,9 +3,9 @@ import 'package:provider/provider.dart';
 
 import '../../services/api_service.dart';
 import '../../ui/app_theme.dart';
-import '../../ui/format.dart';
 import '../../ui/open_file.dart';
 import '../../ui/debouncer.dart';
+import '../../utils/business_datetime.dart';
 import '../../widgets/manager_pin_dialog.dart';
 import '../management/management_widgets.dart';
 import '../../utils/translation.dart';
@@ -215,7 +215,7 @@ class _DocumentsBodyState extends State<DocumentsBody> {
   Widget _card(Map<String, dynamic> f) {
     final name =
         _s(f['original_name']).isEmpty ? _s(f['name']) : _s(f['original_name']);
-    final created = DateTime.tryParse(_s(f['created_at']));
+    final created = BusinessDateTime.dateTime(f['created_at']);
     final size = _n(f['size']);
     final id = _s(f['id']);
 
@@ -260,7 +260,7 @@ class _DocumentsBodyState extends State<DocumentsBody> {
           Text(
             [
               if (size > 0) _humanSize(size),
-              if (created != null) Fmt.dmyHm(created).substring(6),
+              if (created != '—') created,
             ].join(' · '),
             style: TextStyle(fontSize: 11, color: DanColors.faint),
           ),

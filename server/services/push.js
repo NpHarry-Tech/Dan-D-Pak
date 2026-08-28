@@ -7,29 +7,43 @@
 // bản cập nhật, tạo đơn…) — mọi lỗi ở đây chỉ log, không throw ra ngoài.
 import { db, uid, now, audit } from '../db.js';
 import { getFirebaseServiceAccount } from './settings.js';
+import { getNotificationRoutingConfig } from './settings/notifications.js';
 import { logger } from '../core/logger.js';
+import { createHash } from 'node:crypto';
 
-let _app = null;
-let _initFailed = false;
+const _appsByCredential = new Map();
+const _failedCredentials = new Set();
+
+function credentialFingerprint(serviceAccount) {
+  return createHash('sha256').update(JSON.stringify({
+    project_id: serviceAccount?.project_id || '',
+    client_email: serviceAccount?.client_email || '',
+    private_key_id: serviceAccount?.private_key_id || '',
+    private_key: serviceAccount?.private_key || '',
+  })).digest('hex');
+}
 
 async function getMessaging(branch_id) {
-  if (_initFailed) return null;
   const serviceAccount = getFirebaseServiceAccount(branch_id);
   if (!serviceAccount) return null;
+  const fingerprint = credentialFingerprint(serviceAccount);
+  if (_failedCredentials.has(fingerprint)) return null;
   try {
     const admin = await import('firebase-admin');
-    if (!_app) {
-      // Nhiều branch có thể dùng CHUNG 1 project Firebase (thường tình) — chỉ
-      // khởi tạo app mặc định MỘT LẦN, tái dùng cho mọi lần gửi sau.
-      _app = admin.default.apps.length
-        ? admin.default.app()
-        : admin.default.initializeApp({
-            credential: admin.default.credential.cert(serviceAccount),
-          });
+    let app = _appsByCredential.get(fingerprint);
+    if (!app) {
+      // Cache một named app theo fingerprint. Các branch có thể dùng chung
+      // project, project riêng hoặc xoay credential mà không cần restart server.
+      const appName = `ddp-${fingerprint.slice(0, 20)}`;
+      app = admin.default.apps.find((candidate) => candidate?.name === appName)
+        || admin.default.initializeApp({
+          credential: admin.default.credential.cert(serviceAccount),
+        }, appName);
+      _appsByCredential.set(fingerprint, app);
     }
-    return admin.default.messaging(_app);
+    return admin.default.messaging(app);
   } catch (e) {
-    _initFailed = true;
+    _failedCredentials.add(fingerprint);
     logger.warn('firebase-admin init failed', { message: e?.message });
     return null;
   }
@@ -101,6 +115,38 @@ export async function sendPushToBranch(branch_id, { title, body, data = {}, plat
     return result;
   } catch (e) {
     logger.warn('sendPushToBranch failed', { message: e?.message });
+    return { sent: 0, failed: 0, reason: 'error' };
+  }
+}
+
+/** Gửi push THEO ĐÚNG ĐỊNH TUYẾN THÔNG BÁO trong Cài đặt: chỉ đẩy tới thiết bị
+ *  mà VAI TRÒ người đăng nhập nằm trong danh sách nhận [category] (giống banner
+ *  in-app _roleReceivesCategory ở client). Thiết bị không rõ vai trò → vẫn gửi
+ *  (khớp hành vi client: currentUserRole rỗng thì nhận tất). Không cấu hình
+ *  category → gửi tất. Best-effort, không throw. */
+export async function sendPushForCategory(branch_id, category, { title, body, data = {} } = {}) {
+  try {
+    const messaging = await getMessaging(branch_id);
+    if (!messaging) return { sent: 0, failed: 0, reason: 'not_configured' };
+    const cfg = getNotificationRoutingConfig(branch_id);
+    const allowed = cfg && cfg.roles ? cfg.roles[category] : null;
+    const allowedSet = Array.isArray(allowed) ? new Set(allowed.map(String)) : null;
+    const rows = db.prepare(`
+      SELECT dt.*, u.role AS user_role
+      FROM device_tokens dt LEFT JOIN users u ON u.id = dt.user_id
+      WHERE dt.branch_id = ?`).all(branch_id);
+    const targets = allowedSet
+      ? rows.filter(r => {
+        const role = String(r.user_role || '').trim();
+        return role === '' || allowedSet.has(role); // rõ vai trò & không nằm trong list → bỏ
+      })
+      : rows;
+    if (!targets.length) return { sent: 0, failed: 0, reason: 'no_devices' };
+    const result = await deliver(messaging, targets, { title, body, data });
+    audit('push.sent', { title, category, ...result, total: targets.length }, branch_id);
+    return result;
+  } catch (e) {
+    logger.warn('sendPushForCategory failed', { message: e?.message });
     return { sent: 0, failed: 0, reason: 'error' };
   }
 }

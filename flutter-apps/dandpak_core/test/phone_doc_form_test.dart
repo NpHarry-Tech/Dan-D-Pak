@@ -105,7 +105,7 @@ void main() {
     testWidgets('gửi đúng route và trường server đọc', (tester) async {
       final api = await _pump(tester, const PhoneProductFormScreen());
       await tester.enterText(find.byType(TextField).at(0), 'Hạt óc chó 1kg');
-      await tester.enterText(find.byType(TextField).at(2), '320000');
+      await tester.enterText(find.byType(TextField).at(5), '320000');
       await tester.pump();
       await tester.tap(find.text('Lưu hàng hóa'));
       await tester.pumpAndSettle();

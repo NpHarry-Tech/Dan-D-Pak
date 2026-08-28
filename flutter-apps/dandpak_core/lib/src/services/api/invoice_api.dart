@@ -2,15 +2,25 @@ part of '../api_service.dart';
 
 extension ApiServiceInvoiceApi on ApiService {
   // ── Invoices (Hóa đơn) ─────────────────────────────────────────────────
-  Future<List<dynamic>> getInvoices() async {
-    return listFrom(
-        await getJson('/api/invoices', errorMessage: 'Không tải được hóa đơn'));
+  Future<Map<String, dynamic>> getInvoicePage({
+    int page = 1,
+    int limit = 100,
+    String q = '',
+    String status = '',
+  }) async {
+    final query = Uri(queryParameters: {
+      'page': '$page',
+      'limit': '$limit',
+      if (q.trim().isNotEmpty) 'q': q.trim(),
+      if (status.isNotEmpty) 'status': status,
+    }).query;
+    return mapFrom(await getJson('/api/invoices?$query',
+        errorMessage: 'Không tải được hóa đơn'));
   }
 
-  Future<void> cancelInvoice(String id, {String reason = ''}) async {
-    await postJson('/api/invoices/$id/cancel',
-        body: {'reason': reason}, errorMessage: 'Không hủy được hóa đơn');
-  }
+  Future<Map<String, dynamic>> getInvoiceDetail(String orderId) async =>
+      mapFrom(await getJson('/api/invoices/$orderId/detail',
+          errorMessage: 'Không tải được chi tiết hóa đơn'));
 
   /// Issue a VAT invoice for a paid order (from the sales-history dialog).
   Future<Map<String, dynamic>> issueInvoice(Map<String, dynamic> body) async {

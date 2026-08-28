@@ -9,6 +9,7 @@ import '../../ui/app_theme.dart';
 import '../../widgets/dan_top_bar.dart';
 import 'dashboard_tab.dart';
 import 'reports_screen.dart';
+import '../money/money_screen.dart';
 import '../../services/black_box.dart';
 import '../../utils/translation.dart';
 
@@ -23,7 +24,9 @@ class ManagementScreen extends StatefulWidget {
   State<ManagementScreen> createState() => _ManagementScreenState();
 }
 
-class _ManagementScreenState extends State<ManagementScreen> {
+class _ManagementScreenState extends State<ManagementScreen>
+    with SingleTickerProviderStateMixin {
+  late final TabController _tab = TabController(length: 2, vsync: this);
   static final _events = [
     'stats:dirty',
     'payment:done',
@@ -70,6 +73,7 @@ class _ManagementScreenState extends State<ManagementScreen> {
   @override
   void dispose() {
     _disposed = true;
+    _tab.dispose();
     _realtime.dispose();
     _refreshTick.dispose();
     super.dispose();
@@ -108,7 +112,35 @@ class _ManagementScreenState extends State<ManagementScreen> {
           ),
         ],
       ),
-      body: DashboardTab(api: api, refresh: _refreshTick),
+      body: Column(
+        children: [
+          Material(
+            color: DanColors.surface,
+            child: TabBar(
+              controller: _tab,
+              isScrollable: true,
+              tabAlignment: TabAlignment.start,
+              labelColor: DanColors.brand,
+              unselectedLabelColor: DanColors.muted,
+              indicatorColor: DanColors.brand,
+              tabs: [
+                Tab(text: t('Tổng quan')),
+                Tab(text: t('Dòng tiền')),
+              ],
+            ),
+          ),
+          const Divider(height: 1, color: DanColors.border),
+          Expanded(
+            child: TabBarView(
+              controller: _tab,
+              children: [
+                DashboardTab(api: api, refresh: _refreshTick),
+                const MoneyPanel(),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

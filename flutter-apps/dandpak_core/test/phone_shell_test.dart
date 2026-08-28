@@ -8,6 +8,8 @@ import 'package:dandpak_core/src/providers/auth_provider.dart';
 import 'package:dandpak_core/src/screens/phone/phone_catalog_screens.dart';
 import 'package:dandpak_core/src/screens/phone/phone_ops_screens.dart';
 import 'package:dandpak_core/src/screens/phone/phone_overview_screens.dart';
+import 'package:dandpak_core/src/screens/phone/phone_form_screens.dart';
+import 'package:dandpak_core/src/screens/phone/phone_printers_screen.dart';
 import 'package:dandpak_core/src/screens/phone/phone_shell.dart';
 import 'package:dandpak_core/src/services/api_service.dart';
 import 'package:flutter/material.dart';
@@ -37,6 +39,29 @@ class _FakeApi extends ApiService {
         ],
       };
     }
+    if (path.startsWith('/api/reports/preview')) {
+      return {
+        'summary': [
+          {'label': 'Doanh thu', 'value': '84.216.000đ'},
+          {'label': 'Trả hàng', 'value': '2.480.000đ'},
+          {'label': 'Doanh thu thuần', 'value': '81.736.000đ'},
+          {'label': 'Hóa đơn', 'value': 46},
+        ],
+        'sections': [
+          {
+            'title': 'Doanh thu theo ngày',
+            'columns': [
+              {'key': 'date', 'label': 'Ngày'},
+              {'key': 'bills', 'label': 'Hóa đơn'},
+              {'key': 'revenue', 'label': 'Doanh thu'},
+            ],
+            'rows': [
+              {'date': '30/07', 'bills': 46, 'revenue': '84.216.000đ'},
+            ],
+          },
+        ],
+      };
+    }
     // MỌI phản hồi giả dưới đây phải giống HỆT hình dạng server thật trả về.
     // Đó chính là giá trị của bộ test này: nếu ai đổi tên trường ở server mà
     // quên sửa app (hoặc ngược lại), test phải đỏ chứ không phải màn hình hiện
@@ -52,10 +77,20 @@ class _FakeApi extends ApiService {
         'byChannel': {},
         'methods': [],
         'topItems': [
-          {'name': 'Hạt điều rang muối 500g', 'emoji': '', 'qty': 128, 'revenue': 21120000},
+          {
+            'name': 'Hạt điều rang muối 500g',
+            'emoji': '',
+            'qty': 128,
+            'revenue': 21120000
+          },
         ],
         'lowStock': [
-          {'name': 'Hạt chia Úc 1kg', 'stock': 0, 'min_stock': 15, 'unit': 'kg'},
+          {
+            'name': 'Hạt chia Úc 1kg',
+            'stock': 0,
+            'min_stock': 15,
+            'unit': 'kg'
+          },
         ],
         'stations': [],
       };
@@ -93,6 +128,27 @@ class _FakeApi extends ApiService {
           },
         ],
         'summary': {'total': 4200000},
+      };
+    }
+    if (path.startsWith('/api/invoices')) {
+      // server/services/invoices.js -> ledger() paginated contract
+      return {
+        'items': [
+          {
+            'order_id': 'o1',
+            'bill_code': 'HD000129',
+            'invoice_no': '',
+            'total': 92592,
+            'status': 'not_issued',
+            'einvoice_status': 'NOT_ISSUED',
+            'paid_at': '2026-07-30T09:41:00.000Z',
+            'buyer': {'name': 'Bán cho người tiêu dùng'},
+          },
+        ],
+        'page': 1,
+        'limit': 100,
+        'total': 1,
+        'pages': 1,
       };
     }
     if (path.startsWith('/api/orders/history')) {
@@ -252,9 +308,17 @@ void main() {
     // Bộ quyền thu ngân THẬT — DEFAULT_ROLE_PERMS.cashier trong
     // server/services/auth.js.
     await _pump(tester, const PhoneShell(), perms: {
-      'sell', 'pay', 'discount', 'invoice',
-      'table.move', 'bill.split', 'order.view', 'order.confirm',
-      'module.pos', 'module.retail', 'module.invoice',
+      'sell',
+      'pay',
+      'discount',
+      'invoice',
+      'table.move',
+      'bill.split',
+      'order.view',
+      'order.confirm',
+      'module.pos',
+      'module.retail',
+      'module.invoice',
     });
 
     expect(find.text('Bán lẻ'), findsWidgets);
@@ -270,10 +334,19 @@ void main() {
   testWidgets('QUẢN LÝ thấy đủ 5 mục', (tester) async {
     // Trích từ DEFAULT_ROLE_PERMS.manager.
     await _pump(tester, const PhoneShell(), perms: {
-      'sell', 'pay', 'order.view', 'reports', 'settings.manage',
-      'warehouse.manage', 'inventory.adjust',
-      'module.retail', 'module.warehouse', 'module.inventory',
-      'module.invoice', 'module.contacts', 'module.purchase',
+      'sell',
+      'pay',
+      'order.view',
+      'reports',
+      'settings.manage',
+      'warehouse.manage',
+      'inventory.adjust',
+      'module.retail',
+      'module.warehouse',
+      'module.inventory',
+      'module.invoice',
+      'module.contacts',
+      'module.purchase',
       'module.expenses',
     });
     expect(find.text('Tổng quan'), findsWidgets);
@@ -281,6 +354,46 @@ void main() {
     expect(find.text('Hàng hóa'), findsWidgets);
     expect(find.text('Hóa đơn'), findsWidgets);
     expect(find.text('Nhiều hơn'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('Nhiều hơn mở được Nhập hàng, Báo cáo và Máy in', (tester) async {
+    final perms = {
+      'reports',
+      'module.purchase',
+      'module.printing',
+      'warehouse.manage',
+      'inventory.adjust',
+    };
+    await _pump(tester, const PhoneMoreScreen(), perms: perms);
+
+    await tester.tap(find.text('Nhập hàng'));
+    await tester.pumpAndSettle();
+    expect(find.byType(PhonePurchaseScreen), findsOneWidget);
+    await tester.tap(find.byIcon(Icons.arrow_back_ios_new));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Báo cáo'));
+    await tester.pumpAndSettle();
+    expect(find.byType(PhoneReportsScreen), findsOneWidget);
+    await tester.tap(find.byIcon(Icons.arrow_back_ios_new));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Máy in'));
+    await tester.pumpAndSettle();
+    expect(find.byType(PhonePrintersScreen), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('Báo cáo phone đọc đúng contract summary + sections của server',
+      (tester) async {
+    await _pump(tester, const PhoneReportsScreen(), perms: {'reports'});
+    await tester.pumpAndSettle();
+
+    expect(find.text('84.216.000đ'), findsWidgets);
+    expect(find.text('Trả hàng'), findsOneWidget);
+    expect(find.text('30/07'), findsOneWidget);
+    expect(find.text('Kỳ này chưa có số liệu'), findsNothing);
     expect(tester.takeException(), isNull);
   });
 

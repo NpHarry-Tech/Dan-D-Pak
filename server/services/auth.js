@@ -146,6 +146,18 @@ export const PERMISSIONS = [
   { key: 'warehouse.delete', label: 'Kho — XÓA mặt hàng, SKU, phiếu kho, phiếu kiểm, bảng giá (nhạy cảm)' },
   { key: 'invoice', label: 'Xuất hóa đơn điện tử' },
   { key: 'online', label: 'Xử lý đơn hàng online' },
+  { key: 'online.order.manage', label: 'Retail Online — xác nhận, đóng gói và cập nhật đơn' },
+  { key: 'online.order.assign', label: 'Retail Online — phân công người xử lý đơn' },
+  { key: 'online.order.cancel', label: 'Retail Online — hủy đơn trên kênh bán' },
+  { key: 'online.order.refund', label: 'Retail Online — trả hàng và hoàn tiền' },
+  { key: 'online.product_mapping', label: 'Retail Online — đối chiếu và liên kết sản phẩm' },
+  { key: 'online.reconciliation', label: 'Retail Online — xem đối soát thanh toán' },
+  { key: 'marketplace.view', label: 'Kết nối sàn — xem gian hàng và trạng thái kết nối' },
+  { key: 'marketplace.connect', label: 'Kết nối sàn — kết nối / ngắt / cấu hình gian hàng (Shopee, Lazada…)' },
+  { key: 'omni.view', label: 'Dan D Pak Omni — xem hộp thư và lịch sử hội thoại' },
+  { key: 'omni.reply', label: 'Dan D Pak Omni — trả lời khách hàng' },
+  { key: 'omni.manage', label: 'Dan D Pak Omni — phân công, nhãn, ghi chú và liên kết đơn' },
+  { key: 'omni.connector', label: 'Dan D Pak Omni — quản lý connector kênh ngoài' },
   { key: 'kds', label: 'Sử dụng màn hình bếp (KDS)' },
   { key: 'reports', label: 'Báo cáo — xem toàn bộ trung tâm báo cáo' },
   ...REPORT_PERMISSIONS,
@@ -174,9 +186,46 @@ export const PERMISSIONS = [
   { key: 'settings.notification_sound', label: 'Cài đặt — Âm thanh thông báo' },
   { key: 'settings.loyalty', label: 'Cài đặt — Tích điểm & CTKM khách hàng' },
   { key: 'settings.promotions', label: 'Cài đặt — Khuyến mại / voucher' },
+  // Quản lý máy in THEO CÔNG DỤNG: mỗi loại 1 quyền — ai có quyền loại nào mới
+  // thấy + cấu hình máy in loại đó. printer.manage = thấy tất cả + máy chưa
+  // phân loại (Khác/Custom). Gác ở UI máy in (Cài đặt → Kết nối / Máy in).
+  { key: 'printer.manage', label: 'Máy in — Quản lý TẤT CẢ (mọi loại + chưa phân loại)' },
+  { key: 'printer.receipt', label: 'Máy in — Hóa đơn / Tạm tính' },
+  { key: 'printer.kitchen', label: 'Máy in — Phiếu bếp' },
+  { key: 'printer.cup_label', label: 'Máy in — Tem ly' },
+  { key: 'printer.product_label', label: 'Máy in — Tem sản phẩm' },
+  { key: 'printer.shipping_label', label: 'Máy in — Tem vận đơn' },
+  { key: 'printer.runner', label: 'Máy in — Phiếu chạy món' },
+  { key: 'printer.report', label: 'Máy in — Báo cáo' },
   ...MODULE_PERMISSIONS,
 ];
 export const ALL_PERMS = PERMISSIONS.map(p => p.key);
+
+// ── Branch Full Access vs Tenant Admin (§11/§40) ─────────────────────────────
+// Ba khái niệm độc lập: TENANT (thuộc chuỗi nào) · BRANCH ACCESS (được làm ở đâu)
+// · PERMISSION (được làm gì). "Full permission" KHÔNG được bypass branch scope.
+//
+// TENANT_ADMIN_PERMS = quyền quản trị cấp TENANT/chuỗi (quản lý chi nhánh, người
+// dùng & vai trò toàn tenant, sync policy, và secret tích hợp thô). Chúng KHÔNG
+// thuộc "branch full access".
+export const TENANT_ADMIN_PERMS = new Set([
+  'settings.manage', 'settings.perms', 'settings.users',
+  'settings.branches', 'settings.sync',
+]);
+// LƯU Ý (§29/§30): `settings.integrations` & `settings.connections` là cấu hình
+// KÊNH/TÍCH HỢP cấp BRANCH (Shopee/MISA/payOS…) nên THUỘC branch full access —
+// reviewer cần để thiết lập kênh. Bí mật (Partner Key/secret/token) KHÔNG lộ nhờ
+// MASK ở tầng API (getPublicIntegrations), không phải nhờ cấm quyền.
+
+// BRANCH FULL ACCESS = toàn bộ quyền NGHIỆP VỤ trong (các) chi nhánh được cấp,
+// nhưng KHÔNG quản trị tenant và KHÔNG xem secret tích hợp thô. Tính TỪ catalog
+// nên không bao giờ stale: thêm quyền nghiệp vụ mới thì tự thuộc branch full
+// access (trừ khi liệt kê vào TENANT_ADMIN_PERMS). Dùng cho vai trò như
+// shopee_reviewer (full functional trong 1 branch review) — thay cho việc chép
+// tay 82 quyền hay danh sách cứng dễ lỗi thời (§19/§40).
+export function branchFullAccessPerms() {
+  return [...new Set(ALL_PERMS)].filter(p => !TENANT_ADMIN_PERMS.has(p));
+}
 
 // Display roles with plain-language names.
 export const ROLES = [
@@ -185,6 +234,8 @@ export const ROLES = [
   { key: 'cashier', label: 'Thu ngân', note: 'Bán hàng và thu tiền.' },
   { key: 'kitchen', label: 'Bếp', note: 'Chế biến món.' },
   { key: 'warehouse', label: 'Thủ kho', note: 'Quản lý nhập xuất kho.' },
+  { key: 'online_manager', label: 'Quản đơn Retail Online', note: 'Xử lý đơn web và hội thoại Dan D Pak Omni.' },
+  { key: 'marketplace_operator', label: 'Vận hành sàn', note: 'Kết nối sàn, liên kết hàng, đối soát, in tem vận đơn và xử lý đơn/chat.' },
 ];
 
 // Built-in defaults used to seed the editable matrix on first run.
@@ -203,21 +254,43 @@ const DEFAULT_ROLE_PERMS = {
     'module.ipad', 'module.pos', 'module.retail', 'module.kds', 'module.online', 'module.warehouse',
     'module.inventory', 'module.printing', 'module.invoice', 'module.reports', 'module.contacts',
     'module.purchase', 'module.expenses', 'module.accounting',
+    'printer.manage',
   ],
   // Thu ngân: bán hàng, thanh toán, chuyển bàn, tách bill, xác nhận món, xem đơn
   cashier: [
     'sell', 'pay', 'discount', 'invoice',
     'table.move', 'bill.split', 'order.view', 'order.confirm',
     'module.pos', 'module.retail', 'module.invoice',
+    'printer.receipt',
   ],
   // Bếp: chỉ KDS + xem đơn (không được thay đổi bill hay thanh toán)
-  kitchen: ['kds', 'order.view', 'module.kds'],
+  kitchen: ['kds', 'order.view', 'module.kds', 'printer.kitchen'],
   warehouse: [
     'inventory.adjust', 'warehouse.manage', 'module.warehouse', 'module.inventory', 'module.purchase',
     // Thủ kho có đủ mọi nghiệp vụ kho chi tiết (kể cả cân bằng & xóa phiếu).
     'warehouse.item', 'warehouse.receive', 'warehouse.issue', 'warehouse.transfer',
     'warehouse.stocktake', 'warehouse.stocktake.balance', 'warehouse.pricebook',
     'warehouse.create', 'warehouse.delete',
+    'printer.product_label',
+  ],
+  online_manager: [
+    'online', 'online.order.manage', 'online.order.assign', 'online.order.cancel',
+    'online.order.refund', 'online.product_mapping', 'online.reconciliation',
+    'omni.view', 'omni.reply', 'omni.manage',
+    'order.view', 'contacts.create', 'contacts.edit', 'invoice',
+    'module.online', 'module.retail', 'module.invoice',
+    'printer.shipping_label',
+  ],
+  // Vận hành sàn = như Quản đơn Retail Online NHƯNG được cả quản lý connector
+  // (kết nối Shopee/Lazada/TikTok/Meta/Zalo/Haravan) — vai trò "admin của mảng sàn".
+  marketplace_operator: [
+    'online', 'online.order.manage', 'online.order.assign', 'online.order.cancel',
+    'online.order.refund', 'online.product_mapping', 'online.reconciliation',
+    'marketplace.view', 'marketplace.connect',
+    'omni.view', 'omni.reply', 'omni.manage', 'omni.connector',
+    'order.view', 'contacts.create', 'contacts.edit', 'invoice',
+    'module.online', 'module.retail', 'module.invoice',
+    'printer.shipping_label',
   ],
 };
 export const ROLE_PERMS = DEFAULT_ROLE_PERMS; // kept for backwards-compat imports
@@ -288,6 +361,75 @@ function seedNewOperationalPerms() {
 }
 seedNewOperationalPerms();
 
+function seedOnlineManagerPerms() {
+  const ins = db.prepare(`INSERT OR IGNORE INTO role_perms (role,perm) VALUES (?,?)`);
+  for (const permission of DEFAULT_ROLE_PERMS.online_manager) ins.run('online_manager', permission);
+  for (const permission of PERMISSIONS.filter(p => p.key.startsWith('online.')).map(p => p.key)) {
+    ins.run('manager', permission);
+  }
+  for (const permission of PERMISSIONS.filter(p => p.key.startsWith('omni.')).map(p => p.key)) {
+    ins.run('manager', permission);
+    if (permission !== 'omni.connector') ins.run('online_manager', permission);
+  }
+}
+seedOnlineManagerPerms();
+
+// Backfill vai trò "Vận hành sàn" trên bản đã chạy (seedRolePerms chỉ chạy 1 lần
+// lúc cài đặt trống). Idempotent bằng INSERT OR IGNORE.
+function seedMarketplaceOperatorPerms() {
+  const ins = db.prepare(`INSERT OR IGNORE INTO role_perms (role,perm) VALUES (?,?)`);
+  for (const permission of DEFAULT_ROLE_PERMS.marketplace_operator) ins.run('marketplace_operator', permission);
+  // Quyền "Kết nối sàn" mới (marketplace.view/connect) cũng thuộc Quản lý — vai
+  // trò này vốn đã quản lý connector qua omni.connector.
+  for (const role of ['manager']) {
+    ins.run(role, 'marketplace.view');
+    ins.run(role, 'marketplace.connect');
+  }
+}
+seedMarketplaceOperatorPerms();
+
+// Backfill quyền máy in THEO LOẠI cho bản đã chạy (mỗi vai trò nhận loại phù hợp).
+function seedPrinterTypePerms() {
+  const ins = db.prepare(`INSERT OR IGNORE INTO role_perms (role,perm) VALUES (?,?)`);
+  ins.run('manager', 'printer.manage');
+  ins.run('cashier', 'printer.receipt');
+  ins.run('kitchen', 'printer.kitchen');
+  ins.run('warehouse', 'printer.product_label');
+  for (const role of ['online_manager', 'marketplace_operator']) ins.run(role, 'printer.shipping_label');
+}
+seedPrinterTypePerms();
+
+// Quyền nghiệp vụ KHO chi tiết (warehouse.item, warehouse.receive, ...).
+//
+// VÌ SAO CẦN BACKFILL: seedRolePerms() chỉ chạy khi bảng role_perms còn TRỐNG —
+// tức đúng một lần lúc cài đặt đầu tiên. Cửa hàng đã chạy từ trước rồi thì mọi
+// quyền thêm vào DEFAULT_ROLE_PERMS sau đó KHÔNG BAO GIỜ tới được vai trò nào.
+//
+// Hậu quả thật: nút "Tạo mới" trong Tồn kho gác bằng 'warehouse.item'. Code đã
+// có, bản build đã ra, nhưng quản lý và thủ kho ở cửa hàng cũ không hề thấy nút
+// — vì vai trò của họ chưa từng được cấp quyền đó. Người dùng báo "vẫn chưa có
+// nút thêm item" trong khi tính năng đã làm xong.
+//
+// Chỉ cấp cho vai trò ĐÃ có quyền kho tổng quát ('warehouse.manage'), để không
+// tự tiện nới quyền cho thu ngân hay bếp.
+function seedNewWarehousePerms() {
+  const ins = db.prepare(`INSERT OR IGNORE INTO role_perms (role,perm) VALUES (?,?)`);
+  const roles = db.prepare(`SELECT DISTINCT role FROM role_perms WHERE perm='warehouse.manage'`)
+    .all().map(r => r.role);
+  // Quản lý và thủ kho luôn nằm trong nhóm này kể cả khi cấu hình cũ thiếu.
+  for (const r of ['manager', 'warehouse']) if (!roles.includes(r)) roles.push(r);
+  const permKeys = PERMISSIONS.filter(p => p.key.startsWith('warehouse.')).map(p => p.key);
+  for (const role of roles) {
+    for (const p of permKeys) {
+      // 'warehouse.delete' là quyền XOÁ — chỉ trả lại cho vai trò mặc định vốn có
+      // nó, không phát thêm cho vai trò tuỳ biến mà chủ cửa hàng đã tự cấu hình.
+      if (p === 'warehouse.delete' && !(DEFAULT_ROLE_PERMS[role] || []).includes(p)) continue;
+      ins.run(role, p);
+    }
+  }
+}
+seedNewWarehousePerms();
+
 let permCache = null;
 function loadPerms() {
   permCache = {};
@@ -310,6 +452,7 @@ function rolePermSet(role) {
   return new Set(effectivePerms(role).filter(p => p !== '*'));
 }
 function userPermRows(user_id) {
+  if (!user_id) return []; // defensive: user object thiếu id → không có override riêng
   return db.prepare(`SELECT perm,mode FROM user_perms WHERE user_id=?`).all(user_id)
     .filter(r => ALL_PERMS.includes(r.perm));
 }
@@ -384,14 +527,57 @@ export function setUserPerms(user_id, perms, branch_id = 'sala', actor = null) {
 }
 export function canUser(user, perm) {
   if (!user) return false;
-  if (user.role === 'owner') return true;
+  if (user.role === 'owner') return true;      // Tenant admin — mọi quyền TRONG tenant
   const perms = effectivePermsForUser(user);
-  return perms.includes('*') || perms.includes(perm);
+  if (perms.includes('*') || perms.includes(perm)) return true;
+  // 'settings.manage' = umbrella CHỈ cho nhóm settings.* (quản lý người dùng, phân
+  // quyền, chi nhánh, tích hợp, cấu hình…). KHÔNG phải master key toàn hệ thống:
+  // KHÔNG tự cấp quyền nghiệp vụ (sell/refund/void/warehouse.*). Sửa §4/§20 mà
+  // vẫn giữ đúng chức năng quản trị settings mà Quản lý đang có.
+  if (String(perm).startsWith('settings.') && perms.includes('settings.manage')) return true;
+  return false;
 }
+// ── Vai trò TÙY CHỈNH (do admin tạo) ────────────────────────────────────────
+// Vai trò hệ thống (ROLES) không xóa được. custom_roles cho phép admin tạo thêm
+// vai trò riêng; quyền của chúng dùng chung bảng role_perms như vai trò hệ thống.
+db.exec(`CREATE TABLE IF NOT EXISTS custom_roles (key TEXT PRIMARY KEY, label TEXT NOT NULL, note TEXT, created_at TEXT);`);
+const RESERVED_ROLE_KEYS = new Set(ROLES.map(r => r.key));
+
+export function customRoles() {
+  return db.prepare(`SELECT key, label, note FROM custom_roles ORDER BY created_at, label`).all()
+    .map(r => ({ ...r, custom: true }));
+}
+export function allRoles() { return [...ROLES, ...customRoles()]; }
+
+export function createCustomRole({ key, label, note = '' } = {}, actor = null) {
+  const k = String(key || '').trim().toLowerCase().replace(/[^a-z0-9_]/g, '_').replace(/^_+|_+$/g, '').slice(0, 40);
+  if (!k) throw new Error('Mã vai trò không hợp lệ (chỉ a-z, 0-9, _).');
+  if (RESERVED_ROLE_KEYS.has(k)) throw new Error('Mã vai trò trùng vai trò hệ thống.');
+  const name = String(label || '').trim();
+  if (!name) throw new Error('Vai trò cần có tên hiển thị.');
+  db.prepare(`INSERT INTO custom_roles (key,label,note,created_at) VALUES (?,?,?,?)
+    ON CONFLICT(key) DO UPDATE SET label=excluded.label, note=excluded.note`)
+    .run(k, name.slice(0, 80), String(note || '').slice(0, 200), now());
+  audit('role.create', { role: k, label: name, by: actor?.username || 'system' }, 'sala', actor?.username || 'system');
+  return permMatrix();
+}
+export function deleteCustomRole(key, actor = null) {
+  const k = String(key || '').trim().toLowerCase();
+  if (RESERVED_ROLE_KEYS.has(k)) throw new Error('Không thể xóa vai trò hệ thống.');
+  if (!db.prepare(`SELECT 1 FROM custom_roles WHERE key=?`).get(k)) throw new Error('Vai trò không tồn tại.');
+  const inUse = db.prepare(`SELECT COUNT(*) n FROM users WHERE role=? AND active=1`).get(k).n;
+  if (inUse > 0) throw new Error(`Còn ${inUse} nhân viên đang giữ vai trò này — đổi vai trò cho họ trước khi xóa.`);
+  db.prepare(`DELETE FROM custom_roles WHERE key=?`).run(k);
+  db.prepare(`DELETE FROM role_perms WHERE role=?`).run(k);
+  loadPerms();
+  audit('role.delete', { role: k, by: actor?.username || 'system' }, 'sala', actor?.username || 'system');
+  return permMatrix();
+}
+
 // Returns the full matrix for the settings UI.
 export function permMatrix() {
   if (!permCache) loadPerms();
-  return ROLES.map(r => ({
+  return allRoles().map(r => ({
     ...r,
     perms: r.key === 'owner' ? ALL_PERMS : [...(permCache[r.key] || [])],
     locked: r.key === 'owner',
@@ -399,7 +585,7 @@ export function permMatrix() {
 }
 export function setRolePerms(role, perms, branch_id = 'sala', actor = null) {
   if (role === 'owner') throw new Error('Vai trò Admin luôn toàn quyền, không thể chỉnh');
-  if (!ROLES.some(r => r.key === role)) throw new Error('Vai trò không hợp lệ');
+  if (!allRoles().some(r => r.key === role)) throw new Error('Vai trò không hợp lệ');
   // Same scoped-delegation rule as users: the actor can only toggle permissions
   // they hold; ones out of reach stay exactly as the role already had them.
   const grantable = grantablePermSet(actor);
@@ -742,7 +928,7 @@ export function listAllUsers(branch_id = 'sala') {
     .filter(u => canAccessBranch(u, branch_id))
     .map(u => ({ ...publicUser(u), active: !!u.active, lang: u.lang || 'vi', ...userPermDetails(u) }));
 }
-function validRole(r) { return ROLES.some(x => x.key === r); }
+function validRole(r) { return allRoles().some(x => x.key === r); }
 export function createUser(body, branch_id = 'sala', actor = null) {
   const username = String(body.username || '').trim().toLowerCase();
   const name = String(body.name || '').trim();

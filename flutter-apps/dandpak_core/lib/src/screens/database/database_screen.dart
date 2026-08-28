@@ -12,6 +12,7 @@ import '../../widgets/dan_top_bar.dart';
 import '../../widgets/manager_pin_dialog.dart';
 import '../documents/documents_screen.dart';
 import '../management/management_widgets.dart';
+import '../../utils/business_datetime.dart';
 import '../../utils/translation.dart';
 
 part 'database_audit_tab.dart';
@@ -99,7 +100,7 @@ class _DatabaseScreenState extends State<DatabaseScreen> {
   ];
 
   static final _descriptions = [
-    t('Theo dõi động cơ dữ liệu local, sao lưu cấu hình và thống kê hệ thống.'),
+    t('Theo dõi máy chủ dữ liệu đang chọn, sao lưu cấu hình và thống kê hệ thống.'),
     t('Lịch sử thao tác hệ thống, lỗi phát sinh và truy vết theo thời gian.'),
     t('Kho tài liệu nội bộ dùng cho vận hành và đào tạo.'),
   ];
@@ -313,7 +314,8 @@ class _DatabaseTabState extends State<_DatabaseTab> {
       });
     } catch (e) {
       if (!mounted) return;
-      if (silent) return; // đừng để 1 lần làm mới ngầm lỗi mạng che mất màn đang xem
+      if (silent)
+        return; // đừng để 1 lần làm mới ngầm lỗi mạng che mất màn đang xem
       setState(() {
         _error = e.toString().replaceFirst('Exception: ', '');
         _loading = false;
@@ -570,7 +572,7 @@ class _DatabaseTabState extends State<_DatabaseTab> {
     final queue = _map(live['printQueue']);
     final queueDepth = _n(queue['queued']) + _n(queue['failed']);
     final recentErrors = _n(live['recentErrors5m']);
-    final checkedAt = DateTime.tryParse(_s(live['checkedAt']))?.toLocal();
+    final checkedAt = BusinessDateTime.parseApi(live['checkedAt']);
 
     Color lagColor = lagMs >= 300
         ? DanColors.late
@@ -808,4 +810,3 @@ class _DbCard extends StatelessWidget {
     );
   }
 }
-

@@ -1,6 +1,6 @@
 # Repository Structure
 
-Last updated: 2026-07-13
+Last updated: 2026-08-01
 
 This document maps the **target architecture** (public VPS zone vs. private company
 server zone) onto the **current repository layout**. A full directory rename of a
@@ -50,12 +50,14 @@ Dan-D-Pak/
     config/                    env, cors, runtime, providers
     core/                      logger, errors, http helpers
     services/                  current business logic (orders, payments, inventory ...)
+      misa/                    tích hợp MISA meInvoice (xem docs/MISA_EINVOICE.md)
+      settings/                từng nhóm cấu hình một file (print, retail, sell, ...)
     modules/                   domain route/module entrypoints (inventory, payments, invoices, tax...)
-    adapters/                  database/realtime/storage provider seams
-    db/                        repositories + PostgreSQL schema (planned)
-      schema/                  planned additive PostgreSQL schema (company server)
-    migrations/                migration files zone
-    permanent-storage/         archived JSON/NDJSON snapshots, not a live DB
+    db/                        SQLite connection, transaction, audit, backup, maintenance helpers
+    migrations/                utilities; live schema migration remains in server/db.js
+    assets/ uploads/ releases/ runtime/downloadable files served by backend
+    enterprise-storage/        append-only enterprise archive storage
+    permanent-storage/         archived JSON/NDJSON snapshots, not the live DB
 
   runtime/                     local runtime data, ignored by git
     server-data/store.db        single local SQLite DB (+ WAL sidecar files)
@@ -64,19 +66,31 @@ Dan-D-Pak/
     company-server/            Docker/Caddy/Postgres scaffold for company server
 
   docs/                        architecture, workflows, data-ownership, runbooks
+
+  artifacts/                   bản build đem đi phát hành (.apk/.exe) — git bỏ qua
+  backups/                     bản sao DB xuất ra bằng tay — git bỏ qua
+
+  # Ở NGAY THƯ MỤC GỐC (không gom vào deploy/): mấy file này là ĐƯỜNG VÀO của
+  # người dùng cuối và của bộ cài desktop, đường dẫn tới chúng nằm trong shortcut
+  # trên máy khách và trong setup.iss. Gom vào thư mục con là gãy shortcut đã
+  # phát cho cửa hàng, nên giữ nguyên chỗ và ghi lại ở đây.
+  Dan D Pak POS.vbs            shortcut khởi động app desktop (không hiện cửa sổ đen)
+  DanDPak_POS_DESKTOP_APP.ps1  script chạy app desktop kèm backend cục bộ
+  package-for-it.ps1           đóng gói mã nguồn gửi bộ phận IT
+  package.json                 script dev dùng chung + khoá phiên bản Node
 ```
 
 ## Company-server module zones
 
-Route ownership hiện có trong `server/modules/` (mỗi module: `routes.js` giữ route +
-`index.js` re-export service). Nghiệp vụ luôn ở `server/services/*`.
+Route ownership hiện có trong `server/modules/` (mỗi module có `routes.js`).
+Nghiệp vụ luôn ở `server/services/*`.
 
 ```text
-server/modules/   (23 module — route ownership; api.js còn ~320 dòng registrar)
+server/modules/   (22 module — route ownership; api.js là registrar)
   ✅ inventory/ invoices/ payments/ tax/                          (đã tách trước đó)
   ✅ orders/ reports/ audit/ purchase/ expenses/ online/ printing/ (tách 2026-07-13)
   ✅ retail/ contacts/ catalog/ agent/ appRelease/ sync/           (tách 2026-07-13)
-  ✅ auth/ clientLog/ config/ settings/ database/ documents/       (tách 2026-07-13, nhóm nhạy cảm)
+  ✅ auth/ clientLog/ settings/ database/ documents/               (tách 2026-07-13, nhóm nhạy cảm)
   # api.js chỉ còn: helper cross-cutting dùng chung (truyền vào module) + route dev /dev/seed.
 ```
 

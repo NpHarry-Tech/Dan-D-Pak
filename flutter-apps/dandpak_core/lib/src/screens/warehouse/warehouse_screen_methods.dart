@@ -97,15 +97,71 @@ extension _WarehouseScreenMethods on _WarehouseScreenState {
     }
   }
 
-  Future<void> _addItem() async {
+  Future<void> _addItem({String itemType = 'ingredient'}) async {
     final ok = await showDialog<bool>(
       context: context,
-      builder: (_) => _NewItemDialog(api: context.read<ApiService>()),
+      // warehouseId: mặt hàng phải nằm ĐÚNG kho đang mở. Thiếu tham số này thì
+      // server rơi về kho mặc định — người dùng tạo xong không thấy hàng đâu.
+      builder: (_) => _NewItemDialog(
+          api: context.read<ApiService>(),
+          warehouseId: _activeWh,
+          itemType: itemType),
     );
     if (ok == true) {
       _toast(t('Đã tạo mặt hàng'));
       _loadWarehouseData();
     }
+  }
+
+  /// NÚT "TẠO MỚI" KIỂU KIOTVIET — bấm ra danh sách loại hàng cần tạo.
+  ///
+  /// Danh sách CHỈ gồm loại hàng backend thật sự có nghiệp vụ:
+  ///   • Kho bán lẻ  -> Hàng hóa (bảng `skus`, có giá bán/VAT/đơn vị quy đổi)
+  ///   • Kho bếp     -> Nguyên liệu / Vật dụng (`inventory_items.item_type`)
+  ///
+  /// KiotViet còn có "Dịch vụ", "Combo - đóng gói", "Hàng sản xuất". Ba loại đó
+  /// CỐ Ý KHÔNG đưa vào: bảng `skus` không có cột phân loại, không có định mức
+  /// combo, không có lệnh sản xuất. Thêm vào chỉ ra menu bấm được mà lưu xuống
+  /// thành hàng hóa thường — sai dữ liệu tồn kho và không ai lần ra vì sao.
+  Widget _nutTaoMoi() {
+    final loai = _isRetailWh
+        ? [('sku', t('Hàng hóa'))]
+        : [('ingredient', t('Nguyên liệu')), ('supply', t('Vật dụng'))];
+
+    // Một lựa chọn duy nhất thì bày menu là thừa một cú bấm — bấm là mở luôn.
+    if (loai.length == 1) {
+      return FilledButton.icon(
+        onPressed: _isRetailWh ? _createSku : () => _addItem(),
+        icon: Icon(Icons.add, size: 18),
+        label: Text(t('Tạo mới')),
+        style: FilledButton.styleFrom(minimumSize: Size(0, 40)),
+      );
+    }
+
+    return PopupMenuButton<String>(
+      tooltip: t('Tạo mới'),
+      position: PopupMenuPosition.under,
+      onSelected: (v) => v == 'sku' ? _createSku() : _addItem(itemType: v),
+      itemBuilder: (_) => [
+        for (final (key, nhan) in loai)
+          PopupMenuItem(value: key, child: Text(nhan)),
+      ],
+      child: FilledButton.icon(
+        // Nút chỉ để hiển thị — PopupMenuButton bọc ngoài đã bắt cú bấm rồi.
+        onPressed: null,
+        icon: Icon(Icons.add, size: 18),
+        label: Row(mainAxisSize: MainAxisSize.min, children: [
+          Text(t('Tạo mới')),
+          SizedBox(width: 2),
+          Icon(Icons.keyboard_arrow_down, size: 18),
+        ]),
+        style: FilledButton.styleFrom(
+          minimumSize: Size(0, 40),
+          disabledBackgroundColor: DanColors.brand,
+          disabledForegroundColor: Colors.white,
+        ),
+      ),
+    );
   }
 
   /// Các nhóm tính năng: (nhãn nhóm, [[key, nhãn tab], …]).
@@ -378,6 +434,12 @@ extension _WarehouseScreenMethods on _WarehouseScreenState {
     return m;
   }
 
+  /// Giá trị PHÂN BIỆT của 1 trường (category/brand) trong kho — cho dropdown
+  /// chọn nhanh khi tạo/sửa hàng, khỏi gõ tay và tránh sai chính tả nhóm hàng.
+  List<String> _distinctValues(String key) =>
+      (_stock.map((s) => _s(s[key])).where((v) => v.isNotEmpty).toSet().toList()
+        ..sort());
+
   bool get _anyRetailFilter =>
       _catFilter.isNotEmpty ||
       _brandFilter.isNotEmpty ||
@@ -478,14 +540,8 @@ extension _WarehouseScreenMethods on _WarehouseScreenState {
             ),
           ],
           SizedBox(width: 6),
-          // Kho nguyên liệu/vật dụng: thêm mặt hàng thủ công (retail SKU đến từ import).
-          if (!_isRetailWh)
-            FilledButton.icon(
-              onPressed: _addItem,
-              icon: Icon(Icons.add, size: 18),
-              label: Text(t('Thêm mặt hàng')),
-              style: FilledButton.styleFrom(minimumSize: Size(0, 40)),
-            ),
+          if (context.watch<AuthProvider>().hasPermission('warehouse.item'))
+            _nutTaoMoi(),
           // Chọn cột chỉ có ý nghĩa với retail (giá/VAT/thương hiệu).
           if (_isRetailWh)
             IconButton(
@@ -810,12 +866,30 @@ extension _WarehouseScreenMethods on _WarehouseScreenState {
     final changed = await showDialog<bool>(
       context: context,
       barrierDismissible: false,
-      builder: (_) => _SkuEditDialog(sku: sku),
+      builder: (_) => _SkuEditDialog(
+          sku: sku,
+          warehouseId: _activeWh,
+          isRetail: _isRetailWh,
+          categories: _distinctValues('category'),
+          brands: _distinctValues('brand')),
     );
     if (changed == true) {
       _rebuild(() => _expandedSku = '');
       await _loadWarehouseData();
     }
+  }
+
+  Future<void> _createSku() async {
+    final changed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => _SkuEditDialog(
+          warehouseId: _activeWh,
+          isRetail: _isRetailWh,
+          categories: _distinctValues('category'),
+          brands: _distinctValues('brand')),
+    );
+    if (changed == true) await _loadWarehouseData();
   }
 
   /// Nút "In tem mã": hỏi số tem rồi đẩy job ra máy in tem đã cấu hình.
@@ -885,10 +959,7 @@ extension _WarehouseScreenMethods on _WarehouseScreenState {
   }
 
   static String _shortDate(String iso) {
-    final t = DateTime.tryParse(iso);
-    if (t == null) return iso.isEmpty ? '—' : iso;
-    String two(int n) => n.toString().padLeft(2, '0');
-    return '${two(t.day)}/${two(t.month)}/${t.year}';
+    return BusinessDateTime.date(iso);
   }
 
   Widget _retailSidebar() {
@@ -1204,7 +1275,7 @@ extension _WarehouseScreenMethods on _WarehouseScreenState {
         final m = _movements[i];
         final qty = _n(m['qty']);
         final inbound = qty >= 0;
-        final t = DateTime.tryParse(_s(m['created_at']));
+        final t = BusinessDateTime.parseApi(m['created_at']);
         return Row(
           children: [
             Container(
@@ -1266,7 +1337,7 @@ extension _WarehouseScreenMethods on _WarehouseScreenState {
       separatorBuilder: (_, __) => SizedBox(height: 8),
       itemBuilder: (_, i) {
         final d = _documents[i];
-        final t = DateTime.tryParse(_s(d['created_at']));
+        final t = BusinessDateTime.parseApi(d['created_at']);
         return Container(
           padding: EdgeInsets.symmetric(horizontal: 14, vertical: 12),
           decoration: BoxDecoration(
@@ -1308,8 +1379,21 @@ extension _WarehouseScreenMethods on _WarehouseScreenState {
 }
 
 class _SkuEditDialog extends StatefulWidget {
-  final Map<String, dynamic> sku;
-  const _SkuEditDialog({required this.sku});
+  final Map<String, dynamic>? sku;
+  final String warehouseId;
+  // isRetail=false → mặt hàng nguyên liệu/vật dụng (kho bếp): sửa/xóa phải gọi
+  // endpoint /inventory, KHÔNG phải /skus (nếu không sẽ báo "SKU không tồn tại").
+  final bool isRetail;
+  // Nhóm hàng + Thương hiệu đã có trong kho → để dropdown chọn nhanh, vẫn gõ mới được.
+  final List<String> categories;
+  final List<String> brands;
+  const _SkuEditDialog({
+    this.sku,
+    required this.warehouseId,
+    this.isRetail = true,
+    this.categories = const [],
+    this.brands = const [],
+  });
 
   @override
   State<_SkuEditDialog> createState() => _SkuEditDialogState();
@@ -1317,16 +1401,32 @@ class _SkuEditDialog extends StatefulWidget {
 
 class _SkuEditDialogState extends State<_SkuEditDialog> {
   late final TextEditingController name, code, barcode, brand, category, unit;
-  late final TextEditingController cost, price, vat;
+  late final TextEditingController cost, price, vat, minStock, openingStock;
+
+  /// Tồn kho hiện tại của hàng ĐÃ CÓ — sửa ở đây là đặt lại tồn (kiểm kho).
+  late final TextEditingController tonKho;
+  late final num _tonBanDau;
+
+  /// GIỚI THIỆU SẢN PHẨM — đoạn văn KHÁCH đọc trên màn catalogue ngoài quầy
+  /// (thành phần, xuất xứ, cách dùng). Khác ghi chú nội bộ: cái này ra ngoài.
+  late final TextEditingController description;
+
+  /// HSD của LÔ TỒN ĐẦU KỲ. Server từ chối tạo hàng khi vừa bật "Bắt buộc hạn
+  /// sử dụng" vừa khai tồn đầu kỳ mà không có ngày — thiếu ô này thì người dùng
+  /// gặp lỗi "Tồn đầu kỳ của hàng bắt buộc HSD phải có hạn sử dụng" mà không có
+  /// chỗ nào để nhập ngày.
+  DateTime? expiryDate;
   final units = <_SkuUnitCtrls>[];
   bool includesVat = true;
+  bool trackLot = false;
+  bool expiryRequired = false;
   bool busy = false;
   String image = '';
 
   @override
   void initState() {
     super.initState();
-    final s = widget.sku;
+    final s = widget.sku ?? const <String, dynamic>{};
     TextEditingController c(dynamic v) =>
         TextEditingController(text: v?.toString() ?? '');
     name = c(s['name']);
@@ -1334,16 +1434,40 @@ class _SkuEditDialogState extends State<_SkuEditDialog> {
     barcode = c(s['barcode']);
     brand = c(s['brand']);
     category = c(s['category']);
-    unit = c(s['unit']);
+    unit = c(s['unit'] ?? 'cái');
     cost = c(s['cost']);
     price = c(s['price']);
     vat = c(s['vat']);
+    minStock = c(s['min_stock']);
+    openingStock = c('');
+    _tonBanDau = _n(s['stock']);
+    tonKho = c(widget.sku == null ? '' : _tonBanDau.toString());
+    description = c(s['description']);
     includesVat = s['price_includes_vat'] != 0;
+    trackLot = s['track_lot'] == 1 || s['track_lot'] == true;
+    expiryRequired = s['expiry_required'] == 1 || s['expiry_required'] == true;
     image = s['image']?.toString() ?? '';
     final raw = s['units'];
     if (raw is List) {
       units.addAll(raw.whereType<Map>().map(_SkuUnitCtrls.new));
     }
+    // Ô "Hạn sử dụng lô tồn đầu kỳ" chỉ hiện khi có tồn đầu kỳ > 0, nên phải
+    // dựng lại form ngay lúc con số đó vượt qua 0 (và khi bị xoá về rỗng).
+    openingStock.addListener(() {
+      final co = _num(openingStock) > 0;
+      if (co != _coTonDauKy && mounted) setState(() => _coTonDauKy = co);
+    });
+  }
+
+  bool _coTonDauKy = false;
+
+  /// Ai được đặt lại tồn: người sửa hàng hoá hoặc người điều chỉnh tồn kho —
+  /// khớp đúng guardAny('warehouse.item','inventory.adjust') của route
+  /// /api/skus/:id/adjust, để nút không hiện ra rồi bấm vào bị server từ chối.
+  bool get _duocSuaTon {
+    final auth = context.read<AuthProvider>();
+    return auth.hasPermission('warehouse.item') ||
+        auth.hasPermission('inventory.adjust');
   }
 
   @override
@@ -1357,7 +1481,11 @@ class _SkuEditDialogState extends State<_SkuEditDialog> {
       unit,
       cost,
       price,
-      vat
+      vat,
+      minStock,
+      openingStock,
+      tonKho,
+      description
     ]) {
       c.dispose();
     }
@@ -1371,7 +1499,8 @@ class _SkuEditDialogState extends State<_SkuEditDialog> {
       num.tryParse(c.text.trim().replaceAll(',', '.')) ?? 0;
 
   Future<void> _pickImage() async {
-    final path = await pickImagePathCross(title: 'Chọn ảnh sản phẩm');
+    final path =
+        await pickImagePathCross(title: 'Chọn ảnh sản phẩm', context: context);
     if (path == null) return;
     final file = File(path);
     final bytes = await file.readAsBytes();
@@ -1416,36 +1545,79 @@ class _SkuEditDialogState extends State<_SkuEditDialog> {
         return;
       }
     }
+    // Bắt lỗi NGAY TRÊN FORM thay vì để server ném ra sau khi bấm Lưu — người
+    // dùng thấy ô nào thiếu, không phải đoán từ câu báo lỗi.
+    if (widget.sku == null &&
+        expiryRequired &&
+        _num(openingStock) > 0 &&
+        expiryDate == null) {
+      appToast(context,
+          t('Hàng bắt buộc hạn sử dụng: phải chọn HSD cho lô tồn đầu kỳ'),
+          isError: true);
+      return;
+    }
     setState(() => busy = true);
     try {
-      await context.read<ApiService>().updateSku(
-        widget.sku['id'].toString(),
-        {
-          'name': name.text.trim(),
-          'code': code.text.trim(),
-          'barcode': barcode.text.trim(),
-          'brand': brand.text.trim(),
-          'category': category.text.trim(),
-          'unit': unit.text.trim(),
-          'cost': _num(cost),
-          'price': _num(price),
-          'price_includes_vat': includesVat,
-          'vat': vat.text.trim().isEmpty ? null : _num(vat),
-          'image': image,
-          'units': [
-            for (final u in units)
-              {
-                'name': u.name.text.trim(),
-                'factor': _num(u.factor),
-                'barcode': u.barcode.text.trim(),
-                'cost': _num(u.cost),
-                'price': _num(u.price),
-                'price_includes_vat': u.includesVat,
-                'vat': u.vat.text.trim().isEmpty ? null : _num(u.vat),
-              }
-          ],
-        },
-      );
+      final body = {
+        'name': name.text.trim(),
+        'code': code.text.trim(),
+        'barcode': barcode.text.trim(),
+        'brand': brand.text.trim(),
+        'category': category.text.trim(),
+        'unit': unit.text.trim(),
+        'cost': _num(cost),
+        'price': _num(price),
+        'price_includes_vat': includesVat,
+        'vat': vat.text.trim().isEmpty ? null : _num(vat),
+        'min_stock': _num(minStock),
+        'track_lot': trackLot,
+        'expiry_required': expiryRequired,
+        'warehouse_id': widget.warehouseId,
+        'description': description.text.trim(),
+        'image': image,
+        'units': [
+          for (final u in units)
+            {
+              'name': u.name.text.trim(),
+              'factor': _num(u.factor),
+              'barcode': u.barcode.text.trim(),
+              'cost': _num(u.cost),
+              'price': _num(u.price),
+              'price_includes_vat': u.includesVat,
+              'vat': u.vat.text.trim().isEmpty ? null : _num(u.vat),
+            }
+        ],
+      };
+      if (widget.sku == null) {
+        body['opening_stock'] = _num(openingStock);
+        // Server dựng lô 'OPENING' cho tồn đầu kỳ; hàng bắt buộc HSD thì lô đó
+        // phải có ngày hết hạn, nếu không server từ chối tạo.
+        if (expiryDate != null) {
+          body['expiry_date'] = expiryDate!.toIso8601String().split('T').first;
+        }
+        await context.read<ApiService>().createSku(body);
+      } else {
+        final id = widget.sku!['id'].toString();
+        if (widget.isRetail) {
+          await context.read<ApiService>().updateSku(id, body);
+        } else {
+          // Nguyên liệu/vật dụng → endpoint /inventory.
+          await context.read<ApiService>().updateInventoryItem(id, body);
+        }
+        // Tồn đi đường RIÊNG: update chỉ sửa hồ sơ mặt hàng, đổi tồn phải
+        // sinh bút toán kiểm kho để còn truy được ai chỉnh và lệch bao nhiêu.
+        if (!trackLot && _duocSuaTon && tonKho.text.trim().isNotEmpty) {
+          final moi = _num(tonKho);
+          if ((moi - _tonBanDau).abs() > 0.000001) {
+            if (!mounted) return;
+            if (widget.isRetail) {
+              await context.read<ApiService>().adjustSkuStock(id, moi);
+            } else {
+              await context.read<ApiService>().adjustInventoryStock(id, moi);
+            }
+          }
+        }
+      }
       if (mounted) Navigator.of(context).pop(true);
     } catch (e) {
       if (mounted) {
@@ -1484,7 +1656,12 @@ class _SkuEditDialogState extends State<_SkuEditDialog> {
     if (ok != true || !mounted) return;
     setState(() => busy = true);
     try {
-      await context.read<ApiService>().deleteSku(widget.sku['id'].toString());
+      final id = widget.sku!['id'].toString();
+      if (widget.isRetail) {
+        await context.read<ApiService>().deleteSku(id);
+      } else {
+        await context.read<ApiService>().deleteInventoryItem(id);
+      }
       if (mounted) Navigator.of(context).pop(true);
     } catch (e) {
       if (mounted) {
@@ -1507,6 +1684,33 @@ class _SkuEditDialogState extends State<_SkuEditDialog> {
     );
   }
 
+  /// Ô CHỌN-HOẶC-TẠO-MỚI: gõ tay để tạo giá trị mới, hoặc bấm mũi tên chọn giá
+  /// trị đã có trong kho (nhóm hàng / thương hiệu). Tránh gõ sai chính tả nhóm.
+  Widget _pickField(String label, TextEditingController c, List<String> options,
+      {double width = 205}) {
+    return SizedBox(
+      width: width,
+      child: TextField(
+        controller: c,
+        decoration: InputDecoration(
+          labelText: t(label),
+          isDense: true,
+          suffixIcon: options.isEmpty
+              ? null
+              : PopupMenuButton<String>(
+                  icon: const Icon(Icons.arrow_drop_down),
+                  tooltip: t('Chọn có sẵn / tạo mới'),
+                  itemBuilder: (_) => [
+                    for (final o in options)
+                      PopupMenuItem<String>(value: o, child: Text(o)),
+                  ],
+                  onSelected: (v) => setState(() => c.text = v),
+                ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final vatRate = _num(vat);
@@ -1516,7 +1720,9 @@ class _SkuEditDialogState extends State<_SkuEditDialog> {
         : salePrice;
     return AlertDialog(
       title: Row(children: [
-        Expanded(child: Text(t('Cập nhật sản phẩm'))),
+        Expanded(
+            child: Text(
+                t(widget.sku == null ? 'Tạo hàng hóa' : 'Cập nhật sản phẩm'))),
         IconButton(
             onPressed: busy ? null : _pickImage,
             tooltip: t('Chỉnh sửa hình ảnh'),
@@ -1530,14 +1736,100 @@ class _SkuEditDialogState extends State<_SkuEditDialog> {
             _field('Tên sản phẩm', name, width: 422),
             _field('Mã sản phẩm', code),
             _field('Mã vạch', barcode),
-            _field('Thương hiệu', brand),
-            _field('Nhóm hàng', category),
+            _pickField('Thương hiệu', brand, widget.brands),
+            _pickField('Nhóm hàng', category, widget.categories),
             _field('Đơn vị gốc', unit),
             _field('Giá nhập', cost, number: true),
             _field(includesVat ? 'Giá bán sau VAT' : 'Giá bán trước VAT', price,
                 number: true),
             _field('VAT (%)', vat, number: true),
+            _field('Định mức tồn thấp nhất', minStock, number: true),
+            if (widget.sku == null)
+              _field('Tồn đầu kỳ', openingStock, number: true),
+            // SỬA TỒN NGAY TẠI ĐÂY cho hàng đã có.
+            //
+            // Trước đây form chỉ cho nhập "Tồn đầu kỳ" lúc TẠO hàng; mở lại một
+            // mặt hàng cũ thì không còn ô nào chỉnh tồn, phải đi đường kiểm kho.
+            // Người có quyền sửa hàng hoá thì cũng phải sửa được con số tồn.
+            //
+            // Hàng quản lý theo LÔ không sửa thẳng ở đây: tồn của nó là tổng các
+            // lô, đặt đại một con số thì không biết trừ vào lô nào — phải đi qua
+            // phiếu kiểm kho để chỉ rõ từng lô.
+            if (widget.sku != null && !trackLot && _duocSuaTon)
+              _field('Tồn kho', tonKho, number: true),
           ]),
+          // Đoạn giới thiệu này hiện ở cột phải màn catalogue khách — chỗ khách
+          // đọc trước khi bấm "Thêm vào giỏ". Để trống thì cột đó chỉ có tên,
+          // giá và tình trạng hàng.
+          //
+          // Tách hẳn thành một khối có tiêu đề riêng: nó là ô chữ nhiều dòng
+          // duy nhất trong form, dán sát ngay dưới lưới ô một dòng ở trên thì
+          // trông như bị nhét thừa vào. Khoảng thở + nhãn nhóm cho biết đây là
+          // phần nội dung cho khách đọc, không phải một thông số kho nữa.
+          SizedBox(height: 22),
+          Text(t('Nội dung cho khách'),
+              style: TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w900,
+                  color: DanColors.muted,
+                  letterSpacing: .3)),
+          SizedBox(height: 10),
+          TextField(
+            controller: description,
+            maxLines: 5,
+            minLines: 3,
+            decoration: InputDecoration(
+              labelText: t('Giới thiệu sản phẩm'),
+              helperText: t(
+                  'Hiện cho KHÁCH đọc trên màn catalogue: thành phần, xuất xứ, cách dùng.'),
+              alignLabelWithHint: true,
+              contentPadding:
+                  EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+            ),
+          ),
+          SizedBox(height: 22),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            value: trackLot,
+            onChanged: (v) => setState(() {
+              trackLot = v;
+              if (!v) expiryRequired = false;
+            }),
+            title: Text(t('Quản lý theo lô')),
+          ),
+          if (trackLot)
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              value: expiryRequired,
+              onChanged: (v) => setState(() => expiryRequired = v),
+              title: Text(t('Bắt buộc hạn sử dụng')),
+            ),
+          // Chỉ hỏi HSD khi thật sự cần: hàng mới + bắt buộc HSD + có tồn đầu
+          // kỳ. Hỏi lúc nào cũng hỏi thì form dài ra mà đa số không dùng tới.
+          if (widget.sku == null && expiryRequired && _num(openingStock) > 0)
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              title: Text(t('Hạn sử dụng lô tồn đầu kỳ')),
+              subtitle: Text(expiryDate == null
+                  ? t('Chưa chọn — bắt buộc với hàng quản lý hạn sử dụng')
+                  : '${expiryDate!.day.toString().padLeft(2, '0')}/'
+                      '${expiryDate!.month.toString().padLeft(2, '0')}/'
+                      '${expiryDate!.year}'),
+              trailing: Icon(Icons.event_outlined),
+              onTap: busy
+                  ? null
+                  : () async {
+                      final now = DateTime.now();
+                      final picked = await showDatePicker(
+                        context: context,
+                        initialDate:
+                            expiryDate ?? now.add(const Duration(days: 180)),
+                        firstDate: now,
+                        lastDate: DateTime(now.year + 10),
+                      );
+                      if (picked != null) setState(() => expiryDate = picked);
+                    },
+            ),
           SwitchListTile(
             contentPadding: EdgeInsets.zero,
             value: includesVat,
@@ -1602,7 +1894,8 @@ class _SkuEditDialogState extends State<_SkuEditDialog> {
         ]),
       ),
       actions: [
-        if (context.read<AuthProvider>().hasPermission('warehouse.delete'))
+        if (widget.sku != null &&
+            context.read<AuthProvider>().hasPermission('warehouse.delete'))
           TextButton(
             onPressed: busy ? null : _delete,
             style: TextButton.styleFrom(foregroundColor: DanColors.late),
@@ -1613,7 +1906,8 @@ class _SkuEditDialogState extends State<_SkuEditDialog> {
             child: Text(t('Hủy'))),
         FilledButton(
             onPressed: busy ? null : _save,
-            child: Text(t('Cập nhật sản phẩm'))),
+            child: Text(
+                t(widget.sku == null ? 'Lưu hàng hóa' : 'Cập nhật sản phẩm'))),
       ],
     );
   }

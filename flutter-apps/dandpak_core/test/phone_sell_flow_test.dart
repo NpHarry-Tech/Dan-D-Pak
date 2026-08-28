@@ -7,6 +7,7 @@
 import 'package:dandpak_core/src/models/retail_models.dart';
 import 'package:dandpak_core/src/providers/auth_provider.dart';
 import 'package:dandpak_core/src/screens/phone/phone_kit.dart';
+import 'package:dandpak_core/src/screens/phone/phone_return_screen.dart';
 import 'package:dandpak_core/src/screens/phone/phone_sell_screen.dart';
 import 'package:dandpak_core/src/services/api_service.dart';
 import 'package:flutter/material.dart';
@@ -18,6 +19,8 @@ const phoneSize = Size(393, 852);
 /// Giả lập server ở tầng HTTP — màn hình chạy THẬT, chỉ mạng là giả.
 class _FakeApi extends ApiService {
   final List<Map<String, dynamic>> checkoutCalls = [];
+  final List<Map<String, dynamic>> previewPrintCalls = [];
+  final List<Map<String, dynamic>> returnCalls = [];
   bool shiftOpen;
 
   _FakeApi({this.shiftOpen = true});
@@ -38,6 +41,7 @@ class _FakeApi extends ApiService {
             'sale_price': 165000,
             'stock': 64,
             'unit': 'gói',
+            'image': '/assets/product-images/cashews.png',
           },
           {
             'id': 's2',
@@ -50,11 +54,65 @@ class _FakeApi extends ApiService {
         ],
       };
     }
+    if (path.startsWith('/api/customers')) {
+      return [
+        {
+          'id': 'c1',
+          'code': 'DC000001',
+          'name': 'Nguyễn Minh Lâm',
+          'phone': '0900000001',
+          'perk_type': 'pct',
+          'perk_value': 10,
+        },
+      ];
+    }
+    if (path == '/api/vouchers/active') {
+      return [
+        {
+          'id': 'promo_s1',
+          'name': 'Giảm hạt điều',
+          'type': 'pct',
+          'value': 10,
+          'scope': 'sku',
+          'sku_id': 's1',
+          'active': true,
+          'usable': true,
+        }
+      ];
+    }
     if (path.startsWith('/api/shifts/current')) {
       // Server trả BỌC trong {'shift': …} — xem pos_api.getCurrentShift().
       // Trả thẳng object ca ở đây thì getCurrentShift() đọc body['shift'] ra
       // null và màn hình tưởng chưa mở ca; test từng sai đúng chỗ này.
-      return shiftOpen ? {'shift': {'id': 'sh_1', 'status': 'open'}} : {};
+      return shiftOpen
+          ? {
+              'shift': {'id': 'sh_1', 'status': 'open'}
+            }
+          : {};
+    }
+    if (path.contains('/detail')) {
+      // ledgerDetail đã enrich: item_snapshot có id/qty/returned_qty/unit_price.
+      return {
+        'bill': {'bill_code': 'HD000129', 'einvoice_status': 'ISSUED'},
+        'totals': {'gross': 200000, 'total': 200000, 'vat': 0},
+        'buyer_snapshot': {'name': 'Nguyễn Minh Lâm'},
+        'item_snapshot': [
+          {
+            'id': 'oi1',
+            'name': 'Hạt điều rang muối 500g',
+            'item_barcode': 'DDP-CAS-500',
+            'qty': 2,
+            'returned_qty': 0,
+            'unit_price': 100000,
+            'line_total': 200000,
+            'vat_rate': 0,
+          },
+        ],
+        'payment_history': [
+          {'method': 'cash', 'amount': 200000}
+        ],
+        'returns': const [],
+      };
     }
     return <dynamic>[];
   }
@@ -69,6 +127,16 @@ class _FakeApi extends ApiService {
     if (path == '/api/retail/checkout') {
       checkoutCalls.add(Map<String, dynamic>.from(body as Map));
       return {'id': 'o_1', 'bill_no': 'HD000129', 'fully_settled': true};
+    }
+    if (path == '/api/retail/receipt/preview/print') {
+      previewPrintCalls.add(Map<String, dynamic>.from(body as Map));
+    }
+    if (path.endsWith('/return')) {
+      returnCalls.add(Map<String, dynamic>.from(body as Map));
+      return {'return_id': 'r_1'};
+    }
+    if (path == '/api/print/return-voucher') {
+      return <String, dynamic>{};
     }
     return <String, dynamic>{};
   }
@@ -118,6 +186,13 @@ void main() {
     await _pump(tester);
     expect(tester.takeException(), isNull);
     expect(find.text('Hạt điều rang muối 500g'), findsOneWidget);
+  });
+
+  testWidgets('ảnh SKU tương đối dùng đúng URL server', (tester) async {
+    final api = await _pump(tester);
+    final image = tester.widget<Image>(find.byType(Image).first);
+    expect((image.image as NetworkImage).url,
+        '${api.baseUrl}/assets/product-images/cashews.png');
   });
 
   testWidgets('hàng hết tồn KHÔNG thêm được vào giỏ', (tester) async {
@@ -177,6 +252,40 @@ void main() {
     await tester.pumpAndSettle();
   });
 
+  testWidgets('nút In trên giỏ điện thoại gửi lệnh in tạm tính',
+      (tester) async {
+    final api = await _pump(tester);
+
+    await tester.tap(find.text('Hạt điều rang muối 500g'));
+    await tester.pump();
+    await tester.tap(find.textContaining('Giỏ hàng · 1 món'));
+    await tester.pumpAndSettle();
+
+    expect(find.byTooltip('Chọn khuyến mãi'), findsOneWidget);
+    await tester.tap(find.byTooltip('Chọn khuyến mãi'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Giảm hạt điều · 10%'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Ghi chú'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), 'ABC123456XYZ');
+    await tester.tap(find.text('Lưu'));
+    await tester.pumpAndSettle();
+    expect(find.text('Ghi chú: ABC123456XYZ'), findsOneWidget);
+
+    expect(find.text('In'), findsOneWidget);
+    await tester.tap(find.text('In'));
+    await tester.pumpAndSettle();
+
+    expect(api.previewPrintCalls.length, 1);
+    final item = (api.previewPrintCalls.single['items'] as List).single;
+    expect(item['sku_id'], 's1');
+    expect(item['voucher_id'], 'promo_s1');
+    expect(api.previewPrintCalls.single['note'], 'ABC123456XYZ');
+    expect(api.checkoutCalls, isEmpty);
+  });
+
   testWidgets('khách đưa THIẾU tiền thì không cho hoàn tất', (tester) async {
     final api = await _pump(tester);
 
@@ -191,6 +300,11 @@ void main() {
     await tester.tap(find.text('1'));
     await tester.pump();
     expect(find.text('Còn thiếu'), findsOneWidget);
+    expect(
+      tester.widget<Text>(find.byKey(const Key('cash-live-input'))).data,
+      '1đ',
+      reason: 'số vừa bấm phải luôn hiện, không được bấm mù',
+    );
 
     await tester.tap(find.text('Hoàn tất thanh toán'));
     await tester.pumpAndSettle();
@@ -235,6 +349,39 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  // Ưu đãi khách phải trừ vào ĐÚNG số tiền gửi lên server. Màn hình hiện một
+  // số mà checkout gửi số khác thì đơn thành "trả thiếu" và bill không đóng.
+  testWidgets('chọn khách có ưu đãi thì thu ĐÚNG số đã giảm', (tester) async {
+    final api = await _pump(tester);
+
+    await tester.tap(find.text('Hạt điều rang muối 500g'));
+    await tester.pump();
+
+    await tester.tap(find.text('Bán cho người tiêu dùng'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Nguyễn Minh Lâm'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.textContaining('Giỏ hàng · 1 món'));
+    await tester.pumpAndSettle();
+    // 165.000 − 10% = 148.500
+    expect(find.text('148.500đ'), findsWidgets);
+
+    await tester.tap(find.text('Thanh toán'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Vừa đủ'));
+    await tester.pump();
+    await tester.tap(find.text('Hoàn tất thanh toán'));
+    await tester.pumpAndSettle();
+
+    final sent = api.checkoutCalls.single;
+    expect((sent['payments'] as List).single['amount'], 148500);
+    expect(sent['customer_id'], 'c1');
+    expect(tester.takeException(), isNull);
+    await tester.pump(const Duration(milliseconds: 700));
+    await tester.pumpAndSettle();
+  });
+
   test('CartLine tính thành tiền từ giá SKU thật', () {
     const sku = Sku(
       id: 's1',
@@ -252,5 +399,83 @@ void main() {
       expiryRequired: false,
     );
     expect(CartLine(sku, 3).lineTotal, 495000);
+  });
+
+  // MULTI-TENDER: chia tiền nhiều phương thức phải gửi ĐÚNG mảng payments tổng
+  // bằng khách cần trả. Mặc định (không chia) vẫn một dòng — đã có test riêng.
+  testWidgets('chia tiền 2 phương thức gửi đúng mảng payments', (tester) async {
+    final api = await _pump(tester);
+
+    await tester.tap(find.text('Hạt điều rang muối 500g'));
+    await tester.pump();
+    await tester.tap(find.textContaining('Giỏ hàng · 1 món'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Thanh toán'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Chia nhiều phương thức'));
+    await tester.pumpAndSettle();
+
+    // Sheet chia: 2 ô (Tiền mặt, Thẻ) — mặc định macDinh khi không có cài đặt.
+    final fields = find.byType(TextFormField);
+    expect(fields, findsNWidgets(2));
+    await tester.enterText(fields.at(0), '100000'); // tiền mặt
+    await tester.enterText(fields.at(1), '65000'); // thẻ
+    await tester.pump();
+
+    await tester.tap(find.text('Xong'));
+    await tester.pumpAndSettle();
+    expect(find.text('ĐÃ CHIA TIỀN'), findsOneWidget);
+
+    await tester.tap(find.text('Hoàn tất thanh toán'));
+    await tester.pumpAndSettle();
+
+    final payments =
+        (api.checkoutCalls.single['payments'] as List).cast<Map>();
+    expect(payments.length, 2, reason: 'phải gửi 2 dòng tender');
+    expect(payments.fold<num>(0, (a, m) => a + (m['amount'] as num)), 165000,
+        reason: 'tổng chia phải bằng khách cần trả');
+    expect(payments.map((m) => m['method']).toSet(), {'cash', 'visa'});
+
+    await tester.pump(const Duration(milliseconds: 700));
+    await tester.pumpAndSettle();
+  });
+
+  // RETURN: màn Trả hàng phone dựng dòng từ ledgerDetail, chặn qty ≤ còn được
+  // trả, và gửi retailReturn đúng body (order_item_id/qty/disposition).
+  testWidgets('màn Trả hàng phone gửi đúng body retailReturn', (tester) async {
+    final api = _FakeApi();
+    tester.view.physicalSize = phoneSize;
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(_wrap(
+        const PhoneReturnScreen(order: {
+          'order_id': 'o_1',
+          'bill_code': 'HD000129',
+          'status': 'paid',
+          'channel': 'retail',
+        }),
+        api));
+    await tester.pumpAndSettle();
+
+    // Dòng hàng hiện "Đã bán 2 · Còn 2".
+    expect(find.textContaining('Đã bán 2'), findsOneWidget);
+    expect(find.textContaining('Còn 2'), findsOneWidget);
+
+    // Trả 1 món.
+    await tester.tap(find.byIcon(Icons.add));
+    await tester.pump();
+    expect(find.text('Trả hàng · 100.000đ'), findsOneWidget);
+
+    await tester.tap(find.text('Trả hàng · 100.000đ'));
+    await tester.pumpAndSettle();
+
+    final body = api.returnCalls.single;
+    final item = (body['items'] as List).single as Map;
+    expect(item['order_item_id'], 'oi1');
+    expect(item['qty'], 1);
+    expect(item['disposition'], 'restock');
+    expect(body['refund_method'], 'original');
   });
 }

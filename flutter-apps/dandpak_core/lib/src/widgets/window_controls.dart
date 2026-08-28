@@ -1,9 +1,11 @@
-﻿import 'dart:io';
+﻿import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../services/black_box.dart';
+import '../services/ring_controller.dart';
 import '../utils/translation.dart';
 
 /// Bridge to the native runner's custom window-chrome channel (the app has a
@@ -50,6 +52,41 @@ class WindowButtons extends StatefulWidget {
 }
 
 class _WindowButtonsState extends State<WindowButtons> {
+  // CHỐNG TẮT NHẦM: lần bấm nút Đóng ĐẦU TIÊN chỉ hiện thông báo giữa-trên màn
+  // (Anh + Việt); phải bấm LẦN NỮA trong vài giây mới thật sự thoát app. Tránh
+  // cửa hàng lỡ tay tắt giữa giờ bán.
+  bool _armed = false;
+  Timer? _disarmTimer;
+
+  @override
+  void dispose() {
+    _disarmTimer?.cancel();
+    // KHÔNG tắt banner ở đây: nút cửa sổ luôn hiển thị suốt đời app, dispose chỉ
+    // xảy ra khi thoát — nếu tắt cờ sẽ nhấp nháy. Cờ tự hết sau 3s.
+    super.dispose();
+  }
+
+  void _onClosePressed() {
+    if (_armed) {
+      _clearConfirm();
+      WindowControls.close();
+      return;
+    }
+    _armed = true;
+    // Bật banner qua RingOverlay (nằm đúng trong cây widget) — nút cửa sổ không
+    // có Overlay tổ tiên nên không tự chèn overlay được.
+    RingController.instance.closeConfirm.value = true;
+    _disarmTimer?.cancel();
+    _disarmTimer = Timer(const Duration(seconds: 3), _clearConfirm);
+  }
+
+  void _clearConfirm() {
+    _armed = false;
+    _disarmTimer?.cancel();
+    _disarmTimer = null;
+    RingController.instance.closeConfirm.value = false;
+  }
+
   @override
   Widget build(BuildContext context) {
     if (!WindowControls.supported) return SizedBox.shrink();
@@ -76,8 +113,8 @@ class _WindowButtonsState extends State<WindowButtons> {
             ),
             _WinBtn(
               icon: Icons.close,
-              tooltip: t('Đóng'),
-              onTap: WindowControls.close,
+              tooltip: t('Bấm 2 lần để tắt app'),
+              onTap: _onClosePressed,
               iconSize: 18,
             ),
           ],
@@ -111,17 +148,16 @@ class _WinBtnState extends State<_WinBtn> {
   Widget build(BuildContext context) {
     final isMac = Platform.isMacOS;
     Color dotColor;
-    IconData displayIcon = widget.icon;
+    // Phân biệt nút theo ICON (bền vững) — KHÔNG theo tooltip: đổi tooltip (vd nút
+    // Đóng thành "bấm 2 lần để tắt") mà key theo tooltip sẽ làm nút hiện nhầm kiểu.
+    final IconData displayIcon = widget.icon;
 
-    if (widget.tooltip == t('Đóng')) {
+    if (widget.icon == Icons.close) {
       dotColor = Color(0xFFFF5F56); // macOS Close Red
-      displayIcon = Icons.close;
-    } else if (widget.tooltip == t('Thu nhỏ')) {
+    } else if (widget.icon == Icons.remove) {
       dotColor = Color(0xFFFFBD2E); // macOS Minimize Yellow
-      displayIcon = Icons.remove;
     } else {
       dotColor = Color(0xFF27C93F); // macOS Maximize Green
-      displayIcon = Icons.crop_square;
     }
 
     if (isMac) {
@@ -171,12 +207,12 @@ class _WinBtnState extends State<_WinBtn> {
       Color fg;
       Color bg;
 
-      if (widget.tooltip == t('Đóng')) {
+      if (widget.icon == Icons.close) {
         bg = _hover
             ? Color(0xFFE81123)
             : Colors.transparent; // Windows Close Red
         fg = _hover ? Colors.white : Color(0xFFE81123);
-      } else if (widget.tooltip == t('Thu nhỏ')) {
+      } else if (widget.icon == Icons.remove) {
         bg = _hover
             ? Color(0xFFFFBD2E).withValues(alpha: 0.1)
             : Colors.transparent;

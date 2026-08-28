@@ -62,5 +62,6 @@ export { getTaxFilingProfile, sanitizeTaxFilingProfile } from './settings/taxPro
 export {
   getFirebaseServiceAccount,
   firebaseConfigured,
+  firebaseConfigurationStatus,
   setFirebaseServiceAccount,
 } from './settings/firebase.js';

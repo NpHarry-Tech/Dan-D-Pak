@@ -1,11 +1,14 @@
 [Setup]
 AppId={{DANDPAK-POS-DESKTOP-APP}}
 AppName=Dan D Pak POS
-AppVersion=2026.07.31.01
+; PH?I d?i k�m kAppBuildNumber/kAppVersionName trong lib/app_version.dart.
+; publish-release.ps1 d?c s? build t? app_version.dart r?i d?i chi?u v?i file
+; dem l�n � l?ch l� m�y POS roi v�o v�ng l?p c?p nh?t v� t?n.
+AppVersion=2026.08.28.01
 DefaultDirName={commonpf}\DanDPakPOS
 DefaultGroupName=Dan D Pak POS
 OutputDir=..\..\artifacts\releases
-OutputBaseFilename=dan-d-pak-pos-setup-2026-07-31-01
+OutputBaseFilename=dan-d-pak-pos-setup-b168
 Compression=lzma
 SolidCompression=yes
 SetupIconFile=windows\runner\resources\app_icon.ico
@@ -44,3 +47,15 @@ Name: "{commondesktop}\Dan D Pak POS"; Filename: "{app}\dandpak_desktop.exe"; Wo
 [Run]
 ; Không skipifsilent/unchecked: auto-update chạy /VERYSILENT xong TỰ mở lại app.
 Filename: "{app}\dandpak_desktop.exe"; Description: "{cm:LaunchProgram,Dan D Pak POS}"; WorkingDir: "{app}"; Flags: nowait postinstall runasoriginaluser
+
+[Code]
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+var
+  ResultCode: Integer;
+begin
+  { Agent chay tach khoi app; phai dung truoc khi ghi de file va khoi dong ban moi. }
+  Exec(ExpandConstant('{cmd}'), '/C taskkill /F /IM dandpak-agent.exe >NUL 2>&1',
+    '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Result := '';
+end;
+

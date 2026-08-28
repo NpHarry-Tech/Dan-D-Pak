@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../services/api_service.dart';
 import '../../ui/app_theme.dart';
 import '../../ui/format.dart';
+import '../../utils/business_datetime.dart';
 import '../../utils/translation.dart';
 import '../management/management_widgets.dart';
 import '../warehouse/kv_excel.dart';
@@ -42,9 +43,8 @@ class _PurchaseDocListPageState extends State<PurchaseDocListPage> {
   String? _error;
   bool _showFilters = true;
   String _search = '';
-  late final Set<String> _statuses = _isReturn
-      ? {'draft', 'returned'}
-      : {'draft', 'confirmed', 'received'};
+  late final Set<String> _statuses =
+      _isReturn ? {'draft', 'returned'} : {'draft', 'confirmed', 'received'};
   // Lọc thời gian (KiotViet: Tháng này / Tùy chỉnh) + người tạo.
   String _timeFilter = 'month'; // today | 7d | month | all | custom
   DateTimeRange? _customRange;
@@ -98,8 +98,9 @@ class _PurchaseDocListPageState extends State<PurchaseDocListPage> {
       } else {
         final res = await api.getPurchaseOrders(q: _search.trim());
         rows = kvMapList(res['orders']);
-        _summary =
-            res['summary'] is Map ? Map<String, dynamic>.from(res['summary']) : {};
+        _summary = res['summary'] is Map
+            ? Map<String, dynamic>.from(res['summary'])
+            : {};
       }
       if (!mounted) return;
       setState(() {
@@ -119,9 +120,9 @@ class _PurchaseDocListPageState extends State<PurchaseDocListPage> {
 
   bool _inTimeRange(Map<String, dynamic> r) {
     if (_timeFilter == 'all') return true;
-    final ts = DateTime.tryParse(kvs(r['created_at']))?.toLocal();
+    final ts = BusinessDateTime.parseApi(r['created_at']);
     if (ts == null) return true;
-    final now = DateTime.now();
+    final now = BusinessDateTime.now();
     final today = DateTime(now.year, now.month, now.day);
     switch (_timeFilter) {
       case 'today':
@@ -154,7 +155,8 @@ class _PurchaseDocListPageState extends State<PurchaseDocListPage> {
   void _toast(String m, {bool error = false}) =>
       appToast(context, m, isError: error);
 
-  Future<void> _openForm({Map<String, dynamic>? existing, PurchaseDocMode? mode}) async {
+  Future<void> _openForm(
+      {Map<String, dynamic>? existing, PurchaseDocMode? mode}) async {
     final changed = await Navigator.of(context).push<bool>(MaterialPageRoute(
         builder: (_) => PurchaseDocFormPage(
               mode: mode ?? widget.mode,
@@ -183,7 +185,8 @@ class _PurchaseDocListPageState extends State<PurchaseDocListPage> {
   /// các dòng đã nhận (đúng kiểu nút "Trả hàng nhập" trên phiếu KiotViet).
   void _returnFromPO(Map<String, dynamic> po) {
     final lines = kvMapList(po['lines'])
-        .where((l) => kvn(l['received_qty']) > 0 && kvs(l['item_type']) != 'adhoc')
+        .where(
+            (l) => kvn(l['received_qty']) > 0 && kvs(l['item_type']) != 'adhoc')
         .map((l) => {
               'item_type': l['item_type'],
               'item_id': l['item_id'],
@@ -206,7 +209,8 @@ class _PurchaseDocListPageState extends State<PurchaseDocListPage> {
   }
 
   Future<void> _pay(Map<String, dynamic> po) async {
-    final amount = TextEditingController(text: kvNumText(kvn(po['amount_due'])));
+    final amount =
+        TextEditingController(text: kvNumText(kvn(po['amount_due'])));
     final note = TextEditingController();
     String source = 'direct';
     String method = 'cash';
@@ -346,11 +350,10 @@ class _PurchaseDocListPageState extends State<PurchaseDocListPage> {
                 SizedBox(width: 10),
                 kvHeaderCell(t('Thời gian'), width: 118),
                 kvHeaderCell(t('Nhà cung cấp'), flex: 1),
-                kvHeaderCell(t('Tổng tiền'), width: 104, align: TextAlign.right),
-                kvHeaderCell(
-                    _isReturn ? t('VAT hoàn lại') : t('VAT nhập hàng'),
-                    width: 96,
-                    align: TextAlign.right),
+                kvHeaderCell(t('Tổng tiền'),
+                    width: 104, align: TextAlign.right),
+                kvHeaderCell(_isReturn ? t('VAT hoàn lại') : t('VAT nhập hàng'),
+                    width: 96, align: TextAlign.right),
                 SizedBox(width: 12),
                 kvHeaderCell(t('Trạng thái'), width: 128),
                 SizedBox(width: 22),
@@ -399,8 +402,7 @@ class _PurchaseDocListPageState extends State<PurchaseDocListPage> {
                   fontSize: 12.5,
                   color: Color(0xFFB45309))),
           for (final sup in suppliers)
-            Text(
-                '${kvs(sup['supplier_name'])}: ${Fmt.money(kvn(sup['due']))}',
+            Text('${kvs(sup['supplier_name'])}: ${Fmt.money(kvn(sup['due']))}',
                 style: TextStyle(fontSize: 11.5, color: DanColors.muted)),
         ],
       ),
@@ -580,8 +582,7 @@ class _PurchaseDocListPageState extends State<PurchaseDocListPage> {
                       textAlign: TextAlign.right,
                       style: TextStyle(
                           fontSize: 12,
-                          color:
-                              vat > 0 ? DanColors.text : DanColors.faint)),
+                          color: vat > 0 ? DanColors.text : DanColors.faint)),
                 ),
                 SizedBox(width: 12),
                 SizedBox(
@@ -595,10 +596,8 @@ class _PurchaseDocListPageState extends State<PurchaseDocListPage> {
                 ),
                 SizedBox(
                   width: 22,
-                  child: Icon(
-                      expanded ? Icons.expand_less : Icons.expand_more,
-                      size: 18,
-                      color: DanColors.faint),
+                  child: Icon(expanded ? Icons.expand_less : Icons.expand_more,
+                      size: 18, color: DanColors.faint),
                 ),
               ],
             ),
@@ -759,9 +758,8 @@ class _PurchaseDocListPageState extends State<PurchaseDocListPage> {
                         label: t('Tổng tiền hàng'),
                         value: Fmt.money(kvn(r['subtotal']))),
                     KvMetaTotalRow(
-                        label: _isReturn
-                            ? t('VAT hoàn lại')
-                            : t('VAT nhập hàng'),
+                        label:
+                            _isReturn ? t('VAT hoàn lại') : t('VAT nhập hàng'),
                         value: Fmt.money(
                             kvn(r[_isReturn ? 'vat_refund' : 'vat_amount']))),
                     KvMetaTotalRow(
@@ -849,8 +847,7 @@ class _PurchaseDocListPageState extends State<PurchaseDocListPage> {
         ),
         if (due > 0)
           FilledButton(
-              onPressed: () => _pay(r),
-              child: Text(t('Thanh toán công nợ'))),
+              onPressed: () => _pay(r), child: Text(t('Thanh toán công nợ'))),
       ]);
     } else if (_isReturn && status == 'draft') {
       // đã xử lý ở nhánh draft chung phía trên

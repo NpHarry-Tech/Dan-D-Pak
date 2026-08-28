@@ -7,6 +7,8 @@ import { join } from 'node:path';
 const tmp = mkdtempSync(join(tmpdir(), 'haravan-'));
 process.env.SQLITE_PATH = join(tmp, 'test.db');
 process.env.STORAGE_PATH = join(tmp, 'storage');
+process.env.DATA_ENCRYPTION_KEY =
+  '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
 process.env.HARAVAN_WEBHOOK_SECRET = 'test_secret';
 process.env.HARAVAN_DEFAULT_BRANCH_ID = 'ONLINE';
 process.env.HARAVAN_ENABLED = 'true';
@@ -95,7 +97,7 @@ try {
   Settings.updateIntegrations({ channels: { haravan: publicHaravan } }, 'sala');
   assert.equal(Settings.getIntegrations('sala').channels.haravan.accessToken, 'tok_1234');
   assert.equal(Settings.getIntegrations('sala').channels.haravan.webhookSecret, 'sec_5678');
-  Haravan.syncHaravanProduct({
+  const syncedProduct = Haravan.syncHaravanProduct({
     id: 11,
     title: 'Ao',
     variants: [{ id: 22, sku: 'SKU-1', title: 'Default Title', price: 15000, inventory_quantity: 4 }],
@@ -115,9 +117,10 @@ try {
   // BR-STOCK-001: POS is the inventory source of truth. An inbound Haravan quantity
   // (9) must NOT overwrite POS stock (4, set locally via syncHaravanProduct above) —
   // it's an external observation to reconcile, not an authoritative write.
-  assert.equal(db.prepare(`SELECT stock FROM skus WHERE id='hvn_22'`).get().stock, 4);
+  const syncedSkuId = syncedProduct.skus[0];
+  assert.equal(db.prepare(`SELECT stock FROM skus WHERE id=?`).get(syncedSkuId).stock, 4);
   assert.equal(db.prepare(`SELECT COUNT(*) n FROM stock_movements`).get().n, movementsBeforeInbound);
-  assert.equal(db.prepare(`SELECT branch_id FROM skus WHERE id='hvn_22'`).get().branch_id, 'sala');
+  assert.equal(db.prepare(`SELECT branch_id FROM skus WHERE id=?`).get(syncedSkuId).branch_id, 'sala');
   assert.equal(
     db.prepare(`SELECT COUNT(*) n FROM audit_log WHERE action='haravan.inventory.discrepancy'`).get().n,
     1,
@@ -126,7 +129,7 @@ try {
     Haravan.syncHaravanInventory({ loc_id: 111, variant_id: 22, qty_available: 3 }, 'shop.myharavan.com').reason,
     'different_location',
   );
-  assert.equal(db.prepare(`SELECT stock FROM skus WHERE id='hvn_22'`).get().stock, 4);
+  assert.equal(db.prepare(`SELECT stock FROM skus WHERE id=?`).get(syncedSkuId).stock, 4);
 
   Settings.updateIntegrations({ channels: { haravan: { syncInventory: false } } }, 'sala');
   const disabledBody = Buffer.from(JSON.stringify({ loc_id: 963414, variant_id: 22, qty_available: 3 }));
@@ -137,7 +140,7 @@ try {
     'x-haravan-shop-domain': 'shop.myharavan.com',
   });
   assert.equal(db.prepare(`SELECT status FROM sync_logs WHERE id=?`).get(disabledLog.log_id).status, 'ignored');
-  assert.equal(db.prepare(`SELECT stock FROM skus WHERE id='hvn_22'`).get().stock, 4);
+  assert.equal(db.prepare(`SELECT stock FROM skus WHERE id=?`).get(syncedSkuId).stock, 4);
   Settings.updateIntegrations({ channels: { haravan: { syncInventory: true } } }, 'sala');
 
   const savedSignature = crypto.createHmac('sha256', 'sec_5678').update(body).digest('base64');
@@ -169,13 +172,15 @@ try {
   };
   const fullSync = await Haravan.syncAllHaravan({ shopDomain: 'shop.myharavan.com', delta: false });
   assert.equal(fullSync.queued, 4);
+  const pulledSkuId = db.prepare(`SELECT internal_variant_id FROM external_products
+    WHERE provider='haravan' AND shop_domain='shop.myharavan.com' AND external_variant_id='502'`).get().internal_variant_id;
   // BR-STOCK-001: even for a brand-new SKU discovered via Haravan's own product feed
   // (stock=0 at creation, no inventory_quantity on the product payload), the
   // FOLLOWING inventory pull (qty_available=8) must still land as a reconciliation
   // discrepancy, not an authoritative write — POS stays the one place that sets stock.
-  assert.equal(db.prepare(`SELECT stock FROM skus WHERE id='hvn_502'`).get().stock, 0);
+  assert.equal(db.prepare(`SELECT stock FROM skus WHERE id=?`).get(pulledSkuId).stock, 0);
   assert.equal(
-    db.prepare(`SELECT COUNT(*) n FROM audit_log WHERE action='haravan.inventory.discrepancy' AND detail LIKE '%hvn_502%'`).get().n,
+    db.prepare(`SELECT COUNT(*) n FROM audit_log WHERE action='haravan.inventory.discrepancy' AND detail LIKE ?`).get(`%${pulledSkuId}%`).n,
     1,
   );
   assert.equal(db.prepare(`SELECT COUNT(*) n FROM customers WHERE phone='0900000504'`).get().n, 1);
@@ -208,18 +213,18 @@ try {
   const insertMovement = db.prepare(`INSERT INTO stock_movements
     (id,branch_id,inventory_item_id,type,qty,created_at,item_type,reason)
     VALUES (?,?,?,?,?,?,?,?)`);
-  insertMovement.run('sm_old', 'sala', 'hvn_22', 'adjust', 1, new Date().toISOString(), 'sku', 'test');
+  insertMovement.run('sm_old', 'sala', syncedSkuId, 'adjust', 1, new Date().toISOString(), 'sku', 'test');
   const initialized = await Haravan.pushPendingInventoryChanges();
   assert.equal(initialized.pushed, 0);
   assert.equal(initialized.results[0].initialized, true);
   assert.equal(fetchCalls, 0);
 
-  insertMovement.run('sm_new', 'sala', 'hvn_22', 'sale', -1, new Date().toISOString(), 'sku', 'pos');
+  insertMovement.run('sm_new', 'sala', syncedSkuId, 'sale', -1, new Date().toISOString(), 'sku', 'pos');
   const pending = await Haravan.pushPendingInventoryChanges();
   assert.equal(pending.pushed, 1);
   assert.equal(fetchCalls, 1);
 
-  const pushed = await Haravan.pushInventoryToHaravan({ shopDomain: 'shop.myharavan.com', skuIds: ['hvn_22'] });
+  const pushed = await Haravan.pushInventoryToHaravan({ shopDomain: 'shop.myharavan.com', skuIds: [syncedSkuId] });
   assert.equal(pushed.pushed, 1);
   assert.equal(fetchCalls, 2);
   assert.equal(pushedBody.inventory.location_id, 963414);
@@ -230,13 +235,13 @@ try {
 
   const logsBeforeMissingLocation = db.prepare(`SELECT COUNT(*) n FROM sync_logs`).get().n;
   Settings.updateIntegrations({ channels: { haravan: { locationId: '' } } }, 'sala');
-  insertMovement.run('sm_no_location', 'sala', 'hvn_22', 'sale', -1, new Date().toISOString(), 'sku', 'pos');
+  insertMovement.run('sm_no_location', 'sala', syncedSkuId, 'sale', -1, new Date().toISOString(), 'sku', 'pos');
   const missingLocation = await Haravan.pushPendingInventoryChanges();
   assert.equal(missingLocation.pushed, 0);
   assert.equal(db.prepare(`SELECT COUNT(*) n FROM sync_logs`).get().n, logsBeforeMissingLocation);
 
   Haravan.deleteHaravanProduct({ id: 11 }, 'shop.myharavan.com');
-  assert.equal(db.prepare(`SELECT active FROM skus WHERE id='hvn_22'`).get().active, 0);
+  assert.equal(db.prepare(`SELECT active FROM skus WHERE id=?`).get(syncedSkuId).active, 0);
   await new Promise(resolve => setImmediate(resolve));
 } finally {
   db.close();

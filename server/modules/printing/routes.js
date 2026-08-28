@@ -52,6 +52,13 @@ api.post('/print/shipping-label',
     copies: req.body.copies || 1,
     deviceId: deviceOf(req),
   })));
+api.post('/print/return-voucher',
+  guardAny('refund', 'pay', 'reports', 'module.printing', 'settings.printers'),
+  wrap((req) => Print.printReturnVoucher(branch(req), {
+    return_id: req.body.return_id || '',
+    copies: req.body.copies || 1,
+    deviceId: deviceOf(req),
+  })));
 api.get('/print/jobs', printGuard, wrap((req) => Print.listJobs(branch(req), req.query)));
 api.get('/print/jobs/:id', printGuard, wrap((req) => Print.getJobForBranch(req.params.id, branch(req))));
 api.get('/print/jobs/:id/text', printGuard, wrap((req) => ({ text: Print.renderJobText(Print.getJobForBranch(req.params.id, branch(req)) || {}) })));

@@ -30,6 +30,14 @@ export function firebaseConfigured(branch_id = 'sala') {
   return !!getFirebaseServiceAccount(branch_id);
 }
 
+/** Public-safe health state; never exposes ciphertext or service credentials. */
+export function firebaseConfigurationStatus(branch_id = 'sala') {
+  const row = db.prepare(`SELECT value FROM app_settings WHERE branch_id=? AND key=?`)
+    .get(branch_id, FIREBASE_SERVICE_ACCOUNT_KEY);
+  if (!row?.value) return 'missing';
+  return getFirebaseServiceAccount(branch_id) ? 'ready' : 'unreadable';
+}
+
 /** Nhận object HOẶC chuỗi JSON của file service-account tải từ Firebase
  *  Console, xác thực đủ trường bắt buộc, mã hoá rồi lưu — 1 dòng trong
  *  app_settings, không phải file trên đĩa. */

@@ -43,6 +43,16 @@ const DEFAULT_OPERATIONS_CONFIG = {
     bankAccount: '0123456789',
     accountName: 'DAN D PAK',
     qrProvider: 'vietqr_public',
+    // ẢNH QR TĨNH của cửa hàng — dùng khi chưa đấu nối được cổng thanh toán
+    // theo pháp nhân. Khách quét chuyển khoản, cửa hàng đối soát bằng mắt.
+    // Đây là MỘT PHƯƠNG THỨC THANH TOÁN, không phải thứ riêng của catalogue:
+    // bật lên là nó hiện ở màn phụ, iPad self-order, catalogue, POS — mọi chỗ
+    // có bước chuyển khoản. Xem services/qrProvider.js.
+    // Tắt hẳn QR ngân hàng (VietQR public/API). Tắt xong mà chưa bật cổng nào
+    // thì ẢNH QR TĨNH tự lên thay ở mọi màn. Xem services/qrProvider.js.
+    bankQrEnabled: true,
+    staticQrUrl: '',
+    staticQrNote: 'Quét mã để chuyển khoản, sau đó báo nhân viên để đối soát.',
     transferPrefix: 'DANBILL',
     posTerminalName: 'POS May 1',
     // Máy POS thẻ (PAX A920Pro của PAX Technology - Shenzhen). mode: auto = native
@@ -160,6 +170,9 @@ export function sanitizeOperationsConfig(raw = {}) {
       bankAccount: str(payment.bankAccount || DEFAULT_OPERATIONS_CONFIG.payment.bankAccount, 80),
       accountName: str(payment.accountName || DEFAULT_OPERATIONS_CONFIG.payment.accountName, 160),
       qrProvider: str(payment.qrProvider || DEFAULT_OPERATIONS_CONFIG.payment.qrProvider, 40),
+      bankQrEnabled: payment.bankQrEnabled !== false,
+      staticQrUrl: str(payment.staticQrUrl || '', 500),
+      staticQrNote: str(payment.staticQrNote || DEFAULT_OPERATIONS_CONFIG.payment.staticQrNote, 300),
       transferPrefix: str(payment.transferPrefix || DEFAULT_OPERATIONS_CONFIG.payment.transferPrefix, 40).replace(/\s+/g, '').toUpperCase(),
       posTerminalName: str(payment.posTerminalName || DEFAULT_OPERATIONS_CONFIG.payment.posTerminalName, 120),
       cardTerminal: sanitizeCardTerminal(payment.cardTerminal),

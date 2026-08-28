@@ -26,9 +26,26 @@ class _DevicesPanelState extends State<DevicesPanel> {
 
   // Mật khẩu 4 số dễ đoán — chặn tại chỗ (server cũng chốt chặn lại).
   static const _weakPins = {
-    '0000', '1111', '2222', '3333', '4444', '5555', '6666', '7777', '8888',
-    '9999', '1234', '4321', '2345', '3456', '4567', '5678', '6789', '0123',
-    '1212', '2580',
+    '0000',
+    '1111',
+    '2222',
+    '3333',
+    '4444',
+    '5555',
+    '6666',
+    '7777',
+    '8888',
+    '9999',
+    '1234',
+    '4321',
+    '2345',
+    '3456',
+    '4567',
+    '5678',
+    '6789',
+    '0123',
+    '1212',
+    '2580',
   };
 
   @override
@@ -73,7 +90,8 @@ class _DevicesPanelState extends State<DevicesPanel> {
     }
     if (_weakPins.contains(newPin)) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text(t('Mật khẩu quá dễ đoán (0000/1111/1234…). Hãy chọn 4 số khác.')),
+          content: Text(
+              t('Mật khẩu quá dễ đoán (0000/1111/1234…). Hãy chọn 4 số khác.')),
           backgroundColor: DanColors.late));
       return;
     }

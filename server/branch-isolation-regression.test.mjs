@@ -58,8 +58,8 @@ test('ghi chú đơn đi xuyên suốt tới nội dung bill, ngay trước lờ
   const receipt = History.orderReceipt('order_note', 'moi');
   assert.equal(receipt.note, 'Giao trước 18 giờ');
   const text = Print.renderJobText({ type: 'receipt', branch_id: 'moi', payload: receipt }, 'moi');
-  assert.match(text, /Ghi chu: Giao truoc 18 gio/);
-  assert.ok(text.indexOf('Ghi chu:') < text.indexOf('Cam on'));
+  assert.match(text, /Ghi chú: Giao trước 18 giờ/);
+  assert.ok(text.toLowerCase().indexOf('ghi chú:') < text.toLowerCase().indexOf('cảm ơn'));
 });
 
 test('query routing từ chối chi nhánh sai thay vì âm thầm rơi về sala', () => {

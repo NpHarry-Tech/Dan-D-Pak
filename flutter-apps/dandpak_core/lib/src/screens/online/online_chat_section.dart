@@ -7,6 +7,7 @@ import '../../services/socket_service.dart';
 import '../../ui/app_theme.dart';
 import '../../ui/debouncer.dart';
 import '../../ui/format.dart';
+import '../../utils/business_datetime.dart';
 import '../../utils/translation.dart';
 import '../management/management_widgets.dart';
 import 'online_shared.dart';
@@ -23,6 +24,7 @@ class OnlineChatSection extends StatefulWidget {
 class _OnlineChatSectionState extends State<OnlineChatSection> {
   final SocketService _socket = SocketService();
   final Debouncer _refresh = Debouncer();
+  final Debouncer _searchDebounce = Debouncer();
   final _search = TextEditingController();
 
   List<Map<String, dynamic>> _conversations = [];
@@ -72,6 +74,7 @@ class _OnlineChatSectionState extends State<OnlineChatSection> {
   void dispose() {
     _disposed = true;
     _refresh.dispose();
+    _searchDebounce.dispose();
     _search.dispose();
     _socket.removeListener(_onSocket);
     super.dispose();
@@ -172,9 +175,13 @@ class _OnlineChatSectionState extends State<OnlineChatSection> {
                     hintText: t('Tìm kiếm'),
                     prefixIcon: const Icon(Icons.search, size: 18),
                   ),
-                  onSubmitted: (v) {
-                    setState(() => _query = v.trim());
-                    _load();
+                  onChanged: (v) {
+                    final q = v.trim();
+                    _searchDebounce(() {
+                      if (!mounted || q == _query) return;
+                      setState(() => _query = q);
+                      _load();
+                    });
                   },
                 ),
               ),
@@ -222,7 +229,7 @@ class _OnlineChatSectionState extends State<OnlineChatSection> {
     final name = oStr(c['display_name']).isNotEmpty
         ? oStr(c['display_name'])
         : oStr(c['external_user_id']);
-    final at = DateTime.tryParse(oStr(c['last_message_at']))?.toLocal();
+    final at = BusinessDateTime.parseApi(c['last_message_at']);
     return InkWell(
       onTap: () => _openThread(id),
       child: Container(
@@ -232,7 +239,8 @@ class _OnlineChatSectionState extends State<OnlineChatSection> {
           children: [
             CircleAvatar(
               radius: 18,
-              backgroundColor: providerMeta(oStr(c['provider'])).color
+              backgroundColor: providerMeta(oStr(c['provider']))
+                  .color
                   .withValues(alpha: .15),
               child: Icon(providerMeta(oStr(c['provider'])).icon,
                   size: 16, color: providerMeta(oStr(c['provider'])).color),
@@ -264,17 +272,15 @@ class _OnlineChatSectionState extends State<OnlineChatSection> {
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                           fontSize: 12,
-                          color: unread > 0
-                              ? DanColors.text
-                              : DanColors.faint)),
+                          color:
+                              unread > 0 ? DanColors.text : DanColors.faint)),
                 ],
               ),
             ),
             if (unread > 0)
               Container(
                 margin: const EdgeInsets.only(left: 6),
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
                 decoration: BoxDecoration(
                     color: DanColors.late,
                     borderRadius: BorderRadius.circular(9)),
@@ -353,7 +359,8 @@ class _OnlineChatSectionState extends State<OnlineChatSection> {
     );
   }
 
-  String _statusLabel(String s) => const {
+  String _statusLabel(String s) =>
+      const {
         'open': 'Đang mở',
         'pending': 'Chờ',
         'resolved': 'Đã xử lý',
@@ -361,7 +368,8 @@ class _OnlineChatSectionState extends State<OnlineChatSection> {
       }[s] ??
       s;
 
-  Color _statusColor(String s) => const {
+  Color _statusColor(String s) =>
+      const {
         'open': DanColors.doing,
         'pending': DanColors.doing,
         'resolved': DanColors.done,
@@ -390,8 +398,8 @@ class _OnlineChatSectionState extends State<OnlineChatSection> {
           ),
         );
         if (ok == true) {
-          await api.updateOmniConversation(
-              _selectedId, {'note': ctrl.text.trim()});
+          await api
+              .updateOmniConversation(_selectedId, {'note': ctrl.text.trim()});
         }
       } else {
         await api.updateOmniConversation(_selectedId, {'status': action});
@@ -408,14 +416,14 @@ class _OnlineChatSectionState extends State<OnlineChatSection> {
 
   Widget _messageBubble(Map<String, dynamic> m) {
     final outbound = oStr(m['direction']) == 'outbound';
-    final at = DateTime.tryParse(oStr(m['sent_at']))?.toLocal();
+    final at = BusinessDateTime.parseApi(m['sent_at']);
     return Align(
       alignment: outbound ? Alignment.centerRight : Alignment.centerLeft,
       child: Container(
         margin: const EdgeInsets.symmetric(vertical: 4),
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        constraints: BoxConstraints(
-            maxWidth: MediaQuery.sizeOf(context).width * .5),
+        constraints:
+            BoxConstraints(maxWidth: MediaQuery.sizeOf(context).width * .5),
         decoration: BoxDecoration(
           color: outbound ? DanColors.brand : DanColors.surface2,
           borderRadius: BorderRadius.circular(12),
@@ -432,9 +440,7 @@ class _OnlineChatSectionState extends State<OnlineChatSection> {
               Text(Fmt.hm(at),
                   style: TextStyle(
                       fontSize: 9.5,
-                      color: outbound
-                          ? Colors.white70
-                          : DanColors.faint)),
+                      color: outbound ? Colors.white70 : DanColors.faint)),
           ],
         ),
       ),
@@ -445,7 +451,8 @@ class _OnlineChatSectionState extends State<OnlineChatSection> {
     // Gửi outbound cần connector sống. Cho tới lúc đó chỉ hiện trạng thái, không
     // giả vờ gửi được.
     final provider = oStr(_detail['provider']);
-    final conn = oMap(oMap(_capabilities['connectors'])[_connectorKey(provider)]);
+    final conn =
+        oMap(oMap(_capabilities['connectors'])[_connectorKey(provider)]);
     final canSend = conn['outbound'] == true;
     return Container(
       padding: const EdgeInsets.all(12),
@@ -463,14 +470,12 @@ class _OnlineChatSectionState extends State<OnlineChatSection> {
               FilledButton(onPressed: () {}, child: Text(t('Gửi'))),
             ])
           : Row(children: [
-              const Icon(Icons.lock_outline,
-                  size: 16, color: DanColors.faint),
+              const Icon(Icons.lock_outline, size: 16, color: DanColors.faint),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
                   t('Gửi tin ra kênh này mở khi connector được cấp quyền (${providerMeta(provider).name}).'),
-                  style:
-                      const TextStyle(fontSize: 12, color: DanColors.faint),
+                  style: const TextStyle(fontSize: 12, color: DanColors.faint),
                 ),
               ),
             ]),

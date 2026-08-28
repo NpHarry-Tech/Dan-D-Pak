@@ -13,6 +13,7 @@ export const TAX_FILING_PROFILE_KEY = 'tax_filing_profile';
 export const CUSTOMER_DISPLAY_KEY = 'customer_display';
 export const LOYALTY_CONFIG_KEY = 'loyalty_config';
 export const RETAIL_CONFIG_KEY = 'retail_config';
+export const SELL_CONFIG_KEY = 'sell_config';
 export const FIREBASE_SERVICE_ACCOUNT_KEY = 'firebase_service_account';
 
 // ── Ép kiểu giá trị từ client ───────────────────────────────────────────────

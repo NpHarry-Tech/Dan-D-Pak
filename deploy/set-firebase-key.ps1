@@ -6,7 +6,8 @@
 # Dung sau khi da tai file service-account tu Firebase Console
 # (Project settings -> Service accounts -> Generate new private key):
 #   powershell -File deploy\set-firebase-key.ps1 `
-#       -Server http://42.96.18.70:3000 -Username admin -Pin 1234 `
+# Server: https://api.dandpakpos.io.vn (cổng 3000 không còn mở ra internet).
+#       -Server https://api.dandpakpos.io.vn -Username admin -Pin 1234 `
 #       -File "D:\DTrash\dan-d-pak-pos-firebase-adminsdk-fbsvc-xxxxx.json"
 #
 # Sau khi chay XONG va thay "Success", XOA file .json goc khoi may -

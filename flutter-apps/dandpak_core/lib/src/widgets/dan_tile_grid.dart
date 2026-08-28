@@ -36,9 +36,10 @@ class DanTileGrid extends StatelessWidget {
     return LayoutBuilder(
       builder: (context, constraints) {
         // Chỉ THU khi ô rộng hơn chỗ khả dụng (chống tràn ở màn siêu nhỏ).
-        final w = constraints.maxWidth.isFinite && tileWidth > constraints.maxWidth
-            ? constraints.maxWidth
-            : tileWidth;
+        final w =
+            constraints.maxWidth.isFinite && tileWidth > constraints.maxWidth
+                ? constraints.maxWidth
+                : tileWidth;
         return Wrap(
           spacing: spacing,
           runSpacing: runSpacing,

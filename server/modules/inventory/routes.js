@@ -1,7 +1,6 @@
 import * as Inv from '../../services/inventory.js';
 import * as Auth from '../../services/auth.js';
 import { audit } from '../../db.js';
-import { notImplemented } from '../../core/http.js';
 
 function verifyWarehouseConfigAccess(req, branch) {
   const branch_id = branch(req);
@@ -35,16 +34,15 @@ export function registerInventoryRoutes(api, {
 
   api.get('/inventory', guard(), wrap((req) => Inv.listInventory(visibleBranch(req), req.query)));
   api.post('/inventory', guardAny('warehouse.item', 'inventory.adjust'), wrap((req) => Inv.createInventoryItem(req.body, branch(req))));
-  api.post('/inventory/movements', guard('inventory.adjust'), wrap(() => notImplemented('Generic inventory movement endpoint is planned. Current app uses warehouse receive/issue/transfer/stocktake endpoints.')));
   api.post('/inventory/:id/update', guardAny('warehouse.item', 'inventory.adjust'), wrap((req) => Inv.updateInventoryItem(req.params.id, req.body, branch(req))));
   api.post('/inventory/:id/delete', guardAny('warehouse.delete', 'inventory.adjust'), wrap((req) => Inv.deleteInventoryItem(req.params.id, branch(req))));
   api.post('/inventory/:id/receive', guardAny('warehouse.receive', 'inventory.adjust'), wrap((req) => Inv.receiveStock(req.params.id, parseFloat(req.body.qty), visibleBranch(req), req.body)));
   api.post('/inventory/:id/adjust', guardAny('warehouse.item', 'inventory.adjust'), wrap((req) => Inv.adjustStock(req.params.id, parseFloat(req.body.stock), branch(req), req.body)));
 
   api.get('/skus', guard(), wrap((req) => Inv.listSkus(visibleBranch(req), req.query)));
-  api.post('/skus/image-upload', guardAny('warehouse.item', 'inventory.adjust'), wrap((req) =>
+  api.post('/skus/image-upload', guard('warehouse.item'), wrap((req) =>
     saveBase64Image(req, { dir: PRODUCT_UPLOADS_DIR, urlBase: '/uploads/products', prefix: 'product_', auditAction: 'sku.image_upload' })));
-  api.post('/skus', guardAny('warehouse.item', 'inventory.adjust'), wrap((req) => Inv.createSku(req.body, branch(req))));
+  api.post('/skus', guard('warehouse.item'), wrap((req) => Inv.createSku(req.body, branch(req))));
   api.post('/skus/:id/update', guardAny('warehouse.item', 'inventory.adjust'), wrap((req) => Inv.updateSku(req.params.id, req.body, branch(req))));
   api.post('/skus/:id/delete', guard('warehouse.delete'), wrap((req) => Inv.deleteSku(req.params.id, branch(req))));
   api.get('/skus/barcode/:code', guard(), wrap((req) => {

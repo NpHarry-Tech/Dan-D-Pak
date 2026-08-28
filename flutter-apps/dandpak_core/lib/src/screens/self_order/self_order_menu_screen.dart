@@ -55,6 +55,8 @@ class _SelfOrderMenuScreenState extends State<SelfOrderMenuScreen> {
   final List<SoCartItem> _cart = [];
   String _selectedCategory = 'all';
   SoMenuItem? _detailItem;
+  // Tùy chọn khách đang chọn ở panel chi tiết: groupKey -> tập optionKey.
+  final Map<String, Set<String>> _detailSel = {};
   bool _loading = true;
   String? _error;
   bool _sending = false;
@@ -66,6 +68,11 @@ class _SelfOrderMenuScreenState extends State<SelfOrderMenuScreen> {
 
   late final ApiService _api;
   void Function(String, dynamic)? _socketListener;
+  // POLL trạng thái đơn: sự kiện realtime có thể bị LỠ (socket rớt/reconnect,
+  // máy khách không ở đúng room) khiến chip trạng thái món đứng ở "đợi xác nhận"
+  // dù bếp/nhân viên đã xác nhận. Tự đồng bộ lại định kỳ để chip đổi mà KHÔNG
+  // cần khách chạm gì — bù cho push realtime.
+  Timer? _statusPoll;
 
   SelfOrderLang get L => widget.lang;
 
@@ -84,15 +91,35 @@ class _SelfOrderMenuScreenState extends State<SelfOrderMenuScreen> {
     if (resume != null) _applyOrder(resume);
     _socketListener = _onSocket;
     SocketService().addListener(_socketListener!);
+    // Đồng bộ lại trạng thái mỗi 8s (chỉ khi đã có đơn) — bù realtime bị lỡ.
+    _statusPoll =
+        Timer.periodic(const Duration(seconds: 8), (_) => _resyncStatus());
     _load();
   }
 
   @override
   void dispose() {
+    _statusPoll?.cancel();
     if (_socketListener != null) {
       SocketService().removeListener(_socketListener!);
     }
     super.dispose();
+  }
+
+  /// Nạp lại đơn từ server rồi cập nhật chip trạng thái — dùng cho poll định kỳ
+  /// và sau khi socket nối lại (bắt kịp các thay đổi đã bỏ lỡ).
+  Future<void> _resyncStatus() async {
+    final oid = _orderId;
+    if (oid == null || oid.isEmpty || !mounted) return;
+    try {
+      final order = await _api.getOrderById(oid);
+      if (!mounted) return;
+      if ((order['id'] ?? '').toString() == oid) {
+        setState(() => _applyOrder(order));
+      }
+    } catch (_) {
+      // Mạng chập chờn thì thôi — lần poll sau thử lại.
+    }
   }
 
   /// Đồng bộ trạng thái đơn từ server (id, tổng đã gửi, danh sách món + status).
@@ -114,21 +141,39 @@ class _SelfOrderMenuScreenState extends State<SelfOrderMenuScreen> {
   }
 
   void _onSocket(String event, dynamic payload) {
-    if (!mounted || payload is! Map) return;
+    if (!mounted) return;
+    // Socket vừa NỐI LẠI sau khi rớt → đồng bộ ngay để bắt kịp các thay đổi
+    // trạng thái đã bỏ lỡ trong lúc mất kết nối (payload rỗng nên xử trước).
+    if (event == kSyncReconnected) {
+      _resyncStatus();
+      return;
+    }
+    if (payload is! Map) return;
     final oid = _orderId;
     if (oid == null) return;
     switch (event) {
       case 'order:item': // KDS đổi trạng thái món → cập nhật chip ngay
       case 'order:updated':
+      case 'order:pending': // nhân viên xác nhận / từ chối món
       case 'order:confirmed':
       case 'order:new':
-        final order = payload['order'];
-        final pid =
-            (payload['order_id'] ?? (order is Map ? order['id'] : '') ?? '')
-                .toString();
-        if (pid == oid && order is Map) {
-          setState(() => _applyOrder(Map<String, dynamic>.from(order)));
+        // HAI DẠNG PAYLOAD, PHẢI HIỂU CẢ HAI.
+        //
+        // Server phát 'order:updated' với payload LÀ CHÍNH ĐƠN HÀNG
+        // (`emit('order:updated', full, ...)`), còn 'order:pending' thì bọc
+        // trong `{ order: full, confirmed: [...] }`. Bản trước chỉ đọc
+        // `payload['order']` nên nhánh 'order:updated' không bao giờ khớp —
+        // nhân viên bấm xác nhận món xong mà màn khách đứng im, đúng lỗi báo về.
+        final raw = payload['order'] ?? payload;
+        final order = raw is Map ? Map<String, dynamic>.from(raw) : null;
+        final pid = (payload['order_id'] ?? order?['id'] ?? '').toString();
+        if (pid == oid && order != null) {
+          setState(() => _applyOrder(order));
         }
+        break;
+      case 'payment:config':
+        // Cổng thanh toán vừa đổi ở Cài đặt → lần bấm thanh toán tiếp theo phải
+        // lấy QR mới. Không cần vẽ lại gì ngay, chỉ cần đừng dùng bản cũ.
         break;
       case 'payment:done':
         if ((payload['order_id'] ?? '').toString() == oid) {
@@ -235,7 +280,33 @@ class _SelfOrderMenuScreenState extends State<SelfOrderMenuScreen> {
     }
     _lastTappedItemId = item.id;
     _lastItemTapAt = now;
-    setState(() => _detailItem = item);
+    setState(() {
+      _detailItem = item;
+      // Mở món mới → reset lựa chọn; nhóm "chọn 1 bắt buộc" tự chọn sẵn cái đầu.
+      _detailSel.clear();
+      for (final g in item.optionGroups) {
+        if (g.single && g.required && g.options.isNotEmpty) {
+          _detailSel[g.key] = {g.options.first.key};
+        }
+      }
+    });
+  }
+
+  // Bấm một tùy chọn: nhóm "chọn 1" thay thế; nhóm nhiều thì bật/tắt (tôn trọng max).
+  void _toggleOption(SoOptionGroup g, SoOptionItem o) {
+    setState(() {
+      final sel = _detailSel.putIfAbsent(g.key, () => <String>{});
+      if (g.single) {
+        sel
+          ..clear()
+          ..add(o.key);
+      } else if (sel.contains(o.key)) {
+        sel.remove(o.key);
+      } else {
+        if (g.max > 0 && sel.length >= g.max) return; // đủ số tối đa
+        sel.add(o.key);
+      }
+    });
   }
 
   void _addItemById(String id) {
@@ -248,8 +319,35 @@ class _SelfOrderMenuScreenState extends State<SelfOrderMenuScreen> {
   }
 
   void _addDetailItem(SoMenuItem item) {
-    _addItem(item);
-    setState(() => _detailItem = null);
+    // Nhóm bắt buộc (min>0) phải chọn đủ trước khi thêm.
+    for (final g in item.optionGroups) {
+      final sel = _detailSel[g.key] ?? const <String>{};
+      if (g.min > 0 && sel.length < g.min) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(t('Vui lòng chọn: ${g.name}')),
+          duration: Duration(seconds: 2),
+        ));
+        return;
+      }
+    }
+    // Dựng danh sách tùy chọn đã chọn (group+name để server validate, price để tính).
+    final mods = <SoModifierOption>[];
+    for (final g in item.optionGroups) {
+      final sel = _detailSel[g.key] ?? const <String>{};
+      for (final o in g.options) {
+        if (sel.contains(o.key)) {
+          mods.add(
+              SoModifierOption(group: g.name, name: o.name, price: o.price));
+        }
+      }
+    }
+    setState(() {
+      // Món có tùy chọn = KHÔNG gộp (mỗi cấu hình là 1 dòng riêng).
+      _cart.add(
+          SoCartItem(item: item, qty: 1, notes: '', selectedModifiers: mods));
+      _detailItem = null;
+      _detailSel.clear();
+    });
   }
 
   void _changeQty(int index, int newQty) {
@@ -262,6 +360,41 @@ class _SelfOrderMenuScreenState extends State<SelfOrderMenuScreen> {
     });
   }
 
+  // GHI CHÚ MÓN cho khách tự gọi (đồng bộ với F&B POS + Retail). Ghi chú theo món
+  // (vd "ít đá, không hành") đã gửi kèm khi đặt (_sendOrder gửi 'note': c.notes).
+  Future<void> _editNote(int index) async {
+    if (index < 0 || index >= _cart.length) return;
+    final ctrl = TextEditingController(text: _cart[index].notes);
+    final note = await showDialog<String>(
+      context: context,
+      builder: (dc) => AlertDialog(
+        title: Text(t('Ghi chú: ${_cart[index].item.name}')),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          maxLength: 200,
+          minLines: 1,
+          maxLines: 3,
+          decoration: InputDecoration(
+            hintText: t('Ví dụ: ít đá, không hành, ít cay…'),
+          ),
+          onSubmitted: (v) => Navigator.pop(dc, v.trim()),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dc), child: Text(t('Hủy'))),
+          FilledButton(
+              onPressed: () => Navigator.pop(dc, ctrl.text.trim()),
+              child: Text(t('Lưu'))),
+        ],
+      ),
+    );
+    ctrl.dispose();
+    if (note == null || !mounted) return;
+    setState(() {
+      if (index < _cart.length) _cart[index].notes = note;
+    });
+  }
+
   Future<void> _sendOrder() async {
     if (_cart.isEmpty) return;
     setState(() => _sending = true);
@@ -271,7 +404,11 @@ class _SelfOrderMenuScreenState extends State<SelfOrderMenuScreen> {
                 'menu_item_id': c.item.id,
                 'qty': c.qty,
                 'note': c.notes,
-                'mods': <Map<String, dynamic>>[],
+                // Tùy chọn đã chọn (group+name) → server validate + tính giá.
+                'mods': [
+                  for (final m in c.selectedModifiers)
+                    {'group': m.group, 'name': m.name},
+                ],
               })
           .toList();
 
@@ -378,6 +515,11 @@ class _SelfOrderMenuScreenState extends State<SelfOrderMenuScreen> {
                   setModalState(() {});
                 },
                 onQtyChange: changeQty,
+                onNote: (i) {
+                  _editNote(i).then((_) {
+                    if (mounted) setModalState(() {});
+                  });
+                },
                 onSend: _cart.isEmpty || _sending
                     ? null
                     : () {
@@ -667,8 +809,10 @@ class _SelfOrderMenuScreenState extends State<SelfOrderMenuScreen> {
                                         .clamp(420.0, 760.0);
                                     final maxSafe = constraints.maxWidth - 24;
                                     if (width > maxSafe) width = maxSafe;
+                                    // Popup thông tin món TRƯỢT RA TỪ TRÁI — giỏ hàng
+                                    // (cột phải) vẫn thấy, chọn món vẫn vào giỏ bình thường.
                                     return Align(
-                                      alignment: Alignment.centerRight,
+                                      alignment: Alignment.centerLeft,
                                       child: _ItemDetailPanel(
                                         item: _detailItem!,
                                         lang: L,
@@ -676,6 +820,8 @@ class _SelfOrderMenuScreenState extends State<SelfOrderMenuScreen> {
                                         categoryLabel: _categoryLabel(
                                             _detailItem!.category ?? ''),
                                         serverUrl: widget.serverUrl,
+                                        selected: _detailSel,
+                                        onToggleOption: _toggleOption,
                                         onClose: () =>
                                             setState(() => _detailItem = null),
                                         onAdd: () =>
@@ -764,6 +910,7 @@ class _SelfOrderMenuScreenState extends State<SelfOrderMenuScreen> {
                                     itemBuilder: (_, i) => _CartRow(
                                       item: _cart[i],
                                       onQtyChange: (q) => _changeQty(i, q),
+                                      onNote: () => _editNote(i),
                                     ),
                                   ),
                           ),
@@ -852,4 +999,3 @@ class _SelfOrderMenuScreenState extends State<SelfOrderMenuScreen> {
 }
 
 // ─── Món hay gọi (thẻ ngang) ─────────────────────────────────────────────────
-

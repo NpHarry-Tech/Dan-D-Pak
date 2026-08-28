@@ -9,6 +9,9 @@
     <application>
       <!-- Windows 10 and Windows 11 -->
       <supportedOS Id="{8e0f7a12-bfb3-4fe8-b9a5-48fd50a15a9a}"/>
+      <!-- Required by desktop XAML/PrintDocument interop. This is a tested-API
+           declaration, not an OS minimum-version restriction. -->
+      <maxversiontested Id="10.0.19041.0"/>
     </application>
   </compatibility>
 </assembly>

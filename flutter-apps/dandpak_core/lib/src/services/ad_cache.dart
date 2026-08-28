@@ -19,7 +19,8 @@ Future<List<String>> materializeAdSources(List<String> images) async {
       try {
         final comma = img.indexOf(',');
         final bytes = base64Decode(comma >= 0 ? img.substring(comma + 1) : img);
-        final f = File('${dir.path}/ad_${img.hashCode & 0x7fffffff}${_extFor(img)}');
+        final f =
+            File('${dir.path}/ad_${img.hashCode & 0x7fffffff}${_extFor(img)}');
         if (!f.existsSync() || f.lengthSync() != bytes.length) {
           await f.writeAsBytes(bytes);
         }

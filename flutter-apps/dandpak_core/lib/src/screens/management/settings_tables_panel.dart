@@ -5,6 +5,7 @@ import '../../services/api_service.dart';
 import '../../ui/app_theme.dart';
 import '../../utils/translation.dart';
 import '../../widgets/side_sheet.dart';
+import 'floor_plan_editor.dart';
 import 'settings_tab.dart';
 import 'settings_value_utils.dart';
 
@@ -22,6 +23,17 @@ class _TablesPanelState extends State<TablesPanel> {
   List<Map<String, dynamic>> _tables = [];
   bool _loading = true;
   String? _error;
+  String _view = 'plan'; // 'plan' = sơ đồ kéo-thả · 'list' = danh sách
+  final GlobalKey<FloorPlanEditorState> _planKey = GlobalKey();
+  bool _planDirty = false;
+
+  Future<void> _savePlan() async {
+    final st = _planKey.currentState;
+    if (st == null || !st.hasChanges) return;
+    final pin = await settingsPin(context, t('Lưu sơ đồ bàn.'));
+    if (pin == null) return;
+    await st.saveChanges(pin);
+  }
 
   @override
   void initState() {
@@ -65,7 +77,8 @@ class _TablesPanelState extends State<TablesPanel> {
   }
 
   Future<void> _delete(Map<String, dynamic> table) async {
-    final pin = await settingsPin(context, 'Xóa bàn "${asText(table['code'])}".');
+    final pin =
+        await settingsPin(context, 'Xóa bàn "${asText(table['code'])}".');
     if (pin == null) return;
     try {
       await widget.api.deleteTable(asText(table['id']), pin);
@@ -92,39 +105,109 @@ class _TablesPanelState extends State<TablesPanel> {
       addLabel: t('Thêm bàn'),
       onAdd: () => _openForm(),
       onRefresh: _load,
-      child: settingsState(
-        loading: _loading && _tables.isEmpty,
-        error: _tables.isEmpty ? _error : null,
-        onRetry: _load,
-        child: ListView(
-          padding: EdgeInsets.all(16),
-          children: [
-            for (final entry in zones.entries) ...[
-              Padding(
-                padding: EdgeInsets.only(top: 6, bottom: 10),
-                child: Text(entry.key.toUpperCase(),
-                    style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w900,
-                        color: DanColors.muted,
-                        letterSpacing: .3)),
+      // Nút LƯU chỉ hiện ở chế độ Sơ đồ — kéo bàn không hỏi PIN, bấm Lưu mới nhập.
+      actions: _view == 'plan'
+          ? [
+              FilledButton.icon(
+                onPressed: _planDirty ? _savePlan : null,
+                icon: const Icon(Icons.save, size: 18),
+                label: Text(_planDirty ? t('Lưu *') : t('Lưu')),
+                style: FilledButton.styleFrom(
+                  minimumSize: const Size(0, 40),
+                  backgroundColor:
+                      _planDirty ? DanColors.doing : DanColors.surface2,
+                  foregroundColor: _planDirty ? Colors.white : DanColors.faint,
+                ),
               ),
-              Wrap(
-                spacing: 10,
-                runSpacing: 10,
-                children: [
-                  for (final t in entry.value)
-                    _TableCard(
-                      table: t,
-                      onEdit: () => _openForm(t),
-                      onDelete: () => _delete(t),
-                    ),
-                ],
-              ),
-              SizedBox(height: 18),
-            ],
-          ],
+            ]
+          : null,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+            child: Row(children: [
+              _viewToggle('plan', t('Sơ đồ'), Icons.grid_view),
+              const SizedBox(width: 8),
+              _viewToggle('list', t('Danh sách'), Icons.view_list),
+            ]),
+          ),
+          Expanded(
+            child: _view == 'plan'
+                // Sơ đồ kéo-thả (dùng lại getFloorPlan; tạo bàn qua nút "Thêm bàn"
+                // ở trên -> bàn mới vào khay "chưa xếp").
+                ? FloorPlanEditor(
+                    key: _planKey,
+                    api: widget.api,
+                    // PIN chỉ dùng cho tạo/xoá khu vực; kéo bàn KHÔNG hỏi PIN.
+                    askPin: () => settingsPin(context, t('Thay đổi khu vực.')),
+                    onDirtyChanged: () => setState(() => _planDirty =
+                        _planKey.currentState?.hasChanges ?? false),
+                  )
+                : _listView(zones),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _viewToggle(String id, String label, IconData icon) {
+    final active = _view == id;
+    return Material(
+      color: active ? DanColors.brand : DanColors.surface2,
+      borderRadius: BorderRadius.circular(8),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(8),
+        onTap: () => setState(() => _view = id),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            Icon(icon,
+                size: 16, color: active ? Colors.white : DanColors.muted),
+            const SizedBox(width: 6),
+            Text(label,
+                style: TextStyle(
+                    color: active ? Colors.white : DanColors.text,
+                    fontWeight: FontWeight.w700)),
+          ]),
         ),
+      ),
+    );
+  }
+
+  Widget _listView(Map<String, List<Map<String, dynamic>>> zones) {
+    return settingsState(
+      loading: _loading && _tables.isEmpty,
+      error: _tables.isEmpty ? _error : null,
+      onRetry: _load,
+      child: ListView(
+        padding: EdgeInsets.all(16),
+        children: [
+          for (final entry in zones.entries) ...[
+            Padding(
+              padding: EdgeInsets.only(top: 6, bottom: 10),
+              child: Text(entry.key.toUpperCase(),
+                  style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w900,
+                      color: DanColors.muted,
+                      letterSpacing: .3)),
+            ),
+            Wrap(
+              spacing: 10,
+              runSpacing: 10,
+              children: [
+                for (final t in entry.value)
+                  _TableCard(
+                    table: t,
+                    onEdit: () => _openForm(t),
+                    onDelete: () => _delete(t),
+                  ),
+              ],
+            ),
+            SizedBox(height: 18),
+          ],
+        ],
       ),
     );
   }

@@ -151,12 +151,19 @@ function buildLines(rawLines = []) {
     } else if (!item_id) {
       continue;                                   // hàng trong kho: bắt buộc có item_id
     }
+    const master = type === 'sku'
+      ? db.prepare(`SELECT name,code,barcode,unit FROM skus WHERE id=?`).get(item_id)
+      : (type === 'inventory'
+        ? db.prepare(`SELECT name,NULL code,barcode,unit FROM inventory_items WHERE id=?`).get(item_id)
+        : null);
     const unit_cost = Number(r.unit_cost) || 0;
     lines.push({
       item_type: type,
       item_id,
-      name,
-      unit: str(r.unit, 40),
+      name: name || master?.name || '',
+      unit: str(r.unit, 40) || master?.unit || '',
+      item_code: str(r.item_code || r.code, 100) || master?.code || null,
+      item_barcode: str(r.item_barcode || r.barcode, 100) || master?.barcode || null,
       uom: str(r.uom || r.unit, 40),
       qty,
       unit_cost,
@@ -215,9 +222,11 @@ export function savePurchaseOrder(body = {}, branch_id = 'sala', user = {}) {
 }
 
 function insertLines(po_id, lines) {
-  const ins = db.prepare(`INSERT INTO purchase_order_lines (id,po_id,item_type,item_id,name,unit,qty,unit_cost,received_qty,line_total,lot_no,expiry_date)
-    VALUES (?,?,?,?,?,?,?,?,0,?,?,?)`);
-  for (const l of lines) ins.run(uid('pol_'), po_id, l.item_type, l.item_id, l.name, l.unit, l.qty, l.unit_cost, l.line_total, l.lot_no, l.expiry_date);
+  const ins = db.prepare(`INSERT INTO purchase_order_lines
+    (id,po_id,item_type,item_id,name,unit,item_code,item_barcode,qty,unit_cost,received_qty,line_total,lot_no,expiry_date)
+    VALUES (?,?,?,?,?,?,?,?,?,?,0,?,?,?)`);
+  for (const l of lines) ins.run(uid('pol_'), po_id, l.item_type, l.item_id, l.name, l.unit,
+    l.item_code, l.item_barcode, l.qty, l.unit_cost, l.line_total, l.lot_no, l.expiry_date);
 }
 
 export function confirmPurchaseOrder(id, branch_id = 'sala', user = {}) {

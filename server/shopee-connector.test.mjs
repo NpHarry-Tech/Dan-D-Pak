@@ -55,7 +55,7 @@ test('push chu ky HMAC(url|body) hop le duoc chap nhan; sai chu ky bi tu choi', 
   const good = crypto.createHmac('sha256', PARTNER_KEY).update(`${url}|${body}`).digest('hex');
 
   const ok = await Shopee.handleShopeePush(Buffer.from(body), { authorization: good }, [url]);
-  assert.equal(ok.handled, true);
+  assert.equal(ok.accepted, true);
   assert.equal(ok.code, 1);
 
   await assert.rejects(
@@ -67,5 +67,5 @@ test('push body-only signature cung duoc chap nhan (fallback)', async () => {
   const body = JSON.stringify({ shop_id: SHOP_ID, code: 1 });
   const bodyOnly = crypto.createHmac('sha256', PARTNER_KEY).update(body).digest('hex');
   const ok = await Shopee.handleShopeePush(Buffer.from(body), { authorization: bodyOnly }, ['https://any/x']);
-  assert.equal(ok.handled, true);
+  assert.equal(ok.accepted, true);
 });

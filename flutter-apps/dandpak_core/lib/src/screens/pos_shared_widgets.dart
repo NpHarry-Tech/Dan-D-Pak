@@ -227,4 +227,3 @@ class _ResolveCallButton extends StatelessWidget {
     );
   }
 }
-

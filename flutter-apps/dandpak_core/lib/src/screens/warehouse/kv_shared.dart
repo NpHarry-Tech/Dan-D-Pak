@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../ui/app_theme.dart';
 import '../../ui/format.dart';
 import '../../utils/translation.dart';
+import '../../utils/business_datetime.dart';
 import '../../widgets/scan_button.dart';
 
 /// Bộ widget DÙNG CHUNG cho các trang Kho kiểu KiotViet (Thiết lập giá, Kiểm
@@ -32,16 +33,11 @@ num? kvParseNum(String s) {
 }
 
 String kvShortDate(String iso) {
-  final t = DateTime.tryParse(iso);
-  if (t == null) return iso.isEmpty ? '—' : iso;
-  String two(int n) => n.toString().padLeft(2, '0');
-  return '${two(t.day)}/${two(t.month)}/${t.year}';
+  return BusinessDateTime.date(iso, fallback: iso.isEmpty ? '—' : iso);
 }
 
 String kvDateTime(String iso) {
-  final t = DateTime.tryParse(iso);
-  if (t == null) return iso.isEmpty ? '—' : iso;
-  return Fmt.dmyHm(t);
+  return BusinessDateTime.dateTime(iso, fallback: iso.isEmpty ? '—' : iso);
 }
 
 /// Danh sách Map an toàn từ dynamic.
@@ -279,6 +275,9 @@ Widget kvHeaderCell(String label,
     {double? width, int flex = 0, TextAlign align = TextAlign.left}) {
   final text = Text(label,
       textAlign: align,
+      maxLines: 1,
+      softWrap: false,
+      overflow: TextOverflow.ellipsis,
       style: TextStyle(
           fontSize: 11.5,
           fontWeight: FontWeight.w800,

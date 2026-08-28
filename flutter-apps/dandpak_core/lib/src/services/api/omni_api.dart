@@ -79,8 +79,8 @@ extension ApiServiceOmniApi on ApiService {
   }
 
   Future<List<dynamic>> getOmniTags() async {
-    return listFrom(await getJson('/api/omni/tags',
-        errorMessage: 'Không tải được nhãn'));
+    return listFrom(
+        await getJson('/api/omni/tags', errorMessage: 'Không tải được nhãn'));
   }
 
   Future<Map<String, dynamic>> saveOmniTag(Map<String, dynamic> body) async {
@@ -91,7 +91,6 @@ extension ApiServiceOmniApi on ApiService {
   Future<Map<String, dynamic>> setOmniConversationTags(
       String id, List<String> tagIds) async {
     return mapFrom(await putJson('/api/omni/conversations/$id/tags',
-        body: {'tag_ids': tagIds},
-        errorMessage: 'Không cập nhật được nhãn'));
+        body: {'tag_ids': tagIds}, errorMessage: 'Không cập nhật được nhãn'));
   }
 }

@@ -154,7 +154,8 @@ class _OnlineShellState extends State<OnlineShell> {
                 child: Text(t(item.label),
                     style: TextStyle(
                         fontSize: 13.5,
-                        fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
+                        fontWeight:
+                            selected ? FontWeight.w800 : FontWeight.w600,
                         color: selected ? DanColors.brand : DanColors.text)),
               ),
             ],
@@ -167,7 +168,9 @@ class _OnlineShellState extends State<OnlineShell> {
         padding: EdgeInsets.fromLTRB(16, 14, 12, 4),
         child: Text('BÁN ONLINE',
             style: TextStyle(
-                fontSize: 13, fontWeight: FontWeight.w900, color: DanColors.text)),
+                fontSize: 13,
+                fontWeight: FontWeight.w900,
+                color: DanColors.text)),
       ),
       ...tiles,
     ]);

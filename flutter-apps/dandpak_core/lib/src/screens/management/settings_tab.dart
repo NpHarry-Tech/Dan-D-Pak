@@ -66,7 +66,7 @@ class _SettingsTabState extends State<SettingsTab> {
     _SettingsSection(
         'integrations',
         t('Liên kết'),
-        t('Hóa đơn điện tử, kế toán và nền tảng bán hàng.'),
+        t('Hóa đơn điện tử, kế toán, ERP và nền tảng bán hàng.'),
         Icons.hub_outlined),
     _SettingsSection(
         'connections',
@@ -122,7 +122,6 @@ class _SettingsTabState extends State<SettingsTab> {
   /// Desktop và tablet GIỮ NGUYÊN đủ 12 mục — đây chỉ là bỏ bớt trên màn nhỏ, không
   /// phải xoá tính năng.
   static const _anTrenDienThoai = {'print', 'users', 'connections'};
-
 
   @override
   Widget build(BuildContext context) {
@@ -187,11 +186,17 @@ class _SettingsTabState extends State<SettingsTab> {
                 ),
                 child: Row(
                   children: [
-                    Icon(s.icon,
-                        size: 20,
-                        color: _selected == s.key
-                            ? DanColors.brand
-                            : DanColors.muted),
+                    SizedBox(
+                      width: 24,
+                      height: 24,
+                      child: Center(
+                        child: Icon(s.icon,
+                            size: 20,
+                            color: _selected == s.key
+                                ? DanColors.brand
+                                : DanColors.muted),
+                      ),
+                    ),
                     SizedBox(width: 11),
                     Expanded(
                       child: Column(
@@ -337,6 +342,8 @@ class SettingsPanelScaffold extends StatelessWidget {
   final VoidCallback? onAdd;
   final Widget child;
   final VoidCallback? onRefresh;
+  // Nút phụ ở header (VD nút "Lưu" của sơ đồ bàn) — hiện TRƯỚC nút Thêm.
+  final List<Widget>? actions;
 
   SettingsPanelScaffold({
     super.key,
@@ -345,6 +352,7 @@ class SettingsPanelScaffold extends StatelessWidget {
     this.addLabel,
     this.onAdd,
     this.onRefresh,
+    this.actions,
   });
 
   @override
@@ -354,25 +362,36 @@ class SettingsPanelScaffold extends StatelessWidget {
       children: [
         Padding(
           padding: EdgeInsets.fromLTRB(18, 16, 18, 12),
-          child: Row(
-            children: [
-              Expanded(
-                child: Text(title,
-                    style:
-                        TextStyle(fontSize: 18, fontWeight: FontWeight.w900)),
-              ),
-              if (onRefresh != null)
-                IconButton(
-                    onPressed: onRefresh,
-                    icon: Icon(Icons.refresh, color: DanColors.muted)),
-              if (onAdd != null && addLabel != null)
-                FilledButton.icon(
-                  onPressed: onAdd,
-                  icon: Icon(Icons.add, size: 18),
-                  label: Text(addLabel!),
-                  style: FilledButton.styleFrom(minimumSize: Size(0, 40)),
+          child: LayoutBuilder(
+            builder: (context, box) => Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              alignment: WrapAlignment.end,
+              children: [
+                SizedBox(
+                  width: box.maxWidth < 620 ? box.maxWidth : 260,
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(title,
+                        style: TextStyle(
+                            fontSize: 18, fontWeight: FontWeight.w900)),
+                  ),
                 ),
-            ],
+                if (onRefresh != null)
+                  IconButton(
+                      onPressed: onRefresh,
+                      icon: Icon(Icons.refresh, color: DanColors.muted)),
+                if (actions != null) ...actions!,
+                if (onAdd != null && addLabel != null)
+                  FilledButton.icon(
+                    onPressed: onAdd,
+                    icon: Icon(Icons.add, size: 18),
+                    label: Text(addLabel!),
+                    style: FilledButton.styleFrom(minimumSize: Size(0, 40)),
+                  ),
+              ],
+            ),
           ),
         ),
         Divider(height: 1, color: DanColors.border),

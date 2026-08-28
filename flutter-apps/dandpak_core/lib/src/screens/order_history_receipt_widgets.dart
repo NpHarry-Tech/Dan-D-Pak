@@ -413,8 +413,7 @@ class _Badge extends StatelessWidget {
 }
 
 String _date(dynamic value) {
-  final d = DateTime.tryParse(_s(value))?.toLocal();
-  return d == null ? '-' : Fmt.dmyHm(d);
+  return BusinessDateTime.dateTime(value, fallback: '-');
 }
 
 String _paymentMethods(dynamic value) {

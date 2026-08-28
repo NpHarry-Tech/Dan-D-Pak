@@ -16,5 +16,9 @@ Future<void> main(List<String> args) => runDandpakApp(
         layout: AppLayout.station,
         // Desktop = quầy đầy đủ: hiện TẤT CẢ module theo quyền (null = không lọc).
         enabledModuleKeys: null,
+        // Trừ đúng một ngoại lệ: 'catalogue' là màn KHÁCH trên tablet đặt ngoài
+        // quầy. Máy POS để bàn mở nó là tự khoá mình sau lớp mật khẩu thoát
+        // giữa lúc đang bán hàng.
+        disabledModuleKeys: {'catalogue'},
       ),
     );

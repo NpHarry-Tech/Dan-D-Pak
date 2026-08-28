@@ -9,11 +9,13 @@ import '../../models/management_models.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/api_service.dart';
 import '../../ui/app_theme.dart';
+import '../../ui/file_pick.dart';
 import '../../ui/format.dart';
 import '../../widgets/manager_pin_dialog.dart';
 import '../../widgets/side_sheet.dart';
 import '../self_order/self_order_strings.dart';
 import 'book_menu_panel.dart';
+import 'catalogue_panel.dart';
 import 'management_widgets.dart';
 import '../../utils/translation.dart';
 
@@ -197,6 +199,15 @@ class _MenuTabState extends State<MenuTab> {
       );
     }
 
+    // Catalogue BÁN LẺ: quyển ảnh riêng cho màn khách ngoài quầy. Tách hẳn khỏi
+    // "Menu quyển" của FnB — bật cái này không được đụng tới menu iPad nhà hàng.
+    if (_subTab == 'catalogue') {
+      return CataloguePanel(
+        api: widget.api,
+        moduleSwitcher: _subNav(),
+      );
+    }
+
     return Column(
       children: [
         _subNav(),
@@ -252,6 +263,7 @@ class _MenuTabState extends State<MenuTab> {
         children: [
           tab('items', Icons.restaurant_menu_outlined, t('Thực đơn FnB')),
           tab('book', Icons.menu_book_outlined, t('Menu quyển')),
+          tab('catalogue', Icons.storefront_outlined, t('Catalogue bán lẻ')),
         ],
       ),
     );

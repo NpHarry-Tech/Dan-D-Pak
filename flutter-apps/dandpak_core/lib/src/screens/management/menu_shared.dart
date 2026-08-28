@@ -24,6 +24,42 @@ class _AddonRow {
   });
 }
 
+// Trình sửa NHÓM TÙY CHỌN (size/topping/combo) cho Self-Order.
+int _optSeq = 0;
+
+class _OptItemRow {
+  String key;
+  String name;
+  String type; // paid | free
+  String price;
+  String refItemId; // != '' => combo (trỏ món khác)
+  _OptItemRow({
+    String? key,
+    this.name = '',
+    this.type = 'paid',
+    this.price = '0',
+    this.refItemId = '',
+  }) : key = key ?? 'o${_optSeq++}';
+}
+
+class _OptGroupRow {
+  String key;
+  String name;
+  String position; // top | bottom
+  String min;
+  String max;
+  List<_OptItemRow> options;
+  _OptGroupRow({
+    String? key,
+    this.name = '',
+    this.position = 'top',
+    this.min = '0',
+    this.max = '0',
+    List<_OptItemRow>? options,
+  })  : key = key ?? 'g${_optSeq++}',
+        options = options ?? [_OptItemRow()];
+}
+
 String _mimeForFileName(String name) {
   final lower = name.toLowerCase();
   if (lower.endsWith('.png')) return 'image/png';

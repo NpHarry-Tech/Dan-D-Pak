@@ -16,6 +16,12 @@ const Color _kInfoColor = Color(0xFF1A2230);
 final GlobalKey<ScaffoldMessengerState> appMessengerKey =
     GlobalKey<ScaffoldMessengerState>();
 
+/// Navigator TOÀN CỤC (root) — đăng ký ở `MaterialApp.navigatorKey`. Dùng cho các
+/// hộp thoại phải LUÔN mở được bất kể BuildContext của nơi gọi còn sống hay không
+/// (vd modal xác nhận quyền Quản lý/Admin). Sửa lỗi modal "thỉnh thoảng không hiện"
+/// do context bị dispose/nằm sau await (§16). currentContext null nếu app chưa mount.
+final GlobalKey<NavigatorState> appNavigatorKey = GlobalKey<NavigatorState>();
+
 /// MỘT nơi DUY NHẤT phát thông báo cho người dùng (root/DRY) — thay cho việc mỗi
 /// màn tự SnackBar / native-notif một kiểu, gây bất đồng bộ UI. Kết hợp:
 ///  • Native OS notification trên desktop qua local_notifier và Android qua MethodChannel —
@@ -27,6 +33,11 @@ class AppNotifier {
   static const _androidChannel = MethodChannel('com.dandpak.pos/notifications');
   static final _logo = rootBundle.load('assets/brand/DanOnLogo.png');
 
+  /// Hàm MỞ MỤC THÔNG BÁO — màn đang hiển thị (POS/phone) tự đăng ký ở initState.
+  /// Banner thông báo khách (gọi món/gọi nhân viên) hiện nút "Xem" gọi hàm này để
+  /// NHẢY THẲNG vào mục xử lý, khỏi tự đi tìm.
+  static VoidCallback? onOpenRequested;
+
   static void show({
     required String title,
     String body = '',
@@ -34,9 +45,11 @@ class AppNotifier {
     bool inApp = true,
     bool osNotify = true,
     bool androidNotify = false,
+    // true = banner có nút "Xem" bấm để nhảy vào mục thông báo (onOpenRequested).
+    bool showViewAction = false,
   }) {
     if (osNotify) _osNotification(title, body, androidNotify);
-    if (inApp) _inAppBanner(title, body, isError);
+    if (inApp) _inAppBanner(title, body, isError, showViewAction);
   }
 
   static void _osNotification(String title, String body, bool androidNotify) {
@@ -72,15 +85,24 @@ class AppNotifier {
     } catch (_) {/* thông báo không được phá luồng chính */}
   }
 
-  static void _inAppBanner(String title, String body, bool isError) {
+  static void _inAppBanner(
+      String title, String body, bool isError, bool showViewAction) {
     try {
       final messenger = appMessengerKey.currentState;
       if (messenger == null) return;
+      final canOpen = showViewAction && onOpenRequested != null;
       messenger.clearSnackBars();
       messenger.showSnackBar(SnackBar(
-        duration: Duration(seconds: isError ? 5 : 3),
+        duration: Duration(seconds: isError ? 5 : (canOpen ? 6 : 3)),
         behavior: SnackBarBehavior.floating,
         backgroundColor: isError ? _kErrorColor : _kInfoColor,
+        action: canOpen
+            ? SnackBarAction(
+                label: 'Xem',
+                textColor: Colors.white,
+                onPressed: () => onOpenRequested?.call(),
+              )
+            : null,
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,

@@ -74,9 +74,11 @@ String _moduleDescription(AppModule module) {
     'contacts': 'Danh bạ khách hàng, nhà cung cấp, điện thoại, MST và địa chỉ.',
     'pos': 'Bàn, order, giảm giá, thanh toán, in bill và realtime với bếp.',
     'retail': 'Bán lẻ, mã vạch, lô/HSD, voucher và đổi trả.',
-    'catalogue': 'Màn khách ngoài quầy: khách tự lật catalogue, chọn hàng và gọi thanh toán.',
+    'catalogue':
+        'Màn khách ngoài quầy: khách tự lật catalogue, chọn hàng và gọi thanh toán.',
     'kds': 'Màn hình bếp/bar, SLA và trạng thái món realtime.',
-    'online': 'Đơn Shopee/TikTok/Lazada/Tiki/Haravan, hàng hóa, đối soát, chat đa kênh và thiết lập kênh (Dan D Pak Omni).',
+    'online':
+        'Đơn Shopee/TikTok/Lazada/Tiki/Haravan, hàng hóa, đối soát, chat đa kênh và thiết lập kênh (Dan D Pak Omni).',
     'warehouse': 'Quản lý kho BCM/showroom/bếp, SKU, lô/HSD và tồn tối thiểu.',
     'purchase': 'Đơn mua, nhập kho và công nợ nhà cung cấp.',
     'expenses': 'Sổ chi phí theo danh mục, quỹ két và đối soát.',
@@ -101,10 +103,12 @@ class _LauncherScreenState extends State<LauncherScreen> {
   bool _loading = true;
   UpdateInfo? _update;
   bool _updating = false;
+  int _updateRequestSerial = 0;
 
   @override
   void initState() {
     super.initState();
+    AppUpdater.contextRevision.addListener(_serverChanged);
     BlackBox.screen = 'launcher';
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _load();
@@ -115,9 +119,27 @@ class _LauncherScreenState extends State<LauncherScreen> {
     });
   }
 
+  void _serverChanged() {
+    if (!mounted) return;
+    setState(() {
+      _update = null;
+      _updating = false;
+    });
+    _checkUpdate();
+  }
+
+  @override
+  void dispose() {
+    AppUpdater.contextRevision.removeListener(_serverChanged);
+    super.dispose();
+  }
+
   Future<void> _checkUpdate() async {
+    final request = ++_updateRequestSerial;
     final info = await AppUpdater.checkForUpdate(context.read<ApiService>());
-    if (mounted && info != null) setState(() => _update = info);
+    if (mounted && request == _updateRequestSerial) {
+      setState(() => _update = info);
+    }
   }
 
   Future<void> _runUpdate() async {

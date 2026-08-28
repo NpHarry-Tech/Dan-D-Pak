@@ -243,6 +243,7 @@ class _RetailTotals {
   final num orderDiscount;
   final num customerDiscount;
   final num manualDiscount;
+  final num comboDiscount;
   final num vat;
   final num total;
   final RetailVoucher? orderVoucher;
@@ -253,6 +254,7 @@ class _RetailTotals {
     required this.orderDiscount,
     required this.customerDiscount,
     required this.manualDiscount,
+    this.comboDiscount = 0,
     required this.vat,
     required this.total,
     required this.orderVoucher,
@@ -438,6 +440,8 @@ class _CartRow extends StatelessWidget {
   final VoidCallback onInc;
   final VoidCallback onDec;
   final VoidCallback onRemove;
+  final VoidCallback onEditPrice;
+  final VoidCallback onEditNote;
 
   _CartRow({
     required this.line,
@@ -450,6 +454,8 @@ class _CartRow extends StatelessWidget {
     required this.onInc,
     required this.onDec,
     required this.onRemove,
+    required this.onEditPrice,
+    required this.onEditNote,
   });
 
   @override
@@ -557,8 +563,48 @@ class _CartRow extends StatelessWidget {
               ),
               _QtyBtn(icon: Icons.add, onTap: onInc),
               Spacer(),
-              Text(Fmt.money(line.sku.price),
-                  style: TextStyle(fontSize: 11.5, color: DanColors.faint)),
+              // ĐƠN GIÁ chạm được → chỉnh giá (cần PIN Quản lý). Nếu đã đổi giá:
+              // hiện giá gốc gạch ngang + giá mới đậm màu thương hiệu.
+              InkWell(
+                onTap: onEditPrice,
+                borderRadius: BorderRadius.circular(6),
+                child: Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                  child: line.hasPriceOverride
+                      ? Row(mainAxisSize: MainAxisSize.min, children: [
+                          Text(Fmt.money(line.sku.price),
+                              style: TextStyle(
+                                  fontSize: 10.5,
+                                  color: DanColors.faint,
+                                  decoration: TextDecoration.lineThrough)),
+                          SizedBox(width: 4),
+                          Text(Fmt.money(line.effectivePrice),
+                              style: TextStyle(
+                                  fontSize: 12,
+                                  color: DanColors.brand,
+                                  fontWeight: FontWeight.w900)),
+                          SizedBox(width: 2),
+                          Icon(Icons.edit, size: 12, color: DanColors.brand),
+                        ])
+                      : Row(mainAxisSize: MainAxisSize.min, children: [
+                          Text(Fmt.money(line.sku.price),
+                              style: TextStyle(
+                                  fontSize: 11.5, color: DanColors.muted)),
+                          SizedBox(width: 2),
+                          Icon(Icons.edit, size: 12, color: DanColors.faint),
+                        ]),
+                ),
+              ),
+              IconButton(
+                onPressed: onEditNote,
+                visualDensity: VisualDensity.compact,
+                tooltip: t('Ghi chú dòng'),
+                icon: Icon(Icons.sticky_note_2_outlined,
+                    size: 16,
+                    color: (line.note?.isNotEmpty ?? false)
+                        ? DanColors.brand
+                        : DanColors.faint),
+              ),
               IconButton(
                 onPressed: onRemove,
                 visualDensity: VisualDensity.compact,
@@ -566,6 +612,17 @@ class _CartRow extends StatelessWidget {
               ),
             ],
           ),
+          if (line.note?.isNotEmpty ?? false) ...[
+            SizedBox(height: 4),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Text('${t('Ghi chú')}: ${line.note}',
+                  style: TextStyle(
+                      fontSize: 11,
+                      color: DanColors.muted,
+                      fontStyle: FontStyle.italic)),
+            ),
+          ],
         ],
       ),
     );

@@ -25,6 +25,10 @@ const IPAD_EVENTS = new Set([
   'order:new', 'order:updated', 'order:item', 'order:pending',
   'order:confirmed', 'order:rejected', 'order:customer_pending',
   'table:updated', 'menu:updated', 'book-menu:updated', 'payment:done',
+  // Đổi cổng thanh toán phải tới được MÀN KHÁCH (iPad self-order, catalogue,
+  // màn phụ) — chúng đang hiện QR và cần vẽ lại bằng cổng mới. Payload chỉ có
+  // tên người đổi, không có PII.
+  'payment:config',
 ]);
 
 // Xoá thông tin khách (PII) khỏi payload trước khi gửi vào phòng kiosk công khai.
@@ -150,6 +154,12 @@ export function initRealtime(httpServer) {
       socket.join(device === 'ipad' ? ipadRoom(branch) : staffRoom(branch));
       socket.data.branch = branch;
       socket.data.device = device;
+      socket.data.deviceId = String(
+        socket.handshake.auth?.deviceId
+          || socket.handshake.query?.deviceId
+          || socket.handshake.headers?.['x-device-id']
+          || '',
+      ).trim().slice(0, 120);
       logDeviceConnect(branch, device, cleanIp(socket.handshake.address));
       emitPresenceThrottled(branch);
 
@@ -208,6 +218,7 @@ export function getActiveConnections(branch = 'sala') {
       const u = s?.data?.user || null;
       return {
         id: s.id,
+        device_id: s?.data?.deviceId || '',
         device: s?.data?.device || 'unknown',   // loại màn hình (admin/pos/kds/ipad...)
         // Người đăng nhập thực trên thiết bị đó (iPad công cộng thì không có).
         user_name: u?.name || u?.username || '',

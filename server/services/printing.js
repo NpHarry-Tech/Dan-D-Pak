@@ -14,7 +14,8 @@ import { moneyToWords } from './history.js';
 import { listSystemPrinters, getAgentDevices } from './system.js';
 import { logSystem } from './systemLogs.js';
 import { receiptTaxNote } from './tax.js';
-import { buildReceiptDoc, buildKitchenDoc, sampleReceiptPayload } from './receipt_doc.js';
+import { buildReceiptDoc, buildKitchenDoc, buildShippingLabelDoc, buildExpenseVoucherDoc, buildReturnVoucherDoc, sampleReceiptPayload } from './receipt_doc.js';
+import { businessDateTime, businessParts, businessTime } from '../core/businessClock.js';
 
 const execFileAsync = promisify(execFile);
 const STATION_PRINTER = { kitchen: 'kitchen', salad: 'kitchen', bar: 'bar', beverage: 'bar' };
@@ -1096,6 +1097,14 @@ function receiptVars(p = {}, widthOverride = 0, cfgChiNhanh = null) {
   const showQr = cfg.showQr !== '0' && !p.preview;
 
   const lines = Array.isArray(p.lines) ? p.lines : [];
+  const collectionLines = lines.filter(line => Number(line.amount) > 0);
+  const refundLines = lines.filter(line => Number(line.amount) < 0);
+  const collectionMethods = [...new Set(collectionLines.map(line => methodLabel(line.method)))];
+  const returnMark = String(p.return_status || '').toUpperCase() === 'FULL'
+    ? 'ĐÃ HOÀN HÀNG TOÀN BỘ'
+    : String(p.return_status || '').toUpperCase() === 'PARTIAL'
+      ? 'ĐÃ HOÀN HÀNG MỘT PHẦN'
+      : refundLines.length ? 'ĐÃ HOÀN HÀNG' : '';
   const total = Number(p.total) || 0;
   const vatAmount = Number(p.vat_amount ?? p.tax?.vat_amount) || 0;
   const subtotal = Number(p.subtotal) || 0;
@@ -1116,8 +1125,8 @@ function receiptVars(p = {}, widthOverride = 0, cfgChiNhanh = null) {
 
   const billNo = p.bill_no || p.number || '';
 
-  const paymentLines = lines.length
-    ? lines.map(l => rightPad(`${danMethod(l.method)}(VND) - ${money(l.amount)}`, W)).join('\n')
+  const paymentLines = collectionLines.length
+    ? collectionLines.map(l => rightPad(`${danMethod(l.method)}(VND) - ${money(l.amount)}`, W)).join('\n')
     : '';
 
   const customer = p.customer || {};
@@ -1192,13 +1201,13 @@ function receiptVars(p = {}, widthOverride = 0, cfgChiNhanh = null) {
     totalLine: labelValue('TỔNG TIỀN:', so(total), W),
     grandTotalLine: labelValue('Tổng thanh toán:', so(total), W),
     totalWordsLine: `Bằng chữ: ${p.total_words || moneyToWords(total)}`,
-    methodLine: lines.length
-      ? labelValue('Hình thức thanh toán:', lines.map(l => methodLabel(l.method)).join(', '), W)
-      : '',
+    methodLine: collectionMethods.length
+      ? `${labelValue('Hình thức thanh toán:', collectionMethods.join(', '), W)}${returnMark ? `\n${center(returnMark, W)}` : ''}`
+      : returnMark ? center(returnMark, W) : '',
     paymentLines,
     paidLine: labelValue('Tiền khách đưa:', money(paid), W),
     changeLine: labelValue('Tiền trả khách:', money(change), W),
-    method: lines.map(l => methodLabel(l.method)).join(', '),
+    method: collectionMethods.join(', '),
     footer,
     footerC: center(footer, W),
     // MẪU BILL MẶC ĐỊNH GỌI {thanksC} VÀ {solidLine} — hai biến này chưa bao giờ
@@ -1584,8 +1593,102 @@ function renderShippingLabel(p = {}, W = 48) {
   return L.join('\n');
 }
 
+// PHIẾU CHI — giống bill bán hàng nhưng tiêu đề "PHIẾU CHI", KHÔNG hiện VAT.
+// Ghi rõ: người chi, ngày giờ, lý do, dòng (item · đơn giá · SL · thành tiền),
+// tổng cộng. Bản CHỮ (ESC/POS) — bản driver dựng ở buildExpenseVoucherDoc.
+function renderExpenseVoucher(p = {}, W = 48) {
+  const L = [];
+  const push = (s = '') => L.push(ascii(String(s)));
+  if (p.shopName) push(center(ascii(p.shopName), W));
+  if (p.address) for (const ln of wrap(ascii(p.address), W)) push(center(ln, W));
+  if (p.phone) push(center(`ĐT: ${ascii(p.phone)}`, W));
+  push(line('=', W));
+  push(centerBig('PHIẾU CHI', W));
+  push(line('=', W));
+  if (p.code) push(`Số phiếu: ${ascii(p.code)}`);
+  if (p.datetime) {
+    try { push(`Ngày giờ chi: ${businessDateTime(p.datetime)}`); } catch {}
+  }
+  if (p.payer) push(`Người chi: ${ascii(p.payer)}`);
+  if (p.payee) push(`Bên nhận/NCC: ${ascii(p.payee)}`);
+  if (p.reason) for (const ln of wrap(`Lý do: ${ascii(p.reason)}`, W)) push(ln);
+  push(line('-', W));
+  // Header cột: Tên · ĐG · SL · T.Tiền
+  const money$ = (n) => money(n);
+  const qty = Number(p.qty || 1);
+  const unit = Number(p.unitPrice != null ? p.unitPrice : p.amount || 0);
+  const lineTotal = Number(p.amount || unit * qty);
+  push('Nội dung');
+  push(ascii(p.item || 'Chi phí'));
+  const dg = `ĐG ${money$(unit)}`;
+  const sl = `SL ${qty}`;
+  const tt = money$(lineTotal);
+  // dòng số: ĐG (trái) · SL (giữa) · thành tiền (phải)
+  const left = `${dg}   ${sl}`;
+  push(`${left.slice(0, W - tt.length - 1).padEnd(W - tt.length - 1)} ${tt}`);
+  push(line('-', W));
+  const total = Number(p.total != null ? p.total : lineTotal);
+  const tval = money$(total);
+  const tlabel = 'TỔNG CỘNG:';
+  push(`${tlabel}${tval.padStart(W - tlabel.length)}`);
+  if (p.totalWords) { push(''); for (const ln of wrap(`Bằng chữ: ${ascii(p.totalWords)}`, W)) push(ln); }
+  push(line('=', W));
+  push('');
+  push('Người lập phiếu            Người nhận'.slice(0, W));
+  push('');
+  push('');
+  push(center('(Ký, ghi rõ họ tên)', W));
+  return L.join('\n');
+}
+
+// PHIẾU TRẢ HÀNG (ESC/POS text) — nhiều dòng món + TỔNG HOÀN.
+function renderReturnVoucher(p = {}, W = 48) {
+  const L = [];
+  const push = (s = '') => L.push(ascii(String(s)));
+  if (p.shopName) push(center(ascii(p.shopName), W));
+  if (p.address) for (const ln of wrap(ascii(p.address), W)) push(center(ln, W));
+  if (p.phone) push(center(`ĐT: ${ascii(p.phone)}`, W));
+  push(line('=', W));
+  push(centerBig('PHIẾU TRẢ HÀNG', W));
+  push(line('=', W));
+  if (p.code) push(`Bill gốc: ${ascii(p.code)}`);
+  if (p.datetime) {
+    try { push(`Ngày giờ trả: ${businessDateTime(p.datetime)}`); } catch {}
+  }
+  if (p.actor) push(`Người lập: ${ascii(p.actor)}`);
+  if (p.approvedBy) push(`Quản lý duyệt: ${ascii(p.approvedBy)}`);
+  push(line('-', W));
+  for (const it of (Array.isArray(p.items) ? p.items : [])) {
+    push(ascii(it.name || ''));
+    const dg = `ĐG ${money(it.unitPrice || 0)}`;
+    const sl = `SL ${it.qty || 0}`;
+    const tt = money(it.amount || 0);
+    const left = `${dg}   ${sl}`;
+    push(`${left.slice(0, W - tt.length - 1).padEnd(W - tt.length - 1)} ${tt}`);
+  }
+  push(line('-', W));
+  const tval = money(p.total || 0);
+  const tlabel = 'TỔNG HOÀN:';
+  push(`${tlabel}${tval.padStart(W - tlabel.length)}`);
+  if (p.refundMethod) push(`Hoàn qua: ${ascii(p.refundMethod)}`);
+  push(line('=', W));
+  push('');
+  push('Người lập phiếu            Người nhận'.slice(0, W));
+  push('');
+  push('');
+  return L.join('\n');
+}
+
 export function renderJobText(job, branch_id = 'sala', printer = null) {
   const p = job.payload || {};
+  if (job.type === 'expense_voucher') {
+    const W = Number(printer?.widthMm) ? paperWidthCharsFrom({ widthMm: Number(printer.widthMm) }) : 48;
+    return renderExpenseVoucher(p, W);
+  }
+  if (job.type === 'return_voucher') {
+    const W = Number(printer?.widthMm) ? paperWidthCharsFrom({ widthMm: Number(printer.widthMm) }) : 48;
+    return renderReturnVoucher(p, W);
+  }
   if (job.type === 'kitchen_ticket') {
     // Mẫu Phiếu bếp do cửa hàng thiết kế (templates.kitchen_ticket) ĐƯỢC ƯU TIÊN,
     // nhưng chỉ khi mẫu có phần tử bảng món (kitchenTemplateUsable) — nếu không thì
@@ -2265,6 +2368,73 @@ export function printShippingLabel(branch_id = 'sala', { order_id = '', size = '
   return { ok: true, printer: printer.id, jobs: jobs.length, size };
 }
 
+// IN PHIẾU CHI — in trên máy in hóa đơn (như bill). Nhận expense_id thật hoặc
+// 'drawer:<id>' (chi tiền mặt tạo từ POS).
+export function printExpenseVoucher(branch_id = 'sala', { expense_id = '', deviceId = '', copies = 1 } = {}) {
+  const sid = String(expense_id);
+  let e;
+  if (sid.startsWith('drawer:')) {
+    const de = db.prepare(`SELECT * FROM cash_drawer_entries WHERE id=? AND branch_id=? AND kind='expense'`).get(sid.slice(7), branch_id);
+    if (!de) { const err = new Error('Không tìm thấy khoản chi.'); err.status = 404; throw err; }
+    e = { code: '', actor_name: de.actor_name, expense_date: de.occurred_at,
+      category_name: 'Chi từ két', payee_name: de.counterparty, note: de.reason || de.product, amount: de.amount };
+  } else {
+    e = db.prepare(`SELECT * FROM expenses WHERE id=? AND branch_id=?`).get(sid, branch_id);
+    if (!e) { const err = new Error('Không tìm thấy khoản chi.'); err.status = 404; throw err; }
+  }
+  const cfg = getPrintConfig(branch_id) || {};
+  const header = cfg.bill || {};
+  const payload = {
+    shopName: header.shopName || header.name || 'Dan D Pak',
+    address: header.address || '', phone: header.phone || header.hotline || '',
+    code: e.code || '', payer: e.actor_name || '', datetime: e.expense_date,
+    reason: e.note || e.category_name || 'Chi phí', payee: e.payee_name || '',
+    item: e.category_name || e.note || 'Chi phí',
+    unitPrice: Number(e.amount || 0), qty: 1,
+    amount: Number(e.amount || 0), total: Number(e.amount || 0),
+  };
+  const printer = resolveReceiptPrinter(branch_id, { deviceId });
+  if (!printer) { const err = new Error('Chưa cấu hình máy in hóa đơn để in phiếu chi.'); err.status = 400; throw err; }
+  const n = Math.max(1, Math.min(5, parseInt(copies) || 1));
+  const jobs = [];
+  for (let i = 0; i < n; i++) {
+    jobs.push(createJob({ printer: printer.id, type: 'expense_voucher',
+      title: `Phiếu chi ${payload.code || ''}`.trim().slice(0, 120), payload, branch_id }));
+  }
+  audit('expense.voucher.print', { expense_id: sid, printer: printer.id, copies: n }, branch_id);
+  return { ok: true, printer: printer.id, jobs: jobs.length };
+}
+
+// In PHIẾU TRẢ HÀNG cho một return (order_returns) — nhiều dòng món + tổng hoàn.
+export function printReturnVoucher(branch_id = 'sala', { return_id = '', deviceId = '', copies = 1 } = {}) {
+  const rid = String(return_id);
+  const ret = db.prepare(`SELECT * FROM order_returns WHERE id=? AND branch_id=?`).get(rid, branch_id);
+  if (!ret) { const err = new Error('Không tìm thấy phiếu trả hàng.'); err.status = 404; throw err; }
+  const items = db.prepare(`SELECT name,qty,unit_price,amount FROM order_return_items WHERE return_id=?`).all(rid);
+  const order = db.prepare(`SELECT bill_no FROM orders WHERE id=?`).get(ret.original_order_id);
+  const cfg = getPrintConfig(branch_id) || {};
+  const header = cfg.bill || {};
+  const payload = {
+    shopName: header.shopName || header.name || 'Dan D Pak',
+    address: header.address || '', phone: header.phone || header.hotline || '',
+    code: order?.bill_no || ret.original_order_id,
+    datetime: ret.created_at, actor: ret.created_by || '', approvedBy: ret.approved_by || '',
+    items: items.map(it => ({ name: it.name, qty: it.qty, unitPrice: it.unit_price, amount: it.amount })),
+    total: Number(ret.refund_total || 0),
+    refundMethod: ret.refund_method === 'original' ? 'Theo phương thức gốc' : ret.refund_method,
+  };
+  const printer = resolveReceiptPrinter(branch_id, { deviceId });
+  if (!printer) { const err = new Error('Chưa cấu hình máy in hóa đơn để in phiếu trả hàng.'); err.status = 400; throw err; }
+  const n = Math.max(1, Math.min(5, parseInt(copies) || 1));
+  const jobs = [];
+  for (let i = 0; i < n; i++) {
+    jobs.push(createJob({ printer: printer.id, type: 'return_voucher',
+      title: `Phiếu trả hàng ${payload.code || ''}`.trim().slice(0, 120), payload, branch_id }));
+  }
+  audit('retail.return.voucher.print', { return_id: rid, printer: printer.id, copies: n }, branch_id);
+  return { ok: true, printer: printer.id, jobs: jobs.length };
+}
+
 export function listJobs(branch_id = 'sala', query = {}) {
   const limit = Math.max(1, Math.min(300, parseInt(query.limit || query) || 120));
   return db.prepare(`SELECT * FROM print_jobs WHERE branch_id=? ORDER BY created_at DESC LIMIT ?`).all(branch_id, limit).map(publicJob);
@@ -2738,10 +2908,14 @@ function driverFieldsFor(job, printer, printCfg) {
   if ((printer.connection || 'browser') !== 'system') return null;
   // receipt = payload thật; test = bill mẫu (so font); kitchen_ticket = phiếu bếp
   // font LỚN qua GDI (không giới hạn 2x của ESC/POS).
-  if (job.type !== 'receipt' && job.type !== 'test' && job.type !== 'kitchen_ticket') return null;
+  if (job.type !== 'receipt' && job.type !== 'test' && job.type !== 'kitchen_ticket'
+    && job.type !== 'shipping_label' && job.type !== 'expense_voucher' && job.type !== 'return_voucher') return null;
   try {
     let doc;
     if (job.type === 'kitchen_ticket') doc = buildKitchenDoc(job.payload || {}, printCfg || {}, { font: printer.driverFont });
+    else if (job.type === 'shipping_label') doc = buildShippingLabelDoc(job.payload || {}, printCfg || {}, { font: printer.driverFont });
+    else if (job.type === 'expense_voucher') doc = buildExpenseVoucherDoc(job.payload || {}, printCfg || {}, { font: printer.driverFont });
+    else if (job.type === 'return_voucher') doc = buildReturnVoucherDoc(job.payload || {}, printCfg || {}, { font: printer.driverFont });
     else {
       const payload = job.type === 'test' ? sampleReceiptPayload() : (job.payload || {});
       const width = Number(printer?.widthMm)
@@ -3074,6 +3248,7 @@ export function printKitchenTickets(order, items, branch_id = 'sala', staff = ''
   });
 
   const now = new Date();
+  const storeNow = businessParts(now);
   const base = {
     order_id: order.id || '',
     zone: order.zone || '',
@@ -3086,8 +3261,8 @@ export function printKitchenTickets(order, items, branch_id = 'sala', staff = ''
     seq: updateSeq > 0 ? `${kitchenDailySeq(order)}-${updateSeq}` : kitchenDailySeq(order),
     update_seq: updateSeq || 0,
     update_kind: updateKind || '',
-    time: now.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
-    date: now.toLocaleDateString('vi-VN'),
+    time: businessTime(now),
+    date: `${String(storeNow.day).padStart(2, '0')}/${String(storeNow.month).padStart(2, '0')}/${storeNow.year}`,
   };
 
   // Chế độ gộp cũ: 1 phiếu / trạm in.

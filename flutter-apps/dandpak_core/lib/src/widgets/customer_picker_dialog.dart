@@ -1,26 +1,41 @@
-// GENERATED SPLIT of retail_screen.dart — dialog chọn/sửa khách (part of, cùng library).
-part of 'retail_screen.dart';
+// HỘP THOẠI CHỌN / THÊM KHÁCH HÀNG — DÙNG CHUNG.
+//
+// Trước đây nằm trong `part of retail_screen.dart` nên chỉ màn bán lẻ dùng
+// được; màn khách catalogue phải tự dựng một ô nhập tên/SĐT riêng, tức là gõ
+// tay lại một khách đã có sẵn trong hệ thống và không tra ra được hồ sơ cũ
+// (điểm tích luỹ, MST, ưu đãi). Tách ra đây để mọi màn dùng CHUNG một đường:
+// tìm khách có sẵn, hoặc thêm mới bằng đúng biểu mẫu quầy đang dùng.
+import 'package:flutter/material.dart';
 
-class _CustomerPickerDialog extends StatefulWidget {
+import '../models/retail_models.dart';
+import '../services/api_service.dart';
+import '../ui/app_theme.dart';
+import '../ui/debouncer.dart';
+import '../utils/translation.dart';
+import 'address_fields.dart';
+import 'tax_lookup.dart';
+
+class CustomerPickerDialog extends StatefulWidget {
   final ApiService api;
   final List<RetailCustomer> customers;
   final RetailCustomer? selected;
 
-  _CustomerPickerDialog({
+  const CustomerPickerDialog({
+    super.key,
     required this.api,
     required this.customers,
     required this.selected,
   });
 
   @override
-  State<_CustomerPickerDialog> createState() => _CustomerPickerDialogState();
+  State<CustomerPickerDialog> createState() => CustomerPickerDialogState();
 }
 
-class _NoCustomer {
-  _NoCustomer();
+class NoCustomer {
+  NoCustomer();
 }
 
-class _CustomerPickerDialogState extends State<_CustomerPickerDialog> {
+class CustomerPickerDialogState extends State<CustomerPickerDialog> {
   final _search = TextEditingController();
   String _q = '';
   // widget.customers is only the ~200 most-recently-updated customers preloaded
@@ -45,7 +60,11 @@ class _CustomerPickerDialogState extends State<_CustomerPickerDialog> {
     final trimmed = query.trim();
     if (trimmed.isEmpty) {
       _searchGuard.invalidate();
-      if (mounted) setState(() { _liveResults = widget.customers; _searching = false; });
+      if (mounted)
+        setState(() {
+          _liveResults = widget.customers;
+          _searching = false;
+        });
       return;
     }
     final generation = _searchGuard.next();
@@ -57,15 +76,21 @@ class _CustomerPickerDialogState extends State<_CustomerPickerDialog> {
           .whereType<Map>()
           .map((e) => RetailCustomer.fromJson(Map<String, dynamic>.from(e)))
           .toList();
-      setState(() { _liveResults = parsed; _searching = false; });
+      setState(() {
+        _liveResults = parsed;
+        _searching = false;
+      });
     } catch (e) {
       if (!mounted || !_searchGuard.isCurrent(generation)) return;
       // Previously swallowed silently — a failed search looked identical to a
       // real "no results", making this impossible to tell apart from the bug
       // this dialog was fixed for. Surface it instead.
-      setState(() { _liveResults = []; _searching = false; });
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('${t('Không tìm được khách hàng')}: $e')));
+      setState(() {
+        _liveResults = [];
+        _searching = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('${t('Không tìm được khách hàng')}: $e')));
     }
   }
 
@@ -74,7 +99,7 @@ class _CustomerPickerDialogState extends State<_CustomerPickerDialog> {
   Future<void> _create() async {
     final saved = await showDialog<RetailCustomer>(
       context: context,
-      builder: (_) => _CustomerEditDialog(api: widget.api),
+      builder: (_) => CustomerEditDialog(api: widget.api),
     );
     if (saved != null && mounted) Navigator.of(context).pop(saved);
   }
@@ -86,7 +111,8 @@ class _CustomerPickerDialogState extends State<_CustomerPickerDialog> {
       // Without an explicit shape + clip, Dialog doesn't clip its child to its
       // own rounded corners — the last (partially scrolled) row in a long list
       // can render past the visible rounded edge instead of being cut cleanly.
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(DanRadius.lg)),
+      shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(DanRadius.lg)),
       clipBehavior: Clip.antiAlias,
       child: ConstrainedBox(
         constraints: BoxConstraints(maxWidth: 560, maxHeight: 660),
@@ -159,7 +185,7 @@ class _CustomerPickerDialogState extends State<_CustomerPickerDialog> {
             ListTile(
               leading: Icon(Icons.person_off_outlined),
               title: Text(t('Bán cho người tiêu dùng')),
-              onTap: () => Navigator.of(context).pop(_NoCustomer()),
+              onTap: () => Navigator.of(context).pop(NoCustomer()),
             ),
             Expanded(
               child: _rows.isEmpty
@@ -206,15 +232,15 @@ class _CustomerPickerDialogState extends State<_CustomerPickerDialog> {
   }
 }
 
-class _CustomerEditDialog extends StatefulWidget {
+class CustomerEditDialog extends StatefulWidget {
   final ApiService api;
-  _CustomerEditDialog({required this.api});
+  const CustomerEditDialog({super.key, required this.api});
 
   @override
-  State<_CustomerEditDialog> createState() => _CustomerEditDialogState();
+  State<CustomerEditDialog> createState() => CustomerEditDialogState();
 }
 
-class _CustomerEditDialogState extends State<_CustomerEditDialog> {
+class CustomerEditDialogState extends State<CustomerEditDialog> {
   final _name = TextEditingController();
   final _phone = TextEditingController();
   final _email = TextEditingController();
@@ -259,9 +285,11 @@ class _CustomerEditDialogState extends State<_CustomerEditDialog> {
   Future<void> _save() async {
     if (_name.text.trim().isEmpty &&
         _phone.text.trim().isEmpty &&
-        _company.text.trim().isEmpty) {
+        _company.text.trim().isEmpty &&
+        _tax.text.trim().isEmpty &&
+        _email.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text(t('Nhập tên, SĐT hoặc tên công ty')),
+          content: Text(t('Nhập tên, công ty, MST, SĐT hoặc email')),
           backgroundColor: DanColors.late));
       return;
     }

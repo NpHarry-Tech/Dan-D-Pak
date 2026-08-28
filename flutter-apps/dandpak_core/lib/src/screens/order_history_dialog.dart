@@ -12,8 +12,10 @@ import '../ui/format.dart';
 import '../widgets/address_fields.dart';
 import '../widgets/manager_pin_dialog.dart';
 import '../widgets/tax_lookup.dart';
+import '../widgets/return_dialog.dart';
 import 'management/management_widgets.dart';
 import '../utils/translation.dart';
+import '../utils/business_datetime.dart';
 
 part 'order_history_receipt_pane.dart';
 part 'order_history_receipt_widgets.dart';
@@ -46,19 +48,26 @@ Map<String, String> get _methodLabels => {
 class OrderHistoryDialog extends StatefulWidget {
   final ApiService api;
 
-  /// Retail mode: show t("Đổi trả / Hoàn hàng") on paid retail bills
-  /// (mirrors the web shared orderHistory `allowRefund` option).
+  /// Legacy compatibility flag. Visibility is now permission-based for both
+  /// F&B and Retail paid bills.
   final bool allowRefund;
 
   /// Called after a mutation (refund / VAT invoice) so the opening screen can
   /// refresh its own data (stock, shift, vouchers...).
   final VoidCallback? onAfterChange;
 
+  /// Khi mở từ màn Retail: bấm "Trả hàng" trên bill bán lẻ → BÀN GIAO cho Retail
+  /// mở tab "Trả hàng N" (preload item). Nếu null (mở từ nơi khác) → dùng hộp thoại
+  /// trả hàng inline. (orderId, receiptItems).
+  final void Function(String orderId, List<Map<String, dynamic>> items)?
+      onReturnToTab;
+
   OrderHistoryDialog({
     super.key,
     required this.api,
     this.allowRefund = false,
     this.onAfterChange,
+    this.onReturnToTab,
   });
 
   @override
@@ -73,6 +82,9 @@ class _OrderHistoryDialogState extends State<OrderHistoryDialog> {
   Map<String, dynamic>? _selected;
   Map<String, dynamic>? _receipt;
   bool _loadingList = true;
+  bool _loadingMore = false;
+  bool _hasMore = true;
+  int _page = 1;
   bool _loadingReceipt = false;
   bool _printing = false;
   String _channel = '';
@@ -92,14 +104,20 @@ class _OrderHistoryDialogState extends State<OrderHistoryDialog> {
     super.dispose();
   }
 
-  Future<void> _load({bool keepSelection = true}) async {
+  Future<void> _load({bool keepSelection = true, bool append = false}) async {
     setState(() {
-      _loadingList = true;
+      if (append) {
+        _loadingMore = true;
+      } else {
+        _loadingList = true;
+        _page = 1;
+      }
       _listError = null;
     });
     try {
       final rows = await widget.api.getOrderHistory(
-        limit: 80,
+        limit: 200,
+        page: append ? _page + 1 : 1,
         q: _search.text,
         channel: _channel,
       );
@@ -110,19 +128,29 @@ class _OrderHistoryDialogState extends State<OrderHistoryDialog> {
       if (!mounted) return;
 
       final selectedId = keepSelection ? _s(_selected?['id']) : '';
-      final selected = selectedId.isEmpty
-          ? (mapped.isEmpty ? null : mapped.first)
-          : mapped.cast<Map<String, dynamic>?>().firstWhere(
-                (row) => _s(row?['id']) == selectedId,
-                orElse: () => mapped.isEmpty ? null : mapped.first,
-              );
+      final selected = append
+          ? _selected
+          : selectedId.isEmpty
+              ? (mapped.isEmpty ? null : mapped.first)
+              : mapped.cast<Map<String, dynamic>?>().firstWhere(
+                    (row) => _s(row?['id']) == selectedId,
+                    orElse: () => mapped.isEmpty ? null : mapped.first,
+                  );
 
       setState(() {
-        _orders
-          ..clear()
-          ..addAll(mapped);
+        if (append) {
+          _orders.addAll(mapped);
+          _page += 1;
+        } else {
+          _orders
+            ..clear()
+            ..addAll(mapped);
+          _page = 1;
+        }
+        _hasMore = mapped.length == 200;
         _selected = selected;
         _loadingList = false;
+        _loadingMore = false;
         _listError = null;
       });
 
@@ -139,6 +167,7 @@ class _OrderHistoryDialogState extends State<OrderHistoryDialog> {
       setState(() {
         _listError = e.toString().replaceFirst('Exception: ', '');
         _loadingList = false;
+        _loadingMore = false;
       });
     }
   }
@@ -228,24 +257,60 @@ class _OrderHistoryDialogState extends State<OrderHistoryDialog> {
     );
   }
 
-  /// Đổi trả / hoàn hàng cho bill retail đã thanh toán (web parity).
-  Future<void> _refund(String reason) async {
+  /// TRẢ HÀNG bill đã thanh toán: tạo giao dịch trả riêng (bill gốc GIỮ NGUYÊN
+  /// trong lịch sử, §6). Bán lẻ dùng return model mới; kênh khác giữ luồng cũ.
+  Future<void> _deleteBill(String reason) async {
     final receipt = _receipt;
     if (receipt == null) return;
     final orderId = _s(receipt['order_id'] ?? _selected?['id']);
     if (orderId.isEmpty) return;
     final pin = await _pinIfLocked(receipt);
-    if (pin == null) return;
+    if (pin == null) return; // huỷ nhập PIN
+    final channel = _s(receipt['channel']);
+
+    // Bán lẻ: ưu tiên BÀN GIAO cho màn Retail mở tab "Trả hàng N" (preload item,
+    // +/- SL, hoàn theo tender). Nếu không có kênh đó (mở History từ nơi khác) →
+    // hộp thoại trả hàng inline.
+    if (channel == 'retail') {
+      final items = (receipt['items'] as List?)
+              ?.whereType<Map>()
+              .map((e) => Map<String, dynamic>.from(e))
+              .toList() ??
+          const <Map<String, dynamic>>[];
+      if (widget.onReturnToTab != null) {
+        widget.onReturnToTab!(orderId, items);
+        if (mounted)
+          Navigator.of(context).maybePop(); // đóng History, sang tab Retail
+        return;
+      }
+      final ok = await showReturnDialog(context,
+          api: widget.api,
+          orderId: orderId,
+          receiptItems: items,
+          securityPin: pin.isEmpty ? null : pin);
+      if (ok == true) {
+        widget.onAfterChange?.call();
+        if (!mounted) return;
+        setState(() {
+          _selected = null;
+          _receipt = null;
+        });
+        await _load(keepSelection: false);
+      }
+      return;
+    }
+
+    // Kênh khác retail: giữ luồng cũ (soft-delete có audit).
     try {
-      final res = await widget.api.retailRefund(orderId, {
-        'reason': reason,
-        if (pin.isNotEmpty) 'security_pin': pin,
-      });
+      await widget.api.deletePaidBill(orderId, reason: reason, pin: pin);
       if (!mounted) return;
-      _toast('Đã hoàn ${Fmt.money(_n(res['refunded'] ?? receipt['total']))}');
+      _toast('Đã xử lý; dữ liệu vẫn được lưu trong nhật ký database.');
       widget.onAfterChange?.call();
-      await _load();
-      await _loadReceipt(orderId);
+      setState(() {
+        _selected = null;
+        _receipt = null;
+      });
+      await _load(keepSelection: false);
     } catch (e) {
       if (mounted) {
         _toast(e.toString().replaceFirst('Exception: ', ''), error: true);
@@ -435,9 +500,25 @@ class _OrderHistoryDialogState extends State<OrderHistoryDialog> {
                         )
                       : ListView.separated(
                           padding: EdgeInsets.all(12),
-                          itemCount: _orders.length,
+                          itemCount: _orders.length + (_hasMore ? 1 : 0),
                           separatorBuilder: (_, __) => SizedBox(height: 8),
                           itemBuilder: (context, index) {
+                            if (index == _orders.length) {
+                              return OutlinedButton.icon(
+                                onPressed: _loadingMore
+                                    ? null
+                                    : () => _load(append: true),
+                                icon: _loadingMore
+                                    ? const SizedBox(
+                                        width: 16,
+                                        height: 16,
+                                        child: CircularProgressIndicator(
+                                            strokeWidth: 2),
+                                      )
+                                    : const Icon(Icons.expand_more),
+                                label: Text(t('Xem thêm lịch sử')),
+                              );
+                            }
                             final order = _orders[index];
                             return _HistoryRow(
                               order: order,
@@ -482,14 +563,14 @@ class _OrderHistoryDialogState extends State<OrderHistoryDialog> {
         ),
       );
     }
-    // Web-parity action gating: refund only for paid retail bills (and only
-    // when the opener enables it); VAT invoice for paid bills without one,
-    // if the user has the 'invoice' permission (server re-checks anyway).
+    // Nút xóa chỉ admin/người có quyền refund mới nhìn thấy; server kiểm tra lại.
     final status = _s(receipt['status']);
-    final channel = _s(receipt['channel']);
-    final canRefund =
-        widget.allowRefund && status == 'paid' && channel == 'retail';
+    final returnStatus = _s(receipt['return_status']).toUpperCase();
+    final canRefund = status == 'paid' &&
+        returnStatus != 'FULL' &&
+        context.read<AuthProvider>().hasPermission('refund');
     final canIssue = status == 'paid' &&
+        returnStatus == 'NONE' &&
         receipt['invoice'] is! Map &&
         context.read<AuthProvider>().hasPermission('invoice');
     return _ReceiptPane(
@@ -498,7 +579,7 @@ class _OrderHistoryDialogState extends State<OrderHistoryDialog> {
       printing: _printing,
       onPrint: _printReceipt,
       onCopy: _copyReceipt,
-      onRefund: canRefund ? _refund : null,
+      onRefund: canRefund ? _deleteBill : null,
       onIssueInvoice: canIssue ? _issueInvoice : null,
     );
   }
@@ -522,6 +603,7 @@ class _HistoryRow extends StatelessWidget {
     final voided = _s(order['status']) == 'void';
     final locked = order['locked'] == true;
     final invoiceNo = _s(order['invoice_no']);
+    final returnStatus = _s(order['return_status']).toUpperCase();
     return InkWell(
       borderRadius: BorderRadius.circular(DanRadius.sm),
       onTap: onTap,
@@ -581,12 +663,19 @@ class _HistoryRow extends StatelessWidget {
               overflow: TextOverflow.ellipsis,
               style: TextStyle(color: DanColors.muted, fontSize: 11.5),
             ),
-            if (voided || locked || invoiceNo.isNotEmpty) ...[
+            if (voided ||
+                locked ||
+                invoiceNo.isNotEmpty ||
+                returnStatus != 'NONE') ...[
               SizedBox(height: 7),
               Wrap(
                 spacing: 6,
                 runSpacing: 5,
                 children: [
+                  if (returnStatus == 'FULL')
+                    _Badge(t('Đã trả hết'), DanColors.late),
+                  if (returnStatus == 'PARTIAL')
+                    _Badge(t('Đã trả một phần'), DanColors.doing),
                   if (locked) _Badge(t('Đã kết ca'), DanColors.text),
                   if (voided) _Badge(t('Đã hủy'), DanColors.late),
                   if (invoiceNo.isNotEmpty)
@@ -600,4 +689,3 @@ class _HistoryRow extends StatelessWidget {
     );
   }
 }
-

@@ -43,6 +43,7 @@ test('Firebase service-account is stored encrypted, never leaks plaintext via ge
   const decoded = Settings.getFirebaseServiceAccount('sala');
   assert.deepEqual(decoded, FAKE_SERVICE_ACCOUNT);
   assert.equal(Settings.firebaseConfigured('sala'), true);
+  assert.equal(Settings.firebaseConfigurationStatus('sala'), 'ready');
 
   const publicSettings = Settings.getSettings('sala');
   assert.equal(publicSettings.firebase_configured, true);
@@ -52,6 +53,16 @@ test('Firebase service-account is stored encrypted, never leaks plaintext via ge
   // Chi nhánh khác chưa cấu hình → không nhìn thấy khoá của sala.
   assert.equal(Settings.firebaseConfigured('br2'), false);
   assert.equal(Settings.getFirebaseServiceAccount('br2'), null);
+  assert.equal(Settings.firebaseConfigurationStatus('br2'), 'missing');
+});
+
+test('encrypted Firebase key that cannot be decrypted is reported as unreadable', () => {
+  db.prepare(`INSERT OR REPLACE INTO app_settings(branch_id,key,value,updated_at)
+              VALUES('broken','firebase_service_account','enc:v1:not-valid',?)`)
+    .run(new Date().toISOString());
+  assert.equal(Settings.firebaseConfigured('broken'), false);
+  assert.equal(Settings.firebaseConfigurationStatus('broken'), 'unreadable');
+  assert.equal(Settings.getSettings('broken').firebase_status, 'unreadable');
 });
 
 test('device token registration upserts by device_id, and push never throws when unconfigured', async () => {

@@ -242,7 +242,7 @@ Toàn bộ logic nằm trong `server/services/*`, được `api.js` gọi:
 | `customers.js` | Khách hàng + đối tác (Contacts), tích điểm, tra cứu mã số thuế |
 | `vouchers.js` | Voucher & giảm giá |
 | `invoices.js` | Hóa đơn điện tử (qua MISA), yêu cầu hóa đơn từ khách |
-| `misa.js` | Tích hợp HĐĐT MISA (test kết nối + phát hành) |
+| `misa/` | Adapter HĐĐT MISA đã tách theo auth/client/config/company/payload/invoice; `misa/index.js` là public API duy nhất |
 | `online.js` | Kênh online: nhận webhook đơn, danh sách kênh, đổi trạng thái |
 | `printing.js` | Job in (bếp/bar/bill/tem), điều phối máy in LAN/OS, in lại, mở ngăn kéo |
 | `reports.js` | Dashboard, xu hướng doanh thu, nhật ký hoạt động gần đây |

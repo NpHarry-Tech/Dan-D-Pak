@@ -29,7 +29,7 @@ How devices, apps, and web sessions are paired and linked to the company server.
 
 ## Stored per device
 
-- device identity (iPad / POS / KDS / printer agent / warehouse)
+- device identity (Tablet / POS / KDS / printer agent / warehouse)
 - device role and branch
 - device status (online/offline via `device_heartbeats`)
 - route assignments (e.g. which station/printer)

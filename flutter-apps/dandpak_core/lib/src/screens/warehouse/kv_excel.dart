@@ -1,11 +1,15 @@
 import 'dart:io';
+import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:archive/archive.dart';
 import 'package:excel/excel.dart' as xl;
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
 
+import '../../services/api_service.dart';
 import '../../ui/app_theme.dart';
 import '../../utils/translation.dart';
 
@@ -36,11 +40,72 @@ String _cellText(xl.Data? cell) {
   return v.toString().trim();
 }
 
-/// Mở hộp thoại chọn file .xlsx và trả về các dòng (bỏ dòng tiêu đề nếu
-/// [skipHeader]). Trả null nếu người dùng hủy; ném Exception nếu file hỏng.
-Future<List<List<String>>?> kvPickSpreadsheetRows({
-  bool skipHeader = true,
-}) async {
+/// Microsoft Excel đôi khi ghi một custom numFmt với ID built-in (ví dụ 43).
+/// excel ^4.0.6 ném lỗi dù workbook vẫn hợp lệ với Excel. Chỉ khi gặp đúng lỗi
+/// này ta ánh xạ các declaration đó sang vùng custom >=164 và cập nhật mọi
+/// reference trong styles.xml; dữ liệu/sheet/công thức không bị thay đổi.
+Uint8List _repairLegacyNumberFormats(Uint8List bytes) {
+  final zip = ZipDecoder().decodeBytes(bytes, verify: true);
+  final styles = zip.findFile('xl/styles.xml');
+  if (styles == null) return bytes;
+  var xml = utf8.decode(styles.content as List<int>);
+  final declarations = RegExp(r'<numFmt\b[^>]*\bnumFmtId="(\d+)"[^>]*/?>')
+      .allMatches(xml)
+      .map((m) => int.tryParse(m.group(1)!))
+      .whereType<int>()
+      .where((id) => id < 164)
+      .toSet()
+      .toList()
+    ..sort();
+  if (declarations.isEmpty) return bytes;
+  var next = 164;
+  final used = RegExp(r'numFmtId="(\d+)"')
+      .allMatches(xml)
+      .map((m) => int.tryParse(m.group(1)!))
+      .whereType<int>()
+      .toSet();
+  for (final old in declarations) {
+    while (used.contains(next)) next++;
+    xml = xml.replaceAll('numFmtId="$old"', 'numFmtId="$next"');
+    used.add(next++);
+  }
+  final repaired = Uint8List.fromList(utf8.encode(xml));
+  zip.addFile(ArchiveFile('xl/styles.xml', repaired.length, repaired));
+  return Uint8List.fromList(ZipEncoder().encode(zip)!);
+}
+
+xl.Excel kvDecodeSpreadsheet(Uint8List bytes) {
+  try {
+    return xl.Excel.decodeBytes(bytes);
+  } catch (error) {
+    if (!error.toString().contains('custom numFmtId starts at 164')) rethrow;
+    return xl.Excel.decodeBytes(_repairLegacyNumberFormats(bytes));
+  }
+}
+
+class KvSpreadsheetData {
+  final List<String> headers;
+  final List<List<String>> rows;
+  const KvSpreadsheetData(this.headers, this.rows);
+
+  int column(List<String> aliases) {
+    String norm(String value) => value
+        .toLowerCase()
+        .trim()
+        .replaceAll(RegExp(r'[^a-z0-9à-ỹ]+', unicode: true), ' ')
+        .replaceAll(RegExp(r'\s+'), ' ');
+    final wanted = aliases.map(norm).toSet();
+    return headers.indexWhere((h) => wanted.contains(norm(h)));
+  }
+
+  String cell(List<String> row, List<String> aliases, {int fallback = -1}) {
+    final index = column(aliases);
+    final resolved = index >= 0 ? index : fallback;
+    return resolved >= 0 && resolved < row.length ? row[resolved].trim() : '';
+  }
+}
+
+Future<KvSpreadsheetData?> kvPickSpreadsheetData() async {
   final picked = await FilePicker.platform.pickFiles(
     type: FileType.custom,
     allowedExtensions: ['xlsx'],
@@ -49,7 +114,34 @@ Future<List<List<String>>?> kvPickSpreadsheetRows({
   if (picked == null || picked.files.isEmpty) return null;
   final f = picked.files.first;
   final bytes = f.bytes ?? await File(f.path!).readAsBytes();
-  final book = xl.Excel.decodeBytes(bytes);
+  final book = kvDecodeSpreadsheet(Uint8List.fromList(bytes));
+  if (book.tables.isEmpty) throw Exception(t('File không có sheet nào'));
+  final sheet = book.tables[book.tables.keys.first]!;
+  final headers =
+      sheet.maxRows == 0 ? <String>[] : sheet.row(0).map(_cellText).toList();
+  final rows = <List<String>>[];
+  for (var r = 1; r < sheet.maxRows; r++) {
+    final cells = sheet.row(r).map(_cellText).toList();
+    if (!cells.every((c) => c.isEmpty)) rows.add(cells);
+  }
+  return KvSpreadsheetData(headers, rows);
+}
+
+/// Mở hộp thoại chọn file .xlsx và trả về các dòng (bỏ dòng tiêu đề nếu
+/// [skipHeader]). Trả null nếu người dùng hủy; ném Exception nếu file hỏng.
+Future<List<List<String>>?> kvPickSpreadsheetRows({
+  bool skipHeader = true,
+}) async {
+  if (skipHeader) return (await kvPickSpreadsheetData())?.rows;
+  final picked = await FilePicker.platform.pickFiles(
+    type: FileType.custom,
+    allowedExtensions: ['xlsx'],
+    withData: true,
+  );
+  if (picked == null || picked.files.isEmpty) return null;
+  final f = picked.files.first;
+  final bytes = f.bytes ?? await File(f.path!).readAsBytes();
+  final book = kvDecodeSpreadsheet(Uint8List.fromList(bytes));
   if (book.tables.isEmpty) throw Exception(t('File không có sheet nào'));
   final sheet = book.tables[book.tables.keys.first]!;
   final rows = <List<String>>[];
@@ -73,48 +165,169 @@ Future<bool> kvSaveTemplate(BuildContext context, KvTemplateKind kind) async {
   List<String> header;
   List<List<String>> examples;
   String fileName;
+  var dynamicPriceBooks = <Map<String, dynamic>>[];
+  if (kind == KvTemplateKind.purchaseIn) {
+    try {
+      dynamicPriceBooks = (await context.read<ApiService>().getPriceBooks())
+          .whereType<Map>()
+          .map((x) => Map<String, dynamic>.from(x))
+          .where((x) => '${x['id']}' != 'default')
+          .toList();
+    } catch (_) {
+      // Mẫu vẫn tải được offline; giá chung luôn có mặt.
+    }
+  }
   switch (kind) {
     case KvTemplateKind.stocktake:
       fileName = 'MauFileKiemKho.xlsx';
       header = [
-        'Mã hàng', 'Số lượng',
-        'Lô 1', 'Hạn sử dụng 1', 'Số lượng 1',
-        'Lô 2', 'Hạn sử dụng 2', 'Số lượng 2',
+        'Mã sản phẩm',
+        'Mã vạch',
+        'Tên sản phẩm',
+        'Thương hiệu',
+        'Phân loại',
+        'ĐVT',
+        'Số lượng thực tế',
+        'Lô 1',
+        'Hạn sử dụng 1',
+        'Số lượng 1',
+        'Lô 2',
+        'Hạn sử dụng 2',
+        'Số lượng 2',
       ];
       examples = [
-        ['00060', '', 'L001', '15/10/2026', '1', 'L002', '15/10/2027', '10'],
-        ['00483', '5', '', '', '', '', '', ''],
+        [
+          '00060',
+          '8930000000060',
+          'Tên sản phẩm mẫu',
+          'Dan D Pak',
+          'Hạt',
+          'Gói',
+          '',
+          'L001',
+          '15/10/2026',
+          '1',
+          'L002',
+          '15/10/2027',
+          '10'
+        ],
+        [
+          '00483',
+          '',
+          'Sản phẩm không theo lô',
+          '',
+          'Khác',
+          'Cái',
+          '5',
+          '',
+          '',
+          '',
+          '',
+          '',
+          ''
+        ],
       ];
       break;
     case KvTemplateKind.purchaseIn:
       fileName = 'MauFileNhapHang.xlsx';
-      header = ['Mã hàng', 'Số lượng', 'Đơn giá', 'Lô', 'Hạn sử dụng'];
+      header = [
+        'Mã sản phẩm',
+        'Mã vạch',
+        'Tên sản phẩm',
+        'Thương hiệu',
+        'Phân loại',
+        'ĐVT',
+        'Số lượng',
+        'Đơn giá nhập',
+        'Giá bán mặc định',
+        'Giá bán trước VAT',
+        'VAT (%)',
+        // Đây là giá riêng của một BẢNG GIÁ, không phải giá mặc định thứ hai.
+        // Ghi rõ để tên bảng giá kiểu "Giá bán" hoặc trùng tên chi nhánh không
+        // tạo ra cột mơ hồ cạnh "Giá bán mặc định".
+        for (final book in dynamicPriceBooks)
+          'Giá theo bảng giá — ${book['name']}',
+        'Lô',
+        'Ngày sản xuất',
+        'Hạn sử dụng',
+      ];
       examples = [
-        ['00060', '24', '15000', 'L001', '15/10/2027'],
-        ['00483', '10', '92000', '', ''],
+        [
+          '00060',
+          '8930000000060',
+          'Tên sản phẩm mẫu',
+          'Dan D Pak',
+          'Hạt dinh dưỡng',
+          'Gói',
+          '24',
+          '15000',
+          '30000',
+          '27778',
+          '8',
+          for (final _ in dynamicPriceBooks) '30000',
+          'L001',
+          '15/10/2026',
+          '15/10/2027'
+        ],
+        [
+          '00483',
+          '',
+          'Sản phẩm không theo lô',
+          '',
+          'Khác',
+          'Cái',
+          '10',
+          '92000',
+          '120000',
+          '111111',
+          '8',
+          for (final _ in dynamicPriceBooks) '120000',
+          '',
+          '',
+          ''
+        ],
       ];
       break;
     case KvTemplateKind.issue:
       fileName = 'MauFileXuatHang.xlsx';
-      header = ['Mã hàng', 'Số lượng', 'Lô'];
+      header = [
+        'Mã sản phẩm',
+        'Mã vạch',
+        'Tên sản phẩm',
+        'Thương hiệu',
+        'Phân loại',
+        'ĐVT',
+        'Số lượng',
+        'Lô',
+        'Hạn sử dụng'
+      ];
       examples = [
-        ['00060', '2', 'L001'],
-        ['00483', '1', ''],
+        [
+          '00060',
+          '8930000000060',
+          'Tên sản phẩm mẫu',
+          'Dan D Pak',
+          'Hạt',
+          'Gói',
+          '2',
+          'L001',
+          '15/10/2027'
+        ],
+        ['00483', '', 'Sản phẩm không theo lô', '', 'Khác', 'Cái', '1', '', ''],
       ];
       break;
   }
 
   for (var c = 0; c < header.length; c++) {
-    final cell = sheet.cell(
-        xl.CellIndex.indexByColumnRow(columnIndex: c, rowIndex: 0));
+    final cell =
+        sheet.cell(xl.CellIndex.indexByColumnRow(columnIndex: c, rowIndex: 0));
     cell.value = xl.TextCellValue(header[c]);
     cell.cellStyle = xl.CellStyle(bold: true);
   }
   for (var r = 0; r < examples.length; r++) {
     for (var c = 0; c < examples[r].length; c++) {
       sheet
-          .cell(xl.CellIndex.indexByColumnRow(
-              columnIndex: c, rowIndex: r + 1))
+          .cell(xl.CellIndex.indexByColumnRow(columnIndex: c, rowIndex: r + 1))
           .value = xl.TextCellValue(examples[r][c]);
     }
   }
@@ -134,9 +347,8 @@ Future<bool> kvSaveTemplate(BuildContext context, KvTemplateKind kind) async {
     allowedExtensions: ['xlsx'],
   );
   if (savePath == null) return false;
-  final path = savePath.toLowerCase().endsWith('.xlsx')
-      ? savePath
-      : '$savePath.xlsx';
+  final path =
+      savePath.toLowerCase().endsWith('.xlsx') ? savePath : '$savePath.xlsx';
   await File(path).writeAsBytes(bytes, flush: true);
   return true;
 }
@@ -170,8 +382,7 @@ class KvExcelEmptyImport extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               Text('(${t('Tải về file mẫu')}: ',
-                  style:
-                      TextStyle(fontSize: 12.5, color: DanColors.muted)),
+                  style: TextStyle(fontSize: 12.5, color: DanColors.muted)),
               InkWell(
                 onTap: () async {
                   final saved = await kvSaveTemplate(context, templateKind);
@@ -190,8 +401,7 @@ class KvExcelEmptyImport extends StatelessWidget {
                         decorationColor: DanColors.brand)),
               ),
               Text(')',
-                  style:
-                      TextStyle(fontSize: 12.5, color: DanColors.muted)),
+                  style: TextStyle(fontSize: 12.5, color: DanColors.muted)),
             ],
           ),
           SizedBox(height: 16),
@@ -222,16 +432,15 @@ Future<bool> kvExportXlsx(
   final book = xl.Excel.createExcel();
   final sheet = book[book.getDefaultSheet()!];
   for (var c = 0; c < header.length; c++) {
-    final cell = sheet.cell(
-        xl.CellIndex.indexByColumnRow(columnIndex: c, rowIndex: 0));
+    final cell =
+        sheet.cell(xl.CellIndex.indexByColumnRow(columnIndex: c, rowIndex: 0));
     cell.value = xl.TextCellValue(header[c]);
     cell.cellStyle = xl.CellStyle(bold: true);
   }
   for (var r = 0; r < rows.length; r++) {
     for (var c = 0; c < rows[r].length; c++) {
       sheet
-          .cell(xl.CellIndex.indexByColumnRow(
-              columnIndex: c, rowIndex: r + 1))
+          .cell(xl.CellIndex.indexByColumnRow(columnIndex: c, rowIndex: r + 1))
           .value = xl.TextCellValue(rows[r][c]);
     }
   }
@@ -249,9 +458,8 @@ Future<bool> kvExportXlsx(
     allowedExtensions: ['xlsx'],
   );
   if (savePath == null) return false;
-  final path = savePath.toLowerCase().endsWith('.xlsx')
-      ? savePath
-      : '$savePath.xlsx';
+  final path =
+      savePath.toLowerCase().endsWith('.xlsx') ? savePath : '$savePath.xlsx';
   await File(path).writeAsBytes(bytes, flush: true);
   return true;
 }

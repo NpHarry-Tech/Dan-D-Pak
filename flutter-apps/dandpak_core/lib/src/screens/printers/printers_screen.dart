@@ -4,7 +4,7 @@ import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/api_service.dart';
 import '../../ui/app_theme.dart';
-import '../../ui/format.dart';
+import '../../utils/business_datetime.dart';
 import '../../widgets/dan_top_bar.dart';
 import '../management/management_widgets.dart';
 import '../../utils/translation.dart';
@@ -16,6 +16,10 @@ Map<String, String> get _statusLabels => {
       'printing': t('Đang in'),
       'printed': t('Đã in'),
       'failed': t('Lỗi'),
+      // Phiếu để quá lâu trong hàng đợi thì server gỡ ra thay vì in muộn — nếu
+      // không, bill của ca đêm sẽ tự chui ra khi mở máy sáng hôm sau.
+      'expired': t('Quá hạn'),
+      'cancelled': t('Đã huỷ'),
     };
 
 Color _statusColor(String s) {
@@ -26,6 +30,9 @@ Color _statusColor(String s) {
       return DanColors.brand;
     case 'failed':
       return DanColors.late;
+    case 'expired':
+    case 'cancelled':
+      return DanColors.muted;
     default:
       return DanColors.doing;
   }
@@ -36,6 +43,7 @@ Map<String, String> get _typeLabels => {
       'receipt': t('Hóa đơn / Tạm tính'),
       'cup_label': 'Tem ly',
       'product_label': t('Tem sản phẩm'),
+      'shipping_label': t('Tem vận đơn'),
       'runner': t('Phiếu chạy món'),
       'test': t('In thử'),
       'cash_drawer': t('Mở két tiền'),
@@ -65,7 +73,8 @@ String _target(Map<String, dynamic> p) {
       // Quản lý/Admin thấy máy in của mọi máy POS → phải biết cái nào của máy nào,
       // nếu không lại rơi vào cảnh thao tác nhầm máy như trước.
       final owner = _s(p['owner_device_name']);
-      if (owner.isNotEmpty && p['attached_to_me'] != true) return '$name · $owner';
+      if (owner.isNotEmpty && p['attached_to_me'] != true)
+        return '$name · $owner';
       return name;
     default:
       return t('Trình duyệt');
@@ -262,6 +271,7 @@ class _PrintersScreenState extends State<PrintersScreen> {
             DropdownMenuItem(value: 'printing', child: Text(t('Đang in'))),
             DropdownMenuItem(value: 'printed', child: Text(t('Đã in'))),
             DropdownMenuItem(value: 'failed', child: Text(t('Lỗi'))),
+            DropdownMenuItem(value: 'expired', child: Text(t('Quá hạn'))),
           ],
           onChanged: (v) => setState(() => _statusFilter = v ?? ''),
         ),
@@ -293,7 +303,7 @@ class _PrintersScreenState extends State<PrintersScreen> {
   Widget _jobRow(Map<String, dynamic> j) {
     final status = _s(j['status']);
     final c = _statusColor(status);
-    final created = DateTime.tryParse(_s(j['created_at']));
+    final created = BusinessDateTime.dateTime(j['created_at']);
     return Padding(
       padding: EdgeInsets.symmetric(vertical: 7),
       child: Row(
@@ -308,7 +318,7 @@ class _PrintersScreenState extends State<PrintersScreen> {
                     style:
                         TextStyle(fontSize: 13, fontWeight: FontWeight.w700)),
                 Text(
-                  '${_printerName(_s(j['printer_id']))}${created != null ? ' · ${Fmt.dmyHm(created)}' : ''}',
+                  '${_printerName(_s(j['printer_id']))}${created != '—' ? ' · $created' : ''}',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(fontSize: 11, color: DanColors.faint),
@@ -352,9 +362,8 @@ class _PrinterCard extends StatelessWidget {
     final online = p['online'] == true;
     final ready = state.isEmpty ? online : state == 'ok';
     final warn = state == 'warn';
-    final dotColor = ready
-        ? DanColors.done
-        : (warn ? DanColors.doing : DanColors.late);
+    final dotColor =
+        ready ? DanColors.done : (warn ? DanColors.doing : DanColors.late);
     final textColor = ready
         ? const Color(0xFF047857)
         : (warn ? DanColors.doing : DanColors.late);

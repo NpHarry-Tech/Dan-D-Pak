@@ -187,4 +187,3 @@ class _BookPageImage extends StatelessWidget {
     );
   }
 }
-

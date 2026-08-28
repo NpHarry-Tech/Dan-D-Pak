@@ -15,6 +15,7 @@ part 'api/retail_api.dart';
 part 'api/contacts_api.dart';
 part 'api/purchase_api.dart';
 part 'api/expenses_api.dart';
+part 'api/money_api.dart';
 part 'api/online_api.dart';
 part 'api/omni_api.dart';
 part 'api/documents_api.dart';

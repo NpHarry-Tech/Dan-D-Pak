@@ -71,7 +71,7 @@ class _BranchSelectScreenState extends State<BranchSelectScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                t('Nhập địa chỉ API của máy chủ trung tâm:'),
+                t('Nhập địa chỉ Store Edge trong mạng LAN hoặc máy chủ VPS:'),
                 style: TextStyle(color: DanColors.muted, fontSize: 13),
               ),
               SizedBox(height: 12),
@@ -87,7 +87,7 @@ class _BranchSelectScreenState extends State<BranchSelectScreen> {
               ),
               SizedBox(height: 12),
               Text(
-                t('Máy chủ mặc định là https://api.dandpakpos.io.vn.'),
+                t('Khi bật chế độ offline tại cửa hàng, tất cả thiết bị phải trỏ tới cùng Store Edge; không tự chuyển qua VPS để tránh hai nơi cùng nhận đơn.'),
                 style: TextStyle(
                   color: DanColors.muted,
                   fontSize: 11,
@@ -105,10 +105,18 @@ class _BranchSelectScreenState extends State<BranchSelectScreen> {
               onPressed: () async {
                 final url = controller.text.trim();
                 if (url.isNotEmpty) {
-                  await auth.updateServerUrl(url);
-                  if (context.mounted) {
-                    Navigator.pop(context);
-                    _load();
+                  try {
+                    await auth.updateServerUrl(url);
+                    if (context.mounted) {
+                      Navigator.pop(context);
+                      _load();
+                    }
+                  } on FormatException catch (e) {
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text(e.message)),
+                      );
+                    }
                   }
                 }
               },

@@ -17,6 +17,9 @@ import 'utils/translation.dart';
 class ApiException implements Exception {
   final String message;
   final int statusCode; // 0 khi không có phản hồi HTTP (offline/timeout)
+  /// Mã lỗi nghiệp vụ server trả về (vd ORDER_VERSION_CONFLICT/EDIT_LEASE_LOST/
+  /// ORDER_FINALIZED/ORDER_ALREADY_CHECKING_OUT). Rỗng nếu không có.
+  final String code;
   final String method;
   final String endpoint;
   final bool offline;
@@ -26,6 +29,7 @@ class ApiException implements Exception {
   const ApiException(
     this.message, {
     this.statusCode = 0,
+    this.code = '',
     this.method = '',
     this.endpoint = '',
     this.offline = false,
@@ -111,6 +115,13 @@ class DanDpakApiClient {
   static String normalizeBaseUrl(String url) {
     var trimmed = url.trim();
     if (trimmed.isEmpty) return defaultBaseUrl;
+
+    final scheme =
+        RegExp(r'^https?://', caseSensitive: false).firstMatch(trimmed);
+    if (scheme != null) {
+      trimmed =
+          '${scheme.group(0)!.toLowerCase()}${trimmed.substring(scheme.end)}';
+    }
 
     // Remove trailing slash
     trimmed = trimmed.replaceFirst(RegExp(r'/$'), '');
@@ -487,13 +498,21 @@ class DanDpakApiClient {
 
     final serverMessage =
         decoded is Map ? decoded['error'] ?? decoded['message'] : null;
+    // Mã lỗi nghiệp vụ: server gửi ở decoded['code'] hoặc decoded['error']['code'].
+    String serverCode = '';
+    if (decoded is Map) {
+      final err = decoded['error'];
+      serverCode = (decoded['code'] ?? (err is Map ? err['code'] : null) ?? '')
+          .toString();
+    }
     // HTTP lỗi = server ĐÃ trả lời → ApiException nghiệp vụ có statusCode,
-    // KHÔNG phải offline. UI hiện message; ai cần status thì đọc được.
+    // KHÔNG phải offline. UI hiện message; ai cần status/code thì đọc được.
     throw ApiException(
       serverMessage?.toString() ??
           errorMessage ??
           'Request failed (HTTP ${response.statusCode})',
       statusCode: response.statusCode,
+      code: serverCode,
       method: method,
       endpoint: path,
     );

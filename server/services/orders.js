@@ -3,20 +3,22 @@
 import { db, uid, now, audit } from '../db.js';
 import { parseJson } from '../core/util.js';
 import { emit } from '../realtime.js';
-import { printKitchenTickets, printRunnerSlip, printCupLabels } from './printing.js';
+import { printKitchenTickets, printKitchenUpdate, printRunnerSlip, printCupLabels } from './printing.js';
 import { getMenuItemForOrder } from './catalog.js';
 import { getOperationsConfig } from './settings.js';
 import { applyChannelPrice } from './inventory.js';
 import { getActiveShift } from './shifts.js';
 import { archiveOrder } from './archive.js';
 import { orderVatTotals, salePrice } from './tax.js';
+import { sendPushForCategory } from './push.js';
+import { businessDayBoundsUtc, businessParts } from '../core/businessClock.js';
 
 // Số Bill nội bộ: Dan{ddMMyy}{seq} — seq là số thứ tự đơn trong NGÀY (reset mỗi
 // ngày vận hành: ca sáng → ca tối đều trong 1 ngày dương lịch). VD Dan210626001.
 function todayDdMMyy() {
-  const d = new Date();
+  const d = businessParts();
   const pad = (x) => String(x).padStart(2, '0');
-  return pad(d.getDate()) + pad(d.getMonth() + 1) + String(d.getFullYear()).slice(-2);
+  return pad(d.day) + pad(d.month) + String(d.year).slice(-2);
 }
 function billNoForSeq(seq) {
   return `Dan${todayDdMMyy()}${String(seq).padStart(3, '0')}`;
@@ -24,11 +26,9 @@ function billNoForSeq(seq) {
 // seq kế tiếp = MAX(seq đã có TRONG NGÀY) + 1. Tách đúng phần seq SAU tiền tố ngày
 // (Dan{ddMMyy}) — KHÔNG dùng \d+$ vì sẽ nuốt luôn 6 chữ số ngày. Dùng MAX (không COUNT)
 // để chịu được khoảng trống do xóa, và để retry-chống-trùng tăng dần khi đụng UNIQUE.
-function nextBillSeq(branch_id = 'sala') {
+function nextPaySeq(branch_id = 'sala') {
   const ddMMyy = todayDdMMyy();
-  const d = new Date();
-  const start = new Date(d); start.setHours(0, 0, 0, 0);
-  const end = new Date(d); end.setHours(24, 0, 0, 0);
+  const { start, end } = businessDayBoundsUtc();
   const rows = db.prepare(`SELECT bill_no FROM orders WHERE branch_id=? AND bill_no LIKE ? AND created_at>=? AND created_at<?`)
     .all(branch_id, `Dan${ddMMyy}%`, start.toISOString(), end.toISOString());
   const re = new RegExp(`^Dan${ddMMyy}(\\d+)$`);
@@ -41,20 +41,74 @@ function nextBillSeq(branch_id = 'sala') {
 }
 // Tạo 1 order mở với bill_no duy nhất. Chịu được race/đa-server: nếu chỉ mục UNIQUE
 // (branch_id,bill_no) bị đụng (server khác vừa chèn cùng seq), tăng seq và thử lại.
+// ĐƠN MỞ RA CHƯA CÓ SỐ HOÁ ĐƠN.
+//
+// Chỉ cấp `pay_ref` — mã để khách chuyển khoản và để webhook khớp tiền về.
+// `bill_no` để TRỐNG, chỉ điền khi thanh toán xong (xem capSoBillKhiThanhToan).
+// Nhờ vậy đơn huỷ chưa trả tiền không tiêu số hoá đơn nào.
+// seq cho PAY_REF = MAX seq trong PAY_REF hôm nay + 1. PHẢI đếm theo pay_ref (mã
+// cấp lúc MỞ đơn), KHÔNG theo bill_no (chỉ cấp lúc THANH TOÁN): nhiều đơn treo
+// (mở, chưa trả) sẽ giữ pay_ref nhưng chưa có bill_no, nên đếm bill_no cho ra seq
+// thấp → trùng pay_ref của đơn treo → UNIQUE constraint failed (sự cố 07/08/2026).
+function nextPayRefSeq(branch_id = 'sala') {
+  const ddMMyy = todayDdMMyy();
+  const { start, end } = businessDayBoundsUtc();
+  const rows = db.prepare(`SELECT pay_ref FROM orders WHERE branch_id=? AND pay_ref LIKE ? AND created_at>=? AND created_at<?`)
+    .all(branch_id, `Dan${ddMMyy}%`, start.toISOString(), end.toISOString());
+  const re = new RegExp(`^Dan${ddMMyy}(\\d+)$`);
+  let max = 0;
+  for (const r of rows) {
+    const m = re.exec(r.pay_ref || '');
+    if (m) { const n = parseInt(m[1], 10); if (n > max) max = n; }
+  }
+  return max + 1;
+}
+
 function insertOpenOrder({ branch_id = 'sala', table_id = null, channel = 'dine_in' }) {
   const id = uid('o_');
-  let seq = nextBillSeq(branch_id);
-  const ins = db.prepare(`INSERT INTO orders (id,branch_id,table_id,channel,status,bill_no,created_at) VALUES (?,?,?,?,'open',?,?)`);
+  let seq = nextPayRefSeq(branch_id);
+  const ins = db.prepare(`INSERT INTO orders (id,branch_id,table_id,channel,status,pay_ref,created_at) VALUES (?,?,?,?,'open',?,?)`);
   for (let attempt = 0; ; attempt++) {
     try {
       ins.run(id, branch_id, table_id, channel, billNoForSeq(seq), now());
       break;
     } catch (e) {
-      if (attempt < 10 && /unique|constraint/i.test(String(e?.message))) { seq++; continue; }
+      if (attempt < 500 && /unique|constraint/i.test(String(e?.message))) { seq++; continue; }
       throw e;
     }
   }
   return db.prepare(`SELECT * FROM orders WHERE id=?`).get(id);
+}
+
+/**
+ * CẤP SỐ HOÁ ĐƠN — chỉ gọi khi đơn ĐÃ THANH TOÁN XONG.
+ *
+ * Số hoá đơn là con số đi vào sổ sách, nên chỉ được tiêu khi thật sự phát sinh
+ * doanh thu. Cấp từ lúc mở đơn (cách cũ) thì mọi đơn huỷ đều chiếm một số và
+ * dãy số thủng lỗ chỗ — cơ quan thuế hỏi thì không giải thích được.
+ *
+ * Gọi lại nhiều lần trên cùng một đơn là vô hại: đã có số thì giữ nguyên.
+ */
+export function capSoBillKhiThanhToan(order_id, branch_id = 'sala') {
+  const o = db.prepare(`SELECT id, branch_id, bill_no FROM orders WHERE id=?`).get(order_id);
+  if (!o) return null;
+  if (o.bill_no) return o.bill_no; // đã có số rồi (VD thanh toán nhiều lần)
+
+  const br = o.branch_id || branch_id;
+  let seq = nextPaySeq(br);
+  const upd = db.prepare(`UPDATE orders SET bill_no=? WHERE id=? AND (bill_no IS NULL OR bill_no='')`);
+  for (let lan = 0; ; lan++) {
+    const so = billNoForSeq(seq);
+    try {
+      upd.run(so, order_id);
+      const lai = db.prepare(`SELECT bill_no FROM orders WHERE id=?`).get(order_id);
+      return lai?.bill_no || so;
+    } catch (e) {
+      // Máy khác vừa chiếm đúng số này (chỉ mục UNIQUE) → lấy số kế tiếp.
+      if (lan < 10 && /unique|constraint/i.test(String(e?.message))) { seq++; continue; }
+      throw e;
+    }
+  }
 }
 
 export function getOpenOrderForTable(table_id, branch_id = 'sala') {
@@ -64,7 +118,8 @@ export function getOpenOrderForTable(table_id, branch_id = 'sala') {
 }
 
 export function recomputeTotals(order_id) {
-  const items = db.prepare(`SELECT qty,unit_price,vat_rate,status FROM order_items WHERE order_id=?`).all(order_id);
+  const items = db.prepare(`SELECT qty,unit_price,vat_rate,status,promo_json FROM order_items WHERE order_id=?`).all(order_id)
+    .map(item => ({ ...item, promo: parseJson(item.promo_json, null) }));
   const order = db.prepare(`SELECT discount FROM orders WHERE id=?`).get(order_id);
   const discount = order?.discount || 0;
   const totals = orderVatTotals(items, discount);
@@ -194,8 +249,8 @@ export function createOrUpdateOrder(options) {
     }
 
     const insItem = db.prepare(`INSERT INTO order_items
-      (id,order_id,menu_item_id,sku_id,name,emoji,qty,unit_price,vat_rate,station,sla_minutes,note,mods_json,status,lot_id,promo_json,created_at)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
+      (id,order_id,menu_item_id,sku_id,item_code,item_barcode,unit_snapshot,name,emoji,qty,unit_price,vat_rate,station,sla_minutes,note,mods_json,status,lot_id,promo_json,orig_price,created_at)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
 
     const created = [];
     for (const line of items) {
@@ -204,6 +259,8 @@ export function createOrUpdateOrder(options) {
       if (line.sku_id) {
         const sku = db.prepare(`SELECT * FROM skus WHERE id=? AND branch_id=? AND active=1`).get(line.sku_id, branch_id);
         if (!sku) throw new Error('SKU không tồn tại: ' + line.sku_id);
+        // Production invariant: không bán âm kho ở bất kỳ kênh nào. Tầng kho
+        // vẫn kiểm tra lại trong transaction payment để chống concurrent sale.
         if (sku.stock < qty) throw new Error(`Hết hàng: ${sku.name} (còn ${sku.stock})`);
         const lotId = line.lot_id || null;
         validateSkuLot(sku, qty, lotId, branch_id);
@@ -211,16 +268,34 @@ export function createOrUpdateOrder(options) {
         // retail thêm trong đơn F&B (order bàn) dùng cấu hình 'fnb_retail'.
         const priced = applyChannelPrice(
           sku, branch_id, order.channel === 'retail' ? 'retail' : 'fnb_retail');
-        if (Number(priced.price) <= 0) throw new Error(`SKU chưa có giá bán: ${sku.name}`);
-        insItem.run(id, order.id, null, sku.id, sku.name, sku.emoji, qty, priced.price, Number(sku.vat) || 0, 'retail', 0, null, '[]',
-          needsStaffConfirm ? 'pending_confirm' : 'served', lotId, line.promo ? JSON.stringify(line.promo) : null, now());
+        const serverPrice = Number(priced.price) || 0;
+        // CHỈNH GIÁ DÒNG: dùng line.price nếu client gửi (route đã xác thực PIN
+        // Quản lý). orig_price = giá niêm yết để bill in "gốc → sau đổi". Cho phép
+        // 0đ (hàng tặng/khuyến mãi 100%) — bỏ chặn "chưa có giá" khi có chỉnh giá.
+        const hasOverride = line.price !== undefined && line.price !== null;
+        const unitPrice = hasOverride ? Math.max(0, Math.round(Number(line.price))) : serverPrice;
+        const origPrice = (line.orig_price !== undefined && line.orig_price !== null)
+          ? Math.round(Number(line.orig_price)) : serverPrice;
+        if (!hasOverride && serverPrice <= 0) throw new Error(`SKU chưa có giá bán: ${sku.name}`);
+        const lineNote = String(line.note || '').trim().slice(0, 200) || null;
+        insItem.run(id, order.id, null, sku.id, sku.code || null, sku.barcode || null, sku.unit || 'cái', sku.name, sku.emoji, qty, unitPrice, Number(sku.vat) || 0, 'retail', 0, lineNote, '[]',
+          needsStaffConfirm ? 'pending_confirm' : 'served', lotId, line.promo ? JSON.stringify(line.promo) : null, origPrice, now());
       } else {
         const mi = getMenuItemForOrder(line.menu_item_id, branch_id);
         const mods = resolveOrderMods(line.mods, mi);
         const modSum = mods.reduce((s, m) => s + m.price, 0);
-        const unitPrice = salePrice(mi.price, mi.vat_rate, mi.price_includes_vat) + modSum;
-        insItem.run(id, order.id, mi.id, null, mi.name, mi.emoji, qty, unitPrice, Number(mi.vat_rate) || 0, mi.station, mi.sla_minutes,
-          line.note || null, JSON.stringify(mods), needsStaffConfirm ? 'pending_confirm' : 'new', null, null, now());
+        const listedPrice = salePrice(mi.price, mi.vat_rate, mi.price_includes_vat) + modSum;
+        // CHỈNH GIÁ DÒNG cho món F&B — ĐỒNG BỘ với nhánh SKU/Retail ở trên. Dùng
+        // line.price nếu client gửi (route đã xác thực PIN Quản lý). orig_price =
+        // giá niêm yết (đã gồm modifier) để bill in "gốc → sau đổi". KHÔNG gửi
+        // override thì y hệt hành vi cũ (unit = orig = giá niêm yết).
+        const hasOverride = line.price !== undefined && line.price !== null;
+        const unitPrice = hasOverride ? Math.max(0, Math.round(Number(line.price))) : listedPrice;
+        const origPrice = (line.orig_price !== undefined && line.orig_price !== null)
+          ? Math.round(Number(line.orig_price)) : listedPrice;
+        const lineNote = String(line.note || '').trim().slice(0, 200) || null;
+        insItem.run(id, order.id, mi.id, null, mi.code || null, mi.barcode || null, mi.unit || 'phần', mi.name, mi.emoji, qty, unitPrice, Number(mi.vat_rate) || 0, mi.station, mi.sla_minutes,
+          lineNote, JSON.stringify(mods), needsStaffConfirm ? 'pending_confirm' : 'new', null, null, origPrice, now());
       }
       created.push(db.prepare(`SELECT * FROM order_items WHERE id=?`).get(id));
     }
@@ -238,7 +313,17 @@ export function createOrUpdateOrder(options) {
     if (printable.length) printKitchenTickets(full, printable, branch_id, actor);
     printCupLabels(full, created, branch_id);
     emit('order:new', { order: full, newItems: created, isNew, pendingConfirm: needsStaffConfirm }, branch_id);
-    if (needsStaffConfirm) emit('order:pending', { order: full, newItems: created }, branch_id);
+    if (needsStaffConfirm) {
+      emit('order:pending', { order: full, newItems: created }, branch_id);
+      // A2: PUSH FCM để nhân viên nhận thông báo cả khi ĐÃ TẮT app/khoá máy
+      // (socket/AppNotifier chỉ chạy khi app đang mở). Lọc THEO ĐỊNH TUYẾN trong
+      // Cài đặt (category 'fnb_order'). Best-effort, không chặn.
+      sendPushForCategory(branch_id, 'fnb_order', {
+        title: 'Khách tự gọi món',
+        body: `Bàn ${full.table_code || '—'} có món chờ xác nhận`,
+        data: { type: 'order_pending', order_id: full.id },
+      }).catch(() => {});
+    }
     if (printable.length) emit('kds:refresh', { station: 'all' }, branch_id);
     emit('stats:dirty', {}, branch_id);
 
@@ -263,17 +348,22 @@ export function getOrder(order_id) {
   // hoặc skus — đơn 30 món = 30 query phụ, getOrder được gọi ở mọi lần đọc/realtime).
   const miIds = [...new Set(rawItems.filter(i => i.menu_item_id).map(i => i.menu_item_id))];
   const skuIds = [...new Set(rawItems.filter(i => !i.menu_item_id && i.sku_id).map(i => i.sku_id))];
-  const miImg = new Map();
+  const miImg = new Map(), miUnit = new Map();
   if (miIds.length) {
-    for (const r of db.prepare(`SELECT id,image FROM menu_items WHERE branch_id=? AND id IN (${miIds.map(() => '?').join(',')})`).all(order.branch_id, ...miIds)) miImg.set(r.id, r.image || null);
+    for (const r of db.prepare(`SELECT id,image FROM menu_items WHERE branch_id=? AND id IN (${miIds.map(() => '?').join(',')})`).all(order.branch_id, ...miIds)) {
+      miImg.set(r.id, r.image || null); miUnit.set(r.id, 'phần');
+    }
   }
-  const skuImg = new Map();
+  const skuImg = new Map(), skuUnit = new Map();
   if (skuIds.length) {
-    for (const r of db.prepare(`SELECT id,image FROM skus WHERE id IN (${skuIds.map(() => '?').join(',')})`).all(...skuIds)) skuImg.set(r.id, r.image || null);
+    for (const r of db.prepare(`SELECT id,image,unit FROM skus WHERE id IN (${skuIds.map(() => '?').join(',')})`).all(...skuIds)) {
+      skuImg.set(r.id, r.image || null); skuUnit.set(r.id, r.unit || 'cái');
+    }
   }
   order.items = rawItems.map(it => ({
     ...it,
     image: it.menu_item_id ? (miImg.get(it.menu_item_id) || null) : (it.sku_id ? (skuImg.get(it.sku_id) || null) : null),
+    unit: it.unit_snapshot || (it.menu_item_id ? (miUnit.get(it.menu_item_id) || 'phần') : (it.sku_id ? (skuUnit.get(it.sku_id) || 'cái') : '')),
     mods: parseJson(it.mods_json, []),
     promo: parseJson(it.promo_json, null),
   }));
@@ -346,6 +436,23 @@ export function confirmPendingItems(order_id, item_ids = [], branch_id = 'sala',
   return full;
 }
 
+// SỬA GHI CHÚ MÓN ĐÃ GỬI (persisted). Ghi chú không ảnh hưởng tiền nên không cần
+// PIN; chỉ đổi cột note rồi phát realtime để KDS/bill thấy ngay. (Chỉnh GIÁ món đã
+// gửi thì phức tạp hơn — hủy rồi thêm lại; ở đây chỉ cho sửa ghi chú.)
+export function updateItemNote(item_id, note, branch_id = 'sala', actor = 'system') {
+  const item = db.prepare(
+    `SELECT oi.* FROM order_items oi JOIN orders o ON o.id=oi.order_id
+     WHERE oi.id=? AND o.branch_id=?`).get(item_id, branch_id);
+  if (!item) throw new Error('Món không tồn tại');
+  const clean = String(note || '').trim().slice(0, 200) || null;
+  db.prepare(`UPDATE order_items SET note=? WHERE id=?`).run(clean, item_id);
+  audit('order.item_note', { order: item.order_id, item: item_id }, branch_id, actor);
+  const full = getOrder(item.order_id);
+  archiveOrder(full);
+  emit('order:updated', full, branch_id);
+  return full;
+}
+
 export function rejectPendingItems(order_id, item_ids = [], reason = '', branch_id = 'sala', actor = 'system') {
   const order = db.prepare(`SELECT * FROM orders WHERE id=? AND branch_id=? AND status IN ('open','partially_paid')`).get(order_id, branch_id);
   if (!order) throw new Error('Bill không tồn tại hoặc đã đóng');
@@ -384,7 +491,9 @@ export function rejectPendingItems(order_id, item_ids = [], reason = '', branch_
  *
  *  Xoá ở đây = huỷ toàn bộ món + đưa bill về 'void' + trả bàn về trống. KHÔNG
  *  xoá dòng khỏi DB: bill vẫn nằm trong lịch sử và nhật ký để đối soát về sau. */
-export function resetTable(table_id, branch_id = 'sala', actor = 'system', reason = '') {
+export function resetTable(table_id, branch_id = 'sala', actor = 'system', reason = '', {
+  refundPaid = false,
+} = {}) {
   const table = db.prepare(`SELECT * FROM tables WHERE id=? AND branch_id=?`).get(table_id, branch_id);
   if (!table) throw new Error('Bàn không tồn tại');
 
@@ -392,20 +501,49 @@ export function resetTable(table_id, branch_id = 'sala', actor = 'system', reaso
     `SELECT * FROM orders WHERE table_id=? AND branch_id=? AND status IN ('open','partially_paid')`,
   ).all(table_id, branch_id);
 
+  // Tiền đã ghi nhận trên từng bill của bàn.
+  const daThu = new Map();
   for (const o of orders) {
-    const paid = db.prepare(`SELECT COALESCE(SUM(total),0) n FROM payments WHERE order_id=?`).get(o.id)?.n || 0;
-    if (paid > 0) {
-      throw Object.assign(
-        new Error(`Bill ${o.bill_no || o.id} đã ghi nhận ${Math.round(paid).toLocaleString('vi-VN')}đ. `
-          + 'Dùng chức năng Hoàn tiền / Đổi trả để còn chứng từ, không xoá trắng bàn.'),
-        { status: 409 });
+    daThu.set(o.id, db.prepare(`SELECT COALESCE(SUM(total),0) n FROM payments WHERE order_id=?`).get(o.id)?.n || 0);
+  }
+
+  if (!refundPaid) {
+    for (const o of orders) {
+      const paid = daThu.get(o.id) || 0;
+      if (paid > 0) {
+        throw Object.assign(
+          new Error(`Bill ${o.bill_no || o.id} đã ghi nhận ${Math.round(paid).toLocaleString('vi-VN')}đ. `
+            + 'Dùng chức năng Hoàn tiền / Đổi trả để còn chứng từ, không xoá trắng bàn.'),
+          { status: 409, code: 'PAID_NEEDS_REFUND', order_id: o.id, paid });
+      }
     }
   }
 
   db.prepare('BEGIN IMMEDIATE').run();
   try {
     let items = 0;
+    let refunded = 0;
     for (const o of orders) {
+      // HOÀN TIỀN CÓ CHỨNG TỪ: ghi một khoản thu ÂM đối ứng đúng số đã nhận,
+      // thay vì xoá dấu vết khoản tiền đó.
+      //
+      // Bàn từng kẹt cứng ở đây: bill nhận 30.000đ rồi mất hết món (khách bỏ
+      // về, món bị huỷ, đồng bộ lỗi…). Không thanh toán tiếp được vì không còn
+      // gì để bán, không hoàn trả được vì đường hoàn trả đòi đơn đã 'paid', mà
+      // dọn bàn thì bị chặn vì đã có tiền. Bàn nằm chết, kể cả admin.
+      //
+      // Khoản âm này khiến doanh thu của bill về 0 nhưng CẢ HAI dòng tiền đều
+      // còn trong sổ để đối soát — đúng tinh thần "để còn chứng từ".
+      const paid = daThu.get(o.id) || 0;
+      if (paid > 0) {
+        const pid = uid('pay_');
+        db.prepare(`INSERT INTO payments (id,order_id,shift_id,cashier,total,created_at) VALUES (?,?,?,?,?,?)`)
+          .run(pid, o.id, getActiveShift(branch_id)?.id || null, actor, -paid, now());
+        db.prepare(`INSERT INTO payment_lines (id,payment_id,method,amount,tendered_amount,reference) VALUES (?,?,?,?,?,?)`)
+          .run(uid('pl_'), pid, 'cash', -paid, -paid,
+            `refund:reset_table:${String(reason || '').slice(0, 80)}`);
+        refunded += paid;
+      }
       items += db.prepare(`UPDATE order_items SET status='cancelled' WHERE order_id=? AND status!='cancelled'`)
         .run(o.id).changes || 0;
       db.prepare(`UPDATE orders SET status='void', subtotal=0, goods_amount=0, vat_amount=0, total=0, discount=0 WHERE id=?`)
@@ -455,6 +593,11 @@ export function moveTable(from_table_id, to_table_id, branch_id = 'sala', actor 
   setTableByOpenOrders(from_table_id, branch_id);
   setTableByOpenOrders(to_table_id, branch_id);
   audit('table.move', { order: order.id, from: from_table_id, to: to_table_id, from_code: source.code, to_code: target.code }, branch_id, actor);
+  printKitchenUpdate(order, items, branch_id, actor, 'move_table', {
+    // Mẫu phiếu đã có tiền tố "BÀN ", vì vậy giá trị này tạo đúng:
+    // "BÀN A08 => BÀN B03" (không bị thiếu chữ BÀN ở bàn đích).
+    tableDisplay: `${source.code} => BÀN ${target.code}`,
+  });
   emit('order:updated', getOrder(order.id), branch_id);
   emit('kds:refresh', {}, branch_id);
   archiveOrder(getOrder(order.id));
@@ -640,10 +783,17 @@ export function setItemStatus(item_id, status, branch_id = 'sala', actor = 'syst
 }
 
 export function cancelItem(item_id, reason, branch_id = 'sala', actor = 'system') {
+  const cancelledItem = db.prepare(`SELECT * FROM order_items WHERE id=?`).get(item_id);
+  if (!cancelledItem) throw new Error('Item không tồn tại');
+  const beforeCancel = getOrder(cancelledItem.order_id);
   setItemStatus(item_id, 'cancelled', branch_id, actor);
   const item = db.prepare(`SELECT order_id FROM order_items WHERE id=?`).get(item_id);
   recomputeTotals(item.order_id);
   audit('item.cancel', { item: item_id, reason }, branch_id, actor);
+  if (cancelledItem.station !== 'retail') {
+    printKitchenUpdate(beforeCancel, [{ ...cancelledItem, cancelled: true }], branch_id, actor,
+      'cancel_item');
+  }
 
   // Hủy DÒNG ACTIVE CUỐI CÙNG của đơn → đóng đơn rỗng và GIẢI PHÓNG BÀN (giống
   // rejectPendingItems ở trên). Thiếu bước này thì đơn vẫn 'open' và tables.status
@@ -670,6 +820,13 @@ export function createStaffCall(table_id, reason, branch_id = 'sala') {
     .run(id, branch_id, table_id, reason, now());
   audit('staff.call', { table: table_id, reason }, branch_id);
   emit('staff:call', { id, table_id, reason }, branch_id);
+  // A2: PUSH FCM khách gọi nhân viên — nhận cả khi tắt app. Lọc theo định tuyến
+  // (category 'fnb_order' như banner in-app). Best-effort.
+  sendPushForCategory(branch_id, 'fnb_order', {
+    title: 'Khách gọi nhân viên',
+    body: String(reason || '').trim() || 'Có khách cần hỗ trợ',
+    data: { type: 'staff_call', table_id: String(table_id || '') },
+  }).catch(() => {});
   emit('table:updated', getTableState(table_id), branch_id);
   return { id };
 }
@@ -684,18 +841,23 @@ export function listStaffCalls(branch_id = 'sala') {
     JOIN tables t ON t.id=sc.table_id WHERE sc.branch_id=? AND sc.status='open' ORDER BY sc.created_at`).all(branch_id);
 }
 
-export function createTable({ branch_id = 'sala', zone, code, seats = 4 }) {
-  if (!zone || !code) throw new Error('Thiếu khu vực hoặc số bàn');
-  const cleanZone = String(zone).trim();
-  const cleanCode = String(code).trim();
-  if (!cleanZone || !cleanCode) throw new Error('Thiếu khu vực hoặc số bàn');
+export function createTable({ branch_id = 'sala', zone, zone_id = null, code, seats = 4,
+    pos_x = -1, pos_y = -1, grid_w = 1, grid_h = 1 }) {
+  const cleanCode = String(code || '').trim();
+  if (!cleanCode) throw new Error('Thiếu số bàn');
+  // Khu vực nhận theo zone_id (mô hình mới) hoặc tên zone (tương thích cũ). Tên
+  // hiển thị `zone` LẤY TỪ bảng zones để đồng bộ khi đổi tên khu vực.
+  const z = resolveZone(branch_id, { zone_id, zone });
+  const cleanZone = z ? z.name : String(zone || '').trim();
 
   const existing = db.prepare(`SELECT 1 FROM tables WHERE branch_id=? AND code=?`).get(branch_id, cleanCode);
   if (existing) throw new Error(`Số bàn "${cleanCode}" đã tồn tại`);
 
   const id = uid('t_');
-  db.prepare(`INSERT INTO tables (id, branch_id, zone, code, seats, status) VALUES (?, ?, ?, ?, ?, 'free')`)
-    .run(id, branch_id, cleanZone, cleanCode, parseInt(seats) || 4);
+  db.prepare(`INSERT INTO tables (id, branch_id, zone, zone_id, code, seats, status, pos_x, pos_y, grid_w, grid_h)
+      VALUES (?, ?, ?, ?, ?, ?, 'free', ?, ?, ?, ?)`)
+    .run(id, branch_id, cleanZone, z ? z.id : null, cleanCode, parseInt(seats) || 4,
+      _num(pos_x, -1), _num(pos_y, -1), Math.max(1, _int(grid_w, 1)), Math.max(1, _int(grid_h, 1)));
 
   audit('table.create', { id, zone: cleanZone, code: cleanCode, seats }, branch_id);
   const state = getTableState(id);
@@ -704,29 +866,131 @@ export function createTable({ branch_id = 'sala', zone, code, seats = 4 }) {
   return state;
 }
 
-export function updateTable(id, { zone, code, seats }, branch_id = 'sala') {
+function _int(v, d = 0) { const n = parseInt(v); return Number.isFinite(n) ? n : d; }
+// Vị trí bàn trên sơ đồ là SỐ THỰC (đặt tự do, không snap ô) — đơn vị = ô lưới,
+// vd pos_x=3.5 nằm giữa cột 3 và 4. Lưu float để kéo lệch tuỳ ý.
+function _num(v, d = 0) { const n = Number(v); return Number.isFinite(n) ? n : d; }
+
+// Khu vực theo zone_id (ưu tiên) hoặc theo TÊN (tạo mới nếu chưa có, cho tương
+// thích luồng cũ "nhập tên khu vực"). Trả { id, name } hoặc null.
+function resolveZone(branch_id, { zone_id = null, zone = null } = {}) {
+  if (zone_id) {
+    const z = db.prepare(`SELECT id,name FROM zones WHERE id=? AND branch_id=?`).get(zone_id, branch_id);
+    if (z) return z;
+  }
+  const name = String(zone || '').trim();
+  if (!name) return null;
+  const found = db.prepare(`SELECT id,name FROM zones WHERE branch_id=? AND name=?`).get(branch_id, name);
+  if (found) return found;
+  return createZone({ branch_id, name });
+}
+
+export function updateTable(id, { zone, zone_id, code, seats, pos_x, pos_y, grid_w, grid_h } = {}, branch_id = 'sala') {
   const table = db.prepare(`SELECT * FROM tables WHERE id=? AND branch_id=?`).get(id, branch_id);
   if (!table) throw new Error('Bàn không tồn tại');
 
-  const cleanZone = zone !== undefined ? String(zone).trim() : table.zone;
+  const z = (zone_id !== undefined || zone !== undefined)
+    ? resolveZone(branch_id, { zone_id, zone }) : null;
+  const cleanZone = z ? z.name : table.zone;
+  const zoneId = z ? z.id : table.zone_id;
   const cleanCode = code !== undefined ? String(code).trim() : table.code;
   const numSeats = seats !== undefined ? parseInt(seats) || 4 : table.seats;
 
-  if (!cleanZone || !cleanCode) throw new Error('Thiếu khu vực hoặc số bàn');
+  if (!cleanCode) throw new Error('Thiếu số bàn');
 
   if (cleanCode !== table.code) {
     const existing = db.prepare(`SELECT 1 FROM tables WHERE branch_id=? AND code=? AND id!=?`).get(branch_id, cleanCode, id);
     if (existing) throw new Error(`Số bàn "${cleanCode}" đã tồn tại`);
   }
 
-  db.prepare(`UPDATE tables SET zone=?, code=?, seats=? WHERE id=?`)
-    .run(cleanZone, cleanCode, numSeats, id);
+  db.prepare(`UPDATE tables SET zone=?, zone_id=?, code=?, seats=?, pos_x=?, pos_y=?, grid_w=?, grid_h=? WHERE id=?`)
+    .run(cleanZone, zoneId, cleanCode, numSeats,
+      pos_x !== undefined ? _num(pos_x, -1) : table.pos_x,
+      pos_y !== undefined ? _num(pos_y, -1) : table.pos_y,
+      grid_w !== undefined ? Math.max(1, _int(grid_w, 1)) : table.grid_w,
+      grid_h !== undefined ? Math.max(1, _int(grid_h, 1)) : table.grid_h, id);
 
   audit('table.update', { id, zone: cleanZone, code: cleanCode, seats: numSeats }, branch_id);
   const state = getTableState(id);
   emit('table:updated', state, branch_id);
   emit('stats:dirty', {}, branch_id);
   return state;
+}
+
+// ── KHU VỰC (zones) — thực thể riêng: tạo xong dù KHÔNG có bàn vẫn hiện ─────────
+export function listZones(branch_id = 'sala') {
+  return db.prepare(`SELECT id,name,sort FROM zones WHERE branch_id=? ORDER BY sort,name`).all(branch_id);
+}
+
+export function createZone({ branch_id = 'sala', name }) {
+  const clean = String(name || '').trim();
+  if (!clean) throw new Error('Thiếu tên khu vực');
+  const dup = db.prepare(`SELECT id,name FROM zones WHERE branch_id=? AND name=?`).get(branch_id, clean);
+  if (dup) return dup;
+  const maxSort = db.prepare(`SELECT COALESCE(MAX(sort),-1) m FROM zones WHERE branch_id=?`).get(branch_id).m;
+  const id = uid('zone_');
+  db.prepare(`INSERT INTO zones (id,branch_id,name,sort) VALUES (?,?,?,?)`).run(id, branch_id, clean, maxSort + 1);
+  audit('zone.create', { id, name: clean }, branch_id);
+  emit('table:updated', { zones_changed: true }, branch_id);
+  return { id, name: clean };
+}
+
+export function updateZone(id, { name, sort } = {}, branch_id = 'sala') {
+  const z = db.prepare(`SELECT * FROM zones WHERE id=? AND branch_id=?`).get(id, branch_id);
+  if (!z) throw new Error('Khu vực không tồn tại');
+  const clean = name !== undefined ? String(name).trim() : z.name;
+  if (!clean) throw new Error('Thiếu tên khu vực');
+  const newSort = sort !== undefined ? _int(sort, z.sort) : z.sort;
+  db.prepare(`UPDATE zones SET name=?, sort=? WHERE id=?`).run(clean, newSort, id);
+  // Đồng bộ tên khu vực hiển thị trên các bàn thuộc khu vực này.
+  if (clean !== z.name) db.prepare(`UPDATE tables SET zone=? WHERE branch_id=? AND zone_id=?`).run(clean, branch_id, id);
+  audit('zone.update', { id, name: clean }, branch_id);
+  emit('table:updated', { zones_changed: true }, branch_id);
+  return { id, name: clean, sort: newSort };
+}
+
+export function deleteZone(id, branch_id = 'sala') {
+  const z = db.prepare(`SELECT * FROM zones WHERE id=? AND branch_id=?`).get(id, branch_id);
+  if (!z) throw new Error('Khu vực không tồn tại');
+  // Bàn thuộc khu vực bị xoá → trả về "chưa xếp" (bỏ khu vực + vị trí), KHÔNG xoá bàn.
+  db.prepare(`UPDATE tables SET zone_id=NULL, zone='', pos_x=-1, pos_y=-1 WHERE branch_id=? AND zone_id=?`).run(branch_id, id);
+  db.prepare(`DELETE FROM zones WHERE id=?`).run(id);
+  audit('zone.delete', { id, name: z.name }, branch_id);
+  emit('table:updated', { zones_changed: true }, branch_id);
+  return { id, success: true };
+}
+
+// Lưu HÀNG LOẠT vị trí bàn sau khi kéo-thả trên sơ đồ (một transaction).
+export function saveTablePositions(branch_id = 'sala', positions = []) {
+  if (!Array.isArray(positions)) throw new Error('positions phải là mảng');
+  const upd = db.prepare(`UPDATE tables SET pos_x=?, pos_y=?, grid_w=?, grid_h=?, zone_id=?, zone=COALESCE((SELECT name FROM zones WHERE id=?),zone) WHERE id=? AND branch_id=?`);
+  db.prepare('BEGIN IMMEDIATE').run();
+  try {
+    for (const r of positions) {
+      const zid = r.zone_id || null;
+      upd.run(_num(r.pos_x, -1), _num(r.pos_y, -1),
+        Math.max(1, _int(r.grid_w, 1)), Math.max(1, _int(r.grid_h, 1)),
+        zid, zid, String(r.id || ''), branch_id);
+    }
+    db.prepare('COMMIT').run();
+  } catch (err) {
+    db.prepare('ROLLBACK').run();
+    throw err;
+  }
+  emit('table:updated', { layout_changed: true }, branch_id);
+  return { ok: true, count: positions.length };
+}
+
+// SƠ ĐỒ BÀN đầy đủ: danh sách khu vực + bàn (kèm vị trí + trạng thái) cho editor
+// và cho POS/self-order render.
+export function getFloorPlan(branch_id = 'sala') {
+  const zones = listZones(branch_id);
+  const tables = listTables(branch_id).map(t => {
+    const row = db.prepare(`SELECT pos_x,pos_y,grid_w,grid_h,zone_id FROM tables WHERE id=?`).get(t.id) || {};
+    return { ...t, pos_x: row.pos_x ?? -1, pos_y: row.pos_y ?? -1,
+      grid_w: row.grid_w ?? 1, grid_h: row.grid_h ?? 1, zone_id: row.zone_id || null };
+  });
+  return { zones, tables };
 }
 
 export function deleteTable(id, branch_id = 'sala') {

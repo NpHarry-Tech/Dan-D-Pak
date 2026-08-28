@@ -1,10 +1,24 @@
 import { db } from '../../db.js';
+import * as Idem from '../../services/idempotency.js';
 import { emit } from '../../realtime.js';
 import * as Auth from '../../services/auth.js';
 import * as CashDrawer from '../../services/cashDrawer.js';
 import * as Customers from '../../services/customers.js';
 import * as Pay from '../../services/payments.js';
+import * as PaymentIntents from '../../services/paymentIntents.js';
 import * as Shifts from '../../services/shifts.js';
+
+export function paymentWebhookBranch(req, visibleBranch, legacyDefault = false) {
+  if (!req.headers['x-branch-id'] && !req.query?.branch_id) {
+    // Legacy SePay URLs predate branch routing. Authentication still fails
+    // closed against this branch's configured API key.
+    if (legacyDefault) return 'sala';
+    const e = new Error('Webhook thanh toán phải chỉ rõ branch_id để định tuyến đúng chi nhánh.');
+    e.status = 400;
+    throw e;
+  }
+  return visibleBranch(req);
+}
 
 export function registerPaymentRoutes(api, {
   wrap,
@@ -16,14 +30,8 @@ export function registerPaymentRoutes(api, {
   fileCashDrawerReceipt,
   logRequestError,
 }) {
-  const webhookBranch = (req) => {
-    if (!req.headers['x-branch-id'] && !req.query?.branch_id) {
-      const e = new Error('Webhook thanh toán phải chỉ rõ branch_id để định tuyến đúng chi nhánh.');
-      e.status = 400;
-      throw e;
-    }
-    return visibleBranch(req);
-  };
+  const webhookBranch = (req, legacyDefault = false) =>
+    paymentWebhookBranch(req, visibleBranch, legacyDefault);
 
   api.post('/orders/:id/pay', guard('pay'), wrap((req) => {
     const branch_id = branch(req);
@@ -52,22 +60,16 @@ export function registerPaymentRoutes(api, {
       branch_id,
     });
     // Ghi voucher đơn + CTKM từng dòng vào đơn để hóa đơn/lịch sử hiện giống Retail.
-    if (plan.orderVoucher) {
-      db.prepare(`UPDATE orders SET voucher_id=?, voucher_code=? WHERE id=?`)
-        .run(plan.orderVoucher.id || null, plan.orderVoucher.code || null, req.params.id);
-    }
-    for (const promo of plan.appliedSkuPromos || []) {
-      const line = plan.lines[promo.line_index];
-      if (!line?.item_id) continue;
-      db.prepare(`UPDATE order_items SET promo_json=? WHERE id=?`)
-        .run(JSON.stringify(promo), line.item_id);
-    }
+    const transactionalPromotions = (plan.appliedSkuPromos || []).map((promo) => ({
+      ...promo,
+      item_id: plan.lines[promo.line_index]?.item_id || null,
+    }));
     const manual = applyManualConfirm(req, req.body.lines, branch_id);
     const receipt = Pay.payOrder(req.params.id, req.body.lines, {
       discount: plan.discount,
       discount_breakdown: plan.breakdown,
       voucher: plan.orderVoucher,
-      promotions: plan.appliedSkuPromos,
+      promotions: transactionalPromotions,
       customer: req.body.customer || null,
       invoice_customer: req.body.invoice_customer || null,
       note: req.body.note || '',
@@ -77,6 +79,9 @@ export function registerPaymentRoutes(api, {
       // không truyền, nên tuyến in luôn phân giải giống nhau cho mọi máy POS
       // (thu ngân POS 2 phải chạy qua POS 1 lấy bill).
       device_id: String(req.headers['x-device-id'] || req.body.device_id || '').trim(),
+      payment_intent_id: req.body.payment_intent_id || null,
+      confirmation_source: req.body.payment_intent_id ? 'MANUAL' : null,
+      confirmed_by: req.user?.username || req.user?.name || null,
     }, branch_id);
     if (manual) for (const tx of manual.txIds) Pay.markBankTxClaimed(tx, req.params.id, manual.approver.username, branch_id);
     if (receipt.fully_settled !== false && (req.body.customer?.id || req.body.customer?.phone)) {
@@ -88,7 +93,7 @@ export function registerPaymentRoutes(api, {
   }));
 
   api.post('/vietqr/webhook', wrap((req) => Pay.handleVietqrWebhook(req.body || {}, req.headers, webhookBranch(req))));
-  api.post('/sepay/webhook', wrap((req) => Pay.handleSepayWebhook(req.body || {}, req.headers, webhookBranch(req))));
+  api.post('/sepay/webhook', wrap((req) => Pay.handleSepayWebhook(req.body || {}, req.headers, webhookBranch(req, true))));
   api.post('/casso/webhook', wrap((req) => Pay.handleCassoWebhook(req.body || {}, req.headers, webhookBranch(req))));
   api.post('/payos/webhook', wrap((req) => Pay.handlePayosWebhook(req.body || {}, req.headers, webhookBranch(req))));
   api.get('/payments/bank-transactions', guardAny('reports', 'pay', 'settings.integrations'), wrap((req) => Pay.listBankTransactions(branch(req), req.query)));
@@ -105,7 +110,8 @@ export function registerPaymentRoutes(api, {
   }));
   api.post('/orders/:id/request-payment', wrap((req) => { Pay.requestPayment(req.body.table_id, visibleBranch(req)); return { ok: true }; }));
   api.post('/tables/:id/request-payment', wrap((req) => { Pay.requestPayment(req.params.id, visibleBranch(req)); return { ok: true }; }));
-  api.post('/orders/:id/payment-qr', wrap((req) => Pay.generateCustomerPaymentQr(req.params.id, req.body || {}, visibleBranch(req))));
+  api.post('/orders/:id/payment-qr', guard('pay'), wrap((req) => Pay.generateCustomerPaymentQr(req.params.id, req.body || {}, branch(req))));
+  api.get('/orders/:id/payment-intent', guard('pay'), wrap((req) => PaymentIntents.intentStatusForOrder(req.params.id, branch(req))));
   api.post('/payment-qr', wrap((req) => Pay.buildStandalonePaymentQr(req.body || {}, visibleBranch(req))));
   api.post('/orders/:id/customer-qr-pay', wrap((req) => Pay.customerQrPay(req.params.id, req.body || {}, visibleBranch(req))));
 
@@ -118,19 +124,23 @@ export function registerPaymentRoutes(api, {
   api.get('/cash-drawer/entries', guardAny('reports', 'pay'), wrap((req) => CashDrawer.listEntries(branch(req), req.query)));
   api.post('/cash-drawer/expense', guard('pay'), wrap((req) => {
     const branch_id = branch(req);
-    const entry = CashDrawer.createEntry('expense', req.body, req.user, branch_id);
-    let document = null;
-    try { document = fileCashDrawerReceipt(entry, branch_id, req.user); }
-    catch (e) { logRequestError(req, e); }
-    emit('shift:updated', { cash_drawer: true, entry }, branch_id);
-    emit('cash-drawer:updated', { entry }, branch_id);
-    return { entry, document, drawer: CashDrawer.currentDrawer(branch_id) };
+    return Idem.withIdempotency('cash-drawer:expense', Idem.idempotencyKeyOf(req), branch_id, () => {
+      const entry = CashDrawer.createEntry('expense', req.body, req.user, branch_id);
+      let document = null;
+      try { document = fileCashDrawerReceipt(entry, branch_id, req.user); }
+      catch (e) { logRequestError(req, e); }
+      emit('shift:updated', { cash_drawer: true, entry }, branch_id);
+      emit('cash-drawer:updated', { entry }, branch_id);
+      return { entry, document, drawer: CashDrawer.currentDrawer(branch_id) };
+    });
   }));
   api.post('/cash-drawer/reimbursement', guard('pay'), wrap((req) => {
     const branch_id = branch(req);
-    const entry = CashDrawer.createEntry('reimbursement', req.body, req.user, branch_id);
-    emit('shift:updated', { cash_drawer: true, entry }, branch_id);
-    emit('cash-drawer:updated', { entry }, branch_id);
-    return { entry, drawer: CashDrawer.currentDrawer(branch_id) };
+    return Idem.withIdempotency('cash-drawer:reimbursement', Idem.idempotencyKeyOf(req), branch_id, () => {
+      const entry = CashDrawer.createEntry('reimbursement', req.body, req.user, branch_id);
+      emit('shift:updated', { cash_drawer: true, entry }, branch_id);
+      emit('cash-drawer:updated', { entry }, branch_id);
+      return { entry, drawer: CashDrawer.currentDrawer(branch_id) };
+    });
   }));
 }

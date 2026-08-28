@@ -403,6 +403,15 @@ function onlineOperationRow(row) {
   const shipping = raw.shipping_address || {};
   const fulfillments = Array.isArray(raw.fulfillments) ? raw.fulfillments : [];
   const tracking = fulfillments.flatMap(x => x.tracking_numbers || (x.tracking_number ? [x.tracking_number] : []));
+  // Dòng hàng (để thẻ đơn hiện ảnh/tên/SL như KiotViet) + tổng hợp.
+  const items = db.prepare(`SELECT name,qty,emoji FROM order_items WHERE order_id=? ORDER BY created_at LIMIT 5`).all(row.id);
+  const agg = db.prepare(`SELECT COUNT(*) n,COALESCE(SUM(qty),0) q FROM order_items WHERE order_id=?`).get(row.id);
+  const rawItems = raw.item_list || raw.items || raw.line_items || [];
+  const firstImage = String(rawItems[0]?.image_info?.image_url
+    || rawItems[0]?.image?.src || rawItems[0]?.sku_image || rawItems[0]?.image || '');
+  const paymentMethod = String(raw.payment_method || raw.gateway
+    || (Array.isArray(raw.payment_gateway_names) ? raw.payment_gateway_names[0] : '')
+    || raw.payment?.method || raw.payment_info?.method || '');
   return {
     id: row.id,
     bill_no: row.bill_no || null,
@@ -424,6 +433,11 @@ function onlineOperationRow(row) {
     locked_at: row.locked_at || null,
     needs_product_mapping: Number(row.unmapped_items || 0) > 0,
     unmapped_items: Number(row.unmapped_items || 0),
+    payment_method: paymentMethod,
+    first_item_image: firstImage,
+    item_count: Number(agg?.n || 0),
+    total_qty: Number(agg?.q || 0),
+    items: items.map(it => ({ name: it.name || '', qty: Number(it.qty || 0), emoji: it.emoji || '' })),
     customer: {
       id: customer.id || null,
       name: customer.name || raw.customer?.name || shipping.name || '',
@@ -502,7 +516,7 @@ export function onlineOperationsSummary(branch_id = 'sala') {
       AND oi.sku_id IS NULL AND oi.menu_item_id IS NULL`).get(branch_id).count || 0);
   const total = Object.entries(buckets).filter(([key]) => key !== 'product_attention')
     .reduce((sum, [, value]) => sum + value, 0);
-  return { total, buckets, capabilities: { haravan: haravanCapabilities() } };
+  return { total, buckets, capabilities: { haravan: haravanCapabilities(branch_id) } };
 }
 
 // ĐỐI SOÁT (reconciliation) — tổng hợp theo sàn từ đơn đã ghi nhận. Phí sàn và
@@ -614,8 +628,14 @@ export async function transitionOnlineOperation(order_id, action, input = {}, br
     throw new Error('Đơn đã ở trạng thái kết thúc; không thể tiếp tục xử lý.');
   }
   if (remoteActions[action]) {
-    if (current.provider !== 'haravan') throw new Error(`Kênh ${current.provider} chưa hỗ trợ đồng bộ thao tác này.`);
-    await performHaravanOrderAction({ internalOrderId: order_id, action, input, branchId: branch_id });
+    if (current.provider === 'haravan') {
+      await performHaravanOrderAction({ internalOrderId: order_id, action, input, branchId: branch_id });
+    } else if (action !== 'confirm') {
+      // cancel/refund/close/reopen cần API sàn (chỉ Haravan có). "confirm" thì
+      // với sàn chỉ là XÁC NHẬN NỘI BỘ (đơn đã nằm sẵn trên sàn) → cho đổi trạng
+      // thái pending→processed mà không gọi API ngoài.
+      throw new Error(`Kênh ${current.provider} chưa hỗ trợ đồng bộ thao tác này.`);
+    }
   }
   const status = localActions[action] || remoteActions[action];
   db.prepare(`INSERT INTO online_order_state(order_id,workflow_status,locked_at,last_action,last_action_by,revision,created_at,updated_at)
@@ -631,3 +651,242 @@ export async function transitionOnlineOperation(order_id, action, input = {}, br
   return result;
 }
 
+
+// Xác nhận / chuyển trạng thái NHIỀU đơn cùng lúc (chọn tất cả ở KiotViet).
+// Chạy tuần tự, gom kết quả từng đơn để UI biết cái nào lỗi.
+export async function bulkTransitionOnlineOperations(ids = [], action, input = {}, branch_id = 'sala', actor = 'system') {
+  const list = [...new Set((Array.isArray(ids) ? ids : []).map(x => String(x || '').trim()).filter(Boolean))];
+  const results = [];
+  for (const id of list) {
+    try {
+      await transitionOnlineOperation(id, action, input, branch_id, actor);
+      results.push({ id, ok: true });
+    } catch (e) {
+      results.push({ id, ok: false, error: e.message || String(e) });
+    }
+  }
+  return {
+    action,
+    total: list.length,
+    ok_count: results.filter(r => r.ok).length,
+    fail_count: results.filter(r => !r.ok).length,
+    results,
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// LIÊN KẾT HÀNG HÓA SÀN ↔ SKU KHO — đa sàn (Haravan/Shopee/Lazada/TikTok/Tiki).
+//
+// Bảng external_products là NGUỒN CHUNG cho mọi provider. raw_payload giữ dữ
+// liệu gốc listing; product-sync mỗi connector nên lưu kèm envelope chuẩn hoá
+// {name,image,sku,...} để list hiển thị nhanh mà không phải hiểu mọi shape sàn.
+// "Đã liên kết" = internal_variant_id trỏ tới SKU thật (không phải shadow hvn_).
+// ─────────────────────────────────────────────────────────────────────────
+
+// Rút tên/ảnh/sku listing từ raw_payload — ưu tiên envelope chuẩn hoá, sau đó
+// fallback theo shape từng sàn (haravan {product,variant}, shopee, lazada, tiktok).
+function externalListingMeta(raw) {
+  if (!raw || typeof raw !== 'object') return { name: '', image: '', sku: '' };
+  let name = raw.name || '';
+  let image = raw.image || '';
+  let sku = raw.sku || '';
+  const p = raw.product || {};
+  const v = raw.variant || {};
+  if (!name) name = v.title || v.name || p.title || p.name || p.item_name || raw.title || raw.item_name || '';
+  if (!image) {
+    image = p.image?.src
+      || (Array.isArray(p.images) ? (p.images[0]?.src || p.images[0]) : '')
+      || (p.image?.image_url_list?.[0])
+      || (Array.isArray(p.main_images) ? (p.main_images[0]?.urls?.[0]) : '')
+      || (Array.isArray(raw.images) ? (raw.images[0]?.src || raw.images[0]) : '')
+      || '';
+  }
+  if (!sku) sku = v.sku || p.sku || raw.seller_sku || '';
+  return { name: String(name || ''), image: String(image || ''), sku: String(sku || '') };
+}
+
+// SKU "bóng" do connector tự tạo để đơn có chỗ trừ kho khi CHƯA liên kết mặt
+// hàng thật (haravan hvn_, shopee shp_, lazada lzd_, tiktok ttk_). Liên kết vào
+// shadow = coi như CHƯA liên kết; auto-link cũng KHÔNG được khớp vào shadow.
+const SHADOW_PREFIXES = ['hvn_', 'shp_', 'lzd_', 'ttk_'];
+const isShadowId = (id) => SHADOW_PREFIXES.some(p => String(id || '').startsWith(p));
+const SHADOW_SKU = `(${SHADOW_PREFIXES.map(p => `ep.internal_variant_id LIKE '${p}%'`).join(' OR ')})`;
+// Điều kiện SQL loại trừ shadow khi tìm mặt hàng kho THẬT (cho autoLink).
+const NOT_SHADOW_SKU_SQL = SHADOW_PREFIXES.map(p => `id NOT LIKE '${p}%'`).join(' AND ');
+const IS_LINKED = `(ep.internal_variant_id IS NOT NULL AND NOT ${SHADOW_SKU})`;
+
+function mapMappingRow(r) {
+  const meta = externalListingMeta(parseJson(r.raw_payload, {}));
+  const linked = !!r.sku_id && !isShadowId(r.internal_variant_id);
+  return {
+    provider: r.provider,
+    shop_domain: r.shop_domain || '',
+    external_product_id: r.external_product_id,
+    external_variant_id: r.external_variant_id || '',
+    external_sku: r.external_sku || meta.sku || '',
+    external_name: meta.name,
+    external_image: meta.image,
+    mapping_status: linked ? 'catalog_linked' : 'unlinked',
+    pos: linked ? {
+      sku_id: r.sku_id,
+      name: r.pos_name || '',
+      code: r.pos_code || '',
+      barcode: r.pos_barcode || '',
+      image: r.pos_image || '',
+      price: Number(r.pos_price || 0),
+      stock: Number(r.pos_stock || 0),
+    } : null,
+  };
+}
+
+export function listProductMappings(branch_id = 'sala', query = {}) {
+  const provider = String(query.provider || '').trim().toLowerCase();
+  const shop = String(query.shop_domain || query.shopDomain || '').trim().toLowerCase();
+  const status = String(query.status || 'all').trim();
+  const q = String(query.q || query.search || '').trim().toLowerCase();
+  const limit = Math.max(1, Math.min(200, Number(query.limit) || 100));
+  const offset = Math.max(0, Number(query.offset) || 0);
+
+  const base = [`1=1`];
+  const params = [];
+  if (provider) { base.push('LOWER(ep.provider)=?'); params.push(provider); }
+  if (shop) { base.push('LOWER(ep.shop_domain)=?'); params.push(shop); }
+  if (q) {
+    base.push(`LOWER(COALESCE(ep.sku,'')||' '||ep.external_product_id||' '||ep.external_variant_id||' '||COALESCE(ep.raw_payload,'')||' '||COALESCE(s.name,'')) LIKE ?`);
+    params.push(`%${q}%`);
+  }
+  const where = [...base];
+  if (status === 'linked' || status === 'catalog_linked') where.push(IS_LINKED);
+  else if (status === 'unlinked' || status === 'shadow_import') where.push(`NOT ${IS_LINKED}`);
+
+  const join = `external_products ep LEFT JOIN skus s ON s.id=ep.internal_variant_id AND s.active=1`;
+  const from = `FROM ${join} WHERE ${where.join(' AND ')}`;
+  const rows = db.prepare(`SELECT ep.provider,ep.shop_domain,ep.external_product_id,ep.external_variant_id,
+      ep.sku external_sku,ep.raw_payload,ep.internal_variant_id,
+      s.id sku_id,s.name pos_name,s.code pos_code,s.barcode pos_barcode,s.price pos_price,s.stock pos_stock,s.image pos_image
+    ${from} ORDER BY ep.updated_at DESC,ep.created_at DESC LIMIT ? OFFSET ?`)
+    .all(...params, limit, offset).map(mapMappingRow);
+
+  // Đếm cho các tab Tất cả / Đã liên kết / Chưa liên kết (giữ nguyên filter
+  // provider/shop/tìm-kiếm, BỎ filter trạng thái).
+  const counts = db.prepare(`SELECT COUNT(*) total,
+      SUM(CASE WHEN ${IS_LINKED} THEN 1 ELSE 0 END) linked
+    FROM ${join} WHERE ${base.join(' AND ')}`).get(...params);
+  const all = Number(counts?.total || 0);
+  const linked = Number(counts?.linked || 0);
+  const total = status === 'linked' || status === 'catalog_linked' ? linked
+    : status === 'unlinked' || status === 'shadow_import' ? all - linked
+    : all;
+  return { rows, total, limit, offset, counts: { all, linked, unlinked: all - linked } };
+}
+
+function findExternalRow(provider, shop, pid, vid) {
+  return db.prepare(`SELECT * FROM external_products
+    WHERE provider=? AND shop_domain=? AND external_product_id=? AND external_variant_id=?`)
+    .get(provider, shop, pid, vid);
+}
+
+function normLinkArgs(a = {}) {
+  return {
+    prov: String(a.provider || '').trim().toLowerCase(),
+    shop: String(a.shop_domain || a.shopDomain || '').trim().toLowerCase(),
+    pid: String(a.external_product_id || a.externalProductId || '').trim(),
+    vid: String(a.external_variant_id || a.externalVariantId || '').trim(),
+  };
+}
+
+export function linkProduct(a = {}) {
+  const branch_id = a.branch_id || a.branchId || 'sala';
+  const actor = a.actor || 'system';
+  const { prov, shop, pid, vid } = normLinkArgs(a);
+  const target = String(a.sku_id || a.skuId || '').trim();
+  const ep = findExternalRow(prov, shop, pid, vid);
+  if (!ep) throw new Error('Không tìm thấy listing trên sàn cần liên kết.');
+  const sku = db.prepare(`SELECT id FROM skus WHERE id=? AND branch_id=? AND active=1`).get(target, branch_id);
+  if (!sku) throw new Error('Mặt hàng POS không tồn tại trong chi nhánh này.');
+  const prev = String(ep.internal_variant_id || '');
+  db.prepare(`UPDATE external_products SET internal_product_id=?,internal_variant_id=?,updated_at=?
+    WHERE provider=? AND shop_domain=? AND external_product_id=? AND external_variant_id=?`)
+    .run(target, target, now(), prov, shop, pid, vid);
+  // Dọn shadow SKU cũ (hvn_) nếu không còn được dùng — tránh rác kho.
+  if (prev && prev !== target && prev.startsWith('hvn_')) {
+    const used = db.prepare(`SELECT 1 FROM order_items WHERE sku_id=? LIMIT 1`).get(prev);
+    if (!used) db.prepare(`UPDATE skus SET active=0 WHERE id=?`).run(prev);
+  }
+  audit('online.product.link', { provider: prov, shop_domain: shop,
+    external_product_id: pid, external_variant_id: vid, sku_id: target, previous: prev || null }, branch_id, actor);
+  return { linked: true, provider: prov, shop_domain: shop, external_product_id: pid, external_variant_id: vid, sku_id: target };
+}
+
+export function unlinkProduct(a = {}) {
+  const branch_id = a.branch_id || a.branchId || 'sala';
+  const actor = a.actor || 'system';
+  const { prov, shop, pid, vid } = normLinkArgs(a);
+  const ep = findExternalRow(prov, shop, pid, vid);
+  if (!ep) throw new Error('Không tìm thấy listing trên sàn.');
+  db.prepare(`UPDATE external_products SET internal_product_id=NULL,internal_variant_id=NULL,updated_at=?
+    WHERE provider=? AND shop_domain=? AND external_product_id=? AND external_variant_id=?`)
+    .run(now(), prov, shop, pid, vid);
+  audit('online.product.unlink', { provider: prov, shop_domain: shop,
+    external_product_id: pid, external_variant_id: vid }, branch_id, actor);
+  return { linked: false, provider: prov, shop_domain: shop, external_product_id: pid, external_variant_id: vid };
+}
+
+// "Sao chép": tự đối chiếu SKU rồi ID của listing sàn với mặt hàng trong kho.
+// KHỚP → liên kết ngay. KHÔNG KHỚP → trả matched=false để UI cho chọn tay
+// (KHÔNG tự tạo mặt hàng mới — theo quyết định của chủ hệ thống).
+export function autoLinkProduct(a = {}) {
+  const branch_id = a.branch_id || a.branchId || 'sala';
+  const actor = a.actor || 'system';
+  const { prov, shop, pid, vid } = normLinkArgs(a);
+  const ep = findExternalRow(prov, shop, pid, vid);
+  if (!ep) throw new Error('Không tìm thấy listing trên sàn.');
+  const meta = externalListingMeta(parseJson(ep.raw_payload, {}));
+  const extSku = String(ep.sku || meta.sku || '').trim();
+  // CHỈ khớp mặt hàng kho THẬT — bỏ qua SKU bóng do connector tạo (nếu không sẽ
+  // "liên kết" listing vào chính shadow của nó → vẫn hiện chưa liên kết).
+  let sku = null;
+  if (extSku) {
+    sku = db.prepare(`SELECT id,name,code,barcode,price,stock FROM skus
+      WHERE branch_id=? AND active=1 AND (code=? OR barcode=?) AND ${NOT_SHADOW_SKU_SQL} LIMIT 1`)
+      .get(branch_id, extSku, extSku);
+  }
+  if (!sku && pid) {
+    sku = db.prepare(`SELECT id,name,code,barcode,price,stock FROM skus
+      WHERE branch_id=? AND active=1 AND id=? AND ${NOT_SHADOW_SKU_SQL} LIMIT 1`).get(branch_id, pid);
+  }
+  if (!sku) {
+    return { matched: false, external_sku: extSku,
+      reason: 'Không tìm thấy mặt hàng trong kho có SKU/ID khớp — hãy chọn tay để liên kết.' };
+  }
+  const res = linkProduct({ branch_id, provider: prov, shop_domain: shop,
+    external_product_id: pid, external_variant_id: vid, sku_id: sku.id, actor });
+  return { matched: true, ...res,
+    pos: { sku_id: sku.id, name: sku.name, code: sku.code || '', price: Number(sku.price || 0), stock: Number(sku.stock || 0) } };
+}
+
+// Upsert MỘT listing sàn vào external_products — DÙNG CHUNG cho product-sync mọi
+// connector (Shopee/Lazada/TikTok…). raw_payload lưu envelope chuẩn hoá
+// {name,image,sku,raw} để list hiển thị nhanh. ON CONFLICT KHÔNG đụng
+// internal_variant_id nên KHÔNG làm mất liên kết đã có khi đồng bộ lại.
+export function upsertExternalProduct(a = {}) {
+  const prov = String(a.provider || '').trim().toLowerCase();
+  const shop = String(a.shop_domain || a.shopDomain || '').trim();
+  const pid = String(a.external_product_id || a.externalProductId || '').trim();
+  const vid = String(a.external_variant_id || a.externalVariantId || '').trim();
+  if (!prov || !pid) return null;
+  const sku = String(a.sku || '').trim();
+  const payload = JSON.stringify({
+    name: String(a.name || ''),
+    image: String(a.image || ''),
+    sku,
+    raw: a.raw ?? null,
+  });
+  db.prepare(`INSERT INTO external_products
+    (id,provider,shop_domain,external_product_id,external_variant_id,internal_product_id,internal_variant_id,sku,raw_payload,created_at,updated_at)
+    VALUES (?,?,?,?,?,NULL,NULL,?,?,?,?)
+    ON CONFLICT(provider, shop_domain, external_product_id, external_variant_id) DO UPDATE SET
+      sku=excluded.sku,raw_payload=excluded.raw_payload,updated_at=excluded.updated_at`)
+    .run(uid('ep_'), prov, shop, pid, vid, sku, payload, now(), now());
+  return { provider: prov, shop_domain: shop, external_product_id: pid, external_variant_id: vid };
+}

@@ -85,12 +85,22 @@ Kiem tra:
 
 ```bash
 curl http://127.0.0.1:3000/health
-curl http://42.96.18.70:3000/health
+curl https://api.dandpakpos.io.vn/health
 ```
+
+Tu 2026-08 server chay sau Caddy tren domain that; cong 3000 CHI mo trong may
+(127.0.0.1), khong con mo ra internet. Goi tu ngoai vao `42.96.18.70:3000` se
+bao "Unable to connect to the remote server".
 
 ## 5. Tro app ve server moi
 
-Tam thoi dung:
+Dia chi DANG DUNG (Caddy + HTTPS):
+
+```text
+https://api.dandpakpos.io.vn
+```
+
+Dia chi IP:3000 duoi day chi dung trong giai doan CHUA gan domain:
 
 ```text
 http://42.96.18.70:3000

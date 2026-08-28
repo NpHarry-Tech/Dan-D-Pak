@@ -19,20 +19,55 @@ class HardwareAgentLauncher {
   HardwareAgentLauncher._();
 
   static bool _attempted = false;
+  static String? _currentBranch;
 
   /// Goi sau khi dang nhap THANH CONG. Tu bo qua neu: khong phai Windows,
   /// khong tim thay dandpak-agent.exe canh file .exe chinh (ban build khong
-  /// kem, hoac app khong phai ban cai dat), hoac da thu o phien nay roi.
+  /// kem, hoac app khong phai ban cai dat), hoac da chay dung chi nhanh nay roi.
+  ///
+  /// DOI CHI NHANH: agent chay 1 lan/phien voi BRANCH_ID co dinh, chi report may
+  /// in cho DUNG chi nhanh do. Truoc day khi thu ngan doi sang chi nhanh khac,
+  /// agent cu van report chi nhanh cu -> chi nhanh moi KHONG thay may in cho toi
+  /// khi tat/mo lai app. Nay: doi chi nhanh -> tat agent cu, bat lai voi chi
+  /// nhanh moi, chi nhanh moi thay may in ngay (agent report lien khi khoi dong).
   static void spawnIfNeeded({
     required String centralUrl,
     required String username,
     required String pin,
     required String branchId,
   }) {
-    if (!Platform.isWindows || _attempted) return;
+    if (!Platform.isWindows) return;
     if (username.trim().isEmpty || pin.trim().isEmpty) return;
+    if (_attempted && _currentBranch == branchId)
+      return; // dung chi nhanh -> thoi
+    final switching = _attempted && _currentBranch != branchId;
     _attempted = true;
+    _currentBranch = branchId;
+    _spawn(
+      centralUrl: centralUrl,
+      username: username,
+      pin: pin,
+      branchId: branchId,
+      killFirst: switching,
+    );
+  }
+
+  static Future<void> _spawn({
+    required String centralUrl,
+    required String username,
+    required String pin,
+    required String branchId,
+    required bool killFirst,
+  }) async {
     try {
+      // Doi chi nhanh: tat agent cu (dang giu chi nhanh cu + singleton lock) roi
+      // cho lock nha truoc khi bat ban moi, khong thi ban moi gap lock roi tu thoat.
+      if (killFirst) {
+        try {
+          await Process.run('taskkill', ['/F', '/IM', 'dandpak-agent.exe']);
+          await Future.delayed(const Duration(milliseconds: 900));
+        } catch (_) {/* khong co agent cu de tat cung khong sao */}
+      }
       final exeDir = File(Platform.resolvedExecutable).parent.path;
       final agentPath = '$exeDir\\dandpak-agent.exe';
       if (!File(agentPath).existsSync()) return; // ban build nay chua kem agent
@@ -50,14 +85,15 @@ class HardwareAgentLauncher {
       });
     } catch (e) {
       _attempted = false; // cho thu lai o lan dang nhap sau neu lan nay loi
+      _currentBranch = null;
       dlog('HardwareAgentLauncher: khong khoi dong duoc - $e');
     }
   }
 
   static void _createHiddenProcess(String exePath, Map<String, String> env) {
     final kernel32 = DynamicLibrary.open('kernel32.dll');
-    final createProcessW = kernel32
-        .lookupFunction<_CreateProcessWNative, _CreateProcessWDart>(
+    final createProcessW =
+        kernel32.lookupFunction<_CreateProcessWNative, _CreateProcessWDart>(
             'CreateProcessW');
 
     final cmdLine = '"$exePath"'.toNativeUtf16();

@@ -19,7 +19,7 @@ class _SystemLogRowState extends State<_SystemLogRow> {
     final e = widget.entry;
     final level = _s(e['level']);
     final color = _levelColor(level);
-    final ts = DateTime.tryParse(_s(e['timestamp']))?.toLocal();
+    final ts = BusinessDateTime.parseApi(e['timestamp']);
     final title = _s(e['title']);
     final message = _s(e['message']);
     final isSevere = level == 'error' || level == 'fatal';

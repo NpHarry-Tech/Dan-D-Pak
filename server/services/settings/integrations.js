@@ -262,7 +262,9 @@ const DEFAULT_INTEGRATIONS = {
       accessToken: '',
       refreshToken: '',
       webhookSecret: '',
-      apiBase: 'https://partner.shopeemobile.com',
+      // Để trống = connector chọn TEST/LIVE theo SHOPEE_ENV/environment.
+      // Custom endpoint chỉ dùng khi có yêu cầu được xác minh.
+      apiBase: '',
       orderMode: 'manual_confirm',
       syncOrders: true,
       syncProducts: true,
@@ -275,6 +277,7 @@ const DEFAULT_INTEGRATIONS = {
       environment: 'sandbox',
       region: 'VN',
       appId: '',          // TikTok Shop app_key
+      serviceId: '',      // dùng cho link ủy quyền services.tiktokshop.com
       shopId: '',
       shopCipher: '',
       secretKey: '',      // app_secret

@@ -18,6 +18,7 @@ Future<void> main(List<String> args) => runDandpakApp(
           'admin', // Quản lý: dashboard, báo cáo, xem tình trạng (thêm cho tablet)
           'pos', // gọi món tại bàn
           'retail',
+          'catalogue', // màn khách bán lẻ ngoài quầy — CHỈ tablet mới có
           'ipad', // khách tự gọi món (kiosk)
           'kds', // màn bếp/bar
           'online', // đơn Grab/Shopee

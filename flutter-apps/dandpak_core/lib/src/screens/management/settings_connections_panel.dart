@@ -5,11 +5,17 @@
 // kia mang tên chẳng liên quan. Nay là thư viện độc lập, mang theo đúng các helper
 // hiển thị thiết bị của riêng nó.
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
+import '../../providers/auth_provider.dart';
 import '../../services/api_service.dart';
 import '../../services/socket_service.dart';
+import '../../services/system_log.dart';
 import '../../ui/app_theme.dart';
+import '../../ui/debouncer.dart';
 import '../../utils/translation.dart';
+import '../../utils/business_datetime.dart';
+import '../../widgets/build_diagnostics_card.dart';
 import 'management_widgets.dart';
 import 'settings_tab.dart';
 import 'settings_value_utils.dart';
@@ -84,7 +90,6 @@ IconData _connIcon(String device) {
   }
 }
 
-
 class ConnectionsPanel extends StatefulWidget {
   final ApiService api;
   ConnectionsPanel({super.key, required this.api});
@@ -107,6 +112,7 @@ Map<String, String> get _outputLabels => {
       'receipt': t('Hóa đơn'),
       'cup_label': 'Tem ly',
       'product_label': t('Tem sản phẩm'),
+      'shipping_label': t('Tem vận đơn'),
       'runner': t('Phiếu chạy'),
       'report': t('Báo cáo'),
       'test': t('In thử'),
@@ -115,16 +121,7 @@ Map<String, String> get _outputLabels => {
 
 String _fmtTime(String iso) {
   if (iso.isEmpty) return '';
-  try {
-    final dt = DateTime.parse(iso).toLocal();
-    final h = dt.hour.toString().padLeft(2, '0');
-    final m = dt.minute.toString().padLeft(2, '0');
-    final d = dt.day.toString().padLeft(2, '0');
-    final mo = dt.month.toString().padLeft(2, '0');
-    return '$h:$m $d/$mo';
-  } catch (_) {
-    return '';
-  }
+  return BusinessDateTime.dateTime(iso);
 }
 
 class _ConnectionsPanelState extends State<ConnectionsPanel> {
@@ -132,7 +129,10 @@ class _ConnectionsPanelState extends State<ConnectionsPanel> {
   Map<String, dynamic> _ops = {};
   Map<String, dynamic> _printConfig = {};
   List<Map<String, dynamic>> _printers = [];
+  // Máy in đang XỔ chi tiết (theo index). Mặc định GỘP hết cho gọn khi nhiều máy.
+  final Set<int> _expandedPrinters = {};
   List<Map<String, dynamic>> _systemPrinters = [];
+
   /// Các máy đang chạy Hardware Agent — dùng cho ô "Máy chủ trì".
   List<Map<String, dynamic>> _agentDevices = [];
   List<Map<String, dynamic>> _recentJobs = [];
@@ -156,14 +156,49 @@ class _ConnectionsPanelState extends State<ConnectionsPanel> {
 
   List<PrinterControllers> _printerControllersList = [];
 
+  /// Máy KHÁC vừa sửa cấu hình in → tải lại để danh sách máy in không lạc hậu.
+  ///
+  /// Trước đây panel này chỉ dùng socket để HIỆN trạng thái kết nối, không nghe
+  /// gì cả. Máy A thêm một máy in thì máy B đang mở đúng màn này vẫn thấy danh
+  /// sách cũ cho tới khi bấm tải lại — người dùng tưởng chưa lưu được nên khai
+  /// lại lần nữa, sinh ra tuyến in trùng.
+  final SocketService _socket = SocketService();
+  final Debouncer _reload = Debouncer(delay: const Duration(milliseconds: 400));
+
+  void _onSocketEvent(String event, dynamic payload) {
+    if (!mounted) return;
+    if (event != 'settings:updated' &&
+        event != 'agent:printers' &&
+        event != kSyncReconnected) {
+      return;
+    }
+    // Lọc theo khoá vừa đổi: sửa cấu hình thuế thì màn này không việc gì phải
+    // giật mình tải lại. Không kèm khoá (VD reconnect) thì cứ tải cho chắc.
+    final keys = (payload is Map ? payload['keys'] : null);
+    if (keys is List && keys.isNotEmpty && !keys.contains('print_config')) {
+      return;
+    }
+    _reload(() {
+      if (mounted) _load();
+    });
+  }
+
   @override
   void initState() {
     super.initState();
     _load();
+    // CHỈ NGHE, KHÔNG TỰ MỞ KẾT NỐI.
+    //
+    // Vỏ app đã giữ sẵn một socket cho cả phiên; màn danh sách mà tự gọi
+    // connect() thì vừa thừa vừa để lại hẹn giờ treo (widget test bắt được
+    // ngay), và vòng đời kết nối bị chia cho nhiều màn cùng quản.
+    _socket.addListener(_onSocketEvent);
   }
 
   @override
   void dispose() {
+    _socket.removeListener(_onSocketEvent);
+    _reload.dispose();
     _ctProvider.dispose();
     _ctName.dispose();
     _ctIp.dispose();
@@ -368,6 +403,16 @@ class _ConnectionsPanelState extends State<ConnectionsPanel> {
             _printerRegistryPanel(),
             SizedBox(height: 16),
             _recentJobsPanel(),
+            SizedBox(height: 16),
+            BuildDiagnosticsCard(
+              apiBaseUrl: widget.api.baseUrl,
+              allowAdvanced: canViewAdvancedDiagnostics(
+                role: context.watch<AuthProvider>().currentUser?.role ?? '',
+                hasDiagnosticsPermission: context
+                    .watch<AuthProvider>()
+                    .hasPermission('settings.manage'),
+              ),
+            ),
           ],
         ),
       ),
@@ -477,12 +522,17 @@ class _ConnectionsPanelState extends State<ConnectionsPanel> {
     final st = _status['storage'] is Map
         ? Map<String, dynamic>.from(_status['storage'])
         : {};
-    final db = asText(st['database']).isNotEmpty ? asText(st['database']) : 'SQLite';
-    final dbMode =
-        asText(st['databaseMode']).isNotEmpty ? asText(st['databaseMode']) : 'WAL';
-    final rt = asText(st['realtime']).isNotEmpty ? asText(st['realtime']) : 'Socket.IO';
-    final lt =
-        asText(st['longTerm']).isNotEmpty ? asText(st['longTerm']) : 'Permanent JSON';
+    final db =
+        asText(st['database']).isNotEmpty ? asText(st['database']) : 'SQLite';
+    final dbMode = asText(st['databaseMode']).isNotEmpty
+        ? asText(st['databaseMode'])
+        : 'WAL';
+    final rt = asText(st['realtime']).isNotEmpty
+        ? asText(st['realtime'])
+        : 'Socket.IO';
+    final lt = asText(st['longTerm']).isNotEmpty
+        ? asText(st['longTerm'])
+        : 'Permanent JSON';
     return Panel(
       title: t('Lưu trữ cục bộ'),
       child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
@@ -514,7 +564,8 @@ class _ConnectionsPanelState extends State<ConnectionsPanel> {
   }
 
   Widget _printerStatusRow(Map p) {
-    final label = asText(p['label']).isNotEmpty ? asText(p['label']) : asText(p['name']);
+    final label =
+        asText(p['label']).isNotEmpty ? asText(p['label']) : asText(p['name']);
     final location = asText(p['location']);
     final connection = asText(p['connection']);
     final ip = asText(p['ip']);
@@ -735,8 +786,11 @@ class _ConnectionsPanelState extends State<ConnectionsPanel> {
               ),
             )
           else
+            // Chỉ hiện máy in có công dụng mà người dùng được cấp quyền THẤY.
+            // _printers vẫn giữ NGUYÊN (không xóa) nên lưu lại không mất máy ẩn.
             for (int i = 0; i < _printers.length; i++)
-              if (i < _printerControllersList.length)
+              if (i < _printerControllersList.length &&
+                  _canSeePrinterType(asText(_printers[i]['output'])))
                 _printerEditorRow(i, _printers[i], _printerControllersList[i]),
           SizedBox(height: 12),
           Wrap(
@@ -753,41 +807,57 @@ class _ConnectionsPanelState extends State<ConnectionsPanel> {
                     : Icon(Icons.sync, size: 16),
                 label: Text(t('Đồng bộ máy in hệ điều hành')),
               ),
-              OutlinedButton.icon(
-                onPressed: () {
-                  setState(() {
-                    final newRow = {
-                      'id': 'printer_${_printers.length + 1}',
-                      'name': '',
-                      'systemName': '',
-                      // 'browser' chưa cài đặt thật (server luôn báo lỗi khi in) —
-                      // mặc định 'system' để máy in mới thêm in được ngay.
-                      'connection': 'system',
-                      'ip': '',
-                      'port': 9100,
-                      'label': t('Nhãn in'),
-                      'type': t('Nhãn in'),
-                      'output': 'custom',
-                      'location': '',
-                      'active': true,
-                      'auto': false,
-                      'cashDrawer': false,
-                      'openDrawerOnPrint': false,
-                    };
-                    _printers.add(newRow);
-                    _printerControllersList.add(PrinterControllers(
-                      idVal: 'printer_${_printers.length}',
-                      systemNameVal: '',
-                      ipVal: '',
-                      portVal: '9100',
-                      labelVal: t('Nhãn in'),
-                      locationVal: '',
-                    ));
-                  });
-                },
-                icon: Icon(Icons.add, size: 16),
-                label: Text(t('Thêm danh mục in')),
-              ),
+              // Chỉ người có quyền quản lý tất cả máy in mới được thêm dòng mới.
+              if (_canManageAllPrinters())
+                OutlinedButton.icon(
+                  onPressed: () {
+                    setState(() {
+                      final newRow = {
+                        'id': 'printer_${_printers.length + 1}',
+                        'name': '',
+                        'systemName': '',
+                        // 'browser' chưa cài đặt thật (server luôn báo lỗi khi in) —
+                        // mặc định 'system' để máy in mới thêm in được ngay.
+                        'connection': 'system',
+                        'ip': '',
+                        'port': 9100,
+                        'label': t('Nhãn in'),
+                        'type': t('Nhãn in'),
+                        'output': 'custom',
+                        'location': '',
+                        'active': true,
+                        'auto': false,
+                        'cashDrawer': false,
+                        'openDrawerOnPrint': false,
+                        // GÁN SẴN MÁY NÀY LÀM MÁY CHỦ TRÌ.
+                        //
+                        // Người khai tuyến đang đứng ngay tại máy có máy in cắm
+                        // vào — hệ thống thừa thông tin để tự điền, không có lý do
+                        // bắt họ chọn lại từ danh sách 'DESKTOP-781R8F5 /
+                        // localhost' mà không ai biết máy nào là máy nào.
+                        //
+                        // Quan trọng hơn: bỏ trống ô này là hai máy in TRÙNG TÊN
+                        // ở hai máy khác nhau sẽ giẫm lên nhau (sự cố Vietfoods
+                        // 04/08 — bill khai ở laptop lại chui ra máy in dưới
+                        // quầy). Xem isAttachedTo() ở server/services/printing.js.
+                        'primaryDeviceId': SystemLog.deviceId,
+                      };
+                      _printers.add(newRow);
+                      _printerControllersList.add(PrinterControllers(
+                        idVal: 'printer_${_printers.length}',
+                        systemNameVal: '',
+                        ipVal: '',
+                        portVal: '9100',
+                        labelVal: t('Nhãn in'),
+                        locationVal: '',
+                      ));
+                      // Máy in vừa thêm → xổ sẵn để điền ngay.
+                      _expandedPrinters.add(_printers.length - 1);
+                    });
+                  },
+                  icon: Icon(Icons.add, size: 16),
+                  label: Text(t('Thêm danh mục in')),
+                ),
               FilledButton.icon(
                 onPressed: _savingPrinters ? null : _savePrinters,
                 icon: _savingPrinters
@@ -934,9 +1004,55 @@ class _ConnectionsPanelState extends State<ConnectionsPanel> {
     });
   }
 
-  Widget _printerCardHeader(int index, PrinterControllers ctrl) {
+  // Quyền THẤY/cấu hình máy in theo CÔNG DỤNG. printer.manage = thấy tất cả +
+  // máy chưa phân loại (Khác/Custom). Loại có quyền riêng thì cần đúng quyền đó.
+  static const Map<String, String> _printerTypePerm = {
+    'receipt': 'printer.receipt',
+    'kitchen_ticket': 'printer.kitchen',
+    'cup_label': 'printer.cup_label',
+    'product_label': 'printer.product_label',
+    'shipping_label': 'printer.shipping_label',
+    'runner': 'printer.runner',
+    'report': 'printer.report',
+  };
+  bool _canManageAllPrinters() =>
+      context.read<AuthProvider>().hasPermission('printer.manage');
+  bool _canSeePrinterType(String output) {
+    if (_canManageAllPrinters()) return true;
+    final perm = _printerTypePerm[output];
+    return perm != null && context.read<AuthProvider>().hasPermission(perm);
+  }
+
+  // Dòng tóm tắt hiển thị khi máy in đang GỘP (kết nối · loại phiếu).
+  String _printerSummary(int index) {
+    if (index < 0 || index >= _printers.length) return '';
+    final p = _printers[index];
+    final conn = asText(p['connection']);
+    final connLabel = const {
+          'system': 'Máy OS',
+          'lan': 'LAN',
+          'browser': 'Trình duyệt',
+        }[conn] ??
+        conn;
+    final outLabel = const {
+      'kitchen_ticket': 'Phiếu bếp',
+      'receipt': 'Hóa đơn',
+      'cup_label': 'Tem ly',
+      'product_label': 'Tem sản phẩm',
+      'shipping_label': 'Tem vận đơn',
+      'runner': 'Chạy món',
+      'report': 'Báo cáo',
+      'custom': 'Khác',
+    }[asText(p['output'])];
+    return [connLabel, outLabel]
+        .where((e) => e != null && e.isNotEmpty)
+        .join(' · ');
+  }
+
+  Widget _printerCardHeader(int index, PrinterControllers ctrl,
+      {bool expanded = true, VoidCallback? onToggle}) {
     return Container(
-      padding: EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      padding: EdgeInsets.symmetric(horizontal: 8, vertical: 10),
       decoration: BoxDecoration(
         color: DanColors.surface2,
         borderRadius: BorderRadius.only(
@@ -947,9 +1063,29 @@ class _ConnectionsPanelState extends State<ConnectionsPanel> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(
-            '${t('Máy in')} #${index + 1} (${ctrl.id.text.isNotEmpty ? ctrl.id.text : t("Chưa đặt tên")})',
-            style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13),
+          Expanded(
+            child: InkWell(
+              onTap: onToggle,
+              borderRadius: BorderRadius.circular(6),
+              child: Padding(
+                padding: EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                child: Row(children: [
+                  Icon(expanded ? Icons.expand_more : Icons.chevron_right,
+                      size: 20, color: DanColors.muted),
+                  SizedBox(width: 4),
+                  Flexible(
+                    child: Text(
+                      '${t('Máy in')} #${index + 1} (${ctrl.id.text.isNotEmpty ? ctrl.id.text : t("Chưa đặt tên")})'
+                      '${expanded ? '' : ' · ${_printerSummary(index)}'}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style:
+                          TextStyle(fontWeight: FontWeight.w800, fontSize: 13),
+                    ),
+                  ),
+                ]),
+              ),
+            ),
           ),
           Row(
             children: [
@@ -968,6 +1104,8 @@ class _ConnectionsPanelState extends State<ConnectionsPanel> {
                     _printers.removeAt(index);
                     _printerControllersList[index].dispose();
                     _printerControllersList.removeAt(index);
+                    // Index đổi sau khi xóa → reset trạng thái xổ cho khỏi lệch.
+                    _expandedPrinters.clear();
                   });
                 },
                 icon:
@@ -1024,72 +1162,133 @@ class _ConnectionsPanelState extends State<ConnectionsPanel> {
           initialValue: output.isEmpty ? 'custom' : output,
           isExpanded: true,
           decoration: InputDecoration(isDense: true),
+          // Chỉ hiện loại phiếu mà người dùng có quyền (giữ loại hiện tại để
+          // không vỡ dropdown). Loại "Khác/Custom" cần quyền printer.manage.
           items: [
-            DropdownMenuItem(
-                value: 'kitchen_ticket',
-                child: Text(t('Phiếu bếp (Kitchen ticket)'))),
-            DropdownMenuItem(
-                value: 'receipt', child: Text(t('Hóa đơn / Tạm tính'))),
-            DropdownMenuItem(
-                value: 'cup_label', child: Text('Tem ly (Cup label)')),
-            DropdownMenuItem(
-                value: 'product_label',
-                child: Text(t('Tem sản phẩm (Product label)'))),
-            DropdownMenuItem(
-                value: 'runner', child: Text(t('Phiếu chạy món (Runner)'))),
-            DropdownMenuItem(value: 'report', child: Text(t('Báo cáo (Report)'))),
-            DropdownMenuItem(value: 'custom', child: Text(t('Khác (Custom)'))),
+            if (_canSeePrinterType('kitchen_ticket') ||
+                p['output'] == 'kitchen_ticket')
+              DropdownMenuItem(
+                  value: 'kitchen_ticket',
+                  child: Text(t('Phiếu bếp (Kitchen ticket)'))),
+            if (_canSeePrinterType('receipt') || p['output'] == 'receipt')
+              DropdownMenuItem(
+                  value: 'receipt', child: Text(t('Hóa đơn / Tạm tính'))),
+            if (_canSeePrinterType('cup_label') || p['output'] == 'cup_label')
+              DropdownMenuItem(
+                  value: 'cup_label', child: Text('Tem ly (Cup label)')),
+            if (_canSeePrinterType('product_label') ||
+                p['output'] == 'product_label')
+              DropdownMenuItem(
+                  value: 'product_label',
+                  child: Text(t('Tem sản phẩm (Product label)'))),
+            if (_canSeePrinterType('shipping_label') ||
+                p['output'] == 'shipping_label')
+              DropdownMenuItem(
+                  value: 'shipping_label',
+                  child: Text(t('Tem vận đơn (Shipping label)'))),
+            if (_canSeePrinterType('runner') || p['output'] == 'runner')
+              DropdownMenuItem(
+                  value: 'runner', child: Text(t('Phiếu chạy món (Runner)'))),
+            if (_canSeePrinterType('report') || p['output'] == 'report')
+              DropdownMenuItem(
+                  value: 'report', child: Text(t('Báo cáo (Report)'))),
+            if (_canManageAllPrinters() ||
+                p['output'] == 'custom' ||
+                output.isEmpty)
+              DropdownMenuItem(
+                  value: 'custom', child: Text(t('Khác (Custom)'))),
           ],
           onChanged: (val) => setState(() => p['output'] = val),
         ),
       );
 
   /// Kết nối 'system': chọn tên máy in do hệ điều hành báo về.
+  ///
+  /// Nút bên phải LUÔN hiện. Trước đây nó chỉ hiện khi `_systemPrinters` đã có
+  /// sẵn — mà danh sách đó nạp ở nền lúc mở panel, nên trên máy vừa cắm máy in
+  /// (hoặc lần dò nền lỗi) ô này trơ ra và người dùng chỉ còn cách GÕ TAY tên
+  /// máy in. Gõ sai một ký tự thì tuyến in không bao giờ khớp với máy in thật:
+  /// job nằm chờ, không ai biết vì sao giấy không ra. Giờ bấm là DÒ LẠI THẬT
+  /// (`force`) rồi mới mở danh sách.
   Widget _printerSystemNameField(PrinterControllers ctrl) => _printerField(
         t('Máy in hệ điều hành (OS)'),
         TextField(
           controller: ctrl.systemName,
           decoration: InputDecoration(
             isDense: true,
-            hintText: t('Nhập hoặc chọn tên máy in thật (VD: EPSON TM-T82)'),
-            suffixIcon: _systemPrinters.isEmpty
-                ? null
-                : PopupMenuButton<String>(
-                    icon: Icon(Icons.arrow_drop_down),
-                    onSelected: (val) =>
-                        setState(() => ctrl.systemName.text = val),
-                    // Hiện kèm MÁY nào đang cắm và máy in đó còn sống không.
-                    // Nhiều máy POS thì tên máy in dễ trùng nhau, chỉ thấy mỗi
-                    // tên thì không biết đang chọn cái ở quầy hay ở văn phòng.
-                    itemBuilder: (context) => _systemPrinters.map((sp) {
-                      final ten = asText(sp['name']);
-                      final may = asText(sp['device_name']);
-                      final song = sp['online'] != false;
-                      final phu = [
-                        if (may.isNotEmpty) may,
-                        song ? t('đang sẵn sàng') : t('đang offline'),
-                      ].join(' · ');
-                      return PopupMenuItem<String>(
-                        value: ten,
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(ten),
-                            Text(phu,
-                                style: TextStyle(
-                                    fontSize: 11,
-                                    color: song
-                                        ? DanColors.muted
-                                        : DanColors.late)),
-                          ],
-                        ),
-                      );
-                    }).toList(),
+            hintText: t('Bấm mũi tên để máy tự dò máy in đang cắm'),
+            suffixIcon: _loadingSystemPrinters
+                ? Padding(
+                    padding: EdgeInsets.all(12),
+                    child: SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2)),
+                  )
+                : IconButton(
+                    tooltip: t('Dò máy in đang kết nối'),
+                    icon: Icon(Icons.arrow_forward, color: DanColors.brand),
+                    onPressed: () => _doVaChonMayIn(ctrl),
                   ),
           ),
         ),
       );
+
+  /// Dò máy in hệ điều hành rồi cho chọn. Không thấy cái nào thì NÓI THẲNG,
+  /// đừng mở một danh sách rỗng để người dùng ngồi đoán.
+  Future<void> _doVaChonMayIn(PrinterControllers ctrl) async {
+    await _syncSystemPrinters(imLang: true);
+    if (!mounted) return;
+    if (_systemPrinters.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(t(
+            'Không thấy máy in nào đang kết nối. Kiểm tra dây/nguồn máy in và Hardware Agent trên máy đó rồi bấm dò lại.')),
+        backgroundColor: DanColors.late,
+      ));
+      return;
+    }
+    final chon = await showDialog<String>(
+      context: context,
+      builder: (ctx) => SimpleDialog(
+        backgroundColor: DanColors.surface,
+        title: Text(t('Máy in đang kết nối (${_systemPrinters.length})')),
+        children: [
+          // Hiện kèm MÁY nào đang cắm và máy in đó còn sống không. Nhiều máy POS
+          // thì tên máy in dễ trùng nhau, chỉ thấy mỗi tên thì không biết đang
+          // chọn cái ở quầy hay ở văn phòng.
+          for (final sp in _systemPrinters)
+            SimpleDialogOption(
+              onPressed: () => Navigator.of(ctx).pop(asText(sp['name'])),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(asText(sp['name']),
+                      style: TextStyle(fontWeight: FontWeight.w700)),
+                  SizedBox(height: 2),
+                  Text(
+                      [
+                        if (asText(sp['device_name']).isNotEmpty)
+                          asText(sp['device_name']),
+                        sp['online'] != false
+                            ? t('đang sẵn sàng')
+                            : t('đang offline'),
+                      ].join(' · '),
+                      style: TextStyle(
+                          fontSize: 11.5,
+                          color: sp['online'] != false
+                              ? DanColors.muted
+                              : DanColors.late)),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+    if (chon != null && chon.isNotEmpty && mounted) {
+      setState(() => ctrl.systemName.text = chon);
+    }
+  }
 
   /// MÁY CHỦ TRÌ tuyến in này. Khi nhiều máy POS cùng với tới một máy in (máy in
   /// LAN, hoặc máy in chia sẻ), chọn ở đây để phiếu LUÔN ra ở đúng một chỗ thay
@@ -1110,7 +1309,8 @@ class _ConnectionsPanelState extends State<ConnectionsPanel> {
         isExpanded: true,
         decoration: InputDecoration(
           isDense: true,
-          helperText: t('Để trống = máy nào đang cắm cũng in được'),
+          helperText: t(
+              'Máy in cắm vào máy nào thì chọn máy đó. Bỏ trống chỉ dùng khi CHẮC CHẮN không có hai máy in trùng tên.'),
           helperMaxLines: 2,
         ),
         items: [
@@ -1118,9 +1318,18 @@ class _ConnectionsPanelState extends State<ConnectionsPanel> {
           for (final d in may)
             DropdownMenuItem(
               value: asText(d['device_id']),
-              child: Text(asText(d['device_name']).isEmpty
-                  ? asText(d['device_id'])
-                  : asText(d['device_name'])),
+              // Đánh dấu rõ MÁY NÀY. Danh sách toàn 'DESKTOP-781R8F5 /
+              // localhost' thì người khai không biết chọn cái nào — mà chọn sai
+              // là bill chạy sang máy khác.
+              child: Text(
+                (asText(d['device_name']).isEmpty
+                        ? asText(d['device_id'])
+                        : asText(d['device_name'])) +
+                    (asText(d['device_id']) == SystemLog.deviceId
+                        ? '  ★ ${t('máy này')}'
+                        : ''),
+                overflow: TextOverflow.ellipsis,
+              ),
             ),
           if (hienTai.isNotEmpty && !coTrongDs)
             DropdownMenuItem(
@@ -1141,8 +1350,8 @@ class _ConnectionsPanelState extends State<ConnectionsPanel> {
             t('IP máy in (LAN)'),
             TextField(
               controller: ctrl.ip,
-              decoration: InputDecoration(
-                  isDense: true, hintText: 'VD: 192.168.1.50'),
+              decoration:
+                  InputDecoration(isDense: true, hintText: 'VD: 192.168.1.50'),
             ),
           ),
           _printerField(
@@ -1209,33 +1418,56 @@ class _ConnectionsPanelState extends State<ConnectionsPanel> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          _printerCardHeader(index, ctrl),
-          Padding(
-            padding: EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                _printerFieldRow(700, [
-                  _printerIdField(ctrl),
-                  _printerConnField(p, conn),
-                  _printerOutputField(p, output),
-                ]),
-                SizedBox(height: 12),
-                if (conn == 'system') ...[
-                  _printerSystemNameField(ctrl),
+          _printerCardHeader(index, ctrl,
+              expanded: _expandedPrinters.contains(index),
+              onToggle: () => setState(() {
+                    if (!_expandedPrinters.remove(index)) {
+                      _expandedPrinters.add(index);
+                    }
+                  })),
+          if (_expandedPrinters.contains(index))
+            Padding(
+              padding: EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _printerFieldRow(700, [
+                    _printerIdField(ctrl),
+                    _printerConnField(p, conn),
+                    _printerOutputField(p, output),
+                  ]),
                   SizedBox(height: 12),
-                ] else if (conn == 'lan') ...[
-                  _printerIpPortRow(ctrl),
+                  if (conn == 'system') ...[
+                    _printerSystemNameField(ctrl),
+                    SizedBox(height: 12),
+                  ] else if (conn == 'lan') ...[
+                    _printerIpPortRow(ctrl),
+                    SizedBox(height: 12),
+                  ],
+                  _printerLabelLocationRow(ctrl),
                   SizedBox(height: 12),
+                  _printerPaperField(p),
+                  SizedBox(height: 12),
+                  _printerPrimaryDeviceField(p),
+                  SizedBox(height: 12),
+                  // Chỉ tuyến in THẬT mới có thứ tự dự phòng và bảng mã — tuyến
+                  // 'browser' in bằng hộp thoại hệ điều hành, không đi ESC/POS.
+                  if (conn == 'system' || conn == 'lan') ...[
+                    _printerPriorityField(p),
+                    SizedBox(height: 12),
+                    _printerCharsetField(p),
+                    SizedBox(height: 12),
+                  ],
+                  // In bill bằng driver Windows (font đẹp) — chỉ máy in 'system'.
+                  if (conn == 'system') ...[
+                    _printerDriverModeField(p),
+                    SizedBox(height: 12),
+                  ],
+                  SizedBox(height: 2),
+                  _printerToggles(p),
                 ],
-                _printerLabelLocationRow(ctrl),
-                SizedBox(height: 12),
-                _printerPrimaryDeviceField(p),
-                SizedBox(height: 14),
-                _printerToggles(p),
-              ],
+              ),
             ),
-          ),
         ],
       ),
     );
@@ -1263,7 +1495,127 @@ class _ConnectionsPanelState extends State<ConnectionsPanel> {
     );
   }
 
-  Future<void> _syncSystemPrinters() async {
+  Widget _printerPaperField(Map<String, dynamic> p) => _printerField(
+        t('Khổ giấy riêng của máy in'),
+        DropdownButtonFormField<String>(
+          initialValue: asText(p['paper']).isEmpty ? '' : asText(p['paper']),
+          decoration: InputDecoration(
+            isDense: true,
+            helperText: t('Không đồng bộ sang máy khác'),
+          ),
+          items: [
+            DropdownMenuItem(value: '', child: Text(t('Theo mẫu bill chung'))),
+            DropdownMenuItem(value: 'K80', child: Text('K80 (80 mm)')),
+            DropdownMenuItem(value: 'K57', child: Text('K57 (57/58 mm)')),
+          ],
+          onChanged: (v) => setState(() {
+            p['paper'] = v ?? '';
+            p['widthMm'] = v == 'K80' ? 80 : (v == 'K57' ? 57 : null);
+          }),
+        ),
+      );
+
+  /// THỨ TỰ ƯU TIÊN khi máy in đứng trước không in được.
+  ///
+  /// Máy in cắm THẲNG vào máy đang thao tác luôn được thử đầu tiên, bất kể số
+  /// này — đó là chỗ người bấm đứng chờ tờ giấy. Số này xếp hạng các tuyến CÒN
+  /// LẠI: hỏng máy 1 thì phiếu tự chuyển sang máy 2, rồi máy 3.
+  Widget _printerPriorityField(Map<String, dynamic> p) => _printerField(
+        t('Thứ tự ưu tiên dự phòng'),
+        DropdownButtonFormField<int>(
+          initialValue: int.tryParse(asText(p['priority'])) ?? 0,
+          decoration: InputDecoration(
+            isDense: true,
+            helperText: t('Máy in tại chỗ luôn được thử trước'),
+          ),
+          items: [
+            DropdownMenuItem(value: 0, child: Text(t('Theo thứ tự danh sách'))),
+            for (var i = 1; i <= 5; i++)
+              DropdownMenuItem(value: i, child: Text(t('Ưu tiên $i'))),
+          ],
+          onChanged: (v) => setState(() => p['priority'] = v ?? 0),
+        ),
+      );
+
+  /// IN BILL BẰNG DRIVER WINDOWS (WindowsDriverBackend).
+  ///
+  /// Bật = gửi TEXT + font TrueType qua driver Windows (GDI), driver raster hoá ở
+  /// tầng thiết bị → bill đẹp, tiếng Việt chuẩn, KHÔNG tạo ảnh. Chỉ dùng cho máy
+  /// in bill 'system' trên Windows (K80). Tắt = in ESC/POS font ROM như cũ (bếp/
+  /// bar/tem nên để tắt). Bấm "In thử" để xem font ngay trên máy in thật.
+  Widget _printerDriverModeField(Map<String, dynamic> p) {
+    final driver = asText(p['renderMode']) == 'driver';
+    const known = [
+      'Segoe UI',
+      'Roboto',
+      'Roboto Condensed',
+      'Arial',
+      'Tahoma',
+      'Consolas',
+    ];
+    final cur =
+        asText(p['driverFont']).isEmpty ? 'Segoe UI' : asText(p['driverFont']);
+    final fonts = known.contains(cur) ? known : <String>[cur, ...known];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _switchRow(
+            t('In bill bằng driver Windows (font đẹp, tiếng Việt chuẩn)'),
+            driver,
+            (val) =>
+                setState(() => p['renderMode'] = val ? 'driver' : 'escpos')),
+        if (driver) ...[
+          SizedBox(height: 10),
+          _printerField(
+            t('Font in (TrueType — phải cài sẵn trên máy Windows)'),
+            DropdownButtonFormField<String>(
+              initialValue: cur,
+              decoration: InputDecoration(
+                isDense: true,
+                helperText: t('Bấm In thử để xem font trên máy in thật'),
+              ),
+              items: [
+                for (final f in fonts)
+                  DropdownMenuItem(value: f, child: Text(f)),
+              ],
+              onChanged: (v) =>
+                  setState(() => p['driverFont'] = v ?? 'Segoe UI'),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  /// BẢNG MÃ TIẾNG VIỆT của máy in.
+  ///
+  /// Mặc định gửi UTF-8 — máy in gắn liền trên máy POS cầm tay và phần lớn máy
+  /// đời mới đọc được. Máy đời cũ in ra ký tự lạ thì đổi sang CP1258; vẫn không
+  /// được nữa mới chọn "Bỏ dấu". Bấm In thử để xem hai dòng tiếng Việt mẫu rồi
+  /// chọn — không phải đoán.
+  Widget _printerCharsetField(Map<String, dynamic> p) => _printerField(
+        t('Bảng mã tiếng Việt'),
+        DropdownButtonFormField<String>(
+          initialValue:
+              asText(p['charset']).isEmpty ? 'auto' : asText(p['charset']),
+          decoration: InputDecoration(
+            isDense: true,
+            helperText: t('In thử để kiểm tra chữ có dấu'),
+          ),
+          items: [
+            DropdownMenuItem(value: 'auto', child: Text(t('Tự động (UTF-8)'))),
+            DropdownMenuItem(value: 'utf8', child: Text('UTF-8')),
+            DropdownMenuItem(
+                value: 'cp1258', child: Text(t('CP1258 (máy in đời cũ)'))),
+            DropdownMenuItem(value: 'ascii', child: Text(t('Bỏ dấu'))),
+          ],
+          onChanged: (v) => setState(() => p['charset'] = v ?? 'auto'),
+        ),
+      );
+
+  /// [imLang] = không báo "đã đồng bộ N máy in"; dùng khi dò để mở danh sách
+  /// chọn ngay sau đó (danh sách hiện ra đã là câu trả lời rồi).
+  Future<void> _syncSystemPrinters({bool imLang = false}) async {
     setState(() => _loadingSystemPrinters = true);
     try {
       final res = await widget.api.getSystemPrinters(force: true);
@@ -1275,6 +1627,7 @@ class _ConnectionsPanelState extends State<ConnectionsPanel> {
             .toList();
         _loadingSystemPrinters = false;
       });
+      if (imLang) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text(
             t('Đã đồng bộ ${_systemPrinters.length} máy in từ hệ điều hành')),
@@ -1325,7 +1678,15 @@ class _ConnectionsPanelState extends State<ConnectionsPanel> {
         'auto': p['auto'] == true,
         'cashDrawer': p['cashDrawer'] == true,
         'openDrawerOnPrint': p['openDrawerOnPrint'] == true,
+        'paper': asText(p['paper']),
+        'widthMm': p['widthMm'],
         'primaryDeviceId': asText(p['primaryDeviceId']),
+        'priority': int.tryParse(asText(p['priority'])) ?? 0,
+        'charset': asText(p['charset']).isEmpty ? 'auto' : asText(p['charset']),
+        'renderMode': asText(p['renderMode']) == 'driver' ? 'driver' : 'escpos',
+        'driverFont': asText(p['driverFont']).isEmpty
+            ? 'Segoe UI'
+            : asText(p['driverFont']),
       });
     }
 

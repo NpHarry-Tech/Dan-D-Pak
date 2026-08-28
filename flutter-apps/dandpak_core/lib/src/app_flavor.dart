@@ -16,6 +16,7 @@ class AppFlavor {
     required this.versionName,
     required this.buildNumber,
     this.enabledModuleKeys,
+    this.disabledModuleKeys,
     this.layout = AppLayout.station,
   });
 
@@ -29,12 +30,27 @@ class AppFlavor {
   /// tương thích ngược 100%).
   final Set<String>? enabledModuleKeys;
 
+  /// Module CẤM trên thiết bị này, kể cả khi [enabledModuleKeys] để `null`
+  /// (nghĩa là "hiện tất cả").
+  ///
+  /// Cần vì có module chỉ hợp lý trên MỘT lớp thiết bị: 'catalogue' là màn KHÁCH
+  /// để khách cầm lật xem, chỉ đặt trên tablet ngoài quầy. Mở nó trên máy POS
+  /// để bàn là sai mục đích — máy đang bán hàng mà nhảy sang màn khách toàn màn
+  /// hình thì thu ngân mắc kẹt sau lớp mật khẩu thoát.
+  ///
+  /// Đổi `enabledModuleKeys` của desktop từ `null` sang danh sách liệt kê tay
+  /// thì mỗi lần thêm module mới lại phải nhớ khai thêm — quên là module biến
+  /// mất trên desktop mà không ai biết. Danh sách CẤM chỉ ghi đúng ngoại lệ.
+  final Set<String>? disabledModuleKeys;
+
   /// Gợi ý bố cục cho từng lớp thiết bị (giữ chung ngôn ngữ thiết kế).
   final AppLayout layout;
 
   /// Thiết bị này có được phép mở module [key] không.
-  bool showsModule(String key) =>
-      enabledModuleKeys == null || enabledModuleKeys!.contains(key);
+  bool showsModule(String key) {
+    if (disabledModuleKeys?.contains(key) == true) return false;
+    return enabledModuleKeys == null || enabledModuleKeys!.contains(key);
+  }
 
   bool get isStation => layout == AppLayout.station;
   bool get isTablet => layout == AppLayout.tablet;

@@ -80,7 +80,8 @@ class _OnlineReconciliationSectionState
                 const Color(0xFF047857)),
             _kpi('Chưa thanh toán', Fmt.money(oNum(totals['unsettled'])),
                 const Color(0xFFB45309)),
-            _kpi('Số đơn', '${oNum(totals['orders']).toInt()}', DanColors.brand),
+            _kpi(
+                'Số đơn', '${oNum(totals['orders']).toInt()}', DanColors.brand),
           ]),
           const SizedBox(height: 8),
           if (oStr(_summary['note']).isNotEmpty)
@@ -145,9 +146,7 @@ class _OnlineReconciliationSectionState
       ),
       child: Row(
         children: [
-          SizedBox(
-              width: 150,
-              child: ProviderBadge(oStr(p['provider']))),
+          SizedBox(width: 150, child: ProviderBadge(oStr(p['provider']))),
           _cell('Đơn', '${oNum(p['orders']).toInt()}'),
           _cell('Doanh thu', Fmt.money(oNum(p['revenue']))),
           _cell('Đã TT', Fmt.money(oNum(p['settled']))),
@@ -261,8 +260,10 @@ class _OnlineReconciliationSectionState
                     ? oStr(r['external_order_code'])
                     : oStr(r['bill_no']),
                 style: const TextStyle(fontSize: 12))),
-        Expanded(flex: 2, child: Text(providerMeta(oStr(r['provider'])).name,
-            style: const TextStyle(fontSize: 12))),
+        Expanded(
+            flex: 2,
+            child: Text(providerMeta(oStr(r['provider'])).name,
+                style: const TextStyle(fontSize: 12))),
         Expanded(
             flex: 2,
             child: Text(Fmt.money(oNum(r['customer_pays'])),

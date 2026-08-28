@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../../services/api_service.dart';
 import '../../ui/app_theme.dart';
+import '../../utils/business_datetime.dart';
 import '../../utils/translation.dart';
 import '../management/management_widgets.dart';
 import 'phone_kit.dart';
@@ -59,6 +60,7 @@ class _PhonePrintersScreenState extends State<PhonePrintersScreen> {
     'kitchen_ticket': 'Phiếu bếp',
     'cup_label': 'Tem ly',
     'product_label': 'Tem sản phẩm',
+    'shipping_label': 'Tem vận đơn',
     'runner': 'Phiếu chạy món',
     'test': 'In thử',
     'cash_drawer': 'Mở két tiền',
@@ -107,8 +109,7 @@ class _PhonePrintersScreenState extends State<PhonePrintersScreen> {
     try {
       await context.read<ApiService>().testPrinter(_s(p['id']));
       if (!mounted) return;
-      appToast(context,
-          t('Đã gửi lệnh in thử tới ${_label(p)}'));
+      appToast(context, t('Đã gửi lệnh in thử tới ${_label(p)}'));
       _load();
     } catch (e) {
       if (!mounted) return;
@@ -141,19 +142,30 @@ class _PhonePrintersScreenState extends State<PhonePrintersScreen> {
         shrinkWrap: true,
         children: [
           PhoneInfoCard(rows: [
-            (t('Kiểu kết nối'), _s(p['connection']) == 'lan'
-                ? t('Máy in mạng (LAN)')
-                : t('Máy in của máy này')),
+            (
+              t('Kiểu kết nối'),
+              _s(p['connection']) == 'lan'
+                  ? t('Máy in mạng (LAN)')
+                  : t('Máy in của máy này')
+            ),
             if (_s(p['systemName']).isNotEmpty)
               (t('Tên hệ điều hành'), _s(p['systemName'])),
             if (_s(p['ip']).isNotEmpty)
               (t('Địa chỉ IP'), '${_s(p['ip'])}:${_s(p['port'])}'),
-            (t('Loại phiếu'), t(_typeLabels[_s(p['output'])] ?? _s(p['output']))),
-            (t('Ngăn kéo tiền'),
-                p['cashDrawer'] == true ? t('Có') : t('Không')),
-            (t('Trạng thái'), _s(p['statusText']).isNotEmpty
-                ? _s(p['statusText'])
-                : (p['online'] == true ? t('Sẵn sàng') : t('Không rõ'))),
+            (
+              t('Loại phiếu'),
+              t(_typeLabels[_s(p['output'])] ?? _s(p['output']))
+            ),
+            (
+              t('Ngăn kéo tiền'),
+              p['cashDrawer'] == true ? t('Có') : t('Không')
+            ),
+            (
+              t('Trạng thái'),
+              _s(p['statusText']).isNotEmpty
+                  ? _s(p['statusText'])
+                  : (p['online'] == true ? t('Sẵn sàng') : t('Không rõ'))
+            ),
             if (tuNhan) (t('Nguồn'), t('Tự nhận từ máy này')),
           ]),
           Padding(
@@ -179,8 +191,7 @@ class _PhonePrintersScreenState extends State<PhonePrintersScreen> {
                   ),
                 ] else ...[
                   const SizedBox(height: 10),
-                  Text(
-                      t('Máy in này được máy tự nhận, không nằm trong cấu hình nên không sửa hay xoá được. Rút máy in ra là nó tự biến mất.'),
+                  Text(t('Máy in này được máy tự nhận, không nằm trong cấu hình nên không sửa hay xoá được. Rút máy in ra là nó tự biến mất.'),
                       style: const TextStyle(
                           fontSize: 11.5, height: 1.5, color: DanColors.faint)),
                 ],
@@ -196,7 +207,7 @@ class _PhonePrintersScreenState extends State<PhonePrintersScreen> {
   Future<void> _moCaiDat(Map<String, dynamic>? p) async {
     final luu = await showPhoneSheet<bool>(
       context: context,
-      title: t(p == null ? 'Thêm máy in mạng' : 'Sửa máy in'),
+      title: t(p == null ? 'Thêm máy in mới' : 'Sửa máy in'),
       builder: (_) => PhonePrinterSetupSheet(printer: p),
     );
     if (luu == true) _load();
@@ -268,8 +279,7 @@ class _PhonePrintersScreenState extends State<PhonePrintersScreen> {
                               PhoneSectionTitle(t('Thiết bị máy in')),
                               if (_printers.isEmpty)
                                 PhoneEmpty(
-                                    title: t(
-                                        'Máy này chưa cắm máy in nào'),
+                                    title: t('Máy này chưa cắm máy in nào'),
                                     hint: t(
                                         'Máy in của máy POS khác do Quản lý/Admin xem và thiết lập.'),
                                     icon: Icons.print_outlined)
@@ -354,13 +364,12 @@ class _PhonePrintersScreenState extends State<PhonePrintersScreen> {
 
   Widget _jobRow(Map<String, dynamic> j) {
     final status = _s(j['status']);
-    final created = DateTime.tryParse(_s(j['created_at']));
+    final created = BusinessDateTime.dateTime(j['created_at']);
     return PhoneListRow(
       title: t(_typeLabels[_s(j['type'])] ?? _s(j['type'])),
       subtitle: [
         _printerName(_s(j['printer'])),
-        if (created != null)
-          '${created.day}/${created.month} ${created.hour.toString().padLeft(2, '0')}:${created.minute.toString().padLeft(2, '0')}',
+        if (created != '—') created,
         if (_n(j['attempts']) > 1) '${t('thử')} ${phoneInt(_n(j['attempts']))}',
       ].where((e) => e.isNotEmpty).join(' · '),
       badge: t(_statusLabels[status] ?? status),
@@ -387,13 +396,15 @@ class _PhonePrintersScreenState extends State<PhonePrintersScreen> {
           PhoneInfoCard(
             rows: [
               (t('Máy in'), _printerName(_s(j['printer']))),
-              (t('Trạng thái'),
-                  t(_statusLabels[_s(j['status'])] ?? _s(j['status']))),
+              (
+                t('Trạng thái'),
+                t(_statusLabels[_s(j['status'])] ?? _s(j['status']))
+              ),
               if (_s(j['target']).isNotEmpty) (t('Đích'), _s(j['target'])),
               if (_n(j['attempts']) > 0)
                 (t('Số lần thử'), phoneInt(_n(j['attempts']))),
               if (_s(j['printed_at']).isNotEmpty)
-                (t('In lúc'), _s(j['printed_at']).replaceFirst('T', ' ')),
+                (t('In lúc'), BusinessDateTime.dateTime(j['printed_at'])),
             ],
           ),
           if (_s(j['error']).isNotEmpty)
@@ -493,8 +504,7 @@ class _PrinterCard extends StatelessWidget {
               ].where((e) => e.isNotEmpty).join(' · '),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                  fontSize: 11, color: DanColors.muted)),
+              style: const TextStyle(fontSize: 11, color: DanColors.muted)),
           const SizedBox(height: 10),
           Row(
             children: [

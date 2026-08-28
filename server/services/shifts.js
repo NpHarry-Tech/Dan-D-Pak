@@ -6,6 +6,7 @@ import { emit } from '../realtime.js';
 import * as CashDrawer from './cashDrawer.js';
 import * as einvoice from './einvoice.js';
 import * as Auth from './auth.js';
+import { businessDayBoundsUtc } from '../core/businessClock.js';
 
 
 function cashTotal(counts = {}) {
@@ -17,12 +18,10 @@ function cashTotal(counts = {}) {
 }
 
 function dayBounds(ref = new Date()) {
-  const d = ref instanceof Date ? new Date(ref) : new Date(ref || Date.now());
-  if (Number.isNaN(d.getTime())) return dayBounds(new Date());
-  d.setHours(0, 0, 0, 0);
-  const start = d.toISOString();
-  d.setHours(24, 0, 0, 0);
-  return { start, end: d.toISOString() };
+  try {
+    const { start, end } = businessDayBoundsUtc(ref);
+    return { start: start.toISOString(), end: end.toISOString() };
+  } catch { return dayBounds(new Date()); }
 }
 
 function publicShift(row) {
@@ -140,11 +139,19 @@ export function shiftReport(shift_id, branch_id = 'sala') {
     WHERE p.shift_id=?
     GROUP BY pl.method
     ORDER BY amount DESC`).all(shift_id);
-  const billLines = db.prepare(`SELECT method,COALESCE(tendered_amount,amount) amount,reference FROM payment_lines WHERE payment_id=? ORDER BY rowid`);
+  const billLinesByPayment = new Map();
+  for (const row of db.prepare(`SELECT pl.payment_id,pl.method,
+      COALESCE(pl.tendered_amount,pl.amount) amount,pl.reference
+    FROM payment_lines pl JOIN payments p ON p.id=pl.payment_id
+    WHERE p.shift_id=? ORDER BY pl.payment_id,pl.rowid`).all(shift_id)) {
+    const bucket = billLinesByPayment.get(row.payment_id) || [];
+    bucket.push({ method: row.method, amount: row.amount, reference: row.reference });
+    billLinesByPayment.set(row.payment_id, bucket);
+  }
   const bills = payments.map(p => ({
     ...p,
     number: p.bill_no || p.order_id.slice(-6).toUpperCase(),
-    lines: billLines.all(p.payment_id),
+    lines: billLinesByPayment.get(p.payment_id) || [],
   }));
   const methodTotals = Object.fromEntries(lines.map(l => [l.method, Number(l.amount) || 0]));
   const cash = Number(methodTotals.cash) || 0;

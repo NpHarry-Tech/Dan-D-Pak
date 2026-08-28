@@ -3,7 +3,8 @@ import 'package:flutter/material.dart';
 // Re-export helper thông báo/toast DÙNG CHUNG: mọi màn đã import app_theme (cho
 // DanColors) nên tự có `appToast()` — không cần thêm import ở 23 nơi. `appToast`
 // thay cho "label đỏ" cũ (mỗi màn tự SnackBar đỏ một kiểu).
-export '../services/app_notifier.dart' show appToast, appMessengerKey, AppNotifier;
+export '../services/app_notifier.dart'
+    show appToast, appMessengerKey, appNavigatorKey, AppNotifier;
 
 class DanColors {
   const DanColors._();
@@ -119,7 +120,8 @@ class DanTheme {
           backgroundColor: DanColors.brand,
           foregroundColor: Colors.white,
           minimumSize: const Size(0, 42),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(DanRadius.sm)),
+          shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(DanRadius.sm)),
           textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
         ),
       ),
@@ -128,14 +130,16 @@ class DanTheme {
           foregroundColor: DanColors.text,
           side: const BorderSide(color: DanColors.border2),
           minimumSize: const Size(0, 42),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(DanRadius.sm)),
+          shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(DanRadius.sm)),
           textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
         ),
       ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
         fillColor: DanColors.surface2,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(DanRadius.sm),
           borderSide: const BorderSide(color: DanColors.border),

@@ -648,8 +648,7 @@ class _AuditLogRowState extends State<_AuditLogRow> {
   @override
   Widget build(BuildContext context) {
     final action = _s(widget.entry['action']);
-    final createdAt =
-        DateTime.tryParse(_s(widget.entry['created_at']))?.toLocal();
+    final createdAt = BusinessDateTime.parseApi(widget.entry['created_at']);
     final actor = _s(widget.entry['actor']);
     final rawDetail = _decrypted ?? _s(widget.entry['detail']);
     final encrypted =
@@ -1039,7 +1038,12 @@ _AuditSummary _summaryFor(
     case 'payment.done':
       return _AuditSummary(t('Đã ghi nhận thanh toán.'), target);
     case 'retail.refund':
-      return _AuditSummary(t('Đã xử lý đổi trả bán lẻ.'), target);
+      return _AuditSummary(
+          t('Bill bán lẻ đã bị xóa khỏi lịch sử (trả hàng / hoàn hàng).'),
+          target);
+    case 'order.refund':
+      return _AuditSummary(
+          t('Bill F&B đã bị xóa khỏi lịch sử (trả hàng / hoàn hàng).'), target);
     case 'invoice.cancel':
       return _AuditSummary(t('Đã hủy hóa đơn.'), target);
     case 'print.job':

@@ -21,6 +21,7 @@ class _CartPanel extends StatelessWidget {
   final bool sending;
   final VoidCallback onClear;
   final void Function(int index, int qty) onQtyChange;
+  final void Function(int index) onNote;
   final VoidCallback? onSend;
   final VoidCallback? onCheckout;
 
@@ -33,6 +34,7 @@ class _CartPanel extends StatelessWidget {
     required this.sending,
     required this.onClear,
     required this.onQtyChange,
+    required this.onNote,
     required this.onSend,
     required this.onCheckout,
   });
@@ -83,6 +85,7 @@ class _CartPanel extends StatelessWidget {
                   itemBuilder: (_, i) => _CartRow(
                     item: cart[i],
                     onQtyChange: (q) => onQtyChange(i, q),
+                    onNote: () => onNote(i),
                   ),
                 ),
         ),
@@ -151,6 +154,65 @@ class _CartPanel extends StatelessWidget {
   }
 }
 
+// Chip chọn một tùy chọn (size/topping). single=true vẽ tròn (radio), false vẽ vuông.
+class _OptionChip extends StatelessWidget {
+  final String label;
+  final int price;
+  final bool selected;
+  final bool single;
+  final VoidCallback onTap;
+  const _OptionChip({
+    required this.label,
+    required this.price,
+    required this.selected,
+    required this.single,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(10),
+      child: Container(
+        padding: EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+        decoration: BoxDecoration(
+          color: selected ? Color(0xFFE0F5FA) : Colors.white,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+              color: selected ? Color(0xFF0891B2) : Color(0xFFD9DEE5),
+              width: selected ? 1.6 : 1),
+        ),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          Icon(
+            selected
+                ? (single ? Icons.radio_button_checked : Icons.check_box)
+                : (single
+                    ? Icons.radio_button_unchecked
+                    : Icons.check_box_outline_blank),
+            size: 17,
+            color: selected ? Color(0xFF0891B2) : Color(0xFF9AA3B2),
+          ),
+          SizedBox(width: 6),
+          Text(label,
+              style: TextStyle(
+                  fontSize: 13.5,
+                  fontWeight: FontWeight.w700,
+                  color: Color(0xFF1A2230))),
+          if (price > 0) ...[
+            SizedBox(width: 6),
+            Text('+đ$price',
+                style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                    color: Color(0xFF0891B2))),
+          ],
+        ]),
+      ),
+    );
+  }
+}
+
 class _ItemDetailPanel extends StatelessWidget {
   final SoMenuItem item;
   final SelfOrderLang lang;
@@ -159,6 +221,9 @@ class _ItemDetailPanel extends StatelessWidget {
   final String serverUrl;
   final VoidCallback onClose;
   final VoidCallback onAdd;
+  // Trạng thái chọn tùy chọn do MÀN (Stateful) giữ: groupKey -> tập optionKey.
+  final Map<String, Set<String>> selected;
+  final void Function(SoOptionGroup group, SoOptionItem option) onToggleOption;
 
   _ItemDetailPanel({
     required this.item,
@@ -168,7 +233,60 @@ class _ItemDetailPanel extends StatelessWidget {
     required this.serverUrl,
     required this.onClose,
     required this.onAdd,
+    this.selected = const {},
+    required this.onToggleOption,
   });
+
+  int get _optionsTotal {
+    var sum = 0;
+    for (final g in item.optionGroups) {
+      final sel = selected[g.key] ?? const <String>{};
+      for (final o in g.options) {
+        if (sel.contains(o.key)) sum += o.price;
+      }
+    }
+    return sum;
+  }
+
+  Widget _optionGroupBlock(SoOptionGroup g) {
+    final sel = selected[g.key] ?? const <String>{};
+    return Padding(
+      padding: EdgeInsets.only(bottom: 14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(children: [
+            Text(g.name,
+                style: TextStyle(
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w900,
+                    color: Color(0xFF1A2230))),
+            SizedBox(width: 6),
+            Text(
+                g.required
+                    ? (g.single ? t('(bắt buộc chọn 1)') : t('(bắt buộc)'))
+                    : (g.single ? t('(chọn 1)') : t('(tùy chọn)')),
+                style: TextStyle(fontSize: 11, color: Color(0xFF9AA3B2))),
+          ]),
+          SizedBox(height: 6),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final o in g.options)
+                _OptionChip(
+                  label: o.name,
+                  price: o.price,
+                  selected: sel.contains(o.key),
+                  single: g.single,
+                  onTap: () => onToggleOption(g, o),
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
 
   String get _itemCode {
     final values = [item.code, item.barcode]
@@ -208,15 +326,6 @@ class _ItemDetailPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final optionRows = <(String, String)>[];
-    void addOption(String label, String value) {
-      final v = value.trim();
-      if (v.isNotEmpty) optionRows.add((label, v));
-    }
-
-    addOption(lang.optionsLabel, _joinList(item.modifiers));
-    addOption(lang.addonsLabel, _joinList(item.addons));
-
     return Container(
       width: width,
       margin: EdgeInsets.all(16),
@@ -273,7 +382,9 @@ class _ItemDetailPanel extends StatelessWidget {
                         ),
                         SizedBox(height: 6),
                         Text(
-                          t('đ${item.price}'),
+                          _optionsTotal > 0
+                              ? t('đ${item.price + _optionsTotal}')
+                              : t('đ${item.price}'),
                           style: TextStyle(
                             fontSize: 24,
                             fontWeight: FontWeight.w900,
@@ -282,25 +393,14 @@ class _ItemDetailPanel extends StatelessWidget {
                         ),
                         SizedBox(height: 12),
                         Expanded(
-                          child: optionRows.isEmpty
-                              ? Text(
-                                  lang.itemInfoTitle,
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w800,
-                                    color: Color(0xFF9AA3B2),
-                                  ),
-                                )
-                              : SingleChildScrollView(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      for (final row in optionRows)
-                                        _infoRow(row.$1, row.$2),
-                                    ],
-                                  ),
-                                ),
+                          child: Text(
+                            lang.itemInfoTitle,
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w800,
+                              color: Color(0xFF9AA3B2),
+                            ),
+                          ),
                         ),
                       ],
                     ),
@@ -311,25 +411,21 @@ class _ItemDetailPanel extends StatelessWidget {
           ),
           Divider(height: 1, color: Color(0xFFE7EAEE)),
           Expanded(
-            child: _rows.isEmpty
-                ? Center(
-                    child: Text(
-                      lang.itemInfoTitle,
-                      style: TextStyle(
-                        color: Color(0xFF9AA3B2),
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                  )
-                : SingleChildScrollView(
-                    padding: EdgeInsets.fromLTRB(18, 16, 18, 12),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        for (final row in _rows) _infoRow(row.$1, row.$2),
-                      ],
-                    ),
-                  ),
+            child: SingleChildScrollView(
+              padding: EdgeInsets.fromLTRB(18, 16, 18, 12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Nhóm tùy chọn "Trên" trước thông tin món.
+                  for (final g in item.optionGroups)
+                    if (g.position == 'top') _optionGroupBlock(g),
+                  for (final row in _rows) _infoRow(row.$1, row.$2),
+                  // Nhóm tùy chọn "Dưới" sau thông tin món.
+                  for (final g in item.optionGroups)
+                    if (g.position != 'top') _optionGroupBlock(g),
+                ],
+              ),
+            ),
           ),
           Padding(
             padding: EdgeInsets.fromLTRB(18, 0, 18, 18),
@@ -337,7 +433,9 @@ class _ItemDetailPanel extends StatelessWidget {
               onPressed: onAdd,
               icon: Icon(Icons.add_shopping_cart, size: 18),
               label: Text(
-                lang.addToCartBtn,
+                _optionsTotal > 0
+                    ? '${lang.addToCartBtn} · đ${item.price + _optionsTotal}'
+                    : lang.addToCartBtn,
                 style: TextStyle(fontSize: 15, fontWeight: FontWeight.w900),
               ),
               style: FilledButton.styleFrom(
@@ -548,7 +646,9 @@ class _MenuCard extends StatelessWidget {
 class _CartRow extends StatelessWidget {
   final SoCartItem item;
   final ValueChanged<int> onQtyChange;
-  _CartRow({required this.item, required this.onQtyChange});
+  final VoidCallback onNote;
+  _CartRow(
+      {required this.item, required this.onQtyChange, required this.onNote});
 
   @override
   Widget build(BuildContext context) {
@@ -563,11 +663,36 @@ class _CartRow extends StatelessWidget {
                       fontWeight: FontWeight.bold,
                       color: Color(0xFF1A2230),
                       fontSize: 13)),
+              // Tùy chọn khách đã chọn (Size: Lớn · +Trân châu…).
+              if (item.selectedModifiers.isNotEmpty)
+                Text(item.selectedModifiers.map((m) => m.name).join(' · '),
+                    style: TextStyle(
+                        color: Color(0xFF677084), fontSize: 11, height: 1.25)),
               Text(t('đ${item.totalPrice}'),
                   style: TextStyle(
                       color: Color(0xFF0891B2),
                       fontWeight: FontWeight.bold,
                       fontSize: 12)),
+              // Ghi chú của khách cho món (vd "ít đá, không hành") — bấm để sửa.
+              GestureDetector(
+                onTap: onNote,
+                child: Padding(
+                  padding: EdgeInsets.only(top: 3),
+                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    Icon(Icons.edit_note, size: 15, color: Color(0xFF0891B2)),
+                    SizedBox(width: 3),
+                    Text(item.notes.isEmpty ? t('Thêm ghi chú') : item.notes,
+                        style: TextStyle(
+                            fontSize: 11.5,
+                            color: item.notes.isEmpty
+                                ? Color(0xFF677084)
+                                : Color(0xFF1A2230),
+                            fontStyle: item.notes.isEmpty
+                                ? FontStyle.italic
+                                : FontStyle.normal)),
+                  ]),
+                ),
+              ),
             ],
           ),
         ),
@@ -600,7 +725,8 @@ class _QtyBtn extends StatelessWidget {
           height: 44,
           alignment: Alignment.center,
           decoration: BoxDecoration(
-              color: Color(0xFFF3F5F7), borderRadius: BorderRadius.circular(10)),
+              color: Color(0xFFF3F5F7),
+              borderRadius: BorderRadius.circular(10)),
           child: Icon(icon, size: 18, color: Color(0xFF677084)),
         ),
       );

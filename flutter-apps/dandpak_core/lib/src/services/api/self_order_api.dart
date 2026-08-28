@@ -83,21 +83,14 @@ extension ApiServiceSelfOrderApi on ApiService {
         await getJson('/api/tables', errorMessage: 'Failed to load tables'));
     return data
         .whereType<Map>()
-        .map((e) => SoTableModel(
-              id: (e['id'] ?? '').toString(),
-              code: (e['code'] ?? '').toString(),
-              // Server chỉ có `code` (VD "A01") — dùng làm tên hiển thị.
-              name: (e['name'] ?? e['code'] ?? '').toString(),
-              zoneId: (e['zone_id'] ?? e['zone'] ?? '').toString(),
-              status: (e['status'] ?? 'empty').toString(),
-            ))
+        .map((e) => SoTableModel.fromJson(Map<String, dynamic>.from(e)))
         .toList();
   }
 
   Future<List<SoMenuItem>> fetchMenuRaw({String lang = 'vi'}) async {
-    final path = lang == 'vi'
-        ? '/api/menu'
-        : '/api/menu?lang=${Uri.encodeQueryComponent(lang)}';
+    // self_order=1 → server trả MENU KHÁCH (ẩn thêm món self_order_hidden), khác F&B POS.
+    final langQ = lang == 'vi' ? '' : '&lang=${Uri.encodeQueryComponent(lang)}';
+    final path = '/api/menu?self_order=1$langQ';
     final decoded = await getJson(path, errorMessage: 'Failed to load menu');
     final List<dynamic> data = decoded is List
         ? decoded
@@ -151,6 +144,14 @@ extension ApiServiceSelfOrderApi on ApiService {
         allergens: item['allergens'] is List ? item['allergens'] as List : [],
         modifiers: item['modifiers'] is List ? item['modifiers'] as List : [],
         addons: item['addons'] is List ? item['addons'] as List : [],
+        optionGroups: (item['option_groups'] is List)
+            ? (item['option_groups'] as List)
+                .whereType<Map>()
+                .map(
+                    (e) => SoOptionGroup.fromJson(Map<String, dynamic>.from(e)))
+                .where((g) => g.options.isNotEmpty)
+                .toList()
+            : const <SoOptionGroup>[],
       );
     }).toList();
   }

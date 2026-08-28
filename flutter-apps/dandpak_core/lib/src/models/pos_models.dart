@@ -97,6 +97,9 @@ class TableModel {
   final String code;
   final String name;
   final String zoneId;
+  final String zoneName; // tên khu vực để hiển thị (zoneId là ĐỊNH DANH)
+  final double posX; // vị trí trên sơ đồ theo đơn vị ô lưới, SỐ THỰC để đặt
+  final double posY; // tự do (không snap ô). -1 = chưa xếp vị trí.
   final String status; // 'empty', 'occupied', 'checking_out', 'dirty'
   final String? activeOrderId;
   final double? activeOrderTotal;
@@ -114,6 +117,9 @@ class TableModel {
     required this.code,
     required this.name,
     required this.zoneId,
+    this.zoneName = '',
+    this.posX = -1,
+    this.posY = -1,
     required this.status,
     this.activeOrderId,
     this.activeOrderTotal,
@@ -149,6 +155,9 @@ class TableModel {
       code: json['code'] ?? '',
       name: json['name'] ?? '',
       zoneId: json['zone_id'] ?? json['zone'] ?? '',
+      zoneName: (json['zone'] ?? json['zone_id'] ?? '').toString(),
+      posX: _money(json['pos_x']) ?? -1,
+      posY: _money(json['pos_y']) ?? -1,
       status: json['status'] ?? 'empty',
       activeOrderId: activeOrderId,
       activeOrderTotal: amount != null && amount > 0 ? amount : null,
@@ -250,7 +259,9 @@ class CartItem {
   final String orderItemId;
   final String status;
   final String station;
-  final double? unitPriceOverride;
+  // CHỈNH GIÁ DÒNG (giảm giá trực tiếp trên món, như Retail): giá bán/đơn vị đã
+  // đổi. null = giữ giá niêm yết. Sửa được nên KHÔNG final.
+  double? unitPriceOverride;
 
   CartItem({
     required this.item,
@@ -265,14 +276,19 @@ class CartItem {
 
   bool get persisted => orderItemId.isNotEmpty;
 
-  double get unitPrice {
-    if (unitPriceOverride != null) return unitPriceOverride!;
+  // Giá niêm yết/đơn vị (đã gồm modifier) — dùng làm "giá gốc" khi có chỉnh giá.
+  double get listedUnitPrice {
     double total = item.price;
     for (var m in selectedModifiers) {
       total += m.price;
     }
     return total;
   }
+
+  bool get hasPriceOverride =>
+      unitPriceOverride != null && unitPriceOverride != listedUnitPrice;
+
+  double get unitPrice => unitPriceOverride ?? listedUnitPrice;
 
   double get totalPrice => unitPrice * qty;
 

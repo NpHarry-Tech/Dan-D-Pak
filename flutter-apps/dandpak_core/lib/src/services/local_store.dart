@@ -83,4 +83,10 @@ class LocalStore {
     data.remove(key);
     await _write(data);
   }
+
+  Future<void> removeWhere(bool Function(String key) predicate) async {
+    final data = Map<String, dynamic>.from(await _read());
+    data.removeWhere((key, _) => predicate(key));
+    await _write(data);
+  }
 }

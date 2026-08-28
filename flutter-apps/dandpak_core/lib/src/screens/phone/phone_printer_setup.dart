@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../services/api_service.dart';
+import '../../services/system_log.dart';
 import '../../ui/app_theme.dart';
 import '../../utils/translation.dart';
 import 'phone_kit.dart';
@@ -33,6 +34,7 @@ class _PhonePrinterSetupSheetState extends State<PhonePrinterSetupSheet> {
   String _kieuNoi = 'system'; // 'system' = máy in của máy này | 'lan'
   String _tenHeDieuHanh = '';
   String _loaiPhieu = 'receipt';
+  String _khoGiay = 'K57';
   bool _coKet = false;
   bool _dangLuu = false;
 
@@ -52,6 +54,7 @@ class _PhonePrinterSetupSheetState extends State<PhonePrinterSetupSheet> {
     'kitchen_ticket': 'Phiếu bếp',
     'product_label': 'Tem sản phẩm',
     'cup_label': 'Tem ly',
+    'shipping_label': 'Tem vận đơn',
     'report': 'Báo cáo (máy in A4)',
   };
 
@@ -71,6 +74,10 @@ class _PhonePrinterSetupSheetState extends State<PhonePrinterSetupSheet> {
       if (_kieuNoiLabels.containsKey(c)) _kieuNoi = c;
       final out = '${p['output'] ?? 'receipt'}';
       if (_loaiPhieuLabels.containsKey(out)) _loaiPhieu = out;
+      final paper = '${p['paper'] ?? ''}'.toUpperCase();
+      if (paper == 'K80' || paper == 'K57' || paper == 'K58') {
+        _khoGiay = paper == 'K80' ? 'K80' : 'K57';
+      }
     }
     _doMayIn();
   }
@@ -83,31 +90,98 @@ class _PhonePrinterSetupSheetState extends State<PhonePrinterSetupSheet> {
     super.dispose();
   }
 
-  Future<void> _doMayIn() async {
+  /// Dò máy in đang cắm vào CHÍNH MÁY NÀY.
+  ///
+  /// Hai nguồn, gộp lại rồi khử trùng:
+  ///  1. `/api/print/printers?live=1` — các tuyến máy in đã khai, lọc cái gắn
+  ///     vào máy này.
+  ///  2. `/api/print/system-printers?force=1` — hỏi THẲNG hệ điều hành qua
+  ///     hardware agent. Đây mới là nguồn thấy được máy in vừa cắm mà chưa ai
+  ///     khai bao giờ; thiếu nó thì "máy in của máy này" luôn rỗng ở máy mới và
+  ///     người dùng buộc phải gõ tay — gõ sai một ký tự là phiếu không bao giờ
+  ///     ra giấy.
+  Future<void> _doMayIn({bool nguoiDungBam = false}) async {
+    if (mounted) setState(() => _dangDo = true);
     try {
       final api = context.read<ApiService>();
-      // Máy in mà CHÍNH MÁY NÀY đang cắm — server lọc sẵn theo thiết bị.
-      final ds = await api.getPrinters(live: true);
-      final ten = ds
-          .whereType<Map>()
-          .where((e) => e['attached_to_me'] == true || e['implicit'] == true)
-          .map((e) => '${e['systemName'] ?? e['name'] ?? ''}')
-          .where((e) => e.isNotEmpty)
-          .toSet()
-          .toList();
+      final ten = <String>{};
+
+      try {
+        final ds = await api.getPrinters(live: true);
+        ten.addAll(ds
+            .whereType<Map>()
+            .where((e) => e['attached_to_me'] == true || e['implicit'] == true)
+            .map((e) => '${e['systemName'] ?? e['name'] ?? ''}')
+            .where((e) => e.isNotEmpty));
+      } catch (_) {}
+
+      try {
+        // force khi người dùng chủ động bấm: bỏ cache để thấy máy in vừa cắm.
+        final res = await api.getSystemPrinters(force: nguoiDungBam);
+        final ds = (res['printers'] as List?) ?? const [];
+        final toi = SystemLog.deviceId.trim();
+        ten.addAll(ds
+            .whereType<Map>()
+            // Chỉ nhận máy in của MÁY NÀY. Ở chế độ agent server trả máy in của
+            // MỌI máy POS kèm `device_id`; khai nhầm máy của người khác vào đây
+            // là tạo tuyến ma, giấy chui ra ở quầy khác (đúng lỗi đã sửa ngày
+            // 2026-07-30). Bản không chạy agent thì server dò máy in ngay trên
+            // nó và không gắn device_id — khi đó lấy hết.
+            .where((e) {
+              final may = '${e['device_id'] ?? ''}'.trim();
+              return may.isEmpty || (toi.isNotEmpty && may == toi);
+            })
+            .map((e) => '${e['systemName'] ?? e['name'] ?? ''}')
+            .where((e) => e.isNotEmpty));
+      } catch (_) {}
+
       if (!mounted) return;
+      final ds = ten.toList()..sort();
       setState(() {
-        _mayInCuaMay = ten;
+        _mayInCuaMay = ds;
         _dangDo = false;
         // Thêm mới mà máy chỉ có đúng một máy in thì chọn sẵn — đỡ một thao tác.
-        if (!_laSua && _tenHeDieuHanh.isEmpty && ten.length == 1) {
-          _tenHeDieuHanh = ten.first;
-          if (_ten.text.trim().isEmpty) _ten.text = ten.first;
+        if (!_laSua && _tenHeDieuHanh.isEmpty && ds.length == 1) {
+          _tenHeDieuHanh = ds.first;
+          if (_ten.text.trim().isEmpty) _ten.text = ds.first;
         }
       });
     } catch (_) {
       if (mounted) setState(() => _dangDo = false);
     }
+  }
+
+  /// Bấm nút mũi tên: dò lại rồi MỞ LUÔN danh sách. Dò xong mà không có gì thì
+  /// nói thẳng là không thấy, chứ không im lặng để người dùng bấm vào khoảng
+  /// không.
+  Future<void> _doVaChon() async {
+    await _doMayIn(nguoiDungBam: true);
+    if (!mounted) return;
+    if (_mayInCuaMay.isEmpty) {
+      appToast(context,
+          t('Máy này không thấy máy in nào đang cắm. Kiểm tra dây/nguồn máy in rồi bấm dò lại.'),
+          isError: true);
+      return;
+    }
+    await _chonMayInCuaMay();
+  }
+
+  Future<void> _chonMayInCuaMay() async {
+    await showPhoneSheet<void>(
+      context: context,
+      title: t('Máy in của máy này'),
+      builder: (c) => PhonePickList(
+        options: _mayInCuaMay,
+        selected: _tenHeDieuHanh,
+        onPick: (v) {
+          Navigator.of(c).pop();
+          setState(() {
+            _tenHeDieuHanh = v;
+            if (_ten.text.trim().isEmpty) _ten.text = v;
+          });
+        },
+      ),
+    );
   }
 
   /// Chỉ kiểm IP khi thật sự là máy in mạng. Máy in gắn liền không có IP —
@@ -142,6 +216,10 @@ class _PhonePrinterSetupSheetState extends State<PhonePrinterSetupSheet> {
       appToast(context, loi, isError: true);
       return;
     }
+    final pin = await _printerPin(t(_laSua
+        ? 'Xác nhận sửa cấu hình máy in.'
+        : 'Xác nhận thêm máy in mới.'));
+    if (pin == null || pin.trim().isEmpty || !mounted) return;
     setState(() => _dangLuu = true);
     try {
       final api = context.read<ApiService>();
@@ -164,12 +242,15 @@ class _PhonePrinterSetupSheetState extends State<PhonePrinterSetupSheet> {
         'systemName': laLan ? '' : _tenHeDieuHanh.trim(),
         'output': _loaiPhieu,
         'connection': _kieuNoi,
+        'primaryDeviceId': laLan ? '' : SystemLog.deviceId,
         'ip': laLan ? _ip.text.trim() : '',
         'port': laLan ? (int.tryParse(_cong.text.trim()) ?? 9100) : 0,
         'active': true,
         'auto': true,
         'cashDrawer': _coKet,
         'openDrawerOnPrint': _coKet && _loaiPhieu == 'receipt',
+        'paper': _khoGiay,
+        'widthMm': _khoGiay == 'K80' ? 80 : 57,
       };
 
       final i = ds.indexWhere((e) => '${e['id']}' == id);
@@ -179,7 +260,10 @@ class _PhonePrinterSetupSheetState extends State<PhonePrinterSetupSheet> {
         ds.add(tuyen);
       }
 
-      await api.saveAppSettings({'print_config': {...cfg, 'printers': ds}});
+      await api.saveAppSettings({
+        'print_config': {...cfg, 'printers': ds},
+        'security_pin': pin,
+      });
       if (!mounted) return;
       Navigator.of(context).pop(true);
     } catch (e) {
@@ -200,8 +284,7 @@ class _PhonePrinterSetupSheetState extends State<PhonePrinterSetupSheet> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-                t('Phiếu đang chờ ở máy in này sẽ không in được nữa. Có thể thêm lại bất cứ lúc nào.'),
+            Text(t('Phiếu đang chờ ở máy in này sẽ không in được nữa. Có thể thêm lại bất cứ lúc nào.'),
                 style: const TextStyle(
                     fontSize: 12.5, height: 1.5, color: DanColors.muted)),
             const SizedBox(height: 14),
@@ -218,6 +301,9 @@ class _PhonePrinterSetupSheetState extends State<PhonePrinterSetupSheet> {
     );
     if (ok != true || !mounted) return;
 
+    final pin = await _printerPin(t('Xác nhận xoá máy in này.'));
+    if (pin == null || pin.trim().isEmpty || !mounted) return;
+
     setState(() => _dangLuu = true);
     try {
       final api = context.read<ApiService>();
@@ -228,7 +314,10 @@ class _PhonePrinterSetupSheetState extends State<PhonePrinterSetupSheet> {
           .map((e) => Map<String, dynamic>.from(e))
           .where((e) => '${e['id']}' != id)
           .toList();
-      await api.saveAppSettings({'print_config': {...cfg, 'printers': ds}});
+      await api.saveAppSettings({
+        'print_config': {...cfg, 'printers': ds},
+        'security_pin': pin,
+      });
       if (!mounted) return;
       Navigator.of(context).pop(true);
     } catch (e) {
@@ -239,11 +328,42 @@ class _PhonePrinterSetupSheetState extends State<PhonePrinterSetupSheet> {
     }
   }
 
+  Future<String?> _printerPin(String reason) async {
+    var pin = '';
+    final value = await showDialog<String>(
+      context: context,
+      builder: (c) => AlertDialog(
+        title: Text(t('Mật khẩu Admin / Manager')),
+        content: Column(mainAxisSize: MainAxisSize.min, children: [
+          Text(reason),
+          const SizedBox(height: 12),
+          TextField(
+            key: const ValueKey('printer_admin_pin'),
+            autofocus: true,
+            obscureText: true,
+            keyboardType: TextInputType.number,
+            onChanged: (value) => pin = value.trim(),
+            decoration: InputDecoration(labelText: t('Nhập mật khẩu (PIN)')),
+          ),
+        ]),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.of(c).pop(), child: Text(t('Huỷ'))),
+          FilledButton(
+              onPressed: () => Navigator.of(c).pop(pin),
+              child: Text(t('Xác nhận'))),
+        ],
+      ),
+    );
+    return value;
+  }
+
   @override
   Widget build(BuildContext context) {
     final laLan = _kieuNoi == 'lan';
     return Padding(
-      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      padding:
+          EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
       child: SafeArea(
         top: false,
         child: SingleChildScrollView(
@@ -261,45 +381,49 @@ class _PhonePrinterSetupSheetState extends State<PhonePrinterSetupSheet> {
                   (k) => setState(() => _kieuNoi = k),
                 ),
               ),
-
               if (!laLan)
                 PhoneField(
                   label: 'Máy in của máy này',
                   required: true,
                   value: _tenHeDieuHanh,
                   hint: _dangDo
-                      ? t('Đang dò...')
+                      ? t('Đang dò máy in...')
                       : (_mayInCuaMay.isEmpty
-                          ? t('Máy này chưa thấy máy in nào')
+                          ? t('Chạm mũi tên để máy tự dò')
                           : t('Chọn máy in')),
-                  onTap: _mayInCuaMay.isEmpty
-                      ? null
-                      : () async {
-                          await showPhoneSheet<void>(
-                            context: context,
-                            title: t('Máy in của máy này'),
-                            builder: (c) => PhonePickList(
-                              options: _mayInCuaMay,
-                              selected: _tenHeDieuHanh,
-                              onPick: (v) {
-                                Navigator.of(c).pop();
-                                setState(() {
-                                  _tenHeDieuHanh = v;
-                                  if (_ten.text.trim().isEmpty) _ten.text = v;
-                                });
-                              },
-                            ),
-                          );
-                        },
+                  // Rỗng cũng PHẢI bấm được: bấm là dò lại. Trước đây danh sách
+                  // rỗng thì ô này chết cứng, người dùng không còn cách nào
+                  // ngoài gõ tay ở màn khác.
+                  //
+                  // Đang dò thì nuốt cú chạm chứ KHÔNG để null: null biến ô này
+                  // thành ô gõ tay, đúng thứ đang cần bỏ.
+                  onTap: _dangDo
+                      ? () {}
+                      : (_mayInCuaMay.isEmpty ? _doVaChon : _chonMayInCuaMay),
+                  trailing: _dangDo
+                      ? const SizedBox(
+                          width: 44,
+                          height: 44,
+                          child: Center(
+                            child: SizedBox(
+                                width: 18,
+                                height: 18,
+                                child:
+                                    CircularProgressIndicator(strokeWidth: 2)),
+                          ),
+                        )
+                      : PhoneIconButton(
+                          icon: Icons.arrow_forward,
+                          color: DanColors.brand,
+                          onTap: _doVaChon,
+                        ),
                 ),
-
               PhoneField(
                 label: 'Tên hiển thị',
                 required: true,
                 hint: 'VD: Máy in tại quầy',
                 controller: _ten,
               ),
-
               if (laLan) ...[
                 PhoneField(
                   label: 'Địa chỉ IP',
@@ -315,7 +439,6 @@ class _PhonePrinterSetupSheetState extends State<PhonePrinterSetupSheet> {
                   keyboardType: TextInputType.number,
                 ),
               ],
-
               PhoneField(
                 label: 'Loại phiếu',
                 value: t(_loaiPhieuLabels[_loaiPhieu] ?? _loaiPhieu),
@@ -326,22 +449,32 @@ class _PhonePrinterSetupSheetState extends State<PhonePrinterSetupSheet> {
                   (k) => setState(() => _loaiPhieu = k),
                 ),
               ),
+              PhoneField(
+                label: 'Khổ giấy riêng của máy in',
+                value: _khoGiay == 'K80' ? 'K80 (80 mm)' : 'K57 (57/58 mm)',
+                onTap: () => _chon(
+                  t('Khổ giấy của máy in này'),
+                  const {'K57': 'K57 (57/58 mm)', 'K80': 'K80 (80 mm)'},
+                  _khoGiay,
+                  (k) => setState(() => _khoGiay = k),
+                ),
+              ),
               PhoneSwitchRow(
                 label: t('Có nối ngăn kéo đựng tiền'),
                 value: _coKet,
                 onChanged: (v) => setState(() => _coKet = v),
               ),
-
               Padding(
                 padding: const EdgeInsets.all(16),
                 child: Text(
                     laLan
-                        ? t('Máy in mạng phải cùng mạng Wi-Fi với máy này. Cổng thường là 9100.')
-                        : t('Máy in gắn liền và máy in cắm USB không có địa chỉ IP — chỉ cần chọn đúng tên.'),
+                        ? t(
+                            'Máy in mạng phải cùng mạng Wi-Fi với máy này. Cổng thường là 9100.')
+                        : t(
+                            'Máy in gắn liền và máy in cắm USB không có địa chỉ IP — bấm mũi tên để máy tự dò tên, ĐỪNG gõ tay: sai một ký tự là phiếu không bao giờ ra giấy.'),
                     style: const TextStyle(
                         fontSize: 11.5, height: 1.5, color: DanColors.faint)),
               ),
-
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
                 child: Column(

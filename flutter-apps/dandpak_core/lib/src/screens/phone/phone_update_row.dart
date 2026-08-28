@@ -29,24 +29,47 @@ class _PhoneUpdateRowState extends State<PhoneUpdateRow> {
   UpdateInfo? _banMoi;
   bool _dangDo = true;
   bool _dangTai = false;
+  int _requestSerial = 0;
 
   @override
   void initState() {
     super.initState();
+    AppUpdater.contextRevision.addListener(_serverChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) => _do());
   }
 
+  void _serverChanged() {
+    if (!mounted) return;
+    setState(() {
+      _banMoi = null;
+      _dangDo = true;
+      _dangTai = false;
+    });
+    _do();
+  }
+
+  @override
+  void dispose() {
+    AppUpdater.contextRevision.removeListener(_serverChanged);
+    super.dispose();
+  }
+
   Future<void> _do() async {
-    if (mounted) setState(() => _dangDo = true);
+    final request = ++_requestSerial;
+    if (mounted)
+      setState(() {
+        _dangDo = true;
+        _banMoi = null;
+      });
     try {
       final info = await AppUpdater.checkForUpdate(context.read<ApiService>());
-      if (!mounted) return;
+      if (!mounted || request != _requestSerial) return;
       setState(() {
         _banMoi = info;
         _dangDo = false;
       });
     } catch (_) {
-      if (!mounted) return;
+      if (!mounted || request != _requestSerial) return;
       setState(() => _dangDo = false);
     }
   }
@@ -66,7 +89,8 @@ class _PhoneUpdateRowState extends State<PhoneUpdateRow> {
       appToast(context, loi, isError: true);
     } else {
       // Android: hệ thống mở hộp thoại cài đặt, app vẫn đang chạy phía sau.
-      appToast(context, t('Đang mở trình cài đặt — chọn "Cài đặt" để hoàn tất'));
+      appToast(
+          context, t('Đang mở trình cài đặt — chọn "Cài đặt" để hoàn tất'));
     }
   }
 
@@ -94,9 +118,7 @@ class _PhoneUpdateRowState extends State<PhoneUpdateRow> {
               Row(
                 children: [
                   Icon(
-                    coBanMoi
-                        ? Icons.system_update
-                        : Icons.check_circle_outline,
+                    coBanMoi ? Icons.system_update : Icons.check_circle_outline,
                     size: 20,
                     color: coBanMoi ? DanColors.brand : const Color(0xFF047857),
                   ),
@@ -162,8 +184,7 @@ class _PhoneUpdateRowState extends State<PhoneUpdateRow> {
                   ),
                 if (_banMoi!.mandatory) ...[
                   const SizedBox(height: 8),
-                  Text(
-                      t('Bản này bắt buộc — hãy cập nhật trước khi tiếp tục bán hàng.'),
+                  Text(t('Bản này bắt buộc — hãy cập nhật trước khi tiếp tục bán hàng.'),
                       style: const TextStyle(
                           fontSize: 11,
                           fontWeight: FontWeight.w700,

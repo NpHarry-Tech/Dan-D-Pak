@@ -12,6 +12,7 @@ import '../../ui/format.dart';
 import '../../widgets/dan_top_bar.dart';
 import '../management/management_widgets.dart';
 import '../../services/black_box.dart';
+import '../../utils/business_datetime.dart';
 import '../../utils/translation.dart';
 
 String _s(dynamic v) => v?.toString() ?? '';
@@ -289,7 +290,7 @@ class _OnlineScreenState extends State<OnlineScreen> {
     final ch = _channel(_s(o['online_channel']));
     final customer =
         o['customer'] is Map ? _s((o['customer'] as Map)['name']) : '';
-    final created = DateTime.tryParse(_s(o['created_at']));
+    final created = BusinessDateTime.parseApi(o['created_at']);
     final ref = _s(o['online_ref']).isNotEmpty
         ? _s(o['online_ref'])
         : (_s(o['id']).length >= 6

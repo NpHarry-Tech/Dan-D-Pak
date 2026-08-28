@@ -108,7 +108,8 @@ class _WarehouseSettingsPanelState extends State<WarehouseSettingsPanel> {
 
         // Set form baseline from selected warehouse or default to new
         if (_selectedId != null) {
-          final wh = _warehouses.firstWhere((w) => asText(w['id']) == _selectedId);
+          final wh =
+              _warehouses.firstWhere((w) => asText(w['id']) == _selectedId);
           _selectWarehouse(wh);
         } else {
           _selectWarehouse(null);
@@ -398,19 +399,19 @@ class _WarehouseSettingsPanelState extends State<WarehouseSettingsPanel> {
     final retailWhs =
         _warehouses.where((w) => asText(w['type']) != 'kitchen').toList();
     final activeBooks = _priceBooks
-        .where((b) =>
-            asText(b['status']) != 'inactive' || asFlag(b['builtin']))
+        .where((b) => asText(b['status']) != 'inactive' || asFlag(b['builtin']))
         .toList();
 
     Widget sectionRow(String label, String key, {required bool enabled}) {
       final sec = Map<String, dynamic>.from(_retailCfg[key] as Map? ?? {});
-      final whValue = retailWhs.any((w) => asText(w['id']) == asText(sec['warehouse_id']))
-          ? asText(sec['warehouse_id'])
-          : '';
-      final bookValue =
-          activeBooks.any((b) => asText(b['id']) == asText(sec['price_book_id']))
-              ? asText(sec['price_book_id'])
-              : 'default';
+      final whValue =
+          retailWhs.any((w) => asText(w['id']) == asText(sec['warehouse_id']))
+              ? asText(sec['warehouse_id'])
+              : '';
+      final bookValue = activeBooks
+              .any((b) => asText(b['id']) == asText(sec['price_book_id']))
+          ? asText(sec['price_book_id'])
+          : 'default';
       void update(String field, String value) {
         sec[field] = value;
         setState(() {
@@ -569,7 +570,8 @@ class _WarehouseSettingsPanelState extends State<WarehouseSettingsPanel> {
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: DanColors.surface,
-        title: Text(existing == null ? t('Tạo bảng giá') : t('Đổi tên bảng giá'),
+        title: Text(
+            existing == null ? t('Tạo bảng giá') : t('Đổi tên bảng giá'),
             style: TextStyle(fontWeight: FontWeight.w900, fontSize: 18)),
         content: SizedBox(
           width: 340,
@@ -671,98 +673,104 @@ class _WarehouseSettingsPanelState extends State<WarehouseSettingsPanel> {
                 children: [
                   Expanded(
                     child: ListView.separated(
-                padding: EdgeInsets.all(16),
-                itemCount: _warehouses.length,
-                separatorBuilder: (_, __) => SizedBox(height: 8),
-                itemBuilder: (_, i) {
-                  final w = _warehouses[i];
-                  final isSelected = asText(w['id']) == _selectedId;
-                  final kitchen = asText(w['type']) == 'kitchen';
-                  final active = asFlag(w['active']);
+                      padding: EdgeInsets.all(16),
+                      itemCount: _warehouses.length,
+                      separatorBuilder: (_, __) => SizedBox(height: 8),
+                      itemBuilder: (_, i) {
+                        final w = _warehouses[i];
+                        final isSelected = asText(w['id']) == _selectedId;
+                        final kitchen = asText(w['type']) == 'kitchen';
+                        final active = asFlag(w['active']);
 
-                  return InkWell(
-                    onTap: () => _selectWarehouse(w),
-                    borderRadius: BorderRadius.circular(DanRadius.md),
-                    child: Container(
-                      padding:
-                          EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                      decoration: BoxDecoration(
-                        color:
-                            isSelected ? DanColors.brandDim : DanColors.surface,
-                        border: Border.all(
-                          color:
-                              isSelected ? DanColors.brand : DanColors.border,
-                          width: isSelected ? 1.5 : 1,
-                        ),
-                        borderRadius: BorderRadius.circular(DanRadius.md),
-                      ),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Padding(
-                            padding: EdgeInsets.only(top: 2),
-                            child: Icon(
-                              kitchen
-                                  ? Icons.soup_kitchen_outlined
-                                  : Icons.storefront_outlined,
-                              size: 22,
+                        return InkWell(
+                          onTap: () => _selectWarehouse(w),
+                          borderRadius: BorderRadius.circular(DanRadius.md),
+                          child: Container(
+                            padding: EdgeInsets.symmetric(
+                                horizontal: 14, vertical: 12),
+                            decoration: BoxDecoration(
                               color: isSelected
-                                  ? DanColors.brand
-                                  : DanColors.muted,
+                                  ? DanColors.brandDim
+                                  : DanColors.surface,
+                              border: Border.all(
+                                color: isSelected
+                                    ? DanColors.brand
+                                    : DanColors.border,
+                                width: isSelected ? 1.5 : 1,
+                              ),
+                              borderRadius: BorderRadius.circular(DanRadius.md),
                             ),
-                          ),
-                          SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
+                            child: Row(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text(
-                                  asText(w['name']),
-                                  style: TextStyle(
-                                    fontSize: 14,
-                                    fontWeight: isSelected
-                                        ? FontWeight.w900
-                                        : FontWeight.w800,
-                                    color: DanColors.text,
+                                Padding(
+                                  padding: EdgeInsets.only(top: 2),
+                                  child: Icon(
+                                    kitchen
+                                        ? Icons.soup_kitchen_outlined
+                                        : Icons.storefront_outlined,
+                                    size: 22,
+                                    color: isSelected
+                                        ? DanColors.brand
+                                        : DanColors.muted,
                                   ),
                                 ),
-                                SizedBox(height: 3),
-                                Text(
-                                  '${kitchen ? t('Kho bếp') : t('Kho retail')} · ${asText(w['code']).isNotEmpty ? asText(w['code']) : asText(w['id'])}',
-                                  style: TextStyle(
-                                      fontSize: 11.5, color: DanColors.faint),
+                                SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        asText(w['name']),
+                                        style: TextStyle(
+                                          fontSize: 14,
+                                          fontWeight: isSelected
+                                              ? FontWeight.w900
+                                              : FontWeight.w800,
+                                          color: DanColors.text,
+                                        ),
+                                      ),
+                                      SizedBox(height: 3),
+                                      Text(
+                                        '${kitchen ? t('Kho bếp') : t('Kho retail')} · ${asText(w['code']).isNotEmpty ? asText(w['code']) : asText(w['id'])}',
+                                        style: TextStyle(
+                                            fontSize: 11.5,
+                                            color: DanColors.faint),
+                                      ),
+                                      SizedBox(height: 6),
+                                      _buildChannelBadges(w),
+                                    ],
+                                  ),
                                 ),
-                                SizedBox(height: 6),
-                                _buildChannelBadges(w),
+                                SizedBox(width: 8),
+                                Container(
+                                  padding: EdgeInsets.symmetric(
+                                      horizontal: 8, vertical: 3),
+                                  decoration: BoxDecoration(
+                                    color: (active
+                                            ? DanColors.done
+                                            : DanColors.faint)
+                                        .withValues(alpha: 0.12),
+                                    borderRadius: BorderRadius.circular(99),
+                                  ),
+                                  child: Text(
+                                    active ? t('Bật') : t('Tắt'),
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w800,
+                                      color: active
+                                          ? Color(0xFF047857)
+                                          : DanColors.muted,
+                                    ),
+                                  ),
+                                ),
                               ],
                             ),
                           ),
-                          SizedBox(width: 8),
-                          Container(
-                            padding: EdgeInsets.symmetric(
-                                horizontal: 8, vertical: 3),
-                            decoration: BoxDecoration(
-                              color: (active ? DanColors.done : DanColors.faint)
-                                  .withValues(alpha: 0.12),
-                              borderRadius: BorderRadius.circular(99),
-                            ),
-                            child: Text(
-                              active ? t('Bật') : t('Tắt'),
-                              style: TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w800,
-                                color: active
-                                    ? Color(0xFF047857)
-                                    : DanColors.muted,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
+                        );
+                      },
                     ),
-                  );
-                },
-              ),
                   ),
                   Divider(height: 1, color: DanColors.border),
                   // Nửa dưới cuộn được: Bảng giá + Cấu hình bán retail —
@@ -1057,4 +1065,3 @@ class _WarehouseSettingsPanelState extends State<WarehouseSettingsPanel> {
 }
 
 // ── Print (Bill & Tem nhãn) ─────────────────────────────────────────────────
-

@@ -7,6 +7,7 @@ import '../../ui/app_theme.dart';
 import '../../ui/open_file.dart';
 import 'management_widgets.dart';
 import '../../utils/translation.dart';
+import '../../utils/business_datetime.dart';
 
 /// Management → Báo cáo tab. Port of the web Report Center:
 /// grouped report picker, period / date-range filters, summary cards,
@@ -472,7 +473,7 @@ class _ReportsTabState extends State<ReportsTab> {
                 style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900)),
             SizedBox(height: 4),
             Text(
-              '${t('Kỳ báo cáo')}: ${r.rangeLabel}${r.generatedAt.isNotEmpty ? ' · ${t('Xuất lúc')}: ${r.generatedAt}' : ''}',
+              '${t('Kỳ báo cáo')}: ${r.rangeLabel}${r.generatedAt.isNotEmpty ? ' · ${t('Xuất lúc')}: ${BusinessDateTime.dateTimeSeconds(r.generatedAt, fallback: r.generatedAt)}' : ''}',
               style: TextStyle(fontSize: 12, color: DanColors.muted),
             ),
             SizedBox(height: 16),
@@ -577,7 +578,8 @@ class _ReportsTabState extends State<ReportsTab> {
                           DataCell(ConstrainedBox(
                             constraints: BoxConstraints(maxWidth: 280),
                             child: Text(
-                              (row[c.key] ?? '').toString(),
+                              BusinessDateTime.reportValue(
+                                  c.format, row[c.key]),
                               maxLines: 2,
                               overflow: TextOverflow.ellipsis,
                             ),
@@ -621,16 +623,6 @@ class _ReportTile extends StatelessWidget {
                 color: active ? DanColors.brand : DanColors.text,
               ),
             ),
-            if (info.description.isNotEmpty) ...[
-              SizedBox(height: 2),
-              Text(
-                info.description,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                    fontSize: 11, color: DanColors.faint, height: 1.3),
-              ),
-            ],
           ],
         ),
       ),

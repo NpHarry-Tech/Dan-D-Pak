@@ -3,8 +3,12 @@ import 'package:provider/provider.dart';
 
 import '../../app_flavor.dart';
 import '../../providers/auth_provider.dart';
+import '../../services/api_service.dart';
+import '../../services/push_notifications.dart';
 import '../../ui/app_theme.dart';
 import '../../utils/translation.dart';
+import '../../widgets/dan_top_bar.dart' show roleLabel;
+import '../../widgets/build_diagnostics_card.dart';
 
 import 'phone_catalog_screens.dart';
 import 'phone_form_screens.dart';
@@ -32,6 +36,17 @@ class PhoneShell extends StatefulWidget {
 
 class _PhoneShellState extends State<PhoneShell> {
   int _tab = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    // Đăng ký nhận thông báo đẩy (FCM) — nhận CẢ KHI TẮT app. Trước đây chỉ
+    // LauncherScreen (desktop/tablet) gọi, nên PHONE không bao giờ đăng ký token.
+    // Android-only + idempotent nên gọi thoải mái.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      PushNotifications.register(context.read<ApiService>());
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -131,6 +146,134 @@ class _PhoneShellState extends State<PhoneShell> {
   }
 }
 
+/// THẺ TÀI KHOẢN ở đầu màn "Nhiều hơn".
+///
+/// Ba thứ phải thấy được ngay, vì máy POS cầm tay hay bị chuyền tay giữa các
+/// ca: ĐANG LÀ AI, quyền gì, và ở CƠ SỞ nào. Nút "Đổi" nhả máy cho người sau
+/// mà không phải đi tìm nút Đăng xuất tận cuối màn.
+class _PhoneAccountCard extends StatelessWidget {
+  const _PhoneAccountCard();
+
+  String _viet(String name) {
+    final parts =
+        name.trim().split(RegExp(r'\s+')).where((e) => e.isNotEmpty).toList();
+    if (parts.isEmpty) return '?';
+    // Lấy theo RUNE chứ không cắt chuỗi: chữ có dấu tiếng Việt không phải lúc
+    // nào cũng gọn trong một đơn vị UTF-16.
+    String dau(String s) => String.fromCharCode(s.runes.first).toUpperCase();
+    if (parts.length == 1) return dau(parts.first);
+    // Tên Việt: chữ cái họ + chữ cái tên gọi (Nguyễn Minh Thư → NT).
+    return '${dau(parts.first)}${dau(parts.last)}';
+  }
+
+  Future<void> _doi(BuildContext context, AuthProvider auth) async {
+    final chon = await showPhoneSheet<String>(
+      context: context,
+      title: t('Đổi người dùng / cơ sở'),
+      builder: (c) => Padding(
+        padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            PhoneCta(
+                label: t('Đổi người dùng'),
+                onPressed: () => Navigator.of(c).pop('user')),
+            const SizedBox(height: 8),
+            PhoneSecondaryButton(
+                label: t('Đổi cơ sở'),
+                icon: Icons.store_outlined,
+                onPressed: () => Navigator.of(c).pop('branch')),
+            const SizedBox(height: 10),
+            Text(t('Cả hai đều đăng xuất khỏi máy này. Ca đang mở KHÔNG bị ảnh hưởng — ca thuộc về cơ sở, không thuộc về máy.'),
+                style: const TextStyle(
+                    fontSize: 11.5, height: 1.5, color: DanColors.faint)),
+          ],
+        ),
+      ),
+    );
+    if (chon == null) return;
+    // Đổi người dùng: giữ cơ sở để người sau bấm PIN là vào ngay.
+    await auth.logout(keepBranch: chon == 'user');
+    if (chon == 'branch') auth.changeBranch();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final auth = context.watch<AuthProvider>();
+    final user = auth.currentUser;
+    final ten = user?.name ?? user?.username ?? '—';
+    final coSo = auth.selectedBranch.name.isNotEmpty
+        ? auth.selectedBranch.name
+        : auth.selectedBranchId;
+
+    return Container(
+      color: DanColors.surface,
+      padding: const EdgeInsets.fromLTRB(16, 14, 12, 14),
+      child: Row(
+        children: [
+          Container(
+            width: 46,
+            height: 46,
+            decoration: const BoxDecoration(
+                color: DanColors.brandDim, shape: BoxShape.circle),
+            alignment: Alignment.center,
+            child: Text(_viet(ten),
+                style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w900,
+                    color: DanColors.brand)),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(ten,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                        fontSize: 16, fontWeight: FontWeight.w800)),
+                const SizedBox(height: 3),
+                Text(
+                    [roleLabel(user?.role ?? ''), coSo]
+                        .where((e) => e.isNotEmpty)
+                        .join(' · '),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: DanColors.muted)),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          Material(
+            color: DanColors.surface,
+            borderRadius: BorderRadius.circular(9),
+            child: InkWell(
+              onTap: () => _doi(context, auth),
+              borderRadius: BorderRadius.circular(9),
+              child: Container(
+                height: 40,
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  border: Border.all(color: DanColors.border2),
+                  borderRadius: BorderRadius.circular(9),
+                ),
+                child: Text(t('Đổi'),
+                    style: const TextStyle(
+                        fontSize: 13, fontWeight: FontWeight.w800)),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 /// MÀN "NHIỀU HƠN" — lưới module còn lại, ẩn theo quyền.
 class PhoneMoreScreen extends StatelessWidget {
   const PhoneMoreScreen({super.key});
@@ -144,6 +287,13 @@ class PhoneMoreScreen extends StatelessWidget {
     VoidCallback? gate(String moduleKey, String perm, Widget Function() build) {
       if (!AppFlavor.current.showsModule(moduleKey)) return null;
       if (!auth.hasPermission(perm)) return null;
+      return () => go(build());
+    }
+
+    VoidCallback? gateAny(
+        String moduleKey, List<String> perms, Widget Function() build) {
+      if (!AppFlavor.current.showsModule(moduleKey)) return null;
+      if (!perms.any(auth.hasPermission)) return null;
       return () => go(build());
     }
 
@@ -185,23 +335,35 @@ class PhoneMoreScreen extends StatelessWidget {
       (
         'Chuyển hàng',
         Icons.swap_horiz,
-        gate('warehouse', 'warehouse.manage', () => const PhoneTransferScreen())
+        gateAny('warehouse', ['warehouse.manage', 'inventory.adjust'],
+            () => const PhoneTransferScreen())
       ),
       (
         'Kiểm kho',
         Icons.fact_check_outlined,
-        gate(
-            'warehouse', 'inventory.adjust', () => const PhoneStocktakeScreen())
+        gateAny('warehouse', ['warehouse.stocktake', 'inventory.adjust'],
+            () => const PhoneStocktakeScreen())
       ),
       (
         'Báo cáo',
         Icons.bar_chart_outlined,
-        gate('reports', 'reports', () => const PhoneReportsScreen())
+        // Backend không có module key `reports`; Trung tâm báo cáo thuộc module
+        // `admin` và endpoint tự kiểm tra quyền `reports`/reports.<type>.
+        AppFlavor.current.showsModule('admin') &&
+                (auth.hasPermission('reports') ||
+                    (auth.currentUser?.permissions
+                            .any((p) => p.startsWith('reports.')) ??
+                        false))
+            ? () => go(const PhoneReportsScreen())
+            : null
       ),
       (
         'Máy in',
         Icons.print_outlined,
-        gate('printing', 'module.printing', () => const PhonePrintersScreen())
+        gateAny(
+            'printing',
+            ['module.printing', 'settings.printers', 'settings.print', 'pay'],
+            () => const PhonePrintersScreen())
       ),
       (
         'Thiết lập',
@@ -216,14 +378,15 @@ class PhoneMoreScreen extends StatelessWidget {
         bottom: false,
         child: Column(
           children: [
-            PhoneHeader(
-              title: t('Nhiều hơn'),
-              subtitle: auth.currentUser?.name ?? '',
-            ),
+            PhoneHeader(title: t('Nhiều hơn')),
             Expanded(
               child: ListView(
                 padding: const EdgeInsets.only(bottom: 20),
                 children: [
+                  // ĐẦU MÀN là THẺ NGƯỜI DÙNG, không phải một dòng phụ đề mờ:
+                  // đây là chỗ duy nhất trên bản điện thoại nói rõ đang đăng
+                  // nhập bằng ai, quyền gì, ở cơ sở nào — và đổi được ngay.
+                  const _PhoneAccountCard(),
                   PhoneModuleGrid(items),
                   // Cập nhật đặt NGAY TRÊN phần Tài khoản: người dùng cuộn tới
                   // cuối màn là thấy, không phải đi tìm trong Thiết lập.
@@ -235,6 +398,17 @@ class PhoneMoreScreen extends StatelessWidget {
                     value: '',
                     valueColor: DanColors.late,
                     onTap: () => auth.logout(),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+                    child: BuildDiagnosticsCard(
+                      apiBaseUrl: context.read<ApiService>().baseUrl,
+                      allowAdvanced: canViewAdvancedDiagnostics(
+                        role: auth.currentUser?.role ?? '',
+                        hasDiagnosticsPermission:
+                            auth.hasPermission('settings.manage'),
+                      ),
+                    ),
                   ),
                   Padding(
                     padding: const EdgeInsets.all(16),

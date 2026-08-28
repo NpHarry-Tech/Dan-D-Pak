@@ -1,32 +1,45 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../api_client.dart';
 import '../../models/retail_models.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/customer_display_controller.dart';
 import '../../providers/pos_provider.dart';
 import '../../services/api_service.dart';
 import '../../services/local_store.dart';
+import '../../services/retail_canonical.dart';
+import '../../services/retail_order_session.dart';
 import '../../services/socket_service.dart';
 import '../../ui/app_theme.dart';
 import '../../ui/debouncer.dart';
 import '../../ui/format.dart';
-import '../../widgets/address_fields.dart';
+import '../../widgets/app_loading.dart';
+import '../../widgets/customer_picker_dialog.dart';
+import '../../widgets/manager_pin_dialog.dart';
+import '../../widgets/online_only_gate.dart';
 import '../../widgets/dan_top_bar.dart';
 import '../../widgets/resizable_pane.dart';
 import '../../widgets/scan_button.dart';
-import '../../widgets/tax_lookup.dart';
+import '../../widgets/order_note_dialog.dart';
 import '../customer_display/customer_display_screen.dart';
 import '../order_history_dialog.dart';
 import '../shift_dialog.dart';
 import 'checkout_dialog.dart';
+import 'combo_support.dart';
 import '../../services/black_box.dart';
 import '../../utils/translation.dart';
 
 part 'retail_cart_widgets.dart';
-part 'retail_customer_dialogs.dart';
+part 'retail_cart_view.dart';
+part 'retail_return_view.dart';
+part 'retail_screen_view.dart';
+part 'retail_realtime_binding.dart';
+part 'retail_canonical_orders.dart';
+part 'retail_promotion_section.dart';
 
 class RetailScreen extends StatefulWidget {
   RetailScreen({super.key});
@@ -41,6 +54,11 @@ class _RetailScreenState extends State<RetailScreen>
   final _barcodeFocus = FocusNode();
 
   List<Sku> _skus = [];
+
+  /// Server giải thích vì sao danh mục rỗng (kho chưa nối / kho được chọn chưa
+  /// có hàng). Rỗng mà không nói lý do là ngõ cụt: cửa hàng không biết là chưa
+  /// tạo hàng hay đã tạo mà nằm ở kho khác.
+  String _lyDoTrong = '';
   List<StockLot> _lots = [];
   List<RetailVoucher> _activeVouchers = [];
   List<RetailCustomer> _customers = [];
@@ -56,6 +74,10 @@ class _RetailScreenState extends State<RetailScreen>
   // Lưu vĩnh viễn trên THIẾT BỊ này qua LocalStore (giống resizable_pane) — mỗi
   // máy tự nhớ riêng, không đồng bộ qua server.
   String _sortBy = '';
+  // Lọc theo NHÓM HÀNG (category). '' = tất cả. Danh sách nhóm lấy từ server
+  // (field `categories` trong trang SKU) để đủ nhóm dù đang phân trang.
+  String _category = '';
+  List<String> _categories = [];
   bool _loading = true;
   String? _error;
 
@@ -91,8 +113,33 @@ class _RetailScreenState extends State<RetailScreen>
   // KHÔNG đẩy ngược lên server. Đẩy giỏ được debounce để gõ nhanh không spam mạng.
   final String _cartClientId = 'rt${DateTime.now().microsecondsSinceEpoch}';
   bool _applyingRemoteCart = false;
+  // Slot đang THANH TOÁN (mở CheckoutDialog). Trong lúc này KHÔNG cho sync giỏ từ
+  // máy khác / snapshot cũ ghi đè hay xoá giỏ của slot này — nếu không, request
+  // xác nhận đang chậm mà một event 'cleared'/thay giỏ ập tới sẽ xoá mất giỏ đang
+  // bán, đơn chưa lưu xong -> "mất tiêu đơn, không vào lịch sử, phải nhập lại".
+  int? _checkoutSlot;
   final Debouncer _cartSyncDebouncer =
       Debouncer(delay: const Duration(milliseconds: 350));
+  bool _localCartsRestored = false;
+  Timer? _presenceTimer;
+  // Giảm giá do SERVER tính (gồm CTKM tự động: combo, mua-X-tặng-1). Giỏ gọi khi
+  // đổi → hiện + thu ĐÚNG. Chỉ dùng khi chữ ký khớp giỏ hiện tại (tránh cũ).
+  final Debouncer _previewDebouncer =
+      Debouncer(delay: const Duration(milliseconds: 300));
+  Map<String, dynamic>? _preview;
+  String _previewSig = '';
+
+  // ── §2 CANONICAL ORDERS (multi-device, server-authoritative) ────────────────
+  // Gated: chỉ chạy khi server bật operationsConfig.retail.canonicalOrders=true.
+  // Tắt (mặc định) → đường bán lẻ giữ NGUYÊN cơ chế giỏ-chia-sẻ hiện tại đang
+  // chạy Production (không đổi hành vi). Bật → mỗi tab = 1 canonical order:
+  // mutation đi qua applyCommand, giá do server (priceCart) áp, client chỉ render.
+  final Map<int, RetailOrderSession> _sessions = {};
+  RetailOrderSession? get _activeSession => _sessions[_activeTabId];
+  bool get _canonicalEnabled {
+    final r = _operationsConfig['retail'];
+    return r is Map && r['canonicalOrders'] == true;
+  }
 
   @override
   void initState() {
@@ -111,6 +158,11 @@ class _RetailScreenState extends State<RetailScreen>
         token: auth.token ?? '',
       );
       _socketService.addListener(_onSocketEvent);
+      _heartbeatPresence();
+      _presenceTimer = Timer.periodic(const Duration(seconds: 10), (_) {
+        _heartbeatPresence();
+        _canonicalHeartbeat();
+      });
     });
   }
 
@@ -125,6 +177,10 @@ class _RetailScreenState extends State<RetailScreen>
       _socketRefresh(() {
         if (mounted) _reloadLight();
       });
+      _heartbeatPresence();
+    } else if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.detached) {
+      _leavePresence(_activeTabId);
     }
   }
 
@@ -162,10 +218,16 @@ class _RetailScreenState extends State<RetailScreen>
         channel: 'retail',
         inStockOnly: _inStockOnly,
         sort: _sortBy,
+        category: _category,
       );
 
       final itemsData = result['items'] as List? ?? [];
       final total = result['total'] as int? ?? 0;
+      final cats = (result['categories'] as List?)
+              ?.map((e) => e.toString())
+              .where((e) => e.isNotEmpty)
+              .toList() ??
+          const <String>[];
 
       final skus = itemsData
           .whereType<Map>()
@@ -179,6 +241,8 @@ class _RetailScreenState extends State<RetailScreen>
         if (skus.isNotEmpty) {
           _skuPage++;
         }
+        // Danh sách nhóm chỉ cần cập nhật ở trang đầu (server trả đủ nhóm mỗi lần).
+        if (cats.isNotEmpty) _categories = cats;
         _loadingSkus = false;
       });
     } catch (e) {
@@ -193,8 +257,16 @@ class _RetailScreenState extends State<RetailScreen>
 
   void _onSocketEvent(String event, dynamic payload) {
     if (!mounted) return;
+    // §2 canonical: chuyển tiếp event order.* tới session (paid/lease/changed).
+    // Session tự lọc theo order_id; event không liên quan sẽ bị bỏ qua.
+    if (_sessions.isNotEmpty && payload is Map)
+      _canonicalOnSocket(event, payload);
     if (event == 'retail:cart') {
       _applyRemoteCart(payload);
+      return;
+    }
+    if (event == 'retail:presence') {
+      _applyPresence(payload);
       return;
     }
     if (event == 'inventory:updated' ||
@@ -220,6 +292,10 @@ class _RetailScreenState extends State<RetailScreen>
     _skuDebouncer.dispose();
     _socketRefresh.dispose();
     _cartSyncDebouncer.dispose();
+    _previewDebouncer.dispose();
+    _presenceTimer?.cancel();
+    _leavePresence(_activeTabId);
+    _releaseAllSessions();
     _socketService.removeListener(_onSocketEvent);
     _searchCtrl.dispose();
     _barcodeFocus.dispose();
@@ -228,14 +304,17 @@ class _RetailScreenState extends State<RetailScreen>
 
   static const _kFilterInStockKey = 'retail_filter_in_stock';
   static const _kFilterSortKey = 'retail_filter_sort';
+  static const _kFilterCategoryKey = 'retail_filter_category';
 
   Future<void> _loadFilterPrefs() async {
     final inStock = await LocalStore.instance.getString(_kFilterInStockKey);
     final sort = await LocalStore.instance.getString(_kFilterSortKey);
+    final cat = await LocalStore.instance.getString(_kFilterCategoryKey);
     if (!mounted) return;
     setState(() {
       _inStockOnly = inStock == '1';
       _sortBy = sort ?? '';
+      _category = cat ?? '';
     });
   }
 
@@ -243,6 +322,7 @@ class _RetailScreenState extends State<RetailScreen>
     await LocalStore.instance
         .setString(_kFilterInStockKey, _inStockOnly ? '1' : '0');
     await LocalStore.instance.setString(_kFilterSortKey, _sortBy);
+    await LocalStore.instance.setString(_kFilterCategoryKey, _category);
   }
 
   List<MapEntry<String, String>> get _sortOptions => [
@@ -256,6 +336,13 @@ class _RetailScreenState extends State<RetailScreen>
   Future<void> _openFilterSheet() async {
     var tempInStock = _inStockOnly;
     var tempSort = _sortBy;
+    var tempCategory = _category;
+    // Nhóm hiện có + nhóm đang chọn (dù trang hiện tại chưa nạp) → không mất lựa chọn.
+    final catOptions = <String>{
+      ..._categories,
+      if (_category.isNotEmpty) _category
+    }.toList()
+      ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
     final applied = await showDialog<bool>(
       context: context,
       builder: (ctx) => StatefulBuilder(
@@ -274,6 +361,32 @@ class _RetailScreenState extends State<RetailScreen>
                     value: tempInStock,
                     onChanged: (v) => setLocal(() => tempInStock = v),
                   ),
+                  if (catOptions.isNotEmpty) ...[
+                    Divider(height: 20),
+                    Padding(
+                      padding: EdgeInsets.only(bottom: 6),
+                      child: Text(t('Nhóm hàng'),
+                          style: TextStyle(
+                              fontWeight: FontWeight.w800, fontSize: 12.5)),
+                    ),
+                    DropdownButtonFormField<String>(
+                      initialValue: tempCategory.isEmpty ? '' : tempCategory,
+                      isExpanded: true,
+                      decoration: InputDecoration(
+                        isDense: true,
+                        border: OutlineInputBorder(),
+                        contentPadding:
+                            EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                      ),
+                      items: [
+                        DropdownMenuItem(
+                            value: '', child: Text(t('Tất cả nhóm'))),
+                        for (final c in catOptions)
+                          DropdownMenuItem(value: c, child: Text(c)),
+                      ],
+                      onChanged: (v) => setLocal(() => tempCategory = v ?? ''),
+                    ),
+                  ],
                   Divider(height: 20),
                   Padding(
                     padding: EdgeInsets.only(bottom: 4),
@@ -317,6 +430,7 @@ class _RetailScreenState extends State<RetailScreen>
     setState(() {
       _inStockOnly = tempInStock;
       _sortBy = tempSort;
+      _category = tempCategory;
     });
     unawaited(_saveFilterPrefs());
     _loadSkusNextPage(isRefresh: true);
@@ -324,6 +438,7 @@ class _RetailScreenState extends State<RetailScreen>
 
   Future<void> _load() async {
     await _loadFilterPrefs();
+    await _restoreLocalCarts();
     setState(() {
       _loading = true;
       _error = null;
@@ -350,6 +465,8 @@ class _RetailScreenState extends State<RetailScreen>
       final skuPageResult = results[0] as Map<String, dynamic>;
       final skuRows = skuPageResult['items'] as List? ?? [];
       final skuTotal = skuPageResult['total'] as int? ?? 0;
+      final lyDo =
+          '${(skuPageResult['empty_reason'] as Map?)?['message'] ?? ''}';
       final operations = results[1] as Map<String, dynamic>;
       final lotRows = results[2] as List;
       final activeRows = results[3] as List;
@@ -376,6 +493,7 @@ class _RetailScreenState extends State<RetailScreen>
       setState(() {
         _operationsConfig = operations;
         _skus = parsedSkus;
+        _lyDoTrong = lyDo;
         _skuPage = 2;
         _hasMoreSkus = _skus.length < skuTotal;
         _lots = parsedLots;
@@ -406,6 +524,9 @@ class _RetailScreenState extends State<RetailScreen>
       _applyingRemoteCart = true;
       _pushCustomerDisplay();
       _applyingRemoteCart = false;
+      // §2 gated: nếu server bật canonicalOrders → mở canonical session cho tab
+      // đang hoạt động (no-op khi tắt → giữ nguyên đường giỏ-chia-sẻ).
+      _ensureCanonicalSession();
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -433,6 +554,7 @@ class _RetailScreenState extends State<RetailScreen>
     final skuPageResult = results[0] as Map<String, dynamic>;
     final skuRows = skuPageResult['items'] as List? ?? [];
     final skuTotal = skuPageResult['total'] as int? ?? 0;
+    final lyDo = '${(skuPageResult['empty_reason'] as Map?)?['message'] ?? ''}';
 
     final parsedSkus = skuRows
         .whereType<Map>()
@@ -453,6 +575,7 @@ class _RetailScreenState extends State<RetailScreen>
     if (!mounted) return;
     setState(() {
       _skus = parsedSkus;
+      _lyDoTrong = lyDo;
       _skuPage = 2;
       _hasMoreSkus = _skus.length < skuTotal;
       _lots = parsedLots;
@@ -477,133 +600,6 @@ class _RetailScreenState extends State<RetailScreen>
 
   void _toast(String m, {bool error = false}) =>
       appToast(context, m, isError: error);
-
-  void _pushCustomerDisplay() {
-    if (!mounted) return;
-    try {
-      final totals = _totals();
-      context.read<CustomerDisplayController>().showRetailCart(
-        items: [
-          for (final c in _cart)
-            CustomerLine(
-              name: c.sku.name,
-              options: _lineOptions(c),
-              promoText: _lineAppliedPromoText(c),
-              qty: c.qty,
-              unitPrice: c.sku.price,
-              lineTotal: c.lineTotal,
-            ),
-        ],
-        subtotal: totals.subtotal,
-        discount: totals.productDiscount +
-            totals.orderDiscount +
-            totals.customerDiscount +
-            totals.manualDiscount,
-        tax: totals.vat,
-        total: totals.total,
-        discountLabel: t('Khuyến mãi / giảm giá'),
-      );
-    } catch (_) {}
-    // Mọi thay đổi giỏ (thêm/sửa/xóa món, khách, voucher, giảm giá) đều đi qua đây
-    // → đẩy giỏ lên server để máy khác thấy. Bỏ qua khi đang ÁP snapshot máy khác.
-    if (!_applyingRemoteCart) _syncCart();
-  }
-
-  // Snapshot giỏ ĐANG mở — đủ để máy khác dựng lại dòng hàng mà không cần SKU đã tải.
-  Map<String, dynamic> _cartSnapshot(RetailSaleTab tab) => {
-        'lines': [
-          for (final c in tab.cart)
-            {
-              'sku': c.sku.toJson(),
-              'qty': c.qty,
-              'lot_id': c.lotId,
-              'voucher_id': c.voucherId,
-            }
-        ],
-        'customer': tab.customer?.toCheckoutCustomer(),
-        'order_voucher_id': tab.orderVoucherId,
-        'manual_discount': tab.manualDiscount.round(),
-      };
-
-  // Đẩy snapshot tab đang mở lên server (debounce) → server phát 'retail:cart'.
-  void _syncCart() {
-    final tab = _tab;
-    final slot = tab.id;
-    _cartSyncDebouncer(() {
-      if (!mounted) return;
-      context
-          .read<ApiService>()
-          .saveRetailCart(slot, _cartSnapshot(tab), device: _cartClientId)
-          .catchError((_) => <String, dynamic>{});
-    });
-  }
-
-  // Áp snapshot giỏ do MÁY KHÁC gửi tới (tự bỏ qua event của chính mình).
-  void _applyRemoteCart(dynamic payload) {
-    if (payload is! Map) return;
-    if ((payload['device'] ?? '').toString() == _cartClientId) return;
-    final slot = (payload['slot'] as num?)?.toInt() ?? 0;
-    if (slot < 1) return;
-    _applyingRemoteCart = true;
-    try {
-      RetailSaleTab? tab;
-      for (final tb in _tabs) {
-        if (tb.id == slot) {
-          tab = tb;
-          break;
-        }
-      }
-      final cleared = payload['cleared'] == true;
-      if (cleared) {
-        if (tab == null) return;
-        final target = tab;
-        setState(() {
-          target.cart.clear();
-          target.customer = null;
-          target.orderVoucherId = null;
-          target.manualDiscount = 0;
-        });
-      } else {
-        if (tab == null) {
-          tab = RetailSaleTab(id: slot);
-          _tabs.add(tab);
-          if (slot > _nextTabId) _nextTabId = slot;
-        }
-        final target = tab;
-        final lines = <CartLine>[];
-        for (final raw in (payload['lines'] as List? ?? const [])) {
-          if (raw is! Map) continue;
-          final skuMap = raw['sku'];
-          if (skuMap is! Map) continue;
-          final sku = Sku.fromJson(Map<String, dynamic>.from(skuMap));
-          final lot = raw['lot_id']?.toString();
-          final vou = raw['voucher_id']?.toString();
-          lines.add(CartLine(
-            sku,
-            (raw['qty'] as num?)?.toInt() ?? 1,
-            lotId: (lot == null || lot.isEmpty) ? null : lot,
-            voucherId: (vou == null || vou.isEmpty) ? null : vou,
-          ));
-        }
-        final custMap = payload['customer'];
-        final ovId = payload['order_voucher_id']?.toString();
-        setState(() {
-          target.cart
-            ..clear()
-            ..addAll(lines);
-          target.customer = custMap is Map
-              ? RetailCustomer.fromJson(Map<String, dynamic>.from(custMap))
-              : null;
-          target.orderVoucherId = (ovId == null || ovId.isEmpty) ? null : ovId;
-          target.manualDiscount =
-              (payload['manual_discount'] as num?)?.toDouble() ?? 0;
-        });
-      }
-      if (slot == _activeTabId) _pushCustomerDisplay();
-    } finally {
-      _applyingRemoteCart = false;
-    }
-  }
 
   String _lineOptions(CartLine line) {
     final lot = _selectedLot(line);
@@ -659,14 +655,21 @@ class _RetailScreenState extends State<RetailScreen>
   }
 
   void _addToCart(Sku sku) {
+    // §2 gated: tab canonical → ADD_LINE qua server (không sửa _cart local).
+    if (_activeSession != null) {
+      _canonicalAdd(sku);
+      return;
+    }
     if (_salesLocked) {
       _toast(t('Cần mở ca làm việc trước khi bán hàng.'), error: true);
       _openShiftDialog();
       return;
     }
+    // KHÔNG chặn cứng theo tồn HIỂN THỊ: số này có thể CŨ (vừa nhập/sửa kho ở máy
+    // khác mà POS chưa kịp refresh — sự cố ĐVL RM180 06/08/2026, kho 90 nhưng POS
+    // báo hết). Server vẫn kiểm tra tồn khi THANH TOÁN nên an toàn. Chỉ CẢNH BÁO.
     if (sku.stock <= 0) {
-      _toast(t('${sku.name} đã hết hàng'), error: true);
-      return;
+      _toast(t('${sku.name}: tồn hiển thị 0 — kiểm tra lại nếu cần'));
     }
     final lot = _defaultLot(sku);
     final lotId = lot?.id;
@@ -675,10 +678,9 @@ class _RetailScreenState extends State<RetailScreen>
           _cart.indexWhere((c) => c.sku.id == sku.id && c.lotId == lotId);
       if (existing >= 0) {
         final line = _cart[existing];
-        if (line.qty < _availableFor(line)) {
-          line.qty++;
-        } else {
-          _toast(t('Không đủ tồn cho lô đã chọn'), error: true);
+        line.qty++;
+        if (line.qty > _availableFor(line)) {
+          _toast(t('${sku.name}: vượt tồn hiển thị (server sẽ kiểm tra lại)'));
         }
       } else {
         _cart.add(CartLine(sku, 1, lotId: lotId));
@@ -737,10 +739,13 @@ class _RetailScreenState extends State<RetailScreen>
       final next = line.qty + delta;
       if (next <= 0) {
         _cart.remove(line);
-      } else if (next <= _availableFor(line)) {
-        line.qty = next;
       } else {
-        _toast(t('Không đủ tồn cho lô đã chọn'), error: true);
+        // Cảnh báo nếu vượt tồn hiển thị nhưng VẪN cho tăng — tồn có thể cũ,
+        // server chặn vượt tồn khi thanh toán.
+        line.qty = next;
+        if (next > _availableFor(line)) {
+          _toast(t('${line.sku.name}: vượt tồn hiển thị'));
+        }
       }
     });
     _pushCustomerDisplay();
@@ -767,110 +772,67 @@ class _RetailScreenState extends State<RetailScreen>
   List<RetailVoucher> get _usableVouchers =>
       _activeVouchers.where((v) => v.usableForCustomer(_customer)).toList();
 
-  String _promoLabelForSku(Sku sku) {
-    // Khớp voucher gán đúng SKU hoặc t('Mọi sản phẩm') (all_sku); SKU cụ thể
-    // ưu tiên hiển thị trước.
-    final matches =
-        _usableVouchers.where((v) => v.appliesToSku(sku.id)).toList();
-    if (matches.isEmpty) return '';
-    matches.sort((a, b) {
-      final ad = a.amountFor(sku.price, qty: 1);
-      final bd = b.amountFor(sku.price, qty: 1);
-      if (bd != ad) return bd.compareTo(ad);
-      if (a.isSku != b.isSku) return a.isSku ? -1 : 1;
-      return 0;
-    });
-    return matches.first.valueLabel;
+  // ---- COMBO (Phương án B: combo là item bấm chọn, gom 1 dòng trong giỏ) ----
+  int _comboSeq = 0;
+
+  List<RetailVoucher> get _comboVouchers =>
+      _usableVouchers.where((v) => v.isCombo && v.comboQty > 0).toList();
+
+  // Ủy quyền toàn bộ tính toán combo cho combo_support.dart (dùng chung với phone).
+
+  Future<void> _editNote() async {
+    final value = await editOrderNote(context, _tab.note);
+    if (value == null || !mounted) return;
+    setState(() => _tab.note = value);
+    _pushCustomerDisplay();
   }
 
-  String? _lotNoOf(CartLine line) => _selectedLot(line)?.lotNo;
-
-  List<RetailVoucher> _lineVoucherCandidates(CartLine line) {
-    final lotNo = _lotNoOf(line);
-    return _usableVouchers
-        .where((v) =>
-            (v.isSku || v.isAllSku) &&
-            v.appliesToSku(line.sku.id, lotNo: lotNo))
-        .toList();
-  }
-
-  RetailVoucher? _selectedLineVoucher(CartLine line) {
-    final id = line.voucherId;
-    if (id == null || id.isEmpty) return null;
-    return _lineVoucherCandidates(line).where((v) => v.id == id).firstOrNull;
-  }
-
-  num _lineVoucherAmount(CartLine line, RetailVoucher v) {
-    final base = line.lineTotal;
-    if (base <= 0) return 0;
-    if (v.type == 'buy_x_get_1') {
-      final x = v.value.round().clamp(1, 1000000);
-      final freeUnits = line.qty ~/ (x + 1);
-      return (freeUnits * line.sku.price).clamp(0, base);
-    }
-    if (base < v.minTotal) return 0;
-    return v.amountFor(base, qty: line.qty).clamp(0, base);
-  }
-
-  String _lineAppliedPromoText(CartLine line) {
-    final v = _selectedLineVoucher(line);
-    if (v == null) return '';
-    final amount = _lineVoucherAmount(line, v);
-    if (amount <= 0) return '';
-    if (v.type == 'buy_x_get_1') {
-      final x = v.value.round().clamp(1, 1000000);
-      final freeUnits = line.qty ~/ (x + 1);
-      return t('${v.displayName}: tặng $freeUnits ${line.sku.unit}');
-    }
-    return t('${v.displayName}: giảm ${Fmt.money(amount)}');
-  }
-
-  _RetailTotals _totals() {
-    final subtotal = _cart.fold<num>(0, (s, c) => s + c.lineTotal);
-    num productDiscount = 0;
-    for (final line in _cart) {
-      final v = _selectedLineVoucher(line);
-      if (v != null) productDiscount += _lineVoucherAmount(line, v);
-    }
-    final afterProduct = (subtotal - productDiscount).clamp(0, double.infinity);
-    final orderVoucher = _voucherById(_tab.orderVoucherId);
-    final orderDiscount =
-        orderVoucher != null && afterProduct >= orderVoucher.minTotal
-            ? orderVoucher.amountFor(afterProduct)
-            : 0;
-    final afterVoucher =
-        (afterProduct - orderDiscount).clamp(0, double.infinity);
-    final customerDiscount = _customer?.perkAmount(afterVoucher) ?? 0;
-    final afterCustomer =
-        (afterVoucher - customerDiscount).clamp(0, double.infinity);
-    final manualDiscount = 0;
-    final total = afterCustomer.clamp(0, double.infinity);
-    num allocated = 0;
-    num vat = 0;
-    if (subtotal > 0 && total > 0) {
-      final pricedLines = _cart.where((line) => line.lineTotal > 0).toList();
-      for (var index = 0; index < pricedLines.length; index++) {
-        final line = pricedLines[index];
-        final discountedGross = index == pricedLines.length - 1
-            ? total - allocated
-            : (line.lineTotal * total / subtotal).round();
-        allocated += discountedGross;
-        if (line.sku.vatRate > 0) {
-          vat += discountedGross -
-              (discountedGross / (1 + line.sku.vatRate / 100)).round();
-        }
-      }
-    }
-    return _RetailTotals(
-      subtotal: subtotal,
-      productDiscount: productDiscount,
-      orderDiscount: orderDiscount,
-      customerDiscount: customerDiscount,
-      manualDiscount: manualDiscount,
-      vat: vat,
-      total: total,
-      orderVoucher: orderVoucher,
+  // Chạm đơn giá 1 dòng → nhập PIN Quản lý → chỉnh giá bán dòng đó (server xác
+  // thực PIN lúc thanh toán). Combo có giá riêng nên không chỉnh từng dòng.
+  Future<void> _editLinePrice(CartLine line) async {
+    if (line.isCombo) return;
+    final pin = _tab.priceOverridePin ??
+        await requestManagerPin(
+          context,
+          t('Chỉnh giá bán "${line.sku.name}" — cần PIN Quản lý/Admin.'),
+          label: t('PIN Quản lý / Admin'),
+        );
+    if (pin == null || !mounted) return;
+    final result = await showDialog<num>(
+      context: context,
+      builder: (_) =>
+          LinePriceDialog(sku: line.sku, current: line.priceOverride),
     );
+    if (result == null || !mounted) return;
+    setState(() {
+      _tab.priceOverridePin = pin;
+      // -1 = "Về giá gốc" → xoá override. Bằng giá niêm yết cũng coi là không đổi.
+      line.priceOverride =
+          (result < 0 || result == line.sku.price) ? null : result;
+    });
+    _pushCustomerDisplay();
+  }
+
+  // Ghi chú RIÊNG cho 1 dòng hàng (in dưới dòng đó trên bill).
+  Future<void> _editLineNote(CartLine line) async {
+    final value = await editOrderNote(context, line.note ?? '');
+    if (value == null || !mounted) return;
+    setState(() => line.note = value.trim().isEmpty ? null : value.trim());
+    _pushCustomerDisplay();
+  }
+
+  // Giảm giá tay (không phải CTKM) — theo tiền hoặc %, cho khách mua sỉ/ưu đãi
+  // riêng. Lưu vào _tab.manualDiscount, áp lúc checkout (server tính lại).
+  Future<void> _openManualDiscount() async {
+    final baseTotal = _totals().total; // trước giảm tay
+    final result = await showDialog<num>(
+      context: context,
+      builder: (_) => ManualDiscountDialog(
+          baseTotal: baseTotal, current: _tab.manualDiscount),
+    );
+    if (result == null || !mounted) return;
+    setState(() => _tab.manualDiscount = result.clamp(0, double.infinity));
+    _pushCustomerDisplay();
   }
 
   Future<void> _checkout() async {
@@ -881,6 +843,14 @@ class _RetailScreenState extends State<RetailScreen>
       return;
     }
     final totals = _totals();
+    // Khoá sync xa cho slot này suốt lúc thanh toán (xem _applyRemoteCart) —
+    // không để máy khác/snapshot cũ xoá giỏ đang bán giữa chừng.
+    _checkoutSlot = _tab.id;
+    // ĐỒNG BỘ giỏ lên server NGAY trước khi mở màn thu tiền, để bản ghi giỏ chia
+    // sẻ tồn tại với version mới nhất → server chống thanh toán trùng dựa vào
+    // (slot, version) này. Nếu offline thì thôi (offline không có máy thứ hai).
+    await _saveCartRemote(_tab, _tab.id);
+    final checkoutVersion = _tab.version;
     final receipt = await showDialog<Map<String, dynamic>>(
       context: context,
       builder: (_) => CheckoutDialog(
@@ -891,21 +861,49 @@ class _RetailScreenState extends State<RetailScreen>
         customer: _customer,
         voucher: totals.orderVoucher,
         subtotal: totals.subtotal,
-        productDiscount: totals.productDiscount,
+        // Combo gộp vào giảm sản phẩm để dialog hiển thị + biên lai đủ; `total`
+        // đã là số server-authoritative (đã trừ combo) → thu đúng.
+        productDiscount: totals.productDiscount + totals.comboDiscount,
         orderDiscount: totals.orderDiscount,
         customerDiscount: totals.customerDiscount,
-        manualDiscount: 0,
+        manualDiscount: _tab.manualDiscount,
         total: totals.total,
         vatAmount: totals.vat,
         channelLabel: 'Checkout',
+        initialNote: _tab.note,
+        selectedCombos: _selectedComboIds(),
+        securityPin: _tab.priceOverridePin,
+        cartSlot: _tab.id,
+        cartVersion: checkoutVersion,
       ),
     );
+    // Mở khoá sync xa cho slot này (dù thành công hay huỷ) — từ đây máy khác lại
+    // được đồng bộ bình thường.
+    _checkoutSlot = null;
     if (receipt != null) {
+      // §4.1 money-integrity: CHỈ xoá giỏ khi server xác nhận PAID canonical —
+      // có ĐỊNH DANH đơn (id/order_id/bill_no) và KHÔNG phải fully_settled:false.
+      // Receipt mơ hồ (thiếu định danh / chưa chốt) → GIỮ giỏ, tải lại canonical,
+      // báo rõ. Tránh "chuyển khoản xong mất giỏ mà không có bill".
+      final paidOrderId =
+          '${receipt['id'] ?? receipt['order_id'] ?? receipt['bill_no'] ?? ''}'
+              .trim();
+      final settled = receipt['fully_settled'] != false;
+      if (paidOrderId.isEmpty || !settled) {
+        await _reloadLight();
+        _toast(
+            t('Chưa xác nhận được hóa đơn đã thanh toán — giỏ hàng được giữ lại. Vui lòng kiểm tra Lịch sử.'),
+            error: true);
+        return;
+      }
       setState(() {
         _cart.clear();
         _tab.customer = null;
         _tab.orderVoucherId = null;
         _tab.manualDiscount = 0;
+        _tab.note = '';
+        _tab.priceOverridePin =
+            null; // xong bill → quên PIN chỉnh giá của đúng bill này
       });
       _pushCustomerDisplay();
       _toast('Đã thanh toán ${Fmt.money(receipt['total'] ?? totals.total)}');
@@ -914,6 +912,31 @@ class _RetailScreenState extends State<RetailScreen>
         _toast('Đã thanh toán, nhưng chưa in được: $printError', error: true);
       }
       await _reloadLight();
+    }
+  }
+
+  Future<void> _printPreview() async {
+    if (_cart.isEmpty || _salesLocked) return;
+    try {
+      await context.read<ApiService>().printRetailPreview({
+        'items': [
+          for (final c in _cart)
+            {
+              'sku_id': c.sku.id,
+              'qty': c.qty,
+              'lot_id': c.lotId,
+              'voucher_id': c.voucherId,
+            }
+        ],
+        'voucher_id': _tab.orderVoucherId,
+        'customer': _customer?.toCheckoutCustomer(),
+        'customer_id': _customer?.id,
+        'note': _tab.note,
+      });
+      if (mounted) _toast(t('Đã gửi lệnh in tạm tính.'));
+    } catch (e) {
+      if (mounted)
+        _toast(e.toString().replaceFirst('Exception: ', ''), error: true);
     }
   }
 
@@ -926,6 +949,7 @@ class _RetailScreenState extends State<RetailScreen>
         api: context.read<ApiService>(),
         allowRefund: true,
         onAfterChange: _reloadLight,
+        onReturnToTab: _openReturnTab,
       ),
     );
     if (mounted) await _reloadLight();
@@ -946,7 +970,7 @@ class _RetailScreenState extends State<RetailScreen>
   Future<void> _openCustomerPicker() async {
     final picked = await showDialog<Object?>(
       context: context,
-      builder: (_) => _CustomerPickerDialog(
+      builder: (_) => CustomerPickerDialog(
         api: context.read<ApiService>(),
         customers: _customers,
         selected: _customer,
@@ -1031,6 +1055,10 @@ class _RetailScreenState extends State<RetailScreen>
     _pushCustomerDisplay();
   }
 
+  // Cầu nối setState cho các view tách sang part file (extension) — setState là
+  // @protected nên gọi trực tiếp từ extension sẽ cảnh báo; rebuild là public wrapper.
+  void rebuild(VoidCallback fn) => setState(fn);
+
   void _addTab() {
     setState(() {
       _nextTabId++;
@@ -1039,6 +1067,65 @@ class _RetailScreenState extends State<RetailScreen>
       _activeTabId = tab.id;
     });
     _pushCustomerDisplay();
+    // §2 gated: tab mới = canonical order mới (server cấp display_sequence). No-op
+    // khi tắt gate.
+    _ensureCanonicalSession();
+  }
+
+  /// Mở TAB TRẢ HÀNG cho bill [orderId] (§1). Preload item bill gốc: ảnh (tra từ
+  /// _skus), tên, SKU, giá snapshot, đã bán, đã trả (fetch retailReturns), còn trả.
+  /// Không đụng tab bán; bill gốc giữ nguyên.
+  Future<void> _openReturnTab(
+      String orderId, List<Map<String, dynamic>> items) async {
+    final api = context.read<ApiService>();
+    final returnedBy = <String, int>{};
+    try {
+      for (final r in await api.retailReturns(orderId)) {
+        final its = (r is Map ? r['items'] : null);
+        if (its is List) {
+          for (final it in its) {
+            if (it is Map) {
+              final id = '${it['order_item_id'] ?? ''}';
+              returnedBy[id] =
+                  (returnedBy[id] ?? 0) + ((it['qty'] as num?)?.toInt() ?? 0);
+            }
+          }
+        }
+      }
+    } catch (_) {/* chưa trả lần nào */}
+
+    final skuImg = {for (final s in _skus) s.id: s.image};
+    final lines = <Map<String, dynamic>>[];
+    for (final raw in items) {
+      final id = '${raw['order_item_id'] ?? ''}';
+      if (id.isEmpty) continue;
+      final sold = (raw['qty'] as num?)?.toInt() ?? 0;
+      final returned = returnedBy[id] ?? 0;
+      if (sold - returned <= 0) continue;
+      final skuId = '${raw['sku_id'] ?? ''}';
+      lines.add({
+        'order_item_id': id,
+        'name': '${raw['name'] ?? ''}',
+        'sku_id': skuId,
+        'code': '${raw['item_code'] ?? raw['item_barcode'] ?? ''}',
+        'image': skuId.isNotEmpty ? skuImg[skuId] : null,
+        'unit_price': (raw['unit_price'] as num?)?.toInt() ?? 0,
+        'sold': sold,
+        'returned': returned,
+        'qty': 0, // SL sẽ trả (thu ngân chọn +/-)
+        'disposition': 'restock',
+      });
+    }
+    if (lines.isEmpty) {
+      if (mounted) appToast(context, t('Bill này đã được trả hết.'));
+      return;
+    }
+    setState(() {
+      _nextTabId++;
+      _tabs.add(RetailSaleTab(
+          id: _nextTabId, returnOfOrderId: orderId, returnLines: lines));
+      _activeTabId = _nextTabId;
+    });
   }
 
   Future<void> _closeTab(RetailSaleTab tab) async {
@@ -1050,6 +1137,7 @@ class _RetailScreenState extends State<RetailScreen>
     if (_tabs.length == 1) {
       setState(() {
         tab.cart.clear();
+        tab.note = '';
         tab.customer = null;
         tab.orderVoucherId = null;
         tab.manualDiscount = 0;
@@ -1149,7 +1237,10 @@ class _RetailScreenState extends State<RetailScreen>
                     Divider(height: 1, color: DanColors.border),
                     SizedBox(
                         height: 360,
-                        child: RepaintBoundary(child: _cartPanel())),
+                        child: RepaintBoundary(
+                            child: _tab.isReturn
+                                ? _returnCartPanel()
+                                : _cartPanel())),
                   ],
                 );
               }
@@ -1162,7 +1253,9 @@ class _RetailScreenState extends State<RetailScreen>
                     minWidth: 360,
                     maxWidth: 760,
                     defaultWidth: 500,
-                    child: RepaintBoundary(child: _cartPanel()),
+                    child: RepaintBoundary(
+                        child:
+                            _tab.isReturn ? _returnCartPanel() : _cartPanel()),
                   ),
                 ],
               );
@@ -1173,424 +1266,35 @@ class _RetailScreenState extends State<RetailScreen>
     );
   }
 
-  Widget _tabBar() {
-    return Container(
-      height: 56,
-      padding: EdgeInsets.symmetric(horizontal: 14, vertical: 9),
-      color: DanColors.surface2,
-      child: Row(
-        children: [
-          Expanded(
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              itemCount: _tabs.length,
-              separatorBuilder: (_, __) => SizedBox(width: 8),
-              itemBuilder: (_, i) {
-                final tab = _tabs[i];
-                final active = tab.id == _activeTabId;
-                return InkWell(
-                  onTap: () {
-                    setState(() => _activeTabId = tab.id);
-                    _pushCustomerDisplay();
-                  },
-                  borderRadius: BorderRadius.circular(DanRadius.sm),
-                  child: Container(
-                    padding: EdgeInsets.symmetric(horizontal: 12),
-                    decoration: BoxDecoration(
-                      color: active ? DanColors.brand : DanColors.surface,
-                      borderRadius: BorderRadius.circular(DanRadius.sm),
-                      border: Border.all(
-                          color: active ? DanColors.brand : DanColors.border2),
-                    ),
-                    child: Row(
-                      children: [
-                        Icon(Icons.receipt_long_outlined,
-                            size: 15,
-                            color: active ? Colors.white : DanColors.muted),
-                        SizedBox(width: 7),
-                        Text(tab.title,
-                            style: TextStyle(
-                                color: active ? Colors.white : DanColors.text,
-                                fontWeight: FontWeight.w900,
-                                fontSize: 12.5)),
-                        if (tab.cart.isNotEmpty) ...[
-                          SizedBox(width: 6),
-                          _CountDot('${tab.cart.length}', active),
-                        ],
-                        SizedBox(width: 5),
-                        InkWell(
-                          onTap: () => _closeTab(tab),
-                          borderRadius: BorderRadius.circular(99),
-                          child: Icon(Icons.close,
-                              size: 15,
-                              color: active ? Colors.white70 : DanColors.faint),
-                        ),
-                      ],
-                    ),
-                  ),
-                );
-              },
-            ),
-          ),
-          SizedBox(width: 8),
-          IconButton.outlined(
-            onPressed: _addTab,
-            icon: Icon(Icons.add),
-            tooltip: t('Thêm hóa đơn'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _shiftWarning() {
-    return Material(
-      color: DanColors.late.withValues(alpha: .08),
-      child: InkWell(
-        onTap: _openShiftDialog,
-        child: Container(
-          width: double.infinity,
-          padding: EdgeInsets.symmetric(horizontal: 16, vertical: 9),
-          child: Row(
-            children: [
-              Icon(Icons.lock_clock_outlined, color: DanColors.late, size: 18),
-              SizedBox(width: 8),
-              Text(t('Cần mở ca làm việc trước khi bán retail.'),
-                  style: TextStyle(
-                      color: DanColors.late, fontWeight: FontWeight.w800)),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _productArea() {
-    final list = _filteredSkus;
-    final serverUrl = context.read<AuthProvider>().serverUrl;
-    final narrow = MediaQuery.sizeOf(context).width < 560;
-    return Column(
-      children: [
-        Padding(
-          padding: EdgeInsets.fromLTRB(14, 12, 14, 10),
-          child: Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: _searchCtrl,
-                  focusNode: _barcodeFocus,
-                  decoration: InputDecoration(
-                    hintText:
-                        t('Tìm sản phẩm hoặc quét/nhập mã vạch rồi Enter...'),
-                    // Tablet/điện thoại: bấm để mở camera quét; desktop: chỉ là
-                    // icon gợi ý (máy quét USB gõ thẳng vào ô).
-                    prefixIcon: ScanIconButton(
-                      title: t('Quét sản phẩm'),
-                      onCode: (code) {
-                        _searchCtrl.text = code;
-                        _submitSearch(code);
-                      },
-                    ),
-                    isDense: true,
-                  ),
-                  onChanged: (v) {
-                    setState(() => _search = v);
-                    _skuDebouncer(() {
-                      _loadSkusNextPage(isRefresh: true);
-                    });
-                  },
-                  onSubmitted: _submitSearch,
-                ),
-              ),
-              SizedBox(width: 8),
-              narrow
-                  ? IconButton.filled(
-                      onPressed: () => _submitSearch(_searchCtrl.text),
-                      icon: Icon(Icons.add, size: 18),
-                      tooltip: t('Thêm'),
-                    )
-                  : FilledButton.icon(
-                      onPressed: () => _submitSearch(_searchCtrl.text),
-                      icon: Icon(Icons.add, size: 18),
-                      label: Text(t('Thêm')),
-                    ),
-              SizedBox(width: 8),
-              _FilterButton(
-                active: _inStockOnly || _sortBy.isNotEmpty,
-                onPressed: _openFilterSheet,
-              ),
-            ],
-          ),
-        ),
-        Padding(
-          padding: EdgeInsets.fromLTRB(16, 0, 16, 7),
-          child: Align(
-            alignment: Alignment.centerLeft,
-            child: Text(
-                '${list.length} ${t('SP')} (${t('hiện')} ${_skus.length})',
-                style: TextStyle(fontSize: 11.5, color: DanColors.muted)),
-          ),
-        ),
-        Expanded(
-          child: _loading && _skus.isEmpty
-              ? Center(child: CircularProgressIndicator())
-              : _error != null && _skus.isEmpty
-                  ? Center(
-                      child: Text(t('Chưa có sản phẩm'),
-                          style: TextStyle(color: DanColors.faint)),
-                    )
-                  : list.isEmpty
-                      ? Center(
-                          child: Text(t('Không có sản phẩm'),
-                              style: TextStyle(color: DanColors.faint)))
-                      : GridView.builder(
-                          controller: _skuScrollCtrl,
-                          padding: EdgeInsets.fromLTRB(14, 0, 14, 14),
-                          gridDelegate:
-                              SliverGridDelegateWithMaxCrossAxisExtent(
-                            maxCrossAxisExtent: narrow ? 132 : 160,
-                            mainAxisExtent: narrow ? 192 : 206,
-                            crossAxisSpacing: 10,
-                            mainAxisSpacing: 10,
-                          ),
-                          itemCount: list.length + (_loadingSkus ? 1 : 0),
-                          itemBuilder: (_, i) {
-                            if (i >= list.length) {
-                              return Center(child: CircularProgressIndicator());
-                            }
-                            return _SkuCard(
-                              sku: list[i],
-                              serverUrl: serverUrl,
-                              promoLabel: _promoLabelForSku(list[i]),
-                              onTap: () => _addToCart(list[i]),
-                            );
-                          },
-                        ),
-        ),
-      ],
-    );
-  }
-
-  Widget _cartPanel() {
-    final totals = _totals();
-    return Container(
-      color: DanColors.surface,
-      child: Column(
-        children: [
-          Padding(
-            padding: EdgeInsets.fromLTRB(16, 14, 12, 10),
-            child: Row(
-              children: [
-                Icon(Icons.shopping_cart_outlined,
-                    size: 18, color: DanColors.muted),
-                SizedBox(width: 8),
-                Text(t('Giỏ hàng'),
-                    style:
-                        TextStyle(fontSize: 16, fontWeight: FontWeight.w900)),
-                SizedBox(width: 8),
-                Text('${_cart.length} ${t('mặt hàng')}',
-                    style: TextStyle(fontSize: 12, color: DanColors.faint)),
-                Spacer(),
-                if (_cart.isNotEmpty)
-                  IconButton(
-                    onPressed: () {
-                      setState(() {
-                        _cart.clear();
-                        _tab.manualDiscount = 0;
-                        _tab.orderVoucherId = null;
-                      });
-                      _pushCustomerDisplay();
-                    },
-                    icon: Icon(Icons.delete_outline,
-                        color: DanColors.late, size: 19),
-                    tooltip: t('Xóa giỏ'),
-                  ),
-              ],
-            ),
-          ),
-          Divider(height: 1, color: DanColors.border),
-          Expanded(
-            child: _cart.isEmpty
-                ? _EmptyCart()
-                : ListView.separated(
-                    padding: EdgeInsets.all(12),
-                    itemCount: _cart.length,
-                    separatorBuilder: (_, __) => SizedBox(height: 8),
-                    itemBuilder: (_, i) {
-                      final line = _cart[i];
-                      return _CartRow(
-                        line: line,
-                        lots: _lotsForSku(line.sku),
-                        promoText: _linePromoHint(line),
-                        hasPromos: _lineVoucherCandidates(line).isNotEmpty,
-                        promoApplied: line.voucherId != null,
-                        onPickPromo: () => _pickLineVoucher(line),
-                        onLotChanged: (lotId) => _changeLot(line, lotId),
-                        onInc: () => _changeQty(line, 1),
-                        onDec: () => _changeQty(line, -1),
-                        onRemove: () {
-                          setState(() => _cart.removeAt(i));
-                          _pushCustomerDisplay();
-                        },
-                      );
-                    },
-                  ),
-          ),
-          Divider(height: 1, color: DanColors.border),
-          _cartFooter(totals),
-        ],
-      ),
-    );
-  }
-
-  String _linePromoHint(CartLine line) {
-    final applied = _lineAppliedPromoText(line);
-    if (applied.isNotEmpty) return applied;
-    RetailVoucher? bestVoucher;
-    num best = 0;
-    for (final v in _lineVoucherCandidates(line)) {
-      final amount = _lineVoucherAmount(line, v);
-      if (amount > best) {
-        best = amount;
-        bestVoucher = v;
-      }
-    }
-    if (bestVoucher == null) {
-      final buyX = _lineVoucherCandidates(line)
-          .where((v) => v.type == 'buy_x_get_1')
-          .firstOrNull;
-      return buyX == null ? '' : '${t('Có CTKM')}: ${buyX.displayName}';
-    }
-    if (bestVoucher.type == 'buy_x_get_1') {
-      return '${t('Gợi ý')}: ${bestVoucher.displayName}';
-    }
-    return '${t('Gợi ý')}: ${bestVoucher.displayName} ${t('giảm')} ${Fmt.money(best)}';
-  }
-
-  Widget _cartFooter(_RetailTotals totals) {
-    return Padding(
-      padding: EdgeInsets.all(16),
-      child: Column(
-        children: [
-          _clickRow(
-            t('Khách hàng'),
-            _customer?.title.isNotEmpty == true
-                ? _customer!.title
-                : t('Bán cho người tiêu dùng'),
-            _openCustomerPicker,
-          ),
-          _clickRow(
-            'Voucher',
-            totals.orderVoucher?.displayName ?? t('Thêm'),
-            _pickOrderVoucher,
-            accent: totals.orderVoucher != null,
-          ),
-          SizedBox(height: 6),
-          _totalRow(t('Tạm tính'), Fmt.money(totals.subtotal)),
-          if (totals.productDiscount > 0)
-            _totalRow(t('Khuyến mãi sản phẩm'),
-                '-${Fmt.money(totals.productDiscount)}',
-                accent: DanColors.doing),
-          if (totals.orderDiscount > 0)
-            _totalRow(totals.orderVoucher?.name ?? 'Voucher',
-                '-${Fmt.money(totals.orderDiscount)}',
-                accent: DanColors.done),
-          if (totals.customerDiscount > 0)
-            _totalRow(t('Ưu đãi khách hàng'),
-                '-${Fmt.money(totals.customerDiscount)}',
-                accent: DanColors.done),
-          if (totals.vat > 0)
-            _totalRow(t('Trong đó VAT'), Fmt.money(totals.vat)),
-          Divider(height: 18, color: DanColors.border),
-          _totalRow(t('TỔNG CỘNG'), Fmt.money(totals.total), big: true),
-          SizedBox(height: 12),
-          SizedBox(
-            width: double.infinity,
-            height: 50,
-            child: FilledButton.icon(
-              onPressed: _cart.isEmpty || _salesLocked ? null : _checkout,
-              icon: Icon(Icons.payments_outlined),
-              label: Text('${t('Thanh toán')}  ${Fmt.money(totals.total)}',
-                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.w900)),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _clickRow(String label, String value, VoidCallback onTap,
-      {bool accent = false}) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(DanRadius.sm),
-      child: Padding(
-        padding: EdgeInsets.symmetric(vertical: 4),
-        child: Row(
-          children: [
-            Expanded(
-              child: Text(label,
-                  style: TextStyle(
-                      fontSize: 12.5,
-                      fontWeight: FontWeight.w700,
-                      color: DanColors.muted)),
-            ),
-            SizedBox(width: 12),
-            Expanded(
-              flex: 2,
-              child: Align(
-                alignment: Alignment.centerRight,
-                child: Text(value,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    textAlign: TextAlign.right,
-                    style: TextStyle(
-                        fontSize: 12.5,
-                        color: accent ? DanColors.done : DanColors.text,
-                        fontWeight: FontWeight.w900)),
-              ),
-            ),
+  Future<void> _openSharedTab(RetailSaleTab tab) async {
+    if (tab.id == _activeTabId) return;
+    final others =
+        tab.activeDevices.where((device) => device != _cartClientId).toList();
+    if (others.isNotEmpty) {
+      final accepted = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: Text(t('Giỏ đang được mở ở thiết bị khác')),
+          content: Text(t(
+              'Nếu tiếp tục, hai thiết bị sẽ cùng nhìn thấy cập nhật realtime. Hệ thống sẽ chặn ghi đè khi phiên bản đã cũ.')),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: Text(t('Hủy'))),
+            FilledButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: Text(t('Vẫn mở giỏ'))),
           ],
         ),
-      ),
-    );
-  }
-
-  Widget _totalRow(String label, String value,
-      {bool big = false, Color? accent}) {
-    return Padding(
-      padding: EdgeInsets.symmetric(vertical: 3),
-      child: Row(
-        children: [
-          // Nhãn lấy đúng bề rộng cần (Flexible-loose) nên t("TỔNG CỘNG") không bị
-          // cắt "…"; số tiền chiếm phần còn lại và canh phải.
-          Flexible(
-            child: Text(label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                    fontSize: big ? 15 : 12.5,
-                    fontWeight: big ? FontWeight.w900 : FontWeight.w700,
-                    color: big ? DanColors.text : DanColors.muted)),
-          ),
-          SizedBox(width: 12),
-          Expanded(
-            child: Align(
-              alignment: Alignment.centerRight,
-              child: Text(value,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  textAlign: TextAlign.right,
-                  style: TextStyle(
-                      fontSize: big ? 20 : 13,
-                      fontWeight: FontWeight.w900,
-                      color:
-                          big ? DanColors.brand : (accent ?? DanColors.text))),
-            ),
-          ),
-        ],
-      ),
-    );
+      );
+      if (accepted != true || !mounted) return;
+    }
+    final previous = _activeTabId;
+    setState(() => _activeTabId = tab.id);
+    _leavePresence(previous);
+    _heartbeatPresence();
+    _pushCustomerDisplay();
+    _ensureCanonicalSession(); // §2 gated
   }
 }
 
@@ -1615,4 +1319,16 @@ class _FilterButton extends StatelessWidget {
       label: Text(t('Lọc')),
     );
   }
+}
+
+// Một dòng hiển thị trong giỏ: hàng thường (line) HOẶC 1 combo (comboId + nhóm).
+class _CartDisplay {
+  final CartLine? line;
+  final String? comboId;
+  final List<CartLine> comboLines;
+  const _CartDisplay.single(this.line)
+      : comboId = null,
+        comboLines = const [];
+  const _CartDisplay.combo(this.comboId, this.comboLines) : line = null;
+  bool get isCombo => comboId != null;
 }

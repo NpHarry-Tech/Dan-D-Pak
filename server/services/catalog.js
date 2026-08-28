@@ -1,6 +1,7 @@
 import { db, audit } from '../db.js';
 import { salePrice } from './tax.js';
 import { matchesSearch, searchTokens } from '../core/search.js';
+import { businessParts } from '../core/businessClock.js';
 
 // ---------- Simple in-memory cache ----------
 // Menu và print config là dữ liệu đọc nhiều nhưng thay đổi ít.
@@ -33,6 +34,9 @@ export function safeJson(raw, fallback) {
 export function listMenu(options = {}) {
   const {
     forCustomer = false,
+    // selfOrder = gọi từ Tablet Self-Order → ẩn thêm món đặt self_order_hidden
+    // (menu khách có thể KHÁC F&B POS). Ngầm hiểu forCustomer.
+    selfOrder = false,
     includeDeleted = false,
     page = null,
     limit = 40,
@@ -58,6 +62,9 @@ export function listMenu(options = {}) {
 
     if (forCustomer) {
       sql += ` AND hidden = 0`;
+    }
+    if (selfOrder) {
+      sql += ` AND self_order_hidden = 0`;
     }
 
     if (category_id && String(category_id).trim() !== '') {
@@ -86,13 +93,14 @@ export function listMenu(options = {}) {
     };
   }
 
-  const cacheKey = `menu:${branch_id}:${forCustomer ? 'pub' : 'adm'}:${includeDeleted ? 'all' : 'live'}:${menuLang}`;
+  const cacheKey = `menu:${branch_id}:${forCustomer ? 'pub' : 'adm'}:${selfOrder ? 'so' : 'all'}:${includeDeleted ? 'all' : 'live'}:${menuLang}`;
   const cached = cacheGet(cacheKey);
   if (cached) return cached;
   const categories = db.prepare(`SELECT * FROM categories WHERE branch_id=? ORDER BY sort`).all(branch_id);
   const rows = db.prepare(`SELECT * FROM menu_items WHERE branch_id=? ORDER BY sort`).all(branch_id)
     .filter(r => includeDeleted || !r.deleted_at)
-    .filter(r => !forCustomer || !r.hidden);
+    .filter(r => !forCustomer || !r.hidden)
+    .filter(r => !selfOrder || !r.self_order_hidden);
   return cacheSet(cacheKey, { categories, items: rows.map(r => normalizeMenuItem(r, { forCustomer, includeRecipe: !forCustomer, lang: menuLang })) }, MENU_TTL);
 }
 
@@ -128,20 +136,29 @@ export function normalizeMenuItem(row, { forCustomer = false, includeRecipe = fa
   const translations = normalizeMenuTranslations(row.translations_json, row);
   const priceIncludesVat = row.price_includes_vat !== 0;
   const vatRate = Number(row.vat_rate) || 0;
+  // NHÓM TÙY CHỌN hợp nhất (size/đá + topping + combo) — nguồn chính cho Self-Order.
+  const optionGroups = enrichOptionGroups(row.option_groups_json, row.branch_id, vatRate, priceIncludesVat);
+  // FLATTEN nhóm -> modifiers phẳng (group=tên nhóm, name=tên option) để
+  // resolveOrderMods VALIDATE + tính giá tự động, KHÔNG phải sửa logic đặt món.
+  // Gộp cả modifiers_json cũ để tương thích ngược.
+  const flatFromGroups = optionGroups.flatMap(g =>
+    g.options.map(o => ({ group: g.name, name: o.name, price: o.price, sale_price: o.sale_price })));
+  const legacyMods = safeJson(row.modifiers_json, []).map(mod => ({
+    ...mod, sale_price: salePrice(mod.price, vatRate, priceIncludesVat),
+  }));
   const out = {
     ...row,
     price_includes_vat: priceIncludesVat,
     sale_price: salePrice(row.price, vatRate, priceIncludesVat),
     available_flag: !!row.available,
     hidden: !!row.hidden,
+    self_order_hidden: !!row.self_order_hidden,
     available: forCustomer ? canOrder : !!row.available,
     can_order: canOrder,
     schedule_available: scheduleAvailable,
     availability_reason: !visible ? 'hidden' : !row.available ? 'manual' : !scheduleAvailable ? 'schedule' : null,
-    modifiers: safeJson(row.modifiers_json, []).map(mod => ({
-      ...mod,
-      sale_price: salePrice(mod.price, vatRate, priceIncludesVat),
-    })),
+    modifiers: [...legacyMods, ...flatFromGroups],
+    option_groups: optionGroups,
     addons: enrichAddons(row.addons_json, row.branch_id),
     ingredients: ingredients.length ? ingredients : (recipe || []).map(r => r.name),
     allergens: safeJson(row.allergens_json, []),
@@ -240,7 +257,8 @@ export function isScheduleAvailable(schedule, at = new Date()) {
   }
 
   const days = Array.isArray(s.days) ? s.days.map(Number) : [];
-  if ((s.mode === 'weekly' || s.mode === 'time') && days.length && !days.includes(at.getDay())) {
+  const storeAt = businessParts(at);
+  if ((s.mode === 'weekly' || s.mode === 'time') && days.length && !days.includes(storeAt.weekday)) {
     return false;
   }
 
@@ -249,7 +267,8 @@ export function isScheduleAvailable(schedule, at = new Date()) {
 }
 
 function isNowInTimeRange(at, start = '00:00', end = '23:59') {
-  const nowM = at.getHours() * 60 + at.getMinutes();
+  const p = businessParts(at);
+  const nowM = p.hour * 60 + p.minute;
   const startM = toMinutes(start, 0);
   const endM = toMinutes(end, 23 * 60 + 59);
   if (startM <= endM) return nowM >= startM && nowM <= endM;
@@ -263,7 +282,8 @@ function toMinutes(v, fallback) {
 }
 
 function localDate(d) {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  const p = businessParts(d);
+  return `${p.year}-${String(p.month).padStart(2, '0')}-${String(p.day).padStart(2, '0')}`;
 }
 
 // ---- Add-ons (combos & extras) ----
@@ -294,6 +314,62 @@ function refAvailability(ref_item_id, branch_id = 'sala') {
 }
 
 // Returns add-ons with live availability + effective price resolved.
+// Đọc: nhóm tùy chọn + resolve option combo (ref_item_id) lấy tên/giá/còn-hàng,
+// kèm sale_price (đã gồm VAT của món) để đặt món tính đúng tiền.
+function enrichOptionGroups(raw, branch_id, vatRate, priceIncludesVat) {
+  const groups = safeJson(raw, []) || [];
+  return (Array.isArray(groups) ? groups : []).map(g => ({
+    key: String(g.key || ''),
+    name: String(g.name || ''),
+    position: g.position === 'bottom' ? 'bottom' : 'top',
+    min: Math.max(0, Number(g.min) || 0),
+    max: Math.max(0, Number(g.max) || 0), // 0 = không giới hạn
+    options: (Array.isArray(g.options) ? g.options : []).map(o => {
+      const out = {
+        key: String(o.key || ''),
+        name: String(o.name || ''),
+        type: o.type === 'free' ? 'free' : 'paid',
+        price: o.type === 'free' ? 0 : (Number(o.price) || 0),
+        ref_item_id: o.ref_item_id || null,
+        emoji: o.emoji || null,
+        available: o.available !== false,
+      };
+      if (o.ref_item_id) {
+        const ref = refAvailability(o.ref_item_id, branch_id);
+        out.available = ref.exists ? ref.available : false;
+        out.ref_exists = ref.exists;
+        if (ref.exists) {
+          if (!out.name) out.name = ref.name;
+          if (!out.emoji) out.emoji = ref.emoji;
+          if (out.type !== 'free' && !out.price) out.price = ref.price;
+        }
+      }
+      out.sale_price = salePrice(out.price, vatRate, priceIncludesVat);
+      return out;
+    }),
+  }));
+}
+
+// Lưu: chuẩn hoá mảng nhóm tùy chọn từ client (bỏ nhóm/option rỗng, ép kiểu).
+export function normalizeOptionGroups(raw) {
+  const list = Array.isArray(raw) ? raw : (safeJson(raw, []) || []);
+  return (Array.isArray(list) ? list : []).map((g, gi) => ({
+    key: String(g.key || `g${gi}`).slice(0, 40),
+    name: String(g.name || '').trim().slice(0, 60),
+    position: g.position === 'bottom' ? 'bottom' : 'top',
+    min: Math.max(0, parseInt(g.min) || 0),
+    max: Math.max(0, parseInt(g.max) || 0),
+    options: (Array.isArray(g.options) ? g.options : []).map((o, oi) => ({
+      key: String(o.key || `o${oi}`).slice(0, 40),
+      name: String(o.name || '').trim().slice(0, 80),
+      type: o.type === 'free' ? 'free' : 'paid',
+      price: o.type === 'free' ? 0 : Math.max(0, Math.round(Number(o.price) || 0)),
+      ref_item_id: o.ref_item_id ? String(o.ref_item_id) : null,
+      emoji: o.emoji ? String(o.emoji).slice(0, 8) : null,
+    })).filter(o => o.name || o.ref_item_id),
+  })).filter(g => g.name && g.options.length);
+}
+
 export function enrichAddons(addonsRaw, branch_id = 'sala') {
   const list = safeJson(addonsRaw, []) || [];
   return (Array.isArray(list) ? list : []).map(a => {

@@ -23,6 +23,12 @@
     #     chính proxy là thứ làm rớt kết nối chứ không phải mạng.
     handle /socket.io/* {
         reverse_proxy app:3000 {
+            # HOTFIX tenant routing (prod 2026-08-26): giữ ĐÚNG Host của tenant.
+            # Mặc định Caddy đặt Host=app:3000 (internal Docker) → TenantContext chỉ
+            # allow api.dandpakpos.io.vn/localhost/127.0.0.1 nên trả 421 "Host không
+            # thuộc tenant này". KHÔNG whitelist internal host — fail-closed; sửa ở
+            # đây để app luôn thấy domain tenant thật.
+            header_up Host {$APP_DOMAIN}
             flush_interval -1
             transport http {
                 dial_timeout 10s
@@ -33,5 +39,47 @@
         }
     }
 
-    reverse_proxy app:3000
+    reverse_proxy app:3000 {
+        header_up Host {$APP_DOMAIN}
+    }
+}
+
+api-review.dandpakpos.io.vn {
+    encode zstd gzip
+
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        -Server
+    }
+
+    handle /socket.io/* {
+        reverse_proxy review-api:3000 {
+            # Cùng lý do hotfix tenant routing như production: review tenant chỉ
+            # allow api-review.dandpakpos.io.vn → phải giữ đúng Host, không để lọt
+            # internal Docker host (review-api) làm 421.
+            header_up Host api-review.dandpakpos.io.vn
+            flush_interval -1
+            transport http {
+                dial_timeout 10s
+                response_header_timeout 60s
+                read_timeout 0
+                write_timeout 0
+            }
+        }
+    }
+
+    reverse_proxy review-api:3000 {
+        header_up Host api-review.dandpakpos.io.vn
+    }
+}
+
+review.dandpakpos.io.vn {
+    encode zstd gzip
+
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        -Server
+    }
+
+    reverse_proxy review-portal:80
 }

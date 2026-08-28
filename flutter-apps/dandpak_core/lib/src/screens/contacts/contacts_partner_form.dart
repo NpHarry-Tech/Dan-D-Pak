@@ -110,9 +110,10 @@ class _PartnerFormState extends State<_PartnerForm> {
   }
 
   Future<void> _save() async {
-    if (_name.text.trim().isEmpty) {
+    if ([_name, _company, _tax, _phone, _email]
+        .every((c) => c.text.trim().isEmpty)) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text(t('Cần nhập tên liên hệ')),
+          content: Text(t('Cần ít nhất tên, công ty, MST, SĐT hoặc email')),
           backgroundColor: DanColors.late));
       return;
     }
@@ -230,7 +231,7 @@ class _PartnerFormState extends State<_PartnerForm> {
   // mở hộp thoại hệ điều hành — bản cũ chỉ có PowerShell nên trên Android
   // bấm nút không có phản ứng gì.
   Future<String?> _pickImagePath() =>
-      pickImagePathCross(title: 'Chọn ảnh đại diện');
+      pickImagePathCross(title: 'Chọn ảnh đại diện', context: context);
 
   Future<void> _delete() async {
     final ok = await showDialog<bool>(

@@ -160,7 +160,19 @@ class _MoveDialogState extends State<_MoveDialog> {
 /// New inventory item (kitchen warehouse).
 class _NewItemDialog extends StatefulWidget {
   final ApiService api;
-  _NewItemDialog({required this.api});
+
+  /// Kho ĐANG MỞ. Không truyền thì server rơi về kho mặc định của chi nhánh —
+  /// người dùng tạo hàng ở kho A xong không thấy nó đâu vì nó nằm ở kho B.
+  final String warehouseId;
+
+  /// Loại chọn sẵn từ menu "Tạo mới" (Nguyên liệu / Vật dụng).
+  final String itemType;
+
+  _NewItemDialog({
+    required this.api,
+    this.warehouseId = '',
+    this.itemType = 'ingredient',
+  });
 
   @override
   State<_NewItemDialog> createState() => _NewItemDialogState();
@@ -170,7 +182,7 @@ class _NewItemDialogState extends State<_NewItemDialog> {
   final _name = TextEditingController();
   final _unit = TextEditingController(text: t('cái'));
   final _cost = TextEditingController(text: '0');
-  String _itemType = 'ingredient';
+  late String _itemType = widget.itemType;
   bool _saving = false;
 
   @override
@@ -195,6 +207,7 @@ class _NewItemDialogState extends State<_NewItemDialog> {
         'unit': _unit.text.trim(),
         'cost': double.tryParse(_cost.text.trim()) ?? 0,
         'item_type': _itemType,
+        if (widget.warehouseId.isNotEmpty) 'warehouse_id': widget.warehouseId,
       });
       if (mounted) Navigator.of(context).pop(true);
     } catch (e) {

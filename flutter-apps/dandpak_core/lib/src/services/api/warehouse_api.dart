@@ -95,6 +95,18 @@ extension ApiServiceWarehouseApi on ApiService {
         body: body, errorMessage: 'Không tạo được mặt hàng'));
   }
 
+  /// Cập nhật mặt hàng NGUYÊN LIỆU / VẬT DỤNG (kho bếp) — khác SKU bán lẻ.
+  Future<Map<String, dynamic>> updateInventoryItem(
+      String id, Map<String, dynamic> body) async {
+    return mapFrom(await postJson('/api/inventory/$id/update',
+        body: body, errorMessage: 'Không cập nhật được mặt hàng'));
+  }
+
+  Future<void> deleteInventoryItem(String id) async {
+    await postJson('/api/inventory/$id/delete',
+        body: const {}, errorMessage: 'Không xóa được mặt hàng');
+  }
+
   /// Tạo SKU bán lẻ. Server (inventory.createSku) bắt buộc `name`; `opening_stock`
   /// được ghi thành một lô 'OPENING' chứ không set thẳng cột stock, nên sổ lô và
   /// tồn kho luôn khớp. Route `/api/skus` đã có sẵn từ trước — client chỉ thiếu
@@ -151,6 +163,26 @@ extension ApiServiceWarehouseApi on ApiService {
       String id, Map<String, dynamic> body) async {
     return mapFrom(await postJson('/api/skus/$id/update',
         body: body, errorMessage: 'Không cập nhật được sản phẩm'));
+  }
+
+  /// ĐẶT LẠI TỒN KHO của một mặt hàng về đúng con số đếm được.
+  ///
+  /// Server ghi thành một bút toán kiểm kho (nhập bù hoặc xuất bớt phần lệch)
+  /// chứ không sửa thẳng con số — nhờ vậy vẫn truy được ai chỉnh, chỉnh lúc nào
+  /// và lệch bao nhiêu.
+  Future<Map<String, dynamic>> adjustSkuStock(String id, num stock,
+      {String reason = 'manual_count'}) async {
+    return mapFrom(await postJson('/api/skus/$id/adjust',
+        body: {'stock': stock, 'reason': reason},
+        errorMessage: 'Không điều chỉnh được tồn kho'));
+  }
+
+  /// Điều chỉnh tồn cho mặt hàng NGUYÊN LIỆU / VẬT DỤNG (kho bếp).
+  Future<Map<String, dynamic>> adjustInventoryStock(String id, num stock,
+      {String reason = 'manual_count'}) async {
+    return mapFrom(await postJson('/api/inventory/$id/adjust',
+        body: {'stock': stock, 'reason': reason},
+        errorMessage: 'Không điều chỉnh được tồn kho'));
   }
 
   Future<void> deleteSku(String id) async {

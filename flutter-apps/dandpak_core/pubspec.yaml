@@ -26,7 +26,8 @@ dependencies:
   path_provider: ^2.1.5
   # Quét mã vạch/QR bằng camera (ML Kit/AVFoundation) — không có bản Windows,
   # desktop tự bỏ qua.
-  mobile_scanner: ^6.0.10
+  # Production pin: nâng phiên bản chỉ sau canary camera trên thiết bị thật.
+  mobile_scanner: 6.0.11
   # Win32 (FFI) cho kiosk màn hình phụ desktop.
   ffi: ^2.1.0
   video_player: ^2.11.1
@@ -41,11 +42,18 @@ dependencies:
   file_picker: ^10.0.0
   # Đọc/ghi file Excel .xlsx thuần Dart (file mẫu kiểm kho/nhập/xuất hàng).
   excel: ^4.0.6
+  # Sửa tương thích các file Excel hợp lệ do Microsoft Excel tạo nhưng có
+  # custom number-format dùng ID built-in (<164) trước khi đưa vào excel parser.
+  archive: ^3.6.1
   # Đẩy thông báo KỂ CẢ KHI APP ĐÃ TẮT (Firebase Cloud Messaging) — chỉ thật
   # sự hoạt động trên Android (cần google-services.json ở app tablet/phone);
   # desktop tự bỏ qua (Platform.isAndroid check ở nơi gọi), không cần cấu hình gì thêm.
   firebase_core: ^3.8.0
   firebase_messaging: ^15.1.5
+  # In thủ công cho kế toán: dựng tài liệu PDF dạng vector và mở hộp thoại in
+  # của hệ điều hành. Luồng này tách biệt hoàn toàn với máy in nhiệt POS.
+  pdf: ^3.11.3
+  printing: ^5.14.2
 
 dev_dependencies:
   flutter_test:

@@ -4,6 +4,7 @@ import 'package:http/http.dart' as http;
 import '../primitives.dart';
 import 'app_notifier.dart';
 import '../ui/sound_player.dart';
+import 'ring_controller.dart';
 import 'app_log.dart';
 import 'black_box.dart';
 import 'connectivity_status.dart';
@@ -204,7 +205,14 @@ class SocketService {
       final info = _notificationFor(event, payload);
       if (info == null) return;
       if (!_roleReceivesCategory(info.category)) return;
-      AppNotifier.show(title: info.title, body: info.body);
+      // Thông báo KHÁCH cần nhân viên xử lý (tự gọi món / gọi nhân viên) → banner
+      // có nút "Xem" nhảy thẳng vào mục xử lý (AppNotifier.onOpenRequested).
+      final actionable = event == 'order:pending' ||
+          event == 'staff:call' ||
+          event == 'online:new' ||
+          event == 'online:order';
+      AppNotifier.show(
+          title: info.title, body: info.body, showViewAction: actionable);
     } catch (e) {
       dlog('notifyBusiness error: $e');
     }
@@ -316,6 +324,9 @@ class SocketService {
   }
 
   void _handleSoundNotification(String event, dynamic payload) {
+    // NHÁY ĐÈN HIỆU cho phiếu bếp sắp in — chạy KHÔNG phụ thuộc cấu hình âm
+    // thanh (đèn là báo hình, phải nháy dù đã tắt tiếng).
+    if (event == 'kds:alert') RingController.instance.flashKds();
     final cfg = _soundConfig;
     if (cfg == null) return;
     if (event == 'order:new' &&
@@ -351,6 +362,10 @@ class SocketService {
     } else if (event == 'order:item') {
       configEvent = 'kds_new_order';
       defaultSound = 'Beeper';
+    } else if (event == 'kds:alert') {
+      // MÁY IN BẾP sắp in: kêu "tít tít tít" (nháy đèn đã xử ở đầu hàm).
+      configEvent = 'kds_new_order';
+      defaultSound = 'Beeper';
     }
 
     if (configEvent == null) return;
@@ -372,7 +387,17 @@ class SocketService {
 
     final baseUrlStr = _baseUrl;
     if (baseUrlStr != null) {
-      playNotificationSound(baseUrlStr, soundId, volume: volume);
+      // KHÁCH TỰ GỌI MÓN (order:pending) và KHÁCH GỌI NHÂN VIÊN (staff:call):
+      // REO LIÊN TỤC như điện thoại đổ chuông tới khi nhân viên bấm chuông xem —
+      // không chỉ kêu một tiếng rồi im (yêu cầu chủ cửa hàng). Các sự kiện khác
+      // vẫn kêu một tiếng như cũ.
+      if (event == 'order:pending' || event == 'staff:call') {
+        RingController.instance
+            .configure(baseUrl: baseUrlStr, soundId: soundId);
+        RingController.instance.ring();
+      } else {
+        playNotificationSound(baseUrlStr, soundId, volume: volume);
+      }
     }
   }
 

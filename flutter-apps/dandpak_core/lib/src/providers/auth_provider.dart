@@ -5,10 +5,11 @@ import '../primitives.dart';
 import '../models/pos_models.dart';
 import '../services/api_service.dart';
 import '../services/app_log.dart';
+import '../services/app_updater.dart';
 import '../services/hardware_agent_launcher.dart';
 import '../services/local_store.dart';
-import '../services/node_runner.dart';
 import '../services/socket_service.dart';
+import '../services/tenant_scope.dart';
 import '../services/system_log.dart';
 import '../utils/translation.dart';
 
@@ -66,6 +67,13 @@ class AuthProvider extends ChangeNotifier {
   List<User> get loginUsers => _loginUsers;
   bool moduleEnabled(String key) =>
       _enabledBranchModules.isEmpty || _enabledBranchModules.contains(key);
+
+  // Namespace state tenant-scoped theo origin server hiện tại (§B/§C): đổi tenant
+  // = đổi bộ khoá → không rò token/branch/cache giữa các tenant.
+  String get _originKey => TenantScope.originOf(_serverUrl);
+  String _tk(String key) => TenantScope.tenantKey(_originKey, key);
+  String _legacyTk(String key) =>
+      TenantScope.tenantKey(TenantScope.hostOf(_serverUrl), key);
   Branch get selectedBranch => _branches.firstWhere(
         (b) => b.id == _selectedBranchId,
         orElse: () => Branch(
@@ -79,22 +87,28 @@ class AuthProvider extends ChangeNotifier {
     _booting = true;
     try {
       final prefs = LocalStore.instance;
-      final savedServerUrl = await prefs.getString('server_url');
-      final savedHost =
-          Uri.tryParse(DanDpakApiClient.normalizeBaseUrl(savedServerUrl ?? ''))
-              ?.host;
-      _serverUrl = savedServerUrl == null ||
-              savedServerUrl.trim().isEmpty ||
-              savedHost == '127.0.0.1' ||
-              savedHost == 'localhost' ||
-              savedHost == '42.96.18.70'
-          ? DanDpakDefaults.baseUrl
-          : savedServerUrl;
-      if (_serverUrl != savedServerUrl) {
-        await prefs.setString('server_url', _serverUrl);
-      }
-      _selectedBranchId =
-          await prefs.getString('branch_id') ?? DanDpakDefaults.branchId;
+      // Server URL theo BUILD (chống review build đọc nhầm server_url production, §E).
+      final buildDefault = DanDpakDefaults.baseUrl;
+      final serverKey = TenantScope.serverUrlKey(buildDefault);
+      final legacyBuildServerKey =
+          'server_url@${TenantScope.hostOf(buildDefault)}';
+      _serverUrl = TenantScope.resolveServerUrl(
+        savedForBuild: await prefs.getString(serverKey) ??
+            await prefs.getString(legacyBuildServerKey),
+        legacyUnscoped: await prefs.getString('server_url'),
+        buildDefaultUrl: buildDefault,
+      );
+      await prefs.setString(serverKey, _serverUrl);
+
+      // Branch chọn: theo namespace tenant hiện tại; migrate legacy 'branch_id'
+      // CHỈ khi server_url legacy cùng origin (cùng tenant) — không gán nhầm (§J).
+      final legacyServer = await prefs.getString('server_url');
+      final legacySameOrigin = legacyServer != null &&
+          TenantScope.originOf(legacyServer) == _originKey;
+      _selectedBranchId = await prefs.getString(_tk('branch_id')) ??
+          await prefs.getString(_legacyTk('branch_id')) ??
+          (legacySameOrigin ? await prefs.getString('branch_id') : null) ??
+          DanDpakDefaults.branchId;
       _setLanguage(await prefs.getString('app_lang') ?? 'vi', notify: false);
       // MÁY DESKTOP TẠI QUẦY: đóng hẳn app rồi mở lại thì PHẢI đăng nhập lại.
       // Máy quầy dùng chung nhiều ca, giữ phiên qua các lần khởi động đồng nghĩa
@@ -103,18 +117,25 @@ class AuthProvider extends ChangeNotifier {
       // Tablet/KDS thì giữ nguyên: chúng là màn treo tường, bắt đăng nhập lại sau
       // mỗi lần chớp điện sẽ làm gián đoạn bếp.
       if (_desktopRequiresFreshLogin) {
-        await prefs.remove('auth_token');
+        await prefs.remove(_tk('auth_token'));
+        await prefs.remove('auth_token'); // dọn legacy
         _token = null;
       } else {
-        _token = await prefs.getString('auth_token');
+        _token = await prefs.getString(_tk('auth_token')) ??
+            await prefs.getString(_legacyTk('auth_token')) ??
+            (legacySameOrigin ? await prefs.getString('auth_token') : null);
       }
+      // Ghi lại branch theo namespace + dọn khoá legacy toàn cục để không rò tenant.
+      await prefs.setString(_tk('branch_id'), _selectedBranchId);
+      if (_token != null) await prefs.setString(_tk('auth_token'), _token!);
+      await prefs.remove(_legacyTk('branch_id'));
+      await prefs.remove(_legacyTk('auth_token'));
+      await prefs.remove('branch_id');
+      await prefs.remove('auth_token');
 
       apiService.setBaseUrl(_serverUrl);
       apiService.setToken(_token);
       apiService.setBranchId(_selectedBranchId);
-      // Server boots in the background; wait for it before the first calls so we
-      // don't race an un-booted engine (branch list / auto-login would fail).
-      await NodeRunner.ready;
       try {
         await loadBranches(silent: true);
       } catch (e) {
@@ -155,7 +176,8 @@ class AuthProvider extends ChangeNotifier {
           !_branches.any((b) => b.id == _selectedBranchId)) {
         _selectedBranchId = _branches.first.id;
         apiService.setBranchId(_selectedBranchId);
-        await LocalStore.instance.setString('branch_id', _selectedBranchId);
+        await LocalStore.instance
+            .setString(_tk('branch_id'), _selectedBranchId);
       }
     } finally {
       if (!silent) {
@@ -182,17 +204,71 @@ class AuthProvider extends ChangeNotifier {
   }
 
   Future<void> updateServerUrl(String url) async {
-    _serverUrl = url;
-    apiService.setBaseUrl(url);
+    final normalized = DanDpakApiClient.normalizeBaseUrl(url);
+    final uri = Uri.tryParse(normalized);
+    if (uri == null ||
+        !{'http', 'https'}.contains(uri.scheme) ||
+        uri.host.trim().isEmpty) {
+      throw const FormatException('Địa chỉ máy chủ không hợp lệ');
+    }
+    final tenantChanged = TenantScope.originChanged(_serverUrl, normalized);
+    if (tenantChanged) {
+      await AppUpdater.prepareForServerOriginChange(
+        fromBaseUrl: _serverUrl,
+        toBaseUrl: normalized,
+      );
+    }
+    _serverUrl = normalized;
+    apiService.setBaseUrl(normalized);
     final prefs = LocalStore.instance;
-    await prefs.setString('server_url', url);
+    // Lưu server_url THEO BUILD (không đè server của build khác, §E).
+    await prefs.setString(
+        TenantScope.serverUrlKey(DanDpakDefaults.baseUrl), normalized);
+
+    if (tenantChanged) {
+      // §F/§H — đổi TENANT: cắt socket tenant cũ, XOÁ sạch ngữ cảnh tenant cũ khỏi
+      // bộ nhớ (không hiển thị stale), KHÔNG mang token/branch/cache/queue tenant cũ
+      // sang tenant mới; nạp namespace tenant mới rồi buộc xác thực lại.
+      SocketService().logoutDisconnect();
+      _token = null;
+      _currentUser = null;
+      _branches = [];
+      _loginUsers = [];
+      _enabledBranchModules = {};
+      _branchConfirmed = false;
+      _mustChangePin = false;
+      apiService.setToken(null);
+      // Namespace tenant MỚI (khoá theo origin mới qua _tk).
+      _selectedBranchId = await prefs.getString(_tk('branch_id')) ??
+          await prefs.getString(_legacyTk('branch_id')) ??
+          DanDpakDefaults.branchId;
+      apiService.setBranchId(_selectedBranchId);
+      _token = _desktopRequiresFreshLogin
+          ? null
+          : await prefs.getString(_tk('auth_token')) ??
+              await prefs.getString(_legacyTk('auth_token'));
+      apiService.setToken(_token);
+      _syncLogContext();
+      try {
+        await loadBranches(silent: true);
+      } catch (_) {}
+      if (_token != null) {
+        try {
+          _currentUser = User.fromJson(await apiService.getMe());
+        } catch (_) {
+          _token = null;
+          apiService.setToken(null);
+        }
+      }
+      AppUpdater.notifyServerOriginChanged();
+    }
     notifyListeners();
   }
 
   Future<void> selectBranch(String branchId) async {
     _selectedBranchId = branchId;
     apiService.setBranchId(branchId);
-    await LocalStore.instance.setString('branch_id', branchId);
+    await LocalStore.instance.setString(_tk('branch_id'), branchId);
     notifyListeners();
     await loadLoginUsers();
   }
@@ -249,11 +325,11 @@ class AuthProvider extends ChangeNotifier {
       // Desktop: token chỉ sống trong bộ nhớ của phiên chạy này — đóng app là mất,
       // mở lại phải đăng nhập. Xem _desktopRequiresFreshLogin.
       if (_desktopRequiresFreshLogin) {
-        await prefs.remove('auth_token');
+        await prefs.remove(_tk('auth_token'));
       } else {
-        await prefs.setString('auth_token', _token!);
+        await prefs.setString(_tk('auth_token'), _token!);
       }
-      await prefs.setString('branch_id', branchId);
+      await prefs.setString(_tk('branch_id'), branchId);
       await prefs.setString('app_lang', _language);
 
       // Máy Windows tại quầy: tự khởi động ngầm Hardware Agent (không cửa sổ)
@@ -318,7 +394,8 @@ class AuthProvider extends ChangeNotifier {
     _syncLogContext();
 
     final prefs = LocalStore.instance;
-    await prefs.remove('auth_token');
+    await prefs.remove(_tk('auth_token'));
+    await prefs.remove('auth_token'); // dọn legacy toàn cục
 
     _isLoading = false;
     notifyListeners();

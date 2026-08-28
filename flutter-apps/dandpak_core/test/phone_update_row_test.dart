@@ -64,6 +64,11 @@ Future<void> _pump(WidgetTester tester, _FakeApi api) async {
   // lời gọi thông báo trong checkForUpdate — trong môi trường test không có kênh
   // thông báo thật nên nó chỉ nhả khi hết hạn giờ.
   await tester.pump();
+  // LocalStore persists the origin-scoped manifest through real file I/O. Give
+  // that microtask/I/O queue a chance to complete before advancing widget time.
+  await tester.runAsync(() => Future<void>.delayed(
+        const Duration(milliseconds: 100),
+      ));
   await tester.pump(const Duration(seconds: 5));
   await tester.pump();
 }
@@ -78,7 +83,8 @@ void main() {
   testWidgets('server CUNG build -> KHONG moi cap nhat', (tester) async {
     await _pump(tester, _FakeApi(buildTrenServer: 22));
     expect(find.text('Cập nhật ngay'), findsNothing,
-        reason: 'moi nham la nguoi dung tai hon 100 MB de cai lai ban dang chay');
+        reason:
+            'moi nham la nguoi dung tai hon 100 MB de cai lai ban dang chay');
     expect(find.text('Đang dùng bản mới nhất'), findsOneWidget);
   });
 
@@ -93,8 +99,10 @@ void main() {
   });
 
   testWidgets('hien ghi chu cua ban moi truoc khi tai', (tester) async {
-    await _pump(tester,
-        _FakeApi(buildTrenServer: 30, ghiChu: 'Sua loi in bill tren may cam tay'));
+    await _pump(
+        tester,
+        _FakeApi(
+            buildTrenServer: 30, ghiChu: 'Sua loi in bill tren may cam tay'));
     expect(find.text('Sua loi in bill tren may cam tay'), findsOneWidget);
   });
 
@@ -104,8 +112,8 @@ void main() {
   });
 
   testWidgets('dung gon trong man 6 inch, khong tran khung', (tester) async {
-    await _pump(tester,
-        _FakeApi(buildTrenServer: 30, ghiChu: 'Ghi chu rat dai ' * 12));
+    await _pump(
+        tester, _FakeApi(buildTrenServer: 30, ghiChu: 'Ghi chu rat dai ' * 12));
     expect(tester.takeException(), isNull);
   });
 }

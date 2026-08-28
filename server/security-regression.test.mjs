@@ -63,3 +63,14 @@ test('request audit context keeps complete device metadata', () => {
     });
   });
 });
+
+test('cancel order item stays behind the sell permission guard', () => {
+  const routes = fs.readFileSync(new URL('./modules/orders/routes.js', import.meta.url), 'utf8');
+  assert.match(routes, /api\.post\('\/orders\/items\/:id\/cancel', guard\('sell'\)/);
+});
+
+test('creating products requires the dedicated warehouse item permission', () => {
+  const routes = fs.readFileSync(new URL('./modules/inventory/routes.js', import.meta.url), 'utf8');
+  assert.match(routes, /api\.post\('\/skus', guard\('warehouse\.item'\)/);
+  assert.match(routes, /api\.post\('\/skus\/image-upload', guard\('warehouse\.item'\)/);
+});

@@ -31,9 +31,15 @@ class _FakeApi extends ApiService {
           {'key': 'pay'},
           {'key': 'settings.manage'},
         ],
-        'roles': {
-          'manager': ['module.pos', 'sell'],
-        },
+        // Contract hiện tại trả role objects (không còn map role -> perms).
+        'roles': [
+          {
+            'key': 'manager',
+            'label': 'Quản lý',
+            'perms': ['module.pos', 'sell'],
+            'custom': false,
+          },
+        ],
       };
     }
     return <dynamic>[];

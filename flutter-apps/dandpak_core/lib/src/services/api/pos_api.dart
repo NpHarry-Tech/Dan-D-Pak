@@ -103,7 +103,8 @@ extension ApiServicePosApi on ApiService {
   }
 
   Future<List<dynamic>> getOrderHistory({
-    int limit = 80,
+    int limit = 200,
+    int page = 1,
     String q = '',
     String channel = '',
     String from = '',
@@ -111,6 +112,7 @@ extension ApiServicePosApi on ApiService {
   }) async {
     final params = <String, String>{
       'limit': '$limit',
+      'page': '$page',
       if (q.trim().isNotEmpty) 'q': q.trim(),
       if (channel.isNotEmpty) 'channel': channel,
       if (from.isNotEmpty) 'from': from,
@@ -330,6 +332,15 @@ extension ApiServicePosApi on ApiService {
     );
   }
 
+  // Sửa ghi chú món ĐÃ gửi bếp (đồng bộ với ghi chú món nháp ở F&B POS).
+  Future<void> updateItemNote(String itemId, String note) async {
+    await postJson(
+      '/api/orders/items/$itemId/note',
+      body: {'note': note},
+      errorMessage: 'Không lưu được ghi chú',
+    );
+  }
+
   // ── KDS (Kitchen Display) ──────────────────────────────────────────────
   Future<List<dynamic>> getKdsTickets([String station = 'all']) async {
     return listFrom(await getJson('/api/kds/$station',
@@ -350,6 +361,29 @@ extension ApiServicePosApi on ApiService {
       '/api/tables/$tableId/reset',
       body: {'reason': reason},
       errorMessage: 'Không dọn được bàn',
+    ));
+  }
+
+  /// DỌN BÀN KÈM HOÀN TIỀN — dùng khi bill của bàn ĐÃ ghi nhận tiền.
+  ///
+  /// Server KHÔNG xoá khoản tiền đó: nó ghi một khoản thu ÂM đối ứng để sổ sách
+  /// còn cả hai chiều, rồi mới huỷ bill và trả bàn về trống. Bắt buộc PIN Quản
+  /// lý/Admin và lý do — vì đây là thao tác đụng tiền thật.
+  Future<Map<String, dynamic>> refundAndResetTable(String tableId,
+      {required String reason, required String pin}) async {
+    return mapFrom(await postJson(
+      '/api/tables/$tableId/reset',
+      body: {'reason': reason, 'refund_paid': true, 'security_pin': pin},
+      errorMessage: 'Không hoàn tiền và dọn được bàn',
+    ));
+  }
+
+  Future<Map<String, dynamic>> deletePaidBill(String orderId,
+      {required String reason, required String pin}) async {
+    return mapFrom(await postJson(
+      '/api/orders/$orderId/refund',
+      body: {'reason': reason, 'pin': pin},
+      errorMessage: 'Không xóa được bill',
     ));
   }
 }

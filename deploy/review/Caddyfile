@@ -1,0 +1,40 @@
+# Caddy cho stack Shopee Review — 2 domain, TLS tự động (Let's Encrypt).
+#
+#   api-review.<domain>  → backend review (app:3000)  — desktop Review build gọi
+#   review.<domain>      → Reviewer Portal tĩnh (trang tải app + hướng dẫn test)
+#
+# "Business Product URL" khai với Shopee = https://review.<domain> (KHÔNG phải
+# domain API). Cả hai domain phải trỏ DNS về VPS này trước khi Caddy cấp TLS.
+
+# ── Backend review (API + realtime) ─────────────────────────────────────────
+{$API_REVIEW_DOMAIN} {
+    encode zstd gzip
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        -Server
+    }
+    # Realtime Socket.IO: không nén + không đệm (xem chú thích Caddyfile production).
+    handle /socket.io/* {
+        reverse_proxy app:3000 {
+            flush_interval -1
+            transport http {
+                dial_timeout 10s
+                response_header_timeout 60s
+                read_timeout 0
+                write_timeout 0
+            }
+        }
+    }
+    reverse_proxy app:3000
+}
+
+# ── Reviewer Portal (trang tĩnh: tải bản Review + hướng dẫn test) ────────────
+{$REVIEW_PORTAL_DOMAIN} {
+    encode zstd gzip
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        -Server
+    }
+    root * /srv/portal
+    file_server
+}

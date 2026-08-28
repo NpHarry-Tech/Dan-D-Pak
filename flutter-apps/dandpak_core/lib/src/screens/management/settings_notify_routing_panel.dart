@@ -11,7 +11,6 @@ import 'settings_tab.dart';
 import '../../utils/translation.dart';
 import 'settings_value_utils.dart';
 
-
 /// Notification categories that can be routed. [key, icon, label].
 List<List<String>> get _notifyCategories => [
       ['fnb_order', '', t('Đơn F&B tại bàn / POS')],
@@ -142,7 +141,8 @@ class _NotificationSettingsPanelState extends State<NotificationSettingsPanel> {
         final saved = evRaw[key] is Map
             ? Map<String, dynamic>.from(evRaw[key])
             : <String, dynamic>{};
-        var sound = asText(saved['sound']).isNotEmpty ? asText(saved['sound']) : e[3];
+        var sound =
+            asText(saved['sound']).isNotEmpty ? asText(saved['sound']) : e[3];
         if (!catalogIds.contains(sound)) {
           sound = catalogIds.contains(e[3])
               ? e[3]
@@ -168,7 +168,8 @@ class _NotificationSettingsPanelState extends State<NotificationSettingsPanel> {
         final key = c[0];
         final saved = rolesRaw[key];
         if (saved is List) {
-          _routingRoles[key] = saved.map(asText).where((e) => e.isNotEmpty).toSet();
+          _routingRoles[key] =
+              saved.map(asText).where((e) => e.isNotEmpty).toSet();
         } else {
           _routingRoles[key] = {..._defaultRoleRouting[key]!};
         }
@@ -466,8 +467,8 @@ class _NotificationSettingsPanelState extends State<NotificationSettingsPanel> {
               for (final c in _soundsCatalog)
                 DropdownMenuItem(
                     value: asText(c['id']),
-                    child:
-                        Text(asText(c['name']), overflow: TextOverflow.ellipsis)),
+                    child: Text(asText(c['name']),
+                        overflow: TextOverflow.ellipsis)),
             ],
             onChanged: on
                 ? (v) {
@@ -583,9 +584,12 @@ class _NotificationSettingsPanelState extends State<NotificationSettingsPanel> {
   }
 
   Widget _userOverrideTile(Map<String, dynamic> u) {
-    final uid = asText(u['id']).isNotEmpty ? asText(u['id']) : asText(u['username']);
+    final uid =
+        asText(u['id']).isNotEmpty ? asText(u['id']) : asText(u['username']);
     final role = asText(u['role']);
-    final name = asText(u['name']).isNotEmpty ? asText(u['name']) : asText(u['username']);
+    final name = asText(u['name']).isNotEmpty
+        ? asText(u['name'])
+        : asText(u['username']);
     final ovCount = _routingOverrides[uid]?.length ?? 0;
 
     return Theme(

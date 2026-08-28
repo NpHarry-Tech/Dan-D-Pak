@@ -38,7 +38,7 @@ class PhoneMetricStrip extends StatelessWidget {
             // thẳng), nhưng chiều cao do nội dung quyết định. Dùng thẳng
             // CrossAxisAlignment.stretch trong Column là ép chiều cao vô hạn.
             IntrinsicHeight(
-              child: Row(
+                child: Row(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 for (var i = 0; i < columns; i++)
@@ -178,8 +178,7 @@ class PhoneListRow extends StatelessWidget {
             ),
             if (onTap != null) ...[
               const SizedBox(width: 4),
-              const Icon(Icons.chevron_right,
-                  size: 17, color: DanColors.faint),
+              const Icon(Icons.chevron_right, size: 17, color: DanColors.faint),
             ],
           ],
         ),
@@ -236,8 +235,8 @@ class PhoneSearchBar extends StatelessWidget {
                     fontWeight: FontWeight.w600,
                     color: DanColors.faint),
               ),
-              style: const TextStyle(
-                  fontSize: 13.5, fontWeight: FontWeight.w600),
+              style:
+                  const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600),
             ),
           ),
         ],
@@ -256,6 +255,8 @@ class PhoneListScaffold<T> extends StatefulWidget {
 
   /// Nạp dữ liệu. Nhận từ khóa tìm kiếm hiện tại.
   final Future<List<T>> Function(String query) fetch;
+  final Future<List<T>> Function(String query, int page)? fetchMore;
+  final int pageSize;
   final Widget Function(BuildContext, T, int) rowBuilder;
 
   /// Dải chỉ số tính từ dữ liệu đã nạp (rỗng = không hiện).
@@ -273,6 +274,8 @@ class PhoneListScaffold<T> extends StatefulWidget {
     super.key,
     required this.title,
     required this.fetch,
+    this.fetchMore,
+    this.pageSize = 100,
     required this.rowBuilder,
     this.subtitle,
     this.showBack = true,
@@ -296,6 +299,9 @@ class PhoneListScaffoldState<T> extends State<PhoneListScaffold<T>> {
   Timer? _debounce;
   List<T> _items = [];
   bool _loading = true;
+  bool _loadingMore = false;
+  bool _hasMore = false;
+  int _page = 1;
   String? _error;
 
   @override
@@ -318,7 +324,10 @@ class PhoneListScaffoldState<T> extends State<PhoneListScaffold<T>> {
       if (!mounted) return;
       setState(() {
         _items = list;
+        _page = 1;
+        _hasMore = widget.fetchMore != null && list.length >= widget.pageSize;
         _loading = false;
+        _loadingMore = false;
         _error = null;
       });
     } catch (e) {
@@ -326,6 +335,29 @@ class PhoneListScaffoldState<T> extends State<PhoneListScaffold<T>> {
       setState(() {
         _error = e.toString().replaceFirst('Exception: ', '');
         _loading = false;
+      });
+    }
+  }
+
+  Future<void> _loadMore() async {
+    final fetchMore = widget.fetchMore;
+    if (fetchMore == null || _loadingMore || !_hasMore) return;
+    setState(() => _loadingMore = true);
+    try {
+      final next = await fetchMore(_searchCtrl.text.trim(), _page + 1);
+      if (!mounted) return;
+      setState(() {
+        _items.addAll(next);
+        _page += 1;
+        _hasMore = next.length >= widget.pageSize;
+        _loadingMore = false;
+        _error = null;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _loadingMore = false;
+        _error = e.toString().replaceFirst('Exception: ', '');
       });
     }
   }
@@ -423,8 +455,26 @@ class PhoneListScaffoldState<T> extends State<PhoneListScaffold<T>> {
       onRefresh: reload,
       child: ListView.builder(
         padding: EdgeInsets.zero,
-        itemCount: _items.length,
-        itemBuilder: (ctx, i) => widget.rowBuilder(ctx, _items[i], i),
+        itemCount: _items.length + (_hasMore ? 1 : 0),
+        itemBuilder: (ctx, i) {
+          if (i == _items.length) {
+            return Padding(
+              padding: const EdgeInsets.all(16),
+              child: OutlinedButton.icon(
+                onPressed: _loadingMore ? null : _loadMore,
+                icon: _loadingMore
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.expand_more),
+                label: Text(t('Xem thêm lịch sử')),
+              ),
+            );
+          }
+          return widget.rowBuilder(ctx, _items[i], i);
+        },
       ),
     );
   }
@@ -482,6 +532,10 @@ class PhoneField extends StatelessWidget {
   final TextInputType? keyboardType;
   final bool required;
 
+  /// Nút phụ nằm cuối hàng (VD: nút dò máy in). Có [trailing] thì nó THAY cho
+  /// mũi tên ">" — hai biểu tượng cạnh nhau chỉ làm người dùng bấm nhầm.
+  final Widget? trailing;
+
   const PhoneField({
     super.key,
     required this.label,
@@ -492,6 +546,7 @@ class PhoneField extends StatelessWidget {
     this.controller,
     this.keyboardType,
     this.required = false,
+    this.trailing,
   });
 
   @override
@@ -544,8 +599,9 @@ class PhoneField extends StatelessWidget {
                   ],
                 ),
               ),
-              const Icon(Icons.chevron_right,
-                  size: 18, color: DanColors.faint),
+              trailing ??
+                  const Icon(Icons.chevron_right,
+                      size: 18, color: DanColors.faint),
             ],
           ),
         ),
@@ -558,31 +614,55 @@ class PhoneField extends StatelessWidget {
         color: DanColors.surface,
         border: Border(bottom: BorderSide(color: DanColors.border)),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Row(
         children: [
-          labelRow,
-          TextField(
-            controller: controller,
-            onChanged: onChanged,
-            keyboardType: keyboardType,
-            decoration: InputDecoration(
-              isDense: true,
-              border: InputBorder.none,
-              enabledBorder: InputBorder.none,
-              focusedBorder: InputBorder.none,
-              filled: false,
-              contentPadding: const EdgeInsets.symmetric(vertical: 6),
-              hintText: t(hint),
-              hintStyle: const TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w700,
-                  color: DanColors.faint),
-            ),
-            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
-          ),
+          Expanded(child: _typedField()),
+          if (trailing != null) trailing!,
         ],
       ),
+    );
+  }
+
+  Widget _typedField() {
+    final labelRow = Row(
+      children: [
+        Text(t(label),
+            style: const TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w800,
+                color: DanColors.muted)),
+        if (required)
+          const Text(' *',
+              style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w800,
+                  color: DanColors.late)),
+      ],
+    );
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        labelRow,
+        TextField(
+          controller: controller,
+          onChanged: onChanged,
+          keyboardType: keyboardType,
+          decoration: InputDecoration(
+            isDense: true,
+            border: InputBorder.none,
+            enabledBorder: InputBorder.none,
+            focusedBorder: InputBorder.none,
+            filled: false,
+            contentPadding: const EdgeInsets.symmetric(vertical: 6),
+            hintText: t(hint),
+            hintStyle: const TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w700,
+                color: DanColors.faint),
+          ),
+          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+        ),
+      ],
     );
   }
 }
@@ -669,8 +749,7 @@ class PhoneModuleGrid extends StatelessWidget {
                       Icon(icon, size: 23, color: DanColors.brand),
                       const SizedBox(height: 9),
                       Padding(
-                        padding:
-                            const EdgeInsets.symmetric(horizontal: 6),
+                        padding: const EdgeInsets.symmetric(horizontal: 6),
                         child: Text(t(label),
                             textAlign: TextAlign.center,
                             maxLines: 2,

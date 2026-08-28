@@ -2,9 +2,18 @@
 import { db } from '../db.js';
 import { matchesSearch, searchTokens } from '../core/search.js';
 import { archiveDashboardReport } from './archive.js';
+import { businessPeriodStartUtc } from '../core/businessClock.js';
 
-const todayStart = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return d.toISOString(); };
-const tomorrowStart = () => { const d = new Date(); d.setHours(24, 0, 0, 0); return d.toISOString(); };
+// NGÀY VIỆT NAM (+7). Container chạy UTC nên setHours(0,0,0,0) cho ra nửa đêm UTC,
+// không phải nửa đêm VN → "hôm nay" của dashboard lệch ngày (sự cố 07/08/2026).
+const _VN_OFFSET_MS = 7 * 3600 * 1000;
+const _asVietnamClock = (value) => new Date(new Date(value).getTime() + _VN_OFFSET_MS);
+const _vnMidnightUtc = (addDays = 0) => {
+  const v = new Date(Date.now() + _VN_OFFSET_MS);
+  return new Date(Date.UTC(v.getUTCFullYear(), v.getUTCMonth(), v.getUTCDate() + addDays) - _VN_OFFSET_MS).toISOString();
+};
+const todayStart = () => _vnMidnightUtc(0);
+const tomorrowStart = () => _vnMidnightUtc(1);
 
 function businessWindow(branch_id = 'sala') {
   const calendarStart = todayStart();
@@ -38,9 +47,13 @@ export function dashboard(branch_id = 'sala') {
   const avg = bills ? Math.round(revenue / bills) : 0;
   const openOrders = db.prepare(`SELECT COUNT(*) n FROM orders WHERE branch_id=? AND status IN ('open','partially_paid')`).get(branch_id).n;
 
-  // revenue by hour
+  // revenue by hour — GIỜ VIỆT NAM (+7). Container chạy UTC nên getHours() trả giờ
+  // UTC → biểu đồ doanh thu theo giờ lệch 7 tiếng (sự cố 07/08/2026).
   const byHour = Array.from({ length: 24 }, () => 0);
-  for (const o of paid) byHour[new Date(o.paid_at).getHours()] += o.total;
+  for (const o of paid) {
+    const vnHour = new Date(new Date(o.paid_at).getTime() + 7 * 3600 * 1000).getUTCHours();
+    byHour[vnHour] += o.total;
+  }
 
   // payment methods
   const methods = db.prepare(`
@@ -51,7 +64,9 @@ export function dashboard(branch_id = 'sala') {
 
   // top items today
   const topItems = db.prepare(`
-    SELECT oi.name, oi.emoji, SUM(oi.qty) qty, SUM(oi.qty*oi.unit_price) revenue
+    SELECT oi.name, oi.emoji, SUM(oi.qty) qty,
+      SUM(oi.qty*oi.unit_price - CASE WHEN json_valid(oi.promo_json)
+        THEN COALESCE(json_extract(oi.promo_json,'$.amount'),0) ELSE 0 END) revenue
     FROM order_items oi JOIN orders o ON o.id=oi.order_id
     WHERE o.branch_id=? AND o.status='paid' AND o.paid_at>=? AND o.paid_at<=? AND oi.status!='cancelled'
     GROUP BY oi.name ORDER BY qty DESC LIMIT 8`).all(branch_id, window.start, window.end);
@@ -80,40 +95,41 @@ export function dashboard(branch_id = 'sala') {
 export function revenueTrends(branch_id = 'sala') {
   const pad = (n) => String(n).padStart(2, '0');
   const now = new Date();
+  const vnNow = _asVietnamClock(now);
   // earliest data we need is for the 5-year series
-  const cutoff = new Date(now.getFullYear() - 4, 0, 1).toISOString();
+  const cutoff = new Date(Date.UTC(vnNow.getUTCFullYear() - 4, 0, 1) - _VN_OFFSET_MS).toISOString();
   const rows = db.prepare(
     `SELECT paid_at, total FROM orders WHERE branch_id=? AND status='paid' AND paid_at>=?`
   ).all(branch_id, cutoff);
 
-  const dayKey = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-  const monthKey = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}`;
-  const quarterKey = (d) => `${d.getFullYear()}-Q${Math.floor(d.getMonth() / 3) + 1}`;
-  const yearKey = (d) => `${d.getFullYear()}`;
+  const dayKey = (d) => `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`;
+  const monthKey = (d) => `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}`;
+  const quarterKey = (d) => `${d.getUTCFullYear()}-Q${Math.floor(d.getUTCMonth() / 3) + 1}`;
+  const yearKey = (d) => `${d.getUTCFullYear()}`;
   const mondayOf = (d) => {
-    const x = new Date(d.getFullYear(), d.getMonth(), d.getDate());
-    x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); // back to Monday
+    const x = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+    x.setUTCDate(x.getUTCDate() - ((x.getUTCDay() + 6) % 7)); // back to Monday
     return x;
   };
   const weekKey = (d) => dayKey(mondayOf(d));
 
   // Pre-build the period buckets (chronological) so empty periods render as zero.
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const today = new Date(Date.UTC(vnNow.getUTCFullYear(), vnNow.getUTCMonth(), vnNow.getUTCDate()));
   const days = [];
-  for (let i = 6; i >= 0; i--) { const d = new Date(today); d.setDate(d.getDate() - i); days.push({ key: dayKey(d), label: `${pad(d.getDate())}/${pad(d.getMonth() + 1)}` }); }
+  for (let i = 6; i >= 0; i--) { const d = new Date(today); d.setUTCDate(d.getUTCDate() - i); days.push({ key: dayKey(d), label: `${pad(d.getUTCDate())}/${pad(d.getUTCMonth() + 1)}` }); }
   const weeks = [];
   const thisMonday = mondayOf(today);
-  for (let i = 7; i >= 0; i--) { const d = new Date(thisMonday); d.setDate(d.getDate() - i * 7); weeks.push({ key: dayKey(d), label: `${pad(d.getDate())}/${pad(d.getMonth() + 1)}` }); }
+  for (let i = 7; i >= 0; i--) { const d = new Date(thisMonday); d.setUTCDate(d.getUTCDate() - i * 7); weeks.push({ key: dayKey(d), label: `${pad(d.getUTCDate())}/${pad(d.getUTCMonth() + 1)}` }); }
   const months = [];
-  for (let i = 11; i >= 0; i--) { const d = new Date(now.getFullYear(), now.getMonth() - i, 1); months.push({ key: monthKey(d), label: `${pad(d.getMonth() + 1)}/${d.getFullYear()}` }); }
+  for (let i = 11; i >= 0; i--) { const d = new Date(Date.UTC(vnNow.getUTCFullYear(), vnNow.getUTCMonth() - i, 1)); months.push({ key: monthKey(d), label: `${pad(d.getUTCMonth() + 1)}/${d.getUTCFullYear()}` }); }
   const quarters = [];
-  for (let i = 7; i >= 0; i--) { const d = new Date(now.getFullYear(), now.getMonth() - i * 3, 1); quarters.push({ key: quarterKey(d), label: `Q${Math.floor(d.getMonth() / 3) + 1}/${d.getFullYear()}` }); }
+  for (let i = 7; i >= 0; i--) { const d = new Date(Date.UTC(vnNow.getUTCFullYear(), vnNow.getUTCMonth() - i * 3, 1)); quarters.push({ key: quarterKey(d), label: `Q${Math.floor(d.getUTCMonth() / 3) + 1}/${d.getUTCFullYear()}` }); }
   const years = [];
-  for (let i = 4; i >= 0; i--) { const d = new Date(now.getFullYear() - i, 0, 1); years.push({ key: yearKey(d), label: `${d.getFullYear()}` }); }
+  for (let i = 4; i >= 0; i--) { const d = new Date(Date.UTC(vnNow.getUTCFullYear() - i, 0, 1)); years.push({ key: yearKey(d), label: `${d.getUTCFullYear()}` }); }
 
   const sum = (list, keyFn) => {
     const map = new Map(list.map((p) => [p.key, 0]));
-    for (const r of rows) { const k = keyFn(new Date(r.paid_at)); if (map.has(k)) map.set(k, map.get(k) + r.total); }
+    for (const r of rows) { const k = keyFn(_asVietnamClock(r.paid_at)); if (map.has(k)) map.set(k, map.get(k) + r.total); }
     return list.map((p) => ({ label: p.label, value: map.get(p.key) || 0 }));
   };
 
@@ -133,36 +149,19 @@ export function revenueTrends(branch_id = 'sala') {
 export function recentAudit(branch_id = 'sala', limit = 30, before = null, period = null, search = '', from = null, to = null) {
   const lim = Math.min(Math.max(parseInt(limit) || 30, 1), 1000);
   let timeCutoff = null;
-  const now = new Date();
-
-  if (period === 'day') {
-    const d = new Date(now);
-    d.setHours(0, 0, 0, 0);
-    timeCutoff = d.toISOString();
-  } else if (period === 'week') {
-    const d = new Date(now);
-    const day = d.getDay();
-    const diff = d.getDate() - day + (day === 0 ? -6 : 1);
-    const monday = new Date(d.setDate(diff));
-    monday.setHours(0, 0, 0, 0);
-    timeCutoff = monday.toISOString();
-  } else if (period === 'month') {
-    const d = new Date(now.getFullYear(), now.getMonth(), 1);
-    timeCutoff = d.toISOString();
-  } else if (period === 'quarter') {
-    const currentQuarter = Math.floor(now.getMonth() / 3);
-    const d = new Date(now.getFullYear(), currentQuarter * 3, 1);
-    timeCutoff = d.toISOString();
-  } else if (period === 'year') {
-    const d = new Date(now.getFullYear(), 0, 1);
-    timeCutoff = d.toISOString();
+  if (['day', 'week', 'month', 'quarter', 'year'].includes(period)) {
+    timeCutoff = businessPeriodStartUtc(period).toISOString();
   }
 
   let query = `SELECT id,action,detail,actor,created_at FROM audit_log
     WHERE branch_id=? AND action NOT IN (
       'system.error','client.crash','print.failed','print.agent.failed',
-      'einvoice.backfill_failed','einvoice.auto_create_failed'
-    )`;
+      'einvoice.backfill_failed','einvoice.auto_create_failed',
+      'haravan.order.sync','haravan.customer.sync','haravan.product.sync',
+      'haravan.product.delete','haravan.inventory.reconciled',
+      'haravan.inventory.push'
+    )
+    AND NOT (actor='system_backfill' AND action='invoice.buyer_updated')`;
   const params = [branch_id];
 
   if (timeCutoff) {

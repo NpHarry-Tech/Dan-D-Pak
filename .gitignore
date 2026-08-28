@@ -1,4 +1,6 @@
 node_modules/
+.build-cache/
+.tmp-agent-runtime/
 web/node_modules/
 server/node_modules/
 
@@ -80,6 +82,14 @@ server/assets/product-images/
 server/assets/menu-books/
 server/releases/*.apk
 
+# Runtime archives contain real orders, payments, invoices and audit records.
+# Keep the committed directory skeleton/README, never the generated payload.
+server/permanent-storage/**/*.json
+server/permanent-storage/**/*.json.gz
+server/permanent-storage/**/*.tmp
+server/enterprise-storage/**/*.json
+server/enterprise-storage/**/*.tmp
+
 # Dữ liệu NGUỒN của script import (export thô từ KiotViet/BCM — không phải asset
 # runtime). Data thật đã nằm trong SQLite; giữ trên đĩa để import lại, KHÔNG version.
 server/scripts/data/*.md
@@ -87,6 +97,9 @@ server/scripts/data/*.xlsx
 server/scripts/data/*.csv
 server/scripts/*.xlsx
 server/scripts/*.csv
+server/scripts/*.json
+server/scripts/*.txt
+server/scripts/*.sql
 
 # Cấu hình công cụ AI cục bộ của máy dev
 .aevum/
@@ -100,3 +113,5 @@ qa-artifacts/
 # Rac build cua Gradle va thu muc test tam - khong bao gio commit
 .gradle/
 .tmp-tests/
+.codex-test-temp/
+tmp/

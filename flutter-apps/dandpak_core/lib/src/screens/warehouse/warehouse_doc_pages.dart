@@ -16,7 +16,8 @@ import 'kv_shared.dart';
 enum WhDocType { transfer, internalUse }
 
 extension WhDocTypeX on WhDocType {
-  String get apiType => this == WhDocType.transfer ? 'transfer' : 'internal_use';
+  String get apiType =>
+      this == WhDocType.transfer ? 'transfer' : 'internal_use';
   String get title =>
       this == WhDocType.transfer ? t('Chuyển hàng') : t('Xuất dùng nội bộ');
   String get codeLabel =>
@@ -289,9 +290,8 @@ class _WarehouseDocPageState extends State<WarehouseDocPage> {
     final lines = kvMapList(d['lines']);
     final isTransfer = widget.docType == WhDocType.transfer;
     // Chuyển hàng: chỉ hiện dòng xuất (qty âm) — dòng nhận là bản sao ở kho đích.
-    final visible = isTransfer
-        ? lines.where((l) => kvn(l['qty']) < 0).toList()
-        : lines;
+    final visible =
+        isTransfer ? lines.where((l) => kvn(l['qty']) < 0).toList() : lines;
     return Container(
       width: double.infinity,
       color: DanColors.surface,
@@ -430,8 +430,8 @@ class _WarehouseDocFormPageState extends State<WarehouseDocFormPage> {
           : kvs(widget.warehouses.first['id']);
       if (_isTransfer && widget.warehouses.length > 1) {
         // Kho nhận mặc định = kho đầu tiên KHÁC kho xuất.
-        _toId = kvs(widget.warehouses
-            .firstWhere((w) => kvs(w['id']) != _fromId)['id']);
+        _toId = kvs(
+            widget.warehouses.firstWhere((w) => kvs(w['id']) != _fromId)['id']);
       }
     }
     _loadItems();
@@ -476,8 +476,7 @@ class _WarehouseDocFormPageState extends State<WarehouseDocFormPage> {
   }
 
   bool get _isRetailWh {
-    final wh =
-        widget.warehouses.where((w) => kvs(w['id']) == _fromId).toList();
+    final wh = widget.warehouses.where((w) => kvs(w['id']) == _fromId).toList();
     return wh.isEmpty || kvs(wh.first['type']) == 'retail';
   }
 
@@ -509,8 +508,8 @@ class _WarehouseDocFormPageState extends State<WarehouseDocFormPage> {
   /// (Mã hàng | Số lượng | Lô).
   Future<void> _importFromExcel() async {
     try {
-      final rows = await kvPickSpreadsheetRows();
-      if (rows == null) return; // người dùng hủy
+      final data = await kvPickSpreadsheetData();
+      if (data == null) return;
       final byCode = <String, Map<String, dynamic>>{};
       for (final it in _items) {
         for (final k in [kvs(it['code']), kvs(it['barcode']), kvs(it['id'])]) {
@@ -520,18 +519,24 @@ class _WarehouseDocFormPageState extends State<WarehouseDocFormPage> {
       var added = 0;
       final missed = <String>[];
       setState(() {
-        for (final r in rows) {
-          String cell(int i) => i < r.length ? r[i].trim() : '';
-          final code = cell(0);
-          if (code.isEmpty) continue;
-          final item = byCode[code.toLowerCase()];
+        for (final r in data.rows) {
+          final code = data.cell(r, ['Mã sản phẩm', 'Mã hàng', 'Product code'],
+              fallback: 0);
+          final barcode = data.cell(r, ['Mã vạch', 'Barcode']);
+          if (code.isEmpty && barcode.isEmpty) continue;
+          final item =
+              byCode[code.toLowerCase()] ?? byCode[barcode.toLowerCase()];
           if (item == null) {
             missed.add(code);
             continue;
           }
-          final qty = kvParseNum(cell(1)) ?? 1;
+          final qty =
+              kvParseNum(data.cell(r, ['Số lượng', 'Quantity'], fallback: 1)) ??
+                  1;
           _lines.add(KvDocLine(item, _isRetailWh ? 'sku' : 'inventory',
-              initialQty: qty <= 0 ? 1 : qty, lot: cell(2)));
+              initialQty: qty <= 0 ? 1 : qty,
+              lot: data.cell(r, ['Lô', 'Số lô', 'Lot'], fallback: 2),
+              exp: data.cell(r, ['Hạn sử dụng', 'HSD', 'Expiry date'])));
           added++;
         }
       });
@@ -581,9 +586,8 @@ class _WarehouseDocFormPageState extends State<WarehouseDocFormPage> {
         await api.issueInternalUse({
           'warehouse_id': _fromId,
           'note': _note.text.trim(),
-          'reason': _note.text.trim().isEmpty
-              ? 'internal_use'
-              : _note.text.trim(),
+          'reason':
+              _note.text.trim().isEmpty ? 'internal_use' : _note.text.trim(),
           'lines': lines,
         });
       }
@@ -606,180 +610,181 @@ class _WarehouseDocFormPageState extends State<WarehouseDocFormPage> {
         if (!didPop) _confirmExit();
       },
       child: Scaffold(
-      backgroundColor: DanColors.bg,
-      body: SafeArea(
-        child: Column(
-          children: [
-            Container(
-              color: DanColors.surface,
-              // Chừa góc phải trên cho nút cửa sổ — không đặt nút ở hàng này.
-              padding: EdgeInsets.fromLTRB(16, 12, 160, 10),
-              child: Row(
-                children: [
-                  IconButton(
-                      onPressed: () => Navigator.of(context).maybePop(),
-                      icon: Icon(Icons.arrow_back)),
-                  SizedBox(width: 4),
-                  Text(widget.docType.title,
-                      style:
-                          TextStyle(fontSize: 17, fontWeight: FontWeight.w900)),
-                  SizedBox(width: 18),
-                  SizedBox(
-                    width: 220,
-                    child: DropdownButtonFormField<String>(
-                      initialValue: _fromId,
-                      isExpanded: true,
-                      decoration: InputDecoration(
-                          labelText:
-                              _isTransfer ? t('Từ kho') : t('Kho xuất'),
-                          isDense: true,
-                          contentPadding: EdgeInsets.symmetric(
-                              horizontal: 10, vertical: 8)),
-                      items: [
-                        for (final w in widget.warehouses)
-                          DropdownMenuItem(
-                              value: kvs(w['id']),
-                              child: Text(kvs(w['name']),
-                                  overflow: TextOverflow.ellipsis)),
-                      ],
-                      onChanged: _lines.isNotEmpty
-                          ? null
-                          : (v) {
-                              setState(() => _fromId = v);
-                              _loadItems();
-                            },
-                    ),
-                  ),
-                  if (_isTransfer) ...[
-                    Padding(
-                      padding: EdgeInsets.symmetric(horizontal: 8),
-                      child: Icon(Icons.arrow_forward,
-                          size: 18, color: DanColors.muted),
-                    ),
+        backgroundColor: DanColors.bg,
+        body: SafeArea(
+          child: Column(
+            children: [
+              Container(
+                color: DanColors.surface,
+                // Chừa góc phải trên cho nút cửa sổ — không đặt nút ở hàng này.
+                padding: EdgeInsets.fromLTRB(16, 12, 160, 10),
+                child: Row(
+                  children: [
+                    IconButton(
+                        onPressed: () => Navigator.of(context).maybePop(),
+                        icon: Icon(Icons.arrow_back)),
+                    SizedBox(width: 4),
+                    Text(widget.docType.title,
+                        style: TextStyle(
+                            fontSize: 17, fontWeight: FontWeight.w900)),
+                    SizedBox(width: 18),
                     SizedBox(
                       width: 220,
                       child: DropdownButtonFormField<String>(
-                        initialValue: _toId,
+                        initialValue: _fromId,
                         isExpanded: true,
                         decoration: InputDecoration(
-                            labelText: t('Tới kho'),
+                            labelText:
+                                _isTransfer ? t('Từ kho') : t('Kho xuất'),
                             isDense: true,
                             contentPadding: EdgeInsets.symmetric(
                                 horizontal: 10, vertical: 8)),
                         items: [
                           for (final w in widget.warehouses)
-                            if (kvs(w['id']) != _fromId)
-                              DropdownMenuItem(
-                                  value: kvs(w['id']),
-                                  child: Text(kvs(w['name']),
-                                      overflow: TextOverflow.ellipsis)),
+                            DropdownMenuItem(
+                                value: kvs(w['id']),
+                                child: Text(kvs(w['name']),
+                                    overflow: TextOverflow.ellipsis)),
                         ],
-                        onChanged: (v) => setState(() => _toId = v),
+                        onChanged: _lines.isNotEmpty
+                            ? null
+                            : (v) {
+                                setState(() => _fromId = v);
+                                _loadItems();
+                              },
                       ),
                     ),
+                    if (_isTransfer) ...[
+                      Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 8),
+                        child: Icon(Icons.arrow_forward,
+                            size: 18, color: DanColors.muted),
+                      ),
+                      SizedBox(
+                        width: 220,
+                        child: DropdownButtonFormField<String>(
+                          initialValue: _toId,
+                          isExpanded: true,
+                          decoration: InputDecoration(
+                              labelText: t('Tới kho'),
+                              isDense: true,
+                              contentPadding: EdgeInsets.symmetric(
+                                  horizontal: 10, vertical: 8)),
+                          items: [
+                            for (final w in widget.warehouses)
+                              if (kvs(w['id']) != _fromId)
+                                DropdownMenuItem(
+                                    value: kvs(w['id']),
+                                    child: Text(kvs(w['name']),
+                                        overflow: TextOverflow.ellipsis)),
+                          ],
+                          onChanged: (v) => setState(() => _toId = v),
+                        ),
+                      ),
+                    ],
                   ],
-                ],
+                ),
               ),
-            ),
-            Divider(height: 1, color: DanColors.border),
-            Expanded(
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Expanded(
-                    child: Column(
-                      children: [
-                        Padding(
-                          padding: EdgeInsets.fromLTRB(20, 16, 20, 0),
-                          child: Row(
-                            children: [
-                              Expanded(
-                                child: KvItemSearchField(
-                                  items: _items,
-                                  onPick: (item) => setState(() => _lines.add(
-                                      KvDocLine(
-                                          item,
-                                          _isRetailWh ? 'sku' : 'inventory',
-                                          initialQty: 1))),
+              Divider(height: 1, color: DanColors.border),
+              Expanded(
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Expanded(
+                      child: Column(
+                        children: [
+                          Padding(
+                            padding: EdgeInsets.fromLTRB(20, 16, 20, 0),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: KvItemSearchField(
+                                    items: _items,
+                                    onPick: (item) => setState(() => _lines.add(
+                                        KvDocLine(item,
+                                            _isRetailWh ? 'sku' : 'inventory',
+                                            initialQty: 1))),
+                                  ),
                                 ),
-                              ),
-                              SizedBox(width: 10),
-                              OutlinedButton.icon(
-                                onPressed: _importFromExcel,
-                                icon: Icon(Icons.file_copy_outlined, size: 18),
-                                label: Text(t('Chọn file dữ liệu')),
-                                style: OutlinedButton.styleFrom(
-                                    minimumSize: Size(0, 42)),
-                              ),
-                            ],
+                                SizedBox(width: 10),
+                                OutlinedButton.icon(
+                                  onPressed: _importFromExcel,
+                                  icon:
+                                      Icon(Icons.file_copy_outlined, size: 18),
+                                  label: Text(t('Chọn file dữ liệu')),
+                                  style: OutlinedButton.styleFrom(
+                                      minimumSize: Size(0, 42)),
+                                ),
+                              ],
+                            ),
                           ),
-                        ),
-                        SizedBox(height: 10),
-                        KvTableHeader(cells: [
-                          kvHeaderCell('#', width: 30),
-                          kvHeaderCell(t('Mã hàng'), width: 104),
-                          SizedBox(width: 8),
-                          kvHeaderCell(t('Tên hàng'), flex: 1),
-                          kvHeaderCell(t('ĐVT'), width: 56),
-                          kvHeaderCell(t('Tồn kho'),
-                              width: 76, align: TextAlign.right),
-                          SizedBox(width: 10),
-                          kvHeaderCell(
-                              _isTransfer ? t('SL chuyển') : t('SL xuất'),
-                              width: 90),
-                          SizedBox(width: 40),
-                        ]),
-                        Divider(height: 1, color: DanColors.border),
-                        Expanded(
-                          child: _loadingItems
-                              ? Center(child: CircularProgressIndicator())
-                              : _lines.isEmpty
-                                  ? KvExcelEmptyImport(
-                                      message:
-                                          t('Thêm sản phẩm từ file excel'),
-                                      templateKind: KvTemplateKind.issue,
-                                      onPick: _importFromExcel)
-                                  : ListView.separated(
-                                      itemCount: _lines.length,
-                                      separatorBuilder: (_, __) => Divider(
-                                          height: 1, color: DanColors.border),
-                                      itemBuilder: (_, i) => _lineRow(i),
-                                    ),
-                        ),
+                          SizedBox(height: 10),
+                          KvTableHeader(cells: [
+                            kvHeaderCell('#', width: 30),
+                            kvHeaderCell(t('Mã hàng'), width: 104),
+                            SizedBox(width: 8),
+                            kvHeaderCell(t('Tên hàng'), flex: 1),
+                            kvHeaderCell(t('ĐVT'), width: 56),
+                            kvHeaderCell(t('Tồn kho'),
+                                width: 76, align: TextAlign.right),
+                            SizedBox(width: 10),
+                            kvHeaderCell(
+                                _isTransfer ? t('SL chuyển') : t('SL xuất'),
+                                width: 90),
+                            SizedBox(width: 40),
+                          ]),
+                          Divider(height: 1, color: DanColors.border),
+                          Expanded(
+                            child: _loadingItems
+                                ? Center(child: CircularProgressIndicator())
+                                : _lines.isEmpty
+                                    ? KvExcelEmptyImport(
+                                        message:
+                                            t('Thêm sản phẩm từ file excel'),
+                                        templateKind: KvTemplateKind.issue,
+                                        onPick: _importFromExcel)
+                                    : ListView.separated(
+                                        itemCount: _lines.length,
+                                        separatorBuilder: (_, __) => Divider(
+                                            height: 1, color: DanColors.border),
+                                        itemBuilder: (_, i) => _lineRow(i),
+                                      ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    KvDocMetaPanel(
+                      userName: auth.currentUser?.name ?? '—',
+                      codeHint: widget.docType.codeLabel,
+                      statusLabel: '',
+                      noteCtrl: _note,
+                      busy: _busy,
+                      onComplete: _save,
+                      completeLabel:
+                          _isTransfer ? t('Chuyển hàng') : t('Hoàn thành'),
+                      children: [
+                        KvMetaTotalRow(
+                            label: t('Số mặt hàng'), value: '${_lines.length}'),
+                        KvMetaTotalRow(
+                            label: t('Tổng số lượng'),
+                            value: Fmt.int0(_totalQty)),
+                        SizedBox(height: 2),
+                        Text(
+                            _isTransfer
+                                ? t(
+                                    'Hàng chuyển đi giữ nguyên lô/HSD ở kho đích.')
+                                : t(
+                                    'Xuất cho cửa hàng tự dùng — trừ tồn theo lô gần hết hạn trước (FEFO).'),
+                            style: TextStyle(
+                                fontSize: 11.5, color: DanColors.faint)),
                       ],
                     ),
-                  ),
-                  KvDocMetaPanel(
-                    userName: auth.currentUser?.name ?? '—',
-                    codeHint: widget.docType.codeLabel,
-                    statusLabel: '',
-                    noteCtrl: _note,
-                    busy: _busy,
-                    onComplete: _save,
-                    completeLabel: _isTransfer
-                        ? t('Chuyển hàng')
-                        : t('Hoàn thành'),
-                    children: [
-                      KvMetaTotalRow(
-                          label: t('Số mặt hàng'), value: '${_lines.length}'),
-                      KvMetaTotalRow(
-                          label: t('Tổng số lượng'),
-                          value: Fmt.int0(_totalQty)),
-                      SizedBox(height: 2),
-                      Text(
-                          _isTransfer
-                              ? t('Hàng chuyển đi giữ nguyên lô/HSD ở kho đích.')
-                              : t('Xuất cho cửa hàng tự dùng — trừ tồn theo lô gần hết hạn trước (FEFO).'),
-                          style: TextStyle(
-                              fontSize: 11.5, color: DanColors.faint)),
-                    ],
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
-      ),
       ),
     );
   }

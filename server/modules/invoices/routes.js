@@ -1,4 +1,3 @@
-import { db } from '../../db.js';
 import * as Auth from '../../services/auth.js';
 import * as Einvoices from '../../services/einvoice.js';
 import * as Invoices from '../../services/invoices.js';
@@ -25,7 +24,7 @@ export function registerInvoiceRoutes(api, {
   }));
 
   api.get('/orders/:id/einvoice', guard('pay'), wrap((req) =>
-    Einvoices.getInvoiceByOrder(req.params.id)
+    Einvoices.getInvoiceByOrder(req.params.id, branch(req))
   ));
 
   api.post('/orders/:id/einvoice/retry', guard('pay'), wrap((req) => {
@@ -35,18 +34,18 @@ export function registerInvoiceRoutes(api, {
     if (!req.body.e_invoice_id) {
       return Einvoices.createInvoiceRequest(req.params.id, 'NO_BUYER_INFO', {}, branch(req), actor(req));
     }
-    return Einvoices.retryInvoice(req.body.e_invoice_id, actor(req));
+    return Einvoices.retryInvoice(req.body.e_invoice_id, actor(req), branch(req));
   }));
 
   api.post('/einvoice/:id/sync', guard('pay'), wrap((req) =>
-    Einvoices.syncInvoiceStatus(req.params.id)
+    Einvoices.syncInvoiceStatus(req.params.id, branch(req))
   ));
 
   api.post('/einvoice/:id/cancel', guard('pay'), wrap((req) => {
     const pin = req.body?.security_pin;
     const approvedBy = Auth.verifyManagerOwnerPin(pin, branch(req));
     if (!approvedBy) throw new Error('Can nhap PIN Manager hoac Admin de huy hoa don.');
-    return Einvoices.cancelInvoice(req.params.id, req.body.reason, actor(req));
+    return Einvoices.cancelInvoice(req.params.id, req.body.reason, actor(req), branch(req));
   }));
 
   api.get('/einvoice/reconciliation', guardAny('reports', 'pay'), wrap((req) =>
@@ -70,23 +69,14 @@ export function registerInvoiceRoutes(api, {
       customer,
       branch_id,
       actor(req),
-      {
-        amount: req.body.amount ?? req.body.allocation?.amount,
-        order_item_id: req.body.allocation?.order_item_id,
-        qty: req.body.allocation?.qty,
-        idempotency_key: req.body.idempotency_key || req.headers['idempotency-key'] || null,
-      },
+      { idempotency_key: req.body.idempotency_key || req.headers['idempotency-key'] || null },
     );
   }));
 
   // BẢO MẬT: danh sách HĐĐT chứa PII (tên, MST, địa chỉ, SĐT, email) + số tiền —
   // BẮT BUỘC đăng nhập & đúng quyền, và khóa theo chi nhánh. Trước đây 2 route này
   // để trống guard → bất kỳ ai (kể cả chưa đăng nhập) cũng liệt kê/đọc được hóa đơn.
-  api.get('/invoices', guardAny('invoice', 'pay', 'reports', 'settings.invoices'), wrap((req) => Invoices.list(branch(req))));
+  api.get('/invoices', guardAny('invoice', 'pay', 'reports', 'settings.invoices'), wrap((req) => Invoices.ledger(branch(req), req.query)));
+  api.get('/invoices/:orderId/detail', guardAny('invoice', 'pay', 'reports', 'settings.invoices'), wrap((req) => Invoices.ledgerDetail(req.params.orderId, branch(req))));
   api.get('/invoices/order/:id', guard('pay'), wrap((req) => Invoices.byOrder(req.params.id, branch(req))));
-  api.post('/invoices/:id/cancel', guard('invoice'), wrap((req) => {
-    const ord = db.prepare(`SELECT id FROM orders WHERE invoice_id=? AND branch_id=?`).get(req.params.id, branch(req));
-    if (ord) assertBillEditable(ord.id, req, 'invoice_cancel');
-    return Invoices.cancel(req.params.id, req.body.reason, branch(req));
-  }));
 }

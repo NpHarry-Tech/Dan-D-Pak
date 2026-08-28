@@ -7,7 +7,13 @@ import { emit } from '../../realtime.js';
 
 export function registerCatalogRoutes(api, { wrap, guard, branch, visibleBranch, actor, saveBase64Image, MENU_UPLOADS_DIR }) {
 // --- Catalog / Menu ---
-api.get('/menu', wrap((req) => Catalog.listMenu({ forCustomer: true, ...req.query, branch_id: visibleBranch(req) })));
+api.get('/menu', wrap((req) => Catalog.listMenu({
+  ...req.query,
+  forCustomer: true,
+  // Tablet Self-Order gọi kèm ?self_order=1 → menu KHÁCH (ẩn thêm self_order_hidden).
+  selfOrder: req.query.self_order === '1' || req.query.self_order === 'true',
+  branch_id: visibleBranch(req),
+})));
 api.get('/menu/manage', guard('menu.manage'), wrap((req) => Catalog.listMenu({ forCustomer: false, ...req.query, branch_id: branch(req) })));
 
 api.post('/menu/image-upload', guard('menu.manage'), wrap((req) =>
@@ -34,8 +40,8 @@ api.post('/menu', guard('menu.manage'), wrap(async (req) => {
     translations: b.translations,
   });
   db.prepare(`INSERT INTO menu_items
-    (id,branch_id,category_id,name,emoji,image,description,price,price_includes_vat,vat_rate,station,sla_minutes,available,hidden,ingredients_json,allergens_json,schedule_json,modifiers_json,addons_json,translations_json,sort)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
+    (id,branch_id,category_id,name,emoji,image,description,price,price_includes_vat,vat_rate,station,sla_minutes,available,hidden,self_order_hidden,ingredients_json,allergens_json,schedule_json,modifiers_json,addons_json,option_groups_json,translations_json,sort)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
     id,
     branch_id,
     b.category_id,
@@ -50,11 +56,13 @@ api.post('/menu', guard('menu.manage'), wrap(async (req) => {
     parseInt(b.sla_minutes) || 10,
     b.available === false ? 0 : 1,
     b.hidden ? 1 : 0,
+    b.self_order_hidden ? 1 : 0,
     JSON.stringify(Catalog.parseList(b.ingredients)),
     JSON.stringify(Catalog.parseList(b.allergens)),
     JSON.stringify(Catalog.normalizeSchedule(b.schedule)),
     JSON.stringify(Array.isArray(b.modifiers) ? b.modifiers : []),
     JSON.stringify(Catalog.normalizeAddons(b.addons)),
+    JSON.stringify(Catalog.normalizeOptionGroups(b.option_groups)),
     JSON.stringify(translations),
     sort);
   Catalog.replaceRecipe(id, b.recipe || [], branch_id);
@@ -85,7 +93,7 @@ api.post('/menu/:id/update', guard('menu.manage'), wrap(async (req) => {
   });
   db.prepare(`UPDATE menu_items SET
       name=?, emoji=?, image=?, description=?, price=?, price_includes_vat=?, vat_rate=?, category_id=?, station=?, sla_minutes=?,
-      ingredients_json=?, allergens_json=?, schedule_json=?, hidden=?, addons_json=?, translations_json=?
+      ingredients_json=?, allergens_json=?, schedule_json=?, hidden=?, self_order_hidden=?, addons_json=?, option_groups_json=?, translations_json=?
     WHERE id=? AND branch_id=?`).run(
     nextName,
     v('emoji', cur.emoji),
@@ -101,7 +109,9 @@ api.post('/menu/:id/update', guard('menu.manage'), wrap(async (req) => {
     b.allergens !== undefined ? JSON.stringify(Catalog.parseList(b.allergens)) : cur.allergens_json,
     b.schedule !== undefined ? JSON.stringify(Catalog.normalizeSchedule(b.schedule)) : cur.schedule_json,
     b.hidden !== undefined ? (b.hidden ? 1 : 0) : cur.hidden,
+    b.self_order_hidden !== undefined ? (b.self_order_hidden ? 1 : 0) : (cur.self_order_hidden || 0),
     b.addons !== undefined ? JSON.stringify(Catalog.normalizeAddons(b.addons)) : (cur.addons_json || '[]'),
+    b.option_groups !== undefined ? JSON.stringify(Catalog.normalizeOptionGroups(b.option_groups)) : (cur.option_groups_json || '[]'),
     JSON.stringify(translations),
     req.params.id, branch_id);
   if (Array.isArray(b.recipe)) Catalog.replaceRecipe(req.params.id, b.recipe || [], branch_id);

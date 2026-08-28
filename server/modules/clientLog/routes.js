@@ -3,6 +3,7 @@
 import { logger } from '../../core/logger.js';
 import { db } from '../../db.js';
 import { logSystem } from '../../services/systemLogs.js';
+import { sanitizeText } from '../../core/redaction.js';
 
 export function registerClientLogRoutes(api, { wrap, guard, branch }) {
 let _clientLogWindowStart = 0;
@@ -17,11 +18,11 @@ api.post('/client-log', guard(), wrap((req) => {
     branch: branch(req),
     app: String(b.app || '').slice(0, 40),
     version: String(b.version || '').slice(0, 20),
-    screen: String(b.screen || '').slice(0, 120),
-    message: String(b.message || '').slice(0, 600),
-    stack: String(b.stack || '').slice(0, 4000),
+    screen: sanitizeText(b.screen).slice(0, 120),
+    message: sanitizeText(b.message).slice(0, 600),
+    stack: sanitizeText(b.stack).slice(0, 4000),
     // Vệt thao tác cuối từ "hộp đen" của app (chạm/API/socket/đổi màn).
-    breadcrumbs: String(b.breadcrumbs || '').slice(0, 4000),
+    breadcrumbs: sanitizeText(b.breadcrumbs).slice(0, 4000),
   };
   logger.error('client error', entry);
   // Mirror sang nhật ký HỆ THỐNG hợp nhất — kể cả app bản cũ (chưa có

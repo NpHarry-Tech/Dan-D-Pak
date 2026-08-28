@@ -16,7 +16,11 @@
 [CmdletBinding()]
 param(
   [switch]$SkipInstaller,
-  [switch]$Clean
+  [switch]$Clean,
+  # Khi set (vd https://api-review.dandpakpos.io.vn) → build bản REVIEW trỏ backend
+  # review qua dart-define STORE_EDGE_URL (app_defaults.baseUrl dùng URL này thay
+  # cho production). Để trống = build production như thường.
+  [string]$ReviewApiUrl = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -42,6 +46,18 @@ $verText = Get-Content $verFile -Raw
 $build = [regex]::Match($verText, 'kAppBuildNumber\s*=\s*(\d+)').Groups[1].Value
 $version = [regex]::Match($verText, "kAppVersionName\s*=\s*'([^']+)'").Groups[1].Value
 Write-Host "Build    : $build ($version)" -ForegroundColor Cyan
+$buildMetadata = & (Join-Path $PSScriptRoot 'get-app-build-metadata.ps1') | ConvertFrom-Json
+$dartDefines = @(
+  "--dart-define=BUILD_GIT_COMMIT=$($buildMetadata.gitCommit)",
+  "--dart-define=BUILD_SOURCE_SHA256=$($buildMetadata.sourceTreeSha256)",
+  "--dart-define=BUILD_TIME_UTC=$($buildMetadata.builtAtUtc)",
+  "--dart-define=SCHEMA_VERSION=$($buildMetadata.schemaVersion)"
+)
+if ($ReviewApiUrl) {
+  Write-Host "REVIEW build -> backend: $ReviewApiUrl" -ForegroundColor Magenta
+  $dartDefines += "--dart-define=STORE_EDGE_URL=$ReviewApiUrl"
+}
+$dartDefines = $dartDefines -join ' '
 
 if ($Clean) {
   Write-Host 'Dang xoa cache build...' -ForegroundColor Yellow
@@ -50,7 +66,7 @@ if ($Clean) {
 
 # ── 3. Build qua môi trường MSVC ─────────────────────────────────────────────
 # CC/CXX ép rõ cl.exe phòng khi CMake vẫn cố dò lung tung.
-$cmd = "call `"$vcvars`" >nul && set CC=cl.exe && set CXX=cl.exe && cd /d `"$appDir`" && flutter build windows --release"
+$cmd = "call `"$vcvars`" >nul && set CC=cl.exe && set CXX=cl.exe && cd /d `"$appDir`" && flutter build windows --release $dartDefines"
 # vcvars64.bat và CMake ghi cảnh báo ra stderr (vd "vswhere.exe is not
 # recognized") NGAY CẢ KHI build thành công. Với $ErrorActionPreference='Stop',
 # PowerShell 5.1 biến mỗi dòng stderr của native command thành lỗi kết thúc và
@@ -64,7 +80,13 @@ $exe = Join-Path $appDir 'build\windows\x64\runner\Release\dandpak_desktop.exe'
 if (-not (Test-Path $exe)) { throw "Build xong nhung khong thay $exe" }
 Write-Host "OK: $exe" -ForegroundColor Green
 
-if ($SkipInstaller) { return }
+$manifestWriter = Join-Path $PSScriptRoot 'write-build-manifest.ps1'
+if ($SkipInstaller) {
+  & $manifestWriter -Artifact $exe -Platform windows -Build ([int]$build) -Version $version `
+    -BuiltAtUtc $buildMetadata.builtAtUtc -SourceTreeSha256 $buildMetadata.sourceTreeSha256 `
+    -GitCommit $buildMetadata.gitCommit
+  return
+}
 
 # ── 4. Đóng gói installer bằng Inno Setup ────────────────────────────────────
 $isccCandidates = @(
@@ -88,6 +110,14 @@ try {
   $ErrorActionPreference = $prevEap2
   Pop-Location
 }
+
+$installer = Join-Path $root "artifacts\releases\dan-d-pak-pos-setup-b$build.exe"
+if (-not (Test-Path -LiteralPath $installer)) {
+  throw "Dong goi xong nhung khong thay installer $installer"
+}
+& $manifestWriter -Artifact $installer -Platform windows -Build ([int]$build) -Version $version `
+  -BuiltAtUtc $buildMetadata.builtAtUtc -SourceTreeSha256 $buildMetadata.sourceTreeSha256 `
+  -GitCommit $buildMetadata.gitCommit
 
 Write-Host ''
 Write-Host 'Xong. Phat hanh bang:' -ForegroundColor Green

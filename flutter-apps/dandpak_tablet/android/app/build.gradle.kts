@@ -24,12 +24,28 @@ android {
     if (keystorePropertiesFile.exists()) {
         keystoreProperties.load(FileInputStream(keystorePropertiesFile))
     }
+    val releaseRequested = gradle.startParameter.taskNames.any {
+        it.contains("release", ignoreCase = true)
+    }
+    val requiredSigningKeys = listOf("keyAlias", "keyPassword", "storeFile", "storePassword")
+    val missingSigningKeys = requiredSigningKeys.filter {
+        keystoreProperties.getProperty(it).isNullOrBlank()
+    }
+    val releaseStoreFile = keystoreProperties.getProperty("storeFile")?.let { file(it) }
+    if (releaseRequested &&
+        (!keystorePropertiesFile.exists() || missingSigningKeys.isNotEmpty() || releaseStoreFile?.isFile != true)
+    ) {
+        throw GradleException(
+            "Release signing is not configured. Provide android/key.properties and an existing production " +
+                "keystore with keyAlias, keyPassword, storeFile and storePassword. Debug signing is forbidden."
+        )
+    }
 
     signingConfigs {
         create("release") {
             keyAlias = keystoreProperties["keyAlias"] as String?
             keyPassword = keystoreProperties["keyPassword"] as String?
-            storeFile = keystoreProperties["storeFile"]?.let { file(it) }
+            storeFile = releaseStoreFile
             storePassword = keystoreProperties["storePassword"] as String?
         }
     }
@@ -46,19 +62,14 @@ android {
 
     buildTypes {
         release {
-            // Sử dụng release signing config nếu file key.properties tồn tại, ngược lại fallback về debug key
-            signingConfig = if (keystorePropertiesFile.exists()) {
-                signingConfigs.getByName("release")
-            } else {
-                signingConfigs.getByName("debug")
-            }
-            // BẬT LẠI R8/obfuscation để giảm dung lượng APK và bảo mật code
-            isMinifyEnabled = true
-            isShrinkResources = true
-            proguardFiles(
-                getDefaultProguardFile("proguard-android-optimize.txt"),
-                "proguard-rules.pro"
-            )
+            // Ký bằng key.properties (trỏ về đúng key đã ký các bản đang cài) — giữ
+            // liên tục chữ ký để auto-update không bị Android từ chối.
+            signingConfig = signingConfigs.getByName("release")
+            // R8/shrink TẮT: các bản đang chạy trên máy POS (build 90) build KHÔNG R8.
+            // Bật R8 mà proguard-rules chưa đủ dễ nuốt class dùng qua reflection/JSON
+            // -> crash lúc chạy. Giữ đúng cấu hình đã kiểm chứng cho hệ thống tiền thật.
+            isMinifyEnabled = false
+            isShrinkResources = false
         }
     }
 }

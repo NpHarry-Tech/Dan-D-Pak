@@ -89,8 +89,13 @@ export function publishRelease(platform, buffer, { version, buildNumber, notes, 
   ensureDir();
 
   const ext = laAndroid(platform) ? '.apk' : '.exe';
-  const safeName = nodePath.basename(String(fileName || `dan-d-pak-${platform}-${version || bn}${ext}`))
+  const rawName = nodePath.basename(String(fileName || `dan-d-pak-${platform}-${version || bn}${ext}`))
     .replace(/[^a-zA-Z0-9._-]/g, '_');
+  // NAMESPACE THEO PLATFORM. APK tablet và phone `flutter build` ra ĐỀU tên
+  // 'app-release.apk'; lưu chung tên là đè lên nhau → cả hai khe (android,
+  // android-phone) trỏ CÙNG một file, ai publish sau thắng cả hai. (Desktop tên
+  // file riêng nên chưa bao giờ dính — đúng vì sao chỉ 2 APK bị lộn 05/08/2026.)
+  const safeName = `${platform}__${rawName}`;
   fs.writeFileSync(nodePath.join(RELEASES_DIR, safeName), buffer);
 
   const m = readManifest();

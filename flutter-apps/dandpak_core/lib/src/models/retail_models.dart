@@ -50,6 +50,10 @@ class Sku {
   final bool trackLot;
   final bool expiryRequired;
 
+  /// Giới thiệu sản phẩm cho KHÁCH đọc trên màn catalogue ngoài quầy.
+  /// Rỗng là bình thường — phần lớn hàng không cần mô tả.
+  final String description;
+
   const Sku({
     required this.id,
     required this.barcode,
@@ -64,6 +68,7 @@ class Sku {
     required this.warehouseId,
     required this.trackLot,
     required this.expiryRequired,
+    this.description = '',
   });
 
   // Snapshot đủ để MỌI máy dựng lại dòng giỏ hàng mà không cần SKU nằm sẵn trong
@@ -82,6 +87,7 @@ class Sku {
         'warehouse_id': warehouseId,
         'track_lot': trackLot,
         'expiry_required': expiryRequired,
+        'description': description,
       };
 
   factory Sku.fromJson(Map<String, dynamic> j) {
@@ -100,6 +106,7 @@ class Sku {
       warehouseId: retailS(j['warehouse_id']),
       trackLot: retailB(j['track_lot']),
       expiryRequired: retailB(j['expiry_required']),
+      description: retailS(j['description']),
     );
   }
 }
@@ -189,6 +196,10 @@ class RetailVoucher {
   final String usageLimit;
   final String scheduleLabel;
   final String scopeLabel;
+  // Combo (scope='combo'): tập SKU + nhóm hàng thành viên, số món/combo (N).
+  final List<String> comboSkus;
+  final List<String> comboGroups;
+  final int comboQty;
 
   const RetailVoucher({
     required this.id,
@@ -216,10 +227,17 @@ class RetailVoucher {
     required this.usageLimit,
     required this.scheduleLabel,
     required this.scopeLabel,
+    this.comboSkus = const [],
+    this.comboGroups = const [],
+    this.comboQty = 0,
   });
 
   factory RetailVoucher.fromJson(Map<String, dynamic> j) {
     final schedule = retailMap(j['schedule']);
+    final sc = retailMap(j['scope_config']);
+    List<String> strList(dynamic v) => v is List
+        ? v.map((e) => '$e').where((e) => e.isNotEmpty).toList()
+        : <String>[];
     return RetailVoucher(
       id: retailS(j['id']),
       code: retailS(j['code']),
@@ -253,11 +271,15 @@ class RetailVoucher {
               : retailS(schedule['usageLimit'] ?? schedule['usage_limit']),
       scheduleLabel: retailS(j['schedule_label']),
       scopeLabel: retailS(j['scope_label']),
+      comboSkus: strList(sc['skus']),
+      comboGroups: strList(sc['groups']),
+      comboQty: retailN(sc['qty']).toInt(),
     );
   }
 
   bool get isOrder => scope == 'order';
   bool get isSku => scope == 'sku';
+  bool get isCombo => scope == 'combo';
 
   /// 'all_sku': áp MỌI sản phẩm nhưng tính riêng từng dòng hàng (khác toàn
   /// bill gộp chung) — vd "mua 5 tặng 1 bất kỳ món nào".
@@ -490,30 +512,204 @@ class CartLine {
   int qty;
   String? lotId;
   String? voucherId;
+  // Combo: dòng là THÀNH PHẦN của combo nào. Nhiều dòng cùng comboId = 1 combo,
+  // gom hiển thị thành 1 dòng combo. comboPer = số món này trong 1 combo (để nút
+  // +/− combo cộng/trừ đều). comboName để hiện tên. null/0 = hàng thường.
+  String? comboId;
+  String? comboName;
+  int comboPer;
+  // Chỉnh giá TỪNG DÒNG (cần PIN Quản lý/Admin): giá tuỳ chỉnh thay cho giá niêm
+  // yết. null = dùng giá gốc. Bill hiện cả giá gốc + giá sau đổi.
+  num? priceOverride;
+  // Ghi chú RIÊNG cho dòng này (in dưới dòng hàng trên bill).
+  String? note;
 
-  CartLine(this.sku, this.qty, {this.lotId, this.voucherId});
+  CartLine(this.sku, this.qty,
+      {this.lotId,
+      this.voucherId,
+      this.comboId,
+      this.comboName,
+      this.comboPer = 0,
+      this.priceOverride,
+      this.note});
 
-  num get lineTotal => sku.price * qty;
+  bool get isCombo => comboId != null && comboId!.isNotEmpty;
+  // Giá thực dùng để tính tiền: giá chỉnh tay nếu có, không thì giá niêm yết.
+  num get effectivePrice => priceOverride ?? sku.price;
+  bool get hasPriceOverride =>
+      priceOverride != null && priceOverride != sku.price;
+  num get lineTotal => effectivePrice * qty;
 
-  CartLine copy() => CartLine(sku, qty, lotId: lotId, voucherId: voucherId);
+  CartLine copy() => CartLine(sku, qty,
+      lotId: lotId,
+      voucherId: voucherId,
+      comboId: comboId,
+      comboName: comboName,
+      comboPer: comboPer,
+      priceOverride: priceOverride,
+      note: note);
+}
+
+/// Một món thành phần trong combo (SKU + số món trong 1 combo).
+class CartComboItem {
+  final Sku sku;
+  int perCombo;
+  CartComboItem(this.sku, this.perCombo);
+  CartComboItem copy() => CartComboItem(sku, perCombo);
+}
+
+/// COMBO trong giỏ = một dòng tổng hợp: tên combo + đơn giá combo + số combo,
+/// bên dưới liệt kê thành phần. Khi checkout sẽ bung ra các SKU thành phần
+/// (qty = perCombo × số combo) và áp ưu đãi combo phía server.
+class CartCombo {
+  final String comboId; // voucher id
+  final String name;
+  final String type; // fixed | amount | pct
+  final num value;
+  final int n; // tổng món trong 1 combo
+  int qty; // số combo
+  final List<CartComboItem> items;
+  CartCombo({
+    required this.comboId,
+    required this.name,
+    required this.type,
+    required this.value,
+    required this.n,
+    this.qty = 1,
+    required this.items,
+  });
+
+  num get grossPerCombo =>
+      items.fold<num>(0, (s, i) => s + i.sku.price * i.perCombo);
+
+  /// Đơn giá 1 combo SAU ưu đãi.
+  num get unitPrice {
+    switch (type) {
+      case 'fixed':
+        return value;
+      case 'amount':
+        return (grossPerCombo - value).clamp(0, double.infinity);
+      case 'pct':
+        return (grossPerCombo * (100 - value) / 100).round();
+      default:
+        return grossPerCombo;
+    }
+  }
+
+  num get lineTotal => unitPrice * qty;
+  num get discount =>
+      (grossPerCombo * qty - lineTotal).clamp(0, double.infinity);
+
+  CartCombo copy() => CartCombo(
+        comboId: comboId,
+        name: name,
+        type: type,
+        value: value,
+        n: n,
+        qty: qty,
+        items: items.map((i) => i.copy()).toList(),
+      );
 }
 
 class RetailSaleTab {
   final int id;
   final List<CartLine> cart;
+  final List<CartCombo> combos;
   RetailCustomer? customer;
   String? orderVoucherId;
   num manualDiscount;
+  String note;
+
+  /// Giỏ này do KHÁCH tự chọn trên máy catalogue ngoài quầy ('catalogue') hay
+  /// do nhân viên bấm tại quầy ('staff').
+  String origin;
+
+  /// Tên máy catalogue đã tạo giỏ ("Kệ hạt điều", "Quầy trước"). Thu ngân nhìn
+  /// tên là biết chạy tới đâu — hơn hẳn nhãn vô nghĩa "Hóa đơn 03".
+  String deviceName;
+
+  /// Khách đã bấm Thanh toán và đang đứng chờ → tab tô ĐỎ.
+  /// Cố ý KHÔNG kèm chuông/thông báo: cửa hàng có nhân viên đứng quầy, một tab
+  /// đổi màu là đủ, thêm tiếng ồn giữa ca đông khách chỉ gây rối.
+  bool payRequested;
+
+  /// Hình thức khách chọn ở màn catalogue (qr / cash / card).
+  String payMethod;
+  int version;
+  List<String> activeDevices;
+
+  /// PIN duyệt chỉnh giá chỉ sống trong bộ nhớ và chỉ thuộc bill/tab này.
+  /// Không serialize/sync sang thiết bị khác; xoá khi thanh toán hoặc xoá giỏ.
+  String? priceOverridePin;
+
+  /// TAB TRẢ HÀNG (§1). Khi != null, tab này là phiếu trả cho bill gốc [returnOfOrderId];
+  /// [returnLines] là item preload (order_item_id/name/sku/image/unit_price/sold/returned)
+  /// — KHÔNG cho thêm item ngoài bill; nút Thanh toán → "Trả hàng". Tab bán KHÔNG set.
+  final String? returnOfOrderId;
+  final List<Map<String, dynamic>> returnLines;
+
+  bool get isReturn => returnOfOrderId != null;
+
+  // ── Step 2 multi-device: CANONICAL identity (server là nguồn sự thật) ──────
+  // Tab bán lẻ giữ order_id canonical + display_sequence (nhãn) + revision +
+  // lease_token do SERVER cấp. `id` chỉ là KHÓA widget cục bộ, KHÔNG phải nhãn
+  // và KHÔNG phải identity API/socket/payment. Màn Retail đồng bộ các trường này
+  // từ RetailOrderSession (không để model phụ thuộc tầng service → tránh vòng).
+  String? orderId;
+  int? serverSequence;
+  int canonicalRevision;
+  String leaseToken;
+  String orderStatus;
+  bool serverReadOnly;
+
+  /// Read-only khi server chốt (paid/finalized) hoặc mất quyền sửa (lease lost).
+  bool get canonicalReadOnly =>
+      serverReadOnly || orderStatus == 'paid' || orderStatus == 'void';
 
   RetailSaleTab({
     required this.id,
     List<CartLine>? cart,
+    List<CartCombo>? combos,
     this.customer,
     this.orderVoucherId,
     this.manualDiscount = 0,
-  }) : cart = cart ?? <CartLine>[];
+    this.note = '',
+    this.origin = 'staff',
+    this.deviceName = '',
+    this.payRequested = false,
+    this.payMethod = '',
+    this.version = 0,
+    List<String>? activeDevices,
+    this.priceOverridePin,
+    this.returnOfOrderId,
+    List<Map<String, dynamic>>? returnLines,
+    this.orderId,
+    this.serverSequence,
+    this.canonicalRevision = 0,
+    this.leaseToken = '',
+    this.orderStatus = 'open',
+    this.serverReadOnly = false,
+  })  : cart = cart ?? <CartLine>[],
+        combos = combos ?? <CartCombo>[],
+        activeDevices = activeDevices ?? <String>[],
+        returnLines = returnLines ?? <Map<String, dynamic>>[];
 
-  String get title => 'Hóa đơn ${id.toString().padLeft(2, '0')}';
+  bool get fromCatalogue => origin == 'catalogue';
+
+  /// Nhãn tab. Tab trả hàng → "Trả hàng NN"; catalogue → tên máy; bán lẻ → SỐ
+  /// SERVER cấp (display_sequence). KHÔNG dùng `id` cục bộ/tabs.length+1 làm số
+  /// hiển thị — tab chưa có order canonical thì hiện "Hóa đơn mới".
+  String get title => isReturn
+      ? 'Trả hàng ${id.toString().padLeft(2, '0')}'
+      : deviceName.isNotEmpty
+          ? deviceName
+          : serverSequence != null
+              ? 'Hóa đơn ${serverSequence!.toString().padLeft(2, '0')}'
+              : 'Hóa đơn ${id.toString().padLeft(2, '0')}';
+
+  /// Dòng phụ nhỏ dưới nhãn tab: tên khách nếu khách đã nhập thông tin.
+  /// Chưa nhập thì để trống — mặc định vẫn là bán cho người tiêu dùng.
+  String get subtitle => customer?.name.trim() ?? '';
 }
 
 class PaymentLine {

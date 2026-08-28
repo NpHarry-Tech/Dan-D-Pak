@@ -604,7 +604,8 @@ class _OperationsPanelState extends State<OperationsPanel> {
                   children: [
                     for (final cat in _categories) ...[
                       FilterChip(
-                        label: Text('${asText(cat['icon'])} ${asText(cat['name'])}'),
+                        label: Text(
+                            '${asText(cat['icon'])} ${asText(cat['name'])}'),
                         selected: (_wiz['scopeValue'] as List)
                             .contains(asText(cat['id'])),
                         onSelected: (selected) {
@@ -920,7 +921,8 @@ class _OperationsPanelState extends State<OperationsPanel> {
               SizedBox(height: 12),
               _confirmRow('MST', asText(p['taxCode'])),
               _confirmRow(t('Tên Hộ kinh doanh'), asText(p['businessName'])),
-              _confirmRow(t('Ngày bắt đầu kê khai'), asText(p['transitionDate'])),
+              _confirmRow(
+                  t('Ngày bắt đầu kê khai'), asText(p['transitionDate'])),
               _confirmRow(t('Quy mô doanh thu'), revGroupName),
               _confirmRow(t('Trụ sở chính'),
                   '${asText(hq['name'])} - ${asText(hq['address'])}'),
@@ -1171,6 +1173,13 @@ class _OperationsPanelState extends State<OperationsPanel> {
                     _field(t('Tên chủ tài khoản'), _accountName),
                     _field(t('Tiền tố nội dung CK (memo)'), _transferPrefix,
                         hint: 'VD: DANBILL'),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        '${t('Tiền tố thực dùng')}: ${_transferPrefix.text.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '').toUpperCase()}',
+                        style: TextStyle(fontSize: 11, color: DanColors.muted),
+                      ),
+                    ),
                   ],
                 ),
               ),

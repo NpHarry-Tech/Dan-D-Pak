@@ -6,6 +6,7 @@ import { dirname, join } from 'node:path';
 import zlib from 'node:zlib';
 import { logger } from '../core/logger.js';
 import { storagePath } from '../config/env.js';
+import { businessDate, businessParts } from '../core/businessClock.js';
 
 export const PERMANENT_ROOT = storagePath('permanent-storage');
 
@@ -18,9 +19,8 @@ function safePart(v, fallback = 'unknown') {
 }
 
 function isoDate(iso = null) {
-  const d = iso ? new Date(iso) : new Date();
-  if (Number.isNaN(d.getTime())) return new Date().toISOString().slice(0, 10);
-  return d.toISOString().slice(0, 10);
+  try { return businessDate(iso || new Date()); }
+  catch { return businessDate(); }
 }
 
 function pad2(n) {
@@ -28,14 +28,14 @@ function pad2(n) {
 }
 
 function localDateParts(iso = null) {
-  const d = iso ? new Date(iso) : new Date();
-  const x = Number.isNaN(d.getTime()) ? new Date() : d;
+  let x;
+  try { x = businessParts(iso || new Date()); } catch { x = businessParts(); }
   return {
-    yyyy: String(x.getFullYear()),
-    mm: pad2(x.getMonth() + 1),
-    dd: pad2(x.getDate()),
-    hh: pad2(x.getHours()),
-    min: pad2(x.getMinutes()),
+    yyyy: String(x.year),
+    mm: pad2(x.month),
+    dd: pad2(x.day),
+    hh: pad2(x.hour),
+    min: pad2(x.minute),
   };
 }
 

@@ -42,4 +42,19 @@ extension ApiServiceExpensesApi on ApiService {
     await postJson('/api/expenses/$id/delete',
         errorMessage: 'Không xóa được chi phí');
   }
+
+  /// Chi tiết một khoản chi (kể cả 'drawer:<id>' — chi từ két).
+  Future<Map<String, dynamic>> getExpenseDetail(String id) async {
+    return mapFrom(await getJson(
+        '/api/expenses/item/${Uri.encodeComponent(id)}',
+        errorMessage: 'Không tải được chi tiết khoản chi'));
+  }
+
+  /// In PHIẾU CHI trên máy in hóa đơn.
+  Future<Map<String, dynamic>> printExpenseVoucher(String id) async {
+    return mapFrom(await postJson(
+        '/api/expenses/${Uri.encodeComponent(id)}/print',
+        body: const {},
+        errorMessage: 'Không in được phiếu chi'));
+  }
 }

@@ -14,6 +14,8 @@ void main() {
       notes: '',
       url: '/update.apk',
       mandatory: false,
+      scopeKey: 'https://api.dandpakpos.io.vn|production|android-phone',
+      serverOrigin: 'https://api.dandpakpos.io.vn',
     );
     expect(AppUpdater.notificationBody(info, localeName: 'vi_VN'),
         contains('cập nhật mới số "2026.07.21.3"'));

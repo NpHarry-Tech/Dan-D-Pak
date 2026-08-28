@@ -1496,8 +1496,8 @@ const Map<String, String> viToEnMap = {
   'Thao tác phát sinh lỗi.': 'The operation generated an error.',
   'Thao tác quản trị cơ sở dữ liệu': 'Database administration operations',
   'Thay đổi cấu hình liên kết đối tác.': 'Change partner link configuration.',
-  'Theo dõi động cơ dữ liệu local, sao lưu cấu hình và thống kê hệ thống.':
-      'Monitor local engine data, configuration backups and system statistics.',
+  'Theo dõi máy chủ dữ liệu đang chọn, sao lưu cấu hình và thống kê hệ thống.':
+      'Monitor the selected data server, configuration backups and system statistics.',
   'Theo giờ mỗi ngày': 'Hourly every day',
   'Theo mã, tên hàng': 'According to code, product name',
   'Theo mã, tên, số điện thoại': 'By code, name, phone number',
@@ -1826,14 +1826,13 @@ const Map<String, String> viToEnMap = {
   '{footer} {invoiceLookupUrl}': '{footer} {invoiceLookupUrl}',
   '{grandTotalLine}': '{grandTotalLine}',
   '{invoiceLookupUrl}': '{invoiceLookupUrl}',
-  '{items} {subtotalLine} {vatLine} {orderPromoLine} {grandTotalLine} {totalLine} {paymentLines} {paidLine} {changeLine} {grandTotal}':
-      '{items} {subtotalLine} {vatLine} {orderPromoLine} {grandTotalLine} {totalLine} {paymentLines} {paidLine} {changeLine} {grandTotal}',
-  '{orderPromoLine}': '{orderPromoLine}',
+  '{items} {subtotalLine} {vatLine} {grandTotalLine} {totalLine} {paymentLines} {paidLine} {changeLine} {grandTotal}':
+      '{items} {subtotalLine} {vatLine} {grandTotalLine} {totalLine} {paymentLines} {paidLine} {changeLine} {grandTotal}',
   '{paidLine}': '{paidLine}',
   '{paymentLines}': '{paymentLines}',
   '{subtotalLine}': '{subtotalLine}',
-  '{subtotalLine}\\n{vatLine}\\n{orderPromoLine}\\n{grandTotalLine}\\n{paymentLines}\\n{paidLine}\\n{changeLine}':
-      '{subtotalLine}\\n{vatLine}\\n{orderPromoLine}\\n{grandTotalLine}\\n{paymentLines}\\n{paidLine}\\n{changeLine}',
+  '{subtotalLine}\\n{vatLine}\\n{grandTotalLine}\\n{paymentLines}\\n{paidLine}\\n{changeLine}':
+      '{subtotalLine}\\n{vatLine}\\n{grandTotalLine}\\n{paymentLines}\\n{paidLine}\\n{changeLine}',
   '{totalLine}': '{totalLine}',
   '{vatLine}': '{vatLine}',
   '}\$bđ': '}\$bdd',
@@ -2002,8 +2001,7 @@ const Map<String, String> viToEnMap = {
   'Đơn khách': 'Guest application',
   'Đơn vị': 'Unit',
   'Đơn đang mở': 'Open orders',
-  'Đưa mã vạch / QR vào khung để quét':
-      'Insert the barcode/QR into the frame to scan',
+  'Đưa mã vạch vào khung để quét': 'Place the barcode inside the frame to scan',
   'Đường B (phương án thay thế SePay): đọc giao dịch ngân hàng và bắn webhook xác nhận tiền về theo nội dung bill.':
       'Route B (SePay alternative): read bank transactions and shoot webhook to confirm money according to bill content.',
   'Đường B: đọc biến động số dư ngân hàng, khi khách chuyển khoản/quét VietQR đúng nội dung bill thì tự đóng bill. Rẻ nhất cho chuyển khoản.':
@@ -2137,11 +2135,11 @@ const Map<String, String> viToEnMap = {
 
   // Generated missing static i18n keys (2026-07-14).
   'Cấu hình Máy chủ (Server)': 'Server Configuration',
-  'Nhập địa chỉ API của máy chủ trung tâm:':
-      'Enter the API address of the central server:',
+  'Nhập địa chỉ Store Edge trong mạng LAN hoặc máy chủ VPS:':
+      'Enter the Store Edge LAN address or VPS server address:',
   'Địa chỉ Server': 'Server address',
-  'Máy chủ mặc định là https://api.dandpakpos.io.vn.':
-      'The default server is https://api.dandpakpos.io.vn.',
+  'Khi bật chế độ offline tại cửa hàng, tất cả thiết bị phải trỏ tới cùng Store Edge; không tự chuyển qua VPS để tránh hai nơi cùng nhận đơn.':
+      'When store offline mode is enabled, every device must use the same Store Edge; do not automatically switch to VPS and create two order authorities.',
   'Hủy': 'Cancel',
   'Lưu & Kết nối': 'Save & Connect',
   'Chọn cơ sở': 'Select facility',

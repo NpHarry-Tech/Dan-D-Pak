@@ -80,9 +80,11 @@ class _OnlineOverviewSectionState extends State<OnlineOverviewSection> {
                   const Color(0xFF2563EB), Icons.local_shipping_outlined),
               _tile('Đã giao', oNum(buckets['delivered']).toInt(),
                   const Color(0xFF047857), Icons.done_all),
-              _tile('Cần xử lý hàng hóa',
+              _tile(
+                  'Cần xử lý hàng hóa',
                   oNum(buckets['product_attention']).toInt(),
-                  const Color(0xFFB91C1C), Icons.link_off),
+                  const Color(0xFFB91C1C),
+                  Icons.link_off),
             ],
           ),
           const SizedBox(height: 26),
@@ -174,8 +176,8 @@ class _OnlineOverviewSectionState extends State<OnlineOverviewSection> {
           ),
           const SizedBox(height: 4),
           Text('${t('Tổng đơn online')}: ${Fmt.int0(oNum(_summary['total']))}',
-              style: const TextStyle(
-                  fontSize: 12.5, fontWeight: FontWeight.w700)),
+              style:
+                  const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700)),
         ],
       ),
     );

@@ -13,9 +13,29 @@ import '../../services/system_log.dart';
 import '../../ui/app_theme.dart';
 import '../../widgets/address_fields.dart';
 import '../../widgets/manual_confirm_dialog.dart';
+import '../../widgets/online_only_gate.dart';
 import '../../widgets/tax_lookup.dart';
 import '../../ui/format.dart';
 import '../../utils/translation.dart';
+import 'temporary_transfer_confirm_button.dart';
+
+/// Đổi phương thức sau khi đã có đúng một dòng thanh toán đủ toàn bộ bill là
+/// thao tác SỬA lựa chọn, không phải split tender. Quy tắc này không phụ thuộc
+/// cash/bank nên phương thức mới thêm sau này cũng không giữ lại dòng cũ.
+@visibleForTesting
+List<PaymentLine> paymentLinesAfterMethodSelection({
+  required List<PaymentLine> lines,
+  required String previousMethod,
+  required String nextMethod,
+  required num payable,
+}) {
+  if (previousMethod == nextMethod || lines.length != 1) return List.of(lines);
+  final current = lines.single;
+  if (current.method != previousMethod || current.amount < payable) {
+    return List.of(lines);
+  }
+  return [PaymentLine(method: nextMethod, amount: payable)];
+}
 
 class CheckoutDialog extends StatefulWidget {
   final ApiService api;
@@ -34,6 +54,20 @@ class CheckoutDialog extends StatefulWidget {
   final String? orderId;
   final int? itemCount;
   final String channelLabel;
+  final String initialNote;
+  // Combo (Option B): id các combo được CHỌN trong giỏ → server chỉ áp đúng
+  // những combo này (không auto). Rỗng/null = không combo nào.
+  final List<String> selectedCombos;
+  // PIN Quản lý đã nhập khi CHỈNH GIÁ dòng — gửi kèm để server xác thực override.
+  final String? securityPin;
+  // Ô GIỎ CHIA SẺ + phiên bản của nó — gửi kèm để server chống thanh toán trùng
+  // (hai máy cùng mở một hóa đơn). null = giỏ không chia sẻ (không kiểm).
+  final int? cartSlot;
+  final int? cartVersion;
+  // §2 canonical order: id + device để server acquire checkout lock + markDraftPaid
+  // (một finalizer, idempotent). null = đơn legacy (không canonical).
+  final String? mdOrderId;
+  final String? mdDeviceId;
 
   CheckoutDialog({
     super.key,
@@ -53,6 +87,13 @@ class CheckoutDialog extends StatefulWidget {
     this.orderId,
     this.itemCount,
     this.channelLabel = 'Checkout',
+    this.initialNote = '',
+    this.selectedCombos = const [],
+    this.securityPin,
+    this.cartSlot,
+    this.cartVersion,
+    this.mdOrderId,
+    this.mdDeviceId,
   });
 
   bool get existingOrder => orderId?.trim().isNotEmpty == true;
@@ -87,6 +128,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
   bool _qrLoading = false;
   bool _posLoading = false;
   Map<String, dynamic>? _qrData;
+  String? _paymentIntentId;
   String? _qrError;
 
   // Đơn nháp THẬT tạo trên server ngay khi chọn "Chuyển khoản" cho đơn Bán lẻ mới
@@ -116,6 +158,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
   // true khi dialog da tu dong vi webhook/thiet bi khac dong bill nay roi —
   // chan _confirm() dong lan 2 (race voi SePay/Casso/payOS tu doi soat).
   bool _settledExternally = false;
+  int _methodRevision = 0;
 
   @override
   void didChangeDependencies() {
@@ -142,6 +185,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
     final methods = _methods;
     _method = methods.isNotEmpty ? methods.first.key : 'cash';
     _amountCtrl.text = _payable.round().toString();
+    _noteCtrl.text = widget.initialNote;
     if (widget.manualDiscount > 0) {
       _adjustmentCtrl.text = widget.manualDiscount.round().toString();
     }
@@ -179,9 +223,15 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
     final orderId = map?['order_id']?.toString();
     if (orderId == null || orderId.isEmpty || orderId != effective) return;
     _settledExternally = true;
+    // Đơn ĐÃ được xác nhận PAID (socket payment:done cho đúng order này). Receipt
+    // TỐI THIỂU vẫn phải mang ĐỊNH DANH canonical + cờ đã chốt để màn Bán lẻ xoá
+    // giỏ AN TOÀN (không xoá mù khi thiếu định danh → tránh "mất giỏ, không bill").
     final receipt = map?['receipt'] is Map
         ? Map<String, dynamic>.from(map!['receipt'] as Map)
         : <String, dynamic>{'total': widget.total.round()};
+    receipt['id'] ??= orderId;
+    receipt['order_id'] ??= orderId;
+    receipt['fully_settled'] ??= true;
     _toast(t(
         'Hoá đơn đã được thanh toán (chuyển khoản tự động hoặc thiết bị khác)'));
     Navigator.of(context).pop(receipt);
@@ -190,8 +240,14 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
   void _startPaymentStatusPolling() {
     _paymentStatusTimer?.cancel();
     if (_effectiveOrderId == null) return;
+    unawaited(_pollPaymentStatus());
     _paymentStatusTimer =
         Timer.periodic(const Duration(seconds: 3), (_) => _pollPaymentStatus());
+  }
+
+  void _stopPaymentStatusPolling() {
+    _paymentStatusTimer?.cancel();
+    _paymentStatusTimer = null;
   }
 
   Future<void> _pollPaymentStatus() async {
@@ -314,9 +370,6 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
   }
 
   String _defaultReference(String method) {
-    final prefix = retailS(_paymentCfg['transferPrefix']).trim().isEmpty
-        ? 'DANBILL'
-        : retailS(_paymentCfg['transferPrefix']).trim().toUpperCase();
     // Đơn đã có bill_no THẬT (đơn nháp vừa tạo, hoặc đơn POS có sẵn) → PHẢI dùng
     // đúng bill_no đó, vì server tính mã đối soát cho webhook SePay/Casso/payOS
     // (paymentReferenceForOrder) từ bill_no thật — không phải nhãn tab cục bộ
@@ -333,8 +386,8 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
       // Bỏ hẳn phần chữ đầu, chỉ lấy phần số ghép sau tiền tố — khớp đúng công
       // thức billNoDigits()/paymentReferenceForOrder() bên server, nếu không QR
       // hiện đúng nhưng webhook lại chờ chuỗi khác, không bao giờ khớp được.
-      final digitsOnly = invoice.replaceAll(RegExp(r'^\D+'), '');
-      return '$prefix-${digitsOnly.isEmpty ? invoice.toUpperCase() : digitsOnly}';
+      // Bank references are allocated atomically by the server PaymentIntent.
+      return '';
     }
     return '';
   }
@@ -344,26 +397,6 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
   // SePay, và img.vietqr.io từ chối VA này ("Tài khoản hưởng không hợp lệ").
   // vietqr.app/img nhận cả VA lẫn số tài khoản thường — dùng endpoint này (khớp
   // server: publicVietQrImage trong payments.js) để QR luôn tạo được.
-  String _dynamicQrUrl(num amount, String ref) {
-    final bankCode = retailS(_paymentCfg['bankCode']).trim();
-    final bankAccount = retailS(_paymentCfg['bankAccount']).trim();
-    if (bankCode.isEmpty || bankAccount.isEmpty) return '';
-    return Uri.https(
-      'vietqr.app',
-      '/img',
-      {
-        'bank': bankCode,
-        'acc': bankAccount,
-        'template': '',
-        'showinfo': 'true',
-        'fullacc': 'true',
-        'holder': retailS(_paymentCfg['accountName']),
-        if (amount.round() > 0) 'amount': amount.round().toString(),
-        if (ref.isNotEmpty) 'des': ref,
-      },
-    ).toString();
-  }
-
   void _startAutoWaitTimer() {
     _autoWaitTimer?.cancel();
     _autoConfirmGraceElapsed = false;
@@ -375,29 +408,37 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
 
   Future<void> _refreshQr() async {
     if (!_isQr) return;
+    await _ensureDraftOrder();
+    final orderId = _effectiveOrderId;
+    if (orderId == null) {
+      if (mounted)
+        setState(
+            () => _qrError = t('Khong tao duoc don de cap ma chuyen khoan.'));
+      return;
+    }
+    final requestedMethod = _method;
+    final requestedRevision = _methodRevision;
     _startAutoWaitTimer();
     final amount = _pendingAmount;
-    final ref = _refCtrl.text.trim().isEmpty
-        ? _defaultReference(_method)
-        : _refCtrl.text.trim();
     setState(() {
       _qrLoading = true;
       _qrError = null;
       _qrData = {
-        'imageUrl': _dynamicQrUrl(amount, ref),
-        'reference': ref,
+        'imageUrl': '',
+        'reference': '',
         'providerLabel': t('Đang tạo QR...'),
       };
     });
     try {
-      final data = await widget.api.buildPaymentQr({
-        'amount': amount.round(),
-        'reference': ref,
-        'method': _method,
-      });
-      if (!mounted) return;
+      final data = await widget.api.orderPaymentQr(orderId, method: _method);
+      if (!mounted ||
+          requestedRevision != _methodRevision ||
+          requestedMethod != _method ||
+          !_isQr) return;
       setState(() {
         _qrData = data;
+        _paymentIntentId = data['payment_intent_id']?.toString();
+        _refCtrl.text = data['reference']?.toString() ?? '';
         _qrLoading = false;
       });
       // Mirror the QR onto the customer-facing 2nd screen.
@@ -410,7 +451,10 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
         qrData: data['qrString']?.toString() ?? data['qr']?.toString() ?? '',
       );
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted ||
+          requestedRevision != _methodRevision ||
+          requestedMethod != _method ||
+          !_isQr) return;
       setState(() {
         _qrError = e.toString().replaceFirst('Exception: ', '');
         _qrLoading = false;
@@ -436,6 +480,9 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
               'qty': c.qty,
               'lot_id': c.lotId,
               'voucher_id': c.voucherId,
+              if (c.priceOverride != null)
+                'price_override': c.priceOverride!.round(),
+              if (c.note != null) 'note': c.note,
             },
         ],
         'voucher_id': widget.voucher?.id,
@@ -444,6 +491,9 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
         'manual_discount': _adjustment.round(),
         'note': _noteCtrl.text.trim(),
         'client_request_id': _clientRequestId,
+        'selected_combos': widget.selectedCombos,
+        if (((widget.securityPin ?? _manualPin) ?? '').isNotEmpty)
+          'security_pin': widget.securityPin ?? _manualPin,
       });
       if (!mounted) return;
       setState(() {
@@ -565,12 +615,16 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
       _toast(t('Không còn số tiền cần thu'), error: true);
       return;
     }
+    _stopPaymentStatusPolling();
     final result = await showManualConfirmDialog(
       context,
       api: widget.api,
       amount: amount.round(),
     );
-    if (result == null || !mounted) return;
+    if (result == null || !mounted) {
+      if (mounted && _isQr) _startPaymentStatusPolling();
+      return;
+    }
     setState(() {
       _manualPin = result.pin;
       _lines.add(PaymentLine(
@@ -590,6 +644,19 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
       _qrData = null;
       _qrError = null;
     });
+    _display?.markPaid();
+  }
+
+  void _temporaryConfirmBank() {
+    final amount = _pendingAmount;
+    if (amount <= 0) return;
+    _stopPaymentStatusPolling();
+    _addLine(
+      amount,
+      ref: _refCtrl.text.trim().isEmpty
+          ? _defaultReference('bank')
+          : _refCtrl.text.trim(),
+    );
     _display?.markPaid();
   }
 
@@ -631,6 +698,9 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
   }
 
   Future<void> _confirm() async {
+    // ONLINE-ONLY: mất kết nối máy chủ ⇒ KHÔNG thu tiền/chốt bill local, KHÔNG
+    // queue thanh toán. Server là nguồn dữ liệu duy nhất.
+    if (!ensureOnlineForMutation(context, action: t('Thanh toán'))) return;
     if (_lines.isEmpty && _pendingAmount > 0) _addLine(_pendingAmount);
     Map<String, dynamic>? invoiceCustomer;
     try {
@@ -649,6 +719,9 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
             'qty': c.qty,
             'lot_id': c.lotId,
             'voucher_id': c.voucherId,
+            if (c.priceOverride != null)
+              'price_override': c.priceOverride!.round(),
+            if (c.note != null) 'note': c.note,
           },
       ],
       'voucher_id': widget.voucher?.id,
@@ -659,8 +732,19 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
       'manual_discount': _adjustment.round(),
       'note': _noteCtrl.text.trim(),
       'client_request_id': _clientRequestId,
-      if (_manualPin != null && _manualPin!.isNotEmpty)
-        'security_pin': _manualPin,
+      'selected_combos': widget.selectedCombos,
+      // §2 canonical: order_id → server dùng checkout lock + markDraftPaid (một
+      // finalizer, PAID terminal). device_id → chốt lock đúng thiết bị + in bill
+      // đúng máy đang thu.
+      if ((widget.mdOrderId ?? '').isNotEmpty) 'order_id': widget.mdOrderId,
+      if ((widget.mdDeviceId ?? '').isNotEmpty) 'device_id': widget.mdDeviceId,
+      // Ô giỏ + phiên bản → server chống thanh toán trùng (2 máy cùng 1 hóa đơn).
+      if (widget.cartSlot != null) 'cart_slot': widget.cartSlot,
+      if (widget.cartVersion != null) 'cart_version': widget.cartVersion,
+      // PIN: ưu tiên PIN chỉnh giá (Quản lý) nếu có, không thì PIN xác nhận thủ
+      // công. Server dùng chung field security_pin cho cả hai.
+      if (((widget.securityPin ?? _manualPin) ?? '').isNotEmpty)
+        'security_pin': widget.securityPin ?? _manualPin,
     };
     // Đơn đã có sẵn (POS/tại bàn — widget.orderId) HOẶC đơn nháp vừa tạo cho QR
     // (_draftOrderId) đều là đơn THẬT trên server rồi → settle bằng payOrder()
@@ -684,6 +768,8 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                 'invoice_customer': invoiceCustomer,
                 'note': _noteCtrl.text.trim(),
                 'idempotency_key': _clientRequestId,
+                if (retailS(_paymentIntentId).isNotEmpty)
+                  'payment_intent_id': _paymentIntentId,
                 if (_manualPin != null && _manualPin!.isNotEmpty)
                   'security_pin': _manualPin,
               })
@@ -716,6 +802,33 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
     } catch (e) {
       if (!mounted) return;
       setState(() => _paying = false);
+      // Unknown outcome: the request may have committed before the connection
+      // dropped. Query the canonical order/intent before allowing another try.
+      if (effectiveOrderId != null && e is ApiException && e.isNetworkIssue) {
+        try {
+          final order = await widget.api.getOrderById(effectiveOrderId.trim());
+          if (!mounted) return;
+          if (order['status']?.toString() == 'paid') {
+            _toast(t('Hoa don da thanh toan thanh cong.'));
+            Navigator.of(context).pop(Map<String, dynamic>.from(order));
+            return;
+          }
+          final intent =
+              await widget.api.orderPaymentIntent(effectiveOrderId.trim());
+          if (!mounted) return;
+          final state = intent['state']?.toString() ?? 'UNKNOWN';
+          _toast(
+              t('Chua xac dinh ket qua thanh toan ($state). Gio hang duoc giu nguyen; vui long kiem tra lai, khong thu tien lan nua.'),
+              error: true);
+          return;
+        } catch (_) {
+          if (!mounted) return;
+          _toast(
+              t('Mat ket noi khi xac nhan. Gio hang duoc giu nguyen; hay kiem tra lich su truoc khi thu tien lai.'),
+              error: true);
+          return;
+        }
+      }
       // 409 ALREADY_SETTLED: bill vua bi webhook SePay/Casso/payOS hoac thiet bi
       // khac dong truoc khi request nay toi kip (thua vai giay) — khong phai loi
       // thao tac cua thu ngan, chi can dong dialog nhu da thanh toan xong.
@@ -1023,7 +1136,18 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                       fontWeight: FontWeight.w800),
                   onSelected: (_) async {
                     setState(() {
+                      final previousMethod = _method;
+                      final revised = paymentLinesAfterMethodSelection(
+                        lines: _lines,
+                        previousMethod: previousMethod,
+                        nextMethod: m.key,
+                        payable: _payable,
+                      );
+                      _lines
+                        ..clear()
+                        ..addAll(revised);
                       _method = m.key;
+                      _methodRevision++;
                       _refCtrl.clear();
                       _qrData = null;
                       _qrError = null;
@@ -1034,6 +1158,8 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                       if (!mounted || _effectiveOrderId == null) return;
                       await _refreshQr();
                       _startPaymentStatusPolling();
+                    } else {
+                      _stopPaymentStatusPolling();
                     }
                   },
                 ),
@@ -1161,6 +1287,9 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                       icon: Icon(Icons.refresh, size: 16),
                       label: Text(t('Tạo lại QR')),
                     ),
+                    TemporaryTransferConfirmButton(
+                      onPressed: _paying ? null : _temporaryConfirmBank,
+                    ),
                     if (retailS(data?['orderCode']).isNotEmpty)
                       OutlinedButton.icon(
                         onPressed: _checkPayos,
@@ -1181,8 +1310,8 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                             side: BorderSide(color: DanColors.doing)),
                         icon: Icon(Icons.rule, size: 16),
                         label: Text(t('Khách đã chuyển? Xác nhận thủ công')),
-                      )
-                    else
+                      ),
+                    if (_effectiveOrderId != null)
                       Padding(
                         padding: const EdgeInsets.symmetric(vertical: 6),
                         child: Row(

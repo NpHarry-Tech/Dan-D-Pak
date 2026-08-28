@@ -306,11 +306,15 @@ test('phiếu in thử KHÔNG được đổ JSON cấu hình ra giấy', () => 
   assert.ok(!text.includes('"openDrawerOnPrint"'), 'không được lộ cấu hình máy in');
   assert.ok(!/\{\s*$/m.test(text), 'không được có dấu mở ngoặc JSON đứng cuối dòng');
 
-  // Thay vào đó phải là thông tin người đứng máy đọc được.
+  // Thay vào đó phải là thông tin người đứng máy đọc được. Phiếu in thử KHÔNG
+  // DẤU có chủ đích: đây là tờ CHẨN ĐOÁN, phải đọc được cả trên máy in không có
+  // phông tiếng Việt — chính tờ này mà ra ký tự lạ thì nó hết tác dụng.
   assert.match(text, /PHIEU IN THU/);
   assert.match(text, /in bill/, 'phải nói rõ in từ máy in nào');
   assert.match(text, /K80/, 'phải ghi khổ giấy đang cấu hình');
   assert.match(text, /Dam/, 'phải ghi độ đậm đang dùng');
+  // Hai dòng mẫu tiếng Việt CÓ DẤU vẫn phải còn — đó là phần dùng để thử bảng mã.
+  assert.match(text, /Ti[ếe]ng Vi[ệe]t/, 'phải giữ dòng mẫu để thử bảng mã');
 });
 
 test('phiếu in thử trải đúng bề ngang khổ giấy đã cấu hình', () => {

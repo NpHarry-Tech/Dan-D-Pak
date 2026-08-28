@@ -14,11 +14,15 @@ import { registerReportRoutes } from './modules/reports/routes.js';
 import { registerAuditRoutes } from './modules/audit/routes.js';
 import { registerPurchaseRoutes } from './modules/purchase/routes.js';
 import { registerExpenseRoutes } from './modules/expenses/routes.js';
+import { registerMoneyRoutes } from './modules/money/routes.js';
 import { registerOnlineRoutes } from './modules/online/routes.js';
+import { registerOmniRoutes } from './modules/omni/routes.js';
+import { registerMarketplaceRoutes } from './modules/marketplace/routes.js';
 import { registerPrintingRoutes } from './modules/printing/routes.js';
 import { registerRetailRoutes } from './modules/retail/routes.js';
 import { registerContactRoutes } from './modules/contacts/routes.js';
 import { registerCatalogRoutes } from './modules/catalog/routes.js';
+import { registerCatalogueRoutes } from './modules/catalogue/routes.js';
 import { registerAgentRoutes } from './modules/agent/routes.js';
 import { registerAppReleaseRoutes } from './modules/appRelease/routes.js';
 import { registerSyncRoutes } from './modules/sync/routes.js';
@@ -26,15 +30,19 @@ import { registerAuthRoutes } from './modules/auth/routes.js';
 import { registerClientLogRoutes } from './modules/clientLog/routes.js';
 import { registerSettingsRoutes } from './modules/settings/routes.js';
 import { registerDatabaseRoutes } from './modules/database/routes.js';
+import { registerErpRoutes } from './modules/erp/routes.js';
 import { registerDocumentRoutes, fileCashDrawerReceipt } from './modules/documents/routes.js';
 import * as Haravan from './services/haravanConnector.js';
 import { errorPayload } from './core/errors.js';
 import fs from 'node:fs';
+import { sanitizeText, sanitizeUrl } from './core/redaction.js';
 import nodePath from 'node:path';
 import { storagePath } from './config/env.js';
 const AVATAR_UPLOADS_DIR = storagePath('uploads', 'avatars');
 const MENU_UPLOADS_DIR = storagePath('uploads', 'menu');
 const PRODUCT_UPLOADS_DIR = storagePath('uploads', 'products');
+const CATALOGUE_UPLOADS_DIR = storagePath('uploads', 'catalogue');
+const CUSTOMER_DISPLAY_UPLOADS_DIR = storagePath('uploads', 'customer-display');
 const AVATAR_ALLOWED_MIME = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);
 const AVATAR_MAX_BYTES = 20 * 1024 * 1024;
 
@@ -86,7 +94,9 @@ function requireAnyPermission(req, ...perms) {
     e.status = 401;
     throw e;
   }
-  if (user.role === 'owner' || Auth.canUser(user, 'settings.manage')) return;
+  // Owner = tenant admin (mọi quyền trong tenant). KHÔNG còn bypass bằng
+  // settings.manage (đó chỉ là umbrella settings.* trong canUser, §4/§20).
+  if (user.role === 'owner') return;
   if (perms.some(p => Auth.canUser(user, p))) return;
   const e = new Error('Không đủ quyền thực hiện thao tác này');
   e.status = 403;
@@ -100,7 +110,9 @@ const guardAny = (...perms) => (req, res, next) => {
   const user = req.user;
   if (!user) return res.status(401).json({ error: 'Cần đăng nhập' });
   if (user.role === 'owner') return next();
-  const hasAccess = perms.some(p => Auth.canUser(user, p)) || Auth.canUser(user, 'settings.manage');
+  // settings.manage KHÔNG còn là master key: canUser đã xử lý umbrella settings.*
+  // (§4/§20). Route cần settings.manage phải liệt kê perm cụ thể trong guardAny.
+  const hasAccess = perms.some(p => Auth.canUser(user, p));
   if (!hasAccess) return res.status(403).json({ error: 'Không đủ quyền truy cập các mục này' });
   next();
 };
@@ -141,13 +153,13 @@ function logRequestError(req, e) {
     let branch_id = 'sala';
     try { branch_id = branch(req) || 'sala'; } catch { /* unresolved branch */ }
     const actor = req?.user?.name || req?.user?.username || 'system';
-    const path = req?.originalUrl || req?.url || '';
+    const path = sanitizeUrl(req?.originalUrl || req?.url || '');
     logSystem({
       level: 'error',
       source: 'backend',
       eventType: pickBackendEventType(path, status),
       title: `API ${req?.method || ''} ${path} → ${status}`,
-      message: e?.message || 'Request failed',
+      message: sanitizeText(e?.message || 'Request failed'),
       username: actor,
       branchId: branch_id,
       endpoint: path,
@@ -155,7 +167,7 @@ function logRequestError(req, e) {
       statusCode: status,
       requestId: req?.headers?.['x-request-id'],
       exceptionType: e?.code || e?.name || 'Error',
-      stackTrace: String(e?.stack || '').split('\n').slice(0, 8).join('\n').trim(),
+      stackTrace: sanitizeText(String(e?.stack || '').split('\n').slice(0, 8).join('\n').trim()),
       ...currentRequestMetadata(),
     });
   } catch { /* logging must never break the request */ }
@@ -237,7 +249,10 @@ registerAuditRoutes(api, { wrap, guard, branch });
 // Mua hàng / Chi phí / Online / In ấn — route ownership tách sang modules/<domain>.
 registerPurchaseRoutes(api, { wrap, guard, branch });
 registerExpenseRoutes(api, { wrap, guard, branch });
-registerOnlineRoutes(api, { wrap, guard, guardAny, branch, visibleBranch });
+registerMoneyRoutes(api, { wrap, guardAny, branch, actor });
+registerOnlineRoutes(api, { wrap, guard, guardAny, branch, visibleBranch, actor });
+registerOmniRoutes(api, { wrap, guardAny, branch, visibleBranch, actor });
+registerMarketplaceRoutes(api, { wrap, guardAny, branch, actor });
 api.get('/v1/integrations/haravan/status', guardAny('settings.integrations', 'online'), wrap(() => Haravan.status()));
 api.get('/v1/integrations/haravan/install-url', guardAny('settings.integrations'), wrap((req) => Haravan.installUrl({ branch_id: branch(req) })));
 api.post('/v1/integrations/haravan/subscribe-webhook', guardAny('settings.integrations'), wrap((req) => Haravan.subscribeWebhook(req.body?.shop_domain || req.body?.shopDomain || '')));
@@ -249,16 +264,20 @@ api.post('/v1/integrations/haravan/sync-all', guardAny('settings.integrations'),
 api.post('/v1/integrations/haravan/push-inventory', guardAny('settings.integrations', 'inventory.adjust'), wrap((req) => Haravan.pushInventoryToHaravan({ shopDomain: req.body?.shop_domain || req.body?.shopDomain || '', skuIds: req.body?.sku_ids || req.body?.skuIds || [] })));
 api.post('/v1/integrations/haravan/push-pending-inventory', guardAny('settings.integrations', 'inventory.adjust'), wrap(() => Haravan.pushPendingInventoryChanges()));
 api.get('/v1/integrations/haravan/sync-logs', guardAny('settings.integrations', 'online'), wrap((req) => Haravan.listSyncLogs(req.query.limit)));
+api.get('/v1/integrations/haravan/sync-sessions', guardAny('settings.integrations', 'online'), wrap((req) => Haravan.listSyncSessions(req.query.limit)));
+api.get('/v1/integrations/haravan/sync-sessions/:id', guardAny('settings.integrations', 'online'), wrap((req) => Haravan.syncSessionDetails(req.params.id, req.query.limit)));
 registerPrintingRoutes(api, { wrap, guardAny, branch, actor });
 // Retail POS + Vouchers / Contacts — pass helper cục bộ (applyManualConfirm,
 // assertBillEditable, requireContactMutationPermission, saveBase64Image) vì api.js
 // vẫn là nơi định nghĩa duy nhất (domain khác còn dùng chung).
-registerRetailRoutes(api, { wrap, guard, guardAny, branch, visibleBranch, applyManualConfirm, assertBillEditable });
+registerRetailRoutes(api, { wrap, guard, guardAny, branch, visibleBranch, actor, applyManualConfirm, assertBillEditable });
 registerContactRoutes(api, { wrap, guard, guardAny, branch, requireContactMutationPermission, saveBase64Image, AVATAR_UPLOADS_DIR });
 // Catalog / Menu + Categories — pass saveBase64Image + MENU_UPLOADS_DIR.
 registerCatalogRoutes(api, { wrap, guard, branch, visibleBranch, actor, saveBase64Image, MENU_UPLOADS_DIR });
+// Catalogue bán lẻ (màn khách ngoài quầy) — xem chú thích phân tầng quyền trong file.
+registerCatalogueRoutes(api, { wrap, guardAny, branch, visibleBranch, saveBase64Image, CATALOGUE_UPLOADS_DIR });
 // Hardware Agent / Auto-update / Cloud Sync.
-registerAgentRoutes(api, { wrap, guardAny, branch });
+registerAgentRoutes(api, { wrap, guard, guardAny, branch });
 registerAppReleaseRoutes(api, { wrap, guardAny, logRequestError });
 registerSyncRoutes(api, { wrap, guard, branch, visibleBranch });
 // Auth (login/logout/me/branches/users) + ERP module registry — pass publicBranch.
@@ -267,9 +286,14 @@ registerAuthRoutes(api, { wrap, guard, guardAny, branch, visibleBranch, publicBr
 registerClientLogRoutes(api, { wrap, guard, branch });
 // Settings (user/permission, config, integrations, devices, book-menu, self-order)
 // — NHẠY CẢM; pass scopedUserBody + saveBase64Image + AVATAR_UPLOADS_DIR.
-registerSettingsRoutes(api, { wrap, guard, guardAny, branch, visibleBranch, actor, scopedUserBody, saveBase64Image, AVATAR_UPLOADS_DIR });
+registerSettingsRoutes(api, {
+  wrap, guard, guardAny, branch, visibleBranch, actor, scopedUserBody, saveBase64Image,
+  AVATAR_UPLOADS_DIR, CUSTOMER_DISPLAY_UPLOADS_DIR,
+});
 // Database Management (backup/restore/integrity/reset) — NHẠY CẢM (thao tác huỷ).
 registerDatabaseRoutes(api, { wrap, guardAny, branch });
+// ERP — Business Central (outbox/mapping/reconcile). Additive, mặc định TẮT.
+registerErpRoutes(api, { wrap, guard, guardAny, branch });
 // Document Management (DMS) — pass logRequestError + SECURE_MIME_EXT (fileCashDrawerReceipt
 // export từ module này đã được import ở trên để truyền cho payments).
 registerDocumentRoutes(api, { wrap, logRequestError, SECURE_MIME_EXT });

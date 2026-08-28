@@ -15,12 +15,14 @@ process.env.SQLITE_PATH = join(temp, 'store.db');
 process.env.STORAGE_PATH = join(temp, 'storage');
 process.env.DATA_ENCRYPTION_KEY =
   '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
+process.env.PRINT_DISPATCH = 'agent';
 
 const { db, migrate, now } = await import('./db.js');
 const Inventory = await import('./services/inventory.js');
 const Retail = await import('./services/retail.js');
 const Payments = await import('./services/payments.js');
 const Settings = await import('./services/settings.js');
+const System = await import('./services/system.js');
 
 migrate();
 db.prepare(`INSERT INTO shifts (id,branch_id,user_name,shift_key,shift_label,opening_cash,status,opened_at) VALUES (?,?,?,?,?,?,?,?)`)
@@ -39,21 +41,31 @@ test('draft order is created open, unpaid, without deducting stock', () => {
   assert.equal(db.prepare(`SELECT stock FROM skus WHERE id='sku_draft_a'`).get().stock, 5);
 });
 
-test('SePay webhook auto-settles a draft order it can find (no manual confirm needed)', () => {
+test('SePay webhook auto-settles a draft order it can find (no manual confirm needed)', async () => {
+  System.setAgentPrinters('sala', [{ Name: 'SunmiInner' }], {
+    deviceId: 'phone_auto_qr', deviceName: 'PHONE-AUTO-QR',
+  });
   Inventory.createSku({ id: 'sku_draft_b', name: 'Draft SKU B', price: 15000, stock: 3 }, 'sala');
   const order = Retail.createDraftOrder({
     items: [{ sku_id: 'sku_draft_b', qty: 1 }],
     branch_id: 'sala',
     cashier: 'Tester',
+    device_id: 'phone_auto_qr',
   });
-  // billNoDigits() bên server bỏ hẳn chữ "Dan" đầu bill_no — chỉ ghép phần số vào
+  assert.equal(order.linked_pos_device, 'phone_auto_qr');
+  // billNoDigits() bên server bỏ hẳn chữ "Dan" đầu mã — chỉ ghép phần số vào
   // sau tiền tố (tránh lặp "DANBILLDAN..." không cần thiết).
-  const ref = 'DANBILL' + order.bill_no.replace(/^\D+/, '');
+  //
+  // Mã đối soát là `pay_ref`, KHÔNG phải `bill_no`: số hoá đơn chỉ được cấp khi
+  // thanh toán xong, còn đơn đang mở thì chưa có (xem db.js, cột pay_ref).
+  const qr = await Payments.generateCustomerPaymentQr(order.id, { method: 'qrcode' }, 'sala');
+  const ref = qr.reference;
   const result = Payments.handleSepayWebhook({
     id: 'sepay_tx_1',
     transferType: 'in',
     transferAmount: 15000,
-    content: `NGUYEN VAN A CHUYEN KHOAN ${ref} THANH TOAN`,
+    content: ref,
+    accountNumber: qr.bankAccount,
   }, { authorization: 'Apikey test-sepay-key' }, 'sala');
 
   assert.equal(result.status, 'paid');
@@ -61,6 +73,9 @@ test('SePay webhook auto-settles a draft order it can find (no manual confirm ne
   const settled = db.prepare(`SELECT status FROM orders WHERE id=?`).get(order.id);
   assert.equal(settled.status, 'paid');
   assert.equal(db.prepare(`SELECT stock FROM skus WHERE id='sku_draft_b'`).get().stock, 2);
+  const job = db.prepare(`SELECT printer FROM print_jobs WHERE type='receipt' AND payload_json LIKE ? ORDER BY created_at DESC LIMIT 1`)
+    .get(`%${order.id}%`);
+  assert.match(String(job?.printer), /^auto:phone_auto_qr:SunmiInner$/);
 });
 
 test('ALREADY_SETTLED: settling an order whose recorded payments already cover the total fails gracefully (Vietnamese + 409), not a raw English crash', () => {
@@ -98,9 +113,12 @@ test('a late webhook credit for a bill that already closed is parked as unmatche
     branch_id: 'sala',
     cashier: 'Tester',
   });
-  // billNoDigits() bên server bỏ hẳn chữ "Dan" đầu bill_no — chỉ ghép phần số vào
+  // billNoDigits() bên server bỏ hẳn chữ "Dan" đầu mã — chỉ ghép phần số vào
   // sau tiền tố (tránh lặp "DANBILLDAN..." không cần thiết).
-  const ref = 'DANBILL' + order.bill_no.replace(/^\D+/, '');
+  //
+  // Mã đối soát là `pay_ref`, KHÔNG phải `bill_no`: số hoá đơn chỉ được cấp khi
+  // thanh toán xong, còn đơn đang mở thì chưa có (xem db.js, cột pay_ref).
+  const ref = 'DANBILL' + (order.pay_ref || order.bill_no).replace(/^\D+/, '');
   // Thu ngân xác nhận tay TRƯỚC khi webhook kịp về (race thật ngoài đời) — order
   // rời khỏi tập 'open'/'partially_paid' nên webhook không còn gì để khớp nữa.
   Payments.payOrder(order.id, [{ method: 'cash', amount: 10000 }], { cashier: 'Tester' }, 'sala');
@@ -151,7 +169,7 @@ test('voidDraftOrder cancels an unpaid draft but refuses once payment exists', (
   assert.throws(() => Retail.voidDraftOrder(partial.id, 'sala'), /đã có thanh toán/);
 });
 
-test('a webhook redelivery for a previously-unmatched external_id gets a real second chance once the order exists', () => {
+test('a webhook redelivery for a previously-unmatched external_id gets a real second chance once the order exists', async () => {
   // Race thật ngoài đời: khách chuyển khoản cực nhanh trước khi đơn nháp kịp tạo
   // xong (hoặc webhook tới lúc đơn tạm thời không "open"), lần đầu ghi 'unmatched'.
   // SePay gửi lại (hoặc merchant tự bấm "Gửi lại" trong Lịch sử gửi) sau khi đơn đã
@@ -171,15 +189,20 @@ test('a webhook redelivery for a previously-unmatched external_id gets a real se
     branch_id: 'sala',
     cashier: 'Tester',
   });
-  // billNoDigits() bên server bỏ hẳn chữ "Dan" đầu bill_no — chỉ ghép phần số vào
+  // billNoDigits() bên server bỏ hẳn chữ "Dan" đầu mã — chỉ ghép phần số vào
   // sau tiền tố (tránh lặp "DANBILLDAN..." không cần thiết).
-  const ref = 'DANBILL' + order.bill_no.replace(/^\D+/, '');
+  //
+  // Mã đối soát là `pay_ref`, KHÔNG phải `bill_no`: số hoá đơn chỉ được cấp khi
+  // thanh toán xong, còn đơn đang mở thì chưa có (xem db.js, cột pay_ref).
+  const qr = await Payments.generateCustomerPaymentQr(order.id, { method: 'qrcode' }, 'sala');
+  const ref = qr.reference;
 
   const retry = Payments.handleSepayWebhook({
     id: 'sepay_retry_1', // CÙNG external_id — mô phỏng gửi lại
     transferType: 'in',
     transferAmount: 15000,
-    content: `NGUYEN VAN A CHUYEN KHOAN ${ref} THANH TOAN LAN 2`,
+    content: ref,
+    accountNumber: qr.bankAccount,
   }, { authorization: 'Apikey test-sepay-key' }, 'sala');
 
   assert.equal(retry.status, 'paid');
@@ -191,7 +214,7 @@ test('a webhook redelivery for a previously-unmatched external_id gets a real se
   );
 });
 
-test('a custom transfer prefix (e.g. "TEST") never carries the bill_no\'s own "Dan" letters along with it', () => {
+test('a custom transfer prefix (e.g. "TEST") never carries the bill_no\'s own "Dan" letters along with it', async () => {
   // Người dùng đổi "Tiền tố nội dung CK" thành "TEST" và mong mã đối soát ra
   // "TEST270726004" — trước đây ra "TESTDAN270726004" (thừa "DAN" của chính số
   // hoá đơn "Dan270726004", không liên quan gì tới tiền tố cấu hình riêng).
@@ -207,7 +230,9 @@ test('a custom transfer prefix (e.g. "TEST") never carries the bill_no\'s own "D
     branch_id: 'sala',
     cashier: 'Tester',
   });
-  const digitsOnly = order.bill_no.replace(/^\D+/, '');
+  // Mã đối soát là `pay_ref` — đơn đang mở chưa có số hoá đơn.
+  const qr = await Payments.generateCustomerPaymentQr(order.id, { method: 'qrcode' }, 'sala');
+  const digitsOnly = qr.reference.replace(/^TEST/, '');
   assert.ok(digitsOnly.length > 0 && !/[A-Za-z]/.test(digitsOnly));
 
   // Nội dung chuyển khoản CHỈ chứa "TEST" + số — KHÔNG có chữ "DAN" nào — vẫn
@@ -216,7 +241,8 @@ test('a custom transfer prefix (e.g. "TEST") never carries the bill_no\'s own "D
     id: 'sepay_prefix_1',
     transferType: 'in',
     transferAmount: 12000,
-    content: `NGUYEN VAN A CHUYEN KHOAN TEST${digitsOnly} THANH TOAN`,
+    content: qr.reference,
+    accountNumber: qr.bankAccount,
   }, { authorization: 'Apikey test-sepay-key' }, 'sala');
 
   assert.equal(result.status, 'paid');

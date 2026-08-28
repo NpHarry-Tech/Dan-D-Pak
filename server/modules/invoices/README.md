@@ -5,7 +5,7 @@ Invoices, MISA/e-invoice data, lookup codes, cancellation history, and tax-custo
 Live code:
 - `server/services/invoices.js` legacy/local invoice records
 - `server/services/einvoice.js` provider queue, status sync, cancel/retry
-- `server/services/misa.js` MISA provider integration
+- `server/services/misa/` MISA provider integration, split by auth/client/config/company/invoice/payload
 - `server/services/tax.js` shared tax profile/MST helpers
 
 AI/Agent Safety:

@@ -40,7 +40,8 @@ class CardTerminalService {
         'approved': true,
         'mode': 'mock',
         'txnId': 'MOCK${DateTime.now().millisecondsSinceEpoch}',
-        'rrn': DateTime.now().millisecondsSinceEpoch.toString().substring(0, 12),
+        'rrn':
+            DateTime.now().millisecondsSinceEpoch.toString().substring(0, 12),
         'approval': (100000 + (DateTime.now().millisecond * 9)).toString(),
         'mask': '**** **** **** 9999',
         'scheme': 'VISA',
@@ -60,7 +61,10 @@ class CardTerminalService {
           final decoded = jsonDecode(resultJson);
           final result = decoded is Map
               ? Map<String, dynamic>.from(decoded)
-              : <String, dynamic>{'approved': false, 'error': 'Phản hồi POS-Link sai định dạng'};
+              : <String, dynamic>{
+                  'approved': false,
+                  'error': 'Phản hồi POS-Link sai định dạng'
+                };
           if (result['approved'] != true && result['error'] != null) {
             // Từ chối/thất bại từ app VCB cũng phải để lại dấu vết.
             SystemLog.log(
@@ -78,12 +82,14 @@ class CardTerminalService {
         }
       } else {
         // Desktop PC -> Socket TCP/IP over local LAN / USB Network Tethering
-        final targetIp = (ip == null || ip.trim().isEmpty) ? '127.0.0.1' : ip.trim();
+        final targetIp =
+            (ip == null || ip.trim().isEmpty) ? '127.0.0.1' : ip.trim();
         final targetPort = port ?? 25000;
 
         try {
-          final socket = await Socket.connect(targetIp, targetPort, timeout: const Duration(seconds: 10));
-          
+          final socket = await Socket.connect(targetIp, targetPort,
+              timeout: const Duration(seconds: 10));
+
           final requestPayload = jsonEncode({
             'command': 'sale',
             'amount': amount.toInt(),
@@ -91,13 +97,13 @@ class CardTerminalService {
             'billNo': billNo,
             'terminalName': terminalName,
           });
-          
+
           socket.write('$requestPayload\n');
           await socket.flush();
 
           final completer = Completer<String>();
           final buffer = StringBuffer();
-          
+
           final subscription = socket.listen(
             (data) {
               buffer.write(utf8.decode(data));
@@ -119,32 +125,42 @@ class CardTerminalService {
             cancelOnError: true,
           );
 
-          final responseStr = await completer.future.timeout(const Duration(minutes: 3));
+          final responseStr =
+              await completer.future.timeout(const Duration(minutes: 3));
           await subscription.cancel();
           await socket.close();
 
           final cleanResponse = responseStr.trim();
           final Map<String, dynamic> respJson = jsonDecode(cleanResponse);
 
-          final isSuccess = respJson['approved'] == true || 
-                             respJson['responseCode'] == '00' || 
-                             respJson['respCode'] == '00' ||
-                             respJson['status'] == 'success';
+          final isSuccess = respJson['approved'] == true ||
+              respJson['responseCode'] == '00' ||
+              respJson['respCode'] == '00' ||
+              respJson['status'] == 'success';
 
           if (isSuccess) {
             return {
               'approved': true,
-              'txnId': respJson['txnId'] ?? respJson['transactionId'] ?? 'POS${DateTime.now().millisecondsSinceEpoch}',
+              'txnId': respJson['txnId'] ??
+                  respJson['transactionId'] ??
+                  'POS${DateTime.now().millisecondsSinceEpoch}',
               'rrn': respJson['rrn'] ?? respJson['referenceNo'] ?? '',
-              'approval': respJson['approval'] ?? respJson['approvalCode'] ?? '',
-              'mask': respJson['mask'] ?? respJson['cardNo'] ?? respJson['cardNumber'] ?? '**** **** **** ****',
+              'approval':
+                  respJson['approval'] ?? respJson['approvalCode'] ?? '',
+              'mask': respJson['mask'] ??
+                  respJson['cardNo'] ??
+                  respJson['cardNumber'] ??
+                  '**** **** **** ****',
               'scheme': respJson['scheme'] ?? respJson['cardType'] ?? 'CARD',
               'terminal': respJson['terminal'] ?? terminalName,
             };
           } else {
             return {
               'approved': false,
-              'error': respJson['error'] ?? respJson['message'] ?? respJson['responseMessage'] ?? 'Giao dịch bị từ chối hoặc thất bại.',
+              'error': respJson['error'] ??
+                  respJson['message'] ??
+                  respJson['responseMessage'] ??
+                  'Giao dịch bị từ chối hoặc thất bại.',
             };
           }
         } catch (e) {

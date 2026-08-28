@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>Dan D Pak POS — Shopee Integration Review</title>
+<style>
+  :root{
+    --bg:#0f1216; --card:#171b21; --line:#262c34; --fg:#e8ecf1; --muted:#9aa4b2;
+    --accent:#ee4d2d; --ok:#2fb457;
+  }
+  @media (prefers-color-scheme: light){
+    :root{ --bg:#f4f6f9; --card:#ffffff; --line:#e2e6ec; --fg:#1a1f26; --muted:#5c6673; }
+  }
+  *{ box-sizing:border-box }
+  body{ margin:0; font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
+    background:var(--bg); color:var(--fg); line-height:1.55; }
+  .wrap{ max-width:720px; margin:0 auto; padding:40px 20px 64px; }
+  .badge{ display:inline-block; font-size:12px; font-weight:700; letter-spacing:.04em;
+    color:var(--accent); border:1px solid var(--accent); border-radius:999px; padding:4px 12px; }
+  h1{ font-size:28px; margin:18px 0 6px; }
+  .sub{ color:var(--muted); font-size:15px; margin:0 0 28px; }
+  .card{ background:var(--card); border:1px solid var(--line); border-radius:14px;
+    padding:22px 24px; margin:16px 0; }
+  .dl{ display:inline-flex; align-items:center; gap:10px; background:var(--accent);
+    color:#fff; text-decoration:none; font-weight:700; font-size:16px;
+    padding:14px 26px; border-radius:10px; }
+  .dl:hover{ filter:brightness(1.06) }
+  .meta{ display:grid; grid-template-columns:auto 1fr; gap:6px 18px; font-size:14px; margin-top:8px }
+  .meta dt{ color:var(--muted) } .meta dd{ margin:0; font-weight:600 }
+  .dot{ display:inline-block; width:9px; height:9px; border-radius:50%; background:var(--ok); margin-right:7px }
+  ol{ padding-left:20px; margin:6px 0 } ol li{ margin:7px 0 }
+  code{ background:rgba(127,127,127,.16); padding:2px 6px; border-radius:5px; font-size:13px }
+  .note{ font-size:13px; color:var(--muted); margin-top:14px }
+  h2{ font-size:16px; margin:0 0 10px }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <span class="badge">SHOPEE REVIEW ENVIRONMENT</span>
+  <h1>Dan D Pak POS</h1>
+  <p class="sub">Windows Desktop Application — isolated review/staging instance for Shopee Open Platform third-party app review. Synthetic data only; no production customer data.</p>
+
+  <div class="card">
+    <h2>Download the review build</h2>
+    <p style="margin:4px 0 18px;color:var(--muted);font-size:14px">Signed Windows installer of the actual Dan D Pak POS product, configured to connect to the isolated review backend.</p>
+    <a class="dl" href="/download/DanDPak-Review-Setup.exe" download>⬇ Download Dan D Pak (Review)</a>
+    <dl class="meta" style="margin-top:20px">
+      <dt>Platform</dt><dd>Windows 10/11 (64-bit)</dd>
+      <dt>Environment</dt><dd>Shopee Review (sandbox)</dd>
+      <dt>Backend</dt><dd>api-review.dandpakpos.io.vn</dd>
+      <dt>Status</dt><dd><span class="dot"></span>Online</dd>
+    </dl>
+  </div>
+
+  <div class="card">
+    <h2>Testing instructions</h2>
+    <ol>
+      <li>Download and install the review build above.</li>
+      <li>Launch <b>Dan D Pak POS (Review)</b>. It connects to the review backend automatically.</li>
+      <li>Log in with the <b>test username &amp; password supplied to Shopee</b> in the app submission form.</li>
+      <li>Open <b>Bán Online</b> (Online Sales) from the main menu.</li>
+      <li>Go to <b>Thiết lập kênh → Shopee</b> and press <b>Kết nối</b> to test the one-click Shopee authorization (sandbox).</li>
+      <li>Review <b>Đơn hàng</b> (Orders), <b>Hàng hoá</b> (Products / listing mapping), <b>Tồn kho</b> (Inventory) and <b>Kết nối sàn</b> (Marketplace Connections).</li>
+    </ol>
+    <p class="note">The review account is least-privilege: it can view and test the online-commerce and Shopee integration areas only. It cannot access secrets, production credentials, database administration, or destructive operations.</p>
+  </div>
+
+  <p class="note">© Dan D Pak — this instance exists solely for Shopee app review and holds no real customer or order data.</p>
+</div>
+</body>
+</html>

@@ -5,6 +5,7 @@ import { db } from '../../db.js';
 import * as Reports from '../../services/reports.js';
 import { rehydrateAuditForQuery } from '../../db.js';
 import * as Archive from '../../services/archive.js';
+import { sanitizeObject } from '../../core/redaction.js';
 
 export function registerAuditRoutes(api, { wrap, guard, branch }) {
 // Throttle như client-log: 1 client lỗi lặp vô hạn không được spam đầy đĩa.
@@ -34,7 +35,7 @@ api.post('/system-logs', guard(), wrap((req) => {
     }
     // Server là nguồn sự thật cho user/branch — không tin client tự khai.
     const id = logSystem({
-      ...entry,
+      ...sanitizeObject(entry),
       requestId: eventId || entry.requestId,
       username: req.user?.username || entry.username || '',
       userId: req.user?.id || entry.userId || '',

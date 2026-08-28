@@ -54,6 +54,7 @@ class _PurchaseDocFormPageState extends State<PurchaseDocFormPage> {
   List<Map<String, dynamic>> _items = [];
   List<Map<String, dynamic>> _suppliers = [];
   final List<KvDocLine> _lines = [];
+  final _tableHorizontal = ScrollController();
   bool _loadingItems = false;
   bool _busy = false;
   // "Ảnh" trạng thái form sau khi load — thoát mà khác ảnh này thì hỏi xác
@@ -112,30 +113,40 @@ class _PurchaseDocFormPageState extends State<PurchaseDocFormPage> {
       Navigator.of(context).pop();
       return;
     }
-    final leave = await showDialog<bool>(
+    final action = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: DanColors.surface,
-        title: Text(t('Thoát mà không lưu?'),
+        title: Text(t('Lưu tạm hay xóa phiếu?'),
             style: TextStyle(fontWeight: FontWeight.w900, fontSize: 17)),
         content: Text(t(
-            'Phiếu đang nhập dở sẽ MẤT. Bấm "Lưu tạm" nếu muốn giữ lại làm tiếp sau.')),
+            'Phiếu nhập đang làm dở. "Lưu tạm" để giữ lại làm tiếp sau, hoặc "Xóa phiếu" để bỏ hẳn.')),
         actions: [
           TextButton(
-              onPressed: () => Navigator.of(ctx).pop(false),
+              onPressed: () => Navigator.of(ctx).pop('stay'),
               child: Text(t('Ở lại'))),
+          OutlinedButton(
+              onPressed: () => Navigator.of(ctx).pop('draft'),
+              child: Text(t('Lưu tạm'))),
           FilledButton(
               style: FilledButton.styleFrom(backgroundColor: DanColors.late),
-              onPressed: () => Navigator.of(ctx).pop(true),
-              child: Text(t('Thoát, bỏ phiếu'))),
+              onPressed: () => Navigator.of(ctx).pop('discard'),
+              child: Text(t('Xóa phiếu'))),
         ],
       ),
     );
-    if (leave == true && mounted) Navigator.of(context).pop();
+    if (!mounted) return;
+    if (action == 'draft') {
+      await _save(complete: false); // lưu nháp; _save tự pop khi thành công
+    } else if (action == 'discard') {
+      Navigator.of(context).pop();
+    }
+    // 'stay' hoặc null → ở lại, không làm gì
   }
 
   @override
   void dispose() {
+    _tableHorizontal.dispose();
     _supplierManual.dispose();
     _note.dispose();
     _vatCtrl.dispose();
@@ -222,6 +233,14 @@ class _PurchaseDocFormPageState extends State<PurchaseDocFormPage> {
   Future<void> _save({required bool complete}) async {
     if (_supplierId == null && _supplierManual.text.trim().isEmpty) {
       _toast(t('Chọn nhà cung cấp hoặc nhập tên nơi mua'), error: true);
+      return;
+    }
+    // Chưa khớp mã thì item_id rỗng → không nhập kho được. Bắt khớp hết trước.
+    final unmatched = _lines.where((l) => l.item['_unmatched'] == true).length;
+    if (unmatched > 0) {
+      _toast(
+          t('Còn $unmatched dòng CHƯA KHỚP MÃ — bấm "Khớp mã" trên từng dòng trước khi Hoàn thành'),
+          error: true);
       return;
     }
     final bodyLines = <Map<String, dynamic>>[];
@@ -383,43 +402,64 @@ class _PurchaseDocFormPageState extends State<PurchaseDocFormPage> {
                             ),
                           ),
                           SizedBox(height: 10),
-                          KvTableHeader(cells: [
-                            kvHeaderCell('#', width: 30),
-                            kvHeaderCell(t('Mã hàng'), width: 104),
-                            SizedBox(width: 8),
-                            kvHeaderCell(t('Tên hàng'), flex: 1),
-                            kvHeaderCell(t('ĐVT'), width: 52),
-                            kvHeaderCell(t('Số lượng'), width: 78),
-                            SizedBox(width: 8),
-                            kvHeaderCell(t('Đơn giá'), width: 96),
-                            if (!_isReturn) ...[
-                              SizedBox(width: 8),
-                              kvHeaderCell(t('Lô'), width: 78),
-                              SizedBox(width: 8),
-                              kvHeaderCell('HSD', width: 106),
-                            ],
-                            kvHeaderCell(t('Thành tiền'),
-                                width: 104, align: TextAlign.right),
-                            SizedBox(width: 40),
-                          ]),
-                          Divider(height: 1, color: DanColors.border),
                           Expanded(
-                            child: _loadingItems
-                                ? Center(child: CircularProgressIndicator())
-                                : _lines.isEmpty
-                                    ? KvExcelEmptyImport(
-                                        message:
-                                            t('Thêm sản phẩm từ file excel'),
-                                        templateKind: _isReturn
-                                            ? KvTemplateKind.issue
-                                            : KvTemplateKind.purchaseIn,
-                                        onPick: _importFromExcel)
-                                    : ListView.separated(
+                            child: LayoutBuilder(builder: (context, box) {
+                              if (_loadingItems) {
+                                return Center(
+                                    child: CircularProgressIndicator());
+                              }
+                              if (_lines.isEmpty) {
+                                return KvExcelEmptyImport(
+                                  message: t('Thêm sản phẩm từ file excel'),
+                                  templateKind: _isReturn
+                                      ? KvTemplateKind.issue
+                                      : KvTemplateKind.purchaseIn,
+                                  onPick: _importFromExcel,
+                                );
+                              }
+                              final tableWidth = _isReturn ? 820.0 : 1040.0;
+                              return Scrollbar(
+                                controller: _tableHorizontal,
+                                thumbVisibility: tableWidth > box.maxWidth,
+                                child: SingleChildScrollView(
+                                  controller: _tableHorizontal,
+                                  scrollDirection: Axis.horizontal,
+                                  child: SizedBox(
+                                    width: tableWidth,
+                                    child: Column(children: [
+                                      KvTableHeader(cells: [
+                                        kvHeaderCell('#', width: 30),
+                                        kvHeaderCell(t('Mã hàng'), width: 104),
+                                        SizedBox(width: 8),
+                                        kvHeaderCell(t('Tên hàng'), flex: 1),
+                                        kvHeaderCell(t('ĐVT'), width: 92),
+                                        kvHeaderCell(t('Số lượng'), width: 78),
+                                        SizedBox(width: 8),
+                                        kvHeaderCell(t('Đơn giá'), width: 96),
+                                        if (!_isReturn) ...[
+                                          SizedBox(width: 8),
+                                          kvHeaderCell(t('Lô'), width: 78),
+                                          SizedBox(width: 8),
+                                          kvHeaderCell('HSD', width: 106),
+                                        ],
+                                        kvHeaderCell(t('Thành tiền'),
+                                            width: 104, align: TextAlign.right),
+                                        SizedBox(width: 40),
+                                      ]),
+                                      Divider(
+                                          height: 1, color: DanColors.border),
+                                      Expanded(
+                                          child: ListView.separated(
                                         itemCount: _lines.length,
                                         separatorBuilder: (_, __) => Divider(
                                             height: 1, color: DanColors.border),
                                         itemBuilder: (_, i) => _lineRow(i),
-                                      ),
+                                      )),
+                                    ]),
+                                  ),
+                                ),
+                              );
+                            }),
                           ),
                         ],
                       ),
@@ -634,11 +674,199 @@ class _PurchaseDocFormPageState extends State<PurchaseDocFormPage> {
   }
 
   /// "Chọn file dữ liệu" — nạp dòng hàng từ file Excel theo file mẫu
-  /// (Nhập hàng: Mã hàng|Số lượng|Đơn giá|Lô|HSD; Trả hàng: Mã hàng|Số lượng).
+  /// Header-aware; vẫn tương thích mẫu 5 cột cũ.
+  String _matchText(Object? value) => kvs(value)
+      .toLowerCase()
+      .trim()
+      .replaceAll(RegExp(r'[^a-z0-9à-ỹ]+', unicode: true), ' ')
+      .replaceAll(RegExp(r'\s+'), ' ');
+
+  double _similarity(Map<String, dynamic> item, Map<String, String> row) {
+    final a =
+        _matchText(item['name']).split(' ').where((x) => x.isNotEmpty).toSet();
+    final b =
+        _matchText(row['name']).split(' ').where((x) => x.isNotEmpty).toSet();
+    if (a.isEmpty || b.isEmpty) return 0;
+    return a.intersection(b).length / a.union(b).length;
+  }
+
+  Future<Map<String, dynamic>?> _resolveUnmatched(
+      Map<String, String> row) async {
+    final ranked = [..._items]
+      ..sort((a, b) => _similarity(b, row).compareTo(_similarity(a, row)));
+    final candidates =
+        ranked.where((x) => _similarity(x, row) >= .35).take(6).toList();
+    String? choice;
+    final result = await showDialog<String>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => StatefulBuilder(
+          builder: (ctx, setLocal) => AlertDialog(
+                title: Text(t('Cân bằng mặt hàng nhập')),
+                content: SizedBox(
+                  width: 560,
+                  child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                            '${row['code']!.isEmpty ? row['barcode'] : row['code']} — ${row['name']}',
+                            style:
+                                const TextStyle(fontWeight: FontWeight.w800)),
+                        const SizedBox(height: 8),
+                        Text(t(
+                            'Không tìm thấy mã chính xác. Hãy xác nhận đây là hàng cũ hay tạo mặt hàng mới; hệ thống không tự tạo bản trùng.')),
+                        const SizedBox(height: 14),
+                        DropdownButtonFormField<String>(
+                          initialValue: choice,
+                          isExpanded: true,
+                          decoration: InputDecoration(
+                              labelText: t('Mặt hàng cần liên kết')),
+                          items: [
+                            for (final item in candidates)
+                              DropdownMenuItem(
+                                  value: kvs(item['id']),
+                                  child: Text(
+                                      '${kvs(item['code'])} — ${kvs(item['name'])}')),
+                            if ((row['name'] ?? '').trim().isNotEmpty)
+                              DropdownMenuItem(
+                                  value: '__new__',
+                                  child: Text(
+                                      t('Tạo mặt hàng mới từ dòng Excel'))),
+                            DropdownMenuItem(
+                                value: '__skip__',
+                                child: Text(t('Bỏ qua dòng này'))),
+                          ],
+                          onChanged: (v) => setLocal(() => choice = v),
+                        ),
+                      ]),
+                ),
+                actions: [
+                  FilledButton(
+                      onPressed: choice == null
+                          ? null
+                          : () => Navigator.pop(ctx, choice),
+                      child: Text(t('Xác nhận'))),
+                ],
+              )),
+    );
+    if (result == null || result == '__skip__') return null;
+    if (result != '__new__')
+      return _items
+          .cast<Map<String, dynamic>?>()
+          .firstWhere((x) => kvs(x?['id']) == result, orElse: () => null);
+    final body = <String, dynamic>{
+      'code': row['code'],
+      'barcode': row['barcode'],
+      'name': row['name'],
+      'brand': row['brand'],
+      'category': row['category'],
+      'unit': row['unit'],
+      'cost': kvParseNum(row['cost'] ?? '') ?? 0,
+      'price': kvParseNum(row['price'] ?? '') ?? 0,
+      'price_pre_tax': kvParseNum(row['price_pre_tax'] ?? '') ?? 0,
+      'vat': kvParseNum(row['vat'] ?? '') ?? 0,
+      'warehouse_id': _warehouseId,
+      'opening_stock': 0,
+      'track_lot':
+          (row['lot'] ?? '').isNotEmpty || (row['expiry'] ?? '').isNotEmpty,
+      'expiry_required': (row['expiry'] ?? '').isNotEmpty,
+    };
+    final created = _isRetailWh
+        ? await context.read<ApiService>().createSku(body)
+        : await context.read<ApiService>().createInventoryItem(body);
+    final item = created['item'] is Map
+        ? Map<String, dynamic>.from(created['item'])
+        : Map<String, dynamic>.from(created);
+    if (_isRetailWh) {
+      final books =
+          (await context.read<ApiService>().getPriceBooks()).whereType<Map>();
+      for (final book in books) {
+        final id = kvs(book['id']);
+        if (id.isEmpty || id == 'default') continue;
+        final price =
+            kvParseNum(row['price_book:${_matchText(book['name'])}'] ?? '');
+        if (price != null && price >= 0) {
+          await context.read<ApiService>().setPriceBookEntry(
+              bookId: id, skuId: kvs(item['id']), price: price);
+        }
+      }
+    }
+    _items.add(item);
+    return item;
+  }
+
+  void _mergeImportedLine(Map<String, dynamic> item, num qty, num? cost,
+      String lot, String expiry) {
+    final same = _lines
+        .where((line) =>
+            line.id == kvs(item['id']) &&
+            _matchText(line.lotNo.text) == _matchText(lot) &&
+            line.expiry.text.trim() == expiry.trim())
+        .toList();
+    if (same.isEmpty) {
+      _lines.add(KvDocLine(item, _isRetailWh ? 'sku' : 'inventory',
+          initialQty: qty,
+          initialCost: cost ?? kvn(item['cost']),
+          lot: lot,
+          exp: expiry));
+      return;
+    }
+    final line = same.first;
+    final oldQty = line.qtyNum;
+    final newQty = oldQty + qty;
+    final newCost = cost == null || cost <= 0
+        ? line.costNum
+        : ((oldQty * line.costNum) + (qty * cost)) / newQty;
+    line.qty.text = kvNumText(newQty);
+    line.cost.text = kvNumText(newCost);
+  }
+
+  // Dòng "chưa khớp mã" mang nguyên dữ liệu Excel (id rỗng) — hiển thị trên
+  // bảng ngay, chờ người dùng bấm "Khớp mã" trước khi Hoàn thành.
+  KvDocLine _unmatchedLine(Map<String, String> row, num qty) {
+    final placeholder = <String, dynamic>{
+      'id': '',
+      'name': row['name'] ?? '',
+      'code': row['code'] ?? '',
+      'barcode': row['barcode'] ?? '',
+      'unit': row['unit'] ?? '',
+      'cost': kvParseNum(row['cost'] ?? '') ?? 0,
+      '_unmatched': true,
+      '_excel': Map<String, String>.from(row),
+    };
+    return KvDocLine(placeholder, _isRetailWh ? 'sku' : 'inventory',
+        initialQty: qty,
+        initialCost: kvParseNum(row['cost'] ?? ''),
+        lot: _isReturn ? '' : row['lot'],
+        exp: _isReturn ? '' : row['expiry']);
+  }
+
+  // Bấm "Khớp mã" trên một dòng chưa khớp: mở hộp chọn/tạo mặt hàng, rồi thay
+  // dòng cũ bằng dòng đã gắn mặt hàng (GIỮ NGUYÊN SL/giá/lô/HSD đã nhập).
+  Future<void> _matchLine(int i) async {
+    final l = _lines[i];
+    final excel = l.item['_excel'];
+    final row = excel is Map
+        ? excel.map((k, v) => MapEntry(k.toString(), v?.toString() ?? ''))
+        : <String, String>{'name': l.name, 'code': l.code};
+    final item = await _resolveUnmatched(Map<String, String>.from(row));
+    if (item == null || !mounted) return;
+    final replaced = KvDocLine(item, _isRetailWh ? 'sku' : 'inventory',
+        initialQty: l.qtyNum,
+        initialCost: l.costNum,
+        lot: l.lotNo.text,
+        exp: l.expiry.text);
+    setState(() {
+      _lines[i].dispose();
+      _lines[i] = replaced;
+    });
+  }
+
   Future<void> _importFromExcel() async {
     try {
-      final rows = await kvPickSpreadsheetRows();
-      if (rows == null) return; // người dùng hủy
+      final data = await kvPickSpreadsheetData();
+      if (data == null) return;
       final byCode = <String, Map<String, dynamic>>{};
       for (final it in _items) {
         for (final k in [kvs(it['code']), kvs(it['barcode']), kvs(it['id'])]) {
@@ -647,28 +875,74 @@ class _PurchaseDocFormPageState extends State<PurchaseDocFormPage> {
       }
       var added = 0;
       final missed = <String>[];
-      setState(() {
-        for (final r in rows) {
-          String cell(int i) => i < r.length ? r[i].trim() : '';
-          final code = cell(0);
-          if (code.isEmpty) continue;
-          final item = byCode[code.toLowerCase()];
-          if (item == null) {
-            missed.add(code);
-            continue;
+      for (final r in data.rows) {
+        String value(List<String> names, int old) =>
+            data.cell(r, names, fallback: old);
+        final row = <String, String>{
+          'code': value(['Mã sản phẩm', 'Mã hàng', 'Product code'], 0),
+          'barcode': value(['Mã vạch', 'Barcode'], -1),
+          'name': value(['Tên sản phẩm', 'Tên hàng', 'Product name'], -1),
+          'brand': value(['Thương hiệu', 'Brand'], -1),
+          'category': value(['Phân loại', 'Nhóm hàng', 'Category'], -1),
+          'unit': value(['ĐVT', 'Đơn vị', 'Unit'], -1),
+          'qty': value(['Số lượng', 'Quantity'], 1),
+          'cost': value(['Đơn giá nhập', 'Đơn giá', 'Unit cost'], 2),
+          'price': value(['Giá bán mặc định', 'Giá bán', 'Sale price'], -1),
+          'price_pre_tax': value(['Giá bán trước VAT', 'Pre-tax price'], -1),
+          'vat': value(['VAT (%)', 'VAT'], -1),
+          'lot': value(['Lô', 'Số lô', 'Lot'], 3),
+          'expiry': value(['Hạn sử dụng', 'HSD', 'Expiry date'], 4),
+        };
+        for (var column = 0; column < data.headers.length; column++) {
+          final header = data.headers[column].trim();
+          final lowerHeader = header.toLowerCase();
+          if (lowerHeader.startsWith('giá theo bảng giá —') ||
+              lowerHeader.startsWith('gia theo bang gia —') ||
+              lowerHeader.startsWith('giá bán —') ||
+              lowerHeader.startsWith('gia ban —')) {
+            final name = header.split('—').skip(1).join('—').trim();
+            row['price_book:${_matchText(name)}'] =
+                column < r.length ? r[column].trim() : '';
           }
-          final qty = kvParseNum(cell(1)) ?? 1;
-          final cost = kvParseNum(cell(2));
-          _lines.add(KvDocLine(item, _isRetailWh ? 'sku' : 'inventory',
-              initialQty: qty <= 0 ? 1 : qty,
-              initialCost: cost ?? kvn(item['cost']),
-              lot: _isReturn ? '' : cell(3),
-              exp: _isReturn ? '' : cell(4)));
-          added++;
         }
-      });
+        // Mỗi dòng xử lý ĐỘC LẬP: một dòng lỗi (vd tạo mặt hàng trùng mã, API
+        // lỗi) KHÔNG được làm hỏng cả file → những dòng hợp lệ vẫn nạp lên trang.
+        // KHÔNG hỏi khớp mã ngay lúc import — LIỆT KÊ HẾT ra bảng. Dòng khớp mã
+        // thì gắn luôn mặt hàng; dòng chưa khớp thêm dạng "chưa khớp" (có nút
+        // "Khớp mã" trên dòng để xử lý sau, trước khi Hoàn thành).
+        try {
+          final lookup = [row['code'], row['barcode']]
+              .whereType<String>()
+              .where((x) => x.isNotEmpty);
+          Map<String, dynamic>? item;
+          for (final key in lookup) {
+            item = byCode[key.toLowerCase()];
+            if (item != null) break;
+          }
+          final rawQty = kvParseNum(row['qty'] ?? '') ?? 0;
+          final qty = rawQty > 0 ? rawQty : 1;
+          if (item != null) {
+            _mergeImportedLine(item, qty, kvParseNum(row['cost'] ?? ''),
+                _isReturn ? '' : row['lot']!, _isReturn ? '' : row['expiry']!);
+          } else {
+            _lines.add(_unmatchedLine(row, qty));
+          }
+          added++;
+        } catch (rowErr) {
+          final label = (row['code']?.isNotEmpty ?? false)
+              ? row['code']!
+              : (row['name'] ?? '?');
+          missed.add(
+              '$label (${rowErr.toString().replaceFirst('Exception: ', '')})');
+        }
+      }
+      if (mounted) setState(() {});
+      final unmatched =
+          _lines.where((l) => l.item['_unmatched'] == true).length;
       final msg = missed.isEmpty
-          ? t('Đã nạp $added dòng từ file')
+          ? (unmatched > 0
+              ? t('Đã nạp $added dòng — $unmatched dòng CHƯA KHỚP MÃ, bấm "Khớp mã" trên từng dòng')
+              : t('Đã nạp $added dòng từ file'))
           : t('Đã nạp $added dòng; không thấy mã: ${missed.take(5).join(", ")}${missed.length > 5 ? "…" : ""}');
       _toast(msg, error: missed.isNotEmpty && added == 0);
     } catch (e) {
@@ -680,8 +954,10 @@ class _PurchaseDocFormPageState extends State<PurchaseDocFormPage> {
 
   Widget _lineRow(int i) {
     final l = _lines[i];
+    final unmatched = l.item['_unmatched'] == true;
     return Container(
-      color: DanColors.surface,
+      color:
+          unmatched ? DanColors.late.withValues(alpha: .06) : DanColors.surface,
       padding: EdgeInsets.symmetric(horizontal: 20, vertical: 6),
       child: Row(
         children: [
@@ -691,14 +967,28 @@ class _PurchaseDocFormPageState extends State<PurchaseDocFormPage> {
                   style: TextStyle(fontSize: 12, color: DanColors.faint))),
           SizedBox(
             width: 104,
-            child: Text(l.code,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                    fontFamily: 'JetBrains Mono',
-                    fontSize: 11.5,
-                    fontWeight: FontWeight.w700,
-                    color: DanColors.brand)),
+            child: unmatched
+                ? OutlinedButton(
+                    onPressed: () => _matchLine(i),
+                    style: OutlinedButton.styleFrom(
+                        minimumSize: const Size(0, 30),
+                        padding: const EdgeInsets.symmetric(horizontal: 6),
+                        foregroundColor: DanColors.late,
+                        side: const BorderSide(color: DanColors.late)),
+                    child: Row(mainAxisSize: MainAxisSize.min, children: [
+                      const Icon(Icons.link, size: 13),
+                      const SizedBox(width: 3),
+                      Text(t('Khớp mã'), style: const TextStyle(fontSize: 11)),
+                    ]),
+                  )
+                : Text(l.code,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                        fontFamily: 'JetBrains Mono',
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w700,
+                        color: DanColors.brand)),
           ),
           SizedBox(width: 8),
           Expanded(

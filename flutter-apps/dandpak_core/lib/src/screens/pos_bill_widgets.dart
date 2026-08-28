@@ -19,6 +19,7 @@ class _BillPane extends StatelessWidget {
     required this.onPrint,
     required this.onSendKitchen,
     required this.onCancelItem,
+    required this.onEditItem,
     required this.onPayment,
     required this.openingPayment,
   });
@@ -38,6 +39,7 @@ class _BillPane extends StatelessWidget {
   final VoidCallback onPrint;
   final VoidCallback onSendKitchen;
   final ValueChanged<CartItem> onCancelItem;
+  final ValueChanged<CartItem> onEditItem;
   final VoidCallback onPayment;
   final bool openingPayment;
 
@@ -220,6 +222,7 @@ class _BillPane extends StatelessWidget {
                       item: item,
                       money: money,
                       onCancel: () => onCancelItem(item),
+                      onEdit: () => onEditItem(item),
                     );
                   },
                 ),
@@ -231,7 +234,10 @@ class _BillPane extends StatelessWidget {
             vat: pos.cartVat,
             total: pos.cartTotal,
             saving: pos.isSavingOrder || openingPayment,
-            canPay: hasItems && !openingPayment && !hasPending,
+            // Nút Thanh toán KHÔNG còn chết khi còn món chưa gửi bếp — nó bấm được
+            // và báo rõ "gửi bếp trước" (xem _BillFooter). Trước đây nút trơ ra,
+            // thu ngân bấm không thấy gì nên tưởng lỗi.
+            canPay: hasItems && !openingPayment,
             customer: pos.selectedCustomer,
             hasPending: hasPending,
             money: money,
@@ -308,82 +314,102 @@ class _BillItemRow extends StatelessWidget {
     required this.item,
     required this.money,
     required this.onCancel,
+    required this.onEdit,
   });
 
   final CartItem item;
   final String Function(num value) money;
   final VoidCallback onCancel;
+  final VoidCallback onEdit;
 
   @override
   Widget build(BuildContext context) {
     final meta = [
       if (item.selectedModifiers.isNotEmpty)
         item.selectedModifiers.map((m) => '+${m.name}').join(', '),
-      if (item.notes.isNotEmpty) item.notes,
+      if (item.notes.isNotEmpty) '📝 ${item.notes}',
     ].join(' · ');
-    return Container(
-      padding: EdgeInsets.fromLTRB(11, 9, 7, 9),
-      decoration: BoxDecoration(
-        color: DanColors.surface2,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: DanColors.border),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        '${item.qty}× ${item.item.name}',
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
+    return InkWell(
+      onTap: onEdit,
+      borderRadius: BorderRadius.circular(10),
+      child: Container(
+        padding: EdgeInsets.fromLTRB(11, 9, 7, 9),
+        decoration: BoxDecoration(
+          color: DanColors.surface2,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: DanColors.border),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          '${item.qty}× ${item.item.name}',
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                              fontSize: 13, fontWeight: FontWeight.w800),
+                        ),
+                      ),
+                      SizedBox(width: 8),
+                      if (item.hasPriceOverride) ...[
+                        Text(
+                          money(item.listedUnitPrice * item.qty),
+                          style: TextStyle(
+                            color: DanColors.faint,
+                            fontFamily: 'JetBrains Mono',
+                            fontSize: 10.5,
+                            decoration: TextDecoration.lineThrough,
+                          ),
+                        ),
+                        SizedBox(width: 5),
+                      ],
+                      Text(
+                        money(item.totalPrice),
                         style: TextStyle(
-                            fontSize: 13, fontWeight: FontWeight.w800),
+                          color: item.hasPriceOverride
+                              ? DanColors.brand
+                              : DanColors.muted,
+                          fontFamily: 'JetBrains Mono',
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
-                    ),
-                    SizedBox(width: 8),
-                    Text(
-                      money(item.totalPrice),
-                      style: TextStyle(
-                        color: DanColors.muted,
-                        fontFamily: 'JetBrains Mono',
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ],
-                ),
-                SizedBox(height: 5),
-                Wrap(
-                  spacing: 5,
-                  runSpacing: 4,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  children: [
-                    _ItemStatusChip(status: item.status),
-                    if (meta.isNotEmpty)
-                      Text(meta,
-                          style:
-                              TextStyle(color: DanColors.muted, fontSize: 11)),
-                  ],
-                ),
-              ],
+                    ],
+                  ),
+                  SizedBox(height: 5),
+                  Wrap(
+                    spacing: 5,
+                    runSpacing: 4,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      _ItemStatusChip(status: item.status),
+                      if (meta.isNotEmpty)
+                        Text(meta,
+                            style: TextStyle(
+                                color: DanColors.muted, fontSize: 11)),
+                    ],
+                  ),
+                ],
+              ),
             ),
-          ),
-          SizedBox(width: 6),
-          IconButton(
-            onPressed: onCancel,
-            tooltip: item.persisted ? t('Hủy món') : t('Xóa món nháp'),
-            icon: Icon(Icons.close, size: 18),
-            color: DanColors.faint,
-            constraints: BoxConstraints.tightFor(width: 32, height: 32),
-            padding: EdgeInsets.zero,
-          ),
-        ],
+            SizedBox(width: 6),
+            IconButton(
+              onPressed: onCancel,
+              tooltip: item.persisted ? t('Hủy món') : t('Xóa món nháp'),
+              icon: Icon(Icons.close, size: 18),
+              color: DanColors.faint,
+              constraints: BoxConstraints.tightFor(width: 32, height: 32),
+              padding: EdgeInsets.zero,
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -533,7 +559,12 @@ class _BillFooter extends StatelessWidget {
           SizedBox(
             width: double.infinity,
             child: FilledButton(
+              // Còn món chưa gửi bếp → nhấn nút này BÁO RÕ phải gửi bếp trước
+              // (onPayment tự kiểm và hiện thông báo), thay vì nút chết im lìm.
               onPressed: canPay ? onPayment : null,
+              style: hasPending
+                  ? FilledButton.styleFrom(backgroundColor: DanColors.late)
+                  : null,
               child: saving
                   ? SizedBox(
                       width: 16,
@@ -541,7 +572,9 @@ class _BillFooter extends StatelessWidget {
                       child: CircularProgressIndicator(
                           strokeWidth: 2, color: Colors.white),
                     )
-                  : Text('${t('Thanh toán')} · ${money(total)}'),
+                  : Text(hasPending
+                      ? t('Gửi món vào bếp trước khi thanh toán')
+                      : '${t('Thanh toán')} · ${money(total)}'),
             ),
           ),
         ],

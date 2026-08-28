@@ -19,13 +19,24 @@ class PushNotifications {
   PushNotifications._();
 
   static bool _registered = false;
+  static Future<void>? _registration;
 
   /// Gọi 1 lần sau khi có ApiService còn hiệu lực (đã đăng nhập) — xin quyền
   /// thông báo (Android 13+), lấy token FCM, đăng ký với server, và tự đăng
   /// ký lại mỗi khi token đổi.
   static Future<void> register(ApiService api) async {
     if (!Platform.isAndroid || _registered) return;
-    _registered = true;
+    if (_registration != null) return _registration!;
+    final attempt = _registerOnce(api);
+    _registration = attempt;
+    try {
+      await attempt;
+    } finally {
+      _registration = null;
+    }
+  }
+
+  static Future<void> _registerOnce(ApiService api) async {
     try {
       await Firebase.initializeApp();
       FirebaseMessaging.onBackgroundMessage(_backgroundHandler);
@@ -34,7 +45,8 @@ class PushNotifications {
       await messaging.requestPermission(alert: true, badge: true, sound: true);
 
       final deviceId = await LocalStore.instance.getString('device_id') ?? '';
-      if (deviceId.isEmpty) return; // SystemLog.attach() chưa chạy xong — bỏ qua, thử lại lần sau
+      if (deviceId.isEmpty)
+        return; // SystemLog.attach() chưa chạy xong — bỏ qua, thử lại lần sau
 
       Future<void> sendToken(String? token) async {
         if (token == null || token.isEmpty) return;
@@ -44,7 +56,11 @@ class PushNotifications {
         } catch (_) {/* mất mạng lúc đăng ký → lần mở app sau thử lại */}
       }
 
-      await sendToken(await messaging.getToken());
+      final token = await messaging.getToken();
+      if (token == null || token.isEmpty) return;
+      await api.registerPushToken(
+          deviceId: deviceId, fcmToken: token, platform: 'android');
+      _registered = true;
       // Firebase tự phát token mới khi app cài lại/xoá dữ liệu/hết hạn token cũ.
       messaging.onTokenRefresh.listen(sendToken);
 
@@ -52,7 +68,11 @@ class PushNotifications {
       // (đó là hành vi chuẩn của FCM), nên không cần xử lý gì thêm ở đây; các
       // luồng trong-app (SnackBar cập nhật ở LauncherScreen) đã lo phần này.
       FirebaseMessaging.onMessage.listen((_) {});
-    } catch (_) {/* thiết bị/Google Play Services lỗi → app vẫn chạy bình thường */}
+    } catch (_) {
+      // A transient network/Play Services error must not disable push for the
+      // rest of the process lifetime. A later screen/session may retry.
+      _registered = false;
+    }
   }
 }
 

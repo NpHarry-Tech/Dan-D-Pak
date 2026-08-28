@@ -71,13 +71,26 @@ List<Map> _tuyen(_FakeApi api) =>
         .whereType<Map>()
         .toList();
 
+Future<void> _nhapPin(WidgetTester tester) async {
+  await tester.pumpAndSettle();
+  await tester.enterText(
+      find.byKey(const ValueKey('printer_admin_pin')), '1999');
+  await tester.tap(find.text('Xác nhận'));
+  await tester.pumpAndSettle();
+}
+
 void main() {
   // Bo cuc moi: [Kieu ket noi] (cham) - [May in cua may nay] (cham, chi khi
   // system) - [Ten hien thi] - [IP] [Cong] (chi khi LAN) - [Loai phieu] (cham).
   // Cac test dung che do SUA mot may in LAN co san cho tat de xac dinh.
   Map<String, dynamic> lanCoSan() => {
-        'id': 'bep', 'name': 'BEP', 'label': 'BEP', 'ip': '192.168.1.50',
-        'port': 9100, 'output': 'kitchen_ticket', 'connection': 'lan',
+        'id': 'bep',
+        'name': 'BEP',
+        'label': 'BEP',
+        'ip': '192.168.1.50',
+        'port': 9100,
+        'output': 'kitchen_ticket',
+        'connection': 'lan',
       };
 
   testWidgets('may in LAN thieu ten thi KHONG luu', (tester) async {
@@ -106,12 +119,15 @@ void main() {
     await tester.enterText(find.byType(TextField).at(1), '192.168.1.51');
     await tester.pump();
     await tester.tap(find.text('Lưu máy in'));
-    await tester.pumpAndSettle();
+    await _nhapPin(tester);
 
     final ds = _tuyen(api);
     expect(ds.length, 2, reason: 'sua thi khong duoc de ra tuyen thu ba');
     expect(ds.firstWhere((e) => e['id'] == 'bep')['ip'], '192.168.1.51');
-    expect(ds.any((e) => e['id'] == 'quay'), true, reason: 'tuyen kia phai con');
+    expect(ds.firstWhere((e) => e['id'] == 'bep')['paper'], 'K57');
+    expect(ds.firstWhere((e) => e['id'] == 'bep')['widthMm'], 57);
+    expect(ds.any((e) => e['id'] == 'quay'), true,
+        reason: 'tuyen kia phai con');
   });
 
   testWidgets('XOA may in chi bo dung tuyen do', (tester) async {
@@ -119,7 +135,7 @@ void main() {
     await tester.tap(find.text('Xoá máy in này'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Xoá máy in'));
-    await tester.pumpAndSettle();
+    await _nhapPin(tester);
 
     final ds = _tuyen(api);
     expect(ds.any((e) => e['id'] == 'bep'), false, reason: 'phai xoa duoc');
@@ -132,7 +148,7 @@ void main() {
     await tester.enterText(find.byType(TextField).at(1), '10.0.0.5');
     await tester.pump();
     await tester.tap(find.text('Lưu máy in'));
-    await tester.pumpAndSettle();
+    await _nhapPin(tester);
     final cfg = api.daLuu!['print_config'] as Map;
     expect((cfg['bill'] as Map)['paper'], 'K80',
         reason: 'kho giay bill khong lien quan gi toi viec sua may in');

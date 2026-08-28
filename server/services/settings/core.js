@@ -9,12 +9,13 @@ import { FIREBASE_SERVICE_ACCOUNT_KEY } from './shared.js';
 import { getPrintConfig, sanitizePrintConfig } from './print.js';
 import { getOperationsConfig, sanitizeOperationsConfig } from './operations.js';
 import { getRetailConfig, sanitizeRetailConfig } from './retail.js';
+import { getSellConfig, sanitizeSellConfig } from './sell.js';
 import { getSalesModules, sanitizeSalesModules } from './salesModules.js';
 import { getLoyaltyConfig, sanitizeLoyaltyConfig } from './loyalty.js';
 import { getCustomerDisplayConfig, sanitizeCustomerDisplay } from './customerDisplay.js';
-import { getNotificationSoundConfig } from './notifications.js';
+import { getNotificationRoutingConfig, getNotificationSoundConfig } from './notifications.js';
 import { getTaxFilingProfile, sanitizeTaxFilingProfile } from './taxProfile.js';
-import { firebaseConfigured, setFirebaseServiceAccount } from './firebase.js';
+import { firebaseConfigured, firebaseConfigurationStatus, setFirebaseServiceAccount } from './firebase.js';
 
 const DEFAULTS = {
   ipad_staff_pin: '0000',
@@ -41,15 +42,20 @@ export function getSettings(branch_id = 'sala') {
   out.print_config = getPrintConfig(branch_id);
   out.operations_config = getOperationsConfig(branch_id);
   out.notification_sound_config = getNotificationSoundConfig(branch_id);
+  // PHẢI trả về đã parse: giá trị thô trong app_settings là chuỗi JSON, client
+  // kiểm `is Map` sẽ trượt và rơi về định tuyến mặc định.
+  out.notification_routing_config = getNotificationRoutingConfig(branch_id);
   out.tax_filing_profile = getTaxFilingProfile(branch_id);
   out.customer_display = getCustomerDisplayConfig(branch_id);
   out.loyalty_config = getLoyaltyConfig(branch_id);
   out.retail_config = getRetailConfig(branch_id);
+  out.sell_config = getSellConfig(branch_id);
   out.sales_modules = getSalesModules(branch_id);
   // Khoá dịch vụ Firebase (đẩy thông báo) — MÃ HOÁ trong DB, không bao giờ trả
   // nguyên văn qua API. Chỉ báo đã cấu hình hay chưa (xem setFirebaseServiceAccount).
   delete out[FIREBASE_SERVICE_ACCOUNT_KEY];
   out.firebase_configured = firebaseConfigured(branch_id);
+  out.firebase_status = firebaseConfigurationStatus(branch_id);
   return out;
 }
 
@@ -73,6 +79,16 @@ export function updateSettings(body = {}, branch_id = 'sala') {
   if (body.notification_sound_config !== undefined) {
     next.notification_sound_config = body.notification_sound_config;
   }
+  // Định tuyến thông báo: gửi lên mà không ghi thì màn Cài đặt báo "đã lưu"
+  // rồi mở lại là mất sạch. Gộp với cấu hình đang có để client chỉ gửi phần nó
+  // sửa (VD bản điện thoại chỉ đổi 'roles', không được xoá 'overrides').
+  if (body.notification_routing_config !== undefined) {
+    const cu = current.notification_routing_config;
+    next.notification_routing_config = {
+      ...(cu && typeof cu === 'object' ? cu : {}),
+      ...(body.notification_routing_config || {}),
+    };
+  }
   if (body.tax_filing_profile !== undefined) {
     next.tax_filing_profile = sanitizeTaxFilingProfile(body.tax_filing_profile);
   }
@@ -84,6 +100,14 @@ export function updateSettings(body = {}, branch_id = 'sala') {
   }
   if (body.retail_config !== undefined) {
     next.retail_config = sanitizeRetailConfig(body.retail_config);
+  }
+  // Gộp với cấu hình đang có: màn Cài đặt chỉ gửi phần nó sửa, ghi đè cả khối
+  // là các công tắc còn lại bị đưa về mặc định mà không ai đụng tới chúng.
+  if (body.sell_config !== undefined) {
+    next.sell_config = sanitizeSellConfig({
+      ...getSellConfig(branch_id),
+      ...(body.sell_config && typeof body.sell_config === 'object' ? body.sell_config : {}),
+    });
   }
   if (body.sales_modules !== undefined) {
     next.sales_modules = sanitizeSalesModules(body.sales_modules);
@@ -104,7 +128,12 @@ export function updateSettings(body = {}, branch_id = 'sala') {
   // firebase_configured PHẢI đọc lại SAU khi setFirebaseServiceAccount() đã
   // lưu xong — `current` chụp TRƯỚC dòng đó nên vẫn mang giá trị cũ (đúng lỗi
   // "server không xác nhận firebase_configured=true" dù khoá đã lưu thành công).
-  return { ...current, ...next, firebase_configured: firebaseConfigured(branch_id) };
+  return {
+    ...current,
+    ...next,
+    firebase_configured: firebaseConfigured(branch_id),
+    firebase_status: firebaseConfigurationStatus(branch_id),
+  };
 }
 
 export function verifyIpadStaffPin(pin, branch_id = 'sala') {

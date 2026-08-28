@@ -13,7 +13,6 @@ import 'settings_value_utils.dart';
 
 part 'print_template_designer_methods.dart';
 
-
 double _d(dynamic v, [double fallback = 0]) {
   if (v is num) return v.toDouble();
   return double.tryParse(asText(v).replaceAll(',', '.')) ?? fallback;
@@ -66,6 +65,7 @@ class _PrintTemplateDesignerState extends State<PrintTemplateDesigner> {
   // on that echo so we don't dispose row controllers while the user is typing.
   bool _ignoreNextConfigUpdate = false;
   int _rowSeq = 0; // bộ đếm sinh id dòng (dùng trong _tRow/_lineRow/_qrRow…)
+  bool _smallPreview = false;
 
   // Cầu nối setState cho các method đã tách sang extension (…_methods.dart).
   // setState là @protected nên extension gọi qua wrapper này (instance member)
@@ -127,9 +127,25 @@ class _PrintTemplateDesignerState extends State<PrintTemplateDesigner> {
                 if (constraints.maxWidth < 900) {
                   return Column(
                     children: [
-                      Expanded(flex: 3, child: _previewPane()),
-                      SizedBox(height: 12),
-                      Expanded(flex: 4, child: _editorPane()),
+                      SegmentedButton<bool>(
+                        segments: [
+                          ButtonSegment(
+                              value: false,
+                              icon: Icon(Icons.edit_outlined),
+                              label: Text(t('Chỉnh sửa'))),
+                          ButtonSegment(
+                              value: true,
+                              icon: Icon(Icons.preview_outlined),
+                              label: Text(t('Xem trước'))),
+                        ],
+                        selected: {_smallPreview},
+                        onSelectionChanged: (v) =>
+                            setState(() => _smallPreview = v.first),
+                      ),
+                      SizedBox(height: 10),
+                      Expanded(
+                          child:
+                              _smallPreview ? _previewPane() : _editorPane()),
                     ],
                   );
                 }

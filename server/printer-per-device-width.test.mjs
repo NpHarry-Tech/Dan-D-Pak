@@ -75,6 +75,23 @@ test('hai may cung chi nhanh ra hai be ngang KHAC NHAU', () => {
     'day chinh la loi cu: mot be ngang dung chung cho ca hai loai may');
 });
 
+test('cau hinh tung tuyen giu rieng K80 va K57', () => {
+  AppSettings.updateSettings({
+    print_config: {
+      bill: { paper: 'K80', widthMm: 80 },
+      printers: [
+        { id: 'desktop', output: 'receipt', paper: 'K80', widthMm: 80 },
+        { id: 'phone', output: 'receipt', paper: 'K57', widthMm: 57 },
+      ],
+    },
+  }, 'routes');
+  const printers = AppSettings.getSettings('routes').print_config.printers;
+  assert.deepEqual(
+    printers.map(p => [p.id, p.paper, p.widthMm]),
+    [['desktop', 'K80', 80], ['phone', 'K57', 57]],
+  );
+});
+
 test('may KHONG khai be ngang thi theo chi nhanh, khong doan bua', () => {
   AppSettings.updateSettings({
     print_config: { bill: { paper: 'K57', widthMm: 57 }, printers: [] },

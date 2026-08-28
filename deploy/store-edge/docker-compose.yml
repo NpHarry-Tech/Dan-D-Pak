@@ -1,0 +1,48 @@
+services:
+  edge:
+    build:
+      context: ../..
+      dockerfile: server/Dockerfile
+    restart: unless-stopped
+    env_file:
+      - ${EDGE_ENV_FILE:-.env}
+    environment:
+      NODE_ENV: production
+      DEPLOYMENT_TARGET: store-edge
+      PORT: 3000
+      TZ: Asia/Ho_Chi_Minh
+      DISABLE_DEMO_SEED: "true"
+      DISABLE_WEB_UI: "true"
+    ports:
+      # Chỉ LAN cửa hàng được phép tới cổng này; firewall/router không được NAT
+      # 3000 ra Internet. Có thể đổi host port trong .env bằng EDGE_PORT.
+      - "${EDGE_BIND_IP:-0.0.0.0}:${EDGE_PORT:-3000}:3000"
+    volumes:
+      - edge_sqlite:/app/server-data
+      - edge_storage:/app/storage
+      - edge_permanent:/app/server/permanent-storage
+      - edge_uploads:/app/server/uploads
+      - edge_product_images:/app/server/assets/product-images
+      - edge_backups:/app/backups
+    deploy:
+      resources:
+        limits:
+          memory: 1536M
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/health').then(r=>r.ok?process.exit(0):process.exit(1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+volumes:
+  edge_sqlite:
+  edge_storage:
+  edge_permanent:
+  edge_uploads:
+  edge_product_images:
+  edge_backups:

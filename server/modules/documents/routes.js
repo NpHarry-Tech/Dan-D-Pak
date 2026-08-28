@@ -11,6 +11,7 @@ import { pipeline } from 'node:stream/promises';
 import { rateLimit } from '../../core/rateLimit.js';
 import { storagePath } from '../../config/env.js';
 import { matchesSearch, searchTokens } from '../../core/search.js';
+import { businessDateEndUtc, businessDateStartUtc } from '../../core/businessClock.js';
 
 const UPLOADS_DIR = storagePath('uploads', 'documents');
 
@@ -128,8 +129,8 @@ api.get('/documents/files', wrap(async (req) => {
 
   if (category && category !== 'all') { sql += ` AND category=?`; params.push(category); }
   if (source && source !== 'all')     { sql += ` AND source=?`;   params.push(source); }
-  if (from)  { sql += ` AND created_at>=?`; params.push(from); }
-  if (to)    { sql += ` AND created_at<=?`; params.push(to + 'T23:59:59'); }
+  if (from)  { sql += ` AND created_at>=?`; params.push(businessDateStartUtc(from).toISOString()); }
+  if (to)    { sql += ` AND created_at<=?`; params.push(businessDateEndUtc(to).toISOString()); }
   sql += ` ORDER BY created_at DESC LIMIT 10000`;
   const matched = db.prepare(sql).all(...params)
     .filter(row => matchesSearch([row.name, row.original_name, row.description, row.tags_json], searchTokens(q)));

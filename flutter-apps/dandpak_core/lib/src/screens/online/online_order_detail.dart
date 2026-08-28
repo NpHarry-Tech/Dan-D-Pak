@@ -1,5 +1,9 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../../services/api_service.dart';
 import '../../ui/app_theme.dart';
@@ -114,8 +118,7 @@ class _OnlineOrderDetailDialogState extends State<OnlineOrderDetailDialog> {
           child: Row(
             children: [
               const Text('Chi tiết đơn hàng',
-                  style:
-                      TextStyle(fontSize: 17, fontWeight: FontWeight.w800)),
+                  style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800)),
               const Spacer(),
               IconButton(
                   onPressed: () => Navigator.of(context).maybePop(),
@@ -223,13 +226,13 @@ class _OnlineOrderDetailDialogState extends State<OnlineOrderDetailDialog> {
       children: [
         _kv('Đơn vị vận chuyển', oStr(ship['carrier'])),
         _kv('Mã vận đơn', tracking),
-        _kv('Trạng thái giao', workflowMeta(oStr(_op['workflow_status'])).label),
+        _kv('Trạng thái giao',
+            workflowMeta(oStr(_op['workflow_status'])).label),
         _kv('Người xử lý', oStr(_op['assignee_name'])),
         const SizedBox(height: 12),
         Row(children: [
           OutlinedButton.icon(
-            onPressed: _busy ? null : () => showShippingLabelDialog(
-                context, oStr(_op['id'])),
+            onPressed: _busy ? null : () => printOrderLabel(context, _op),
             icon: const Icon(Icons.print_outlined, size: 16),
             label: Text(t('In tem vận đơn')),
           ),
@@ -249,12 +252,10 @@ class _OnlineOrderDetailDialogState extends State<OnlineOrderDetailDialog> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(oStr(it['name']),
-                    style: const TextStyle(fontSize: 12.5)),
+                Text(oStr(it['name']), style: const TextStyle(fontSize: 12.5)),
                 if (unmapped)
                   const Text('Chưa liên kết SKU',
-                      style: TextStyle(
-                          fontSize: 11, color: Color(0xFFB91C1C))),
+                      style: TextStyle(fontSize: 11, color: Color(0xFFB91C1C))),
               ],
             ),
           ),
@@ -262,8 +263,8 @@ class _OnlineOrderDetailDialogState extends State<OnlineOrderDetailDialog> {
               style: const TextStyle(fontSize: 12.5, color: DanColors.muted)),
           const SizedBox(width: 16),
           Text(Fmt.money(oNum(it['qty']) * oNum(it['unit_price'])),
-              style: const TextStyle(
-                  fontSize: 12.5, fontWeight: FontWeight.w700)),
+              style:
+                  const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700)),
         ],
       ),
     );
@@ -281,8 +282,7 @@ class _OnlineOrderDetailDialogState extends State<OnlineOrderDetailDialog> {
               child: Text(k,
                   style:
                       const TextStyle(fontSize: 12.5, color: DanColors.muted))),
-          Expanded(
-              child: Text(v, style: const TextStyle(fontSize: 12.5))),
+          Expanded(child: Text(v, style: const TextStyle(fontSize: 12.5))),
         ],
       ),
     );
@@ -317,8 +317,7 @@ class _OnlineOrderDetailDialogState extends State<OnlineOrderDetailDialog> {
       actions.add(FilledButton(
         onPressed: _busy
             ? null
-            : () => _run(
-                () => api.transitionOnlineOperation(id, action), ok),
+            : () => _run(() => api.transitionOnlineOperation(id, action), ok),
         child: Text(label),
       ));
     }
@@ -333,7 +332,8 @@ class _OnlineOrderDetailDialogState extends State<OnlineOrderDetailDialog> {
                 t('Đang chuẩn bị hàng')),
         child: Text(t('Chuẩn bị hàng')),
       ));
-      primary(t('Sẵn sàng giao'), 'ready_to_ship', t('Đã chuyển sẵn sàng giao'));
+      primary(
+          t('Sẵn sàng giao'), 'ready_to_ship', t('Đã chuyển sẵn sàng giao'));
     } else if (status == 'ready_to_ship') {
       primary(t('Giao cho ĐVVC'), 'mark_shipping', t('Đã bàn giao vận chuyển'));
     } else if (status == 'shipping') {
@@ -342,9 +342,13 @@ class _OnlineOrderDetailDialogState extends State<OnlineOrderDetailDialog> {
 
     if (status == 'delivered') {
       actions.add(OutlinedButton(
-        onPressed: _busy ? null : () => _reasonThen('Lý do hoàn tiền',
-            (reason) => api.refundOnlineOperation(id, body: {'reason': reason}),
-            t('Đã tạo hoàn tiền')),
+        onPressed: _busy
+            ? null
+            : () => _reasonThen(
+                'Lý do hoàn tiền',
+                (reason) =>
+                    api.refundOnlineOperation(id, body: {'reason': reason}),
+                t('Đã tạo hoàn tiền')),
         style: OutlinedButton.styleFrom(foregroundColor: DanColors.late),
         child: Text(t('Trả hàng/Hoàn tiền')),
       ));
@@ -355,7 +359,7 @@ class _OnlineOrderDetailDialogState extends State<OnlineOrderDetailDialog> {
 
     // Print label
     actions.add(OutlinedButton.icon(
-      onPressed: _busy ? null : () => showShippingLabelDialog(context, id),
+      onPressed: _busy ? null : () => printOrderLabel(context, _op),
       icon: const Icon(Icons.print_outlined, size: 16),
       label: Text(t('In tem')),
     ));
@@ -363,9 +367,13 @@ class _OnlineOrderDetailDialogState extends State<OnlineOrderDetailDialog> {
     // Cancel
     if (status != 'cancelled' && status != 'return_refund') {
       actions.add(TextButton(
-        onPressed: _busy ? null : () => _reasonThen('Lý do hủy đơn',
-            (reason) => api.cancelOnlineOperation(id, body: {'reason': reason}),
-            t('Đã hủy đơn')),
+        onPressed: _busy
+            ? null
+            : () => _reasonThen(
+                'Lý do hủy đơn',
+                (reason) =>
+                    api.cancelOnlineOperation(id, body: {'reason': reason}),
+                t('Đã hủy đơn')),
         style: TextButton.styleFrom(foregroundColor: DanColors.late),
         child: Text(t('Hủy đơn')),
       ));
@@ -423,9 +431,53 @@ class _OnlineOrderDetailDialogState extends State<OnlineOrderDetailDialog> {
   }
 }
 
+const _sanProviders = {'shopee', 'lazada', 'tiktokshop'};
+
+/// Điểm vào IN TEM cho đơn online — tự chọn cách in theo kênh:
+/// • Sàn (Shopee/Lazada/TikTok): tải WAYBILL PDF CHÍNH THỨC của sàn rồi mở/in
+///   (dùng đúng mẫu tem của sàn, KHÔNG tự thiết kế).
+/// • Haravan/website/khác: tem văn bản tự dựng (chọn khổ 100×150/76×130).
+Future<void> printOrderLabel(
+    BuildContext context, Map<String, dynamic> op) async {
+  final provider = oStr(op['provider']);
+  if (_sanProviders.contains(provider)) {
+    final ref = oStr(op['external_order_code']).isNotEmpty
+        ? oStr(op['external_order_code'])
+        : oStr(op['external_order_id']);
+    await _openSanWaybill(context, provider, ref);
+  } else {
+    await showShippingLabelDialog(context, oStr(op['id']));
+  }
+}
+
+Future<void> _openSanWaybill(
+    BuildContext context, String provider, String ref) async {
+  final api = context.read<ApiService>();
+  try {
+    final bytes = await api.getConnectorWaybill(provider, ref);
+    final dir = await getTemporaryDirectory();
+    final f = File('${dir.path}/waybill-$provider-$ref.pdf');
+    await f.writeAsBytes(bytes, flush: true);
+    if (Platform.isWindows) {
+      // Mở bằng trình xem PDF mặc định (có nút In).
+      await Process.start('cmd', ['/c', 'start', '', f.path]);
+    } else {
+      await Share.shareXFiles([XFile(f.path)],
+          subject: 'Tem vận đơn ${providerMeta(provider).name}');
+    }
+    if (context.mounted) appToast(context, t('Đã tải tem vận đơn của sàn'));
+  } catch (e) {
+    if (context.mounted) {
+      appToast(context, e.toString().replaceFirst('Exception: ', ''),
+          isError: true);
+    }
+  }
+}
+
 /// Hộp thoại chọn khổ tem (100×150 mặc định / 76×130) + số bản, rồi in tem
 /// vận đơn qua máy in tem đã cấu hình.
-Future<void> showShippingLabelDialog(BuildContext context, String orderId) async {
+Future<void> showShippingLabelDialog(
+    BuildContext context, String orderId) async {
   String size = '100x150';
   int copies = 1;
   await showDialog<void>(
@@ -453,16 +505,12 @@ Future<void> showShippingLabelDialog(BuildContext context, String orderId) async
               Text(t('Số bản')),
               const SizedBox(width: 12),
               IconButton(
-                  onPressed: copies > 1
-                      ? () => setLocal(() => copies--)
-                      : null,
+                  onPressed: copies > 1 ? () => setLocal(() => copies--) : null,
                   icon: const Icon(Icons.remove_circle_outline)),
               Text('$copies',
                   style: const TextStyle(fontWeight: FontWeight.w800)),
               IconButton(
-                  onPressed: copies < 5
-                      ? () => setLocal(() => copies++)
-                      : null,
+                  onPressed: copies < 5 ? () => setLocal(() => copies++) : null,
                   icon: const Icon(Icons.add_circle_outline)),
             ]),
           ],
@@ -485,8 +533,8 @@ Future<void> showShippingLabelDialog(BuildContext context, String orderId) async
                 }
               } catch (e) {
                 if (context.mounted) {
-                  appToast(context,
-                      e.toString().replaceFirst('Exception: ', ''),
+                  appToast(
+                      context, e.toString().replaceFirst('Exception: ', ''),
                       isError: true);
                 }
               }

@@ -27,8 +27,6 @@ class _ReceiptPane extends StatefulWidget {
 }
 
 class _ReceiptPaneState extends State<_ReceiptPane> {
-  String? _activeForm; // 'refund', 'invoice', or null
-
   late final TextEditingController _refundReasonCtrl;
   late final TextEditingController _invoiceNameCtrl;
   late final TextEditingController _invoiceTaxCtrl;
@@ -45,7 +43,7 @@ class _ReceiptPaneState extends State<_ReceiptPane> {
   @override
   void initState() {
     super.initState();
-    _refundReasonCtrl = TextEditingController(text: t('Khách trả hàng'));
+    _refundReasonCtrl = TextEditingController(text: t('Trả hàng / hoàn hàng'));
     _invoiceNameCtrl = TextEditingController();
     _invoiceTaxCtrl = TextEditingController();
     _invoiceAddrCtrl = TextEditingController();
@@ -71,7 +69,6 @@ class _ReceiptPaneState extends State<_ReceiptPane> {
     super.didUpdateWidget(oldWidget);
     if (widget.receipt['order_id'] != oldWidget.receipt['order_id'] ||
         widget.receipt['id'] != oldWidget.receipt['id']) {
-      _activeForm = null;
       _initControllers();
     }
   }
@@ -91,7 +88,7 @@ class _ReceiptPaneState extends State<_ReceiptPane> {
     _invoiceWardCodeCtrl.text = _s(c['ward_code']);
     _invoiceProvinceCodeCtrl.text = _s(c['province_code']);
     _invoiceEmailCtrl.text = _s(c['email']);
-    _refundReasonCtrl.text = t('Khách trả hàng');
+    _refundReasonCtrl.text = t('Trả hàng / hoàn hàng');
   }
 
   @override
@@ -113,6 +110,7 @@ class _ReceiptPaneState extends State<_ReceiptPane> {
   @override
   Widget build(BuildContext context) {
     final locked = widget.receipt['locked'] == true;
+    final reconciliation = _list(widget.receipt['payment_reconciliation']);
     final invoice = _map(widget.receipt['invoice']);
     final hasInvoice =
         invoice.isNotEmpty && _s(invoice['lookup_url']).isNotEmpty;
@@ -171,6 +169,45 @@ class _ReceiptPaneState extends State<_ReceiptPane> {
             ],
           ),
         ),
+        if (reconciliation.isNotEmpty)
+          Container(
+            width: double.infinity,
+            padding: EdgeInsets.fromLTRB(16, 9, 16, 9),
+            decoration: BoxDecoration(
+              color: DanColors.brand.withValues(alpha: .06),
+              border: Border(bottom: BorderSide(color: DanColors.border)),
+            ),
+            child: Wrap(
+              spacing: 14,
+              runSpacing: 6,
+              children: [
+                for (final row in reconciliation)
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text('Mã đối soát CK: ${_s(row['reference'])}',
+                          style: TextStyle(
+                              fontWeight: FontWeight.w800,
+                              fontFamily: 'JetBrains Mono',
+                              color: DanColors.text)),
+                      SizedBox(width: 6),
+                      IconButton(
+                        visualDensity: VisualDensity.compact,
+                        tooltip: 'Copy',
+                        onPressed: () async {
+                          await Clipboard.setData(
+                              ClipboardData(text: _s(row['reference'])));
+                          if (context.mounted)
+                            ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(content: Text('Đã copy mã đối soát')));
+                        },
+                        icon: Icon(Icons.copy_outlined, size: 17),
+                      ),
+                    ],
+                  ),
+              ],
+            ),
+          ),
         if (locked)
           Container(
             width: double.infinity,
@@ -209,28 +246,19 @@ class _ReceiptPaneState extends State<_ReceiptPane> {
                   ),
                 if (widget.onIssueInvoice != null)
                   OutlinedButton.icon(
-                    onPressed: () {
-                      setState(() {
-                        _activeForm =
-                            _activeForm == 'invoice' ? null : 'invoice';
-                      });
-                    },
+                    onPressed: _openInvoiceDialog,
                     icon: Icon(Icons.receipt_outlined, size: 17),
                     label: Text(t('Xuất hóa đơn VAT')),
                   ),
                 if (widget.onRefund != null)
                   OutlinedButton.icon(
-                    onPressed: () {
-                      setState(() {
-                        _activeForm = _activeForm == 'refund' ? null : 'refund';
-                      });
-                    },
+                    onPressed: _openRefundDialog,
                     style: OutlinedButton.styleFrom(
                       foregroundColor: DanColors.late,
                       side: BorderSide(color: DanColors.late),
                     ),
                     icon: Icon(Icons.undo, size: 17),
-                    label: Text(t('Đổi trả / Hoàn hàng')),
+                    label: Text(t('Trả hàng')),
                   ),
               ],
             ),
@@ -253,8 +281,6 @@ class _ReceiptPaneState extends State<_ReceiptPane> {
                         _ReceiptPaper(text: widget.printText)
                       else
                         _ReceiptCard(receipt: widget.receipt),
-                      if (_activeForm == 'refund') _buildRefundForm(),
-                      if (_activeForm == 'invoice') _buildInvoiceForm(),
                     ],
                   ),
                 ),
@@ -266,39 +292,180 @@ class _ReceiptPaneState extends State<_ReceiptPane> {
     );
   }
 
-  Widget _buildRefundForm() {
-    return Container(
-      margin: EdgeInsets.only(top: 12),
-      padding: EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: DanColors.late.withValues(alpha: .07),
-        border: Border.all(color: DanColors.late.withValues(alpha: .25)),
-        borderRadius: BorderRadius.circular(DanRadius.sm),
+  // #1a: Đổi trả hiện thành POPUP overlay (không expand dưới bill — khó thấy
+  // trên màn nhỏ). Xác nhận thì đóng popup rồi mới gọi hoàn hàng.
+  Future<void> _openRefundDialog() async {
+    await showDialog<void>(
+      context: context,
+      builder: (dialogCtx) => Dialog(
+        backgroundColor: DanColors.surface,
+        insetPadding: EdgeInsets.all(24),
+        child: ConstrainedBox(
+          constraints: BoxConstraints(maxWidth: 440),
+          child: SingleChildScrollView(
+            padding: EdgeInsets.all(18),
+            child: _buildRefundForm(dialogCtx),
+          ),
+        ),
       ),
-      child: Column(
+    );
+  }
+
+  Widget _buildRefundForm(BuildContext dialogCtx) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(children: [
+          Icon(Icons.undo, size: 18, color: DanColors.late),
+          SizedBox(width: 8),
+          Text(t('Trả hàng'),
+              style: TextStyle(fontSize: 15, fontWeight: FontWeight.w900)),
+        ]),
+        SizedBox(height: 12),
+        Text(
+          t('Lý do xóa bill / hoàn trả'),
+          style: TextStyle(
+              color: DanColors.muted,
+              fontSize: 11,
+              fontWeight: FontWeight.bold),
+        ),
+        SizedBox(height: 5),
+        TextField(
+          controller: _refundReasonCtrl,
+          decoration: InputDecoration(
+            hintText: t('VD: Khách trả hàng / hủy bill sai'),
+            isDense: true,
+          ),
+        ),
+        SizedBox(height: 14),
+        Row(
+          children: [
+            Expanded(
+              child: OutlinedButton(
+                onPressed: () => Navigator.of(dialogCtx).pop(),
+                child: Text(t('Hủy')),
+              ),
+            ),
+            SizedBox(width: 8),
+            Expanded(
+              child: FilledButton(
+                onPressed: () {
+                  final reason = _refundReasonCtrl.text.trim();
+                  Navigator.of(dialogCtx).pop();
+                  widget.onRefund?.call(
+                      reason.isEmpty ? t('Trả hàng / hoàn trả') : reason);
+                },
+                style: FilledButton.styleFrom(
+                  backgroundColor: DanColors.late,
+                  foregroundColor: Colors.white,
+                ),
+                child: Text('Hoàn ${Fmt.money(_n(widget.receipt['total']))}'),
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  // #1a: Xuất VAT cũng hiện thành POPUP overlay thay vì expand dưới bill.
+  Future<void> _openInvoiceDialog() async {
+    await showDialog<void>(
+      context: context,
+      builder: (dialogCtx) => Dialog(
+        backgroundColor: DanColors.surface,
+        insetPadding: EdgeInsets.all(24),
+        child: ConstrainedBox(
+          constraints: BoxConstraints(maxWidth: 520, maxHeight: 640),
+          child: SingleChildScrollView(
+            padding: EdgeInsets.all(18),
+            child: _buildInvoiceForm(dialogCtx),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildInvoiceForm(BuildContext dialogCtx) {
+    return ListenableBuilder(
+      listenable: _taxLookup,
+      builder: (context, _) => Column(
+        mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            t('Lý do đổi trả / hoàn hàng'),
-            style: TextStyle(
-                color: DanColors.muted,
-                fontSize: 11,
-                fontWeight: FontWeight.bold),
+          Row(children: [
+            Icon(Icons.receipt_outlined, size: 18, color: DanColors.brand),
+            SizedBox(width: 8),
+            Text(t('Xuất hóa đơn VAT'),
+                style: TextStyle(fontSize: 15, fontWeight: FontWeight.w900)),
+          ]),
+          SizedBox(height: 12),
+          Text(t('Mã số thuế'),
+              style: TextStyle(
+                  fontSize: 11,
+                  color: DanColors.muted,
+                  fontWeight: FontWeight.bold)),
+          SizedBox(height: 4),
+          MstField(
+            lookup: _taxLookup,
+            label: '',
+            hint: t('MST (nếu xuất cho công ty)'),
+            onMessage: (m, {bool error = false}) =>
+                ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+              content: Text(m),
+              backgroundColor: error ? DanColors.late : DanColors.text,
+            )),
           ),
-          SizedBox(height: 5),
+          SizedBox(height: 8),
+          Text(t('Tên người mua / công ty'),
+              style: TextStyle(
+                  fontSize: 11,
+                  color: DanColors.muted,
+                  fontWeight: FontWeight.bold)),
+          SizedBox(height: 4),
           TextField(
-            controller: _refundReasonCtrl,
-            decoration: InputDecoration(
-              hintText: t('VD: Khách trả hàng'),
-              isDense: true,
-            ),
+            controller: _invoiceNameCtrl,
+            readOnly: _taxLookup.companyLocked,
+            decoration:
+                taxLockedDecoration(label: '', locked: _taxLookup.companyLocked)
+                    .copyWith(hintText: t('Tên cá nhân hoặc công ty')),
           ),
-          SizedBox(height: 10),
+          SizedBox(height: 8),
+          Text(t('Địa chỉ'),
+              style: TextStyle(
+                  fontSize: 11,
+                  color: DanColors.muted,
+                  fontWeight: FontWeight.bold)),
+          SizedBox(height: 4),
+          AddressFields(
+            address: _invoiceAddrCtrl,
+            detail: _invoiceAddrDetailCtrl,
+            ward: _invoiceAddrWardCtrl,
+            province: _invoiceAddrProvinceCtrl,
+            wardCode: _invoiceWardCodeCtrl,
+            provinceCode: _invoiceProvinceCodeCtrl,
+            label: t('Địa chỉ trên hóa đơn'),
+            locked: _taxLookup.addressLocked,
+          ),
+          SizedBox(height: 8),
+          Text(t('Email nhận hóa đơn'),
+              style: TextStyle(
+                  fontSize: 11,
+                  color: DanColors.muted,
+                  fontWeight: FontWeight.bold)),
+          SizedBox(height: 4),
+          TextField(
+            controller: _invoiceEmailCtrl,
+            decoration:
+                InputDecoration(hintText: 'email@congty.vn', isDense: true),
+          ),
+          SizedBox(height: 12),
           Row(
             children: [
               Expanded(
                 child: OutlinedButton(
-                  onPressed: () => setState(() => _activeForm = null),
+                  onPressed: () => Navigator.of(dialogCtx).pop(),
                   child: Text(t('Hủy')),
                 ),
               ),
@@ -306,131 +473,25 @@ class _ReceiptPaneState extends State<_ReceiptPane> {
               Expanded(
                 child: FilledButton(
                   onPressed: () {
-                    final reason = _refundReasonCtrl.text.trim();
-                    widget.onRefund
-                        ?.call(reason.isEmpty ? t('Khách trả hàng') : reason);
+                    Navigator.of(dialogCtx).pop();
+                    widget.onIssueInvoice?.call({
+                      'name': _invoiceNameCtrl.text.trim(),
+                      'tax_code': _invoiceTaxCtrl.text.trim(),
+                      'address': _invoiceAddrCtrl.text.trim(),
+                      'address_detail': _invoiceAddrDetailCtrl.text.trim(),
+                      'address_ward': _invoiceAddrWardCtrl.text.trim(),
+                      'address_province': _invoiceAddrProvinceCtrl.text.trim(),
+                      'ward_code': _invoiceWardCodeCtrl.text.trim(),
+                      'province_code': _invoiceProvinceCodeCtrl.text.trim(),
+                      'email': _invoiceEmailCtrl.text.trim(),
+                    });
                   },
-                  style: FilledButton.styleFrom(
-                    backgroundColor: DanColors.late,
-                    foregroundColor: Colors.white,
-                  ),
-                  child: Text(
-                      'Xác nhận hoàn ${Fmt.money(_n(widget.receipt['total']))}'),
+                  child: Text(t('Xuất hóa đơn VAT')),
                 ),
               ),
             ],
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _buildInvoiceForm() {
-    return Container(
-      margin: EdgeInsets.only(top: 12),
-      padding: EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: DanColors.surface2,
-        border: Border.all(color: DanColors.border2),
-        borderRadius: BorderRadius.circular(DanRadius.sm),
-      ),
-      child: ListenableBuilder(
-        listenable: _taxLookup,
-        builder: (context, _) => Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(t('Mã số thuế'),
-                style: TextStyle(
-                    fontSize: 11,
-                    color: DanColors.muted,
-                    fontWeight: FontWeight.bold)),
-            SizedBox(height: 4),
-            MstField(
-              lookup: _taxLookup,
-              label: '',
-              hint: t('MST (nếu xuất cho công ty)'),
-              onMessage: (m, {bool error = false}) =>
-                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                content: Text(m),
-                backgroundColor: error ? DanColors.late : DanColors.text,
-              )),
-            ),
-            SizedBox(height: 8),
-            Text(t('Tên người mua / công ty'),
-                style: TextStyle(
-                    fontSize: 11,
-                    color: DanColors.muted,
-                    fontWeight: FontWeight.bold)),
-            SizedBox(height: 4),
-            TextField(
-              controller: _invoiceNameCtrl,
-              readOnly: _taxLookup.companyLocked,
-              decoration: taxLockedDecoration(
-                      label: '', locked: _taxLookup.companyLocked)
-                  .copyWith(hintText: t('Tên cá nhân hoặc công ty')),
-            ),
-            SizedBox(height: 8),
-            Text(t('Địa chỉ'),
-                style: TextStyle(
-                    fontSize: 11,
-                    color: DanColors.muted,
-                    fontWeight: FontWeight.bold)),
-            SizedBox(height: 4),
-            AddressFields(
-              address: _invoiceAddrCtrl,
-              detail: _invoiceAddrDetailCtrl,
-              ward: _invoiceAddrWardCtrl,
-              province: _invoiceAddrProvinceCtrl,
-              wardCode: _invoiceWardCodeCtrl,
-              provinceCode: _invoiceProvinceCodeCtrl,
-              label: t('Địa chỉ trên hóa đơn'),
-              locked: _taxLookup.addressLocked,
-            ),
-            SizedBox(height: 8),
-            Text(t('Email nhận hóa đơn'),
-                style: TextStyle(
-                    fontSize: 11,
-                    color: DanColors.muted,
-                    fontWeight: FontWeight.bold)),
-            SizedBox(height: 4),
-            TextField(
-              controller: _invoiceEmailCtrl,
-              decoration:
-                  InputDecoration(hintText: 'email@congty.vn', isDense: true),
-            ),
-            SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton(
-                    onPressed: () => setState(() => _activeForm = null),
-                    child: Text(t('Hủy')),
-                  ),
-                ),
-                SizedBox(width: 8),
-                Expanded(
-                  child: FilledButton(
-                    onPressed: () {
-                      widget.onIssueInvoice?.call({
-                        'name': _invoiceNameCtrl.text.trim(),
-                        'tax_code': _invoiceTaxCtrl.text.trim(),
-                        'address': _invoiceAddrCtrl.text.trim(),
-                        'address_detail': _invoiceAddrDetailCtrl.text.trim(),
-                        'address_ward': _invoiceAddrWardCtrl.text.trim(),
-                        'address_province':
-                            _invoiceAddrProvinceCtrl.text.trim(),
-                        'ward_code': _invoiceWardCodeCtrl.text.trim(),
-                        'province_code': _invoiceProvinceCodeCtrl.text.trim(),
-                        'email': _invoiceEmailCtrl.text.trim(),
-                      });
-                    },
-                    child: Text(t('Xuất hóa đơn VAT')),
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
       ),
     );
   }
@@ -450,4 +511,3 @@ Future<void> _launchUrl(String url) async {
     debugPrint('Failed to open URL: $e');
   }
 }
-

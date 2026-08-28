@@ -474,7 +474,8 @@ class _LoyaltySettingsPanelState extends State<LoyaltySettingsPanel> {
         SizedBox(
           width: 140,
           child: DropdownButtonFormField<String>(
-            initialValue: asText(p['match']).isEmpty ? 'sku' : asText(p['match']),
+            initialValue:
+                asText(p['match']).isEmpty ? 'sku' : asText(p['match']),
             decoration: InputDecoration(labelText: 'Match'),
             items: [
               DropdownMenuItem(value: 'sku', child: Text(t('Mã hàng'))),
@@ -554,7 +555,8 @@ class _LoyaltySettingsPanelState extends State<LoyaltySettingsPanel> {
 
   Widget _inlineNum(
       String label, dynamic value, ValueChanged<String> onChanged) {
-    return _textField(label, asText(value), onChanged, width: 130, numeric: true);
+    return _textField(label, asText(value), onChanged,
+        width: 130, numeric: true);
   }
 
   Widget _textField(String label, String value, ValueChanged<String> onChanged,

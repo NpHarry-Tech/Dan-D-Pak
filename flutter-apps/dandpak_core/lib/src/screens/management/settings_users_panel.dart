@@ -12,7 +12,6 @@ import 'settings_tab.dart';
 import '../../utils/translation.dart';
 import 'settings_value_utils.dart';
 
-final _roleKeys = ['owner', 'manager', 'cashier', 'kitchen', 'warehouse'];
 Map<String, String> get _roleLabels => {
       'owner': 'Admin',
       'manager': t('Quản lý'),
@@ -167,6 +166,8 @@ class _UsersPanelState extends State<UsersPanel> {
   List<Map<String, dynamic>> _users = [];
   List<Map<String, dynamic>> _catalog = [];
   Map<String, Set<String>> _rolePerms = {};
+  // Danh sách vai trò LẤY TỪ SERVER (hệ thống + tùy chỉnh) — không hardcode nữa.
+  List<Map<String, dynamic>> _roles = [];
   bool _loading = true;
   String? _error;
 
@@ -197,6 +198,12 @@ class _UsersPanelState extends State<UsersPanel> {
                 .toList()
             : [];
         _rolePerms = _rolePermMap(perms['roles']);
+        _roles = (perms['roles'] is List)
+            ? (perms['roles'] as List)
+                .whereType<Map>()
+                .map((e) => Map<String, dynamic>.from(e))
+                .toList()
+            : [];
         _loading = false;
       });
     } catch (e) {
@@ -220,6 +227,7 @@ class _UsersPanelState extends State<UsersPanel> {
         user: user,
         catalog: _catalog,
         rolePerms: _rolePerms,
+        roles: _roles,
       ),
     );
     if (saved == true) _load();
@@ -241,6 +249,77 @@ class _UsersPanelState extends State<UsersPanel> {
       ),
     );
     if (saved == true) _load();
+  }
+
+  Future<void> _createRole() async {
+    final keyCtrl = TextEditingController();
+    final labelCtrl = TextEditingController();
+    final noteCtrl = TextEditingController();
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: Text(t('Thêm vai trò mới')),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: labelCtrl,
+              decoration:
+                  InputDecoration(labelText: t('Tên vai trò (hiển thị)')),
+            ),
+            SizedBox(height: 8),
+            TextField(
+              controller: keyCtrl,
+              decoration: InputDecoration(
+                  labelText: t('Mã vai trò (a-z, 0-9, _)'),
+                  hintText: 'vd: sale_online'),
+            ),
+            SizedBox(height: 8),
+            TextField(
+              controller: noteCtrl,
+              decoration: InputDecoration(labelText: t('Ghi chú (tùy chọn)')),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: Text(t('Hủy'))),
+          FilledButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: Text(t('Tạo'))),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    final label = labelCtrl.text.trim();
+    final key = keyCtrl.text.trim().isEmpty ? label : keyCtrl.text.trim();
+    if (label.isEmpty) {
+      _toast(t('Vai trò cần có tên hiển thị'), error: true);
+      return;
+    }
+    final pin = await settingsPin(context, 'Tạo vai trò "$label".');
+    if (pin == null) return;
+    try {
+      await widget.api.createRole(
+          key: key, label: label, note: noteCtrl.text.trim(), securityPin: pin);
+      _toast(t('Đã tạo vai trò'));
+      _load();
+    } catch (e) {
+      _toast(e.toString().replaceFirst('Exception: ', ''), error: true);
+    }
+  }
+
+  Future<void> _deleteRole(String key, String label) async {
+    final pin = await settingsPin(context, 'Xóa vai trò "$label".');
+    if (pin == null) return;
+    try {
+      await widget.api.deleteRole(key, pin);
+      _toast(t('Đã xóa vai trò'));
+      _load();
+    } catch (e) {
+      _toast(e.toString().replaceFirst('Exception: ', ''), error: true);
+    }
   }
 
   Future<void> _delete(Map<String, dynamic> user) async {
@@ -271,8 +350,11 @@ class _UsersPanelState extends State<UsersPanel> {
           padding: EdgeInsets.all(16),
           children: [
             _RoleDefaultsPanel(
+              roles: _roles,
               rolePerms: _rolePerms,
               onEdit: _openRoleEditor,
+              onAdd: _createRole,
+              onDelete: _deleteRole,
             ),
             SizedBox(height: 14),
             for (final user in _users) ...[
@@ -294,9 +376,18 @@ class _UsersPanelState extends State<UsersPanel> {
 }
 
 class _RoleDefaultsPanel extends StatelessWidget {
+  final List<Map<String, dynamic>> roles;
   final Map<String, Set<String>> rolePerms;
   final ValueChanged<String> onEdit;
-  _RoleDefaultsPanel({required this.rolePerms, required this.onEdit});
+  final VoidCallback onAdd;
+  final void Function(String key, String label) onDelete;
+  _RoleDefaultsPanel({
+    required this.roles,
+    required this.rolePerms,
+    required this.onEdit,
+    required this.onAdd,
+    required this.onDelete,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -310,11 +401,23 @@ class _RoleDefaultsPanel extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(t('Quyền mặc định vai trò'),
-              style: TextStyle(fontSize: 15, fontWeight: FontWeight.w900)),
+          Row(
+            children: [
+              Expanded(
+                child: Text(t('Quyền mặc định vai trò'),
+                    style:
+                        TextStyle(fontSize: 15, fontWeight: FontWeight.w900)),
+              ),
+              OutlinedButton.icon(
+                onPressed: onAdd,
+                icon: Icon(Icons.add, size: 16),
+                label: Text(t('Thêm vai trò')),
+              ),
+            ],
+          ),
           SizedBox(height: 4),
           Text(
-            t('Nhân viên mới sẽ nhận quyền theo vai trò, sau đó có thể chỉnh riêng từng người.'),
+            t('Nhân viên mới sẽ nhận quyền theo vai trò, sau đó có thể chỉnh riêng từng người. Vai trò tùy chỉnh có thể xóa.'),
             style: TextStyle(fontSize: 12, color: DanColors.faint),
           ),
           SizedBox(height: 12),
@@ -322,50 +425,79 @@ class _RoleDefaultsPanel extends StatelessWidget {
             spacing: 10,
             runSpacing: 10,
             children: [
-              for (final role in _roleKeys)
-                SizedBox(
-                  width: 210,
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      color: DanColors.surface2,
-                      border: Border.all(color: DanColors.border),
-                      borderRadius: BorderRadius.circular(DanRadius.md),
-                    ),
-                    child: Padding(
-                      padding: EdgeInsets.all(12),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(_roleLabel(role),
-                                    style: TextStyle(
-                                        fontSize: 13.5,
-                                        fontWeight: FontWeight.w900)),
-                                SizedBox(height: 2),
-                                Text(
-                                  role == 'owner'
-                                      ? t('Toàn quyền')
-                                      : '${rolePerms[role]?.length ?? 0} ${t('quyền')}',
-                                  style: TextStyle(
-                                      fontSize: 11.5, color: DanColors.faint),
-                                ),
-                              ],
-                            ),
-                          ),
-                          TextButton(
-                            onPressed: () => onEdit(role),
-                            child: Text(role == 'owner' ? 'Xem' : t('Sửa')),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
+              for (final role in roles)
+                _roleCard(
+                  key: asText(role['key']),
+                  label: asText(role['label']).isNotEmpty
+                      ? asText(role['label'])
+                      : asText(role['key']),
+                  custom: role['custom'] == true,
                 ),
             ],
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _roleCard(
+      {required String key, required String label, required bool custom}) {
+    final isOwner = key == 'owner';
+    return SizedBox(
+      width: 220,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: DanColors.surface2,
+          border: Border.all(color: DanColors.border),
+          borderRadius: BorderRadius.circular(DanRadius.md),
+        ),
+        child: Padding(
+          padding: EdgeInsets.all(12),
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Flexible(
+                          child: Text(label,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                  fontSize: 13.5, fontWeight: FontWeight.w900)),
+                        ),
+                        if (custom) ...[
+                          SizedBox(width: 6),
+                          _Pill(t('Tùy chỉnh'), DanColors.brand),
+                        ],
+                      ],
+                    ),
+                    SizedBox(height: 2),
+                    Text(
+                      isOwner
+                          ? t('Toàn quyền')
+                          : '${rolePerms[key]?.length ?? 0} ${t('quyền')}',
+                      style: TextStyle(fontSize: 11.5, color: DanColors.faint),
+                    ),
+                  ],
+                ),
+              ),
+              TextButton(
+                onPressed: () => onEdit(key),
+                child: Text(isOwner ? 'Xem' : t('Sửa')),
+              ),
+              if (custom)
+                IconButton(
+                  tooltip: t('Xóa vai trò'),
+                  onPressed: () => onDelete(key, label),
+                  icon: Icon(Icons.delete_outline,
+                      size: 18, color: DanColors.late),
+                ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -443,11 +575,13 @@ class _UserFormDialog extends StatefulWidget {
   final Map<String, dynamic>? user;
   final List<Map<String, dynamic>> catalog;
   final Map<String, Set<String>> rolePerms;
+  final List<Map<String, dynamic>> roles;
   _UserFormDialog({
     required this.api,
     required this.user,
     required this.catalog,
     required this.rolePerms,
+    required this.roles,
   });
 
   @override
@@ -477,7 +611,15 @@ class _UserFormDialogState extends State<_UserFormDialog> {
     _username = TextEditingController(text: asText(user?['username']));
     _pin = TextEditingController();
     final rawRole = asText(user?['role']);
-    _role = _roleKeys.contains(rawRole) ? rawRole : 'cashier';
+    final roleKeys = widget.roles
+        .map((r) => asText(r['key']))
+        .where((k) => k.isNotEmpty)
+        .toList();
+    _role = roleKeys.contains(rawRole)
+        ? rawRole
+        : (roleKeys.contains('cashier')
+            ? 'cashier'
+            : (roleKeys.isNotEmpty ? roleKeys.first : 'cashier'));
     _lang = asText(user?['lang']) == 'en' ? 'en' : 'vi';
     _avatar = asText(user?['avatar']);
     _active = user == null ? true : asFlag(user['active']);
@@ -541,7 +683,7 @@ class _UserFormDialogState extends State<_UserFormDialog> {
   // mở hộp thoại hệ điều hành — bản cũ chỉ có PowerShell nên trên Android
   // bấm nút không có phản ứng gì.
   Future<String?> _pickImagePath() =>
-      pickImagePathCross(title: 'Chọn ảnh đại diện');
+      pickImagePathCross(title: 'Chọn ảnh đại diện', context: context);
 
   void _toast(String message, {bool error = false}) =>
       appToast(context, message, isError: error);
@@ -807,8 +949,12 @@ class _UserFormDialogState extends State<_UserFormDialog> {
           initialValue: _role,
           decoration: InputDecoration(isDense: true),
           items: [
-            for (final role in _roleKeys)
-              DropdownMenuItem(value: role, child: Text(_roleLabel(role))),
+            for (final role in widget.roles)
+              DropdownMenuItem(
+                  value: asText(role['key']),
+                  child: Text(asText(role['label']).isNotEmpty
+                      ? asText(role['label'])
+                      : asText(role['key']))),
           ],
           onChanged: _isEdit && asText(widget.user?['role']) == 'owner'
               ? null

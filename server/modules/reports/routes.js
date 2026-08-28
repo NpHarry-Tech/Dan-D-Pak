@@ -4,7 +4,6 @@ import * as ReportCenter from '../../services/reportCenter.js';
 import * as Reports from '../../services/reports.js';
 import * as Auth from '../../services/auth.js';
 import * as Branches from '../../services/branches.js';
-import { notImplemented } from '../../core/http.js';
 
 export function registerReportRoutes(api, { wrap, guard, branch, visibleBranch }) {
   // --- Report access helpers (chỉ dùng trong module này) ---
@@ -76,10 +75,6 @@ function reportScopeForUser(req) {
 // BẮT BUỘC đăng nhập (trước đây trống guard → người chưa đăng nhập đọc được doanh thu).
 api.get('/dashboard', guard(), wrap((req) => Reports.dashboard(visibleBranch(req))));
 api.get('/dashboard/trends', guard(), wrap((req) => Reports.revenueTrends(visibleBranch(req))));
-api.get('/reports/sales', guard('reports'), wrap(() => notImplemented('Sales report endpoint is planned. Current app uses /api/reports/preview?type=sales_overview.')));
-api.get('/reports/inventory', guard('reports'), wrap(() => notImplemented('Inventory report endpoint is planned. Current app uses /api/reports/preview with inventory report types.')));
-api.get('/reports/payments', guard('reports'), wrap(() => notImplemented('Payments report endpoint is planned. Current app uses dashboard/report center endpoints.')));
-api.get('/reports/kds', guard('reports'), wrap(() => notImplemented('KDS timing report endpoint is planned.')));
 api.get('/reports/catalog', guard(), wrap((req) => {
   requireReportCenter(req);
   return reportCatalogForUser(req);

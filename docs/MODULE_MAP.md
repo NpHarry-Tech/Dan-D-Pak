@@ -1,9 +1,10 @@
 # Module Map
 
-Last updated: 2026-07-13
+Last updated: 2026-08-09
 
-**Ranh giới module = tầng `server/services/*`** (34 file, một domain một file). Tầng
-`server/modules/<domain>/` là *route ownership* (routes.js + index.js re-export service).
+**Ranh giới nghiệp vụ = tầng `server/services/*`**; domain lớn có thể là một thư mục
+(`misa/`, `settings/`) với đúng một public entrypoint. Tầng `server/modules/<domain>/`
+là *route ownership* (`routes.js` và entrypoint), không chứa bản sao business logic.
 
 Trạng thái tách route ownership (THỰC TẾ, không phải kế hoạch):
 
@@ -23,7 +24,7 @@ Trạng thái tách route ownership (THỰC TẾ, không phải kế hoạch):
 | Menu/catalog/pricing | `server/services/catalog.js`, `server/services/bookMenu.js`, `server/services/vouchers.js` | `server/modules/menu`, `pricing`, `promotions`, `vouchers` | Yes |
 | Orders/KDS | `server/services/orders.js` | `server/modules/orders`, `kds` | Yes |
 | Payments/shifts/cash drawer | `server/services/payments.js`, `shifts.js`, `cashDrawer.js` | `server/modules/payments` | Yes |
-| Invoices/MISA | `server/services/invoices.js`, `misa.js` | `server/modules/invoices`, `integrations/misa` | Yes |
+| Invoices/MISA | `server/services/invoices.js`, `server/services/einvoice.js`, `server/services/misa/` | `server/modules/invoices`, `server/services/misa` | Yes |
 | Inventory/warehouse/SKU | `server/services/inventory.js` | `server/modules/inventory` | Yes |
 | Tax/VAT/MST | `server/services/tax.js`, `settings.js`, `customers.js` | `server/modules/tax` | Yes |
 | Retail | `server/services/retail.js` | `server/modules/pos`, `inventory` | Yes |

@@ -206,8 +206,30 @@ class _LoginGateScreenState extends State<LoginGateScreen> {
     if (users.isEmpty) {
       return _InlineHint(message: t('Không tìm thấy nhân viên phù hợp.'));
     }
-    // QUY TẮC LƯỚI CHUNG: ô nhân viên có kích thước CỐ ĐỊNH; thêm/bớt người thì các
-    // ô sau tự dịch trái – lùi lên, KHÔNG giãn ô ra cho vừa hàng (xem DanTileGrid).
+    // Điện thoại trước đây vẫn dùng ô rộng cố định 150 px. Phần nội dung thực tế
+    // thường chỉ còn 300–310 px, nên 2 ô + khoảng cách không vừa và Wrap dồn tất
+    // cả nhân viên thành MỘT cột rất dài. Chỉ đổi layout ở phone; tablet/desktop
+    // vẫn giữ DanTileGrid cố định như cũ.
+    if (MediaQuery.sizeOf(context).shortestSide < 600) {
+      return LayoutBuilder(builder: (context, constraints) {
+        final columns = constraints.maxWidth >= 430 ? 3 : 2;
+        return GridView.builder(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          itemCount: users.length,
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: columns,
+            crossAxisSpacing: 10,
+            mainAxisSpacing: 10,
+            childAspectRatio: 1.22,
+          ),
+          itemBuilder: (_, i) => _EmployeeGridTile(
+            user: users[i],
+            onTap: () => _openPin(users[i]),
+          ),
+        );
+      });
+    }
     return DanTileGrid(
       tileWidth: 150,
       tileHeight: 122,
@@ -350,16 +372,16 @@ class _EmployeeGridTile extends StatelessWidget {
             // khai (chưa có phiên) nên listLoginUsers cố ý không trả `role` —
             // đừng dựng một dòng trắng dưới mỗi cái tên.
             if (user.role.trim().isNotEmpty)
-            Text(
-              _roleLabels[user.role] ?? user.role,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: DanColors.muted,
-                fontSize: 10.5,
-                fontWeight: FontWeight.w600,
+              Text(
+                _roleLabels[user.role] ?? user.role,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: DanColors.muted,
+                  fontSize: 10.5,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
-            ),
           ],
         ),
       ),
@@ -399,27 +421,34 @@ class _PinDialogState extends State<_PinDialog> {
   Widget build(BuildContext context) {
     final displayName =
         widget.user.name.isNotEmpty ? widget.user.name : widget.user.username;
+    final phone = MediaQuery.sizeOf(context).shortestSide < 600;
     return Dialog(
       elevation: 0,
       backgroundColor: Colors.transparent,
-      insetPadding: EdgeInsets.all(20),
+      insetPadding: EdgeInsets.all(phone ? 0 : 20),
       child: ConstrainedBox(
         constraints: BoxConstraints(
-          maxWidth: 450,
+          maxWidth: phone ? double.infinity : 450,
           // Cap chiều cao theo màn hình: tablet mini màn thấp thì nội dung CUỘN được
           // (dưới đây bọc SingleChildScrollView) để hàng phím 0/⌫ không bị đáy màn che.
-          maxHeight: MediaQuery.sizeOf(context).height - 32,
+          maxHeight: MediaQuery.sizeOf(context).height - (phone ? 0 : 32),
         ),
         child: SingleChildScrollView(
           child: Container(
             // Tablet mini: KHÔNG ép cứng 450 khi màn hẹp hơn → tránh tràn ngang.
-            width: MediaQuery.sizeOf(context).width - 40 < 450
-                ? MediaQuery.sizeOf(context).width - 40
-                : 450,
-            padding: EdgeInsets.fromLTRB(30, 22, 30, 25),
+            width: phone
+                ? MediaQuery.sizeOf(context).width
+                : MediaQuery.sizeOf(context).width - 40 < 450
+                    ? MediaQuery.sizeOf(context).width - 40
+                    : 450,
+            constraints: phone
+                ? BoxConstraints(minHeight: MediaQuery.sizeOf(context).height)
+                : null,
+            padding: EdgeInsets.fromLTRB(
+                phone ? 28 : 30, phone ? 72 : 22, phone ? 28 : 30, 25),
             decoration: BoxDecoration(
               color: DanColors.surface,
-              borderRadius: BorderRadius.circular(28),
+              borderRadius: BorderRadius.circular(phone ? 0 : 28),
               border: Border.all(color: DanColors.border2),
               boxShadow: [
                 BoxShadow(
@@ -448,7 +477,12 @@ class _PinDialogState extends State<_PinDialog> {
                 Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    SizedBox(height: 22),
+                    if (phone) ...[
+                      Image.asset('assets/brand/DanOnLogo.png',
+                          width: 66, fit: BoxFit.contain),
+                      const SizedBox(height: 18),
+                    ] else
+                      const SizedBox(height: 22),
                     Text(
                       t('Nhập mã PIN'),
                       style: TextStyle(
@@ -467,27 +501,28 @@ class _PinDialogState extends State<_PinDialog> {
                       ),
                     ),
                     SizedBox(height: 10),
-                    Container(
-                      padding:
-                          EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                      decoration: BoxDecoration(
-                        color: DanColors.brandDim,
-                        borderRadius: BorderRadius.circular(99),
-                      ),
-                      child: Text(
-                        (_roleLabels[widget.user.role] ?? widget.user.role)
-                            .toUpperCase(),
-                        style: TextStyle(
-                          color: DanColors.brand,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: .3,
+                    if (widget.user.role.trim().isNotEmpty)
+                      Container(
+                        padding:
+                            EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: DanColors.brandDim,
+                          borderRadius: BorderRadius.circular(99),
+                        ),
+                        child: Text(
+                          (_roleLabels[widget.user.role] ?? widget.user.role)
+                              .toUpperCase(),
+                          style: TextStyle(
+                            color: DanColors.brand,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: .3,
+                          ),
                         ),
                       ),
-                    ),
-                    SizedBox(height: 28),
+                    SizedBox(height: phone ? 22 : 28),
                     _PinDots(length: _pin.length),
-                    SizedBox(height: 36),
+                    SizedBox(height: phone ? 54 : 36),
                     // Bọc keypad để CŨNG nhận bàn phím thiết bị/rời (gõ số/Backspace).
                     // Enter bỏ qua vì PIN đủ 4 số là tự đăng nhập.
                     PinKeyCapture(

@@ -10,6 +10,7 @@ import {
 } from '../services/archive.js';
 import { now, uid } from './ids.js';
 import { decryptSecret, encryptSecret } from '../core/crypto.js';
+import { businessPeriodStartUtc } from '../core/businessClock.js';
 
 const TECHNICAL_ONLY_ACTIONS = new Set([
   'system.error',
@@ -267,13 +268,10 @@ export function rehydrateAuditForQuery(branch, { from = null, to = null, period 
 }
 
 function auditPeriodStart(period) {
-  const ref = new Date();
-  if (period === 'day') { const d = new Date(ref); d.setHours(0, 0, 0, 0); return d; }
-  if (period === 'week') { const d = new Date(ref); const day = d.getDay(); const diff = d.getDate() - day + (day === 0 ? -6 : 1); const mon = new Date(d.setDate(diff)); mon.setHours(0, 0, 0, 0); return mon; }
-  if (period === 'month') return new Date(ref.getFullYear(), ref.getMonth(), 1);
-  if (period === 'quarter') return new Date(ref.getFullYear(), Math.floor(ref.getMonth() / 3) * 3, 1);
-  if (period === 'year') return new Date(ref.getFullYear(), 0, 1);
-  return new Date(ref.getTime() - 62 * AUDIT_MS_DAY);
+  if (['day', 'week', 'month', 'quarter', 'year'].includes(period)) {
+    return businessPeriodStartUtc(period);
+  }
+  return new Date(Date.now() - 62 * AUDIT_MS_DAY);
 }
 
 // Delete archives + rows older than the retention window (month 37 drops month 1).

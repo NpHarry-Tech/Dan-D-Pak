@@ -10,6 +10,7 @@ import '../../providers/auth_provider.dart';
 import '../../services/api_service.dart';
 import '../../ui/file_pick.dart';
 import '../../ui/app_theme.dart';
+import '../online/marketplace_connect_panel.dart';
 import 'settings_erp_panel.dart';
 import 'settings_tab.dart';
 import 'settings_value_utils.dart';
@@ -179,7 +180,8 @@ List<IntegrationDef> get _integrationDefs => [
           desc: t(
               'Shopee Open Platform: nhận đơn, đồng bộ hàng hóa và tồn kho. Cần Partner ID + Shop được ủy quyền.'),
           type: 'marketplace',
-          channel: 'shopee'),
+          channel: 'shopee',
+          imageAsset: 'assets/brand/shopee.png'),
       IntegrationDef(
           key: 'tiktokshop',
           icon: '🎵',
@@ -187,7 +189,8 @@ List<IntegrationDef> get _integrationDefs => [
           desc: t(
               'TikTok Shop Partner: nhận đơn, đồng bộ hàng và tồn. Cần app được ủy quyền và shop cipher.'),
           type: 'marketplace',
-          channel: 'tiktokshop'),
+          channel: 'tiktokshop',
+          imageAsset: 'assets/brand/tiktok.png'),
       IntegrationDef(
           key: 'lazada',
           icon: '🛒',
@@ -195,7 +198,8 @@ List<IntegrationDef> get _integrationDefs => [
           desc: t(
               'Lazada Open Platform: nhận đơn và đồng bộ sản phẩm/tồn kho. Cần App Key/Secret và seller token.'),
           type: 'marketplace',
-          channel: 'lazada'),
+          channel: 'lazada',
+          imageAsset: 'assets/brand/Lazada.png'),
       IntegrationDef(
           key: 'tiki',
           icon: '🔷',
@@ -212,7 +216,8 @@ List<IntegrationDef> get _integrationDefs => [
           desc: t(
               'Nhận tin nhắn Trang qua Meta webhook (X-Hub-Signature-256). Cần Meta App, Page token và Advanced Access.'),
           type: 'social',
-          channel: 'facebook'),
+          channel: 'facebook',
+          imageAsset: 'assets/brand/Facebook_Logo.png'),
       IntegrationDef(
           key: 'instagram',
           icon: '📷',
@@ -220,7 +225,8 @@ List<IntegrationDef> get _integrationDefs => [
           desc: t(
               'Nhận tin nhắn Instagram Professional qua Meta webhook. Cần tài khoản Professional và Advanced Access.'),
           type: 'social',
-          channel: 'instagram'),
+          channel: 'instagram',
+          imageAsset: 'assets/brand/Instagram_Glyph_Gradient.png'),
       IntegrationDef(
           key: 'zalooa',
           icon: '💬',
@@ -228,7 +234,8 @@ List<IntegrationDef> get _integrationDefs => [
           desc: t(
               'Zalo Official Account OpenAPI + webhook. Cần OA App, access token và webhook secret được cấp.'),
           type: 'social',
-          channel: 'zalooa'),
+          channel: 'zalooa',
+          imageAsset: 'assets/brand/Zalo_logo.png'),
     ];
 
 Map<String, List<String>> _channelTextFields = {
@@ -313,6 +320,7 @@ Map<String, List<String>> _channelTextFields = {
   ],
   'tiktokshop': [
     'appId',
+    'serviceId',
     'shopId',
     'shopCipher',
     'secretKey',
@@ -481,6 +489,27 @@ class IntegrationsPanel extends StatefulWidget {
 class _IntegrationsPanelState extends State<IntegrationsPanel> {
   Map<String, Map<String, dynamic>> _channels = {};
   final Map<String, TextEditingController> _ctrls = {};
+
+  /// Trạng thái kết nối của các sàn "1 chạm" (shopee/lazada) — lấy từ Connection
+  /// Platform, không phải cờ enabled cũ. Dùng để hiện "Đã/Chưa kết nối" ở danh sách.
+  final Map<String, bool> _mpConnected = {};
+
+  Future<void> _loadMarketplaceState() async {
+    for (final p in kMarketplaceOneClickProviders) {
+      try {
+        final res = await widget.api.getMarketplaceConnections(p);
+        final list = (res['connections'] as List?) ?? const [];
+        _mpConnected[p] = list.any((c) {
+          final s = (c is Map ? c['status'] : '').toString();
+          return s == 'active' || s == 'connected';
+        });
+      } catch (_) {
+        // Chưa lấy được thì giữ nguyên trạng thái đã biết.
+      }
+    }
+    if (mounted) setState(() {});
+  }
+
   bool _loading = true;
   bool _saving = false;
   String? _testingKey;
@@ -505,6 +534,7 @@ class _IntegrationsPanelState extends State<IntegrationsPanel> {
     super.initState();
     _load();
     _loadCatalogueCfg();
+    _loadMarketplaceState();
   }
 
   @override
@@ -1552,6 +1582,15 @@ class _IntegrationsPanelState extends State<IntegrationsPanel> {
     // ERP — Business Central dùng backend riêng (/erp/*), không theo hệ field
     // của các cổng thanh toán → render UI riêng, vẫn nằm trong khung "Liên kết".
     if (_selectedKey == 'erp') return ErpConfigView(api: widget.api);
+    // Sàn TMĐT qua Connection Platform (Shopee/Lazada…): kết nối "1 chạm" — user
+    // chỉ đăng nhập + đồng ý, KHÔNG nhập Partner ID/Key/token. Gộp thẳng vào detail
+    // của màn Liên kết (một màn duy nhất), không dựng UI kết nối riêng.
+    if (kMarketplaceOneClickProviders.contains(_selectedKey)) {
+      return MarketplaceConnectPanel(
+          provider: _selectedKey,
+          embedded: true,
+          onChanged: _loadMarketplaceState);
+    }
     final def = _integrationDefs.firstWhere((d) => d.key == _selectedKey);
     final conf = _channels[def.key] ?? {};
     final enabled = asFlag(conf['enabled']);
@@ -1850,7 +1889,10 @@ class _IntegrationsPanelState extends State<IntegrationsPanel> {
                   final def = _integrationDefs[index];
                   final isSelected = def.key == _selectedKey;
                   final conf = _channels[def.key] ?? {};
-                  final enabled = asFlag(conf['enabled']);
+                  final enabled =
+                      kMarketplaceOneClickProviders.contains(def.key)
+                          ? (_mpConnected[def.key] ?? false)
+                          : asFlag(conf['enabled']);
 
                   return InkWell(
                     onTap: () {

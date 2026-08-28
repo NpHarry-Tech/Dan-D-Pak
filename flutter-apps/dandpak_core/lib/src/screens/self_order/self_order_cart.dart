@@ -41,13 +41,16 @@ class SoCartItem {
 }
 
 class SoModifierOption {
+  // group = tên NHÓM tùy chọn (Size, Topping…) — server validate mods theo group+name.
+  final String group;
   final String name;
   final int price;
 
-  SoModifierOption({required this.name, required this.price});
+  SoModifierOption({this.group = '', required this.name, required this.price});
 
   factory SoModifierOption.fromJson(Map<String, dynamic> json) {
     return SoModifierOption(
+      group: (json['group'] ?? '').toString(),
       name: (json['name'] ?? '').toString(),
       price: _cartIntValue(json['price']),
     );

@@ -1,13 +1,21 @@
+import 'dart:convert';
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../../providers/auth_provider.dart';
 import '../../services/api_service.dart';
 import '../../ui/app_theme.dart';
+import '../../ui/file_pick.dart';
 import '../../ui/format.dart';
+import '../../widgets/dan_datetime_picker.dart';
 import '../../widgets/dan_top_bar.dart';
 import '../management/management_widgets.dart';
+import '../shift_dialog.dart';
+import '../../utils/business_datetime.dart';
 import '../../utils/translation.dart';
 
 String _s(dynamic v) => v?.toString() ?? '';
@@ -114,6 +122,15 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
     }
   }
 
+  Future<void> _openDetail(Map<String, dynamic> e) async {
+    final action = await showDialog<String>(
+      context: context,
+      builder: (_) => _ExpenseDetailDialog(expense: e),
+    );
+    if (action == 'edit' && mounted) _openForm(e);
+    if (action == 'reload' && mounted) _load();
+  }
+
   Future<void> _delete(Map<String, dynamic> e) async {
     final ok = await showDialog<bool>(
       context: context,
@@ -183,6 +200,15 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
         onBack: () => Navigator.of(context).maybePop(),
         onLogout: () => auth.logout(),
         actions: [
+          DanTopBarButton(
+            onPressed: () async {
+              final ok = await showDialog<bool>(
+                  context: context, builder: (_) => CashReimbursementDialog());
+              if (ok == true) _load();
+            },
+            icon: Icons.assignment_return_outlined,
+            label: t('Hoàn chi két'),
+          ),
           DanTopBarButton(
             onPressed: () => _openForm(),
             icon: Icons.add,
@@ -336,7 +362,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
     final drawer = _s(e['source']) == 'drawer';
     final date = DateTime.tryParse(_s(e['expense_date']));
     return InkWell(
-      onTap: () => _openForm(e),
+      onTap: () => _openDetail(e),
       borderRadius: BorderRadius.circular(DanRadius.md),
       child: Container(
         padding: EdgeInsets.symmetric(horizontal: 14, vertical: 12),
@@ -429,6 +455,8 @@ class _ExpenseFormState extends State<_ExpenseForm> {
   String? _categoryId;
   final _amount = TextEditingController();
   final _note = TextEditingController();
+  final _payee = TextEditingController();
+  String? _image;
   late DateTime _date;
   bool _saving = false;
 
@@ -449,14 +477,23 @@ class _ExpenseFormState extends State<_ExpenseForm> {
     _amount.text =
         _n(e?['amount']) > 0 ? _n(e?['amount']).round().toString() : '';
     _note.text = _s(e?['note']);
-    _date = DateTime.tryParse(_s(e?['expense_date'])) ?? DateTime.now();
+    _payee.text = _s(e?['payee_name']);
+    _image = _s(e?['invoice_image']).isEmpty ? null : _s(e?['invoice_image']);
+    _date =
+        BusinessDateTime.parseApi(e?['expense_date']) ?? BusinessDateTime.now();
   }
 
   @override
   void dispose() {
     _amount.dispose();
     _note.dispose();
+    _payee.dispose();
     super.dispose();
+  }
+
+  Future<void> _pickImage() async {
+    final data = await pickReceiptAsDataUrl();
+    if (data != null && mounted) setState(() => _image = data);
   }
 
   Future<void> _addCategory() async {
@@ -507,8 +544,10 @@ class _ExpenseFormState extends State<_ExpenseForm> {
       'method': _source == 'direct' ? _method : 'cash',
       'category_id': _categoryId,
       'amount': amount,
-      'expense_date': _ymd.format(_date),
+      'expense_date': BusinessDateTime.toApiUtc(_date),
       'note': _note.text.trim(),
+      'payee_name': _payee.text.trim(),
+      'invoice_image': _image ?? '',
     };
     setState(() => _saving = true);
     try {
@@ -600,25 +639,41 @@ class _ExpenseFormState extends State<_ExpenseForm> {
                 decoration: InputDecoration(labelText: t('Số tiền')),
               ),
               SizedBox(height: 12),
+              TextField(
+                controller: _payee,
+                decoration: InputDecoration(
+                    labelText: t('Bên nhận / NCC'),
+                    hintText: t('VD: Điện lực, Ahamove, cô Ba...')),
+              ),
+              SizedBox(height: 12),
               InkWell(
                 onTap: () async {
-                  final picked = await showDatePicker(
-                    context: context,
-                    initialDate: _date,
-                    firstDate: DateTime(2020),
-                    lastDate: DateTime(2100),
-                  );
+                  final picked = await pickDanDateTime(context, initial: _date);
                   if (picked != null) setState(() => _date = picked);
                 },
                 child: InputDecorator(
-                  decoration: InputDecoration(labelText: t('Ngày chi')),
-                  child: Text(_ymd.format(_date)),
+                  decoration: InputDecoration(labelText: t('Ngày giờ chi')),
+                  child: Text(Fmt.dmyHm(_date)),
                 ),
               ),
               SizedBox(height: 12),
               TextField(
                 controller: _note,
-                decoration: InputDecoration(labelText: t('Ghi chú')),
+                decoration: InputDecoration(labelText: t('Lý do / Ghi chú')),
+              ),
+              SizedBox(height: 12),
+              OutlinedButton.icon(
+                onPressed: _pickImage,
+                icon: Icon(_image == null
+                    ? Icons.add_a_photo_outlined
+                    : Icons.check_circle),
+                label: Text(_image == null
+                    ? t('Đính kèm ảnh hóa đơn')
+                    : t('Đã có ảnh hóa đơn — đổi ảnh')),
+                style: OutlinedButton.styleFrom(
+                    minimumSize: const Size(double.infinity, 42),
+                    foregroundColor:
+                        _image == null ? DanColors.muted : DanColors.done),
               ),
             ],
           ),
@@ -637,6 +692,221 @@ class _ExpenseFormState extends State<_ExpenseForm> {
                   child: CircularProgressIndicator(
                       strokeWidth: 2, color: Colors.white))
               : Text(_isEdit ? t('Lưu') : t('Ghi chi phí')),
+        ),
+      ],
+    );
+  }
+}
+
+/// Chi tiết một khoản chi: hiện rõ mọi trường + ảnh hóa đơn (xem/tải) + in
+/// phiếu chi. Khoản "Chi từ két" (from_drawer) chỉ đọc — không sửa/xoá ở đây.
+class _ExpenseDetailDialog extends StatefulWidget {
+  final Map<String, dynamic> expense;
+  const _ExpenseDetailDialog({required this.expense});
+
+  @override
+  State<_ExpenseDetailDialog> createState() => _ExpenseDetailDialogState();
+}
+
+class _ExpenseDetailDialogState extends State<_ExpenseDetailDialog> {
+  bool _printing = false;
+
+  Map<String, dynamic> get e => widget.expense;
+  bool get _fromDrawer =>
+      e['from_drawer'] == true || _s(e['id']).startsWith('drawer:');
+
+  Uint8List? _imageBytes() {
+    final raw = _s(e['invoice_image']);
+    if (raw.isEmpty) return null;
+    try {
+      final b64 = raw.contains(',') ? raw.split(',').last : raw;
+      return base64Decode(b64);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> _print() async {
+    setState(() => _printing = true);
+    try {
+      await context.read<ApiService>().printExpenseVoucher(_s(e['id']));
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(t('Đã gửi in phiếu chi'))));
+      }
+    } catch (err) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text(err.toString().replaceFirst('Exception: ', '')),
+            backgroundColor: DanColors.late));
+      }
+    } finally {
+      if (mounted) setState(() => _printing = false);
+    }
+  }
+
+  Future<void> _saveImage(Uint8List bytes) async {
+    try {
+      await Share.shareXFiles(
+        [
+          XFile.fromData(bytes,
+              name: 'hoa-don-${_s(e['code'])}.png', mimeType: 'image/png')
+        ],
+        subject: t('Ảnh hóa đơn chi'),
+      );
+    } catch (_) {
+      // Một số nền tảng (desktop) không có share sheet — bỏ qua im lặng.
+    }
+  }
+
+  void _viewImage(Uint8List bytes) {
+    showDialog<void>(
+      context: context,
+      builder: (_) => Dialog(
+        backgroundColor: Colors.black,
+        insetPadding: const EdgeInsets.all(16),
+        child: Stack(
+          children: [
+            InteractiveViewer(
+              maxScale: 5,
+              child: Center(child: Image.memory(bytes)),
+            ),
+            Positioned(
+              top: 4,
+              right: 4,
+              child: IconButton(
+                icon: const Icon(Icons.close, color: Colors.white),
+                onPressed: () => Navigator.of(context).pop(),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _kv(String k, String v) {
+    if (v.trim().isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+              width: 118,
+              child: Text(k,
+                  style:
+                      const TextStyle(fontSize: 12.5, color: DanColors.muted))),
+          Expanded(
+              child: Text(v,
+                  style: const TextStyle(
+                      fontSize: 13, fontWeight: FontWeight.w600))),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final date = DateTime.tryParse(_s(e['expense_date']));
+    final bytes = _imageBytes();
+    return AlertDialog(
+      backgroundColor: DanColors.surface,
+      title: Row(children: [
+        Expanded(
+            child: Text(t('Chi tiết khoản chi'),
+                style: const TextStyle(
+                    fontWeight: FontWeight.w900, fontSize: 17))),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+          decoration: BoxDecoration(
+              color: (_fromDrawer ? DanColors.doing : DanColors.brand)
+                  .withValues(alpha: .13),
+              borderRadius: BorderRadius.circular(6)),
+          child: Text(_fromDrawer ? t('Tiền két') : t('Trực tiếp'),
+              style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w800,
+                  color:
+                      _fromDrawer ? const Color(0xFFB45309) : DanColors.brand)),
+        ),
+      ]),
+      content: SizedBox(
+        width: dialogWidth(context, 420),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Text(Fmt.money(_n(e['amount'])),
+                    style: const TextStyle(
+                        fontSize: 26,
+                        fontWeight: FontWeight.w900,
+                        color: DanColors.late)),
+              ),
+              const SizedBox(height: 12),
+              _kv(t('Số phiếu'), _s(e['code'])),
+              _kv(t('Người chi'), _s(e['actor_name'])),
+              _kv(t('Ngày giờ chi'),
+                  date != null ? Fmt.dmyHm(date) : _s(e['expense_date'])),
+              _kv(t('Bên nhận / NCC'), _s(e['payee_name'])),
+              _kv(t('Danh mục'), _s(e['category_name'])),
+              _kv(
+                  t('Hình thức'),
+                  _s(e['method']) == 'transfer'
+                      ? t('Chuyển khoản')
+                      : t('Tiền mặt')),
+              _kv(t('Lý do / Ghi chú'), _s(e['note'])),
+              if (bytes != null) ...[
+                const SizedBox(height: 12),
+                const Divider(height: 1, color: DanColors.border),
+                const SizedBox(height: 10),
+                Row(children: [
+                  Text(t('Ảnh hóa đơn'),
+                      style: const TextStyle(
+                          fontSize: 12.5, fontWeight: FontWeight.w700)),
+                  const Spacer(),
+                  TextButton.icon(
+                    onPressed: () => _saveImage(bytes),
+                    icon: const Icon(Icons.download, size: 16),
+                    label: Text(t('Tải ảnh')),
+                  ),
+                ]),
+                const SizedBox(height: 6),
+                InkWell(
+                  onTap: () => _viewImage(bytes),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(DanRadius.md),
+                    child: Image.memory(bytes,
+                        height: 160, width: double.infinity, fit: BoxFit.cover),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        if (!_fromDrawer)
+          TextButton.icon(
+            onPressed: () => Navigator.of(context).pop('edit'),
+            icon: const Icon(Icons.edit_outlined, size: 16),
+            label: Text(t('Sửa')),
+          ),
+        OutlinedButton.icon(
+          onPressed: _printing ? null : _print,
+          icon: _printing
+              ? const SizedBox(
+                  width: 15,
+                  height: 15,
+                  child: CircularProgressIndicator(strokeWidth: 2))
+              : const Icon(Icons.print_outlined, size: 16),
+          label: Text(t('In phiếu chi')),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: Text(t('Đóng')),
         ),
       ],
     );

@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart' hide Category;
 import '../models/pos_models.dart';
 import '../services/api_service.dart';
 import '../services/app_log.dart';
+import '../services/local_store.dart';
 import '../services/system_log.dart';
 
 double _doubleValue(dynamic value) {
@@ -34,6 +35,8 @@ class PosProvider extends ChangeNotifier {
   String? _activeOrderId;
   String? _activeBillNo;
   double _activeDiscount = 0.0;
+  // PIN Quản lý/Chủ đã nhập khi chỉnh giá dòng — gửi kèm submit (server bắt PIN).
+  String? _lineOverridePin;
   Map<String, dynamic>? _selectedCustomer;
 
   bool _isLoadingFloor = false;
@@ -43,6 +46,21 @@ class PosProvider extends ChangeNotifier {
   bool _isPayingOrder = false;
 
   PosProvider({required this.apiService});
+
+  String _paymentOperationStoreKey(String orderId) =>
+      'pending_payment_operation_$orderId';
+
+  Future<String> _paymentOperationId(String orderId) async {
+    final store = LocalStore.instance;
+    final key = _paymentOperationStoreKey(orderId);
+    final existing = await store.getString(key);
+    if (existing != null && existing.isNotEmpty) return existing;
+    final created = 'pay-$orderId-'
+        '${DateTime.now().microsecondsSinceEpoch.toRadixString(36)}-'
+        '${math.Random.secure().nextInt(0x7fffffff).toRadixString(36)}';
+    await store.setString(key, created);
+    return created;
+  }
 
   List<Zone> get zones => _zones;
   List<TableModel> get tables => _tables;
@@ -397,13 +415,32 @@ class PosProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  // GHI CHÚ DÒNG (đồng bộ Retail): đặt ghi chú cho một món trong giỏ. Món đã gửi
+  // bếp (persisted) sửa ghi chú sẽ KHÔNG tự đẩy lại — chỉnh trước khi gửi bếp.
+  void setLineNote(CartItem cartItem, String note) {
+    cartItem.notes = note.trim();
+    notifyListeners();
+  }
+
+  // CHỈNH GIÁ DÒNG (giảm giá trực tiếp trên món, như Retail): [price] = giá bán mới
+  // mỗi đơn vị, null = về giá niêm yết. [pin] = PIN Quản lý/Chủ đã nhập ở UI, giữ
+  // lại để gửi kèm khi submit (server bắt PIN khi có dòng chỉnh giá).
+  void setLinePrice(CartItem cartItem, double? price, {String? pin}) {
+    cartItem.unitPriceOverride = price;
+    if (price != null && pin != null && pin.isNotEmpty) _lineOverridePin = pin;
+    if (!_cart.any((c) => c.hasPriceOverride)) _lineOverridePin = null;
+    notifyListeners();
+  }
+
   void removeFromCart(CartItem cartItem) {
     _cart.remove(cartItem);
+    if (!_cart.any((c) => c.hasPriceOverride)) _lineOverridePin = null;
     notifyListeners();
   }
 
   void clearCart() {
     _cart = [];
+    _lineOverridePin = null;
     notifyListeners();
   }
 
@@ -447,6 +484,9 @@ class PosProvider extends ChangeNotifier {
                   'menu_item_id': c.item.id,
                 'qty': c.qty,
                 'note': c.notes,
+                // CHỈNH GIÁ DÒNG: gửi giá đã đổi; server tự lấy giá niêm yết làm
+                // orig_price để bill in "gốc → sau đổi". Không chỉnh thì bỏ qua.
+                if (c.hasPriceOverride) 'price': c.unitPriceOverride,
                 'mods': c.selectedModifiers
                     .map((m) => {
                           'name': m.name,
@@ -456,11 +496,15 @@ class PosProvider extends ChangeNotifier {
               })
           .toList();
 
+      final hasOverride = unsaved.any((c) => c.hasPriceOverride);
       final payload = {
         if (_activeOrderId != null) 'id': _activeOrderId,
         'table_id': _selectedTable!.id,
         'source': 'staff_pos',
         'items': orderItems,
+        // Server bắt PIN Quản lý/Chủ khi có dòng chỉnh giá.
+        if (hasOverride && _lineOverridePin != null)
+          'security_pin': _lineOverridePin,
       };
 
       final orderRes = await apiService.createOrUpdateOrder(payload);
@@ -583,6 +627,10 @@ class PosProvider extends ChangeNotifier {
     // HĐĐT phát sinh đều truy vết được thành một chuỗi trong nhật ký.
     return SystemLog.runFlow('payment', () async {
       try {
+        // Giữ nguyên operation ID qua timeout, retry và cả lúc app khởi động lại.
+        // Chỉ xóa sau khi server trả một kết quả terminal; nếu response bị mất,
+        // lần thử sau sẽ replay đúng payment thay vì tạo lần thu tiền thứ hai.
+        final paymentOperationId = await _paymentOperationId(targetOrderId);
         final payload = {
           'lines': [
             {
@@ -600,11 +648,12 @@ class PosProvider extends ChangeNotifier {
             'customer': customerOverride ?? _selectedCustomer,
           if (securityPin != null && securityPin.isNotEmpty)
             'security_pin': securityPin,
-          'idempotency_key':
-              'pay-$targetOrderId-${DateTime.now().microsecondsSinceEpoch}',
+          'idempotency_key': paymentOperationId,
         };
 
         final receipt = await apiService.payOrder(targetOrderId, payload);
+        await LocalStore.instance
+            .remove(_paymentOperationStoreKey(targetOrderId));
 
         if (receipt['fully_settled'] != false) {
           _selectedTable = null;

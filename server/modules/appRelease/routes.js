@@ -12,8 +12,14 @@ const publishLimiter = rateLimit({ key: 'app-publish', windowMs: 60_000, max: 3 
 export function registerAppReleaseRoutes(api, { wrap, guardAny, logRequestError }) {
 // --- Auto-update: phát hành & phân phối bản cài mới cho thiết bị ---
 // Version: PUBLIC (client hỏi trước cả khi đăng nhập). Chỉ lộ số hiệu + ghi chú.
-api.get('/app/version', wrap((req) => AppRelease.latestFor(
-  String(req.query.platform || 'windows').toLowerCase())));
+api.get('/app/version', wrap((req, res) => {
+  // Release state is origin-specific and must be revalidated after an endpoint
+  // switch. Do not let a browser/proxy reuse a stale mandatory flag or URL.
+  res.setHeader('Cache-Control', 'no-store, max-age=0');
+  res.setHeader('Vary', 'Host');
+  return AppRelease.latestFor(
+    String(req.query.platform || 'windows').toLowerCase());
+}));
 // Download: PUBLIC — stream file cài đặt (exe/apk) cho client tự cập nhật.
 // KHÔNG dùng wrap() vì handler tự pipe vào res (wrap sẽ res.json sau khi đã gửi).
 api.get('/app/download/:platform', async (req, res) => {

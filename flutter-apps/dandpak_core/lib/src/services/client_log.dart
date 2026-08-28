@@ -1,4 +1,3 @@
-
 import 'package:flutter/foundation.dart';
 
 import '../app_flavor.dart';
@@ -7,7 +6,7 @@ import 'app_log.dart';
 import 'black_box.dart';
 import 'system_log.dart';
 
-/// Ships client-side runtime errors to the local engine
+/// Ships client-side runtime errors to the selected Store Edge or VPS
 /// (`POST /api/client-log`) so every error on a POS terminal lands in ONE
 /// place — the server log stream — next to request logs and the audit trail.
 ///
@@ -45,15 +44,16 @@ class ClientLog {
     try {
       final api = _api;
       if (api == null) return;
-      final message = error.toString();
+      final message = SystemLog.redactDiagnostic(error.toString());
+      final safeStack = SystemLog.redactDiagnostic(
+          (stack ?? StackTrace.current).toString(), 6000);
       final now = DateTime.now();
       if (now.difference(_windowStart).inSeconds > 60) {
         _windowStart = now;
         _windowCount = 0;
       }
       if (_windowCount >= 20) return;
-      final key =
-          message.length > 200 ? message.substring(0, 200) : message;
+      final key = message.length > 200 ? message.substring(0, 200) : message;
       if (!_sentThisRun.add(key)) return;
       _windowCount++;
       // Lỗi Dart cũng vào hộp đen — nếu sau đó app chết native thì vệt này
@@ -68,19 +68,20 @@ class ClientLog {
         title: 'Lỗi runtime chưa được bắt ($context)',
         message: message,
         exceptionType: error.runtimeType.toString(),
-        stackTrace: (stack ?? StackTrace.current).toString(),
+        stackTrace: safeStack,
       );
       api.postClientLog({
         'app': AppFlavor.current.appId,
-        'version': '${AppFlavor.current.versionName}+${AppFlavor.current.buildNumber}',
+        'version':
+            '${AppFlavor.current.versionName}+${AppFlavor.current.buildNumber}',
         'screen': '${BlackBox.screen}|$context',
         // Bản này đã tự ghi system_logs (SystemLog.log ở trên) → server đừng
         // mirror thêm lần nữa kẻo 1 lỗi thành 2 dòng nhật ký.
         'mirrored': true,
         'message': message,
-        'stack': (stack ?? StackTrace.current).toString(),
+        'stack': safeStack,
         // ~40 thao tác gần nhất (chạm, API, socket, đổi màn) dẫn tới lỗi này.
-        'breadcrumbs': BlackBox.recentTrace(),
+        'breadcrumbs': SystemLog.redactDiagnostic(BlackBox.recentTrace(), 6000),
       }).catchError((_) {});
     } catch (_) {
       // Reporting must never break the app.
