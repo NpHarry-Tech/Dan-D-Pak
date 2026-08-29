@@ -91,7 +91,12 @@ test('live backup is decrypt-restored, integrity-checked and hash-verified befor
 test('immutable server image builder gates source, tests, labels and exported hash', () => {
   const dirtyGate = serverImageBuilder.indexOf('clean committed worktree');
   const audit = serverImageBuilder.indexOf('npm audit --omit=dev --audit-level=high');
-  const tests = serverImageBuilder.indexOf('node --test @serverTests');
+  // Production build uses the canonical DETERMINISTIC backend runner, not a raw
+  // parallel `node --test` fan-out over every file. Integration tests boot
+  // servers/workers with timing, leases and isolated SQLite DBs; running them
+  // concurrently produced false cross-test/resource interference. The gate still
+  // sits AFTER npm audit and BEFORE docker build, and still fail-closes.
+  const tests = serverImageBuilder.indexOf('run-backend-tests.mjs');
   const dockerBuild = serverImageBuilder.indexOf('docker build');
   const dockerSave = serverImageBuilder.indexOf('docker save');
   assert.ok(dirtyGate >= 0 && dirtyGate < audit && audit < tests && tests < dockerBuild && dockerBuild < dockerSave);
@@ -99,8 +104,12 @@ test('immutable server image builder gates source, tests, labels and exported ha
   assert.match(serverImageBuilder, /BUILD_GIT_COMMIT/);
   assert.match(serverImageBuilder, /BUILD_SOURCE_SHA256/);
   assert.match(serverImageBuilder, /schemaVersion = \$schemaVersion/);
-  assert.match(serverImageBuilder, /Get-ChildItem[^\n]+server[^\n]+-Recurse[^\n]+\*\.test\.mjs/);
-  assert.match(serverImageBuilder, /node --test @serverTests/);
+  // Builder MUST invoke the canonical runner and fail-close on its non-zero exit.
+  assert.match(serverImageBuilder, /run-backend-tests\.mjs/);
+  assert.match(serverImageBuilder, /& node \$canonicalRunner/);
+  assert.match(serverImageBuilder, /NO_GO: canonical server test suite failed/);
+  // Builder MUST NOT regress to the raw parallel `node --test` fan-out.
+  assert.doesNotMatch(serverImageBuilder, /node --test @serverTests/);
   assert.match(serverImageBuilder, /Get-FileHash/);
   assert.match(serverImageBuilder, /imageId/);
 });

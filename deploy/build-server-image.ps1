@@ -23,11 +23,19 @@ Push-Location $root
 try {
   & npm audit --omit=dev --audit-level=high
   if ($LASTEXITCODE -ne 0) { throw 'NO_GO: high/critical production dependency vulnerability detected.' }
-  $serverTests = @(Get-ChildItem -LiteralPath (Join-Path $root 'server') -Recurse -File -Filter '*.test.mjs' |
-    Sort-Object FullName | ForEach-Object FullName)
-  if ($serverTests.Count -eq 0) { throw 'NO_GO: no server tests were discovered.' }
-  & node --test @serverTests
-  if ($LASTEXITCODE -ne 0) { throw 'NO_GO: server test suite failed.' }
+  # Production build uses the canonical deterministic backend runner.
+  # Many integration tests start servers/workers and intentionally use timing,
+  # leases and isolated SQLite databases; raw node --test over every file runs
+  # files concurrently and creates false cross-test/resource interference.
+  $canonicalRunner = Join-Path $root 'scripts\run-backend-tests.mjs'
+  if (-not (Test-Path -LiteralPath $canonicalRunner -PathType Leaf)) {
+    throw 'NO_GO: canonical backend test runner is missing.'
+  }
+
+  & node $canonicalRunner
+  if ($LASTEXITCODE -ne 0) {
+    throw 'NO_GO: canonical server test suite failed.'
+  }
 
   & docker version --format '{{.Server.Version}}' | Out-Null
   if ($LASTEXITCODE -ne 0) { throw 'NO_GO: Docker Linux daemon is unavailable.' }
