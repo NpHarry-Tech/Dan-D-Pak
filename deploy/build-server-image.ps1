@@ -42,7 +42,11 @@ try {
 
   $short = $commit.Substring(0, 12)
   $tag = "dandpak-pos-server:$short"
-  & docker build --platform linux/amd64 --pull=false `
+  # --provenance=false/--sbom=false: produce a single-manifest image (not a
+  # BuildKit attestation manifest-list). The immutable deploy pins identity with
+  # loaded_id == manifest.imageId after the image is exported and re-loaded; an
+  # attestation index digest would not survive export/load deterministically.
+  & docker build --platform linux/amd64 --pull=false --provenance=false --sbom=false `
     --build-arg "BUILD_GIT_COMMIT=$commit" `
     --build-arg "BUILD_SOURCE_SHA256=$sourceHash" `
     --build-arg "BUILD_TIME_UTC=$builtAtUtc" `
@@ -50,9 +54,14 @@ try {
   if ($LASTEXITCODE -ne 0) { throw 'NO_GO: server image build failed.' }
 
   $imageId = (& docker image inspect $tag --format '{{.Id}}').Trim()
-  $labelCommit = (& docker image inspect $tag --format '{{index .Config.Labels "org.opencontainers.image.revision"}}').Trim()
-  $labelSource = (& docker image inspect $tag --format '{{index .Config.Labels "io.dandpak.source-sha256"}}').Trim()
-  $labelBuiltAt = (& docker image inspect $tag --format '{{index .Config.Labels "org.opencontainers.image.created"}}').Trim()
+  # Read labels as JSON. Windows PowerShell mangles embedded double-quotes when
+  # passing `{{index .Config.Labels "key"}}` to docker.exe, so the Go template
+  # parsed the dotted label key as a function call ("org" not defined) and
+  # returned nothing. `{{json .Config.Labels}}` has no embedded quotes.
+  $labels = (& docker image inspect $tag --format '{{json .Config.Labels}}') | ConvertFrom-Json
+  $labelCommit = [string]$labels.'org.opencontainers.image.revision'
+  $labelSource = [string]$labels.'io.dandpak.source-sha256'
+  $labelBuiltAt = [string]$labels.'org.opencontainers.image.created'
   if ($imageId -notmatch '^sha256:[0-9a-f]{64}$' -or $labelCommit -ne $commit -or
       $labelSource -ne $sourceHash -or $labelBuiltAt -ne $builtAtUtc) {
     throw 'NO_GO: built image identity/labels do not match source provenance.'
