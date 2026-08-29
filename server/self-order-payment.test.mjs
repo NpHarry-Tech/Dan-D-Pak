@@ -92,34 +92,95 @@ test('bill TRẢ TRƯỚC MỘT PHẦN vẫn gửi món vào bếp được', ()
     0);
 });
 
-test('webhook SePay của đối tác mới là thứ đóng bill — giống hệt POS', () => {
+test('webhook SePay của đối tác mới là thứ đóng bill — giống hệt POS', async () => {
+  AppSettings.updateSettings({
+    operations_config: {
+      payment: {
+        bankCode: 'VCB',
+        bankAccount: '1020352657',
+        accountName: 'TEST',
+        transferPrefix: 'DANBILL',
+      },
+    },
+  }, 'sala');
+
   AppSettings.updateIntegrations({
-    channels: { sepay: { enabled: true, apiKey: 'k_test_sepay', accountNumber: '' } },
+    channels: {
+      sepay: {
+        enabled: true,
+        apiKey: 'k_test_sepay',
+      },
+    },
   }, 'sala');
 
   const order = selfOrder();
   Orders.confirmPendingItems(order.id, [], 'sala', 'Thu ngan');
   const fresh = Orders.getOrder(order.id);
-  const ref = Payments.customerQrPay(order.id, { method: 'qrcode' }, 'sala').reference;
 
-  // Sai API key → từ chối (fail-closed), bill không bị đóng.
+  const qr = await Payments.generateCustomerPaymentQr(
+    order.id,
+    { method: 'qrcode' },
+    'sala',
+  );
+
+  assert.ok(qr.payment_intent_id);
+  assert.ok(qr.reference);
+  assert.ok(qr.bankAccount);
+
+  // Sai API key → fail closed, không đóng bill.
   assert.throws(
     () => Payments.handleSepayWebhook(
-      { id: 'tx_bad', transferType: 'in', transferAmount: fresh.total, content: ref },
-      { authorization: 'Apikey sai_key' }, 'sala'),
-    /Sai API key/);
+      {
+        id: 'tx_bad',
+        transferType: 'in',
+        transferAmount: fresh.total,
+        content: qr.reference,
+        accountNumber: qr.bankAccount,
+      },
+      { authorization: 'Apikey sai_key' },
+      'sala',
+    ),
+    /Sai API key/,
+  );
+
   assert.equal(Orders.getOrder(order.id).status, 'open');
 
-  // Đúng API key + đúng nội dung + đủ tiền → bill tự đóng.
-  Payments.handleSepayWebhook(
-    { id: 'tx_ok', transferType: 'in', transferAmount: fresh.total, content: ref },
-    { authorization: 'Apikey k_test_sepay' }, 'sala');
+  // Đúng account + reference + amount → canonical payment settlement.
+  const result = Payments.handleSepayWebhook(
+    {
+      id: 'tx_ok',
+      transferType: 'in',
+      transferAmount: fresh.total,
+      content: qr.reference,
+      accountNumber: qr.bankAccount,
+    },
+    { authorization: 'Apikey k_test_sepay' },
+    'sala',
+  );
+
+  assert.equal(result.status, 'paid');
   assert.equal(Orders.getOrder(order.id).status, 'paid');
   assert.equal(Payments.paidForOrder(order.id), fresh.total);
-  const paymentAudits = db.prepare(
-    `SELECT action FROM audit_log
-     WHERE branch_id='sala' AND action IN ('payment.done','payment.auto_confirmed')
-       AND detail LIKE ?`,
-  ).all(`%"order":"${order.id}"%`);
-  assert.deepEqual(paymentAudits.map(row => row.action), ['payment.done']);
+
+  const intent = db.prepare(`
+    SELECT state,payment_id,payment_line_id
+    FROM payment_intents
+    WHERE id=?
+  `).get(qr.payment_intent_id);
+
+  assert.equal(intent.state, 'SUCCEEDED');
+  assert.ok(intent.payment_id);
+  assert.ok(intent.payment_line_id);
+
+  const paymentAudits = db.prepare(`
+    SELECT action FROM audit_log
+    WHERE branch_id='sala'
+      AND action IN ('payment.done','payment.auto_confirmed')
+      AND detail LIKE ?
+  `).all(`%"order":"${order.id}"%`);
+
+  assert.deepEqual(
+    paymentAudits.map(row => row.action),
+    ['payment.done'],
+  );
 });

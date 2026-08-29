@@ -40,13 +40,33 @@ test('history, invoice and shift hot queries use their composite indexes', () =>
   assert.match(shift, /idx_payments_shift_created/);
 });
 
-test('one history page batches enrichments instead of executing three queries per bill', () => {
+test('one history page batches enrichments instead of querying per bill', () => {
   const source = readFileSync(new URL('./services/history.js', import.meta.url), 'utf8');
   const start = source.indexOf('export function listOrderHistory');
   const end = source.indexOf('export function billShiftStatus');
   const body = source.slice(start, end);
-  assert.equal((body.match(/db\.prepare\(/g) || []).length, 4,
-    'one base query plus three page-wide enrichment queries');
+
+  // 1 base page query + 5 page-wide enrichment queries:
+  // payment methods, item count, shift status, return amount, return qty.
+  assert.equal(
+    (body.match(/db\.prepare\(/g) || []).length,
+    6,
+    'one base query plus five page-wide enrichment queries',
+  );
+
   assert.match(body, /p\.order_id IN \(\$\{slots\}\)/);
+  assert.match(body, /order_id IN \(\$\{slots\}\)/);
+  assert.match(body, /original_order_id IN \(\$\{slots\}\)/);
+
+  // Sau khi đã batch xong, projection từng bill tuyệt đối không query DB.
+  const projectionStart = body.indexOf('.map(o =>');
+  assert.ok(projectionStart >= 0, 'history projection must exist');
+
+  assert.doesNotMatch(
+    body.slice(projectionStart),
+    /db\.prepare\(/,
+    'history projection must not execute per-bill SQL',
+  );
+
   assert.doesNotMatch(body, /methodStmt|itemCountStmt|shiftStmt/);
 });

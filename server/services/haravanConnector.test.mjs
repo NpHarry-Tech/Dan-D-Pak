@@ -57,7 +57,24 @@ try {
   assert.equal(db.prepare(`SELECT COUNT(*) n FROM orders WHERE online_channel='haravan' AND online_ref='123'`).get().n, 1);
   assert.equal(db.prepare(`SELECT COUNT(*) n FROM order_items`).get().n, 2);
   assert.equal(db.prepare(`SELECT branch_id FROM orders WHERE online_ref='123'`).get().branch_id, 'sala');
-  assert.equal(db.prepare(`SELECT status FROM orders WHERE online_ref='123'`).get().status, 'waiting_assignment');
+  const imported = db.prepare(`
+    SELECT id,status
+    FROM orders
+    WHERE online_channel='haravan'
+      AND online_ref='123'
+  `).get();
+
+  assert.ok(imported);
+  assert.equal(imported.status, 'open');
+
+  const onlineState = db.prepare(`
+    SELECT workflow_status
+    FROM online_order_state
+    WHERE order_id=?
+  `).get(imported.id);
+
+  assert.ok(onlineState);
+  assert.equal(onlineState.workflow_status, 'pending');
 
   const duplicate = Haravan.handleHaravanWebhook(body, {
     'x-haravan-hmacsha256': signature,
