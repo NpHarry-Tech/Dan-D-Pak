@@ -79,7 +79,30 @@ Require-Minimum 'flutterTestsPassedCount' $gate.flutterTestsPassedCount 109
 if ([int]$gate.flutterTestsSkippedCount -ne 1) {
   throw 'NO_GO: Flutter evidence must contain exactly the one documented updater E2E skip.'
 }
-Require-True 'windowsArtifactSigned' $gate.windowsArtifactSigned
+$windowsSigned = ($gate.windowsArtifactSigned -eq $true)
+$windowsOverride = ($gate.windowsUnsignedOwnerOverride -eq $true)
+
+if (-not $windowsSigned) {
+  if (-not $windowsOverride) {
+    throw 'NO_GO: unsigned Windows artifact requires explicit owner override evidence.'
+  }
+
+  if ([string]$gate.windowsArtifactSignatureStatus -ne 'NotSigned') {
+    throw 'NO_GO: unsigned Windows owner override requires signature status NotSigned.'
+  }
+
+  if ([string]::IsNullOrWhiteSpace([string]$gate.windowsUnsignedOwnerOverrideActor)) {
+    throw 'NO_GO: windowsUnsignedOwnerOverrideActor is required.'
+  }
+
+  if ([string]::IsNullOrWhiteSpace([string]$gate.windowsUnsignedOwnerOverrideReason)) {
+    throw 'NO_GO: windowsUnsignedOwnerOverrideReason is required.'
+  }
+}
+elseif ($windowsOverride) {
+  throw 'NO_GO: signed Windows artifact must not also claim unsigned owner override.'
+}
+
 Require-Sha 'windowsArtifactSha256' $gate.windowsArtifactSha256
 Require-True 'phoneArtifactSigned' $gate.phoneArtifactSigned
 Require-Sha 'phoneArtifactSha256' $gate.phoneArtifactSha256

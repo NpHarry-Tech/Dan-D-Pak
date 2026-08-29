@@ -150,10 +150,19 @@ test('production evidence verifier is fail-closed on every external gate', () =>
   for (const gate of [
     'productionCopyRestoreTested', 'databaseQuickCheckOk', 'logicalOrphansZero',
     'pendingOutboxPreserved', 'serverTestsPassed', 'flutterTestsPassed',
-    'windowsArtifactSigned', 'phoneArtifactSigned', 'tabletArtifactSigned',
+    'phoneArtifactSigned', 'tabletArtifactSigned',
     'hardwareCanaryPassed', 'storeEdgeWanCanaryPassed',
     'paymentInventoryInvoiceReconciled', 'rollbackRehearsed',
   ]) assert.match(evidenceVerifier, new RegExp(`Require-True '${gate}'`));
+
+  // Windows policy is intentionally dual-mode:
+  // Authenticode signed OR explicit audited owner override for NotSigned.
+  assert.match(evidenceVerifier, /windowsArtifactSigned/);
+  assert.match(evidenceVerifier, /windowsUnsignedOwnerOverride/);
+  assert.match(evidenceVerifier, /windowsArtifactSignatureStatus/);
+  assert.match(evidenceVerifier, /NotSigned/);
+  assert.match(evidenceVerifier, /windowsUnsignedOwnerOverrideActor/);
+  assert.match(evidenceVerifier, /windowsUnsignedOwnerOverrideReason/);
   assert.match(evidenceVerifier, /Require-Minimum 'serverTestFiles' \$gate\.serverTestFiles 69/);
   assert.match(evidenceVerifier, /Require-Minimum 'serverTestsPassedCount' \$gate\.serverTestsPassedCount 393/);
   assert.match(evidenceVerifier, /Require-Minimum 'flutterTestsPassedCount' \$gate\.flutterTestsPassedCount 109/);
