@@ -1,6 +1,0 @@
-
-> pos-erp-system@0.1.0 start
-> node server/index.js
-
-{"time":"2026-06-28T15:11:35.940Z","level":"info","message":"database backup written","meta":{"path":"C:\\Users\\PC\\Desktop\\Dan D Pak\\backups\\store-2026-06-28T15-11-35.db","bytes":23789568,"pruned":0}}
-{"time":"2026-06-28T15:11:35.989Z","level":"info","message":"POS/ERP server started","meta":{"port":3000,"localUrl":"http://localhost:3000","webRoot":"C:\\Users\\PC\\Desktop\\Dan D Pak\\web","runtime":{"nodeEnv":"development","deploymentTarget":"local","providers":{"database":"sqlite","realtime":"socketio","storage":"local"},"appDataDirConfigured":false,"centralSyncConfigured":false,"corsConfigured":false,"backupRetentionDays":14,"warnings":[],"providerIssues":[],"startedAt":"2026-06-28T15:11:35.075Z"}}}

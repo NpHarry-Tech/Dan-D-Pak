@@ -33,7 +33,7 @@ Thiết bị nối **Local Hub trong LAN cửa hàng** → LAN không bao giờ 
 |---|---|
 | **VPS** | Sự thật toàn chuỗi. Nhận sync từ các Local Hub, gộp báo cáo, xuất e-invoice, phát OTA. KHÔNG phục vụ trực tiếp thiết bị POS. |
 | **Local Hub** (1 máy/CN: máy POS quầy hoặc mini-PC) | Chạy `server/index.js` tại cửa hàng. Là nơi POS/tablet/KDS ghi/đọc. Hàng đợi thay đổi → đẩy lên VPS khi online; kéo thay đổi từ VPS về. Điều khiển máy in/két qua LAN (đã có Hardware Agent). |
-| **Thiết bị** (POS/tablet/KDS) | Client mỏng, nối Local Hub qua LAN. `discovery_service` (đã có) tự dò Local Hub trong subnet. |
+| **Thiết bị** (POS/tablet/KDS) | Client mỏng, nối Local Hub qua URL LAN được cấu hình rõ ràng. Flutter không sở hữu hoặc tự khởi chạy tiến trình Node. |
 
 ## 4. Cơ chế đồng bộ (an toàn, chống mất/đè dữ liệu)
 
@@ -44,8 +44,7 @@ ghi thay đổi có: `table, ref (pk), op, payload, updated_at, origin_device, s
 ### 4.2 Định danh & chống trùng (idempotency)
 - Mỗi Local Hub có `hub_id` cố định. Mỗi bản ghi sync mang `hub_id + seq` (số tăng dần).
 - VPS lưu `processed_seq` theo từng hub → đẩy lại cùng bản ghi cũng KHÔNG áp 2 lần
-  (chống double khi mạng chập chờn). Schema `processed_event_ids` đã phác trong
-  `server/db/schema/0001_planned_company_server.sql`.
+  (chống double khi mạng chập chờn).
 
 ### 4.3 Chống XUNG ĐỘT (2 nơi sửa cùng 1 bản ghi)
 Quy tắc theo LOẠI dữ liệu (không dùng "last-write-wins" mù cho mọi thứ):
@@ -59,17 +58,17 @@ Quy tắc theo LOẠI dữ liệu (không dùng "last-write-wins" mù cho mọi 
   VPS → Local Hub một chiều (pull). Local Hub không tự sửa danh mục.
 
 ### 4.4 Bầu hub dự phòng (mesh, chống chết 1 máy)
-Nếu Local Hub chính chết: các thiết bị (đã có `discovery_service`) không thấy hub →
-một máy POS được cấu hình "có thể làm hub" tự bật `server/index.js` lên làm hub tạm,
-tiếp tục bán; khi hub chính sống lại, merge change feed 2 bên bằng `hub_id + seq`.
-(Giai đoạn sau — không bắt buộc cho MVP offline.)
+Nếu Local Hub chính chết, thiết bị phải báo mất Edge và dừng mutation thay vì tự chuyển sang
+VPS hoặc tự dựng một DB mới. Hub dự phòng chỉ được kích hoạt bằng quy trình vận hành có kiểm
+soát sau khi đã xác định DB/replication state; tự bầu hub chưa nằm trong phạm vi production hiện tại.
 
 ## 5. Lộ trình TĂNG DẦN (mỗi bước tự chạy + test được)
 
 > Làm từng bước, test kỹ rồi mới sang bước sau. Sync sai = mất dữ liệu → không vội.
 
-- **B2.1 — Local Hub cơ bản (offline bán được).** Thiết bị nối Local Hub LAN (đã có
-  `discovery_service` + `NodeRunner`). Bỏ ép nối VPS ở cửa hàng. Test: rút mạng WAN,
+- **B2.1 — Local Hub cơ bản (offline bán được).** Triển khai Store Edge độc lập theo
+  `deploy/store-edge/`, rồi cấu hình mọi thiết bị trong cùng chi nhánh về đúng một URL LAN.
+  Không tự fallback Edge → VPS vì sẽ tạo split-brain. Test: rút mạng WAN,
   vẫn bán/in/mở két. *Chưa cần sync lên VPS.* — **Giá trị lớn nhất, rủi ro thấp nhất.**
 - **B2.2 — Đẩy 1 chiều Local Hub → VPS (append-only).** Wire `CENTRAL_SYNC_URL`:
   đẩy orders/payments/shifts/audit lên VPS (idempotent theo hub_id+seq). VPS gộp báo

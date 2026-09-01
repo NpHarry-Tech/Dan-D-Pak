@@ -1,7 +1,7 @@
-Permanent storage snapshots live here.
+Permanent storage archives live here.
 
-SQLite remains the live database. The server also writes JSON/NDJSON snapshots
-into these folders for important records:
+SQLite remains the only live database. The server also writes JSON/NDJSON archive
+files into these folders for important records:
 
 - customers
 - orders
@@ -11,6 +11,7 @@ into these folders for important records:
 - audit
 - staff
 
+This folder is not a second database and must not contain extra `.db` files.
 Do not delete this folder in production unless you have a verified backup.
 
 AI/Agent Safety:

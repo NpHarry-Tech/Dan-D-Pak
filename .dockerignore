@@ -1,0 +1,35 @@
+**
+!package.json
+!package-lock.json
+!server/
+!server/**
+
+# Runtime/user data is mounted as volumes and must never enter build context.
+server/node_modules/
+server/releases/
+server/backups/
+server/permanent-storage/
+server/enterprise-storage/
+server/uploads/
+server/assets/product-images/
+# Maintenance/import utilities and their locally generated reports/backups are
+# not runtime dependencies. The encrypted backup/restore runbook executes the
+# two crypto helpers inside the container, so only those audited helpers ship.
+server/scripts/*
+!server/scripts/encrypt-file.js
+!server/scripts/decrypt-file.js
+# Tests are run before the immutable image is built; they are not shipped.
+server/**/*.test.mjs
+server/**/*.db
+server/**/*.db-*
+server/**/*.sqlite*
+server/**/.env*
+server/**/*.pem
+server/**/*.key
+server/**/*.p12
+server/**/*.pfx
+server/**/*.jks
+server/**/*.keystore
+server/**/.tmp-tests/
+server/**/runtime/
+server/**/*.log

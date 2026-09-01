@@ -1,10 +1,19 @@
 // Demo seed for one realistic mixed FnB + retail branch.
 // Re-runnable: clears operational demo data and rebuilds catalog/stock.
 import { db, migrate, bootstrapWarehouseDefaults } from './db.js';
+import { env } from './config/env.js';
+
+// FAIL-CLOSED (§8/§9/§16): demo seed là TENANT BOOTSTRAP production-like (nhân sự
+// admin/tanbv/…, kho BCM, bàn Khu A/B/VIP). TUYỆT ĐỐI không được chạy cho tenant
+// review/commercial mới, DÙ được gọi từ bất kỳ đâu (index.js dynamic import,
+// /dev/seed subprocess, hay tay). Chặn ngay tại lớp seed, không chỉ ở caller.
+if (env.isReview) {
+  throw new Error('seed.js (demo seed) bị CẤM khi APP_ENV=review — tenant review chỉ dùng reviewSeed.');
+}
 
 migrate();
 
-const BR = 'br1';
+const BR = 'sala';
 const WH_KITCHEN = 'wh_kitchen';
 const WH_RETAIL = 'wh_retail';
 const ALWAYS = JSON.stringify({ mode: 'always' });

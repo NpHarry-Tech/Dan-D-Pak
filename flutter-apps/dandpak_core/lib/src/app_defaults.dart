@@ -1,23 +1,24 @@
-import 'dart:io';
-
 import 'api_client.dart';
 
 class DanDpakDefaults {
   const DanDpakDefaults._();
 
-  /// Máy chủ sản xuất (VPS Viettel). Tablet/điện thoại là thin-client KHÔNG
-  /// chạy Node engine nội bộ, nên phải trỏ thẳng vào đây ngay từ lần cài đầu —
-  /// nếu để mặc định localhost:3000 thì máy sẽ "connection refused" và hiện ra
-  /// đúng triệu chứng "thiếu cơ sở dữ liệu". Có thể đổi trong màn Kết nối.
-  static const prodBaseUrl = 'http://171.244.199.186';
+  /// Máy chủ sản xuất (VPS). Mọi app đều là client; Store Edge là một service
+  /// độc lập trên LAN chứ không phải process con do Flutter âm thầm sở hữu.
+  static const prodBaseUrl = DanDpakApiClient.defaultBaseUrl;
 
-  /// Mặc định theo nền tảng: desktop chạy engine nội bộ → localhost; di động là
-  /// thin-client → VPS. Người dùng vẫn ghi đè được và giá trị được lưu bền.
+  /// Build canary/Edge của một cửa hàng khai báo:
+  /// `--dart-define=STORE_EDGE_URL=http://192.168.x.x:3000`.
+  /// Không khai thì tất cả nền tảng dùng VPS, tránh desktop cài mới rơi vào
+  /// localhost trong khi local engine không hề chạy. URL người dùng chọn vẫn
+  /// được LocalStore lưu bền và thắng giá trị mặc định này.
+  static const storeEdgeUrl = String.fromEnvironment('STORE_EDGE_URL');
+
   static String get baseUrl {
-    if (Platform.isAndroid || Platform.isIOS) return prodBaseUrl;
-    return DanDpakApiClient.defaultBaseUrl;
+    final edge = storeEdgeUrl.trim();
+    return edge.isEmpty ? prodBaseUrl : DanDpakApiClient.normalizeBaseUrl(edge);
   }
 
-  static const branchId = 'br1';
+  static const branchId = 'sala';
   static const username = '';
 }

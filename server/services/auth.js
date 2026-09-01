@@ -5,37 +5,111 @@ import { db, uid, now, audit } from '../db.js';
 import { archiveStaff } from './archive.js';
 import { MODULE_PERMISSIONS } from './modules.js';
 import { REPORTS } from './reportCenter.js';
-import { hashPin, verifyPin, newToken } from './pin.js';
+import { hashPin, verifyPin, newToken, tokenDigest } from './pin.js';
+import { currentRequestUser, setRequestUser } from '../core/requestContext.js';
 
 const sessions = new Map(); // token -> { user, at }
 
-// Chống dò PIN: khóa đăng nhập tạm thời sau nhiều lần sai liên tiếp (theo username).
-const loginFails = new Map(); // username -> { count, until }
-const LOGIN_MAX_FAILS = 5;
-const LOGIN_LOCK_MS = 5 * 60 * 1000; // khóa 5 phút sau khi vượt ngưỡng
-function loginLockState(uname) {
-  const e = loginFails.get(uname);
-  if (!e) return null;
-  if (e.until && e.until <= Date.now()) { loginFails.delete(uname); return null; }
-  return e;
+// Chống dò PIN.
+//
+// Bản cũ đếm trong RAM và CHỈ theo username. Hai lỗ:
+//   - Khởi động lại server là bộ đếm về 0 → kẻ tấn công chỉ cần chờ (hoặc ép)
+//     một lần restart là được thêm 5 lượt, khoá gần như vô nghĩa với tấn công dài.
+//   - Không đếm theo IP → một máy có thể xoay vòng qua toàn bộ nhân sự, mỗi
+//     người 5 lượt, mà không bao giờ chạm ngưỡng của ai.
+// Nay đếm trong DB (bền qua restart) và theo CẢ hai chiều: định danh + IP.
+const LOGIN_MAX_FAILS = 5;         // theo từng tài khoản
+const LOGIN_MAX_FAILS_IP = 20;     // theo IP — chặn kiểu rải đều qua nhiều tài khoản
+const LOGIN_LOCK_MS = 5 * 60 * 1000;
+const LOGIN_WINDOW_MS = 15 * 60 * 1000; // quá cũ thì bỏ qua, tránh khoá oan người quên PIN hôm trước
+
+function loginFailRow(scope, key) {
+  return db.prepare(`SELECT * FROM login_failures WHERE scope=? AND key=?`).get(scope, key);
 }
+
+/** Trả { until } nếu đang bị khoá, null nếu không. */
+function lockStateFor(scope, key, maxFails) {
+  if (!key) return null;
+  const row = loginFailRow(scope, key);
+  if (!row) return null;
+  const until = Number(row.until_ms) || 0;
+  if (until > Date.now()) return { count: row.count, until };
+  // Hết hạn khoá, hoặc chuỗi sai đã quá cũ → coi như làm lại từ đầu.
+  if (until || (Date.now() - (Number(row.last_fail_ms) || 0)) > LOGIN_WINDOW_MS) {
+    db.prepare(`DELETE FROM login_failures WHERE scope=? AND key=?`).run(scope, key);
+    return null;
+  }
+  return row.count >= maxFails ? { count: row.count, until: 0 } : null;
+}
+
+function loginLockState(uname, ip = '') {
+  return lockStateFor('user', uname, LOGIN_MAX_FAILS)
+    || lockStateFor('ip', String(ip || ''), LOGIN_MAX_FAILS_IP);
+}
+
+function bumpFail(scope, key, maxFails) {
+  if (!key) return 0;
+  const nowMs = Date.now();
+  const row = loginFailRow(scope, key);
+  const stale = row && (nowMs - (Number(row.last_fail_ms) || 0)) > LOGIN_WINDOW_MS;
+  const count = (stale ? 0 : (row?.count || 0)) + 1;
+  const untilMs = count >= maxFails ? nowMs + LOGIN_LOCK_MS : 0;
+  db.prepare(`INSERT INTO login_failures (scope,key,count,last_fail_ms,until_ms) VALUES (?,?,?,?,?)
+    ON CONFLICT(scope,key) DO UPDATE SET count=excluded.count, last_fail_ms=excluded.last_fail_ms, until_ms=excluded.until_ms`)
+    .run(scope, key, count, nowMs, untilMs);
+  return count;
+}
+
+function clearLoginFails(uname, ip = '') {
+  db.prepare(`DELETE FROM login_failures WHERE (scope='user' AND key=?) OR (scope='ip' AND key=?)`)
+    .run(uname, String(ip || ''));
+}
+
 function registerLoginFail(uname, branch_id, ip = '') {
-  const e = loginFails.get(uname) || { count: 0, until: 0 };
-  e.count += 1;
-  if (e.count >= LOGIN_MAX_FAILS) e.until = Date.now() + LOGIN_LOCK_MS;
-  loginFails.set(uname, e);
-  audit('auth.login.failed', { user: uname, attempts: e.count, locked: !!e.until, ip }, branch_id, uname || 'unknown');
+  const count = bumpFail('user', uname, LOGIN_MAX_FAILS);
+  const ipCount = bumpFail('ip', String(ip || ''), LOGIN_MAX_FAILS_IP);
+  audit('auth.login.failed', {
+    user: uname, attempts: count, ip, ip_attempts: ipCount,
+    locked: count >= LOGIN_MAX_FAILS || ipCount >= LOGIN_MAX_FAILS_IP,
+  }, branch_id, uname || 'unknown');
 }
 
 // Tự dọn các session quá hạn trong Map — tránh memory leak khi thiết bị tắt mà không logout.
 const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 ngày
+// Phiên KHÔNG DÙNG tới quá lâu thì coi như hết hạn, kể cả chưa tới hạn tuyệt đối.
+// Máy POS dùng hằng ngày nên 7 ngày im lặng gần như chắc chắn là máy đã nghỉ.
+const SESSION_IDLE_MS = 7 * 24 * 60 * 60 * 1000;
+
+/** Phiên còn hiệu lực không, xét theo tuổi tuyệt đối và thời gian im lặng. */
+function sessionRowExpired(row) {
+  if (!row) return true;
+  const created = new Date(row.created_at || 0).getTime();
+  const seen = new Date(row.last_seen_at || row.created_at || 0).getTime();
+  const nowMs = Date.now();
+  if (!Number.isFinite(created) || !Number.isFinite(seen)) return true;
+  return (nowMs - created) > SESSION_TTL_MS || (nowMs - seen) > SESSION_IDLE_MS;
+}
+
+// Dọn cả cache RAM lẫn BẢNG auth_sessions.
+//
+// Trước đây chỉ dọn Map trong RAM, còn bảng thì không ai đụng tới — và userFor()
+// cũng không kiểm tra tuổi dòng. Nghĩa là SESSION_TTL_MS 30 ngày CHƯA TỪNG có
+// hiệu lực: một token cấp từ nửa năm trước vẫn đăng nhập được, chỉ cần dòng còn
+// nằm trong bảng. Nay hết hạn được cưỡng chế ở cả hai nơi.
 function cleanupSessionMap() {
   const cutoff = Date.now() - SESSION_TTL_MS;
   for (const [token, entry] of sessions) {
     const entryMs = new Date(entry.at).getTime();
     if (Number.isNaN(entryMs) || entryMs < cutoff) sessions.delete(token);
   }
+  const absCutoff = new Date(Date.now() - SESSION_TTL_MS).toISOString();
+  const idleCutoff = new Date(Date.now() - SESSION_IDLE_MS).toISOString();
+  try {
+    db.prepare(`DELETE FROM auth_sessions WHERE created_at < ? OR COALESCE(last_seen_at, created_at) < ?`)
+      .run(absCutoff, idleCutoff);
+  } catch {}
 }
+cleanupSessionMap();
 setInterval(cleanupSessionMap, 6 * 60 * 60 * 1000).unref(); // chạy 6 tiếng/lần, không block shutdown
 
 const REPORT_PERMISSIONS = REPORTS.map(r => ({
@@ -58,8 +132,32 @@ export const PERMISSIONS = [
   { key: 'menu.manage', label: 'Quản lý thực đơn — thêm, sửa, xóa món và danh mục' },
   { key: 'inventory.adjust', label: 'Điều chỉnh tồn kho và kiểm kho' },
   { key: 'warehouse.manage', label: 'Quản lý kho — tạo kho, nhập, xuất, chuyển kho' },
+  // Quyền KHO chi tiết theo từng tính năng (cấp riêng lẻ). Route bảo vệ bằng
+  // guardAny(granular, coarse) nên ai đang có quyền cũ (inventory.adjust /
+  // warehouse.manage) vẫn chạy bình thường — quyền mới để cấp/giới hạn tinh hơn.
+  { key: 'warehouse.item', label: 'Kho — Thêm & sửa mặt hàng, SKU, định mức tồn' },
+  { key: 'warehouse.receive', label: 'Kho — Nhập kho (nhận hàng vào tồn)' },
+  { key: 'warehouse.issue', label: 'Kho — Xuất kho & xuất dùng nội bộ' },
+  { key: 'warehouse.transfer', label: 'Kho — Chuyển hàng giữa các kho' },
+  { key: 'warehouse.stocktake', label: 'Kho — Kiểm kho (tạo, sửa, lưu tạm phiếu kiểm)' },
+  { key: 'warehouse.stocktake.balance', label: 'Kho — CÂN BẰNG KHO: duyệt kiểm kho, đồng bộ tồn thực tế (nhạy cảm)' },
+  { key: 'warehouse.pricebook', label: 'Kho — Thiết lập giá & bảng giá' },
+  { key: 'warehouse.create', label: 'Kho — Tạo & sửa kho hàng' },
+  { key: 'warehouse.delete', label: 'Kho — XÓA mặt hàng, SKU, phiếu kho, phiếu kiểm, bảng giá (nhạy cảm)' },
   { key: 'invoice', label: 'Xuất hóa đơn điện tử' },
   { key: 'online', label: 'Xử lý đơn hàng online' },
+  { key: 'online.order.manage', label: 'Retail Online — xác nhận, đóng gói và cập nhật đơn' },
+  { key: 'online.order.assign', label: 'Retail Online — phân công người xử lý đơn' },
+  { key: 'online.order.cancel', label: 'Retail Online — hủy đơn trên kênh bán' },
+  { key: 'online.order.refund', label: 'Retail Online — trả hàng và hoàn tiền' },
+  { key: 'online.product_mapping', label: 'Retail Online — đối chiếu và liên kết sản phẩm' },
+  { key: 'online.reconciliation', label: 'Retail Online — xem đối soát thanh toán' },
+  { key: 'marketplace.view', label: 'Kết nối sàn — xem gian hàng và trạng thái kết nối' },
+  { key: 'marketplace.connect', label: 'Kết nối sàn — kết nối / ngắt / cấu hình gian hàng (Shopee, Lazada…)' },
+  { key: 'omni.view', label: 'Dan D Pak Omni — xem hộp thư và lịch sử hội thoại' },
+  { key: 'omni.reply', label: 'Dan D Pak Omni — trả lời khách hàng' },
+  { key: 'omni.manage', label: 'Dan D Pak Omni — phân công, nhãn, ghi chú và liên kết đơn' },
+  { key: 'omni.connector', label: 'Dan D Pak Omni — quản lý connector kênh ngoài' },
   { key: 'kds', label: 'Sử dụng màn hình bếp (KDS)' },
   { key: 'reports', label: 'Báo cáo — xem toàn bộ trung tâm báo cáo' },
   ...REPORT_PERMISSIONS,
@@ -71,6 +169,7 @@ export const PERMISSIONS = [
   { key: 'settings.users', label: 'Cài đặt — Quản lý nhân viên' },
   { key: 'settings.perms', label: 'Cài đặt — Quản lý quyền và vai trò' },
   { key: 'settings.branches', label: 'Cài đặt — Quản lý chi nhánh & phân vùng' },
+  { key: 'settings.warehouse', label: 'Cài đặt — Kho & kênh bán' },
   { key: 'settings.sync', label: 'Cài đặt — Cloud Sync & Đồng bộ ngoại tuyến' },
   { key: 'settings.integrations', label: 'Cài đặt — Liên kết dịch vụ (MISA, PayOS...)' },
   { key: 'settings.connections', label: 'Cài đặt — Kết nối hệ thống (Mạng, máy in, POS...)' },
@@ -87,9 +186,46 @@ export const PERMISSIONS = [
   { key: 'settings.notification_sound', label: 'Cài đặt — Âm thanh thông báo' },
   { key: 'settings.loyalty', label: 'Cài đặt — Tích điểm & CTKM khách hàng' },
   { key: 'settings.promotions', label: 'Cài đặt — Khuyến mại / voucher' },
+  // Quản lý máy in THEO CÔNG DỤNG: mỗi loại 1 quyền — ai có quyền loại nào mới
+  // thấy + cấu hình máy in loại đó. printer.manage = thấy tất cả + máy chưa
+  // phân loại (Khác/Custom). Gác ở UI máy in (Cài đặt → Kết nối / Máy in).
+  { key: 'printer.manage', label: 'Máy in — Quản lý TẤT CẢ (mọi loại + chưa phân loại)' },
+  { key: 'printer.receipt', label: 'Máy in — Hóa đơn / Tạm tính' },
+  { key: 'printer.kitchen', label: 'Máy in — Phiếu bếp' },
+  { key: 'printer.cup_label', label: 'Máy in — Tem ly' },
+  { key: 'printer.product_label', label: 'Máy in — Tem sản phẩm' },
+  { key: 'printer.shipping_label', label: 'Máy in — Tem vận đơn' },
+  { key: 'printer.runner', label: 'Máy in — Phiếu chạy món' },
+  { key: 'printer.report', label: 'Máy in — Báo cáo' },
   ...MODULE_PERMISSIONS,
 ];
 export const ALL_PERMS = PERMISSIONS.map(p => p.key);
+
+// ── Branch Full Access vs Tenant Admin (§11/§40) ─────────────────────────────
+// Ba khái niệm độc lập: TENANT (thuộc chuỗi nào) · BRANCH ACCESS (được làm ở đâu)
+// · PERMISSION (được làm gì). "Full permission" KHÔNG được bypass branch scope.
+//
+// TENANT_ADMIN_PERMS = quyền quản trị cấp TENANT/chuỗi (quản lý chi nhánh, người
+// dùng & vai trò toàn tenant, sync policy, và secret tích hợp thô). Chúng KHÔNG
+// thuộc "branch full access".
+export const TENANT_ADMIN_PERMS = new Set([
+  'settings.manage', 'settings.perms', 'settings.users',
+  'settings.branches', 'settings.sync',
+]);
+// LƯU Ý (§29/§30): `settings.integrations` & `settings.connections` là cấu hình
+// KÊNH/TÍCH HỢP cấp BRANCH (Shopee/MISA/payOS…) nên THUỘC branch full access —
+// reviewer cần để thiết lập kênh. Bí mật (Partner Key/secret/token) KHÔNG lộ nhờ
+// MASK ở tầng API (getPublicIntegrations), không phải nhờ cấm quyền.
+
+// BRANCH FULL ACCESS = toàn bộ quyền NGHIỆP VỤ trong (các) chi nhánh được cấp,
+// nhưng KHÔNG quản trị tenant và KHÔNG xem secret tích hợp thô. Tính TỪ catalog
+// nên không bao giờ stale: thêm quyền nghiệp vụ mới thì tự thuộc branch full
+// access (trừ khi liệt kê vào TENANT_ADMIN_PERMS). Dùng cho vai trò như
+// shopee_reviewer (full functional trong 1 branch review) — thay cho việc chép
+// tay 82 quyền hay danh sách cứng dễ lỗi thời (§19/§40).
+export function branchFullAccessPerms() {
+  return [...new Set(ALL_PERMS)].filter(p => !TENANT_ADMIN_PERMS.has(p));
+}
 
 // Display roles with plain-language names.
 export const ROLES = [
@@ -98,6 +234,8 @@ export const ROLES = [
   { key: 'cashier', label: 'Thu ngân', note: 'Bán hàng và thu tiền.' },
   { key: 'kitchen', label: 'Bếp', note: 'Chế biến món.' },
   { key: 'warehouse', label: 'Thủ kho', note: 'Quản lý nhập xuất kho.' },
+  { key: 'online_manager', label: 'Quản đơn Retail Online', note: 'Xử lý đơn web và hội thoại Dan D Pak Omni.' },
+  { key: 'marketplace_operator', label: 'Vận hành sàn', note: 'Kết nối sàn, liên kết hàng, đối soát, in tem vận đơn và xử lý đơn/chat.' },
 ];
 
 // Built-in defaults used to seed the editable matrix on first run.
@@ -109,19 +247,51 @@ const DEFAULT_ROLE_PERMS = {
     'table.move', 'bill.split', 'order.view', 'order.confirm',
     'reports', 'invoice', 'online', 'sell', 'pay', 'audit.view', 'settings.manage',
     'contacts.create', 'contacts.edit', 'contacts.delete', 'settings.loyalty', 'settings.promotions',
+    'settings.warehouse',
+    'warehouse.item', 'warehouse.receive', 'warehouse.issue', 'warehouse.transfer',
+    'warehouse.stocktake', 'warehouse.stocktake.balance', 'warehouse.pricebook',
+    'warehouse.create', 'warehouse.delete',
     'module.ipad', 'module.pos', 'module.retail', 'module.kds', 'module.online', 'module.warehouse',
     'module.inventory', 'module.printing', 'module.invoice', 'module.reports', 'module.contacts',
     'module.purchase', 'module.expenses', 'module.accounting',
+    'printer.manage',
   ],
   // Thu ngân: bán hàng, thanh toán, chuyển bàn, tách bill, xác nhận món, xem đơn
   cashier: [
     'sell', 'pay', 'discount', 'invoice',
     'table.move', 'bill.split', 'order.view', 'order.confirm',
     'module.pos', 'module.retail', 'module.invoice',
+    'printer.receipt',
   ],
   // Bếp: chỉ KDS + xem đơn (không được thay đổi bill hay thanh toán)
-  kitchen: ['kds', 'order.view', 'module.kds'],
-  warehouse: ['inventory.adjust', 'warehouse.manage', 'module.warehouse', 'module.inventory', 'module.purchase'],
+  kitchen: ['kds', 'order.view', 'module.kds', 'printer.kitchen'],
+  warehouse: [
+    'inventory.adjust', 'warehouse.manage', 'module.warehouse', 'module.inventory', 'module.purchase',
+    // Thủ kho có đủ mọi nghiệp vụ kho chi tiết (kể cả cân bằng & xóa phiếu).
+    'warehouse.item', 'warehouse.receive', 'warehouse.issue', 'warehouse.transfer',
+    'warehouse.stocktake', 'warehouse.stocktake.balance', 'warehouse.pricebook',
+    'warehouse.create', 'warehouse.delete',
+    'printer.product_label',
+  ],
+  online_manager: [
+    'online', 'online.order.manage', 'online.order.assign', 'online.order.cancel',
+    'online.order.refund', 'online.product_mapping', 'online.reconciliation',
+    'omni.view', 'omni.reply', 'omni.manage',
+    'order.view', 'contacts.create', 'contacts.edit', 'invoice',
+    'module.online', 'module.retail', 'module.invoice',
+    'printer.shipping_label',
+  ],
+  // Vận hành sàn = như Quản đơn Retail Online NHƯNG được cả quản lý connector
+  // (kết nối Shopee/Lazada/TikTok/Meta/Zalo/Haravan) — vai trò "admin của mảng sàn".
+  marketplace_operator: [
+    'online', 'online.order.manage', 'online.order.assign', 'online.order.cancel',
+    'online.order.refund', 'online.product_mapping', 'online.reconciliation',
+    'marketplace.view', 'marketplace.connect',
+    'omni.view', 'omni.reply', 'omni.manage', 'omni.connector',
+    'order.view', 'contacts.create', 'contacts.edit', 'invoice',
+    'module.online', 'module.retail', 'module.invoice',
+    'printer.shipping_label',
+  ],
 };
 export const ROLE_PERMS = DEFAULT_ROLE_PERMS; // kept for backwards-compat imports
 
@@ -191,6 +361,75 @@ function seedNewOperationalPerms() {
 }
 seedNewOperationalPerms();
 
+function seedOnlineManagerPerms() {
+  const ins = db.prepare(`INSERT OR IGNORE INTO role_perms (role,perm) VALUES (?,?)`);
+  for (const permission of DEFAULT_ROLE_PERMS.online_manager) ins.run('online_manager', permission);
+  for (const permission of PERMISSIONS.filter(p => p.key.startsWith('online.')).map(p => p.key)) {
+    ins.run('manager', permission);
+  }
+  for (const permission of PERMISSIONS.filter(p => p.key.startsWith('omni.')).map(p => p.key)) {
+    ins.run('manager', permission);
+    if (permission !== 'omni.connector') ins.run('online_manager', permission);
+  }
+}
+seedOnlineManagerPerms();
+
+// Backfill vai trò "Vận hành sàn" trên bản đã chạy (seedRolePerms chỉ chạy 1 lần
+// lúc cài đặt trống). Idempotent bằng INSERT OR IGNORE.
+function seedMarketplaceOperatorPerms() {
+  const ins = db.prepare(`INSERT OR IGNORE INTO role_perms (role,perm) VALUES (?,?)`);
+  for (const permission of DEFAULT_ROLE_PERMS.marketplace_operator) ins.run('marketplace_operator', permission);
+  // Quyền "Kết nối sàn" mới (marketplace.view/connect) cũng thuộc Quản lý — vai
+  // trò này vốn đã quản lý connector qua omni.connector.
+  for (const role of ['manager']) {
+    ins.run(role, 'marketplace.view');
+    ins.run(role, 'marketplace.connect');
+  }
+}
+seedMarketplaceOperatorPerms();
+
+// Backfill quyền máy in THEO LOẠI cho bản đã chạy (mỗi vai trò nhận loại phù hợp).
+function seedPrinterTypePerms() {
+  const ins = db.prepare(`INSERT OR IGNORE INTO role_perms (role,perm) VALUES (?,?)`);
+  ins.run('manager', 'printer.manage');
+  ins.run('cashier', 'printer.receipt');
+  ins.run('kitchen', 'printer.kitchen');
+  ins.run('warehouse', 'printer.product_label');
+  for (const role of ['online_manager', 'marketplace_operator']) ins.run(role, 'printer.shipping_label');
+}
+seedPrinterTypePerms();
+
+// Quyền nghiệp vụ KHO chi tiết (warehouse.item, warehouse.receive, ...).
+//
+// VÌ SAO CẦN BACKFILL: seedRolePerms() chỉ chạy khi bảng role_perms còn TRỐNG —
+// tức đúng một lần lúc cài đặt đầu tiên. Cửa hàng đã chạy từ trước rồi thì mọi
+// quyền thêm vào DEFAULT_ROLE_PERMS sau đó KHÔNG BAO GIỜ tới được vai trò nào.
+//
+// Hậu quả thật: nút "Tạo mới" trong Tồn kho gác bằng 'warehouse.item'. Code đã
+// có, bản build đã ra, nhưng quản lý và thủ kho ở cửa hàng cũ không hề thấy nút
+// — vì vai trò của họ chưa từng được cấp quyền đó. Người dùng báo "vẫn chưa có
+// nút thêm item" trong khi tính năng đã làm xong.
+//
+// Chỉ cấp cho vai trò ĐÃ có quyền kho tổng quát ('warehouse.manage'), để không
+// tự tiện nới quyền cho thu ngân hay bếp.
+function seedNewWarehousePerms() {
+  const ins = db.prepare(`INSERT OR IGNORE INTO role_perms (role,perm) VALUES (?,?)`);
+  const roles = db.prepare(`SELECT DISTINCT role FROM role_perms WHERE perm='warehouse.manage'`)
+    .all().map(r => r.role);
+  // Quản lý và thủ kho luôn nằm trong nhóm này kể cả khi cấu hình cũ thiếu.
+  for (const r of ['manager', 'warehouse']) if (!roles.includes(r)) roles.push(r);
+  const permKeys = PERMISSIONS.filter(p => p.key.startsWith('warehouse.')).map(p => p.key);
+  for (const role of roles) {
+    for (const p of permKeys) {
+      // 'warehouse.delete' là quyền XOÁ — chỉ trả lại cho vai trò mặc định vốn có
+      // nó, không phát thêm cho vai trò tuỳ biến mà chủ cửa hàng đã tự cấu hình.
+      if (p === 'warehouse.delete' && !(DEFAULT_ROLE_PERMS[role] || []).includes(p)) continue;
+      ins.run(role, p);
+    }
+  }
+}
+seedNewWarehousePerms();
+
 let permCache = null;
 function loadPerms() {
   permCache = {};
@@ -213,6 +452,7 @@ function rolePermSet(role) {
   return new Set(effectivePerms(role).filter(p => p !== '*'));
 }
 function userPermRows(user_id) {
+  if (!user_id) return []; // defensive: user object thiếu id → không có override riêng
   return db.prepare(`SELECT perm,mode FROM user_perms WHERE user_id=?`).all(user_id)
     .filter(r => ALL_PERMS.includes(r.perm));
 }
@@ -254,7 +494,7 @@ export function grantablePermSet(actor) {
   return new Set(effectivePermsForUser(actor).filter(p => p !== '*'));
 }
 
-export function setUserPerms(user_id, perms, branch_id = 'br1', actor = null) {
+export function setUserPerms(user_id, perms, branch_id = 'sala', actor = null) {
   const u = db.prepare(`SELECT * FROM users WHERE id=?`).get(user_id);
   if (!u) throw new Error('Người dùng không tồn tại');
   if (u.role === 'owner') {
@@ -287,22 +527,65 @@ export function setUserPerms(user_id, perms, branch_id = 'br1', actor = null) {
 }
 export function canUser(user, perm) {
   if (!user) return false;
-  if (user.role === 'owner') return true;
+  if (user.role === 'owner') return true;      // Tenant admin — mọi quyền TRONG tenant
   const perms = effectivePermsForUser(user);
-  return perms.includes('*') || perms.includes(perm);
+  if (perms.includes('*') || perms.includes(perm)) return true;
+  // 'settings.manage' = umbrella CHỈ cho nhóm settings.* (quản lý người dùng, phân
+  // quyền, chi nhánh, tích hợp, cấu hình…). KHÔNG phải master key toàn hệ thống:
+  // KHÔNG tự cấp quyền nghiệp vụ (sell/refund/void/warehouse.*). Sửa §4/§20 mà
+  // vẫn giữ đúng chức năng quản trị settings mà Quản lý đang có.
+  if (String(perm).startsWith('settings.') && perms.includes('settings.manage')) return true;
+  return false;
 }
+// ── Vai trò TÙY CHỈNH (do admin tạo) ────────────────────────────────────────
+// Vai trò hệ thống (ROLES) không xóa được. custom_roles cho phép admin tạo thêm
+// vai trò riêng; quyền của chúng dùng chung bảng role_perms như vai trò hệ thống.
+db.exec(`CREATE TABLE IF NOT EXISTS custom_roles (key TEXT PRIMARY KEY, label TEXT NOT NULL, note TEXT, created_at TEXT);`);
+const RESERVED_ROLE_KEYS = new Set(ROLES.map(r => r.key));
+
+export function customRoles() {
+  return db.prepare(`SELECT key, label, note FROM custom_roles ORDER BY created_at, label`).all()
+    .map(r => ({ ...r, custom: true }));
+}
+export function allRoles() { return [...ROLES, ...customRoles()]; }
+
+export function createCustomRole({ key, label, note = '' } = {}, actor = null) {
+  const k = String(key || '').trim().toLowerCase().replace(/[^a-z0-9_]/g, '_').replace(/^_+|_+$/g, '').slice(0, 40);
+  if (!k) throw new Error('Mã vai trò không hợp lệ (chỉ a-z, 0-9, _).');
+  if (RESERVED_ROLE_KEYS.has(k)) throw new Error('Mã vai trò trùng vai trò hệ thống.');
+  const name = String(label || '').trim();
+  if (!name) throw new Error('Vai trò cần có tên hiển thị.');
+  db.prepare(`INSERT INTO custom_roles (key,label,note,created_at) VALUES (?,?,?,?)
+    ON CONFLICT(key) DO UPDATE SET label=excluded.label, note=excluded.note`)
+    .run(k, name.slice(0, 80), String(note || '').slice(0, 200), now());
+  audit('role.create', { role: k, label: name, by: actor?.username || 'system' }, 'sala', actor?.username || 'system');
+  return permMatrix();
+}
+export function deleteCustomRole(key, actor = null) {
+  const k = String(key || '').trim().toLowerCase();
+  if (RESERVED_ROLE_KEYS.has(k)) throw new Error('Không thể xóa vai trò hệ thống.');
+  if (!db.prepare(`SELECT 1 FROM custom_roles WHERE key=?`).get(k)) throw new Error('Vai trò không tồn tại.');
+  const inUse = db.prepare(`SELECT COUNT(*) n FROM users WHERE role=? AND active=1`).get(k).n;
+  if (inUse > 0) throw new Error(`Còn ${inUse} nhân viên đang giữ vai trò này — đổi vai trò cho họ trước khi xóa.`);
+  db.prepare(`DELETE FROM custom_roles WHERE key=?`).run(k);
+  db.prepare(`DELETE FROM role_perms WHERE role=?`).run(k);
+  loadPerms();
+  audit('role.delete', { role: k, by: actor?.username || 'system' }, 'sala', actor?.username || 'system');
+  return permMatrix();
+}
+
 // Returns the full matrix for the settings UI.
 export function permMatrix() {
   if (!permCache) loadPerms();
-  return ROLES.map(r => ({
+  return allRoles().map(r => ({
     ...r,
     perms: r.key === 'owner' ? ALL_PERMS : [...(permCache[r.key] || [])],
     locked: r.key === 'owner',
   }));
 }
-export function setRolePerms(role, perms, branch_id = 'br1', actor = null) {
+export function setRolePerms(role, perms, branch_id = 'sala', actor = null) {
   if (role === 'owner') throw new Error('Vai trò Admin luôn toàn quyền, không thể chỉnh');
-  if (!ROLES.some(r => r.key === role)) throw new Error('Vai trò không hợp lệ');
+  if (!allRoles().some(r => r.key === role)) throw new Error('Vai trò không hợp lệ');
   // Same scoped-delegation rule as users: the actor can only toggle permissions
   // they hold; ones out of reach stay exactly as the role already had them.
   const grantable = grantablePermSet(actor);
@@ -343,11 +626,11 @@ function branchExists(id, { includeInactive = false } = {}) {
 }
 
 export function userBranchIds(user) {
-  if (!user) return ['br1'];
+  if (!user) return ['sala'];
   if (user.role === 'owner') return listBranches().map(b => b.id);
   const access = parseBranchAccess(user.branch_access_json || user.branch_access || user.branch_ids);
   if (access.includes('*')) return listBranches().map(b => b.id);
-  const ids = new Set([user.branch_id || 'br1', ...access]);
+  const ids = new Set([user.branch_id || 'sala', ...access]);
   return [...ids].filter(id => branchExists(id));
 }
 
@@ -357,20 +640,25 @@ export function canAccessBranch(user, branch_id) {
 }
 
 export function publicBranch(req) {
-  const requested = String(req?.headers?.['x-branch-id'] || req?.query?.branch_id || req?.body?.branch_id || 'br1');
-  return branchExists(requested) ? requested : 'br1';
+  const raw = req?.headers?.['x-branch-id'] || req?.query?.branch_id || req?.body?.branch_id;
+  if (!raw) return 'sala';
+  const requested = String(raw);
+  if (!branchExists(requested)) throw new Error('Chi nhánh được yêu cầu không tồn tại hoặc đã ngừng hoạt động.');
+  return requested;
 }
 
 export function resolveBranch(req) {
-  const requested = String(req?.headers?.['x-branch-id'] || req?.query?.branch_id || req?.body?.branch_id || req?.user?.branch_id || 'br1');
+  const raw = req?.headers?.['x-branch-id'] || req?.query?.branch_id || req?.body?.branch_id;
+  const requested = String(raw || req?.user?.branch_id || '');
   if (!req?.user) return publicBranch(req);
   if (canAccessBranch(req.user, requested)) return requested;
-  const fallback = req.user.branch_id || userBranchIds(req.user)[0] || 'br1';
+  if (raw) throw new Error('Tài khoản này không có quyền truy cập chi nhánh đã chọn.');
+  const fallback = req.user.branch_id || userBranchIds(req.user)[0] || 'sala';
   if (canAccessBranch(req.user, fallback)) return fallback;
   throw new Error('Tài khoản này không có quyền truy cập chi nhánh đã chọn.');
 }
 
-function normalizeBranchAccess(body = {}, role = 'cashier', homeBranch = 'br1') {
+function normalizeBranchAccess(body = {}, role = 'cashier', homeBranch = 'sala') {
   if (role === 'owner') return ['*'];
   const raw = body.branch_access || body.branch_ids || body.branchAccess || [];
   const ids = Array.isArray(raw) ? raw : [];
@@ -379,34 +667,72 @@ function normalizeBranchAccess(body = {}, role = 'cashier', homeBranch = 'br1') 
   return clean.length ? clean : [homeBranch];
 }
 
-export function login(username, pin, branch_id = 'br1', meta = {}) {
+export function login(username, pin, branch_id = 'sala', meta = {}) {
   const ip = String(meta?.ip || '').slice(0, 64);
   const uname = String(username || '').toLowerCase();
-  const lock = loginLockState(uname);
+  const lock = loginLockState(uname, ip);
   if (lock && lock.until && lock.until > Date.now()) {
     const mins = Math.max(1, Math.ceil((lock.until - Date.now()) / 60000));
-    audit('auth.login.locked', { user: uname, ip }, branchExists(branch_id) ? branch_id : 'br1', uname || 'unknown');
+    audit('auth.login.locked', { user: uname, ip }, branchExists(branch_id) ? branch_id : 'sala', uname || 'unknown');
     throw new Error(`Đăng nhập tạm khóa do nhập sai nhiều lần. Thử lại sau ~${mins} phút.`);
   }
-  const u = db.prepare(`SELECT * FROM users WHERE username=? AND active=1`).get(uname);
+  // Màn đăng nhập gửi `id` (từ listLoginUsers) thay vì username thật — chấp nhận
+  // cả hai để máy đã cập nhật lẫn máy bản cũ đều đăng nhập được.
+  const u = db.prepare(`SELECT * FROM users WHERE (username=? OR id=?) AND active=1`)
+    .get(uname, String(username || '').trim());
   if (!u || !verifyPin(pin, u.pin)) {
-    registerLoginFail(uname, branchExists(branch_id) ? branch_id : 'br1', ip);
+    registerLoginFail(uname, branchExists(branch_id) ? branch_id : 'sala', ip);
     throw new Error('Sai tài khoản hoặc mã PIN');
   }
-  loginFails.delete(uname);
-  const selectedBranch = branchExists(branch_id) ? branch_id : (u.branch_id || 'br1');
+  clearLoginFails(uname, ip);
+  const selectedBranch = branchExists(branch_id) ? branch_id : (u.branch_id || 'sala');
   if (!canAccessBranch(u, selectedBranch)) throw new Error('Tài khoản này chưa được cấp quyền vào chi nhánh đã chọn.');
   const token = newToken();
+  const digest = tokenDigest(token);
   const user = publicUser(u);
   const ts = now();
-  sessions.set(token, { user, at: ts });
-  db.prepare(`INSERT INTO auth_sessions (token,user_id,branch_id,created_at,last_seen_at) VALUES (?,?,?,?,?)`)
-    .run(token, u.id, selectedBranch, ts, ts);
+  sessions.set(digest, { user, at: ts });
+  // Gắn phiên với thiết bị đăng nhập ngay từ đầu (xem sessionDeviceGate).
+  const deviceId = String(meta?.deviceId || '').trim().slice(0, 120) || null;
+  db.prepare(`INSERT INTO auth_sessions (token,user_id,branch_id,created_at,last_seen_at,device_id) VALUES (?,?,?,?,?,?)`)
+    .run(digest, u.id, selectedBranch, ts, ts, deviceId);
   audit('auth.login', { user: u.username, role: u.role, ip }, selectedBranch, u.username);
-  return { token, user, perms: effectivePermsForUser(u) };
+  // Cảnh báo bảo mật: tài khoản Admin còn dùng PIN mặc định '1234' (từ lần khởi tạo
+  // DB rỗng). Trả cờ để app nhắc chủ cửa hàng đổi PIN — không chặn đăng nhập.
+  const usingDefaultPin = u.role === 'owner' && verifyPin('1234', u.pin);
+  return { token, user, perms: effectivePermsForUser(u), ...(usingDefaultPin ? { security_warning: 'default_admin_pin' } : {}) };
 }
 
-export function verifyManagerOwnerPin(pin, branch_id = 'br1') {
+const APPROVER_ROLES = ['owner', 'manager'];
+
+/** Người ĐANG ĐĂNG NHẬP có tự duyệt được không (đã là Quản lý/Admin).
+ *  Đọc từ ngữ cảnh request nên mọi nơi gọi verifyManagerOwnerPin đều được hưởng,
+ *  không phải sửa 30 điểm gọi rải khắp các module. */
+function selfApprover(branch_id) {
+  const ctx = currentRequestUser();
+  if (!ctx?.id) return null;
+  // Nạp lại từ DB để áp ĐÚNG các điều kiện của đường PIN (còn hoạt động, đúng
+  // vai trò, có quyền vào chi nhánh) — không tin dữ liệu đã nằm trong phiên.
+  const row = db.prepare(
+    `SELECT * FROM users WHERE id=? AND active=1 AND role IN ('owner','manager')`).get(ctx.id);
+  if (!row || !canAccessBranch(row, branch_id)) return null;
+  return publicUser(row);
+}
+
+/** Xác nhận thao tác nhạy cảm bằng PIN Quản lý/Admin.
+ *
+ *  Nếu CHÍNH người đang đăng nhập đã là Quản lý/Admin thì họ là người duyệt —
+ *  không bắt gõ lại PIN của chính mình. Trước đây quản lý phải nhập PIN của
+ *  mình cho từng thao tác, vừa chậm giữa ca bận vừa khiến PIN bị gõ ra màn hình
+ *  nhiều lần trước mặt người khác.
+ *
+ *  Lợi thêm về hiệu năng: đường PIN phải scrypt (đồng bộ, cố tình chậm ~80ms)
+ *  lần lượt từng tài khoản quản lý cho tới khi khớp — chặn vòng lặp sự kiện.
+ *  Trường hợp phổ biến nhất (quản lý tự thao tác) nay tốn 0 lần scrypt. */
+export function verifyManagerOwnerPin(pin, branch_id = 'sala') {
+  const self = selfApprover(branch_id);
+  if (self) return self;
+
   const clean = String(pin || '').trim();
   if (!clean) return null;
   // PIN nay duoc bam (scrypt) nen khong the tra theo `WHERE pin=?`: nap ung vien
@@ -424,7 +750,7 @@ export function verifyManagerOwnerPin(pin, branch_id = 'br1') {
 // Voucher: nguoi thao tac phai TU nhap PIN cua CHINH MINH — PIN cua nguoi khac
 // (ke ca Manager) bi tu choi. Ngoai le duy nhat: PIN cua Admin/Owner van duyet duoc
 // (Admin ho tro tai quay). Tra ve publicUser cua nguoi duyet, hoac null.
-export function verifySelfOrOwnerPin(pin, currentUserId, branch_id = 'br1') {
+export function verifySelfOrOwnerPin(pin, currentUserId, branch_id = 'sala') {
   const clean = String(pin || '').trim();
   if (!clean) return null;
   // 1) PIN cua chinh nguoi dang dang nhap
@@ -441,7 +767,7 @@ export function verifySelfOrOwnerPin(pin, currentUserId, branch_id = 'br1') {
   return row ? publicUser(row) : null;
 }
 
-export function verifyWarehouseConfigPin(pin, branch_id = 'br1') {
+export function verifyWarehouseConfigPin(pin, branch_id = 'sala') {
   const clean = String(pin || '').trim();
   if (!clean) return null;
   const rows = db.prepare(`
@@ -457,7 +783,7 @@ export function verifyWarehouseConfigPin(pin, branch_id = 'br1') {
 // Xác nhận PIN thuộc về một user CÓ quyền `perm` (dùng cho phân quyền nhiều cấp:
 // nếu người đang thao tác không đủ quyền, quản lý/người có quyền nhập PIN duyệt).
 // Owner/Admin luôn qua (canUser owner=true). Trả publicUser người duyệt hoặc null.
-export function verifyPinHasPerm(pin, perm, branch_id = 'br1') {
+export function verifyPinHasPerm(pin, perm, branch_id = 'sala') {
   const clean = String(pin || '').trim();
   if (!clean) return null;
   const rows = db.prepare(`SELECT * FROM users WHERE active=1 LIMIT 500`).all();
@@ -468,45 +794,142 @@ export function verifyPinHasPerm(pin, perm, branch_id = 'br1') {
 
 export function logout(token) {
   if (!token) return;
-  sessions.delete(token);
-  db.prepare(`DELETE FROM auth_sessions WHERE token=?`).run(token);
+  const digest = tokenDigest(token);
+  sessions.delete(digest);
+  db.prepare(`DELETE FROM auth_sessions WHERE token IN (?,?)`).run(digest, token);
 }
 
-export function userFor(token) {
+// BẢO MẬT — phiên gắn với THIẾT BỊ.
+//
+// Token đăng nhập nằm trên đĩa máy khách (máy thu ngân Windows, tablet Android)
+// nên phải coi là có thể bị rút ra: máy root, máy bị chiếm, hoặc app bị hook.
+// Trước đây token rút được dùng lại ở BẤT KỲ máy nào trong 30 ngày.
+//
+// Nay mỗi phiên nhớ x-device-id đã tạo ra nó. Trình bày token đúng nhưng từ
+// thiết bị khác → từ chối và ghi nhật ký. Ba trường hợp cần giữ chạy được:
+//   - Phiên cũ (device_id NULL, tạo trước bản này) → gắn ở lần dùng đầu (TOFU),
+//     không đá người đang làm việc ra ngoài lúc nâng cấp.
+//   - Client chưa gửi header (bản app cũ) → cho qua, KHÔNG gắn, để bản mới gắn sau.
+//   - Ràng buộc chỉ siết khi CẢ HAI phía đều có giá trị.
+function sessionDeviceGate(digest, storedDeviceId, requestDeviceId, username = '') {
+  const incoming = String(requestDeviceId || '').trim().slice(0, 120);
+  const bound = String(storedDeviceId || '').trim();
+  if (!incoming) return true;              // app cũ chưa gửi header
+  if (!bound) {                            // TOFU: gắn thiết bị đầu tiên nhìn thấy
+    db.prepare(`UPDATE auth_sessions SET device_id=? WHERE token=?`).run(incoming, digest);
+    return true;
+  }
+  if (bound === incoming) return true;
+  // Token đúng nhưng sai thiết bị → gần như chắc chắn token đã bị sao chép.
+  db.prepare(`DELETE FROM auth_sessions WHERE token=?`).run(digest);
+  sessions.delete(digest);
+  audit('auth.session.device_mismatch', { bound_device: bound, seen_device: incoming }, 'sala', username || 'unknown');
+  return false;
+}
+
+export function userFor(token, deviceId = '') {
   if (!token) return null;
-  const cached = sessions.get(token);
+  const digest = tokenDigest(token);
+  const cached = sessions.get(digest);
   if (cached) {
     const fresh = db.prepare(`SELECT * FROM users WHERE id=? AND active=1`).get(cached.user.id);
-    if (!fresh) { sessions.delete(token); return null; }
+    if (!fresh) { sessions.delete(digest); return null; }
+    // Kiểm tra thiết bị VÀ HẠN DÙNG ngay cả khi trúng cache — nếu không, cache
+    // trong RAM trở thành đường vòng qua mặt cả hai ràng buộc.
+    const s = db.prepare(`SELECT device_id, created_at, last_seen_at FROM auth_sessions WHERE token=?`).get(digest);
+    if (!s || sessionRowExpired(s)) {
+      db.prepare(`DELETE FROM auth_sessions WHERE token=?`).run(digest);
+      sessions.delete(digest);
+      return null;
+    }
+    if (!sessionDeviceGate(digest, s.device_id, deviceId, fresh.username)) return null;
     cached.user = publicUser(fresh);
-    db.prepare(`UPDATE auth_sessions SET last_seen_at=? WHERE token=?`).run(now(), token);
+    db.prepare(`UPDATE auth_sessions SET last_seen_at=? WHERE token=?`).run(now(), digest);
     return cached.user;
   }
   const row = db.prepare(`
-    SELECT u.* FROM auth_sessions s
-    JOIN users u ON u.id=s.user_id
-    WHERE s.token=? AND u.active=1`).get(token);
+    SELECT u.*, s.device_id AS session_device_id, s.created_at AS session_created_at,
+           s.last_seen_at AS session_last_seen_at
+      FROM auth_sessions s
+      JOIN users u ON u.id=s.user_id
+     WHERE s.token IN (?,?) AND u.active=1`).get(digest, token);
   if (!row) return null;
+  // Cưỡng chế hết hạn NGAY tại đường đọc, không chờ tác vụ dọn định kỳ.
+  if (sessionRowExpired({ created_at: row.session_created_at, last_seen_at: row.session_last_seen_at })) {
+    db.prepare(`DELETE FROM auth_sessions WHERE token IN (?,?)`).run(digest, token);
+    sessions.delete(digest);
+    return null;
+  }
+  db.prepare(`UPDATE auth_sessions SET token=? WHERE token=?`).run(digest, token);
+  if (!sessionDeviceGate(digest, row.session_device_id, deviceId, row.username)) return null;
   const user = publicUser(row);
-  sessions.set(token, { user, at: now() });
-  db.prepare(`UPDATE auth_sessions SET last_seen_at=? WHERE token=?`).run(now(), token);
+  sessions.set(digest, { user, at: now() });
+  db.prepare(`UPDATE auth_sessions SET last_seen_at=? WHERE token=?`).run(now(), digest);
   return user;
 }
 
-export function listUsers(branch_id = 'br1') {
+export function listUsers(branch_id = 'sala') {
   return db.prepare(`SELECT * FROM users WHERE active=1 ORDER BY role,name`).all()
     .filter(u => canAccessBranch(u, branch_id))
     .map(publicUser);
 }
 
+/** Danh sách cho MÀN ĐĂNG NHẬP (chưa đăng nhập nên không được xem gì thừa).
+ *
+ *  BẢO MẬT: trước đây /users trả nguyên `publicUser` cho cả request ẩn danh —
+ *  gồm `username`, `role` và `branch_ids` của TOÀN BỘ nhân sự, trên một domain
+ *  công khai. Ai cũng lấy được danh sách tài khoản và biết chính xác ai là
+ *  owner/manager để nhắm PIN vào đúng người.
+ *
+ *  Màn đăng nhập chỉ cần ĐỦ ĐỂ NHẬN MẶT: ảnh + tên hiển thị, và một định danh
+ *  để gửi kèm PIN. Định danh đó là `id` — chuỗi ngẫu nhiên mật mã (xem
+ *  db/ids.js), lộ ra cũng không dùng lại được ở hệ thống khác và không suy ra
+ *  được quy tắc đặt tên tài khoản. VAI TRÒ thì không trả về: kẻ tấn công không
+ *  biết nên nhắm vào ai.
+ *
+ *  TƯƠNG THÍCH NGƯỢC — phần này quan trọng khi lên bản:
+ *  App đang cài trên máy khách đọc trường `username` để gửi kèm PIN. Nếu bỏ hẳn
+ *  trường đó, mọi máy CHƯA kịp cập nhật sẽ gửi chuỗi rỗng và KHÔNG ĐĂNG NHẬP
+ *  ĐƯỢC ngay khi server mới lên — hỏng cả cửa hàng dù app chưa đổi gì.
+ *  Nên `username` vẫn còn, nhưng mang GIÁ TRỊ CỦA `id` chứ không phải tên tài
+ *  khoản thật. App cũ lẫn app mới đều gửi đúng thứ server nhận (login() chấp
+ *  nhận cả username lẫn id), còn tên tài khoản thật thì không bao giờ rời server. */
+/**
+ * Tài khoản quản trị KHÔNG hiện trong lưới chọn nhân viên — họ vào bằng nút
+ * "Đăng nhập quản trị viên" (gõ tài khoản + PIN).
+ *
+ * PHẢI lọc Ở ĐÂY chứ không phải ở client. Client từng tự lọc bằng
+ * `u.role == 'owner' || u.username == 'admin'`, nhưng payload này CỐ Ý không
+ * gửi `role` và ô `username` thực chất chứa `id` — nên cả hai vế đều luôn sai và
+ * ô "Admin" vẫn hiện ngay cạnh nút đăng nhập quản trị. Chỉ server mới biết vai
+ * trò thật, và cũng chỉ server mới giấu được nó.
+ */
+function laTaiKhoanQuanTri(u) {
+  return u.role === 'owner'
+    || String(u.username || '').trim().toLowerCase() === 'admin';
+}
+
+export function listLoginUsers(branch_id = 'sala') {
+  return db.prepare(`SELECT * FROM users WHERE active=1 ORDER BY name`).all()
+    .filter(u => canAccessBranch(u, branch_id))
+    .filter(u => !laTaiKhoanQuanTri(u))
+    .map(u => ({
+      id: u.id,
+      username: u.id, // định danh đăng nhập, KHÔNG phải username thật
+      name: u.name,
+      avatar: u.avatar || '',
+      lang: u.lang || 'vi',
+    }));
+}
+
 // ---- User management (settings.manage) ----
-export function listAllUsers(branch_id = 'br1') {
+export function listAllUsers(branch_id = 'sala') {
   return db.prepare(`SELECT * FROM users ORDER BY active DESC, role, name`).all()
     .filter(u => canAccessBranch(u, branch_id))
     .map(u => ({ ...publicUser(u), active: !!u.active, lang: u.lang || 'vi', ...userPermDetails(u) }));
 }
-function validRole(r) { return ROLES.some(x => x.key === r); }
-export function createUser(body, branch_id = 'br1', actor = null) {
+function validRole(r) { return allRoles().some(x => x.key === r); }
+export function createUser(body, branch_id = 'sala', actor = null) {
   const username = String(body.username || '').trim().toLowerCase();
   const name = String(body.name || '').trim();
   const pin = String(body.pin || '').trim();
@@ -528,7 +951,7 @@ export function createUser(body, branch_id = 'br1', actor = null) {
   archiveStaff(out);
   return out;
 }
-export function updateUser(id, body, branch_id = 'br1', actor = null) {
+export function updateUser(id, body, branch_id = 'sala', actor = null) {
   const cur = db.prepare(`SELECT * FROM users WHERE id=?`).get(id);
   if (!cur) throw new Error('Người dùng không tồn tại');
   const name = body.name !== undefined ? String(body.name).trim() || cur.name : cur.name;
@@ -554,7 +977,7 @@ export function updateUser(id, body, branch_id = 'br1', actor = null) {
   return out;
 }
 
-export function updateOwnLang(user_id, lang, branch_id = 'br1') {
+export function updateOwnLang(user_id, lang, branch_id = 'sala') {
   const clean = lang === 'en' ? 'en' : 'vi';
   const cur = db.prepare(`SELECT * FROM users WHERE id=? AND active=1`).get(user_id);
   if (!cur) throw new Error('Người dùng không tồn tại');
@@ -565,7 +988,31 @@ export function updateOwnLang(user_id, lang, branch_id = 'br1') {
   archiveStaff(out);
   return publicUser(out);
 }
-export function deleteUser(id, branch_id = 'br1') {
+
+// PIN yếu/dễ đoán tuyệt đối cấm — chặn cả admin lẫn nhân viên khi tự đổi PIN.
+export const WEAK_PINS = new Set([
+  '0000', '1111', '2222', '3333', '4444', '5555', '6666', '7777', '8888', '9999',
+  '1234', '4321', '2345', '3456', '4567', '5678', '6789', '0123', '1212', '2580',
+  '000000', '111111', '123456', '654321', '121212',
+]);
+
+// Đổi PIN của CHÍNH mình: người dùng tự xác thực bằng PIN HIỆN TẠI (không cần PIN
+// quản lý khác). Dùng cho luồng ép-đổi-PIN-mặc-định lần đầu (owner còn dùng 1234)
+// và cho việc đổi PIN chủ động. Chặn PIN yếu để không đổi từ mặc định này sang mặc
+// định khác.
+export function changeOwnPin(user_id, currentPin, newPin, branch_id = 'sala') {
+  const cur = db.prepare(`SELECT * FROM users WHERE id=? AND active=1`).get(user_id);
+  if (!cur) throw new Error('Người dùng không tồn tại');
+  if (!verifyPin(String(currentPin ?? ''), cur.pin)) throw new Error('Mã PIN hiện tại không đúng.');
+  const next = String(newPin ?? '').trim();
+  if (!/^\d{4,6}$/.test(next)) throw new Error('PIN mới phải gồm 4–6 chữ số.');
+  if (WEAK_PINS.has(next)) throw new Error('PIN mới quá dễ đoán (1234/0000/1111…). Hãy chọn dãy số khác.');
+  if (verifyPin(next, cur.pin)) throw new Error('PIN mới phải khác PIN hiện tại.');
+  db.prepare(`UPDATE users SET pin=? WHERE id=?`).run(hashPin(next), user_id);
+  audit('user.pin.self_change', { username: cur.username, role: cur.role }, branch_id, cur.username);
+  return { ok: true };
+}
+export function deleteUser(id, branch_id = 'sala') {
   const cur = db.prepare(`SELECT * FROM users WHERE id=?`).get(id);
   if (!cur) throw new Error('Người dùng không tồn tại');
   if (cur.role === 'owner' && db.prepare(`SELECT COUNT(*) n FROM users WHERE role='owner'`).get().n <= 1)
@@ -592,7 +1039,7 @@ function publicUser(u) {
     role: u.role,
     username: u.username,
     lang: u.lang || 'vi',
-    branch_id: u.branch_id || branch_ids[0] || 'br1',
+    branch_id: u.branch_id || branch_ids[0] || 'sala',
     branch_ids,
     branch_access: parseBranchAccess(u.branch_access_json || u.branch_access || u.branch_ids),
   };
@@ -623,7 +1070,12 @@ export function requirePermission(req, perm) {
 // Lets unguarded routes (POS/iPad) record who acted in the activity log.
 export function attachUser() {
   return (req, _res, next) => {
-    if (!req.user) req.user = userFor(tokenFromReq(req)) || null;
+    if (!req.user) {
+      req.user = userFor(tokenFromReq(req), req.headers?.['x-device-id']) || null;
+    }
+    // Đưa vào ngữ cảnh request để tầng service biết ai đang thao tác mà không
+    // phải luồn `req` qua từng hàm — xem selfApprover().
+    setRequestUser(req.user);
     next();
   };
 }
@@ -632,4 +1084,3 @@ export function attachUser() {
 export function actorName(req) {
   return req?.user?.name || req?.user?.username || 'system';
 }
-

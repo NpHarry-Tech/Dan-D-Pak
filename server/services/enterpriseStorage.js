@@ -4,11 +4,10 @@
 
 import { db, now } from '../db.js';
 import { mkdirSync, writeFileSync, existsSync, readFileSync } from 'node:fs';
-import { join, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
+import { storagePath } from '../config/env.js';
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const STORAGE_ROOT = join(__dirname, '..', 'enterprise-storage');
+const STORAGE_ROOT = storagePath('enterprise-storage');
 
 // ── Scopes ──────────────────────────────────────────────────────────────────
 // 'system'  → toàn hệ thống (scope_id = '')

@@ -4,14 +4,16 @@
 // double-counted; a 'direct' expense (kế toán chi trực tiếp / chuyển khoản) is
 // recorded in the ledger only and never touches the drawer.
 import { db, uid, now, audit } from '../db.js';
+import { intval } from '../core/util.js';
 import { emit } from '../realtime.js';
 import { getCustomer } from './customers.js';
 import { createEntry as createDrawerEntry } from './cashDrawer.js';
+import { matchesSearch, searchTokens } from '../core/search.js';
+import { businessDateEndUtc, businessDateStartUtc } from '../core/businessClock.js';
 
 const SOURCES = ['drawer', 'direct'];
 const DEFAULT_CATEGORIES = ['Thuê mặt bằng', 'Điện nước', 'Lương nhân viên', 'Marketing', 'Nguyên vật liệu', 'Vận chuyển', 'Sửa chữa & bảo trì', 'Khác'];
 
-function intval(v) { return Math.round(Number(v) || 0); }
 function str(v, max = 400) { return String(v ?? '').trim().slice(0, max); }
 function parseDate(v) {
   if (!v) return now();
@@ -20,7 +22,7 @@ function parseDate(v) {
 }
 
 // ---------- categories ----------
-export function listCategories(branch_id = 'br1') {
+export function listCategories(branch_id = 'sala') {
   let rows = db.prepare(`SELECT * FROM expense_categories WHERE branch_id=? AND active=1 ORDER BY sort, name`).all(branch_id);
   if (!rows.length) {
     const ins = db.prepare(`INSERT INTO expense_categories (id,branch_id,name,sort,active,created_at) VALUES (?,?,?,?,1,?)`);
@@ -30,7 +32,7 @@ export function listCategories(branch_id = 'br1') {
   return rows;
 }
 
-export function upsertCategory(body = {}, branch_id = 'br1') {
+export function upsertCategory(body = {}, branch_id = 'sala') {
   const name = str(body.name, 120);
   if (!name) throw new Error('Thiếu tên danh mục');
   if (body.id) {
@@ -45,7 +47,7 @@ export function upsertCategory(body = {}, branch_id = 'br1') {
   return db.prepare(`SELECT * FROM expense_categories WHERE id=?`).get(id);
 }
 
-export function deleteCategory(id, branch_id = 'br1') {
+export function deleteCategory(id, branch_id = 'sala') {
   db.prepare(`UPDATE expense_categories SET active=0 WHERE id=? AND branch_id=?`).run(id, branch_id);
   emit('expenses:updated', { category: id, deleted: true }, branch_id);
   return { ok: true };
@@ -64,16 +66,55 @@ function expenseOut(r) {
   return { ...r, amount: intval(r.amount), source: SOURCES.includes(r.source) ? r.source : 'direct' };
 }
 
-export function listExpenses(branch_id = 'br1', filters = {}) {
+// Chi tiền mặt tạo TRỰC TIẾP từ POS (két) → hiển thị như một khoản chi để mục
+// Chi phí liệt kê ĐẦY ĐỦ. id có tiền tố 'drawer:' để phân biệt, chỉ đọc/ in.
+function drawerAsExpense(de) {
+  return {
+    id: `drawer:${de.id}`, code: '', category_id: null,
+    category_name: 'Chi từ két', payee_id: null, payee_name: de.counterparty || '',
+    source: 'drawer', method: 'cash', amount: intval(de.amount),
+    expense_date: de.occurred_at, note: de.reason || de.product || '',
+    invoice_image: de.invoice_image || '', drawer_entry_id: de.id,
+    actor_name: de.actor_name || '', created_at: de.created_at, from_drawer: true,
+  };
+}
+
+export function getExpense(id, branch_id = 'sala') {
+  const sid = String(id || '');
+  if (sid.startsWith('drawer:')) {
+    const de = db.prepare(`SELECT * FROM cash_drawer_entries WHERE id=? AND branch_id=? AND kind='expense'`).get(sid.slice(7), branch_id);
+    if (!de) throw new Error('Khoản chi không tồn tại');
+    return drawerAsExpense(de);
+  }
+  const e = db.prepare(`SELECT * FROM expenses WHERE id=? AND branch_id=?`).get(sid, branch_id);
+  if (!e) throw new Error('Khoản chi không tồn tại');
+  return expenseOut(e);
+}
+
+export function listExpenses(branch_id = 'sala', filters = {}) {
   const params = [branch_id];
   let where = 'branch_id=?';
   if (filters.category_id) { where += ' AND category_id=?'; params.push(String(filters.category_id)); }
   if (filters.source && SOURCES.includes(filters.source)) { where += ' AND source=?'; params.push(filters.source); }
-  if (filters.from) { where += ' AND expense_date>=?'; params.push(new Date(String(filters.from) + 'T00:00:00').toISOString()); }
-  if (filters.to) { where += ' AND expense_date<=?'; params.push(new Date(String(filters.to) + 'T23:59:59.999').toISOString()); }
+  if (filters.from) { where += ' AND expense_date>=?'; params.push(businessDateStartUtc(filters.from).toISOString()); }
+  if (filters.to) { where += ' AND expense_date<=?'; params.push(businessDateEndUtc(filters.to).toISOString()); }
   const rows = db.prepare(`SELECT * FROM expenses WHERE ${where} ORDER BY expense_date DESC, created_at DESC LIMIT 500`).all(...params);
-  const term = String(filters.q || '').trim().toLowerCase();
-  const out = rows.map(expenseOut).filter(e => !term || [e.code, e.payee_name, e.category_name, e.note].some(v => String(v || '').toLowerCase().includes(term)));
+  const term = searchTokens(filters.q);
+  const out = rows.map(expenseOut).filter(e => matchesSearch([e.code, e.payee_name, e.category_name, e.note], term));
+
+  // Bổ sung chi tiền mặt tạo trực tiếp từ POS (két) CHƯA có bản ghi expenses —
+  // để mục Chi phí không bị "trống" khi cửa hàng chỉ chi qua nút "Chi từ két".
+  if (!filters.category_id && (!filters.source || filters.source === 'drawer')) {
+    const dp = [branch_id];
+    let dw = `branch_id=? AND kind='expense' AND id NOT IN (SELECT drawer_entry_id FROM expenses WHERE drawer_entry_id IS NOT NULL)`;
+    if (filters.from) { dw += ' AND occurred_at>=?'; dp.push(businessDateStartUtc(filters.from).toISOString()); }
+    if (filters.to) { dw += ' AND occurred_at<=?'; dp.push(businessDateEndUtc(filters.to).toISOString()); }
+    const drawer = db.prepare(`SELECT * FROM cash_drawer_entries WHERE ${dw} ORDER BY occurred_at DESC LIMIT 500`)
+      .all(...dp).map(drawerAsExpense)
+      .filter(e => matchesSearch([e.payee_name, e.category_name, e.note], term));
+    out.push(...drawer);
+    out.sort((a, b) => String(b.expense_date).localeCompare(String(a.expense_date)));
+  }
   return { expenses: out, summary: summarize(out) };
 }
 
@@ -97,7 +138,7 @@ function resolvePayee(payee_id, branch_id) {
   return { id: p.id, name: p.company || p.name };
 }
 
-export function createExpense(body = {}, branch_id = 'br1', user = {}) {
+export function createExpense(body = {}, branch_id = 'sala', user = {}) {
   const amount = intval(body.amount);
   if (amount <= 0) throw new Error('Số tiền chi phải lớn hơn 0');
   const source = SOURCES.includes(body.source) ? body.source : 'direct';
@@ -106,6 +147,9 @@ export function createExpense(body = {}, branch_id = 'br1', user = {}) {
     : null;
   const category_name = cat ? cat.name : str(body.category_name, 120);
   const payee = resolvePayee(str(body.payee_id, 80), branch_id);
+  // Cho nhập BÊN NHẬN / NCC dạng chữ tự do (giống mục chi ở POS) khi không chọn
+  // đối tác trong danh bạ.
+  if (!payee.name && body.payee_name) payee.name = str(body.payee_name, 240);
   const expense_date = parseDate(body.expense_date);
   const note = str(body.note, 800);
   const invoice_image = str(body.invoice_image, 7_500_000);
@@ -138,12 +182,13 @@ export function createExpense(body = {}, branch_id = 'br1', user = {}) {
   return expenseOut(db.prepare(`SELECT * FROM expenses WHERE id=?`).get(id));
 }
 
-export function updateExpense(id, body = {}, branch_id = 'br1', user = {}) {
+export function updateExpense(id, body = {}, branch_id = 'sala', user = {}) {
   const e = db.prepare(`SELECT * FROM expenses WHERE id=? AND branch_id=?`).get(id, branch_id);
   if (!e) throw new Error('Khoản chi không tồn tại');
   if (e.drawer_entry_id) throw new Error('Khoản chi này đã trừ vào két — chỉnh sửa trong sổ quỹ/ca để không lệch tiền mặt');
   const cat = body.category_id ? db.prepare(`SELECT * FROM expense_categories WHERE id=? AND branch_id=?`).get(body.category_id, branch_id) : null;
   const payee = resolvePayee(str(body.payee_id, 80), branch_id);
+  if (!payee.name && body.payee_name) payee.name = str(body.payee_name, 240);
   db.prepare(`UPDATE expenses SET category_id=?,category_name=?,payee_id=?,payee_name=?,method=?,amount=?,expense_date=?,note=?,invoice_image=?,updated_at=? WHERE id=? AND branch_id=?`)
     .run(cat?.id || null, cat ? cat.name : str(body.category_name, 120), payee.id, payee.name, str(body.method, 30), intval(body.amount), parseDate(body.expense_date), str(body.note, 800), str(body.invoice_image, 7_500_000), now(), id, branch_id);
   audit('expense.update', { id, amount: intval(body.amount) }, branch_id, user?.username || user?.name);
@@ -151,7 +196,7 @@ export function updateExpense(id, body = {}, branch_id = 'br1', user = {}) {
   return expenseOut(db.prepare(`SELECT * FROM expenses WHERE id=?`).get(id));
 }
 
-export function deleteExpense(id, branch_id = 'br1', user = {}) {
+export function deleteExpense(id, branch_id = 'sala', user = {}) {
   const e = db.prepare(`SELECT * FROM expenses WHERE id=? AND branch_id=?`).get(id, branch_id);
   if (!e) throw new Error('Khoản chi không tồn tại');
   if (e.drawer_entry_id) throw new Error('Khoản chi này đã trừ vào két — không xóa từ Chi phí để tránh lệch quỹ');

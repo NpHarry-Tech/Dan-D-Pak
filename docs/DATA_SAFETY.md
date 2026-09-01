@@ -8,6 +8,9 @@ Orders, order items, kitchen tickets, payments, payment lines, refunds, voids, i
 
 ## Protected File Patterns
 
+- `runtime/server-data/store.db`
+- `runtime/server-data/store.db-shm`
+- `runtime/server-data/store.db-wal`
 - `server/store.db`
 - `server/store.db-shm`
 - `server/store.db-wal`
@@ -18,7 +21,9 @@ Orders, order items, kitchen tickets, payments, payment lines, refunds, voids, i
 - `.env`
 - `.env.*`
 - `backups/`
-- `server/permanent-storage/**` data files
+- `server/permanent-storage/**` legacy/default durable archives
+- `server/uploads/**` legacy/default uploads and DMS files
+- `storage/**` durable archives, documents, uploads, and enterprise snapshots
 - database dumps, exported reports, invoice exports, customer exports, payment reconciliation files
 
 ## Rules
@@ -32,6 +37,12 @@ Orders, order items, kitchen tickets, payments, payment lines, refunds, voids, i
 - If protected files are tracked, remove them from git index only and keep them on disk.
 - Any change touching protected data logic must be documented in README and `docs/CHANGELOG_WORKFLOW.md`.
 
-## Current Safety Finding
+## Current Layout
 
-The repository currently contains tracked local database/archive data. The safe remediation is to expand `.gitignore` and run `git rm --cached` on those protected files only. Do not delete them from disk.
+The source tree keeps code in `server/`. Local runtime database files live under
+`runtime/server-data/` and are ignored. VPS Docker stores the same single live DB
+at `/app/server-data/store.db`.
+
+Durable non-database files resolve from `STORAGE_PATH`: archives live under
+`<STORAGE_PATH>/permanent-storage`, DMS/uploads under `<STORAGE_PATH>/uploads`,
+and enterprise snapshots under `<STORAGE_PATH>/enterprise-storage`.

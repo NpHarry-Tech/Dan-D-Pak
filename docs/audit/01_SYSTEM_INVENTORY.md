@@ -32,7 +32,7 @@ reportCenter, history, archive, enterpriseStorage, settings, modules, system, sy
 - `server/core/`: logger.js, errors.js, http.js, requestLogger.js
 - `server/adapters/`: database (sqlite/postgres), realtime (socketio/websocket), storage (local/s3) — **postgres/s3/websocket còn scaffold**
 - `server/modules/`: orders/payments/inventory/invoices/reports/audit (chỉ README, vùng đích refactor)
-- `server/db/schema/`: `0001_*.sql`, `0002_*.sql` — PostgreSQL đích (planned)
+- PostgreSQL schema dự kiến đã được gỡ; runtime chỉ hỗ trợ SQLite.
 - `server/permanent-storage/`: NDJSON append-only (audit/orders/payments/customers/staff/cash-drawer/reports) — gitignored
 - `server/enterprise-storage/`: config doanh nghiệp — gitignored
 

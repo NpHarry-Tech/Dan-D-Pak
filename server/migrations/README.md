@@ -2,9 +2,9 @@
 
 Migration files must be append-only, reversible where practical, and reviewed before touching production data.
 
-The PostgreSQL company-server target schema is planned in `server/db/schema/`
-(additive, idempotent, no destructive statements). It is NOT auto-run against
-production; apply it only through a reviewed migration runner during the
+Runtime SQLite migrations live in `server/db/migrations.js`. They are applied
+automatically at startup and must remain additive/idempotent. Apply any
+destructive data migration only through a reviewed migration runner during the
 SQLite → PostgreSQL phase. See `docs/DATABASE_SCHEMA.md`.
 
 AI/Agent Safety:

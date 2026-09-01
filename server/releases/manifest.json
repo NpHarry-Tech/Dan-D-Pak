@@ -1,16 +1,18 @@
-{
-  "windows": {
-    "buildNumber": 6,
-    "version": "2026.07.09e",
-    "file": "dan-d-pak-pos-setup-2026-07-09e.exe",
-    "notes": "Màn Mạng & kết nối đo đúng độ trễ (tách Internet/API/Socket); giao diện 'Khách tự gọi món' sáng đồng bộ + topbar chuẩn; tinh gọn mã nguồn.",
-    "mandatory": false
-  },
-  "android": {
-    "buildNumber": 6,
-    "version": "2026.07.09e",
-    "file": "dan-d-pak-pos-android-2026.07.09e.apk",
-    "notes": "Khách tự gọi món giao diện sáng đồng bộ + topbar chuẩn; sửa Retail giỏ hàng chồng chữ; thêm ảnh từ thư viện/chụp; xuất báo cáo; ảnh món hiện đúng; camera quét về dọc đúng chiều.",
-    "mandatory": false
-  }
+﻿{
+    "platforms":  {
+                      "windows":  {
+                                      "version":  "2026.07.17e",
+                                      "build":  38,
+                                      "url":  "/api/app/download/windows",
+                                      "file":  "dan-d-pak-pos-setup.exe",
+                                      "notes":  "Build 38: masked server-side integration credentials, Haravan token/secret UI."
+                                  },
+                      "android":  {
+                                      "version":  "2026.07.17e",
+                                      "build":  25,
+                                      "url":  "/api/app/download/android",
+                                      "file":  "dan-d-pak-pos.apk",
+                                      "notes":  "Tablet build 25: masked server-side integration credentials, Haravan token/secret UI."
+                                  }
+                  }
 }

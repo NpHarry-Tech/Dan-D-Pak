@@ -1,10 +1,17 @@
 node_modules/
+.build-cache/
+.tmp-agent-runtime/
 web/node_modules/
 server/node_modules/
 
 .env
 .env.*
 !.env.example
+
+# Firebase Admin SDK service-account key — grants server-side push/admin
+# access to the Firebase project. Never commit; each deploy target keeps its
+# own local copy at the path FIREBASE_SERVICE_ACCOUNT_PATH points to.
+server/config/firebase-service-account*.json
 
 .next/
 dist/
@@ -16,6 +23,8 @@ out/
 Thumbs.db
 
 backups/
+runtime/
+server-data/
 server/store.db
 server/store.db-shm
 server/store.db-wal
@@ -27,6 +36,7 @@ server/db.sqlite
 *.sqlite3
 tmp_*
 uploads/
+/storage/
 storage/private/
 *.dump
 *.backup
@@ -40,7 +50,14 @@ server/permanent-storage/**
 # Model / Temporary
 artifacts/
 scratch/
+.runlogs/
 *.exe
+*.apk
+*.tgz
+*.zip
+# Hardware Agent - binary DAU VAO can commit (khong phai build output) de
+# CMake copy vao ban cai Windows - xem windows/runner/CMakeLists.txt.
+!flutter-apps/dandpak_desktop/windows/hardware-agent/dandpak-agent.exe
 
 # Flutter temp
 **/.dart_tool/
@@ -65,8 +82,36 @@ server/assets/product-images/
 server/assets/menu-books/
 server/releases/*.apk
 
+# Runtime archives contain real orders, payments, invoices and audit records.
+# Keep the committed directory skeleton/README, never the generated payload.
+server/permanent-storage/**/*.json
+server/permanent-storage/**/*.json.gz
+server/permanent-storage/**/*.tmp
+server/enterprise-storage/**/*.json
+server/enterprise-storage/**/*.tmp
+
+# Dữ liệu NGUỒN của script import (export thô từ KiotViet/BCM — không phải asset
+# runtime). Data thật đã nằm trong SQLite; giữ trên đĩa để import lại, KHÔNG version.
+server/scripts/data/*.md
+server/scripts/data/*.xlsx
+server/scripts/data/*.csv
+server/scripts/*.xlsx
+server/scripts/*.csv
+server/scripts/*.json
+server/scripts/*.txt
+server/scripts/*.sql
+
 # Cấu hình công cụ AI cục bộ của máy dev
 .aevum/
 .antigravitycli/
 .gemini/
 .mcp.json
+
+# Bao cao QA sinh tu dong (~87MB) - khong dua vao lich su git
+qa-artifacts/
+
+# Rac build cua Gradle va thu muc test tam - khong bao gio commit
+.gradle/
+.tmp-tests/
+.codex-test-temp/
+tmp/

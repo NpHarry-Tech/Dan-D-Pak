@@ -59,9 +59,9 @@ Bản chạy hiện tại (local store server):
 
 
 - **Backend + frontend chung 1 server Express** (`server/index.js`) — Node.js, ES Modules (`"type": "module"`).
-- **Database: SQLite** thông qua module built-in **`node:sqlite`** (không cần `better-sqlite3`). File mặc định `server/store.db` (WAL mode).
+- **Database: SQLite** thông qua module built-in **`node:sqlite`** (không cần `better-sqlite3`). File local mặc định `runtime/server-data/store.db` (WAL mode).
 - **Realtime: Socket.IO** (`server/realtime.js`) — phòng theo chi nhánh (`branch:<id>`).
-- **Frontend: HTML tĩnh** trong `web/`, phục vụ trực tiếp từ Express (không bundler bắt buộc).
+- **Frontend: Flutter native apps** trong `flutter-apps/`: `dandpak_desktop`, `dandpak_tablet`, `dandpak_phone`.
 - **Dependency runtime tối thiểu:** chỉ `express` + `socket.io` (xem `package.json`). DB, crypto, fs… đều dùng module built-in của Node.
 
 Stack đích khi lên máy chủ công ty (đã có scaffold deploy):
@@ -69,7 +69,7 @@ Stack đích khi lên máy chủ công ty (đã có scaffold deploy):
 - Ubuntu/Linux + **Docker Compose**.
 - **Caddy** reverse proxy (HTTP/HTTPS).
 - Node backend (image build từ `server/Dockerfile`).
-- **PostgreSQL 16** làm CSDL bền vững (adapter Postgres còn ở dạng scaffold — xem [Vấn đề đã biết](#vấn-đề-đã-biết)).
+- **SQLite (WAL)** làm CSDL production duy nhất, lưu trên volume bền vững của VPS.
 - Backup/restore tự động qua script trong `deploy/company-server/scripts/`.
 
 
@@ -109,7 +109,7 @@ Sau khi chạy, mở:
 | `http://localhost:3000/purchase` | Mua hàng (PO) |
 | `http://localhost:3000/expenses` | Chi phí |
 | `http://localhost:3000/invoices` | Hóa đơn điện tử |
-| `http://localhost:3000/database` | CSDL & tài liệu (backup/restore/staging) |
+| `http://localhost:3000/database` | CSDL & tài liệu (backup/restore/reset giao dịch) |
 | `http://localhost:3000/documents` | Tài liệu (DMS) |
 | `http://localhost:3000/settings` | Cài đặt (= admin.html) |
 
@@ -145,7 +145,7 @@ PIN mặc định mở khóa thiết bị khách (iPad): `0000` (đổi trong C�
 - **Purchase** (`purchase.html`): vòng đời đơn mua hàng (PO) → nhận hàng vào kho → công nợ NCC.
 - **Expenses** (`expenses.html`): sổ chi phí theo danh mục, chi từ tiền két hoặc kế toán chi trực tiếp, đối chiếu quỹ.
 - **Invoices** (`invoices.html`): hóa đơn điện tử (MISA), phát hành/hủy/tra cứu.
-- **Database** (`database.html`): trạng thái CSDL, kiểm tra toàn vẹn, dọn dữ liệu giao dịch, nhân bản staging, tài liệu hệ thống.
+- **Database** (`database.html`): trạng thái CSDL, kiểm tra toàn vẹn, dọn dữ liệu giao dịch, tài liệu hệ thống.
 - **Documents** (`documents.html`): hệ thống quản lý tài liệu (DMS) — upload/preview/tải/xóa file.
 - **Admin/Settings** (`admin.html`): dashboard, báo cáo, thực đơn, người dùng & phân quyền, chi nhánh, tích hợp, máy in, thiết bị, âm thanh thông báo, nhật ký hoạt động.
 - **Printers** (`printers.html`): trạng thái máy in kết nối, lịch sử in, in lại, điều phối máy in LAN/OS, điều khiển ngăn kéo tiền.
@@ -156,7 +156,7 @@ Chi tiết: [docs/DEVICE_WORKFLOWS.md](docs/DEVICE_WORKFLOWS.md), [docs/WORKFLOW
 
 ## Kiến trúc tổng quan
 
-Kiến trúc là **modular monolith**: một server Express phục vụ cả API REST, realtime Socket.IO và web tĩnh. Logic nghiệp vụ tách theo `server/services/*`. Một lớp `config/` + `adapters/` tạo seam để sau này đổi provider (SQLite→Postgres, Socket.IO→WebSocket, local→S3) mà không phải viết lại nghiệp vụ.
+Kiến trúc là **modular monolith**: một server Express phục vụ API REST và realtime Socket.IO cho các app Flutter native. Logic nghiệp vụ tách theo `server/services/*`; runtime dùng đúng một SQLite, Socket.IO và storage local bền vững.
 
 ```text
 Thiết bị (iPad / POS / KDS / Retail / Warehouse / Admin)
@@ -165,10 +165,10 @@ Thiết bị (iPad / POS / KDS / Retail / Warehouse / Admin)
 server/index.js  ── Express ──┬── /health
                               ├── /api/*  → api.js (router) → services/*
                               ├── Socket.IO (realtime.js)  → phòng theo chi nhánh
-                              └── static web/  + route từng trang
+                              └── Flutter native apps dùng /api + Socket.IO
         │
         ▼
-node:sqlite  (server/store.db, WAL)  +  permanent-storage/  (kho lưu trữ vĩnh viễn dạng file)
+node:sqlite  (runtime/server-data/store.db, WAL)  +  permanent-storage/  (archive file, không phải DB sống)
 ```
 
 Luồng xử lý request (`api.js`):
@@ -196,23 +196,19 @@ Dan-D-Pak/
     config/                       env.js, cors.js, runtime.js, providers.js
     core/                         logger, errors, http helpers, requestLogger
     services/                     Logic nghiệp vụ (xem bảng bên dưới)
-    adapters/                     Seam provider: database/, realtime/, storage/ (sqlite/postgres, socketio/websocket, local/s3)
     modules/                      Vùng module đích (orders, payments, inventory, invoices, reports, audit — README)
-    db/                           Repository zone + schema PostgreSQL dự kiến (0001, 0002)
-    migrations/                   Vùng file migration (kế hoạch)
+    db/                           Kết nối, migration versioned, audit và backup SQLite
+    migrations/                   Ghi chú quy ước migration
     scripts/                      Script import dữ liệu (KiotViet, BCM products)
     permanent-storage/            Lưu trữ vĩnh viễn dạng file (orders/payments/customers/staff/audit/reports/cash-drawer) — GITIGNORED
     enterprise-storage/           Kho cấu hình doanh nghiệp (branches/users/system) — GITIGNORED
     uploads/documents/            File DMS upload (runtime) — GITIGNORED
 
-  web/                            Frontend tĩnh (public-web shell)
-    *.html                        Các màn hình thiết bị/nghiệp vụ
-    runtime-config.js             Cấu hình API_BASE_URL / REALTIME_URL ở runtime (không hardcode IP)
-    js/core/                      apiClient, realtimeClient, config, eventBus, storage, money, dates, formatters, dom, errors, notificationSound
-    shared/                       Runtime frontend dùng chung: app.css, client.js, i18n.js, modules.js, customer.js,
-                                  shift.js, kiosk.js, orderHistory.js, invoiceRequest.js, cardTerminal.js
-    assets/                       Logo, ảnh menu-book, âm thanh thông báo (.ogg), logo đối tác thanh toán
-    vendor/                       Thư viện bên thứ ba (interact.min.js)
+  flutter-apps/                    Flutter native app shells
+    dandpak_desktop/               Desktop POS/Admin/KDS/Warehouse shell
+    dandpak_tablet/                Tablet self-order/POS shell
+    dandpak_phone/                 Phone companion shell
+    dandpak_core/                  Shared Dart API/realtime client package
 
   android-pos/                    App Android mỏng bọc web POS + cầu nối thẻ VCB SmartPOS (scaffold)
   deploy/company-server/          Docker Compose triển khai trên máy chủ công ty (app + caddy + postgres)
@@ -220,7 +216,7 @@ Dan-D-Pak/
   backups/                        Bản backup (GITIGNORED)
 ```
 
-> **Quy ước vùng:** `web/` là vỏ public, không chứa dữ liệu nhạy cảm. `server/` là nguồn dữ liệu thật.
+> **Quy ước vùng:** Flutter apps là vỏ native không giữ dữ liệu nhạy cảm. `server/` là nguồn dữ liệu thật.
 > Tên thư mục hiện giữ nguyên để tránh rủi ro đổi tên hệ thống đang chạy — ánh xạ trong [docs/REPO_STRUCTURE.md](docs/REPO_STRUCTURE.md).
 
 ---
@@ -246,7 +242,7 @@ Toàn bộ logic nằm trong `server/services/*`, được `api.js` gọi:
 | `customers.js` | Khách hàng + đối tác (Contacts), tích điểm, tra cứu mã số thuế |
 | `vouchers.js` | Voucher & giảm giá |
 | `invoices.js` | Hóa đơn điện tử (qua MISA), yêu cầu hóa đơn từ khách |
-| `misa.js` | Tích hợp HĐĐT MISA (test kết nối + phát hành) |
+| `misa/` | Adapter HĐĐT MISA đã tách theo auth/client/config/company/payload/invoice; `misa/index.js` là public API duy nhất |
 | `online.js` | Kênh online: nhận webhook đơn, danh sách kênh, đổi trạng thái |
 | `printing.js` | Job in (bếp/bar/bill/tem), điều phối máy in LAN/OS, in lại, mở ngăn kéo |
 | `reports.js` | Dashboard, xu hướng doanh thu, nhật ký hoạt động gần đây |
@@ -301,7 +297,7 @@ Lộ trình: [docs/ERP_MODULE_ROADMAP.md](docs/ERP_MODULE_ROADMAP.md), ánh xạ
 
 ## Cơ sở dữ liệu
 
-SQLite (`node:sqlite`) tại `server/store.db`, WAL mode. Schema & migration sống trong `server/db.js` (`migrate()`). Các bảng chính:
+SQLite (`node:sqlite`) tại `runtime/server-data/store.db` khi chạy local, hoặc `/app/server-data/store.db` khi chạy VPS Docker. Schema & migration sống trong `server/db.js` (`migrate()`). Các bảng chính:
 
 - **Cấu hình:** `branches`, `users`, `auth_sessions`, `role_perms`, `user_perms`, `app_settings`, `user_preferences`
 - **Danh mục:** `categories`, `menu_items`, `recipes`, `skus`, `inventory_items`, `tables`, `vouchers`
@@ -313,10 +309,9 @@ SQLite (`node:sqlite`) tại `server/store.db`, WAL mode. Schema & migration s�
 
 Đặc điểm quan trọng:
 
-- **Nhật ký hoạt động (`audit_log`)** trong SQLite chỉ giữ **7 ngày gần nhất** (`purgeOldAudit`, dọn khi khởi động + mỗi ngày). Bản đầy đủ được ghi song song xuống `permanent-storage/audit/` dạng NDJSON.
+- **Nhật ký hoạt động (`audit_log`)** trong SQLite chỉ giữ **7 ngày gần nhất** (`purgeOldAudit`, dọn khi khởi động + mỗi ngày). Bản đầy đủ được ghi song song xuống `<STORAGE_PATH>/permanent-storage/audit/` dạng NDJSON.
 - **`permanent-storage/`** là **bộ nhớ vĩnh viễn dạng file**: orders, payments, customers, staff, cash-drawer, reports được snapshot theo `by-id/` và `by-date/`. Đây là dữ liệu được bảo vệ, **gitignored**.
 - Database được coi là **bộ nhớ vĩnh viễn của cửa hàng** — lưu lịch sử thay đổi quan trọng, không chỉ trạng thái mới nhất. Xem [docs/COMPANY_DATABASE_MEMORY.md](docs/COMPANY_DATABASE_MEMORY.md) và [docs/DATABASE_SCHEMA.md](docs/DATABASE_SCHEMA.md).
-- Schema PostgreSQL đích (additive) đã phác trong [server/db/schema/](server/db/schema/README.md) (`0001` history/sync/audit, `0002` nhóm bảng company-memory).
 
 ---
 
@@ -341,7 +336,7 @@ Hệ thống hỗ trợ nhiều phương thức và **tự động đóng bill k
 - **Tự xác nhận (auto-confirm):**
   - *Path B — Webhook ngân hàng* (SePay/Casso): khớp bill theo nội dung chuyển khoản (memo `DANBILL…`) → gọi `payOrder` → đóng bill realtime. Webhook công khai, xác thực bằng key/chữ ký provider.
   - *Path A — payOS*: tạo link/QR theo từng bill, xác thực webhook HMAC bằng Checksum Key; đồng thời hỗ trợ **poll trạng thái** (`GET /api/payos/payment-status/:orderCode`) để chạy được cả trên localhost (không cần webhook public).
-- **Thẻ (VCB SmartPOS):** cầu nối đa chế độ `auto/manual/mock` (`web/shared/cardTerminal.js`). Nếu không có app native, vẫn chạy ở chế độ **manual** (thu ngân tự quẹt rồi nhập approval code). App Android nâng cấp lên `auto` nằm ở `android-pos/` (scaffold, chờ tài liệu Intent VCB + Printer SDK).
+- **Thẻ (VCB SmartPOS):** cầu nối đa chế độ `auto/manual/mock` (native payment/card-terminal integration). Nếu không có app native, vẫn chạy ở chế độ **manual** (thu ngân tự quẹt rồi nhập approval code). App Android nâng cấp lên `auto` nằm ở `android-pos/` (scaffold, chờ tài liệu Intent VCB + Printer SDK).
 
 Webhook & endpoint liên quan: `/api/{vietqr,sepay,casso,payos}/webhook`, `/api/orders/:id/payment-qr`, `/api/payment-qr`, `/api/payments/bank-transactions`.
 
@@ -377,7 +372,7 @@ Toàn bộ route khai báo trong `server/api.js`, mount tại `/api`. Một số
 - **Online/in ấn/hóa đơn:** `/online/*`, `/print/*`, `/invoices/*`
 - **Báo cáo/audit/lưu trữ:** `/dashboard`, `/dashboard/trends`, `/reports/{catalog,preview,export}`, `/audit`, `/archive/*`
 - **Đồng bộ & cấu hình:** `/sync/{status,offline,now}`, `/config/{export,import}`
-- **CSDL & tài liệu:** `/database/{status,integrity-check,reset-transactions,clone-to-staging,docs}`, `/documents/*` (DMS)
+- **CSDL & tài liệu:** `/database/{status,integrity-check,reset-transactions,docs}`, `/documents/*` (DMS)
 
 Các endpoint chưa hiện thực trả về `notImplemented(...)` rõ ràng (JSON), không trả HTML. Route không tồn tại dưới `/api` trả JSON `apiNotFound`.
 
@@ -397,18 +392,18 @@ Hợp đồng chi tiết: [docs/API_CONTRACT.md](docs/API_CONTRACT.md).
 | `CORS_ORIGIN` | — | Danh sách origin tin cậy (phẩy ngăn cách) |
 | `DEPLOYMENT_TARGET` | `local` | `local` \| `vps` |
 | `DATABASE_PROVIDER` | `sqlite` | `sqlite` \| `postgres` |
-| `SQLITE_PATH` | `server/store.db` | Đường dẫn file SQLite |
+| `SQLITE_PATH` | `runtime/server-data/store.db` | Đường dẫn file SQLite local |
 | `DATABASE_URL` | — | Bắt buộc khi `postgres` |
 | `REALTIME_PROVIDER` | `socketio` | `socketio` \| `websocket` |
 | `STORAGE_PROVIDER` | `local` | `local` \| `s3` |
-| `STORAGE_PATH` | `storage` | Thư mục lưu trữ local |
+| `STORAGE_PATH` | `server` | Thư mục lưu trữ local; deployment nên đặt volume bền riêng (ví dụ `/app/storage`) |
 | `LOG_LEVEL` | `info` | Mức log |
 | `BACKUP_RETENTION_DAYS` | `14` | Số ngày giữ backup |
 | `DISABLE_DEMO_SEED` | `false` | Tắt nạp dữ liệu demo lần đầu |
 | `CONFIG_SEED_URL` | — | Khôi phục cấu hình từ URL khi DB trống |
 | `JWT_SECRET` / `SESSION_SECRET` | `change-me` | Khóa bí mật (đổi khi production) |
 
-Thứ tự ưu tiên `API_BASE_URL` phía frontend (`web/runtime-config.js`):
+Thứ tự ưu tiên `API_BASE_URL` phía Flutter native apps:
 
 1. `window.APP_CONFIG.API_BASE_URL`
 2. `VITE_API_BASE_URL` (nếu có build tool)
@@ -447,7 +442,7 @@ Mô hình đích chia **hai vùng với ranh giới cứng** (xem [docs/DATA_OWN
 
 ### Vùng VPS công khai (gateway — KHÔNG phải nguồn dữ liệu)
 
-VPS public-facing: phục vụ vỏ web (`web/`), kết thúc HTTPS, reverse-proxy `/api` + WebSocket về company server, expose health/version, và giữ **bộ đệm sự kiện mã hóa tạm thời (1–7 ngày, mặc định 7)** khi company server offline. VPS **không bao giờ** là nguồn dữ liệu, không lưu vĩnh viễn order/khách/nhân viên/thanh toán/hóa đơn/tồn kho/báo cáo/credential/audit/cài đặt riêng tư. PostgreSQL không bao giờ mở trên VPS. Xem [docs/VPS_GATEWAY.md](docs/VPS_GATEWAY.md), [docs/VPS_TEMPORARY_BUFFER.md](docs/VPS_TEMPORARY_BUFFER.md).
+VPS public-facing: kết thúc HTTPS, reverse-proxy `/api` + WebSocket về company server cho các app Flutter native, expose health/version, và giữ **bộ đệm sự kiện mã hóa tạm thời (1–7 ngày, mặc định 7)** khi company server offline. VPS **không bao giờ** là nguồn dữ liệu, không lưu vĩnh viễn order/khách/nhân viên/thanh toán/hóa đơn/tồn kho/báo cáo/credential/audit/cài đặt riêng tư. PostgreSQL không bao giờ mở trên VPS. Xem [docs/VPS_GATEWAY.md](docs/VPS_GATEWAY.md), [docs/VPS_TEMPORARY_BUFFER.md](docs/VPS_TEMPORARY_BUFFER.md).
 
 ### Vùng company server riêng tư (nguồn dữ liệu thật)
 
@@ -463,7 +458,7 @@ Khi company server không tới được, ghi sự kiện được **đệm (VPS
 
 File/đường dẫn được bảo vệ (đã có trong `.gitignore`):
 
-- `server/store.db`, `server/store.db-shm`, `server/store.db-wal`, `server/db.sqlite`, `*.db`, `*.sqlite`, `*.sqlite3`
+- `runtime/server-data/store.db`, `runtime/server-data/store.db-shm`, `runtime/server-data/store.db-wal`, `server/db.sqlite`, `*.db`, `*.sqlite`, `*.sqlite3`
 - `server/permanent-storage/**`, `server/enterprise-storage/**` (giữ lại README/.gitkeep)
 - `server/uploads/**` (file DMS), `storage/private/`
 - `backups/`, `*.dump`, `*.backup`, dump DB, báo cáo/hóa đơn/khách/đối soát đã export
@@ -514,7 +509,7 @@ Xem [docs/KNOWN_CASES.md](docs/KNOWN_CASES.md).
 
 **Kiến trúc & vùng:** [ARCHITECTURE](docs/ARCHITECTURE.md) · [REPO_STRUCTURE](docs/REPO_STRUCTURE.md) · [DATA_OWNERSHIP](docs/DATA_OWNERSHIP.md) · [VPS_GATEWAY](docs/VPS_GATEWAY.md) · [COMPANY_DATA_SERVER](docs/COMPANY_DATA_SERVER.md) · [SECURITY_BOUNDARIES](docs/SECURITY_BOUNDARIES.md)
 
-**CSDL & schema:** [COMPANY_DATABASE_MEMORY](docs/COMPANY_DATABASE_MEMORY.md) · [DATABASE_SCHEMA](docs/DATABASE_SCHEMA.md) · [AUDIT_LOGGING](docs/AUDIT_LOGGING.md) · [server/db/schema](server/db/schema/README.md)
+**CSDL & schema:** [COMPANY_DATABASE_MEMORY](docs/COMPANY_DATABASE_MEMORY.md) · [DATABASE_SCHEMA](docs/DATABASE_SCHEMA.md) · [AUDIT_LOGGING](docs/AUDIT_LOGGING.md)
 
 **Offline, sync & resilience:** [OFFLINE_FIRST_ARCHITECTURE](docs/OFFLINE_FIRST_ARCHITECTURE.md) · [VPS_TEMPORARY_BUFFER](docs/VPS_TEMPORARY_BUFFER.md) · [SYNC_BACK_TO_COMPANY_SERVER](docs/SYNC_BACK_TO_COMPANY_SERVER.md) · [POWER_OUTAGE_RUNBOOK](docs/POWER_OUTAGE_RUNBOOK.md) · [FAILOVER_RUNBOOK](docs/FAILOVER_RUNBOOK.md) · [BACKUP_RESTORE](docs/BACKUP_RESTORE.md)
 

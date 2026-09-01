@@ -5,6 +5,8 @@ import 'dart:isolate';
 
 import 'package:http/http.dart' as http;
 
+import 'utils/translation.dart';
+
 /// Lỗi API có PHÂN LOẠI — nền tảng của crash hardening phía mạng:
 ///  • [offline]  = không chạm được server (SocketException/ClientException).
 ///  • [timedOut] = server không trả lời kịp.
@@ -15,6 +17,9 @@ import 'package:http/http.dart' as http;
 class ApiException implements Exception {
   final String message;
   final int statusCode; // 0 khi không có phản hồi HTTP (offline/timeout)
+  /// Mã lỗi nghiệp vụ server trả về (vd ORDER_VERSION_CONFLICT/EDIT_LEASE_LOST/
+  /// ORDER_FINALIZED/ORDER_ALREADY_CHECKING_OUT). Rỗng nếu không có.
+  final String code;
   final String method;
   final String endpoint;
   final bool offline;
@@ -24,6 +29,7 @@ class ApiException implements Exception {
   const ApiException(
     this.message, {
     this.statusCode = 0,
+    this.code = '',
     this.method = '',
     this.endpoint = '',
     this.offline = false,
@@ -64,17 +70,8 @@ class ApiTrace {
 }
 
 class DanDpakApiClient {
-  static const defaultBaseUrl = 'http://127.0.0.1:3000';
+  static const defaultBaseUrl = 'https://api.dandpakpos.io.vn';
   static const defaultTimeout = Duration(seconds: 10);
-
-  /// Hook tự cứu khi request bị CONNECTION REFUSED (engine local chưa chạy /
-  /// vừa bị tắt). App gắn hàm khởi động lại Node engine vào đây; trả về true
-  /// nếu engine đã sống lại → request được RETRY trong suốt, người dùng không
-  /// thấy lỗi "remote computer refused the network connection" nữa.
-  ///
-  /// An toàn cho cả POST: connect bị refused nghĩa là request CHƯA HỀ tới
-  /// server (không có nguy cơ double-submit).
-  static Future<bool> Function()? onConnectionRefused;
 
   /// Quan sát mọi request đã có phản hồi ("hộp đen" của app gắn vào đây để ghi
   /// vệt API trước crash). Nhận 1 dòng gọn: "GET /api/menu → 200". Callback
@@ -89,6 +86,7 @@ class DanDpakApiClient {
   /// App cung cấp correlationId của flow hiện tại (Zone-based). Mỗi request sẽ
   /// mang header `x-correlation-id` để truy vết Flutter → API → DB → máy in.
   static String? Function()? correlationIdProvider;
+  static Map<String, String> Function()? deviceMetadataProvider;
 
   static void _trace(http.Response response) {
     final cb = onRequestTrace;
@@ -107,37 +105,23 @@ class DanDpakApiClient {
     } catch (_) {/* hook của app không được phá request */}
   }
 
-  static bool _isRefused(Object e) {
-    final cause = e is ApiException ? (e.cause ?? e) : e;
-    if (cause is SocketException) return true;
-    final s = cause.toString();
-    return s.contains('refused') ||
-        s.contains('errno = 1225') ||
-        s.contains('SocketException');
-  }
-
-  Future<T> _withEngineRetry<T>(Future<T> Function() run) async {
-    try {
-      return await run();
-    } catch (e) {
-      final recover = onConnectionRefused;
-      if (recover == null || !_isRefused(e)) rethrow;
-      final ok = await recover();
-      if (!ok) rethrow;
-      return await run();
-    }
-  }
-
   String baseUrl;
   String? token;
   String? branchId;
 
   DanDpakApiClient({String baseUrl = defaultBaseUrl, this.token, this.branchId})
-    : baseUrl = normalizeBaseUrl(baseUrl);
+      : baseUrl = normalizeBaseUrl(baseUrl);
 
   static String normalizeBaseUrl(String url) {
     var trimmed = url.trim();
     if (trimmed.isEmpty) return defaultBaseUrl;
+
+    final scheme =
+        RegExp(r'^https?://', caseSensitive: false).firstMatch(trimmed);
+    if (scheme != null) {
+      trimmed =
+          '${scheme.group(0)!.toLowerCase()}${trimmed.substring(scheme.end)}';
+    }
 
     // Remove trailing slash
     trimmed = trimmed.replaceFirst(RegExp(r'/$'), '');
@@ -187,7 +171,24 @@ class DanDpakApiClient {
     return Uri.parse('$baseUrl$normalizedPath');
   }
 
+  /// Tên máy gửi kèm mọi request (x-device-name) để Nhật ký hoạt động trên
+  /// server ghi rõ "ai làm gì ở THIẾT BỊ NÀO" — kể cả log phía backend.
+  static final String _deviceName = () {
+    try {
+      // Header HTTP chỉ an toàn với ASCII — lọc ký tự lạ khỏi tên máy.
+      return Platform.localHostname
+          .replaceAll(RegExp(r'[^\x20-\x7E]'), '?')
+          .trim();
+    } catch (_) {
+      return '';
+    }
+  }();
+
   Map<String, String> headers([Map<String, String>? extra]) {
+    Map<String, String> deviceMetadata = const {};
+    try {
+      deviceMetadata = deviceMetadataProvider?.call() ?? const {};
+    } catch (_) {}
     final result = <String, String>{
       'Content-Type': 'application/json; charset=utf-8',
       if (token != null && token!.isNotEmpty) ...{
@@ -195,6 +196,8 @@ class DanDpakApiClient {
         'Authorization': 'Bearer $token',
       },
       if (branchId != null && branchId!.isNotEmpty) 'x-branch-id': branchId!,
+      if (_deviceName.isNotEmpty) 'x-device-name': _deviceName,
+      ...deviceMetadata,
     };
     if (extra != null) result.addAll(extra);
     return result;
@@ -212,8 +215,7 @@ class DanDpakApiClient {
   }) async {
     final sw = Stopwatch()..start();
     final cid = _safeCorrelationId();
-    final hdrs =
-        headers(cid == null ? null : {'x-correlation-id': cid});
+    final hdrs = headers(cid == null ? null : {'x-correlation-id': cid});
     final target = uri(path);
     try {
       final http.Response response;
@@ -224,8 +226,20 @@ class DanDpakApiClient {
                   headers: hdrs, body: body == null ? null : jsonEncode(body))
               .timeout(timeout);
         case 'DELETE':
-          response =
-              await http.delete(target, headers: hdrs).timeout(timeout);
+          response = await http
+              .delete(target,
+                  headers: hdrs, body: body == null ? null : jsonEncode(body))
+              .timeout(timeout);
+        case 'PATCH':
+          response = await http
+              .patch(target,
+                  headers: hdrs, body: body == null ? null : jsonEncode(body))
+              .timeout(timeout);
+        case 'PUT':
+          response = await http
+              .put(target,
+                  headers: hdrs, body: body == null ? null : jsonEncode(body))
+              .timeout(timeout);
         default:
           response = await http.get(target, headers: hdrs).timeout(timeout);
       }
@@ -236,9 +250,8 @@ class DanDpakApiClient {
         statusCode: response.statusCode,
         durationMs: sw.elapsedMilliseconds,
         correlationId: cid,
-        error: response.statusCode >= 400
-            ? 'HTTP ${response.statusCode}'
-            : null,
+        error:
+            response.statusCode >= 400 ? 'HTTP ${response.statusCode}' : null,
       ));
       return response;
     } on TimeoutException catch (e) {
@@ -312,13 +325,22 @@ class DanDpakApiClient {
     String path, {
     Duration timeout = defaultTimeout,
     String? errorMessage,
-  }) {
-    return _withEngineRetry(() async {
-      final response = await _send('GET', path,
-          timeout: timeout, errorMessage: errorMessage);
-      return decodeResponseAsync(response,
-          errorMessage: errorMessage, method: 'GET', path: path);
-    });
+  }) async {
+    ApiException? lastNetworkError;
+    for (var attempt = 1; attempt <= 3; attempt++) {
+      try {
+        final response = await _send('GET', path,
+            timeout: timeout, errorMessage: errorMessage);
+        return decodeResponseAsync(response,
+            errorMessage: errorMessage, method: 'GET', path: path);
+      } on ApiException catch (e) {
+        if (!e.isNetworkIssue) rethrow;
+        lastNetworkError = e;
+        if (attempt == 3) break;
+        await Future.delayed(Duration(milliseconds: 250 * attempt));
+      }
+    }
+    throw lastNetworkError!;
   }
 
   Future<dynamic> postJson(
@@ -326,13 +348,11 @@ class DanDpakApiClient {
     Object? body,
     Duration timeout = defaultTimeout,
     String? errorMessage,
-  }) {
-    return _withEngineRetry(() async {
-      final response = await _send('POST', path,
-          body: body, timeout: timeout, errorMessage: errorMessage);
-      return decodeResponseAsync(response,
-          errorMessage: errorMessage, method: 'POST', path: path);
-    });
+  }) async {
+    final response = await _send('POST', path,
+        body: body, timeout: timeout, errorMessage: errorMessage);
+    return decodeResponseAsync(response,
+        errorMessage: errorMessage, method: 'POST', path: path);
   }
 
   /// Probe MỘT endpoint và trả về kết quả CÓ CẤU TRÚC cho màn "Mạng & kết nối".
@@ -342,8 +362,7 @@ class DanDpakApiClient {
   ///    trả lời, KHÔNG phải mất mạng)
   ///  - mất mạng     : SocketException/timeout (statusCode=0 + exceptionType)
   /// Đây là phép đo trực tiếp từ THIẾT BỊ (không phải server tự đo), nên phản
-  /// ánh đúng độ trễ thật client↔server. Không dùng _withEngineRetry để số đo
-  /// là một lần gọi sạch.
+  /// ánh đúng độ trễ thật client↔server. Phép đo luôn là một lần gọi sạch.
   Future<Map<String, dynamic>> probe(
     String path, {
     Duration timeout = const Duration(seconds: 5),
@@ -389,33 +408,54 @@ class DanDpakApiClient {
     String path, {
     Duration timeout = const Duration(seconds: 30),
     String? errorMessage,
-  }) {
-    return _withEngineRetry(() async {
-      final response = await _send('GET', path,
-          timeout: timeout, errorMessage: errorMessage);
-      if (response.statusCode >= 200 && response.statusCode < 300) {
-        return response.bodyBytes;
-      }
-      throw ApiException(
-        errorMessage ?? 'Request failed (HTTP ${response.statusCode})',
-        statusCode: response.statusCode,
-        method: 'GET',
-        endpoint: path,
-      );
-    });
+  }) async {
+    final response =
+        await _send('GET', path, timeout: timeout, errorMessage: errorMessage);
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      return response.bodyBytes;
+    }
+    throw ApiException(
+      errorMessage ?? 'Request failed (HTTP ${response.statusCode})',
+      statusCode: response.statusCode,
+      method: 'GET',
+      endpoint: path,
+    );
   }
 
   Future<dynamic> deleteJson(
     String path, {
+    Object? body,
     Duration timeout = defaultTimeout,
     String? errorMessage,
-  }) {
-    return _withEngineRetry(() async {
-      final response = await _send('DELETE', path,
-          timeout: timeout, errorMessage: errorMessage);
-      return decodeResponseAsync(response,
-          errorMessage: errorMessage, method: 'DELETE', path: path);
-    });
+  }) async {
+    final response = await _send('DELETE', path,
+        body: body, timeout: timeout, errorMessage: errorMessage);
+    return decodeResponseAsync(response,
+        errorMessage: errorMessage, method: 'DELETE', path: path);
+  }
+
+  Future<dynamic> patchJson(
+    String path, {
+    Object? body,
+    Duration timeout = defaultTimeout,
+    String? errorMessage,
+  }) async {
+    final response = await _send('PATCH', path,
+        body: body, timeout: timeout, errorMessage: errorMessage);
+    return decodeResponseAsync(response,
+        errorMessage: errorMessage, method: 'PATCH', path: path);
+  }
+
+  Future<dynamic> putJson(
+    String path, {
+    Object? body,
+    Duration timeout = defaultTimeout,
+    String? errorMessage,
+  }) async {
+    final response = await _send('PUT', path,
+        body: body, timeout: timeout, errorMessage: errorMessage);
+    return decodeResponseAsync(response,
+        errorMessage: errorMessage, method: 'PUT', path: path);
   }
 
   /// Bodies above this size are parsed in a background isolate so a large
@@ -456,16 +496,23 @@ class DanDpakApiClient {
       return decoded;
     }
 
-    final serverMessage = decoded is Map
-        ? decoded['error'] ?? decoded['message']
-        : null;
+    final serverMessage =
+        decoded is Map ? decoded['error'] ?? decoded['message'] : null;
+    // Mã lỗi nghiệp vụ: server gửi ở decoded['code'] hoặc decoded['error']['code'].
+    String serverCode = '';
+    if (decoded is Map) {
+      final err = decoded['error'];
+      serverCode = (decoded['code'] ?? (err is Map ? err['code'] : null) ?? '')
+          .toString();
+    }
     // HTTP lỗi = server ĐÃ trả lời → ApiException nghiệp vụ có statusCode,
-    // KHÔNG phải offline. UI hiện message; ai cần status thì đọc được.
+    // KHÔNG phải offline. UI hiện message; ai cần status/code thì đọc được.
     throw ApiException(
       serverMessage?.toString() ??
           errorMessage ??
           'Request failed (HTTP ${response.statusCode})',
       statusCode: response.statusCode,
+      code: serverCode,
       method: method,
       endpoint: path,
     );
@@ -509,14 +556,14 @@ dynamic _tryJsonDecode(String body) {
 
 String _timeoutMessage(Duration timeout, String? errorMessage) {
   final action = errorMessage?.trim().isNotEmpty == true
-      ? errorMessage!.trim()
-      : 'Yêu cầu';
-  return '$action quá thời gian chờ ${timeout.inSeconds} giây. Vui lòng kiểm tra server/máy in rồi thử lại.';
+      ? t(errorMessage!.trim())
+      : t('Yêu cầu');
+  return '$action ${t('quá thời gian chờ')} ${timeout.inSeconds} ${t('giây')}. ${t('Vui lòng kiểm tra server/máy in rồi thử lại')}.';
 }
 
 String _offlineMessage(String? errorMessage) {
   final action = errorMessage?.trim().isNotEmpty == true
-      ? errorMessage!.trim()
-      : 'Yêu cầu';
-  return '$action: không kết nối được máy chủ. Kiểm tra mạng/WiFi rồi thử lại — thao tác CHƯA được ghi nhận.';
+      ? t(errorMessage!.trim())
+      : t('Yêu cầu');
+  return '$action: ${t('không kết nối được máy chủ')}. ${t('Kiểm tra mạng/WiFi rồi thử lại')} — ${t('thao tác CHƯA được ghi nhận')}.';
 }

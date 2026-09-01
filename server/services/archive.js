@@ -3,11 +3,12 @@
 // copies into separate folders so records can still be inspected/exported fast.
 import { closeSync, existsSync, fsyncSync, mkdirSync, openSync, readdirSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync, writeSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import zlib from 'node:zlib';
+import { logger } from '../core/logger.js';
+import { storagePath } from '../config/env.js';
+import { businessDate, businessParts } from '../core/businessClock.js';
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-export const PERMANENT_ROOT = join(__dirname, '..', 'permanent-storage');
+export const PERMANENT_ROOT = storagePath('permanent-storage');
 
 const ENTITY_KINDS = new Set(['customers', 'orders', 'invoices', 'payments', 'staff', 'cash-drawer']);
 const FOLDERS = ['customers', 'orders', 'invoices', 'payments', 'reports', 'audit', 'staff', 'cash-drawer'];
@@ -18,9 +19,8 @@ function safePart(v, fallback = 'unknown') {
 }
 
 function isoDate(iso = null) {
-  const d = iso ? new Date(iso) : new Date();
-  if (Number.isNaN(d.getTime())) return new Date().toISOString().slice(0, 10);
-  return d.toISOString().slice(0, 10);
+  try { return businessDate(iso || new Date()); }
+  catch { return businessDate(); }
 }
 
 function pad2(n) {
@@ -28,14 +28,14 @@ function pad2(n) {
 }
 
 function localDateParts(iso = null) {
-  const d = iso ? new Date(iso) : new Date();
-  const x = Number.isNaN(d.getTime()) ? new Date() : d;
+  let x;
+  try { x = businessParts(iso || new Date()); } catch { x = businessParts(); }
   return {
-    yyyy: String(x.getFullYear()),
-    mm: pad2(x.getMonth() + 1),
-    dd: pad2(x.getDate()),
-    hh: pad2(x.getHours()),
-    min: pad2(x.getMinutes()),
+    yyyy: String(x.year),
+    mm: pad2(x.month),
+    dd: pad2(x.day),
+    hh: pad2(x.hour),
+    min: pad2(x.minute),
   };
 }
 
@@ -60,7 +60,7 @@ export function archiveEntity(kind, entity = {}, opts = {}) {
   try {
     if (!ENTITY_KINDS.has(kind) || !entity) return null;
     ensurePermanentStorage();
-    const branch = safePart(opts.branch_id || entity.branch_id || 'br1');
+    const branch = safePart(opts.branch_id || entity.branch_id || 'sala');
     const id = safePart(opts.id || entity.id || entity.order_id || entity.payment_id);
     const ts = opts.timestamp || entity.updated_at || entity.paid_at || entity.issued_at || entity.created_at || new Date().toISOString();
     const payload = {
@@ -75,7 +75,7 @@ export function archiveEntity(kind, entity = {}, opts = {}) {
     writeJsonAtomic(byDate, payload);
     return { byId, byDate };
   } catch (e) {
-    console.warn('[archive] entity archive failed:', e.message);
+    logger.warn('archive entity archive failed', { message: e.message });
     return null;
   }
 }
@@ -108,7 +108,7 @@ export function archiveCashDrawerEntry(entry) {
   try {
     if (!entry) return base;
     ensurePermanentStorage();
-    const branch = safePart(entry.branch_id || 'br1');
+    const branch = safePart(entry.branch_id || 'sala');
     const id = safePart(entry.id || entry.entry_id);
     const parts = localDateParts(entry.occurred_at || entry.created_at);
     const dayFolder = `${parts.yyyy}-${parts.mm}-${parts.dd}`;
@@ -128,12 +128,12 @@ export function archiveCashDrawerEntry(entry) {
     writeJsonAtomic(file, payload);
     return { ...(base || {}), journal: file, archive_sequence: sequence, archive_file_name: fileName };
   } catch (e) {
-    console.warn('[archive] cash drawer journal failed:', e.message);
+    logger.warn('archive cash drawer journal failed', { message: e.message });
     return base;
   }
 }
 
-export function archiveDashboardReport(report = {}, branch_id = 'br1') {
+export function archiveDashboardReport(report = {}, branch_id = 'sala') {
   try {
     ensurePermanentStorage();
     const branch = safePart(branch_id);
@@ -147,7 +147,7 @@ export function archiveDashboardReport(report = {}, branch_id = 'br1') {
     writeJsonAtomic(join(PERMANENT_ROOT, 'reports', branch, 'daily', `${isoDate()}.json`), stamped);
     return stamped;
   } catch (e) {
-    console.warn('[archive] report archive failed:', e.message);
+    logger.warn('archive report archive failed', { message: e.message });
     return null;
   }
 }
@@ -156,7 +156,7 @@ export function appendAuditArchive(entry = {}) {
   let fd;
   try {
     ensurePermanentStorage();
-    const branch = safePart(entry.branch_id || 'br1');
+    const branch = safePart(entry.branch_id || 'sala');
     const day = isoDate(entry.created_at);
     const file = join(PERMANENT_ROOT, 'audit', branch, `${day}.ndjson`);
     ensureDir(dirname(file));
@@ -169,7 +169,7 @@ export function appendAuditArchive(entry = {}) {
     fsyncSync(fd);
     return file;
   } catch (e) {
-    console.warn('[archive] audit archive failed:', e.message);
+    logger.warn('archive audit archive failed', { message: e.message });
     return null;
   } finally {
     if (fd !== undefined) { try { closeSync(fd); } catch { /* already closed */ } }
@@ -209,19 +209,19 @@ export function readRecentAuditArchive(days = 2) {
       }
     }
   } catch (e) {
-    console.warn('[archive] read recent audit failed:', e.message);
+    logger.warn('archive read recent audit failed', { message: e.message });
   }
   return out;
 }
 
-export function readArchivedEntity(kind, id, branch_id = 'br1') {
+export function readArchivedEntity(kind, id, branch_id = 'sala') {
   if (!ENTITY_KINDS.has(kind)) throw new Error('Archive kind khong hop le');
   const file = join(PERMANENT_ROOT, kind, safePart(branch_id), 'by-id', `${safePart(id)}.json`);
   if (!existsSync(file)) return null;
   return JSON.parse(readFileSync(file, 'utf8'));
 }
 
-export function latestDashboardReport(branch_id = 'br1') {
+export function latestDashboardReport(branch_id = 'sala') {
   const file = join(PERMANENT_ROOT, 'reports', safePart(branch_id), 'dashboard-latest.json');
   if (!existsSync(file)) return null;
   return JSON.parse(readFileSync(file, 'utf8'));
@@ -344,7 +344,7 @@ export function readMonthlyArchive(branch, ym) {
     }
     return out;
   } catch (e) {
-    console.warn('[archive] read monthly archive failed:', e.message);
+    logger.warn('archive read monthly archive failed', { message: e.message });
     return [];
   }
 }

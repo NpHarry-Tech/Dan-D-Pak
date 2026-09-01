@@ -1,0 +1,288 @@
+// Route ownership: Database Management (status, integrity-check, reset-transactions,
+// decrypt-audit, docs). NHẠY CẢM: có thao tác HUỶ/tái tạo dữ liệu —
+// route dời NGUYÊN VĂN, không đổi logic.
+import * as Auth from '../../services/auth.js';
+import { db, audit, decryptDecompress, listBackups } from '../../db.js';
+import { scanCriticalOrphans } from '../../db/integrity.js';
+
+export function registerDatabaseRoutes(api, { wrap, guardAny, branch }) {
+// --- Database Management & Documentation APIs ---
+
+// Đo độ trễ event loop thật (không phải CPU% hệ điều hành — Node đơn luồng
+// nên "event loop lag" là chỉ số phản ánh sát nhất việc server có đang bị một
+// tác vụ đồng bộ nào đó (như vụ backup/print-job phình to hôm nay) chặn mất
+// hay không, dùng ngay được trên VPS không cần cài thêm gì.
+function measureEventLoopLag() {
+  return new Promise((resolve) => {
+    const started = Date.now();
+    setImmediate(() => resolve(Date.now() - started));
+  });
+}
+
+// GET /api/database/status
+api.get('/database/status', guardAny('settings.manage'), wrap(async () => {
+  const fs = await import('node:fs');
+  const { DB_PATH } = await import('../../db.js');
+
+  let dbSize = 0;
+  try {
+    dbSize = fs.statSync(DB_PATH).size;
+  } catch {}
+
+  let walSize = 0;
+  try {
+    walSize = fs.statSync(`${DB_PATH}-wal`).size;
+  } catch {}
+
+  const eventLoopLagMs = await measureEventLoopLag();
+  const mem = process.memoryUsage();
+
+  let printQueue = { queued: 0, failed: 0 };
+  try {
+    const rows = db.prepare(`SELECT status, COUNT(*) n FROM print_jobs WHERE status IN ('queued','failed') GROUP BY status`).all();
+    for (const r of rows) printQueue[r.status] = r.n;
+  } catch {}
+
+  let recentErrors5m = 0;
+  try {
+    const cutoff = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+    recentErrors5m = db.prepare(`SELECT COUNT(*) n FROM system_logs WHERE level='error' AND timestamp >= ?`).get(cutoff).n;
+  } catch {}
+
+  const configTables = [
+    'branches', 'users', 'warehouses', 'categories', 'menu_items',
+    'inventory_items', 'skus', 'tables', 'recipes', 'app_settings',
+    'role_perms', 'user_perms', 'vouchers'
+  ];
+
+  const transactionTables = [
+    'orders', 'order_items', 'payments', 'payment_lines', 'shifts',
+    'cash_drawer_entries', 'purchase_orders', 'purchase_order_lines',
+    'expenses', 'audit_log', 'print_jobs', 'invoices', 'bank_transactions'
+  ];
+
+  const configCounts = {};
+  for (const table of configTables) {
+    try {
+      const row = db.prepare(`SELECT COUNT(*) as n FROM ${table}`).get();
+      configCounts[table] = row.n;
+    } catch {
+      configCounts[table] = 0;
+    }
+  }
+
+  const transactionCounts = {};
+  for (const table of transactionTables) {
+    try {
+      const row = db.prepare(`SELECT COUNT(*) as n FROM ${table}`).get();
+      transactionCounts[table] = row.n;
+    } catch {
+      transactionCounts[table] = 0;
+    }
+  }
+
+  let sqliteVersion = 'Unknown';
+  let journalMode = 'Unknown';
+  try {
+    sqliteVersion = db.prepare('SELECT sqlite_version() as v').get().v;
+    journalMode = db.prepare('PRAGMA journal_mode').get().journal_mode;
+  } catch {}
+
+  let pendingSyncCount = 0;
+  try {
+    const row = db.prepare(`SELECT COUNT(*) as n FROM sync_queue WHERE status = 'pending'`).get();
+    pendingSyncCount = row.n;
+  } catch {}
+
+  const scopeRouting = {
+    branches: db.prepare(`
+      SELECT b.id, b.name,
+        (SELECT COUNT(*) FROM warehouses w WHERE w.branch_id=b.id) warehouses,
+        (SELECT COUNT(*) FROM tables t WHERE t.branch_id=b.id) tables,
+        (SELECT COUNT(*) FROM categories c WHERE c.branch_id=b.id) categories,
+        (SELECT COUNT(*) FROM menu_items m WHERE m.branch_id=b.id) menu_items,
+        (SELECT COUNT(*) FROM inventory_items i WHERE i.branch_id=b.id) inventory_items,
+        (SELECT COUNT(*) FROM skus s WHERE s.branch_id=b.id) skus,
+        (SELECT COUNT(*) FROM orders o WHERE o.branch_id=b.id) orders
+      FROM branches b ORDER BY b.sort,b.name`).all(),
+    violations: {
+      menuCategory: db.prepare(`SELECT COUNT(*) n FROM menu_items m
+        LEFT JOIN categories c ON c.id=m.category_id AND c.branch_id=m.branch_id
+        WHERE c.id IS NULL`).get().n,
+      skuWarehouse: db.prepare(`SELECT COUNT(*) n FROM skus s
+        LEFT JOIN warehouses w ON w.id=s.warehouse_id AND w.branch_id=s.branch_id
+        WHERE s.warehouse_id IS NOT NULL AND w.id IS NULL`).get().n,
+      inventoryWarehouse: db.prepare(`SELECT COUNT(*) n FROM inventory_items i
+        LEFT JOIN warehouses w ON w.id=i.warehouse_id AND w.branch_id=i.branch_id
+        WHERE i.warehouse_id IS NOT NULL AND w.id IS NULL`).get().n,
+      lotWarehouse: db.prepare(`SELECT COUNT(*) n FROM stock_lots l
+        LEFT JOIN warehouses w ON w.id=l.warehouse_id AND w.branch_id=l.branch_id
+        WHERE w.id IS NULL`).get().n,
+      orderTable: db.prepare(`SELECT COUNT(*) n FROM orders o
+        LEFT JOIN tables t ON t.id=o.table_id AND t.branch_id=o.branch_id
+        WHERE o.table_id IS NOT NULL AND t.id IS NULL`).get().n,
+    },
+  };
+
+  return {
+    dbType: 'SQLite (node:sqlite)',
+    dbPath: DB_PATH,
+    dbSize,
+    walSize,
+    sqliteVersion,
+    journalMode,
+    configCounts,
+    transactionCounts,
+    pendingSyncCount,
+    scopeRouting,
+    // Sự sống thật của tiến trình NGAY LÚC NÀY — dùng để phát hiện sớm kiểu sự
+    // cố hôm nay (agent poll làm nghẽn CPU): lag cao bất thường + queue in tồn
+    // đọng lớn là dấu hiệu trực tiếp, không cần chờ người dùng báo "app treo".
+    live: {
+      checkedAt: new Date().toISOString(),
+      uptimeSec: Math.round(process.uptime()),
+      eventLoopLagMs,
+      memory: { rssMb: Math.round(mem.rss / 1048576), heapUsedMb: Math.round(mem.heapUsed / 1048576), heapTotalMb: Math.round(mem.heapTotal / 1048576) },
+      printQueue,
+      recentErrors5m,
+    },
+    // Báo cáo TRUNG THỰC: trạng thái sao lưu/đồng bộ phản ánh đúng thực tế hệ thống.
+    backups: (() => {
+      const list = listBackups();
+      return {
+        provider: 'local-snapshot',
+        retentionDays: parseInt(process.env.BACKUP_RETENTION_DAYS) || 14,
+        count: list.length,
+        latest: list[0] || null,
+        dir: 'backups/',
+      };
+    })(),
+    cloudSync: {
+      mode: process.env.DATABASE_PROVIDER === 'postgres' ? 'postgres' : 'local-only',
+      offsiteReplication: false,
+      pending: pendingSyncCount,
+      note: 'Đẩy đồng bộ ngoại vi CHƯA bật. An toàn dữ liệu dựa vào sao lưu local định kỳ (backups/) + nhật ký NDJSON fsync. Hãy copy thư mục backups/ ra ổ ngoài/VPS định kỳ.',
+    },
+    auditArchive: { durable: true, format: 'ndjson-fsync' },
+  };
+}));
+
+// POST /api/database/integrity-check
+api.post('/database/integrity-check', guardAny('settings.manage'), wrap(async () => {
+  let result = 'failed';
+  try {
+    const row = db.prepare('PRAGMA integrity_check').get();
+    result = row.integrity_check || row['integrity_check'] || 'ok';
+  } catch (e) {
+    result = e.message;
+  }
+  const logical = result === 'ok'
+    ? scanCriticalOrphans(db)
+    : { ok: false, checkedRelations: 0, orphanCount: null, findings: [] };
+  return { ok: result === 'ok' && logical.ok, result, logical };
+}));
+
+// POST /api/database/reset-transactions
+api.post('/database/reset-transactions', guardAny('settings.manage'), wrap(async (req) => {
+  const { pin } = req.body;
+  if (!pin) throw new Error('Cần cung cấp mã PIN xác nhận.');
+
+  const user = Auth.verifyManagerOwnerPin(pin, branch(req));
+  if (!user) {
+    throw new Error('Mã PIN không đúng hoặc không có quyền Admin/Manager.');
+  }
+
+  const transactionTables = [
+    'payment_lines', 'payments', 'order_items',
+    'invoice_allocations', 'invoice_audit_logs', 'e_invoices', 'invoices',
+    'bank_transactions', 'print_jobs', 'staff_calls', 'orders',
+    'cash_drawer_reimbursement_allocations', 'cash_drawer_entries', 'shifts',
+    'purchase_order_lines', 'purchase_payments', 'purchase_orders',
+    'purchase_return_lines', 'purchase_returns',
+    'expenses', 'sync_queue', 'audit_log'
+  ];
+
+  // node:sqlite (DatabaseSync) không có .transaction() — dùng BEGIN/COMMIT/ROLLBACK.
+  db.exec('BEGIN');
+  try {
+    for (const table of transactionTables) {
+      db.exec(`DELETE FROM ${table}`);
+    }
+    db.exec(`UPDATE tables SET status = 'free'`);
+    db.exec('COMMIT');
+  } catch (e) {
+    db.exec('ROLLBACK');
+    throw e;
+  }
+  audit('db.reset_transactions', 'Dọn dẹp toàn bộ dữ liệu giao dịch về trạng thái sạch.', branch(req), user.username);
+
+  return { ok: true, message: 'Đã dọn dẹp sạch toàn bộ dữ liệu giao dịch thành công.' };
+}));
+
+// POST /api/database/decrypt-audit
+api.post('/database/decrypt-audit', guardAny('settings.manage'), wrap(async (req) => {
+  const { id } = req.body;
+  if (!id) throw new Error('Cần cung cấp ID audit log.');
+  const row = db.prepare(`SELECT detail FROM audit_log WHERE id = ?`).get(id);
+  if (!row) throw new Error('Không tìm thấy bản ghi nhật ký hoạt động.');
+  const decrypted = decryptDecompress(row.detail);
+  return { decrypted };
+}));
+
+// GET /api/database/docs
+api.get('/database/docs', guardAny('settings.manage'), wrap(async () => {
+  return [
+    { file: 'README.md', title: 'Tổng quan & Stack dự án' },
+    { file: 'docs/ARCHITECTURE.md', title: 'Kiến trúc & Vùng triển khai' },
+    { file: 'docs/OFFLINE_FIRST_ARCHITECTURE.md', title: 'Kiến trúc Offline-First' },
+    { file: 'docs/COMPANY_DATABASE_MEMORY.md', title: 'Chính sách Bộ nhớ vĩnh viễn' },
+    { file: 'docs/VPS_TEMPORARY_BUFFER.md', title: 'Bộ đệm sự kiện tạm thời VPS' },
+    { file: 'docs/SYNC_BACK_TO_COMPANY_SERVER.md', title: 'Quy trình Đồng bộ ngược' }
+  ];
+}));
+
+// GET /api/database/docs/:file
+api.get('/database/docs/:file', guardAny('settings.manage'), wrap(async (req) => {
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+  const { fileURLToPath } = await import('node:url');
+
+  const reqFile = req.params.file;
+  const whitelist = [
+    'README.md',
+    'docs/ARCHITECTURE.md',
+    'docs/OFFLINE_FIRST_ARCHITECTURE.md',
+    'docs/COMPANY_DATABASE_MEMORY.md',
+    'docs/VPS_TEMPORARY_BUFFER.md',
+    'docs/SYNC_BACK_TO_COMPANY_SERVER.md'
+  ];
+
+  if (!whitelist.includes(reqFile)) {
+    throw new Error('Tài liệu không nằm trong danh mục cho phép.');
+  }
+
+  const __dirname = path.dirname(fileURLToPath(import.meta.url));
+  const ROOT = path.resolve(__dirname, '..', '..', '..');
+  const targetPath = path.resolve(ROOT, reqFile);
+
+  let content = '';
+  try {
+    content = fs.readFileSync(targetPath, 'utf8');
+  } catch (e) {
+    throw new Error('Không thể đọc nội dung tài liệu.');
+  }
+
+  return { file: reqFile, content };
+}));
+
+// ══════════════════════════════════════════════════════════════════════════════
+// DMS — Document Management System
+// POST /documents/upload     — upload 1 file (base64 trong JSON body)
+// GET  /documents/files      — danh sách tài liệu
+// GET  /documents/files/:id/download  — tải file
+// GET  /documents/files/:id/preview   — preview (ảnh/pdf inline)
+// PUT  /documents/files/:id  — cập nhật metadata
+// DEL  /documents/files/:id  — xóa (cần PIN)
+// ══════════════════════════════════════════════════════════════════════════════
+
+}

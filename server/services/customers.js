@@ -1,9 +1,12 @@
 // Customer directory — remembers buyers (incl. full invoice info) so special
 // customers can carry a default perk (free / % / amount off) into retail & POS.
 import { db, uid, now, audit } from '../db.js';
+import { parseJson } from '../core/util.js';
 import { emit } from '../realtime.js';
 import { archiveCustomer } from './archive.js';
 import { getLoyaltyConfig } from './settings.js';
+import { lookupTaxCode as lookupTaxCodeFromTaxModule } from './tax.js';
+import { searchScore, searchTokens } from '../core/search.js';
 
 const PERKS = ['none', 'pct', 'amount', 'free'];
 const PARTNER_TYPES = ['customer', 'supplier', 'both', 'staff'];
@@ -32,38 +35,47 @@ function normalizeRow(r) {
 
 function pickPartnerType(v) { return PARTNER_TYPES.includes(v) ? v : 'customer'; }
 
-function parseJson(raw, fallback) {
-  try { return raw ? JSON.parse(raw) : fallback; } catch { return fallback; }
+
+function partnerSearchValues(c) {
+  // Keep directory search aligned with the fields users can see and expect.
+  // Searching hidden address/preferences made "Dan" return names such as "Hà"
+  // merely because the address contained "khu dân cư".
+  return [c.code, c.name, c.phone, c.tax_code, c.company, c.email,
+    c.contact_person, c.address, c.address_detail, c.address_ward,
+    c.address_province, c.note];
 }
 
-function matchesTerm(c, term) {
-  if (!term) return true;
-  return [c.code, c.name, c.phone, c.tax_code, c.company, c.email, c.contact_person, c.address, c.preferences, c.allergies, c.profile_summary]
-    .some(v => String(v || '').toLowerCase().includes(term));
+function rankMatches(rows, q, limit) {
+  if (!searchTokens(q).length) return rows.slice(0, limit);
+  return rows
+    .map((row, index) => ({ row, index, score: searchScore(partnerSearchValues(row), q) }))
+    .filter(item => item.score >= 0)
+    .sort((a, b) => b.score - a.score || a.index - b.index)
+    .slice(0, limit)
+    .map(item => item.row);
 }
 
 // Sales-side customer picker (POS/retail/invoice). Suppliers never show here.
-export function listCustomers(branch_id = 'br1', q = '') {
+export function listCustomers(branch_id = 'sala', q = '') {
   const rows = db.prepare(`SELECT * FROM customers WHERE branch_id=? AND active!=0 ORDER BY updated_at DESC, created_at DESC`).all(branch_id);
-  const term = String(q || '').trim().toLowerCase();
   // Khách hàng + nhân viên (CBNV) đều chọn được ở POS để áp ưu đãi mặc định. NCC thì không.
   const out = rows.map(normalizeRow).filter(c => c.is_customer || c.is_staff);
-  return out.filter(c => matchesTerm(c, term)).slice(0, 200);
+  return rankMatches(out, q, 200);
 }
 
 // Full contacts directory (Liên hệ): customers + suppliers, filterable by type.
-export function listPartners(branch_id = 'br1', { type = 'all', q = '', includeInactive = false } = {}) {
+export function listPartners(branch_id = 'sala', { type = 'all', q = '', includeInactive = false } = {}) {
   const rows = db.prepare(`SELECT * FROM customers WHERE branch_id=? ORDER BY updated_at DESC, created_at DESC`).all(branch_id);
-  const term = String(q || '').trim().toLowerCase();
+  const term = searchTokens(q);
   let out = rows.map(normalizeRow);
   if (!includeInactive) out = out.filter(c => c.active !== 0);
   if (type === 'customer') out = out.filter(c => c.is_customer);
   else if (type === 'supplier') out = out.filter(c => c.is_supplier);
   else if (type === 'staff') out = out.filter(c => c.is_staff);
-  return out.filter(c => matchesTerm(c, term)).slice(0, 500);
+  return rankMatches(out, q, 500);
 }
 
-export function partnerCounts(branch_id = 'br1') {
+export function partnerCounts(branch_id = 'sala') {
   const all = db.prepare(`SELECT * FROM customers WHERE branch_id=? AND active!=0`).all(branch_id).map(normalizeRow);
   return {
     all: all.length,
@@ -73,18 +85,18 @@ export function partnerCounts(branch_id = 'br1') {
   };
 }
 
-export function getCustomer(id, branch_id = 'br1') {
+export function getCustomer(id, branch_id = 'sala') {
   if (!id) return null;
   return normalizeRow(db.prepare(`SELECT * FROM customers WHERE id=? AND branch_id=?`).get(id, branch_id));
 }
 
-export function findByTaxCode(tax_code, branch_id = 'br1') {
+export function findByTaxCode(tax_code, branch_id = 'sala') {
   const tc = String(tax_code || '').trim();
   if (!tc) return null;
   return normalizeRow(db.prepare(`SELECT * FROM customers WHERE branch_id=? AND tax_code=?`).get(branch_id, tc));
 }
 
-export function findByPhone(phone, branch_id = 'br1') {
+export function findByPhone(phone, branch_id = 'sala') {
   const digits = String(phone || '').replace(/\D/g, '');
   if (!digits) return null;
   return normalizeRow(db.prepare(`
@@ -106,7 +118,7 @@ function cleanCustomerCode(v) {
   return str(v, 40).replace(/\s+/g, '').toUpperCase();
 }
 
-function nextCustomerCode(branch_id = 'br1') {
+function nextCustomerCode(branch_id = 'sala') {
   const row = db.prepare(`
     SELECT COALESCE(MAX(CAST(SUBSTR(code, 3) AS INTEGER)), 0) AS n
     FROM customers
@@ -164,13 +176,18 @@ function loyaltyEarn(customer, amount, cfg) {
   };
 }
 
-export function upsertCustomer(body = {}, branch_id = 'br1') {
-  const name = str(body.name, 200);
+export function upsertCustomer(body = {}, branch_id = 'sala') {
+  const suppliedName = str(body.name, 200);
+  const identity = suppliedName || str(body.company, 200)
+    || (str(body.tax_code, 40) ? `Khách MST ${str(body.tax_code, 40)}` : '')
+    || (str(body.phone, 40) ? `Khách ${str(body.phone, 40)}` : '')
+    || str(body.email, 160);
+  const name = identity;
   const existing = body.id ? db.prepare(`SELECT * FROM customers WHERE id=? AND branch_id=?`).get(body.id, branch_id) : null;
   const code = cleanCustomerCode(body.code) || existing?.code || nextCustomerCode(branch_id);
   const dup = db.prepare(`SELECT id FROM customers WHERE branch_id=? AND code=? AND id!=?`).get(branch_id, code, existing?.id || '');
   if (dup) throw new Error('Mã khách hàng đã tồn tại');
-  if (!name) throw new Error('Thiếu tên liên hệ');
+  if (!name) throw new Error('Nhập ít nhất tên, tên công ty, MST, số điện thoại hoặc email');
   const perk_type = pickPerk(body.perk_type);
   let perk_value = Math.max(0, parseInt(body.perk_value) || 0);
   if (perk_type === 'pct' && perk_value > 100) perk_value = 100;
@@ -224,7 +241,7 @@ export function upsertCustomer(body = {}, branch_id = 'br1') {
   return out;
 }
 
-export function deleteCustomer(id, branch_id = 'br1') {
+export function deleteCustomer(id, branch_id = 'sala') {
   const c = getCustomer(id, branch_id);
   if (!c) throw new Error('Khách hàng không tồn tại');
   archiveCustomer({ ...c, deleted: true, deleted_at: now() });
@@ -235,7 +252,7 @@ export function deleteCustomer(id, branch_id = 'br1') {
 }
 
 // Bump lifetime stats and loyalty points after a paid order (best-effort).
-export function recordPurchase(customerRef, amount = 0, branch_id = 'br1', order_id = null) {
+export function recordPurchase(customerRef, amount = 0, branch_id = 'sala', order_id = null) {
   try {
     if (!customerRef) return;
     let customer = typeof customerRef === 'string'
@@ -247,6 +264,12 @@ export function recordPurchase(customerRef, amount = 0, branch_id = 'br1', order
     if (!customer?.id) return;
     const cfg = getLoyaltyConfig(branch_id);
     const earned = loyaltyEarn(customer, amount, cfg);
+    if (order_id) {
+      const inserted = db.prepare(`INSERT OR IGNORE INTO customer_purchase_ledger
+        (id,branch_id,customer_id,source_order_id,amount,points,created_at) VALUES (?,?,?,?,?,?,?)`)
+        .run(uid('cpl_'), branch_id, customer.id, String(order_id), Math.max(0, parseInt(amount) || 0), earned.points, now());
+      if (!inserted.changes) return getCustomer(customer.id, branch_id);
+    }
     const nextPoints = (parseInt(customer.loyalty_points) || 0) + earned.points;
     db.prepare(`UPDATE customers SET total_orders=total_orders+1,total_spent=total_spent+?,loyalty_points=?,loyalty_tier=?,last_visit_at=?,updated_at=? WHERE id=? AND branch_id=?`)
       .run(Math.max(0, parseInt(amount) || 0), nextPoints, earned.tier || customer.loyalty_tier || '', now(), now(), customer.id, branch_id);
@@ -257,7 +280,23 @@ export function recordPurchase(customerRef, amount = 0, branch_id = 'br1', order
   } catch { /* ignore */ }
 }
 
-export function rebuildCustomerInsights(id, branch_id = 'br1') {
+export function reversePurchase(order_id, branch_id = 'sala') {
+  if (!order_id) return null;
+  const row = db.prepare(`SELECT * FROM customer_purchase_ledger
+    WHERE branch_id=? AND source_order_id=? AND reversed_at IS NULL`).get(branch_id, String(order_id));
+  if (!row) return null;
+  const changed = db.prepare(`UPDATE customer_purchase_ledger SET reversed_at=?
+    WHERE id=? AND reversed_at IS NULL`).run(now(), row.id).changes;
+  if (!changed) return null;
+  db.prepare(`UPDATE customers SET total_orders=MAX(0,total_orders-1),total_spent=MAX(0,total_spent-?),
+    loyalty_points=MAX(0,loyalty_points-?),updated_at=? WHERE id=? AND branch_id=?`)
+    .run(row.amount, row.points, now(), row.customer_id, branch_id);
+  audit('customer.loyalty_reverse', { id: row.customer_id, points: row.points, order_id }, branch_id);
+  emit('customers:updated', { id: row.customer_id }, branch_id);
+  return getCustomer(row.customer_id, branch_id);
+}
+
+export function rebuildCustomerInsights(id, branch_id = 'sala') {
   if (!id) return [];
   const rows = db.prepare(`
     SELECT oi.menu_item_id, oi.sku_id, oi.name, SUM(oi.qty) qty, SUM(oi.qty * oi.unit_price) spent
@@ -287,25 +326,41 @@ const PLACEHOLDER_NAMES = new Set([UNREGISTERED_NAME, 'Khách hàng chưa đặt
 // Tự lưu/bổ sung hồ sơ khách từ thông tin HÓA ĐƠN sau bữa ăn — hoàn toàn ÂM
 // THẦM (không toast, không label phía UI): khách đã chịu khai tên/SĐT/email
 // khi xuất HĐ thì thông tin đó tự chảy vào mục Khách hàng.
-//  • Chỉ chạy khi có SĐT (khóa nhận diện); không có SĐT thì thôi.
+//  • Nhận diện ưu tiên SĐT, sau đó MST, email, cuối cùng là tên khớp
+//    chính xác trong cùng chi nhánh. Form hóa đơn cá nhân cho phép chỉ nhập
+//    tên; nút "thêm khách hàng" vẫn phải tạo hồ sơ. Không fuzzy-match tên
+//    vì có thể ghép nhầm hai người khác nhau.
 //  • Khách đã có hồ sơ: chỉ BỔ SUNG chỗ trống (tên placeholder → tên thật,
 //    email/MST/địa chỉ đang trống) — không bao giờ đè dữ liệu đã có.
 //  • Không được ném lỗi: lưu khách thất bại không được chặn phát hành HĐ.
-export function silentSaveFromInvoice(buyer = {}, branch_id = 'br1') {
+export function silentSaveFromInvoice(buyer = {}, branch_id = 'sala') {
   try {
     const phone = String(buyer.phone || '').replace(/\D/g, '');
-    if (phone.length < 8 || phone.length > 12) return null;
-    const name = String(buyer.name || '').trim().slice(0, 200);
-    const existing = findByPhone(phone, branch_id);
+    const validPhone = phone.length >= 8 && phone.length <= 12 ? phone : '';
+    const taxCode = String(buyer.tax_code || '').replace(/\s+/g, '').trim();
+    const email = String(buyer.email || '').trim().toLowerCase();
+    const company = String(buyer.company || '').trim();
+    const name = String(buyer.name || company || '').trim().slice(0, 200);
+    if (!name || PLACEHOLDER_NAMES.has(name)) return null;
+    const existing = validPhone
+      ? findByPhone(validPhone, branch_id)
+      : taxCode
+        ? db.prepare(`SELECT * FROM customers WHERE branch_id=? AND tax_code=? ORDER BY updated_at DESC LIMIT 1`).get(branch_id, taxCode)
+        : email
+          ? db.prepare(`SELECT * FROM customers WHERE branch_id=? AND lower(email)=? ORDER BY updated_at DESC LIMIT 1`).get(branch_id, email)
+          : db.prepare(`SELECT * FROM customers WHERE branch_id=? AND lower(trim(name))=lower(?) ORDER BY updated_at DESC LIMIT 1`).get(branch_id, name);
     if (!existing) {
       const customer = upsertCustomer({
         name: name || UNREGISTERED_NAME,
-        phone,
-        email: String(buyer.email || '').trim(),
-        tax_code: String(buyer.tax_code || '').trim(),
+        phone: validPhone,
+        email,
+        tax_code: taxCode,
+        company: String(buyer.company || '').trim(),
         address: String(buyer.address || '').trim(),
       }, branch_id);
-      audit('customer.auto_from_invoice', { id: customer.id, phone }, branch_id, 'system');
+      audit('customer.auto_from_invoice', {
+        id: customer.id, phone: validPhone, tax_code: taxCode, email,
+      }, branch_id, 'system');
       return customer;
     }
     const patch = {};
@@ -313,11 +368,12 @@ export function silentSaveFromInvoice(buyer = {}, branch_id = 'br1') {
     if (!String(existing.email || '').trim() && String(buyer.email || '').trim()) patch.email = String(buyer.email).trim();
     if (!String(existing.tax_code || '').trim() && String(buyer.tax_code || '').trim()) patch.tax_code = String(buyer.tax_code).trim();
     if (!String(existing.address || '').trim() && String(buyer.address || '').trim()) patch.address = String(buyer.address).trim();
+    if (!String(existing.company || '').trim() && String(buyer.company || '').trim()) patch.company = String(buyer.company).trim();
     if (!Object.keys(patch).length) return existing;
     const sets = Object.keys(patch).map(k => `${k}=?`).join(', ');
     db.prepare(`UPDATE customers SET ${sets}, updated_at=? WHERE id=? AND branch_id=?`)
       .run(...Object.values(patch), now(), existing.id, branch_id);
-    audit('customer.auto_from_invoice', { id: existing.id, phone, filled: Object.keys(patch) }, branch_id, 'system');
+    audit('customer.auto_from_invoice', { id: existing.id, phone: validPhone, tax_code: taxCode, email, filled: Object.keys(patch) }, branch_id, 'system');
     return { ...existing, ...patch };
   } catch {
     return null; // lưu hồ sơ khách là việc phụ — không bao giờ phá flow hóa đơn
@@ -327,7 +383,7 @@ export function silentSaveFromInvoice(buyer = {}, branch_id = 'br1') {
 // iPad self-order: khách nhập SĐT ở đầu bữa. SĐT lạ → TỰ TẠO khách mới (tên
 // placeholder — nhân viên đổi sau trong Liên hệ). Trả về hồ sơ + danh sách
 // MÓN HAY GỌI (chỉ hiện từ lần ăn thứ 3 — tức đã có ≥2 bill paid).
-export function selfOrderCheckin(phone, branch_id = 'br1') {
+export function selfOrderCheckin(phone, branch_id = 'sala') {
   const clean = String(phone || '').replace(/\D/g, '');
   if (clean.length < 8 || clean.length > 12) throw new Error('Số điện thoại không hợp lệ');
   let customer = findByPhone(clean, branch_id);
@@ -350,7 +406,7 @@ export function selfOrderCheckin(phone, branch_id = 'br1') {
     if (menuIds.length) {
       const marks = menuIds.map(() => '?').join(',');
       const rows = db.prepare(`SELECT id,name,price,image,emoji FROM menu_items
-        WHERE id IN (${marks}) AND available=1 AND hidden=0 AND deleted_at IS NULL`).all(...menuIds);
+        WHERE branch_id=? AND id IN (${marks}) AND available=1 AND hidden=0 AND deleted_at IS NULL`).all(branch_id, ...menuIds);
       const byId = new Map(rows.map(r => [r.id, r]));
       favorites = fav
         .filter(f => byId.has(f.id))
@@ -385,22 +441,5 @@ export function perkDiscount(customer, base = 0) {
 // Look up company name/address from a Vietnamese tax code via the free VietQR
 // business directory (used to prefill invoice info the first time an MST is typed).
 export async function lookupTaxCode(taxCode) {
-  const tc = String(taxCode || '').replace(/\s+/g, '');
-  if (!/^\d{10}(\d{3})?$/.test(tc)) throw new Error('Mã số thuế phải gồm 10 hoặc 13 chữ số');
-  const local = db.prepare(`SELECT * FROM customers WHERE tax_code=?`).get(tc);
-  try {
-    const ctrl = new AbortController();
-    const t = setTimeout(() => ctrl.abort(), 8000);
-    const res = await fetch(`https://api.vietqr.io/v2/business/${tc}`, { signal: ctrl.signal, headers: { Accept: 'application/json' } });
-    clearTimeout(t);
-    if (res.ok) {
-      const json = await res.json();
-      const d = json?.data;
-      if (d && (d.name || d.shortName)) {
-        return { ok: true, source: 'vietqr', tax_code: tc, company: d.name || d.shortName || '', name: d.shortName || d.name || '', address: d.address || '', existed: local ? { id: local.id, name: local.name } : null };
-      }
-    }
-  } catch { /* fall through to local / not-found */ }
-  if (local) return { ok: true, source: 'local', tax_code: tc, company: local.company || local.name, name: local.name, address: local.address || '', existed: { id: local.id, name: local.name } };
-  return { ok: false, tax_code: tc, message: 'Không tra cứu được thông tin theo MST này. Vui lòng nhập tay (có thể do mạng hoặc MST chưa có trên cơ sở dữ liệu công khai).' };
+  return lookupTaxCodeFromTaxModule(taxCode);
 }

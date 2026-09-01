@@ -7,6 +7,8 @@ import { promisify } from 'util';
 import { mkdtemp, writeFile, readFile, rm } from 'fs/promises';
 import os from 'os';
 import path from 'path';
+import { businessDate, businessDateStartUtc, businessDateTimeSeconds,
+  businessDisplayDate, businessParts } from '../core/businessClock.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -30,6 +32,8 @@ export const REPORTS = [
   { key: 'purchase', group: 'inventory', label: 'Báo cáo nhập hàng', description: 'Phiếu nhập, supplier, lot, hạn dùng, giá vốn.' },
   { key: 'issue', group: 'inventory', label: 'Báo cáo xuất hàng', description: 'Xuất kho, bán hàng, recipe, chuyển kho, kiểm kho.' },
   { key: 'stock', group: 'inventory', label: 'Báo cáo tồn kho chi tiết', description: 'Tồn hiện tại, min stock, giá trị tồn, hạn dùng.' },
+  { key: 'low_stock', group: 'inventory', label: 'Hàng cần nhập (dưới định mức)', description: 'Mặt hàng tồn ≤ định mức, gợi ý số lượng nhập và giá trị cần nhập.' },
+  { key: 'expiry_alert', group: 'inventory', label: 'Cảnh báo hạn sử dụng', description: 'Lô hàng sắp hết hạn hoặc đã hết hạn, số ngày còn lại và giá trị tồn rủi ro.' },
   { key: 'stocktake', group: 'inventory', label: 'Báo cáo kiểm kho', description: 'Phiên kiểm kho, chênh lệch, lý do điều chỉnh.' },
   { key: 'cash_drawer', group: 'cash', label: 'Báo cáo tiền két', description: 'Thu tiền mặt, chi tiền, hoàn chi, số dư két theo ca và theo kỳ.' },
   { key: 'payables', group: 'debt', label: 'Công nợ phải trả', description: 'Ước tính phải trả theo phiếu nhập và supplier.' },
@@ -50,54 +54,54 @@ function money(n) {
 function qty(n) {
   return Number(n || 0).toLocaleString('vi-VN', { maximumFractionDigits: 3 });
 }
+// GIỜ VIỆT NAM (+7, không DST). Container chạy UTC nên nếu dùng getHours()/local
+// sẽ lệch 7h → báo cáo sai giờ (sự cố 07/08/2026). Mọi định dạng giờ + mốc ngày
+// của báo cáo phải quy về VN để khớp với bill thực tế.
+const VN_OFFSET_MS = 7 * 3600 * 1000;
+const _p2 = n => String(n).padStart(2, '0');
+const _vn = d => new Date(new Date(d).getTime() + VN_OFFSET_MS); // dùng getUTC* sau đó
 function dateOnly(d) {
-  const x = new Date(d);
-  return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}`;
+  return businessDate(d);
 }
 function dateTime(d) {
   if (!d) return '';
-  const x = new Date(d);
-  if (isNaN(x)) return String(d);
-  const p = n => String(n).padStart(2, '0');
-  return `${p(x.getDate())}/${p(x.getMonth() + 1)}/${x.getFullYear()} ${p(x.getHours())}:${p(x.getMinutes())}`;
+  try { return businessDateTimeSeconds(d); } catch { return String(d); }
 }
 function dMy(d) {
   if (!d) return '';
-  const parts = String(d).slice(0, 10).split('-');
-  if (parts.length === 3) return `${parts[2]}/${parts[1]}/${parts[0]}`;
-  const x = new Date(d);
-  if (isNaN(x.getTime())) return String(d);
-  const p = n => String(n).padStart(2, '0');
-  return `${p(x.getDate())}/${p(x.getMonth() + 1)}/${x.getFullYear()}`;
+  try { return businessDisplayDate(String(d).slice(0, 10)); } catch { return String(d); }
 }
+// Mốc ngày theo VN: 00:00 và 23:59:59 giờ VN → quy ra UTC để so với paid_at (UTC).
 function dayStart(s) {
   if (!s) return null;
-  return new Date(String(s) + 'T00:00:00').toISOString();
+  return new Date(String(s) + 'T00:00:00+07:00').toISOString();
 }
 function dayEnd(s) {
   if (!s) return null;
-  return new Date(String(s) + 'T23:59:59.999').toISOString();
+  return new Date(String(s) + 'T23:59:59.999+07:00').toISOString();
 }
 function rangeFromQuery(q = {}) {
-  const nowDt = new Date();
+  const vnNow = _vn(Date.now());
   let from = dayStart(q.from);
   let to = dayEnd(q.to);
   if (!from || !to) {
-    const d = new Date(nowDt.getFullYear(), nowDt.getMonth(), nowDt.getDate());
+    // "Hôm nay/tuần/tháng…" tính theo NGÀY VN, không theo ngày UTC của container.
+    const d = new Date(Date.UTC(vnNow.getUTCFullYear(), vnNow.getUTCMonth(), vnNow.getUTCDate()));
     const period = q.period || 'day';
-    if (period === 'week') d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
-    if (period === 'month') d.setDate(1);
-    if (period === 'quarter') d.setMonth(Math.floor(d.getMonth() / 3) * 3, 1);
-    if (period === 'year') d.setMonth(0, 1);
-    from = from || d.toISOString();
-    to = to || nowDt.toISOString();
+    if (period === 'week') d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7));
+    if (period === 'month') d.setUTCDate(1);
+    if (period === 'quarter') d.setUTCMonth(Math.floor(d.getUTCMonth() / 3) * 3, 1);
+    if (period === 'year') d.setUTCMonth(0, 1);
+    const dStr = `${d.getUTCFullYear()}-${_p2(d.getUTCMonth() + 1)}-${_p2(d.getUTCDate())}`;
+    from = from || dayStart(dStr);
+    to = to || new Date().toISOString();
   }
   return {
     from,
     to,
     fromDate: dateOnly(from),
     toDate: dateOnly(to),
-    label: `${dateOnly(from)} → ${dateOnly(to)}`,
+    label: `${businessDisplayDate(dateOnly(from))} → ${businessDisplayDate(dateOnly(to))}`,
   };
 }
 function channelLabel(v) {
@@ -159,7 +163,7 @@ function branchRowsFor(ids = []) {
   const map = new Map(rows.map(r => [r.id, { id: r.id, name: r.name || r.code || r.id, code: r.code || r.id }]));
   return clean.map(id => map.get(id) || { id, name: id, code: id });
 }
-function normalizeScope(scope = 'br1') {
+function normalizeScope(scope = 'sala') {
   if (typeof scope === 'string') {
     const branches = branchRowsFor([scope]);
     return { branch_ids: [scope], branches, label: branches[0]?.name || scope };
@@ -266,22 +270,44 @@ function saleRows(branch_id, query = {}, kind = 'all') {
       params.push(...ids);
     }
   }
-  return db.prepare(`
-    SELECT o.id order_id, o.bill_no, o.channel, o.online_channel, o.online_ref, o.paid_at,
+  const raw = db.prepare(`
+    SELECT o.id order_id, o.bill_no, o.channel, o.online_channel, o.online_ref, o.paid_at, o.note order_note, o.pay_ref,
       t.code table_code, oi.menu_item_id, oi.sku_id, oi.name item_name, oi.station,
-      oi.qty, oi.unit_price, oi.qty * oi.unit_price amount
+      oi.qty, oi.unit_price, oi.vat_rate, oi.qty * oi.unit_price gross, oi.promo_json,
+      oi.item_code sku_code, oi.item_barcode sku_barcode,
+      COALESCE(oi.unit_snapshot,CASE WHEN oi.sku_id IS NOT NULL THEN 'cái' ELSE 'phần' END) unit
     FROM order_items oi
     JOIN orders o ON o.id=oi.order_id
     LEFT JOIN tables t ON t.id=o.table_id
     WHERE ${w.sql} AND oi.status!='cancelled' ${itemFilter}
     ORDER BY o.paid_at DESC, oi.created_at DESC`).all(...params);
+  // NET = tiền hàng gốc TRỪ khuyến mãi/combo (promo_json.amount). Trước đây báo cáo
+  // cộng giá GỐC nên combo 2corn 100k đổ ra 80k/bịch (sự cố 07/08/2026). Kèm tên
+  // CTKM + ghi chú để báo cáo khớp bill thực tế.
+  return raw.map(r => {
+    let promo = null;
+    try { promo = JSON.parse(r.promo_json || 'null'); } catch { /* bỏ qua */ }
+    // KHÔNG kẹp về 0: combo bán-kèm tăng giá có amount ÂM → net phải CAO hơn gốc.
+    const promoAmount = Math.round(Number(promo?.amount) || 0);
+    return {
+      ...r,
+      amount: (Number(r.gross) || 0) - promoAmount, // NET
+      effective_unit_price: Number(r.qty)
+        ? ((Number(r.gross) || 0) - promoAmount) / Number(r.qty)
+        : 0,
+      promo_name: promo?.name || promo?.code || '',
+    };
+  });
 }
 function buildSales(type, branch_id, query) {
   const report = reportShell(type, query);
   const kind = type === 'sales_fnb' ? 'all' : type === 'sales_retail' ? 'retail' : type === 'sales_online' ? 'online' : 'all';
   const rows = saleRows(branch_id, query, type === 'sales_by_product' ? 'all' : kind);
-  const bills = new Set(rows.map(r => r.order_id));
-  const revenue = rowsSum(rows, 'amount');
+  const range = rangeFromQuery(query);
+  const w = paidOrderWhere(branch_id, range, type === 'sales_online' ? `AND COALESCE(o.online_channel,'')!=''` : '');
+  const orders = db.prepare(`SELECT id, paid_at, total FROM orders o WHERE ${w.sql} ORDER BY paid_at DESC`).all(...w.params);
+  const bills = new Set(orders.map(r => r.id));
+  const revenue = rowsSum(orders, 'total');
   const quantity = rowsSum(rows, 'qty');
   report.summary = [
     stat('Doanh thu', money(revenue), revenue),
@@ -289,14 +315,30 @@ function buildSales(type, branch_id, query) {
     stat('Số lượng', qty(quantity), quantity),
     stat('Bình quân/bill', money(bills.size ? revenue / bills.size : 0), bills.size ? revenue / bills.size : 0),
   ];
+  const byDay = new Map();
+  for (const order of orders) {
+    const date = dateOnly(order.paid_at); // ngày VN, không phải UTC
+    const day = byDay.get(date) || { date, bills: 0, revenue: 0 };
+    day.bills += 1;
+    day.revenue += Number(order.total) || 0;
+    byDay.set(date, day);
+  }
+  report.sections.push(section('Doanh thu theo ngày', [
+    { key: 'date_fmt', label: 'Ngày', format: 'date' },
+    { key: 'bills', label: 'Hóa đơn', align: 'right' },
+    { key: 'revenue_fmt', label: 'Doanh thu', align: 'right' },
+  ], [...byDay.values()].sort((a, b) => b.date.localeCompare(a.date))
+    .map(day => ({ ...day, date_fmt: dMy(day.date), revenue_fmt: money(day.revenue) }))));
   const byProduct = new Map();
   for (const r of rows) {
     const k = r.menu_item_id || r.sku_id || r.item_name;
-    const cur = byProduct.get(k) || { item_name: r.item_name, qty: 0, amount: 0 };
+    const cur = byProduct.get(k) || { item_name: r.item_name, sku_code: r.sku_code || '', sku_barcode: r.sku_barcode || '', qty: 0, amount: 0 };
     cur.qty += Number(r.qty) || 0; cur.amount += Number(r.amount) || 0;
     byProduct.set(k, cur);
   }
   report.sections.push(section('Tổng hợp theo sản phẩm', [
+    { key: 'sku_code', label: 'Mã hàng' },
+    { key: 'sku_barcode', label: 'Mã vạch' },
     { key: 'item_name', label: 'Sản phẩm / món' },
     { key: 'qty_fmt', label: 'SL', align: 'right' },
     { key: 'amount_fmt', label: 'Doanh thu', align: 'right' },
@@ -337,23 +379,35 @@ function buildSales(type, branch_id, query) {
   }
 
   report.sections.push(section('Chi tiết giao dịch', [
-    { key: 'time_fmt', label: 'Thời gian mua' },
+    { key: 'time_fmt', label: 'Thời gian mua', format: 'datetime' },
     { key: 'bill', label: 'Bill' },
     { key: 'channel_label', label: 'Kênh' },
     { key: 'method_label', label: 'Thanh toán' },
+    { key: 'sku_code', label: 'Mã hàng' },
+    { key: 'sku_barcode', label: 'Mã vạch' },
     { key: 'item_name', label: 'Sản phẩm / món' },
     { key: 'qty_fmt', label: 'SL', align: 'right' },
     { key: 'price_fmt', label: 'Đơn giá', align: 'right' },
     { key: 'amount_fmt', label: 'Thành tiền', align: 'right' },
+    { key: 'promo_name', label: 'CTKM' },
+    { key: 'order_note', label: 'Ghi chú' },
+    { key: 'pay_ref', label: 'Nội dung CK' },
   ], rows.map(r => ({
     ...r,
-    time_fmt: dateTime(r.paid_at),
+    time_fmt: r.paid_at,
     bill: r.bill_no || String(r.order_id).slice(-6).toUpperCase(),
     channel_label: r.online_channel || channelLabel(r.channel),
     method_label: orderMethodLabel(r.order_id),
+    sku_code: r.sku_code || '',
+    sku_barcode: r.sku_barcode || '',
     qty_fmt: qty(r.qty),
-    price_fmt: money(r.unit_price),
+    // Báo cáo phải hiện đúng giá thực thu trên dòng. Giá gốc vẫn nằm trong dữ
+    // liệu order_item/promo để audit, nhưng không được trình bày như giá bán.
+    price_fmt: money(r.effective_unit_price),
     amount_fmt: money(r.amount),
+    promo_name: r.promo_name || '',
+    order_note: r.order_note || '',
+    pay_ref: r.pay_ref || '',
   }))));
   return report;
 }
@@ -365,7 +419,10 @@ function movementRows(branch_id, query, mode) {
   if (mode === 'issue') typeSql = `AND m.type IN ('issue','sale','recipe','transfer_out','stocktake') AND m.qty<0`;
   if (query.warehouse_id) { typeSql += ` AND m.warehouse_id=?`; params.push(query.warehouse_id); }
   return db.prepare(`
-    SELECT m.*, COALESCE(i.name, s.name) item_name, COALESCE(i.unit, s.unit) unit,
+    SELECT m.*, COALESCE(m.item_name, i.name, s.name) item_name,
+      COALESCE(m.unit_snapshot, i.unit, s.unit) unit,
+      COALESCE(m.item_code, s.code) item_code,
+      COALESCE(m.item_barcode, i.barcode, s.barcode) item_barcode,
       COALESCE(i.item_type, CASE WHEN s.id IS NOT NULL THEN 'retail' ELSE m.item_type END) item_kind,
       w.name warehouse_name, l.lot_no, l.expiry_date
     FROM stock_movements m
@@ -386,7 +443,7 @@ function buildMovements(type, branch_id, query) {
     { label: 'Giá trị ước tính', value: money(value) },
   ];
   report.sections.push(section(type === 'purchase' ? 'Chi tiết nhập hàng' : 'Chi tiết xuất hàng', [
-    { key: 'created_at', label: 'Ngày giờ' },
+    { key: 'created_at', label: 'Ngày giờ', format: 'datetime' },
     { key: 'warehouse_name', label: 'Kho' },
     { key: 'item_name', label: 'Mặt hàng' },
     { key: 'type_label', label: 'Loại' },
@@ -395,7 +452,7 @@ function buildMovements(type, branch_id, query) {
     { key: 'unit_cost_fmt', label: 'Giá vốn', align: 'right' },
     { key: 'value_fmt', label: 'Giá trị', align: 'right' },
     { key: 'lot_no', label: 'Lot' },
-    { key: 'expiry_date', label: 'HSD' },
+    { key: 'expiry_date', label: 'HSD', format: 'date' },
     { key: 'reason', label: 'Lý do' },
   ], rows.map(r => ({
     ...r,
@@ -419,23 +476,42 @@ function buildStock(branch_id, query) {
   ];
   report.sections.push(section('Tồn kho hiện tại', [
     { key: 'warehouse_name', label: 'Kho' },
-    { key: 'name', label: 'Mặt hàng' },
+    { key: 'sku_code', label: 'Mã hàng' },
+    { key: 'sku_barcode', label: 'Mã vạch' },
+    { key: 'name', label: 'Sản phẩm / SKU' },
     { key: 'stock_type_label', label: 'Nhóm' },
-    { key: 'stock_fmt', label: 'Tồn', align: 'right' },
+    { key: 'category', label: 'Danh mục' },
+    { key: 'stock_fmt', label: 'Tồn kho', align: 'right' },
     { key: 'min_stock_fmt', label: 'Tồn min', align: 'right' },
     { key: 'unit', label: 'ĐVT' },
-    { key: 'cost_fmt', label: 'Giá vốn', align: 'right' },
-    { key: 'value_fmt', label: 'Giá trị', align: 'right' },
-    { key: 'category', label: 'Danh mục' },
+    { key: 'cost_fmt', label: 'Giá nhập (vốn)', align: 'right' },
+    { key: 'pretax_fmt', label: 'Giá bán trước VAT', align: 'right' },
+    { key: 'vat_fmt', label: '% VAT', align: 'right' },
+    { key: 'price_fmt', label: 'Giá bán sau VAT', align: 'right' },
+    { key: 'value_fmt', label: 'Giá trị tồn (vốn)', align: 'right' },
     { key: 'supplier', label: 'Supplier' },
-  ], rows.map(r => ({
-    ...r,
-    stock_type_label: r.stock_type === 'sku' ? 'Retail' : (r.item_type === 'supply' ? 'Vật dụng' : 'Nguyên liệu'),
-    stock_fmt: qty(r.stock),
-    min_stock_fmt: qty(r.min_stock),
-    cost_fmt: money(r.cost || 0),
-    value_fmt: money((Number(r.stock) || 0) * (Number(r.cost) || 0)),
-  }))));
+  ], rows.map(r => {
+    const vatRate = Number(r.vat) || 0;
+    const includesVat = r.price_includes_vat !== 0 && r.price_includes_vat !== undefined;
+    const price = Number(r.price) || 0;
+    // Giá SAU VAT (giá khách trả): nếu giá đã gồm VAT thì chính là price; nếu chưa
+    // thì cộng thêm VAT. Giá TRƯỚC VAT lấy price_pre_tax (hoặc suy từ price).
+    const preTax = Number(r.price_pre_tax) || (includesVat && vatRate > 0 ? Math.round(price / (1 + vatRate / 100)) : price);
+    const afterVat = includesVat ? price : (vatRate > 0 ? Math.round(price * (1 + vatRate / 100)) : price);
+    return {
+      ...r,
+      sku_code: r.stock_type === 'sku' ? (r.code || '') : '',
+      sku_barcode: r.stock_type === 'sku' ? (r.barcode || '') : '',
+      stock_type_label: r.stock_type === 'sku' ? 'Retail' : (r.item_type === 'supply' ? 'Vật dụng' : 'Nguyên liệu'),
+      stock_fmt: qty(r.stock),
+      min_stock_fmt: qty(r.min_stock),
+      cost_fmt: money(r.cost || 0),
+      pretax_fmt: r.stock_type === 'sku' ? money(preTax) : '',
+      vat_fmt: r.stock_type === 'sku' ? `${vatRate}%` : '',
+      price_fmt: r.stock_type === 'sku' ? money(afterVat) : '',
+      value_fmt: money((Number(r.stock) || 0) * (Number(r.cost) || 0)),
+    };
+  })));
   const lots = db.prepare(`
     SELECT l.*, COALESCE(i.name, s.name) item_name, COALESCE(i.unit, s.unit) unit, w.name warehouse_name
     FROM stock_lots l
@@ -451,9 +527,103 @@ function buildStock(branch_id, query) {
     { key: 'lot_no', label: 'Lot' },
     { key: 'qty_fmt', label: 'Tồn lot', align: 'right' },
     { key: 'unit_cost_fmt', label: 'Giá vốn', align: 'right' },
-    { key: 'expiry_date', label: 'HSD' },
+    { key: 'expiry_date', label: 'HSD', format: 'date' },
     { key: 'supplier', label: 'Supplier' },
   ], lots.map(r => ({ ...r, qty_fmt: qty(r.qty_on_hand), unit_cost_fmt: money(r.unit_cost || 0) }))));
+  return report;
+}
+
+// Cảnh báo "Hàng cần nhập": tồn ≤ định mức (min_stock>0). Gợi ý SL nhập = min−tồn
+// và ước giá trị cần nhập theo giá vốn — như báo cáo "Hàng hóa cần nhập" KiotViet.
+function buildLowStock(branch_id, query) {
+  const report = reportShell('low_stock', query);
+  const raw = [
+    ...db.prepare(`SELECT 'inventory' stock_type, i.*, w.name warehouse_name FROM inventory_items i LEFT JOIN warehouses w ON w.id=i.warehouse_id WHERE i.branch_id=? AND i.active=1`).all(branch_id),
+    ...db.prepare(`SELECT 'sku' stock_type, s.*, w.name warehouse_name FROM skus s LEFT JOIN warehouses w ON w.id=s.warehouse_id WHERE s.branch_id=? AND s.active=1`).all(branch_id),
+  ].filter(r => !query.warehouse_id || r.warehouse_id === query.warehouse_id)
+    .filter(r => (Number(r.min_stock) || 0) > 0 && (Number(r.stock) || 0) <= (Number(r.min_stock) || 0))
+    .map(r => {
+      const stock = Number(r.stock) || 0, min = Number(r.min_stock) || 0;
+      const suggest = Math.max(0, min - stock);
+      return { r, stock, min, suggest, value: suggest * (Number(r.cost) || 0), out: stock <= 0 };
+    })
+    .sort((a, b) => (a.stock - a.min) - (b.stock - b.min));
+  report.summary = [
+    { label: 'Số mặt hàng cần nhập', value: raw.length },
+    { label: 'Hết hàng', value: raw.filter(x => x.out).length },
+    { label: 'Giá trị cần nhập (ước)', value: money(raw.reduce((s, x) => s + x.value, 0)) },
+  ];
+  report.sections.push(section('Hàng cần nhập lại', [
+    { key: 'warehouse_name', label: 'Kho' },
+    { key: 'name', label: 'Mặt hàng' },
+    { key: 'status_label', label: 'Tình trạng' },
+    { key: 'stock_fmt', label: 'Tồn', align: 'right' },
+    { key: 'min_fmt', label: 'Định mức', align: 'right' },
+    { key: 'suggest_fmt', label: 'Gợi ý nhập', align: 'right' },
+    { key: 'unit', label: 'ĐVT' },
+    { key: 'value_fmt', label: 'Giá trị nhập', align: 'right' },
+    { key: 'supplier', label: 'Nhà cung cấp' },
+  ], raw.map(x => ({
+    warehouse_name: x.r.warehouse_name || '',
+    name: x.r.name || '',
+    status_label: x.out ? 'Hết hàng' : 'Dưới định mức',
+    stock_fmt: qty(x.stock), min_fmt: qty(x.min), suggest_fmt: qty(x.suggest),
+    unit: x.r.unit || '', value_fmt: money(x.value), supplier: x.r.supplier || '',
+  }))));
+  return report;
+}
+
+// Cảnh báo hạn sử dụng: lô còn tồn có HSD trong ≤N ngày (mặc định 30) hoặc đã quá
+// hạn. Sắp xếp gấp nhất trước, kèm giá trị tồn rủi ro (qty×giá vốn lô).
+function buildExpiryAlert(branch_id, query) {
+  const report = reportShell('expiry_alert', query);
+  const days = Math.max(1, parseInt(query.days) || 30);
+  const today = businessDateStartUtc(businessDate());
+  const DAY = 86400000;
+  const rows = db.prepare(`
+    SELECT l.*, COALESCE(i.name, s.name) item_name, COALESCE(i.unit, s.unit) unit, w.name warehouse_name
+    FROM stock_lots l
+    LEFT JOIN inventory_items i ON i.id=l.item_id AND l.item_type='inventory'
+    LEFT JOIN skus s ON s.id=l.item_id AND l.item_type='sku'
+    LEFT JOIN warehouses w ON w.id=l.warehouse_id
+    WHERE l.branch_id=? AND l.qty_on_hand>0 AND l.expiry_date IS NOT NULL AND l.expiry_date!=''
+    ORDER BY l.expiry_date ASC`).all(branch_id)
+    .filter(r => !query.warehouse_id || r.warehouse_id === query.warehouse_id)
+    .map(r => {
+      let exp;
+      try { exp = businessDateStartUtc(String(r.expiry_date).slice(0, 10)); }
+      catch { exp = new Date(NaN); }
+      const daysLeft = Math.round((exp.getTime() - today.getTime()) / DAY);
+      return { r, daysLeft, expired: daysLeft < 0, value: (Number(r.qty_on_hand) || 0) * (Number(r.unit_cost) || 0) };
+    })
+    .filter(x => Number.isFinite(x.daysLeft) && x.daysLeft <= days)
+    .sort((a, b) => a.daysLeft - b.daysLeft);
+  report.summary = [
+    { label: 'Đã hết hạn', value: rows.filter(x => x.expired).length },
+    { label: `Sắp hết hạn (≤${days} ngày)`, value: rows.filter(x => !x.expired).length },
+    { label: 'Giá trị tồn rủi ro', value: money(rows.reduce((s, x) => s + x.value, 0)) },
+  ];
+  report.sections.push(section('Lô hàng theo hạn dùng', [
+    { key: 'warehouse_name', label: 'Kho' },
+    { key: 'item_name', label: 'Mặt hàng' },
+    { key: 'lot_no', label: 'Lot' },
+    { key: 'expiry_date', label: 'HSD', format: 'date' },
+    { key: 'days_left_label', label: 'Còn lại', align: 'right' },
+    { key: 'status_label', label: 'Tình trạng' },
+    { key: 'qty_fmt', label: 'Tồn lot', align: 'right' },
+    { key: 'unit', label: 'ĐVT' },
+    { key: 'value_fmt', label: 'Giá trị', align: 'right' },
+  ], rows.map(x => ({
+    warehouse_name: x.r.warehouse_name || '',
+    item_name: x.r.item_name || '',
+    lot_no: x.r.lot_no || '',
+    expiry_date: x.r.expiry_date || '',
+    days_left_label: x.expired ? `quá ${Math.abs(x.daysLeft)} ngày` : `${x.daysLeft} ngày`,
+    status_label: x.expired ? 'Đã hết hạn' : (x.daysLeft <= 7 ? 'Rất gấp' : 'Sắp hết hạn'),
+    qty_fmt: qty(x.r.qty_on_hand),
+    unit: x.r.unit || '',
+    value_fmt: money(x.value),
+  }))));
   return report;
 }
 function buildStocktake(branch_id, query) {
@@ -475,7 +645,7 @@ function buildStocktake(branch_id, query) {
     { label: 'Tổng lệch', value: qty(rowsSum(rows, 'delta_qty')) },
   ];
   report.sections.push(section('Chi tiết kiểm kho', [
-    { key: 'created_at', label: 'Ngày' },
+    { key: 'created_at', label: 'Ngày', format: 'datetime' },
     { key: 'session_name', label: 'Phiên' },
     { key: 'warehouse_name', label: 'Kho' },
     { key: 'item_name', label: 'Mặt hàng' },
@@ -494,14 +664,14 @@ function buildReceivables(branch_id, query) {
   const rows = db.prepare(`
     SELECT o.id, o.bill_no, o.channel, o.status, o.total, o.created_at, o.customer_json, t.code table_code
     FROM orders o LEFT JOIN tables t ON t.id=o.table_id
-    WHERE o.branch_id=? AND o.status IN ('open','pending','pending_payment')
+    WHERE o.branch_id=? AND o.status IN ('open','partially_paid','pending','pending_payment')
     ORDER BY o.created_at DESC`).all(branch_id).map(r => ({ ...r, customer: parseCustomer(r.customer_json) }));
   report.summary = [
     { label: 'Số khoản phải thu', value: rows.length },
     { label: 'Tổng phải thu', value: money(rowsSum(rows, 'total')) },
   ];
   report.sections.push(section('Công nợ phải thu', [
-    { key: 'created_at', label: 'Ngày' },
+    { key: 'created_at', label: 'Ngày', format: 'datetime' },
     { key: 'bill', label: 'Bill' },
     { key: 'customer_name', label: 'Khách hàng' },
     { key: 'channel_label', label: 'Kênh' },
@@ -533,7 +703,7 @@ function buildPayables(branch_id, query) {
     { label: 'Ước tính phải trả', value: money(rowsSum(rows, 'amount')) },
   ];
   report.sections.push(section('Công nợ phải trả theo phiếu nhập', [
-    { key: 'created_at', label: 'Ngày' },
+    { key: 'created_at', label: 'Ngày', format: 'datetime' },
     { key: 'supplier', label: 'Nhà cung cấp' },
     { key: 'warehouse_name', label: 'Kho' },
     { key: 'ref', label: 'Tham chiếu' },
@@ -561,7 +731,7 @@ function buildPurchaseOrders(branch_id, query) {
     { label: 'Còn nợ NCC', value: money(Math.max(0, totalVal - totalPaid)) },
   ];
   report.sections.push(section('Đơn mua hàng theo kỳ', [
-    { key: 'order_date', label: 'Ngày' },
+    { key: 'order_date', label: 'Ngày', format: 'date' },
     { key: 'code', label: 'Mã đơn' },
     { key: 'supplier_name', label: 'Nhà cung cấp' },
     { key: 'status_label', label: 'Trạng thái' },
@@ -608,7 +778,8 @@ function buildPurchasePriceAnalysis(branch_id, query) {
   `).all(branch_id, range.fromDate, range.toDate);
 
   const idocRows = db.prepare(`
-    SELECT COALESCE(i.name, s.name, idl.item_id) AS item_name, COALESCE(i.unit, s.unit, '') AS unit,
+    SELECT COALESCE(idl.item_name, i.name, s.name, idl.item_id) AS item_name,
+      COALESCE(idl.unit_snapshot, i.unit, s.unit, '') AS unit,
       ABS(idl.qty) AS qty, idl.unit_cost, idoc.supplier AS supplier_name,
       SUBSTR(idoc.created_at, 1, 10) AS date, 'Nhập kho' AS source
     FROM inventory_document_lines idl
@@ -737,12 +908,12 @@ function buildPurchasePriceAnalysis(branch_id, query) {
       { key: 'item_name', label: 'Mặt hàng' },
       { key: 'supplier_name', label: 'Nhà cung cấp' },
       { key: 'price_fmt', label: 'Giá nhập gần nhất', align: 'right' },
-      { key: 'date_fmt', label: 'Ngày nhập gần nhất' },
+      { key: 'date_fmt', label: 'Ngày nhập gần nhất', format: 'date' },
     ], comparisonRows));
   }
 
   report.sections.push(section('Lịch sử biến động chi tiết', [
-    { key: 'date_fmt', label: 'Ngày nhập' },
+    { key: 'date_fmt', label: 'Ngày nhập', format: 'date' },
     { key: 'item_name', label: 'Mặt hàng' },
     { key: 'supplier_name', label: 'Nhà cung cấp' },
     { key: 'qty_fmt', label: 'Số lượng', align: 'right' },
@@ -751,14 +922,14 @@ function buildPurchasePriceAnalysis(branch_id, query) {
   ], historyRows));
 
   report.sections.push(section('Chi phí mua hàng/nhập hàng từ két POS (POS Expenses)', [
-    { key: 'occurred_at_fmt', label: 'Ngày giờ chi' },
+    { key: 'occurred_at_fmt', label: 'Ngày giờ chi', format: 'datetime' },
     { key: 'supplier_name', label: 'NCC / Bên nhận' },
     { key: 'product', label: 'Sản phẩm / Khoản chi' },
     { key: 'reason', label: 'Lý do chi' },
     { key: 'amount_fmt', label: 'Số tiền', align: 'right' },
     { key: 'actor_name', label: 'Nhân viên thực hiện' },
   ], posExpenses.map(e => ({
-    occurred_at_fmt: dateTime(e.occurred_at),
+    occurred_at_fmt: e.occurred_at,
     supplier_name: e.supplier_name || 'Mua lẻ',
     product: e.product || '—',
     reason: e.reason || '—',
@@ -784,7 +955,7 @@ function buildExpenses(branch_id, query) {
     { label: 'Số phiếu', value: rows.length },
   ];
   report.sections.push(section('Chi tiết chi phí', [
-    { key: 'expense_date', label: 'Ngày' },
+    { key: 'expense_date', label: 'Ngày', format: 'date' },
     { key: 'code', label: 'Mã' },
     { key: 'category_name', label: 'Danh mục' },
     { key: 'payee_name', label: 'Người nhận' },
@@ -844,27 +1015,42 @@ function buildCashDrawer(branch_id, query) {
     FROM shifts s
     WHERE s.branch_id=? AND s.opened_at<=? AND COALESCE(s.closed_at,?)>=?
     ORDER BY s.opened_at DESC`).all(branch_id, range.to, range.to, range.from)
-    .map(s => ({
-      ...s,
-      expected_cash: (Number(s.opening_cash) || 0) + (Number(s.cash_sales) || 0) - (Number(s.drawer_expenses) || 0) + (Number(s.drawer_reimbursements) || 0),
-    }));
+    .map(s => {
+      // Tồn quỹ DỰ KIẾN cuối ca = tiền đầu ca + tiền mặt bán hàng − chi từ két
+      // + hoàn vào két. Đây là số tiền LẼ RA phải có trong két khi kết ca.
+      const expected_cash = (Number(s.opening_cash) || 0) + (Number(s.cash_sales) || 0) - (Number(s.drawer_expenses) || 0) + (Number(s.drawer_reimbursements) || 0);
+      // Chỉ ca ĐÃ kết mới có tiền đếm thực tế (closing_cash) để đối chiếu. Ca
+      // đang mở thì CHƯA có "lệch" — để null, KHÔNG coi bằng 0 (0 = khớp quỹ).
+      const counted = !!s.closed_at && s.closing_cash !== null && s.closing_cash !== undefined;
+      const actual_cash = counted ? Number(s.closing_cash) || 0 : null;
+      const variance = counted ? actual_cash - expected_cash : null; // + thừa, − thiếu
+      return { ...s, expected_cash, actual_cash, variance };
+    });
   const expenseTotal = entries.filter(e => e.kind === 'expense').reduce((s, e) => s + (Number(e.amount) || 0), 0);
   const reimbursementTotal = entries.filter(e => e.kind === 'reimbursement').reduce((s, e) => s + (Number(e.amount) || 0), 0);
+  // LỆCH QUỸ = tiền đếm thực tế − tồn quỹ dự kiến, cộng dồn các ca ĐÃ kết trong
+  // kỳ. Dương = thừa quỹ, âm = thiếu quỹ. Đây mới là "lệch" thật của két —
+  // KHÁC hẳn hiệu (hoàn − chi) cũ vốn dễ hiểu nhầm là "chênh lệch thu/chi".
+  const closedShifts = shifts.filter(s => s.variance !== null);
+  const totalVariance = closedShifts.reduce((sum, s) => sum + (Number(s.variance) || 0), 0);
+  const signed = (n) => (Number(n) > 0 ? '+' : '') + money(n);
   report.summary = [
-    { label: 'Số khoản chi/hoàn', value: entries.length },
+    { label: 'Số khoản chi/hoàn từ két', value: entries.length },
     { label: 'Tổng chi từ két', value: money(expenseTotal) },
-    { label: 'Tổng hoàn chi', value: money(reimbursementTotal) },
-    { label: 'Chênh lệch thu/chi', value: money(reimbursementTotal - expenseTotal) },
+    { label: 'Tổng hoàn chi vào két', value: money(reimbursementTotal) },
+    { label: 'Lệch quỹ cuối kỳ (thực tế − dự kiến)', value: closedShifts.length ? signed(totalVariance) : '—' },
   ];
   report.sections.push(section('Tổng hợp theo ca', [
-    { key: 'opened_at', label: 'Mở ca' },
-    { key: 'closed_at', label: 'Kết ca' },
+    { key: 'opened_at', label: 'Mở ca', format: 'datetime' },
+    { key: 'closed_at', label: 'Kết ca', format: 'datetime' },
     { key: 'shift_label', label: 'Ca' },
     { key: 'opening_fmt', label: 'Đầu ca', align: 'right' },
     { key: 'cash_sales_fmt', label: 'Tiền mặt bán hàng', align: 'right' },
-    { key: 'expense_fmt', label: 'Chi két', align: 'right' },
-    { key: 'reimburse_fmt', label: 'Hoàn chi', align: 'right' },
-    { key: 'expected_fmt', label: 'Số dư dự kiến', align: 'right' },
+    { key: 'expense_fmt', label: 'Chi từ két', align: 'right' },
+    { key: 'reimburse_fmt', label: 'Hoàn vào két', align: 'right' },
+    { key: 'expected_fmt', label: 'Tồn quỹ cuối ca (dự kiến)', align: 'right' },
+    { key: 'actual_fmt', label: 'Tiền đếm thực tế', align: 'right' },
+    { key: 'variance_fmt', label: 'Lệch (thực tế − dự kiến)', align: 'right' },
   ], shifts.map(s => ({
     ...s,
     opening_fmt: money(s.opening_cash),
@@ -872,9 +1058,12 @@ function buildCashDrawer(branch_id, query) {
     expense_fmt: money(s.drawer_expenses),
     reimburse_fmt: money(s.drawer_reimbursements),
     expected_fmt: money(s.expected_cash),
+    // Ca đang mở chưa đếm tiền → hiển thị "—" thay vì 0đ (0 nghĩa là khớp quỹ).
+    actual_fmt: s.actual_cash === null ? '—' : money(s.actual_cash),
+    variance_fmt: s.variance === null ? 'Chưa kết ca' : signed(s.variance),
   }))));
   report.sections.push(section('Chi tiết chi / hoàn tiền két', [
-    { key: 'occurred_at', label: 'Ngày giờ' },
+    { key: 'occurred_at', label: 'Ngày giờ', format: 'datetime' },
     { key: 'kind_label', label: 'Loại' },
     { key: 'shift_label', label: 'Ca' },
     { key: 'counterparty', label: 'NCC / người hoàn' },
@@ -918,7 +1107,7 @@ function buildCustomers(branch_id, query) {
     { key: 'total_orders', label: 'Số đơn', align: 'right' },
     { key: 'spent_fmt', label: 'Tổng mua', align: 'right' },
     { key: 'favorite_text', label: 'Hay mua' },
-    { key: 'updated_at', label: 'Cập nhật' },
+    { key: 'updated_at', label: 'Cập nhật', format: 'datetime' },
   ], rows.map(r => {
     let fav = [];
     try { fav = JSON.parse(r.favorite_items_json || '[]'); } catch {}
@@ -957,8 +1146,8 @@ function buildStaff(branch_id, query) {
     { key: 'lang', label: 'Ngôn ngữ' },
   ], users.map(u => ({ ...u, active_label: u.active ? 'Đang hoạt động' : 'Tắt' }))));
   report.sections.push(section('Ca làm trong kỳ', [
-    { key: 'opened_at', label: 'Mở ca' },
-    { key: 'closed_at', label: 'Kết ca' },
+    { key: 'opened_at', label: 'Mở ca', format: 'datetime' },
+    { key: 'closed_at', label: 'Kết ca', format: 'datetime' },
     { key: 'shift_label', label: 'Ca' },
     { key: 'user_name', label: 'Nhân viên' },
     { key: 'bill_count', label: 'Bill', align: 'right' },
@@ -969,19 +1158,19 @@ function buildStaff(branch_id, query) {
   return report;
 }
 
-export function products(branch_id = 'br1') {
+export function products(branch_id = 'sala') {
   return [
-    ...db.prepare(`SELECT id, name, 'menu' type FROM menu_items WHERE hidden=0 AND deleted_at IS NULL ORDER BY name`).all(),
+    ...db.prepare(`SELECT id, name, 'menu' type FROM menu_items WHERE branch_id=? AND hidden=0 AND deleted_at IS NULL ORDER BY name`).all(branch_id),
     ...db.prepare(`SELECT id, name, 'sku' type FROM skus WHERE branch_id=? AND active=1 ORDER BY name`).all(branch_id),
   ];
 }
-export function warehouses(branch_id = 'br1') {
+export function warehouses(branch_id = 'sala') {
   return db.prepare(`SELECT id, name, type FROM warehouses WHERE branch_id=? AND active=1 ORDER BY sort,name`).all(branch_id);
 }
-export function catalog(branch_id = 'br1') {
+export function catalog(branch_id = 'sala') {
   return { groups: REPORT_GROUPS, reports: REPORTS, products: products(branch_id), warehouses: warehouses(branch_id) };
 }
-function buildSingleReport(type = 'sales_overview', branch_id = 'br1', query = {}) {
+function buildSingleReport(type = 'sales_overview', branch_id = 'sala', query = {}) {
   if (['sales_fnb', 'sales_retail', 'sales_by_product'].includes(type)) type = 'sales_overview';
   let report;
   if (['sales_overview', 'sales_online'].includes(type)) report = buildSales(type, branch_id, query);
@@ -991,6 +1180,8 @@ function buildSingleReport(type = 'sales_overview', branch_id = 'br1', query = {
   else if (type === 'purchase') report = buildMovements(type, branch_id, query);
   else if (type === 'issue') report = buildMovements(type, branch_id, query);
   else if (type === 'stock') report = buildStock(branch_id, query);
+  else if (type === 'low_stock') report = buildLowStock(branch_id, query);
+  else if (type === 'expiry_alert') report = buildExpiryAlert(branch_id, query);
   else if (type === 'stocktake') report = buildStocktake(branch_id, query);
   else if (type === 'cash_drawer') report = buildCashDrawer(branch_id, query);
   else if (type === 'payables') report = buildPayables(branch_id, query);
@@ -1001,14 +1192,40 @@ function buildSingleReport(type = 'sales_overview', branch_id = 'br1', query = {
   report.branch_id = branch_id;
   return report;
 }
-export function buildReport(type = 'sales_overview', scopeInput = 'br1', query = {}) {
+export function buildReport(type = 'sales_overview', scopeInput = 'sala', query = {}) {
   const scope = normalizeScope(scopeInput);
-  const branchIds = scope.branch_ids.length ? scope.branch_ids : ['br1'];
+  const branchIds = scope.branch_ids.length ? scope.branch_ids : ['sala'];
   if (branchIds.length === 1) return withScope(buildSingleReport(type, branchIds[0], query), normalizeScope(branchIds[0]));
   return combineBranchReports(type, scope, query, branchIds.map(id => buildSingleReport(type, id, query)));
 }
 function tableHtml(sec) {
-  return `<h2>${esc(sec.title)}</h2><table><thead><tr>${sec.columns.map(c => `<th class="${c.align === 'right' ? 'r' : ''}">${esc(c.label)}</th>`).join('')}</tr></thead><tbody>${sec.rows.length ? sec.rows.map(r => `<tr>${sec.columns.map(c => `<td class="${c.align === 'right' ? 'r' : ''}">${esc(r[c.key] ?? '')}</td>`).join('')}</tr>`).join('') : `<tr><td colspan="${sec.columns.length}" class="empty">Không có dữ liệu</td></tr>`}</tbody></table>`;
+  return `<h2>${esc(sec.title)}</h2><table><thead><tr>${sec.columns.map(c => `<th class="${c.align === 'right' ? 'r' : ''}">${esc(c.label)}</th>`).join('')}</tr></thead><tbody>${sec.rows.length ? sec.rows.map(r => `<tr>${sec.columns.map(c => `<td class="${c.align === 'right' ? 'r' : ''}">${esc(reportDisplayValue(c, r[c.key]))}</td>`).join('')}</tr>`).join('') : `<tr><td colspan="${sec.columns.length}" class="empty">Không có dữ liệu</td></tr>`}</tbody></table>`;
+}
+
+function reportDisplayValue(column = {}, value) {
+  if (value === undefined || value === null || value === '') return '';
+  try {
+    if (column.format === 'datetime') return businessDateTimeSeconds(value);
+    if (column.format === 'date') return businessDisplayDate(String(value).slice(0, 10));
+  } catch { /* invalid legacy display values remain visible instead of crashing export */ }
+  return value;
+}
+
+function reportExcelDate(column = {}, value, style = {}) {
+  if (!value || !['date', 'datetime'].includes(column.format)) return null;
+  try {
+    if (column.format === 'date') {
+      const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(value));
+      if (!m) return null;
+      return { value: new Date(Date.UTC(+m[1], +m[2] - 1, +m[3])), type: Date,
+        format: 'dd/mm/yyyy', ...style };
+    }
+    const p = businessParts(value);
+    // Wall-clock Date: write-excel-file serializes this as an Excel datetime;
+    // constructing in UTC keeps the displayed Vietnam fields host-TZ independent.
+    return { value: new Date(Date.UTC(p.year, p.month - 1, p.day, p.hour, p.minute, p.second)),
+      type: Date, format: 'dd/mm/yyyy hh:mm:ss', ...style };
+  } catch { return null; }
 }
 export function renderReportHtml(report, { mode = 'preview' } = {}) {
   return `<!doctype html><html><head><meta charset="utf-8"><title>${esc(report.title)}</title><style>
@@ -1026,7 +1243,7 @@ export function renderReportHtml(report, { mode = 'preview' } = {}) {
   </style></head><body><div class="page">
     <div class="no-print" style="text-align:right;margin-bottom:10px"><button onclick="window.print()">In / Lưu PDF</button></div>
     <h1>${esc(report.title)}</h1>
-    <div class="meta">Kỳ báo cáo: ${esc(report.range.label)} · Xuất lúc: ${esc(report.generated_at)}</div>
+    <div class="meta">Kỳ báo cáo: ${esc(report.range.label)} · Xuất lúc: ${esc(dateTime(report.generated_at))}</div>
     <div class="summary">${report.summary.map(s => `<div class="sum">${esc(s.label)}<b>${esc(s.value)}</b></div>`).join('')}</div>
     ${report.sections.map(tableHtml).join('')}
     <div class="foot">Dan D Pak POS/ERP · Báo cáo được tạo tự động từ dữ liệu lưu trữ nội bộ.</div>
@@ -1076,6 +1293,8 @@ export async function renderReportXlsx(report) {
     if (typeof out === 'number') return numericCell(out, style);
     return { value: out, ...style };
   };
+  const reportCell = (column, value, style = {}) =>
+    reportExcelDate(column, value, style) || cell(reportDisplayValue(column, value), style);
   const rawAliases = {
     amount_fmt: 'amount',
     total_fmt: 'total',
@@ -1116,7 +1335,8 @@ export async function renderReportXlsx(report) {
       [{ value: report.title || 'Report', columnSpan: 2, ...titleStyle }, null],
       [cell('Báo cáo', labelStyle), cell(report.title, bodyStyle)],
       [cell('Kỳ báo cáo', labelStyle), cell(report.range?.label || '', bodyStyle)],
-      [cell('Xuất lúc', labelStyle), cell(report.generated_at || '', bodyStyle)],
+      [cell('Xuất lúc', labelStyle), reportExcelDate({ format: 'datetime' }, report.generated_at, bodyStyle)
+        || cell(dateTime(report.generated_at), bodyStyle)],
       [cell('Chi nhánh', labelStyle), cell(report.scope?.label || '', bodyStyle)],
       [cell('', bodyStyle), cell('', bodyStyle)],
       [cell('Chỉ số', headerStyle), cell('Giá trị', headerStyle)],
@@ -1139,7 +1359,7 @@ export async function renderReportXlsx(report) {
       ? cols.map(c => cell(c.label, { ...headerStyle, align: c.align === 'right' ? 'right' : 'left' }))
       : [cell('Dữ liệu', headerStyle)];
     const dataRows = rows.length
-      ? rows.map(row => cols.map(c => cell(sectionValue(row, c.key), c.align === 'right' ? rightBodyStyle : bodyStyle)))
+      ? rows.map(row => cols.map(c => reportCell(c, sectionValue(row, c.key), c.align === 'right' ? rightBodyStyle : bodyStyle)))
       : [[cell('Không có dữ liệu', bodyStyle)]];
     sheets.push({
       sheet: sheetName(sec.title, usedNames),
@@ -1178,6 +1398,11 @@ function browserCandidates() {
     'msedge',
     'chrome',
     'google-chrome',
+    'chromium',
+    'chromium-browser',
+    '/usr/bin/google-chrome',
+    '/usr/bin/chromium',
+    '/usr/bin/chromium-browser',
   ].filter(Boolean);
 }
 export async function renderReportPdf(report) {
@@ -1215,8 +1440,8 @@ export async function renderReportPdfKit(report) {
     doc.on('end', () => resolve(Buffer.concat(chunks)));
     doc.on('error', reject);
   });
-  const regular = path.resolve(process.cwd(), 'flutter-apps/dandpak_pos/assets/fonts/BeVietnamPro-Regular.ttf');
-  const bold = path.resolve(process.cwd(), 'flutter-apps/dandpak_pos/assets/fonts/BeVietnamPro-Bold.ttf');
+  const regular = path.resolve(process.cwd(), 'flutter-apps/dandpak_desktop/assets/fonts/BeVietnamPro-Regular.ttf');
+  const bold = path.resolve(process.cwd(), 'flutter-apps/dandpak_desktop/assets/fonts/BeVietnamPro-Bold.ttf');
   const hasFont = existsSync(regular) && existsSync(bold);
   if (hasFont) {
     doc.registerFont('ReportRegular', regular);
@@ -1233,7 +1458,7 @@ export async function renderReportPdfKit(report) {
   font();
   doc.fontSize(9).fillColor('#667085')
     .text(`Kỳ báo cáo: ${report.range?.label || ''}`)
-    .text(`Xuất lúc: ${report.generated_at || ''}`);
+    .text(`Xuất lúc: ${dateTime(report.generated_at)}`);
   doc.moveDown(.7);
 
   const gap = 8;
@@ -1287,7 +1512,7 @@ export async function renderReportPdfKit(report) {
     drawRow(cols.map(c => c.label), true);
     const rows = (sec.rows || []).slice(0, 400);
     if (!rows.length) drawRow(['Không có dữ liệu']);
-    for (const row of rows) drawRow(cols.map(c => row[c.key] ?? ''));
+    for (const row of rows) drawRow(cols.map(c => reportDisplayValue(c, row[c.key])));
     if ((sec.rows || []).length > rows.length) {
       font();
       doc.fontSize(8).fillColor('#667085').text(`Còn ${sec.rows.length - rows.length} dòng, vui lòng xem trong Excel/Google Sheet.`);

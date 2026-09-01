@@ -1,13 +1,12 @@
 import { db, uid, now, audit } from '../db.js';
+import { cleanText } from '../core/util.js';
 import { archiveCashDrawerEntry } from './archive.js';
+import { businessDateEndUtc, businessDateStartUtc } from '../core/businessClock.js';
 
 function parseAmount(v) {
   const n = Math.round(Number(v) || 0);
   if (n <= 0) throw new Error('Số tiền phải lớn hơn 0');
   return n;
-}
-function cleanText(v, max = 800) {
-  return String(v ?? '').trim().slice(0, max);
 }
 function parseDate(v) {
   if (!v) return now();
@@ -27,7 +26,7 @@ function publicEntry(row) {
     linked_expense_amount: Number(row.linked_expense_amount) || 0,
   };
 }
-function activeShift(branch_id = 'br1') {
+function activeShift(branch_id = 'sala') {
   return db.prepare(`SELECT * FROM shifts WHERE branch_id=? AND status='open' ORDER BY opened_at DESC LIMIT 1`).get(branch_id);
 }
 function entryTitle(row = {}) {
@@ -91,6 +90,92 @@ function decorateEntry(row) {
   }
   return out;
 }
+function decorateEntries(rows = []) {
+  if (!rows.length) return [];
+  const mapKey = (branch, id) => `${branch || ''}\u0000${id || ''}`;
+  const expenseIds = rows.filter(row => row.kind === 'expense').map(row => row.id);
+  const reimbursementIds = rows.filter(row => row.kind === 'reimbursement').map(row => row.id);
+  const reimbursedByExpense = new Map();
+  const allocationsByReimbursement = new Map();
+  const legacyExpenseById = new Map();
+
+  if (expenseIds.length) {
+    const slots = expenseIds.map(() => '?').join(',');
+    for (const row of db.prepare(`SELECT a.branch_id,a.expense_id,COALESCE(SUM(a.amount),0) amount
+      FROM cash_drawer_reimbursement_allocations a
+      JOIN cash_drawer_entries r ON r.id=a.reimbursement_id
+      WHERE a.expense_id IN (${slots}) AND r.kind='reimbursement'
+        AND r.branch_id=a.branch_id
+      GROUP BY a.branch_id,a.expense_id`).all(...expenseIds)) {
+      reimbursedByExpense.set(mapKey(row.branch_id, row.expense_id), Number(row.amount) || 0);
+    }
+    for (const row of db.prepare(`SELECT r.branch_id,r.reimburses_entry_id expense_id,
+        COALESCE(SUM(r.amount),0) amount
+      FROM cash_drawer_entries r
+      WHERE r.kind='reimbursement' AND r.reimburses_entry_id IN (${slots})
+        AND NOT EXISTS (SELECT 1 FROM cash_drawer_reimbursement_allocations a
+          WHERE a.reimbursement_id=r.id)
+      GROUP BY r.branch_id,r.reimburses_entry_id`).all(...expenseIds)) {
+      const key = mapKey(row.branch_id, row.expense_id);
+      reimbursedByExpense.set(key,
+        (reimbursedByExpense.get(key) || 0) + (Number(row.amount) || 0));
+    }
+  }
+
+  if (reimbursementIds.length) {
+    const slots = reimbursementIds.map(() => '?').join(',');
+    for (const row of db.prepare(`SELECT a.*,e.branch_id expense_branch_id,
+        e.product,e.reason,e.counterparty,e.occurred_at expense_occurred_at,e.amount expense_amount
+      FROM cash_drawer_reimbursement_allocations a
+      JOIN cash_drawer_entries e ON e.id=a.expense_id
+      WHERE a.reimbursement_id IN (${slots})
+      ORDER BY a.reimbursement_id,e.occurred_at,e.created_at`).all(...reimbursementIds)) {
+      if (row.branch_id !== row.expense_branch_id) continue;
+      const key = mapKey(row.branch_id, row.reimbursement_id);
+      const bucket = allocationsByReimbursement.get(key) || [];
+      bucket.push({ ...row, amount: Number(row.amount) || 0,
+        expense_amount: Number(row.expense_amount) || 0, title: entryTitle(row) });
+      allocationsByReimbursement.set(key, bucket);
+    }
+    const legacyIds = [...new Set(rows
+      .filter(row => row.kind === 'reimbursement' && row.reimburses_entry_id
+        && !(allocationsByReimbursement.get(mapKey(row.branch_id, row.id))?.length))
+      .map(row => row.reimburses_entry_id))];
+    if (legacyIds.length) {
+      const legacySlots = legacyIds.map(() => '?').join(',');
+      for (const row of db.prepare(`SELECT * FROM cash_drawer_entries
+        WHERE kind='expense' AND id IN (${legacySlots})`).all(...legacyIds)) {
+        legacyExpenseById.set(mapKey(row.branch_id, row.id), row);
+      }
+    }
+  }
+
+  return rows.map(row => {
+    const out = publicEntry(row);
+    if (out.kind === 'expense') {
+      out.reimbursed_amount = reimbursedByExpense.get(mapKey(out.branch_id, out.id)) || 0;
+      out.outstanding_amount = Math.max(0, out.amount - out.reimbursed_amount);
+    }
+    if (out.kind === 'reimbursement' && out.reimburses_entry_id) {
+      out.linked_expenses = allocationsByReimbursement.get(mapKey(out.branch_id, out.id)) || [];
+      const exp = out.linked_expenses.length ? null
+        : legacyExpenseById.get(mapKey(out.branch_id, out.reimburses_entry_id));
+      if (exp && exp.branch_id === out.branch_id) {
+        out.linked_expense_id = exp.id;
+        out.linked_expense_title = entryTitle(exp);
+        out.linked_expense_amount = Number(exp.amount) || 0;
+        out.linked_expense_at = exp.occurred_at;
+      }
+      if (out.linked_expenses.length) {
+        out.linked_expense_id = out.linked_expenses[0].expense_id;
+        out.linked_expense_title = out.linked_expenses.map(item => item.title).join(', ');
+        out.linked_expense_amount = out.linked_expenses.reduce((sum, item) => sum + item.amount, 0);
+        out.linked_expense_at = out.linked_expenses[0].expense_occurred_at;
+      }
+    }
+    return out;
+  });
+}
 export function cashSalesForShift(shift_id) {
   if (!shift_id) return 0;
   return Number(db.prepare(`
@@ -120,7 +205,7 @@ export function expectedCashForShift(shift = {}, shift_id = shift?.id) {
   const mv = movementTotalsForShift(shift_id);
   return opening + cashSales - mv.expenses + mv.reimbursements;
 }
-export function summaryForShift(shift_id, branch_id = 'br1') {
+export function summaryForShift(shift_id, branch_id = 'sala') {
   if (!shift_id) return null;
   const sh = db.prepare(`SELECT * FROM shifts WHERE id=? AND branch_id=?`).get(shift_id, branch_id);
   if (!sh) return null;
@@ -140,7 +225,7 @@ export function summaryForShift(shift_id, branch_id = 'br1') {
     movement_count: mv.count,
   };
 }
-export function defaultOpeningCash(branch_id = 'br1', cfg = {}) {
+export function defaultOpeningCash(branch_id = 'sala', cfg = {}) {
   const last = db.prepare(`
     SELECT closing_cash, opening_cash FROM shifts
     WHERE branch_id=? AND status='closed'
@@ -155,13 +240,14 @@ export function defaultOpeningCash(branch_id = 'br1', cfg = {}) {
 }
 export function entriesForShift(shift_id, limit = 40) {
   if (!shift_id) return [];
-  return db.prepare(`
+  const rows = db.prepare(`
     SELECT * FROM cash_drawer_entries
     WHERE shift_id=?
     ORDER BY occurred_at DESC, created_at DESC
-    LIMIT ?`).all(shift_id, Math.max(1, Math.min(200, parseInt(limit) || 40))).map(decorateEntry);
+    LIMIT ?`).all(shift_id, Math.max(1, Math.min(200, parseInt(limit) || 40)));
+  return decorateEntries(rows);
 }
-export function reimbursableExpenses(branch_id = 'br1', limit = 80) {
+export function reimbursableExpenses(branch_id = 'sala', limit = 80) {
   const rows = db.prepare(`
     SELECT e.*, s.shift_label,
       (SELECT COALESCE(SUM(a.amount),0)
@@ -189,7 +275,7 @@ export function reimbursableExpenses(branch_id = 'br1', limit = 80) {
     }).filter(x => x.outstanding_amount > 0);
   return rows.slice(0, Math.max(1, Math.min(200, parseInt(limit) || 80)));
 }
-export function currentDrawer(branch_id = 'br1', limit = 40) {
+export function currentDrawer(branch_id = 'sala', limit = 40) {
   const sh = activeShift(branch_id);
   if (!sh) return { shift: null, summary: null, entries: [], reimbursable_expenses: reimbursableExpenses(branch_id, 80) };
   return {
@@ -199,21 +285,22 @@ export function currentDrawer(branch_id = 'br1', limit = 40) {
     reimbursable_expenses: reimbursableExpenses(branch_id, 80),
   };
 }
-export function listEntries(branch_id = 'br1', query = {}) {
+export function listEntries(branch_id = 'sala', query = {}) {
   const limit = Math.max(1, Math.min(500, parseInt(query.limit) || 100));
   const params = [branch_id];
   let where = 'branch_id=?';
   if (query.shift_id) { where += ' AND shift_id=?'; params.push(String(query.shift_id)); }
   if (query.kind) { where += ' AND kind=?'; params.push(String(query.kind)); }
-  if (query.from) { where += ' AND occurred_at>=?'; params.push(new Date(String(query.from) + 'T00:00:00').toISOString()); }
-  if (query.to) { where += ' AND occurred_at<=?'; params.push(new Date(String(query.to) + 'T23:59:59.999').toISOString()); }
-  return db.prepare(`
+  if (query.from) { where += ' AND occurred_at>=?'; params.push(businessDateStartUtc(query.from).toISOString()); }
+  if (query.to) { where += ' AND occurred_at<=?'; params.push(businessDateEndUtc(query.to).toISOString()); }
+  const rows = db.prepare(`
     SELECT * FROM cash_drawer_entries
     WHERE ${where}
     ORDER BY occurred_at DESC, created_at DESC
-    LIMIT ?`).all(...params, limit).map(decorateEntry);
+    LIMIT ?`).all(...params, limit);
+  return decorateEntries(rows);
 }
-export function createEntry(kind, body = {}, user = {}, branch_id = 'br1') {
+export function createEntry(kind, body = {}, user = {}, branch_id = 'sala') {
   if (!['expense', 'reimbursement'].includes(kind)) throw new Error('Loại giao dịch két không hợp lệ');
   const sh = activeShift(branch_id);
   if (!sh) throw new Error('Cần mở ca trước khi ghi nhận thu/chi tiền két');

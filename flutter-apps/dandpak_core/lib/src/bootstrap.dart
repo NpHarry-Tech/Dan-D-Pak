@@ -1,0 +1,326 @@
+import 'dart:async';
+import 'dart:io' show Platform;
+
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:media_kit/media_kit.dart';
+import 'package:provider/provider.dart';
+import 'package:local_notifier/local_notifier.dart';
+
+import 'app_flavor.dart';
+import 'primitives.dart';
+import 'providers/auth_provider.dart';
+import 'providers/customer_display_controller.dart';
+import 'providers/pos_provider.dart';
+import 'screens/branch_select_screen.dart';
+import 'screens/customer_display/second_screen.dart';
+import 'screens/force_change_pin_screen.dart';
+import 'screens/launcher_screen.dart';
+import 'screens/phone/phone_shell.dart';
+import 'services/second_window_fullscreen.dart';
+import 'screens/login_gate_screen.dart';
+import 'screens/splash_screen.dart';
+import 'services/api_service.dart';
+import 'services/black_box.dart';
+import 'services/ring_controller.dart';
+import 'services/client_log.dart';
+import 'services/connectivity_status.dart';
+import 'services/local_print_agent.dart';
+import 'services/local_store.dart';
+import 'services/perf_mode.dart';
+import 'services/system_log.dart';
+import 'ui/app_theme.dart';
+import 'widgets/window_controls.dart';
+
+final Map<String, DateTime> _lastApiNetworkLogs = <String, DateTime>{};
+
+Future<void> runDandpakApp({
+  required List<String> args,
+  required AppFlavor flavor,
+}) async {
+  AppFlavor.current = flavor;
+
+  await runZonedGuarded(() async {
+    await _mainImpl(args);
+  }, (error, stack) {
+    ClientLog.report(error, stack, context: 'zone');
+  });
+}
+
+Future<void> _mainImpl(List<String> args) async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  // ĐIỆN THOẠI KHOÁ DỌC, chỉ một hướng duy nhất.
+  //
+  // Bản phone dựng theo ngôn ngữ một tay: thanh điều hướng đáy, thao tác chính
+  // trong tầm ngón cái. Xoay ngang là bố cục đó vỡ hết.
+  //
+  // Khoá ở CẢ HAI tầng: AndroidManifest (`screenOrientation="portrait"`) và ở
+  // đây. Manifest một mình là chưa đủ — nhiều máy POS cầm tay có màn hình gắn
+  // ngang theo phần cứng và bỏ qua thuộc tính đó; SystemChrome thì Flutter tự
+  // ép ở tầng engine nên máy nào cũng nghe.
+  //
+  // Tablet và desktop KHÔNG đụng tới: chúng cần xoay được, và POS bán hàng chạy
+  // ngang là chuyện bình thường.
+  if (AppFlavor.current.isHandset) {
+    await SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
+  }
+
+  if (Platform.isWindows) {
+    try {
+      await localNotifier.setup(
+        appName: 'Dan D Pak POS',
+      );
+    } catch (_) {}
+  }
+
+  // The customer display is a separate process so its renderer cannot crash
+  // the POS process. Data travels only over a loopback HTTP bridge.
+  if (args.contains('--customer-display')) {
+    BlackBox.init(role: 'display');
+    if (!await startCustomerDisplayProcessBridge()) return;
+    runApp(CustomerDisplayWindowApp());
+    return;
+  }
+
+  // Initialise the inline audio engine (used to preview/play notification
+  // sounds). Guarded so a platform without the native libs can't block boot.
+  try {
+    MediaKit.ensureInitialized();
+  } catch (_) {}
+
+  final apiService = ApiService();
+  // Every uncaught error is shipped to the selected server's log stream
+  // (Store Edge or VPS) so client + server logs live in one place.
+  ClientLog.attach(apiService);
+  ClientLog.installGlobalHooks();
+
+  await SystemLog.attach(apiService);
+  DanDpakApiClient.deviceMetadataProvider = SystemLog.requestHeaders;
+  // Cùng định danh thiết bị cho WebSocket — server ràng buộc phiên theo máy.
+  DanDpakRealtimeClient.deviceIdProvider = () => SystemLog.deviceId;
+  _logUpdateSuccessIfJustUpdated();
+
+  PerfMode.init();
+
+  BlackBox.init(role: 'main', api: apiService);
+  DanDpakApiClient.onRequestTrace = (line) => BlackBox.add('api', line);
+
+  DanDpakApiClient.correlationIdProvider = SystemLog.currentCorrelationId;
+
+  DanDpakApiClient.onApiResult = (t) {
+    ConnectivityStatus.instance.onApiTrace(t);
+    if (t.networkIssue) {
+      if (t.path.startsWith('/api/system-logs') ||
+          t.path.startsWith('/api/client-log')) {
+        return;
+      }
+      if (t.method == 'GET') return;
+      final eventType =
+          t.exceptionType == 'TimeoutException' ? 'api_timeout' : 'api_offline';
+      final key = '$eventType:${t.method}:${t.path}';
+      final now = DateTime.now();
+      final last = _lastApiNetworkLogs[key];
+      if (last != null && now.difference(last).inSeconds < 60) return;
+      _lastApiNetworkLogs[key] = now;
+      SystemLog.log(
+        level: 'warn',
+        source: 'flutter_app',
+        eventType: eventType,
+        title: 'Không gọi được ${t.method} ${t.path}',
+        message: t.error ?? '',
+        endpoint: t.path,
+        method: t.method,
+        statusCode: 0,
+        durationMs: t.durationMs,
+        correlationId: t.correlationId,
+        exceptionType: t.exceptionType,
+      );
+    }
+    // Lỗi thao tác của người dùng KHÔNG bắc cầu ở đây để tránh TRÙNG: mọi lỗi hiển
+    // thị đều đã đi qua appToast(isError:true) (thay cho "label đỏ" cũ) → 1 thông báo.
+  };
+  runApp(
+    MultiProvider(
+      providers: [
+        Provider<ApiService>.value(value: apiService),
+        ChangeNotifierProvider(
+            create: (_) => AuthProvider(apiService: apiService)),
+        ChangeNotifierProvider(
+            create: (_) => PosProvider(apiService: apiService)),
+        // Drives the secondary display; mirrors the live cart.
+        ChangeNotifierProxyProvider<PosProvider, CustomerDisplayController>(
+          create: (_) => CustomerDisplayController(api: apiService),
+          update: (_, pos, ctrl) =>
+              (ctrl ?? CustomerDisplayController(api: apiService))..attach(pos),
+        ),
+      ],
+      child: const DandpakPosApp(),
+    ),
+  );
+}
+
+Future<void> _logUpdateSuccessIfJustUpdated() async {
+  try {
+    final build = AppFlavor.current.buildNumber;
+    final versionName = AppFlavor.current.versionName;
+    final key = 'last_run_build::${AppFlavor.current.appId}';
+    final prev = await LocalStore.instance.getString(key) ??
+        await LocalStore.instance.getString('last_run_build');
+    if (prev == '$build') return;
+    final prevBuild = int.tryParse(prev ?? '');
+    if (prevBuild == null) {
+      await LocalStore.instance.setString(key, '$build');
+      await LocalStore.instance.remove('last_run_build');
+      return;
+    }
+    if (build < prevBuild) {
+      SystemLog.log(
+        level: 'warn',
+        source: 'updater',
+        eventType: 'old_build_started',
+        title:
+            'Đang mở bản cũ: build $build thấp hơn build đã chạy $prevBuild ($versionName)',
+        message:
+            'Có thể đang mở nhầm shortcut/exe cũ. Không hạ mốc cập nhật đã lưu',
+        action: 'app_update',
+      );
+      return;
+    }
+    await LocalStore.instance.setString(key, '$build');
+    await LocalStore.instance.remove('last_run_build');
+    SystemLog.log(
+      level: 'info',
+      source: 'updater',
+      eventType: 'update_success',
+      title: 'Cập nhật thành công: build $prev -> $build ($versionName)',
+      action: 'app_update',
+    );
+  } catch (_) {/* không chặn boot */}
+}
+
+class DandpakPosApp extends StatefulWidget {
+  const DandpakPosApp({super.key});
+
+  @override
+  State<DandpakPosApp> createState() => _DandpakPosAppState();
+}
+
+class _DandpakPosAppState extends State<DandpakPosApp>
+    with WidgetsBindingObserver {
+  bool _secondaryDisplayAutoOpenQueued = false;
+  String? _secondaryDisplayAutoOpenBranch;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  void _queueSavedSecondaryDisplayOpen(String branchId) {
+    if (_secondaryDisplayAutoOpenQueued) return;
+    if (_secondaryDisplayAutoOpenBranch == branchId) return;
+    _secondaryDisplayAutoOpenQueued = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
+      final display = context.read<CustomerDisplayController>();
+      await display.loadConfig();
+      if (!mounted) return;
+      _secondaryDisplayAutoOpenQueued = false;
+      _secondaryDisplayAutoOpenBranch = branchId;
+      if (await LocalStore.instance.getString('customer_display_enabled') !=
+          'true') return;
+
+      // A native crash cannot be caught by Dart. Never recreate the secondary
+      // engine automatically on the first recovery launch: this breaks the
+      // otherwise permanent crash loop and lets the operator disable/retry it.
+      if (BlackBox.previousRunCrashed) {
+        BlackBox.add('display', 'auto-open suppressed after unclean exit');
+        return;
+      }
+
+      if (!hasSecondMonitor()) return;
+      await SecondScreen.instance.open(display).catchError((_) {});
+    });
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.detached) {
+      BlackBox.markCleanExit();
+      unawaited(SecondScreen.instance.close());
+    }
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    BlackBox.markCleanExit();
+    unawaited(SecondScreen.instance.close());
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<bool>(
+      valueListenable: PerfMode.lowEnd,
+      builder: (context, lowEnd, _) => _buildApp(lowEnd),
+    );
+  }
+
+  Widget _buildApp(bool lowEnd) {
+    return MaterialApp(
+      debugShowCheckedModeBanner: false,
+      // Messenger toàn cục để AppNotifier hiện banner thông báo trong-app trên MỌI màn.
+      scaffoldMessengerKey: appMessengerKey,
+      // Navigator toàn cục để modal xác nhận quyền LUÔN mở được (không phụ thuộc
+      // context nơi gọi — sửa lỗi modal PIN đôi lúc không hiện, §16).
+      navigatorKey: appNavigatorKey,
+      title: 'Dan D Pak POS',
+      theme: DanTheme.light(lowEnd: lowEnd),
+      builder: (context, child) {
+        final mq = MediaQuery.of(context);
+        return MediaQuery(
+          data: mq.copyWith(textScaler: TextScaler.noScaling),
+          child: Listener(
+            behavior: HitTestBehavior.translucent,
+            onPointerDown: (e) => BlackBox.add('tap',
+                '(${e.position.dx.toStringAsFixed(0)},${e.position.dy.toStringAsFixed(0)})'),
+            child: WindowChrome(
+              child: SafeArea(
+                top: false,
+                // Overlay CHUÔNG toàn cục: có món self-order chưa xem thì nút
+                // chuông đổ nổi trên mọi màn tới khi bấm xem.
+                child: RingOverlay(child: child ?? const SizedBox()),
+              ),
+            ),
+          ),
+        );
+      },
+      home: Consumer<AuthProvider>(
+        builder: (context, auth, _) {
+          if (!auth.booting) {
+            _queueSavedSecondaryDisplayOpen(auth.selectedBranchId);
+          }
+          if (auth.booting) return SplashScreen();
+          if (auth.isLoggedIn) {
+            // Chặn cứng: tài khoản còn PIN mặc định phải đổi trước khi vào app.
+            if (auth.mustChangePin) return const ForceChangePinScreen();
+            // Điện thoại vào thẳng vỏ điều hướng đáy (Tổng quan · Bán lẻ ·
+            // Hàng hóa · Hóa đơn · Nhiều hơn). Lưới module của LauncherScreen
+            // là bố cục cho máy POS/tablet — trên màn 6 inch nó biến thành một
+            // danh sách ô dài phải cuộn, và không có đường tắt tới màn bán.
+            // Máy POS cầm tay có máy in gắn liền (Sunmi V2...) thì bật agent
+            // in ngay trong app — Hardware Agent trên Windows không với tới máy
+            // Android được, nên không có bước này bill sẽ xếp hàng rồi nằm im.
+            LocalPrintAgent.khoiDongNeuCo(context.read<ApiService>());
+            if (AppFlavor.current.isHandset) return const PhoneShell();
+            return LauncherScreen();
+          }
+          if (!auth.branchConfirmed) return BranchSelectScreen();
+          return LoginGateScreen();
+        },
+      ),
+    );
+  }
+}

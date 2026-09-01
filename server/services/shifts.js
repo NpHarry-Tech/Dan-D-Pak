@@ -1,14 +1,13 @@
 // Shift management: opening cash count, payment grouping, and close-shift report.
 import { db, uid, now, audit } from '../db.js';
+import { parseJson } from '../core/util.js';
 import { getOperationsConfig } from './settings.js';
 import { emit } from '../realtime.js';
 import * as CashDrawer from './cashDrawer.js';
 import * as einvoice from './einvoice.js';
 import * as Auth from './auth.js';
+import { businessDayBoundsUtc } from '../core/businessClock.js';
 
-function parseJson(raw, fallback) {
-  try { return raw ? JSON.parse(raw) : fallback; } catch { return fallback; }
-}
 
 function cashTotal(counts = {}) {
   return Object.entries(counts || {}).reduce((sum, [denom, qty]) => {
@@ -19,12 +18,10 @@ function cashTotal(counts = {}) {
 }
 
 function dayBounds(ref = new Date()) {
-  const d = ref instanceof Date ? new Date(ref) : new Date(ref || Date.now());
-  if (Number.isNaN(d.getTime())) return dayBounds(new Date());
-  d.setHours(0, 0, 0, 0);
-  const start = d.toISOString();
-  d.setHours(24, 0, 0, 0);
-  return { start, end: d.toISOString() };
+  try {
+    const { start, end } = businessDayBoundsUtc(ref);
+    return { start: start.toISOString(), end: end.toISOString() };
+  } catch { return dayBounds(new Date()); }
 }
 
 function publicShift(row) {
@@ -38,11 +35,11 @@ function publicShift(row) {
   };
 }
 
-export function getActiveShift(branch_id = 'br1') {
+export function getActiveShift(branch_id = 'sala') {
   return publicShift(db.prepare(`SELECT * FROM shifts WHERE branch_id=? AND status='open' ORDER BY opened_at DESC LIMIT 1`).get(branch_id));
 }
 
-export function openShift(body = {}, user = {}, branch_id = 'br1') {
+export function openShift(body = {}, user = {}, branch_id = 'sala') {
   const current = getActiveShift(branch_id);
   if (current) throw new Error('Dang co ca dang mo. Hay ket ca hien tai truoc khi mo ca moi.');
   const cfg = getOperationsConfig(branch_id);
@@ -62,7 +59,7 @@ export function openShift(body = {}, user = {}, branch_id = 'br1') {
   return { shift: getActiveShift(branch_id), config: cfg };
 }
 
-export function closeShift(body = {}, user = {}, branch_id = 'br1') {
+export function closeShift(body = {}, user = {}, branch_id = 'sala') {
   const shift = getActiveShift(branch_id);
   if (!shift) throw new Error('Chua co ca dang mo de ket ca.');
 
@@ -108,7 +105,7 @@ export function closeShift(body = {}, user = {}, branch_id = 'br1') {
   return { shift: publicShift(db.prepare(`SELECT * FROM shifts WHERE id=?`).get(shift.id)), report: { ...report, closing_cash }, day_report };
 }
 
-export function currentShift(branch_id = 'br1') {
+export function currentShift(branch_id = 'sala') {
   const shift = getActiveShift(branch_id);
   const config = getOperationsConfig(branch_id);
   return {
@@ -121,12 +118,12 @@ export function currentShift(branch_id = 'br1') {
   };
 }
 
-export function listShifts(branch_id = 'br1', limit = 40) {
+export function listShifts(branch_id = 'sala', limit = 40) {
   return db.prepare(`SELECT * FROM shifts WHERE branch_id=? ORDER BY opened_at DESC LIMIT ?`).all(branch_id, limit)
     .map(publicShift);
 }
 
-export function shiftReport(shift_id, branch_id = 'br1') {
+export function shiftReport(shift_id, branch_id = 'sala') {
   const shift = publicShift(db.prepare(`SELECT * FROM shifts WHERE id=? AND branch_id=?`).get(shift_id, branch_id));
   if (!shift) throw new Error('Ca lam viec khong ton tai.');
   const payments = db.prepare(`
@@ -142,11 +139,19 @@ export function shiftReport(shift_id, branch_id = 'br1') {
     WHERE p.shift_id=?
     GROUP BY pl.method
     ORDER BY amount DESC`).all(shift_id);
-  const billLines = db.prepare(`SELECT method,amount,reference FROM payment_lines WHERE payment_id=? ORDER BY rowid`);
+  const billLinesByPayment = new Map();
+  for (const row of db.prepare(`SELECT pl.payment_id,pl.method,
+      COALESCE(pl.tendered_amount,pl.amount) amount,pl.reference
+    FROM payment_lines pl JOIN payments p ON p.id=pl.payment_id
+    WHERE p.shift_id=? ORDER BY pl.payment_id,pl.rowid`).all(shift_id)) {
+    const bucket = billLinesByPayment.get(row.payment_id) || [];
+    bucket.push({ method: row.method, amount: row.amount, reference: row.reference });
+    billLinesByPayment.set(row.payment_id, bucket);
+  }
   const bills = payments.map(p => ({
     ...p,
     number: p.bill_no || p.order_id.slice(-6).toUpperCase(),
-    lines: billLines.all(p.payment_id),
+    lines: billLinesByPayment.get(p.payment_id) || [],
   }));
   const methodTotals = Object.fromEntries(lines.map(l => [l.method, Number(l.amount) || 0]));
   const cash = Number(methodTotals.cash) || 0;
@@ -177,7 +182,7 @@ export function shiftReport(shift_id, branch_id = 'br1') {
   };
 }
 
-export function operationDayReport(branch_id = 'br1', endAt = null) {
+export function operationDayReport(branch_id = 'sala', endAt = null) {
   const ref = endAt ? new Date(endAt) : new Date();
   const bounds = dayBounds(ref);
   const firstShift = db.prepare(`

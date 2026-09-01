@@ -1,10 +1,24 @@
-FROM node:22-bookworm-slim
+FROM node:22-bookworm-slim@sha256:d649c27dae7ba0137b3cef5dd75baa422c08dc3d9e3fc0c23dfb172dc3cc6436
+
+ARG BUILD_GIT_COMMIT=unknown
+ARG BUILD_SOURCE_SHA256=unknown
+ARG BUILD_TIME_UTC=unknown
+LABEL org.opencontainers.image.title="Dan D Pak POS Server" \
+      org.opencontainers.image.revision=$BUILD_GIT_COMMIT \
+      org.opencontainers.image.created=$BUILD_TIME_UTC \
+      io.dandpak.source-sha256=$BUILD_SOURCE_SHA256
 
 # Cài sqlite3 CLI để backup + diagnostic
-RUN apt-get update && apt-get install -y sqlite3 curl && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    sqlite3 curl chromium \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 ENV NODE_ENV=production
+ENV REPORT_PDF_BROWSER=/usr/bin/chromium
+ENV BUILD_GIT_COMMIT=$BUILD_GIT_COMMIT
+ENV BUILD_SOURCE_SHA256=$BUILD_SOURCE_SHA256
+ENV BUILD_TIME_UTC=$BUILD_TIME_UTC
 
 # Copy dependency manifests trước để tận dụng Docker layer cache
 COPY package*.json ./

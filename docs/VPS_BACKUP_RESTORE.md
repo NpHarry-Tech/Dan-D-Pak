@@ -22,6 +22,10 @@ Store copies off-server. Keep retention aligned with `BACKUP_RETENTION_DAYS`.
 ## SQLite Backup
 
 While SQLite remains live, stop writes or use a SQLite-safe backup procedure. Copy `store.db`, `store.db-shm`, and `store.db-wal` together, or use SQLite backup tooling.
+The canonical `deploy/company-server/scripts/backup-db.sh` uses SQLite `.backup`, encrypts with
+authenticated AES-GCM, immediately decrypts to an ephemeral verification DB, compares plaintext
+SHA-256, requires `PRAGMA quick_check` = `ok`, compares the encrypted SHA again after the Docker
+copy, and removes all container plaintext through an EXIT trap. Any failed proof aborts deployment.
 
 ## Restore Rules
 

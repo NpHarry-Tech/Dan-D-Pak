@@ -6,11 +6,17 @@ class DanDpakRealtimeClient {
 
   bool isConnected = false;
 
+  /// Định danh thiết bị dùng cho ràng buộc phiên phía server. Nối ở bootstrap
+  /// (cùng chỗ với DanDpakApiClient.deviceMetadataProvider) để mọi màn hình gọi
+  /// connect() đều gửi kèm mà không phải tự truyền — cùng cách làm với REST.
+  static String Function()? deviceIdProvider;
+
   void connect({
     required String url,
     required String token,
     required String branchId,
     required String device,
+    String? deviceId,
     required Iterable<String> events,
     void Function(bool isConnected)? onConnectionChanged,
     void Function(String event, dynamic data)? onEvent,
@@ -19,7 +25,21 @@ class DanDpakRealtimeClient {
   }) {
     disconnect();
 
-    final auth = {'branch': branchId, 'device': device, 'token': token};
+    // deviceId: server ràng buộc phiên với thiết bị đã đăng nhập (xem
+    // sessionDeviceGate trong services/auth.js). Thiếu trường này thì WebSocket
+    // trở thành đường vòng cho token bị sao chép sang máy khác.
+    String resolvedDeviceId = deviceId ?? '';
+    if (resolvedDeviceId.isEmpty) {
+      try {
+        resolvedDeviceId = deviceIdProvider?.call() ?? '';
+      } catch (_) {}
+    }
+    final auth = {
+      'branch': branchId,
+      'device': device,
+      'token': token,
+      if (resolvedDeviceId.isNotEmpty) 'deviceId': resolvedDeviceId,
+    };
     var options = io.OptionBuilder()
         // WebSocket trước cho độ trễ thấp, NHƯNG cho phép TỤT XUỐNG polling khi
         // ws chập chờn (WiFi yếu / mạng qua proxy) — trước đây ép ws-only nên chỉ
@@ -31,15 +51,23 @@ class DanDpakRealtimeClient {
         .setTimeout(20000)
         .disableAutoConnect();
     if (enableReconnection) {
-      // KHÔNG BAO GIỜ bỏ cuộc, nhưng lùi dần theo cấp số nhân
-      // (~1s → 2s → 4s → 8s → 16s → 30s): mạng chớp tắt thì nối lại gần như
-      // ngay, còn server chết hẳn thì không dội request mỗi giây làm nặng
-      // thêm thiết bị yếu lẫn server đang gượng dậy.
+      // KHÔNG BAO GIỜ bỏ cuộc, nhưng lùi dần để server chết hẳn thì không bị dội
+      // request mỗi giây.
+      //
+      // ĐO THỰC TẾ trên nhật ký socket_reconnect của cửa hàng: trong 45 lần nối
+      // lại, 19 lần rơi vào dải 6–30 giây — đúng bằng các nấc 4s/8s/16s của thang
+      // lùi cũ (1s → 2s → 4s → 8s → 16s → 30s). Tức mạng chỉ chớp 1–2 giây nhưng
+      // client TỰ BẮT MÌNH chờ thêm cả chục giây, nhân viên thấy "MẤT KẾT NỐI"
+      // lâu hơn sự cố thật nhiều lần.
+      //
+      // Máy POS nằm trong cửa hàng, không phải điện thoại chạy pin ngoài đường:
+      // thử lại dày hơn không hại gì. Nấc đầu 400ms và trần 8s → sự cố chớp tắt
+      // gần như không kịp thấy, mà server sập hẳn vẫn chỉ bị hỏi ~8s một lần.
       options = options
           .enableReconnection()
           .setReconnectionAttempts(1 << 30)
-          .setReconnectionDelay(1000)
-          .setReconnectionDelayMax(30000)
+          .setReconnectionDelay(400)
+          .setReconnectionDelayMax(8000)
           .setRandomizationFactor(0.5);
     }
 

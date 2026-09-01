@@ -1,49 +1,28 @@
-// SQLite layer for the Local Store Server.
-// The schema is migration-friendly: existing demo DBs keep working while new
-// warehouse/menu fields are added in place.
-import { DatabaseSync } from 'node:sqlite';
-import { fileURLToPath } from 'node:url';
-import { dirname, isAbsolute, join, resolve } from 'node:path';
-import { mkdirSync, existsSync, readdirSync, statSync, rmSync } from 'node:fs';
-import {
-  appendAuditArchive, ensurePermanentStorage, readRecentAuditArchive,
-  listAuditBranches, listArchivedMonths, listAuditDayMonths, hasMonthlyArchive,
-  writeMonthlyArchive, readMonthlyArchive, deleteMonthlyArchive,
-  readDayEntriesForMonth, deleteDayFilesForMonth,
-} from './services/archive.js';
+// SQLite layer facade for the Local Store Server.
+// Heavy DB concerns live in server/db/*; keep this file as the stable import surface.
+import { ensurePermanentStorage } from './services/archive.js';
 import { env } from './config/env.js';
-import crypto from 'node:crypto';
-import zlib from 'node:zlib';
+import { db, DB_PATH, DB_WAS_EMPTY, ROOT } from './db/connection.js';
+import { now, uid } from './db/ids.js';
+import {
+  audit, encryptCompress, decryptDecompress, reconcileAuditFromArchive, compactAuditToMonthly,
+  rehydrateAuditMonths, rehydrateAuditForQuery, purgeAuditBeyondRetention,
+} from './db/audit.js';
+import {
+  defaultWarehouseIds, defaultWarehouseId, bootstrapBranchDefaults,
+  bootstrapWarehouseDefaults, bootstrapTableDefaults,
+} from './db/bootstrap.js';
+import { backupDatabase, listBackups } from './db/maintenance.js';
+import { inTransaction } from './db/transaction.js';
+import { CRITICAL_RELATIONS } from './db/integrity.js';
 
-
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const ROOT = join(__dirname, '..');
-
-function resolveDbPath() {
-  if (env.DATABASE_URL && env.DATABASE_PROVIDER === 'sqlite') {
-    if (env.DATABASE_URL.startsWith('sqlite://')) {
-      const path = env.DATABASE_URL.replace('sqlite://', '');
-      return isAbsolute(path) ? path : resolve(ROOT, path);
-    }
-  }
-  if (!env.SQLITE_PATH) return join(__dirname, 'store.db');
-  return isAbsolute(env.SQLITE_PATH) ? env.SQLITE_PATH : resolve(ROOT, env.SQLITE_PATH);
-}
-
-export const DB_PATH = resolveDbPath();
-mkdirSync(dirname(DB_PATH), { recursive: true });
-
-export const db = new DatabaseSync(DB_PATH);
-
-db.exec('PRAGMA journal_mode = WAL;');
-db.exec('PRAGMA foreign_keys = ON;');
-db.exec('PRAGMA busy_timeout = 5000;');        // Retry 5 giây trước khi báo lỗi locked — quan trọng khi 50 thiết bị cùng ghi
-db.exec('PRAGMA synchronous = NORMAL;');       // Nhanh hơn FULL, vẫn an toàn với WAL
-db.exec('PRAGMA cache_size = -65536;');        // 64 MB page cache trong RAM
-db.exec('PRAGMA temp_store = MEMORY;');        // Bảng tạm trong RAM
-db.exec('PRAGMA mmap_size = 134217728;');      // 128 MB memory-mapped I/O
-db.exec('PRAGMA wal_autocheckpoint = 1000;');  // Checkpoint mỗi 1000 pages (~4 MB)
-
+export {
+  db, DB_PATH, DB_WAS_EMPTY, ROOT, now, uid, audit, encryptCompress, decryptDecompress,
+  reconcileAuditFromArchive, compactAuditToMonthly, rehydrateAuditMonths, rehydrateAuditForQuery,
+  purgeAuditBeyondRetention, defaultWarehouseIds, defaultWarehouseId,
+  bootstrapBranchDefaults, bootstrapWarehouseDefaults, bootstrapTableDefaults,
+  backupDatabase, listBackups, inTransaction,
+};
 const globalDb = db;
 export function migrate(targetDb = globalDb) {
   const isMaster = (targetDb === globalDb);
@@ -81,6 +60,7 @@ export function migrate(targetDb = globalDb) {
 
   CREATE TABLE IF NOT EXISTS categories (
     id TEXT PRIMARY KEY,
+    branch_id TEXT NOT NULL DEFAULT 'sala',
     name TEXT NOT NULL,
     icon TEXT,
     sort INTEGER DEFAULT 0
@@ -99,12 +79,15 @@ export function migrate(targetDb = globalDb) {
 
   CREATE TABLE IF NOT EXISTS menu_items (
     id TEXT PRIMARY KEY,
+    branch_id TEXT NOT NULL DEFAULT 'sala',
     category_id TEXT NOT NULL,
     name TEXT NOT NULL,
     emoji TEXT,
     image TEXT,
     description TEXT,
     price INTEGER NOT NULL,
+    price_includes_vat INTEGER NOT NULL DEFAULT 1,
+    vat_rate REAL NOT NULL DEFAULT 8,
     station TEXT NOT NULL DEFAULT 'kitchen',
     sla_minutes INTEGER DEFAULT 10,
     available INTEGER NOT NULL DEFAULT 1,
@@ -114,6 +97,7 @@ export function migrate(targetDb = globalDb) {
     allergens_json TEXT DEFAULT '[]',
     schedule_json TEXT DEFAULT '{"mode":"always"}',
     modifiers_json TEXT DEFAULT '[]',
+    translations_json TEXT DEFAULT '{}',
     sort INTEGER DEFAULT 0
   );
 
@@ -125,6 +109,7 @@ export function migrate(targetDb = globalDb) {
     emoji TEXT,
     image TEXT,
     price INTEGER NOT NULL,
+    price_includes_vat INTEGER NOT NULL DEFAULT 1,
     cost INTEGER DEFAULT 0,
     stock REAL NOT NULL DEFAULT 0,
     min_stock REAL NOT NULL DEFAULT 0,
@@ -200,6 +185,10 @@ export function migrate(targetDb = globalDb) {
     document_id TEXT NOT NULL,
     item_type TEXT NOT NULL,
     item_id TEXT NOT NULL,
+    item_name TEXT,
+    item_code TEXT,
+    item_barcode TEXT,
+    unit_snapshot TEXT,
     lot_id TEXT,
     qty REAL NOT NULL,
     unit_cost REAL DEFAULT 0,
@@ -223,6 +212,10 @@ export function migrate(targetDb = globalDb) {
     session_id TEXT NOT NULL,
     item_type TEXT NOT NULL,
     item_id TEXT NOT NULL,
+    item_name TEXT,
+    item_code TEXT,
+    item_barcode TEXT,
+    unit_snapshot TEXT,
     lot_id TEXT,
     expected_qty REAL NOT NULL DEFAULT 0,
     counted_qty REAL NOT NULL DEFAULT 0,
@@ -234,6 +227,10 @@ export function migrate(targetDb = globalDb) {
     id TEXT PRIMARY KEY,
     branch_id TEXT NOT NULL,
     inventory_item_id TEXT NOT NULL,
+    item_name TEXT,
+    item_code TEXT,
+    item_barcode TEXT,
+    unit_snapshot TEXT,
     type TEXT NOT NULL,
     qty REAL NOT NULL,
     ref TEXT,
@@ -254,6 +251,8 @@ export function migrate(targetDb = globalDb) {
     status TEXT NOT NULL DEFAULT 'open',
     subtotal INTEGER NOT NULL DEFAULT 0,
     discount INTEGER NOT NULL DEFAULT 0,
+    goods_amount INTEGER NOT NULL DEFAULT 0,
+    vat_amount INTEGER NOT NULL DEFAULT 0,
     total INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL,
     paid_at TEXT,
@@ -265,7 +264,8 @@ export function migrate(targetDb = globalDb) {
     voucher_id TEXT,
     voucher_code TEXT,
     linked_pos_device TEXT,
-    linked_printer_id TEXT
+    linked_printer_id TEXT,
+    client_request_id TEXT
   );
 
   CREATE TABLE IF NOT EXISTS order_items (
@@ -273,10 +273,14 @@ export function migrate(targetDb = globalDb) {
     order_id TEXT NOT NULL,
     menu_item_id TEXT,
     sku_id TEXT,
+    item_code TEXT,
+    item_barcode TEXT,
+    unit_snapshot TEXT,
     name TEXT NOT NULL,
     emoji TEXT,
     qty INTEGER NOT NULL DEFAULT 1,
     unit_price INTEGER NOT NULL,
+    vat_rate REAL NOT NULL DEFAULT 0,
     station TEXT NOT NULL DEFAULT 'kitchen',
     sla_minutes INTEGER DEFAULT 10,
     note TEXT,
@@ -350,6 +354,8 @@ export function migrate(targetDb = globalDb) {
     id TEXT PRIMARY KEY,
     order_id TEXT NOT NULL,
     shift_id TEXT,
+    idempotency_key TEXT,
+    cashier TEXT,
     total INTEGER NOT NULL,
     created_at TEXT NOT NULL
   );
@@ -359,8 +365,32 @@ export function migrate(targetDb = globalDb) {
     payment_id TEXT NOT NULL,
     method TEXT NOT NULL,
     amount INTEGER NOT NULL,
+    tendered_amount INTEGER,
     reference TEXT
   );
+
+  CREATE TABLE IF NOT EXISTS sale_snapshots (
+    id TEXT PRIMARY KEY,
+    order_id TEXT NOT NULL UNIQUE,
+    payment_id TEXT NOT NULL,
+    branch_id TEXT NOT NULL,
+    pricing_hash TEXT NOT NULL,
+    snapshot_json TEXT NOT NULL,
+    paid_at TEXT NOT NULL,
+    business_timezone TEXT NOT NULL DEFAULT 'Asia/Ho_Chi_Minh',
+    business_date TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_sale_snapshots_branch_paid
+    ON sale_snapshots(branch_id, paid_at DESC);
+  CREATE TRIGGER IF NOT EXISTS trg_sale_snapshots_immutable_update
+    BEFORE UPDATE ON sale_snapshots BEGIN
+      SELECT RAISE(ABORT, 'sale snapshot is immutable');
+    END;
+  CREATE TRIGGER IF NOT EXISTS trg_sale_snapshots_immutable_delete
+    BEFORE DELETE ON sale_snapshots BEGIN
+      SELECT RAISE(ABORT, 'sale snapshot is immutable');
+    END;
 
   CREATE TABLE IF NOT EXISTS staff_calls (
     id TEXT PRIMARY KEY,
@@ -401,8 +431,24 @@ export function migrate(targetDb = globalDb) {
     payload_json TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'queued',
     created_at TEXT NOT NULL,
-    printed_at TEXT
+    printed_at TEXT,
+    idempotency_key TEXT
   );
+
+  CREATE TABLE IF NOT EXISTS receipt_print_outbox (
+    id TEXT PRIMARY KEY,
+    branch_id TEXT NOT NULL,
+    payment_id TEXT NOT NULL UNIQUE,
+    payload_json TEXT NOT NULL,
+    device_id TEXT,
+    status TEXT NOT NULL DEFAULT 'queued',
+    attempts INTEGER NOT NULL DEFAULT 0,
+    last_error TEXT,
+    created_at TEXT NOT NULL,
+    completed_at TEXT
+  );
+  CREATE INDEX IF NOT EXISTS idx_receipt_print_outbox_status
+    ON receipt_print_outbox(status, created_at);
 
   CREATE TABLE IF NOT EXISTS invoices (
     id TEXT PRIMARY KEY,
@@ -452,10 +498,22 @@ export function migrate(targetDb = globalDb) {
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
   );
-  CREATE UNIQUE INDEX IF NOT EXISTS idx_einv_order ON e_invoices(order_id);
+  CREATE INDEX IF NOT EXISTS idx_einv_order ON e_invoices(order_id);
   CREATE UNIQUE INDEX IF NOT EXISTS idx_einv_idempotency ON e_invoices(idempotency_key);
   CREATE INDEX IF NOT EXISTS idx_einv_status ON e_invoices(invoice_status, next_retry_at);
   CREATE INDEX IF NOT EXISTS idx_einv_branch ON e_invoices(branch_id, created_at DESC);
+
+  CREATE TABLE IF NOT EXISTS invoice_allocations (
+    id TEXT PRIMARY KEY,
+    e_invoice_id TEXT NOT NULL,
+    order_id TEXT NOT NULL,
+    order_item_id TEXT,
+    qty REAL,
+    amount INTEGER NOT NULL,
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_inv_alloc_invoice ON invoice_allocations(e_invoice_id);
+  CREATE INDEX IF NOT EXISTS idx_inv_alloc_order ON invoice_allocations(order_id);
 
   -- Audit log bất biến cho mọi thao tác HĐĐT. Không cho sửa/xóa từ UI.
   CREATE TABLE IF NOT EXISTS invoice_audit_logs (
@@ -481,7 +539,50 @@ export function migrate(targetDb = globalDb) {
     ref TEXT,
     status TEXT NOT NULL DEFAULT 'pending',
     created_at TEXT NOT NULL,
-    synced_at TEXT
+    synced_at TEXT,
+    hub_id TEXT,
+    sequence INTEGER,
+    operation TEXT NOT NULL DEFAULT 'upsert',
+    payload_json TEXT,
+    attempt_count INTEGER NOT NULL DEFAULT 0,
+    last_attempt_at TEXT,
+    last_error TEXT
+  );
+
+  CREATE TABLE IF NOT EXISTS sync_hub_state (
+    id INTEGER PRIMARY KEY CHECK(id=1),
+    hub_id TEXT NOT NULL,
+    next_sequence INTEGER NOT NULL DEFAULT 0
+  );
+  INSERT OR IGNORE INTO sync_hub_state(id,hub_id,next_sequence)
+    VALUES(1,'unconfigured',0);
+
+  CREATE TABLE IF NOT EXISTS sync_inbox (
+    event_id TEXT PRIMARY KEY,
+    hub_id TEXT NOT NULL,
+    sequence INTEGER NOT NULL,
+    kind TEXT NOT NULL,
+    ref TEXT,
+    payload_hash TEXT NOT NULL,
+    received_at TEXT NOT NULL,
+    applied_at TEXT NOT NULL,
+    UNIQUE(hub_id,sequence)
+  );
+  CREATE TABLE IF NOT EXISTS sync_apply_state (
+    id INTEGER PRIMARY KEY CHECK(id=1),
+    remote_apply INTEGER NOT NULL DEFAULT 0 CHECK(remote_apply IN (0,1))
+  );
+  INSERT OR IGNORE INTO sync_apply_state(id,remote_apply) VALUES(1,0);
+  CREATE TABLE IF NOT EXISTS sync_hub_cursors (
+    hub_id TEXT PRIMARY KEY,
+    last_sequence INTEGER NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+  CREATE TABLE IF NOT EXISTS catalogue_snapshot_state (
+    branch_id TEXT PRIMARY KEY,
+    snapshot_hash TEXT NOT NULL,
+    source_generated_at TEXT NOT NULL,
+    applied_at TEXT NOT NULL
   );
 
   CREATE TABLE IF NOT EXISTS audit_log (
@@ -492,7 +593,7 @@ export function migrate(targetDb = globalDb) {
     detail TEXT,
     created_at TEXT NOT NULL
   );
-  CREATE INDEX IF NOT EXISTS idx_audit_branch_time ON audit_log(branch_id, created_at);
+  CREATE INDEX IF NOT EXISTS idx_audit_branch_created ON audit_log(branch_id, created_at DESC);
 
   -- Nhật ký HỆ THỐNG hợp nhất (crash/api_error/socket/printer/payment/sync…).
   -- Khác audit_log (vệt thao tác người dùng, mã hóa + lưu 36 tháng): bảng này
@@ -626,6 +727,8 @@ export function migrate(targetDb = globalDb) {
     item_id TEXT NOT NULL,
     name TEXT,
     unit TEXT,
+    item_code TEXT,
+    item_barcode TEXT,
     qty REAL NOT NULL DEFAULT 0,
     unit_cost REAL NOT NULL DEFAULT 0,
     received_qty REAL NOT NULL DEFAULT 0,
@@ -645,6 +748,46 @@ export function migrate(targetDb = globalDb) {
     created_at TEXT NOT NULL
   );
   CREATE INDEX IF NOT EXISTS idx_pp_po ON purchase_payments(po_id);
+
+  -- Trả hàng nhập (KiotViet PurchaseReturns): trả hàng đã nhập về lại NCC.
+  -- status: draft (Phiếu tạm) -> returned (Đã trả hàng) | cancelled (Đã hủy).
+  -- Khi returned: xuất kho các dòng hàng (1 phiếu kho type 'purchase_return').
+  CREATE TABLE IF NOT EXISTS purchase_returns (
+    id TEXT PRIMARY KEY,
+    branch_id TEXT NOT NULL,
+    code TEXT,
+    supplier_id TEXT,
+    supplier_name TEXT,
+    po_id TEXT,
+    warehouse_id TEXT,
+    status TEXT NOT NULL DEFAULT 'draft',
+    note TEXT,
+    subtotal INTEGER NOT NULL DEFAULT 0,
+    vat_refund INTEGER NOT NULL DEFAULT 0,
+    total INTEGER NOT NULL DEFAULT 0,
+    refund_received INTEGER NOT NULL DEFAULT 0,
+    created_by TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT,
+    returned_at TEXT
+  );
+  CREATE INDEX IF NOT EXISTS idx_pr_branch ON purchase_returns(branch_id);
+
+  CREATE TABLE IF NOT EXISTS purchase_return_lines (
+    id TEXT PRIMARY KEY,
+    pr_id TEXT NOT NULL,
+    item_type TEXT NOT NULL,
+    item_id TEXT NOT NULL,
+    name TEXT,
+    unit TEXT,
+    qty REAL NOT NULL DEFAULT 0,
+    unit_cost REAL NOT NULL DEFAULT 0,
+    line_total INTEGER NOT NULL DEFAULT 0,
+    lot_id TEXT,
+    lot_no TEXT,
+    expiry_date TEXT
+  );
+  CREATE INDEX IF NOT EXISTS idx_prl_pr ON purchase_return_lines(pr_id);
 
   -- Expenses (Chi phí): general business expense ledger. Two cash sources:
   --   'drawer'  -> trừ vào két ca đang mở (reuses cash_drawer_entries, linked via drawer_entry_id)
@@ -682,6 +825,23 @@ export function migrate(targetDb = globalDb) {
 
   // Columns added after the first demo release.
   addColumnIfMissing('orders', 'bill_no', 'TEXT');   // Số Bill nội bộ Dan{ddMMyy}{seq}, reset theo ngày
+  // MÃ ĐỐI SOÁT CHUYỂN KHOẢN — cấp NGAY khi mở đơn, khác hẳn số bill.
+  //
+  // Trước đây `bill_no` gánh HAI việc: vừa là số hoá đơn, vừa là nội dung
+  // chuyển khoản để khớp tiền về. Vì phải có sẵn lúc khách quét QR nên nó bị
+  // cấp ngay lúc mở đơn — và đơn HUỶ vẫn chiếm số, làm thủng dãy số hoá đơn
+  // (vấn đề sổ sách/thuế thật, báo về 04/08/2026).
+  //
+  // Tách đôi: `pay_ref` cấp lúc mở đơn và chỉ dùng cho QR + đối soát ngân hàng;
+  // `bill_no` để TRỐNG cho tới khi thanh toán xong. Huỷ đơn chưa trả tiền thì
+  // không tiêu số nào cả.
+  addColumnIfMissing('orders', 'pay_ref', 'TEXT');
+  // Chỉnh giá TỪNG DÒNG (cần PIN Quản lý): unit_price = giá đã đổi; orig_price =
+  // giá niêm yết gốc lúc bán → bill in được cả "giá gốc → giá sau đổi".
+  addColumnIfMissing('order_items', 'orig_price', 'INTEGER');
+  addColumnIfMissing('order_items', 'item_code', 'TEXT');
+  addColumnIfMissing('order_items', 'item_barcode', 'TEXT');
+  addColumnIfMissing('order_items', 'unit_snapshot', 'TEXT');
   addColumnIfMissing('branches', 'code', 'TEXT');
   addColumnIfMissing('branches', 'phone', 'TEXT');
   addColumnIfMissing('branches', 'active', 'INTEGER NOT NULL DEFAULT 1');
@@ -700,6 +860,9 @@ export function migrate(targetDb = globalDb) {
   addColumnIfMissing('order_items', 'promo_json', 'TEXT');
   addColumnIfMissing('order_items', 'reject_reason', 'TEXT');
   addColumnIfMissing('menu_items', 'image', 'TEXT');
+  addColumnIfMissing('menu_items', 'branch_id', "TEXT NOT NULL DEFAULT 'sala'");
+  addColumnIfMissing('categories', 'branch_id', "TEXT NOT NULL DEFAULT 'sala'");
+  addColumnIfMissing('orders', 'note', 'TEXT');
   addColumnIfMissing('menu_items', 'description', 'TEXT');
   addColumnIfMissing('menu_items', 'hidden', 'INTEGER NOT NULL DEFAULT 0');
   addColumnIfMissing('menu_items', 'deleted_at', 'TEXT');
@@ -707,6 +870,12 @@ export function migrate(targetDb = globalDb) {
   addColumnIfMissing('menu_items', 'allergens_json', `TEXT DEFAULT '[]'`);
   addColumnIfMissing('menu_items', 'schedule_json', `TEXT DEFAULT '{"mode":"always"}'`);
   addColumnIfMissing('menu_items', 'addons_json', `TEXT DEFAULT '[]'`);   // combos & extras
+  addColumnIfMissing('menu_items', 'translations_json', `TEXT DEFAULT '{}'`);
+  // NHÓM TÙY CHỌN hợp nhất (size/đá + topping + combo) cho Self-Order: mảng
+  // [{key,name,position:top|bottom,min,max,options:[{name,price,type,ref_item_id}]}].
+  addColumnIfMissing('menu_items', 'option_groups_json', `TEXT DEFAULT '[]'`);
+  // Ẩn RIÊNG khỏi Tablet Self-Order (vẫn hiện ở F&B POS) — menu khách khác nội bộ.
+  addColumnIfMissing('menu_items', 'self_order_hidden', 'INTEGER NOT NULL DEFAULT 0');
 
   addColumnIfMissing('inventory_items', 'warehouse_id', 'TEXT');
   addColumnIfMissing('inventory_items', 'item_type', `TEXT NOT NULL DEFAULT 'ingredient'`);
@@ -726,11 +895,15 @@ export function migrate(targetDb = globalDb) {
   addColumnIfMissing('skus', 'track_lot', 'INTEGER NOT NULL DEFAULT 0');
   addColumnIfMissing('skus', 'expiry_required', 'INTEGER NOT NULL DEFAULT 0');
   addColumnIfMissing('skus', 'active', 'INTEGER NOT NULL DEFAULT 1');
+  // Giới thiệu sản phẩm — đoạn văn khách đọc trên màn catalogue ngoài quầy
+  // (thành phần, xuất xứ, cách dùng). Khác `note` nội bộ: cái này KHÁCH đọc.
+  addColumnIfMissing('skus', 'description', 'TEXT');
   addColumnIfMissing('skus', 'units_json', `TEXT DEFAULT '[]'`);          // alt units of measure
   // KiotViet product-list parity (Kho BCM): mã hàng, giá trước thuế, %VAT, thương hiệu, nhóm hàng, thời gian tạo.
   addColumnIfMissing('skus', 'code', 'TEXT');                             // Mã hàng (KiotViet SP…)
   addColumnIfMissing('skus', 'price_pre_tax', 'INTEGER');                 // Giá bán trước thuế
   addColumnIfMissing('skus', 'vat', 'REAL');                             // VAT hàng bán (%) — null = KCT
+  addColumnIfMissing('skus', 'price_includes_vat', 'INTEGER NOT NULL DEFAULT 1');
   addColumnIfMissing('skus', 'brand', 'TEXT');                            // Thương hiệu
   addColumnIfMissing('skus', 'group_path', 'TEXT');                       // Nhóm hàng (3 cấp, "A>>B>>C")
   addColumnIfMissing('skus', 'weight', 'REAL');                           // Trọng lượng
@@ -744,6 +917,33 @@ export function migrate(targetDb = globalDb) {
   addColumnIfMissing('stock_movements', 'unit_cost', 'REAL');
   addColumnIfMissing('stock_movements', 'reason', 'TEXT');
   addColumnIfMissing('stock_movements', 'doc_id', 'TEXT');
+  addColumnIfMissing('stock_movements', 'item_name', 'TEXT');
+  addColumnIfMissing('stock_movements', 'item_code', 'TEXT');
+  addColumnIfMissing('stock_movements', 'item_barcode', 'TEXT');
+  addColumnIfMissing('stock_movements', 'unit_snapshot', 'TEXT');
+  addColumnIfMissing('inventory_document_lines', 'item_name', 'TEXT');
+  addColumnIfMissing('inventory_document_lines', 'item_code', 'TEXT');
+  addColumnIfMissing('inventory_document_lines', 'item_barcode', 'TEXT');
+  addColumnIfMissing('inventory_document_lines', 'unit_snapshot', 'TEXT');
+  addColumnIfMissing('stocktake_lines', 'item_name', 'TEXT');
+  addColumnIfMissing('stocktake_lines', 'item_code', 'TEXT');
+  addColumnIfMissing('stocktake_lines', 'item_barcode', 'TEXT');
+  addColumnIfMissing('stocktake_lines', 'unit_snapshot', 'TEXT');
+  addColumnIfMissing('purchase_order_lines', 'item_code', 'TEXT');
+  addColumnIfMissing('purchase_order_lines', 'item_barcode', 'TEXT');
+  // Legacy rows can only be backfilled from today's catalogue once. New writes
+  // always persist these fields at transaction time and never depend on this join.
+  // migrate() is intentionally rerunnable. On the second boot the immutable
+  // trigger already exists, so temporarily remove it while this startup-only
+  // backfill runs; it is recreated below before the server accepts traffic.
+  db.exec(`DROP TRIGGER IF EXISTS trg_paid_order_items_facts_immutable;`);
+  db.exec(`UPDATE order_items SET
+    item_code=COALESCE(item_code,(SELECT code FROM skus WHERE skus.id=order_items.sku_id)),
+    item_barcode=COALESCE(item_barcode,(SELECT barcode FROM skus WHERE skus.id=order_items.sku_id)),
+    unit_snapshot=COALESCE(unit_snapshot,
+      (SELECT unit FROM skus WHERE skus.id=order_items.sku_id),
+      CASE WHEN sku_id IS NOT NULL THEN 'cái' ELSE 'phần' END)
+    WHERE item_code IS NULL OR item_barcode IS NULL OR unit_snapshot IS NULL;`);
 
   addColumnIfMissing('orders', 'online_channel', 'TEXT');
   addColumnIfMissing('orders', 'online_ref', 'TEXT');
@@ -759,9 +959,100 @@ export function migrate(targetDb = globalDb) {
   addColumnIfMissing('orders', 'voucher_code', 'TEXT');
   addColumnIfMissing('orders', 'linked_pos_device', 'TEXT');
   addColumnIfMissing('orders', 'linked_printer_id', 'TEXT');
+  addColumnIfMissing('orders', 'client_request_id', 'TEXT');
+  addColumnIfMissing('orders', 'goods_amount', 'INTEGER NOT NULL DEFAULT 0');
+  addColumnIfMissing('orders', 'vat_amount', 'INTEGER NOT NULL DEFAULT 0');
   // Dấu "đã in tạm tính" cho đơn còn mở — sơ đồ bàn POS hiện trạng thái này.
   addColumnIfMissing('orders', 'prebill_printed_at', 'TEXT');
   addColumnIfMissing('payments', 'shift_id', 'TEXT');
+  addColumnIfMissing('payments', 'idempotency_key', 'TEXT');
+  // Ai THỰC SỰ bấm thanh toán dòng này — KHÁC với shifts.user_name (người MỞ ca).
+  // Một ca có thể nhiều người dùng chung (BR-SHIFT-001); trước đây receipt/audit
+  // join qua shifts.user_name nên mọi giao dịch trong ca hiện sai thành tên người mở ca.
+  addColumnIfMissing('payments', 'cashier', 'TEXT');
+  addColumnIfMissing('print_jobs', 'idempotency_key', 'TEXT');
+  addColumnIfMissing('sale_snapshots', 'business_timezone', `TEXT NOT NULL DEFAULT 'Asia/Ho_Chi_Minh'`);
+  addColumnIfMissing('sale_snapshots', 'business_date', `TEXT`);
+  db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_payments_idempotency
+    ON payments(idempotency_key) WHERE idempotency_key IS NOT NULL;`);
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_payments_order ON payments(order_id);
+    CREATE INDEX IF NOT EXISTS idx_payments_shift_created ON payments(shift_id, created_at DESC, order_id);
+    CREATE INDEX IF NOT EXISTS idx_payment_lines_payment ON payment_lines(payment_id);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_print_jobs_idempotency
+      ON print_jobs(idempotency_key) WHERE idempotency_key IS NOT NULL;
+    CREATE TABLE IF NOT EXISTS receipt_print_outbox (
+      id TEXT PRIMARY KEY,
+      branch_id TEXT NOT NULL,
+      payment_id TEXT NOT NULL UNIQUE,
+      payload_json TEXT NOT NULL,
+      device_id TEXT,
+      status TEXT NOT NULL DEFAULT 'queued',
+      attempts INTEGER NOT NULL DEFAULT 0,
+      last_error TEXT,
+      created_at TEXT NOT NULL,
+      completed_at TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_receipt_print_outbox_status
+      ON receipt_print_outbox(status, created_at);
+    CREATE TABLE IF NOT EXISTS sale_snapshots (
+      id TEXT PRIMARY KEY,
+      order_id TEXT NOT NULL UNIQUE,
+      payment_id TEXT NOT NULL,
+      branch_id TEXT NOT NULL,
+      pricing_hash TEXT NOT NULL,
+      snapshot_json TEXT NOT NULL,
+      paid_at TEXT NOT NULL,
+      business_timezone TEXT NOT NULL DEFAULT 'Asia/Ho_Chi_Minh',
+      business_date TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_sale_snapshots_branch_paid
+      ON sale_snapshots(branch_id, paid_at DESC);
+    CREATE TRIGGER IF NOT EXISTS trg_sale_snapshots_immutable_update
+      BEFORE UPDATE ON sale_snapshots BEGIN
+        SELECT RAISE(ABORT, 'sale snapshot is immutable');
+      END;
+    CREATE TRIGGER IF NOT EXISTS trg_sale_snapshots_immutable_delete
+      BEFORE DELETE ON sale_snapshots BEGIN
+        SELECT RAISE(ABORT, 'sale snapshot is immutable');
+      END;
+  `);
+  addColumnIfMissing('payment_lines', 'tendered_amount', 'INTEGER');
+  db.prepare(`UPDATE payment_lines SET tendered_amount=amount WHERE tendered_amount IS NULL`).run();
+  db.exec(`
+    DROP INDEX IF EXISTS idx_einv_order;
+    CREATE INDEX IF NOT EXISTS idx_einv_order ON e_invoices(order_id);
+    CREATE INDEX IF NOT EXISTS idx_einv_branch_order_created
+      ON e_invoices(branch_id, order_id, created_at DESC);
+    CREATE TABLE IF NOT EXISTS invoice_allocations (
+      id TEXT PRIMARY KEY,
+      e_invoice_id TEXT NOT NULL,
+      order_id TEXT NOT NULL,
+      order_item_id TEXT,
+      qty REAL,
+      amount INTEGER NOT NULL,
+      created_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_inv_alloc_invoice ON invoice_allocations(e_invoice_id);
+    CREATE INDEX IF NOT EXISTS idx_inv_alloc_order ON invoice_allocations(order_id);
+  `);
+  const overpaidPayments = db.prepare(`
+    SELECT p.id, p.total, COALESCE(SUM(pl.amount),0) paid
+    FROM payments p JOIN payment_lines pl ON pl.payment_id=p.id
+    GROUP BY p.id HAVING paid>p.total`).all();
+  const reduceApplied = db.prepare(`UPDATE payment_lines SET amount=amount-? WHERE id=?`);
+  for (const payment of overpaidPayments) {
+    let excess = Math.max(0, Number(payment.paid) - Number(payment.total));
+    if (!excess) continue;
+    const lines = db.prepare(`SELECT id,amount FROM payment_lines WHERE payment_id=? AND amount>0 ORDER BY method='cash' DESC,rowid DESC`).all(payment.id);
+    for (const line of lines) {
+      const reduction = Math.min(excess, Number(line.amount));
+      reduceApplied.run(reduction, line.id);
+      excess -= reduction;
+      if (!excess) break;
+    }
+  }
   // Thanh toán thẻ qua máy POS (VCB SmartPOS...): lưu mã giao dịch để ĐỐI SOÁT
   // với sao kê acquirer. mode = auto (native bridge) | manual (thu ngân nhập tay) | mock.
   addColumnIfMissing('payment_lines', 'card_txn_id', 'TEXT');   // mã giao dịch của máy/acquirer
@@ -779,7 +1070,86 @@ export function migrate(targetDb = globalDb) {
   addColumnIfMissing('print_jobs', 'reprint_of', 'TEXT');
   addColumnIfMissing('print_jobs', 'printed_by', 'TEXT');
   addColumnIfMissing('order_items', 'table_path', 'TEXT');
+  addColumnIfMissing('order_items', 'vat_rate', 'REAL');
+  addColumnIfMissing('menu_items', 'price_includes_vat', 'INTEGER NOT NULL DEFAULT 1');
+  addColumnIfMissing('menu_items', 'vat_rate', 'REAL NOT NULL DEFAULT 8');
+  db.prepare(`UPDATE order_items SET vat_rate=COALESCE(
+    (SELECT m.vat_rate FROM menu_items m WHERE m.id=order_items.menu_item_id),
+    (SELECT s.vat FROM skus s WHERE s.id=order_items.sku_id), 0)
+    WHERE vat_rate IS NULL AND order_id IN (SELECT id FROM orders WHERE status='open')`).run();
   addColumnIfMissing('order_items', 'kds_dismissed', 'INTEGER DEFAULT 0');
+  // SƠ ĐỒ BÀN kéo-thả: vị trí theo LƯỚI (ô x,y) + kích thước ô (w,h). -1 = CHƯA
+  // xếp vị trí (nằm trong khay "bàn chưa xếp"). Khu vực là bảng RIÊNG (zones) để
+  // tạo khu vực rỗng vẫn hiện, không phụ thuộc có bàn hay không.
+  addColumnIfMissing('tables', 'pos_x', 'INTEGER NOT NULL DEFAULT -1');
+  addColumnIfMissing('tables', 'pos_y', 'INTEGER NOT NULL DEFAULT -1');
+  addColumnIfMissing('tables', 'grid_w', 'INTEGER NOT NULL DEFAULT 1');
+  addColumnIfMissing('tables', 'grid_h', 'INTEGER NOT NULL DEFAULT 1');
+  addColumnIfMissing('tables', 'zone_id', 'TEXT');
+  db.exec(`CREATE TABLE IF NOT EXISTS zones (
+    id TEXT PRIMARY KEY,
+    branch_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    sort INTEGER NOT NULL DEFAULT 0
+  );
+  CREATE INDEX IF NOT EXISTS idx_zones_branch ON zones(branch_id, sort);`);
+
+  // ── ERP (Microsoft Dynamics 365 Business Central) — OUTBOX + MAPPING ────────
+  // OUTBOX PATTERN (mission #12): POS commit thanh toán XONG mới ghi 1 sự kiện ở
+  // đây; worker nền đẩy sang BC. BC down → POS VẪN BÁN, sự kiện nằm 'pending' rồi
+  // retry. Idempotency bằng external_id UNIQUE: gửi 20 lần vẫn 1 document.
+  db.exec(`CREATE TABLE IF NOT EXISTS erp_outbox (
+    id TEXT PRIMARY KEY,
+    branch_id TEXT NOT NULL,
+    event_id TEXT,
+    external_id TEXT NOT NULL,
+    doc_type TEXT NOT NULL,
+    entity_id TEXT,
+    payload_json TEXT NOT NULL,
+    payload_hash TEXT,
+    status TEXT NOT NULL DEFAULT 'pending',
+    error_class TEXT,
+    last_error TEXT,
+    retry_count INTEGER NOT NULL DEFAULT 0,
+    next_attempt_at TEXT,
+    nav_document_no TEXT,
+    nav_entry_no TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_erp_outbox_external ON erp_outbox(external_id);
+  CREATE INDEX IF NOT EXISTS idx_erp_outbox_due ON erp_outbox(status, next_attempt_at);
+  CREATE INDEX IF NOT EXISTS idx_erp_outbox_branch ON erp_outbox(branch_id, status, created_at);
+
+  CREATE TABLE IF NOT EXISTS erp_mapping (
+    id TEXT PRIMARY KEY,
+    branch_id TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    pos_key TEXT NOT NULL,
+    nav_value TEXT,
+    extra_json TEXT,
+    updated_at TEXT NOT NULL
+  );
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_erp_mapping_key ON erp_mapping(branch_id, kind, pos_key);`);
+  // SEED zones từ các `tables.zone` đang có (mỗi tên khu vực → một zone) và gắn
+  // zone_id cho bàn, để dữ liệu cũ tự lên mô hình mới mà không mất khu vực.
+  try {
+    const distinctZones = db.prepare(
+      `SELECT DISTINCT branch_id, zone FROM tables WHERE zone IS NOT NULL AND TRIM(zone)<>''`).all();
+    let seedSort = 0;
+    for (const { branch_id: bz, zone } of distinctZones) {
+      const name = String(zone).trim();
+      let z = db.prepare(`SELECT id FROM zones WHERE branch_id=? AND name=?`).get(bz, name);
+      if (!z) {
+        const zid = 'zone_' + Math.random().toString(36).slice(2, 10);
+        db.prepare(`INSERT INTO zones (id,branch_id,name,sort) VALUES (?,?,?,?)`)
+          .run(zid, bz, name, seedSort++);
+        z = { id: zid };
+      }
+      db.prepare(`UPDATE tables SET zone_id=? WHERE branch_id=? AND zone=? AND (zone_id IS NULL OR zone_id='')`)
+        .run(z.id, bz, name);
+    }
+  } catch { /* seed best-effort, không chặn khởi động */ }
   addColumnIfMissing('users', 'lang', 'TEXT');
   addColumnIfMissing('customers', 'birthday', 'TEXT');
   addColumnIfMissing('customers', 'avatar', 'TEXT');
@@ -804,6 +1174,27 @@ export function migrate(targetDb = globalDb) {
   // Purchase payments: support paying a supplier straight from the cash drawer.
   addColumnIfMissing('purchase_payments', 'source', `TEXT NOT NULL DEFAULT 'direct'`); // drawer | direct
   addColumnIfMissing('purchase_payments', 'drawer_entry_id', 'TEXT');
+  // ── Kho KiotViet hoàn thiện (2026-07-15) ────────────────────────────────────
+  // Kiểm kho theo phiếu: nháp (Phiếu tạm) -> cân bằng kho (approved) | hủy.
+  addColumnIfMissing('stocktake_sessions', 'code', 'TEXT');        // Mã kiểm kho KK000001
+  addColumnIfMissing('stocktake_sessions', 'note', 'TEXT');
+  addColumnIfMissing('stocktake_sessions', 'created_by', 'TEXT');
+  addColumnIfMissing('stocktake_sessions', 'cancelled_at', 'TEXT');
+  addColumnIfMissing('stocktake_lines', 'lot_no', 'TEXT');         // kiểm theo lô (file mẫu Lô 1/Lô 2…)
+  addColumnIfMissing('stocktake_lines', 'expiry_date', 'TEXT');
+  addColumnIfMissing('stocktake_lines', 'note', 'TEXT');
+  // Phiếu kho có mã đọc được (PN/XK/CH/KK/XDNB/THN…) thay vì chỉ doc_xxx.
+  addColumnIfMissing('inventory_documents', 'code', 'TEXT');
+  addColumnIfMissing('inventory_documents', 'note', 'TEXT');
+  addColumnIfMissing('inventory_documents', 'created_by', 'TEXT');
+  // Nhập hàng: VAT nhập hàng + lô/HSD khai ngay trên dòng phiếu.
+  addColumnIfMissing('purchase_orders', 'vat_amount', 'INTEGER NOT NULL DEFAULT 0');
+  addColumnIfMissing('purchase_orders', 'received_at', 'TEXT');
+  addColumnIfMissing('purchase_orders', 'created_by', 'TEXT');
+  // Số hóa đơn đầu vào của NCC (KiotViet: "Số hóa đơn đầu vào").
+  addColumnIfMissing('purchase_orders', 'invoice_no', 'TEXT');
+  addColumnIfMissing('purchase_order_lines', 'lot_no', 'TEXT');
+  addColumnIfMissing('purchase_order_lines', 'expiry_date', 'TEXT');
   addColumnIfMissing('cash_drawer_entries', 'invoice_image', 'TEXT');
   addColumnIfMissing('cash_drawer_entries', 'reimburses_entry_id', 'TEXT');
   addColumnIfMissing('cash_drawer_entries', 'actor_id', 'TEXT');
@@ -811,10 +1202,32 @@ export function migrate(targetDb = globalDb) {
   addColumnIfMissing('cash_drawer_entries', 'balance_before', 'INTEGER NOT NULL DEFAULT 0');
   addColumnIfMissing('cash_drawer_entries', 'balance_after', 'INTEGER NOT NULL DEFAULT 0');
 
+  // BẢNG GIÁ (KiotViet): nhiều bảng giá bán song song "Bảng giá chung" (=
+  // skus.price). Bảng giá tạo/sửa trong Cài đặt → Kho & kênh bán; giá riêng
+  // từng SKU lưu ở price_book_items — SKU không có dòng thì dùng giá chung.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS price_books (
+      id TEXT PRIMARY KEY,
+      branch_id TEXT NOT NULL DEFAULT 'sala',
+      name TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'active',
+      created_at TEXT NOT NULL,
+      updated_at TEXT
+    );
+    CREATE TABLE IF NOT EXISTS price_book_items (
+      book_id TEXT NOT NULL,
+      sku_id TEXT NOT NULL,
+      price INTEGER NOT NULL,
+      updated_at TEXT,
+      PRIMARY KEY (book_id, sku_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_pbi_book ON price_book_items(book_id);
+  `);
+
   const customerBranches = db.prepare(`SELECT DISTINCT branch_id FROM customers`).all();
   const codeUpd = db.prepare(`UPDATE customers SET code=? WHERE id=? AND branch_id=?`);
   for (const b of customerBranches) {
-    const branchId = b.branch_id || 'br1';
+    const branchId = b.branch_id || 'sala';
     let seq = Number(db.prepare(`
       SELECT COALESCE(MAX(CAST(SUBSTR(code, 3) AS INTEGER)), 0) AS n
       FROM customers WHERE branch_id=? AND code GLOB 'DC[0-9]*'`).get(branchId)?.n) || 0;
@@ -836,15 +1249,43 @@ export function migrate(targetDb = globalDb) {
   db.exec(`CREATE INDEX IF NOT EXISTS idx_orders_branch_status ON orders(branch_id, status);`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_orders_branch_created ON orders(branch_id, created_at DESC);`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_orders_branch_paid ON orders(branch_id, status, paid_at DESC);`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_orders_branch_history
+    ON orders(branch_id, COALESCE(paid_at,created_at) DESC)
+    WHERE status IN ('paid','void');`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_orders_online_ref ON orders(branch_id, online_channel, online_ref) WHERE online_ref IS NOT NULL AND online_ref!='';`);
   db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_bill_no ON orders(branch_id, bill_no) WHERE bill_no IS NOT NULL;`);
+  // MÃ ĐỐI SOÁT PHẢI DUY NHẤT. Hai đơn trùng pay_ref thì một khoản tiền chuyển
+  // vào sẽ khớp nhầm đơn — khách trả tiền bàn này, hệ thống đóng bill bàn kia.
+  db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_pay_ref ON orders(branch_id, pay_ref) WHERE pay_ref IS NOT NULL;`);
+  db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_checkout_request ON orders(branch_id, client_request_id) WHERE client_request_id IS NOT NULL;`);
   // order_items: KDS gọi mỗi vài giây; pending_confirm polling
   db.exec(`CREATE INDEX IF NOT EXISTS idx_order_items_order ON order_items(order_id, created_at);`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_order_items_status ON order_items(status, created_at);`);
+  // Once a bill is final, transaction facts answer "what was sold then" and
+  // cannot follow later catalogue edits. Kitchen lifecycle fields remain mutable.
+  db.exec(`CREATE TRIGGER IF NOT EXISTS trg_paid_order_items_facts_immutable
+    BEFORE UPDATE ON order_items
+    WHEN EXISTS(SELECT 1 FROM orders o WHERE o.id=OLD.order_id AND o.status IN ('paid','void'))
+      AND (NEW.name IS NOT OLD.name OR NEW.qty IS NOT OLD.qty
+        OR NEW.unit_price IS NOT OLD.unit_price OR NEW.orig_price IS NOT OLD.orig_price
+        OR NEW.vat_rate IS NOT OLD.vat_rate OR NEW.item_code IS NOT OLD.item_code
+        OR NEW.item_barcode IS NOT OLD.item_barcode OR NEW.unit_snapshot IS NOT OLD.unit_snapshot
+        OR NEW.menu_item_id IS NOT OLD.menu_item_id OR NEW.sku_id IS NOT OLD.sku_id
+        OR NEW.mods_json IS NOT OLD.mods_json OR NEW.promo_json IS NOT OLD.promo_json)
+    BEGIN SELECT RAISE(ABORT, 'paid order item facts are immutable'); END;`);
+  db.exec(`CREATE TRIGGER IF NOT EXISTS trg_paid_order_items_no_delete
+    BEFORE DELETE ON order_items
+    WHEN EXISTS(SELECT 1 FROM orders o WHERE o.id=OLD.order_id AND o.status IN ('paid','void'))
+    BEGIN SELECT RAISE(ABORT, 'paid order items cannot be deleted'); END;`);
   // stock_movements: báo cáo kho lọc theo chi nhánh + thời gian
   db.exec(`CREATE INDEX IF NOT EXISTS idx_stock_movements_branch_created ON stock_movements(branch_id, created_at DESC);`);
   // stock_lots: FEFO (First Expire First Out) consumption
   db.exec(`CREATE INDEX IF NOT EXISTS idx_stock_lots_fefo ON stock_lots(warehouse_id, item_type, item_id, qty_on_hand, expiry_date ASC);`);
   // audit_log: sync engine query mỗi 6 giây
+  // SQLite có thể quét cùng B-tree theo cả hai chiều; bản cũ tạo thêm index
+  // `(branch_id,created_at)` dưới tên idx_audit_branch_time nên mọi INSERT audit
+  // phải cập nhật hai cây giống nhau. Giữ một index canonical.
+  db.exec(`DROP INDEX IF EXISTS idx_audit_branch_time;`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_audit_branch_created ON audit_log(branch_id, created_at DESC);`);
   // Cold-tier lifecycle: hot_until marks a rehydrated old row (kept hot for 7 days
   // after a lookup, then re-compacted). NULL = naturally-hot recent row.
@@ -853,10 +1294,20 @@ export function migrate(targetDb = globalDb) {
   addColumnIfMissing('vouchers', 'schedule_json', `TEXT DEFAULT '{}'`);
   addColumnIfMissing('vouchers', 'scope_json', `TEXT DEFAULT '{}'`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_audit_hot_until ON audit_log(hot_until);`);
+  // Client log delivery is retried after lost HTTP responses. Its stable evt_ key
+  // makes those retries idempotent without merging separate, real incidents.
+  db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_system_logs_client_event
+    ON system_logs(COALESCE(branch_id,''), request_id)
+    WHERE request_id LIKE 'evt_%';`);
   // shifts: báo cáo, dashboard
   db.exec(`CREATE INDEX IF NOT EXISTS idx_shifts_branch_opened ON shifts(branch_id, opened_at DESC, status);`);
   // cash_drawer_entries: báo cáo két, ca
   db.exec(`CREATE INDEX IF NOT EXISTS idx_cash_drawer_branch_occurred ON cash_drawer_entries(branch_id, occurred_at DESC);`);
+  // print_jobs: bảng tăng vô hạn (mỗi bill/tem/ticket = 1 dòng). Thiếu 2 index này
+  // thì listJobs (Phiếu in) + agent poll phải full-scan + sort cả bảng → chậm hàng
+  // chục giây. idx branch+created cho danh sách; idx branch+status cho agent poll.
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_print_jobs_branch_created ON print_jobs(branch_id, created_at DESC);`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_print_jobs_branch_status ON print_jobs(branch_id, status, created_at);`);
 
   // Enterprise storage: system-wide + branch + user scoped key-value store.
   db.exec(`
@@ -899,6 +1350,71 @@ export function migrate(targetDb = globalDb) {
   CREATE UNIQUE INDEX IF NOT EXISTS idx_bank_tx_provider_ext ON bank_transactions(provider, external_id);
   CREATE INDEX IF NOT EXISTS idx_bank_tx_order ON bank_transactions(order_id);
   CREATE INDEX IF NOT EXISTS idx_bank_tx_time ON bank_transactions(branch_id, created_at);
+
+  CREATE TABLE IF NOT EXISTS payment_reference_counters (
+    tenant_id TEXT NOT NULL,
+    payment_account_id TEXT NOT NULL,
+    business_date TEXT NOT NULL,
+    last_sequence INTEGER NOT NULL DEFAULT 0,
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY(tenant_id,payment_account_id,business_date)
+  );
+  CREATE TABLE IF NOT EXISTS payment_intents (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL,
+    branch_id TEXT NOT NULL,
+    order_id TEXT NOT NULL,
+    payment_account_id TEXT NOT NULL,
+    payment_account_number TEXT NOT NULL,
+    method TEXT NOT NULL,
+    amount INTEGER NOT NULL,
+    currency TEXT NOT NULL DEFAULT 'VND',
+    prefix_snapshot TEXT NOT NULL,
+    transfer_reference TEXT NOT NULL,
+    state TEXT NOT NULL DEFAULT 'WAITING',
+    expires_at TEXT,
+    client_request_id TEXT,
+    provider TEXT,
+    provider_transaction_id TEXT,
+    created_at TEXT NOT NULL,
+    confirmed_at TEXT,
+    updated_at TEXT NOT NULL
+  );
+  CREATE UNIQUE INDEX IF NOT EXISTS ux_payment_intent_reference
+    ON payment_intents(tenant_id,payment_account_id,transfer_reference);
+  CREATE UNIQUE INDEX IF NOT EXISTS ux_payment_intent_client_request
+    ON payment_intents(tenant_id,client_request_id) WHERE client_request_id IS NOT NULL;
+  CREATE INDEX IF NOT EXISTS idx_payment_intent_order ON payment_intents(branch_id,order_id,created_at);
+  CREATE INDEX IF NOT EXISTS idx_payment_intent_waiting ON payment_intents(payment_account_id,state,created_at);
+  `);
+
+  addColumnIfMissing('bank_transactions', 'tenant_id', "TEXT NOT NULL DEFAULT 'default'");
+  addColumnIfMissing('bank_transactions', 'payment_account_id', 'TEXT');
+  addColumnIfMissing('bank_transactions', 'currency', "TEXT NOT NULL DEFAULT 'VND'");
+  addColumnIfMissing('bank_transactions', 'content_normalized', 'TEXT');
+  addColumnIfMissing('bank_transactions', 'occurred_at', 'TEXT');
+  addColumnIfMissing('bank_transactions', 'matched_payment_intent_id', 'TEXT');
+  addColumnIfMissing('bank_transactions', 'match_status', 'TEXT');
+  addColumnIfMissing('bank_transactions', 'match_method', 'TEXT');
+  addColumnIfMissing('payment_intents', 'order_revision', 'INTEGER NOT NULL DEFAULT 0');
+  addColumnIfMissing('payment_intents', 'snapshot_json', "TEXT NOT NULL DEFAULT '{}'");
+  addColumnIfMissing('payment_intents', 'created_by_user_id', 'TEXT');
+  addColumnIfMissing('payment_intents', 'created_by_device_id', 'TEXT');
+  addColumnIfMissing('payment_intents', 'created_by_register_id', 'TEXT');
+  addColumnIfMissing('payment_intents', 'confirmation_source', 'TEXT');
+  addColumnIfMissing('payment_intents', 'confirmed_by', 'TEXT');
+  addColumnIfMissing('payment_intents', 'payment_id', 'TEXT');
+  addColumnIfMissing('payment_intents', 'payment_line_id', 'TEXT');
+  addColumnIfMissing('payment_intents', 'bill_no', 'TEXT');
+  addColumnIfMissing('payment_intents', 'superseded_by', 'TEXT');
+  addColumnIfMissing('payment_intents', 'cancelled_at', 'TEXT');
+  addColumnIfMissing('payment_intents', 'metadata_json', "TEXT NOT NULL DEFAULT '{}'");
+  db.exec(`
+    CREATE UNIQUE INDEX IF NOT EXISTS ux_payment_intent_provider_tx
+      ON payment_intents(provider,provider_transaction_id)
+      WHERE provider IS NOT NULL AND provider_transaction_id IS NOT NULL;
+    CREATE INDEX IF NOT EXISTS idx_payment_intent_reference_search
+      ON payment_intents(branch_id,transfer_reference);
   `);
 
   // ── Document Management System (DMS) ────────────────────────────────────────
@@ -926,19 +1442,624 @@ export function migrate(targetDb = globalDb) {
   CREATE INDEX IF NOT EXISTS idx_docfiles_category ON document_files(branch_id, category, created_at);
   CREATE INDEX IF NOT EXISTS idx_docfiles_source   ON document_files(branch_id, source, created_at);
   `);
+  addColumnIfMissing('document_files', 'content_hash', 'TEXT');
+  db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_docfiles_content_hash ON document_files(branch_id, content_hash) WHERE content_hash IS NOT NULL AND is_archived=0;`);
+
+  // ── Kênh ngoài / Haravan (gộp từ hệ migration có version cũ v1–v3) ──────────
+  // Trước đây 3 migration này sống ở db/migrations.js (một CƠ CHẾ schema thứ hai
+  // song song). Đã gộp về đây thành MỘT đường DDL idempotent duy nhất: fresh DB
+  // tạo bảng đủ cột shop_domain ngay; DB cũ (migrate dở) được addColumnIfMissing
+  // + DROP/CREATE index bù — mọi đường hội tụ về cùng schema. shop_domain đặt
+  // CUỐI mỗi bảng để khớp đúng thứ tự cột mà ALTER ADD COLUMN (v3) sinh ra.
+  db.exec(`
+  CREATE INDEX IF NOT EXISTS idx_sync_queue_status_created ON sync_queue(status, created_at);
+  CREATE INDEX IF NOT EXISTS idx_sync_queue_done_synced    ON sync_queue(status, synced_at, created_at);
+
+  CREATE TABLE IF NOT EXISTS external_orders (
+    id TEXT PRIMARY KEY,
+    provider TEXT NOT NULL,
+    external_order_id TEXT NOT NULL,
+    internal_order_id TEXT,
+    external_order_code TEXT,
+    sync_status TEXT NOT NULL DEFAULT 'pending',
+    raw_payload TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT,
+    shop_domain TEXT NOT NULL DEFAULT ''
+  );
+  CREATE TABLE IF NOT EXISTS external_customers (
+    id TEXT PRIMARY KEY,
+    provider TEXT NOT NULL,
+    external_customer_id TEXT NOT NULL,
+    internal_customer_id TEXT,
+    raw_payload TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT,
+    shop_domain TEXT NOT NULL DEFAULT ''
+  );
+  CREATE TABLE IF NOT EXISTS external_products (
+    id TEXT PRIMARY KEY,
+    provider TEXT NOT NULL,
+    external_product_id TEXT NOT NULL,
+    external_variant_id TEXT NOT NULL DEFAULT '',
+    internal_product_id TEXT,
+    internal_variant_id TEXT,
+    sku TEXT,
+    raw_payload TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT,
+    shop_domain TEXT NOT NULL DEFAULT ''
+  );
+  CREATE TABLE IF NOT EXISTS sync_logs (
+    id TEXT PRIMARY KEY,
+    provider TEXT NOT NULL,
+    topic TEXT,
+    external_id TEXT,
+    status TEXT NOT NULL,
+    error_message TEXT,
+    raw_payload TEXT,
+    retry_count INTEGER NOT NULL DEFAULT 0,
+    next_retry_at TEXT,
+    processed_at TEXT,
+    created_at TEXT NOT NULL,
+    shop_domain TEXT NOT NULL DEFAULT ''
+  );
+  CREATE TABLE IF NOT EXISTS haravan_shops (
+    id TEXT PRIMARY KEY,
+    shop_domain TEXT NOT NULL UNIQUE,
+    org_id TEXT,
+    branch_id TEXT NOT NULL DEFAULT 'ONLINE',
+    access_token TEXT NOT NULL,
+    refresh_token TEXT,
+    scope TEXT,
+    token_type TEXT NOT NULL DEFAULT 'Bearer',
+    expires_at TEXT,
+    location_id TEXT,
+    api_base TEXT NOT NULL DEFAULT 'https://apis.haravan.com',
+    installed_at TEXT NOT NULL,
+    updated_at TEXT,
+    active INTEGER NOT NULL DEFAULT 1,
+    raw_payload TEXT
+  );
+  CREATE TABLE IF NOT EXISTS haravan_sync_state (
+    id TEXT PRIMARY KEY,
+    shop_domain TEXT NOT NULL,
+    resource TEXT NOT NULL,
+    cursor TEXT,
+    updated_at TEXT NOT NULL,
+    UNIQUE(shop_domain, resource)
+  );
+  CREATE TABLE IF NOT EXISTS online_order_state (
+    order_id TEXT PRIMARY KEY,
+    workflow_status TEXT NOT NULL DEFAULT 'pending',
+    assignee_user_id TEXT,
+    locked_at TEXT,
+    last_action TEXT,
+    last_action_by TEXT,
+    revision INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_online_order_state_workflow
+    ON online_order_state(workflow_status, updated_at DESC);
+
+  -- Dan D Pak Omni is the channel-neutral interaction domain. Providers such
+  -- as Harasocial, Zalo OA or Facebook only adapt into these canonical tables;
+  -- orders, customers and products remain owned by their existing domains.
+  CREATE TABLE IF NOT EXISTS omni_channels (
+    id TEXT PRIMARY KEY,
+    branch_id TEXT NOT NULL,
+    provider TEXT NOT NULL,
+    external_account_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'disconnected',
+    capabilities_json TEXT NOT NULL DEFAULT '{}',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    UNIQUE(branch_id,provider,external_account_id)
+  );
+  CREATE TABLE IF NOT EXISTS omni_identities (
+    id TEXT PRIMARY KEY,
+    channel_id TEXT NOT NULL REFERENCES omni_channels(id) ON DELETE CASCADE,
+    external_user_id TEXT NOT NULL,
+    customer_id TEXT,
+    display_name TEXT,
+    avatar_url TEXT,
+    raw_json TEXT NOT NULL DEFAULT '{}',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    UNIQUE(channel_id,external_user_id)
+  );
+  CREATE INDEX IF NOT EXISTS idx_omni_identity_customer ON omni_identities(customer_id);
+  CREATE TABLE IF NOT EXISTS omni_conversations (
+    id TEXT PRIMARY KEY,
+    branch_id TEXT NOT NULL,
+    channel_id TEXT NOT NULL REFERENCES omni_channels(id) ON DELETE CASCADE,
+    identity_id TEXT REFERENCES omni_identities(id) ON DELETE SET NULL,
+    external_conversation_id TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'open',
+    priority TEXT NOT NULL DEFAULT 'normal',
+    assignee_user_id TEXT,
+    note TEXT,
+    unread_count INTEGER NOT NULL DEFAULT 0,
+    last_message_at TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    UNIQUE(channel_id,external_conversation_id)
+  );
+  CREATE INDEX IF NOT EXISTS idx_omni_inbox ON omni_conversations(branch_id,status,last_message_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_omni_assignee ON omni_conversations(branch_id,assignee_user_id,status);
+  CREATE TABLE IF NOT EXISTS omni_messages (
+    id TEXT PRIMARY KEY,
+    conversation_id TEXT NOT NULL REFERENCES omni_conversations(id) ON DELETE CASCADE,
+    external_message_id TEXT NOT NULL,
+    direction TEXT NOT NULL,
+    sender_type TEXT NOT NULL DEFAULT 'customer',
+    message_type TEXT NOT NULL DEFAULT 'text',
+    body TEXT,
+    attachments_json TEXT NOT NULL DEFAULT '[]',
+    delivery_status TEXT NOT NULL DEFAULT 'received',
+    sent_at TEXT NOT NULL,
+    raw_json TEXT NOT NULL DEFAULT '{}',
+    created_at TEXT NOT NULL,
+    UNIQUE(conversation_id,external_message_id)
+  );
+  CREATE INDEX IF NOT EXISTS idx_omni_messages_time ON omni_messages(conversation_id,sent_at,id);
+  CREATE TABLE IF NOT EXISTS omni_tags (
+    id TEXT PRIMARY KEY,
+    branch_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    color_token TEXT NOT NULL DEFAULT 'neutral',
+    created_at TEXT NOT NULL,
+    UNIQUE(branch_id,name)
+  );
+  CREATE TABLE IF NOT EXISTS omni_conversation_tags (
+    conversation_id TEXT NOT NULL REFERENCES omni_conversations(id) ON DELETE CASCADE,
+    tag_id TEXT NOT NULL REFERENCES omni_tags(id) ON DELETE CASCADE,
+    PRIMARY KEY(conversation_id,tag_id)
+  );
+  CREATE TABLE IF NOT EXISTS omni_canned_replies (
+    id TEXT PRIMARY KEY,
+    branch_id TEXT NOT NULL,
+    shortcut TEXT NOT NULL,
+    body TEXT NOT NULL,
+    active INTEGER NOT NULL DEFAULT 1,
+    created_by TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    UNIQUE(branch_id,shortcut)
+  );
+  CREATE TABLE IF NOT EXISTS omni_conversation_orders (
+    conversation_id TEXT NOT NULL REFERENCES omni_conversations(id) ON DELETE CASCADE,
+    order_id TEXT NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+    linked_by TEXT,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY(conversation_id,order_id)
+  );
+  CREATE INDEX IF NOT EXISTS idx_omni_order_link ON omni_conversation_orders(order_id);
+  CREATE TABLE IF NOT EXISTS omni_events (
+    id TEXT PRIMARY KEY,
+    provider TEXT NOT NULL,
+    event_key TEXT NOT NULL,
+    payload_hash TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'received',
+    attempt_count INTEGER NOT NULL DEFAULT 0,
+    last_error TEXT,
+    received_at TEXT NOT NULL,
+    processed_at TEXT,
+    UNIQUE(provider,event_key)
+  );
+  CREATE TABLE IF NOT EXISTS customer_purchase_ledger (
+    id TEXT PRIMARY KEY,
+    branch_id TEXT NOT NULL,
+    customer_id TEXT NOT NULL,
+    source_order_id TEXT NOT NULL,
+    amount INTEGER NOT NULL DEFAULT 0,
+    points INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL,
+    reversed_at TEXT,
+    UNIQUE(branch_id, source_order_id)
+  );
+  CREATE INDEX IF NOT EXISTS idx_customer_purchase_ledger_customer
+    ON customer_purchase_ledger(branch_id,customer_id,created_at DESC);
+  `);
+  // Job in được GIỮ CHỖ cho đúng một máy. Không có hai cột này thì nhiều Hardware
+  // Agent cùng lấy một job và cùng in — mỗi phiếu ra hai lần. Xem pendingAgentJobs.
+  addColumnIfMissing('print_jobs', 'claimed_by', 'TEXT');
+  addColumnIfMissing('print_jobs', 'claimed_at', 'TEXT');
+  // Đếm số lần đăng nhập sai — LƯU DB để không bị xoá sạch mỗi lần restart server,
+  // và theo cả hai chiều (scope='user' | 'ip') để chặn kiểu rải đều qua nhiều tài khoản.
+  db.exec(`
+  CREATE TABLE IF NOT EXISTS login_failures (
+    scope TEXT NOT NULL,
+    key TEXT NOT NULL,
+    count INTEGER NOT NULL DEFAULT 0,
+    last_fail_ms INTEGER NOT NULL DEFAULT 0,
+    until_ms INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (scope, key)
+  );
+  `);
+  // Phiên đăng nhập gắn với THIẾT BỊ: token bị copy sang máy khác sẽ bị từ chối.
+  // Cột rỗng = phiên cũ (tạo trước bản này) → gắn thiết bị ở lần dùng đầu tiên.
+  addColumnIfMissing('auth_sessions', 'device_id', 'TEXT');
+  // DB tạo external_*/sync_logs ở thời v2 (chưa multi-shop) sẽ thiếu shop_domain.
+  addColumnIfMissing('external_orders', 'shop_domain', "TEXT NOT NULL DEFAULT ''");
+  addColumnIfMissing('external_customers', 'shop_domain', "TEXT NOT NULL DEFAULT ''");
+  addColumnIfMissing('external_products', 'shop_domain', "TEXT NOT NULL DEFAULT ''");
+  addColumnIfMissing('sync_logs', 'shop_domain', "TEXT NOT NULL DEFAULT ''");
+  addColumnIfMissing('sync_logs', 'direction', "TEXT NOT NULL DEFAULT 'inbound'");
+  addColumnIfMissing('sync_logs', 'session_id', 'TEXT');
+  addColumnIfMissing('sync_queue', 'hub_id', 'TEXT');
+  addColumnIfMissing('sync_queue', 'sequence', 'INTEGER');
+  addColumnIfMissing('sync_queue', 'operation', "TEXT NOT NULL DEFAULT 'upsert'");
+  addColumnIfMissing('sync_queue', 'payload_json', 'TEXT');
+  addColumnIfMissing('sync_queue', 'attempt_count', 'INTEGER NOT NULL DEFAULT 0');
+  addColumnIfMissing('sync_queue', 'last_attempt_at', 'TEXT');
+  addColumnIfMissing('sync_queue', 'last_error', 'TEXT');
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS sync_hub_state (
+      id INTEGER PRIMARY KEY CHECK(id=1),
+      hub_id TEXT NOT NULL,
+      next_sequence INTEGER NOT NULL DEFAULT 0
+    );
+    INSERT OR IGNORE INTO sync_hub_state(id,hub_id,next_sequence)
+      VALUES(1,'unconfigured',0);
+    CREATE TABLE IF NOT EXISTS sync_inbox (
+      event_id TEXT PRIMARY KEY,
+      hub_id TEXT NOT NULL,
+      sequence INTEGER NOT NULL,
+      kind TEXT NOT NULL,
+      ref TEXT,
+      payload_hash TEXT NOT NULL,
+      received_at TEXT NOT NULL,
+      applied_at TEXT NOT NULL,
+      UNIQUE(hub_id,sequence)
+    );
+    CREATE TABLE IF NOT EXISTS sync_apply_state (
+      id INTEGER PRIMARY KEY CHECK(id=1),
+      remote_apply INTEGER NOT NULL DEFAULT 0 CHECK(remote_apply IN (0,1))
+    );
+    INSERT OR IGNORE INTO sync_apply_state(id,remote_apply) VALUES(1,0);
+    CREATE TABLE IF NOT EXISTS sync_hub_cursors (
+      hub_id TEXT PRIMARY KEY,
+      last_sequence INTEGER NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS catalogue_snapshot_state (
+      branch_id TEXT PRIMARY KEY,
+      snapshot_hash TEXT NOT NULL,
+      source_generated_at TEXT NOT NULL,
+      applied_at TEXT NOT NULL
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_sync_queue_hub_sequence
+      ON sync_queue(hub_id,sequence) WHERE hub_id IS NOT NULL AND sequence IS NOT NULL;
+    CREATE INDEX IF NOT EXISTS idx_sync_inbox_hub_sequence ON sync_inbox(hub_id,sequence);
+  `);
+  const configuredHubId = String(process.env.EDGE_HUB_ID || '').trim();
+  if (configuredHubId) {
+    if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]{2,63}$/.test(configuredHubId)) {
+      throw new Error('EDGE_HUB_ID must be 3-64 safe identifier characters');
+    }
+    const storedHubId = String(db.prepare(`SELECT hub_id FROM sync_hub_state WHERE id=1`).get().hub_id);
+    if (storedHubId !== 'unconfigured' && storedHubId !== configuredHubId) {
+      throw new Error(`EDGE_HUB_ID cannot change after initialization (${storedHubId} -> ${configuredHubId})`);
+    }
+    db.prepare(`UPDATE sync_hub_state SET hub_id=? WHERE id=1`).run(configuredHubId);
+  }
+  let nextSequence = Number(db.prepare(`SELECT next_sequence FROM sync_hub_state WHERE id=1`).get().next_sequence || 0);
+  const legacySyncRows = db.prepare(
+    `SELECT id FROM sync_queue WHERE hub_id IS NULL OR sequence IS NULL ORDER BY created_at,rowid`,
+  ).all();
+  const backfillSyncRow = db.prepare(
+    `UPDATE sync_queue SET hub_id=(SELECT hub_id FROM sync_hub_state WHERE id=1),sequence=? WHERE id=?`,
+  );
+  for (const row of legacySyncRows) backfillSyncRow.run(++nextSequence, row.id);
+  db.prepare(`UPDATE sync_hub_state SET next_sequence=? WHERE id=1`).run(nextSequence);
+  // Unique key external_* chuyển sang shop-scoped: gỡ index cũ (nếu còn) rồi tạo bản mới.
+  db.exec(`
+  DROP INDEX IF EXISTS uniq_external_order;
+  DROP INDEX IF EXISTS uniq_external_customer;
+  DROP INDEX IF EXISTS uniq_external_product_variant;
+  CREATE UNIQUE INDEX IF NOT EXISTS uniq_external_order_shop           ON external_orders(provider, shop_domain, external_order_id);
+  CREATE UNIQUE INDEX IF NOT EXISTS uniq_external_customer_shop        ON external_customers(provider, shop_domain, external_customer_id);
+  CREATE UNIQUE INDEX IF NOT EXISTS uniq_external_product_variant_shop ON external_products(provider, shop_domain, external_product_id, external_variant_id);
+  CREATE INDEX IF NOT EXISTS idx_sync_logs_provider_created       ON sync_logs(provider, created_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_sync_logs_queue                  ON sync_logs(provider, status, next_retry_at, created_at);
+  CREATE INDEX IF NOT EXISTS idx_sync_logs_provider_shop_created  ON sync_logs(provider, shop_domain, created_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_sync_logs_webhook_dedupe         ON sync_logs(provider, shop_domain, topic, external_id, created_at DESC);
+  DROP INDEX IF EXISTS idx_haravan_sync_state_shop_resource;
+  `);
+
+  // Token đẩy thông báo (Firebase Cloud Messaging) — 1 dòng/thiết bị (khớp
+  // device_id đã dùng ở system_logs/request headers). Token đổi (app cài lại,
+  // xoá dữ liệu…) thì UPSERT theo device_id, không tích luỹ rác.
+  db.exec(`
+  CREATE TABLE IF NOT EXISTS device_tokens (
+    id         TEXT PRIMARY KEY,
+    branch_id  TEXT NOT NULL,
+    device_id  TEXT NOT NULL,
+    user_id    TEXT,
+    platform   TEXT NOT NULL,
+    fcm_token  TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    UNIQUE(device_id)
+  );
+  CREATE INDEX IF NOT EXISTS idx_device_tokens_branch ON device_tokens(branch_id);
+  `);
+
+  migrateStockLotDateIdentity(db);
 
   if (isMaster) {
-    initSyncTriggers(db);
+    dropSyncTriggers(db);
+    migrateLegacySalaBranch(db);
+    cleanupLegacyBranchSamples(db);
+    initScopeGuards(db);
     ensurePermanentStorage();
-    bootstrapBranchDefaults();
-    for (const b of db.prepare(`SELECT id FROM branches WHERE active=1 ORDER BY sort,name`).all()) {
-      bootstrapWarehouseDefaults(b.id);
-      bootstrapTableDefaults(b.id);
+    // Dữ liệu mẫu chi nhánh gốc (branch 'sala' "Dan D Pak Sala" + kho BCM + bàn)
+    // là ĐẶC THÙ CỦA TENANT PRODUCTION (Chuỗi A), KHÔNG phải bất biến toàn hệ
+    // thống. Tenant review (và mọi tenant mới) KHÔNG được tự sinh cấu trúc này —
+    // review tự seed tối thiểu ở reviewSeed.js (branch Shopee Review Store, không
+    // kho/bàn/nhân sự production-like). Tránh vi phạm cách ly tenant (§16/§42).
+    if (!env.isReview) {
+      bootstrapBranchDefaults();
+      // Chỉ chi nhánh gốc có dữ liệu mẫu; mọi chi nhánh tạo sau phải bắt đầu trống.
+      bootstrapWarehouseDefaults('sala');
+      bootstrapTableDefaults('sala');
+    }
+    initSyncTriggers(db);
+  }
+
+  // Một authority phiên bản duy nhất cho schema hợp nhất. Bảng schema_migrations
+  // cũ (nếu DB production có) chỉ còn là lịch sử; không còn runner thứ hai đọc nó.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS schema_meta (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+    INSERT INTO schema_meta(key,value,updated_at) VALUES('canonical_version','7',datetime('now'))
+      ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at;
+    PRAGMA user_version = 7;
+  `);
+  initCriticalIntegrityGuards(db);
+}
+
+function migrateStockLotDateIdentity(targetDb) {
+  // SQLite rewrites trigger bodies that reference a table when ALTER TABLE ...
+  // RENAME is used. The legacy uniqueness rebuild below therefore leaves the
+  // integrity guard triggers pointing at the temporary table after it is
+  // dropped. Remove those guards both before a fresh rebuild and when healing
+  // a database left half-migrated by an interrupted v7 startup; the canonical
+  // guards are recreated by initCriticalIntegrityGuards() immediately after
+  // this migration.
+  const staleGuards = targetDb.prepare(`
+    SELECT name FROM sqlite_master
+    WHERE type='trigger' AND sql LIKE '%stock_lots_legacy_v7%'
+  `).all();
+  for (const { name } of staleGuards) {
+    const safeName = String(name || '').replace(/"/g, '""');
+    targetDb.exec(`DROP TRIGGER IF EXISTS "${safeName}"`);
+  }
+  const sql = String(targetDb.prepare(`SELECT sql FROM sqlite_master WHERE type='table' AND name='stock_lots'`).get()?.sql || '');
+  if (!/UNIQUE\s*\(\s*warehouse_id\s*,\s*item_type\s*,\s*item_id\s*,\s*lot_no\s*\)/i.test(sql)) {
+    targetDb.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_stock_lots_identity_date
+      ON stock_lots(warehouse_id,item_type,item_id,lot_no,COALESCE(expiry_date,''),COALESCE(mfg_date,''));`);
+    return;
+  }
+  inTransaction(() => {
+    const lotGuards = targetDb.prepare(`
+      SELECT name FROM sqlite_master
+      WHERE type='trigger' AND sql LIKE '%stock_lots%'
+    `).all();
+    for (const { name } of lotGuards) {
+      const safeName = String(name || '').replace(/"/g, '""');
+      targetDb.exec(`DROP TRIGGER IF EXISTS "${safeName}"`);
+    }
+    targetDb.exec(`
+      ALTER TABLE stock_lots RENAME TO stock_lots_legacy_v7;
+      CREATE TABLE stock_lots (
+        id TEXT PRIMARY KEY, branch_id TEXT NOT NULL, warehouse_id TEXT NOT NULL,
+        item_type TEXT NOT NULL, item_id TEXT NOT NULL, lot_no TEXT NOT NULL,
+        mfg_date TEXT, expiry_date TEXT, received_at TEXT NOT NULL,
+        qty_on_hand REAL NOT NULL DEFAULT 0, unit_cost REAL DEFAULT 0,
+        supplier TEXT, status TEXT NOT NULL DEFAULT 'active', created_at TEXT NOT NULL
+      );
+      INSERT INTO stock_lots
+        (id,branch_id,warehouse_id,item_type,item_id,lot_no,mfg_date,expiry_date,received_at,qty_on_hand,unit_cost,supplier,status,created_at)
+      SELECT id,branch_id,warehouse_id,item_type,item_id,lot_no,mfg_date,expiry_date,received_at,qty_on_hand,unit_cost,supplier,status,created_at
+      FROM stock_lots_legacy_v7;
+      DROP TABLE stock_lots_legacy_v7;
+      CREATE UNIQUE INDEX idx_stock_lots_identity_date
+        ON stock_lots(warehouse_id,item_type,item_id,lot_no,COALESCE(expiry_date,''),COALESCE(mfg_date,''));
+      CREATE INDEX IF NOT EXISTS idx_stock_lots_fefo
+        ON stock_lots(warehouse_id,item_type,item_id,qty_on_hand,expiry_date ASC);
+      CREATE INDEX IF NOT EXISTS idx_stock_lots_branch_warehouse_item
+        ON stock_lots(branch_id,warehouse_id,item_type,item_id);
+    `);
+  });
+}
+
+function initCriticalIntegrityGuards(targetDb) {
+  // Giai đoạn chuyển tiếp trước khi rebuild các bảng lớn để khai báo FOREIGN KEY:
+  // chặn orphan MỚI ngay tại SQLite. Orphan lịch sử được scan/report riêng, không
+  // tự xoá hay tự nối nhầm dữ liệu production.
+  for (const [child, childKey, parent, parentKey] of CRITICAL_RELATIONS) {
+    const safe = `${child}_${childKey}`.replace(/[^a-z0-9_]/gi, '');
+    const message = `integrity:${child}.${childKey}->${parent}.${parentKey}`;
+    targetDb.exec(`
+      CREATE TRIGGER IF NOT EXISTS trg_integrity_ins_${safe}
+      BEFORE INSERT ON "${child}"
+      WHEN NEW."${childKey}" IS NOT NULL AND TRIM(CAST(NEW."${childKey}" AS TEXT))!=''
+        AND NOT EXISTS (SELECT 1 FROM "${parent}" WHERE "${parentKey}"=NEW."${childKey}")
+      BEGIN SELECT RAISE(ABORT,'${message}'); END;
+      CREATE TRIGGER IF NOT EXISTS trg_integrity_upd_${safe}
+      BEFORE UPDATE OF "${childKey}" ON "${child}"
+      WHEN NEW."${childKey}" IS NOT NULL AND TRIM(CAST(NEW."${childKey}" AS TEXT))!=''
+        AND NOT EXISTS (SELECT 1 FROM "${parent}" WHERE "${parentKey}"=NEW."${childKey}")
+      BEGIN SELECT RAISE(ABORT,'${message}'); END;
+      CREATE TRIGGER IF NOT EXISTS trg_integrity_parent_del_${safe}
+      BEFORE DELETE ON "${parent}"
+      WHEN EXISTS (SELECT 1 FROM "${child}" WHERE "${childKey}"=OLD."${parentKey}")
+      BEGIN SELECT RAISE(ABORT,'${message}:parent-delete'); END;
+      CREATE TRIGGER IF NOT EXISTS trg_integrity_parent_upd_${safe}
+      BEFORE UPDATE OF "${parentKey}" ON "${parent}"
+      WHEN NEW."${parentKey}" IS NOT OLD."${parentKey}"
+        AND EXISTS (SELECT 1 FROM "${child}" WHERE "${childKey}"=OLD."${parentKey}")
+      BEGIN SELECT RAISE(ABORT,'${message}:parent-update'); END;
+    `);
+  }
+}
+
+function migrateLegacySalaBranch(targetDb) {
+  if (!targetDb.prepare(`SELECT 1 FROM branches WHERE id='br1'`).get()) return;
+  if (targetDb.prepare(`SELECT 1 FROM branches WHERE id='sala'`).get()) {
+    throw new Error(`Không thể đổi branch_id br1 thành sala vì ID sala đã tồn tại.`);
+  }
+
+  targetDb.exec('BEGIN IMMEDIATE');
+  try {
+    const tables = targetDb.prepare(`
+      SELECT name FROM sqlite_master
+      WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name!='branches'
+    `).all();
+    for (const { name } of tables) {
+      const columns = targetDb.prepare(`PRAGMA table_info("${String(name).replaceAll('"', '""')}")`).all();
+      if (!columns.some(column => column.name === 'branch_id')) continue;
+      targetDb.prepare(`UPDATE "${String(name).replaceAll('"', '""')}" SET branch_id='sala' WHERE branch_id='br1'`).run();
+    }
+    targetDb.prepare(`UPDATE branches SET id='sala', code='SALA' WHERE id='br1'`).run();
+
+    for (const user of targetDb.prepare(`SELECT id,branch_access_json FROM users WHERE branch_access_json LIKE '%br1%'`).all()) {
+      let access;
+      try { access = JSON.parse(user.branch_access_json || '[]'); } catch { continue; }
+      if (!Array.isArray(access)) continue;
+      const migrated = [...new Set(access.map(id => id === 'br1' ? 'sala' : id))];
+      targetDb.prepare(`UPDATE users SET branch_access_json=? WHERE id=?`).run(JSON.stringify(migrated), user.id);
+    }
+    targetDb.exec('COMMIT');
+  } catch (error) {
+    targetDb.exec('ROLLBACK');
+    throw error;
+  }
+}
+
+function cleanupLegacyBranchSamples(targetDb) {
+  for (const { id: branchId } of targetDb.prepare(`SELECT id FROM branches WHERE id!='sala'`).all()) {
+    const prefix = String(branchId).replace(/[^a-zA-Z0-9_]/g, '_').toLowerCase();
+    targetDb.prepare(`
+      DELETE FROM tables
+      WHERE branch_id=? AND id LIKE ?
+        AND NOT EXISTS (SELECT 1 FROM orders o WHERE o.table_id=tables.id)
+        AND NOT EXISTS (SELECT 1 FROM staff_calls s WHERE s.table_id=tables.id)`)
+      .run(branchId, `${prefix}_t_%`);
+
+    for (const warehouseId of [
+      `${prefix}_wh_kitchen`,
+      `${prefix}_wh_retail`,
+      `${prefix}_wh_showroom_bcm`,
+    ]) {
+      const used = targetDb.prepare(`
+        SELECT
+          EXISTS(SELECT 1 FROM inventory_items WHERE warehouse_id=?) OR
+          EXISTS(SELECT 1 FROM skus WHERE warehouse_id=?) OR
+          EXISTS(SELECT 1 FROM stock_lots WHERE warehouse_id=?) OR
+          EXISTS(SELECT 1 FROM stock_movements WHERE warehouse_id=?) OR
+          EXISTS(SELECT 1 FROM inventory_documents WHERE warehouse_id=? OR to_warehouse_id=?) OR
+          EXISTS(SELECT 1 FROM stocktake_sessions WHERE warehouse_id=?) used`)
+        .get(warehouseId, warehouseId, warehouseId, warehouseId, warehouseId, warehouseId, warehouseId).used;
+      if (!used) targetDb.prepare(`DELETE FROM warehouses WHERE id=? AND branch_id=?`).run(warehouseId, branchId);
+    }
+  }
+}
+
+function initScopeGuards(targetDb) {
+  const orphanBranches = targetDb.prepare(`
+    SELECT DISTINCT m.branch_id
+    FROM menu_items m
+    LEFT JOIN categories c ON c.id=m.category_id AND c.branch_id=m.branch_id
+    WHERE c.id IS NULL`).all();
+  for (const { branch_id } of orphanBranches) {
+    const categoryId = `uncategorized_${String(branch_id).replace(/[^a-zA-Z0-9_]/g, '_')}`;
+    targetDb.prepare(`INSERT OR IGNORE INTO categories (id,branch_id,name,icon,sort) VALUES (?,?,?,'🍽️',9999)`)
+      .run(categoryId, branch_id, 'Chưa phân loại');
+    targetDb.prepare(`
+      UPDATE menu_items SET category_id=?
+      WHERE branch_id=? AND NOT EXISTS (
+        SELECT 1 FROM categories c WHERE c.id=menu_items.category_id AND c.branch_id=menu_items.branch_id)`)
+      .run(categoryId, branch_id);
+  }
+  const guards = [
+    ['menu_items_category', 'menu_items',
+      `NEW.category_id IS NOT NULL AND NOT EXISTS (
+        SELECT 1 FROM categories c WHERE c.id=NEW.category_id AND c.branch_id=NEW.branch_id)`],
+    ['skus_warehouse', 'skus',
+      `NEW.warehouse_id IS NOT NULL AND NOT EXISTS (
+        SELECT 1 FROM warehouses w WHERE w.id=NEW.warehouse_id AND w.branch_id=NEW.branch_id AND w.type='retail')`],
+    ['inventory_items_warehouse', 'inventory_items',
+      `NEW.warehouse_id IS NOT NULL AND NOT EXISTS (
+        SELECT 1 FROM warehouses w WHERE w.id=NEW.warehouse_id AND w.branch_id=NEW.branch_id AND w.type='kitchen')`],
+    ['stock_lots_warehouse', 'stock_lots',
+      `NOT EXISTS (
+        SELECT 1 FROM warehouses w WHERE w.id=NEW.warehouse_id AND w.branch_id=NEW.branch_id)`],
+    ['inventory_documents_warehouse', 'inventory_documents',
+      `(NEW.warehouse_id IS NOT NULL AND NOT EXISTS (
+          SELECT 1 FROM warehouses w WHERE w.id=NEW.warehouse_id AND w.branch_id=NEW.branch_id))
+       OR (NEW.to_warehouse_id IS NOT NULL AND NOT EXISTS (
+          SELECT 1 FROM warehouses w WHERE w.id=NEW.to_warehouse_id AND w.branch_id=NEW.branch_id))`],
+    ['stocktake_sessions_warehouse', 'stocktake_sessions',
+      `NOT EXISTS (
+        SELECT 1 FROM warehouses w WHERE w.id=NEW.warehouse_id AND w.branch_id=NEW.branch_id)`],
+    ['orders_table', 'orders',
+      `NEW.table_id IS NOT NULL AND NOT EXISTS (
+        SELECT 1 FROM tables t WHERE t.id=NEW.table_id AND t.branch_id=NEW.branch_id)`],
+  ];
+  for (const [name, table, condition] of guards) {
+    for (const operation of ['INSERT', 'UPDATE']) {
+      const suffix = operation === 'INSERT' ? 'ins' : 'upd';
+      targetDb.exec(`
+        CREATE TRIGGER IF NOT EXISTS trg_scope_${suffix}_${name}
+        BEFORE ${operation} ON ${table}
+        WHEN ${condition}
+        BEGIN
+          SELECT RAISE(ABORT, 'Dữ liệu không thuộc cùng chi nhánh');
+        END;
+      `);
+    }
+  }
+  targetDb.exec(`
+    CREATE UNIQUE INDEX IF NOT EXISTS uniq_warehouses_branch_code ON warehouses(branch_id, code);
+    CREATE UNIQUE INDEX IF NOT EXISTS uniq_tables_branch_code ON tables(branch_id, code);
+    CREATE INDEX IF NOT EXISTS idx_stock_lots_branch_warehouse_item
+      ON stock_lots(branch_id, warehouse_id, item_type, item_id);
+    CREATE INDEX IF NOT EXISTS idx_stock_movements_branch_warehouse_item
+      ON stock_movements(branch_id, warehouse_id, item_type, inventory_item_id);
+  `);
+}
+
+function dropSyncTriggers(targetDb) {
+  const triggers = targetDb
+    .prepare(`SELECT name FROM sqlite_master WHERE type='trigger' AND name LIKE 'trg_sync_%'`)
+    .all();
+  for (const { name } of triggers) {
+    if (/^trg_sync_(ins|upd)_[a-z0-9_]+$/i.test(name)) {
+      targetDb.exec(`DROP TRIGGER IF EXISTS ${name};`);
     }
   }
 }
 
 function initSyncTriggers(targetDb) {
+  // SAFETY: migration must never delete a pending mutation. Legacy databases
+  // may contain several pending rows for one entity; keep their hub sequence
+  // until each exact payload receives a durable ACK. The trigger's NOT EXISTS
+  // guard below prevents new duplicates without destructive deduplication.
+  // Một thực thể chỉ cần MỘT công việc pending. Trước đây ID ngẫu nhiên khiến
+  // INSERT OR IGNORE không bao giờ chống trùng, tạo hàng trăm queue row dư khi
+  // cùng bill/job được UPDATE liên tiếp.
+  targetDb.exec(`
+    DROP INDEX IF EXISTS idx_sync_queue_pending_entity;
+    CREATE INDEX IF NOT EXISTS idx_sync_queue_pending_entity
+      ON sync_queue(branch_id,kind,COALESCE(ref,'')) WHERE status='pending';
+  `);
   const tables = [
     { name: 'branches', key: 'id' },
     { name: 'tables', key: 'id' },
@@ -959,6 +2080,7 @@ function initSyncTriggers(targetDb) {
     { name: 'customers', key: 'id' },
     { name: 'payments', key: 'id', hasBranch: false, orderRef: 'order_id' },
     { name: 'payment_lines', key: 'id', hasBranch: false, paymentRef: 'payment_id' },
+    { name: 'sale_snapshots', key: 'id' },
     { name: 'orders', key: 'id' },
     { name: 'order_items', key: 'id', hasBranch: false, orderRef: 'order_id' },
     { name: 'staff_calls', key: 'id' },
@@ -973,6 +2095,8 @@ function initSyncTriggers(targetDb) {
     { name: 'purchase_orders', key: 'id' },
     { name: 'purchase_order_lines', key: 'id', hasBranch: false, poRef: 'po_id' },
     { name: 'purchase_payments', key: 'id' },
+    { name: 'purchase_returns', key: 'id' },
+    { name: 'purchase_return_lines', key: 'id', hasBranch: false, prRef: 'pr_id' },
     { name: 'expense_categories', key: 'id' },
     { name: 'expenses', key: 'id' },
     { name: 'enterprise_storage', composite: ['scope', 'scope_id', 'key'] },
@@ -981,8 +2105,22 @@ function initSyncTriggers(targetDb) {
     { name: 'print_jobs', key: 'id' },
     { name: 'document_files', key: 'id' }
   ];
+  const edgePayloadTables = new Set([
+    'orders', 'order_items', 'payments', 'payment_lines',
+    'sale_snapshots', 'stock_movements', 'shifts', 'customers',
+    'skus', 'inventory_items', 'stock_lots',
+    'cash_drawer_entries', 'cash_drawer_reimbursement_allocations',
+    'tables',
+  ]);
 
   for (const t of tables) {
+    // Only complete payloads can ever be transported to Edge/VPS. Legacy
+    // payload-less markers were never consumable and grew without a bound.
+    if (!edgePayloadTables.has(t.name)) {
+      targetDb.exec(`DROP TRIGGER IF EXISTS trg_sync_ins_${t.name};`);
+      targetDb.exec(`DROP TRIGGER IF EXISTS trg_sync_upd_${t.name};`);
+      continue;
+    }
     const isAudit = t.name === 'audit_log';
     
     let hasBranchCol = false;
@@ -991,18 +2129,20 @@ function initSyncTriggers(targetDb) {
       hasBranchCol = cols.some(c => c.name === 'branch_id');
     } catch {}
 
-    let branchSql = 'COALESCE(NEW.branch_id, \'br1\')';
+    let branchSql = 'COALESCE(NEW.branch_id, \'sala\')';
     if (t.name === 'branches') {
       branchSql = 'NEW.id';
     } else if (t.hasBranch === false || !hasBranchCol) {
       if (t.orderRef) {
-        branchSql = `COALESCE((SELECT branch_id FROM orders WHERE id = NEW.${t.orderRef}), 'br1')`;
+        branchSql = `COALESCE((SELECT branch_id FROM orders WHERE id = NEW.${t.orderRef}), 'sala')`;
       } else if (t.paymentRef) {
-        branchSql = `COALESCE((SELECT branch_id FROM orders WHERE id = (SELECT order_id FROM payments WHERE id = NEW.${t.paymentRef})), 'br1')`;
+        branchSql = `COALESCE((SELECT branch_id FROM orders WHERE id = (SELECT order_id FROM payments WHERE id = NEW.${t.paymentRef})), 'sala')`;
       } else if (t.poRef) {
-        branchSql = `COALESCE((SELECT branch_id FROM purchase_orders WHERE id = NEW.${t.poRef}), 'br1')`;
+        branchSql = `COALESCE((SELECT branch_id FROM purchase_orders WHERE id = NEW.${t.poRef}), 'sala')`;
+      } else if (t.prRef) {
+        branchSql = `COALESCE((SELECT branch_id FROM purchase_returns WHERE id = NEW.${t.prRef}), 'sala')`;
       } else {
-        branchSql = `'br1'`;
+        branchSql = `'sala'`;
       }
     }
 
@@ -1013,19 +2153,44 @@ function initSyncTriggers(targetDb) {
       refSql = t.composite.map(c => `NEW.${c}`).join(` || ':' || `);
     }
 
+    const payloadSql = edgePayloadTables.has(t.name)
+      ? `json_object(${targetDb.prepare(`PRAGMA table_info(${t.name})`).all()
+        .flatMap((column) => [`'${column.name}'`, `NEW.${column.name}`]).join(',')})`
+      : 'NULL';
+    const edgeEnabledSql = edgePayloadTables.has(t.name) ? `hub_id!='unconfigured'` : '1=1';
+
+    const triggerBody = `
+        UPDATE sync_hub_state SET next_sequence=next_sequence+1
+        WHERE id=1 AND ${edgeEnabledSql} AND NOT EXISTS (
+          SELECT 1 FROM sync_queue
+          WHERE branch_id=${branchSql} AND kind='${t.name}'
+            AND COALESCE(ref,'')=COALESCE(${refSql},'') AND status='pending'
+        );
+        INSERT INTO sync_queue (
+          id,branch_id,kind,ref,status,created_at,hub_id,sequence,operation,payload_json
+        )
+        SELECT
+          'sq_' || hex(randomblob(8)) || strftime('%s', 'now'),
+          ${branchSql},'${t.name}',${refSql},'pending',datetime('now'),
+          hub_id,next_sequence,'upsert',${payloadSql}
+        FROM sync_hub_state WHERE id=1 AND ${edgeEnabledSql}
+          AND NOT EXISTS (
+            SELECT 1 FROM sync_queue
+            WHERE branch_id=${branchSql} AND kind='${t.name}'
+              AND COALESCE(ref,'')=COALESCE(${refSql},'') AND status='pending'
+          );
+        UPDATE sync_queue
+        SET payload_json=${payloadSql},operation='upsert',created_at=datetime('now'),
+            last_error=NULL
+        WHERE branch_id=${branchSql} AND kind='${t.name}'
+          AND COALESCE(ref,'')=COALESCE(${refSql},'') AND status='pending';`;
+
     targetDb.exec(`DROP TRIGGER IF EXISTS trg_sync_ins_${t.name};`);
     targetDb.exec(`
       CREATE TRIGGER IF NOT EXISTS trg_sync_ins_${t.name} AFTER INSERT ON ${t.name}
+      WHEN (SELECT remote_apply FROM sync_apply_state WHERE id=1)=0
       BEGIN
-        INSERT OR IGNORE INTO sync_queue (id, branch_id, kind, ref, status, created_at)
-        VALUES (
-          'sq_' || hex(randomblob(8)) || strftime('%s', 'now'),
-          ${branchSql},
-          '${t.name}',
-          ${refSql},
-          'pending',
-          datetime('now')
-        );
+        ${triggerBody}
       END;
     `);
 
@@ -1033,437 +2198,11 @@ function initSyncTriggers(targetDb) {
       targetDb.exec(`DROP TRIGGER IF EXISTS trg_sync_upd_${t.name};`);
       targetDb.exec(`
         CREATE TRIGGER IF NOT EXISTS trg_sync_upd_${t.name} AFTER UPDATE ON ${t.name}
+        WHEN (SELECT remote_apply FROM sync_apply_state WHERE id=1)=0
         BEGIN
-          INSERT OR IGNORE INTO sync_queue (id, branch_id, kind, ref, status, created_at)
-          VALUES (
-            'sq_' || hex(randomblob(8)) || strftime('%s', 'now'),
-            ${branchSql},
-            '${t.name}',
-            ${refSql},
-            'pending',
-            datetime('now')
-          );
+          ${triggerBody}
         END;
       `);
     }
-  }
-}
-
-export const now = () => new Date().toISOString();
-export const uid = (p = '') => p + Math.random().toString(36).slice(2, 8) + Date.now().toString(36).slice(-4);
-
-export function audit(action, detail, branch_id = 'br1', actor = 'system') {
-  const id = uid('a_');
-  const created_at = now();
-  const cleanDetail = typeof detail === 'string' ? detail : JSON.stringify(detail);
-  const entry = { id, branch_id, actor, action, detail: cleanDetail, created_at };
-  // Durable archive FIRST (fsync'd NDJSON): if the SQLite write below fails — or a
-  // crash hits right after — the footprint line is already safely on disk.
-  appendAuditArchive(entry);
-  // Logging must never break the business operation that triggered it: swallow
-  // SQLite errors (the NDJSON archive above still has the entry for recovery).
-  try {
-    db.prepare(`INSERT INTO audit_log (id,branch_id,actor,action,detail,created_at) VALUES (?,?,?,?,?,?)`)
-      .run(id, branch_id, actor, action, cleanDetail, created_at);
-  } catch (e) {
-    console.warn('[audit] sqlite write failed (kept in NDJSON archive):', e.message);
-  }
-}
-
-export function defaultWarehouseIds(branch_id = 'br1') {
-  if (branch_id === 'br1') {
-    return { kitchen: 'wh_kitchen', retail: 'wh_retail', showroom: 'wh_showroom_bcm' };
-  }
-  const clean = String(branch_id || 'br1').replace(/[^a-zA-Z0-9_]/g, '_').toLowerCase();
-  return {
-    kitchen: `${clean}_wh_kitchen`,
-    retail: `${clean}_wh_retail`,
-    showroom: `${clean}_wh_showroom_bcm`,
-  };
-}
-
-export function defaultWarehouseId(branch_id = 'br1', stockType = 'inventory') {
-  const ids = defaultWarehouseIds(branch_id);
-  return stockType === 'sku' || stockType === 'retail' ? ids.retail : ids.kitchen;
-}
-
-export function bootstrapBranchDefaults() {
-  db.prepare(`INSERT OR IGNORE INTO branches (id,name,address,code,active,sort) VALUES (?,?,?,?,1,?)`)
-    .run('br1', 'Dan D Pak Sala', 'Sala, TP.HCM', 'SALA', 1);
-  db.prepare(`UPDATE branches
-    SET name=CASE WHEN name IN ('District 1 - HCMC','Dan D Pak') THEN 'Dan D Pak Sala' ELSE name END,
-        code=COALESCE(NULLIF(code,''),'SALA'),
-        active=COALESCE(active,1),
-        sort=COALESCE(sort,1)
-    WHERE id='br1'`).run();
-  db.prepare(`UPDATE users SET branch_access_json='["*"]' WHERE role='owner' AND (branch_access_json IS NULL OR branch_access_json='' OR branch_access_json='[]')`).run();
-}
-
-// Self-heal after a crash: replay the fsync'd NDJSON footprint archive back into
-// audit_log. With WAL+synchronous=NORMAL, a power loss can roll back SQLite's most
-// recent commits, but the archive (written + fsync'd before each SQLite insert)
-// still has them. INSERT OR IGNORE on the primary key makes this idempotent, so it
-// only restores rows that are genuinely missing. Returns how many were restored.
-export function reconcileAuditFromArchive(days = 2) {
-  let restored = 0;
-  try {
-    const entries = readRecentAuditArchive(days);
-    if (!entries.length) return 0;
-    const stmt = db.prepare(`INSERT OR IGNORE INTO audit_log (id,branch_id,actor,action,detail,created_at) VALUES (?,?,?,?,?,?)`);
-    for (const e of entries) {
-      const detail = typeof e.detail === 'string' ? e.detail : JSON.stringify(e.detail ?? null);
-      const r = stmt.run(e.id, e.branch_id ?? 'br1', e.actor ?? 'system', e.action, detail, e.created_at);
-      if (r.changes > 0) restored++;
-    }
-  } catch (e) {
-    console.warn('[audit] reconcile from archive failed:', e.message);
-  }
-  return restored;
-}
-
-const ALGORITHM = 'aes-256-ctr';
-// Khóa mã hóa chi tiết audit khi nén/lưu trữ. Ưu tiên biến môi trường AUDIT_LOG_KEY
-// để không hardcode bí mật trong source. Lưu ý: nếu đặt key MỚI sau khi đã có bản ghi
-// mã hóa bằng key cũ thì các bản cũ đó sẽ không giải mã được — nên đặt key ngay từ đầu
-// (compaction chỉ mã hóa bản ghi > 90 ngày, hệ thống mới thường chưa có).
-const SECRET_KEY = crypto.scryptSync(
-  process.env.AUDIT_LOG_KEY || process.env.SESSION_SECRET || 'dandpak-audit-log-key-secret-12345',
-  'salt', 32);
-
-export function encryptCompress(text) {
-  try {
-    const compressed = zlib.gzipSync(Buffer.from(text, 'utf8'));
-    const iv = crypto.randomBytes(16);
-    const cipher = crypto.createCipheriv(ALGORITHM, SECRET_KEY, iv);
-    const encrypted = Buffer.concat([cipher.update(compressed), cipher.final()]);
-    return '__ENC__:' + iv.toString('hex') + ':' + encrypted.toString('hex');
-  } catch (e) {
-    console.error('[audit] compression/encryption failed:', e.message);
-    return text;
-  }
-}
-
-export function decryptDecompress(encText) {
-  if (!encText || !encText.startsWith('__ENC__:')) return encText;
-  try {
-    const parts = encText.split(':');
-    if (parts.length !== 3) return encText;
-    const iv = Buffer.from(parts[1], 'hex');
-    const encrypted = Buffer.from(parts[2], 'hex');
-    const decipher = crypto.createDecipheriv(ALGORITHM, SECRET_KEY, iv);
-    const decrypted = Buffer.concat([decipher.update(encrypted), decipher.final()]);
-    return zlib.gunzipSync(decrypted).toString('utf8');
-  } catch (e) {
-    console.error('[audit] decryption/decompression failed:', e.message);
-    return encText;
-  }
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// Activity-log lifecycle (tiered retention)
-//   • Hot  : rows of the last AUDIT_HOT_MONTHS months live in SQLite → instant query.
-//   • Cold : older months are consolidated into ONE gzip'd NDJSON per month
-//            (services/archive.js) and their SQLite rows dropped → tiny store.db.
-//   • Open : a lookup that reaches a cold month rehydrates it back into SQLite and
-//            marks it hot for AUDIT_REHYDRATE_DAYS; the daily job re-compacts it
-//            once that window passes → back to the space-saving format.
-//   • Purge: archives (and rows) older than AUDIT_RETENTION_MONTHS are deleted
-//            (as month 37 begins, month 1 is dropped).
-// ═══════════════════════════════════════════════════════════════════════════
-const AUDIT_HOT_MONTHS = 3;
-const AUDIT_RETENTION_MONTHS = 36;
-const AUDIT_REHYDRATE_DAYS = 7;
-const AUDIT_MS_DAY = 24 * 60 * 60 * 1000;
-
-function monthIndexNow() { const d = new Date(); return d.getUTCFullYear() * 12 + d.getUTCMonth(); }
-function monthToIndex(ym) { const [y, m] = String(ym).split('-').map(Number); return y * 12 + (m - 1); }
-function indexToYm(idx) { const y = Math.floor(idx / 12); const m = idx % 12; return `${y}-${String(m + 1).padStart(2, '0')}`; }
-function ymStartIso(ym) { const [y, m] = ym.split('-').map(Number); return new Date(Date.UTC(y, m - 1, 1)).toISOString(); }
-function ymEndIso(ym) { const [y, m] = ym.split('-').map(Number); return new Date(Date.UTC(y, m, 1)).toISOString(); }
-function ymOfDate(d) { return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`; }
-function monthsBetween(start, end) {
-  const out = [];
-  const last = monthToIndex(ymOfDate(end));
-  for (let idx = monthToIndex(ymOfDate(start)); idx <= last && out.length < 60; idx++) out.push(indexToYm(idx));
-  return out;
-}
-
-// Consolidate one branch-month into its gzip archive, then drop the SQLite rows
-// that are no longer within a hot window and the now-redundant per-day files.
-function rollUpAuditMonth(branch, ym) {
-  const startIso = ymStartIso(ym), endIso = ymEndIso(ym);
-  const byId = new Map();
-  const add = (e) => {
-    if (!e || !e.id || !e.action) return;
-    const detail = typeof e.detail === 'string'
-      ? decryptDecompress(e.detail)
-      : (e.detail == null ? '' : JSON.stringify(e.detail));
-    byId.set(e.id, {
-      id: e.id,
-      branch_id: e.branch_id || branch,
-      actor: e.actor || 'system',
-      action: e.action,
-      detail,
-      created_at: e.created_at,
-    });
-  };
-  for (const e of readMonthlyArchive(branch, ym)) add(e);       // preserve on re-roll
-  for (const e of readDayEntriesForMonth(branch, ym)) add(e);   // durable footprint
-  for (const r of db.prepare(
-    `SELECT id,branch_id,actor,action,detail,created_at FROM audit_log WHERE branch_id=? AND created_at>=? AND created_at<?`
-  ).all(branch, startIso, endIso)) add(r);
-
-  const entries = [...byId.values()].sort((a, b) => (a.created_at < b.created_at ? -1 : 1));
-  if (!entries.length) return { archived: 0, removed: 0 };
-
-  writeMonthlyArchive(branch, ym, entries);                     // durable archive FIRST
-  const nowIso = now();
-  const removed = db.prepare(
-    `DELETE FROM audit_log WHERE branch_id=? AND created_at>=? AND created_at<? AND (hot_until IS NULL OR hot_until<=?)`
-  ).run(branch, startIso, endIso, nowIso).changes;
-  deleteDayFilesForMonth(branch, ym);
-  return { archived: entries.length, removed };
-}
-
-// Daily job: archive every month older than the hot window, and re-compact any
-// rehydrated month whose 7-day hot window has passed.
-export function compactAuditToMonthly(hotMonths = AUDIT_HOT_MONTHS) {
-  let archivedMonths = 0, removedRows = 0;
-  try {
-    const nowIso = now();
-    const cutoffIdx = monthIndexNow() - hotMonths;              // months <= cutoff are cold
-    const hotWindowStartIso = ymStartIso(indexToYm(monthIndexNow() - (hotMonths - 1)));
-    for (const branch of listAuditBranches()) {
-      const months = new Set();
-      for (const ym of listAuditDayMonths(branch)) if (monthToIndex(ym) <= cutoffIdx) months.add(ym);
-      for (const r of db.prepare(
-        `SELECT DISTINCT substr(created_at,1,7) ym FROM audit_log WHERE branch_id=? AND created_at<?`
-      ).all(branch, hotWindowStartIso)) if (r.ym) months.add(r.ym);
-      for (const r of db.prepare(
-        `SELECT DISTINCT substr(created_at,1,7) ym FROM audit_log WHERE branch_id=? AND hot_until IS NOT NULL AND hot_until<=?`
-      ).all(branch, nowIso)) if (r.ym) months.add(r.ym);
-      for (const ym of months) {
-        if (monthToIndex(ym) > cutoffIdx) continue;             // never touch the hot window
-        const res = rollUpAuditMonth(branch, ym);
-        if (res.archived) archivedMonths++;
-        removedRows += res.removed;
-      }
-    }
-  } catch (e) {
-    console.warn('[audit] compactAuditToMonthly failed:', e.message);
-  }
-  return { archivedMonths, removedRows };
-}
-
-// Pull cold months back into SQLite and (re)mark them hot for AUDIT_REHYDRATE_DAYS.
-export function rehydrateAuditMonths(branch, months = []) {
-  let touched = 0;
-  const hotUntil = new Date(Date.now() + AUDIT_REHYDRATE_DAYS * AUDIT_MS_DAY).toISOString();
-  const ins = db.prepare(
-    `INSERT OR IGNORE INTO audit_log (id,branch_id,actor,action,detail,created_at,hot_until) VALUES (?,?,?,?,?,?,?)`
-  );
-  for (const ym of months) {
-    const entries = readMonthlyArchive(branch, ym);
-    if (!entries.length) continue;
-    db.exec('BEGIN TRANSACTION;');
-    try {
-      for (const e of entries) {
-        const detail = typeof e.detail === 'string' ? e.detail : JSON.stringify(e.detail ?? null);
-        ins.run(e.id, e.branch_id || branch, e.actor || 'system', e.action, detail, e.created_at, hotUntil);
-      }
-      db.exec('COMMIT;');
-    } catch (err) {
-      db.exec('ROLLBACK;');
-      throw err;
-    }
-    // Extend the hot window on every re-open (naturally-hot rows keep hot_until NULL).
-    db.prepare(
-      `UPDATE audit_log SET hot_until=? WHERE branch_id=? AND created_at>=? AND created_at<? AND hot_until IS NOT NULL`
-    ).run(hotUntil, branch, ymStartIso(ym), ymEndIso(ym));
-    touched += entries.length;
-  }
-  return touched;
-}
-
-// Called by GET /audit: rehydrate any cold month the query window reaches into so
-// even super-old lookups are served from fast SQLite.
-export function rehydrateAuditForQuery(branch, { from = null, to = null, period = null, before = null } = {}) {
-  try {
-    const end = to ? new Date(to) : (before ? new Date(before) : new Date());
-    let start;
-    if (from) start = new Date(from);
-    else if (period) start = auditPeriodStart(period);
-    else start = new Date(end.getTime() - 62 * AUDIT_MS_DAY);  // unbounded paging: ~2 months up to the cursor
-    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return 0;
-    const wanted = monthsBetween(start, end).filter((ym) => hasMonthlyArchive(branch, ym));
-    if (!wanted.length) return 0;
-    return rehydrateAuditMonths(branch, wanted);
-  } catch (e) {
-    console.warn('[audit] rehydrateAuditForQuery failed:', e.message);
-    return 0;
-  }
-}
-
-function auditPeriodStart(period) {
-  const ref = new Date();
-  if (period === 'day') { const d = new Date(ref); d.setHours(0, 0, 0, 0); return d; }
-  if (period === 'week') { const d = new Date(ref); const day = d.getDay(); const diff = d.getDate() - day + (day === 0 ? -6 : 1); const mon = new Date(d.setDate(diff)); mon.setHours(0, 0, 0, 0); return mon; }
-  if (period === 'month') return new Date(ref.getFullYear(), ref.getMonth(), 1);
-  if (period === 'quarter') return new Date(ref.getFullYear(), Math.floor(ref.getMonth() / 3) * 3, 1);
-  if (period === 'year') return new Date(ref.getFullYear(), 0, 1);
-  return new Date(ref.getTime() - 62 * AUDIT_MS_DAY);
-}
-
-// Delete archives + rows older than the retention window (month 37 drops month 1).
-export function purgeAuditBeyondRetention(retentionMonths = AUDIT_RETENTION_MONTHS) {
-  let removedFiles = 0, removedRows = 0;
-  try {
-    const keepFromIdx = monthIndexNow() - (retentionMonths - 1);  // keep last N months incl. current
-    const cutoffIso = ymStartIso(indexToYm(keepFromIdx));
-    for (const branch of listAuditBranches()) {
-      for (const ym of listArchivedMonths(branch)) {
-        if (monthToIndex(ym) < keepFromIdx) {
-          if (deleteMonthlyArchive(branch, ym)) removedFiles++;
-          removedFiles += deleteDayFilesForMonth(branch, ym);
-        }
-      }
-      for (const ym of listAuditDayMonths(branch)) {
-        if (monthToIndex(ym) < keepFromIdx) removedFiles += deleteDayFilesForMonth(branch, ym);
-      }
-    }
-    removedRows = db.prepare(`DELETE FROM audit_log WHERE created_at<?`).run(cutoffIso).changes;
-  } catch (e) {
-    console.warn('[audit] purgeAuditBeyondRetention failed:', e.message);
-  }
-  return { removedFiles, removedRows };
-}
-
-// Sao lưu THẬT cơ sở dữ liệu: VACUUM INTO tạo một bản sao nhất quán (đã gộp WAL)
-// vào thư mục backups/. Đây là bản sao có thể copy ra ổ ngoài/VPS. Giữ `retentionDays`.
-export function backupDatabase(retentionDays = 14) {
-  try {
-    const dir = join(ROOT, 'backups');
-    mkdirSync(dir, { recursive: true });
-    const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-    const dest = join(dir, `store-${stamp}.db`);
-    if (!existsSync(dest)) db.exec(`VACUUM INTO '${dest.replace(/'/g, "''")}'`);
-    // Dọn bản sao quá hạn
-    const cutoff = Date.now() - Math.max(1, retentionDays) * 24 * 60 * 60 * 1000;
-    let pruned = 0;
-    for (const f of readdirSync(dir)) {
-      if (!/^store-.*\.db$/.test(f)) continue;
-      const full = join(dir, f);
-      try { if (statSync(full).mtimeMs < cutoff) { rmSync(full, { force: true }); pruned++; } } catch { /* ignore */ }
-    }
-    return { ok: true, path: dest, bytes: existsSync(dest) ? statSync(dest).size : 0, pruned };
-  } catch (e) {
-    return { ok: false, error: e.message };
-  }
-}
-
-// Liệt kê các bản sao lưu hiện có (cho /database/status báo cáo TRUNG THỰC).
-export function listBackups() {
-  try {
-    const dir = join(ROOT, 'backups');
-    if (!existsSync(dir)) return [];
-    return readdirSync(dir)
-      .filter(f => /^store-.*\.db$/.test(f))
-      .map(f => { const s = statSync(join(dir, f)); return { file: f, bytes: s.size, mtime: new Date(s.mtimeMs).toISOString() }; })
-      .sort((a, b) => b.mtime.localeCompare(a.mtime));
-  } catch { return []; }
-}
-
-
-export function bootstrapWarehouseDefaults(branch_id = 'br1') {
-  const ids = defaultWarehouseIds(branch_id);
-  db.prepare(`INSERT OR IGNORE INTO warehouses (id,branch_id,code,name,type,sort) VALUES (?,?,?,?,?,?)`)
-    .run(ids.kitchen, branch_id, 'KITCHEN', 'Kho bếp / nguyên liệu & vật dụng', 'kitchen', 1);
-  db.prepare(`INSERT OR IGNORE INTO warehouses (id,branch_id,code,name,type,sort) VALUES (?,?,?,?,?,?)`)
-    .run(ids.retail, branch_id, 'BCM', 'Kho BCM', 'retail', 2);
-  db.prepare(`UPDATE warehouses SET code='BCM', name='Kho BCM', type='retail', active=1, sort=2 WHERE id=? AND branch_id=? AND (code='RETAIL' OR name LIKE '%retail%')`)
-    .run(ids.retail, branch_id);
-  db.prepare(`INSERT OR IGNORE INTO warehouses (id,branch_id,code,name,type,sort) VALUES (?,?,?,?,?,?)`)
-    .run(ids.showroom, branch_id, 'SHOWROOM_BCM', 'Showroom BCM', 'retail', 3);
-  db.prepare(`UPDATE warehouses SET sales_channels_json=? WHERE id=? AND branch_id=? AND (sales_channels_json IS NULL OR sales_channels_json='')`)
-    .run(JSON.stringify(['ipad', 'pos']), ids.kitchen, branch_id);
-  db.prepare(`UPDATE warehouses SET sales_channels_json=? WHERE id=? AND branch_id=? AND (sales_channels_json IS NULL OR sales_channels_json='')`)
-    .run(JSON.stringify(['retail', 'online', 'grabmart', 'website']), ids.retail, branch_id);
-  db.prepare(`UPDATE warehouses SET sales_channels_json=? WHERE id=? AND branch_id=? AND (sales_channels_json IS NULL OR sales_channels_json='')`)
-    .run(JSON.stringify(['retail', 'grabmart']), ids.showroom, branch_id);
-
-  db.prepare(`UPDATE inventory_items SET warehouse_id=COALESCE(warehouse_id,?), item_type=COALESCE(item_type,'ingredient'), active=COALESCE(active,1) WHERE branch_id=?`)
-    .run(ids.kitchen, branch_id);
-  db.prepare(`UPDATE skus SET warehouse_id=COALESCE(warehouse_id,?), active=COALESCE(active,1) WHERE branch_id=?`)
-    .run(ids.retail, branch_id);
-  db.prepare(`UPDATE menu_items SET ingredients_json=COALESCE(ingredients_json,'[]'), allergens_json=COALESCE(allergens_json,'[]'), schedule_json=COALESCE(schedule_json,'{"mode":"always"}'), hidden=COALESCE(hidden,0)`)
-    .run();
-
-  backfillMovementMeta(branch_id);
-  createOpeningLots(branch_id);
-  bootstrapVoucherDefaults(branch_id);
-}
-
-export function bootstrapTableDefaults(branch_id = 'br1') {
-  const existing = db.prepare(`SELECT COUNT(*) n FROM tables WHERE branch_id=?`).get(branch_id).n;
-  if (existing) return;
-  const prefix = branch_id === 'br1' ? '' : `${String(branch_id).replace(/[^a-zA-Z0-9_]/g, '_').toLowerCase()}_`;
-  const rows = [
-    ['Tầng trệt', ['A01', 'A02', 'A03', 'A04', 'A05', 'A06', 'A07', 'A08', 'A09', 'A10']],
-    ['Tầng 1', ['A11', 'A12', 'A13', 'A14', 'A15', 'A16', 'A17', 'A18', 'A19']],
-    ['Nội bộ', ['Nội Bộ 01']],
-    ['OS', ['OS1', 'OS2']],
-    ['Take away', ['TA01']],
-  ];
-  const ins = db.prepare(`INSERT OR IGNORE INTO tables (id,branch_id,zone,code,seats,status) VALUES (?,?,?,?,?,'free')`);
-  for (const [zone, codes] of rows) {
-    for (const code of codes) ins.run(`${prefix}t_${code.replace(/\s+/g, '_')}`, branch_id, zone, code, 4);
-  }
-}
-
-function backfillMovementMeta(branch_id) {
-  const rows = db.prepare(`SELECT id, inventory_item_id FROM stock_movements WHERE branch_id=? AND item_type IS NULL`).all(branch_id);
-  const upd = db.prepare(`UPDATE stock_movements SET item_type=?, warehouse_id=? WHERE id=?`);
-  for (const r of rows) {
-    const inv = db.prepare(`SELECT warehouse_id FROM inventory_items WHERE id=?`).get(r.inventory_item_id);
-    const sku = inv ? null : db.prepare(`SELECT warehouse_id FROM skus WHERE id=?`).get(r.inventory_item_id);
-    upd.run(inv ? 'inventory' : 'sku', inv?.warehouse_id || sku?.warehouse_id || defaultWarehouseId(branch_id, inv ? 'inventory' : 'sku'), r.id);
-  }
-}
-
-function createOpeningLots(branch_id) {
-  const countLots = db.prepare(`SELECT COUNT(*) n FROM stock_lots WHERE branch_id=? AND item_type=? AND item_id=?`);
-  const insLot = db.prepare(`INSERT OR IGNORE INTO stock_lots
-    (id,branch_id,warehouse_id,item_type,item_id,lot_no,received_at,qty_on_hand,unit_cost,supplier,status,created_at)
-    VALUES (?,?,?,?,?,?,?,?,?,?,'active',?)`);
-
-  for (const i of db.prepare(`SELECT id, warehouse_id, stock, cost FROM inventory_items WHERE branch_id=? AND stock>0`).all(branch_id)) {
-    if (countLots.get(branch_id, 'inventory', i.id).n) continue;
-    insLot.run(uid('lot_'), branch_id, i.warehouse_id || defaultWarehouseId(branch_id, 'inventory'), 'inventory', i.id, 'OPENING', now(), i.stock, i.cost || 0, 'opening', now());
-  }
-  for (const s of db.prepare(`SELECT id, warehouse_id, stock, cost FROM skus WHERE branch_id=? AND stock>0`).all(branch_id)) {
-    if (countLots.get(branch_id, 'sku', s.id).n) continue;
-    insLot.run(uid('lot_'), branch_id, s.warehouse_id || defaultWarehouseId(branch_id, 'sku'), 'sku', s.id, 'OPENING', now(), s.stock, s.cost || 0, 'opening', now());
-  }
-}
-
-function bootstrapVoucherDefaults(branch_id) {
-  const anySku = db.prepare(`SELECT id FROM skus WHERE branch_id=? AND active=1 LIMIT 1`).get(branch_id);
-  if (!anySku) return;
-  const hasVoucher = db.prepare(`SELECT COUNT(*) n FROM vouchers WHERE branch_id=?`).get(branch_id).n;
-  if (hasVoucher) return;
-
-  const choco = db.prepare(`SELECT id FROM skus WHERE branch_id=? AND id='s_choco' AND active=1`).get(branch_id)
-    || db.prepare(`SELECT id FROM skus WHERE branch_id=? AND active=1 ORDER BY name LIMIT 1`).get(branch_id);
-  const ts = now();
-  const prefix = branch_id === 'br1' ? '' : `${String(branch_id).replace(/[^a-zA-Z0-9_]/g, '_').toLowerCase()}_`;
-  db.prepare(`INSERT OR IGNORE INTO vouchers
-    (id,branch_id,code,name,type,value,scope,sku_id,min_total,active,note,created_at,updated_at)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`)
-    .run(`${prefix}v_open10`, branch_id, 'OPEN10', 'Khai trương -10%', 'pct', 10, 'order', null, 0, 1, 'Voucher mẫu toàn bill', ts, ts);
-  if (choco) {
-    db.prepare(`INSERT OR IGNORE INTO vouchers
-      (id,branch_id,code,name,type,value,scope,sku_id,min_total,active,note,created_at,updated_at)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`)
-      .run(`${prefix}v_choco5`, branch_id, 'CHOCO5', 'Promo SKU giảm 5K', 'amount', 5000, 'sku', choco.id, 0, 1, 'Promo mẫu gán SKU', ts, ts);
   }
 }

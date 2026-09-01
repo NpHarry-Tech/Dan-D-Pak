@@ -1,9 +1,14 @@
-// End-to-end check: fixed client vs the real local engine's large payloads.
-// Run: dart run tool/verify_live_decode.dart (server must be on :3000)
+// End-to-end decode check against an explicitly selected test server.
+// Run: dart run tool/verify_live_decode.dart -- http://127.0.0.1:3000
 import 'package:dandpak_core/dandpak_core.dart';
 
-Future<void> main() async {
-  final client = DanDpakApiClient();
+Future<void> main(List<String> args) async {
+  if (args.length != 1) {
+    throw ArgumentError(
+      'Pass exactly one explicit test server URL; production is never implied.',
+    );
+  }
+  final client = DanDpakApiClient(baseUrl: args.single);
   final skus = await client.getJson('/api/skus?channel=retail');
   final menu = await client.getJson('/api/menu');
   print('skus: ${(skus as List).length} items decoded');

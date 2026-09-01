@@ -15,6 +15,9 @@ export const MODULES = [
   { key: 'ipad', label: 'Khách tự gọi món', icon: '📱', group: 'sales', href: '/ipad?pick=1', perm: 'module.ipad', status: 'active', depends: ['pos'], description: 'Khách tự chọn món, gửi bếp, gọi nhân viên và tự thanh toán.' },
   { key: 'pos', label: 'FnB POS', icon: '💳', group: 'sales', href: '/pos', perm: 'module.pos', status: 'active', depends: ['inventory'], description: 'Table, order, discount, payment, receipt and realtime with the kitchen.' },
   { key: 'retail', label: 'Retail POS', icon: '🛒', group: 'sales', href: '/retail', perm: 'module.retail', status: 'active', depends: ['inventory'], description: 'Retail sales, barcode, lot/date, voucher and return.' },
+  // Man KHACH catalogue ban le — tablet dat ngoai quay cho khach tu lat xem va
+  // chon hang. Dung chung gio hang voi Retail POS nen phu thuoc 'retail'.
+  { key: 'catalogue', label: 'Retail Catalogue', icon: '📖', group: 'sales', href: '/catalogue', perm: 'module.retail', status: 'active', depends: ['retail'], description: 'Customer-facing catalogue tablet: browse pages, pick items, request payment.' },
   { key: 'kds', label: 'KDS', icon: '👨‍🍳', group: 'sales', href: '/kds', perm: 'module.kds', status: 'active', depends: ['pos'], description: 'Kitchen/bar screen, SLA and realtime cooking status.' },
   { key: 'online', label: 'Online Channel', icon: '🌐', group: 'sales', href: '/online', perm: 'module.online', status: 'active', depends: ['pos'], description: 'Receive GrabFood/ShopeeFood/Website orders via webhook and coordinate fulfillment.' },
   { key: 'warehouse', label: 'Warehouse Management', icon: '📦', group: 'supply', href: '/warehouse', perm: 'module.warehouse', status: 'active', depends: ['inventory'], description: 'BCM/showroom/kitchen inventory · SKU & raw materials · check-in/out · audit · lot/date · min stock · valuation.' },
@@ -51,7 +54,7 @@ export const MODULES = [
   { key: 'studio', label: 'Studio', icon: '🧩', group: 'studio', href: '', perm: 'module.studio', status: 'planned', depends: ['settings'], description: 'Model, field, view, automation, approval rule, PDF reports and export customization.' },
   { key: 'automation', label: 'Automation', icon: '⚡', group: 'studio', href: '', perm: 'module.automation', status: 'planned', depends: ['studio'], description: 'Server action, webhook, scheduled action, trigger and approval flow.' },
 
-  { key: 'database', label: 'Database & Documentation', icon: '🛢️', group: 'developer', href: '/database', perm: 'module.database', status: 'active', depends: ['settings'], description: 'Backup, restore, staging, clear transactions, database health check — with guidance documents & system diagrams.' },
+  { key: 'database', label: 'Database & Documentation', icon: '🛢️', group: 'developer', href: '/database', perm: 'module.database', status: 'active', depends: ['settings'], description: 'Backup, restore, clear transactions, database health check — with guidance documents & system diagrams.' },
   { key: 'developer', label: 'Developer', icon: '🛠️', group: 'developer', href: '', perm: 'module.developer', status: 'planned', depends: ['settings'], description: 'Debug mode, technical menu, model metadata, API and internal tutorials.' },
 ];
 
@@ -60,18 +63,29 @@ export const MODULE_PERMISSIONS = MODULES.filter(m => m.perm).map(m => ({
   label: m.label,
 }));
 
-export function listModules(perms = []) {
+function isUsableModule(module) {
+  return module.status === 'active' || module.status === 'core';
+}
+
+export function listModules(perms = [], salesModules = null) {
   const set = new Set(perms || []);
   const all = set.has('*');
   const hasSettings = [...set].some(p => p === 'settings.manage' || p.startsWith('settings.') || p === 'warehouse.manage');
   return MODULES.map(m => ({
     ...m,
+    status: salesModules?.fnb === false && ['pos', 'ipad', 'online'].includes(m.key)
+      ? 'disabled'
+      : salesModules?.retail === false && m.key === 'retail'
+        ? 'disabled'
+        : salesModules?.kds === false && m.key === 'kds'
+          ? 'disabled'
+          : m.status,
     visible: all
       || (m.key === 'settings' ? hasSettings : false)
       || (m.key !== 'settings' && (!m.perm || set.has(m.perm))),
   }));
 }
 
-export function visibleModules(perms = []) {
-  return listModules(perms).filter(m => m.visible);
+export function visibleModules(perms = [], salesModules = null) {
+  return listModules(perms, salesModules).filter(m => m.visible && isUsableModule(m));
 }

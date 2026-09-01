@@ -1,40 +1,13 @@
 # Environment
 
-Last updated: 2026-06-27
+Last updated: 2026-07-13
 
-## Root/Backend Variables
+Backend environment belongs to `server/` and deployment scripts. Flutter app API base URLs are app runtime configuration, not static HTML runtime config.
 
-| Variable | Purpose |
-| --- | --- |
-| `NODE_ENV` | `development` or `production` |
-| `PORT` | Backend listen port |
-| `APP_URL` | Public app URL |
-| `API_BASE_URL` | Public API base URL where needed |
-| `CORS_ORIGIN` | Comma-separated allowed frontend origins |
-| `DEPLOYMENT_TARGET` | `local` or `vps` |
-| `DATABASE_PROVIDER` | `sqlite`, `supabase`, or `postgres` |
-| `DATABASE_URL` | PostgreSQL/Supabase connection URL when implemented |
-| `SQLITE_PATH` | Future override for SQLite path |
-| `SUPABASE_URL` | Temporary Supabase URL |
-| `SUPABASE_ANON_KEY` | Public Supabase anon key, frontend-safe only if used |
-| `SUPABASE_SERVICE_ROLE_KEY` | Backend-only secret |
-| `REALTIME_PROVIDER` | `socketio`, `websocket`, or `supabase` |
-| `STORAGE_PROVIDER` | `local` or `s3` |
-| `STORAGE_PATH` | Local storage path |
-| `JWT_SECRET` | Future auth signing secret |
-| `SESSION_SECRET` | Future session secret |
-| `LOG_LEVEL` | `debug`, `info`, `warn`, `error` |
-| `BACKUP_RETENTION_DAYS` | Backup retention policy |
+## Backend
 
-## Frontend Runtime Config
+Use `.env`/process environment for server settings such as JWT/session secrets, ports, database paths, integration keys, and backup retention.
 
-`web/runtime-config.js` defines `window.APP_CONFIG`.
+## Flutter Apps
 
-Important values:
-
-- `API_BASE_URL`
-- `REALTIME_URL`
-- `DEPLOYMENT_TARGET`
-- `DEMO_MODE`
-
-Never put service-role keys or backend secrets in frontend config.
+The native apps resolve backend URLs through their app services/local settings. Keep customer/company data on the server; clients only store local runtime configuration and session state needed for operation.

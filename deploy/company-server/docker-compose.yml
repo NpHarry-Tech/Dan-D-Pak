@@ -11,6 +11,9 @@ services:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config
+    networks:
+      - default
+      - dandpak-ingress
     depends_on:
       app:
         condition: service_healthy
@@ -25,6 +28,13 @@ services:
     environment:
       PORT: 3000
       NODE_ENV: production
+      DEPLOYMENT_TARGET: vps
+      DISABLE_DEMO_SEED: "true"
+      # MÚI GIỜ NGHIỆP VỤ. Container mặc định chạy UTC, lệch 7 tiếng so với giờ
+      # cửa hàng. Mọi chỗ dựng ngày/giờ bằng giờ máy (phiếu in thử, phiếu bếp,
+      # ngày lập hóa đơn điện tử) sẽ ghi giờ UTC mà gắn nhãn như giờ VN — bill
+      # lúc 00:10 đêm bị đẩy về NGÀY HÔM TRƯỚC, sai kỳ kê khai thuế.
+      TZ: Asia/Ho_Chi_Minh
     volumes:
       # SQLite database — dữ liệu bền vững, không mất khi update
       - app_sqlite:/app/server-data
@@ -40,10 +50,28 @@ services:
       # Ảnh SKU KiotViet (521MB, gitignore nên không nằm trong image) — seed
       # một lần bằng: docker compose cp <thư-mục-ảnh>/. app:/app/server/assets/product-images/
       - app_product_images:/app/server/assets/product-images
+      # Bản sao lưu DB mã hóa (backups/) — TRƯỚC ĐÂY không có volume nên MỖI
+      # LẦN rebuild container (deploy code mới) là mất sạch toàn bộ lịch sử sao
+      # lưu, dù DB thật vẫn an toàn (app_sqlite). Phát hiện khi kiểm tra lại sự
+      # cố 2026-07-27 — rebuild xong, guard "đã sao lưu hôm nay" không thấy file
+      # cũ nào vì thư mục vừa bị xóa sạch, nên lại chạy sao lưu lại từ đầu.
+      - app_backups:/app/backups
     # Mở 3000 trực tiếp bên cạnh Caddy:80 — app POS/tablet nhập IP trần sẽ tự
     # nối cổng 3000 (mặc định của máy chủ LAN) nên phải cho vào được.
-    ports:
-      - "3000:3000"
+    expose:
+      - "3000"
+    # Giới hạn cứng để 1 lỗi (rò rỉ bộ nhớ, vòng lặp CPU do bug) không kéo sập
+    # cả VPS 2GB (kernel OOM-kill lung tung, cả Caddy lẫn app) — container vượt
+    # ngưỡng bị Docker restart SẠCH (restart: unless-stopped ở trên tự hồi phục)
+    # thay vì cả máy bị treo. ulimit nofile đề phòng rò rỉ file descriptor.
+    deploy:
+      resources:
+        limits:
+          memory: 1536M
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://localhost:3000/health').then(r=>r.ok?process.exit(0):process.exit(1)).catch(()=>process.exit(1))"]
       interval: 30s
@@ -60,3 +88,9 @@ volumes:
   app_releases:
   app_uploads:
   app_product_images:
+  app_backups:
+
+networks:
+  dandpak-ingress:
+    external: true
+    name: dandpak-ingress

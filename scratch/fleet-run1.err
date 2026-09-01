@@ -1,4 +1,0 @@
-[fleet-sim +500ms] connecting 79 sockets with concurrency 12
-[fleet-sim +751ms] connected 79 sockets
-[fleet-sim +1057ms] submitting 20 dine-in orders with concurrency 6
-[fleet-sim +11041ms] submitted workload, waiting for realtime completion

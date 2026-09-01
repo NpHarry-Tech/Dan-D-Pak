@@ -62,7 +62,7 @@ WAL · foreign_keys ON · busy_timeout 5000 · cache_size -65536 (64MB) · temp_
 ## Đường dẫn DB (bảo vệ, gitignored)
 `server/store.db` (mặc định) hoặc `SQLITE_PATH`/`DATABASE_URL(sqlite://)`. Backup `backups/store-*.db`. Replica `permanent-storage/eternal_replica.db`.
 
-> Cần kiểm tra thủ công thêm: schema PostgreSQL đích `server/db/schema/0001,0002` (planned, chưa live).
+> Schema PostgreSQL dự kiến đã được gỡ; runtime chỉ hỗ trợ SQLite.
 
 
 ---

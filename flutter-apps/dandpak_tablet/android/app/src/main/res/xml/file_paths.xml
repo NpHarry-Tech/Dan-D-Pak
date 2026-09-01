@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- FileProvider paths cho auto-update: app_updater.dart lưu APK tải về vào
+     getCacheDir()/dandpak_update/ rồi chia sẻ cho trình cài đặt hệ thống. -->
+<paths>
+    <cache-path name="update_cache" path="dandpak_update/"/>
+</paths>

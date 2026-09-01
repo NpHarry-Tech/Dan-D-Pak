@@ -3,8 +3,11 @@
 import { readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { db, uid, now, audit, defaultWarehouseId } from '../db.js';
+import { db, uid, now, audit, defaultWarehouseId, inTransaction } from '../db.js';
 import { emit } from '../realtime.js';
+import { matchesSearch, searchTokens } from '../core/search.js';
+import { getRetailConfig } from './settings.js';
+import { salePrice } from './tax.js';
 
 // Ảnh sản phẩm import từ KiotViet nằm ở server/assets/product-images dưới tên
 // kv_{barcode}.* (trước ở web/assets — web/ đã gỡ khỏi repo; đường dẫn này
@@ -30,8 +33,12 @@ function productImageForBarcode(barcode) {
   return _productImgIndex.get(bc) || null;
 }
 
+// Kho Vietfoods TẮT auto-ảnh theo barcode: nhiều SKU dùng lại chung barcode nên
+// map barcode→kv_<barcode>.jpg cho ra ẢNH SAI (sự cố 06/08/2026). Ở đây chỉ hiện
+// ảnh khi có ảnh THẬT upload; không tự đoán theo barcode.
+const NO_AUTO_IMAGE_BRANCHES = new Set(['br_vietfoods']);
 function withProductImage(row) {
-  if (row && !row.image) {
+  if (row && !row.image && !NO_AUTO_IMAGE_BRANCHES.has(row.branch_id)) {
     const img = productImageForBarcode(row.barcode);
     if (img) row.image = img;
   }
@@ -61,6 +68,13 @@ const intOr = (v, fallback) => {
   return Number.isFinite(n) ? n : fallback;
 };
 const boolOr = (v, fallback) => (v === undefined || v === null) ? (fallback ? 1 : 0) : (v ? 1 : 0);
+// TEXT trong SQLite khong gioi han do dai — khong co check nay, mot request 5MB "name" vao
+// thang duoc luu nguyen, gay phinh DB va gan chac se treo UI khi render danh sach/label.
+function assertMaxLength(value, max, label) {
+  if (value != null && String(value).length > max) {
+    throw new Error(`${label} quá dài (tối đa ${max} ký tự)`);
+  }
+}
 const qtyNum = (v, label = 'Số lượng') => {
   const n = parseFloat(v);
   if (!Number.isFinite(n) || n <= 0) throw new Error(label + ' không hợp lệ');
@@ -71,8 +85,15 @@ const qtyNum = (v, label = 'Số lượng') => {
 function parseUnits(item) { try { return JSON.parse(item?.units_json || '[]'); } catch { return []; } }
 function normalizeUnits(units) {
   if (!Array.isArray(units)) return [];
-  return units.map(u => ({ name: String(u.name || '').trim(), factor: Number(u.factor) || 0 }))
-    .filter(u => u.name && u.factor > 0);
+  return units.map(u => ({
+    name: String(u.name || '').trim(),
+    factor: Number(u.factor) || 0,
+    barcode: String(u.barcode || '').trim(),
+    cost: Math.max(0, Math.round(Number(u.cost) || 0)),
+    price: Math.max(0, Math.round(Number(u.price) || 0)),
+    price_includes_vat: ![false, 0, '0'].includes(u.price_includes_vat),
+    vat: u.vat == null ? null : Math.min(100, Math.max(0, Number(u.vat) || 0)),
+  })).filter(u => u.name && u.factor > 0);
 }
 function parseSalesChannels(row) {
   try {
@@ -107,7 +128,45 @@ function channelWarehouseFilter(branch_id, channel) {
   if (!channel) return null;
   const ids = warehouseIdsForChannel(branch_id, channel, 'retail');
   if (ids === null) return null;      // unknown channel key → no filter
-  return ids.length ? ids : null;     // known but unlinked → show all, don't blank
+  return ids;
+}
+
+function requireWarehouse(branch_id, warehouse_id, type = null) {
+  const row = db.prepare(`SELECT * FROM warehouses WHERE id=? AND branch_id=? AND active=1`).get(warehouse_id, branch_id);
+  if (!row || (type && row.type !== type)) throw new Error('Kho không thuộc chi nhánh hoặc không còn hoạt động');
+  return row;
+}
+
+// ── Cấu hình bán retail (Cài đặt → Kho & kênh bán → retail_config) ─────────
+// channel 'retail' = POS bán lẻ; 'fnb_retail' = mục "Thêm retail" trong POS
+// F&B. Mỗi bên có thể ép KHO cụ thể + BẢNG GIÁ riêng; chưa cấu hình thì giữ
+// hành vi cũ (kho theo liên kết kênh bán, giá = skus.price).
+function retailSectionFor(branch_id, channel) {
+  if (channel !== 'retail' && channel !== 'fnb_retail') return null;
+  const cfg = getRetailConfig(branch_id);
+  return channel === 'fnb_retail' ? cfg.fnb : cfg.standalone;
+}
+
+// Bảng giá đang áp cho kênh — null = dùng giá chung (default/tắt/không có).
+function channelPriceBookId(branch_id, channel) {
+  const sec = retailSectionFor(branch_id, channel);
+  const id = sec?.price_book_id || 'default';
+  if (id === 'default') return null;
+  const b = db.prepare(`SELECT id,status FROM price_books WHERE id=? AND branch_id=?`).get(id, branch_id);
+  return b && b.status !== 'inactive' ? b.id : null;
+}
+
+/// Áp giá bảng giá của kênh lên 1 row SKU (đã enrich). SKU không có giá riêng
+/// trong bảng → giữ nguyên giá chung. price trả về là giá khách thanh toán.
+export function applyChannelPrice(sku, branch_id, channel) {
+  if (!sku) return sku;
+  const bookId = channelPriceBookId(branch_id, channel);
+  const row = bookId ? db.prepare(`SELECT price FROM price_book_items WHERE book_id=? AND sku_id=?`).get(bookId, sku.id) : null;
+  const configuredPrice = Math.max(0, Math.round(Number(row?.price ?? sku.price) || 0));
+  const vat = sku.vat == null ? null : Number(sku.vat);
+  const includesVat = sku.price_includes_vat !== 0;
+  const price_pre_tax = includesVat && vat > 0 ? Math.round(configuredPrice / (1 + vat / 100)) : configuredPrice;
+  return { ...sku, configured_price: configuredPrice, price: salePrice(configuredPrice, vat, includesVat), price_pre_tax, price_book_id: row ? bookId : null };
 }
 // How many base units in 1 of `uom` (the entered unit name).
 function unitFactor(item, uom) {
@@ -116,20 +175,20 @@ function unitFactor(item, uom) {
   return u ? (Number(u.factor) || 1) : 1;
 }
 
-export function listWarehouses(branch_id = 'br1', filters = {}) {
+export function listWarehouses(branch_id = 'sala', filters = {}) {
   const includeInactive = filters.all === '1' || filters.all === 1 || filters.include_inactive === '1' || filters.include_inactive === 1;
   const rows = db.prepare(`SELECT * FROM warehouses WHERE branch_id=? ORDER BY sort,name`).all(branch_id);
   const mapped = rows.map(withWarehouseMeta);
   return includeInactive ? mapped : mapped.filter(w => w.active);
 }
 
-export function createWarehouse(body, branch_id = 'br1') {
+export function createWarehouse(body, branch_id = 'sala') {
   const name = textOr(body.name, '');
   if (!name) throw new Error('Thiếu tên kho');
   const type = body.type === 'kitchen' ? 'kitchen' : 'retail';
   const salesChannels = normalizeSalesChannels(body.sales_channels || body.salesChannels, type);
   const code = normalizeWarehouseCode(body.code || name);
-  const branchPrefix = branch_id === 'br1' ? '' : `${String(branch_id).replace(/[^a-zA-Z0-9_]/g, '_').toLowerCase()}_`;
+  const branchPrefix = branch_id === 'sala' ? '' : `${String(branch_id).replace(/[^a-zA-Z0-9_]/g, '_').toLowerCase()}_`;
   const id = body.id || `${branchPrefix}wh_${code.toLowerCase()}`;
   const active = body.active !== undefined ? (body.active ? 1 : 0) : 1;
   const sort = intOr(body.sort, db.prepare(`SELECT COALESCE(MAX(sort),0)+1 n FROM warehouses WHERE branch_id=?`).get(branch_id).n);
@@ -142,7 +201,7 @@ export function createWarehouse(body, branch_id = 'br1') {
   return withWarehouseMeta(db.prepare(`SELECT * FROM warehouses WHERE id=?`).get(id));
 }
 
-export function updateWarehouse(id, body, branch_id = 'br1') {
+export function updateWarehouse(id, body, branch_id = 'sala') {
   const cur = db.prepare(`SELECT * FROM warehouses WHERE id=? AND branch_id=?`).get(id, branch_id);
   if (!cur) throw new Error('Kho không tồn tại');
   const code = body.code !== undefined ? normalizeWarehouseCode(body.code || cur.code) : cur.code;
@@ -171,31 +230,59 @@ export function updateWarehouse(id, body, branch_id = 'br1') {
   return withWarehouseMeta(db.prepare(`SELECT * FROM warehouses WHERE id=?`).get(id));
 }
 
-export function listInventory(branch_id = 'br1', filters = {}) {
+// Mặt hàng nào ĐANG CÓ LÔ (kể cả lô đã về 0) tại 1 kho — dùng để hiện đúng
+// Tồn kho SAU KHI Chuyển hàng: chuyển kho chỉ dời LÔ (stock_lots), không đổi
+// "kho nhà" (warehouse_id) của item, nên lọc CHỈ theo kho nhà sẽ làm món vừa
+// chuyển tới biến mất khỏi danh sách kho đích dù tồn đã đúng (đúng lỗi báo
+// "Chuyển hàng không hoạt động" — lô chuyển đúng, chỉ là danh sách lọc sai).
+function itemIdsWithLotsAt(branch_id, itemType, warehouse_id) {
+  return db.prepare(`SELECT DISTINCT item_id FROM stock_lots WHERE branch_id=? AND item_type=? AND warehouse_id=?`)
+    .all(branch_id, itemType, warehouse_id)
+    .map(r => r.item_id);
+}
+
+export function listInventory(branch_id = 'sala', filters = {}) {
   const rows = db.prepare(`SELECT * FROM inventory_items WHERE branch_id=? AND active=1 ORDER BY item_type,name`).all(branch_id);
+  const stockedIds = filters.warehouse_id
+    ? new Set(itemIdsWithLotsAt(branch_id, 'inventory', filters.warehouse_id))
+    : null;
   return rows
     .filter(i => !filters.item_type || i.item_type === filters.item_type)
-    .filter(i => !filters.warehouse_id || (i.warehouse_id || fallbackWarehouse(branch_id, 'inventory')) === filters.warehouse_id)
+    .filter(i => !filters.warehouse_id ||
+      (i.warehouse_id || fallbackWarehouse(branch_id, 'inventory')) === filters.warehouse_id ||
+      stockedIds.has(i.id))
     .map(i => enrichStockRow('inventory', i, filters.warehouse_id));
 }
 
-export function listSkus(branch_id = 'br1', filters = {}) {
-  const channelWarehouseIds = channelWarehouseFilter(branch_id, filters.channel);
+export function listSkus(branch_id = 'sala', filters = {}) {
+  // Kho ép theo retail_config (nếu cấu hình); fnb_retail chưa cấu hình thì
+  // rơi về mapping kênh 'retail' như trước — hành vi cũ không đổi.
+  const sec = retailSectionFor(branch_id, filters.channel);
+  const forcedWh = !filters.warehouse_id && sec?.warehouse_id ? sec.warehouse_id : '';
+  const mapChannel = filters.channel === 'fnb_retail' ? 'retail' : filters.channel;
+  const channelWarehouseIds =
+      forcedWh ? null : channelWarehouseFilter(branch_id, mapChannel);
   const fallbackWh = fallbackWarehouse(branch_id, 'sku');
 
   let sql = `SELECT * FROM skus WHERE branch_id=? AND active=1`;
   const params = [branch_id];
 
-  const q = textOr(filters.q || filters.search || filters.query || '', '');
-  if (q) {
-    sql += ` AND (name LIKE ? OR barcode LIKE ? OR category LIKE ?)`;
-    const likeVal = `%${q}%`;
-    params.push(likeVal, likeVal, likeVal);
-  }
+  const search = searchTokens(filters.q || filters.search || filters.query);
 
   if (filters.warehouse_id) {
+    // Duyệt tồn theo TỪNG kho vật lý (màn Kho hàng) → phải theo LÔ THỰC TẾ
+    // đang ở kho đó (OR), không chỉ theo "kho nhà" của SKU — xem itemIdsWithLotsAt().
+    const stockedIds = itemIdsWithLotsAt(branch_id, 'sku', filters.warehouse_id);
+    const stockedClause = stockedIds.length
+      ? ` OR id IN (${stockedIds.map(() => '?').join(',')})`
+      : '';
+    sql += ` AND (COALESCE(warehouse_id, ?) = ?${stockedClause})`;
+    params.push(fallbackWh, filters.warehouse_id, ...stockedIds);
+  } else if (forcedWh) {
+    // Kho ép theo kênh bán (retail_config) — CHÍNH SÁCH bán hàng, giữ nguyên
+    // theo "kho nhà" như trước, không lẫn với duyệt tồn kho vật lý ở trên.
     sql += ` AND COALESCE(warehouse_id, ?) = ?`;
-    params.push(fallbackWh, filters.warehouse_id);
+    params.push(fallbackWh, forcedWh);
   }
 
   if (channelWarehouseIds && channelWarehouseIds.length > 0) {
@@ -205,45 +292,248 @@ export function listSkus(branch_id = 'br1', filters = {}) {
 
   sql += ` ORDER BY name`;
 
+  // ponytail: in-memory fold handles Vietnamese and cross-field tokens; add a
+  // normalized indexed column if a measured catalog above 100k rows needs it.
+  let matchedRows = db.prepare(sql).all(...params)
+    .filter(s => matchesSearch([s.code, s.name, s.barcode, s.category, s.brand, s.unit], search));
+
+  // Lọc "Còn hàng" + sắp xếp — làm TRƯỚC phân trang (không phải lọc client-side sau
+  // khi đã cắt trang), nếu không mỗi trang 40 SKU lọc xong có thể chỉ còn vài dòng,
+  // và màn Bán lẻ không tự tải thêm trang bù vào → nhìn như "thiếu hàng" dù server
+  // còn rất nhiều SKU khác thoả điều kiện.
+  // Danh sách NHÓM HÀNG (category) có trong kho/kênh này — tính TRƯỚC khi lọc
+  // theo nhóm để dropdown luôn hiện đủ nhóm cho người dùng chọn.
+  const allCategories = [...new Set(
+    matchedRows.map(s => String(s.category || '').trim()).filter(Boolean)
+  )].sort((a, b) => a.localeCompare(b, 'vi'));
+
+  if (filters.in_stock === '1' || filters.in_stock === 'true' || filters.in_stock === true) {
+    matchedRows = matchedRows.filter(s => Number(s.stock) > 0);
+  }
+  // Lọc theo NHÓM HÀNG (Retail POS) — khớp đúng field category.
+  const catFilter = String(filters.category || '').trim();
+  if (catFilter) {
+    matchedRows = matchedRows.filter(s => String(s.category || '').trim() === catFilter);
+  }
+  const sortKey = String(filters.sort || '').trim();
+  if (sortKey === 'price_asc') matchedRows = [...matchedRows].sort((a, b) => Number(a.price) - Number(b.price));
+  else if (sortKey === 'price_desc') matchedRows = [...matchedRows].sort((a, b) => Number(b.price) - Number(a.price));
+  else if (sortKey === 'stock_asc') matchedRows = [...matchedRows].sort((a, b) => Number(a.stock) - Number(b.stock));
+  else if (sortKey === 'stock_desc') matchedRows = [...matchedRows].sort((a, b) => Number(b.stock) - Number(a.stock));
+
   const page = intOr(filters.page, null);
   const limit = intOr(filters.limit, 40);
 
   if (page !== null && page > 0) {
-    const countSql = `SELECT COUNT(*) AS total FROM (${sql})`;
-    const totalRow = db.prepare(countSql).get(...params);
-    const total = totalRow ? (totalRow.total || 0) : 0;
-
-    sql += ` LIMIT ? OFFSET ?`;
     const offset = (page - 1) * limit;
-    const paginatedParams = [...params, limit, offset];
-
-    const rows = db.prepare(sql).all(...paginatedParams);
-    const items = rows.map(s => withProductImage(enrichStockRow('sku', s, filters.warehouse_id)));
+    const total = matchedRows.length;
+    const rows = matchedRows.slice(offset, offset + limit);
+    const items = rows.map(s => withProductImage(applyChannelPrice(
+        enrichStockRow('sku', s, filters.warehouse_id || forcedWh),
+        branch_id, filters.channel)));
     return {
       items,
       total,
       page,
       limit,
+      categories: allCategories,
+      // Danh mục rỗng thì NÓI RÕ VÌ SAO. Màn bán lẻ trống trơn không kèm lời
+      // giải thích là ngõ cụt: cửa hàng không biết hàng chưa tạo, hay đã tạo mà
+      // nằm ở kho không nối với kênh bán lẻ (sự cố Vietfoods 04/08/2026).
+      ...(() => {
+        if (total > 0) return {};
+        const ly = emptyReason(branch_id, filters, forcedWh, channelWarehouseIds);
+        return ly ? { empty_reason: ly } : {};
+      })(),
     };
   }
 
-  const rows = db.prepare(sql).all(...params);
-  return rows.map(s => withProductImage(enrichStockRow('sku', s, filters.warehouse_id)));
+  return matchedRows.map(s => withProductImage(applyChannelPrice(
+      enrichStockRow('sku', s, filters.warehouse_id || forcedWh),
+      branch_id, filters.channel)));
 }
 
-export function findSkuByBarcode(barcode, branch_id = 'br1', filters = {}) {
-  const channelWarehouseIds = channelWarehouseFilter(branch_id, filters.channel);
-  const rows = db.prepare(`SELECT * FROM skus WHERE branch_id=? AND barcode=? AND active=1 ORDER BY name`).all(branch_id, barcode);
+/**
+ * Vì sao danh mục bán lẻ rỗng.
+ *
+ * Trả về `null` khi rỗng là chuyện bình thường (chưa tạo hàng, hoặc do người
+ * dùng tự gõ từ khoá tìm kiếm) — chỉ lên tiếng khi chi nhánh CÓ hàng mà bộ lọc
+ * kho đã gạt hết, vì đó là tình huống người dùng không thể tự đoán ra.
+ */
+function emptyReason(branch_id, filters, forcedWh, channelWarehouseIds) {
+  if (filters.q || filters.search || filters.query) return null;
+  const tong = db.prepare(`SELECT COUNT(*) n FROM skus WHERE branch_id=? AND active=1`)
+    .get(branch_id).n;
+  if (!tong) return null;
+
+  const fallbackWh = fallbackWarehouse(branch_id, 'sku');
+  const ten = (id) => db.prepare(`SELECT name FROM warehouses WHERE id=? AND branch_id=?`)
+    .get(id, branch_id)?.name || id;
+  // Hàng đang thật sự nằm ở những kho nào — câu đầu tiên người sửa cấu hình cần.
+  const dangO = [...new Set(db.prepare(`SELECT COALESCE(warehouse_id,?) w FROM skus WHERE branch_id=? AND active=1`)
+    .all(fallbackWh, branch_id).map(r => r.w))].map(ten);
+
+  if (forcedWh) {
+    return {
+      code: 'warehouse_forced_empty',
+      message: `Kênh bán này đang lấy hàng từ kho "${ten(forcedWh)}" — kho đó chưa có mặt hàng nào. `
+        + `${tong} mặt hàng của chi nhánh đang ở: ${dangO.join(', ')}. `
+        + 'Sửa ở Cài đặt → Kho & kênh bán.',
+    };
+  }
+  if (channelWarehouseIds && channelWarehouseIds.length > 0) {
+    return {
+      code: 'warehouse_channel_empty',
+      message: `Chưa có kho nào vừa chứa hàng vừa được nối với kênh bán này. `
+        + `Kho đang nối: ${channelWarehouseIds.map(ten).join(', ')}. `
+        + `${tong} mặt hàng của chi nhánh đang ở: ${dangO.join(', ')}. `
+        + 'Sửa ở Cài đặt → Kho & kênh bán.',
+    };
+  }
+  return null;
+}
+
+// Thiết lập giá (KiotViet PriceBook): mọi SKU đang bán kèm giá vốn, GIÁ NHẬP
+// CUỐI (movement nhập gần nhất có giá > 0) và giá bán trước/sau thuế — client
+// lọc theo điều kiện (nhỏ hơn/bằng/lớn hơn giá so sánh) và sửa giá từng dòng.
+export function priceBook(branch_id = 'sala', filters = {}) {
+  // book_id (≠ default): thêm cột book_price từ price_book_items — SKU chưa
+  // đặt giá riêng trong bảng giá đó thì book_price = NULL (dùng giá chung).
+  const bookId = String(filters.book_id || '').trim();
+  const useBook = bookId && bookId !== 'default';
+  const params = [];
+  let sql = `
+    SELECT s.id, s.code, s.barcode, s.name, s.emoji, s.image, s.unit, s.category, s.group_path,
+      s.brand, s.stock, s.min_stock, s.cost, s.price, s.price_pre_tax, s.vat, s.price_includes_vat, s.warehouse_id,
+      ${useBook ? 'pbi.price AS book_price,' : 'NULL AS book_price,'}
+      (SELECT m.unit_cost FROM stock_movements m
+        WHERE m.inventory_item_id=s.id AND m.item_type='sku'
+          AND m.type IN ('receipt','opening') AND m.unit_cost>0
+        ORDER BY m.created_at DESC LIMIT 1) AS last_in_cost
+    FROM skus s`;
+  if (useBook) {
+    sql += ` LEFT JOIN price_book_items pbi ON pbi.book_id=? AND pbi.sku_id=s.id`;
+    params.push(bookId);
+  }
+  sql += ` WHERE s.branch_id=? AND s.active=1`;
+  params.push(branch_id);
+  if (filters.warehouse_id) {
+    sql += ` AND COALESCE(s.warehouse_id, ?) = ?`;
+    params.push(fallbackWarehouse(branch_id, 'sku'), String(filters.warehouse_id));
+  }
+  sql += ` ORDER BY s.name`;
+  return db.prepare(sql).all(...params).map(r => withProductImage({
+    ...r,
+    sale_price: salePrice(r.price, r.vat, r.price_includes_vat !== 0),
+    low: (r.stock || 0) <= (r.min_stock || 0),
+  }));
+}
+
+// ── Bảng giá (price books) — quản lý trong Cài đặt → Kho & kênh bán ─────────
+
+/// Danh sách bảng giá; 'default' (Bảng giá chung = skus.price) luôn đứng đầu.
+export function listPriceBooks(branch_id = 'sala') {
+  const rows = db.prepare(
+    `SELECT pb.*, (SELECT COUNT(*) FROM price_book_items i WHERE i.book_id=pb.id) AS item_count
+     FROM price_books pb WHERE pb.branch_id=? ORDER BY pb.created_at`).all(branch_id);
+  return [
+    { id: 'default', name: 'Bảng giá chung', status: 'active', builtin: true, item_count: 0 },
+    ...rows,
+  ];
+}
+
+/// Tạo/sửa bảng giá: {id?, name, status}. Không đụng được bảng giá chung.
+export function savePriceBookMeta(body = {}, branch_id = 'sala', user = {}) {
+  const name = String(body.name || '').trim().slice(0, 120);
+  const status = body.status === 'inactive' ? 'inactive' : 'active';
+  const id = String(body.id || '').trim();
+  if (id === 'default') throw new Error('Bảng giá chung là mặc định — không sửa được');
+  if (!id && !name) throw new Error('Thiếu tên bảng giá');
+  if (id) {
+    const ex = db.prepare(`SELECT * FROM price_books WHERE id=? AND branch_id=?`).get(id, branch_id);
+    if (!ex) throw new Error('Không tìm thấy bảng giá');
+    db.prepare(`UPDATE price_books SET name=?, status=?, updated_at=? WHERE id=?`)
+      .run(name || ex.name, status, now(), id);
+    audit('pricebook.update', { id, name: name || ex.name, status }, branch_id, user?.username || user?.name);
+    return db.prepare(`SELECT * FROM price_books WHERE id=?`).get(id);
+  }
+  const newId = uid('pb_');
+  db.prepare(`INSERT INTO price_books (id,branch_id,name,status,created_at) VALUES (?,?,?,?,?)`)
+    .run(newId, branch_id, name, status, now());
+  audit('pricebook.create', { id: newId, name }, branch_id, user?.username || user?.name);
+  return db.prepare(`SELECT * FROM price_books WHERE id=?`).get(newId);
+}
+
+export function deletePriceBookMeta(id, branch_id = 'sala', user = {}) {
+  if (!id || id === 'default') throw new Error('Không xóa được bảng giá chung');
+  const ex = db.prepare(`SELECT * FROM price_books WHERE id=? AND branch_id=?`).get(String(id), branch_id);
+  if (!ex) throw new Error('Không tìm thấy bảng giá');
+  db.prepare(`DELETE FROM price_book_items WHERE book_id=?`).run(ex.id);
+  db.prepare(`DELETE FROM price_books WHERE id=?`).run(ex.id);
+  audit('pricebook.delete', { id: ex.id, name: ex.name }, branch_id, user?.username || user?.name);
+  return { ok: true };
+}
+
+/// Đặt giá riêng 1 SKU trong 1 bảng giá; price null/rỗng = xóa giá riêng
+/// (quay về giá chung). Bảng 'default' thì cập nhật thẳng skus.price.
+export function setPriceBookEntry(body = {}, branch_id = 'sala', user = {}) {
+  const bookId = String(body.book_id || '').trim();
+  const skuId = String(body.sku_id || '').trim();
+  if (!bookId || !skuId) throw new Error('Thiếu book_id/sku_id');
+  const sku = db.prepare(`SELECT id, name, vat, price_includes_vat FROM skus WHERE id=? AND branch_id=?`).get(skuId, branch_id);
+  if (!sku) throw new Error('Không tìm thấy sản phẩm');
+  const raw = body.price;
+  const clear = raw === null || raw === undefined || raw === '';
+  const price = clear ? null : Math.max(0, Math.round(Number(raw) || 0));
+
+  if (bookId === 'default') {
+    if (clear) throw new Error('Bảng giá chung phải có giá bán');
+    const vat = sku.vat == null ? null : Number(sku.vat);
+    const preTax = sku.price_includes_vat !== 0 && vat > 0 ? Math.round(price / (1 + vat / 100)) : price;
+    db.prepare(`UPDATE skus SET price=?, price_pre_tax=?, price_updated_at=? WHERE id=?`)
+      .run(price, preTax, now(), skuId);
+    audit('pricebook.set_price', { sku_id: skuId, name: sku.name, price, book: 'default' }, branch_id, user?.username || user?.name);
+    return { ok: true, price, price_pre_tax: preTax };
+  }
+
+  const book = db.prepare(`SELECT id FROM price_books WHERE id=? AND branch_id=?`).get(bookId, branch_id);
+  if (!book) throw new Error('Không tìm thấy bảng giá');
+  if (clear) {
+    db.prepare(`DELETE FROM price_book_items WHERE book_id=? AND sku_id=?`).run(bookId, skuId);
+  } else {
+    db.prepare(`INSERT INTO price_book_items (book_id, sku_id, price, updated_at) VALUES (?,?,?,?)
+      ON CONFLICT(book_id, sku_id) DO UPDATE SET price=excluded.price, updated_at=excluded.updated_at`)
+      .run(bookId, skuId, price, now());
+  }
+  audit('pricebook.set_price',
+    { sku_id: skuId, name: sku.name, price: clear ? '(về giá chung)' : price, book: bookId },
+    branch_id, user?.username || user?.name);
+  return { ok: true, price };
+}
+
+export function findSkuByBarcode(barcode, branch_id = 'sala', filters = {}) {
+  const sec = retailSectionFor(branch_id, filters.channel);
+  const forcedWh = !filters.warehouse_id && sec?.warehouse_id ? sec.warehouse_id : '';
+  const mapChannel = filters.channel === 'fnb_retail' ? 'retail' : filters.channel;
+  const channelWarehouseIds =
+      forcedWh ? null : channelWarehouseFilter(branch_id, mapChannel);
+  const wantWh = filters.warehouse_id || forcedWh;
+  const rows = db.prepare(`SELECT * FROM skus WHERE branch_id=? AND active=1 ORDER BY name`).all(branch_id)
+    .filter(s => s.barcode === barcode || parseUnits(s).some(u => u.barcode === barcode));
   const row = rows
-    .filter(s => !filters.warehouse_id || (s.warehouse_id || fallbackWarehouse(branch_id, 'sku')) === filters.warehouse_id)
+    .filter(s => !wantWh || (s.warehouse_id || fallbackWarehouse(branch_id, 'sku')) === wantWh)
     .find(s => !channelWarehouseIds || channelWarehouseIds.includes(s.warehouse_id || fallbackWarehouse(branch_id, 'sku')));
-  return row ? withProductImage(enrichStockRow('sku', row, filters.warehouse_id)) : null;
+  return row
+      ? withProductImage(applyChannelPrice(
+          enrichStockRow('sku', row, wantWh), branch_id, filters.channel))
+      : null;
 }
 
-export function createInventoryItem(body, branch_id = 'br1') {
+export function createInventoryItem(body, branch_id = 'sala') {
   if (!body.name) throw new Error('Thiếu tên mặt hàng');
   const id = body.id || uid('i_');
   const warehouse_id = body.warehouse_id || fallbackWarehouse(branch_id, 'inventory');
+  requireWarehouse(branch_id, warehouse_id, 'kitchen');
   const item_type = ['ingredient', 'supply'].includes(body.item_type) ? body.item_type : 'ingredient';
   db.prepare(`INSERT INTO inventory_items
     (id,branch_id,name,unit,stock,min_stock,warehouse_id,item_type,barcode,category,cost,track_lot,expiry_required,active,note,units_json)
@@ -266,12 +556,13 @@ export function createInventoryItem(body, branch_id = 'br1') {
   return getItem('inventory', id, branch_id);
 }
 
-export function updateInventoryItem(id, body, branch_id = 'br1') {
+export function updateInventoryItem(id, body, branch_id = 'sala') {
   const cur = db.prepare(`SELECT * FROM inventory_items WHERE id=? AND branch_id=?`).get(id, branch_id);
   if (!cur) throw new Error('Mặt hàng kho bếp không tồn tại');
   const item_type = body.item_type !== undefined
     ? (['ingredient', 'supply'].includes(body.item_type) ? body.item_type : cur.item_type)
     : cur.item_type;
+  if (body.warehouse_id) requireWarehouse(branch_id, body.warehouse_id, 'kitchen');
   db.prepare(`UPDATE inventory_items SET
       name=?, unit=?, min_stock=?, warehouse_id=?, item_type=?, barcode=?, category=?, cost=?,
       track_lot=?, expiry_required=?, active=?, note=?, units_json=?
@@ -296,29 +587,49 @@ export function updateInventoryItem(id, body, branch_id = 'br1') {
   return getItem('inventory', id, branch_id);
 }
 
-export function deleteInventoryItem(id, branch_id = 'br1') {
+export function deleteInventoryItem(id, branch_id = 'sala') {
   const cur = db.prepare(`SELECT * FROM inventory_items WHERE id=? AND branch_id=?`).get(id, branch_id);
   if (!cur) throw new Error('Mặt hàng kho bếp không tồn tại');
-  cleanupStockMaster('inventory', id, branch_id);
-  db.prepare(`DELETE FROM inventory_items WHERE id=? AND branch_id=?`).run(id, branch_id);
+  // Soft-delete only. Warehouse documents, stock movements and recipes are
+  // historical evidence and must survive catalogue cleanup unchanged.
+  db.prepare(`UPDATE inventory_items SET active=0 WHERE id=? AND branch_id=?`).run(id, branch_id);
   audit('inventory.item.delete', { id, name: cur.name }, branch_id);
   emit('inventory:updated', { ids: [id], deleted: true }, branch_id);
   return { ok: true, deleted: id, name: cur.name };
 }
 
-export function createSku(body, branch_id = 'br1') {
+export function createSku(body, branch_id = 'sala') {
   if (!body.name) throw new Error('Thiếu tên SKU');
+  if (body.warehouse_id) requireWarehouse(branch_id, body.warehouse_id, 'retail');
+  assertMaxLength(body.name, 200, 'Tên SKU');
+  assertMaxLength(body.barcode, 100, 'Mã vạch');
   const id = body.id || uid('s_');
+  const name = String(body.name).trim();
+  if (!name) throw new Error('Thiếu tên SKU');
+  const code = String(body.code || `SP${id.replace(/[^a-z0-9]/gi, '').slice(-8)}`).trim().toUpperCase();
+  const barcode = String(body.barcode || '').trim();
+  if (db.prepare(`SELECT 1 FROM skus WHERE branch_id=? AND active=1 AND (code=? OR (? <> '' AND barcode=?))`).get(branch_id, code, barcode, barcode)) {
+    throw new Error('Mã hàng hoặc mã vạch đã tồn tại');
+  }
   const warehouse_id = body.warehouse_id || fallbackWarehouse(branch_id, 'sku');
-  db.prepare(`INSERT INTO skus
-    (id,branch_id,barcode,name,emoji,image,price,cost,stock,min_stock,unit,warehouse_id,category,supplier,source_url,track_lot,expiry_required,active,units_json)
-    VALUES (?,?,?,?,?,?,?,?,0,?,?,?,?,?,?,?,?,1,?)`).run(
-    id, branch_id, body.barcode || null, body.name, body.emoji || '📦', body.image || null,
-    parseInt(body.price) || 0, parseInt(body.cost) || 0, parseFloat(body.min_stock) || 0,
-    body.unit || 'cái', warehouse_id, body.category || null, body.supplier || null, body.source_url || null,
-    asBool(body.track_lot), asBool(body.expiry_required), JSON.stringify(normalizeUnits(body.units)));
-
+  requireWarehouse(branch_id, warehouse_id, 'retail');
+  const price = parseInt(body.price) || 0;
+  const priceIncludesVat = [false, 0, '0'].includes(body.price_includes_vat) ? 0 : 1;
+  const vat = body.vat == null ? null : Math.min(100, Math.max(0, Number(body.vat) || 0));
+  const pricePreTax = priceIncludesVat && vat > 0 ? Math.round(price / (1 + vat / 100)) : price;
   const opening = parseFloat(body.opening_stock || body.stock || 0);
+  if (opening > 0 && asBool(body.expiry_required) && !body.expiry_date) {
+    throw new Error('Tồn đầu kỳ của hàng bắt buộc HSD phải có hạn sử dụng');
+  }
+  db.prepare(`INSERT INTO skus
+    (id,branch_id,code,barcode,name,emoji,image,price,price_includes_vat,price_pre_tax,vat,cost,stock,min_stock,unit,warehouse_id,category,brand,supplier,source_url,track_lot,expiry_required,active,units_json,created_at,description)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
+    id, branch_id, code, barcode || null, name, body.emoji || '📦', body.image || null,
+    price, priceIncludesVat, pricePreTax, vat, parseInt(body.cost) || 0, 0, parseFloat(body.min_stock) || 0,
+    body.unit || 'cái', warehouse_id, body.category || null, body.brand || null, body.supplier || null, body.source_url || null,
+    asBool(body.track_lot), asBool(body.expiry_required), 1, JSON.stringify(normalizeUnits(body.units)), now(),
+    body.description || null);
+
   if (opening > 0) receiveSku(id, opening, branch_id, {
     warehouse_id,
     unit_cost: parseFloat(body.cost) || 0,
@@ -332,76 +643,101 @@ export function createSku(body, branch_id = 'br1') {
   return getItem('sku', id, branch_id);
 }
 
-export function deleteSku(id, branch_id = 'br1') {
+export function deleteSku(id, branch_id = 'sala') {
   const cur = db.prepare(`SELECT * FROM skus WHERE id=? AND branch_id=?`).get(id, branch_id);
   if (!cur) throw new Error('SKU không tồn tại');
-  cleanupStockMaster('sku', id, branch_id);
-  db.prepare(`DELETE FROM skus WHERE id=? AND branch_id=?`).run(id, branch_id);
-  audit('sku.delete', { id, name: cur.name }, branch_id);
+  db.prepare(`UPDATE skus SET active=0 WHERE id=? AND branch_id=?`).run(id, branch_id);
+  audit('sku.delete', { id, name: cur.name, soft_delete: true }, branch_id);
   emit('inventory:updated', { ids: [id], deleted: true }, branch_id);
   return { ok: true, deleted: id, name: cur.name };
 }
 
-export function updateSku(id, body, branch_id = 'br1') {
+export function updateSku(id, body, branch_id = 'sala') {
   const cur = db.prepare(`SELECT * FROM skus WHERE id=? AND branch_id=?`).get(id, branch_id);
   if (!cur) throw new Error('SKU không tồn tại');
+  if (body.warehouse_id) requireWarehouse(branch_id, body.warehouse_id, 'retail');
+  assertMaxLength(body.name, 200, 'Tên SKU');
+  assertMaxLength(body.barcode, 100, 'Mã vạch');
+  const price = intOr(body.price, cur.price);
+  const priceIncludesVat = boolOr(body.price_includes_vat, cur.price_includes_vat);
+  const vat = body.vat !== undefined ? (body.vat == null ? null : Math.min(100, Math.max(0, Number(body.vat) || 0))) : cur.vat;
+  const pricePreTax = priceIncludesVat && vat > 0 ? Math.round(price / (1 + vat / 100)) : price;
   db.prepare(`UPDATE skus SET
-      barcode=?, name=?, emoji=?, image=?, price=?, cost=?, min_stock=?, unit=?, warehouse_id=?,
-      category=?, supplier=?, source_url=?, track_lot=?, expiry_required=?, active=?, units_json=?
+      code=?, barcode=?, name=?, emoji=?, image=?, price=?, price_includes_vat=?, price_pre_tax=?, vat=?, cost=?, min_stock=?, unit=?, warehouse_id=?,
+      category=?, brand=?, supplier=?, source_url=?, track_lot=?, expiry_required=?, active=?, units_json=?, description=?
     WHERE id=? AND branch_id=?`).run(
+    nullableText(body.code, cur.code),
     nullableText(body.barcode, cur.barcode),
     textOr(body.name, cur.name),
     textOr(body.emoji, cur.emoji || '📦'),
     nullableText(body.image, cur.image),
-    intOr(body.price, cur.price),
+    price,
+    priceIncludesVat,
+    pricePreTax,
+    vat,
     intOr(body.cost, cur.cost || 0),
     numberOr(body.min_stock, cur.min_stock),
     textOr(body.unit, cur.unit || 'cái'),
     textOr(body.warehouse_id, cur.warehouse_id || fallbackWarehouse(branch_id, 'sku')),
     nullableText(body.category, cur.category),
+    nullableText(body.brand, cur.brand),
     nullableText(body.supplier, cur.supplier),
     nullableText(body.source_url, cur.source_url),
     boolOr(body.track_lot, cur.track_lot),
     boolOr(body.expiry_required, cur.expiry_required),
     boolOr(body.active, cur.active),
     body.units !== undefined ? JSON.stringify(normalizeUnits(body.units)) : (cur.units_json || '[]'),
+    nullableText(body.description, cur.description),
     id,
     branch_id);
+  // GIÁ BÁN LẺ = giá trong price book của kênh (xem applyChannelPrice). Nếu chỉ
+  // sửa giá gốc SKU mà KHÔNG cập nhật book thì POS vẫn hiện giá cũ — thu ngân
+  // tưởng đã đổi mà chưa (sự cố Bagel 06/08/2026: kho 250k, POS vẫn 350k). Đồng
+  // bộ: khi giá đổi, cập nhật MỌI dòng price_book_items sẵn có của SKU này trong
+  // chi nhánh về giá mới, để kho và POS luôn ràng buộc nhau. Chỉ chạm dòng ĐÃ có
+  // (không tự tạo mới) — SKU chưa có trong book vẫn rơi về giá gốc như trước.
+  if (body.price !== undefined && price !== cur.price) {
+    const bookIds = db.prepare(`SELECT id FROM price_books WHERE branch_id=?`).all(branch_id).map(b => b.id);
+    if (bookIds.length) {
+      db.prepare(`UPDATE price_book_items SET price=? WHERE sku_id=? AND book_id IN (${bookIds.map(() => '?').join(',')})`)
+        .run(price, id, ...bookIds);
+    }
+  }
   audit('sku.update', { id, name: body.name || cur.name }, branch_id);
   emit('inventory:updated', { ids: [id] }, branch_id);
   return getItem('sku', id, branch_id);
 }
 
-export function receiveStock(inventory_item_id, qty, branch_id = 'br1', options = {}) {
+export function receiveStock(inventory_item_id, qty, branch_id = 'sala', options = {}) {
   receiveGeneric('inventory', inventory_item_id, qty, branch_id, options);
   checkAlerts(branch_id, [{ stockType: 'inventory', id: inventory_item_id }]);
   emit('inventory:updated', { ids: [inventory_item_id] }, branch_id);
   return getItem('inventory', inventory_item_id, branch_id);
 }
 
-export function receiveSku(sku_id, qty, branch_id = 'br1', options = {}) {
+export function receiveSku(sku_id, qty, branch_id = 'sala', options = {}) {
   receiveGeneric('sku', sku_id, qty, branch_id, options);
   checkAlerts(branch_id, [{ stockType: 'sku', id: sku_id }]);
   emit('inventory:updated', { ids: [sku_id] }, branch_id);
   return getItem('sku', sku_id, branch_id);
 }
 
-export function issueStock(stockType, item_id, qty, branch_id = 'br1', options = {}) {
+export function issueStock(stockType, item_id, qty, branch_id = 'sala', options = {}) {
   const consumed = issueGeneric(normalizeStockType(stockType), item_id, qty, branch_id, options);
   checkAlerts(branch_id, [{ stockType: normalizeStockType(stockType), id: item_id }]);
   emit('inventory:updated', { ids: [item_id] }, branch_id);
   return consumed;
 }
 
-export function adjustStock(inventory_item_id, newStock, branch_id = 'br1', options = {}) {
+export function adjustStock(inventory_item_id, newStock, branch_id = 'sala', options = {}) {
   return setStockLevel('inventory', inventory_item_id, newStock, branch_id, options);
 }
 
-export function adjustSku(sku_id, newStock, branch_id = 'br1', options = {}) {
+export function adjustSku(sku_id, newStock, branch_id = 'sala', options = {}) {
   return setStockLevel('sku', sku_id, newStock, branch_id, options);
 }
 
-export function returnSku(sku_id, qty, ref, branch_id = 'br1', options = {}) {
+export function returnSku(sku_id, qty, ref, branch_id = 'sala', options = {}) {
   const lot = options.lot_id ? db.prepare(`SELECT * FROM stock_lots WHERE id=? AND branch_id=? AND item_type='sku' AND item_id=?`)
     .get(options.lot_id, branch_id, sku_id) : null;
   receiveGeneric('sku', sku_id, qty, branch_id, {
@@ -419,64 +755,145 @@ export function returnSku(sku_id, qty, ref, branch_id = 'br1', options = {}) {
   emit('inventory:updated', { ids: [sku_id] }, branch_id);
 }
 
-export function transferStock(body, branch_id = 'br1') {
-  const stockType = normalizeStockType(body.stock_type || body.item_type);
-  const item_id = body.item_id;
+// Chuyển hàng giữa 2 kho. Nhận MỘT mặt hàng (body.item_id/qty — tương thích cũ)
+// hoặc NHIỀU dòng (body.lines=[{stock_type,item_id,qty,lot_id?,uom?}]) gom vào
+// một phiếu chuyển duy nhất (giống phiếu Chuyển hàng KiotViet).
+export function transferStock(body, branch_id = 'sala') {
   const from = body.from_warehouse_id;
   const to = body.to_warehouse_id;
-  if (!item_id || !from || !to || from === to) throw new Error('Phiếu chuyển kho thiếu thông tin');
-  const item = getItem(stockType, item_id, branch_id);
-  if (!item) throw new Error('Mặt hàng không tồn tại');
+  if (!from || !to || from === to) throw new Error('Phiếu chuyển kho thiếu thông tin');
   const whFrom = db.prepare(`SELECT id FROM warehouses WHERE id=? AND branch_id=?`).get(from, branch_id);
   const whTo = db.prepare(`SELECT id FROM warehouses WHERE id=? AND branch_id=?`).get(to, branch_id);
   if (!whFrom || !whTo) throw new Error('Kho nguồn hoặc kho đích không tồn tại');
-  const qty = qtyNum(body.qty) * unitFactor(item, body.uom);
-  // Guard: never move more than is really on hand at the source. Without this,
-  // consumeLots would pad the shortfall with a phantom lot and the destination
-  // would gain stock out of nothing (source goes negative). Transfer runs on lots.
-  const availAtSource = body.lot_id
-    ? currentStock(stockType, item_id, from, body.lot_id)
-    : db.prepare(`SELECT COALESCE(SUM(qty_on_hand),0) s FROM stock_lots WHERE warehouse_id=? AND item_type=? AND item_id=? AND qty_on_hand>0`)
-        .get(from, stockType, item_id).s;
-  if (availAtSource + 0.000001 < qty) {
-    throw new Error(`Không đủ tồn ở kho nguồn: ${item.name} (còn ${roundQty(availAtSource)} ${item.unit})`);
-  }
 
+  const rawLines = Array.isArray(body.lines) && body.lines.length ? body.lines : [body];
+  // Kiểm tra TẤT CẢ các dòng trước khi đụng vào tồn: không để phiếu áp một nửa.
+  const lines = rawLines.map((r) => {
+    const stockType = normalizeStockType(r.stock_type || r.item_type);
+    const item = getItem(stockType, r.item_id, branch_id);
+    if (!item) throw new Error(`Mặt hàng không tồn tại: ${r.item_id || '?'}`);
+    const qty = qtyNum(r.qty) * unitFactor(item, r.uom);
+    // Guard: never move more than is really on hand at the source. Without this,
+    // consumeLots would pad the shortfall with a phantom lot and the destination
+    // would gain stock out of nothing (source goes negative). Transfer runs on lots.
+    const availAtSource = r.lot_id
+      ? currentStock(stockType, r.item_id, from, r.lot_id)
+      : db.prepare(`SELECT COALESCE(SUM(qty_on_hand),0) s FROM stock_lots WHERE warehouse_id=? AND item_type=? AND item_id=? AND qty_on_hand>0`)
+          .get(from, stockType, r.item_id).s;
+    if (availAtSource + 0.000001 < qty) {
+      throw new Error(`Không đủ tồn ở kho nguồn: ${item.name} (còn ${roundQty(availAtSource)} ${item.unit})`);
+    }
+    return { stockType, item, item_id: r.item_id, qty, lot_id: r.lot_id || null, lot_no: r.lot_no, expiry_date: r.expiry_date, supplier: r.supplier };
+  });
+
+  // Từ đây là GHI: phiếu + trừ lô kho nguồn + cộng lô kho đích + nhật ký chuyển
+  // động. Phải nằm trọn trong một giao dịch, nếu không một lỗi giữa chừng để lại
+  // phiếu áp nửa vời — hàng đã rời kho nguồn mà chưa vào kho đích.
+  return inTransaction(() => {
   const doc = createDocument(branch_id, {
     type: 'transfer',
     warehouse_id: from,
     to_warehouse_id: to,
     reason: body.reason || 'transfer',
     ref: body.ref || null,
+    note: body.note || null,
+    created_by: body.created_by || null,
   });
-  const consumed = consumeLots(stockType, item_id, from, qty, body.lot_id);
-  for (const c of consumed) {
-    const lot = c.lot_id ? db.prepare(`SELECT * FROM stock_lots WHERE id=?`).get(c.lot_id) : null;
-    const targetLot = upsertLot({
-      branch_id,
-      warehouse_id: to,
-      item_type: stockType,
-      item_id,
-      lot_no: lot?.lot_no || body.lot_no || 'TRANSFER',
-      expiry_date: lot?.expiry_date || body.expiry_date || null,
-      mfg_date: lot?.mfg_date || null,
-      unit_cost: lot?.unit_cost || item.cost || 0,
-      supplier: lot?.supplier || body.supplier || null,
-      qty: c.qty,
-    });
-    recordMovement({ branch_id, stockType, item_id, warehouse_id: from, lot_id: c.lot_id, type: 'transfer_out', qty: -c.qty, ref: doc.id, reason: body.reason, doc_id: doc.id, unit_cost: lot?.unit_cost || 0 });
-    recordMovement({ branch_id, stockType, item_id, warehouse_id: to, lot_id: targetLot.id, type: 'transfer_in', qty: c.qty, ref: doc.id, reason: body.reason, doc_id: doc.id, unit_cost: lot?.unit_cost || 0 });
-    addDocumentLine(doc.id, stockType, item_id, c.lot_id, -c.qty, lot?.unit_cost || 0, lot?.expiry_date || null, 'transfer out');
-    addDocumentLine(doc.id, stockType, item_id, targetLot.id, c.qty, lot?.unit_cost || 0, lot?.expiry_date || null, 'transfer in');
+  const touchedIds = [];
+  for (const ln of lines) {
+    const { stockType, item, item_id } = ln;
+    const consumed = consumeLots(stockType, item_id, from, ln.qty, ln.lot_id);
+    for (const c of consumed) {
+      const lot = c.lot_id ? db.prepare(`SELECT * FROM stock_lots WHERE id=?`).get(c.lot_id) : null;
+      const targetLot = upsertLot({
+        branch_id,
+        warehouse_id: to,
+        item_type: stockType,
+        item_id,
+        lot_no: lot?.lot_no || ln.lot_no || 'TRANSFER',
+        expiry_date: lot?.expiry_date || ln.expiry_date || null,
+        mfg_date: lot?.mfg_date || null,
+        unit_cost: lot?.unit_cost || item.cost || 0,
+        supplier: lot?.supplier || ln.supplier || null,
+        qty: c.qty,
+      });
+      recordMovement({ branch_id, stockType, item_id, warehouse_id: from, lot_id: c.lot_id, type: 'transfer_out', qty: -c.qty, ref: doc.code || doc.id, reason: body.reason, doc_id: doc.id, unit_cost: lot?.unit_cost || 0 });
+      recordMovement({ branch_id, stockType, item_id, warehouse_id: to, lot_id: targetLot.id, type: 'transfer_in', qty: c.qty, ref: doc.code || doc.id, reason: body.reason, doc_id: doc.id, unit_cost: lot?.unit_cost || 0 });
+      addDocumentLine(doc.id, stockType, item_id, c.lot_id, -c.qty, lot?.unit_cost || 0, lot?.expiry_date || null, 'transfer out');
+      addDocumentLine(doc.id, stockType, item_id, targetLot.id, c.qty, lot?.unit_cost || 0, lot?.expiry_date || null, 'transfer in');
+    }
+    touchedIds.push(item_id);
   }
-  audit('stock.transfer', { item: item_id, stockType, qty, from, to }, branch_id);
-  emit('inventory:updated', { ids: [item_id] }, branch_id);
-  return { ok: true, document_id: doc.id };
+  audit('stock.transfer', { document: doc.code || doc.id, from, to, lines: lines.map(l => ({ item: l.item_id, qty: l.qty })) }, branch_id, body.created_by);
+  emit('inventory:updated', { ids: touchedIds }, branch_id);
+  return { ok: true, document_id: doc.id, code: doc.code };
+  });
 }
 
-export function applyStocktake({ warehouse_id, name, mode = 'partial', lines = [] }, branch_id = 'br1') {
+// Xuất kho NHIỀU dòng gom một phiếu (dùng cho Xuất dùng nội bộ + Trả hàng nhập).
+// Mỗi dòng đi qua issueGeneric với doc_id chung nên tồn/lô/movement chuẩn FEFO.
+export function issueLinesDocumented({ type, warehouse_id, lines = [], reason = null, ref = null, note = null, created_by = null }, branch_id = 'sala') {
+  if (!warehouse_id) throw new Error('Thiếu kho xuất');
+  const wh = db.prepare(`SELECT id FROM warehouses WHERE id=? AND branch_id=?`).get(warehouse_id, branch_id);
+  if (!wh) throw new Error('Kho xuất không tồn tại');
+  // Validate hết trước khi trừ tồn để phiếu không bị áp một nửa.
+  const checked = [];
+  for (const r of Array.isArray(lines) ? lines : []) {
+    const stockType = normalizeStockType(r.stock_type || r.item_type);
+    const item = getItem(stockType, r.item_id, branch_id);
+    if (!item) throw new Error(`Mặt hàng không tồn tại: ${r.item_id || '?'}`);
+    const qty = qtyNum(r.qty) * unitFactor(item, r.uom);
+    const available = currentStock(stockType, r.item_id, warehouse_id, r.lot_id || null);
+    if (available + 0.000001 < qty) {
+      throw new Error(`Không đủ tồn: ${item.name} (còn ${roundQty(available)} ${item.unit})`);
+    }
+    checked.push({ stockType, item_id: r.item_id, qty, lot_id: r.lot_id || null, note: r.note || null });
+  }
+  if (!checked.length) throw new Error('Chưa có dòng hàng để xuất');
+  // Phiếu xuất nhiều dòng — trọn gói, không để trừ được vài dòng rồi hỏng.
+  return inTransaction(() => {
+  const doc = createDocument(branch_id, { type, warehouse_id, reason, ref, note, created_by });
+  const touched = [];
+  for (const ln of checked) {
+    issueGeneric(ln.stockType, ln.item_id, ln.qty, branch_id, {
+      warehouse_id,
+      lot_id: ln.lot_id,
+      movementType: type,
+      ref: ref || doc.code || doc.id,
+      reason: reason || type,
+      doc_id: doc.id,
+      note: ln.note,
+    });
+    touched.push({ stockType: ln.stockType, id: ln.item_id });
+  }
+  checkAlerts(branch_id, touched);
+  emit('inventory:updated', { ids: touched.map(t => t.id) }, branch_id);
+  return doc;
+  });
+}
+
+// Xuất dùng nội bộ (KiotViet "Xuất dùng nội bộ" — Mới): xuất hàng cho cửa hàng
+// tự dùng (pha chế, dùng thử, hư hỏng…). Một phiếu XDNB nhiều dòng.
+export function issueInternalUse(body = {}, branch_id = 'sala', user = {}) {
+  const doc = issueLinesDocumented({
+    type: 'internal_use',
+    warehouse_id: body.warehouse_id,
+    lines: body.lines,
+    reason: String(body.reason || '').trim() || 'internal_use',
+    ref: body.ref || null,
+    note: String(body.note || '').trim() || null,
+    created_by: user?.name || user?.username || null,
+  }, branch_id);
+  audit('inventory.internal_use', { document: doc.code || doc.id, lines: (body.lines || []).length }, branch_id, user?.username || user?.name);
+  return getDocument(doc.id, branch_id);
+}
+
+export function applyStocktake({ warehouse_id, name, mode = 'partial', lines = [] }, branch_id = 'sala') {
   if (!warehouse_id) throw new Error('Thiếu kho kiểm');
   if (!Array.isArray(lines) || !lines.length) throw new Error('Chưa có dòng kiểm kho');
+  // Kiểm kho cân bằng nhiều dòng cùng lúc — phải trọn gói. Hỏng giữa chừng mà
+  // không rollback thì phiên kiểm ghi một đằng, tồn thực tế một nẻo.
+  return inTransaction(() => {
   const sid = uid('st_');
   db.prepare(`INSERT INTO stocktake_sessions (id,branch_id,warehouse_id,name,mode,status,created_at,approved_at)
     VALUES (?,?,?,?,?,'approved',?,?)`).run(sid, branch_id, warehouse_id, name || 'Kiểm kho', mode, now(), now());
@@ -517,23 +934,239 @@ export function applyStocktake({ warehouse_id, name, mode = 'partial', lines = [
   audit('stocktake.approve', { session: sid, warehouse_id, changed }, branch_id);
   emit('inventory:updated', {}, branch_id);
   return { ok: true, session_id: sid, changed };
+  });
 }
 
-export function listStocktakes(branch_id = 'br1', limit = 20) {
-  return db.prepare(`
-    SELECT s.*, w.name AS warehouse_name,
-      (SELECT COUNT(*) FROM stocktake_lines l WHERE l.session_id=s.id) AS lines
+// ---- Kiểm kho theo phiếu (KiotViet StockTakes) -----------------------------
+// Vòng đời: draft (Phiếu tạm) -> approved (Đã cân bằng kho) | cancelled (Đã hủy).
+// applyStocktake cũ ở trên vẫn giữ cho luồng "điều chỉnh ngay" tương thích ngược.
+
+// Chuẩn hoá + tính tồn dự kiến cho từng dòng kiểm. Dòng kiểm theo LÔ (file mẫu
+// Lô 1/Lô 2…) so với tồn của đúng lô đó; dòng không lô so với tồn cả kho.
+function normalizeStocktakeLines(rawLines, warehouse_id, branch_id) {
+  const lines = [];
+  for (const r of Array.isArray(rawLines) ? rawLines : []) {
+    const stockType = normalizeStockType(r.stock_type || r.item_type);
+    const item_id = String(r.item_id || '').trim();
+    const counted = parseFloat(r.counted_qty ?? r.qty ?? r.stock);
+    if (!item_id || !Number.isFinite(counted) || counted < 0) continue;
+    const item = getItem(stockType, item_id, branch_id);
+    if (!item) throw new Error(`Mặt hàng không tồn tại: ${item_id}`);
+    const lot_no = String(r.lot_no || '').trim() || null;
+    let lot_id = String(r.lot_id || '').trim() || null;
+    if (!lot_id && lot_no) {
+      lot_id = db.prepare(`SELECT id FROM stock_lots WHERE warehouse_id=? AND item_type=? AND item_id=? AND lot_no=?`)
+        .get(warehouse_id, stockType, item_id, lot_no)?.id || null;
+    }
+    const expected = lot_no && !lot_id ? 0 : currentStock(stockType, item_id, warehouse_id, lot_id);
+    lines.push({
+      stock_type: stockType,
+      item_id,
+      item_name: item.name || null,
+      item_code: item.code || null,
+      item_barcode: item.barcode || null,
+      unit_snapshot: item.unit || null,
+      lot_id,
+      lot_no,
+      expiry_date: String(r.expiry_date || '').trim() || null,
+      counted_qty: counted,
+      expected_qty: expected,
+      delta_qty: counted - expected,
+      note: String(r.note || r.reason || '').trim() || null,
+    });
+  }
+  return lines;
+}
+
+function replaceStocktakeLines(session_id, lines) {
+  db.prepare(`DELETE FROM stocktake_lines WHERE session_id=?`).run(session_id);
+  const ins = db.prepare(`INSERT INTO stocktake_lines
+    (id,session_id,item_type,item_id,item_name,item_code,item_barcode,unit_snapshot,lot_id,lot_no,expiry_date,expected_qty,counted_qty,delta_qty,reason,note)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
+  for (const l of lines) {
+    ins.run(uid('stl_'), session_id, l.stock_type, l.item_id, l.item_name, l.item_code,
+      l.item_barcode, l.unit_snapshot, l.lot_id, l.lot_no, l.expiry_date,
+      l.expected_qty, l.counted_qty, l.delta_qty, l.note, l.note);
+  }
+}
+
+// Tạo mới hoặc sửa phiếu kiểm kho NHÁP. body.id => update (chỉ khi còn draft).
+export function saveStocktakeSession(body = {}, branch_id = 'sala', user = {}) {
+  const warehouse_id = String(body.warehouse_id || '').trim();
+  if (!warehouse_id) throw new Error('Thiếu kho kiểm');
+  const wh = db.prepare(`SELECT id FROM warehouses WHERE id=? AND branch_id=?`).get(warehouse_id, branch_id);
+  if (!wh) throw new Error('Kho kiểm không tồn tại');
+  const lines = normalizeStocktakeLines(body.lines, warehouse_id, branch_id);
+  if (!lines.length) throw new Error('Chưa có dòng kiểm kho');
+  const name = textOr(body.name, 'Kiểm kho');
+  const note = String(body.note || '').trim() || null;
+  const actorName = user?.name || user?.username || null;
+
+  const existing = body.id
+    ? db.prepare(`SELECT * FROM stocktake_sessions WHERE id=? AND branch_id=?`).get(body.id, branch_id)
+    : null;
+  if (body.id && !existing) throw new Error('Phiếu kiểm không tồn tại');
+  if (existing) {
+    if (existing.status !== 'draft') throw new Error('Chỉ sửa được phiếu kiểm ở trạng thái Phiếu tạm');
+    db.prepare(`UPDATE stocktake_sessions SET warehouse_id=?, name=?, note=?, mode=? WHERE id=?`)
+      .run(warehouse_id, name, note, body.mode === 'full' ? 'full' : 'partial', existing.id);
+    replaceStocktakeLines(existing.id, lines);
+    audit('stocktake.update', { session: existing.id, code: existing.code, lines: lines.length }, branch_id, actorName);
+    emit('inventory:updated', { stocktake: existing.id }, branch_id);
+    return getStocktakeSession(existing.id, branch_id);
+  }
+
+  const sid = uid('st_');
+  const code = nextSeqCode('stocktake_sessions', branch_id, 'KK');
+  db.prepare(`INSERT INTO stocktake_sessions (id,branch_id,code,warehouse_id,name,mode,status,note,created_by,created_at)
+    VALUES (?,?,?,?,?,?,'draft',?,?,?)`)
+    .run(sid, branch_id, code, warehouse_id, name, body.mode === 'full' ? 'full' : 'partial', note, actorName, now());
+  replaceStocktakeLines(sid, lines);
+  audit('stocktake.create', { session: sid, code, warehouse_id, lines: lines.length }, branch_id, actorName);
+  emit('inventory:updated', { stocktake: sid }, branch_id);
+  return getStocktakeSession(sid, branch_id);
+}
+
+// "Cân bằng kho": tính lại chênh lệch tại thời điểm duyệt rồi nhập/xuất bù để
+// tồn kho khớp số đếm. Toàn bộ điều chỉnh gom vào MỘT phiếu kho type 'stocktake'.
+export function approveStocktakeSession(id, branch_id = 'sala', user = {}) {
+  const s = db.prepare(`SELECT * FROM stocktake_sessions WHERE id=? AND branch_id=?`).get(id, branch_id);
+  if (!s) throw new Error('Phiếu kiểm không tồn tại');
+  if (s.status !== 'draft') throw new Error('Phiếu kiểm đã cân bằng hoặc đã hủy');
+  const rawLines = db.prepare(`SELECT * FROM stocktake_lines WHERE session_id=? ORDER BY rowid`).all(id);
+  if (!rawLines.length) throw new Error('Phiếu kiểm chưa có dòng hàng');
+  const actorName = user?.name || user?.username || null;
+  // Cân bằng phiếu kiểm chạm nhiều lô cùng lúc — trọn gói để tồn và phiếu luôn
+  // khớp nhau, không có trạng thái "đã cân bằng một nửa".
+  return inTransaction(() => {
+  const doc = createDocument(branch_id, {
+    type: 'stocktake', warehouse_id: s.warehouse_id,
+    ref: s.code || s.id, reason: 'stocktake_balance', note: s.note, created_by: actorName,
+  });
+  const updLine = db.prepare(`UPDATE stocktake_lines SET expected_qty=?, delta_qty=? WHERE id=?`);
+  let changed = 0;
+  const touched = [];
+  for (const line of rawLines) {
+    const stockType = normalizeStockType(line.item_type);
+    // Lô có thể vừa được tạo/thay đổi sau khi lập phiếu — tính lại ngay lúc duyệt.
+    let lot_id = line.lot_id;
+    if (!lot_id && line.lot_no) {
+      lot_id = db.prepare(`SELECT id FROM stock_lots WHERE warehouse_id=? AND item_type=? AND item_id=? AND lot_no=?`)
+        .get(s.warehouse_id, stockType, line.item_id, line.lot_no)?.id || null;
+    }
+    const expected = line.lot_no && !lot_id ? 0 : currentStock(stockType, line.item_id, s.warehouse_id, lot_id);
+    const delta = line.counted_qty - expected;
+    updLine.run(expected, delta, line.id);
+    if (Math.abs(delta) < 0.000001) continue;
+    if (delta > 0) {
+      receiveGeneric(stockType, line.item_id, delta, branch_id, {
+        warehouse_id: s.warehouse_id,
+        lot_no: line.lot_no || `COUNT-${(s.code || s.id).slice(-6)}`,
+        expiry_date: line.expiry_date || null,
+        movementType: 'stocktake',
+        ref: s.code || s.id,
+        reason: line.note || 'stocktake_gain',
+        doc_id: doc.id,
+      });
+    } else {
+      issueGeneric(stockType, line.item_id, Math.abs(delta), branch_id, {
+        warehouse_id: s.warehouse_id,
+        lot_id: lot_id || null,
+        movementType: 'stocktake',
+        ref: s.code || s.id,
+        reason: line.note || 'stocktake_loss',
+        doc_id: doc.id,
+      });
+    }
+    touched.push({ stockType, id: line.item_id });
+    changed++;
+  }
+  db.prepare(`UPDATE stocktake_sessions SET status='approved', approved_at=? WHERE id=?`).run(now(), id);
+  checkAlerts(branch_id, touched);
+  audit('stocktake.approve', { session: id, code: s.code, changed, document: doc.id }, branch_id, actorName);
+  emit('inventory:updated', { stocktake: id }, branch_id);
+  return getStocktakeSession(id, branch_id);
+  });
+}
+
+export function cancelStocktakeSession(id, branch_id = 'sala', user = {}) {
+  const s = db.prepare(`SELECT * FROM stocktake_sessions WHERE id=? AND branch_id=?`).get(id, branch_id);
+  if (!s) throw new Error('Phiếu kiểm không tồn tại');
+  if (s.status !== 'draft') throw new Error('Chỉ hủy được phiếu kiểm ở trạng thái Phiếu tạm');
+  db.prepare(`UPDATE stocktake_sessions SET status='cancelled', cancelled_at=? WHERE id=?`).run(now(), id);
+  audit('stocktake.cancel', { session: id, code: s.code }, branch_id, user?.name || user?.username);
+  emit('inventory:updated', { stocktake: id }, branch_id);
+  return getStocktakeSession(id, branch_id);
+}
+
+export function getStocktakeSession(id, branch_id = 'sala') {
+  const s = db.prepare(`
+    SELECT s.*, w.name AS warehouse_name
     FROM stocktake_sessions s
     LEFT JOIN warehouses w ON w.id=s.warehouse_id
-    WHERE s.branch_id=?
-    ORDER BY s.created_at DESC LIMIT ?`).all(branch_id, limit);
+    WHERE s.id=? AND s.branch_id=?`).get(id, branch_id);
+  if (!s) throw new Error('Phiếu kiểm không tồn tại');
+  const lines = db.prepare(`
+    SELECT l.*, COALESCE(l.item_name,i.name,sk.name) AS item_name,
+      COALESCE(l.unit_snapshot,i.unit,sk.unit) AS unit,
+      COALESCE(l.item_barcode,i.barcode,sk.barcode) AS barcode,
+      COALESCE(l.item_code,sk.code) AS item_code
+    FROM stocktake_lines l
+    LEFT JOIN inventory_items i ON i.id=l.item_id AND l.item_type='inventory'
+    LEFT JOIN skus sk ON sk.id=l.item_id AND l.item_type='sku'
+    WHERE l.session_id=?
+    ORDER BY l.rowid`).all(id);
+  return { ...s, lines, ...stocktakeTotals(lines) };
 }
 
-export function listLots(branch_id = 'br1', filters = {}) {
+function stocktakeTotals(lines) {
+  let total_counted = 0, total_delta = 0, delta_inc = 0, delta_dec = 0;
+  for (const l of lines) {
+    total_counted += l.counted_qty || 0;
+    total_delta += l.delta_qty || 0;
+    if ((l.delta_qty || 0) > 0) delta_inc += l.delta_qty;
+    else delta_dec += l.delta_qty;
+  }
+  return { total_counted, total_delta, delta_inc, delta_dec };
+}
+
+export function listStocktakes(branch_id = 'sala', filters = {}) {
+  if (typeof filters === 'number') filters = { limit: filters }; // chữ ký cũ (limit)
+  const limit = Math.max(1, Math.min(500, parseInt(filters.limit) || 100));
+  const params = [branch_id];
+  let where = 's.branch_id=?';
+  if (filters.status) {
+    const statuses = String(filters.status).split(',').map(v => v.trim()).filter(Boolean);
+    if (statuses.length) {
+      where += ` AND s.status IN (${statuses.map(() => '?').join(',')})`;
+      params.push(...statuses);
+    }
+  }
+  if (filters.warehouse_id) { where += ' AND s.warehouse_id=?'; params.push(String(filters.warehouse_id)); }
+  if (filters.from) { where += ' AND s.created_at>=?'; params.push(String(filters.from)); }
+  if (filters.to) { where += ' AND s.created_at<=?'; params.push(String(filters.to)); }
+  const search = searchTokens(filters.q);
+  const rows = db.prepare(`
+    SELECT s.*, w.name AS warehouse_name,
+      (SELECT COUNT(*) FROM stocktake_lines l WHERE l.session_id=s.id) AS lines,
+      (SELECT COALESCE(SUM(l.counted_qty),0) FROM stocktake_lines l WHERE l.session_id=s.id) AS total_counted,
+      (SELECT COALESCE(SUM(l.delta_qty),0) FROM stocktake_lines l WHERE l.session_id=s.id) AS total_delta,
+      (SELECT COALESCE(SUM(CASE WHEN l.delta_qty>0 THEN l.delta_qty ELSE 0 END),0) FROM stocktake_lines l WHERE l.session_id=s.id) AS delta_inc,
+      (SELECT COALESCE(SUM(CASE WHEN l.delta_qty<0 THEN l.delta_qty ELSE 0 END),0) FROM stocktake_lines l WHERE l.session_id=s.id) AS delta_dec
+    FROM stocktake_sessions s
+    LEFT JOIN warehouses w ON w.id=s.warehouse_id
+    WHERE ${where}
+    ORDER BY s.created_at DESC LIMIT 5000`).all(...params);
+  return rows.filter(row => matchesSearch([row.code, row.name, row.warehouse_name], search)).slice(0, limit);
+}
+
+export function listLots(branch_id = 'sala', filters = {}) {
   const rows = db.prepare(`
     SELECT l.*, w.name AS warehouse_name,
       COALESCE(i.name, s.name) AS item_name,
       COALESCE(i.unit, s.unit) AS unit,
+      s.code AS item_code,
+      COALESCE(i.barcode, s.barcode) AS item_barcode,
       COALESCE(i.item_type, 'retail') AS item_kind
     FROM stock_lots l
     LEFT JOIN warehouses w ON w.id=l.warehouse_id
@@ -551,7 +1184,7 @@ export function listLots(branch_id = 'br1', filters = {}) {
     .filter(l => !maxDate || (l.expiry_date && l.expiry_date <= maxDate));
 }
 
-export function listMovements(branch_id = 'br1', filters = {}) {
+export function listMovements(branch_id = 'sala', filters = {}) {
   if (typeof filters === 'number') filters = { limit: filters }; // legacy signature
   const limit = Math.max(1, Math.min(500, parseInt(filters.limit) || 80));
   const params = [branch_id];
@@ -582,7 +1215,7 @@ export function listMovements(branch_id = 'br1', filters = {}) {
 // ---- Warehouse documents (electronic goods-receipt / goods-issue slips) ----
 // ONLY real warehouse slips (receive/issue/transfer/stocktake). Sale/return docs
 // are excluded IN SQL so the LIMIT applies to genuine slips, not sales.
-export function listDocuments(branch_id = 'br1', filters = {}) {
+export function listDocuments(branch_id = 'sala', filters = {}) {
   const limit = Math.max(1, Math.min(500, parseInt(filters.limit) || 60));
   const excludedTypes = [...SALE_DOC_TYPES];
   const params = [branch_id, ...excludedTypes];
@@ -603,7 +1236,7 @@ export function listDocuments(branch_id = 'br1', filters = {}) {
     ORDER BY d.created_at DESC LIMIT ?`).all(...params, limit);
 }
 
-export function getDocument(id, branch_id = 'br1') {
+export function getDocument(id, branch_id = 'sala') {
   const doc = db.prepare(`
     SELECT d.*, w.name AS warehouse_name, w.code AS warehouse_code, tw.name AS to_warehouse_name
     FROM inventory_documents d
@@ -613,7 +1246,10 @@ export function getDocument(id, branch_id = 'br1') {
   if (!doc) throw new Error('Phiếu không tồn tại');
   const branch = db.prepare(`SELECT name, address FROM branches WHERE id=?`).get(branch_id);
   const lines = db.prepare(`
-    SELECT l.*, COALESCE(i.name, s.name) AS item_name, COALESCE(i.unit, s.unit) AS unit,
+    SELECT l.*, COALESCE(l.item_name, i.name, s.name) AS item_name,
+      COALESCE(l.unit_snapshot, i.unit, s.unit) AS unit,
+      COALESCE(l.item_code, s.code) AS item_code,
+      COALESCE(l.item_barcode, i.barcode, s.barcode) AS item_barcode,
       lot.lot_no, lot.expiry_date
     FROM inventory_document_lines l
     LEFT JOIN inventory_items i ON i.id=l.item_id AND l.item_type='inventory'
@@ -624,15 +1260,16 @@ export function getDocument(id, branch_id = 'br1') {
   return { ...doc, branch_name: branch?.name, branch_address: branch?.address, lines };
 }
 
-export function deductForOrder(order, branch_id = 'br1') {
+export function deductForOrder(order, branch_id = 'sala') {
   const getRecipe = db.prepare(`SELECT inventory_item_id, qty FROM recipes WHERE menu_item_id=?`);
   const touched = [];
   const shortages = [];
-  const onShort = (s) => shortages.push(s);
+  // BÁN LẺ CHO BÁN ÂM KHO: đơn retail được bán dù số tồn hệ thống thiếu (hàng
+  // thật có trên kệ, số tồn thường trễ). Tồn xuống âm + ghi cảnh báo để đối soát.
+  // Món CÓ LÔ vẫn strict (issueGeneric tự chặn khi có lot_id dù allowNegative).
   for (const it of order.items || []) {
     if (it.status === 'cancelled') continue;
     if (it.sku_id) {
-      // Retail SKUs stay strict: you can't sell a physical unit you don't have.
       issueGeneric('sku', it.sku_id, it.qty, branch_id, { movementType: 'sale', ref: order.id, reason: 'retail_sale', lot_id: it.lot_id || null, skipDocument: true });
       touched.push({ stockType: 'sku', id: it.sku_id });
     } else if (it.menu_item_id) {
@@ -640,7 +1277,7 @@ export function deductForOrder(order, branch_id = 'br1') {
         const used = r.qty * it.qty;
         // Kitchen ingredients never block a sale: allow the count to go negative
         // and just warn, so an off recipe/inventory count can't stop the kitchen.
-        issueGeneric('inventory', r.inventory_item_id, used, branch_id, { movementType: 'recipe', ref: order.id, reason: it.name, allowNegative: true, onShort, skipDocument: true });
+        issueGeneric('inventory', r.inventory_item_id, used, branch_id, { movementType: 'recipe', ref: order.id, reason: it.name, skipDocument: true });
         touched.push({ stockType: 'inventory', id: r.inventory_item_id });
       }
     }
@@ -658,8 +1295,11 @@ export function deductForOrder(order, branch_id = 'br1') {
 function receiveGeneric(stockType, item_id, qtyRaw, branch_id, options = {}) {
   const item = getItem(stockType, item_id, branch_id);
   if (!item) throw new Error('Mặt hàng không tồn tại');
-  const qty = qtyNum(qtyRaw) * unitFactor(item, options.uom);
+  const factor = unitFactor(item, options.uom);
+  const qty = qtyNum(qtyRaw) * factor;
+  const unitCost = (parseFloat(options.unit_cost ?? item.cost ?? 0) || 0) / factor;
   const warehouse_id = options.warehouse_id || item.warehouse_id || fallbackWarehouse(branch_id, stockType);
+  requireWarehouse(branch_id, warehouse_id, stockType === 'sku' ? 'retail' : 'kitchen');
   if (item.expiry_required && !options.expiry_date) throw new Error(`${item.name} bắt buộc nhập hạn sử dụng`);
   const doc = options.skipDocument
       ? null
@@ -680,7 +1320,7 @@ function receiveGeneric(stockType, item_id, qtyRaw, branch_id, options = {}) {
     expiry_date: options.expiry_date || null,
     received_at: options.received_at || now(),
     qty,
-    unit_cost: parseFloat(options.unit_cost ?? item.cost ?? 0) || 0,
+    unit_cost: unitCost,
     supplier: options.supplier || item.supplier || null,
   });
   addSummaryStock(stockType, item_id, qty);
@@ -699,6 +1339,7 @@ function issueGeneric(stockType, item_id, qtyRaw, branch_id, options = {}) {
   if (!item) throw new Error('Mặt hàng không tồn tại');
   const qty = qtyNum(qtyRaw) * unitFactor(item, options.uom);
   const warehouse_id = options.warehouse_id || item.warehouse_id || fallbackWarehouse(branch_id, stockType);
+  requireWarehouse(branch_id, warehouse_id, stockType === 'sku' ? 'retail' : 'kitchen');
   const available = currentStock(stockType, item_id, warehouse_id, options.lot_id || null);
   if (available + 0.000001 < qty) {
     // Strict by default (can't issue what you don't have). With allowNegative
@@ -785,8 +1426,13 @@ function selectedLot(stockType, item_id, warehouse_id, lot_id, qty) {
 }
 
 function upsertLot({ branch_id, warehouse_id, item_type, item_id, lot_no, mfg_date = null, expiry_date = null, received_at = now(), qty, unit_cost = 0, supplier = null }) {
-  const found = db.prepare(`SELECT * FROM stock_lots WHERE warehouse_id=? AND item_type=? AND item_id=? AND lot_no=?`)
-    .get(warehouse_id, item_type, item_id, lot_no);
+  // Lot identity includes its dates. The same supplier lot code with a
+  // different expiry/manufacturing date must never overwrite an older lot.
+  const found = db.prepare(`SELECT * FROM stock_lots
+    WHERE warehouse_id=? AND item_type=? AND item_id=? AND lot_no=?
+      AND COALESCE(expiry_date,'')=COALESCE(?,'')
+      AND COALESCE(mfg_date,'')=COALESCE(?,'')`)
+    .get(warehouse_id, item_type, item_id, lot_no, expiry_date, mfg_date);
   if (found) {
     db.prepare(`UPDATE stock_lots SET qty_on_hand=qty_on_hand+?, unit_cost=?, supplier=COALESCE(?,supplier), expiry_date=COALESCE(?,expiry_date), mfg_date=COALESCE(?,mfg_date), status='active' WHERE id=?`)
       .run(qty, unit_cost, supplier, expiry_date, mfg_date, found.id);
@@ -803,28 +1449,57 @@ function upsertLot({ branch_id, warehouse_id, item_type, item_id, lot_no, mfg_da
 function normalizeLotNo(item, options = {}) {
   if (options.lot_no) return String(options.lot_no).trim();
   if (item.track_lot || item.expiry_required || options.expiry_date) {
-    const d = new Date().toISOString().slice(0, 10).replaceAll('-', '');
-    return `LOT-${d}-${uid('').slice(-5).toUpperCase()}`;
+    // Stable derived key: repeated imports for the same item/date accumulate;
+    // a different date naturally creates a separate lot.
+    const dateKey = String(options.expiry_date || options.mfg_date || new Date().toISOString().slice(0, 10))
+      .replace(/[^0-9]/g, '') || 'UNDATED';
+    return `AUTO-${dateKey}`;
   }
   return 'NOLOT';
 }
 
-function createDocument(branch_id, { type, warehouse_id = null, to_warehouse_id = null, supplier = null, ref = null, reason = null }) {
+// Mã phiếu đọc được theo loại (giống KiotViet): PN000001, XK000001… Đánh số
+// tăng dần theo chi nhánh + tiền tố; phiếu cũ không có mã vẫn hiển thị theo id.
+const DOC_CODE_PREFIX = {
+  receipt: 'PN', opening: 'PN', issue: 'XK', transfer: 'CH',
+  stocktake: 'KK', internal_use: 'XDNB', purchase_return: 'THN',
+};
+function nextSeqCode(table, branch_id, prefix, width = 6) {
+  const last = db.prepare(`SELECT code FROM ${table} WHERE branch_id=? AND code LIKE ? ORDER BY LENGTH(code) DESC, code DESC LIMIT 1`)
+    .get(branch_id, prefix + '%');
+  const seq = last ? (parseInt(String(last.code).slice(prefix.length)) || 0) + 1 : 1;
+  return prefix + String(seq).padStart(width, '0');
+}
+
+function createDocument(branch_id, { type, warehouse_id = null, to_warehouse_id = null, supplier = null, ref = null, reason = null, note = null, created_by = null }) {
   const id = uid('doc_');
-  db.prepare(`INSERT INTO inventory_documents (id,branch_id,warehouse_id,to_warehouse_id,type,status,supplier,ref,reason,created_at,posted_at)
-    VALUES (?,?,?,?,?,'posted',?,?,?,?,?)`).run(id, branch_id, warehouse_id, to_warehouse_id, type, supplier, ref, reason, now(), now());
-  return { id };
+  const prefix = DOC_CODE_PREFIX[type];
+  const code = prefix ? nextSeqCode('inventory_documents', branch_id, prefix) : null;
+  db.prepare(`INSERT INTO inventory_documents (id,branch_id,code,warehouse_id,to_warehouse_id,type,status,supplier,ref,reason,note,created_by,created_at,posted_at)
+    VALUES (?,?,?,?,?,?,'posted',?,?,?,?,?,?,?)`).run(id, branch_id, code, warehouse_id, to_warehouse_id, type, supplier, ref, reason, note, created_by, now(), now());
+  return { id, code };
 }
 
 function addDocumentLine(document_id, item_type, item_id, lot_id, qty, unit_cost, expiry_date, note) {
-  db.prepare(`INSERT INTO inventory_document_lines (id,document_id,item_type,item_id,lot_id,qty,unit_cost,expiry_date,note)
-    VALUES (?,?,?,?,?,?,?,?,?)`).run(uid('dl_'), document_id, item_type, item_id, lot_id || null, qty, unit_cost || 0, expiry_date || null, note || null);
+  const item = item_type === 'sku'
+    ? db.prepare(`SELECT name,code,barcode,unit FROM skus WHERE id=?`).get(item_id)
+    : db.prepare(`SELECT name,NULL code,barcode,unit FROM inventory_items WHERE id=?`).get(item_id);
+  db.prepare(`INSERT INTO inventory_document_lines
+    (id,document_id,item_type,item_id,item_name,item_code,item_barcode,unit_snapshot,lot_id,qty,unit_cost,expiry_date,note)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(uid('dl_'), document_id, item_type, item_id,
+      item?.name || null, item?.code || null, item?.barcode || null, item?.unit || null,
+      lot_id || null, qty, unit_cost || 0, expiry_date || null, note || null);
 }
 
 function recordMovement({ branch_id, stockType, item_id, warehouse_id, lot_id = null, type, qty, ref = null, reason = null, doc_id = null, unit_cost = 0 }) {
+  const item = stockType === 'sku'
+    ? db.prepare(`SELECT name,code,barcode,unit FROM skus WHERE id=?`).get(item_id)
+    : db.prepare(`SELECT name,NULL code,barcode,unit FROM inventory_items WHERE id=?`).get(item_id);
   db.prepare(`INSERT INTO stock_movements
-    (id,branch_id,inventory_item_id,type,qty,ref,created_at,item_type,warehouse_id,lot_id,unit_cost,reason,doc_id)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(uid('sm_'), branch_id, item_id, type, qty, ref, now(), stockType, warehouse_id, lot_id, unit_cost, reason, doc_id);
+    (id,branch_id,inventory_item_id,item_name,item_code,item_barcode,unit_snapshot,type,qty,ref,created_at,item_type,warehouse_id,lot_id,unit_cost,reason,doc_id)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(uid('sm_'), branch_id, item_id,
+      item?.name || null, item?.code || null, item?.barcode || null, item?.unit || null,
+      type, qty, ref, now(), stockType, warehouse_id, lot_id, unit_cost, reason, doc_id);
 }
 
 function addSummaryStock(stockType, item_id, delta) {
@@ -837,14 +1512,19 @@ function currentStock(stockType, item_id, warehouse_id, lot_id = null) {
     return db.prepare(`SELECT COALESCE(qty_on_hand,0) stock FROM stock_lots WHERE id=? AND item_type=? AND item_id=? AND warehouse_id=?`)
       .get(lot_id, stockType, item_id, warehouse_id)?.stock || 0;
   }
-  const lotRows = db.prepare(`SELECT COALESCE(SUM(qty_on_hand),0) stock FROM stock_lots WHERE item_type=? AND item_id=? AND warehouse_id=?`)
+  const lotRows = db.prepare(`SELECT COUNT(*) lots, COALESCE(SUM(qty_on_hand),0) stock FROM stock_lots WHERE item_type=? AND item_id=? AND warehouse_id=?`)
     .get(stockType, item_id, warehouse_id);
-  if (lotRows && lotRows.stock > 0) return lotRows.stock;
-  return getItem(stockType, item_id)?.stock || 0;
+  if (lotRows?.lots) return lotRows.stock;
+  const item = getItem(stockType, item_id);
+  if (!item) return 0;
+  const hasWarehouseStock = db.prepare(`SELECT 1 FROM stock_lots WHERE item_type=? AND item_id=? LIMIT 1`).get(stockType, item_id);
+  if (hasWarehouseStock) return 0;
+  const home = item.warehouse_id || fallbackWarehouse(item.branch_id, stockType);
+  return home === warehouse_id ? (item.stock || 0) : 0;
 }
 
 function enrichStockRow(stockType, row, warehouseFilter = null) {
-  const warehouse_id = row.warehouse_id || fallbackWarehouse(row.branch_id || 'br1', stockType);
+  const warehouse_id = row.warehouse_id || fallbackWarehouse(row.branch_id || 'sala', stockType);
   const stock = warehouseFilter ? currentStock(stockType, row.id, warehouseFilter) : row.stock;
   return {
     ...row,
@@ -868,16 +1548,6 @@ function getItem(stockType, id, branch_id = null) {
   return branch_id
     ? db.prepare(`SELECT *, 'inventory' AS stock_type FROM inventory_items WHERE id=? AND branch_id=?`).get(id, branch_id)
     : db.prepare(`SELECT *, 'inventory' AS stock_type FROM inventory_items WHERE id=?`).get(id);
-}
-
-function cleanupStockMaster(stockType, id, branch_id) {
-  if (stockType === 'inventory') db.prepare(`DELETE FROM recipes WHERE inventory_item_id=?`).run(id);
-  db.prepare(`DELETE FROM stock_lots WHERE branch_id=? AND item_type=? AND item_id=?`).run(branch_id, stockType, id);
-  db.prepare(`DELETE FROM stock_movements
-    WHERE branch_id=? AND inventory_item_id=? AND (item_type=? OR (item_type IS NULL AND ?='inventory'))`)
-    .run(branch_id, id, stockType, stockType);
-  db.prepare(`DELETE FROM inventory_document_lines WHERE item_type=? AND item_id=?`).run(stockType, id);
-  db.prepare(`DELETE FROM stocktake_lines WHERE item_type=? AND item_id=?`).run(stockType, id);
 }
 
 function normalizeStockType(v) {
