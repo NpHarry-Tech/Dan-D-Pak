@@ -62,7 +62,8 @@ có thể cùng một VPS. Không dùng chung DB.
 
 1. Mở `https://review.<domain>` → bấm **Download Dan D Pak (Review)**.
 2. Cài và mở **Dan D Pak POS (Review)** (Windows 10/11). App tự nối backend review.
-3. Đăng nhập: username `shopee-reviewer`, PIN/password `860921`.
+3. Đăng nhập: username `shopee-reviewer`, PIN/password = giá trị `SHOPEE_REVIEWER_PIN`
+   (đặt trong `deploy/review/.env` trên VPS, KHÔNG commit — xem §2). Placeholder, không ghi giá trị thật vào tài liệu.
 4. Vào **Bán Online** từ menu chính.
 5. **Thiết lập kênh → Shopee → Kết nối**: chạy uỷ quyền Shopee 1 chạm (sandbox).
 6. Xem **Đơn hàng**, **Hàng hoá** (đối chiếu listing↔SKU), **Tồn kho**, **Kết nối sàn**.
