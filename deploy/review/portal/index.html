@@ -4,70 +4,142 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex,nofollow">
+<meta name="color-scheme" content="light">
 <title>Dan D Pak POS — Shopee Integration Review</title>
 <style>
   :root{
-    --bg:#0f1216; --card:#171b21; --line:#262c34; --fg:#e8ecf1; --muted:#9aa4b2;
-    --accent:#ee4d2d; --ok:#2fb457;
-  }
-  @media (prefers-color-scheme: light){
-    :root{ --bg:#f4f6f9; --card:#ffffff; --line:#e2e6ec; --fg:#1a1f26; --muted:#5c6673; }
+    --bg:#ffffff; --panel:#f7f9fb; --line:#e3e8ee; --fg:#141a21; --muted:#586573;
+    --accent:#0e7490;        /* cyan-700: white text on this = 4.5:1 (WCAG AA) */
+    --accent-strong:#0b5b70; /* hover/active */
+    --accent-soft:#e6f4f8;   /* subtle cyan wash */
+    --ok:#0f7a3d;
+    --radius:12px;
   }
   *{ box-sizing:border-box }
-  body{ margin:0; font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
-    background:var(--bg); color:var(--fg); line-height:1.55; }
-  .wrap{ max-width:720px; margin:0 auto; padding:40px 20px 64px; }
-  .badge{ display:inline-block; font-size:12px; font-weight:700; letter-spacing:.04em;
-    color:var(--accent); border:1px solid var(--accent); border-radius:999px; padding:4px 12px; }
-  h1{ font-size:28px; margin:18px 0 6px; }
-  .sub{ color:var(--muted); font-size:15px; margin:0 0 28px; }
-  .card{ background:var(--card); border:1px solid var(--line); border-radius:14px;
-    padding:22px 24px; margin:16px 0; }
-  .dl{ display:inline-flex; align-items:center; gap:10px; background:var(--accent);
-    color:#fff; text-decoration:none; font-weight:700; font-size:16px;
-    padding:14px 26px; border-radius:10px; }
-  .dl:hover{ filter:brightness(1.06) }
-  .meta{ display:grid; grid-template-columns:auto 1fr; gap:6px 18px; font-size:14px; margin-top:8px }
-  .meta dt{ color:var(--muted) } .meta dd{ margin:0; font-weight:600 }
-  .dot{ display:inline-block; width:9px; height:9px; border-radius:50%; background:var(--ok); margin-right:7px }
-  ol{ padding-left:20px; margin:6px 0 } ol li{ margin:7px 0 }
-  code{ background:rgba(127,127,127,.16); padding:2px 6px; border-radius:5px; font-size:13px }
-  .note{ font-size:13px; color:var(--muted); margin-top:14px }
-  h2{ font-size:16px; margin:0 0 10px }
+  html{ -webkit-text-size-adjust:100% }
+  body{ margin:0; background:var(--bg); color:var(--fg); line-height:1.6;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; }
+  a{ color:var(--accent) }
+  a:focus-visible,.btn:focus-visible{ outline:3px solid #0e7490; outline-offset:2px; border-radius:6px }
+  .container{ width:100%; max-width:960px; margin:0 auto; padding:0 20px }
+
+  /* ── Header: ONLY wordmark (left) + one Download button (right) ── */
+  .site-header{ border-bottom:1px solid var(--line); background:#fff }
+  .site-header .container{ display:flex; align-items:center; justify-content:space-between;
+    gap:16px; min-height:76px; padding-top:12px; padding-bottom:12px; }
+  .wordmark{ display:inline-flex; align-items:baseline; gap:.12em; font-weight:800;
+    font-size:clamp(22px,4.4vw,30px); letter-spacing:-.01em; color:var(--fg); text-decoration:none; white-space:nowrap }
+  .wordmark .accent{ color:var(--accent) }
+  .btn{ display:inline-flex; align-items:center; justify-content:center; text-align:center;
+    min-height:44px; min-width:44px; padding:0 22px; border-radius:10px; border:1px solid var(--accent);
+    background:var(--accent); color:#ffffff; font-weight:700; font-size:16px; text-decoration:none;
+    cursor:pointer; transition:background-color .12s ease, transform .02s ease; }
+  .btn:hover{ background:var(--accent-strong); border-color:var(--accent-strong) }
+  .btn:active{ transform:translateY(1px) }
+  .btn[aria-disabled="true"]{ opacity:.55; pointer-events:none }
+
+  /* ── Hero + content ── */
+  main .container{ padding-top:40px; padding-bottom:56px }
+  h1{ font-size:clamp(26px,5vw,34px); line-height:1.25; margin:0 0 10px }
+  .lede{ font-size:17px; color:var(--muted); margin:0 0 22px; max-width:60ch }
+  .tags{ display:flex; flex-wrap:wrap; gap:8px; margin:0 0 28px; padding:0; list-style:none }
+  .tag{ font-size:12.5px; font-weight:700; letter-spacing:.02em; color:var(--accent);
+    background:var(--accent-soft); border:1px solid #cfe7ee; border-radius:999px; padding:5px 12px }
+  .grid{ display:grid; grid-template-columns:1fr 1fr; gap:18px; margin:6px 0 }
+  @media (max-width:720px){ .grid{ grid-template-columns:1fr } }
+  .panel{ background:var(--panel); border:1px solid var(--line); border-radius:var(--radius); padding:20px 22px }
+  .panel h2{ font-size:16px; margin:0 0 12px }
+  dl.meta{ display:grid; grid-template-columns:auto 1fr; gap:8px 16px; margin:0; font-size:14.5px }
+  dl.meta dt{ color:var(--muted) } dl.meta dd{ margin:0; font-weight:600 }
+  ol{ margin:6px 0 0; padding-left:22px } ol li{ margin:9px 0 }
+  code{ background:#eef2f6; border:1px solid var(--line); padding:1px 6px; border-radius:5px; font-size:13px }
+  .note{ font-size:13.5px; color:var(--muted); margin:16px 0 0 }
+  .callout{ border-left:3px solid var(--accent); background:var(--accent-soft);
+    border-radius:8px; padding:12px 16px; margin:0 0 26px; font-size:14.5px }
+
+  /* ── Footer ── */
+  .site-footer{ border-top:1px solid var(--line); background:#fff }
+  .site-footer .container{ padding-top:20px; padding-bottom:24px; text-align:center;
+    font-size:13px; color:var(--muted) }
+  .site-footer a{ color:var(--muted); text-decoration:underline; text-underline-offset:2px }
+  .site-footer a:hover{ color:var(--accent) }
+
+  @media (prefers-reduced-motion: reduce){ *{ transition:none !important } }
 </style>
 </head>
 <body>
-<div class="wrap">
-  <span class="badge">SHOPEE REVIEW ENVIRONMENT</span>
-  <h1>Dan D Pak POS</h1>
-  <p class="sub">Windows Desktop Application — isolated review/staging instance for Shopee Open Platform third-party app review. Synthetic data only; no production customer data.</p>
+  <header class="site-header">
+    <div class="container">
+      <a class="wordmark" href="/" aria-label="Dan D Pak — home"><span>Dan D</span> <span class="accent">Pak</span></a>
+      <a class="btn" href="/download/DanDPak-Review-Setup.exe" download>Download</a>
+    </div>
+  </header>
 
-  <div class="card">
-    <h2>Download the review build</h2>
-    <p style="margin:4px 0 18px;color:var(--muted);font-size:14px">Signed Windows installer of the actual Dan D Pak POS product, configured to connect to the isolated review backend.</p>
-    <a class="dl" href="/download/DanDPak-Review-Setup.exe" download>⬇ Download Dan D Pak (Review)</a>
-    <dl class="meta" style="margin-top:20px">
-      <dt>Platform</dt><dd>Windows 10/11 (64-bit)</dd>
-      <dt>Environment</dt><dd>Shopee Review (sandbox)</dd>
-      <dt>Backend</dt><dd>api-review.dandpakpos.io.vn</dd>
-      <dt>Status</dt><dd><span class="dot"></span>Online</dd>
-    </dl>
-  </div>
+  <main>
+    <div class="container">
+      <h1>Shopee integration review environment</h1>
+      <p class="lede">This is an isolated review/staging instance of the Dan D Pak POS Windows desktop
+        application, provided for Shopee Open Platform third‑party app review. It uses synthetic data
+        only and holds no production or customer information.</p>
 
-  <div class="card">
-    <h2>Testing instructions</h2>
-    <ol>
-      <li>Download and install the review build above.</li>
-      <li>Launch <b>Dan D Pak POS (Review)</b>. It connects to the review backend automatically.</li>
-      <li>Log in with the <b>test username &amp; password supplied to Shopee</b> in the app submission form.</li>
-      <li>Open <b>Bán Online</b> (Online Sales) from the main menu.</li>
-      <li>Go to <b>Thiết lập kênh → Shopee</b> and press <b>Kết nối</b> to test the one-click Shopee authorization (sandbox).</li>
-      <li>Review <b>Đơn hàng</b> (Orders), <b>Hàng hoá</b> (Products / listing mapping), <b>Tồn kho</b> (Inventory) and <b>Kết nối sàn</b> (Marketplace Connections).</li>
-    </ol>
-    <p class="note">The review account is least-privilege: it can view and test the online-commerce and Shopee integration areas only. It cannot access secrets, production credentials, database administration, or destructive operations.</p>
-  </div>
+      <ul class="tags">
+        <li class="tag">Windows desktop app</li>
+        <li class="tag">Sandbox / review only</li>
+        <li class="tag">Synthetic data only</li>
+        <li class="tag">Least‑privilege reviewer access</li>
+      </ul>
 
-  <p class="note">© Dan D Pak — this instance exists solely for Shopee app review and holds no real customer or order data.</p>
-</div>
+      <div class="grid">
+        <section class="panel" aria-labelledby="dl-h">
+          <h2 id="dl-h">Download the review build</h2>
+          <p style="margin:0 0 14px;color:var(--muted);font-size:14.5px">The actual Dan D Pak POS
+            Windows installer, configured to connect to the isolated review backend. Use the
+            <strong>Download</strong> button in the header.</p>
+          <dl class="meta">
+            <dt>Platform</dt><dd>Windows 10 / 11 (64‑bit)</dd>
+            <dt>Environment</dt><dd>Shopee review (sandbox)</dd>
+            <dt>Backend</dt><dd>api-review.dandpakpos.io.vn</dd>
+            <dt>File</dt><dd>DanDPak-Review-Setup.exe</dd>
+          </dl>
+        </section>
+
+        <section class="panel" aria-labelledby="acc-h">
+          <h2 id="acc-h">Reviewer access</h2>
+          <p style="margin:0;color:var(--muted);font-size:14.5px">Log in with the test username and
+            password provided to Shopee in the app submission form (they are not published on this
+            page). The reviewer account is least‑privilege: it can view and exercise the
+            online‑commerce and Shopee integration areas only, and cannot access secrets, production
+            credentials, database administration, or destructive operations.</p>
+        </section>
+      </div>
+
+      <section class="panel" aria-labelledby="test-h" style="margin-top:18px">
+        <h2 id="test-h">How to test the Shopee integration</h2>
+        <ol>
+          <li>Use the <strong>Download</strong> button above and install the review build.</li>
+          <li>Launch <strong>Dan D Pak POS (Review)</strong>; it connects to the review backend automatically.</li>
+          <li>Log in with the reviewer test credentials supplied in the submission form.</li>
+          <li>Open <strong>Bán Online</strong> (Online Sales) from the main menu.</li>
+          <li>Go to <strong>Thiết lập kênh → Shopee</strong> and press <strong>Kết nối</strong> to run the
+            Shopee authorization (OAuth) against the sandbox.</li>
+          <li>Review <strong>Đơn hàng</strong> (imported orders), <strong>Tồn kho</strong> (inventory view) and
+            <strong>Kết nối sàn</strong> (marketplace connection status).</li>
+        </ol>
+        <p class="note">Scope note: this build authorizes a Shopee shop and reads orders/connection
+          status in the sandbox. It does not publish products/listings, stock, or prices to Shopee.</p>
+      </section>
+
+      <p class="callout" style="margin-top:22px">Isolated environment: separate backend, synthetic
+        seed data, and a reviewer role restricted to the review branch. No production database,
+        credentials, or customer data are reachable from this instance.</p>
+    </div>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container">
+      Copyright © 2026 <a href="https://bcmarketing.vn/" target="_blank" rel="noopener noreferrer">bcmarketing</a>.
+      Powered by <a href="https://deron.vn/#about" target="_blank" rel="noopener noreferrer">Harry (Deron)</a>
+    </div>
+  </footer>
 </body>
 </html>
