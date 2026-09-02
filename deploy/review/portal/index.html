@@ -5,7 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex,nofollow">
 <meta name="color-scheme" content="light">
-<title>Dan D Pak POS — Shopee Integration Review</title>
+<meta name="description" content="Dan-D Pak POS — isolated Shopee integration review environment (synthetic data only).">
+<link rel="icon" type="image/png" href="assets/DanOnlogo.png">
+<title>Dan-D Pak POS — Shopee Integration Review</title>
 <style>
   :root{
     --bg:#ffffff; --panel:#f7f9fb; --line:#e3e8ee; --fg:#141a21; --muted:#586573;
@@ -23,11 +25,11 @@
   a:focus-visible,.btn:focus-visible{ outline:3px solid #0e7490; outline-offset:2px; border-radius:6px }
   .container{ width:100%; max-width:960px; margin:0 auto; padding:0 20px }
 
-  /* ── Header: ONLY wordmark (left) + one Download button (right) ── */
+  /* ── Header: ONLY official logo (left) + one Download button (right) ── */
   .site-header{ border-bottom:1px solid var(--line); background:#fff }
   .site-header .container{ display:flex; align-items:center; justify-content:space-between;
     gap:16px; min-height:76px; padding-top:12px; padding-bottom:12px; }
-  /* Official Dan D Pak logo (DanOnlogo.png, 400x400, transparent) */
+  /* Official Dan-D Pak logo (DanOnlogo.png, 400x400, transparent) */
   .brand-logo{ display:block; height:64px; width:auto; max-width:min(220px,48vw); object-fit:contain }
   @media (max-width:600px){ .brand-logo{ height:48px; max-width:46vw } }
   .btn{ display:inline-flex; align-items:center; justify-content:center; text-align:center;
@@ -42,20 +44,21 @@
   main .container{ padding-top:40px; padding-bottom:56px }
   h1{ font-size:clamp(26px,5vw,34px); line-height:1.25; margin:0 0 10px }
   .lede{ font-size:17px; color:var(--muted); margin:0 0 22px; max-width:60ch }
-  .tags{ display:flex; flex-wrap:wrap; gap:8px; margin:0 0 28px; padding:0; list-style:none }
+  .tags{ display:flex; flex-wrap:wrap; gap:8px; margin:0; padding:0; list-style:none }
+  .hero-tags{ margin:0 0 28px }
   .tag{ font-size:12.5px; font-weight:700; letter-spacing:.02em; color:var(--accent);
     background:var(--accent-soft); border:1px solid #cfe7ee; border-radius:999px; padding:5px 12px }
   .grid{ display:grid; grid-template-columns:1fr 1fr; gap:18px; margin:6px 0 }
   @media (max-width:720px){ .grid{ grid-template-columns:1fr } }
   .panel{ background:var(--panel); border:1px solid var(--line); border-radius:var(--radius); padding:20px 22px }
   .panel h2{ font-size:16px; margin:0 0 12px }
+  .panel p{ margin:0; color:var(--muted); font-size:14.5px }
   dl.meta{ display:grid; grid-template-columns:auto 1fr; gap:8px 16px; margin:0; font-size:14.5px }
   dl.meta dt{ color:var(--muted) } dl.meta dd{ margin:0; font-weight:600 }
-  ol{ margin:6px 0 0; padding-left:22px } ol li{ margin:9px 0 }
-  code{ background:#eef2f6; border:1px solid var(--line); padding:1px 6px; border-radius:5px; font-size:13px }
-  .note{ font-size:13.5px; color:var(--muted); margin:16px 0 0 }
+  .overview{ margin-top:18px }
+  .overview p{ margin:0 0 14px; max-width:70ch }
   .callout{ border-left:3px solid var(--accent); background:var(--accent-soft);
-    border-radius:8px; padding:12px 16px; margin:0 0 26px; font-size:14.5px }
+    border-radius:8px; padding:12px 16px; margin:22px 0 0; font-size:14.5px }
 
   /* ── Footer ── */
   .site-footer{ border-top:1px solid var(--line); background:#fff }
@@ -70,7 +73,7 @@
 <body>
   <header class="site-header">
     <div class="container">
-      <img class="brand-logo" src="assets/DanOnlogo.png" alt="Dan D Pak" width="400" height="400">
+      <img class="brand-logo" src="assets/DanOnlogo.png" alt="Dan-D Pak" width="400" height="400">
       <a class="btn" href="/download/DanDPak-Review-Setup.exe" download>Download</a>
     </div>
   </header>
@@ -78,23 +81,22 @@
   <main>
     <div class="container">
       <h1>Shopee integration review environment</h1>
-      <p class="lede">This is an isolated review/staging instance of the Dan D Pak POS Windows desktop
+      <p class="lede">This is an isolated review/staging instance of the Dan-D Pak POS Windows desktop
         application, provided for Shopee Open Platform third‑party app review. It uses synthetic data
         only and holds no production or customer information.</p>
 
-      <ul class="tags">
+      <ul class="tags hero-tags">
         <li class="tag">Windows desktop app</li>
         <li class="tag">Sandbox / review only</li>
         <li class="tag">Synthetic data only</li>
-        <li class="tag">Least‑privilege reviewer access</li>
+        <li class="tag">Least‑privilege access</li>
       </ul>
 
       <div class="grid">
         <section class="panel" aria-labelledby="dl-h">
           <h2 id="dl-h">Download the review build</h2>
-          <p style="margin:0 0 14px;color:var(--muted);font-size:14.5px">The actual Dan D Pak POS
-            Windows installer, configured to connect to the isolated review backend. Use the
-            <strong>Download</strong> button in the header.</p>
+          <p style="margin:0 0 14px">The actual Dan-D Pak POS Windows installer, configured to connect
+            to the isolated review backend. Use the <strong>Download</strong> button in the header.</p>
           <dl class="meta">
             <dt>Platform</dt><dd>Windows 10 / 11 (64‑bit)</dd>
             <dt>Environment</dt><dd>Shopee review (sandbox)</dd>
@@ -104,34 +106,31 @@
         </section>
 
         <section class="panel" aria-labelledby="acc-h">
-          <h2 id="acc-h">Reviewer access</h2>
-          <p style="margin:0;color:var(--muted);font-size:14.5px">Log in with the test username and
-            password provided to Shopee in the app submission form (they are not published on this
-            page). The reviewer account is least‑privilege: it can view and exercise the
-            online‑commerce and Shopee integration areas only, and cannot access secrets, production
-            credentials, database administration, or destructive operations.</p>
+          <h2 id="acc-h">Evaluation access</h2>
+          <p>Use the evaluation credentials supplied separately with your review package. Access is
+            restricted to this isolated environment and includes only the features within the
+            evaluation scope. Production data, credentials, administrative controls and destructive
+            actions are unavailable.</p>
         </section>
       </div>
 
-      <section class="panel" aria-labelledby="test-h" style="margin-top:18px">
-        <h2 id="test-h">How to test the Shopee integration</h2>
-        <ol>
-          <li>Use the <strong>Download</strong> button above and install the review build.</li>
-          <li>Launch <strong>Dan D Pak POS (Review)</strong>; it connects to the review backend automatically.</li>
-          <li>Log in with the reviewer test credentials supplied in the submission form.</li>
-          <li>Open <strong>Bán Online</strong> (Online Sales) from the main menu.</li>
-          <li>Go to <strong>Thiết lập kênh → Shopee</strong> and press <strong>Kết nối</strong> to run the
-            Shopee authorization (OAuth) against the sandbox.</li>
-          <li>Review <strong>Đơn hàng</strong> (imported orders), <strong>Tồn kho</strong> (inventory view) and
-            <strong>Kết nối sàn</strong> (marketplace connection status).</li>
-        </ol>
-        <p class="note">Scope note: this build authorizes a Shopee shop and reads orders/connection
-          status in the sandbox. It does not publish products/listings, stock, or prices to Shopee.</p>
+      <section class="panel overview" aria-labelledby="ov-h">
+        <h2 id="ov-h">Product overview</h2>
+        <p>Dan-D Pak POS brings sales, order handling, inventory visibility, customer records,
+          reporting and connected sales channels into one business workspace. This evaluation
+          environment uses isolated synthetic data and is separate from production systems.</p>
+        <ul class="tags">
+          <li class="tag">Point of sale and order management</li>
+          <li class="tag">Inventory visibility</li>
+          <li class="tag">Customer and partner records</li>
+          <li class="tag">Reporting and activity history</li>
+          <li class="tag">Connected sales channels</li>
+        </ul>
       </section>
 
-      <p class="callout" style="margin-top:22px">Isolated environment: separate backend, synthetic
-        seed data, and a reviewer role restricted to the review branch. No production database,
-        credentials, or customer data are reachable from this instance.</p>
+      <p class="callout">Isolated environment: separate backend, synthetic seed data, and an access
+        role restricted to the review branch. No production database, credentials, or customer data
+        are reachable from this instance.</p>
     </div>
   </main>
 
