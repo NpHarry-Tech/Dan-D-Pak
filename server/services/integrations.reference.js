@@ -325,7 +325,7 @@ const DEFAULT_INTEGRATIONS = {
       printOnReceive: false,
       note: '',
     },
-    // ── Mạng xã hội — hội thoại đa kênh Dan D Pak Omni ─────────────────────────
+    // ── Mạng xã hội — hội thoại đa kênh Dan-D Pak Omni ─────────────────────────
     facebook: {
       enabled: false,
       environment: 'production',

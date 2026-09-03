@@ -78,7 +78,7 @@ String _moduleDescription(AppModule module) {
         'Màn khách ngoài quầy: khách tự lật catalogue, chọn hàng và gọi thanh toán.',
     'kds': 'Màn hình bếp/bar, SLA và trạng thái món realtime.',
     'online':
-        'Đơn Shopee/TikTok/Lazada/Tiki/Haravan, hàng hóa, đối soát, chat đa kênh và thiết lập kênh (Dan D Pak Omni).',
+        'Đơn Shopee/TikTok/Lazada/Tiki/Haravan, hàng hóa, đối soát, chat đa kênh và thiết lập kênh (Dan-D Pak Omni).',
     'warehouse': 'Quản lý kho BCM/showroom/bếp, SKU, lô/HSD và tồn tối thiểu.',
     'purchase': 'Đơn mua, nhập kho và công nợ nhà cung cấp.',
     'expenses': 'Sổ chi phí theo danh mục, quỹ két và đối soát.',

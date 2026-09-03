@@ -3,7 +3,7 @@ FROM node:22-bookworm-slim@sha256:d649c27dae7ba0137b3cef5dd75baa422c08dc3d9e3fc0
 ARG BUILD_GIT_COMMIT=unknown
 ARG BUILD_SOURCE_SHA256=unknown
 ARG BUILD_TIME_UTC=unknown
-LABEL org.opencontainers.image.title="Dan D Pak POS Server" \
+LABEL org.opencontainers.image.title="Dan-D Pak POS Server" \
       org.opencontainers.image.revision=$BUILD_GIT_COMMIT \
       org.opencontainers.image.created=$BUILD_TIME_UTC \
       io.dandpak.source-sha256=$BUILD_SOURCE_SHA256

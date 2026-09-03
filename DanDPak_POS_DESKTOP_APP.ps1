@@ -17,7 +17,7 @@ function Show-ErrorBox {
   param([string]$Message)
   try {
     Add-Type -AssemblyName System.Windows.Forms | Out-Null
-    [System.Windows.Forms.MessageBox]::Show($Message, 'Dan D Pak POS', 'OK', 'Error') | Out-Null
+    [System.Windows.Forms.MessageBox]::Show($Message, 'Dan-D Pak POS', 'OK', 'Error') | Out-Null
   } catch {
     Write-Error $Message
   }

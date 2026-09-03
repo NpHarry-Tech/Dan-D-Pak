@@ -118,7 +118,7 @@ export function publishRelease(platform, buffer, { version, buildNumber, notes, 
   // lên, hỏi khe của chính nó, không thấy bản mới thì không hiện gì.
   if (laAndroid(platform)) {
     sendPushForNewAppVersion('android', {
-      title: 'Dan D Pak POS — Bản cập nhật mới',
+      title: 'Dan-D Pak POS — Bản cập nhật mới',
       body: `Phiên bản ${m[platform].version} đã sẵn sàng. Mở app để cập nhật ngay.`,
       data: { type: 'app_update', buildNumber: String(bn), version: m[platform].version },
     }).catch(() => {});

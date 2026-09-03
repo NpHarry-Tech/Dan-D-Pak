@@ -26,7 +26,7 @@ if (-not $adb) {
 if (-not $adb) { throw 'Khong tim thay adb. Cai Android SDK Platform-Tools roi them vao PATH.' }
 
 Write-Host ''
-Write-Host '=== Cai Dan D Pak POS (ban dien thoai) qua ADB ===' -ForegroundColor Cyan
+Write-Host '=== Cai Dan-D Pak POS (ban dien thoai) qua ADB ===' -ForegroundColor Cyan
 Write-Host ("  adb : " + $adb)
 Write-Host ("  APK : " + $apkPath + '  (' + [math]::Round((Get-Item $apkPath).Length/1MB,1) + ' MB)')
 Write-Host ''

@@ -1557,10 +1557,10 @@ extension _PrintDesignerMethods on _PrintTemplateDesignerState {
 
   Map<String, String> get _billSample => {
         'storeName': asText(_bill['storeName']).isEmpty
-            ? 'Dan D Pak'
+            ? 'Dan-D Pak'
             : asText(_bill['storeName']),
         'storeNameC': asText(_bill['storeName']).isEmpty
-            ? 'Dan D Pak'
+            ? 'Dan-D Pak'
             : asText(_bill['storeName']),
         'storeSubtitle': asText(_bill['storeSubtitle']),
         'storeSubtitleC': asText(_bill['storeSubtitle']),

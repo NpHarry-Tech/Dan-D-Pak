@@ -1,4 +1,4 @@
-# Dan D Pak Store Edge
+# Dan-D Pak Store Edge
 
 Store Edge là authority duy nhất của một chi nhánh khi WAN mất. Nó là service
 độc lập trên máy có IP LAN cố định và UPS; Flutter không tự khởi động hay sở hữu

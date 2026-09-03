@@ -1,5 +1,5 @@
 @echo off
-REM Build Dan D Pak POS Windows release and compile the Inno Setup installer.
+REM Build Dan-D Pak POS Windows release and compile the Inno Setup installer.
 REM Requires Inno Setup 6 (ISCC.exe).
 
 setlocal enabledelayedexpansion

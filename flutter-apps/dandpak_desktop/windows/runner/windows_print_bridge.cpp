@@ -68,7 +68,7 @@ class WindowsPrintBridge::Impl {
       xaml_manager_ = WindowsXamlManager::InitializeForCurrentThread();
     }
     Unregister();
-    title_ = title.empty() ? L"Dan D Pak - In tài liệu" : title;
+    title_ = title.empty() ? L"Dan-D Pak - In tài liệu" : title;
     lines_ = Lines(text);
 
     auto interop = get_activation_factory<PrintManager, IPrintManagerInterop>();

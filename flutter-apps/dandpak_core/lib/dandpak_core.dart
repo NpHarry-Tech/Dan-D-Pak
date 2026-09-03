@@ -1,4 +1,4 @@
-/// Gói lõi DÙNG CHUNG cho cả 3 app Dan D Pak (desktop / tablet / phone).
+/// Gói lõi DÙNG CHUNG cho cả 3 app Dan-D Pak (desktop / tablet / phone).
 ///
 /// Toàn bộ models, providers, screens, services, ui, widgets và điểm vào khởi
 /// động sống ở đây (thư mục `src/`). Mỗi app chỉ là một "vỏ mỏng" gọi

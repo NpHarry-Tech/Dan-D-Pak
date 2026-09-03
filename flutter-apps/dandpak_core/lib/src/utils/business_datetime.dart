@@ -1,6 +1,6 @@
 import 'package:intl/intl.dart';
 
-/// Canonical user-facing clock for Dan D Pak.
+/// Canonical user-facing clock for Dan-D Pak.
 ///
 /// API/DB timestamps remain UTC ISO-8601. Vietnam has used UTC+07:00 without
 /// daylight-saving time since 1975, so converting from UTC explicitly keeps

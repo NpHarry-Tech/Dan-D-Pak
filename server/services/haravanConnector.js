@@ -717,7 +717,7 @@ async function findOrCreateHaravanCustomer(order, shop) {
     const names = cleanId(customer.name).split(/\s+/);
     remote = (await haravanRequest('/com/customers.json', { shopDomain: shop, method: 'POST', body: { customer: {
       first_name: names.slice(0, -1).join(' ') || names[0], last_name: names.length > 1 ? names.at(-1) : '',
-      phone, email: cleanId(customer.email) || undefined, note: 'Đồng bộ từ Dan D Pak POS',
+      phone, email: cleanId(customer.email) || undefined, note: 'Đồng bộ từ Dan-D Pak POS',
     } } })).customer;
   }
   if (!remote?.id) throw new Error('Haravan customer response missing id');
@@ -756,7 +756,7 @@ async function pushPaidPosOrder(orderId, shopDomain = '') {
   const totalPoints = Number(currentCustomer?.loyalty_points || 0);
   const messageLines = [
     'Mua hàng thành công',
-    `Cảm ơn ${cleanId(customer.name)} đã mua hàng tại Dan D Pak.`,
+    `Cảm ơn ${cleanId(customer.name)} đã mua hàng tại Dan-D Pak.`,
     `Mã đơn: ${bill}`,
     `Giá trị đơn: ${money(order.total).toLocaleString('vi-VN')}đ`,
     `Điểm vừa nhận: ${earnedPoints.toLocaleString('vi-VN')}`,
@@ -765,7 +765,7 @@ async function pushPaidPosOrder(orderId, shopDomain = '') {
   ];
   const response = await haravanRequest('/com/orders.json', { shopDomain: shop, method: 'POST', body: { order: {
     customer: { id: Number(customerId) || customerId }, line_items: lineItems,
-    financial_status: 'paid', fulfillment_status: 'fulfilled', source_name: 'Dan D Pak POS',
+    financial_status: 'paid', fulfillment_status: 'fulfilled', source_name: 'Dan-D Pak POS',
     note: messageLines.join('\n'), tags: `DanDPakPOS,DDP_PURCHASE_SUCCESS,${bill}`,
     note_attributes: [
       { name: 'ddp_event', value: 'purchase_success' },
@@ -1030,7 +1030,7 @@ export async function pushInventoryToHaravan({ shopDomain = '', skuIds = [], rea
           location_id: Number(cfg.locationId),
           type: 'set',
           reason,
-          note: 'Dan D Pak POS stock sync',
+          note: 'Dan-D Pak POS stock sync',
           line_items: batch.map(r => ({
             product_id: Number(r.external_product_id),
             product_variant_id: Number(r.external_variant_id),
@@ -1109,7 +1109,7 @@ export function haravanCapabilities(branch_id = '') {
     conversations: {
       read: false,
       write: false,
-      reason: 'Haravan Web Order API không cung cấp hội thoại. Dan D Pak Omni cần connector Harasocial Partner API riêng.',
+      reason: 'Haravan Web Order API không cung cấp hội thoại. Dan-D Pak Omni cần connector Harasocial Partner API riêng.',
     },
   };
 }

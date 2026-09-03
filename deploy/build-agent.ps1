@@ -20,12 +20,18 @@ $root    = Split-Path -Parent $PSScriptRoot
 $srcFile = Join-Path $root 'server\agent.cjs'
 $outFile = Join-Path $root 'flutter-apps\dandpak_desktop\windows\hardware-agent\dandpak-agent.exe'
 $work    = Join-Path $env:TEMP ('ddp-agent-sea-' + $PID)
+# PINNED for reproducible builds. Verified from npm _npx cache lockfile:
+#   postject@1.0.0-alpha.6
+#   integrity sha512-b9Eb8h2eVqNE8edvKdwqkrY6O7kAwmI8kcnBv1NScolYJbo59XUF0noFq+lxbC1yN20bmC0WBEbDC5H/7ASb0A==
+#   https://registry.npmjs.org/postject/-/postject-1.0.0-alpha.6.tgz
+$postjectVersion = '1.0.0-alpha.6'
 
 if (-not (Test-Path -LiteralPath $srcFile)) { throw "Khong thay $srcFile" }
 
 Write-Host ''
 Write-Host '=== Build Hardware Agent (Node SEA) ===' -ForegroundColor Cyan
 Write-Host ("  Nguon : " + $srcFile)
+Write-Host ("  Nguon SHA256: " + (Get-FileHash -LiteralPath $srcFile -Algorithm SHA256).Hash)
 Write-Host ("  Dich  : " + $outFile)
 
 # Kiem tra cu phap truoc khi dong goi - dong goi mot file loi thi .exe van tao
@@ -37,6 +43,8 @@ Write-Host '  Cu phap: OK' -ForegroundColor Green
 $nodeExe = (Get-Command node).Source
 $nodeVer = & node --version
 Write-Host ("  Node   : " + $nodeVer + "  (" + $nodeExe + ")")
+Write-Host ("  Node SHA256   : " + (Get-FileHash -LiteralPath $nodeExe -Algorithm SHA256).Hash)
+Write-Host ("  Postject: " + $postjectVersion + " (pinned)")
 
 # node/npx/postject ghi ca thong bao THANH CONG ra stderr (vd "Wrote single
 # executable preparation blob to ..."). Voi $ErrorActionPreference='Stop',
@@ -75,7 +83,7 @@ try {
 
   # 4. Nhet blob vao vo. Sentinel fuse la hang so cua Node, khong duoc doi.
   Invoke-Native {
-    npx --yes postject $staged NODE_SEA_BLOB $blobPath `
+    npx --yes "postject@$postjectVersion" $staged NODE_SEA_BLOB $blobPath `
       --sentinel-fuse NODE_SEA_FUSE_fce680ab2cc467b6e072b8b5df1996b2
   } 'postject'
 
@@ -104,6 +112,7 @@ try {
   $mb = [math]::Round((Get-Item $outFile).Length / 1MB, 1)
   Write-Host ''
   Write-Host ("XONG: " + $outFile + "  (" + $mb + " MB)") -ForegroundColor Cyan
+  Write-Host ("  Dich SHA256: " + (Get-FileHash -LiteralPath $outFile -Algorithm SHA256).Hash) -ForegroundColor Cyan
   Write-Host 'Nho build lai app desktop de CMake copy ban agent moi vao ban cai.' -ForegroundColor Yellow
   Write-Host ''
 }

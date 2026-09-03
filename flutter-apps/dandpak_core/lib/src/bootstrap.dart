@@ -69,7 +69,7 @@ Future<void> _mainImpl(List<String> args) async {
   if (Platform.isWindows) {
     try {
       await localNotifier.setup(
-        appName: 'Dan D Pak POS',
+        appName: 'Dan-D Pak POS',
       );
     } catch (_) {}
   }
@@ -276,7 +276,7 @@ class _DandpakPosAppState extends State<DandpakPosApp>
       // Navigator toàn cục để modal xác nhận quyền LUÔN mở được (không phụ thuộc
       // context nơi gọi — sửa lỗi modal PIN đôi lúc không hiện, §16).
       navigatorKey: appNavigatorKey,
-      title: 'Dan D Pak POS',
+      title: 'Dan-D Pak POS',
       theme: DanTheme.light(lowEnd: lowEnd),
       builder: (context, child) {
         final mq = MediaQuery.of(context);

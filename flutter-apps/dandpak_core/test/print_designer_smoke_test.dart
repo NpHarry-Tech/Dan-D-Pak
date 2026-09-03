@@ -27,7 +27,7 @@ void main() {
             api: ApiService(),
             initialConfig: const {
               'bill': {
-                'storeName': 'Dan D Pak',
+                'storeName': 'Dan-D Pak',
                 'address': 'Đường D9',
                 'widthMm': 80,
                 'heightMm': 320

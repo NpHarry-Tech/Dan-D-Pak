@@ -20,7 +20,7 @@ class CustomerDisplayController extends ChangeNotifier {
   bool _salesMirrorPaused = false;
   bool _retailMirrorActive = false;
   CustomerDisplayData? _retailSnapshot;
-  String _storeName = 'Dan D Pak';
+  String _storeName = 'Dan-D Pak';
 
   CustomerDisplayController({required this.api}) {
     // Realtime "paid" for QR payments: when a bank/QR payment is confirmed

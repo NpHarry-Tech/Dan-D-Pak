@@ -3,7 +3,7 @@ $ROOT = Split-Path -Parent $MyInvocation.MyCommand.Path
 $OUT  = Join-Path $ROOT 'dan-d-pak-release.zip'
 
 Write-Host ''
-Write-Host '=== Dan D Pak - Tao goi release cho doi ky thuat ===' -ForegroundColor Cyan
+Write-Host '=== Dan-D Pak - Tao goi release cho doi ky thuat ===' -ForegroundColor Cyan
 Write-Host ('   Thu muc nguon: ' + $ROOT)
 Write-Host ('   File ket qua : ' + $OUT)
 Write-Host ''

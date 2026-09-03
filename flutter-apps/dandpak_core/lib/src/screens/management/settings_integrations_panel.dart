@@ -172,7 +172,7 @@ List<IntegrationDef> get _integrationDefs => [
           type: 'haravan',
           channel: 'haravan',
           imageAsset: 'assets/brand/Haravan.png'),
-      // ── Sàn TMĐT (Dan D Pak Omni) — kết nối đơn/hàng/tồn qua Open Platform ──
+      // ── Sàn TMĐT (Dan-D Pak Omni) — kết nối đơn/hàng/tồn qua Open Platform ──
       IntegrationDef(
           key: 'shopee',
           icon: '🛍️',
@@ -208,7 +208,7 @@ List<IntegrationDef> get _integrationDefs => [
               'Tiki Integration: nhận đơn và đồng bộ hàng hóa/tồn. Cần Client ID/Secret của seller.'),
           type: 'marketplace',
           channel: 'tiki'),
-      // ── Mạng xã hội — hội thoại đa kênh Dan D Pak Omni ─────────────────────
+      // ── Mạng xã hội — hội thoại đa kênh Dan-D Pak Omni ─────────────────────
       IntegrationDef(
           key: 'facebook',
           icon: '📘',

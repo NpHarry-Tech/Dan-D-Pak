@@ -1,5 +1,5 @@
 name: dandpak_phone
-description: "Dan D Pak Phone POS Application."
+description: "Dan-D Pak Phone POS Application."
 publish_to: 'none'
 # Public/updater release name: 2026.08.26.01 (see lib/app_version.dart).
 # Pub accepts SemVer's three numeric components only.

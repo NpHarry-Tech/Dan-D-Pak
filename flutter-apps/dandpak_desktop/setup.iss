@@ -1,14 +1,14 @@
 [Setup]
 AppId={{DANDPAK-POS-DESKTOP-APP}}
-AppName=Dan D Pak POS
+AppName=Dan-D Pak POS
 ; PH?I d?i k�m kAppBuildNumber/kAppVersionName trong lib/app_version.dart.
 ; publish-release.ps1 d?c s? build t? app_version.dart r?i d?i chi?u v?i file
 ; dem l�n � l?ch l� m�y POS roi v�o v�ng l?p c?p nh?t v� t?n.
-AppVersion=2026.08.28.01
+AppVersion=2026.09.02.01
 DefaultDirName={commonpf}\DanDPakPOS
-DefaultGroupName=Dan D Pak POS
+DefaultGroupName=Dan-D Pak POS
 OutputDir=..\..\artifacts\releases
-OutputBaseFilename=dan-d-pak-pos-setup-b168
+OutputBaseFilename=dan-d-pak-pos-setup-b169
 Compression=lzma
 SolidCompression=yes
 SetupIconFile=windows\runner\resources\app_icon.ico
@@ -41,12 +41,12 @@ Source: "build\windows\x64\runner\Release\data\*"; DestDir: "{app}\data"; Flags:
 Type: files; Name: "{app}\dandpak_pos.exe"
 
 [Icons]
-Name: "{group}\Dan D Pak POS"; Filename: "{app}\dandpak_desktop.exe"; WorkingDir: "{app}"
-Name: "{commondesktop}\Dan D Pak POS"; Filename: "{app}\dandpak_desktop.exe"; WorkingDir: "{app}"; Tasks: desktopicon
+Name: "{group}\Dan-D Pak POS"; Filename: "{app}\dandpak_desktop.exe"; WorkingDir: "{app}"
+Name: "{commondesktop}\Dan-D Pak POS"; Filename: "{app}\dandpak_desktop.exe"; WorkingDir: "{app}"; Tasks: desktopicon
 
 [Run]
 ; Không skipifsilent/unchecked: auto-update chạy /VERYSILENT xong TỰ mở lại app.
-Filename: "{app}\dandpak_desktop.exe"; Description: "{cm:LaunchProgram,Dan D Pak POS}"; WorkingDir: "{app}"; Flags: nowait postinstall runasoriginaluser
+Filename: "{app}\dandpak_desktop.exe"; Description: "{cm:LaunchProgram,Dan-D Pak POS}"; WorkingDir: "{app}"; Flags: nowait postinstall runasoriginaluser
 
 [Code]
 function PrepareToInstall(var NeedsRestart: Boolean): String;

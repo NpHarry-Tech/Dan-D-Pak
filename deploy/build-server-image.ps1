@@ -80,7 +80,7 @@ try {
   $manifestPath = "$tar.manifest.json"
   [ordered]@{
     formatVersion = 1
-    product = 'Dan D Pak POS Server'
+    product = 'Dan-D Pak POS Server'
     platform = 'linux/amd64'
     builtAtUtc = $builtAtUtc
     gitCommit = $commit

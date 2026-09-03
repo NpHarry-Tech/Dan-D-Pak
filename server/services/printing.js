@@ -2107,7 +2107,7 @@ if (-not [DanDPak.Spool]::OpenPrinter($env:DDP_PRINTER, [ref]$h, [IntPtr]::Zero)
   throw "Khong mo duoc may in: $env:DDP_PRINTER" }
 try {
   $di = New-Object DanDPak.Spool+DOCINFO
-  $di.pDocName = 'Dan D Pak'
+  $di.pDocName = 'Dan-D Pak'
   $di.pDataType = 'RAW'
   if (-not [DanDPak.Spool]::StartDocPrinter($h, 1, [ref]$di)) { throw 'StartDocPrinter that bai' }
   try {
@@ -2339,7 +2339,7 @@ export function printShippingLabel(branch_id = 'sala', { order_id = '', size = '
         .filter(Boolean).join(', '),
     },
     sender: {
-      name: header.shopName || header.name || 'Dan D Pak',
+      name: header.shopName || header.name || 'Dan-D Pak',
       phone: header.phone || header.hotline || '',
       address: header.address || '',
     },
@@ -2385,7 +2385,7 @@ export function printExpenseVoucher(branch_id = 'sala', { expense_id = '', devic
   const cfg = getPrintConfig(branch_id) || {};
   const header = cfg.bill || {};
   const payload = {
-    shopName: header.shopName || header.name || 'Dan D Pak',
+    shopName: header.shopName || header.name || 'Dan-D Pak',
     address: header.address || '', phone: header.phone || header.hotline || '',
     code: e.code || '', payer: e.actor_name || '', datetime: e.expense_date,
     reason: e.note || e.category_name || 'Chi phí', payee: e.payee_name || '',
@@ -2415,7 +2415,7 @@ export function printReturnVoucher(branch_id = 'sala', { return_id = '', deviceI
   const cfg = getPrintConfig(branch_id) || {};
   const header = cfg.bill || {};
   const payload = {
-    shopName: header.shopName || header.name || 'Dan D Pak',
+    shopName: header.shopName || header.name || 'Dan-D Pak',
     address: header.address || '', phone: header.phone || header.hotline || '',
     code: order?.bill_no || ret.original_order_id,
     datetime: ret.created_at, actor: ret.created_by || '', approvedBy: ret.approved_by || '',

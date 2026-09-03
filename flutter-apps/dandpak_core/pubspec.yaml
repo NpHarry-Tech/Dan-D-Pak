@@ -1,5 +1,5 @@
 name: dandpak_core
-description: Lõi dùng chung cho 3 app Dan D Pak (desktop/tablet/phone) — models, providers, screens, services, ui, widgets + điểm vào khởi động.
+description: Lõi dùng chung cho 3 app Dan-D Pak (desktop/tablet/phone) — models, providers, screens, services, ui, widgets + điểm vào khởi động.
 publish_to: 'none'
 version: 0.1.0
 

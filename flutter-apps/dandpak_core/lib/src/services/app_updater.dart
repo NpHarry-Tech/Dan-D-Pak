@@ -229,7 +229,7 @@ class AppUpdater {
       final res =
           await ch.invokeMethod<String>('installApk', {'path': file.path});
       if (res == 'NEEDS_PERMISSION') {
-        return 'Hãy bật "Cho phép từ nguồn này" cho Dan D Pak POS ở màn cài đặt '
+        return 'Hãy bật "Cho phép từ nguồn này" cho Dan-D Pak POS ở màn cài đặt '
             'vừa mở, rồi quay lại bấm Cập nhật ngay lần nữa.';
       }
       if (res != null && res.isNotEmpty) {

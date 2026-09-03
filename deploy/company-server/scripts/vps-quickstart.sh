@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Cài đặt nhanh Dan D Pak POS/ERP lên VPS Ubuntu 22.04 mới tinh (chạy bằng root).
+# Cài đặt nhanh Dan-D Pak POS/ERP lên VPS Ubuntu 22.04 mới tinh (chạy bằng root).
 #
 # Cách dùng (sau khi clone repo):
 #   cd /opt/dan-d-pak/deploy/company-server

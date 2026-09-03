@@ -154,10 +154,10 @@ export const PERMISSIONS = [
   { key: 'online.reconciliation', label: 'Retail Online — xem đối soát thanh toán' },
   { key: 'marketplace.view', label: 'Kết nối sàn — xem gian hàng và trạng thái kết nối' },
   { key: 'marketplace.connect', label: 'Kết nối sàn — kết nối / ngắt / cấu hình gian hàng (Shopee, Lazada…)' },
-  { key: 'omni.view', label: 'Dan D Pak Omni — xem hộp thư và lịch sử hội thoại' },
-  { key: 'omni.reply', label: 'Dan D Pak Omni — trả lời khách hàng' },
-  { key: 'omni.manage', label: 'Dan D Pak Omni — phân công, nhãn, ghi chú và liên kết đơn' },
-  { key: 'omni.connector', label: 'Dan D Pak Omni — quản lý connector kênh ngoài' },
+  { key: 'omni.view', label: 'Dan-D Pak Omni — xem hộp thư và lịch sử hội thoại' },
+  { key: 'omni.reply', label: 'Dan-D Pak Omni — trả lời khách hàng' },
+  { key: 'omni.manage', label: 'Dan-D Pak Omni — phân công, nhãn, ghi chú và liên kết đơn' },
+  { key: 'omni.connector', label: 'Dan-D Pak Omni — quản lý connector kênh ngoài' },
   { key: 'kds', label: 'Sử dụng màn hình bếp (KDS)' },
   { key: 'reports', label: 'Báo cáo — xem toàn bộ trung tâm báo cáo' },
   ...REPORT_PERMISSIONS,
@@ -234,7 +234,7 @@ export const ROLES = [
   { key: 'cashier', label: 'Thu ngân', note: 'Bán hàng và thu tiền.' },
   { key: 'kitchen', label: 'Bếp', note: 'Chế biến món.' },
   { key: 'warehouse', label: 'Thủ kho', note: 'Quản lý nhập xuất kho.' },
-  { key: 'online_manager', label: 'Quản đơn Retail Online', note: 'Xử lý đơn web và hội thoại Dan D Pak Omni.' },
+  { key: 'online_manager', label: 'Quản đơn Retail Online', note: 'Xử lý đơn web và hội thoại Dan-D Pak Omni.' },
   { key: 'marketplace_operator', label: 'Vận hành sàn', note: 'Kết nối sàn, liên kết hàng, đối soát, in tem vận đơn và xử lý đơn/chat.' },
 ];
 

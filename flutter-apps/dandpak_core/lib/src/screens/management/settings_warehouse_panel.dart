@@ -846,7 +846,7 @@ class _WarehouseSettingsPanelState extends State<WarehouseSettingsPanel> {
                                   controller: _nameCtrl,
                                   decoration: InputDecoration(
                                     labelText: t('Tên kho'),
-                                    hintText: 'VD: Kho Dan D Pak Sala',
+                                    hintText: 'VD: Kho Dan-D Pak Sala',
                                   ),
                                 ),
                               ),

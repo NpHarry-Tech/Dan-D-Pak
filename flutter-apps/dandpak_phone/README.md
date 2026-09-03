@@ -1,4 +1,4 @@
-# Dan D Pak POS
+# Dan-D Pak POS
 
 Native Flutter POS app for staff ordering, payment, table operations, shifts, and
 printing workflows.
@@ -25,7 +25,7 @@ build\windows\x64\runner\Release\
 
 ## Backend
 
-The app talks to the Dan D Pak Node backend through REST and Socket.IO. Shared
+The app talks to the Dan-D Pak Node backend through REST and Socket.IO. Shared
 defaults/API/realtime code lives in `flutter-apps/dandpak_core`.
 
 ## Notes

@@ -1,6 +1,6 @@
 part of '../api_service.dart';
 
-/// Dan D Pak Omni — hộp thư hội thoại đa kênh (Chat đa kênh).
+/// Dan-D Pak Omni — hộp thư hội thoại đa kênh (Chat đa kênh).
 ///
 /// Chưa có route gửi tin ra ngoài: gửi outbound cần connector sống (Meta/Zalo/
 /// Shopee đang chờ cấp quyền). Vì vậy tầng này chỉ đọc hội thoại/tin nhắn và

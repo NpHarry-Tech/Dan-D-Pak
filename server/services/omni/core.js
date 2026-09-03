@@ -17,7 +17,7 @@ function requireConversation(id, branchId) {
 
 export function capabilities() {
   return {
-    product: 'Dan D Pak Omni',
+    product: 'Dan-D Pak Omni',
     inbox: { conversations: true, assignment: true, tags: true, notes: true, canned_replies: true },
     commerce: { customer_link: true, order_link: true, create_order_with_existing_pos: true },
     connectors: {

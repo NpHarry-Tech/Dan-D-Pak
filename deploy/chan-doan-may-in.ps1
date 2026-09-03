@@ -112,7 +112,7 @@ if (-not [DanDPakRaw]::OpenPrinter($Printer, [ref]$h, [IntPtr]::Zero)) {
 }
 try {
   $di = New-Object DanDPakRaw+DOCINFO
-  $di.pDocName = 'Dan D Pak - chan doan may in'
+  $di.pDocName = 'Dan-D Pak - chan doan may in'
   $di.pDataType = 'RAW'
   if (-not [DanDPakRaw]::StartDocPrinter($h, 1, $di)) { throw 'StartDocPrinter that bai' }
   [void][DanDPakRaw]::StartPagePrinter($h)

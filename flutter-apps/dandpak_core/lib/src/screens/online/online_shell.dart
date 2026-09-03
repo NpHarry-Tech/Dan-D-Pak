@@ -31,7 +31,7 @@ const List<_NavItem> _nav = [
   _NavItem('chat', 'Chat đa kênh', Icons.forum_outlined, group: 'Mạng xã hội'),
 ];
 
-/// Mục "Bán hàng online" (Dan D Pak Omni) — vỏ có thanh điều hướng bên trái
+/// Mục "Bán hàng online" (Dan-D Pak Omni) — vỏ có thanh điều hướng bên trái
 /// theo bố cục KiotViet: Tổng quan / Đơn hàng / Hàng hóa / Đối soát / Thiết lập
 /// kênh / Chat đa kênh.
 class OnlineShell extends StatefulWidget {
@@ -86,7 +86,7 @@ class _OnlineShellState extends State<OnlineShell> {
       appBar: DanModuleTopBar(
         brandName: branch.name.isNotEmpty ? branch.name : branch.id,
         title: t('Bán hàng online'),
-        subtitle: 'Dan D Pak Omni',
+        subtitle: 'Dan-D Pak Omni',
         titleIcon: Icons.public,
         userName: user?.name ?? '—',
         userRole: roleLabel(user?.role ?? ''),

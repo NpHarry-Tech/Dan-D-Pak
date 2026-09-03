@@ -1246,7 +1246,7 @@ export function renderReportHtml(report, { mode = 'preview' } = {}) {
     <div class="meta">Kỳ báo cáo: ${esc(report.range.label)} · Xuất lúc: ${esc(dateTime(report.generated_at))}</div>
     <div class="summary">${report.summary.map(s => `<div class="sum">${esc(s.label)}<b>${esc(s.value)}</b></div>`).join('')}</div>
     ${report.sections.map(tableHtml).join('')}
-    <div class="foot">Dan D Pak POS/ERP · Báo cáo được tạo tự động từ dữ liệu lưu trữ nội bộ.</div>
+    <div class="foot">Dan-D Pak POS/ERP · Báo cáo được tạo tự động từ dữ liệu lưu trữ nội bộ.</div>
   </div></body></html>`;
 }
 function sheetName(name, used = new Set()) {

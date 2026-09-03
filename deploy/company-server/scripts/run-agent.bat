@@ -1,6 +1,6 @@
 @echo off
 REM ============================================================
-REM Dan D Pak - Hardware Agent (chay TAI MAY POS trong cua hang)
+REM Dan-D Pak - Hardware Agent (chay TAI MAY POS trong cua hang)
 REM
 REM May nay giu may in / ket tien / A920 cam truc tiep. Agent nhan
 REM lenh in tu server VPS roi in that tai cho.

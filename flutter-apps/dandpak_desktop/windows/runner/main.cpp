@@ -42,7 +42,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
       static_cast<unsigned int>(work_h < 920 ? work_h - 20 : 900);
   Win32Window::Point origin(10, 10);
   Win32Window::Size size(width, height);
-  if (!window.Create(customer_display ? L"Màn hình phụ" : L"Dan D Pak POS",
+  if (!window.Create(customer_display ? L"Màn hình phụ" : L"Dan-D Pak POS",
                      origin, size)) {
     return EXIT_FAILURE;
   }

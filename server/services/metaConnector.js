@@ -1,4 +1,4 @@
-// Meta connector — Facebook Page Messenger + Instagram messaging → Dan D Pak
+// Meta connector — Facebook Page Messenger + Instagram messaging → Dan-D Pak
 // Omni inbox. KHÔNG phải kênh đơn hàng; đây là hội thoại.
 //
 // Webhook GET: xác thực hub.verify_token → trả hub.challenge.

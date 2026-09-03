@@ -95,7 +95,7 @@ export function occurredAtUtc(value = new Date()) {
   return date.toISOString();
 }
 
-/** Business date at Dan D Pak, independent of the host/container timezone. */
+/** Business date at Dan-D Pak, independent of the host/container timezone. */
 export function businessDate(value = new Date()) {
   const date = value instanceof Date ? value : new Date(value);
   if (Number.isNaN(date.getTime())) throw new Error('Timestamp không hợp lệ');

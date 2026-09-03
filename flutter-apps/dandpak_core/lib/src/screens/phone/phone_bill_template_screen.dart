@@ -245,7 +245,7 @@ class _PhoneBillTemplateScreenState extends State<PhoneBillTemplateScreen> {
                                   label: 'Tên cửa hàng',
                                   controller: _tenCuaHang,
                                   onChanged: _goChu,
-                                  hint: 'Dan D Pak'),
+                                  hint: 'Dan-D Pak'),
                               PhoneField(
                                   label: 'Địa chỉ',
                                   controller: _diaChi,

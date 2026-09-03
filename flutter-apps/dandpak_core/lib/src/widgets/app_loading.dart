@@ -26,7 +26,7 @@ class AppSpinner extends StatelessWidget {
 }
 
 /// Màn LOADING LỚN — cho cả màn hình / vùng lớn (lưới hàng kho/retail đang tải,
-/// mạng lag). Logo Dan D Pak có hiệu ứng SÓNG mờ chạy trái→phải + vòng xoay bên
+/// mạng lag). Logo Dan-D Pak có hiệu ứng SÓNG mờ chạy trái→phải + vòng xoay bên
 /// dưới. Sau 10s chưa xong thì hiện dòng "mạng chậm, vui lòng đợi…" để người dùng
 /// biết là ĐANG tải chứ không phải treo/trống.
 class AppLoadingView extends StatefulWidget {
@@ -98,7 +98,7 @@ class _AppLoadingViewState extends State<AppLoadingView>
                 'assets/brand/DanOnLogo.png',
                 height: 68,
                 fit: BoxFit.contain,
-                errorBuilder: (_, __, ___) => Text('Dan D Pak',
+                errorBuilder: (_, __, ___) => Text('Dan-D Pak',
                     style: TextStyle(
                         fontSize: 22,
                         fontWeight: FontWeight.w900,

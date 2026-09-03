@@ -1,6 +1,6 @@
 @echo off
 echo ========================================
-echo   Dan D Pak POS - Build Release
+echo   Dan-D Pak POS - Build Release
 echo ========================================
 call "C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\VC\Auxiliary\Build\vcvars64.bat"
 echo.

@@ -1,4 +1,4 @@
-﻿# Build báº£n Dan D Pak Desktop cho mÃ´i trÆ°á»ng SHOPEE REVIEW.
+﻿# Build báº£n Dan-D Pak Desktop cho mÃ´i trÆ°á»ng SHOPEE REVIEW.
 #
 # CÃ™NG source, CÃ™NG tÃ­nh nÄƒng nhÆ° báº£n production â€” khÃ¡c DUY NHáº¤T á»Ÿ backend:
 # app trá» vá» https://api-review.<domain> (dá»¯ liá»‡u synthetic, sandbox Shopee)
@@ -19,7 +19,7 @@ param(
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 
-Write-Host "== Build Dan D Pak Desktop (REVIEW) ==" -ForegroundColor Magenta
+Write-Host "== Build Dan-D Pak Desktop (REVIEW) ==" -ForegroundColor Magenta
 Write-Host "Backend review: $ReviewApiUrl" -ForegroundColor Cyan
 
 # Build .exe + installer, trá» backend review qua dart-define.

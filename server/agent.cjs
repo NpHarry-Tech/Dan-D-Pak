@@ -1,5 +1,5 @@
 // ─────────────────────────────────────────────────────────────────────────
-// Dan D Pak — Hardware Agent (chạy TẠI CỬA HÀNG, do chính app Dan D Pak POS
+// Dan-D Pak — Hardware Agent (chạy TẠI CỬA HÀNG, do chính app Dan-D Pak POS
 // tự khởi động ngầm — KHÔNG cần mở tay, KHÔNG hiện cửa sổ đen).
 //
 // Vì sao cần: khi database nằm trên VPS (datacenter), server KHÔNG thể với tới
@@ -368,7 +368,7 @@ if (-not [DanDPak.Spool]::OpenPrinter($env:DDP_PRINTER, [ref]$h, [IntPtr]::Zero)
   throw "Khong mo duoc may in: $env:DDP_PRINTER" }
 try {
   $di = New-Object DanDPak.Spool+DOCINFO
-  $di.pDocName = 'Dan D Pak'
+  $di.pDocName = 'Dan-D Pak'
   $di.pDataType = 'RAW'
   if (-not [DanDPak.Spool]::StartDocPrinter($h, 1, [ref]$di)) { throw 'StartDocPrinter that bai' }
   try {

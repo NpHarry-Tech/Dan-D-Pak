@@ -18,7 +18,7 @@ Future<void> main() async {
       (i) => {
             'id': 'sku_$i',
             'code': 'KV$i',
-            'name': 'Sản phẩm test số $i — Dan D Pak retail',
+            'name': 'Sản phẩm test số $i — Dan-D Pak retail',
             'price': 125000 + i,
             'vat': 8,
             'group_path': 'Thực phẩm >> Hạt dinh dưỡng',

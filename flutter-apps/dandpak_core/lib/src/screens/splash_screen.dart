@@ -35,7 +35,7 @@ class SplashScreen extends StatelessWidget {
             ),
             SizedBox(height: 24),
             Text(
-              'Dan D Pak POS',
+              'Dan-D Pak POS',
               style: TextStyle(
                 fontSize: 20,
                 fontWeight: FontWeight.w900,

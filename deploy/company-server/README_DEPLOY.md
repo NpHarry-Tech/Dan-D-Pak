@@ -1,4 +1,4 @@
-# Hướng Dẫn Triển Khai Hệ Thống Dan D Pak POS/ERP — Máy Chủ Công Ty
+# Hướng Dẫn Triển Khai Hệ Thống Dan-D Pak POS/ERP — Máy Chủ Công Ty
 
 > **Tài liệu này dành cho đội kỹ thuật.** Đọc kỹ từ đầu đến cuối trước khi thao tác.
 

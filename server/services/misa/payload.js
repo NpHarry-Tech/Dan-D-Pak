@@ -3,7 +3,7 @@
 // Tách riêng khỏi phần gọi mạng vì đây là chỗ DỄ SAI TIỀN NHẤT và là chỗ phải
 // test được mà không cần mạng.
 //
-// Quy tắc tiền của Dan D Pak: GIÁ KHÁCH NHÌN THẤY VÀ TRẢ LÀ GIÁ ĐÃ GỒM VAT.
+// Quy tắc tiền của Dan-D Pak: GIÁ KHÁCH NHÌN THẤY VÀ TRẢ LÀ GIÁ ĐÃ GỒM VAT.
 // Nên phải TÁCH thuế ra khỏi giá gồm thuế:
 //     VAT = gross × r / (100 + r)
 //     net = gross − VAT

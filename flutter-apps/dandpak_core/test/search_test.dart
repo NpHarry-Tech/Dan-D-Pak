@@ -11,7 +11,7 @@ void main() {
     expect(searchMatchesAny(['x' * 250, 'needle'], 'needle'), isTrue);
     expect(searchMatchesAny([], ''), isTrue);
     expect(searchScoreAny(['DAN', 'Khách khác'], 'dan'),
-        greaterThan(searchScoreAny(['Cửa hàng Dan D Pak'], 'dan')));
+        greaterThan(searchScoreAny(['Cửa hàng Dan-D Pak'], 'dan')));
     expect(searchScoreAny(['Hà', '0909'], 'dan'), -1);
     final products = [
       {'code': 'SP01', 'name': 'Sữa hạt'},

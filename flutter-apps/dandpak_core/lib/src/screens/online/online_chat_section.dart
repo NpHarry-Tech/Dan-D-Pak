@@ -12,7 +12,7 @@ import '../../utils/translation.dart';
 import '../management/management_widgets.dart';
 import 'online_shared.dart';
 
-/// Chat đa kênh (Dan D Pak Omni) — hộp thư hội thoại. Hiện đọc + thao tác nội
+/// Chat đa kênh (Dan-D Pak Omni) — hộp thư hội thoại. Hiện đọc + thao tác nội
 /// bộ; gửi tin ra ngoài mở khi connector (Meta/Zalo/Shopee…) được cấp quyền.
 class OnlineChatSection extends StatefulWidget {
   const OnlineChatSection({super.key});

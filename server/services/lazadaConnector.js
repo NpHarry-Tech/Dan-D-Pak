@@ -29,7 +29,7 @@ const json = (v) => JSON.stringify(v ?? null);
 
 export function lazadaConfig(branchId = 'sala') {
   const c = getIntegrationChannel('lazada', branchId) || {};
-  // App Key/Secret là credential CẤP NỀN TẢNG: ưu tiên ENV (Dan D Pak đăng ký
+  // App Key/Secret là credential CẤP NỀN TẢNG: ưu tiên ENV (Dan-D Pak đăng ký
   // app Lazada 1 lần), fallback per-branch để migrate. Xem shopeeConfig.
   const envAppId = String(process.env.LAZADA_APP_KEY || '').trim();
   const envSecret = String(process.env.LAZADA_APP_SECRET || '').trim();

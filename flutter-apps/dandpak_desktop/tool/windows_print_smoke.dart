@@ -40,7 +40,7 @@ TONG CONG:                    500.000d
     var exitCode = 0;
     try {
       final opened = await _channel.invokeMethod<bool>('showPrintUI', {
-        'title': 'Dan D Pak Bill Vector Smoke b166',
+        'title': 'Dan-D Pak Bill Vector Smoke b166',
         'text': source.replaceAll(RegExp(r'\[\[B[01]\]\]'), ''),
       });
       _status = opened == true ? 'opened' : 'not-opened';

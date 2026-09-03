@@ -1,4 +1,4 @@
-// Zalo OA connector — Official Account messaging → Dan D Pak Omni inbox.
+// Zalo OA connector — Official Account messaging → Dan-D Pak Omni inbox.
 //
 // Webhook verify: header X-ZEvent-Signature = 'mac=' + SHA256(appId + rawBody +
 // timestamp + OASecretKey)  (SHA256 THƯỜNG, không phải HMAC — theo Zalo docs).

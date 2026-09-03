@@ -45,7 +45,7 @@ if ($sourceHash -notmatch '^[0-9a-f]{64}$') { throw 'Cannot compute source-tree 
 $artifactInfo = Get-Item -LiteralPath $artifactPath
 $manifest = [ordered]@{
   formatVersion = 1
-  product = 'Dan D Pak POS'
+  product = 'Dan-D Pak POS'
   platform = $Platform
   version = $Version
   build = $Build

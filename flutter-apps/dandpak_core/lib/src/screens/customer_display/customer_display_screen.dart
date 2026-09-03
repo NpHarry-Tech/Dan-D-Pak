@@ -67,7 +67,7 @@ class CustomerDisplayData {
 
   const CustomerDisplayData({
     this.mode = CustomerDisplayMode.idle,
-    this.storeName = 'Dan D Pak',
+    this.storeName = 'Dan-D Pak',
     this.items = const [],
     this.subtotal = 0,
     this.discount = 0,
@@ -101,7 +101,7 @@ class CustomerDisplayData {
           (m) => m.name == j['mode'],
           orElse: () => CustomerDisplayMode.idle,
         ),
-        storeName: (j['storeName'] ?? 'Dan D Pak').toString(),
+        storeName: (j['storeName'] ?? 'Dan-D Pak').toString(),
         items: (j['items'] is List)
             ? (j['items'] as List)
                 .map((e) => CustomerLine.fromJson(Map<String, dynamic>.from(e)))

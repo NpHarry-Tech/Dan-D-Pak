@@ -216,7 +216,7 @@ app.get('/auth/tiktok/callback', async (req, res) => {
 function connectedHtml(name, shop) {
   return `<html><body style="font-family:sans-serif;text-align:center;padding:40px">` +
     `<h2>✓ Đã kết nối ${name}${shop ? ` (shop ${shop})` : ''}</h2>` +
-    `<p>Quay lại ứng dụng Dan D Pak — kết nối sẽ tự cập nhật. Có thể đóng cửa sổ này.</p></body></html>`;
+    `<p>Quay lại ứng dụng Dan-D Pak — kết nối sẽ tự cập nhật. Có thể đóng cửa sổ này.</p></body></html>`;
 }
 
 // Lazada OAuth redirect: seller authorize xong → Lazada gọi kèm ?code=.

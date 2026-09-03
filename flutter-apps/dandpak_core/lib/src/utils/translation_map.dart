@@ -2062,8 +2062,8 @@ const Map<String, String> viToEnMap = {
   'Ẩn': 'Hide',
   'Ẩn bộ lọc': 'Hide filters',
   'Ẩn khỏi iPad / POS': 'Hide from iPad/POS',
-  'Ứng dụng Dan D Pak POS cam kết bảo vệ thông tin riêng tư của người dùng. Dưới đây là chính sách thu thập và xử lý dữ liệu chi tiết:':
-      'Dan D Pak POS application is committed to protecting user privacy information. Below is the detailed data collection and processing policy:',
+  'Ứng dụng Dan-D Pak POS cam kết bảo vệ thông tin riêng tư của người dùng. Dưới đây là chính sách thu thập và xử lý dữ liệu chi tiết:':
+      'Dan-D Pak POS application is committed to protecting user privacy information. Below is the detailed data collection and processing policy:',
   'Ứng dụng chưa được cấp quyền camera.\\nVào Settings → Ứng dụng → cấp quyền Camera rồi thử lại.':
       'The application has not been granted camera permissions.\\nGo to Settings → Applications → grant Camera permissions and try again.',
   '— Khác': '— Other',
@@ -2090,8 +2090,8 @@ const Map<String, String> viToEnMap = {
       '• Security: Transaction data is encrypted and transmitted directly within the store\'s internal LAN or via the enterprise VPS security channel.',
   '• Tích chọn ô Đang sử dụng và Tự động in trên dòng máy in vừa thêm.\\n• Trong Menu FnB, gán đúng Station cho từng món ăn (chọn Bếp hoặc Bar). System sẽ tự động gửi món đến máy in tương ứng khi nhận đơn từ iPad hoặc POS quầy.\\n• Bấm nút [Save danh mục in] để hoàn tất cấu hình.':
       '• Check the boxes Currently in use and Automatically print on the newly added printer line.\\n• In the FnB Menu, assign the correct Station to each dish (choose Kitchen or Bar). The system will automatically send the order to the corresponding printer when receiving an order from an iPad or POS counter.\\n• Click the [Save print list] button to complete the configuration.',
-  '• Ứng dụng Dan D Pak POS hoạt động như một công cụ quản trị nguồn lực doanh nghiệp nội bộ. Chúng tôi KHÔNG thu thập thông tin cá nhân của khách hàng vãng lai sử dụng tablet tự phục vụ (Self-order) hay dữ liệu riêng tư của nhân viên ngoại trừ các thông tin đăng nhập nghiệp vụ (mã PIN nhân viên, thông tin chi nhánh cửa hàng) được lưu trữ an toàn trong vùng nhớ ứng dụng.':
-      '• Dan D Pak POS application acts as an internal business resource management tool. We DO NOT collect personal information from customers using self-service tablets or employees\' private data except for professional login information (employee PIN code, store branch information) that is securely stored in the application memory area.',
+  '• Ứng dụng Dan-D Pak POS hoạt động như một công cụ quản trị nguồn lực doanh nghiệp nội bộ. Chúng tôi KHÔNG thu thập thông tin cá nhân của khách hàng vãng lai sử dụng tablet tự phục vụ (Self-order) hay dữ liệu riêng tư của nhân viên ngoại trừ các thông tin đăng nhập nghiệp vụ (mã PIN nhân viên, thông tin chi nhánh cửa hàng) được lưu trữ an toàn trong vùng nhớ ứng dụng.':
+      '• Dan-D Pak POS application acts as an internal business resource management tool. We DO NOT collect personal information from customers using self-service tablets or employees\' private data except for professional login information (employee PIN code, store branch information) that is securely stored in the application memory area.',
   '• Ứng dụng không tự động thu thập bất kỳ thông tin cá nhân hay vị trí địa lý của người dùng. Các thông tin cấu hình (URL máy chủ, mã PIN nhân viên, ca làm việc) được lưu trữ an toàn trong vùng nhớ cache bảo mật của ứng dụng trên thiết bị và chỉ được gửi tới máy chủ POS nội bộ được bạn cấu hình để phục vụ xác thực nghiệp vụ.':
       '• The application does not automatically collect any personal information or geographical location of users. Configuration information (server URL, employee PIN, shift) is safely stored in the application\'s secure cache on the device and is only sent to the internal POS server configured by you for business authentication.',
   '⏱ SLA \${t.slaMinutes}′': '⏱ SLA \${t.slaMinutes}′',
