@@ -131,26 +131,26 @@ Future<KvSpreadsheetData?> kvPickSpreadsheetData() async {
   return KvSpreadsheetData(headers, rows, fileName: f.name, bytes: raw);
 }
 
-/// LƯU file import GỐC vào kho Tài liệu (DMS) — đáp ứng yêu cầu "lưu toàn bộ file
-/// được upload". Idempotent theo nội dung (gửi lại cùng file = bản ghi cũ). Ném
-/// lỗi để caller hiện trạng thái rõ ràng; caller quyết định có chặn import không.
-Future<Map<String, dynamic>?> kvArchiveImportFile(
+/// LƯU file import GỐC vào kho Tài liệu (DMS) bằng quyền tối thiểu của nhân viên
+/// Kho — BẮT BUỘC thành công thì luồng import mới được chạy. NÉM lỗi khi không đọc
+/// được bytes hoặc upload thất bại (caller PHẢI dừng import, không đổi dữ liệu Kho).
+/// Idempotent theo nội dung: gửi lại cùng file trả bản ghi cũ (không tạo trùng).
+Future<Map<String, dynamic>> kvArchiveImportFile(
   ApiService api,
   KvSpreadsheetData data, {
   required String sourceScreen,
 }) async {
   final raw = data.bytes;
-  if (raw == null || raw.isEmpty) return null;
+  if (raw == null || raw.isEmpty) {
+    throw Exception(t('Không đọc được file để lưu vào Tài liệu'));
+  }
   const xlsxMime =
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
-  return api.uploadDocument(
+  return api.importUploadDocument(
     dataBase64: base64Encode(raw),
     originalName: data.fileName.isEmpty ? 'import.xlsx' : data.fileName,
     mimeType: xlsxMime,
-    source: 'warehouse_import',
     sourceScreen: sourceScreen,
-    category: 'import',
-    description: sourceScreen,
   );
 }
 

@@ -273,11 +273,16 @@ class _StocktakeFormPageState extends State<StocktakeFormPage> {
     try {
       final data = await kvPickSpreadsheetData();
       if (data == null) return;
-      // Lưu file GỐC vào kho Tài liệu (idempotent). Không chặn import; trạng thái rõ.
+      // BẮT BUỘC lưu file GỐC vào Tài liệu TRƯỚC. Không lưu được → DỪNG nhập, KHÔNG
+      // đổi dữ liệu Kho (fail-closed).
       try {
         await kvArchiveImportFile(api, data, sourceScreen: 'Kho — Nhập kiểm kho');
       } catch (_) {
-        if (mounted) _toast(t('Đã nhập; chưa lưu được file gốc vào Tài liệu'), error: true);
+        if (mounted) {
+          _toast(t('Không lưu được file gốc vào Tài liệu — đã HỦY nhập. Thử lại.'),
+              error: true);
+        }
+        return;
       }
       final canonical = data.rows.map((r) => [
             data.cell(r, ['Mã sản phẩm', 'Mã hàng', 'Product code'],

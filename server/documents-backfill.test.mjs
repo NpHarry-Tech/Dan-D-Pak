@@ -12,14 +12,22 @@ process.env.STORAGE_PATH = join(_tmp, 'storage');
 // TẤT CẢ import chạm db.js phải là DYNAMIC và SAU khi đặt env — vì connection.js
 // khoá DB_PATH ngay lúc import (const DB_PATH = resolveDbPath()), còn `import`
 // tĩnh bị hoisted lên trước cả dòng đặt env → sẽ mở nhầm DB mặc định.
-const { migrate, db, now, uid } = await import('./db.js');
+const { migrate, db, now, uid, audit } = await import('./db.js');
 const { backfillDocuments, backfillAudit } = await import('./services/documentsBackfill.js');
-const { saveDocumentReference, resolveReferenceContent, registerStorageFileDocument, registerStorageFileOrRollback } =
-  await import('./modules/documents/routes.js');
+const {
+  saveDocumentReference, resolveReferenceContent, registerStorageFileDocument,
+  registerStorageFileOrRollback, storeDmsUpload, WAREHOUSE_IMPORT_PERMS,
+} = await import('./modules/documents/routes.js');
 const { processUpdateEvent } = await import('./modules/appRelease/routes.js');
+const { canUser } = await import('./services/auth.js');
 const { storagePath } = await import('./config/env.js');
-const { writeFileSync, mkdirSync, existsSync } = await import('node:fs');
+const { writeFileSync, mkdirSync, existsSync, readFileSync, readdirSync } = await import('node:fs');
 const { join: pjoin } = await import('node:path');
+
+const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+const XLSX_EXT = { [XLSX_MIME]: '.xlsx' };
+const b64 = (s) => Buffer.from(s).toString('base64');
+const uploadsDoc = (stored) => storagePath('uploads', 'documents', stored);
 
 const successRows = () =>
   db.prepare(`SELECT COUNT(*) c FROM audit_log WHERE action='app.update_success'`).get().c;
@@ -281,4 +289,75 @@ test('#4 product-image backfill indexes uploads/products with metadata + legacy/
   const run2 = backfillDocuments({ branchId: 'sala' });
   assert.equal(run2.byModule.sku_image.indexed, 0, 'second run creates no product-image duplicates');
   assert.ok(run2.byModule.sku_image.skipped >= 2);
+});
+
+// ── #3 /documents/upload atomic + idempotent (via storeDmsUpload) ───────────
+const actorObj = { username: 'kho1', id: 'u_kho1', name: 'Chị Kho' };
+
+test('#3 storeDmsUpload: success writes file + row; download bytes match', () => {
+  const rec = storeDmsUpload({
+    branch_id: 'sala', actor: actorObj, secureMimeExt: XLSX_EXT,
+    body: { data: b64('EXCEL-CONTENT-1'), original_name: 'nhap-hang.xlsx', mime_type: XLSX_MIME, source_screen: 'Kho — Nhập dữ liệu' },
+  });
+  assert.ok(rec.stored_name, 'file stored');
+  assert.equal(rec.source_screen, 'Kho — Nhập dữ liệu');
+  assert.equal(existsSync(uploadsDoc(rec.stored_name)), true);
+  assert.equal(readFileSync(uploadsDoc(rec.stored_name)).toString(), 'EXCEL-CONTENT-1'); // download bytes == original
+});
+
+test('#3 storeDmsUpload: retry SAME content is idempotent (no duplicate file/row)', () => {
+  const body = { data: b64('EXCEL-RETRY'), original_name: 'a.xlsx', mime_type: XLSX_MIME };
+  const first = storeDmsUpload({ branch_id: 'sala', actor: actorObj, secureMimeExt: XLSX_EXT, body });
+  const countBefore = db.prepare(`SELECT COUNT(*) c FROM document_files`).get().c;
+  const second = storeDmsUpload({ branch_id: 'sala', actor: actorObj, secureMimeExt: XLSX_EXT, body });
+  assert.equal(second.duplicate, true);
+  assert.equal(second.id, first.id, 'same document row returned');
+  assert.equal(db.prepare(`SELECT COUNT(*) c FROM document_files`).get().c, countBefore, 'no new row');
+});
+
+test('#3 storeDmsUpload: DB insert failure deletes the just-written file (no orphan)', () => {
+  const dir = storagePath('uploads', 'documents');
+  mkdirSync(dir, { recursive: true });
+  const before = readdirSync(dir).length;
+  // branch_id null -> saveDocumentRecord INSERT (branch_id NOT NULL) throws
+  assert.throws(() => storeDmsUpload({
+    branch_id: null, actor: actorObj, secureMimeExt: XLSX_EXT,
+    body: { data: b64('ORPHAN-CHECK'), original_name: 'x.xlsx', mime_type: XLSX_MIME },
+  }));
+  assert.equal(readdirSync(dir).length, before, 'file rolled back — upload dir unchanged (no orphan)');
+});
+
+// ── #2 least-privilege: warehouse role can import-upload; module.documents NOT required ──
+test('#2 warehouse permission grants import-upload without module.documents', () => {
+  const whId = uid('u_');
+  db.prepare(`INSERT INTO users (id,branch_id,username,name,pin,role,active) VALUES (?,?,?,?,?,?,1)`)
+    .run(whId, 'sala', 'wh_' + whId, 'NV Kho', '0000', 'zzz_test_role');
+  db.prepare(`INSERT OR REPLACE INTO user_perms (user_id,perm,mode) VALUES (?,?,?)`).run(whId, 'warehouse.item', 'allow');
+  const wh = { id: whId, role: 'zzz_test_role' };
+  assert.equal(WAREHOUSE_IMPORT_PERMS.some((p) => canUser(wh, p)), true, 'warehouse.item satisfies import-upload guard');
+  assert.equal(canUser(wh, 'module.documents'), false, 'does NOT have the broad admin doc permission');
+
+  const noneId = uid('u_');
+  db.prepare(`INSERT INTO users (id,branch_id,username,name,pin,role,active) VALUES (?,?,?,?,?,?,1)`)
+    .run(noneId, 'sala', 'none_' + noneId, 'NV Bán', '0000', 'zzz_test_role');
+  db.prepare(`INSERT OR REPLACE INTO user_perms (user_id,perm,mode) VALUES (?,?,?)`).run(noneId, 'sell', 'allow');
+  const none = { id: noneId, role: 'zzz_test_role' };
+  assert.equal(WAREHOUSE_IMPORT_PERMS.some((p) => canUser(none, p)), false, 'non-warehouse staff blocked');
+});
+
+// ── #4 product-image upload ordering: failure -> no file, no document, NO fake audit ──
+test('#4 registration failure leaves no file, no document row, and NO success audit', () => {
+  const dir = storagePath('uploads', 'products');
+  mkdirSync(dir, { recursive: true });
+  const abs = pjoin(dir, 'atomic_fail.png');
+  writeFileSync(abs, Buffer.from('IMG'));
+  const auditsBefore = db.prepare(`SELECT COUNT(*) c FROM audit_log WHERE action='sku.image_upload'`).get().c;
+  // Replicate saveBase64Image ordering: rollback register FIRST, audit only AFTER success.
+  assert.throws(() => {
+    registerStorageFileOrRollback({ absFile: abs, doc: { branch_id: null, original_name: 'x', mime_type: 'image/png', file_size: 3, storageRelPath: 'products/atomic_fail.png', source: 'warehouse' } });
+    audit('sku.image_upload', { url: '/uploads/products/atomic_fail.png' }, 'sala', 'kho'); // unreachable
+  });
+  assert.equal(existsSync(abs), false, 'file deleted on failure');
+  assert.equal(db.prepare(`SELECT COUNT(*) c FROM document_files WHERE ref_locator='products/atomic_fail.png'`).get().c, 0, 'no document row');
+  assert.equal(db.prepare(`SELECT COUNT(*) c FROM audit_log WHERE action='sku.image_upload'`).get().c, auditsBefore, 'NO fake success audit');
 });

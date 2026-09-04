@@ -33,6 +33,23 @@ extension ApiServiceDocumentsApi on ApiService {
     }, errorMessage: 'Không lưu được file vào Tài liệu'));
   }
 
+  /// Lưu file IMPORT gốc của Kho vào Tài liệu bằng quyền TỐI THIỂU của nhân viên
+  /// Kho (không cần module.documents). Idempotent theo nội dung. Dùng cho luồng
+  /// nhập hàng/kiểm kho/xuất kho — bắt buộc lưu file trước khi nhập nghiệp vụ.
+  Future<Map<String, dynamic>> importUploadDocument({
+    required String dataBase64,
+    required String originalName,
+    required String mimeType,
+    String sourceScreen = 'Kho — Nhập dữ liệu',
+  }) async {
+    return mapFrom(await postJson('/api/documents/import-upload', body: {
+      'data': dataBase64,
+      'original_name': originalName,
+      'mime_type': mimeType,
+      'source_screen': sourceScreen,
+    }, errorMessage: 'Không lưu được file import vào Tài liệu'));
+  }
+
   Future<List<int>> downloadDocument(String id) async {
     return getBytes('/api/documents/files/$id/download',
         errorMessage: 'Không tải được file');

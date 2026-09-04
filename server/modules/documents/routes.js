@@ -258,18 +258,18 @@ export function fileCashDrawerReceipt(entry = {}, branch_id = 'sala', user = {})
   });
 }
 
-export function registerDocumentRoutes(api, { wrap, logRequestError, SECURE_MIME_EXT }) {
-// ── Upload ──────────────────────────────────────────────────────────────────
-api.post('/documents/upload', uploadLimiter, wrap(async (req) => {
-  const { branch_id, actor } = Auth.requirePermission(req, 'module.documents');
-  const { name, category = 'other', source = 'manual', source_screen = '', related_id, related_type, tags = [], description = '', data, mime_type, original_name } = req.body;
-
+// Lõi upload DMS dùng chung — ATOMIC/COMPENSATION: ghi file TRƯỚC, nếu ghi
+// document_files THẤT BẠI thì XÓA file vừa ghi rồi ném lỗi (không để file mồ côi).
+// document:new chỉ được emit bên trong saveDocumentRecord SAU khi INSERT thành công.
+// Idempotent theo nội dung (content_hash) → retry cùng file trả bản ghi cũ, KHÔNG
+// tạo file/row trùng. forceSource/forceScreen/forceCategory dùng cho luồng import Kho.
+export function storeDmsUpload({ branch_id, actor, body = {}, secureMimeExt = {}, forceSource = null, forceScreen = null, forceCategory = null }) {
+  const { name, category = 'other', source = 'manual', source_screen = '', related_id, related_type, tags = [], description = '', data, mime_type, original_name } = body;
   if (!data || !original_name) throw new Error('Thiếu dữ liệu file (data, original_name)');
   if (!DMS_ALLOWED_MIME.has(mime_type)) throw new Error(`Định dạng file không được hỗ trợ: ${mime_type}`);
-
-  // data is base64
   const buf = Buffer.from(data, 'base64');
-  if (buf.byteLength > DMS_MAX_BYTES) throw new Error(`File quá lớn — tối đa 25MB`);
+  if (!buf.byteLength) throw new Error('File rỗng');
+  if (buf.byteLength > DMS_MAX_BYTES) throw new Error('File quá lớn — tối đa 25MB');
 
   const contentHash = createHash('sha256').update(buf).digest('hex');
   let duplicate = db.prepare(`SELECT * FROM document_files WHERE branch_id=? AND content_hash=? AND is_archived=0 LIMIT 1`).get(branch_id, contentHash);
@@ -285,18 +285,47 @@ api.post('/documents/upload', uploadLimiter, wrap(async (req) => {
   }
   if (duplicate) return { ...duplicate, tags: JSON.parse(duplicate.tags_json || '[]'), duplicate: true };
 
-  const ext = SECURE_MIME_EXT[mime_type] || '.bin';
+  const ext = secureMimeExt[mime_type] || '.bin';
   const stored_name = uid('f_') + ext;
+  const abs = nodePath.join(UPLOADS_DIR, stored_name);
   fs.mkdirSync(UPLOADS_DIR, { recursive: true });
-  fs.writeFileSync(nodePath.join(UPLOADS_DIR, stored_name), buf);
+  fs.writeFileSync(abs, buf);
+  try {
+    return saveDocumentRecord({
+      branch_id, name: name || original_name, original_name, stored_name, mime_type, file_size: buf.byteLength,
+      category: forceCategory || category, source: forceSource || source, source_screen: forceScreen || source_screen,
+      related_id, related_type, tags, description,
+      uploaded_by: actor.username || actor.id, uploaded_by_name: actor.name, content_hash: contentHash,
+    });
+  } catch (e) {
+    try { fs.unlinkSync(abs); } catch { /* file có thể đã mất */ }
+    throw e; // KHÔNG để file mồ côi; caller nhận lỗi
+  }
+}
 
+// Quyền tối thiểu cho nhân viên KHO lưu FILE IMPORT gốc (không cần module.documents).
+export const WAREHOUSE_IMPORT_PERMS = ['warehouse.item', 'inventory.adjust', 'warehouse.delete', 'module.purchase'];
 
-  const rec = saveDocumentRecord({
-    branch_id, name: name || original_name, original_name, stored_name, mime_type, file_size: buf.byteLength,
-    category, source, source_screen, related_id, related_type, tags,
-    description, uploaded_by: actor.username || actor.id, uploaded_by_name: actor.name, content_hash: contentHash,
+export function registerDocumentRoutes(api, { wrap, logRequestError, SECURE_MIME_EXT }) {
+// ── Upload (DMS chung) ────────────────────────────────────────────────────────
+api.post('/documents/upload', uploadLimiter, wrap(async (req) => {
+  const { branch_id, actor } = Auth.requirePermission(req, 'module.documents');
+  return storeDmsUpload({ branch_id, actor, body: req.body, secureMimeExt: SECURE_MIME_EXT });
+}));
+
+// ── Upload file IMPORT Kho — least-privilege (nhập hàng/kiểm kho/xuất kho) ────
+api.post('/documents/import-upload', uploadLimiter, wrap(async (req) => {
+  const { branch_id, actor, user } = Auth.requirePermission(req, null); // chỉ cần đăng nhập
+  if (!WAREHOUSE_IMPORT_PERMS.some((p) => Auth.canUser(user, p))) {
+    const e = new Error('Không đủ quyền (cần quyền thao tác Kho để lưu file import)');
+    e.status = 403; throw e;
+  }
+  return storeDmsUpload({
+    branch_id, actor, body: req.body, secureMimeExt: SECURE_MIME_EXT,
+    forceSource: 'warehouse_import',
+    forceScreen: (req.body && req.body.source_screen) || 'Kho — Nhập dữ liệu',
+    forceCategory: 'import',
   });
-  return rec;
 }));
 
 // ── List files ───────────────────────────────────────────────────────────────

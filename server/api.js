@@ -212,11 +212,11 @@ function saveBase64Image(req, { dir, urlBase, prefix, auditAction, registerAs })
   fs.writeFileSync(nodePath.join(dir, stored), buf);
   const url = `${urlBase}/${stored}`;
   const branch_id = branch(req);
-  audit(auditAction, { url, original_name, size: buf.byteLength }, branch_id, actor(req));
   // registerAs được TRUYỀN CÓ CHỦ ĐÍCH chỉ ở các đường upload cần lập chỉ mục vào
   // kho Tài liệu (vd ảnh sản phẩm Kho) — KHÔNG áp cho avatar/QR để tránh nhiễu.
-  // KHÔNG nuốt lỗi: nếu ghi document_files thất bại thì registerStorageFileOrRollback
-  // XÓA file vừa ghi và ném lỗi → upload fail sạch, KHÔNG để file mồ côi.
+  // THỨ TỰ ĐÚNG (atomic, không half-state): ghi file → đăng ký document (rollback
+  // xóa file nếu insert lỗi) → CHỈ KHI thành công mới ghi audit. Nếu registration
+  // lỗi thì ném ở đây, KHÔNG có audit "thành công" giả và file đã bị xóa.
   if (registerAs) {
     const rel = `${String(urlBase).replace(/^\/+/, '').replace(/^uploads\//, '')}/${stored}`;
     registerStorageFileOrRollback({
@@ -236,6 +236,9 @@ function saveBase64Image(req, { dir, urlBase, prefix, auditAction, registerAs })
       },
     });
   }
+  // Audit SAU khi (nếu có) registration thành công — tránh audit thành công giả khi
+  // registration bị rollback.
+  audit(auditAction, { url, original_name, size: buf.byteLength }, branch_id, actor(req));
   return { ok: true, url, size: buf.byteLength };
 }
 

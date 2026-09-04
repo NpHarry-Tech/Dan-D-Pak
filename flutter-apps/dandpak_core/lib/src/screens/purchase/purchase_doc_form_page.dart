@@ -868,10 +868,15 @@ class _PurchaseDocFormPageState extends State<PurchaseDocFormPage> {
     try {
       final data = await kvPickSpreadsheetData();
       if (data == null) return;
+      // BẮT BUỘC lưu file GỐC trước; lỗi → DỪNG nhập, KHÔNG đổi dữ liệu Kho.
       try {
         await kvArchiveImportFile(api, data, sourceScreen: 'Kho — Nhập hàng');
       } catch (_) {
-        if (mounted) _toast(t('Đã nhập; chưa lưu được file gốc vào Tài liệu'), error: true);
+        if (mounted) {
+          _toast(t('Không lưu được file gốc vào Tài liệu — đã HỦY nhập. Thử lại.'),
+              error: true);
+        }
+        return;
       }
       final byCode = <String, Map<String, dynamic>>{};
       for (final it in _items) {
