@@ -86,7 +86,10 @@ xl.Excel kvDecodeSpreadsheet(Uint8List bytes) {
 class KvSpreadsheetData {
   final List<String> headers;
   final List<List<String>> rows;
-  const KvSpreadsheetData(this.headers, this.rows);
+  // File GỐC được chọn — giữ lại để LƯU vào kho Tài liệu (không bỏ đi sau khi parse).
+  final String fileName;
+  final Uint8List? bytes;
+  const KvSpreadsheetData(this.headers, this.rows, {this.fileName = '', this.bytes});
 
   int column(List<String> aliases) {
     String norm(String value) => value
@@ -114,7 +117,8 @@ Future<KvSpreadsheetData?> kvPickSpreadsheetData() async {
   if (picked == null || picked.files.isEmpty) return null;
   final f = picked.files.first;
   final bytes = f.bytes ?? await File(f.path!).readAsBytes();
-  final book = kvDecodeSpreadsheet(Uint8List.fromList(bytes));
+  final raw = Uint8List.fromList(bytes);
+  final book = kvDecodeSpreadsheet(raw);
   if (book.tables.isEmpty) throw Exception(t('File không có sheet nào'));
   final sheet = book.tables[book.tables.keys.first]!;
   final headers =
@@ -124,7 +128,30 @@ Future<KvSpreadsheetData?> kvPickSpreadsheetData() async {
     final cells = sheet.row(r).map(_cellText).toList();
     if (!cells.every((c) => c.isEmpty)) rows.add(cells);
   }
-  return KvSpreadsheetData(headers, rows);
+  return KvSpreadsheetData(headers, rows, fileName: f.name, bytes: raw);
+}
+
+/// LƯU file import GỐC vào kho Tài liệu (DMS) — đáp ứng yêu cầu "lưu toàn bộ file
+/// được upload". Idempotent theo nội dung (gửi lại cùng file = bản ghi cũ). Ném
+/// lỗi để caller hiện trạng thái rõ ràng; caller quyết định có chặn import không.
+Future<Map<String, dynamic>?> kvArchiveImportFile(
+  ApiService api,
+  KvSpreadsheetData data, {
+  required String sourceScreen,
+}) async {
+  final raw = data.bytes;
+  if (raw == null || raw.isEmpty) return null;
+  const xlsxMime =
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+  return api.uploadDocument(
+    dataBase64: base64Encode(raw),
+    originalName: data.fileName.isEmpty ? 'import.xlsx' : data.fileName,
+    mimeType: xlsxMime,
+    source: 'warehouse_import',
+    sourceScreen: sourceScreen,
+    category: 'import',
+    description: sourceScreen,
+  );
 }
 
 /// Mở hộp thoại chọn file .xlsx và trả về các dòng (bỏ dòng tiêu đề nếu

@@ -864,9 +864,15 @@ class _PurchaseDocFormPageState extends State<PurchaseDocFormPage> {
   }
 
   Future<void> _importFromExcel() async {
+    final api = context.read<ApiService>();
     try {
       final data = await kvPickSpreadsheetData();
       if (data == null) return;
+      try {
+        await kvArchiveImportFile(api, data, sourceScreen: 'Kho — Nhập hàng');
+      } catch (_) {
+        if (mounted) _toast(t('Đã nhập; chưa lưu được file gốc vào Tài liệu'), error: true);
+      }
       final byCode = <String, Map<String, dynamic>>{};
       for (final it in _items) {
         for (final k in [kvs(it['code']), kvs(it['barcode']), kvs(it['id'])]) {

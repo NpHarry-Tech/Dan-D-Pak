@@ -269,9 +269,16 @@ class _StocktakeFormPageState extends State<StocktakeFormPage> {
 
   // ── Nhập từ file Excel (.xlsx theo MauFileKiemKho) ────────────────────────
   Future<void> _importFromFile() async {
+    final api = context.read<ApiService>();
     try {
       final data = await kvPickSpreadsheetData();
       if (data == null) return;
+      // Lưu file GỐC vào kho Tài liệu (idempotent). Không chặn import; trạng thái rõ.
+      try {
+        await kvArchiveImportFile(api, data, sourceScreen: 'Kho — Nhập kiểm kho');
+      } catch (_) {
+        if (mounted) _toast(t('Đã nhập; chưa lưu được file gốc vào Tài liệu'), error: true);
+      }
       final canonical = data.rows.map((r) => [
             data.cell(r, ['Mã sản phẩm', 'Mã hàng', 'Product code'],
                 fallback: 0),

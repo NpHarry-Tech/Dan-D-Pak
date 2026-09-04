@@ -31,7 +31,7 @@ import { registerClientLogRoutes } from './modules/clientLog/routes.js';
 import { registerSettingsRoutes } from './modules/settings/routes.js';
 import { registerDatabaseRoutes } from './modules/database/routes.js';
 import { registerErpRoutes } from './modules/erp/routes.js';
-import { registerDocumentRoutes, fileCashDrawerReceipt, registerStorageFileDocument } from './modules/documents/routes.js';
+import { registerDocumentRoutes, fileCashDrawerReceipt, registerStorageFileOrRollback } from './modules/documents/routes.js';
 import * as Haravan from './services/haravanConnector.js';
 import { errorPayload } from './core/errors.js';
 import fs from 'node:fs';
@@ -215,10 +215,13 @@ function saveBase64Image(req, { dir, urlBase, prefix, auditAction, registerAs })
   audit(auditAction, { url, original_name, size: buf.byteLength }, branch_id, actor(req));
   // registerAs được TRUYỀN CÓ CHỦ ĐÍCH chỉ ở các đường upload cần lập chỉ mục vào
   // kho Tài liệu (vd ảnh sản phẩm Kho) — KHÔNG áp cho avatar/QR để tránh nhiễu.
+  // KHÔNG nuốt lỗi: nếu ghi document_files thất bại thì registerStorageFileOrRollback
+  // XÓA file vừa ghi và ném lỗi → upload fail sạch, KHÔNG để file mồ côi.
   if (registerAs) {
-    try {
-      const rel = `${String(urlBase).replace(/^\/+/, '').replace(/^uploads\//, '')}/${stored}`;
-      registerStorageFileDocument({
+    const rel = `${String(urlBase).replace(/^\/+/, '').replace(/^uploads\//, '')}/${stored}`;
+    registerStorageFileOrRollback({
+      absFile: nodePath.join(dir, stored),
+      doc: {
         branch_id,
         name: registerAs.name || original_name,
         original_name,
@@ -230,8 +233,8 @@ function saveBase64Image(req, { dir, urlBase, prefix, auditAction, registerAs })
         category: registerAs.category || 'other',
         uploaded_by: req.user?.username || req.user?.id || 'system',
         uploaded_by_name: actor(req) || 'Hệ thống',
-      });
-    } catch { /* đăng ký Tài liệu KHÔNG được chặn upload */ }
+      },
+    });
   }
   return { ok: true, url, size: buf.byteLength };
 }

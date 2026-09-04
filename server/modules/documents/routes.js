@@ -28,12 +28,12 @@ const DMS_MAX_BYTES = 25 * 1024 * 1024; // 25 MB
 const uploadLimiter = rateLimit({ key: 'documents-upload', windowMs: 60_000, max: 20 });
 
 // ── Shared helper — also exported for internal use by other services ────────
-function saveDocumentRecord({ branch_id, name, original_name, stored_name, mime_type, file_size, category = 'other', source = 'manual', related_id = null, related_type = null, tags = [], description = '', uploaded_by = 'system', uploaded_by_name = 'Hệ thống', content_hash = null }) {
+function saveDocumentRecord({ branch_id, name, original_name, stored_name, mime_type, file_size, category = 'other', source = 'manual', related_id = null, related_type = null, tags = [], description = '', uploaded_by = 'system', uploaded_by_name = 'Hệ thống', content_hash = null, source_screen = '' }) {
   const id = uid('doc_');
   const created_at = now();
-  db.prepare(`INSERT INTO document_files (id,branch_id,name,original_name,stored_name,mime_type,file_size,category,source,related_id,related_type,tags_json,description,uploaded_by,uploaded_by_name,is_archived,created_at,content_hash)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,?,?)`)
-    .run(id, branch_id, name, original_name, stored_name, mime_type, file_size, category, source, related_id, related_type, JSON.stringify(tags), description, uploaded_by, uploaded_by_name, created_at, content_hash);
+  db.prepare(`INSERT INTO document_files (id,branch_id,name,original_name,stored_name,mime_type,file_size,category,source,related_id,related_type,tags_json,description,uploaded_by,uploaded_by_name,is_archived,created_at,content_hash,source_screen)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,?,?,?)`)
+    .run(id, branch_id, name, original_name, stored_name, mime_type, file_size, category, source, related_id, related_type, JSON.stringify(tags), description, uploaded_by, uploaded_by_name, created_at, content_hash, source_screen);
   audit('dms.upload', { id, name, category, source, original_name, file_size }, branch_id, uploaded_by);
   const rec = db.prepare(`SELECT * FROM document_files WHERE id=?`).get(id);
   // Post-write realtime: tab Tài liệu đang mở hiện file mới ngay (không polling).
@@ -65,19 +65,33 @@ export function registerStorageFileDocument({
   source, source_screen = '', category = 'other', description = '',
   uploaded_by = 'system', uploaded_by_name = 'Hệ thống',
   related_id = null, related_type = null,
+  is_legacy = 0, status = 'available', created_at = null,
 }) {
   const id = uid('doc_');
-  const created_at = now();
+  const ts = created_at || now();
   const finalOriginal = original_name || name || storageRelPath;
   db.prepare(`INSERT INTO document_files
     (id,branch_id,name,original_name,stored_name,mime_type,file_size,category,source,related_id,related_type,tags_json,description,uploaded_by,uploaded_by_name,is_archived,created_at,content_hash,storage_kind,ref_locator,source_screen,is_legacy,status)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,?,NULL,'storage_file',?,?,0,'available')`)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,?,NULL,'storage_file',?,?,?,?)`)
     .run(id, branch_id, name || finalOriginal, finalOriginal, '', mime_type || 'application/octet-stream',
       Number(file_size) || 0, category, source || 'upload', related_id, related_type, '[]', description,
-      uploaded_by, uploaded_by_name, created_at, String(storageRelPath || ''), source_screen);
+      uploaded_by, uploaded_by_name, ts, String(storageRelPath || ''), source_screen, is_legacy ? 1 : 0, status);
   const rec = db.prepare(`SELECT * FROM document_files WHERE id=?`).get(id);
   try { emit('document:new', documentFileOut(rec), branch_id); } catch { /* best-effort */ }
   return rec;
+}
+
+// Đăng ký một file storage ĐÃ GHI vào Tài liệu với COMPENSATION: nếu ghi
+// document_files THẤT BẠI thì XÓA file vừa ghi rồi NÉM lỗi — kết quả cuối cùng
+// KHÔNG bao giờ là "file upload thành công nhưng thiếu document_files" (không mồ
+// côi). Caller (saveBase64Image) không được nuốt lỗi này → upload phải fail.
+export function registerStorageFileOrRollback({ absFile, doc }) {
+  try {
+    return registerStorageFileDocument(doc);
+  } catch (e) {
+    try { fs.unlinkSync(absFile); } catch { /* file có thể đã mất */ }
+    throw e;
+  }
 }
 
 // ── Reference-mode: index nội dung ĐANG NẰM ở nguồn (vd ảnh hóa đơn inline trong
@@ -90,6 +104,10 @@ const INLINE_REFERENCE_SOURCES = {
   // không được trả 410.
   'cash_drawer_expense:invoice_image': { table: 'cash_drawer_entries', column: 'invoice_image' },
 };
+
+function sha256Hex(buf) {
+  try { return createHash('sha256').update(buf).digest('hex'); } catch { return null; }
+}
 
 function decodeDataUrl(value) {
   const s = String(value ?? '');
@@ -147,6 +165,9 @@ export function saveDocumentReference({
   const decoded = value != null ? decodeDataUrl(value) : null;
   const mime_type = decoded?.mime || 'application/octet-stream';
   const file_size = decoded?.buf?.byteLength || 0;
+  // SHA-256 nội dung THẬT (không phải chỉ mime/size) → phát hiện đổi nội dung kể cả
+  // khi trùng MIME và trùng byte-length. null khi không giải được (missing).
+  const ref_content_hash = decoded?.buf ? sha256Hex(decoded.buf) : null;
   const status = value != null && !decoded ? 'missing' : 'available';
   const ref_locator = `${module}:${field}:${record_id}`;
   const created_at = uploaded_at || now();
@@ -160,12 +181,13 @@ export function saveDocumentReference({
     // COPY-mode (file thật trên đĩa) là nguồn tự quản → KHÔNG đụng (giữ no-clobber,
     // không biến entry copy đang chạy thành reference). Backfill/hook chạy lại vô hại.
     if (existing.storage_kind !== 'reference') return existing;
-    // REFERENCE-mode: nếu ảnh NGUỒN đã đổi (mime/size/status) hoặc metadata đổi thì
-    // CẬP NHẬT đúng mime/size/status/tên/thời gian/người tải và phát 'document:updated'
-    // để tab Tài liệu đang mở thấy ngay. Không đổi gì thì trả nguyên (không phát ồn).
+    // REFERENCE-mode: đổi NỘI DUNG (so ref_content_hash) hoặc metadata → CẬP NHẬT
+    // đúng mime/size/status/tên/thời gian/người tải/hash và phát 'document:updated'.
+    // Không đổi gì thì trả nguyên (KHÔNG phát ồn). Backfill hash cho reference cũ
+    // (ref_content_hash NULL) sẽ chạy nhánh update một lần rồi ổn định (idempotent).
     const changed =
+      (existing.ref_content_hash || null) !== (ref_content_hash || null) ||
       existing.mime_type !== mime_type ||
-      (existing.file_size || 0) !== file_size ||
       (existing.status || 'available') !== status ||
       existing.name !== finalName ||
       existing.original_name !== finalOriginal ||
@@ -173,11 +195,11 @@ export function saveDocumentReference({
       (!!uploaded_by_name && existing.uploaded_by_name !== uploaded_by_name);
     if (!changed) return existing;
     db.prepare(`UPDATE document_files SET name=?, original_name=?, mime_type=?, file_size=?, status=?,
-        source_screen=?, uploaded_by=?, uploaded_by_name=?, created_at=?, ref_locator=?, is_legacy=? WHERE id=?`)
+        source_screen=?, uploaded_by=?, uploaded_by_name=?, created_at=?, ref_locator=?, is_legacy=?, ref_content_hash=? WHERE id=?`)
       .run(finalName, finalOriginal, mime_type, file_size, status,
         source_screen || existing.source_screen || '',
         uploaded_by || existing.uploaded_by, uploaded_by_name || existing.uploaded_by_name,
-        created_at, ref_locator, is_legacy ? 1 : 0, existing.id);
+        created_at, ref_locator, is_legacy ? 1 : 0, ref_content_hash, existing.id);
     const updated = db.prepare(`SELECT * FROM document_files WHERE id=?`).get(existing.id);
     try { emit('document:updated', documentFileOut(updated), branch_id); } catch { /* best-effort */ }
     return updated;
@@ -185,10 +207,10 @@ export function saveDocumentReference({
 
   const id = uid('doc_');
   db.prepare(`INSERT INTO document_files
-    (id,branch_id,name,original_name,stored_name,mime_type,file_size,category,source,related_id,related_type,tags_json,description,uploaded_by,uploaded_by_name,is_archived,created_at,content_hash,storage_kind,ref_locator,source_screen,is_legacy,status)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,?,NULL,'reference',?,?,?,?)`)
+    (id,branch_id,name,original_name,stored_name,mime_type,file_size,category,source,related_id,related_type,tags_json,description,uploaded_by,uploaded_by_name,is_archived,created_at,content_hash,storage_kind,ref_locator,source_screen,is_legacy,status,ref_content_hash)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,?,NULL,'reference',?,?,?,?,?)`)
     .run(id, branch_id, finalName, finalOriginal, '', mime_type, file_size, category, source || module,
-      related_id, related_type, '[]', description, uploaded_by, uploaded_by_name, created_at, ref_locator, source_screen, is_legacy ? 1 : 0, status);
+      related_id, related_type, '[]', description, uploaded_by, uploaded_by_name, created_at, ref_locator, source_screen, is_legacy ? 1 : 0, status, ref_content_hash);
   const rec = db.prepare(`SELECT * FROM document_files WHERE id=?`).get(id);
   // Không audit mỗi backfill (tránh ồn); chỉ realtime cho tab Tài liệu đang mở.
   try { emit('document:new', documentFileOut(rec), branch_id); } catch { /* best-effort */ }
@@ -240,7 +262,7 @@ export function registerDocumentRoutes(api, { wrap, logRequestError, SECURE_MIME
 // ── Upload ──────────────────────────────────────────────────────────────────
 api.post('/documents/upload', uploadLimiter, wrap(async (req) => {
   const { branch_id, actor } = Auth.requirePermission(req, 'module.documents');
-  const { name, category = 'other', source = 'manual', related_id, related_type, tags = [], description = '', data, mime_type, original_name } = req.body;
+  const { name, category = 'other', source = 'manual', source_screen = '', related_id, related_type, tags = [], description = '', data, mime_type, original_name } = req.body;
 
   if (!data || !original_name) throw new Error('Thiếu dữ liệu file (data, original_name)');
   if (!DMS_ALLOWED_MIME.has(mime_type)) throw new Error(`Định dạng file không được hỗ trợ: ${mime_type}`);
@@ -271,7 +293,7 @@ api.post('/documents/upload', uploadLimiter, wrap(async (req) => {
 
   const rec = saveDocumentRecord({
     branch_id, name: name || original_name, original_name, stored_name, mime_type, file_size: buf.byteLength,
-    category, source, related_id, related_type, tags,
+    category, source, source_screen, related_id, related_type, tags,
     description, uploaded_by: actor.username || actor.id, uploaded_by_name: actor.name, content_hash: contentHash,
   });
   return rec;

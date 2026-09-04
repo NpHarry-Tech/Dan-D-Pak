@@ -1826,6 +1826,11 @@ export function migrate(targetDb = globalDb) {
   // Trạng thái file (yêu cầu §4): 'available' | 'missing' (nội dung nguồn không
   // còn giải được). Đặt lúc đăng ký/backfill; endpoint tải cũng trả 410 khi mất.
   addColumnIfMissing('document_files', 'status', "TEXT NOT NULL DEFAULT 'available'");
+  // Hash nội dung cho document REFERENCE (ảnh inline). KHÔNG dùng cột content_hash
+  // (đã có UNIQUE index chống trùng cho file-mode) — hai bản ghi nguồn khác nhau có
+  // thể trùng nội dung ảnh, sẽ vỡ UNIQUE. Cột riêng này chỉ để PHÁT HIỆN THAY ĐỔI
+  // nội dung thật (so SHA-256 decoded bytes), không ràng buộc duy nhất.
+  addColumnIfMissing('document_files', 'ref_content_hash', 'TEXT');
   // Idempotency của backfill/upload-hook KHÔNG dùng ràng buộc UNIQUE (một bản ghi
   // nguồn có thể có nhiều file hợp lệ, và UNIQUE có thể vỡ khi tạo trên dữ liệu cũ
   // đã trùng → chặn khởi động). Thay vào đó dùng chỉ mục thường để tra "đã có

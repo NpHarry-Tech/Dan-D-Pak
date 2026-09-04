@@ -14,10 +14,15 @@ process.env.STORAGE_PATH = join(_tmp, 'storage');
 // tĩnh bị hoisted lên trước cả dòng đặt env → sẽ mở nhầm DB mặc định.
 const { migrate, db, now, uid } = await import('./db.js');
 const { backfillDocuments, backfillAudit } = await import('./services/documentsBackfill.js');
-const { saveDocumentReference, resolveReferenceContent, registerStorageFileDocument } =
+const { saveDocumentReference, resolveReferenceContent, registerStorageFileDocument, registerStorageFileOrRollback } =
   await import('./modules/documents/routes.js');
+const { processUpdateEvent } = await import('./modules/appRelease/routes.js');
 const { storagePath } = await import('./config/env.js');
-const { writeFileSync, mkdirSync } = await import('node:fs');
+const { writeFileSync, mkdirSync, existsSync } = await import('node:fs');
+const { join: pjoin } = await import('node:path');
+
+const successRows = () =>
+  db.prepare(`SELECT COUNT(*) c FROM audit_log WHERE action='app.update_success'`).get().c;
 
 migrate();
 
@@ -164,4 +169,116 @@ test('#4 storage_file (product image) registers + resolves from uploads, rejects
   // missing file -> null (caller returns 410, no crash)
   const gone = { storage_kind: 'storage_file', ref_locator: 'products/does-not-exist.png', mime_type: 'image/png' };
   assert.equal(resolveReferenceContent(gone, 'sala'), null);
+});
+
+// ── #1 update-event FAIL-CLOSED (runtime) ───────────────────────────────────
+test('#1 update-event: valid header==toBuild logs success', () => {
+  const before = successRows();
+  const r = processUpdateEvent({
+    headers: { 'x-build-number': '170' },
+    body: { fromBuild: 169, toBuild: 170, version: '2026.09.03.01', key: 'k_ok_1' },
+    branch_id: 'sala', actor: 'admin',
+  });
+  assert.equal(r.logged, true);
+  assert.equal(successRows(), before + 1);
+});
+
+test('#1 update-event: MISSING build header never audits', () => {
+  const before = successRows();
+  const r = processUpdateEvent({ headers: {}, body: { fromBuild: 169, toBuild: 170, key: 'k_missing' }, branch_id: 'sala' });
+  assert.equal(r.ignored, 'missing-build-header');
+  assert.equal(successRows(), before, 'no audit row written');
+});
+
+test('#1 update-event: INVALID build header never audits', () => {
+  const before = successRows();
+  const r = processUpdateEvent({ headers: { 'x-build-number': 'abc' }, body: { toBuild: 170, key: 'k_invalid' }, branch_id: 'sala' });
+  assert.equal(r.ignored, 'invalid-build-header');
+  assert.equal(successRows(), before);
+});
+
+test('#1 update-event: MISMATCH header != toBuild never audits', () => {
+  const before = successRows();
+  const r = processUpdateEvent({ headers: { 'x-build-number': '169' }, body: { toBuild: 170, key: 'k_mismatch' }, branch_id: 'sala' });
+  assert.equal(r.ignored, 'build-mismatch');
+  assert.equal(successRows(), before);
+});
+
+test('#1 update-event: idempotent by key (same key twice -> one row)', () => {
+  const before = successRows();
+  const body = { fromBuild: 169, toBuild: 170, key: 'k_dupe' };
+  const h = { 'x-build-number': '170' };
+  assert.equal(processUpdateEvent({ headers: h, body, branch_id: 'sala' }).logged, true);
+  assert.equal(processUpdateEvent({ headers: h, body, branch_id: 'sala' }).deduped, true);
+  assert.equal(successRows(), before + 1);
+});
+
+// ── #2 reference content-hash change detection ──────────────────────────────
+test('#2 different bytes, SAME mime & SAME length -> same doc updated + hash changes; same bytes -> no update', () => {
+  const eid = seedExpense({ code: 'CP-HASH', image: dataUrl('AAAA') }); // 4 bytes
+  const a = saveDocumentReference({ branch_id: 'sala', module: 'expense', field: 'invoice_image', record_id: eid, name: 'x', source: 'expense', value: dataUrl('AAAA') });
+  const h1 = a.ref_content_hash;
+  assert.ok(h1, 'hash stored for reference');
+  // same bytes again -> no update (id + hash identical)
+  const same = saveDocumentReference({ branch_id: 'sala', module: 'expense', field: 'invoice_image', record_id: eid, name: 'x', source: 'expense', value: dataUrl('AAAA') });
+  assert.equal(same.ref_content_hash, h1);
+  // different content, SAME mime (image/png) and SAME byte length (4) -> must update
+  db.prepare(`UPDATE expenses SET invoice_image=? WHERE id=?`).run(dataUrl('BBBB'), eid);
+  const changed = saveDocumentReference({ branch_id: 'sala', module: 'expense', field: 'invoice_image', record_id: eid, name: 'x', source: 'expense', value: dataUrl('BBBB') });
+  assert.equal(changed.id, a.id, 'same document id');
+  assert.notEqual(changed.ref_content_hash, h1, 'hash changed even though mime+length identical');
+  assert.equal(changed.file_size, a.file_size, 'byte length identical (proves hash, not size, detected it)');
+});
+
+// ── #3 storage_file registration failure -> NO orphan file ──────────────────
+test('#3 registration failure deletes the file (no orphan, no partial entry)', () => {
+  const dir = storagePath('uploads', 'products');
+  mkdirSync(dir, { recursive: true });
+  const abs = pjoin(dir, 'orphan_test.png');
+  writeFileSync(abs, Buffer.from('DATA'));
+  assert.equal(existsSync(abs), true);
+  // branch_id null -> NOT NULL constraint -> registration throws
+  assert.throws(() => registerStorageFileOrRollback({
+    absFile: abs,
+    doc: { branch_id: null, original_name: 'x.png', mime_type: 'image/png', file_size: 4, storageRelPath: 'products/orphan_test.png', source: 'warehouse' },
+  }));
+  assert.equal(existsSync(abs), false, 'file rolled back (deleted) on registration failure');
+  assert.equal(db.prepare(`SELECT COUNT(*) c FROM document_files WHERE ref_locator='products/orphan_test.png'`).get().c, 0, 'no document row left');
+});
+
+// ── #4 product-image backfill (metadata recovery, legacy, missing, orphan, idempotent) ──
+test('#4 product-image backfill indexes uploads/products with metadata + legacy/missing + idempotent', () => {
+  const dir = storagePath('uploads', 'products');
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(pjoin(dir, 'product_withmeta.png'), Buffer.from('IMG1'));
+  // sku with audit metadata
+  const s1 = uid('sku_');
+  db.prepare(`INSERT INTO skus (id,branch_id,code,name,image,price) VALUES (?,?,?,?,?,?)`).run(s1, 'sala', 'SP01', 'Cà phê', '/uploads/products/product_withmeta.png', 0);
+  db.prepare(`INSERT INTO audit_log (id,branch_id,actor,action,detail,created_at) VALUES (?,?,?,?,?,?)`)
+    .run(uid('a_'), 'sala', 'Chị Kho', 'sku.image_upload', JSON.stringify({ url: '/uploads/products/product_withmeta.png', original_name: 'anh-ca-phe.png', size: 4 }), now());
+  // sku whose file is missing on disk, no audit -> legacy + missing
+  const s2 = uid('sku_');
+  db.prepare(`INSERT INTO skus (id,branch_id,code,name,image,price) VALUES (?,?,?,?,?,?)`).run(s2, 'sala', 'SP02', 'Trà', '/uploads/products/product_gone.png', 0);
+  // an orphan file (no sku points to it)
+  writeFileSync(pjoin(dir, 'product_orphan.png'), Buffer.from('ORPH'));
+
+  const run = backfillDocuments({ branchId: 'sala' });
+  assert.equal(run.byModule.sku_image.indexed, 2);
+  const d1 = db.prepare(`SELECT * FROM document_files WHERE related_type='sku_image' AND related_id=?`).get(s1);
+  assert.equal(d1.storage_kind, 'storage_file');
+  assert.equal(d1.original_name, 'anh-ca-phe.png');   // recovered from audit
+  assert.equal(d1.uploaded_by_name, 'Chị Kho');
+  assert.equal(d1.is_legacy, 0);
+  assert.equal(d1.status, 'available');
+  assert.equal(resolveReferenceContent(d1, 'sala').buf.toString(), 'IMG1');
+  const d2 = db.prepare(`SELECT * FROM document_files WHERE related_type='sku_image' AND related_id=?`).get(s2);
+  assert.equal(d2.is_legacy, 1);
+  assert.equal(d2.uploaded_by_name, 'Không xác định');
+  assert.equal(d2.status, 'missing');
+  assert.ok(run.orphan >= 1, 'orphan files counted (not deleted)');
+  assert.equal(existsSync(pjoin(dir, 'product_orphan.png')), true, 'orphan NOT deleted');
+
+  const run2 = backfillDocuments({ branchId: 'sala' });
+  assert.equal(run2.byModule.sku_image.indexed, 0, 'second run creates no product-image duplicates');
+  assert.ok(run2.byModule.sku_image.skipped >= 2);
 });
