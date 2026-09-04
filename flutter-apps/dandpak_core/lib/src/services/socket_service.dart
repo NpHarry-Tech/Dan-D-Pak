@@ -136,6 +136,11 @@ class SocketService {
 
         // Play the mapped notification sound
         _handleSoundNotification(event, payload);
+        // GỠ CHUÔNG khi server báo món tự-gọi đã được xử lý. Server phát LẠI
+        // 'order:pending' (kèm 'confirmed'/'rejected') để báo đã xác nhận/từ chối
+        // — KHÔNG phải việc mới. Chạy KHÔNG phụ thuộc cấu hình âm thanh để dù có
+        // tắt tiếng giữa chừng, chuông đang reo vẫn được gỡ đúng đơn.
+        _updateRingResolution(event, payload);
         // Sự kiện nghiệp vụ → THÔNG BÁO cho đúng vai trò trên thiết bị này.
         _notifyBusiness(event, payload);
 
@@ -398,14 +403,54 @@ class SocketService {
       // REO LIÊN TỤC như điện thoại đổ chuông tới khi nhân viên bấm chuông xem —
       // không chỉ kêu một tiếng rồi im (yêu cầu chủ cửa hàng). Các sự kiện khác
       // vẫn kêu một tiếng như cũ.
-      if (event == 'order:pending' || event == 'staff:call') {
+      if (event == 'order:pending') {
+        final map = payload is Map ? payload : const {};
+        // Đây là lần PHÁT LẠI báo đã xác nhận/từ chối (có 'confirmed'/'rejected')?
+        // Nếu vậy KHÔNG reo — việc gỡ chuông đã do _updateRingResolution lo.
+        if (map['confirmed'] != null || map['rejected'] != null) return;
         RingController.instance
             .configure(baseUrl: baseUrlStr, soundId: soundId);
-        RingController.instance.ring();
+        RingController.instance.ring(_ringKeyOf(payload));
+      } else if (event == 'staff:call') {
+        RingController.instance
+            .configure(baseUrl: baseUrlStr, soundId: soundId);
+        RingController.instance.ring(_staffRingKeyOf(payload));
       } else {
         playNotificationSound(baseUrlStr, soundId, volume: volume);
       }
     }
+  }
+
+  /// Khóa ổn định cho chuông món tự-gọi = mã ĐƠN (order_id). Ring lúc có việc mới
+  /// và clear lúc xác nhận/từ chối PHẢI ra cùng khóa → suy từ cùng một trường.
+  String _ringKeyOf(dynamic payload) {
+    final p = payload is Map ? payload : const {};
+    final order = p['order'] is Map ? p['order'] as Map : null;
+    final id = order?['id'] ??
+        p['order_id'] ??
+        p['id'] ??
+        order?['table_id'] ??
+        p['table_id'];
+    return id?.toString() ?? '';
+  }
+
+  /// Chuông gọi nhân viên: khóa theo BÀN để gọi lại cùng bàn không cộng dồn.
+  String _staffRingKeyOf(dynamic payload) {
+    final p = payload is Map ? payload : const {};
+    final t = p['table_id'] ??
+        p['table'] ??
+        (p['table'] is Map ? (p['table'] as Map)['id'] : null);
+    return t != null ? 'staff:$t' : '';
+  }
+
+  /// 'order:pending' kèm 'confirmed'/'rejected' = tín hiệu ĐÃ XỬ LÝ → gỡ chuông
+  /// đúng đơn đó. Chạy vô điều kiện (không phụ thuộc cấu hình âm thanh).
+  void _updateRingResolution(String event, dynamic payload) {
+    if (event != 'order:pending') return;
+    final map = payload is Map ? payload : const {};
+    if (map['confirmed'] == null && map['rejected'] == null) return;
+    final key = _ringKeyOf(payload);
+    if (key.isNotEmpty) RingController.instance.clear(key);
   }
 
   void disconnect() {

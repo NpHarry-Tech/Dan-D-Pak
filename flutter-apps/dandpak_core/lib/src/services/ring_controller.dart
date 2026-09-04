@@ -15,7 +15,19 @@ class RingController {
   String _baseUrl = '';
   String _soundId = 'Information_Bell';
 
-  /// Số việc chưa xem — >0 thì overlay chuông hiện + âm thanh lặp.
+  /// CÁC VIỆC CHƯA XEM theo KHÓA ỔN ĐỊNH (order_id / table_id), KHÔNG phải đếm mù.
+  /// Nhờ vậy:
+  ///   1) cùng một sự kiện tới hai lần (Socket.IO gửi lại khi reconnect, hoặc
+  ///      server phát lặp) KHÔNG cộng dồn → chuông không "kêu lặp lại";
+  ///   2) món được XÁC NHẬN/TỪ CHỐI thì gỡ ĐÚNG khóa đó → chuông tự im mà không
+  ///      cần bấm tay (sự cố "đã confirm nhưng vẫn reo");
+  ///   3) reconcile() kéo tập việc về ĐÚNG sự thật server đang chờ (khi reconnect
+  ///      hay tải lại sơ đồ) → không phát lại việc đã xử lý, không bỏ sót việc mới.
+  final Set<String> _keys = <String>{};
+  int _anonSeq = 0;
+
+  /// Số việc chưa xem — >0 thì overlay chuông hiện + âm thanh lặp. Suy ra từ
+  /// `_keys` nên luôn khớp số việc THẬT, không lệch theo số lần nhận sự kiện.
   final ValueNotifier<int> pending = ValueNotifier<int>(0);
 
   /// Mỗi lần TĂNG = một lần MÁY IN BẾP sắp in → nháy đèn hiệu trên màn (kèm tiếng
@@ -33,14 +45,49 @@ class RingController {
     if (soundId != null && soundId.trim().isNotEmpty) _soundId = soundId.trim();
   }
 
-  /// Có món mới → tăng đếm và bắt đầu reo (nếu chưa reo).
-  Future<void> ring() async {
-    pending.value = pending.value + 1;
+  /// Có việc mới cần xem → thêm theo KHÓA (dedup) rồi reo nếu chưa reo. [key] là
+  /// mã ổn định của việc (order_id/table_id). Rỗng/null (vd nguồn không mang mã)
+  /// → sinh khóa ẩn danh để VẪN reo, nhưng không dedup được (giữ hành vi cũ cho
+  /// nguồn đó); server không biết khóa ẩn danh nên reconcile() giữ nguyên chúng.
+  Future<void> ring([String? key]) async {
+    final k = (key == null || key.trim().isEmpty)
+        ? '_anon:${_anonSeq++}'
+        : key.trim();
+    if (_keys.add(k)) pending.value = _keys.length;
     await _startLoop();
   }
 
-  /// Nhân viên bấm chuông xem món → ngưng hẳn, xoá đếm.
+  /// Việc [key] đã được xử lý (nhân viên xác nhận/từ chối/mở xem) → gỡ khóa; hết
+  /// việc thì chuông tự im. An toàn khi gọi với khóa không tồn tại.
+  void clear(String key) {
+    final k = key.trim();
+    if (k.isEmpty) return;
+    if (_keys.remove(k)) {
+      pending.value = _keys.length;
+      if (_keys.isEmpty) _stop();
+    }
+  }
+
+  /// Kéo tập việc-chưa-xem về ĐÚNG sự thật từ server (gọi khi reconnect / tải lại
+  /// sơ đồ bàn). Giữ lại các khóa ẩn danh (server không biết chúng).
+  void reconcile(Iterable<String> keys) {
+    final next = keys
+        .map((e) => e.trim())
+        .where((e) => e.isNotEmpty)
+        .toSet()
+      ..addAll(_keys.where((k) => k.startsWith('_anon:')));
+    if (next.length == _keys.length && next.every(_keys.contains)) return;
+    _keys
+      ..clear()
+      ..addAll(next);
+    pending.value = _keys.length;
+    if (_keys.isEmpty) _stop();
+    else _startLoop();
+  }
+
+  /// Nhân viên bấm chuông xem hết → ngưng hẳn, xoá mọi khóa.
   void acknowledge() {
+    if (_keys.isNotEmpty) _keys.clear();
     pending.value = 0;
     _stop();
   }
