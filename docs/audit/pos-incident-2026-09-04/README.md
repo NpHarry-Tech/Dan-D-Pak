@@ -40,7 +40,7 @@ payment possible → double charge" behavior **could not be reproduced against
 current source** and is contradicted by the code and passing tests below. The most
 probable cause of the observed incident is that the **deployed build is older than
 current source** (the brief itself notes Review runs `ae8c64d` and production is an
-untouched older installer). 
+untouched older installer).
 
 ➡️ **The correct P0 remediation is a controlled redeploy of current source after
 full regression — not a UI rewrite and not new payment logic.** Rewriting the
@@ -48,7 +48,7 @@ checkout now would risk regressing invariants that are currently correct.
 
 Evidence (all in `server/services/payments.js` `payOrder`, and the F&B client):
 
-| Invariant demanded by the brief | Where it already lives | 
+| Invariant demanded by the brief | Where it already lives |
 |---|---|
 | Server is source of truth; client success not blindly optimistic | client clears table only when `receipt['fully_settled'] != false` — [pos_provider.dart:658](../../../flutter-apps/dandpak_core/lib/src/providers/pos_provider.dart#L658) |
 | High-entropy idempotency key, survives timeout/retry/restart | persistent `paymentOperationId` — [pos_provider.dart:633-651](../../../flutter-apps/dandpak_core/lib/src/providers/pos_provider.dart#L633-L651); server replay guard — [payments.js:465-486](../../../server/services/payments.js#L465-L486) |
@@ -73,32 +73,35 @@ Evidence (all in `server/services/payments.js` `payOrder`, and the F&B client):
 | `table-reset` | 4 | 4 | 0 |
 | `fnb-double-pay-guard` *(added this session)* | 3 | 3 | 0 |
 
-## 3. Genuine remaining gaps (defects that DO exist in current source)
+## 3. Status ledger — what was landed this branch vs. what remains
 
-These are real, reproduced-by-reading (and, where noted, by test) and are the
-legitimate targets for code change. See `hypothesis-matrix.md` for the full matrix.
+Every fix below is committed on `fix/universal-print-validation` (local, **not pushed**),
+each with a passing test and clean analyze. Full detail per symptom in `hypothesis-matrix.md`.
 
-1. **Self-order repeat sound (Gate 2) — REAL → FIXED + TESTED this branch.** Root
-   cause: the server's confirm/reject handlers **re-emit `order:pending`** (with a
-   `confirmed`/`rejected` field) — [orders.js:430](../../../server/services/orders.js#L430),
-   [orders.js:477](../../../server/services/orders.js#L477) — and the client rang on every
-   `order:pending`, so *confirming an item fired another ring*. Fixed with a key-based
-   `RingController` (dedup + per-key clear + reconcile) and payload-aware wiring in
-   `socket_service`. Verified: `flutter test` 7/7 + `flutter analyze` clean. See
-   `hypothesis-matrix.md` S1.
-2. **`/api/shifts/current` cost + no GET coalescing (Gate 5) — REAL.** Every poll runs
-   `shiftReport` (4 payment-scan queries) + `operationDayReport` + drawer summaries —
-   O(payments-in-shift) — and the client has no single-flight/coalesce, so rapid
-   clicks multiply heavy reads that queue behind the SQLite single writer → the
-   4.7–28.7 s pile-ups. Evidence: [shifts.js:108-183](../../../server/services/shifts.js#L108-L183).
-3. **Realtime `emit()` carries no event id / order version / dedup token (systemic).**
-   [realtime.js:187-202](../../../server/realtime.js#L187-L202). Underlies both the ring
-   duplication and any client-side replay-on-reconnect.
-4. **`migrate()` ≈ 11.5 s on a fresh DB (startup perf).** Measured this session
-   (import probe). Startup-only, but worth profiling — see `baseline-and-runtime.md`.
-5. **Excel import "633 billion" (Gate 6) — to be reproduced in the Dart import
-   suite.** Symptom points to decimal-comma / column-shift in the client parser
-   (`kv_import_*`). Not yet root-caused to a line; tracked as open.
+| Sym | Symptom | Status | Test |
+|---|---|---|---|
+| S1 | Self-order bell keeps ringing after confirm | **FIXED** — key-based ring dedup + clear on the confirm/reject re-emit ([orders.js:430](../../../server/services/orders.js#L430)/[477](../../../server/services/orders.js#L477)) | `ring_controller_dedup_test.dart` 7/7 |
+| S3 | Double charge / stuck table | **DEPLOY-GAP** (source correct) + guard assertion added | `fnb-double-pay-guard.test.mjs` 3/3 |
+| S4 | `item.cancel` opaque id | **FIXED** — món snapshot in audit | `audit-item-cancel-snapshot.test.mjs` 2/2 |
+| S5 | `/api/shifts/current` 4.7–28.7 s pile-ups | **Client coalescing FIXED**; server instrument/cache remains (benchmark-gated) | `get_coalesce_test.dart` 3/3 |
+| S6 | "Kết ca" stacked calls/modals | **Client single-flight FIXED**; UI modal-singleton remains | `shift_single_flight_test.dart` 3/3 |
+| S7 | Multiple Desktop instances | **IMPLEMENTED** (named mutex); build-verify at gate | inspection (C++) |
+| S8 | Import "633 billion" | **Locale parser FIXED**; barcode-column plausibility remains (needs real file) | `kv_parse_num_locale_test.dart` 8/8 |
+| S9 | Floor plan clipped / ratio drift | **FIXED** — fit both dims + center | `floor_cell_size_test.dart` 6/6 |
+| S12 | Chat blank "Chưa có hội thoại" | **Empty-state taxonomy FIXED**; live E2E blocked | `chat_empty_state_test.dart` 6/6 |
+| S13 | Haravan subscribe fails opaquely | **Structured redacted diagnostics FIXED**; live E2E blocked | `haravan-subscribe-diagnostics.test.mjs` 3/3 |
+
+**Deliberately NOT done (documented, not started):**
+- **S2** print-status UX surface (Gate 1) — payment already commits before print (outbox);
+  the remaining work is showing "đang in / in lỗi / reprint" in the UI.
+- **S10** sell-first launcher IA (Gate 9) — by the brief, only after S1–S9 are green; needs
+  a feature/route/role parity map first.
+- **S11** settings thumbnail centering — the instance checked (`settings_users_panel`
+  avatar) is already correct (`ClipOval` + `BoxFit.cover`); the specific misaligned
+  thumbnail was not identified this session.
+- Systemic follow-ups: realtime `emit()` has no event id/version
+  ([realtime.js:187-202](../../../server/realtime.js#L187-L202)); `migrate()` ≈ 11.5 s
+  startup; server-side `/api/shifts/current` benchmark + lighter query.
 
 ## 4. Files in this dossier
 
