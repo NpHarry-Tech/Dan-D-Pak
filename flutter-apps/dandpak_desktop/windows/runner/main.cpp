@@ -27,6 +27,31 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
       std::find(command_line_arguments.begin(), command_line_arguments.end(),
                 "--customer-display") != command_line_arguments.end();
 
+  // SINGLE-INSTANCE cho cửa sổ POS CHÍNH. Một named mutex cho lần mở thứ hai
+  // phát hiện tiến trình đang chạy rồi ĐƯA CỬA SỔ CŨ LÊN thay vì mở cửa sổ mới
+  // (cùng cơ chế named-mutex Windows dùng để đồng bộ xuyên tiến trình). Màn hình
+  // phụ (--customer-display) CỐ Ý là tiến trình riêng nên được miễn trừ.
+  HANDLE single_instance_mutex = nullptr;
+  if (!customer_display) {
+    single_instance_mutex =
+        ::CreateMutexW(nullptr, TRUE, L"Local\\DanDPakPOS_SingleInstance");
+    if (single_instance_mutex == nullptr ||
+        ::GetLastError() == ERROR_ALREADY_EXISTS) {
+      HWND existing = ::FindWindowW(nullptr, L"Dan-D Pak POS");
+      if (existing != nullptr) {
+        if (::IsIconic(existing)) {
+          ::ShowWindow(existing, SW_RESTORE);
+        }
+        ::SetForegroundWindow(existing);
+      }
+      if (single_instance_mutex != nullptr) {
+        ::CloseHandle(single_instance_mutex);
+      }
+      ::CoUninitialize();
+      return EXIT_SUCCESS;
+    }
+  }
+
   project.set_dart_entrypoint_arguments(std::move(command_line_arguments));
 
   FlutterWindow window(project);
@@ -54,6 +79,9 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
     ::DispatchMessage(&msg);
   }
 
+  if (single_instance_mutex != nullptr) {
+    ::CloseHandle(single_instance_mutex);
+  }
   ::CoUninitialize();
   return EXIT_SUCCESS;
 }

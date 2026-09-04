@@ -136,13 +136,19 @@ Each row: symptom → leading hypothesis → evidence → verdict → how to fal
 - **Falsify:** widget test — 50 close-shift taps during a delayed response → one API call,
   one modal, one closure; late error does not push a route after dispose.
 
-### S7 — Prevent multiple Desktop instances; focus the running one
-- **Hypothesis:** No single-instance guard at the Windows entrypoint/native runner.
-- **Evidence:** NOT yet traced. Next probe: `flutter-apps/dandpak_desktop/windows/runner/`
-  (`main.cpp`) for a named mutex / `CreateMutex` / activation IPC.
-- **Verdict:** **NEEDS-REPRO** (leaning real — feature typically absent unless added).
-- **Falsify:** launch the desktop app twice → second process focuses the first and exits;
-  named OS mutex present in the runner.
+### S7 — Prevent multiple Desktop instances; focus the running one — **IMPLEMENTED (build-gated)**
+- **Confirmed gap:** the Windows runner `main.cpp` had **no** single-instance guard —
+  each launch created a new window.
+- **Fix (this branch):** named mutex `Local\DanDPakPOS_SingleInstance` at the entrypoint;
+  on `ERROR_ALREADY_EXISTS` it `FindWindowW("Dan-D Pak POS")` → `ShowWindow(SW_RESTORE)`
+  if minimized → `SetForegroundWindow` → exits. The `--customer-display` secondary window
+  is **exempt** (it is intentionally a separate process) —
+  [main.cpp:26-51](../../../flutter-apps/dandpak_desktop/windows/runner/main.cpp#L26-L51).
+- **Verdict:** **CONFIRMED-REAL → IMPLEMENTED.** Uses only standard `windows.h` APIs.
+- **Verification:** by inspection this session; **build/run verification deferred to the
+  final gate** (the incident rules forbid building artifacts mid-phase). Falsify at the
+  gate: launch twice → one window, second focuses the first and exits; customer-display
+  still opens as its own window.
 
 ### S8 — Excel import: many "Khớp mã", column shift, absurd total 633,705,997,308.678đ
 - **Hypothesis:** Client Excel parser mis-parses money (decimal-comma vs thousands
