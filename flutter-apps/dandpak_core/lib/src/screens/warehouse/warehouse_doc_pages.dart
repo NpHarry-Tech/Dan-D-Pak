@@ -511,50 +511,45 @@ class _WarehouseDocFormPageState extends State<WarehouseDocFormPage> {
     try {
       final data = await kvPickSpreadsheetData();
       if (data == null) return;
-      // BẮT BUỘC lưu file GỐC trước; lỗi → DỪNG nhập, KHÔNG đổi dữ liệu Kho.
-      try {
-        await kvArchiveImportFile(api, data, sourceScreen: 'Kho — Xuất kho');
-      } catch (_) {
-        if (mounted) {
-          _toast(t('Không lưu được file gốc vào Tài liệu — đã HỦY nhập. Thử lại.'),
-              error: true);
-        }
-        return;
-      }
-      final byCode = <String, Map<String, dynamic>>{};
-      for (final it in _items) {
-        for (final k in [kvs(it['code']), kvs(it['barcode']), kvs(it['id'])]) {
-          if (k.isNotEmpty) byCode[k.toLowerCase()] = it;
-        }
-      }
-      var added = 0;
-      final missed = <String>[];
-      setState(() {
-        for (final r in data.rows) {
-          final code = data.cell(r, ['Mã sản phẩm', 'Mã hàng', 'Product code'],
-              fallback: 0);
-          final barcode = data.cell(r, ['Mã vạch', 'Barcode']);
-          if (code.isEmpty && barcode.isEmpty) continue;
-          final item =
-              byCode[code.toLowerCase()] ?? byCode[barcode.toLowerCase()];
-          if (item == null) {
-            missed.add(code);
-            continue;
+      // BẮT BUỘC lưu file GỐC trước; archive lỗi → runImport KHÔNG chạy (Kho không đổi).
+      await kvArchiveThenImport(api, data,
+          sourceScreen: 'Kho — Xuất kho',
+          runImport: () async {
+        final byCode = <String, Map<String, dynamic>>{};
+        for (final it in _items) {
+          for (final k in [kvs(it['code']), kvs(it['barcode']), kvs(it['id'])]) {
+            if (k.isNotEmpty) byCode[k.toLowerCase()] = it;
           }
-          final qty =
-              kvParseNum(data.cell(r, ['Số lượng', 'Quantity'], fallback: 1)) ??
-                  1;
-          _lines.add(KvDocLine(item, _isRetailWh ? 'sku' : 'inventory',
-              initialQty: qty <= 0 ? 1 : qty,
-              lot: data.cell(r, ['Lô', 'Số lô', 'Lot'], fallback: 2),
-              exp: data.cell(r, ['Hạn sử dụng', 'HSD', 'Expiry date'])));
-          added++;
         }
+        var added = 0;
+        final missed = <String>[];
+        setState(() {
+          for (final r in data.rows) {
+            final code = data.cell(r, ['Mã sản phẩm', 'Mã hàng', 'Product code'],
+                fallback: 0);
+            final barcode = data.cell(r, ['Mã vạch', 'Barcode']);
+            if (code.isEmpty && barcode.isEmpty) continue;
+            final item =
+                byCode[code.toLowerCase()] ?? byCode[barcode.toLowerCase()];
+            if (item == null) {
+              missed.add(code);
+              continue;
+            }
+            final qty =
+                kvParseNum(data.cell(r, ['Số lượng', 'Quantity'], fallback: 1)) ??
+                    1;
+            _lines.add(KvDocLine(item, _isRetailWh ? 'sku' : 'inventory',
+                initialQty: qty <= 0 ? 1 : qty,
+                lot: data.cell(r, ['Lô', 'Số lô', 'Lot'], fallback: 2),
+                exp: data.cell(r, ['Hạn sử dụng', 'HSD', 'Expiry date'])));
+            added++;
+          }
+        });
+        final msg = missed.isEmpty
+            ? t('Đã nạp $added dòng từ file')
+            : t('Đã nạp $added dòng; không thấy mã: ${missed.take(5).join(", ")}${missed.length > 5 ? "…" : ""}');
+        _toast(msg, error: missed.isNotEmpty && added == 0);
       });
-      final msg = missed.isEmpty
-          ? t('Đã nạp $added dòng từ file')
-          : t('Đã nạp $added dòng; không thấy mã: ${missed.take(5).join(", ")}${missed.length > 5 ? "…" : ""}');
-      _toast(msg, error: missed.isNotEmpty && added == 0);
     } catch (e) {
       _toast(
           '${t('Không đọc được file')}: ${e.toString().replaceFirst('Exception: ', '')}',

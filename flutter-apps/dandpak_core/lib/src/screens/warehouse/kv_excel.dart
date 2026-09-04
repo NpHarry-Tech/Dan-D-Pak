@@ -154,6 +154,20 @@ Future<Map<String, dynamic>> kvArchiveImportFile(
   );
 }
 
+/// Orchestration BẮT BUỘC: lưu file gốc TRƯỚC, chỉ khi thành công mới chạy
+/// [runImport] (thao tác đổi dữ liệu Kho). Archive lỗi → NÉM và [runImport] TUYỆT
+/// ĐỐI KHÔNG được gọi (dữ liệu Kho không đổi). Đây là chốt fail-closed dùng chung
+/// cho cả ba màn nhập (kiểm kho / nhập hàng / xuất kho).
+Future<void> kvArchiveThenImport(
+  ApiService api,
+  KvSpreadsheetData data, {
+  required String sourceScreen,
+  required Future<void> Function() runImport,
+}) async {
+  await kvArchiveImportFile(api, data, sourceScreen: sourceScreen); // throws => runImport skipped
+  await runImport();
+}
+
 /// Mở hộp thoại chọn file .xlsx và trả về các dòng (bỏ dòng tiêu đề nếu
 /// [skipHeader]). Trả null nếu người dùng hủy; ném Exception nếu file hỏng.
 Future<List<List<String>>?> kvPickSpreadsheetRows({

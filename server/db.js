@@ -7,6 +7,7 @@ import { now, uid } from './db/ids.js';
 import {
   audit, encryptCompress, decryptDecompress, reconcileAuditFromArchive, compactAuditToMonthly,
   rehydrateAuditMonths, rehydrateAuditForQuery, purgeAuditBeyondRetention,
+  buildAuditEntry, insertAuditRow, auditPostCommit, runDocumentTx,
 } from './db/audit.js';
 import {
   defaultWarehouseIds, defaultWarehouseId, bootstrapBranchDefaults,
@@ -22,6 +23,7 @@ export {
   purgeAuditBeyondRetention, defaultWarehouseIds, defaultWarehouseId,
   bootstrapBranchDefaults, bootstrapWarehouseDefaults, bootstrapTableDefaults,
   backupDatabase, listBackups, inTransaction,
+  buildAuditEntry, insertAuditRow, auditPostCommit, runDocumentTx,
 };
 const globalDb = db;
 export function migrate(targetDb = globalDb) {

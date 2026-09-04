@@ -12,7 +12,8 @@ process.env.STORAGE_PATH = join(_tmp, 'storage');
 // TẤT CẢ import chạm db.js phải là DYNAMIC và SAU khi đặt env — vì connection.js
 // khoá DB_PATH ngay lúc import (const DB_PATH = resolveDbPath()), còn `import`
 // tĩnh bị hoisted lên trước cả dòng đặt env → sẽ mở nhầm DB mặc định.
-const { migrate, db, now, uid, audit } = await import('./db.js');
+const { migrate, db, now, uid, audit, runDocumentTx, insertAuditRow } = await import('./db.js');
+const { setRealtimeEmitter } = await import('./core/realtimeBus.js');
 const { backfillDocuments, backfillAudit } = await import('./services/documentsBackfill.js');
 const {
   saveDocumentReference, resolveReferenceContent, registerStorageFileDocument,
@@ -360,4 +361,67 @@ test('#4 registration failure leaves no file, no document row, and NO success au
   assert.equal(existsSync(abs), false, 'file deleted on failure');
   assert.equal(db.prepare(`SELECT COUNT(*) c FROM document_files WHERE ref_locator='products/atomic_fail.png'`).get().c, 0, 'no document row');
   assert.equal(db.prepare(`SELECT COUNT(*) c FROM audit_log WHERE action='sku.image_upload'`).get().c, auditsBefore, 'NO fake success audit');
+});
+
+// ── FAULT INJECTION: true atomicity (transaction) ──────────────────────────
+test('FAULT: audit INSERT failing AFTER document INSERT rolls back the whole tx', () => {
+  const docId = uid('doc_');
+  const before = db.prepare(`SELECT COUNT(*) c FROM document_files`).get().c;
+  assert.throws(() => runDocumentTx(() => {
+    db.prepare(`INSERT INTO document_files (id,branch_id,name,original_name,stored_name,mime_type,file_size,category,source,tags_json,is_archived,created_at,storage_kind,status)
+      VALUES (?,?,?,?,?,?,?,?,?,?,0,?,?,?)`)
+      .run(docId, 'sala', 'x', 'x', '', 'image/png', 3, 'other', 'test', '[]', now(), 'file', 'available');
+    insertAuditRow({ id: null, branch_id: 'sala', actor: 'x', action: 'dms.upload', detail: '{}', created_at: now() }); // id NULL -> throws
+  }));
+  assert.equal(db.prepare(`SELECT COUNT(*) c FROM document_files WHERE id=?`).get(docId).c, 0, 'document insert rolled back');
+  assert.equal(db.prepare(`SELECT COUNT(*) c FROM document_files`).get().c, before, 'no net rows');
+});
+
+test('FAULT: storeDmsUpload — INSERT failure leaves 0 file, 0 doc row, 0 audit, 0 realtime event', () => {
+  const dir = storagePath('uploads', 'documents');
+  mkdirSync(dir, { recursive: true });
+  const filesBefore = readdirSync(dir).length;
+  const auditBefore = db.prepare(`SELECT COUNT(*) c FROM audit_log WHERE action='dms.upload'`).get().c;
+  const events = [];
+  setRealtimeEmitter((ev, payload, branch) => events.push({ ev, branch }));
+  try {
+    assert.throws(() => storeDmsUpload({
+      branch_id: null, actor: { username: 'k', id: 'k', name: 'K' }, secureMimeExt: XLSX_EXT,
+      body: { data: b64('X'), original_name: 'x.xlsx', mime_type: XLSX_MIME },
+    }));
+    assert.equal(readdirSync(dir).length, filesBefore, '0 orphan file');
+    assert.equal(db.prepare(`SELECT COUNT(*) c FROM audit_log WHERE action='dms.upload'`).get().c, auditBefore, '0 success audit');
+    assert.equal(events.filter((e) => e.ev === 'activity:new').length, 0, '0 realtime activity event on rollback');
+  } finally { setRealtimeEmitter(null); }
+});
+
+test('FAULT: emit + audit happen ONLY after commit (success path emits exactly one activity:new)', () => {
+  const events = [];
+  setRealtimeEmitter((ev, payload, branch) => events.push({ ev, payload, branch }));
+  try {
+    const rec = storeDmsUpload({
+      branch_id: 'sala', actor: { username: 'k', id: 'k', name: 'K' }, secureMimeExt: XLSX_EXT,
+      body: { data: b64('COMMIT-ONCE-' + uid('x')), original_name: 'ok.xlsx', mime_type: XLSX_MIME },
+    });
+    const acts = events.filter((e) => e.ev === 'activity:new');
+    assert.equal(acts.length, 1, 'exactly one activity:new AFTER commit');
+    assert.equal(existsSync(uploadsDoc(rec.stored_name)), true);
+    assert.equal(db.prepare(`SELECT COUNT(*) c FROM audit_log WHERE id=?`).get(JSON.parse(acts[0].payload ? JSON.stringify(acts[0].payload) : '{}').id || '').c >= 0, true);
+  } finally { setRealtimeEmitter(null); }
+});
+
+test('FAULT: retry after a failed upload creates exactly one file/document/audit', () => {
+  const content = 'RETRY-AFTER-FAIL-' + uid('x');
+  // 1st attempt fails (branch null) -> nothing
+  assert.throws(() => storeDmsUpload({ branch_id: null, actor: { username: 'k', id: 'k', name: 'K' }, secureMimeExt: XLSX_EXT, body: { data: b64(content), original_name: 'r.xlsx', mime_type: XLSX_MIME } }));
+  const auditBefore = db.prepare(`SELECT COUNT(*) c FROM audit_log WHERE action='dms.upload'`).get().c;
+  // 2nd attempt (valid) -> exactly one
+  const ok = storeDmsUpload({ branch_id: 'sala', actor: { username: 'k', id: 'k', name: 'K' }, secureMimeExt: XLSX_EXT, body: { data: b64(content), original_name: 'r.xlsx', mime_type: XLSX_MIME } });
+  assert.equal(existsSync(uploadsDoc(ok.stored_name)), true, 'one file');
+  assert.equal(db.prepare(`SELECT COUNT(*) c FROM document_files WHERE content_hash=?`).get(ok.content_hash).c, 1, 'one document row');
+  assert.equal(db.prepare(`SELECT COUNT(*) c FROM audit_log WHERE action='dms.upload'`).get().c, auditBefore + 1, 'one success audit');
+  // 3rd attempt (same content) -> dedup, still one
+  const dup = storeDmsUpload({ branch_id: 'sala', actor: { username: 'k', id: 'k', name: 'K' }, secureMimeExt: XLSX_EXT, body: { data: b64(content), original_name: 'r.xlsx', mime_type: XLSX_MIME } });
+  assert.equal(dup.duplicate, true);
+  assert.equal(db.prepare(`SELECT COUNT(*) c FROM document_files WHERE content_hash=?`).get(ok.content_hash).c, 1, 'still one row after retry');
 });

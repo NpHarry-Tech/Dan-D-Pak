@@ -23,11 +23,12 @@ const TECHNICAL_ONLY_ACTIONS = new Set([
   'settings.template_autosave',
 ]);
 
-export function audit(action, detail, branch_id = 'sala', actor = 'system') {
+// Dựng bản ghi audit (id + metadata thiết bị + detail đã chuẩn hoá). Trả null nếu
+// action nằm trong TECHNICAL_ONLY (không vào Nhật ký hoạt động). KHÔNG ghi DB/emit.
+export function buildAuditEntry(action, detail, branch_id = 'sala', actor = 'system') {
   if (TECHNICAL_ONLY_ACTIONS.has(action)) return null;
   const id = uid('a_');
   const created_at = now();
-  // Gắn metadata của app/thiết bị vào mọi audit từ request.
   let enriched = detail;
   try {
     const metadata = Object.fromEntries(
@@ -40,25 +41,56 @@ export function audit(action, detail, branch_id = 'sala', actor = 'system') {
     }
   } catch { /* ngoài request (worker/cron) — không có thiết bị */ }
   const cleanDetail = typeof enriched === 'string' ? enriched : JSON.stringify(enriched);
-  const entry = { id, branch_id, actor, action, detail: cleanDetail, created_at };
-  // Durable archive FIRST (fsync'd NDJSON): if the SQLite write below fails — or a
-  // crash hits right after — the footprint line is already safely on disk.
-  appendAuditArchive(entry);
-  // Logging must never break the business operation that triggered it: swallow
-  // SQLite errors (the NDJSON archive above still has the entry for recovery).
+  return { id, branch_id, actor, action, detail: cleanDetail, created_at };
+}
+
+// INSERT audit_log THÔ — gọi được BÊN TRONG transaction. NÉM lỗi nếu thất bại để
+// transaction bao ngoài rollback. KHÔNG ghi NDJSON, KHÔNG emit (để sau commit).
+export function insertAuditRow(entry) {
+  db.prepare(`INSERT INTO audit_log (id,branch_id,actor,action,detail,created_at) VALUES (?,?,?,?,?,?)`)
+    .run(entry.id, entry.branch_id, entry.actor, entry.action, entry.detail, entry.created_at);
+}
+
+// Hiệu ứng phụ SAU COMMIT: footprint NDJSON bền + realtime activity:new. Chỉ gọi
+// khi transaction đã commit thành công (không để lại footprint cho hàng đã rollback).
+export function auditPostCommit(entry) {
+  if (!entry) return;
+  try { appendAuditArchive(entry); } catch (e) { logger.warn('audit archive append failed', { message: e.message }); }
+  publishRealtime('activity:new', { ...entry }, entry.branch_id);
+}
+
+// Chạy các thao tác ghi document trong MỘT transaction (SAVEPOINT — an toàn cả khi
+// lồng). Trả kết quả của writeFn khi RELEASE; nếu writeFn ném thì ROLLBACK TO +
+// RELEASE rồi ném lại (KHÔNG commit một phần). Caller chịu trách nhiệm xóa file +
+// emit SAU KHI hàm này trả về thành công.
+export function runDocumentTx(writeFn) {
+  db.exec('SAVEPOINT doc_tx');
+  let result;
   try {
-    db.prepare(`INSERT INTO audit_log (id,branch_id,actor,action,detail,created_at) VALUES (?,?,?,?,?,?)`)
-      .run(id, branch_id, actor, action, cleanDetail, created_at);
+    result = writeFn();
+  } catch (e) {
+    try { db.exec('ROLLBACK TO doc_tx'); } catch { /* ignore */ }
+    try { db.exec('RELEASE doc_tx'); } catch { /* ignore */ }
+    throw e;
+  }
+  db.exec('RELEASE doc_tx');
+  return result;
+}
+
+// Backward-compatible: hành vi CŨ giữ nguyên cho mọi caller hiện tại (archive-first,
+// INSERT nuốt lỗi, realtime). Các luồng cần ATOMIC dùng buildAuditEntry +
+// runDocumentTx(insertAuditRow) + auditPostCommit thay vì hàm này.
+export function audit(action, detail, branch_id = 'sala', actor = 'system') {
+  const entry = buildAuditEntry(action, detail, branch_id, actor);
+  if (!entry) return null;
+  appendAuditArchive(entry); // durable FIRST (semantics cũ)
+  try {
+    insertAuditRow(entry);
   } catch (e) {
     logger.warn('audit sqlite write failed (kept in NDJSON archive)', { message: e.message });
   }
-  // Post-write realtime: màn "Nhật ký hoạt động" đang mở của CHÍNH chi nhánh này
-  // hiện dòng mới ngay, không cần đổi tab / bấm Lọc / chờ polling. Additive &
-  // best-effort — client pre-b170 không nghe 'activity:new' nên bỏ qua vô hại;
-  // sự kiện chỉ vào staffRoom (không phải IPAD_EVENTS) nên không rò sang kiosk.
-  // id là idempotency key: client chống trùng khi reconnect/resync theo id này.
-  publishRealtime('activity:new', { id, branch_id, actor, action, detail: cleanDetail, created_at }, branch_id);
-  return { id, created_at };
+  publishRealtime('activity:new', { ...entry }, entry.branch_id);
+  return { id: entry.id, created_at: entry.created_at };
 }
 
 

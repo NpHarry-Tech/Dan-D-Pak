@@ -273,32 +273,27 @@ class _StocktakeFormPageState extends State<StocktakeFormPage> {
     try {
       final data = await kvPickSpreadsheetData();
       if (data == null) return;
-      // BẮT BUỘC lưu file GỐC vào Tài liệu TRƯỚC. Không lưu được → DỪNG nhập, KHÔNG
-      // đổi dữ liệu Kho (fail-closed).
-      try {
-        await kvArchiveImportFile(api, data, sourceScreen: 'Kho — Nhập kiểm kho');
-      } catch (_) {
-        if (mounted) {
-          _toast(t('Không lưu được file gốc vào Tài liệu — đã HỦY nhập. Thử lại.'),
-              error: true);
-        }
-        return;
-      }
-      final canonical = data.rows.map((r) => [
-            data.cell(r, ['Mã sản phẩm', 'Mã hàng', 'Product code'],
-                fallback: 0),
-            data.cell(r, ['Số lượng thực tế', 'Số lượng', 'Quantity'],
-                fallback: 1),
-            for (var lot = 1; lot <= 2; lot++) ...[
-              data.cell(r, ['Lô $lot', 'Lot $lot'],
-                  fallback: 1 + (lot - 1) * 3 + 1),
-              data.cell(r, ['Hạn sử dụng $lot', 'HSD $lot', 'Expiry date $lot'],
-                  fallback: 1 + (lot - 1) * 3 + 2),
-              data.cell(r, ['Số lượng $lot', 'Quantity $lot'],
-                  fallback: 1 + (lot - 1) * 3 + 3),
-            ],
-          ]);
-      _applyImport(canonical.map((r) => r.join('\t')).join('\n'));
+      // BẮT BUỘC lưu file GỐC vào Tài liệu TRƯỚC; archive lỗi → kvArchiveThenImport
+      // ném và KHÔNG chạy runImport (dữ liệu Kho không đổi — fail-closed).
+      await kvArchiveThenImport(api, data,
+          sourceScreen: 'Kho — Nhập kiểm kho',
+          runImport: () async {
+        final canonical = data.rows.map((r) => [
+              data.cell(r, ['Mã sản phẩm', 'Mã hàng', 'Product code'],
+                  fallback: 0),
+              data.cell(r, ['Số lượng thực tế', 'Số lượng', 'Quantity'],
+                  fallback: 1),
+              for (var lot = 1; lot <= 2; lot++) ...[
+                data.cell(r, ['Lô $lot', 'Lot $lot'],
+                    fallback: 1 + (lot - 1) * 3 + 1),
+                data.cell(r, ['Hạn sử dụng $lot', 'HSD $lot', 'Expiry date $lot'],
+                    fallback: 1 + (lot - 1) * 3 + 2),
+                data.cell(r, ['Số lượng $lot', 'Quantity $lot'],
+                    fallback: 1 + (lot - 1) * 3 + 3),
+              ],
+            ]);
+        _applyImport(canonical.map((r) => r.join('\t')).join('\n'));
+      });
     } catch (e) {
       _toast(
           '${t('Không đọc được file')}: ${e.toString().replaceFirst('Exception: ', '')}',

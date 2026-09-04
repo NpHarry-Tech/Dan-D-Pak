@@ -2,7 +2,7 @@
 // Cụm DMS (consts + saveDocumentRecord + fileCashDrawerReceipt) ở MODULE-LEVEL vì
 // fileCashDrawerReceipt được EXPORT cho payments module dùng (lưu ảnh hóa đơn chi từ két).
 import * as Auth from '../../services/auth.js';
-import { db, uid, audit, now } from '../../db.js';
+import { db, uid, audit, now, buildAuditEntry, insertAuditRow, auditPostCommit, runDocumentTx } from '../../db.js';
 import { emit } from '../../realtime.js';
 import { errorPayload } from '../../core/errors.js';
 import fs from 'node:fs';
@@ -31,13 +31,19 @@ const uploadLimiter = rateLimit({ key: 'documents-upload', windowMs: 60_000, max
 function saveDocumentRecord({ branch_id, name, original_name, stored_name, mime_type, file_size, category = 'other', source = 'manual', related_id = null, related_type = null, tags = [], description = '', uploaded_by = 'system', uploaded_by_name = 'Hệ thống', content_hash = null, source_screen = '' }) {
   const id = uid('doc_');
   const created_at = now();
-  db.prepare(`INSERT INTO document_files (id,branch_id,name,original_name,stored_name,mime_type,file_size,category,source,related_id,related_type,tags_json,description,uploaded_by,uploaded_by_name,is_archived,created_at,content_hash,source_screen)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,?,?,?)`)
-    .run(id, branch_id, name, original_name, stored_name, mime_type, file_size, category, source, related_id, related_type, JSON.stringify(tags), description, uploaded_by, uploaded_by_name, created_at, content_hash, source_screen);
-  audit('dms.upload', { id, name, category, source, original_name, file_size }, branch_id, uploaded_by);
+  // ATOMIC: INSERT document_files + INSERT audit_log trong MỘT transaction. Nếu bất
+  // kỳ INSERT nào (kể cả audit) thất bại → rollback toàn bộ (không có row nào). Caller
+  // xóa file khi hàm ném. Emit + NDJSON footprint CHỈ SAU KHI commit.
+  const auditEntry = buildAuditEntry('dms.upload', { id, name, category, source, original_name, file_size }, branch_id, uploaded_by);
+  runDocumentTx(() => {
+    db.prepare(`INSERT INTO document_files (id,branch_id,name,original_name,stored_name,mime_type,file_size,category,source,related_id,related_type,tags_json,description,uploaded_by,uploaded_by_name,is_archived,created_at,content_hash,source_screen)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,?,?,?)`)
+      .run(id, branch_id, name, original_name, stored_name, mime_type, file_size, category, source, related_id, related_type, JSON.stringify(tags), description, uploaded_by, uploaded_by_name, created_at, content_hash, source_screen);
+    if (auditEntry) insertAuditRow(auditEntry);
+  });
+  // Post-commit ONLY: NDJSON footprint + realtime activity:new + document:new.
+  auditPostCommit(auditEntry);
   const rec = db.prepare(`SELECT * FROM document_files WHERE id=?`).get(id);
-  // Post-write realtime: tab Tài liệu đang mở hiện file mới ngay (không polling).
-  // Additive — b169 client không nghe 'document:new'. Chỉ vào staffRoom (không PII kiosk).
   try { emit('document:new', documentFileOut(rec), branch_id); } catch { /* best-effort */ }
   return rec;
 }
@@ -66,16 +72,25 @@ export function registerStorageFileDocument({
   uploaded_by = 'system', uploaded_by_name = 'Hệ thống',
   related_id = null, related_type = null,
   is_legacy = 0, status = 'available', created_at = null,
+  auditAction = null, auditDetail = null, auditActor = 'system',
 }) {
   const id = uid('doc_');
   const ts = created_at || now();
   const finalOriginal = original_name || name || storageRelPath;
-  db.prepare(`INSERT INTO document_files
-    (id,branch_id,name,original_name,stored_name,mime_type,file_size,category,source,related_id,related_type,tags_json,description,uploaded_by,uploaded_by_name,is_archived,created_at,content_hash,storage_kind,ref_locator,source_screen,is_legacy,status)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,?,NULL,'storage_file',?,?,?,?)`)
-    .run(id, branch_id, name || finalOriginal, finalOriginal, '', mime_type || 'application/octet-stream',
-      Number(file_size) || 0, category, source || 'upload', related_id, related_type, '[]', description,
-      uploaded_by, uploaded_by_name, ts, String(storageRelPath || ''), source_screen, is_legacy ? 1 : 0, status);
+  // ATOMIC: INSERT document_files + (tùy chọn) INSERT audit_log trong MỘT transaction.
+  // Lỗi bất kỳ → rollback toàn bộ (không row nào). Emit + NDJSON CHỈ SAU commit. Caller
+  // (registerStorageFileOrRollback) xóa file khi hàm ném.
+  const auditEntry = auditAction ? buildAuditEntry(auditAction, auditDetail || {}, branch_id, auditActor) : null;
+  runDocumentTx(() => {
+    db.prepare(`INSERT INTO document_files
+      (id,branch_id,name,original_name,stored_name,mime_type,file_size,category,source,related_id,related_type,tags_json,description,uploaded_by,uploaded_by_name,is_archived,created_at,content_hash,storage_kind,ref_locator,source_screen,is_legacy,status)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,?,NULL,'storage_file',?,?,?,?)`)
+      .run(id, branch_id, name || finalOriginal, finalOriginal, '', mime_type || 'application/octet-stream',
+        Number(file_size) || 0, category, source || 'upload', related_id, related_type, '[]', description,
+        uploaded_by, uploaded_by_name, ts, String(storageRelPath || ''), source_screen, is_legacy ? 1 : 0, status);
+    if (auditEntry) insertAuditRow(auditEntry);
+  });
+  auditPostCommit(auditEntry);
   const rec = db.prepare(`SELECT * FROM document_files WHERE id=?`).get(id);
   try { emit('document:new', documentFileOut(rec), branch_id); } catch { /* best-effort */ }
   return rec;
@@ -240,22 +255,30 @@ export function fileCashDrawerReceipt(entry = {}, branch_id = 'sala', user = {})
   fs.mkdirSync(UPLOADS_DIR, { recursive: true });
   fs.writeFileSync(nodePath.join(UPLOADS_DIR, stored_name), buf);
   const label = entry.counterparty || entry.reason || entry.product || 'Chi từ két';
-  return saveDocumentRecord({
-    branch_id,
-    name: `Hóa đơn chi: ${label}`,
-    original_name: `chi-tu-ket-${entry.id}${ext}`,
-    stored_name,
-    mime_type,
-    file_size: buf.byteLength,
-    category: 'receipt',
-    source: 'cash_drawer',
-    related_id: entry.id,
-    related_type: 'cash_drawer_expense',
-    tags: ['chi-từ-két'],
-    description: [entry.reason, entry.counterparty, entry.note].filter(Boolean).join(' · '),
-    uploaded_by: user?.username || user?.id || 'system',
-    uploaded_by_name: user?.name || user?.username || 'Hệ thống',
-  });
+  // saveDocumentRecord giờ ATOMIC và CÓ THỂ ném khi transaction rollback → phải XÓA
+  // file vừa ghi để không mồ côi. Best-effort (nuốt lỗi, trả null) — ảnh hỏng không
+  // được chặn việc ghi khoản chi.
+  try {
+    return saveDocumentRecord({
+      branch_id,
+      name: `Hóa đơn chi: ${label}`,
+      original_name: `chi-tu-ket-${entry.id}${ext}`,
+      stored_name,
+      mime_type,
+      file_size: buf.byteLength,
+      category: 'receipt',
+      source: 'cash_drawer',
+      related_id: entry.id,
+      related_type: 'cash_drawer_expense',
+      tags: ['chi-từ-két'],
+      description: [entry.reason, entry.counterparty, entry.note].filter(Boolean).join(' · '),
+      uploaded_by: user?.username || user?.id || 'system',
+      uploaded_by_name: user?.name || user?.username || 'Hệ thống',
+    });
+  } catch {
+    try { fs.unlinkSync(nodePath.join(UPLOADS_DIR, stored_name)); } catch { /* file có thể đã mất */ }
+    return null;
+  }
 }
 
 // Lõi upload DMS dùng chung — ATOMIC/COMPENSATION: ghi file TRƯỚC, nếu ghi

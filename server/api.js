@@ -214,10 +214,11 @@ function saveBase64Image(req, { dir, urlBase, prefix, auditAction, registerAs })
   const branch_id = branch(req);
   // registerAs được TRUYỀN CÓ CHỦ ĐÍCH chỉ ở các đường upload cần lập chỉ mục vào
   // kho Tài liệu (vd ảnh sản phẩm Kho) — KHÔNG áp cho avatar/QR để tránh nhiễu.
-  // THỨ TỰ ĐÚNG (atomic, không half-state): ghi file → đăng ký document (rollback
-  // xóa file nếu insert lỗi) → CHỈ KHI thành công mới ghi audit. Nếu registration
-  // lỗi thì ném ở đây, KHÔNG có audit "thành công" giả và file đã bị xóa.
   if (registerAs) {
+    // ATOMIC: document_files + audit (auditAction) ghi trong MỘT transaction bên
+    // trong registration; commit xong mới emit. Lỗi → rollback DB + XÓA file (do
+    // registerStorageFileOrRollback) + ném → KHÔNG có audit "thành công" giả, KHÔNG
+    // file mồ côi. KHÔNG audit lần nữa ở ngoài.
     const rel = `${String(urlBase).replace(/^\/+/, '').replace(/^uploads\//, '')}/${stored}`;
     registerStorageFileOrRollback({
       absFile: nodePath.join(dir, stored),
@@ -233,12 +234,15 @@ function saveBase64Image(req, { dir, urlBase, prefix, auditAction, registerAs })
         category: registerAs.category || 'other',
         uploaded_by: req.user?.username || req.user?.id || 'system',
         uploaded_by_name: actor(req) || 'Hệ thống',
+        auditAction,
+        auditDetail: { url, original_name, size: buf.byteLength },
+        auditActor: actor(req),
       },
     });
+  } else {
+    // Upload không lập chỉ mục Tài liệu (avatar/QR/…): ghi audit như cũ.
+    audit(auditAction, { url, original_name, size: buf.byteLength }, branch_id, actor(req));
   }
-  // Audit SAU khi (nếu có) registration thành công — tránh audit thành công giả khi
-  // registration bị rollback.
-  audit(auditAction, { url, original_name, size: buf.byteLength }, branch_id, actor(req));
   return { ok: true, url, size: buf.byteLength };
 }
 
