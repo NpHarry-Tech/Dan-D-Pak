@@ -77,16 +77,20 @@ Each row: symptom → leading hypothesis → evidence → verdict → how to fal
   hardening test — the synchronous `node:sqlite` API serializes intra-process calls, so
   true concurrency needs separate connections; the conditional-close guard covers it.)
 
-### S4 — `item.cancel` audit shows only opaque item ID + generic reason
-- **Hypothesis:** cancel audit logs the technical `order_item.id` and a generic reason
-  without a snapshot (name/SKU/qty/table/bill/actor) captured in the same tx.
-- **Evidence:** NOT yet traced to the exact `audit('item.cancel', …)` call. Next probe:
-  `rg "item.cancel" server/` and the cancel handler in
-  `server/services/orders.js` / `server/modules/orders/routes.js`.
-- **Verdict:** **NEEDS-REPRO** (leaning real; matches brief's Gate-4 requirement of a
-  structured envelope + snapshot).
-- **Falsify:** cancel an item then rename/delete it → audit detail still shows the
-  original món name, SKU, qty, table, bill, actor, reason.
+### S4 — `item.cancel` audit shows only opaque item ID + generic reason — **FIXED + TESTED**
+- **Root cause (proven):** the cancel handler logged only `{ item: item_id, reason }` —
+  [orders.js:792 (before)] — even though the full item row (`cancelledItem`) and order
+  (`beforeCancel`) were already loaded two lines above
+  ([orders.js:786-788](../../../server/services/orders.js#L786-L788)). The snapshot data
+  was in hand and simply not recorded.
+- **Fix (this branch):** enrich the `item.cancel` detail with `item_name`, `sku`, `qty`,
+  `unit_price`, `station`, `order_id`, `table_id`, `bill_no` — captured in the same call,
+  keeping `item`+`reason` for backward compatibility —
+  [orders.js:792-805](../../../server/services/orders.js#L792-L805).
+- **Verdict:** **CONFIRMED-REAL → FIXED.**
+- **Verification (this session):** `server/audit-item-cancel-snapshot.test.mjs` — cancel
+  an item → audit detail carries the món name/SKU/qty/table/order; renaming the menu item
+  afterward does not change the logged name (it is a snapshot). **2/2 pass.**
 
 ### S5 — `GET /api/shifts/current` slow 4.7–28.7 s, multiplied by repeated clicks
 - **Hypothesis:** Heavy per-call aggregation + no client GET coalescing + SQLite

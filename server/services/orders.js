@@ -789,7 +789,21 @@ export function cancelItem(item_id, reason, branch_id = 'sala', actor = 'system'
   setItemStatus(item_id, 'cancelled', branch_id, actor);
   const item = db.prepare(`SELECT order_id FROM order_items WHERE id=?`).get(item_id);
   recomputeTotals(item.order_id);
-  audit('item.cancel', { item: item_id, reason }, branch_id, actor);
+  // SNAPSHOT tại thời điểm huỷ — để nhật ký đọc được bằng tiếng Việt ngay cả khi
+  // sau này món bị đổi tên/xoá. Dữ liệu đã có sẵn (cancelledItem/beforeCancel),
+  // chỉ cần ghi vào detail. Giữ nguyên `item`+`reason` cũ (tương thích ngược).
+  audit('item.cancel', {
+    item: item_id,
+    reason,
+    item_name: cancelledItem.name || null,
+    sku: cancelledItem.sku_id || cancelledItem.item_code || null,
+    qty: cancelledItem.qty ?? null,
+    unit_price: cancelledItem.unit_price ?? null,
+    station: cancelledItem.station || null,
+    order_id: cancelledItem.order_id,
+    table_id: beforeCancel?.table_id || null,
+    bill_no: beforeCancel?.bill_no || null,
+  }, branch_id, actor);
   if (cancelledItem.station !== 'retail') {
     printKitchenUpdate(beforeCancel, [{ ...cancelledItem, cancelled: true }], branch_id, actor,
       'cancel_item');
