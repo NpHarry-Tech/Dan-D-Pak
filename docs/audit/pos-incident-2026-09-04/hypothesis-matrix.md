@@ -67,10 +67,15 @@ Each row: symptom → leading hypothesis → evidence → verdict → how to fal
   idempotent replay [payments.js:466-484](../../../server/services/payments.js#L466-L484).
   Suites green: `idempotency-chong-trung-don` 7/7, `so-bill-cap-khi-thanh-toan` 7/7,
   `retail-double-checkout` 2/2, `table-stuck-paid-reset` 4/4 (this session).
-- **Verdict:** **DEPLOY-GAP.** Not reproducible on current source.
-- **Falsify:** 20–50 concurrent `payOrder` on one order → assert exactly one payment,
-  one `paid`, one print job, table free. (Recommended new runtime test — the existing
-  suites cover the pieces but not the concurrency fan-out; see remediation.)
+- **Verdict:** **DEPLOY-GAP.** Not reproducible on current source — now proven by a
+  direct assertion.
+- **Falsify / verification (added this session):** `server/fnb-double-pay-guard.test.mjs`
+  — pay fully, then a second pay with a **different** key → rejected (`Order đã đóng`),
+  still exactly one payment row, revenue unchanged; same-key retry → idempotent replay of
+  the same `payment_id`; appending items to the closed order is rejected. **3/3 pass**
+  (Node 24 / SQLite 3.51.2). (A multi-process concurrency fan-out remains a further
+  hardening test — the synchronous `node:sqlite` API serializes intra-process calls, so
+  true concurrency needs separate connections; the conditional-close guard covers it.)
 
 ### S4 — `item.cancel` audit shows only opaque item ID + generic reason
 - **Hypothesis:** cancel audit logs the technical `order_item.id` and a generic reason

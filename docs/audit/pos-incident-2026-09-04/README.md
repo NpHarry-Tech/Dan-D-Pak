@@ -71,6 +71,7 @@ Evidence (all in `server/services/payments.js` `payOrder`, and the F&B client):
 | `retail-double-checkout` | 2 | 2 | 0 |
 | `retail-checkout-lock` | 7 | 7 | 0 |
 | `table-reset` | 4 | 4 | 0 |
+| `fnb-double-pay-guard` *(added this session)* | 3 | 3 | 0 |
 
 ## 3. Genuine remaining gaps (defects that DO exist in current source)
 
