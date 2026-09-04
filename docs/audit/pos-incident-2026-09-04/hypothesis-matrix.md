@@ -132,10 +132,20 @@ Each row: symptom → leading hypothesis → evidence → verdict → how to fal
   separator) and/or maps by fragile column position, concatenating cells → giant number.
 - **Evidence:** import tests exist — `flutter-apps/dandpak_core/test/kv_import_orchestration_test.dart`,
   `kv_excel_compatibility_test.dart`. Exact defective parse line NOT yet identified.
-- **Verdict:** **NEEDS-REPRO.**
-- **Falsify:** golden fixture with decimal-comma + reordered columns → preview shows the
-  real per-cell values and totals; a value like `633,705,997,308.678` is flagged as an
-  error before any commit; the commit callback is not invoked when validation fails.
+- **Verdict:** **PARTIALLY FIXED.** Two independent issues:
+  - **(a) Locale parse bug — FIXED + TESTED.** `kvParseNum` only did `,`→`.` then
+    `num.tryParse`, so VN-grouped money mis-scaled 1000× (`"1.000.000"`→`1.0`) and mixed
+    `"1.234,56"`→`null`. Rewrote it locale-aware (last separator = decimal; grouped forms
+    stripped) — [kv_shared.dart:28-63](../../../flutter-apps/dandpak_core/lib/src/screens/warehouse/kv_shared.dart#L28-L63).
+    Test `test/kv_parse_num_locale_test.dart` **8/8**; existing `kv_excel_compatibility` +
+    `kv_import_orchestration` still green (no regression).
+  - **(b) The specific `633,705,997,308.678` — NEEDS-REPRO with the real file.** Most
+    likely a **column shift** placing a 12-digit barcode into the cost column (the parser
+    faithfully parses `"633705997308"`; verified in the test). The fix is header-based
+    (not positional) mapping + a **plausibility guard** that flags implausible unit cost
+    before commit. Requires the actual failing xlsx to pin the mapping — not fabricated.
+- **Falsify (remaining):** golden fixture with a barcode in the cost column → preview
+  flags it and the commit callback is not invoked.
 
 ### S9 — Floor plan differs POS vs Settings (tables missing/clipped, ratio drifts)
 - **Hypothesis:** POS renders the floor with an independent layout/reflow instead of a

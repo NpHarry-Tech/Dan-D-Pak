@@ -25,11 +25,43 @@ String kvNumText(num v) {
   return v.toString();
 }
 
-/// Parse số người dùng nhập: bỏ khoảng trắng, chấp nhận "," làm dấu thập phân.
+/// Parse số nhập tay HOẶC đọc từ Excel, hiểu ĐÚNG cả locale vi-VN lẫn en-US.
+///
+/// Trước đây chỉ đổi "," -> "." nên nhóm nghìn kiểu vi-VN bị hiểu sai 1000 lần:
+///   "1.000.000" -> 1.0 (đáng lẽ 1000000);  "1.234,56" -> null.
+/// Đó là một nguồn của "số tiền vô lý" khi nhập kho từ Excel. Heuristic:
+///   • có CẢ "." và "," → dấu XUẤT HIỆN SAU CÙNG là thập phân, dấu kia là nhóm
+///     nghìn ("1.234.567,89"=vi ; "1,234,567.89"=us);
+///   • chỉ "," → nhóm nghìn chuẩn (\d{1,3}(,\d{3})+) thì bỏ; còn lại coi là thập
+///     phân vi-VN ("4,5"->4.5);
+///   • chỉ "." → nhiều dấu chấm hoặc dạng nhóm nghìn (\d{1,3}(\.\d{3})+) thì bỏ
+///     ("1.000.000"->1000000, "1.000"->1000); còn lại giữ nguyên thập phân
+///     ("4.5"->4.5).
+/// Trả null nếu KHÔNG parse được (caller phải coi là lỗi/để trống, không đoán).
 num? kvParseNum(String s) {
-  final cleaned = s.trim().replaceAll(' ', '').replaceAll(',', '.');
-  if (cleaned.isEmpty) return null;
-  return num.tryParse(cleaned);
+  var t = s.trim().replaceAll(RegExp(r'\s'), '');
+  // Bỏ ký hiệu tiền tệ/phần trăm nếu người dùng dán vào.
+  t = t.replaceAll('đ', '').replaceAll('₫', '').replaceAll('%', '');
+  if (t.isEmpty) return null;
+  final hasDot = t.contains('.');
+  final hasComma = t.contains(',');
+  if (hasDot && hasComma) {
+    if (t.lastIndexOf(',') > t.lastIndexOf('.')) {
+      t = t.replaceAll('.', '').replaceAll(',', '.'); // vi-VN
+    } else {
+      t = t.replaceAll(',', ''); // en-US
+    }
+  } else if (hasComma) {
+    t = RegExp(r'^-?\d{1,3}(,\d{3})+$').hasMatch(t)
+        ? t.replaceAll(',', '') // nhóm nghìn: "1,000,000"
+        : t.replaceAll(',', '.'); // thập phân vi-VN: "4,5"
+  } else if (hasDot) {
+    final dots = '.'.allMatches(t).length;
+    if (dots > 1 || RegExp(r'^-?\d{1,3}(\.\d{3})+$').hasMatch(t)) {
+      t = t.replaceAll('.', ''); // nhóm nghìn vi-VN: "1.000.000" / "1.000"
+    }
+  }
+  return num.tryParse(t);
 }
 
 String kvShortDate(String iso) {
