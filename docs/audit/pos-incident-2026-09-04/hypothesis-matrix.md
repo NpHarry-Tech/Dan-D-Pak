@@ -100,12 +100,18 @@ Each row: symptom → leading hypothesis → evidence → verdict → how to fal
   [shifts.js:108-183](../../../server/services/shifts.js#L108-L183). Client `loadShift`
   sets a flag but does not single-flight the request. `migrate()` ≈ 11.5 s shows the DB
   layer is not cheap on this runtime.
-- **Verdict:** **CONFIRMED-REAL** (cause identified). Fix requires: (a) instrument
-  duration + query count, (b) client coalesce identical in-flight GET, (c) evaluate a
-  short event-driven cache / lighter query, **with a before/after benchmark** — not a
-  blind index.
-- **Falsify:** benchmark on a synthetic near-real DB; assert server p95 ≤ 500 ms and no
-  request > 1.5 s in the recorded environment (report real numbers if not met).
+- **Verdict:** **CONFIRMED-REAL — client mitigation FIXED + TESTED; server work remains.**
+  - **(b) Client GET coalescing — DONE.** Added `coalesceGet` single-flight in the HTTP
+    client and enabled it on both `/api/shifts/current` reads
+    ([api_client.dart:324-372](../../../flutter-apps/dandpak_core/lib/src/api_client.dart#L324-L372),
+    [pos_api.dart:161-210](../../../flutter-apps/dandpak_core/lib/src/services/api/pos_api.dart#L161-L210)):
+    20 rapid clicks → **1** in-flight request; opt-in (default off) so no other GET changes.
+    Test `test/get_coalesce_test.dart` **3/3**; analyze clean.
+  - **(a) server instrument + (c) lighter query / short event-driven cache — REMAINING,
+    benchmark-gated.** Do NOT add a blind cache/index. Next: instrument duration + query
+    count, benchmark on a synthetic near-real DB, target server p95 ≤ 500 ms / none > 1.5 s
+    (report real numbers if unmet).
+- **Falsify (server):** the benchmark above.
 
 ### S6 — "Kết ca" clicked repeatedly during lag → stacked modals/screens
 - **Hypothesis:** No app-wide single-flight (`ActionGate`) keyed by action+entity; each

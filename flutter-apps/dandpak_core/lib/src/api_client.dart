@@ -321,7 +321,42 @@ class DanDpakApiClient {
     }
   }
 
+  // GET đọc-thuần đang bay, gộp theo path (single-flight). Xem coalesceGet.
+  final Map<String, Future<dynamic>> _inFlightGets = {};
+
+  /// Gộp các GET CÙNG [key] đang bay: nhiều lời gọi trong lúc một request chưa
+  /// về sẽ DÙNG CHUNG một Future thay vì bắn thêm request. Dọn khỏi bảng khi
+  /// xong (thành công hay lỗi) để lần sau gọi mới. Chỉ dùng cho GET an toàn
+  /// (đọc-thuần) — KHÔNG dùng cho mutation.
+  Future<dynamic> coalesceGet(String key, Future<dynamic> Function() run) {
+    final existing = _inFlightGets[key];
+    if (existing != null) return existing;
+    final fut = run();
+    _inFlightGets[key] = fut;
+    // Dọn bảng khi xong (thành công HAY lỗi). Nhánh dọn nuốt lỗi để không phát
+    // sinh unhandled rejection — lỗi vẫn tới đúng caller qua `fut`.
+    unawaited(fut.then((_) {}, onError: (Object _, StackTrace __) {}).whenComplete(() {
+      if (identical(_inFlightGets[key], fut)) _inFlightGets.remove(key);
+    }));
+    return fut;
+  }
+
+  /// [coalesce]=true → gộp yêu cầu đang bay theo path (vd /shifts/current bị bấm
+  /// dồn: 20 cú bấm → 1 request). Mặc định TẮT để không đổi hành vi nơi khác.
   Future<dynamic> getJson(
+    String path, {
+    Duration timeout = defaultTimeout,
+    String? errorMessage,
+    bool coalesce = false,
+  }) {
+    if (!coalesce) {
+      return _getJsonOnce(path, timeout: timeout, errorMessage: errorMessage);
+    }
+    return coalesceGet(path,
+        () => _getJsonOnce(path, timeout: timeout, errorMessage: errorMessage));
+  }
+
+  Future<dynamic> _getJsonOnce(
     String path, {
     Duration timeout = defaultTimeout,
     String? errorMessage,
