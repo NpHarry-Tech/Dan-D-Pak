@@ -6,9 +6,15 @@
 import { db } from './connection.js';
 import { env } from '../config/env.js';
 import { hashPin, verifyPin } from '../services/pin.js';
-import { branchFullAccessPerms } from '../services/auth.js';
+import { invalidatePermissionCache } from '../services/auth.js';
 
 export const SHOPEE_REVIEWER_ROLE = 'shopee_reviewer';
+export const SHOPEE_REVIEWER_PERMS = Object.freeze([
+  'module.online',
+  'online.order.manage',
+  'online.product_mapping',
+  'marketplace.connect',
+]);
 
 // Canonical review identity (§2). KHÔNG dùng 'sala' cho tenant review nữa.
 const REVIEW_BRANCH_ID = 'review';
@@ -112,10 +118,12 @@ export function seedShopeeReview() {
     db.prepare(`UPDATE branches SET name=?, code=?, active=1 WHERE id=? AND (name<>? OR code<>?)`)
       .run(REVIEW_BRANCH_NAME, REVIEW_BRANCH_CODE, REVIEW_BRANCH_ID, REVIEW_BRANCH_NAME, REVIEW_BRANCH_CODE);
 
-    // 2) Vai trò reviewer = BRANCH FULL ACCESS canonical (EXACT-set, không stale).
+    // 2) Vai trò reviewer = allowlist Shopee cố định (EXACT-set, không stale).
+    // Không suy ra từ catalog/full-access: quyền mới thêm vào hệ thống không được
+    // tự động rò sang tài khoản reviewer công khai.
     db.prepare(`DELETE FROM role_perms WHERE role=?`).run(SHOPEE_REVIEWER_ROLE);
     const insPerm = db.prepare(`INSERT OR IGNORE INTO role_perms (role, perm) VALUES (?, ?)`);
-    const perms = branchFullAccessPerms();
+    const perms = SHOPEE_REVIEWER_PERMS;
     for (const p of perms) insPerm.run(SHOPEE_REVIEWER_ROLE, p);
 
     // 3) Chỉ reviewer + admin (nếu có) được active (§6/§39 — internet-facing).
@@ -138,6 +146,10 @@ export function seedShopeeReview() {
         .run(REVIEW_BRANCH_ID, REVIEWER_USER.name, pinRotated ? hashPin(pin) : exists.pin,
           SHOPEE_REVIEWER_ROLE, access, REVIEWER_USER.username);
     }
+    // Exact effective set: xóa cả override allow/deny cũ của reviewer. Nếu không,
+    // một user_perms stale có thể cấp lại refund/delete dù role đã được thu hẹp.
+    db.prepare(`DELETE FROM user_perms WHERE user_id=?`)
+      .run(exists?.id || REVIEWER_USER.id);
 
     // 5) admin PERSISTENCE (§6): CHỈ khi đã tồn tại — không tự tạo credential.
     //    Giữ owner + active + ['*']. KHÔNG đụng PIN (do chủ đặt).
@@ -148,6 +160,7 @@ export function seedShopeeReview() {
     }
 
     db.exec('COMMIT');
+    invalidatePermissionCache();
     return {
       role: SHOPEE_REVIEWER_ROLE, perms: perms.length, username: REVIEWER_USER.username,
       branch_id: REVIEW_BRANCH_ID, userCreated, pinRotated,

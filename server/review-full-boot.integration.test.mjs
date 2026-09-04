@@ -75,7 +75,9 @@ test('FULL BOOT review: node index.js trên DB mới → chỉ Shopee Review Sto
   const db = new DatabaseSync(DBP, { readOnly: true });
   try {
     const branches = db.prepare('SELECT id,name FROM branches').all();
-    const users = db.prepare('SELECT username,active FROM users').all();
+    const users = db.prepare('SELECT username,active,branch_id,branch_access_json FROM users').all();
+    const reviewerPerms = db.prepare(
+      `SELECT perm FROM role_perms WHERE role='shopee_reviewer' ORDER BY perm`).all().map(r => r.perm);
     const warehouses = db.prepare('SELECT COUNT(*) n FROM warehouses').get().n;
     const tables = db.prepare('SELECT COUNT(*) n FROM tables').get().n;
 
@@ -84,6 +86,14 @@ test('FULL BOOT review: node index.js trên DB mới → chỉ Shopee Review Sto
     assert.equal(branches[0].name, 'Shopee Review Store', `branch name sai: ${JSON.stringify(branches)}`);
     assert.equal(users.length, 1, `users phải =1 (shopee-reviewer), thực tế: ${JSON.stringify(users)}`);
     assert.equal(users[0].username, 'shopee-reviewer');
+    assert.equal(users[0].branch_id, 'review');
+    assert.equal(users[0].branch_access_json, '["review"]');
+    assert.deepEqual(reviewerPerms, [
+      'marketplace.connect',
+      'module.online',
+      'online.order.manage',
+      'online.product_mapping',
+    ]);
     assert.equal(warehouses, 0, `warehouses phải =0, thực tế ${warehouses}`);
     assert.equal(tables, 0, `tables phải =0, thực tế ${tables}`);
   } finally {

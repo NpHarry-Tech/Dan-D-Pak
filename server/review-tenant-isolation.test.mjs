@@ -1,4 +1,4 @@
-// §44-N REVIEW BOOT + reviewer branch-full-access.
+// §44-N REVIEW BOOT + least-privilege Shopee reviewer.
 // Tenant review khởi động sạch: chỉ có branch "Shopee Review Store" + user
 // shopee-reviewer; KHÔNG có nhân sự demo, kho BCM, bàn, máy in production-like.
 // PHẢI set APP_ENV=review TRƯỚC khi import (env load 1 lần lúc import).
@@ -30,8 +30,8 @@ clean();
 const { db, migrate, DB_WAS_EMPTY } = await import('./db.js');
 migrate();
 // Mô phỏng đúng nhánh review trong index.js: KHÔNG chạy demo seed; chỉ reviewSeed.
-const { seedShopeeReview } = await import('./db/reviewSeed.js');
-const { branchFullAccessPerms, TENANT_ADMIN_PERMS, login } = await import('./services/auth.js');
+const { seedShopeeReview, SHOPEE_REVIEWER_PERMS } = await import('./db/reviewSeed.js');
+const { TENANT_ADMIN_PERMS, effectivePermsForUser, login } = await import('./services/auth.js');
 const seedResult = seedShopeeReview();
 
 test('review DB_WAS_EMPTY on fresh boot', () => {
@@ -77,24 +77,23 @@ test('review KHÔNG có printer/device rows', () => {
   }
 });
 
-test('reviewer = BRANCH FULL ACCESS (full functional, KHÔNG tenant admin, > 14 quyền)', () => {
-  const perms = branchFullAccessPerms();
-  assert.equal(seedResult.perms, perms.length);
-  assert.ok(perms.length > 14, `phải nhiều hơn danh sách cứng 14: ${perms.length}`);
-  // Có quyền nghiệp vụ chính
-  for (const p of ['marketplace.view', 'marketplace.connect', 'online.product_mapping', 'order.view', 'sell']) {
-    assert.ok(perms.includes(p), `thiếu quyền nghiệp vụ ${p}`);
-  }
-  // KHÔNG có quyền tenant-admin/secret
-  for (const p of TENANT_ADMIN_PERMS) {
-    assert.ok(!perms.includes(p), `rò quyền tenant-admin ${p}`);
-  }
+test('reviewer allowlist là exact, fixed và không trùng', () => {
+  assert.equal(seedResult.perms, 4);
+  assert.deepEqual(SHOPEE_REVIEWER_PERMS, [
+    'module.online',
+    'online.order.manage',
+    'online.product_mapping',
+    'marketplace.connect',
+  ]);
+  assert.equal(new Set(SHOPEE_REVIEWER_PERMS).size, SHOPEE_REVIEWER_PERMS.length);
 });
 
-test('reviewer role trong DB khớp branchFullAccessPerms (không stale về 14)', () => {
+test('reviewer role và effective permissions khớp exact allowlist', () => {
   const rows = db.prepare(`SELECT perm FROM role_perms WHERE role='shopee_reviewer'`).all().map(r => r.perm).sort();
-  const expect = branchFullAccessPerms().slice().sort();
+  const expect = [...SHOPEE_REVIEWER_PERMS].sort();
   assert.deepEqual(rows, expect);
+  const reviewer = db.prepare(`SELECT id,role FROM users WHERE username='shopee-reviewer'`).get();
+  assert.deepEqual(effectivePermsForUser(reviewer).sort(), expect);
 });
 
 test('reviewer branch_access chỉ ["review"] (không "*" = không tenant admin)', () => {
@@ -103,22 +102,30 @@ test('reviewer branch_access chỉ ["review"] (không "*" = không tenant admin)
   assert.equal(u.branch_access_json, JSON.stringify(['review']));
 });
 
-test('reviewer RBAC (§29/§30): có channel/integration + marketplace, KHÔNG tenant-admin', () => {
-  const perms = branchFullAccessPerms();
-  for (const p of ['settings.integrations', 'settings.connections', 'marketplace.view', 'marketplace.connect']) {
-    assert.ok(perms.includes(p), `reviewer phải có ${p} để thiết lập kênh Shopee`);
+test('reviewer không có quyền cấm, tenant admin hoặc permission mang nghĩa nguy hiểm', () => {
+  const forbidden = [
+    'settings.manage', 'settings.perms', 'settings.users', 'settings.branches',
+    'settings.audit', 'settings.integrations', 'audit.view', 'refund',
+    'online.order.refund', 'void', 'void.made', 'contacts.delete',
+    'warehouse.delete', 'warehouse.item', 'inventory.adjust',
+    'warehouse.stocktake.balance', 'menu.manage', 'module.database',
+    'module.developer', 'module.accounting', 'module.automation', 'module.fleet',
+    'module.manufacturing', 'module.payment', 'module.pos', 'module.printing',
+    'sell', 'pay', 'invoice', 'discount', 'bill.split',
+  ];
+  for (const p of [...forbidden, ...TENANT_ADMIN_PERMS]) {
+    assert.ok(!SHOPEE_REVIEWER_PERMS.includes(p), `reviewer KHÔNG được có ${p}`);
   }
-  for (const p of ['settings.manage', 'settings.perms', 'settings.users', 'settings.branches', 'settings.sync']) {
-    assert.ok(!perms.includes(p), `reviewer KHÔNG được có quyền tenant-admin ${p}`);
+  for (const p of SHOPEE_REVIEWER_PERMS) {
+    assert.doesNotMatch(p, /delete|refund|void|credential|secret/i,
+      `permission reviewer không được mang nghĩa nguy hiểm: ${p}`);
   }
 });
 
 test('reviewer login được bằng PIN từ ENV (branch review)', () => {
   const res = login('shopee-reviewer', '8421', 'review', { ip: '127.0.0.1' });
   assert.ok(res.token, 'login phải trả token');
-  assert.ok(res.perms.includes('marketplace.connect'));
-  assert.ok(res.perms.includes('settings.integrations'), 'reviewer cần settings.integrations (kênh)');
-  assert.ok(!res.perms.includes('settings.manage'), 'không được có quyền tenant-admin');
+  assert.deepEqual(res.perms.sort(), [...SHOPEE_REVIEWER_PERMS].sort());
 });
 
 test.after(() => { try { clean(); } catch { /* WAL còn khoá trên Windows — bỏ qua */ } });

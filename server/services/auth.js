@@ -437,6 +437,12 @@ function loadPerms() {
     (permCache[r.role] ||= new Set()).add(r.perm);
   }
 }
+// Review seed replaces the reviewer role as an exact set on every boot. Clear
+// the in-process cache after that transaction commits so a repeated seed cannot
+// leave permissions from an earlier role definition effective until restart.
+export function invalidatePermissionCache() {
+  permCache = null;
+}
 export function can(role, perm) {
   if (role === 'owner') return true;
   if (!permCache) loadPerms();

@@ -35,8 +35,10 @@ test('audit() emits activity:new AFTER the durable write, keyed by id (idempoten
   const emitIdx = src.indexOf("publishRealtime('activity:new'");
   assert.ok(insertIdx > 0, 'audit_log insert present');
   assert.ok(emitIdx > insertIdx, 'activity:new emitted after the insert');
-  // Payload must carry the id so clients can dedupe on reconnect/resync.
-  assert.match(src, /publishRealtime\('activity:new', \{ id, branch_id, actor, action, detail: cleanDetail, created_at \}, branch_id\)/);
+  // The entry is built with an id and spread into the payload so clients can
+  // dedupe on reconnect/resync.
+  assert.match(src, /return \{ id, branch_id, actor, action, detail: cleanDetail, created_at \}/);
+  assert.match(src, /publishRealtime\('activity:new', \{ \.\.\.entry \}, entry\.branch_id\)/);
 });
 
 test('realtime.js registers its emit() into the bus at init', () => {

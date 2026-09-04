@@ -15,13 +15,13 @@ review tách biệt**:
 Shopee Reviewer
    │  (1) mở URL Business Product
    ▼
-https://review.<domain>              ← Reviewer Portal (trang tĩnh: tải app + hướng dẫn)
+https://review.dandpakpos.io.vn      ← Reviewer Portal (trang tĩnh: tải app + hướng dẫn)
    │  (2) tải & cài "Dan D Pak (Review)"
    ▼
 Dan D Pak Desktop — Review build     ← CÙNG source production, chỉ khác backend
    │  (3) đăng nhập tài khoản reviewer
    ▼
-https://api-review.<domain>          ← backend review (stack Docker RIÊNG)
+https://api-review.dandpakpos.io.vn  ← backend review (stack Docker RIÊNG)
    ├── DB review riêng  (/app/server-data/review.db — guard khoá cứng, tách store.db)
    ├── dữ liệu synthetic (demo seed)
    ├── user reviewer quyền tối thiểu (role shopee_reviewer)
@@ -36,9 +36,9 @@ có thể cùng một VPS. Không dùng chung DB.
 
 | Trường | Giá trị |
 |---|---|
-| **Business Product URL** | `https://review.<domain>` (VD `https://review.dandpakpos.io.vn`) — KHÔNG điền URL API |
+| **Business Product URL** | `https://review.dandpakpos.io.vn` — KHÔNG điền URL API |
 | **Live Test Username** | `shopee-reviewer` |
-| **Live Test Password** | = giá trị `SHOPEE_REVIEWER_PIN` (8–12 chữ số) bạn đặt trong `deploy/review/.env` — KHÔNG commit, sinh trên VPS |
+| **Live Test Password** | = giá trị `SHOPEE_REVIEWER_PIN` (4–12 chữ số) đặt riêng trong `deploy/review/.env` — KHÔNG commit hoặc ghi vào tài liệu |
 | **How many sellers supporting** | *(số người bán thật của bạn — mới thì chọn dải nhỏ nhất)* |
 | **Other e-commerce platforms integrated** | *(chọn đúng sàn đã tích hợp: Haravan / Lazada / TikTok Shop / Tiki)* |
 | **Remarks** | "Dan D Pak POS is a Windows desktop application. The Business Product URL is a portal to download the desktop review build; log in with the test credentials, then open *Bán Online → Shopee* to test the integration in the sandbox environment." |
@@ -50,9 +50,9 @@ có thể cùng một VPS. Không dùng chung DB.
 | 1 | Reviewer truy cập được sản phẩm thật | App Desktop THẬT (cùng source production), tải từ portal |
 | 2 | Không dữ liệu khách production | DB review riêng (`review.db`), chỉ dữ liệu synthetic demo seed |
 | 3 | Không lộ Partner Key/secret/token | Token/secret nằm ở backend, mã hoá; reviewer không có quyền xem |
-| 4 | Vai trò reviewer quyền tối thiểu | Role `shopee_reviewer` (14 quyền, xem [reviewSeed.js](../../../server/db/reviewSeed.js)) |
-| 5 | Xem/thử Online Sales, Products, Inventory, Orders, Marketplace Connections, Shopee | Đủ quyền `module.online/retail/warehouse/inventory`, `online.*`, `omni.connector` |
-| 6 | KHÔNG xem secret/credential/DB admin/thao tác nguy hiểm | Role KHÔNG có `settings.*`, `warehouse.delete/item`, `refund`, `void`, `audit.view` |
+| 4 | Vai trò reviewer quyền tối thiểu | Role `shopee_reviewer` có đúng 4 quyền cố định: `module.online`, `online.order.manage`, `online.product_mapping`, `marketplace.connect` |
+| 5 | Xem/thử kết nối Shopee, đơn hàng, listing↔SKU và tồn đối chiếu | Các API đọc/sync Shopee dùng đúng bốn quyền trên; đọc SKU chỉ yêu cầu đăng nhập và vẫn bị giới hạn ở branch `review` |
+| 6 | KHÔNG xem secret/credential/DB admin/thao tác nguy hiểm | Không có `settings.*`, `audit.view`, quyền kho, bán hàng, thanh toán, hủy, xóa hoặc hoàn tiền |
 | 7 | Dữ liệu test synthetic | Demo seed (branch "Shopee Review Store", TEST-*, tồn 100, đơn synthetic) |
 | 8 | HTTPS | Caddy tự cấp TLS cho cả `review.` và `api-review.` |
 | 9 | Tách production/testing | Stack Docker riêng + `SHOPEE_ENV=sandbox` + `ALLOW_PRODUCTION_DATA=false` |
@@ -60,20 +60,20 @@ có thể cùng một VPS. Không dùng chung DB.
 
 ## 4. Quy trình test cho reviewer
 
-1. Mở `https://review.<domain>` → bấm **Download Dan D Pak (Review)**.
+1. Mở `https://review.dandpakpos.io.vn` → bấm **Download Dan D Pak (Review)**.
 2. Cài và mở **Dan D Pak POS (Review)** (Windows 10/11). App tự nối backend review.
 3. Đăng nhập: username `shopee-reviewer`, PIN/password = giá trị `SHOPEE_REVIEWER_PIN`
-   (đặt trong `deploy/review/.env` trên VPS, KHÔNG commit — xem §2). Placeholder, không ghi giá trị thật vào tài liệu.
+   (đặt trong `deploy/review/.env` trên VPS, KHÔNG commit hoặc ghi giá trị thật vào tài liệu — xem §2).
 4. Vào **Bán Online** từ menu chính.
 5. **Thiết lập kênh → Shopee → Kết nối**: chạy uỷ quyền Shopee 1 chạm (sandbox).
 6. Xem **Đơn hàng**, **Hàng hoá** (đối chiếu listing↔SKU), **Tồn kho**, **Kết nối sàn**.
 
 ## 5. Việc bạn (chủ) cần làm trước khi nộp form
 
-1. **DNS**: trỏ `review.<domain>` và `api-review.<domain>` về VPS.
+1. **DNS**: `review.dandpakpos.io.vn` và `api-review.dandpakpos.io.vn` phải trỏ về review ingress.
 2. **Shopee Console**: lấy **Sandbox Partner ID/Key**; khai redirect
-   `https://api-review.<domain>/auth/shopee/callback` và webhook
-   `https://api-review.<domain>/webhooks/shopee`.
+   `https://api-review.dandpakpos.io.vn/auth/shopee/callback` và webhook
+   `https://api-review.dandpakpos.io.vn/webhooks/shopee`.
 3. **Build app review** trên máy Windows:
    `.\deploy\build-desktop-review.ps1` → installer copy vào `deploy/review/portal/download/`.
 4. **Chạy stack review** trên VPS:
