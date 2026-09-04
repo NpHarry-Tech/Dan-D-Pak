@@ -27,6 +27,7 @@ import 'services/client_log.dart';
 import 'services/connectivity_status.dart';
 import 'services/local_print_agent.dart';
 import 'services/local_store.dart';
+import 'services/pending_update.dart';
 import 'services/perf_mode.dart';
 import 'services/system_log.dart';
 import 'ui/app_theme.dart';
@@ -187,6 +188,15 @@ Future<void> _logUpdateSuccessIfJustUpdated() async {
       );
       return;
     }
+    // Lần cập nhật THẬT (build cao hơn lần chạy trước). Ghi pending event để sau
+    // đăng nhập báo "Cập nhật thành công" lên Nhật ký hoạt động (audit + realtime).
+    // Đây là đường BẢO ĐẢM cho b169 → b170: b169 không có installer marker, nên
+    // baseline first-boot là nguồn phát hiện. Ghi TRƯỚC khi cập nhật baseline.
+    await PendingUpdate.recordBaselineUpgrade(
+      oldBuild: prevBuild,
+      currentBuild: build,
+      version: versionName,
+    );
     await LocalStore.instance.setString(key, '$build');
     await LocalStore.instance.remove('last_run_build');
     SystemLog.log(

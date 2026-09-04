@@ -30,6 +30,13 @@ api.post('/app/update-event', wrap((req) => {
   // Chỉ ghi khi THỰC SỰ lên build cao hơn (client đã đối chiếu marker; đây là chốt
   // chặn phía server để không ai ghi "thành công" khi không có cập nhật thật).
   if (fromBuild != null && toBuild <= fromBuild) return { ok: true, ignored: 'not-an-upgrade' };
+  // KIỂM TRA BUILD THỰC TẾ: mọi request client đều gửi header x-build-number =
+  // build ĐANG CHẠY của thiết bị. KHÔNG tin toBuild client khai — phải khớp build
+  // thật, nếu không thì không ai giả được "cập nhật thành công".
+  const actualBuild = parseInt(String(req.headers?.['x-build-number'] || ''), 10);
+  if (Number.isFinite(actualBuild) && actualBuild !== toBuild) {
+    return { ok: true, ignored: 'build-mismatch', actualBuild };
+  }
   const dupe = db.prepare(
     `SELECT 1 FROM audit_log WHERE branch_id=? AND action='app.update_success' AND detail LIKE ? LIMIT 1`,
   ).get(branch_id, `%"key":"${key}"%`);

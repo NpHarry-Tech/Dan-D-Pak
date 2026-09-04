@@ -14,9 +14,20 @@ process.env.STORAGE_PATH = join(_tmp, 'storage');
 // tĩnh bị hoisted lên trước cả dòng đặt env → sẽ mở nhầm DB mặc định.
 const { migrate, db, now, uid } = await import('./db.js');
 const { backfillDocuments, backfillAudit } = await import('./services/documentsBackfill.js');
-const { saveDocumentReference, resolveReferenceContent } = await import('./modules/documents/routes.js');
+const { saveDocumentReference, resolveReferenceContent, registerStorageFileDocument } =
+  await import('./modules/documents/routes.js');
+const { storagePath } = await import('./config/env.js');
+const { writeFileSync, mkdirSync } = await import('node:fs');
 
 migrate();
+
+function seedDrawer({ image, actor = 'Anh Ba' }) {
+  const id = uid('drw_');
+  db.prepare(`INSERT INTO cash_drawer_entries (id,branch_id,kind,occurred_at,counterparty,reason,product,invoice_image,actor_name,amount,balance_before,balance_after,created_at)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+    .run(id, 'sala', 'expense', now(), 'NCC B', 'Mua đá', 'Đá cây', image, actor, 50000, 0, -50000, now());
+  return id;
+}
 
 function seedExpense({ code, image, actor = 'Chị Hoa', drawer = null }) {
   const id = uid('exp_');
@@ -88,4 +99,69 @@ test('backfillAudit reports source vs indexed counts', () => {
   const a = backfillAudit({ branchId: 'sala' });
   assert.ok(a.sources.expense.sourceFiles >= 3);
   assert.ok(a.indexed >= 3);
+});
+
+test('#2 drawer-receipt reference resolves for preview/download (not 410)', () => {
+  const png = dataUrl('drawer-receipt');
+  const drw = seedDrawer({ image: png });
+  const rec = saveDocumentReference({
+    branch_id: 'sala', module: 'cash_drawer_expense', field: 'invoice_image', record_id: drw,
+    record_label: 'Chi từ két', category: 'receipt', source: 'cash_drawer_expense',
+    uploaded_by: 'u', uploaded_by_name: 'Anh Ba', uploaded_at: now(),
+    source_screen: 'Sổ quỹ / Két', value: png,
+  });
+  assert.equal(rec.storage_kind, 'reference');
+  assert.equal(rec.ref_locator, `cash_drawer_expense:invoice_image:${drw}`);
+  const resolved = resolveReferenceContent(rec, 'sala');
+  assert.ok(resolved, 'drawer receipt must resolve, not 410');
+  assert.equal(resolved.buf.toString(), 'drawer-receipt');
+});
+
+test('#3 reference updates mime/size/status when the source image changes + no-op when same', () => {
+  const eid = seedExpense({ code: 'CP-CHG', image: dataUrl('v1') });
+  const first = saveDocumentReference({
+    branch_id: 'sala', module: 'expense', field: 'invoice_image', record_id: eid,
+    name: 'Hóa đơn chi CP-CHG', source: 'expense', value: dataUrl('v1'),
+  });
+  const firstSize = first.file_size;
+  // same value again -> idempotent no-op (row unchanged)
+  const same = saveDocumentReference({
+    branch_id: 'sala', module: 'expense', field: 'invoice_image', record_id: eid,
+    name: 'Hóa đơn chi CP-CHG', source: 'expense', value: dataUrl('v1'),
+  });
+  assert.equal(same.id, first.id);
+  assert.equal(same.file_size, firstSize);
+  // source image changes -> reference updates size/mime/status, same id
+  db.prepare(`UPDATE expenses SET invoice_image=? WHERE id=?`).run(dataUrl('v2-longer-bytes', 'image/jpeg'), eid);
+  const changed = saveDocumentReference({
+    branch_id: 'sala', module: 'expense', field: 'invoice_image', record_id: eid,
+    name: 'Hóa đơn chi CP-CHG', source: 'expense', value: dataUrl('v2-longer-bytes', 'image/jpeg'),
+  });
+  assert.equal(changed.id, first.id, 'same document row (no duplicate)');
+  assert.equal(changed.mime_type, 'image/jpeg');
+  assert.notEqual(changed.file_size, firstSize);
+  assert.equal(resolveReferenceContent(changed, 'sala').buf.toString(), 'v2-longer-bytes');
+});
+
+test('#4 storage_file (product image) registers + resolves from uploads, rejects traversal', () => {
+  const dir = storagePath('uploads', 'products');
+  mkdirSync(dir, { recursive: true });
+  const fname = 'product_test.png';
+  writeFileSync(join(dir, fname), Buffer.from('PNGDATA'));
+  const rec = registerStorageFileDocument({
+    branch_id: 'sala', name: 'anh-sp.png', original_name: 'anh-sp.png',
+    mime_type: 'image/png', file_size: 7, storageRelPath: `products/${fname}`,
+    source: 'warehouse', source_screen: 'Kho — Ảnh sản phẩm', category: 'product_image',
+    uploaded_by: 'u1', uploaded_by_name: 'Chị Kho',
+  });
+  assert.equal(rec.storage_kind, 'storage_file');
+  const resolved = resolveReferenceContent(rec, 'sala');
+  assert.ok(resolved);
+  assert.equal(resolved.buf.toString(), 'PNGDATA');
+  // path traversal must be rejected
+  const evil = { storage_kind: 'storage_file', ref_locator: '../../etc/passwd', mime_type: 'text/plain' };
+  assert.equal(resolveReferenceContent(evil, 'sala'), null);
+  // missing file -> null (caller returns 410, no crash)
+  const gone = { storage_kind: 'storage_file', ref_locator: 'products/does-not-exist.png', mime_type: 'image/png' };
+  assert.equal(resolveReferenceContent(gone, 'sala'), null);
 });

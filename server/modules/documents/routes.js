@@ -56,12 +56,39 @@ export function documentFileOut(r) {
   };
 }
 
+// Đăng ký một FILE THẬT đã lưu ở thư mục storage khác (vd ảnh sản phẩm Kho ở
+// uploads/products) vào kho Tài liệu — storage_kind='storage_file', ref_locator =
+// đường dẫn tương đối dưới gốc uploads. KHÔNG copy lại file; download/preview giải
+// qua resolveReferenceContent. Phát 'document:new'. GỌI SAU khi file đã ghi xong.
+export function registerStorageFileDocument({
+  branch_id, name, original_name, mime_type, file_size, storageRelPath,
+  source, source_screen = '', category = 'other', description = '',
+  uploaded_by = 'system', uploaded_by_name = 'Hệ thống',
+  related_id = null, related_type = null,
+}) {
+  const id = uid('doc_');
+  const created_at = now();
+  const finalOriginal = original_name || name || storageRelPath;
+  db.prepare(`INSERT INTO document_files
+    (id,branch_id,name,original_name,stored_name,mime_type,file_size,category,source,related_id,related_type,tags_json,description,uploaded_by,uploaded_by_name,is_archived,created_at,content_hash,storage_kind,ref_locator,source_screen,is_legacy,status)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,?,NULL,'storage_file',?,?,0,'available')`)
+    .run(id, branch_id, name || finalOriginal, finalOriginal, '', mime_type || 'application/octet-stream',
+      Number(file_size) || 0, category, source || 'upload', related_id, related_type, '[]', description,
+      uploaded_by, uploaded_by_name, created_at, String(storageRelPath || ''), source_screen);
+  const rec = db.prepare(`SELECT * FROM document_files WHERE id=?`).get(id);
+  try { emit('document:new', documentFileOut(rec), branch_id); } catch { /* best-effort */ }
+  return rec;
+}
+
 // ── Reference-mode: index nội dung ĐANG NẰM ở nguồn (vd ảnh hóa đơn inline trong
 // expenses.invoice_image) mà KHÔNG copy blob ra đĩa. storage_kind='reference',
 // ref_locator="module:field:recordId" — chỉ giải phía server qua whitelist cứng
 // bên dưới (không cho đọc bảng/cột tùy ý; chống truy cập dữ liệu bừa bãi).
 const INLINE_REFERENCE_SOURCES = {
   'expense:invoice_image': { table: 'expenses', column: 'invoice_image' },
+  // Ảnh chi từ két cũ (backfill dạng reference) — phải giải được để preview/tải,
+  // không được trả 410.
+  'cash_drawer_expense:invoice_image': { table: 'cash_drawer_entries', column: 'invoice_image' },
 };
 
 function decodeDataUrl(value) {
@@ -79,9 +106,21 @@ function decodeDataUrl(value) {
   } catch { return null; }
 }
 
-// Giải một document reference về {mime,buf} bằng cách đọc ĐÚNG cột nguồn cùng chi
-// nhánh. Trả null nếu file nguồn đã mất/hỏng (→ caller trả 410).
+// Giải nội dung của một document reference/storage_file về {mime,buf}. Trả null
+// nếu nguồn đã mất/hỏng (→ caller trả 410).
 export function resolveReferenceContent(rec, branch_id) {
+  // storage_file: file THẬT nằm ở thư mục storage khác (vd uploads/products cho ảnh
+  // sản phẩm Kho). ref_locator = đường dẫn TƯƠNG ĐỐI dưới gốc uploads. Chặn path
+  // traversal tuyệt đối — chỉ phục vụ file nằm trong cây uploads.
+  if (rec.storage_kind === 'storage_file') {
+    const rel = String(rec.ref_locator || '').replace(/\\/g, '/');
+    if (!rel || rel.includes('..') || rel.startsWith('/')) return null;
+    const uploadsRoot = nodePath.resolve(storagePath('uploads'));
+    const abs = nodePath.resolve(nodePath.join(uploadsRoot, rel));
+    if (abs !== uploadsRoot && !abs.startsWith(uploadsRoot + nodePath.sep)) return null;
+    if (!fs.existsSync(abs)) return null;
+    return { mime: rec.mime_type || 'application/octet-stream', buf: fs.readFileSync(abs) };
+  }
   const parts = String(rec.ref_locator || '').split(':');
   const key = `${parts[0]}:${parts[1]}`;
   const recordId = parts.slice(2).join(':');
@@ -114,14 +153,35 @@ export function saveDocumentReference({
   const finalName = name || original_name || record_label || `${module}-${record_id}`;
   const finalOriginal = original_name || finalName;
 
-  // Idempotent & KHÔNG phá dữ liệu: nếu đã có document cho bản ghi nguồn này (kể cả
-  // do fileCashDrawerReceipt lập chỉ mục dạng COPY) thì GIỮ NGUYÊN, không đụng tới
-  // storage_kind/stored_name của nó — chỉ trả lại bản ghi cũ. Chạy lại/backfill lại
-  // không tạo trùng và không biến một entry copy đang chạy thành reference.
   const existing = db.prepare(
     `SELECT * FROM document_files WHERE branch_id=? AND related_type=? AND related_id=? AND is_archived=0 LIMIT 1`,
   ).get(branch_id, related_type, related_id);
-  if (existing) return existing;
+  if (existing) {
+    // COPY-mode (file thật trên đĩa) là nguồn tự quản → KHÔNG đụng (giữ no-clobber,
+    // không biến entry copy đang chạy thành reference). Backfill/hook chạy lại vô hại.
+    if (existing.storage_kind !== 'reference') return existing;
+    // REFERENCE-mode: nếu ảnh NGUỒN đã đổi (mime/size/status) hoặc metadata đổi thì
+    // CẬP NHẬT đúng mime/size/status/tên/thời gian/người tải và phát 'document:updated'
+    // để tab Tài liệu đang mở thấy ngay. Không đổi gì thì trả nguyên (không phát ồn).
+    const changed =
+      existing.mime_type !== mime_type ||
+      (existing.file_size || 0) !== file_size ||
+      (existing.status || 'available') !== status ||
+      existing.name !== finalName ||
+      existing.original_name !== finalOriginal ||
+      (!!uploaded_at && existing.created_at !== created_at) ||
+      (!!uploaded_by_name && existing.uploaded_by_name !== uploaded_by_name);
+    if (!changed) return existing;
+    db.prepare(`UPDATE document_files SET name=?, original_name=?, mime_type=?, file_size=?, status=?,
+        source_screen=?, uploaded_by=?, uploaded_by_name=?, created_at=?, ref_locator=?, is_legacy=? WHERE id=?`)
+      .run(finalName, finalOriginal, mime_type, file_size, status,
+        source_screen || existing.source_screen || '',
+        uploaded_by || existing.uploaded_by, uploaded_by_name || existing.uploaded_by_name,
+        created_at, ref_locator, is_legacy ? 1 : 0, existing.id);
+    const updated = db.prepare(`SELECT * FROM document_files WHERE id=?`).get(existing.id);
+    try { emit('document:updated', documentFileOut(updated), branch_id); } catch { /* best-effort */ }
+    return updated;
+  }
 
   const id = uid('doc_');
   db.prepare(`INSERT INTO document_files
@@ -248,7 +308,7 @@ api.get('/documents/files/:id/download', async (req, res) => {
 
     res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(rec.original_name)}"`);
     res.setHeader('Content-Type', rec.mime_type || 'application/octet-stream');
-    if (rec.storage_kind === 'reference') {
+    if (rec.storage_kind === 'reference' || rec.storage_kind === 'storage_file') {
       const resolved = resolveReferenceContent(rec, branch_id);
       if (!resolved) return res.status(410).json({ error: 'File nguồn không còn' });
       return res.end(resolved.buf);
@@ -272,7 +332,7 @@ api.get('/documents/files/:id/preview', async (req, res) => {
 
     res.setHeader('Content-Type', rec.mime_type || 'application/octet-stream');
     res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(rec.original_name)}"`);
-    if (rec.storage_kind === 'reference') {
+    if (rec.storage_kind === 'reference' || rec.storage_kind === 'storage_file') {
       const resolved = resolveReferenceContent(rec, branch_id);
       if (!resolved) return res.status(410).json({ error: 'File nguồn không còn' });
       return res.end(resolved.buf);

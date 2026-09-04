@@ -49,6 +49,34 @@ class PendingUpdate {
     } catch (_) {/* không chặn cập nhật */}
   }
 
+  /// FALLBACK cho lần nâng cấp mà bản CŨ chưa có [mark] (ví dụ b169 → b170: b169
+  /// không hề gọi mark trước khi cài). Suy ra từ FIRST-BOOT BASELINE bền vững
+  /// (last_run_build): nếu build thực tế cao hơn build đã chạy lần trước thì đó là
+  /// một lần cập nhật thật → ghi pending event để [flushAfterAuth] báo lên server.
+  /// KHÔNG ghi đè nếu đã có marker (đường installer ưu tiên). Gọi ở bootstrap TRƯỚC
+  /// khi cập nhật baseline.
+  static Future<void> recordBaselineUpgrade({
+    required int oldBuild,
+    required int currentBuild,
+    required String version,
+  }) async {
+    try {
+      if (currentBuild <= oldBuild) return;
+      final existing = await LocalStore.instance.getString(_key);
+      if (existing != null && existing.isNotEmpty) return; // marker đã có → không đụng
+      final marker = {
+        'oldBuild': oldBuild,
+        'expectedBuild': currentBuild,
+        'version': version,
+        'ts': DateTime.now().toIso8601String(),
+        'deviceId': SystemLog.deviceId,
+        'appId': AppFlavor.current.appId,
+        'key': 'boot_${oldBuild}_$currentBuild',
+      };
+      await LocalStore.instance.setString(_key, jsonEncode(marker));
+    } catch (_) {/* không chặn boot */}
+  }
+
   /// Gọi SAU KHI đăng nhập thành công (đủ token + branch). Flush ngay, không chờ
   /// timer. Không ném lỗi.
   static Future<void> flushAfterAuth(ApiService api) async {

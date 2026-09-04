@@ -44,3 +44,13 @@ test('realtime.js registers its emit() into the bus at init', () => {
   assert.match(src, /import \{ setRealtimeEmitter \} from '\.\/core\/realtimeBus\.js'/);
   assert.match(src, /setRealtimeEmitter\(emit\)/);
 });
+
+test('#1 update-event verifies the actual device build (x-build-number) not just client toBuild', () => {
+  const src = readFileSync(new URL('./modules/appRelease/routes.js', import.meta.url), 'utf8');
+  // Must read the per-request build header and reject when it disagrees with toBuild.
+  assert.match(src, /x-build-number/);
+  assert.match(src, /actualBuild\s*!==\s*toBuild/);
+  assert.match(src, /build-mismatch/);
+  // Still guards against a non-upgrade even if headers are absent.
+  assert.match(src, /toBuild <= fromBuild/);
+});

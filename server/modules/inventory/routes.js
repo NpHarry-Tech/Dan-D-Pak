@@ -41,7 +41,13 @@ export function registerInventoryRoutes(api, {
 
   api.get('/skus', guard(), wrap((req) => Inv.listSkus(visibleBranch(req), req.query)));
   api.post('/skus/image-upload', guard('warehouse.item'), wrap((req) =>
-    saveBase64Image(req, { dir: PRODUCT_UPLOADS_DIR, urlBase: '/uploads/products', prefix: 'product_', auditAction: 'sku.image_upload' })));
+    // Ảnh sản phẩm Kho là FILE THẬT lưu ở uploads/products → lập chỉ mục vào kho
+    // Tài liệu (tên đầy đủ, nguồn màn hình, người tải, ngày giờ) qua registerAs.
+    saveBase64Image(req, {
+      dir: PRODUCT_UPLOADS_DIR, urlBase: '/uploads/products', prefix: 'product_',
+      auditAction: 'sku.image_upload',
+      registerAs: { source: 'warehouse', screen: 'Kho — Ảnh sản phẩm', category: 'product_image' },
+    })));
   api.post('/skus', guard('warehouse.item'), wrap((req) => Inv.createSku(req.body, branch(req))));
   api.post('/skus/:id/update', guardAny('warehouse.item', 'inventory.adjust'), wrap((req) => Inv.updateSku(req.params.id, req.body, branch(req))));
   api.post('/skus/:id/delete', guard('warehouse.delete'), wrap((req) => Inv.deleteSku(req.params.id, branch(req))));

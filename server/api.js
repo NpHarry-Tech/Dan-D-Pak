@@ -31,7 +31,7 @@ import { registerClientLogRoutes } from './modules/clientLog/routes.js';
 import { registerSettingsRoutes } from './modules/settings/routes.js';
 import { registerDatabaseRoutes } from './modules/database/routes.js';
 import { registerErpRoutes } from './modules/erp/routes.js';
-import { registerDocumentRoutes, fileCashDrawerReceipt } from './modules/documents/routes.js';
+import { registerDocumentRoutes, fileCashDrawerReceipt, registerStorageFileDocument } from './modules/documents/routes.js';
 import * as Haravan from './services/haravanConnector.js';
 import { errorPayload } from './core/errors.js';
 import fs from 'node:fs';
@@ -200,7 +200,7 @@ const wrap = (fn) => (req, res) => {
 // Lưu ảnh gửi lên dạng base64 (≤20MB, đúng mime ảnh) vào thư mục uploads và trả
 // URL công khai. Helper DÙNG CHUNG cho avatar nhân viên (settings), ảnh món
 // (catalog) và avatar đối tác (contacts) — truyền vào các module đó.
-function saveBase64Image(req, { dir, urlBase, prefix, auditAction }) {
+function saveBase64Image(req, { dir, urlBase, prefix, auditAction, registerAs }) {
   const { data, mime_type, original_name } = req.body || {};
   if (!data || !original_name) throw new Error('Thiếu dữ liệu ảnh');
   if (!AVATAR_ALLOWED_MIME.has(mime_type)) throw new Error(`Định dạng ảnh không được hỗ trợ: ${mime_type}`);
@@ -211,7 +211,28 @@ function saveBase64Image(req, { dir, urlBase, prefix, auditAction }) {
   fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(nodePath.join(dir, stored), buf);
   const url = `${urlBase}/${stored}`;
-  audit(auditAction, { url, original_name, size: buf.byteLength }, branch(req), actor(req));
+  const branch_id = branch(req);
+  audit(auditAction, { url, original_name, size: buf.byteLength }, branch_id, actor(req));
+  // registerAs được TRUYỀN CÓ CHỦ ĐÍCH chỉ ở các đường upload cần lập chỉ mục vào
+  // kho Tài liệu (vd ảnh sản phẩm Kho) — KHÔNG áp cho avatar/QR để tránh nhiễu.
+  if (registerAs) {
+    try {
+      const rel = `${String(urlBase).replace(/^\/+/, '').replace(/^uploads\//, '')}/${stored}`;
+      registerStorageFileDocument({
+        branch_id,
+        name: registerAs.name || original_name,
+        original_name,
+        mime_type,
+        file_size: buf.byteLength,
+        storageRelPath: rel,
+        source: registerAs.source || 'upload',
+        source_screen: registerAs.screen || '',
+        category: registerAs.category || 'other',
+        uploaded_by: req.user?.username || req.user?.id || 'system',
+        uploaded_by_name: actor(req) || 'Hệ thống',
+      });
+    } catch { /* đăng ký Tài liệu KHÔNG được chặn upload */ }
+  }
   return { ok: true, url, size: buf.byteLength };
 }
 
