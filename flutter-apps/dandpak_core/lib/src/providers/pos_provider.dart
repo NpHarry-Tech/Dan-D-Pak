@@ -715,19 +715,42 @@ class PosProvider extends ChangeNotifier {
 
   // ── Full shift + cash-drawer actions (used by the shared ShiftDialog) ──
 
+  // Các thao tác GHI đang chạy, khoá theo hành động. Chặn bấm dồn (vd "Kết ca"
+  // lúc mạng lag) tạo nhiều request/nhiều modal chồng nhau. Request có thể lâu
+  // hơn mọi cửa sổ debounce nên PHẢI khoá theo "đang bay", không theo thời gian.
+  final Set<String> _inFlightActions = {};
+
+  /// Chạy [action] đúng MỘT lần cho mỗi [key] tại một thời điểm. Lần bấm sau khi
+  /// lần trước CHƯA xong sẽ bị chặn (ném) thay vì gọi API/đẩy modal lần nữa.
+  Future<T> singleFlight<T>(String key, Future<T> Function() action) async {
+    if (_inFlightActions.contains(key)) {
+      throw Exception('Đang xử lý, vui lòng chờ trong giây lát.');
+    }
+    _inFlightActions.add(key);
+    try {
+      return await action();
+    } finally {
+      _inFlightActions.remove(key);
+    }
+  }
+
+  bool isActionInFlight(String key) => _inFlightActions.contains(key);
+
   Future<void> openShiftCounts({
     required String shiftKey,
     required Map<String, int> counts,
     required int openingCash,
     required bool cashManual,
-  }) async {
-    await apiService.openShiftCounts(
-      shiftKey: shiftKey,
-      counts: counts,
-      openingCash: openingCash,
-      cashManual: cashManual,
-    );
-    await loadShift();
+  }) {
+    return singleFlight('shift:open', () async {
+      await apiService.openShiftCounts(
+        shiftKey: shiftKey,
+        counts: counts,
+        openingCash: openingCash,
+        cashManual: cashManual,
+      );
+      await loadShift();
+    });
   }
 
   Future<void> closeShiftCounts({
@@ -735,14 +758,16 @@ class PosProvider extends ChangeNotifier {
     required Map<String, int> counts,
     required int closingCash,
     String? managerOverridePin,
-  }) async {
-    await apiService.closeShiftCounts(
-      shiftKey: shiftKey,
-      counts: counts,
-      closingCash: closingCash,
-      managerOverridePin: managerOverridePin,
-    );
-    await loadShift();
+  }) {
+    return singleFlight('shift:close', () async {
+      await apiService.closeShiftCounts(
+        shiftKey: shiftKey,
+        counts: counts,
+        closingCash: closingCash,
+        managerOverridePin: managerOverridePin,
+      );
+      await loadShift();
+    });
   }
 
   Future<Map<String, dynamic>> getCashDrawer() => apiService.getCashDrawer();

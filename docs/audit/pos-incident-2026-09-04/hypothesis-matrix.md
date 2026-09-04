@@ -121,9 +121,20 @@ Each row: symptom → leading hypothesis → evidence → verdict → how to fal
   [shifts.js:62-64](../../../server/services/shifts.js#L62-L64). Client `closeShift`
   toggles `_isLoadingShift` but does not prevent concurrent dispatch —
   [pos_provider.dart:701-714](../../../flutter-apps/dandpak_core/lib/src/providers/pos_provider.dart#L701-L714).
-- **Verdict:** **CONFIRMED-REAL.**
-- **Falsify:** fire 50 close-shift calls during a delayed response → one API call, one
-  modal, one closure; late error does not push a route after dispose.
+- **Verdict:** **CONFIRMED-REAL — client single-flight FIXED + TESTED; UI modal-singleton
+  + server conditional close remain.**
+  - **Client single-flight — DONE.** Added `PosProvider.singleFlight(key, action)` and
+    wrapped `openShiftCounts`/`closeShiftCounts` (the ShiftDialog mutations) so rapid
+    "Kết ca" clicks fire the API **once**; the lock releases in `finally` (errors don't
+    wedge it) — [pos_provider.dart:716-772](../../../flutter-apps/dandpak_core/lib/src/providers/pos_provider.dart#L716-L772).
+    Test `test/shift_single_flight_test.dart` **3/3**; analyze clean.
+  - **Remaining:** singleton route/modal key + `mounted` checks so a late response can't
+    push a dialog after dispose (UI); server `closeShift` is already double-close-safe in
+    the single-process synchronous runtime (2nd close → `getActiveShift` null → clear
+    error, [shifts.js:62-64](../../../server/services/shifts.js#L62-L64)) but a conditional
+    `UPDATE … WHERE status='open'` would harden multi-process deploys.
+- **Falsify:** widget test — 50 close-shift taps during a delayed response → one API call,
+  one modal, one closure; late error does not push a route after dispose.
 
 ### S7 — Prevent multiple Desktop instances; focus the running one
 - **Hypothesis:** No single-instance guard at the Windows entrypoint/native runner.
