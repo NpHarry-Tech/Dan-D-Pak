@@ -51,12 +51,19 @@ Each row: symptom → leading hypothesis → evidence → verdict → how to fal
 - **Evidence:** print enqueued in tx then dispatched post-commit with error logging —
   [payments.js:675, 748-758](../../../server/services/payments.js#L675);
   device-scoped print routing added — [payments.js:81 comment](../../../server/modules/payments/routes.js#L78-L81).
-- **Verdict:** **DEPLOY-GAP** for the "no bill at all" report; residual real gap =
-  the UI does not surface *print-job status* ("đang in / in lỗi / reprint") — the
-  brief's Gate-1 requirement. Tracked as **CONFIRMED-REAL (UX surface only)**.
-- **Falsify:** with print agent offline, run `/orders/:id/pay` → assert exactly one
-  payment, order `paid`, one `print_jobs`/outbox row in a retryable state, and the
-  receipt payload carries a print status the client can render.
+- **Verdict:** **DEPLOY-GAP for "no bill at all"; the print-status surface is now
+  SERVER-DONE + TESTED, client banner remains.** The durable outbox already prevents
+  actual loss (worker retries), but the receipt didn't tell the client whether the bill
+  printed. `payOrder` (and `finalizeDeferredPaymentSideEffects`) now set
+  `receipt.print_status = 'sent' | 'pending'` from the outbox dispatch result —
+  [payments.js:748-760](../../../server/services/payments.js#L748-L760).
+- **Verification:** `server/receipt-print-status.test.mjs` **1/1** — with no printer
+  configured, the payment still commits exactly once, the order is `paid`, the durable
+  outbox row is present and not `done` (worker will retry), and the receipt reports
+  `print_status: 'pending'` (surfaced, not silent).
+- **Remaining (client):** show "đang in / in lỗi + in lại" when `print_status == 'pending'`
+  at the F&B (`pos_provider.payOrder`) and retail (`checkout_dialog`) success points, with
+  a permissioned, audited reprint. The server contract is in place.
 
 ### S3 — Table stays open/has items; reopen allows edit + second payment (double charge)  — **P0**
 - **Hypothesis:** On current source this is prevented; symptom fits an old build.

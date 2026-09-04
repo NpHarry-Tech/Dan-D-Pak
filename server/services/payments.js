@@ -747,8 +747,13 @@ export function payOrder(order_id, lines, options = {}, branch_id = 'sala') {
     }
     try {
       const printResult = processReceiptPrintOutbox({ id: receiptPrintOutboxId });
+      // Cho client biết bill ĐÃ GỬI máy in hay còn CHỜ (không im lặng mất bill):
+      // 'sent' = đã đưa vào tuyến in/agent; 'pending' = chưa có tuyến in, worker
+      // sẽ thử lại — UI phải cảnh báo + cho in lại. Payment KHÔNG phụ thuộc điều này.
+      receipt.print_status = printResult.failed > 0 ? 'pending' : 'sent';
       if (printResult.failed) throw new Error('Lệnh in hóa đơn đang chờ worker thử lại');
     } catch (e) {
+      if (!receipt.print_status) receipt.print_status = 'pending';
       logSystem({
         level: 'error', source: 'printer', eventType: 'receipt_enqueue_failed',
         title: 'Thanh toán đã thành công nhưng chưa tạo được lệnh in hóa đơn',
@@ -789,10 +794,13 @@ export function finalizeDeferredPaymentSideEffects(receipt, branch_id = 'sala') 
     branchId: branch_id, orderId: order_id, action: 'archive_paid_sale' }); }
   try {
     const r = processReceiptPrintOutbox({ id: outboxId });
+    receipt.print_status = r.failed > 0 ? 'pending' : 'sent';
     if (r.failed) throw new Error('Lệnh in hóa đơn đang chờ worker thử lại');
-  } catch (e) { logSystem({ level: 'error', source: 'printer', eventType: 'receipt_enqueue_failed',
-    title: 'Thanh toán đã thành công nhưng chưa tạo được lệnh in hóa đơn', message: e.message,
-    branchId: branch_id, orderId: order_id, action: 'enqueue_paid_receipt' }); }
+  } catch (e) {
+    if (!receipt.print_status) receipt.print_status = 'pending';
+    logSystem({ level: 'error', source: 'printer', eventType: 'receipt_enqueue_failed',
+      title: 'Thanh toán đã thành công nhưng chưa tạo được lệnh in hóa đơn', message: e.message,
+      branchId: branch_id, orderId: order_id, action: 'enqueue_paid_receipt' }); }
   try { emit('payment:done', { order_id, receipt }, branch_id); emit('stats:dirty', {}, branch_id); }
   catch (e) { logSystem({ level: 'error', source: 'realtime', eventType: 'payment_emit_failed',
     title: 'Thanh toán đã thành công nhưng realtime chưa phát được', message: e.message,

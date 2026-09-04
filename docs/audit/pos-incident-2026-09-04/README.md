@@ -92,8 +92,9 @@ each with a passing test and clean analyze. Full detail per symptom in `hypothes
 | S13 | Haravan subscribe fails opaquely | **Structured redacted diagnostics FIXED**; live E2E blocked | `haravan-subscribe-diagnostics.test.mjs` 3/3 |
 
 **Deliberately NOT done (documented, not started):**
-- **S2** print-status UX surface (Gate 1) — payment already commits before print (outbox);
-  the remaining work is showing "đang in / in lỗi / reprint" in the UI.
+- **S2** print-status — **server DONE + TESTED** (`receipt.print_status = sent|pending`,
+  `receipt-print-status.test.mjs` 1/1); the remaining piece is the client banner + audited
+  reprint at the F&B/retail success points.
 - **S10** sell-first launcher IA (Gate 9) — by the brief, only after S1–S9 are green; needs
   a feature/route/role parity map first.
 - **S11** settings thumbnail centering — the instance checked (`settings_users_panel`
