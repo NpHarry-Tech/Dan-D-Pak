@@ -291,28 +291,81 @@ async function haravanRequest(path, { shopDomain = '', method = 'GET', body = nu
   throw lastError;
 }
 
+// host + path, KHÔNG kèm query/token — an toàn để ghi vào log chẩn đoán.
+function safeEndpoint(url) {
+  try { const u = new URL(url); return `${u.host}${u.pathname}`; }
+  catch { return String(url).split('?')[0]; }
+}
+
 async function webhookSubscribeRequest(shopDomain, method = 'POST') {
   const cfg = config(shopDomain);
-  const res = await fetch(`${WEBHOOK_BASE}/api/subscribe`, {
-    method,
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${cfg.accessToken}` },
-    body: method === 'POST' ? '{}' : undefined,
-  });
+  const url = `${WEBHOOK_BASE}/api/subscribe`;
+  const shop = normShop(shopDomain || cfg.shopDomain);
+  const startedAt = Date.now();
+  let res;
+  try {
+    res = await fetch(url, {
+      method,
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${cfg.accessToken}` },
+      body: method === 'POST' ? '{}' : undefined,
+    });
+  } catch (netErr) {
+    // Lỗi mạng/DNS/TLS TRƯỚC khi có response — vẫn phải điều tra được.
+    const e = new Error(`Haravan webhook ${method} loi mang: ${netErr.message}`);
+    e.diagnostic = {
+      stage: 'network', method, endpoint: safeEndpoint(url), shop_domain: shop,
+      latency_ms: Date.now() - startedAt, cause: netErr.code || netErr.name || 'network_error',
+    };
+    throw e;
+  }
+  const latency_ms = Date.now() - startedAt;
   const data = await res.json().catch(() => ({}));
-  if (!res.ok || data.error === true) throw new Error(data.message || data.error || `Haravan webhook ${res.status}`);
+  if (!res.ok || data.error === true) {
+    const message = String(data.message || data.error || `Haravan webhook ${res.status}`).slice(0, 200);
+    const e = new Error(message);
+    e.status = res.status;
+    // Chẩn đoán CÓ CẤU TRÚC, đã REDACT (không bao giờ chứa access token — token chỉ
+    // nằm trong header request, không đưa vào đây). Đủ để so với tài liệu Haravan.
+    e.diagnostic = {
+      stage: 'http', method, endpoint: safeEndpoint(url), http_status: res.status,
+      haravan_code: data.code || data.error_code || null,
+      haravan_message: message, shop_domain: shop, latency_ms,
+    };
+    throw e;
+  }
   return data;
 }
 
 export async function subscribeWebhook(shopDomain = '') {
-  const data = await webhookSubscribeRequest(shopDomain, 'POST');
-  audit('haravan.webhook.subscribe', { shop_domain: normShop(shopDomain || config().shopDomain) }, defaultBranch(shopDomain), 'haravan');
-  return data;
+  const shop = normShop(shopDomain || config(shopDomain).shopDomain);
+  try {
+    const data = await webhookSubscribeRequest(shopDomain, 'POST');
+    audit('haravan.webhook.subscribe', { shop_domain: shop }, defaultBranch(shopDomain), 'haravan');
+    return data;
+  } catch (err) {
+    // "Nhận từ Haravan • 1" đỏ mà không rõ vì sao: ghi lại chẩn đoán có cấu trúc
+    // (status/endpoint/haravan_message/latency, KHÔNG token) để còn điều tra được.
+    try {
+      writeSyncLog({ shop_domain: shop, topic: 'webhook/subscribe', status: 'failed',
+        error_message: err.message, raw_payload: err.diagnostic || null });
+    } catch { /* logging must not mask the real error */ }
+    throw err;
+  }
 }
 
 export async function unsubscribeWebhook(shopDomain = '') {
-  const data = await webhookSubscribeRequest(shopDomain, 'DELETE');
-  audit('haravan.webhook.unsubscribe', { shop_domain: normShop(shopDomain || config().shopDomain) }, defaultBranch(shopDomain), 'haravan');
-  return data;
+  const shop = normShop(shopDomain || config(shopDomain).shopDomain);
+  try {
+    const data = await webhookSubscribeRequest(shopDomain, 'DELETE');
+    audit('haravan.webhook.unsubscribe', { shop_domain: shop }, defaultBranch(shopDomain), 'haravan');
+    return data;
+  } catch (err) {
+    try {
+      writeSyncLog({ shop_domain: shop, topic: 'webhook/unsubscribe', status: 'failed',
+        error_message: err.message, raw_payload: err.diagnostic || null });
+    } catch { /* logging must not mask the real error */ }
+    throw err;
+  }
 }
 
 function upsertState(shopDomain, resource, cursor) {

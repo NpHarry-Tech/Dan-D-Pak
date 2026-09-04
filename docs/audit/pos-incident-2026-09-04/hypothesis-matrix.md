@@ -207,10 +207,21 @@ Each row: symptom → leading hypothesis → evidence → verdict → how to fal
   [api.js:287-299](../../../server/api.js#L287-L299), webhook verify/handle at
   [index.js:138-152](../../../server/index.js#L138-L152). No captured failure body/status/
   scope available in-session; must not be invented.
-- **Verdict:** **BLOCKED-EXTERNAL.** Do not assert cause without a logged failure.
-- **Falsify:** capture one failure (method/host+path/status/Haravan code/scopes/shop/
-  callback/topic/latency, tokens redacted); compare against Haravan docs (HTTPS callback,
-  subscribe/receive/authenticate/unsubscribe/list); reconcile idempotently.
+- **Verdict:** **BLOCKED-EXTERNAL for live E2E — but the failure is now CAPTURABLE
+  (diagnostics FIXED + TESTED).** The subscribe path previously threw a bare message.
+  Now `webhookSubscribeRequest` builds a **structured, token-free** `diagnostic`
+  (stage, method, endpoint host+path, http_status, haravan_code, haravan_message,
+  shop_domain, latency_ms) and `subscribeWebhook`/`unsubscribeWebhook` persist it to
+  `sync_logs` (raw_payload) on failure — [haravanConnector.js:294-364](../../../server/services/haravanConnector.js#L294-L364).
+  Test `server/haravan-subscribe-diagnostics.test.mjs` **3/3** (401 → structured
+  diagnostic; sync_logs row written; DNS/network → `stage:network`; the secret token
+  never appears in the diagnostic or the log).
+- **Still BLOCKED:** the actual live subscribe against a real shop needs a Haravan dev
+  store/token (none in-session). But when it next fails in the field, the cause
+  (status/scope/callback/latency) will be recorded instead of an opaque "• 1".
+- **Falsify (remaining):** with a dev store, compare a real captured failure against
+  Haravan docs (HTTPS callback; subscribe/receive/authenticate/unsubscribe/list) and
+  confirm idempotent reconcile.
 
 ---
 
