@@ -1,6 +1,6 @@
 // Retail checkout & returns. Reuses the order + payment core so retail revenue
 // flows into the same dashboard as FnB.
-import { db, uid, now, audit } from '../db.js';
+import { db, uid, now, audit, buildAuditEntry, insertAuditRow, auditPostCommit } from '../db.js';
 import { parseJson } from '../core/util.js';
 import { emit } from '../realtime.js';
 import { createOrUpdateOrder, getOrder, recomputeTotals } from './orders.js';
@@ -9,6 +9,7 @@ import { returnSku, applyChannelPrice } from './inventory.js';
 import { buildDiscountPlan } from './vouchers.js';
 import { getCustomer, recordPurchase } from './customers.js';
 import { orderReceipt } from './history.js';
+import { logSystem } from './systemLogs.js';
 
 function snapshotCustomer(c) {
   if (!c) return null;
@@ -93,7 +94,23 @@ export function checkout({ items, payments, voucher_id = null, customer = null, 
   const cartSlot = (cart_slot != null && Number.isInteger(Number(cart_slot))) ? Number(cart_slot) : null;
   const cartVersion = (cart_version != null) ? Number(cart_version) : null;
 
+  const postCommitAudits = [];
+  const postCommitEvents = [];
+  const postCommitCallbacks = [];
+  const stageAudit = (action, detail, actor) => {
+    const entry = buildAuditEntry(action, detail, branch_id, actor);
+    if (!entry) return;
+    insertAuditRow(entry);
+    postCommitAudits.push(entry);
+  };
+  const stageEvent = (event, payload) => postCommitEvents.push({
+    event,
+    payload: { ...payload, event_id: uid('evt_'), event_version: 1 },
+  });
+  const deferSideEffect = callback => postCommitCallbacks.push(callback);
+  let inTx = false;
   db.prepare('BEGIN IMMEDIATE').run();
+  inTx = true;
   try {
     if (requestId) {
       const existing = db.prepare(`SELECT id,status FROM orders WHERE branch_id=? AND client_request_id=?`).get(branch_id, requestId);
@@ -107,6 +124,7 @@ export function checkout({ items, payments, voucher_id = null, customer = null, 
           }, branch_id);
           replay.idempotent_replay = true;
           db.prepare('COMMIT').run();
+          inTx = false;
           finalizeDeferredPaymentSideEffects(replay, branch_id);
           return replay;
         }
@@ -114,6 +132,7 @@ export function checkout({ items, payments, voucher_id = null, customer = null, 
         const receipt = orderReceipt(existing.id, branch_id);
         receipt.idempotent_replay = true;
         db.prepare('COMMIT').run();
+        inTx = false;
         return receipt;
       }
     }
@@ -172,7 +191,11 @@ export function checkout({ items, payments, voucher_id = null, customer = null, 
         } : null,
       };
     });
-    const order = createOrUpdateOrder({ branch_id, table_id: null, channel: 'retail', items: orderItems, actor: cashier || 'system', skipTransaction: true });
+    const order = createOrUpdateOrder({
+      branch_id, table_id: null, channel: 'retail', items: orderItems,
+      actor: cashier || 'system', skipTransaction: true,
+      stageAudit, stageEvent, deferSideEffect,
+    });
     if (requestId) db.prepare(`UPDATE orders SET client_request_id=? WHERE id=?`).run(requestId, order.id);
     db.prepare(`UPDATE orders SET voucher_id=?, voucher_code=? WHERE id=?`)
       .run(discountPlan.orderVoucher?.id || null, discountPlan.orderVoucher?.code || null, order.id);
@@ -194,7 +217,11 @@ export function checkout({ items, payments, voucher_id = null, customer = null, 
       device_id,
     }, branch_id);
     if (receipt.fully_settled !== false && (cust?.id || cust?.phone)) {
-      recordPurchase(cust, receipt.total, branch_id, order.id);
+      recordPurchase(cust, receipt.total, branch_id, order.id, {
+        auditFn: stageAudit,
+        deferSideEffect,
+        rethrow: true,
+      });
     }
     receipt.discount_breakdown = discountBreakdown;
     receipt.voucher = discountPlan.orderVoucher;
@@ -209,6 +236,19 @@ export function checkout({ items, payments, voucher_id = null, customer = null, 
     }
 
     db.prepare('COMMIT').run();
+    inTx = false;
+    for (const entry of postCommitAudits) auditPostCommit(entry);
+    for (const item of postCommitEvents) emit(item.event, item.payload, branch_id);
+    for (const callback of postCommitCallbacks) {
+      try { callback(); }
+      catch (error) {
+        logSystem({
+          level: 'error', source: 'retail', eventType: 'post_commit_callback_failed',
+          title: 'Checkout committed but a post-commit task failed',
+          message: error?.message || String(error), action: 'retail_post_commit',
+        });
+      }
+    }
     // Báo các máy khác đang xem ô này dọn giỏ (đơn đã chốt). Sau COMMIT để không
     // phát tín hiệu nếu transaction bị rollback.
     if (cartSlot != null) {
@@ -217,7 +257,7 @@ export function checkout({ items, payments, voucher_id = null, customer = null, 
     finalizeDeferredPaymentSideEffects(receipt, branch_id);
     return receipt;
   } catch (err) {
-    db.prepare('ROLLBACK').run();
+    if (inTx) db.prepare('ROLLBACK').run();
     throw err;
   }
 }

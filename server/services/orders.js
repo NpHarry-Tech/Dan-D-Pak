@@ -1,6 +1,6 @@
 // Order lifecycle: create/append items, route to KDS stations, and drive
 // kitchen ticket status transitions.
-import { db, uid, now, audit } from '../db.js';
+import { db, uid, now, audit, buildAuditEntry, insertAuditRow, auditPostCommit } from '../db.js';
 import { parseJson } from '../core/util.js';
 import { emit } from '../realtime.js';
 import { printKitchenTickets, printKitchenUpdate, printRunnerSlip, printCupLabels } from './printing.js';
@@ -12,6 +12,7 @@ import { archiveOrder } from './archive.js';
 import { orderVatTotals, salePrice } from './tax.js';
 import { sendPushForCategory } from './push.js';
 import { businessDayBoundsUtc, businessParts } from '../core/businessClock.js';
+import { logSystem } from './systemLogs.js';
 
 // Số Bill nội bộ: Dan{ddMMyy}{seq} — seq là số thứ tự đơn trong NGÀY (reset mỗi
 // ngày vận hành: ca sáng → ca tối đều trong 1 ngày dương lịch). VD Dan210626001.
@@ -188,6 +189,27 @@ export function createOrUpdateOrder(options) {
   requireOpenShiftForSales(branch_id);
 
   let inTx = false;
+  const localAudits = [];
+  const localEvents = [];
+  const localCallbacks = [];
+  const ownsPostCommit = !skipTransaction && !options.stageAudit && !options.stageEvent && !options.deferSideEffect;
+  const recordAudit = options.stageAudit || (ownsPostCommit
+    ? (action, detail, eventActor) => {
+      const entry = buildAuditEntry(action, detail, branch_id, eventActor);
+      if (!entry) return;
+      insertAuditRow(entry);
+      localAudits.push(entry);
+    }
+    : (action, detail, eventActor) => audit(action, detail, branch_id, eventActor));
+  const publishEvent = options.stageEvent || (ownsPostCommit
+    ? (event, payload) => localEvents.push({
+      event,
+      payload: { ...payload, event_id: uid('evt_'), event_version: 1 },
+    })
+    : emit);
+  const deferSideEffect = options.deferSideEffect || (ownsPostCommit
+    ? callback => localCallbacks.push(callback)
+    : callback => callback());
   if (!skipTransaction) {
     db.prepare('BEGIN IMMEDIATE').run();
     inTx = true;
@@ -303,32 +325,45 @@ export function createOrUpdateOrder(options) {
     recomputeTotals(order.id);
     if (table_id) {
       db.prepare(`UPDATE tables SET status='busy' WHERE id=?`).run(table_id);
-      emit('table:updated', getTableState(table_id), branch_id);
+      publishEvent('table:updated', getTableState(table_id), branch_id);
     }
-    audit(needsStaffConfirm ? 'order.pending' : 'order.send', { order: order.id, items: created.length, source }, branch_id, actor);
+    recordAudit(needsStaffConfirm ? 'order.pending' : 'order.send', { order: order.id, items: created.length, source }, actor);
 
     const full = getOrder(order.id);
-    archiveOrder(full);
+    deferSideEffect(() => archiveOrder(full));
     const printable = created.filter(i => i.status === 'new' && i.station !== 'retail');
-    if (printable.length) printKitchenTickets(full, printable, branch_id, actor);
-    printCupLabels(full, created, branch_id);
-    emit('order:new', { order: full, newItems: created, isNew, pendingConfirm: needsStaffConfirm }, branch_id);
+    if (printable.length) deferSideEffect(() => printKitchenTickets(full, printable, branch_id, actor));
+    deferSideEffect(() => printCupLabels(full, created, branch_id));
+    publishEvent('order:new', { order: full, newItems: created, isNew, pendingConfirm: needsStaffConfirm }, branch_id);
     if (needsStaffConfirm) {
-      emit('order:pending', { order: full, newItems: created }, branch_id);
+      publishEvent('order:pending', { order: full, newItems: created }, branch_id);
       // A2: PUSH FCM để nhân viên nhận thông báo cả khi ĐÃ TẮT app/khoá máy
       // (socket/AppNotifier chỉ chạy khi app đang mở). Lọc THEO ĐỊNH TUYẾN trong
       // Cài đặt (category 'fnb_order'). Best-effort, không chặn.
-      sendPushForCategory(branch_id, 'fnb_order', {
+      deferSideEffect(() => sendPushForCategory(branch_id, 'fnb_order', {
         title: 'Khách tự gọi món',
         body: `Bàn ${full.table_code || '—'} có món chờ xác nhận`,
         data: { type: 'order_pending', order_id: full.id },
-      }).catch(() => {});
+      }).catch(() => {}));
     }
-    if (printable.length) emit('kds:refresh', { station: 'all' }, branch_id);
-    emit('stats:dirty', {}, branch_id);
+    if (printable.length) publishEvent('kds:refresh', { station: 'all' }, branch_id);
+    publishEvent('stats:dirty', {}, branch_id);
 
     if (inTx) {
       db.prepare('COMMIT').run();
+      inTx = false;
+      for (const entry of localAudits) auditPostCommit(entry);
+      for (const item of localEvents) emit(item.event, item.payload, branch_id);
+      for (const callback of localCallbacks) {
+        try { callback(); }
+        catch (error) {
+          logSystem({
+            level: 'error', source: 'orders', eventType: 'post_commit_callback_failed',
+            title: 'Order committed but a post-commit task failed',
+            message: error?.message || String(error), action: 'order_post_commit',
+          });
+        }
+      }
     }
     return full;
   } catch (err) {
@@ -845,9 +880,9 @@ export function createStaffCall(table_id, reason, branch_id = 'sala') {
   return { id };
 }
 
-export function resolveStaffCall(table_id, branch_id = 'sala') {
+export function resolveStaffCall(table_id, branch_id = 'sala', publishEvent = emit) {
   db.prepare(`UPDATE staff_calls SET status='done' WHERE table_id=? AND status='open'`).run(table_id);
-  emit('table:updated', getTableState(table_id), branch_id);
+  publishEvent('table:updated', getTableState(table_id), branch_id);
 }
 
 export function listStaffCalls(branch_id = 'sala') {

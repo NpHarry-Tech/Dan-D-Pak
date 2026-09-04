@@ -32,6 +32,25 @@ extension ApiServicePrintingApi on ApiService {
         errorMessage: 'Không in lại được');
   }
 
+  Future<Map<String, dynamic>> receiptPrintStatus(String paymentId) async {
+    return mapFrom(await getJson('/api/payments/$paymentId/print-status',
+        timeout: const Duration(seconds: 3),
+        errorMessage: 'Không đọc được trạng thái in hóa đơn'));
+  }
+
+  Future<Map<String, dynamic>> waitForReceiptPrint(String paymentId,
+      {Duration timeout = const Duration(seconds: 45)}) async {
+    final deadline = DateTime.now().add(timeout);
+    Map<String, dynamic> state = <String, dynamic>{'status': 'queued'};
+    while (DateTime.now().isBefore(deadline)) {
+      state = await receiptPrintStatus(paymentId);
+      if (state['status'] == 'printed' || state['status'] == 'failed')
+        return state;
+      await Future<void>.delayed(const Duration(seconds: 1));
+    }
+    return state;
+  }
+
   /// dùng để in bill tự động sau thanh toán kể cả khi tuyến in chưa bật auto.
   Future<Map<String, dynamic>> printJobNow(String id) async {
     return mapFrom(await postJson('/api/print/jobs/$id/print',

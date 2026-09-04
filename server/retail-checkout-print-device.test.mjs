@@ -105,7 +105,7 @@ test('luong retail.checkout THAT truyen deviceId xuong toi lenh in', async () =>
   Inv.createSku({ id: 'sku_in', name: 'Hat dieu 500g', price: 50000, stock: 10 }, BR);
 
   const truoc = db.prepare(`SELECT COUNT(*) c FROM print_jobs WHERE type='receipt'`).get().c;
-  Retail.checkout({
+  const receipt = Retail.checkout({
     items: [{ sku_id: 'sku_in', qty: 1 }],
     payments: [{ method: 'cash', amount: 50000 }],
     branch_id: BR,
@@ -114,6 +114,18 @@ test('luong retail.checkout THAT truyen deviceId xuong toi lenh in', async () =>
   });
   const sau = db.prepare(`SELECT COUNT(*) c FROM print_jobs WHERE type='receipt'`).get().c;
   assert.ok(sau > truoc, 'checkout phai sinh lenh in hoa don');
+  assert.equal(receipt.print_status, 'queued',
+    'tao job ben khong duoc gan nhan da in khi agent chua ACK');
+  assert.equal(receipt.print_job_ids.length, 1);
+  assert.equal(Print.receiptPrintStatus(receipt.payment_id, BR).status, 'queued');
+  const pending = Print.pendingAgentJobs(BR, { limit: 100, deviceId: 'dev_sunmi' });
+  assert.ok(pending.some(item => item.id === receipt.print_job_ids[0]));
+  assert.equal(Print.receiptPrintStatus(receipt.payment_id, BR).status, 'claimed');
+  Print.agentReportResult(receipt.print_job_ids[0], BR, {
+    ok: true,
+    deviceId: 'dev_sunmi',
+  });
+  assert.equal(Print.receiptPrintStatus(receipt.payment_id, BR).status, 'printed');
 
   const job = db.prepare(
     `SELECT printer FROM print_jobs WHERE type='receipt' ORDER BY created_at DESC LIMIT 1`).get();

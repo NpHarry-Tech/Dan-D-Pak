@@ -1,8 +1,9 @@
 // KHÔNG IM LẶNG MẤT BILL (Gate-1). Sự cố báo cáo: "thanh toán thành công nhưng
 // không thấy bill in". Trên nguồn hiện tại, thanh toán commit rồi in qua OUTBOX
 // bền (worker retry) → bill KHÔNG mất; nhưng receipt trước đây KHÔNG cho client
-// biết bill đã gửi máy in hay còn chờ. Nay receipt.print_status = 'sent'|'pending'
-// để UI cảnh báo + cho in lại. Payment TUYỆT ĐỐI không phụ thuộc máy in.
+// biết bill đã in thật, agent đã nhận hay còn chờ. receipt.print_status dùng
+// state thật ('queued'|'claimed'|'printed'|'pending'), không gọi 'sent' là đã in.
+// Payment TUYỆT ĐỐI không phụ thuộc máy in.
 import assert from 'node:assert/strict';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';

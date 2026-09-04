@@ -11,9 +11,9 @@
 |---|---|---|---|
 | Repo | `D:/Dan D Pak` | `D:/Dan D Pak` | ✓ |
 | Branch | `fix/universal-print-validation` | same | ✓ |
-| HEAD | `fd4faee7…eddb5` | `fd4faee7fdd452708a4e0e7dacee6f0c755eddb5` | ✓ |
+| HEAD | continuation checkpoint | `5839151e924e13ec70869568860ce4965365f61e` at preflight | ✓ |
 | Worktree | clean | clean (`git status --porcelain` empty) | ✓ |
-| Upstream | — | `origin/fix/universal-print-validation`, 0 ahead / 0 behind | ✓ |
+| Upstream | — | `origin/fix/universal-print-validation`, 15 local commits ahead | ✓ |
 | Worktrees | single | single (`git worktree list`) | ✓ |
 
 No `AGENTS.md` exists in the repo (searched to depth 3, `.agents/` is empty).
@@ -24,9 +24,9 @@ Architecture guidance lives in `docs/` (ARCHITECTURE.md, MODULE_MAP.md, REPO_STR
 - **Node**: `v24.14.1`
 - **SQLite**: `3.51.2` via **`node:sqlite`** (experimental) — confirmed at runtime
   (`SELECT sqlite_version()`), not from a CLI.
-- **Relevance to the brief's WAL-reset warning**: the old multi-connection
-  WAL-reset defect affected much older SQLite builds. **3.51.2 is not affected** —
-  no dependency bump is warranted on that basis. (Do NOT panic-upgrade.)
+- **Relevance to the brief's WAL/reset warning**: the runtime version is a fact,
+  not proof that application-level transaction ordering is safe. No dependency
+  change was made; the payment paths were verified with two real server processes.
 - **Test runner**: Node built-in `node:test` (`.test.mjs`), each suite boots an
   isolated temp DB via `SQLITE_PATH`. Reporter prints `ℹ pass/fail`, not `# tests`.
 - **Flutter**: `3.44.4` stable; Dart present; `flutter-apps/dandpak_core/test/`
@@ -34,17 +34,17 @@ Architecture guidance lives in `docs/` (ARCHITECTURE.md, MODULE_MAP.md, REPO_STR
 
 ## 2. Headline conclusion (the thing that changes what we do next)
 
-**The F&B/Retail P0 money invariants are already implemented and test-green in
-`fd4faee`.** The reported "checkout succeeds, no bill, table stays open, second
-payment possible → double charge" behavior **could not be reproduced against
-current source** and is contradicted by the code and passing tests below. The most
-probable cause of the observed incident is that the **deployed build is older than
-current source** (the brief itself notes Review runs `ae8c64d` and production is an
-untouched older installer).
+The conditional close/idempotency guards were present, but the original conclusion
+"deploy gap only" was too strong. Source inspection plus fault injection found a
+real P0 ordering defect: payment/order/inventory/e-invoice activity, realtime and
+filesystem callbacks could run before the owning transaction committed; legacy
+`audit()` also swallowed a required SQLite audit failure. The payment could then
+roll back while observers had already seen success.
 
-➡️ **The correct P0 remediation is a controlled redeploy of current source after
-full regression — not a UI rewrite and not new payment logic.** Rewriting the
-checkout now would risk regressing invariants that are currently correct.
+The affected paths now insert required audit rows inside the transaction and stage
+archive, realtime, push, print and customer/e-invoice filesystem work until after
+`COMMIT`. A failed required audit rolls back order/payment/table/stock/outbox with no
+success event. This is a source fix, not merely a redeploy recommendation.
 
 Evidence (all in `server/services/payments.js` `payOrder`, and the F&B client):
 
@@ -71,7 +71,9 @@ Evidence (all in `server/services/payments.js` `payOrder`, and the F&B client):
 | `retail-double-checkout` | 2 | 2 | 0 |
 | `retail-checkout-lock` | 7 | 7 | 0 |
 | `table-reset` | 4 | 4 | 0 |
-| `fnb-double-pay-guard` *(added this session)* | 3 | 3 | 0 |
+| `fnb-double-pay-guard` *(fault injection included)* | 5 | 5 | 0 |
+| `payment-concurrency-http.integration` *(2 server processes, 150 requests)* | 3 | 3 | 0 |
+| printing regression group | 39 | 39 | 0 |
 
 ## 3. Status ledger — what was landed this branch vs. what remains
 
@@ -81,7 +83,7 @@ each with a passing test and clean analyze. Full detail per symptom in `hypothes
 | Sym | Symptom | Status | Test |
 |---|---|---|---|
 | S1 | Self-order bell keeps ringing after confirm | **FIXED** — key-based ring dedup + clear on the confirm/reject re-emit ([orders.js:430](../../../server/services/orders.js#L430)/[477](../../../server/services/orders.js#L477)) | `ring_controller_dedup_test.dart` 7/7 |
-| S3 | Double charge / stuck table | **DEPLOY-GAP** (source correct) + guard assertion added | `fnb-double-pay-guard.test.mjs` 3/3 |
+| S3 | Double charge / stuck table | **SOURCE GAP FOUND + FIXED LOCALLY** — transactional audit/side-effect staging + explicit 409 | fault injection 5/5; two-process HTTP 3/3 |
 | S4 | `item.cancel` opaque id | **FIXED** — món snapshot in audit | `audit-item-cancel-snapshot.test.mjs` 2/2 |
 | S5 | `/api/shifts/current` 4.7–28.7 s pile-ups | **FIXED** — client coalescing + server payload cap (577 KB→61 KB, −89%; benchmarked, server p95 ≤24 ms so CPU/indexes were never the issue) | `get_coalesce_test.dart` 3/3 · `shift-report-bill-cap.test.mjs` 3/3 |
 | S6 | "Kết ca" stacked calls/modals | **Client single-flight FIXED**; UI modal-singleton remains | `shift_single_flight_test.dart` 3/3 |
@@ -92,8 +94,8 @@ each with a passing test and clean analyze. Full detail per symptom in `hypothes
 | S13 | Haravan subscribe fails opaquely | **Structured redacted diagnostics FIXED**; live E2E blocked | `haravan-subscribe-diagnostics.test.mjs` 3/3 |
 
 **Deliberately NOT done (documented, not started):**
-- **S2** print-status — **server DONE + TESTED** (`receipt.print_status = sent|pending`,
-  `receipt-print-status.test.mjs` 1/1); the remaining piece is the client banner + audited
+- **S2** print-status — **server state semantics DONE + TESTED** (`queued/claimed/printed/pending`,
+  never `sent == printed`; `receipt-print-status.test.mjs` 1/1); the remaining piece is the persistent client banner + audited
   reprint at the F&B/retail success points.
 - **S10** sell-first launcher IA (Gate 9) — by the brief, only after S1–S9 are green; needs
   a feature/route/role parity map first.

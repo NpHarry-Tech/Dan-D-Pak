@@ -1,8 +1,10 @@
 // Payment Core: multi-method payment lines, close bill, trigger inventory deduction.
 import crypto from 'node:crypto';
-import { db, uid, now, audit } from '../db.js';
+import {
+  db, uid, now, audit, buildAuditEntry, insertAuditRow, auditPostCommit,
+} from '../db.js';
 import { cleanText, headerVal, safeEqual } from '../core/util.js';
-import { emit } from '../realtime.js';
+import { publishRealtime as emit } from '../core/realtimeBus.js';
 import { getOrder, getTableState, recomputeTotals, resolveStaffCall, capSoBillKhiThanhToan } from './orders.js';
 import { deductForOrder } from './inventory.js';
 import { enqueueReceiptPrint, processReceiptPrintOutbox, printConfigForJob } from './printing.js';
@@ -431,6 +433,44 @@ function settlePaymentLines(lines, total) {
   return { lines: settled, paid, applied, fullySettled };
 }
 
+function paymentEventPayload(payload = {}) {
+  return {
+    ...payload,
+    event_id: uid('evt_'),
+    event_version: 1,
+  };
+}
+
+function attachPaymentPostCommit(result, audits, events, callbacks) {
+  if (audits.length || events.length || callbacks.length) {
+    result._payment_post_commit = {
+      audits: [...audits],
+      events: [...events],
+      callbacks: [...callbacks],
+    };
+  }
+  return result;
+}
+
+function flushPaymentPostCommit(result) {
+  const pending = result?._payment_post_commit;
+  if (!pending) return result;
+  delete result._payment_post_commit;
+  for (const entry of pending.audits || []) auditPostCommit(entry);
+  for (const item of pending.events || []) emit(item.event, item.payload, item.branch_id);
+  for (const callback of pending.callbacks || []) {
+    try { callback(); }
+    catch (error) {
+      logSystem({
+        level: 'error', source: 'payment', eventType: 'post_commit_callback_failed',
+        title: 'Thanh toán đã thành công nhưng tác vụ sau commit thất bại',
+        message: error?.message || String(error), action: 'payment_post_commit',
+      });
+    }
+  }
+  return result;
+}
+
 export function payOrder(order_id, lines, options = {}, branch_id = 'sala') {
   const {
     discount,
@@ -453,6 +493,28 @@ export function payOrder(order_id, lines, options = {}, branch_id = 'sala') {
     provider_transaction_id = null,
   } = options;
 
+  const postCommitAudits = [];
+  const postCommitEvents = [];
+  const postCommitCallbacks = [];
+  const stageAudit = (action, detail, actor) => {
+    const entry = buildAuditEntry(action, detail, branch_id, actor);
+    if (!entry) return;
+    insertAuditRow(entry);
+    postCommitAudits.push(entry);
+  };
+  const stageEvent = (event, payload) => {
+    postCommitEvents.push({
+      event,
+      payload: paymentEventPayload(payload),
+      branch_id,
+    });
+  };
+  const finishPostCommit = (result) => {
+    attachPaymentPostCommit(result, postCommitAudits, postCommitEvents, postCommitCallbacks);
+    if (!skipTransaction) flushPaymentPostCommit(result);
+    return result;
+  };
+
   let inTx = false;
   if (!skipTransaction) {
     db.prepare('BEGIN IMMEDIATE').run();
@@ -470,8 +532,11 @@ export function payOrder(order_id, lines, options = {}, branch_id = 'sala') {
         }
         const replayOrder = getOrder(order_id);
         const paidTotal = paidForOrder(order_id);
-        if (inTx) db.prepare('COMMIT').run();
-        return {
+        if (inTx) {
+          db.prepare('COMMIT').run();
+          inTx = false;
+        }
+        return finishPostCommit({
           order_id,
           bill_no: replayOrder?.bill_no || '',
           payment_id: replay.id,
@@ -481,14 +546,19 @@ export function payOrder(order_id, lines, options = {}, branch_id = 'sala') {
           fully_settled: replayOrder?.status === 'paid',
           status: replayOrder?.status || '',
           idempotent_replay: true,
-        };
+        });
       }
     }
     const order = getOrder(order_id);
     const wasPartiallyPaid = order?.status === 'partially_paid';
     if (wasPartiallyPaid) order.status = 'open';
     if (!order) throw new Error('Order không tồn tại');
-    if (order.status !== 'open') throw new Error('Order đã đóng');
+    if (order.status !== 'open') {
+      throw Object.assign(new Error('Order đã đóng'), {
+        status: 409,
+        code: 'ORDER_ALREADY_PAID',
+      });
+    }
     // Voucher/promo metadata belongs to the same unit of work as payment.
     if (voucher) {
       db.prepare(`UPDATE orders SET voucher_id=?, voucher_code=? WHERE id=? AND branch_id=?`)
@@ -512,7 +582,12 @@ export function payOrder(order_id, lines, options = {}, branch_id = 'sala') {
     if (customerSnapshot) {
       if (invoiceCustomer) {
         db.prepare(`UPDATE orders SET customer_json=?, invoice_choice='requested' WHERE id=?`).run(JSON.stringify(customerSnapshot), order_id);
-        audit('invoice.company_requested', { order: order_id, tax_code: invoiceCustomer.tax_code, email: invoiceCustomer.email, phone: invoiceCustomer.phone }, branch_id, cashier || 'system');
+        stageAudit('invoice.company_requested', {
+          order: order_id,
+          tax_code: invoiceCustomer.tax_code,
+          email: invoiceCustomer.email,
+          phone: invoiceCustomer.phone,
+        }, cashier || 'system');
       } else {
         db.prepare(`UPDATE orders SET customer_json=? WHERE id=?`).run(JSON.stringify(customerSnapshot), order_id);
       }
@@ -562,9 +637,16 @@ export function payOrder(order_id, lines, options = {}, branch_id = 'sala') {
       paymentIntent = PaymentIntents.assertCanFinalize(payment_intent_id, order_id, branch_id, remainingDue);
       if (paymentIntent.idempotent) {
         const canonical = getOrder(order_id);
-        if (inTx) db.prepare('COMMIT').run();
-        return { ...buildReceipt(order_id, paymentIntent.payment_id, [], canonical.total, { cashier }),
-          idempotent_replay: true, fully_settled: true, payment_intent_id: paymentIntent.id };
+        if (inTx) {
+          db.prepare('COMMIT').run();
+          inTx = false;
+        }
+        return finishPostCommit({
+          ...buildReceipt(order_id, paymentIntent.payment_id, [], canonical.total, { cashier }),
+          idempotent_replay: true,
+          fully_settled: true,
+          payment_intent_id: paymentIntent.id,
+        });
       }
       PaymentIntents.markIntent(paymentIntent.id, 'FINALIZING', { provider, provider_transaction_id,
         confirmation_source, confirmed_by });
@@ -588,7 +670,10 @@ export function payOrder(order_id, lines, options = {}, branch_id = 'sala') {
     const upd = db.prepare(`UPDATE orders SET status=?, paid_at=? WHERE id=? AND status IN ('open','partially_paid')`)
       .run(fullySettled ? 'paid' : 'partially_paid', fullySettled ? now() : null, order_id);
     if (upd.changes === 0) {
-      throw new Error('Hóa đơn đã được thanh toán hoặc không còn ở trạng thái mở.');
+      throw Object.assign(
+        new Error('Hóa đơn đã được thanh toán hoặc không còn ở trạng thái mở.'),
+        { status: 409, code: 'ORDER_ALREADY_PAID' },
+      );
     }
 
     // SỐ HOÁ ĐƠN CẤP TẠI ĐÂY — đúng lúc doanh thu phát sinh, không sớm hơn.
@@ -609,18 +694,21 @@ export function payOrder(order_id, lines, options = {}, branch_id = 'sala') {
     }
 
     if (!fullySettled) {
-      audit('payment.partial', {
+      stageAudit('payment.partial', {
         order: order_id, payment_id: pid, amount: payment.applied,
         paid_total: paidTotal, remaining_due: fresh.total - paidTotal,
         shift_id: shift?.id || null,
-      }, branch_id, cashier || 'system');
-      emit('payment:partial', {
+      }, cashier || 'system');
+      stageEvent('payment:partial', {
         order_id, payment_id: pid, paid_total: paidTotal,
         remaining_due: fresh.total - paidTotal,
-      }, branch_id);
-      emit('stats:dirty', {}, branch_id);
-      if (inTx) db.prepare('COMMIT').run();
-      return {
+      });
+      stageEvent('stats:dirty', {});
+      if (inTx) {
+        db.prepare('COMMIT').run();
+        inTx = false;
+      }
+      return finishPostCommit({
         order_id,
         bill_no: fresh.bill_no || '',
         payment_id: pid,
@@ -631,23 +719,28 @@ export function payOrder(order_id, lines, options = {}, branch_id = 'sala') {
         remaining_due: fresh.total - paidTotal,
         fully_settled: false,
         status: 'partially_paid',
-      };
+      });
     }
 
     // Mark all remaining active items served on close
     db.prepare(`UPDATE order_items SET status='served', served_at=? WHERE order_id=? AND status NOT IN ('served','cancelled')`)
       .run(now(), order_id);
 
-    deductForOrder(fresh, branch_id);
+    deductForOrder(fresh, branch_id, { audit: stageAudit, event: stageEvent });
 
     if (order.table_id) {
       const stillOpen = db.prepare(`SELECT 1 FROM orders WHERE table_id=? AND branch_id=? AND status IN ('open','partially_paid') LIMIT 1`)
         .get(order.table_id, branch_id);
       db.prepare(`UPDATE tables SET status=? WHERE id=?`).run(stillOpen ? 'busy' : 'free', order.table_id);
-      resolveStaffCall(order.table_id, branch_id);
-      emit('table:updated', getTableState(order.table_id), branch_id);
+      resolveStaffCall(order.table_id, branch_id, stageEvent);
+      stageEvent('table:updated', getTableState(order.table_id));
     }
-    audit('payment.done', { order: order_id, total: fresh.total, lines: payment.lines.length, shift_id: shift?.id || null }, branch_id, cashier || 'system');
+    stageAudit('payment.done', {
+      order: order_id,
+      total: fresh.total,
+      lines: payment.lines.length,
+      shift_id: shift?.id || null,
+    }, cashier || 'system');
     const receiptLines = db.prepare(`
       SELECT pl.method,pl.tendered_amount amount
       FROM payment_lines pl JOIN payments p ON p.id=pl.payment_id
@@ -712,10 +805,17 @@ export function payOrder(order_id, lines, options = {}, branch_id = 'sala') {
     // Tạo bản ghi HĐĐT KHÔNG được phép chặn thu tiền: buyer_info lệch (vd thiếu
     // email cho mode công ty) chỉ được hạ về placeholder consumer, không throw.
     try {
-      einvoice.createInvoiceRequest(order_id, atomicCustomerMode, atomicBuyerInfo, branch_id, cashier || 'system');
+      einvoice.createInvoiceRequest(order_id, atomicCustomerMode, atomicBuyerInfo,
+        branch_id, cashier || 'system', {
+          deferSideEffect: callback => postCommitCallbacks.push(callback),
+          stageAudit,
+        });
     } catch (buyerErr) {
       if (atomicCustomerMode === 'WALK_IN') throw buyerErr;
-      einvoice.createInvoiceRequest(order_id, 'WALK_IN', {}, branch_id, cashier || 'system');
+      einvoice.createInvoiceRequest(order_id, 'WALK_IN', {}, branch_id, cashier || 'system', {
+        deferSideEffect: callback => postCommitCallbacks.push(callback),
+        stageAudit,
+      });
     }
 
     if (inTx) {
@@ -728,8 +828,10 @@ export function payOrder(order_id, lines, options = {}, branch_id = 'sala') {
       // filesystem, printer or realtime side effects are attempted.
       receipt._receipt_print_outbox_id = receiptPrintOutboxId;
       receipt._side_effects_deferred = true;
-      return receipt;
+      return finishPostCommit(receipt);
     }
+
+    finishPostCommit(receipt);
 
     // Payment đã commit là sự thật tài chính và không được đảo ngược vì printer,
     // filesystem archive hay realtime transport. Sale snapshot trong DB là nguồn
@@ -750,8 +852,12 @@ export function payOrder(order_id, lines, options = {}, branch_id = 'sala') {
       // Cho client biết bill ĐÃ GỬI máy in hay còn CHỜ (không im lặng mất bill):
       // 'sent' = đã đưa vào tuyến in/agent; 'pending' = chưa có tuyến in, worker
       // sẽ thử lại — UI phải cảnh báo + cho in lại. Payment KHÔNG phụ thuộc điều này.
-      receipt.print_status = printResult.failed > 0 ? 'pending' : 'sent';
-      if (printResult.failed) throw new Error('Lệnh in hóa đơn đang chờ worker thử lại');
+      receipt.print_status = printResult.print_status;
+      receipt.print_job_ids = printResult.job_ids;
+      if (printResult.failed) {
+        receipt.print_error = 'Chưa có tuyến máy in hóa đơn khả dụng; lệnh đang chờ thử lại.';
+        throw new Error(receipt.print_error);
+      }
     } catch (e) {
       if (!receipt.print_status) receipt.print_status = 'pending';
       logSystem({
@@ -762,8 +868,8 @@ export function payOrder(order_id, lines, options = {}, branch_id = 'sala') {
       });
     }
     try {
-      emit('payment:done', { order_id, receipt }, branch_id);
-      emit('stats:dirty', {}, branch_id);
+      emit('payment:done', paymentEventPayload({ order_id, receipt }), branch_id);
+      emit('stats:dirty', paymentEventPayload({}), branch_id);
     } catch (e) {
       logSystem({
         level: 'error', source: 'realtime', eventType: 'payment_emit_failed',
@@ -785,6 +891,7 @@ export function payOrder(order_id, lines, options = {}, branch_id = 'sala') {
 }
 
 export function finalizeDeferredPaymentSideEffects(receipt, branch_id = 'sala') {
+  flushPaymentPostCommit(receipt);
   if (!receipt?._side_effects_deferred) return receipt;
   const order_id = receipt.order_id;
   const outboxId = receipt._receipt_print_outbox_id;
@@ -794,14 +901,21 @@ export function finalizeDeferredPaymentSideEffects(receipt, branch_id = 'sala') 
     branchId: branch_id, orderId: order_id, action: 'archive_paid_sale' }); }
   try {
     const r = processReceiptPrintOutbox({ id: outboxId });
-    receipt.print_status = r.failed > 0 ? 'pending' : 'sent';
-    if (r.failed) throw new Error('Lệnh in hóa đơn đang chờ worker thử lại');
+    receipt.print_status = r.print_status;
+    receipt.print_job_ids = r.job_ids;
+    if (r.failed) {
+      receipt.print_error = 'Chưa có tuyến máy in hóa đơn khả dụng; lệnh đang chờ thử lại.';
+      throw new Error(receipt.print_error);
+    }
   } catch (e) {
     if (!receipt.print_status) receipt.print_status = 'pending';
     logSystem({ level: 'error', source: 'printer', eventType: 'receipt_enqueue_failed',
       title: 'Thanh toán đã thành công nhưng chưa tạo được lệnh in hóa đơn', message: e.message,
       branchId: branch_id, orderId: order_id, action: 'enqueue_paid_receipt' }); }
-  try { emit('payment:done', { order_id, receipt }, branch_id); emit('stats:dirty', {}, branch_id); }
+  try {
+    emit('payment:done', paymentEventPayload({ order_id, receipt }), branch_id);
+    emit('stats:dirty', paymentEventPayload({}), branch_id);
+  }
   catch (e) { logSystem({ level: 'error', source: 'realtime', eventType: 'payment_emit_failed',
     title: 'Thanh toán đã thành công nhưng realtime chưa phát được', message: e.message,
     branchId: branch_id, orderId: order_id, action: 'emit_payment_done' }); }

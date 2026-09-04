@@ -3410,7 +3410,7 @@ export function processReceiptPrintOutbox({ id = null, limit = 20 } = {}) {
     ? db.prepare(`SELECT * FROM receipt_print_outbox WHERE id=? AND status!='done'`).all(id)
     : db.prepare(`SELECT * FROM receipt_print_outbox WHERE status IN ('queued','retrying') ORDER BY created_at LIMIT ?`)
         .all(Math.max(1, Math.min(100, Number(limit) || 20)));
-  const result = { processed: 0, done: 0, failed: 0 };
+  const result = { processed: 0, done: 0, failed: 0, job_ids: [], print_status: 'pending' };
   for (const row of rows) {
     const claimed = db.prepare(`UPDATE receipt_print_outbox
       SET status='processing',attempts=attempts+1,last_error=NULL
@@ -3421,6 +3421,12 @@ export function processReceiptPrintOutbox({ id = null, limit = 20 } = {}) {
       const receipt = JSON.parse(row.payload_json);
       const jobs = printReceipt(receipt, row.branch_id, { deviceId: row.device_id || '' });
       if (!jobs.length) throw new Error(receipt.print_error || 'Chưa có tuyến máy in hóa đơn khả dụng');
+      result.job_ids.push(...jobs.map(job => job.id));
+      result.print_status = jobs.every(job => job.status === 'printed')
+        ? 'printed'
+        : jobs.some(job => job.status === 'printing' || job.claimed_by)
+          ? 'claimed'
+          : 'queued';
       db.prepare(`UPDATE receipt_print_outbox SET status='done',completed_at=?,last_error=NULL WHERE id=?`)
         .run(now(), row.id);
       result.done++;
@@ -3431,6 +3437,40 @@ export function processReceiptPrintOutbox({ id = null, limit = 20 } = {}) {
     }
   }
   return result;
+}
+
+/** Canonical physical-print state for one committed payment. */
+export function receiptPrintStatus(paymentId, branch_id = 'sala') {
+  const payment = db.prepare(`SELECT p.id FROM payments p JOIN orders o ON o.id=p.order_id
+    WHERE p.id=? AND o.branch_id=?`).get(paymentId, branch_id);
+  if (!payment) throw Object.assign(new Error('Không tìm thấy khoản thanh toán'), { status: 404 });
+  const jobs = db.prepare(`SELECT id,status,printer,claimed_by,claimed_at,printed_at,error
+    FROM print_jobs WHERE branch_id=? AND type='receipt' AND idempotency_key LIKE ?
+    ORDER BY created_at,id`).all(branch_id, `receipt:${branch_id}:${paymentId}:%`);
+  if (!jobs.length) {
+    const outbox = db.prepare(`SELECT status,last_error FROM receipt_print_outbox
+      WHERE branch_id=? AND payment_id=?`).get(branch_id, paymentId);
+    return {
+      payment_id: paymentId,
+      status: outbox?.status === 'retrying' ? 'failed' : 'queued',
+      error: outbox?.last_error || null,
+      jobs: [],
+    };
+  }
+  const terminalFailure = new Set(['failed', 'cancelled', 'expired']);
+  const status = jobs.every(job => job.status === 'printed')
+    ? 'printed'
+    : jobs.every(job => terminalFailure.has(job.status))
+      ? 'failed'
+      : jobs.some(job => job.status === 'printing' || job.claimed_by)
+        ? 'claimed'
+        : 'queued';
+  return {
+    payment_id: paymentId,
+    status,
+    error: status === 'failed' ? jobs.map(job => job.error).filter(Boolean).join(' | ') || null : null,
+    jobs,
+  };
 }
 
 function shouldPrintCupLabels(order, cfg) {

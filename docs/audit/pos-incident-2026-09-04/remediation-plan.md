@@ -4,17 +4,19 @@ Ordered by risk and evidence. Each item states the invariant, the change, the te
 and the rollback. Three **separate** rollout groups (never conflated): Production,
 Shopee Review, External connectors.
 
-## Priority 0 — the money incident is a DEPLOY GAP, not a code gap
-The F&B/Retail payment invariants are correct and test-green in `fd4faee`
-(see README §2, hypothesis S2/S3). **Do NOT rewrite the checkout.**
-- **Action:** after a full regression pass (see "Final gate"), rebuild and redeploy
-  current source. The old installers (`1357b57`, `ae8c64d`, `fd4faee`) are *superseded*
-  the moment source changed on this branch — mark them superseded, keep backups, do not
-  reuse an ambiguous build number.
-- **Add one runtime test** (cheap, high value): 20–50 concurrent `payOrder` on a single
-  order → assert exactly one payment row, order `paid`, one print outbox row, table free.
-  The existing suites cover the pieces but not the concurrency fan-out.
-- **Rollback:** redeploy the prior installer (byte-identical backup retained).
+## Priority 0 — source ordering gap found; fixed and regression-tested locally
+The pre-existing conditional close and idempotency constraints were necessary but
+not sufficient. Required audit plus realtime/archive/print/customer callbacks crossed
+the transaction boundary before commit. The fix stages them and flushes only after
+commit; audit-row insertion is mandatory and can roll back the financial transaction.
+
+- **Completed test:** 50 same-key F&B requests across two server processes produce one
+  payment/snapshot/invoice/outbox; 50 different keys produce one `200` and 49 explicit
+  `409 ORDER_ALREADY_PAID`; 50 Retail retries produce one order/payment/stock movement.
+- **Completed fault tests:** forced `payment.done` and Retail `order.send` audit failures
+  leave no payment/order mutation/outbox/archive footprint/success realtime event.
+- **Rollback:** revert the isolated P0 commit. No deploy or installer build is authorized
+  in this session; Production and Review remain HOLD.
 
 ## Priority 1 — Self-order repeat sound (Gate 2) — DONE on this branch
 - **Invariant:** a sound fires once per *distinct* unhandled self-order event; confirm/

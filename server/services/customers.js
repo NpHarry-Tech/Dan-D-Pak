@@ -252,7 +252,11 @@ export function deleteCustomer(id, branch_id = 'sala') {
 }
 
 // Bump lifetime stats and loyalty points after a paid order (best-effort).
-export function recordPurchase(customerRef, amount = 0, branch_id = 'sala', order_id = null) {
+export function recordPurchase(customerRef, amount = 0, branch_id = 'sala', order_id = null, options = {}) {
+  const recordAudit = options.auditFn
+    ? (action, detail) => options.auditFn(action, detail)
+    : (action, detail) => audit(action, detail, branch_id);
+  const deferSideEffect = options.deferSideEffect || (callback => callback());
   try {
     if (!customerRef) return;
     let customer = typeof customerRef === 'string'
@@ -274,10 +278,12 @@ export function recordPurchase(customerRef, amount = 0, branch_id = 'sala', orde
     db.prepare(`UPDATE customers SET total_orders=total_orders+1,total_spent=total_spent+?,loyalty_points=?,loyalty_tier=?,last_visit_at=?,updated_at=? WHERE id=? AND branch_id=?`)
       .run(Math.max(0, parseInt(amount) || 0), nextPoints, earned.tier || customer.loyalty_tier || '', now(), now(), customer.id, branch_id);
     rebuildCustomerInsights(customer.id, branch_id);
-    if (earned.points > 0) audit('customer.loyalty_earn', { id: customer.id, points: earned.points, order_id }, branch_id);
+    if (earned.points > 0) recordAudit('customer.loyalty_earn', { id: customer.id, points: earned.points, order_id });
     const out = getCustomer(customer.id, branch_id);
-    archiveCustomer({ ...out, last_order_id: order_id || undefined });
-  } catch { /* ignore */ }
+    deferSideEffect(() => archiveCustomer({ ...out, last_order_id: order_id || undefined }));
+  } catch (error) {
+    if (options.rethrow) throw error;
+  }
 }
 
 export function reversePurchase(order_id, branch_id = 'sala') {

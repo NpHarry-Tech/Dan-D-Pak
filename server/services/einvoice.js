@@ -52,6 +52,12 @@ export function compactInvoiceSnapshot(value) {
  * Enforces business rules: consumer-sale mode still gets an invoice.
  */
 export function createInvoiceRequest(order_id, customer_mode = 'WALK_IN', buyer_info = {}, branch_id = 'sala', actor = 'system', allocation = {}) {
+  const deferSideEffect = typeof allocation.deferSideEffect === 'function'
+    ? allocation.deferSideEffect
+    : callback => callback();
+  const recordActivityAudit = typeof allocation.stageAudit === 'function'
+    ? allocation.stageAudit
+    : (action, detail, auditActor) => audit(action, detail, branch_id, auditActor);
   const order = getOrder(order_id);
   if (!order || order.branch_id !== branch_id) throw new Error('Đơn hàng không tồn tại');
   if (order.status !== 'paid') throw new Error('Chỉ xuất hóa đơn cho đơn hàng đã thanh toán');
@@ -176,12 +182,14 @@ export function createInvoiceRequest(order_id, customer_mode = 'WALK_IN', buyer_
     // chỉ dành cho thao tác người dùng; backfill hàng trăm hóa đơn không được
     // đẩy từng dòng làm che mất các sự kiện vận hành khác.
     if (!isBackfill) {
-      audit('invoice.buyer_updated', {
+      recordActivityAudit('invoice.buyer_updated', {
         order: order_id, invoice: existing.id, customer_mode,
-      }, branch_id, actor);
+      }, actor);
     }
-    silentSaveFromInvoice(finalBuyer, branch_id);
-    emit('invoice:updated', { id: existing.id, order_id, buyer: finalBuyer }, branch_id);
+    deferSideEffect(() => {
+      silentSaveFromInvoice(finalBuyer, branch_id);
+      emit('invoice:updated', { id: existing.id, order_id, buyer: finalBuyer }, branch_id);
+    });
     return get(existing.id);
   }
 
@@ -295,11 +303,12 @@ export function createInvoiceRequest(order_id, customer_mode = 'WALK_IN', buyer_
     writeAuditLog({ order_id, e_invoice_id: id, actor_id: actor, actor_role: actor === 'system' ? 'system' : 'staff', action });
   }
 
-  emit('einvoice:queued', { id, order_id, status: initialStatus }, branch_id);
-
-  // Khách khai thông tin khi xuất HĐ → âm thầm lưu/bổ sung hồ sơ khách hàng
-  // (không toast/label gì phía UI; hàm tự nuốt lỗi).
-  silentSaveFromInvoice(finalBuyer, branch_id);
+  deferSideEffect(() => {
+    emit('einvoice:queued', { id, order_id, status: initialStatus }, branch_id);
+    // Khách khai thông tin khi xuất HĐ → âm thầm lưu/bổ sung hồ sơ khách hàng
+    // (không toast/label gì phía UI; hàm tự nuốt lỗi).
+    silentSaveFromInvoice(finalBuyer, branch_id);
+  });
 
   // Return fresh record
   return get(id);

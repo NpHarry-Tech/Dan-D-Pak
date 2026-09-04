@@ -5,10 +5,10 @@ Gate-2 code change (`ring_controller.dart`, `socket_service.dart`) and its test.
 
 ## Git preflight (read-only)
 ```
-HEAD    = fd4faee7fdd452708a4e0e7dacee6f0c755eddb5
+HEAD    = 5839151e924e13ec70869568860ce4965365f61e (continuation preflight)
 branch  = fix/universal-print-validation
 status  = clean (git status --porcelain → empty)
-upstream= origin/fix/universal-print-validation ; 0 ahead / 0 behind (cached)
+upstream= origin/fix/universal-print-validation ; 15 ahead / 0 behind (cached)
 worktree= single (D:/Dan D Pak)
 remote  = https://github.com/NpHarry-Tech/Dan-D-Pak.git
 ```
@@ -43,10 +43,29 @@ Reporter lines are `ℹ pass` / `ℹ fail` (not `# tests`).
 | `retail-double-checkout` | 2 | 2 | 0 |
 | `retail-checkout-lock` | 7 | 7 | 0 |
 | `table-reset` | 4 | 4 | 0 |
+| `payment-intent-state-machine` | 3 | 3 | 0 |
+| `receipt-print-status` | 1 | 1 | 0 |
+| `shift-report-bill-cap` | 3 | 3 | 0 |
+| `shift-query-batching` | 4 | 4 | 0 |
 
 These cover: no-erase of a paid-but-empty bill + refund exit; bill-number capping at
 payment; anti-double-order idempotency; retail double-checkout lock; table reset;
 staff-call close on reset. **All green.**
+
+## P0 hardening evidence after baseline
+
+| Run | Assertions | Pass | Fail |
+|---|---:|---:|---:|
+| Atomic payment + Retail audit fault injection | 5 | 5 | 0 |
+| Two-process HTTP concurrency (50 same-key F&B, 50 different-key F&B, 50 Retail retries) | 3 | 3 | 0 |
+| Payment/inventory/Retail focused regression | 33 | 33 | 0 |
+| Printing routing/queue/status regression | 39 | 39 | 0 |
+
+One first concurrency harness run returned `401` on process B because the harness
+incorrectly reused process A's in-memory session. After logging in independently to
+both processes, F&B passed; one subsequent Retail run saw a transient `ECONNRESET`.
+The harness was instrumented to retain child output and the complete suite then
+passed twice at the business assertion level, including the final post-refactor run.
 
 > NOT a full regression. The complete server suite (~130 `.test.mjs`) and the Flutter
 > analyze across 4 packages were NOT run to completion this session (each server suite

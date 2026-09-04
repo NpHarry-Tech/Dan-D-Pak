@@ -2,6 +2,7 @@
 
 Verdict legend:
 - **DEPLOY-GAP** — current source is correct + test-green; symptom fits an older build.
+- **SOURCE-GAP** — defect exists in source and requires a code change before rollout.
 - **CONFIRMED-REAL** — defect present in current source, proven by file:line (and test where noted).
 - **NEEDS-REPRO** — plausible root cause identified by reading; not yet reproduced with a test.
 - **BLOCKED-EXTERNAL** — cannot verify without credentials/live provider.
@@ -51,11 +52,12 @@ Each row: symptom → leading hypothesis → evidence → verdict → how to fal
 - **Evidence:** print enqueued in tx then dispatched post-commit with error logging —
   [payments.js:675, 748-758](../../../server/services/payments.js#L675);
   device-scoped print routing added — [payments.js:81 comment](../../../server/modules/payments/routes.js#L78-L81).
-- **Verdict:** **DEPLOY-GAP for "no bill at all"; the print-status surface is now
-  SERVER-DONE + TESTED, client banner remains.** The durable outbox already prevents
+- **Verdict:** **SOURCE-GAP PARTIALLY FIXED:** durable server state semantics are now
+  DONE + TESTED; the persistent client banner remains. The outbox prevents
   actual loss (worker retries), but the receipt didn't tell the client whether the bill
   printed. `payOrder` (and `finalizeDeferredPaymentSideEffects`) now set
-  `receipt.print_status = 'sent' | 'pending'` from the outbox dispatch result —
+  truthful `receipt.print_status = queued|claimed|printed|pending`; creating a job is
+  never labelled printed and only the agent ACK transitions the job to `printed` —
   [payments.js:748-760](../../../server/services/payments.js#L748-L760).
 - **Verification:** `server/receipt-print-status.test.mjs` **1/1** — with no printer
   configured, the payment still commits exactly once, the order is `paid`, the durable
@@ -66,7 +68,8 @@ Each row: symptom → leading hypothesis → evidence → verdict → how to fal
   a permissioned, audited reprint. The server contract is in place.
 
 ### S3 — Table stays open/has items; reopen allows edit + second payment (double charge)  — **P0**
-- **Hypothesis:** On current source this is prevented; symptom fits an old build.
+- **Hypothesis:** Double debit was guarded, but transaction observers could still see
+  a false success before rollback; an old deployed build may compound the symptom.
 - **Evidence:** conditional close guard [payments.js:588-592](../../../server/services/payments.js#L588-L592);
   immutable-once-closed [payments.js:491](../../../server/services/payments.js#L491);
   table freed in-tx [payments.js:643-649](../../../server/services/payments.js#L643-L649);
@@ -74,15 +77,15 @@ Each row: symptom → leading hypothesis → evidence → verdict → how to fal
   idempotent replay [payments.js:466-484](../../../server/services/payments.js#L466-L484).
   Suites green: `idempotency-chong-trung-don` 7/7, `so-bill-cap-khi-thanh-toan` 7/7,
   `retail-double-checkout` 2/2, `table-stuck-paid-reset` 4/4 (this session).
-- **Verdict:** **DEPLOY-GAP.** Not reproducible on current source — now proven by a
-  direct assertion.
+- **Verdict:** **SOURCE GAP CONFIRMED + FIXED LOCALLY.** Conditional close was correct;
+  audit/realtime/archive ordering was not.
 - **Falsify / verification (added this session):** `server/fnb-double-pay-guard.test.mjs`
   — pay fully, then a second pay with a **different** key → rejected (`Order đã đóng`),
   still exactly one payment row, revenue unchanged; same-key retry → idempotent replay of
-  the same `payment_id`; appending items to the closed order is rejected. **3/3 pass**
-  (Node 24 / SQLite 3.51.2). (A multi-process concurrency fan-out remains a further
-  hardening test — the synchronous `node:sqlite` API serializes intra-process calls, so
-  true concurrency needs separate connections; the conditional-close guard covers it.)
+  the same `payment_id`; appending items to the closed order is rejected. The suite is
+  **5/5 pass**, including F&B and Retail audit fault injection. A separate two-process
+  HTTP test is **3/3 pass**: same-key and different-key 50-way F&B requests plus 50-way
+  Retail retries all preserve exact cardinality.
 
 ### S4 — `item.cancel` audit shows only opaque item ID + generic reason — **FIXED + TESTED**
 - **Root cause (proven):** the cancel handler logged only `{ item: item_id, reason }` —
@@ -279,7 +282,7 @@ Each row: symptom → leading hypothesis → evidence → verdict → how to fal
 
 ## Known / Inferred / Unknown (Gate-0 close-out)
 
-- **Known (proven):** S1 real; S3 deploy-gap (source correct, suites green); S5 cause
+- **Known (proven):** S1 real; S3 source ordering gap fixed locally with fault/concurrency evidence; S5 cause
   identified; S6 real; runtime = Node 24.14.1 / SQLite 3.51.2; migrate ≈ 11.5 s.
 - **Inferred (read, not yet reproduced):** S2 (deploy-gap + UX surface), S4, S7, S8, S9,
   S11.

@@ -45,11 +45,12 @@ class AppNotifier {
     bool inApp = true,
     bool osNotify = true,
     bool androidNotify = false,
+    Duration? duration,
     // true = banner có nút "Xem" bấm để nhảy vào mục thông báo (onOpenRequested).
     bool showViewAction = false,
   }) {
     if (osNotify) _osNotification(title, body, androidNotify);
-    if (inApp) _inAppBanner(title, body, isError, showViewAction);
+    if (inApp) _inAppBanner(title, body, isError, showViewAction, duration);
   }
 
   static void _osNotification(String title, String body, bool androidNotify) {
@@ -85,15 +86,16 @@ class AppNotifier {
     } catch (_) {/* thông báo không được phá luồng chính */}
   }
 
-  static void _inAppBanner(
-      String title, String body, bool isError, bool showViewAction) {
+  static void _inAppBanner(String title, String body, bool isError,
+      bool showViewAction, Duration? duration) {
     try {
       final messenger = appMessengerKey.currentState;
       if (messenger == null) return;
       final canOpen = showViewAction && onOpenRequested != null;
       messenger.clearSnackBars();
       messenger.showSnackBar(SnackBar(
-        duration: Duration(seconds: isError ? 5 : (canOpen ? 6 : 3)),
+        duration:
+            duration ?? Duration(seconds: isError ? 5 : (canOpen ? 6 : 3)),
         behavior: SnackBarBehavior.floating,
         backgroundColor: isError ? _kErrorColor : _kInfoColor,
         action: canOpen

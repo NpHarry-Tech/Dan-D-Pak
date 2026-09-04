@@ -24,7 +24,11 @@ process.env.DATA_ENCRYPTION_KEY = process.env.DATA_ENCRYPTION_KEY
 const { migrate, db } = await import('./db.js');
 const Orders = await import('./services/orders.js');
 const Pay = await import('./services/payments.js');
+const Retail = await import('./services/retail.js');
+const Inventory = await import('./services/inventory.js');
 const AppSettings = await import('./services/settings.js');
+const { setRealtimeEmitter } = await import('./core/realtimeBus.js');
+const { readRecentAuditArchive } = await import('./services/archive.js');
 
 migrate();
 const BR = 'sala';
@@ -87,4 +91,92 @@ test('đơn đã đóng thì thêm/xóa món cũng bị chặn (bàn không th�
     }),
     /không tồn tại hoặc đã đóng|đã đóng/i,
     'đơn đã đóng không được nối thêm món');
+});
+
+test('audit payment.done thất bại → rollback tiền/đơn/bàn/outbox và không emit success', () => {
+  db.prepare(`INSERT INTO tables (id,branch_id,zone,code,seats,status)
+    VALUES ('t_atomic_pay',?,'Tầng 1','A-01',4,'free')`).run(BR);
+  const order = Orders.createOrUpdateOrder({
+    branch_id: BR, table_id: 't_atomic_pay', channel: 'dine_in', actor: 'test',
+    items: [{ menu_item_id: 'mi_dbl', qty: 1 }],
+  });
+  Orders.confirmPendingItems(order.id, [], BR, 'thu-ngan');
+  const outboxBefore = db.prepare(`SELECT COUNT(*) n FROM receipt_print_outbox`).get().n;
+  const seen = [];
+  setRealtimeEmitter((event, payload, branch) => seen.push({ event, payload, branch }));
+  db.exec(`CREATE TRIGGER fail_payment_done_audit
+    BEFORE INSERT ON audit_log
+    WHEN NEW.action='payment.done'
+    BEGIN SELECT RAISE(ABORT, 'forced payment audit failure'); END`);
+
+  let failure = null;
+  try {
+    Pay.payOrder(order.id, [{ method: 'cash', amount: 50000 }], {
+      idempotency_key: 'atomic-audit-failure', cashier: 'thu-ngan',
+    }, BR);
+  } catch (error) {
+    failure = error;
+  } finally {
+    db.exec('DROP TRIGGER fail_payment_done_audit');
+    setRealtimeEmitter(null);
+  }
+
+  assert.match(String(failure?.message || ''), /forced payment audit failure/,
+    'audit bắt buộc thất bại phải làm payment thất bại');
+  assert.equal(db.prepare(`SELECT status FROM orders WHERE id=?`).get(order.id).status, 'open');
+  assert.equal(db.prepare(`SELECT status FROM tables WHERE id='t_atomic_pay'`).get().status, 'busy');
+  assert.equal(soKhoanThu(order.id), 0, 'không được giữ payment sau rollback');
+  assert.equal(db.prepare(`SELECT COUNT(*) n FROM receipt_print_outbox`).get().n, outboxBefore,
+    'không được tạo outbox mới sau rollback');
+  assert.equal(db.prepare(`SELECT COUNT(*) n FROM audit_log WHERE action='payment.done'
+    AND detail LIKE ?`).get(`%${order.id}%`).n, 0);
+  assert.equal(readRecentAuditArchive(2).filter(entry =>
+    entry.action === 'payment.done' && String(entry.detail || '').includes(order.id)).length, 0,
+  'không được để footprint archive thành công cho transaction rollback');
+  assert.deepEqual(seen.filter(entry =>
+    ['payment:done', 'table:updated', 'stats:dirty'].includes(entry.event)), [],
+  'không được emit success/table state trước commit');
+});
+
+test('Retail audit failure rolls back order, stock, payment and all side effects', () => {
+  Inventory.createSku({
+    id: 'sku_atomic_retail', code: 'ATOMIC-RETAIL', name: 'Atomic Retail',
+    price: 30000, stock: 2,
+  }, BR);
+  const before = {
+    orders: db.prepare(`SELECT COUNT(*) n FROM orders`).get().n,
+    payments: db.prepare(`SELECT COUNT(*) n FROM payments`).get().n,
+    outbox: db.prepare(`SELECT COUNT(*) n FROM receipt_print_outbox`).get().n,
+    stock: db.prepare(`SELECT stock FROM skus WHERE id='sku_atomic_retail'`).get().stock,
+  };
+  const seen = [];
+  setRealtimeEmitter((event, payload, branch) => seen.push({ event, payload, branch }));
+  db.exec(`CREATE TRIGGER fail_retail_order_audit
+    BEFORE INSERT ON audit_log
+    WHEN NEW.action='order.send'
+    BEGIN SELECT RAISE(ABORT, 'forced retail order audit failure'); END`);
+
+  let failure = null;
+  try {
+    Retail.checkout({
+      branch_id: BR, cashier: 'thu-ngan', client_request_id: 'atomic-retail-failure',
+      items: [{ sku_id: 'sku_atomic_retail', qty: 1 }],
+      payments: [{ method: 'cash', amount: 30000 }],
+    });
+  } catch (error) {
+    failure = error;
+  } finally {
+    db.exec('DROP TRIGGER fail_retail_order_audit');
+    setRealtimeEmitter(null);
+  }
+
+  assert.match(String(failure?.message || ''), /forced retail order audit failure/);
+  assert.equal(db.prepare(`SELECT COUNT(*) n FROM orders`).get().n, before.orders);
+  assert.equal(db.prepare(`SELECT COUNT(*) n FROM payments`).get().n, before.payments);
+  assert.equal(db.prepare(`SELECT COUNT(*) n FROM receipt_print_outbox`).get().n, before.outbox);
+  assert.equal(db.prepare(`SELECT stock FROM skus WHERE id='sku_atomic_retail'`).get().stock, before.stock);
+  assert.equal(readRecentAuditArchive(2).filter(entry =>
+    entry.action === 'order.send' && String(entry.detail || '').includes('atomic-retail-failure')).length, 0);
+  assert.deepEqual(seen.filter(entry =>
+    ['order:new', 'inventory:updated', 'payment:done', 'stats:dirty'].includes(entry.event)), []);
 });

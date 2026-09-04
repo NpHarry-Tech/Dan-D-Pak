@@ -1260,35 +1260,47 @@ export function getDocument(id, branch_id = 'sala') {
   return { ...doc, branch_name: branch?.name, branch_address: branch?.address, lines };
 }
 
-export function deductForOrder(order, branch_id = 'sala') {
+export function deductForOrder(order, branch_id = 'sala', hooks = {}) {
   const getRecipe = db.prepare(`SELECT inventory_item_id, qty FROM recipes WHERE menu_item_id=?`);
   const touched = [];
   const shortages = [];
+  const recordAudit = typeof hooks.audit === 'function'
+    ? hooks.audit
+    : (action, detail) => audit(action, detail, branch_id);
+  const publishEvent = typeof hooks.event === 'function'
+    ? hooks.event
+    : (event, payload) => emit(event, payload, branch_id);
   // BÁN LẺ CHO BÁN ÂM KHO: đơn retail được bán dù số tồn hệ thống thiếu (hàng
   // thật có trên kệ, số tồn thường trễ). Tồn xuống âm + ghi cảnh báo để đối soát.
   // Món CÓ LÔ vẫn strict (issueGeneric tự chặn khi có lot_id dù allowNegative).
   for (const it of order.items || []) {
     if (it.status === 'cancelled') continue;
     if (it.sku_id) {
-      issueGeneric('sku', it.sku_id, it.qty, branch_id, { movementType: 'sale', ref: order.id, reason: 'retail_sale', lot_id: it.lot_id || null, skipDocument: true });
+      issueGeneric('sku', it.sku_id, it.qty, branch_id, {
+        movementType: 'sale', ref: order.id, reason: 'retail_sale',
+        lot_id: it.lot_id || null, skipDocument: true, auditFn: recordAudit,
+      });
       touched.push({ stockType: 'sku', id: it.sku_id });
     } else if (it.menu_item_id) {
       for (const r of getRecipe.all(it.menu_item_id)) {
         const used = r.qty * it.qty;
         // Kitchen ingredients never block a sale: allow the count to go negative
         // and just warn, so an off recipe/inventory count can't stop the kitchen.
-        issueGeneric('inventory', r.inventory_item_id, used, branch_id, { movementType: 'recipe', ref: order.id, reason: it.name, skipDocument: true });
+        issueGeneric('inventory', r.inventory_item_id, used, branch_id, {
+          movementType: 'recipe', ref: order.id, reason: it.name,
+          skipDocument: true, auditFn: recordAudit,
+        });
         touched.push({ stockType: 'inventory', id: r.inventory_item_id });
       }
     }
   }
   if (shortages.length) {
     // Surface the shortfall (Nhật ký hoạt động + realtime) so staff restock/recount.
-    audit('inventory.recipe.short', { order: order.id, shortages }, branch_id);
-    emit('inventory:short', { order_id: order.id, shortages }, branch_id);
+    recordAudit('inventory.recipe.short', { order: order.id, shortages });
+    publishEvent('inventory:short', { order_id: order.id, shortages });
   }
-  checkAlerts(branch_id, touched);
-  emit('inventory:updated', { ids: touched.map(t => t.id) }, branch_id);
+  checkAlerts(branch_id, touched, publishEvent);
+  publishEvent('inventory:updated', { ids: touched.map(t => t.id) });
   return { shortages };
 }
 
@@ -1373,7 +1385,13 @@ function issueGeneric(stockType, item_id, qtyRaw, branch_id, options = {}) {
     });
     if (doc) addDocumentLine(doc.id, stockType, item_id, c.lot_id, -c.qty, c.unit_cost || 0, c.expiry_date || null, options.note || null);
   }
-  audit(`${stockType}.issue`, { item: item_id, qty, type: options.movementType || 'issue' }, branch_id);
+  if (typeof options.auditFn === 'function') {
+    options.auditFn(`${stockType}.issue`, {
+      item: item_id, qty, type: options.movementType || 'issue',
+    });
+  } else {
+    audit(`${stockType}.issue`, { item: item_id, qty, type: options.movementType || 'issue' }, branch_id);
+  }
   return consumed;
 }
 
@@ -1555,7 +1573,7 @@ function normalizeStockType(v) {
   return 'inventory';
 }
 
-function checkAlerts(branch_id, touched) {
+function checkAlerts(branch_id, touched, publishEvent = (event, payload) => emit(event, payload, branch_id)) {
   const seen = new Set();
   for (const t of touched) {
     const key = `${t.stockType}:${t.id}`;
@@ -1563,7 +1581,9 @@ function checkAlerts(branch_id, touched) {
     seen.add(key);
     const item = getItem(t.stockType, t.id);
     if (item && item.stock <= item.min_stock) {
-      emit('inventory:alert', { id: t.id, name: item.name, stock: item.stock, min: item.min_stock, unit: item.unit }, branch_id);
+      publishEvent('inventory:alert', {
+        id: t.id, name: item.name, stock: item.stock, min: item.min_stock, unit: item.unit,
+      });
     }
   }
 }

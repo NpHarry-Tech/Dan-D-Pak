@@ -6,6 +6,7 @@ import * as CashDrawer from '../../services/cashDrawer.js';
 import * as Customers from '../../services/customers.js';
 import * as Pay from '../../services/payments.js';
 import * as PaymentIntents from '../../services/paymentIntents.js';
+import * as Print from '../../services/printing.js';
 import * as Shifts from '../../services/shifts.js';
 
 export function paymentWebhookBranch(req, visibleBranch, legacyDefault = false) {
@@ -97,6 +98,8 @@ export function registerPaymentRoutes(api, {
   api.post('/casso/webhook', wrap((req) => Pay.handleCassoWebhook(req.body || {}, req.headers, webhookBranch(req))));
   api.post('/payos/webhook', wrap((req) => Pay.handlePayosWebhook(req.body || {}, req.headers, webhookBranch(req))));
   api.get('/payments/bank-transactions', guardAny('reports', 'pay', 'settings.integrations'), wrap((req) => Pay.listBankTransactions(branch(req), req.query)));
+  api.get('/payments/:id/print-status', guard('pay'), wrap((req) =>
+    Print.receiptPrintStatus(req.params.id, branch(req))));
   api.get('/payos/payment-status/:orderCode', wrap((req) => Pay.getPayosPaymentStatus(req.params.orderCode, visibleBranch(req))));
   api.post('/payments', guard('pay'), wrap(() => {
     const e = new Error('Generic payment creation is planned. Current app uses /api/orders/:id/pay.');
