@@ -111,7 +111,8 @@ export function currentShift(branch_id = 'sala') {
   return {
     shift,
     config,
-    report: shift ? shiftReport(shift.id, branch_id) : null,
+    // Poll live: giới hạn chi tiết bill để payload nhẹ (số tổng vẫn đủ & chính xác).
+    report: shift ? shiftReport(shift.id, branch_id, { billLimit: 200 }) : null,
     day_report: operationDayReport(branch_id),
     drawer: CashDrawer.currentDrawer(branch_id),
     opening_suggestion: CashDrawer.defaultOpeningCash(branch_id, config),
@@ -123,7 +124,12 @@ export function listShifts(branch_id = 'sala', limit = 40) {
     .map(publicShift);
 }
 
-export function shiftReport(shift_id, branch_id = 'sala') {
+// [billLimit] > 0: chỉ trả CHI TIẾT tối đa N bill GẦN NHẤT trong mảng `bills`.
+// Mọi con số tổng (bill_count, total_revenue, method_totals…) VẪN tính trên TOÀN
+// BỘ payments nên KHÔNG đổi. Dùng cho poll live /shifts/current: client chỉ đọc
+// các số tổng + entries két, không duyệt mảng `bills`, nên gửi cả 2000 bill mỗi
+// nhịp poll (≈577KB) là lãng phí băng thông LAN — đó là nút thắt thật (đã đo).
+export function shiftReport(shift_id, branch_id = 'sala', { billLimit = 0 } = {}) {
   const shift = publicShift(db.prepare(`SELECT * FROM shifts WHERE id=? AND branch_id=?`).get(shift_id, branch_id));
   if (!shift) throw new Error('Ca lam viec khong ton tai.');
   const payments = db.prepare(`
@@ -178,7 +184,7 @@ export function shiftReport(shift_id, branch_id = 'sala') {
     drawer,
     method_totals: methodTotals,
     method_lines: lines,
-    bills,
+    bills: billLimit > 0 ? bills.slice(-billLimit) : bills,
   };
 }
 

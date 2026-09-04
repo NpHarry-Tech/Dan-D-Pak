@@ -107,11 +107,28 @@ Each row: symptom → leading hypothesis → evidence → verdict → how to fal
     [pos_api.dart:161-210](../../../flutter-apps/dandpak_core/lib/src/services/api/pos_api.dart#L161-L210)):
     20 rapid clicks → **1** in-flight request; opt-in (default off) so no other GET changes.
     Test `test/get_coalesce_test.dart` **3/3**; analyze clean.
-  - **(a) server instrument + (c) lighter query / short event-driven cache — REMAINING,
-    benchmark-gated.** Do NOT add a blind cache/index. Next: instrument duration + query
-    count, benchmark on a synthetic near-real DB, target server p95 ≤ 500 ms / none > 1.5 s
-    (report real numbers if unmet).
-- **Falsify (server):** the benchmark above.
+  - **(a) server benchmark — DONE (real numbers).** Synthetic near-real DB, one open
+    shift, `Shifts.currentShift` timed over 60 iters (Node 24 / SQLite 3.51.2):
+    | N bills | p50 | p95 | p99 | payload |
+    |---|---|---|---|---|
+    | 500 | 4.8 ms | 6.7 ms | 14.6 ms | 147 KB |
+    | 2000 | 19.8 ms | 23.8 ms | 26.4 ms | **577 KB** |
+    EXPLAIN QUERY PLAN shows the hot queries already use `idx_payments_shift_created` /
+    `idx_payment_lines_payment` (no SCAN). **Server compute is well under the 500 ms
+    target — CPU/indexes are NOT the bottleneck.** The cost is the **payload**: the live
+    poll shipped the *entire* `bills` array every few seconds (577 KB at 2000 bills) even
+    though **no client screen reads that array** (verified — clients use scalar
+    `bill_count`/`total_revenue`/`method_totals`).
+  - **(c) payload cap — FIXED.** `shiftReport` gained an optional `billLimit`; `currentShift`
+    passes `billLimit: 200` so the live poll caps per-bill detail while every total stays
+    exact (computed over the full payment set). Other callers (e.g. `closeShift`/report)
+    are unchanged. Measured after: **577 KB → 60.8 KB (−89%)**, `bill_count` still 2000,
+    server latency unchanged — [shifts.js:108-183](../../../server/services/shifts.js#L108-L183).
+    Test `server/shift-report-bill-cap.test.mjs` **3/3**; `shift-report-batching` 4/4 and
+    `database-hot-query-plan` 2/2 still green.
+- **Verdict (S5 overall):** client coalescing + server payload cap both landed and measured;
+  a short event-driven cache is now optional (server p95 already ≪ 500 ms). Benchmark script
+  kept in scratch (not committed) — rerun with the seed in the test to reproduce.
 
 ### S6 — "Kết ca" clicked repeatedly during lag → stacked modals/screens
 - **Hypothesis:** No app-wide single-flight (`ActionGate`) keyed by action+entity; each

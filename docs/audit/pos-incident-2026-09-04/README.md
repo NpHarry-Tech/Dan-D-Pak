@@ -83,7 +83,7 @@ each with a passing test and clean analyze. Full detail per symptom in `hypothes
 | S1 | Self-order bell keeps ringing after confirm | **FIXED** — key-based ring dedup + clear on the confirm/reject re-emit ([orders.js:430](../../../server/services/orders.js#L430)/[477](../../../server/services/orders.js#L477)) | `ring_controller_dedup_test.dart` 7/7 |
 | S3 | Double charge / stuck table | **DEPLOY-GAP** (source correct) + guard assertion added | `fnb-double-pay-guard.test.mjs` 3/3 |
 | S4 | `item.cancel` opaque id | **FIXED** — món snapshot in audit | `audit-item-cancel-snapshot.test.mjs` 2/2 |
-| S5 | `/api/shifts/current` 4.7–28.7 s pile-ups | **Client coalescing FIXED**; server instrument/cache remains (benchmark-gated) | `get_coalesce_test.dart` 3/3 |
+| S5 | `/api/shifts/current` 4.7–28.7 s pile-ups | **FIXED** — client coalescing + server payload cap (577 KB→61 KB, −89%; benchmarked, server p95 ≤24 ms so CPU/indexes were never the issue) | `get_coalesce_test.dart` 3/3 · `shift-report-bill-cap.test.mjs` 3/3 |
 | S6 | "Kết ca" stacked calls/modals | **Client single-flight FIXED**; UI modal-singleton remains | `shift_single_flight_test.dart` 3/3 |
 | S7 | Multiple Desktop instances | **IMPLEMENTED** (named mutex); build-verify at gate | inspection (C++) |
 | S8 | Import "633 billion" | **Locale parser FIXED**; barcode-column plausibility remains (needs real file) | `kv_parse_num_locale_test.dart` 8/8 |
