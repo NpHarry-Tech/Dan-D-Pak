@@ -64,6 +64,23 @@ num? kvParseNum(String s) {
   return num.tryParse(t);
 }
 
+/// Đơn giá/số tiền HỢP LÝ tối đa cho một dòng nhập kho (VND). Trên ngưỡng này gần
+/// như chắc chắn do LỆCH CỘT — vd mã vạch 12–13 số lọt vào cột giá → ra số tiền vô
+/// lý (sự cố 2026-09-04: ~633.705.997.308đ). 1 tỷ đồng/đơn vị là biên rất rộng cho
+/// hàng F&B/bán lẻ; vượt là phải SOÁT TAY, không tự nhận (fail-closed).
+const num kMaxPlausibleUnitAmount = 1000000000; // 1e9
+
+/// Lý do (tiếng Việt) nếu [value] là số tiền/đơn giá VÔ LÝ nên chặn commit; null
+/// nếu hợp lệ. Để TRỐNG (null) không phải là vô lý — đó là chuyện thiếu dữ liệu.
+String? kvImplausibleAmountReason(num? value) {
+  if (value == null) return null;
+  if (value < 0) return 'Số tiền âm';
+  if (value > kMaxPlausibleUnitAmount) {
+    return 'Số tiền quá lớn bất thường — nghi lệch cột / mã vạch lọt vào cột giá';
+  }
+  return null;
+}
+
 String kvShortDate(String iso) {
   return BusinessDateTime.date(iso, fallback: iso.isEmpty ? '—' : iso);
 }
@@ -466,6 +483,10 @@ class KvDocLine {
   num get qtyNum => kvParseNum(qty.text) ?? 0;
   num get costNum => kvParseNum(cost.text) ?? 0;
   num get lineTotal => qtyNum * costNum;
+
+  /// Cảnh báo nếu ĐƠN GIÁ vô lý (nghi lệch cột / mã vạch) — null nếu ổn. Preview
+  /// dùng để đánh dấu dòng + CHẶN commit tới khi người dùng soát/sửa (fail-closed).
+  String? get costWarning => kvImplausibleAmountReason(costNum);
 
   void dispose() {
     qty.dispose();

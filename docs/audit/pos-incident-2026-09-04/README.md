@@ -86,7 +86,7 @@ each with a passing test and clean analyze. Full detail per symptom in `hypothes
 | S5 | `/api/shifts/current` 4.7–28.7 s pile-ups | **FIXED** — client coalescing + server payload cap (577 KB→61 KB, −89%; benchmarked, server p95 ≤24 ms so CPU/indexes were never the issue) | `get_coalesce_test.dart` 3/3 · `shift-report-bill-cap.test.mjs` 3/3 |
 | S6 | "Kết ca" stacked calls/modals | **Client single-flight FIXED**; UI modal-singleton remains | `shift_single_flight_test.dart` 3/3 |
 | S7 | Multiple Desktop instances | **IMPLEMENTED** (named mutex); build-verify at gate | inspection (C++) |
-| S8 | Import "633 billion" | **Locale parser FIXED**; barcode-column plausibility remains (needs real file) | `kv_parse_num_locale_test.dart` 8/8 |
+| S8 | Import "633 billion" | **FIXED** — locale parser + fail-closed plausibility guard (blocks implausible cost at commit); header-mapping remains (needs real file) | `kv_parse_num_locale_test.dart` 8/8 · `import_plausibility_test.dart` 4/4 |
 | S9 | Floor plan clipped / ratio drift | **FIXED** — fit both dims + center | `floor_cell_size_test.dart` 6/6 |
 | S12 | Chat blank "Chưa có hội thoại" | **Empty-state taxonomy FIXED**; live E2E blocked | `chat_empty_state_test.dart` 6/6 |
 | S13 | Haravan subscribe fails opaquely | **Structured redacted diagnostics FIXED**; live E2E blocked | `haravan-subscribe-diagnostics.test.mjs` 3/3 |

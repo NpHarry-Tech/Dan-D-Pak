@@ -243,6 +243,18 @@ class _PurchaseDocFormPageState extends State<PurchaseDocFormPage> {
           error: true);
       return;
     }
+    // FAIL-CLOSED (Gate-6): chặn HOÀN THÀNH khi có đơn giá vô lý (nghi lệch cột /
+    // mã vạch lọt vào cột giá — sự cố "633 tỷ"). Nháp vẫn lưu được để sửa sau.
+    if (complete) {
+      final bad = _lines.where((l) => l.qtyNum > 0 && l.costWarning != null).toList();
+      if (bad.isNotEmpty) {
+        final f = bad.first;
+        _toast(
+            t('${bad.length} dòng có đơn giá bất thường (vd "${f.name}"): ${f.costWarning}. Hãy soát lại cột giá / mã vạch trước khi Hoàn thành.'),
+            error: true);
+        return;
+      }
+    }
     final bodyLines = <Map<String, dynamic>>[];
     for (final l in _lines) {
       if (l.qtyNum <= 0) continue;

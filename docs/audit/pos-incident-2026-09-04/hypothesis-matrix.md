@@ -186,13 +186,21 @@ Each row: symptom → leading hypothesis → evidence → verdict → how to fal
     stripped) — [kv_shared.dart:28-63](../../../flutter-apps/dandpak_core/lib/src/screens/warehouse/kv_shared.dart#L28-L63).
     Test `test/kv_parse_num_locale_test.dart` **8/8**; existing `kv_excel_compatibility` +
     `kv_import_orchestration` still green (no regression).
-  - **(b) The specific `633,705,997,308.678` — NEEDS-REPRO with the real file.** Most
-    likely a **column shift** placing a 12-digit barcode into the cost column (the parser
-    faithfully parses `"633705997308"`; verified in the test). The fix is header-based
-    (not positional) mapping + a **plausibility guard** that flags implausible unit cost
-    before commit. Requires the actual failing xlsx to pin the mapping — not fabricated.
-- **Falsify (remaining):** golden fixture with a barcode in the cost column → preview
-  flags it and the commit callback is not invoked.
+  - **(b) Plausibility guard — FIXED + TESTED (fail-closed).** The specific
+    `633,705,997,308.678` is most likely a **column shift** putting a 12-digit barcode into
+    the cost column (the parser parses `"633705997308"` faithfully — verified). Added
+    `kvImplausibleAmountReason()` + `KvDocLine.costWarning` (cost > 1e9 VND / negative →
+    flagged) and wired a **hard block in the purchase import commit** (`_save(complete)`)
+    so an implausible unit cost cannot be written to inventory; drafts can still be saved
+    for correction —
+    [kv_shared.dart:35-49, 471](../../../flutter-apps/dandpak_core/lib/src/screens/warehouse/kv_shared.dart#L35-L49),
+    [purchase_doc_form_page.dart:245-259](../../../flutter-apps/dandpak_core/lib/src/screens/purchase/purchase_doc_form_page.dart#L245-L259).
+    Test `test/import_plausibility_test.dart` **4/4**; analyze clean.
+  - **Remaining:** header-based (not positional) column mapping needs the actual failing
+    xlsx to pin — not fabricated. The plausibility guard now catches the *symptom* (garbage
+    value) fail-closed regardless of which column shifted.
+- **Falsify (remaining):** golden fixture with a barcode in the cost column → the commit is
+  refused (already enforced by `_save`); confirm header-mapping once the real file exists.
 
 ### S9 — Floor plan differs POS vs Settings (tables missing/clipped, ratio drifts) — **FIXED + TESTED**
 - **Root cause (proven):** POS and the editor already share the grid geometry
