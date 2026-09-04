@@ -170,15 +170,26 @@ Each row: symptom → leading hypothesis → evidence → verdict → how to fal
 - **Falsify (remaining):** golden fixture with a barcode in the cost column → preview
   flags it and the commit callback is not invoked.
 
-### S9 — Floor plan differs POS vs Settings (tables missing/clipped, ratio drifts)
-- **Hypothesis:** POS renders the floor with an independent layout/reflow instead of a
-  shared canonical coordinate model + single viewport transform.
-- **Evidence:** NOT yet traced. Next probe: floor renderers under
-  `flutter-apps/dandpak_core/lib/src/screens/**` (POS floor vs Settings floor editor) and
-  server `floor-plan` (there is `server/floor-plan.test.mjs`).
-- **Verdict:** **NEEDS-REPRO** (matches Gate-7 description).
-- **Falsify:** golden tests at 1366×768 / 1920×1080 / ultrawide / tablet portrait+landscape /
-  DPI scaling → every table id appears exactly once, in-canvas, stable relative geometry.
+### S9 — Floor plan differs POS vs Settings (tables missing/clipped, ratio drifts) — **FIXED + TESTED**
+- **Root cause (proven):** POS and the editor already share the grid geometry
+  (`floor_layout.dart`, `kFloorCols`, square cells), but the POS renderer sized cells by
+  **width only**: `cellW = max(maxWidth/kFloorCols, minCell)`, `cellH = cellW`
+  ([pos_floor_widgets.dart:352-355 (before)]). On a **wide** screen cells grew tall, so
+  `(maxY+1)*cellH` overflowed the viewport height → lower table rows were **clipped/missing**,
+  and the effective scale drifted with screen width.
+- **Fix (this branch):** extracted a pure `floorCellSize()` that fits **both** dimensions
+  (`min(width/cols, height/rows)`, square, floored at `minCell` → then scroll) and used it
+  in POS; the floor is now **centered** when it fits instead of left-aligned —
+  [floor_layout.dart:17-45](../../../flutter-apps/dandpak_core/lib/src/screens/floor_layout.dart#L17-L45),
+  [pos_floor_widgets.dart:348-384](../../../flutter-apps/dandpak_core/lib/src/screens/pos_floor_widgets.dart#L348-L384).
+- **Verdict:** **CONFIRMED-REAL → FIXED.**
+- **Verification:** `test/floor_cell_size_test.dart` **6/6** (wide-short fits height w/o
+  vertical overflow — the old width-only path overflowed; tall-narrow floors at minCell →
+  horizontal scroll; infinite height → width-based; rows=0 no div-by-zero; square aspect
+  stable across 1366/1920/2560/768 × 480/700/1080); analyze clean.
+- **Remaining:** widget/golden screenshot tests that render the actual floor at each
+  viewport and assert every table id appears once, in-canvas (the geometry is now proven;
+  the golden harness is the follow-up).
 
 ### S10 — Launcher is a flat module list; want sell-first IA (Bán hàng / Quản lý)
 - **Verdict:** **UX (Gate 9)** — deliberately deferred until S1–S8 gates are green, per

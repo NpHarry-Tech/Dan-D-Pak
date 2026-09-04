@@ -349,9 +349,14 @@ class _ZoneSection extends StatelessWidget {
               for (final tb in placed) {
                 if (tb.posY > maxY) maxY = tb.posY;
               }
-              const minCell = 60.0;
-              final cellW =
-                  math.max(constraints.maxWidth / kFloorCols, minCell);
+              // VỪA CẢ HAI CHIỀU, không cắt bàn (Gate-7): ô vuông, chọn cạnh nhỏ
+              // hơn giữa rộng/cột và cao/hàng; nhỏ quá thì CUỘN. Trước đây chỉ theo
+              // bề rộng nên màn rộng làm ô cao vống → hàng bàn dưới tràn ra bị cắt.
+              final cellW = floorCellSize(
+                maxWidth: constraints.maxWidth,
+                maxHeight: constraints.maxHeight,
+                rows: (maxY + 1).ceil(),
+              );
               final cellH = cellW; // ô VUÔNG như editor
               final canvasW = kFloorCols * cellW;
               final stack = SizedBox(
@@ -376,7 +381,8 @@ class _ZoneSection extends StatelessWidget {
                   canvasW > constraints.maxWidth + 1
                       ? SingleChildScrollView(
                           scrollDirection: Axis.horizontal, child: stack)
-                      : stack,
+                      // Vừa khung → CĂN GIỮA ngang (không dồn trái để trống bên phải).
+                      : Align(alignment: Alignment.topCenter, child: stack),
                   if (loose.isNotEmpty) ...[
                     const SizedBox(height: 10),
                     looseWrap(),
