@@ -206,10 +206,19 @@ Each row: symptom → leading hypothesis → evidence → verdict → how to fal
 - **Evidence:** Omni module present (`server/modules/omni/`, `server/services/omni/`,
   `omni-core.test.mjs`, `online-omni-operations.test.mjs`). End-to-end ingest/send/realtime
   NOT verified; no provider credentials available in-session.
-- **Verdict:** **BLOCKED-EXTERNAL** for live E2E; **NEEDS-REPRO** for the empty-state
-  taxonomy (configured-but-empty vs error vs unauthorized).
-- **Falsify:** mock provider with real signature → 2 duplicate webhook ids = 1 message;
-  reconnect no dup; branch isolation holds; UI distinguishes the five empty/error states.
+- **Verdict:** **Empty-state taxonomy FIXED + TESTED; live E2E still BLOCKED-EXTERNAL.**
+  The list already handled `loading`/`error`, but the empty branch conflated
+  *not-configured* with *configured-but-empty* (always "Chưa có hội thoại"). Extracted a
+  pure `chatListState()` (loading/error/notConfigured/empty/hasData) using the already-
+  loaded `_capabilities['connectors']` + a `_capsLoaded` guard (so a caps-fetch that hasn't
+  returned never falsely claims "chưa kết nối") —
+  [online_chat_section.dart:15-40, 206-232](../../../flutter-apps/dandpak_core/lib/src/screens/online/online_chat_section.dart#L15-L40).
+  Test `test/chat_empty_state_test.dart` **6/6**; analyze clean. The UI now shows a distinct
+  "Chưa kết nối kênh chat nào — vào Cài đặt…" for not-configured.
+- **Still BLOCKED:** ingest/send/realtime E2E against a real provider (no credentials
+  in-session). The empty screen now tells the truth about *which* empty state it is.
+- **Falsify (remaining):** mock provider with real signature → 2 duplicate webhook ids = 1
+  message; reconnect no dup; branch isolation; attachment limits.
 
 ### S13 — Haravan "Nhận từ Haravan • 1" failing at webhook/subscribe
 - **Hypothesis:** subscribe/callback misconfig (token/scope/HTTPS callback/HMAC/duplicate

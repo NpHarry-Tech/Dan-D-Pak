@@ -12,6 +12,30 @@ import '../../utils/translation.dart';
 import '../management/management_widgets.dart';
 import 'online_shared.dart';
 
+/// Trạng thái hộp thư chat — PHÂN BIỆT RẠCH RÒI để không gộp "chưa cấu hình" với
+/// "đã cấu hình nhưng chưa có hội thoại" (sự cố 2026-09-04: màn trống mập mờ).
+enum ChatListState { loading, error, notConfigured, empty, hasData }
+
+/// Quyết định trạng thái hộp thư từ dữ liệu hiện có (thuần, để test được):
+///  • loading        → đang tải danh sách
+///  • error          → tải lỗi (auth/mạng…) → hiện lỗi + nút thử lại
+///  • hasData        → có hội thoại
+///  • notConfigured  → ĐÃ biết capabilities và KHÔNG kênh nào được kết nối
+///  • empty          → có kênh nhưng chưa có hội thoại (hoặc chưa biết capabilities)
+ChatListState chatListState({
+  required bool loading,
+  required bool hasError,
+  required bool capsLoaded,
+  required Map<String, dynamic> connectors,
+  required int conversationCount,
+}) {
+  if (loading) return ChatListState.loading;
+  if (hasError) return ChatListState.error;
+  if (conversationCount > 0) return ChatListState.hasData;
+  if (capsLoaded && connectors.isEmpty) return ChatListState.notConfigured;
+  return ChatListState.empty;
+}
+
 /// Chat đa kênh (Dan-D Pak Omni) — hộp thư hội thoại. Hiện đọc + thao tác nội
 /// bộ; gửi tin ra ngoài mở khi connector (Meta/Zalo/Shopee…) được cấp quyền.
 class OnlineChatSection extends StatefulWidget {
@@ -29,6 +53,7 @@ class _OnlineChatSectionState extends State<OnlineChatSection> {
 
   List<Map<String, dynamic>> _conversations = [];
   Map<String, dynamic> _capabilities = {};
+  bool _capsLoaded = false;
   String _selectedId = '';
   Map<String, dynamic> _detail = {};
   List<Map<String, dynamic>> _messages = [];
@@ -83,8 +108,16 @@ class _OnlineChatSectionState extends State<OnlineChatSection> {
   Future<void> _loadCaps() async {
     try {
       final c = await context.read<ApiService>().getOmniCapabilities();
-      if (mounted) setState(() => _capabilities = c);
-    } catch (_) {}
+      if (mounted) {
+        setState(() {
+          _capabilities = c;
+          _capsLoaded = true;
+        });
+      }
+    } catch (_) {
+      // Không rõ có kênh nào được cấu hình hay không → giữ _capsLoaded=false để
+      // KHÔNG khẳng định "chưa kết nối" (tránh thông báo sai).
+    }
   }
 
   Future<void> _load({bool silent = false}) async {
@@ -204,15 +237,29 @@ class _OnlineChatSectionState extends State<OnlineChatSection> {
   }
 
   Widget _list() {
-    if (_loading) return const Center(child: CircularProgressIndicator());
-    if (_error != null) {
-      return Padding(
-        padding: const EdgeInsets.all(24),
-        child: InlineMessage(_error!, error: true, onRetry: _load),
-      );
-    }
-    if (_conversations.isEmpty) {
-      return OnlineEmpty(t('Chưa có hội thoại'), icon: Icons.forum_outlined);
+    final state = chatListState(
+      loading: _loading,
+      hasError: _error != null,
+      capsLoaded: _capsLoaded,
+      connectors: oMap(_capabilities['connectors']),
+      conversationCount: _conversations.length,
+    );
+    switch (state) {
+      case ChatListState.loading:
+        return const Center(child: CircularProgressIndicator());
+      case ChatListState.error:
+        return Padding(
+          padding: const EdgeInsets.all(24),
+          child: InlineMessage(_error!, error: true, onRetry: _load),
+        );
+      case ChatListState.notConfigured:
+        return OnlineEmpty(
+          t('Chưa kết nối kênh chat nào — vào Cài đặt → Kết nối để thêm Facebook/Zalo/Shopee…'),
+          icon: Icons.link_off);
+      case ChatListState.empty:
+        return OnlineEmpty(t('Chưa có hội thoại'), icon: Icons.forum_outlined);
+      case ChatListState.hasData:
+        break;
     }
     return ListView.separated(
       itemCount: _conversations.length,
