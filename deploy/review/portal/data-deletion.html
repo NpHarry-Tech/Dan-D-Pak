@@ -11,14 +11,14 @@
   .wrap{ max-width:820px; margin:0 auto; padding:32px 20px 64px }
   h1{ font-size:26px; margin:0 0 4px } h2{ font-size:18px; margin:28px 0 8px }
   .sub{ color:var(--muted); margin:0 0 24px }
-  a{ color:var(--accent) } .todo{ background:#fff6d6; border:1px solid #e8d98a; padding:2px 6px; border-radius:4px; font-weight:600 }
+  a{ color:var(--accent) }
   .card{ background:#fff; border:1px solid var(--line); border-radius:12px; padding:20px 22px; margin:16px 0 }
   .en{ color:var(--muted) } ol{ padding-left:20px } footer{ margin-top:32px; color:var(--muted); font-size:14px; border-top:1px solid var(--line); padding-top:16px }
 </style>
 </head>
 <body>
 <div class="wrap">
-  <h1>Yêu cầu xoá dữ liệu</h1>
+  <h1>Yêu cầu xoá dữ liệu / Data Deletion</h1>
   <p class="sub">Dan-D Pak POS · User data deletion request · Cập nhật: 2026</p>
 
   <div class="card">
@@ -32,20 +32,34 @@
   <ol>
     <li>Trong ứng dụng: ngắt kết nối Shopee (thu hồi token) tại phần Kết nối/Online.
       <span class="en">In-app: disconnect Shopee (revokes the token) under Connections/Online.</span></li>
-    <li>Gửi yêu cầu xoá tới email hỗ trợ kèm định danh cửa hàng/shop_id.
-      <span class="en">Email a deletion request with your store / shop_id to the support address.</span></li>
-    <li>Chúng tôi xử lý và xác nhận trong thời hạn hợp lý (mục tiêu 30 ngày).
-      <span class="en">We process and confirm within a reasonable period (target 30 days).</span></li>
+    <li>Gửi yêu cầu xoá tới <a href="mailto:nguyenphuchuy263@gmail.com">nguyenphuchuy263@gmail.com</a>,
+      kèm thông tin đủ để xác minh tài khoản, cửa hàng và kết nối liên quan.
+      <span class="en">Email the deletion request to
+      <a href="mailto:nguyenphuchuy263@gmail.com">nguyenphuchuy263@gmail.com</a> with enough information
+      to verify the relevant account, store and connection.</span></li>
+    <li>Không gửi mật khẩu, PIN, access token, partner key hoặc bất kỳ bí mật nào qua email.
+      <span class="en">Do not send passwords, PINs, access tokens, partner keys or any other secrets by email.</span></li>
+    <li>Người phụ trách sẽ xác minh phạm vi yêu cầu và thông báo khi việc xử lý hoàn tất.
+      <span class="en">The responsible person will verify the request scope and confirm when processing is complete.</span></li>
   </ol>
 
   <h2>Email tiếp nhận yêu cầu <span class="en">/ Request address</span></h2>
-  <p><span class="todo">[Email tiếp nhận yêu cầu xoá — TO BE PROVIDED BY OWNER: địa chỉ email chính thức]</span></p>
+  <p><strong>Người tiếp nhận và phụ trách:</strong> Nguyễn Phúc Huy ·
+  <a href="mailto:nguyenphuchuy263@gmail.com">nguyenphuchuy263@gmail.com</a>.<br>
+  <strong>Địa chỉ:</strong> Căn 00.08, tòa Sarimi A1, số 74 đường Nguyễn Cơ Thạch,
+  phường An Khánh, Thành phố Hồ Chí Minh, Việt Nam.</p>
+  <p class="en"><strong>Recipient and responsible person:</strong> Nguyễn Phúc Huy ·
+  <a href="mailto:nguyenphuchuy263@gmail.com">nguyenphuchuy263@gmail.com</a>.<br>
+  <strong>Address:</strong> Apartment 00.08, Sarimi A1 Building, 74 Nguyen Co Thach Street,
+  An Khanh Ward, Ho Chi Minh City, Vietnam.</p>
 
   <h2>Dữ liệu bị xoá gồm <span class="en">/ What gets deleted</span></h2>
-  <p>Token uỷ quyền Shopee, ánh xạ sản phẩm/đơn liên quan đến shop, và dữ liệu cá nhân liên hệ (nếu có) trong
-  phạm vi tài khoản yêu cầu. Bản ghi kế toán/pháp lý bắt buộc lưu theo luật có thể được giữ theo thời hạn luật định.</p>
+  <p>Có thể thu hồi token uỷ quyền Shopee, ngắt kết nối và xoá ánh xạ sản phẩm/đơn liên quan đến cửa hàng cùng
+  dữ liệu liên hệ cá nhân (nếu có) trong phạm vi tài khoản đã xác minh. Một số bản ghi có thể cần được giữ lại
+  khi cần cho nghĩa vụ kế toán, bảo mật hoặc giải quyết tranh chấp.</p>
   <p class="en">The Shopee authorization token, shop-related product/order mappings, and any contact personal
-  data within the requesting account. Records legally required to be retained may be kept for the statutory period.</p>
+  data within the verified requesting account may be revoked, disconnected or deleted. Some records may need to
+  be retained where necessary for accounting, security or dispute resolution.</p>
 
   <footer>
     Xem thêm: <a href="privacy-policy.html">Chính sách quyền riêng tư</a> ·
