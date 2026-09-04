@@ -4,11 +4,11 @@ AppName=Dan-D Pak POS
 ; PH?I d?i k�m kAppBuildNumber/kAppVersionName trong lib/app_version.dart.
 ; publish-release.ps1 d?c s? build t? app_version.dart r?i d?i chi?u v?i file
 ; dem l�n � l?ch l� m�y POS roi v�o v�ng l?p c?p nh?t v� t?n.
-AppVersion=2026.09.02.01
+AppVersion=2026.09.03.01
 DefaultDirName={commonpf}\DanDPakPOS
 DefaultGroupName=Dan-D Pak POS
 OutputDir=..\..\artifacts\releases
-OutputBaseFilename=dan-d-pak-pos-setup-b169
+OutputBaseFilename=dan-d-pak-pos-setup-b170
 Compression=lzma
 SolidCompression=yes
 SetupIconFile=windows\runner\resources\app_icon.ico

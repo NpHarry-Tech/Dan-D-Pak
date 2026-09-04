@@ -53,28 +53,59 @@ class _AuditLogTabState extends State<_AuditLogTab> {
   DateTime _anchor = DateTime.now();
   Timer? _timer;
   Timer? _searchTimer;
+  Timer? _rtDebounce;
+  void Function(String, dynamic)? _socketListener;
 
   bool get _hasMore => _hasMoreAudit || _hasMoreSys;
+
+  // Chỉ làm tươi realtime khi đang ở CHẾ ĐỘ XEM MẶC ĐỊNH (không tìm/không lọc mốc)
+  // để không phá thao tác của người dùng; lúc đó realtime chỉ bổ trợ cho polling.
+  bool get _canLiveRefresh =>
+      mounted &&
+      !_loading &&
+      !_loadingMore &&
+      _search.text.isEmpty &&
+      _granularity.isEmpty;
 
   @override
   void initState() {
     super.initState();
     _load();
+    // Timer GIỮ LÀM FALLBACK (§1.7): nếu realtime rớt vẫn còn nhịp làm tươi.
     _timer = Timer.periodic(Duration(seconds: 5), (timer) {
-      if (mounted &&
-          !_loading &&
-          !_loadingMore &&
-          _search.text.isEmpty &&
-          _granularity.isEmpty) {
-        _load(silent: true);
-      }
+      if (_canLiveRefresh) _load(silent: true);
     });
+    // Realtime: server phát 'activity:new' sau khi ghi audit_log → làm tươi NGAY
+    // (debounce gộp cụm sự kiện). Dedupe tự nhiên vì _load lấy danh sách canonical
+    // từ server, không tự chèn dòng client-side.
+    _socketListener = (event, payload) {
+      if (event != 'activity:new') return;
+      if (!_canLiveRefresh) return;
+      _rtDebounce?.cancel();
+      _rtDebounce = Timer(const Duration(milliseconds: 400), () {
+        if (_canLiveRefresh) _load(silent: true);
+      });
+    };
+    SocketService.instance.addListener(_socketListener!);
+    // Reconnect → resync: kéo lại danh sách để không mất sự kiện lỡ khi rớt mạng.
+    SocketService.instance.connected.addListener(_onConnChanged);
+  }
+
+  void _onConnChanged() {
+    if (SocketService.instance.connected.value && _canLiveRefresh) {
+      _load(silent: true);
+    }
   }
 
   @override
   void dispose() {
     _timer?.cancel();
     _searchTimer?.cancel();
+    _rtDebounce?.cancel();
+    if (_socketListener != null) {
+      SocketService.instance.removeListener(_socketListener!);
+    }
+    SocketService.instance.connected.removeListener(_onConnChanged);
     _search.dispose();
     super.dispose();
   }

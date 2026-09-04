@@ -7,6 +7,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../app_flavor.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/api_service.dart';
 import '../../services/socket_service.dart';
@@ -403,16 +404,22 @@ class _ConnectionsPanelState extends State<ConnectionsPanel> {
             _printerRegistryPanel(),
             SizedBox(height: 16),
             _recentJobsPanel(),
-            SizedBox(height: 16),
-            BuildDiagnosticsCard(
-              apiBaseUrl: widget.api.baseUrl,
-              allowAdvanced: canViewAdvancedDiagnostics(
-                role: context.watch<AuthProvider>().currentUser?.role ?? '',
-                hasDiagnosticsPermission: context
-                    .watch<AuthProvider>()
-                    .hasPermission('settings.manage'),
+            // §3 — Desktop (station) KHÔNG hiện "Thông tin ứng dụng" ở Kết nối:
+            // trạng thái hiện tại đã dời sang tab Cơ sở dữ liệu, lịch sử nằm ở Nhật
+            // ký hoạt động. Tablet vẫn giữ thẻ này (không bỏ nhầm). Bỏ luôn khoảng
+            // đệm phía trên để không để lại chỗ trống.
+            if (!AppFlavor.current.isStation) ...[
+              SizedBox(height: 16),
+              BuildDiagnosticsCard(
+                apiBaseUrl: widget.api.baseUrl,
+                allowAdvanced: canViewAdvancedDiagnostics(
+                  role: context.watch<AuthProvider>().currentUser?.role ?? '',
+                  hasDiagnosticsPermission: context
+                      .watch<AuthProvider>()
+                      .hasPermission('settings.manage'),
+                ),
               ),
-            ),
+            ],
           ],
         ),
       ),

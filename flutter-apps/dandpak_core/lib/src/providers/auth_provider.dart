@@ -8,6 +8,7 @@ import '../services/app_log.dart';
 import '../services/app_updater.dart';
 import '../services/hardware_agent_launcher.dart';
 import '../services/local_store.dart';
+import '../services/pending_update.dart';
 import '../services/socket_service.dart';
 import '../services/tenant_scope.dart';
 import '../services/system_log.dart';
@@ -320,6 +321,10 @@ class AuthProvider extends ChangeNotifier {
       _setLanguage(_currentUser!.lang, notify: false);
       await _loadBranchModules();
       _syncLogContext();
+
+      // §2 — đủ token/branch rồi: flush NGAY marker cập nhật đang chờ (không chờ
+      // timer). Fire-and-forget để không làm chậm đăng nhập; idempotent theo key.
+      PendingUpdate.flushAfterAuth(apiService);
 
       final prefs = LocalStore.instance;
       // Desktop: token chỉ sống trong bộ nhớ của phiên chạy này — đóng app là mất,

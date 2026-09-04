@@ -11,6 +11,7 @@ import 'app_notifier.dart';
 import 'app_log.dart';
 import 'black_box.dart';
 import 'local_store.dart';
+import 'pending_update.dart';
 import 'release_scope.dart';
 import 'system_log.dart';
 
@@ -195,6 +196,15 @@ class AppUpdater {
         ..createSync(recursive: true);
       final file = File('${dir.path}/dan-d-pak-update.$ext');
       await file.writeAsBytes(bytes, flush: true);
+
+      // §2 — lưu marker BỀN VỮNG ngay trước khi chạy installer để lần khởi động
+      // đầu sau cập nhật (sau đăng nhập) đối chiếu build thật rồi ghi ĐÚNG một dòng
+      // "Cập nhật thành công" vào Nhật ký hoạt động (không ghi nếu thực tế chưa lên).
+      await PendingUpdate.mark(
+        oldBuild: AppFlavor.current.buildNumber,
+        expectedBuild: info.buildNumber,
+        version: info.version,
+      );
 
       if (platform == 'windows') {
         // Cài IM LẶNG: không wizard, tự dùng lại thư mục cài cũ

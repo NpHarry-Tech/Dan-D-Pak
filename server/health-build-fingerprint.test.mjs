@@ -52,7 +52,7 @@ test('health reports the running image fingerprint and actual DB schema', { time
       gitCommit: commit,
       sourceTreeSha256: source,
       buildTimeUtc: builtAt,
-      schemaVersion: 7,
+      schemaVersion: 8,
     });
   } finally {
     child.kill('SIGTERM');

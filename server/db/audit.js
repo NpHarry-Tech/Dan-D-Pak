@@ -11,6 +11,7 @@ import {
 import { now, uid } from './ids.js';
 import { decryptSecret, encryptSecret } from '../core/crypto.js';
 import { businessPeriodStartUtc } from '../core/businessClock.js';
+import { publishRealtime } from '../core/realtimeBus.js';
 
 const TECHNICAL_ONLY_ACTIONS = new Set([
   'system.error',
@@ -51,6 +52,13 @@ export function audit(action, detail, branch_id = 'sala', actor = 'system') {
   } catch (e) {
     logger.warn('audit sqlite write failed (kept in NDJSON archive)', { message: e.message });
   }
+  // Post-write realtime: màn "Nhật ký hoạt động" đang mở của CHÍNH chi nhánh này
+  // hiện dòng mới ngay, không cần đổi tab / bấm Lọc / chờ polling. Additive &
+  // best-effort — client pre-b170 không nghe 'activity:new' nên bỏ qua vô hại;
+  // sự kiện chỉ vào staffRoom (không phải IPAD_EVENTS) nên không rò sang kiosk.
+  // id là idempotency key: client chống trùng khi reconnect/resync theo id này.
+  publishRealtime('activity:new', { id, branch_id, actor, action, detail: cleanDetail, created_at }, branch_id);
+  return { id, created_at };
 }
 
 

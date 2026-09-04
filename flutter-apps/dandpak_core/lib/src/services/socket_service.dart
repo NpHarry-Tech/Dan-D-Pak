@@ -45,6 +45,13 @@ class SocketService {
     'inventory:alert',
     'invoice:issued',
     'online:new',
+    // Nhật ký hoạt động realtime: server phát sau khi ghi audit_log → màn Nhật ký
+    // hiện dòng mới ngay (dedupe theo id khi reconnect resync). Gồm cả dòng
+    // "Cập nhật thành công" (app.update_success).
+    'activity:new',
+    // Kho Tài liệu realtime: file/ảnh mới hoặc đổi trạng thái → tab Tài liệu tự cập nhật.
+    'document:new',
+    'document:updated',
   ];
 
   /// Trạng thái kết nối realtime — topbar các màn hiển thị chấm Online thật

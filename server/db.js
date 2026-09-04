@@ -1809,6 +1809,30 @@ export function migrate(targetDb = globalDb) {
     initSyncTriggers(db);
   }
 
+  // Document registry v8 — MỞ RỘNG DMS hiện có (document_files) để trở thành chỉ
+  // mục tập trung THẬT SỰ của mọi file/ảnh hệ thống tiếp nhận. Thêm cột additive:
+  //  • storage_kind : 'file' = nội dung đã copy vào uploads/documents (như cũ);
+  //                   'reference' = TRỎ tới cột nguồn (vd expenses.invoice_image)
+  //                   để index ẢNH INLINE mà KHÔNG nhân bản blob ra đĩa.
+  //  • ref_locator  : "module:field:recordId" — chỉ giải phía server, whitelist.
+  //  • source_screen: nhãn màn hình/nghiệp vụ đã upload (yêu cầu §4).
+  //  • is_legacy    : dữ liệu backfill thiếu metadata lịch sử → đánh dấu.
+  // CREATE cột-nếu-thiếu chạy mỗi lần khởi động → additive & idempotent; DB v7
+  // đang chạy tự có cột khi deploy, b169 client bỏ qua nên tương thích ngược.
+  addColumnIfMissing('document_files', 'storage_kind', "TEXT NOT NULL DEFAULT 'file'");
+  addColumnIfMissing('document_files', 'ref_locator', 'TEXT');
+  addColumnIfMissing('document_files', 'source_screen', 'TEXT');
+  addColumnIfMissing('document_files', 'is_legacy', 'INTEGER NOT NULL DEFAULT 0');
+  // Trạng thái file (yêu cầu §4): 'available' | 'missing' (nội dung nguồn không
+  // còn giải được). Đặt lúc đăng ký/backfill; endpoint tải cũng trả 410 khi mất.
+  addColumnIfMissing('document_files', 'status', "TEXT NOT NULL DEFAULT 'available'");
+  // Idempotency của backfill/upload-hook KHÔNG dùng ràng buộc UNIQUE (một bản ghi
+  // nguồn có thể có nhiều file hợp lệ, và UNIQUE có thể vỡ khi tạo trên dữ liệu cũ
+  // đã trùng → chặn khởi động). Thay vào đó dùng chỉ mục thường để tra "đã có
+  // document cho bản ghi nguồn này chưa" rồi bỏ qua nếu có (xử lý ở tầng code).
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_docfiles_related
+    ON document_files(branch_id, related_type, related_id);`);
+
   // Một authority phiên bản duy nhất cho schema hợp nhất. Bảng schema_migrations
   // cũ (nếu DB production có) chỉ còn là lịch sử; không còn runner thứ hai đọc nó.
   db.exec(`
@@ -1817,9 +1841,9 @@ export function migrate(targetDb = globalDb) {
       value TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
-    INSERT INTO schema_meta(key,value,updated_at) VALUES('canonical_version','7',datetime('now'))
+    INSERT INTO schema_meta(key,value,updated_at) VALUES('canonical_version','8',datetime('now'))
       ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at;
-    PRAGMA user_version = 7;
+    PRAGMA user_version = 8;
   `);
   initCriticalIntegrityGuards(db);
 }

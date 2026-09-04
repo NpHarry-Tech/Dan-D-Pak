@@ -3,6 +3,7 @@
 // fileCashDrawerReceipt được EXPORT cho payments module dùng (lưu ảnh hóa đơn chi từ két).
 import * as Auth from '../../services/auth.js';
 import { db, uid, audit, now } from '../../db.js';
+import { emit } from '../../realtime.js';
 import { errorPayload } from '../../core/errors.js';
 import fs from 'node:fs';
 import nodePath from 'node:path';
@@ -34,7 +35,104 @@ function saveDocumentRecord({ branch_id, name, original_name, stored_name, mime_
     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,?,?)`)
     .run(id, branch_id, name, original_name, stored_name, mime_type, file_size, category, source, related_id, related_type, JSON.stringify(tags), description, uploaded_by, uploaded_by_name, created_at, content_hash);
   audit('dms.upload', { id, name, category, source, original_name, file_size }, branch_id, uploaded_by);
-  return db.prepare(`SELECT * FROM document_files WHERE id=?`).get(id);
+  const rec = db.prepare(`SELECT * FROM document_files WHERE id=?`).get(id);
+  // Post-write realtime: tab Tài liệu đang mở hiện file mới ngay (không polling).
+  // Additive — b169 client không nghe 'document:new'. Chỉ vào staffRoom (không PII kiosk).
+  try { emit('document:new', documentFileOut(rec), branch_id); } catch { /* best-effort */ }
+  return rec;
+}
+
+// Hình dạng an toàn cho client: KHÔNG lộ stored_name/ref_locator (chi tiết nội bộ).
+export function documentFileOut(r) {
+  if (!r) return null;
+  const { stored_name, ref_locator, ...safe } = r;
+  return {
+    ...safe,
+    tags: (() => { try { return JSON.parse(r.tags_json || '[]'); } catch { return []; } })(),
+    is_image: String(r.mime_type || '').startsWith('image/'),
+    is_legacy: !!r.is_legacy,
+    download_url: `/api/documents/files/${encodeURIComponent(r.id)}/download`,
+    preview_url: `/api/documents/files/${encodeURIComponent(r.id)}/preview`,
+  };
+}
+
+// ── Reference-mode: index nội dung ĐANG NẰM ở nguồn (vd ảnh hóa đơn inline trong
+// expenses.invoice_image) mà KHÔNG copy blob ra đĩa. storage_kind='reference',
+// ref_locator="module:field:recordId" — chỉ giải phía server qua whitelist cứng
+// bên dưới (không cho đọc bảng/cột tùy ý; chống truy cập dữ liệu bừa bãi).
+const INLINE_REFERENCE_SOURCES = {
+  'expense:invoice_image': { table: 'expenses', column: 'invoice_image' },
+};
+
+function decodeDataUrl(value) {
+  const s = String(value ?? '');
+  if (!s) return null;
+  const m = s.match(/^data:([^;,]+)(;base64)?,(.*)$/s);
+  try {
+    if (m) {
+      const mime = (m[1] || 'application/octet-stream').trim().toLowerCase();
+      const buf = m[2] ? Buffer.from(m[3], 'base64') : Buffer.from(decodeURIComponent(m[3]), 'utf8');
+      return buf.byteLength ? { mime, buf } : null;
+    }
+    const buf = Buffer.from(s, 'base64');
+    return buf.byteLength ? { mime: 'application/octet-stream', buf } : null;
+  } catch { return null; }
+}
+
+// Giải một document reference về {mime,buf} bằng cách đọc ĐÚNG cột nguồn cùng chi
+// nhánh. Trả null nếu file nguồn đã mất/hỏng (→ caller trả 410).
+export function resolveReferenceContent(rec, branch_id) {
+  const parts = String(rec.ref_locator || '').split(':');
+  const key = `${parts[0]}:${parts[1]}`;
+  const recordId = parts.slice(2).join(':');
+  const allow = INLINE_REFERENCE_SOURCES[key];
+  if (!allow || !recordId) return null;
+  const row = db.prepare(`SELECT ${allow.column} v FROM ${allow.table} WHERE id=? AND branch_id=?`).get(recordId, branch_id);
+  const decoded = decodeDataUrl(row?.v);
+  if (!decoded) return null;
+  return { mime: rec.mime_type || decoded.mime, buf: decoded.buf };
+}
+
+// Đăng ký (idempotent) một document REFERENCE cho một bản ghi nguồn. Không copy
+// file. Idempotency theo (branch, related_type, related_id): gọi lại/backfill lại
+// KHÔNG tạo trùng — cập nhật metadata rồi trả bản ghi cũ. GỌI SAU khi bản ghi
+// nguồn đã lưu (nội dung đã có ở cột nguồn). Trả record hoặc null (không có ảnh).
+export function saveDocumentReference({
+  branch_id, module, field, record_id, record_label,
+  name, original_name, category = 'other', source, description = '',
+  uploaded_by = 'system', uploaded_by_name = 'Hệ thống', uploaded_at = null,
+  source_screen = '', is_legacy = 0, value = null,
+}) {
+  const related_type = module;
+  const related_id = record_id;
+  const decoded = value != null ? decodeDataUrl(value) : null;
+  const mime_type = decoded?.mime || 'application/octet-stream';
+  const file_size = decoded?.buf?.byteLength || 0;
+  const status = value != null && !decoded ? 'missing' : 'available';
+  const ref_locator = `${module}:${field}:${record_id}`;
+  const created_at = uploaded_at || now();
+  const finalName = name || original_name || record_label || `${module}-${record_id}`;
+  const finalOriginal = original_name || finalName;
+
+  // Idempotent & KHÔNG phá dữ liệu: nếu đã có document cho bản ghi nguồn này (kể cả
+  // do fileCashDrawerReceipt lập chỉ mục dạng COPY) thì GIỮ NGUYÊN, không đụng tới
+  // storage_kind/stored_name của nó — chỉ trả lại bản ghi cũ. Chạy lại/backfill lại
+  // không tạo trùng và không biến một entry copy đang chạy thành reference.
+  const existing = db.prepare(
+    `SELECT * FROM document_files WHERE branch_id=? AND related_type=? AND related_id=? AND is_archived=0 LIMIT 1`,
+  ).get(branch_id, related_type, related_id);
+  if (existing) return existing;
+
+  const id = uid('doc_');
+  db.prepare(`INSERT INTO document_files
+    (id,branch_id,name,original_name,stored_name,mime_type,file_size,category,source,related_id,related_type,tags_json,description,uploaded_by,uploaded_by_name,is_archived,created_at,content_hash,storage_kind,ref_locator,source_screen,is_legacy,status)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,?,NULL,'reference',?,?,?,?)`)
+    .run(id, branch_id, finalName, finalOriginal, '', mime_type, file_size, category, source || module,
+      related_id, related_type, '[]', description, uploaded_by, uploaded_by_name, created_at, ref_locator, source_screen, is_legacy ? 1 : 0, status);
+  const rec = db.prepare(`SELECT * FROM document_files WHERE id=?`).get(id);
+  // Không audit mỗi backfill (tránh ồn); chỉ realtime cho tab Tài liệu đang mở.
+  try { emit('document:new', documentFileOut(rec), branch_id); } catch { /* best-effort */ }
+  return rec;
 }
 
 const DATA_URL_EXT = {
@@ -138,7 +236,7 @@ api.get('/documents/files', wrap(async (req) => {
   const rows = matched.slice(start, start + Math.min(Math.max(parseInt(limit) || 100, 1), 500));
   const total = matched.length;
 
-  return { files: rows.map(r => ({ ...r, tags: JSON.parse(r.tags_json || '[]') })), total };
+  return { files: rows.map(documentFileOut), total };
 }));
 
 // ── Download ─────────────────────────────────────────────────────────────────
@@ -148,11 +246,15 @@ api.get('/documents/files/:id/download', async (req, res) => {
     const rec = db.prepare(`SELECT * FROM document_files WHERE id=? AND branch_id=?`).get(req.params.id, branch_id);
     if (!rec) return res.status(404).json({ error: 'Tài liệu không tồn tại' });
 
-    const filePath = nodePath.join(UPLOADS_DIR, rec.stored_name);
-    if (!fs.existsSync(filePath)) return res.status(410).json({ error: 'File đã bị xóa khỏi ổ đĩa' });
-
     res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(rec.original_name)}"`);
     res.setHeader('Content-Type', rec.mime_type || 'application/octet-stream');
+    if (rec.storage_kind === 'reference') {
+      const resolved = resolveReferenceContent(rec, branch_id);
+      if (!resolved) return res.status(410).json({ error: 'File nguồn không còn' });
+      return res.end(resolved.buf);
+    }
+    const filePath = nodePath.join(UPLOADS_DIR, rec.stored_name);
+    if (!fs.existsSync(filePath)) return res.status(410).json({ error: 'File đã bị xóa khỏi ổ đĩa' });
     await pipeline(fs.createReadStream(filePath), res);
   } catch(e) {
     logRequestError(req, e);
@@ -168,11 +270,15 @@ api.get('/documents/files/:id/preview', async (req, res) => {
     const rec = db.prepare(`SELECT * FROM document_files WHERE id=? AND branch_id=?`).get(req.params.id, branch_id);
     if (!rec) return res.status(404).json({ error: 'Tài liệu không tồn tại' });
 
-    const filePath = nodePath.join(UPLOADS_DIR, rec.stored_name);
-    if (!fs.existsSync(filePath)) return res.status(410).json({ error: 'File đã bị xóa khỏi ổ đĩa' });
-
     res.setHeader('Content-Type', rec.mime_type || 'application/octet-stream');
     res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(rec.original_name)}"`);
+    if (rec.storage_kind === 'reference') {
+      const resolved = resolveReferenceContent(rec, branch_id);
+      if (!resolved) return res.status(410).json({ error: 'File nguồn không còn' });
+      return res.end(resolved.buf);
+    }
+    const filePath = nodePath.join(UPLOADS_DIR, rec.stored_name);
+    if (!fs.existsSync(filePath)) return res.status(410).json({ error: 'File đã bị xóa khỏi ổ đĩa' });
     await pipeline(fs.createReadStream(filePath), res);
   } catch(e) {
     logRequestError(req, e);
@@ -214,5 +320,34 @@ api.delete('/documents/files/:id', wrap(async (req) => {
   db.prepare(`DELETE FROM document_files WHERE id=?`).run(req.params.id);
   audit('dms.delete', { id: rec.id, name: rec.name, original_name: rec.original_name }, branch_id, actor.username || actor.id);
   return { ok: true };
+}));
+
+// ── Registry stats (header tab Tài liệu) ─────────────────────────────────────
+api.get('/documents/stats', wrap(async (req) => {
+  const { branch_id } = Auth.requirePermission(req, 'module.documents');
+  const total = db.prepare(`SELECT COUNT(*) c FROM document_files WHERE branch_id=? AND is_archived=0`).get(branch_id).c;
+  const legacy = db.prepare(`SELECT COUNT(*) c FROM document_files WHERE branch_id=? AND is_archived=0 AND is_legacy=1`).get(branch_id).c;
+  const missing = db.prepare(`SELECT COUNT(*) c FROM document_files WHERE branch_id=? AND is_archived=0 AND status='missing'`).get(branch_id).c;
+  const byModule = db.prepare(`SELECT source, COUNT(*) c FROM document_files WHERE branch_id=? AND is_archived=0 GROUP BY source ORDER BY c DESC`).all(branch_id);
+  return { total, legacy, missing, byModule };
+}));
+
+// ── Backfill (idempotent) — lập chỉ mục file/ảnh hiện hữu vào kho Tài liệu ────
+// Gọi bởi quy trình bảo trì (Block 1 sau deploy). requirePermission + manager/owner
+// PIN cho lần chạy THẬT (không phải dry-run) vì đây là thao tác hàng loạt.
+api.post('/documents/backfill', wrap(async (req) => {
+  const { branch_id } = Auth.requirePermission(req, 'module.documents');
+  const dryRun = String(req.query.dry ?? req.body?.dry ?? '') === '1' || req.body?.dry === true;
+  if (!dryRun) {
+    const { pin } = req.body || {};
+    if (!pin || !Auth.verifyManagerOwnerPin(pin, branch_id)) {
+      throw new Error('Cần PIN Quản lý hoặc Admin để chạy backfill thật (dry-run thì không cần).');
+    }
+  }
+  const allBranches = String(req.query.all ?? '') === '1';
+  const { backfillDocuments, backfillAudit } = await import('../../services/documentsBackfill.js');
+  const auditReport = backfillAudit({ branchId: allBranches ? null : branch_id });
+  const stats = backfillDocuments({ branchId: allBranches ? null : branch_id, dryRun });
+  return { dryRun, audit: auditReport, stats };
 }));
 }

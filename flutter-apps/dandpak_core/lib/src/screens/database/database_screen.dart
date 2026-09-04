@@ -5,8 +5,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
+import '../../app_flavor.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/api_service.dart';
+import '../../services/socket_service.dart';
+import '../../services/system_log.dart';
 import '../../ui/app_theme.dart';
 import '../../widgets/dan_top_bar.dart';
 import '../../widgets/manager_pin_dialog.dart';
@@ -358,6 +361,61 @@ class _DatabaseTabState extends State<_DatabaseTab> {
     }
   }
 
+  // §3/§5 — Trạng thái HIỆN TẠI của Desktop (tên human-facing, phiên bản, build,
+  // môi trường/backend production, thiết bị). Dời từ "Thông tin ứng dụng" ở
+  // Cài đặt → Kết nối về đây. KHÔNG lộ internal name 'dandpak_desktop' cho người
+  // dùng — hiển thị tên sản phẩm "Dan-D Pak POS". Lịch sử ở Nhật ký hoạt động.
+  Widget _appInfoBlock() {
+    // Chỉ Desktop (station) hiển thị khối này ở đây — Tablet/Phone giữ "Thông tin
+    // ứng dụng" ở màn của chúng nên KHÔNG lặp lại.
+    if (!AppFlavor.current.isStation) return const SizedBox.shrink();
+    final flavor = AppFlavor.current;
+    final baseUrl = context.read<ApiService>().baseUrl;
+    final host = Uri.tryParse(baseUrl)?.host ?? baseUrl;
+    final env = host == 'api.dandpakpos.io.vn'
+        ? t('Sản xuất')
+        : (host.contains('review') ? t('Đánh giá') : t('Tùy chỉnh'));
+    final device = SystemLog.deviceId;
+    final shortDevice = device.length <= 6
+        ? device
+        : '••••${device.substring(device.length - 6)}';
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: DanColors.surface,
+        border: Border.all(color: DanColors.border),
+        borderRadius: BorderRadius.circular(DanRadius.lg),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text(t('Ứng dụng hiện tại'),
+            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800)),
+        const SizedBox(height: 10),
+        _kv(t('Ứng dụng'), 'Dan-D Pak POS'),
+        _kv(t('Phiên bản'),
+            '${flavor.versionName} (build ${flavor.buildNumber})'),
+        _kv(t('Máy chủ'), '$env · $host'),
+        if (device.isNotEmpty) _kv(t('Thiết bị'), shortDevice),
+      ]),
+    );
+  }
+
+  Widget _kv(String k, String v) => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 3),
+        child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          SizedBox(
+            width: 96,
+            child: Text(k,
+                style: TextStyle(fontSize: 12, color: DanColors.faint)),
+          ),
+          Expanded(
+            child: Text(v,
+                style: const TextStyle(
+                    fontSize: 12.5, fontWeight: FontWeight.w600)),
+          ),
+        ]),
+      );
+
   @override
   Widget build(BuildContext context) {
     if (_loading && _status == null) {
@@ -388,6 +446,7 @@ class _DatabaseTabState extends State<_DatabaseTab> {
       child: ListView(
         padding: EdgeInsets.all(18),
         children: [
+          _appInfoBlock(),
           LayoutBuilder(
             builder: (context, constraints) {
               final wide = constraints.maxWidth >= 960;

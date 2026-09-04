@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../services/api_service.dart';
+import '../../services/socket_service.dart';
 import '../../ui/app_theme.dart';
 import '../../ui/open_file.dart';
 import '../../ui/debouncer.dart';
@@ -57,17 +60,42 @@ class _DocumentsBodyState extends State<DocumentsBody> {
   String? _downloading;
   final _searchDebouncer = Debouncer(delay: Duration(milliseconds: 220));
   final _searchGuard = SearchRequestGuard();
+  Timer? _rtDebounce;
+  void Function(String, dynamic)? _socketListener;
 
   @override
   void initState() {
     super.initState();
     _load();
+    // Realtime §4: file/ảnh mới hoặc đổi trạng thái ở BẤT KỲ module nào (chi phí,
+    // kho, …) → server phát 'document:new'/'document:updated' → tab tự làm tươi
+    // (debounce). Dedupe tự nhiên vì _load lấy danh sách canonical từ server.
+    _socketListener = (event, payload) {
+      if (event != 'document:new' && event != 'document:updated') return;
+      if (!mounted || _loading) return;
+      _rtDebounce?.cancel();
+      _rtDebounce = Timer(const Duration(milliseconds: 400), () {
+        if (mounted && !_loading) _load();
+      });
+    };
+    SocketService.instance.addListener(_socketListener!);
+    SocketService.instance.connected.addListener(_onConnChanged);
+  }
+
+  void _onConnChanged() {
+    // Reconnect → resync: kéo lại để không lỡ tài liệu tạo khi mất mạng.
+    if (SocketService.instance.connected.value && mounted && !_loading) _load();
   }
 
   @override
   void dispose() {
     _searchDebouncer.dispose();
     _searchGuard.invalidate();
+    _rtDebounce?.cancel();
+    if (_socketListener != null) {
+      SocketService.instance.removeListener(_socketListener!);
+    }
+    SocketService.instance.connected.removeListener(_onConnChanged);
     super.dispose();
   }
 
@@ -190,7 +218,7 @@ class _DocumentsBodyState extends State<DocumentsBody> {
         child: Padding(
           padding: EdgeInsets.all(40),
           child: Text(
-              t('Chưa có tài liệu nào.\n(Tải lên tài liệu mới sẽ bổ sung sau khi tích hợp chọn file.)'),
+              t('Chưa có tài liệu nào.\nẢnh hóa đơn khoản chi và file các nghiệp vụ sẽ tự xuất hiện tại đây.'),
               textAlign: TextAlign.center,
               style: TextStyle(color: DanColors.faint)),
         ),
@@ -212,12 +240,30 @@ class _DocumentsBodyState extends State<DocumentsBody> {
     );
   }
 
+  Widget _tag(String label, Color color) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.14),
+          borderRadius: BorderRadius.circular(4),
+        ),
+        child: Text(label,
+            style: TextStyle(
+                fontSize: 9.5, fontWeight: FontWeight.w700, color: color)),
+      );
+
   Widget _card(Map<String, dynamic> f) {
     final name =
         _s(f['original_name']).isEmpty ? _s(f['name']) : _s(f['original_name']);
-    final created = BusinessDateTime.dateTime(f['created_at']);
-    final size = _n(f['size']);
+    // uploaded_at là mốc chuẩn của registry; created_at là fallback cho bản ghi cũ.
+    final created = BusinessDateTime.dateTime(f['uploaded_at'] ?? f['created_at']);
+    // Server trả cột file_size (document_files); giữ 'size' làm fallback tương thích.
+    final size = _n(f['file_size'] ?? f['size']);
     final id = _s(f['id']);
+    final uploader = _s(f['uploader_name'] ?? f['uploaded_by_name']);
+    final sourceScreen = _s(f['source_screen']);
+    final source = sourceScreen.isNotEmpty ? sourceScreen : _s(f['source']);
+    final missing = _s(f['status']) == 'missing';
+    final legacy = f['is_legacy'] == true || f['is_legacy'] == 1;
 
     return Container(
       padding: EdgeInsets.all(14),
@@ -264,6 +310,29 @@ class _DocumentsBodyState extends State<DocumentsBody> {
             ].join(' · '),
             style: TextStyle(fontSize: 11, color: DanColors.faint),
           ),
+          if (uploader.isNotEmpty || source.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 2),
+              child: Text(
+                [
+                  if (source.isNotEmpty) source,
+                  if (uploader.isNotEmpty) uploader,
+                ].join(' · '),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontSize: 10.5, color: DanColors.faint),
+              ),
+            ),
+          if (missing || legacy)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Row(children: [
+                if (missing)
+                  _tag(t('Thiếu file'), DanColors.late),
+                if (missing && legacy) SizedBox(width: 6),
+                if (legacy) _tag(t('Dữ liệu cũ'), DanColors.muted),
+              ]),
+            ),
           Spacer(),
           Row(
             children: [

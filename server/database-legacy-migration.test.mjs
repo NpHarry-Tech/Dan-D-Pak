@@ -110,8 +110,8 @@ test('legacy print_jobs without idempotency_key upgrades before creating its ind
     assert.doesNotThrow(() => migrate(legacy));
     assert.ok(legacy.prepare(`PRAGMA table_info(print_jobs)`).all()
       .some((column) => column.name === 'idempotency_key'));
-    assert.equal(legacy.prepare(`PRAGMA user_version`).get().user_version, 7);
-    assert.equal(legacy.prepare(`SELECT value FROM schema_meta WHERE key='canonical_version'`).get().value, '7');
+    assert.equal(legacy.prepare(`PRAGMA user_version`).get().user_version, 8);
+    assert.equal(legacy.prepare(`SELECT value FROM schema_meta WHERE key='canonical_version'`).get().value, '8');
     assert.ok(legacy.prepare(`SELECT name FROM sqlite_master WHERE type='index' AND name='idx_print_jobs_idempotency'`).get());
   } finally {
     legacy.close();

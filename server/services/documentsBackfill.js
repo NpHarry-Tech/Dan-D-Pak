@@ -1,0 +1,100 @@
+// Backfill kho Tài liệu — lập chỉ mục các file/ảnh HIỆN HỮU vào document_files để
+// tab "Cơ sở dữ liệu & Tài liệu → Tài liệu" thấy được đầy đủ.
+//
+// AN TOÀN:
+//  • Idempotent: chạy lại KHÔNG tạo trùng (bỏ qua bản ghi nguồn đã có document).
+//  • KHÔNG tạo dữ liệu giả, KHÔNG đoán người upload/nguồn. Thiếu metadata lịch sử
+//    → uploader 'Không xác định' + is_legacy=1 (bằng chứng thật thì giữ nguyên).
+//  • Reference-mode: KHÔNG copy/di chuyển/xóa nội dung nguồn (ảnh vẫn nằm inline
+//    trong cột nguồn). File thiếu/hỏng → status='missing', KHÔNG crash.
+//  • KHÔNG xóa orphan trong lần này (chỉ liệt kê ở audit()).
+//
+// PHẠM VI (chứng từ inline — nguồn owner nêu: "ảnh hóa đơn/chứng từ khoản chi"):
+//   expense.invoice_image (khoản chi trực tiếp) + cash_drawer_expense.invoice_image
+//   (chi từ két; bản mới đã được fileCashDrawerReceipt lập chỉ mục → tự bỏ qua).
+// DEFER (ghi rõ, không tự ý index): ảnh sản phẩm/menu là URL asset danh mục
+//   (/assets/product-images, /uploads/menu) — không phải chứng từ; và không tìm
+//   thấy kho file "import Kho" được lưu bền để backfill.
+import { db, audit } from '../db.js';
+import { saveDocumentReference } from '../modules/documents/routes.js';
+
+const INLINE_SOURCES = [
+  {
+    module: 'expense', field: 'invoice_image', table: 'expenses',
+    idCol: 'id', labelCol: 'code', uploaderCol: 'actor_name', timeCol: 'created_at',
+    screen: 'Chi phí', category: 'receipt',
+    where: "invoice_image IS NOT NULL AND invoice_image != '' AND (drawer_entry_id IS NULL OR drawer_entry_id = '')",
+    nameFor: (r) => `Hóa đơn chi ${r.code || ''}`.trim(),
+  },
+  {
+    module: 'cash_drawer_expense', field: 'invoice_image', table: 'cash_drawer_entries',
+    idCol: 'id', labelCol: 'reason', uploaderCol: 'actor_name', timeCol: 'created_at',
+    screen: 'Sổ quỹ / Két', category: 'receipt',
+    where: "invoice_image IS NOT NULL AND invoice_image != ''",
+    nameFor: (r) => `Hóa đơn chi từ két${r.reason ? ': ' + r.reason : ''}`,
+  },
+];
+
+function newStat() { return { scanned: 0, indexed: 0, skipped: 0, legacy: 0, missing: 0 }; }
+
+// Đếm file vật lý (reference nguồn) và document đã lập chỉ mục để đối chiếu.
+export function backfillAudit({ branchId = null } = {}) {
+  const out = { sources: {}, indexed: 0, byModule: {} };
+  for (const src of INLINE_SOURCES) {
+    const bf = branchId ? ' AND branch_id=?' : '';
+    const args = branchId ? [branchId] : [];
+    const srcCount = db.prepare(`SELECT COUNT(*) c FROM ${src.table} WHERE ${src.where}${bf}`).get(...args).c;
+    const idxCount = db.prepare(
+      `SELECT COUNT(*) c FROM document_files WHERE related_type=? AND is_archived=0${branchId ? ' AND branch_id=?' : ''}`,
+    ).get(...(branchId ? [src.module, branchId] : [src.module])).c;
+    out.sources[src.module] = { sourceFiles: srcCount, indexed: idxCount, missing: Math.max(0, srcCount - idxCount) };
+    out.byModule[src.module] = idxCount;
+    out.indexed += idxCount;
+  }
+  return out;
+}
+
+export function backfillDocuments({ branchId = null, dryRun = false } = {}) {
+  const stats = { scanned: 0, indexed: 0, skipped: 0, legacy: 0, missing: 0, byModule: {}, dryRun: !!dryRun };
+  for (const src of INLINE_SOURCES) {
+    const bm = (stats.byModule[src.module] = newStat());
+    const bf = branchId ? ' AND branch_id=?' : '';
+    const args = branchId ? [branchId] : [];
+    const rows = db.prepare(`SELECT * FROM ${src.table} WHERE ${src.where}${bf}`).all(...args);
+    for (const r of rows) {
+      stats.scanned++; bm.scanned++;
+      const exists = db.prepare(
+        `SELECT id FROM document_files WHERE branch_id=? AND related_type=? AND related_id=? AND is_archived=0 LIMIT 1`,
+      ).get(r.branch_id, src.module, r[src.idCol]);
+      if (exists) { stats.skipped++; bm.skipped++; continue; }
+
+      const uploader = (r[src.uploaderCol] || '').toString().trim();
+      const legacy = uploader ? 0 : 1; // metadata người upload thiếu → legacy
+      if (dryRun) {
+        stats.indexed++; bm.indexed++;
+        if (legacy) { stats.legacy++; bm.legacy++; }
+        continue;
+      }
+      const rec = saveDocumentReference({
+        branch_id: r.branch_id, module: src.module, field: src.field,
+        record_id: r[src.idCol], record_label: r[src.labelCol] || '',
+        name: src.nameFor(r), category: src.category, source: src.module,
+        uploaded_by: 'system', uploaded_by_name: uploader || 'Không xác định',
+        uploaded_at: r[src.timeCol] || null, source_screen: src.screen,
+        is_legacy: legacy, value: r[src.field],
+      });
+      stats.indexed++; bm.indexed++;
+      if (legacy) { stats.legacy++; bm.legacy++; }
+      if (rec?.status === 'missing') { stats.missing++; bm.missing++; }
+    }
+  }
+  if (!dryRun && stats.indexed > 0) {
+    try {
+      audit('documents.backfill', {
+        scanned: stats.scanned, indexed: stats.indexed, skipped: stats.skipped,
+        legacy: stats.legacy, missing: stats.missing,
+      }, branchId || 'sala');
+    } catch { /* backfill không được chặn vì logging */ }
+  }
+  return stats;
+}

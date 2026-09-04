@@ -6,6 +6,7 @@ import { audit } from './db.js';
 import { userFor, canAccessBranch } from './services/auth.js';
 import { normalizeIp } from './core/util.js';
 import { logger } from './core/logger.js';
+import { setRealtimeEmitter } from './core/realtimeBus.js';
 
 let io = null;
 
@@ -107,6 +108,10 @@ export function initRealtime(httpServer) {
     // đứt kết nối vì payload lớn.
     maxHttpBufferSize: 1e7,
   });
+
+  // Cho các module tầng dưới (audit log, document registry…) phát domain event
+  // mà không phải import ngược realtime.js — xem core/realtimeBus.js.
+  setRealtimeEmitter(emit);
 
   // Middleware xác thực kết nối Socket.IO
   io.use((socket, next) => {

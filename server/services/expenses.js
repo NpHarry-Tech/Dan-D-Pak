@@ -8,6 +8,7 @@ import { intval } from '../core/util.js';
 import { emit } from '../realtime.js';
 import { getCustomer } from './customers.js';
 import { createEntry as createDrawerEntry } from './cashDrawer.js';
+import { saveDocumentReference } from '../modules/documents/routes.js';
 import { matchesSearch, searchTokens } from '../core/search.js';
 import { businessDateEndUtc, businessDateStartUtc } from '../core/businessClock.js';
 
@@ -179,6 +180,21 @@ export function createExpense(body = {}, branch_id = 'sala', user = {}) {
   audit('expense.create', { id, code, amount, source, category: category_name, drawer_entry_id }, branch_id, user?.username || user?.name);
   emit('expenses:updated', { id, created: true }, branch_id);
   if (drawer_entry_id) emit('shift:updated', { source: 'expense' }, branch_id);
+  // Lập chỉ mục ảnh hóa đơn vào kho Tài liệu. Khoản chi QUA KÉT đã được
+  // fileCashDrawerReceipt lập chỉ mục (bản copy) → bỏ qua tránh trùng; chỉ khoản
+  // chi TRỰC TIẾP mới cần đăng ký reference tới expenses.invoice_image (không copy).
+  if (!drawer_entry_id && invoice_image) {
+    try {
+      saveDocumentReference({
+        branch_id, module: 'expense', field: 'invoice_image', record_id: id, record_label: code,
+        name: `Hóa đơn chi ${code}`, category: 'receipt', source: 'expense',
+        description: [category_name, payee.name, note].filter(Boolean).join(' · '),
+        uploaded_by: user?.username || user?.id || 'system',
+        uploaded_by_name: user?.name || user?.username || 'Hệ thống',
+        uploaded_at: now(), source_screen: 'Chi phí', value: invoice_image,
+      });
+    } catch { /* lập chỉ mục Tài liệu KHÔNG được chặn việc ghi khoản chi */ }
+  }
   return expenseOut(db.prepare(`SELECT * FROM expenses WHERE id=?`).get(id));
 }
 
@@ -193,6 +209,20 @@ export function updateExpense(id, body = {}, branch_id = 'sala', user = {}) {
     .run(cat?.id || null, cat ? cat.name : str(body.category_name, 120), payee.id, payee.name, str(body.method, 30), intval(body.amount), parseDate(body.expense_date), str(body.note, 800), str(body.invoice_image, 7_500_000), now(), id, branch_id);
   audit('expense.update', { id, amount: intval(body.amount) }, branch_id, user?.username || user?.name);
   emit('expenses:updated', { id }, branch_id);
+  // updateExpense chỉ áp dụng cho khoản chi TRỰC TIẾP (đã chặn khoản qua két ở
+  // trên) → luôn cập nhật/đăng ký reference ảnh hóa đơn khi có ảnh (idempotent).
+  const newImage = str(body.invoice_image, 7_500_000);
+  if (newImage) {
+    try {
+      saveDocumentReference({
+        branch_id, module: 'expense', field: 'invoice_image', record_id: id, record_label: e.code,
+        name: `Hóa đơn chi ${e.code}`, category: 'receipt', source: 'expense',
+        uploaded_by: user?.username || user?.id || 'system',
+        uploaded_by_name: user?.name || user?.username || 'Hệ thống',
+        source_screen: 'Chi phí', value: newImage,
+      });
+    } catch { /* best-effort */ }
+  }
   return expenseOut(db.prepare(`SELECT * FROM expenses WHERE id=?`).get(id));
 }
 
