@@ -130,3 +130,37 @@ Production **HOLD**, Shopee Review **HOLD**, reviewer least-privilege at `fd4fae
 left intact, no deploy/DB mutation/credential run/build performed. External
 connector (Haravan/chat) E2E remains **BLOCKED** pending credentials — see
 `hypothesis-matrix.md`.
+
+## 6. Continuation session (reviewing checkpoint `add0b75`)
+
+**5-risk review of `add0b75` — all closed, each with a runtime test:**
+1. post-commit side-effect failure → `fnb-double-pay-guard` realtime-throw test (6/6).
+2. shared-DB two-process test → same-absolute-path + both-processes-served proofs
+   (`payment-concurrency-http.integration` 4/4).
+3. print state machine canonical → `print-state-machine` (6/6) + stale `'sent'` comment fixed.
+4. claimed-job lease recovery → 60 s reclaim proven (same suite).
+5. dossier contradictions → reconciled to HEAD + standardized status vocabulary.
+
+**Full regression gate — VERIFIED (source), this session:**
+- Server: **132/132 files, 688 tests, 0 fail, 0 timeout** (isolated per-file runner).
+- Flutter test dandpak_core: **216 passed, 1 skipped, 0 fail**.
+- `flutter analyze` **4/4 packages clean**.
+- **Regression caught + fixed:** last session's S5 `getJson(coalesce:)` broke ~13 fake-API
+  overrides — reverted to a non-breaking `getJsonCoalesced`; analyze clean.
+- Static gates (pipefail + explicit emptiness): diff-check / conflict-marker / secret-diff
+  all **PASS** (regex-on-diff only — **not** a comprehensive scan; no gitleaks/trufflehog
+  installed). No orphan test processes (2 `node` = MCP servers).
+
+**Continuation gates:**
+- **Gate 1 — AES-256-GCM Secret Vault: VERIFIED (source) + PARTIAL.** `core/crypto.js`
+  proven (9/9 real crypto tests: round-trip, cross-tenant AAD swap fail, wrong-key fail,
+  tamper fail, fail-closed). **Gaps NOT DONE:** `key_id`/rotation, full per-caller AAD
+  audit, prod/review key separation (NEEDS-LIVE-CANARY). See `security-inventory.md`.
+- **Gate 8 (server) — close-shift idempotency: VERIFIED (source)** (`shift-close-idempotency`
+  2/2). UI route/modal singleton **NOT DONE**.
+- **NOT RUN:** import header-mapping (needs real xlsx), ingress p95 benchmark, 1.5 s
+  debounce buffer, floor golden widget tests, desktop mutex build/run, F&B print banner +
+  Flutter banner widget tests, CRM/chat live, Haravan fake-provider contract, sell-first
+  launcher, thumbnail. Full task is **NOT complete**; regression green ≠ done.
+
+HEAD `bbbc31e`, **23 commits ahead of `fd4faee`, NOT pushed.**
