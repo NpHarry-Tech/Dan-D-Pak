@@ -138,6 +138,36 @@ test('audit payment.done thất bại → rollback tiền/đơn/bàn/outbox và 
   'không được emit success/table state trước commit');
 });
 
+test('realtime NÉM SAU commit → payment vẫn committed, receipt canonical, không nhân đôi', () => {
+  const o = moDon();
+  let calls = 0;
+  // Tầng realtime misbehave (ném) SAU khi đã COMMIT — tuyệt đối không được làm
+  // payment rollback / nhân đôi / khiến API báo thất bại (risk 1B).
+  setRealtimeEmitter(() => { calls += 1; throw new Error('realtime down'); });
+  let receipt = null;
+  let err = null;
+  try {
+    receipt = Pay.payOrder(o.id, [{ method: 'cash', amount: 50000 }],
+      { idempotency_key: 'rt-throw', cashier: 'thu-ngan' }, BR);
+  } catch (e) {
+    err = e;
+  } finally {
+    setRealtimeEmitter(null);
+  }
+  assert.equal(err, null, 'realtime lỗi KHÔNG được làm payOrder ném ra ngoài');
+  assert.ok(calls > 0, 'emitter phải thực sự được gọi (đã đi qua nhánh realtime)');
+  assert.equal(receipt?.fully_settled, true, 'receipt canonical đã committed');
+  assert.ok(receipt.payment_id, 'receipt có payment_id committed');
+  assert.equal(trangThai(o.id), 'paid', 'đơn vẫn đóng — KHÔNG rollback vì realtime lỗi');
+  assert.equal(soKhoanThu(o.id), 1, 'đúng một khoản thu, không nhân đôi');
+
+  // Retry cùng key sau khi realtime từng lỗi → replay đúng payment cũ, không thu lần hai.
+  const r2 = Pay.payOrder(o.id, [{ method: 'cash', amount: 50000 }],
+    { idempotency_key: 'rt-throw', cashier: 'thu-ngan' }, BR);
+  assert.equal(r2.payment_id, receipt.payment_id, 'retry trả đúng payment đã commit');
+  assert.equal(soKhoanThu(o.id), 1, 'retry không tạo khoản thu thứ hai');
+});
+
 test('Retail audit failure rolls back order, stock, payment and all side effects', () => {
   Inventory.createSku({
     id: 'sku_atomic_retail', code: 'ATOMIC-RETAIL', name: 'Atomic Retail',
