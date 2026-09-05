@@ -33,6 +33,7 @@ import { apiNotFound, errorHandler } from './core/http.js';
 import { logger } from './core/logger.js';
 import { requestLogger } from './core/requestLogger.js';
 import { requestContextMiddleware } from './core/requestContext.js';
+import { beginRequestTiming } from './core/requestTiming.js';
 import { logSystem, maintainSystemLogs } from './services/systemLogs.js';
 import { maintainPrintJobs, processReceiptPrintOutbox } from './services/printing.js';
 import { maintainRetailCarts } from './services/retailCart.js';
@@ -328,7 +329,7 @@ app.get('/health', (req, res) => {
   return res.status(health.ok ? 200 : 503).json(health);
 });
 
-app.use('/api', requestContextMiddleware, requestLogger, api);
+app.use('/api', beginRequestTiming, requestContextMiddleware, requestLogger, api);
 app.use('/api', apiNotFound);
 app.use('/uploads', express.static(storagePath('uploads'), immutableUploadStaticOptions));
 app.use('/assets', express.static(ENGINE_ASSETS, bundledAssetStaticOptions));

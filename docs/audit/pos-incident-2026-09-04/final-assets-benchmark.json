@@ -1,0 +1,30 @@
+{
+  "status": "VERIFIED",
+  "target": "immutable /uploads static asset over loopback HTTP",
+  "environment": {
+    "platform": "win32",
+    "node": "v24.14.1"
+  },
+  "cold_unique_files": 30,
+  "warm_conditional_requests": 100,
+  "bytes_per_file": 262144,
+  "milliseconds": {
+    "cold_200": {
+      "p50": 2.129,
+      "p95": 8.691,
+      "p99": 30.116,
+      "max": 30.116
+    },
+    "warm_304": {
+      "p50": 0.392,
+      "p95": 0.702,
+      "p99": 1.286,
+      "max": 3.603
+    }
+  },
+  "contracts": {
+    "content_addressed_name": true,
+    "etag_revalidation": true,
+    "immutable_cache_control": true
+  }
+}

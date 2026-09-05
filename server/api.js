@@ -5,6 +5,8 @@ import * as Auth from './services/auth.js';
 import * as History from './services/history.js';
 import { logSystem } from './services/systemLogs.js';
 import { currentRequestMetadata } from './core/requestContext.js';
+import { markAuthAttached, sendTimedJson, timedAuth } from './core/requestTiming.js';
+import { contentAddressedAssetName } from './core/staticAssets.js';
 import { requireImageSignature } from './core/imageValidation.js';
 import { registerInventoryRoutes } from './modules/inventory/routes.js';
 import { registerInvoiceRoutes } from './modules/invoices/routes.js';
@@ -118,6 +120,7 @@ const guardAny = (...perms) => (req, res, next) => {
   next();
 };
 api.use(Auth.attachUser()); // gắn req.user (nếu có token) cho mọi route, kể cả route không bắt buộc đăng nhập
+api.use(markAuthAttached);
 const actor = Auth.actorName; // người phụ trách thao tác cho nhật ký hoạt động
 const branch = (req) => Auth.resolveBranch(req);
 const publicBranch = (req) => Auth.publicBranch(req);
@@ -209,7 +212,7 @@ function saveBase64Image(req, { dir, urlBase, prefix, auditAction, registerAs })
   if (!buf.byteLength) throw new Error('File ảnh rỗng');
   if (buf.byteLength > AVATAR_MAX_BYTES) throw new Error('Ảnh quá lớn, tối đa 20MB');
   requireImageSignature(buf, mime_type);
-  const stored = `${uid(prefix)}${SECURE_MIME_EXT[mime_type] || '.jpg'}`;
+  const stored = contentAddressedAssetName(prefix, buf, SECURE_MIME_EXT[mime_type] || '.jpg');
   fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(nodePath.join(dir, stored), buf);
   const url = `${urlBase}/${stored}`;
@@ -262,6 +265,8 @@ registerPaymentRoutes(api, {
   applyManualConfirm,
   fileCashDrawerReceipt,
   logRequestError,
+  timedAuth,
+  sendTimedJson,
 });
 registerInvoiceRoutes(api, {
   wrap,

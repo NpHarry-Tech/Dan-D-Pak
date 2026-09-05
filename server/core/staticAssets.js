@@ -1,3 +1,10 @@
+import { createHash } from 'node:crypto';
+
+export function contentAddressedAssetName(prefix, bytes, extension) {
+  const digest = createHash('sha256').update(bytes).digest('hex');
+  return `${String(prefix || 'asset_')}${digest.slice(0, 32)}${extension}`;
+}
+
 export const immutableUploadStaticOptions = {
   etag: true,
   lastModified: true,

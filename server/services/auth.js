@@ -79,6 +79,10 @@ const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 ngày
 // Phiên KHÔNG DÙNG tới quá lâu thì coi như hết hạn, kể cả chưa tới hạn tuyệt đối.
 // Máy POS dùng hằng ngày nên 7 ngày im lặng gần như chắc chắn là máy đã nghỉ.
 const SESSION_IDLE_MS = 7 * 24 * 60 * 60 * 1000;
+// last_seen only protects a seven-day idle window. Persisting it on every read turns
+// every authenticated GET into a synchronous SQLite write and creates avoidable
+// cross-process contention. One-minute precision preserves the security invariant.
+const SESSION_TOUCH_INTERVAL_MS = 60 * 1000;
 
 /** Phiên còn hiệu lực không, xét theo tuổi tuyệt đối và thời gian im lặng. */
 function sessionRowExpired(row) {
@@ -88,6 +92,12 @@ function sessionRowExpired(row) {
   const nowMs = Date.now();
   if (!Number.isFinite(created) || !Number.isFinite(seen)) return true;
   return (nowMs - created) > SESSION_TTL_MS || (nowMs - seen) > SESSION_IDLE_MS;
+}
+
+function touchSession(digest, lastSeenAt) {
+  const seen = new Date(lastSeenAt || 0).getTime();
+  if (Number.isFinite(seen) && Date.now() - seen < SESSION_TOUCH_INTERVAL_MS) return;
+  db.prepare(`UPDATE auth_sessions SET last_seen_at=? WHERE token=?`).run(now(), digest);
 }
 
 // Dọn cả cache RAM lẫn BẢNG auth_sessions.
@@ -850,7 +860,7 @@ export function userFor(token, deviceId = '') {
     }
     if (!sessionDeviceGate(digest, s.device_id, deviceId, fresh.username)) return null;
     cached.user = publicUser(fresh);
-    db.prepare(`UPDATE auth_sessions SET last_seen_at=? WHERE token=?`).run(now(), digest);
+    touchSession(digest, s.last_seen_at);
     return cached.user;
   }
   const row = db.prepare(`
@@ -870,7 +880,7 @@ export function userFor(token, deviceId = '') {
   if (!sessionDeviceGate(digest, row.session_device_id, deviceId, row.username)) return null;
   const user = publicUser(row);
   sessions.set(digest, { user, at: now() });
-  db.prepare(`UPDATE auth_sessions SET last_seen_at=? WHERE token=?`).run(now(), digest);
+  touchSession(digest, row.session_last_seen_at);
   return user;
 }
 
@@ -1054,7 +1064,10 @@ function publicUser(u) {
 // Express middleware factory. Pass a permission string to gate an endpoint.
 export function requireAuth(perm) {
   return (req, res, next) => {
-    const user = userFor(tokenFromReq(req));
+    // attachUser() runs before guarded API routes. Reuse that validated identity so a
+    // request does not repeat the session lookup/touch; keep the fallback for direct
+    // middleware callers and tests.
+    const user = req.user || userFor(tokenFromReq(req), req.headers?.['x-device-id']);
     if (!user) return res.status(401).json({ error: 'Cần đăng nhập' });
     if (perm && !canUser(user, perm)) return res.status(403).json({ error: `Không đủ quyền (${perm})` });
     req.user = user;

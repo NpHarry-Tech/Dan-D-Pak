@@ -5,7 +5,20 @@ import path from 'node:path';
 import http from 'node:http';
 import test from 'node:test';
 import express from 'express';
-import { immutableUploadStaticOptions, bundledAssetStaticOptions } from './core/staticAssets.js';
+import {
+  immutableUploadStaticOptions,
+  bundledAssetStaticOptions,
+  contentAddressedAssetName,
+} from './core/staticAssets.js';
+
+test('upload keys are content-addressed and stable without exposing original names', () => {
+  const first = contentAddressedAssetName('menu_', Buffer.from('same image'), '.png');
+  const duplicate = contentAddressedAssetName('menu_', Buffer.from('same image'), '.png');
+  const changed = contentAddressedAssetName('menu_', Buffer.from('changed image'), '.png');
+  assert.equal(first, duplicate);
+  assert.notEqual(first, changed);
+  assert.match(first, /^menu_[0-9a-f]{32}\.png$/);
+});
 
 test('unique uploads cache immutably and revalidate by ETag', async () => {
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'dandpak-assets-'));

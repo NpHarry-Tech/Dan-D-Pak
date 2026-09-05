@@ -1,0 +1,53 @@
+{
+  "status": "VERIFIED",
+  "target": "GET /api/shifts/current over loopback HTTP",
+  "diagnostics": "REQUEST_TIMING_DIAGNOSTICS=1; disabled by default",
+  "environment": {
+    "platform": "win32",
+    "node": "v24.14.1"
+  },
+  "bills": 2000,
+  "iterations": 100,
+  "milliseconds": {
+    "ingress": {
+      "p50": 0.034,
+      "p95": 0.056,
+      "p99": 0.079,
+      "max": 0.091
+    },
+    "auth": {
+      "p50": 0.254,
+      "p95": 0.353,
+      "p99": 0.377,
+      "max": 0.414
+    },
+    "db": {
+      "p50": 20.611,
+      "p95": 24.04,
+      "p99": 25.33,
+      "max": 25.475
+    },
+    "serialize": {
+      "p50": 0.267,
+      "p95": 0.366,
+      "p99": 1.403,
+      "max": 1.774
+    },
+    "total": {
+      "p50": 21.247,
+      "p95": 24.947,
+      "p99": 25.94,
+      "max": 25.991
+    },
+    "client_total": {
+      "p50": 23.183,
+      "p95": 27.325,
+      "p99": 27.888,
+      "max": 76.493
+    }
+  },
+  "payload_bytes": 61786,
+  "returned_bill_details": 200,
+  "total_bill_count": 2000,
+  "correlation_id_echo": true
+}

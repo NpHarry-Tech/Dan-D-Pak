@@ -30,6 +30,8 @@ export function registerPaymentRoutes(api, {
   applyManualConfirm,
   fileCashDrawerReceipt,
   logRequestError,
+  timedAuth,
+  sendTimedJson,
 }) {
   const webhookBranch = (req, legacyDefault = false) =>
     paymentWebhookBranch(req, visibleBranch, legacyDefault);
@@ -118,7 +120,8 @@ export function registerPaymentRoutes(api, {
   api.post('/payment-qr', wrap((req) => Pay.buildStandalonePaymentQr(req.body || {}, visibleBranch(req))));
   api.post('/orders/:id/customer-qr-pay', wrap((req) => Pay.customerQrPay(req.params.id, req.body || {}, visibleBranch(req))));
 
-  api.get('/shifts/current', guard('pay'), wrap((req) => Shifts.currentShift(branch(req))));
+  api.get('/shifts/current', timedAuth(guard('pay')), (req, res) =>
+    sendTimedJson(req, res, () => Shifts.currentShift(branch(req))));
   api.post('/shifts/open', guard('pay'), wrap((req) => Shifts.openShift(req.body, req.user, branch(req))));
   api.post('/shifts/close', guard('pay'), wrap((req) => Shifts.closeShift(req.body, req.user, branch(req))));
   api.get('/shifts', guard('reports'), wrap((req) => Shifts.listShifts(branch(req), parseInt(req.query.limit) || 40)));
