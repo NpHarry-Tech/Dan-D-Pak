@@ -13,7 +13,8 @@
 [CmdletBinding()]
 param(
   [string]$ReviewApiUrl = 'https://api-review.dandpakpos.io.vn',
-  [switch]$Clean
+  [switch]$Clean,
+  [switch]$StagePortal
 )
 
 $ErrorActionPreference = 'Stop'
@@ -28,18 +29,20 @@ Write-Host "Backend review: $ReviewApiUrl" -ForegroundColor Cyan
 # Láº¥y build number Ä‘á»ƒ tÃ¬m installer vá»«a táº¡o.
 $verFile = Join-Path $root 'flutter-apps\dandpak_desktop\lib\app_version.dart'
 $build = [regex]::Match((Get-Content $verFile -Raw), 'kAppBuildNumber\s*=\s*(\d+)').Groups[1].Value
-$installer = Join-Path $root "artifacts\releases\dan-d-pak-pos-setup-b$build.exe"
+$installer = Join-Path $root "artifacts\releases\review\dan-d-pak-pos-review-setup-b$build.exe"
 if (-not (Test-Path -LiteralPath $installer)) {
   throw "Khong thay installer $installer - build co the that bai."
 }
 
-# Copy vÃ o thÆ° má»¥c download cá»§a Reviewer Portal (tÃªn khá»›p portal/index.html).
-$downloadDir = Join-Path $root 'deploy\review\portal\download'
-New-Item -ItemType Directory -Force -Path $downloadDir | Out-Null
-$dest = Join-Path $downloadDir 'DanDPak-Review-Setup.exe'
-Copy-Item -LiteralPath $installer -Destination $dest -Force
+# Portal staging is an explicit publication preparation step, never a build side effect.
+if ($StagePortal) {
+  $downloadDir = Join-Path $root 'deploy\review\portal\download'
+  New-Item -ItemType Directory -Force -Path $downloadDir | Out-Null
+  $dest = Join-Path $downloadDir 'DanDPak-Review-Setup.exe'
+  Copy-Item -LiteralPath $installer -Destination $dest -Force
+  Write-Host "Portal staging copy: $dest" -ForegroundColor Green
+}
 
 Write-Host ''
-Write-Host "OK. Installer review: $dest" -ForegroundColor Green
-Write-Host "Portal se phuc vu file nay tai: https://review.<domain>/download/DanDPak-Review-Setup.exe" -ForegroundColor Green
-Write-Host "Nho deploy lai stack review (docker compose) de Caddy mount thu muc portal moi." -ForegroundColor Yellow
+Write-Host "OK. Installer review: $installer" -ForegroundColor Green
+if (-not $StagePortal) { Write-Host 'Portal was not staged or published.' -ForegroundColor Yellow }

@@ -2,7 +2,7 @@
 
 ## Final local gate (2026-09-05)
 
-- Server canonical isolated runner: **VERIFIED (source)** — 143/143 files, 726/726
+- Server canonical isolated runner at `ac56e24`: **VERIFIED (source)** — 143/143 files, 726/726
   assertions, 0 fail, 0 timeout, 0 error on the final dependency lockfile.
 - Flutter core: **VERIFIED (source)** — 251 pass, 0 fail, 1 E2E-only skip; analyze is
   clean for core, desktop, tablet and phone.
@@ -38,7 +38,7 @@ authoritative completion state.
 - Windows runner singleton source is hardened for minimized/hung first windows with
   async restore, foreground attempt and taskbar flash fallback; the display process is
   deliberately exempt. Static runner contract tests are **3/3 pass**. Building/running
-  an executable is **NEEDS-LIVE-CANARY** because installer/app build was not authorized.
+  packaged launch remains **NEEDS-LIVE-CANARY** even after an authorized local build.
 - Asset/thumbnail source is **VERIFIED locally**: uploads validate JPEG/PNG/WebP/GIF
   magic bytes instead of trusting MIME, return `nosniff`, cache unique upload URLs for
   one year with ETag/304, use SHA-256 content-addressed version keys, and revalidate bundled assets hourly. Settings integration
@@ -154,7 +154,7 @@ commit; audit-row insertion is mandatory and can roll back the financial transac
 - Flutter core tests + `flutter analyze` across the 4 packages.
 - `git diff --check`, secret scan, migration forward/backward/idempotency, worktree clean,
   `local == tracking == git ls-remote`.
-- Only then rebuild Production `b170` and Review `b170-REVIEW` separately; record
+- Only then rebuild Production `b171` and Review `b171-REVIEW` separately; record
   SHA-256/size/manifest commit/dirty=false/schema/signature/backup byte-identity.
 
 ## Standing rollout status

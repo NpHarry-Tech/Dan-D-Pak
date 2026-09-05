@@ -7,7 +7,9 @@ param(
   [string]$Output,
   [string]$BuiltAtUtc,
   [string]$SourceTreeSha256,
-  [string]$GitCommit
+  [string]$GitCommit,
+  [ValidateSet('production', 'review', '')][string]$Environment = '',
+  [string]$BackendUrl = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -49,6 +51,9 @@ $manifest = [ordered]@{
   platform = $Platform
   version = $Version
   build = $Build
+  environment = $Environment
+  backendUrl = $BackendUrl
+  embeddedBackendVerified = [bool]$BackendUrl
   builtAtUtc = $(if ($BuiltAtUtc) { $BuiltAtUtc } else { [DateTime]::UtcNow.ToString('o') })
   gitCommit = $commit
   worktreeDirty = ($status.Count -gt 0)

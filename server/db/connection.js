@@ -3,6 +3,9 @@ import { fileURLToPath } from 'node:url';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { existsSync, mkdirSync, statSync } from 'node:fs';
 import { env } from '../config/env.js';
+import {
+  synchronizeTransactionState, transactionBatchSucceeded, transactionSqlSucceeded,
+} from './transactionLifecycle.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 export const ROOT = resolve(join(__dirname, '..', '..'));
@@ -30,7 +33,44 @@ export const DB_WAS_EMPTY = !existsSync(DB_PATH) || statSync(DB_PATH).size === 0
 mkdirSync(dirname(DB_PATH), { recursive: true });
 
 export const DB_READ_ONLY = process.env.DATABASE_READ_ONLY === 'true';
-export const db = new DatabaseSync(DB_PATH, { readOnly: DB_READ_ONLY });
+const rawDb = new DatabaseSync(DB_PATH, { readOnly: DB_READ_ONLY });
+
+// Preserve raw SQL callers while exposing actual commit/savepoint boundaries.
+export const db = new Proxy(rawDb, {
+  get(target, property) {
+    if (property === 'exec') return (sql) => {
+      try {
+        const result = target.exec(sql);
+        transactionBatchSucceeded(sql);
+        return result;
+      } catch (error) {
+        synchronizeTransactionState(target.isTransaction);
+        throw error;
+      }
+    };
+    if (property === 'prepare') return (sql) => {
+      const statement = target.prepare(sql);
+      return new Proxy(statement, {
+        get(statementTarget, statementProperty) {
+          if (statementProperty === 'run') return (...args) => {
+            try {
+              const result = statementTarget.run(...args);
+              transactionSqlSucceeded(sql);
+              return result;
+            } catch (error) {
+              synchronizeTransactionState(target.isTransaction);
+              throw error;
+            }
+          };
+          const value = Reflect.get(statementTarget, statementProperty, statementTarget);
+          return typeof value === 'function' ? value.bind(statementTarget) : value;
+        },
+      });
+    };
+    const value = Reflect.get(target, property, target);
+    return typeof value === 'function' ? value.bind(target) : value;
+  },
+});
 
 if (DB_READ_ONLY) {
   db.exec('PRAGMA query_only = ON;');

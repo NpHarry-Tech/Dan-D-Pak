@@ -18,6 +18,7 @@ const {
   isEncrypted, needsReencryption, reencryptSecret, secretContext,
 } = await import('./core/crypto.js');
 const { migrateSecretRecords, planSecretMigration } = await import('./core/secretMigration.js');
+const { assertSecureProductionEnv, loadEnv } = await import('./config/env.js');
 
 const ctx = (overrides = {}) => secretContext({
   tenant: 'tenant-a', provider: 'haravan', record: 'shop-a', field: 'access_token',
@@ -86,6 +87,15 @@ test('rotation decrypts previous key and re-encrypts to active key id', () => {
   assert.equal(decryptSecret(rotated, ctx()), 'rotate-me');
 });
 
+test('new encryption never trusts an envelope-shaped input and always writes active v2', () => {
+  useKey('old', KEY_A);
+  const oldEnvelope = encryptSecret('rotate-me', ctx());
+  useKey('new', KEY_B, { old: KEY_A });
+  const newlyWritten = encryptSecret(oldEnvelope, ctx());
+  assert.equal(envelopeInfo(newlyWritten).keyId, 'new');
+  assert.equal(decryptSecret(newlyWritten, ctx()), oldEnvelope);
+});
+
 test('legacy v1 decrypts through previous key without plaintext fallback', () => {
   const iv = crypto.randomBytes(12);
   const cipher = crypto.createCipheriv('aes-256-gcm', Buffer.from(KEY_A, 'hex'), iv);
@@ -127,4 +137,48 @@ test('migration dry-run is redacted; apply is idempotent and transactional', () 
   assert.equal(migrateSecretRecords({ records, dryRun: false, write }).changed, 0);
 
   assert.throws(() => planSecretMigration([{ id: 'bad', field: 'x', value: 'enc:v2:bad', context: ctx() }]));
+});
+
+test('secret migration leaves all rows unchanged when its transaction rolls back', () => {
+  const records = [
+    { id: '1', field: 'access_token', value: 'one', context: ctx({ record: 'one' }) },
+    { id: '2', field: 'access_token', value: 'two', context: ctx({ record: 'two' }) },
+  ];
+  const stored = new Map(records.map((record) => [record.id, record.value]));
+  const transaction = (apply) => {
+    const before = new Map(stored);
+    try { apply(); } catch (error) {
+      stored.clear();
+      for (const [key, value] of before) stored.set(key, value);
+      throw error;
+    }
+  };
+  let writes = 0;
+  assert.throws(() => migrateSecretRecords({
+    records, dryRun: false, transaction,
+    write: (record, value) => {
+      stored.set(record.id, value);
+      if (++writes === 2) throw new Error('injected migration write failure');
+    },
+  }), /injected migration write failure/);
+  assert.deepEqual([...stored.values()], ['one', 'two']);
+});
+
+test('production startup enforces environment-scoped ids and distinct peer keys', () => {
+  const ownFingerprint = crypto.createHash('sha256').update(Buffer.from(KEY_A, 'hex')).digest('hex');
+  const otherFingerprint = crypto.createHash('sha256').update(Buffer.from(KEY_B, 'hex')).digest('hex');
+  const production = loadEnv({
+    NODE_ENV: 'production', DATA_ENCRYPTION_KEY: KEY_A,
+    DATA_ENCRYPTION_ACTIVE_KEY_ID: 'production-2026-01',
+    DATA_ENCRYPTION_PEER_KEY_SHA256: otherFingerprint,
+  });
+  assert.doesNotThrow(() => assertSecureProductionEnv(production));
+  assert.throws(() => assertSecureProductionEnv({ ...production, DATA_ENCRYPTION_PEER_KEY_SHA256: ownFingerprint }), /different/);
+  assert.throws(() => assertSecureProductionEnv({ ...production, DATA_ENCRYPTION_ACTIVE_KEY_ID: 'review-2026-01' }), /production-/);
+  const review = loadEnv({
+    NODE_ENV: 'production', APP_ENV: 'review', SHOPEE_ENV: 'sandbox',
+    DATA_ENCRYPTION_KEY: KEY_B, DATA_ENCRYPTION_ACTIVE_KEY_ID: 'review-2026-01',
+    DATA_ENCRYPTION_PEER_KEY_SHA256: ownFingerprint,
+  });
+  assert.doesNotThrow(() => assertSecureProductionEnv(review));
 });

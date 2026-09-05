@@ -1,5 +1,6 @@
 import { isAbsolute, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createHash } from 'node:crypto';
 
 const PROJECT_ROOT = fileURLToPath(new URL('../../', import.meta.url));
 
@@ -78,6 +79,8 @@ export function loadEnv(source = process.env) {
     SHOPEE_LEGACY_CALLBACK: source.SHOPEE_LEGACY_CALLBACK === 'true'
       || source.SHOPEE_LEGACY_CALLBACK === '1',
     DATA_ENCRYPTION_KEY: clean(source.DATA_ENCRYPTION_KEY) || '',
+    DATA_ENCRYPTION_ACTIVE_KEY_ID: clean(source.DATA_ENCRYPTION_ACTIVE_KEY_ID) || '',
+    DATA_ENCRYPTION_PEER_KEY_SHA256: clean(source.DATA_ENCRYPTION_PEER_KEY_SHA256) || '',
     DISABLE_DEMO_SEED: source.DISABLE_DEMO_SEED === 'true' || source.DISABLE_DEMO_SEED === '1',
     DISABLE_WEB_UI: source.DISABLE_WEB_UI !== undefined ? (source.DISABLE_WEB_UI === 'true' || source.DISABLE_WEB_UI === '1') : DEFAULTS.DISABLE_WEB_UI,
     HARAVAN_ENABLED: source.HARAVAN_ENABLED === 'true' || source.HARAVAN_ENABLED === '1',
@@ -160,6 +163,19 @@ export function assertSecureProductionEnv(config = env) {
     })();
   if (!validKey) {
     throw new Error('Production requires DATA_ENCRYPTION_KEY (32 random bytes, hex or base64).');
+  }
+  const expectedScope = config.isReview ? 'review-' : 'production-';
+  if (!String(config.DATA_ENCRYPTION_ACTIVE_KEY_ID || '').startsWith(expectedScope)) {
+    throw new Error(`Production ${config.isReview ? 'review' : 'live'} requires DATA_ENCRYPTION_ACTIVE_KEY_ID prefixed with ${expectedScope}`);
+  }
+  const peerFingerprint = String(config.DATA_ENCRYPTION_PEER_KEY_SHA256 || '').toLowerCase();
+  if (!/^[0-9a-f]{64}$/.test(peerFingerprint)) {
+    throw new Error('Production requires DATA_ENCRYPTION_PEER_KEY_SHA256 for the opposite environment.');
+  }
+  const keyBytes = /^[0-9a-f]{64}$/i.test(key) ? Buffer.from(key, 'hex') : Buffer.from(key, 'base64');
+  const ownFingerprint = createHash('sha256').update(keyBytes).digest('hex');
+  if (ownFingerprint === peerFingerprint) {
+    throw new Error('Production and review must use different DATA_ENCRYPTION_KEY values.');
   }
   for (const name of ['APP_URL', 'API_BASE_URL']) {
     const value = config[name];

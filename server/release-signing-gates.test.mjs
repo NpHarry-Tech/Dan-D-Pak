@@ -62,6 +62,34 @@ test('all canonical app builders embed the same safe runtime fingerprint as thei
   assert.match(helper, /PRAGMA\\s\+user_version/);
 });
 
+test('desktop production/review builds are isolated and verify their embedded backend', () => {
+  const desktop = fs.readFileSync('deploy/build-desktop.ps1', 'utf8');
+  const review = fs.readFileSync('deploy/build-desktop-review.ps1', 'utf8');
+  const manifest = fs.readFileSync('deploy/write-build-manifest.ps1', 'utf8');
+  const embeddedVerifier = fs.readFileSync('scripts/verify-embedded-string.mjs', 'utf8');
+  assert.match(desktop, /artifacts\\releases\\\$artifactFlavor/);
+  assert.match(desktop, /dan-d-pak-pos-\$artifactFlavor-setup-b\$build/);
+  assert.match(desktop, /Built bundle does not embed expected backend/);
+  assert.match(desktop, /verify-embedded-string\.mjs/);
+  assert.match(embeddedVerifier, /fs\.readdirSync\(current/);
+  assert.match(desktop, /--dart-define=STORE_EDGE_URL=\$backendApiUrl/);
+  assert.match(review, /artifacts\\releases\\review\\dan-d-pak-pos-review-setup/);
+  assert.match(review, /if \(\$StagePortal\)/);
+  assert.match(manifest, /backendUrl = \$BackendUrl/);
+  assert.match(manifest, /environment = \$Environment/);
+  assert.match(manifest, /embeddedBackendVerified = \[bool\]\$BackendUrl/);
+});
+
+test('tracked Git hook is CommonJS-safe under the ESM package and setup enables it', () => {
+  const wrapper = fs.readFileSync('.githooks/pre-commit', 'utf8');
+  const hook = fs.readFileSync('.githooks/pre-commit.cjs', 'utf8');
+  const setup = fs.readFileSync('scripts/setup-git-hooks.ps1', 'utf8');
+  assert.match(wrapper, /pre-commit\.cjs/);
+  assert.match(hook, /git', \['diff', '--cached'\]/);
+  assert.match(hook, /127\.0\.0\.1/);
+  assert.match(setup, /core\.hooksPath \.githooks/);
+});
+
 for (const app of ['dandpak_phone', 'dandpak_tablet', 'dandpak_desktop']) {
   test(`${app} pubspec and updater version source stay identical`, () => {
     const pubspec = fs.readFileSync(`flutter-apps/${app}/pubspec.yaml`, 'utf8');

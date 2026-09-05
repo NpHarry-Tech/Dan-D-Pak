@@ -8,7 +8,7 @@
 ## Final local close-out (2026-09-05; authoritative)
 
 All source changes requested by the incident brief are complete and committed locally.
-The final dependency graph and application source passed the canonical server runner
+At checkpoint `ac56e24`, the dependency graph and application source passed the canonical server runner
 (**143/143 files, 726 assertions, 0 fail/timeout/error**), Flutter core tests
 (**251 pass, 1 explicitly gated E2E skip, 0 fail**) and analysis of all four Flutter
 packages (**0 issues**). Production dependencies report **0 vulnerabilities**.
@@ -30,10 +30,9 @@ installer/build/deploy, credential use, or real DB mutation occurred.
 |---|---|---|---|
 | Repo | `D:/Dan D Pak` | `D:/Dan D Pak` | ✓ |
 | Branch | `fix/universal-print-validation` | same | ✓ |
-| Reviewed checkpoint | `add0b75` | `add0b75ed9dc8711eb7190e07c33690e7ea2f2ba` (verified at re-entry) | ✓ |
-| HEAD (after review commits) | — | `62461ea` (+ concurrency-proof, risk-1B, print-state, comment fixes) | ✓ |
-| Worktree | clean | clean (`git status --porcelain` empty) | ✓ |
-| Upstream | — | live remote `fd4faee` (`git ls-remote`); **19 local commits ahead, NOT pushed** | ✓ |
+| Independent-review checkpoint | `ac56e24` | `ac56e24027a69080a518780c660909270e140578` | ✓ |
+| Worktree at review start | clean | clean (`git status --porcelain` empty) | ✓ |
+| Upstream baseline | — | live remote `fd4faee`; final equality is checked after push | ✓ |
 | Worktrees | single | single (`git worktree list`) | ✓ |
 
 No `AGENTS.md` exists in the repo (searched to depth 3, `.agents/` is empty).
@@ -97,7 +96,8 @@ Evidence (all in `server/services/payments.js` `payOrder`, and the F&B client):
 
 ## 3. Status ledger — what was landed this branch vs. what remains
 
-All work below is committed on `fix/universal-print-validation` (local, **NOT pushed**).
+All work below belongs to `fix/universal-print-validation`; final push state is reported
+from a live remote check rather than inferred from this dossier snapshot.
 Status vocabulary (used consistently across all four dossier files):
 
 - **VERIFIED (source)** — code fix + a runtime test that was actually run this session at

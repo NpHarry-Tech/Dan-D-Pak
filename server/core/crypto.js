@@ -101,7 +101,6 @@ function encryptWith(value, context, keyId, key) {
 
 export function encryptSecret(value, context = '') {
   if (value == null || value === '') return value;
-  if (isEncrypted(value)) return value;
   const ring = keyRing();
   return encryptWith(value, context, ring.activeId, ring.activeKey);
 }

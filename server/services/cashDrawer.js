@@ -2,6 +2,7 @@ import { db, uid, now, audit, inTransaction } from '../db.js';
 import { cleanText } from '../core/util.js';
 import { archiveCashDrawerEntry } from './archive.js';
 import { businessDateEndUtc, businessDateStartUtc } from '../core/businessClock.js';
+import { enqueueAfterCommit } from '../db/transactionLifecycle.js';
 
 function parseAmount(v) {
   const n = Math.round(Number(v) || 0);
@@ -408,12 +409,7 @@ export function createEntry(kind, body = {}, user = {}, branch_id = 'sala') {
   // Archive only after the owning (possibly outer) transaction commits. This
   // prevents a durable false-success footprint when mandatory audit insertion
   // or a later caller step rolls the cash mutation back.
-  queueMicrotask(() => {
-    try {
-      const committed = db.prepare(`SELECT 1 ok FROM cash_drawer_entries WHERE id=?`).get(entry.id);
-      if (committed) archiveCashDrawerEntry(entry);
-    } catch { /* the SQLite row remains the source of truth */ }
-  });
+  enqueueAfterCommit(() => archiveCashDrawerEntry(entry));
   return decorateEntry(entry);
   });
 }

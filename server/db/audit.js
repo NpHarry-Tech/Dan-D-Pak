@@ -12,6 +12,7 @@ import { now, uid } from './ids.js';
 import { decryptSecret, encryptSecret, secretContext } from '../core/crypto.js';
 import { businessPeriodStartUtc } from '../core/businessClock.js';
 import { publishRealtime } from '../core/realtimeBus.js';
+import { enqueueAfterCommit } from './transactionLifecycle.js';
 
 const TECHNICAL_ONLY_ACTIONS = new Set([
   'system.error',
@@ -148,9 +149,9 @@ export function runDocumentTx(writeFn) {
   return result;
 }
 
-// Backward-compatible: hành vi CŨ giữ nguyên cho mọi caller hiện tại (archive-first,
-// INSERT nuốt lỗi, realtime). Các luồng cần ATOMIC dùng buildAuditEntry +
-// runDocumentTx(insertAuditRow) + auditPostCommit thay vì hàm này.
+// Common audit path. A transaction owns both its row and post-commit callback;
+// autocommit callers persist the SQLite row before archive/realtime publication.
+// No branch may create an archive-only false-success record.
 export function audit(action, detail, branch_id = 'sala', actor = 'system') {
   const entry = buildAuditEntry(action, detail, branch_id, actor);
   if (!entry) return null;
@@ -160,23 +161,19 @@ export function audit(action, detail, branch_id = 'sala', actor = 'system') {
     // are deferred until the synchronous transaction has committed; a rollback
     // leaves no row, therefore no success event or archive footprint.
     insertAuditRow(entry);
-    queueMicrotask(() => {
-      try {
-        const committed = db.prepare(`SELECT 1 ok FROM audit_log WHERE id=?`).get(entry.id);
-        if (committed) auditPostCommit(entry);
-      } catch (e) {
-        logger.warn('audit post-transaction finalization failed', { message: e.message });
-      }
-    });
+    enqueueAfterCommit(
+      () => auditPostCommit(entry),
+      (e) => logger.warn('audit post-transaction finalization failed', { message: e.message }),
+    );
     return { id: entry.id, created_at: entry.created_at };
   }
-  appendAuditArchive(entry); // durable FIRST (semantics cũ)
   try {
     insertAuditRow(entry);
   } catch (e) {
-    logger.warn('audit sqlite write failed (kept in NDJSON archive)', { message: e.message });
+    logger.warn('audit sqlite write failed', { message: e.message });
+    return null;
   }
-  publishRealtime('activity:new', { ...entry }, entry.branch_id);
+  auditPostCommit(entry);
   return { id: entry.id, created_at: entry.created_at };
 }
 

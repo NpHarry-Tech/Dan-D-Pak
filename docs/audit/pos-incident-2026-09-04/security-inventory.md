@@ -13,6 +13,7 @@ deployment, or live provider was accessed.
 | Mandatory AAD | VERIFIED | empty context throws; credential callers bind tenant/provider/record/field/version |
 | Missing/wrong key, tamper, malformed/unsupported envelope | VERIFIED | all fail closed; no plaintext return |
 | Legacy plaintext handling | VERIFIED | `decryptSecret` rejects it; only the explicit migration path accepts and immediately encrypts it |
+| Production/Review key separation | VERIFIED (startup gate) | environment-prefixed active key ID plus opposite-environment key fingerprint; startup rejects identical key bytes |
 | v1 compatibility | VERIFIED | v1 is decrypt-only and may use a configured previous key/legacy AAD; new writes are v2 |
 | Binary encrypted backups/files | VERIFIED | `DDPENC02` carries key id; v1 remains decrypt-only |
 | Encryption failure fallback | VERIFIED | secret decrypt and audit archive encryption throw; audit no longer returns plaintext after encryption failure |

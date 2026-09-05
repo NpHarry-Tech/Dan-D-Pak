@@ -58,7 +58,9 @@ Chạy builder end-to-end lộ 2 defect (canonical runner đã PASS 119/119 và 
 2. **Provenance manifest-list.** BuildKit mặc định bật provenance/SBOM attestation → tạo manifest-list; index digest không sống sót qua `docker save/load` → hỏng gate deploy `loaded_id == manifest.imageId`. **Fix:** build với `--provenance=false --sbom=false` → image đơn.
 Không làm yếu gate nào; safety-gates vẫn **12/12**.
 
-> Ghi chú: commit deployment dùng `git commit --no-verify` để bỏ qua Aevum pre-commit hook (support tool, không phải project/release gate). Aevum hook ESM đã được sửa trước đó (require→import).
+> Ghi chú lịch sử: commit deployment khi đó đã dùng `git commit --no-verify`. Cách này
+> không còn được chấp nhận: hook repo-owned hiện nằm tại `.githooks/pre-commit.cjs` và
+> được bật bằng `scripts/setup-git-hooks.ps1`.
 
 ---
 

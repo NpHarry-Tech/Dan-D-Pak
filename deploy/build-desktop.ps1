@@ -55,8 +55,11 @@ $dartDefines = @(
 )
 if ($ReviewApiUrl) {
   Write-Host "REVIEW build -> backend: $ReviewApiUrl" -ForegroundColor Magenta
-  $dartDefines += "--dart-define=STORE_EDGE_URL=$ReviewApiUrl"
 }
+$artifactFlavor = if ($ReviewApiUrl) { 'review' } else { 'production' }
+$backendApiUrl = if ($ReviewApiUrl) { $ReviewApiUrl } else { 'https://api.dandpakpos.io.vn' }
+if ($backendApiUrl -notmatch '^https://') { throw 'Release backend URL must use HTTPS.' }
+$dartDefines += "--dart-define=STORE_EDGE_URL=$backendApiUrl"
 $dartDefines = $dartDefines -join ' '
 
 if ($Clean) {
@@ -76,15 +79,19 @@ $ErrorActionPreference = 'Continue'
 try { cmd /c $cmd } finally { $ErrorActionPreference = $prevEap }
 if ($LASTEXITCODE -ne 0) { throw "flutter build windows that bai (ma loi $LASTEXITCODE)" }
 
-$exe = Join-Path $appDir 'build\windows\x64\runner\Release\dandpak_desktop.exe'
+$releaseBundle = Join-Path $appDir 'build\windows\x64\runner\Release'
+$exe = Join-Path $releaseBundle 'dandpak_desktop.exe'
 if (-not (Test-Path $exe)) { throw "Build xong nhung khong thay $exe" }
+$embeddedMatches = & node (Join-Path $root 'scripts\verify-embedded-string.mjs') $releaseBundle $backendApiUrl
+if ($LASTEXITCODE -ne 0) { throw "Built bundle does not embed expected backend: $backendApiUrl" }
+Write-Host "Embedded backend verified in: $($embeddedMatches -join ', ')" -ForegroundColor Green
 Write-Host "OK: $exe" -ForegroundColor Green
 
 $manifestWriter = Join-Path $PSScriptRoot 'write-build-manifest.ps1'
 if ($SkipInstaller) {
   & $manifestWriter -Artifact $exe -Platform windows -Build ([int]$build) -Version $version `
     -BuiltAtUtc $buildMetadata.builtAtUtc -SourceTreeSha256 $buildMetadata.sourceTreeSha256 `
-    -GitCommit $buildMetadata.gitCommit
+    -GitCommit $buildMetadata.gitCommit -Environment $artifactFlavor -BackendUrl $backendApiUrl
   return
 }
 
@@ -104,20 +111,23 @@ Push-Location $appDir
 $prevEap2 = $ErrorActionPreference
 $ErrorActionPreference = 'Continue'
 try {
-  & $iscc 'setup.iss'
+  $releaseDir = Join-Path $root "artifacts\releases\$artifactFlavor"
+  New-Item -ItemType Directory -Force -Path $releaseDir | Out-Null
+  $outputBase = "dan-d-pak-pos-$artifactFlavor-setup-b$build"
+  & $iscc "/O$releaseDir" "/F$outputBase" 'setup.iss'
   if ($LASTEXITCODE -ne 0) { throw "Dong goi installer that bai (ma loi $LASTEXITCODE)" }
 } finally {
   $ErrorActionPreference = $prevEap2
   Pop-Location
 }
 
-$installer = Join-Path $root "artifacts\releases\dan-d-pak-pos-setup-b$build.exe"
+$installer = Join-Path $root "artifacts\releases\$artifactFlavor\dan-d-pak-pos-$artifactFlavor-setup-b$build.exe"
 if (-not (Test-Path -LiteralPath $installer)) {
   throw "Dong goi xong nhung khong thay installer $installer"
 }
 & $manifestWriter -Artifact $installer -Platform windows -Build ([int]$build) -Version $version `
   -BuiltAtUtc $buildMetadata.builtAtUtc -SourceTreeSha256 $buildMetadata.sourceTreeSha256 `
-  -GitCommit $buildMetadata.gitCommit
+  -GitCommit $buildMetadata.gitCommit -Environment $artifactFlavor -BackendUrl $backendApiUrl
 
 Write-Host ''
 Write-Host 'Xong. Phat hanh bang:' -ForegroundColor Green

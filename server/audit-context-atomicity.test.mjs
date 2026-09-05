@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -12,9 +12,11 @@ process.env.DATA_ENCRYPTION_KEY = '0123456789abcdef0123456789abcdef0123456789abc
 const { db, migrate, audit } = await import('./db.js');
 const { requestContext } = await import('./core/requestContext.js');
 const { setRealtimeEmitter } = await import('./core/realtimeBus.js');
+const { enqueueAfterCommit } = await import('./db/transactionLifecycle.js');
 const Inventory = await import('./services/inventory.js');
 const Expenses = await import('./services/expenses.js');
 const Purchase = await import('./services/purchase.js');
+const CashDrawer = await import('./services/cashDrawer.js');
 migrate();
 
 test('audit snapshots actor/device/branch/request and recursively redacts secrets', () => {
@@ -59,24 +61,140 @@ test('audit failure inside transaction rolls back mutation and emits no success 
   assert.equal(db.prepare(`SELECT COUNT(*) n FROM audit_log WHERE action='test.must_rollback'`).get().n, 0);
 });
 
-test('transactional audit realtime is post-commit and rollback stays silent', async () => {
+function archivedActions() {
+  const root = join(temp, 'storage', 'permanent-storage', 'audit');
+  if (!existsSync(root)) return [];
+  const files = [];
+  const walk = (dir) => {
+    for (const item of readdirSync(dir, { withFileTypes: true })) {
+      const path = join(dir, item.name);
+      if (item.isDirectory()) walk(path);
+      else if (item.name.endsWith('.ndjson')) files.push(path);
+    }
+  };
+  walk(root);
+  return files.flatMap((file) => readFileSync(file, 'utf8').trim().split('\n'))
+    .filter(Boolean).map((line) => JSON.parse(line).action);
+}
+
+const ticks = async (count = 3) => {
+  for (let i = 0; i < count; i++) await new Promise((resolve) => setImmediate(resolve));
+};
+
+function filesContaining(root, fragment) {
+  if (!existsSync(root)) return [];
+  const found = [];
+  const walk = (dir) => {
+    for (const item of readdirSync(dir, { withFileTypes: true })) {
+      const path = join(dir, item.name);
+      if (item.isDirectory()) walk(path);
+      else if (item.name.includes(fragment) || readFileSync(path, 'utf8').includes(fragment)) found.push(path);
+    }
+  };
+  walk(root);
+  return found;
+}
+
+test('transactional audit waits for the actual commit and rollback stays silent across ticks', async () => {
   const events = [];
   setRealtimeEmitter((event, payload, branch) => events.push({ event, payload, branch }));
   db.exec('BEGIN IMMEDIATE');
-  audit('test.post_commit', { previous_state: 'draft', new_state: 'done' }, 'sala', 'owner');
+  audit('test.held_then_rollback', { previous_state: 'draft', new_state: 'done' }, 'sala', 'owner');
+  await ticks();
   assert.equal(events.length, 0);
-  db.exec('COMMIT');
-  await new Promise((resolve) => setImmediate(resolve));
-  assert.equal(events.length, 1);
-  assert.equal(events[0].event, 'activity:new');
+  assert.equal(archivedActions().filter((action) => action === 'test.held_then_rollback').length, 0);
+  db.exec('ROLLBACK');
+  await ticks();
+  assert.equal(events.length, 0);
+  assert.equal(archivedActions().filter((action) => action === 'test.held_then_rollback').length, 0);
+  assert.equal(db.prepare(`SELECT COUNT(*) n FROM audit_log WHERE action='test.held_then_rollback'`).get().n, 0);
 
   db.exec('BEGIN IMMEDIATE');
-  audit('test.rolled_back', { previous_state: 'draft', new_state: 'done' }, 'sala', 'owner');
-  db.exec('ROLLBACK');
-  await new Promise((resolve) => setImmediate(resolve));
+  audit('test.actual_commit', { previous_state: 'draft', new_state: 'done' }, 'sala', 'owner');
+  await ticks();
+  assert.equal(events.length, 0);
+  db.exec('COMMIT');
   assert.equal(events.length, 1);
-  assert.equal(db.prepare(`SELECT COUNT(*) n FROM audit_log WHERE action='test.rolled_back'`).get().n, 0);
+  assert.equal(events[0].event, 'activity:new');
+  assert.equal(archivedActions().filter((action) => action === 'test.actual_commit').length, 1);
+  assert.equal(db.prepare(`SELECT COUNT(*) n FROM audit_log WHERE action='test.actual_commit'`).get().n, 1);
   setRealtimeEmitter(null);
+});
+
+test('savepoint rollback discards only nested audit callbacks', () => {
+  const actions = [];
+  setRealtimeEmitter((_event, payload) => actions.push(payload.action));
+  db.exec('BEGIN IMMEDIATE');
+  audit('test.outer_kept', {}, 'sala', 'owner');
+  db.exec('SAVEPOINT nested_audit');
+  audit('test.inner_rolled_back', {}, 'sala', 'owner');
+  db.exec('ROLLBACK TO nested_audit');
+  db.exec('RELEASE nested_audit');
+  db.exec('COMMIT');
+  assert.deepEqual(actions, ['test.outer_kept']);
+  assert.equal(archivedActions().filter((action) => action === 'test.outer_kept').length, 1);
+  assert.equal(archivedActions().filter((action) => action === 'test.inner_rolled_back').length, 0);
+  assert.equal(db.prepare(`SELECT COUNT(*) n FROM audit_log WHERE action='test.inner_rolled_back'`).get().n, 0);
+  setRealtimeEmitter(null);
+});
+
+test('outer rollback discards audit released from inner savepoint', async () => {
+  const actions = [];
+  setRealtimeEmitter((_event, payload) => actions.push(payload.action));
+  db.exec('BEGIN IMMEDIATE');
+  db.exec('SAVEPOINT inner_release');
+  audit('test.inner_released_outer_rollback', {}, 'sala', 'owner');
+  db.exec('RELEASE inner_release');
+  await ticks();
+  assert.deepEqual(actions, []);
+  db.exec('ROLLBACK');
+  assert.deepEqual(actions, []);
+  assert.equal(archivedActions().filter((action) => action === 'test.inner_released_outer_rollback').length, 0);
+  assert.equal(db.prepare(`SELECT COUNT(*) n FROM audit_log WHERE action='test.inner_released_outer_rollback'`).get().n, 0);
+  setRealtimeEmitter(null);
+});
+
+test('a post-commit callback failure cannot turn a committed API write into failure', () => {
+  db.exec('BEGIN IMMEDIATE');
+  audit('test.callback_failure_commit', {}, 'sala', 'owner');
+  enqueueAfterCommit(() => { throw new Error('injected post-commit failure'); });
+  assert.doesNotThrow(() => db.exec('COMMIT'));
+  assert.equal(db.prepare(`SELECT COUNT(*) n FROM audit_log WHERE action='test.callback_failure_commit'`).get().n, 1);
+});
+
+test('autocommit audit never archives or emits when its durable row fails', () => {
+  const actions = [];
+  setRealtimeEmitter((_event, payload) => actions.push(payload.action));
+  db.exec(`CREATE TRIGGER fail_autocommit_audit BEFORE INSERT ON audit_log
+    WHEN NEW.action='test.autocommit_insert_failure'
+    BEGIN SELECT RAISE(ABORT, 'forced autocommit audit failure'); END;`);
+  assert.equal(audit('test.autocommit_insert_failure', {}, 'sala', 'owner'), null);
+  assert.deepEqual(actions, []);
+  assert.equal(archivedActions().filter((action) => action === 'test.autocommit_insert_failure').length, 0);
+  db.exec('DROP TRIGGER fail_autocommit_audit');
+  setRealtimeEmitter(null);
+});
+
+test('cash-drawer archive follows the owning outer commit, never an event-loop tick', async () => {
+  db.prepare(`INSERT INTO shifts
+    (id,branch_id,shift_key,shift_label,status,opening_cash,opened_at)
+    VALUES ('shift_cash_lifecycle','sala','cash-life','Cash lifecycle','open',500000,?)`).run(new Date().toISOString());
+  db.exec('BEGIN IMMEDIATE');
+  const rolledBack = CashDrawer.createEntry('expense', {
+    amount: 10000, reason: 'rollback probe', counterparty: 'test vendor',
+  }, { id: 'u1', username: 'owner' }, 'sala');
+  await ticks();
+  assert.equal(filesContaining(join(temp, 'storage', 'permanent-storage', 'cash-drawer'), rolledBack.id).length, 0);
+  db.exec('ROLLBACK');
+  assert.equal(filesContaining(join(temp, 'storage', 'permanent-storage', 'cash-drawer'), rolledBack.id).length, 0);
+
+  db.exec('BEGIN IMMEDIATE');
+  const committed = CashDrawer.createEntry('expense', {
+    amount: 10000, reason: 'commit probe', counterparty: 'test vendor',
+  }, { id: 'u1', username: 'owner' }, 'sala');
+  db.exec('COMMIT');
+  assert.ok(filesContaining(join(temp, 'storage', 'permanent-storage', 'cash-drawer'), committed.id).length >= 2);
+  db.prepare(`UPDATE shifts SET status='closed',closed_at=? WHERE id='shift_cash_lifecycle'`).run(new Date().toISOString());
 });
 
 test('real stock and expense mutations roll back when their mandatory audit fails', () => {

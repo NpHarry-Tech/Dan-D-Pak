@@ -95,7 +95,7 @@ result is not represented as proof about those external environments.
 Raw record of what was run and measured this session. All read-only except the
 Gate-2 code change (`ring_controller.dart`, `socket_service.dart`) and its test.
 
-## Git preflight (read-only)
+## Earlier Git preflight record (historical; not final push state)
 ```
 reviewed checkpoint = add0b75ed9dc8711eb7190e07c33690e7ea2f2ba (P0 side-effect staging)
 HEAD    = 62461ea (after review commits: concurrency proof, risk-1B, print-state, comment)

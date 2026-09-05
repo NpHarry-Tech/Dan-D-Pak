@@ -41,8 +41,8 @@ có test. Production-sized restore/host disk vẫn **NEEDS-LIVE-CANARY**. Commit
 user/auth generation/representation; không áp dụng mutation và clear khi đổi scope.
 Online/Omni burst dùng trailing 1.500 ms, max wait 5.000 ms, có flush/cancel/dispose và
 fake-clock 1499/1500/1501. Timing diagnostic tách ingress/auth/DB/serialize/total, mặc
-định tắt. Với 2.000 bill: server HTTP p95 24,947 ms, client-loopback p95 27,325 ms;
-payload 61.786 byte. Auth p95 giảm từ 52,823 ms ở probe trước sửa xuống 0,353 ms nhờ
+định tắt. Với 2.000 bill: server HTTP p95 24.947 ms, client-loopback p95 27.325 ms;
+payload 61,786 bytes. Auth p95 giảm từ 52.823 ms ở probe trước sửa xuống 0.353 ms nhờ
 không xác thực/touch session trùng và throttle `last_seen` một phút. Commits: `cb45125`,
 `d833c1d`.
 
@@ -62,7 +62,7 @@ dedupe giữ write lock và scope theo branch; hai process tạo đúng một me
 branch; attachment HTTPS-only và có giới hạn. Server pagination và Flutter ListView
 virtualization giữ payload/render bounded; PerfMode theo dõi frame/freeze, dùng LRU image
 cache và hạ trần xuống 48 MiB/300 ảnh trên máy yếu. Asset benchmark 256 KiB: cold-200
-p95 8,691 ms, warm-304 p95 0,702 ms. Provider thật **BLOCKED-EXTERNAL**. Commit:
+p95 8.691 ms, warm-304 p95 0.702 ms. Provider thật **BLOCKED-EXTERNAL**. Commit:
 `dce081f`.
 
 ## Gate 8 — Haravan
@@ -97,7 +97,7 @@ archive/activity realtime chỉ chạy post-commit. UI có nhãn tiếng Việt.
 
 ## Gate 12 — Full final gate
 
-**VERIFIED (source).** Server: 143/143 files, 726/726 assertions, 0 fail/timeout/error,
+**VERIFIED (source) at `ac56e24`.** Server: 143/143 files, 726/726 assertions, 0 fail/timeout/error,
 1.265,3 giây. Flutter core: 251 pass, 0 fail, 1 E2E-only skip, 152,8 giây. Analyze
 core/desktop/tablet/phone: 0 issue. `npm audit --omit=dev`: 0 vulnerability. Conflict
 markers: none. Private/server secret scan: only two explicit fake PEM fixtures; tracked
@@ -107,9 +107,10 @@ not inspected. Raw logs and JSON live beside this report.
 ## Gate 13 — Git và release boundary
 
 **VERIFIED (local boundary).** Mỗi nhóm có commit riêng; không amend/reset/rebase/push.
-Desktop config hiện vẫn là `2026.9.3+170`; mọi b170 cũ bị supersede và release tiếp theo
-phải dùng b171 hoặc số tiếp theo được xác định khi có quyền build. Không installer,
-artifact, manifest hay backup nào bị sửa/tạo trong phiên này. Production và Review HOLD.
+Desktop release config là `2026.9.5+171`; mọi b170 cũ bị đánh dấu
+superseded/do-not-publish. Builder tách cứng thư mục production/review, ghi backend vào
+manifest và kiểm tra URL đã nhúng trong executable trước đóng gói. Production và Review
+vẫn HOLD cho tới canary.
 
 ## Gate 14 — Điều kiện kết thúc
 
