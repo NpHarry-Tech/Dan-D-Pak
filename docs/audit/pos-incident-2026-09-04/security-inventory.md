@@ -65,3 +65,20 @@ backup/restore is **NEEDS-LIVE-CANARY** and requires explicit database/credentia
 Production and review must use different random key material. Their example configs use
 different key ids, but inspecting or rotating deployed key material is intentionally
 **BLOCKED-EXTERNAL** in this local-only task.
+
+## Final production dependency audit (2026-09-05)
+
+| Check | Result | Evidence |
+|---|---|---|
+| `npm audit --omit=dev` before remediation | **PARTIAL** — 9 moderate, 0 high/critical | `final-npm-audit-before.json` |
+| Supported dependency refresh | **VERIFIED (source)** — `firebase-admin` 14.3.0 and `@google-cloud/storage` 7.22.0 | `package-lock.json` |
+| Vulnerable transitive ranges | **VERIFIED (source)** — overrides resolve `qs` 6.16.0 and `uuid` 11.1.1 | `package.json`; `npm ls ...` |
+| `npm audit --omit=dev` after remediation | **VERIFIED (source)** — 0 vulnerabilities | `final-npm-audit-after.json` |
+| Runtime compatibility smoke | **VERIFIED (source)** — Firebase app/messaging, Cloud Storage and teeny-request imports plus CommonJS UUID v4 generation | local command output |
+| Focused security/deployment regression | **VERIFIED (source)** — 32/32 pass | Firebase settings, push cache, security, deployment and release-signing suites |
+
+The two high-confidence private-key markers found by the repository scan are explicit
+fake fixtures in `diagnostic_redaction_test.dart` and
+`firebase-settings-regression.test.mjs` (`FAKEKEYFORTEST`); no deploy credential or
+real private key was inspected. Live Firebase/Storage provider calls remain
+**BLOCKED-EXTERNAL** because this task has no credential authority.
