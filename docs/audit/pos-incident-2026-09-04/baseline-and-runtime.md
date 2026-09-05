@@ -1,5 +1,24 @@
 # Baseline, Runtime & Measurements — 2026-09-04
 
+## Final shift-current benchmark (2026-09-05)
+
+Reproducible command: `node scripts/benchmark-shift-current.mjs 2000 100`.
+This measures the service path and intentionally excludes HTTP/network serialization.
+
+| Metric | Earlier before-cap baseline | Final verified result |
+|---|---:|---:|
+| Bills | 2,000 | 2,000 |
+| p50 | 19.8 ms | **19.982 ms** |
+| p95 | 23.8 ms | **23.042 ms** |
+| p99 | 26.4 ms | **23.672 ms** |
+| max | not recorded | **26.467 ms** |
+| Serialized payload | about 577 KB | **61,786 bytes** |
+| Returned bill details / total count | uncapped / 2,000 | **200 / 2,000** |
+
+Status: **VERIFIED (source)** on Win32, Node v24.14.1, SQLite 3.51.2. Raw evidence is
+`final-performance-benchmark.json`. This does not substitute for production disk,
+network, concurrency and host-load canaries, which remain **NEEDS-LIVE-CANARY**.
+
 ## Gate 4 database measurements (continuation 2026-09-05)
 
 All measurements below used isolated temporary SQLite files; no production or

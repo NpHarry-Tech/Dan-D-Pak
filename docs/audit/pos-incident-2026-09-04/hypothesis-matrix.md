@@ -305,3 +305,16 @@ Each row: symptom → leading hypothesis → evidence → verdict → how to fal
 - **Inferred (read, not yet reproduced):** S2 (deploy-gap + UX surface), S4, S7, S8, S9,
   S11.
 - **Unknown / blocked:** S12, S13 external E2E (no credentials in-session).
+
+## Final hypothesis close-out (2026-09-05; supersedes deferred labels above)
+
+- **S10 — VERIFIED (source):** the sell-first launcher now exposes explicit Sales and
+  Management entries with role-aware preference while preserving every permitted module
+  route. Phone retains its dedicated RBAC shell. Launcher/preservation checks: 15/15.
+- **S11 — VERIFIED (source):** centered aspect-safe thumbnails, deliberate contain/cover
+  behavior, upload magic-byte validation and HTTP ETag/cache contracts are tested.
+- **Systemic realtime — VERIFIED (source):** stable replayable envelopes, bounded
+  per-branch journal and client dedupe/out-of-order rejection replace the earlier
+  event-id gap. Physical reconnect remains **NEEDS-LIVE-CANARY**.
+- **External connector truth remains unchanged:** credentialed Haravan/chat validation
+  is **BLOCKED-EXTERNAL**; no causal claim about a live provider was invented.

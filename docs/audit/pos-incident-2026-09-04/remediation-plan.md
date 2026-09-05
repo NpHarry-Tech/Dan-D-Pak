@@ -1,5 +1,22 @@
 # Remediation Plan — POS Incident 2026-09-04
 
+## Final local gate (2026-09-05)
+
+- Server canonical isolated runner: **VERIFIED (source)** — 142/142 files, 722/722
+  assertions, 0 fail, 0 timeout, 0 error on the final dependency lockfile.
+- Flutter core: **VERIFIED (source)** — 251 pass, 0 fail, 1 E2E-only skip; analyze is
+  clean for core, desktop, tablet and phone.
+- Production dependency audit: **VERIFIED (source)** — 0 vulnerabilities after the
+  supported Firebase dependency refresh and bounded `qs`/`uuid` overrides.
+- Performance: **VERIFIED (source)** — shift-current service p95 23.042 ms and max
+  26.467 ms at 2,000 bills; 61,786-byte bounded payload.
+- Deployment/build/live provider/real DB/device validation was not authorized and
+  remains **NEEDS-LIVE-CANARY** or **BLOCKED-EXTERNAL**. Production and Review stay HOLD.
+
+The reproducible evidence index is `final-gate-evidence.md`. Historical DESIGNED/NOT
+DONE sections below are retained for chronology and are superseded by the continuation
+status plus this final gate where they conflict.
+
 ## Continuation status (2026-09-05; supersedes stale DESIGNED/NOT DONE labels below)
 
 - Gate 5 is **VERIFIED locally**. Opt-in GET single-flight includes method, base URL,

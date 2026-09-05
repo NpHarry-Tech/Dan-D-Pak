@@ -80,5 +80,9 @@ different key ids, but inspecting or rotating deployed key material is intention
 The two high-confidence private-key markers found by the repository scan are explicit
 fake fixtures in `diagnostic_redaction_test.dart` and
 `firebase-settings-regression.test.mjs` (`FAKEKEYFORTEST`); no deploy credential or
-real private key was inspected. Live Firebase/Storage provider calls remain
-**BLOCKED-EXTERNAL** because this task has no credential authority.
+real private key was inspected. The scan also identifies the same tracked Firebase
+Android client API key in the phone/tablet `google-services.json` files. Firebase
+documents these client identifiers as public-by-design and safe in client configuration
+when restricted to Firebase APIs; verifying the live project's API restrictions,
+Security Rules and App Check is **BLOCKED-EXTERNAL** because this task has no console or
+credential authority. Live Firebase/Storage provider calls remain **BLOCKED-EXTERNAL**.

@@ -5,6 +5,24 @@
 > investigation.** All conclusions are backed by file:line, a runtime test, or a
 > measured timing. No secrets/PII are stored in this folder.
 
+## Final local close-out (2026-09-05; authoritative)
+
+All source changes requested by the incident brief are complete and committed locally.
+The final dependency graph and application source passed the canonical server runner
+(**142/142 files, 722 assertions, 0 fail/timeout/error**), Flutter core tests
+(**251 pass, 1 explicitly gated E2E skip, 0 fail**) and analysis of all four Flutter
+packages (**0 issues**). Production dependencies report **0 vulnerabilities**.
+
+The final `/api/shifts/current` service benchmark at 2,000 bills and 100 iterations is
+p50 19.982 ms, p95 23.042 ms, p99 23.672 ms, max 26.467 ms; payload is 61,786 bytes
+with 200 bill details and the correct total count of 2,000. See
+`final-gate-evidence.md` for the exact evidence index and remaining external boundaries.
+
+Local completion does not authorize a deploy. Production/Review DB restore, real
+printer/display/device validation, Windows executable launch, credentialed Haravan/chat
+and Firebase provider calls remain **NEEDS-LIVE-CANARY** or **BLOCKED-EXTERNAL**. No
+installer/build/deploy, credential use, or real DB mutation occurred.
+
 ## 0. Preflight (verified, read-only)
 
 | Item | Reported | Verified | Match |

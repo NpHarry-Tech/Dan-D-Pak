@@ -1,0 +1,20 @@
+{
+  "status": "VERIFIED",
+  "target": "/api/shifts/current (service path; excludes HTTP/network serialization)",
+  "environment": {
+    "platform": "win32",
+    "node": "v24.14.1",
+    "sqlite": "3.51.2"
+  },
+  "bills": 2000,
+  "iterations": 100,
+  "milliseconds": {
+    "p50": 19.982,
+    "p95": 23.042,
+    "p99": 23.672,
+    "max": 26.467
+  },
+  "payload_bytes": 61786,
+  "returned_bill_details": 200,
+  "total_bill_count": 2000
+}
