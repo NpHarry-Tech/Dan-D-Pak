@@ -11,9 +11,10 @@
 |---|---|---|---|
 | Repo | `D:/Dan D Pak` | `D:/Dan D Pak` | ✓ |
 | Branch | `fix/universal-print-validation` | same | ✓ |
-| HEAD | continuation checkpoint | `5839151e924e13ec70869568860ce4965365f61e` at preflight | ✓ |
+| Reviewed checkpoint | `add0b75` | `add0b75ed9dc8711eb7190e07c33690e7ea2f2ba` (verified at re-entry) | ✓ |
+| HEAD (after review commits) | — | `62461ea` (+ concurrency-proof, risk-1B, print-state, comment fixes) | ✓ |
 | Worktree | clean | clean (`git status --porcelain` empty) | ✓ |
-| Upstream | — | `origin/fix/universal-print-validation`, 15 local commits ahead | ✓ |
+| Upstream | — | live remote `fd4faee` (`git ls-remote`); **19 local commits ahead, NOT pushed** | ✓ |
 | Worktrees | single | single (`git worktree list`) | ✓ |
 
 No `AGENTS.md` exists in the repo (searched to depth 3, `.agents/` is empty).
@@ -77,34 +78,44 @@ Evidence (all in `server/services/payments.js` `payOrder`, and the F&B client):
 
 ## 3. Status ledger — what was landed this branch vs. what remains
 
-Every fix below is committed on `fix/universal-print-validation` (local, **not pushed**),
-each with a passing test and clean analyze. Full detail per symptom in `hypothesis-matrix.md`.
+All work below is committed on `fix/universal-print-validation` (local, **NOT pushed**).
+Status vocabulary (used consistently across all four dossier files):
 
-| Sym | Symptom | Status | Test |
+- **VERIFIED (source)** — code fix + a runtime test that was actually run this session at
+  the right layer. Not the same as production-verified.
+- **PARTIAL** — only part of the fix landed, or the right-layer test is missing.
+- **BLOCKED-EXTERNAL** — needs a real credential/provider/dev-store to finish.
+- **NEEDS-LIVE-CANARY** — local/source green, but never exercised on production hardware.
+- **NOT RUN** — implemented but the required verification (e.g. Windows build) has not run.
+
+> Everything here is at most **VERIFIED (source)** — none has had a production canary, so
+> the whole branch is collectively **NEEDS-LIVE-CANARY** before any deploy. No "FIXED"
+> label is used bare.
+
+| Sym | Symptom | Status | Evidence (runtime test) |
 |---|---|---|---|
-| S1 | Self-order bell keeps ringing after confirm | **FIXED** — key-based ring dedup + clear on the confirm/reject re-emit ([orders.js:430](../../../server/services/orders.js#L430)/[477](../../../server/services/orders.js#L477)) | `ring_controller_dedup_test.dart` 7/7 |
-| S3 | Double charge / stuck table | **SOURCE GAP FOUND + FIXED LOCALLY** — transactional audit/side-effect staging + explicit 409 | fault injection 5/5; two-process HTTP 3/3 |
-| S4 | `item.cancel` opaque id | **FIXED** — món snapshot in audit | `audit-item-cancel-snapshot.test.mjs` 2/2 |
-| S5 | `/api/shifts/current` 4.7–28.7 s pile-ups | **FIXED** — client coalescing + server payload cap (577 KB→61 KB, −89%; benchmarked, server p95 ≤24 ms so CPU/indexes were never the issue) | `get_coalesce_test.dart` 3/3 · `shift-report-bill-cap.test.mjs` 3/3 |
-| S6 | "Kết ca" stacked calls/modals | **Client single-flight FIXED**; UI modal-singleton remains | `shift_single_flight_test.dart` 3/3 |
-| S7 | Multiple Desktop instances | **IMPLEMENTED** (named mutex); build-verify at gate | inspection (C++) |
-| S8 | Import "633 billion" | **FIXED** — locale parser + fail-closed plausibility guard (blocks implausible cost at commit); header-mapping remains (needs real file) | `kv_parse_num_locale_test.dart` 8/8 · `import_plausibility_test.dart` 4/4 |
-| S9 | Floor plan clipped / ratio drift | **FIXED** — fit both dims + center | `floor_cell_size_test.dart` 6/6 |
-| S12 | Chat blank "Chưa có hội thoại" | **Empty-state taxonomy FIXED**; live E2E blocked | `chat_empty_state_test.dart` 6/6 |
-| S13 | Haravan subscribe fails opaquely | **Structured redacted diagnostics FIXED**; live E2E blocked | `haravan-subscribe-diagnostics.test.mjs` 3/3 |
+| S1 | Self-order bell keeps ringing after confirm | **VERIFIED (source)** — key-based ring dedup + clear on the confirm/reject re-emit | `ring_controller_dedup_test.dart` 7/7 (unit) |
+| S2 | "Checkout success but no bill" / silent print loss | **PARTIAL** — server `print_status` + `/payments/:id/print-status` + retail banner landed; **F&B banner missing; no Flutter widget tests** for the banner lifecycle | `receipt-print-status.test.mjs` 1/1; `print-state-machine.test.mjs` 6/6 (server) |
+| S3 | Double charge / stuck table / pre-commit side effects | **VERIFIED (source)** — transactional required-audit + post-commit staging + explicit 409 `ORDER_ALREADY_PAID` | fault-injection 6/6; **two-process HTTP 4/4** |
+| S4 | `item.cancel` opaque id | **VERIFIED (source)** — món snapshot in audit | `audit-item-cancel-snapshot.test.mjs` 2/2 |
+| S5 | `/api/shifts/current` 4.7–28.7 s pile-ups | **VERIFIED (source)** — client coalescing + server payload cap (577 KB→61 KB, −89%; benchmarked p95 ≤24 ms → CPU/indexes never the cause) | `get_coalesce_test.dart` 3/3 · `shift-report-bill-cap.test.mjs` 3/3 |
+| S6 | "Kết ca" stacked calls/modals | **PARTIAL** — client single-flight VERIFIED; **UI route/modal singleton + server conditional-close not done** | `shift_single_flight_test.dart` 3/3 |
+| S7 | Multiple Desktop instances | **NOT RUN** — named mutex implemented in C++; **Windows build/run verification not performed** (no mid-phase build) | inspection only |
+| S8 | Import "633 billion" | **PARTIAL** — locale parser + fail-closed plausibility guard VERIFIED; **header-based column mapping needs the real xlsx** | `kv_parse_num_locale_test.dart` 8/8 · `import_plausibility_test.dart` 4/4 |
+| S9 | Floor plan clipped / ratio drift | **PARTIAL** — pure geometry (`floorCellSize`) VERIFIED; **widget/golden multi-viewport test NOT RUN** | `floor_cell_size_test.dart` 6/6 (pure) |
+| S12 | Chat blank "Chưa có hội thoại" | **PARTIAL** — empty-state taxonomy VERIFIED (source); **live provider ingest/send E2E BLOCKED-EXTERNAL** | `chat_empty_state_test.dart` 6/6 (pure) |
+| S13 | Haravan subscribe fails opaquely | **PARTIAL** — structured redacted diagnostics VERIFIED (source); **live subscribe BLOCKED-EXTERNAL** (needs dev store) | `haravan-subscribe-diagnostics.test.mjs` 3/3 |
 
-**Deliberately NOT done (documented, not started):**
-- **S2** print-status — **server state semantics DONE + TESTED** (`queued/claimed/printed/pending`,
-  never `sent == printed`; `receipt-print-status.test.mjs` 1/1); the remaining piece is the persistent client banner + audited
-  reprint at the F&B/retail success points.
-- **S10** sell-first launcher IA (Gate 9) — by the brief, only after S1–S9 are green; needs
-  a feature/route/role parity map first.
+**Not started (documented):**
+- **S10** sell-first launcher IA (Gate 9) — only after S1–S9; needs a feature/route/role
+  parity map first. **NOT RUN.**
 - **S11** settings thumbnail centering — the instance checked (`settings_users_panel`
-  avatar) is already correct (`ClipOval` + `BoxFit.cover`); the specific misaligned
-  thumbnail was not identified this session.
-- Systemic follow-ups: realtime `emit()` has no event id/version
-  ([realtime.js:187-202](../../../server/realtime.js#L187-L202)); `migrate()` ≈ 11.5 s
-  startup; server-side `/api/shifts/current` benchmark + lighter query.
+  avatar) is already correct; the specific misaligned thumbnail was not identified.
+  **NOT RUN.**
+- Systemic: payment realtime events now carry `event_id`/`event_version`
+  (`paymentEventPayload`), but the **general `emit()` still has no event id** for other
+  event types; `migrate()` ≈ 11.5 s startup. **PARTIAL / NOT RUN.**
+- **AES-256-GCM Secret Vault** (continuation gate 8) — **NOT RUN.**
 
 ## 4. Files in this dossier
 

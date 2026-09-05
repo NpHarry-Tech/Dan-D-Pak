@@ -5,12 +5,13 @@ Gate-2 code change (`ring_controller.dart`, `socket_service.dart`) and its test.
 
 ## Git preflight (read-only)
 ```
-HEAD    = 5839151e924e13ec70869568860ce4965365f61e (continuation preflight)
+reviewed checkpoint = add0b75ed9dc8711eb7190e07c33690e7ea2f2ba (P0 side-effect staging)
+HEAD    = 62461ea (after review commits: concurrency proof, risk-1B, print-state, comment)
 branch  = fix/universal-print-validation
 status  = clean (git status --porcelain → empty)
-upstream= origin/fix/universal-print-validation ; 15 ahead / 0 behind (cached)
+upstream= origin/fix/universal-print-validation ; 19 ahead / 0 behind
+remote  = fd4faee (git ls-remote — NOT pushed)
 worktree= single (D:/Dan D Pak)
-remote  = https://github.com/NpHarry-Tech/Dan-D-Pak.git
 ```
 
 ## Runtime (measured on this machine)
