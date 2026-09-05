@@ -32,6 +32,10 @@
 - Haravan fake-provider behavior is **VERIFIED locally**: structured redacted subscribe
   diagnostics, outbound-session persistence, order/product idempotency and truthful
   capability flags. Real dev-store subscribe remains **BLOCKED-EXTERNAL**.
+- Sell-first navigation is **VERIFIED locally**: desktop/tablet login presents explicit
+  Sales and Management entries with role-aware preference while retaining the complete
+  permission-filtered module grid. Phone keeps its dedicated RBAC shell. Inventory and
+  preservation evidence is in `feature-preservation-matrix.md`; focused tests **15/15**.
 
 Ordered by risk and evidence. Each item states the invariant, the change, the test,
 and the rollback. Three **separate** rollout groups (never conflated): Production,

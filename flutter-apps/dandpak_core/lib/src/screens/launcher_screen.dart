@@ -19,6 +19,7 @@ import 'database/database_screen.dart';
 import 'expenses/expenses_screen.dart';
 import 'invoices/invoices_screen.dart';
 import 'kds/kds_screen.dart';
+import 'launcher_entry_panel.dart';
 import 'management/management_screen.dart';
 import 'management/settings_screen.dart';
 import 'online/online_shell.dart';
@@ -425,10 +426,18 @@ class _LauncherScreenState extends State<LauncherScreen> {
         .where((m) => AppFlavor.current.showsModule(m.key))
         .toList();
 
-    final blocks = <Widget>[];
+    final blocks = <Widget>[
+      LauncherEntryPanel(
+        role: auth.currentUser?.role ?? '',
+        modules: visible,
+        onOpen: _openModule,
+      ),
+    ];
     for (final group in catalog.groups) {
-      final modules =
-          visible.where((m) => m.group == group.key && m.isActive).toList();
+      final modules = sellFirstModules(
+        auth.currentUser?.role ?? '',
+        visible.where((m) => m.group == group.key && m.isActive),
+      );
       if (modules.isEmpty) continue;
       blocks.add(_GroupTitle(_moduleGroupLabel(group)));
       blocks.add(_ModuleGrid(modules: modules, onTap: _openModule));
