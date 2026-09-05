@@ -849,9 +849,11 @@ export function payOrder(order_id, lines, options = {}, branch_id = 'sala') {
     }
     try {
       const printResult = processReceiptPrintOutbox({ id: receiptPrintOutboxId });
-      // Cho client biết bill ĐÃ GỬI máy in hay còn CHỜ (không im lặng mất bill):
-      // 'sent' = đã đưa vào tuyến in/agent; 'pending' = chưa có tuyến in, worker
-      // sẽ thử lại — UI phải cảnh báo + cho in lại. Payment KHÔNG phụ thuộc điều này.
+      // Trạng thái in THẬT để client hiện đúng + cho in lại (không im lặng mất bill).
+      // printResult.print_status ∈ {printed | claimed | queued | pending} — TUYỆT ĐỐI
+      // không dùng 'sent' như đồng nghĩa của 'printed': 'printed' chỉ khi máy in ĐÃ
+      // ACK; dispatch thành công (agent giữ chỗ) là 'claimed'/'queued'. Payment
+      // KHÔNG phụ thuộc việc in — mọi lỗi in chỉ để lại outbox bền để worker retry.
       receipt.print_status = printResult.print_status;
       receipt.print_job_ids = printResult.job_ids;
       if (printResult.failed) {
