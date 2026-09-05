@@ -29,6 +29,16 @@ const globalDb = db;
 export function migrate(targetDb = globalDb) {
   const isMaster = (targetDb === globalDb);
   const db = targetDb;
+  let ownsMigrationTransaction = false;
+  try {
+    db.prepare('BEGIN IMMEDIATE').run();
+    ownsMigrationTransaction = true;
+  } catch (error) {
+    // migrate(targetDb) is also used by repair/test callers that can already
+    // own a transaction. In that case the caller remains the commit authority.
+    if (!/within a transaction/i.test(String(error?.message || ''))) throw error;
+  }
+  try {
   function addColumnIfMissing(table, col, type) {
     const cols = db.prepare(`PRAGMA table_info(${table})`).all();
     if (!cols.some(c => c.name === col)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${type};`);
@@ -1853,6 +1863,13 @@ export function migrate(targetDb = globalDb) {
     PRAGMA user_version = 8;
   `);
   initCriticalIntegrityGuards(db);
+    if (ownsMigrationTransaction) db.prepare('COMMIT').run();
+  } catch (error) {
+    if (ownsMigrationTransaction) {
+      try { db.prepare('ROLLBACK').run(); } catch { /* SQLite may already have rolled back. */ }
+    }
+    throw error;
+  }
 }
 
 function migrateStockLotDateIdentity(targetDb) {
@@ -1947,7 +1964,13 @@ function migrateLegacySalaBranch(targetDb) {
     throw new Error(`Không thể đổi branch_id br1 thành sala vì ID sala đã tồn tại.`);
   }
 
-  targetDb.exec('BEGIN IMMEDIATE');
+  let ownsTransaction = false;
+  try {
+    targetDb.exec('BEGIN IMMEDIATE');
+    ownsTransaction = true;
+  } catch (error) {
+    if (!/within a transaction/i.test(String(error?.message || ''))) throw error;
+  }
   try {
     const tables = targetDb.prepare(`
       SELECT name FROM sqlite_master
@@ -1967,9 +1990,9 @@ function migrateLegacySalaBranch(targetDb) {
       const migrated = [...new Set(access.map(id => id === 'br1' ? 'sala' : id))];
       targetDb.prepare(`UPDATE users SET branch_access_json=? WHERE id=?`).run(JSON.stringify(migrated), user.id);
     }
-    targetDb.exec('COMMIT');
+    if (ownsTransaction) targetDb.exec('COMMIT');
   } catch (error) {
-    targetDb.exec('ROLLBACK');
+    if (ownsTransaction) targetDb.exec('ROLLBACK');
     throw error;
   }
 }

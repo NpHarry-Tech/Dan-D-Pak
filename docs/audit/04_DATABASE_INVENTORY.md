@@ -1,6 +1,6 @@
 # 04 — DATABASE INVENTORY
 
-Nguồn: `server/db.js` (`migrate()`). Engine: `node:sqlite` DatabaseSync, WAL, `foreign_keys=ON`, `busy_timeout=5000`, `synchronous=NORMAL`.
+Nguồn: `server/db.js` (`migrate()`). Engine: `node:sqlite` DatabaseSync, WAL, `foreign_keys=ON`, `busy_timeout=5000`, `synchronous=FULL`.
 
 ## PRAGMA / tuning (bằng chứng db.js đầu file)
 WAL · foreign_keys ON · busy_timeout 5000 · cache_size -65536 (64MB) · temp_store MEMORY · mmap_size 128MB · wal_autocheckpoint 1000.

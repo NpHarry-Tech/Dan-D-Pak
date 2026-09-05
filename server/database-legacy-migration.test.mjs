@@ -117,3 +117,24 @@ test('legacy print_jobs without idempotency_key upgrades before creating its ind
     legacy.close();
   }
 });
+
+test('migration is atomic when a late schema step fails', () => {
+  const broken = new DatabaseSync(path.join(root, 'migration-fault.db'));
+  try {
+    broken.exec(`CREATE TABLE schema_meta (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL CHECK(value='reject-canonical-version'),
+      updated_at TEXT NOT NULL
+    );`);
+    assert.throws(() => migrate(broken), /CHECK constraint failed/);
+    assert.equal(
+      broken.prepare("SELECT COUNT(*) n FROM sqlite_master WHERE type='table' AND name='branches'").get().n,
+      0,
+      'early DDL must roll back when the final schema marker fails',
+    );
+    assert.equal(broken.prepare('PRAGMA user_version').get().user_version, 0);
+    assert.equal(broken.prepare('PRAGMA integrity_check').get().integrity_check, 'ok');
+  } finally {
+    broken.close();
+  }
+});

@@ -1,5 +1,38 @@
 # Baseline, Runtime & Measurements — 2026-09-04
 
+## Gate 4 database measurements (continuation 2026-09-05)
+
+All measurements below used isolated temporary SQLite files; no production or
+review database was opened, copied, checkpointed, migrated, or modified.
+
+| Probe | Result |
+|---|---|
+| Fresh import | 259 ms |
+| Fresh canonical migration, before atomic batching | 24,067 ms |
+| Fresh canonical migration, after atomic batching | **245 ms** |
+| First `services/orders.js` import, total from process start | 7,414 ms |
+| Two-process writer contention (700 ms held lock) | second writer succeeded after 970–1,580 ms; 2/2 rows, no leaked `SQLITE_BUSY` |
+| Online encrypted backup (8 MiB payload) | concurrent write succeeded; 28–88 heartbeat ticks; worst observed event-loop gap 281.7 ms |
+| WAL checkpoint with active reader | PASS; 2,100/2,100 rows; final TRUNCATE not busy |
+| Forced process abort inside transaction | committed row survived; uncommitted row absent; `integrity_check=ok` |
+| Hot query plans | history, invoice, and shift queries use their measured composite indexes |
+
+The startup fix wraps the rerunnable schema migration in one `BEGIN IMMEDIATE`
+transaction, including DDL and the final `schema_meta` marker. A late injected
+constraint failure proves the whole migration rolls back (no half-created
+`branches` table and `user_version` remains 0). Runtime remains
+`synchronous=FULL`; the speed-up does not weaken money/inventory durability.
+
+Reproducible suite: `node --test server/database-legacy-migration.test.mjs
+server/database-contention-recovery.test.mjs server/database-online-backup.test.mjs
+server/database-hot-query-plan.test.mjs` → **9 pass, 0 fail**.
+
+Production-sized database timing, real host disk latency, operational restore,
+and production/review DB validation remain **NEEDS-LIVE-CANARY**. A local temp-DB
+result is not represented as proof about those external environments.
+
+## Earlier baseline record (2026-09-04)
+
 Raw record of what was run and measured this session. All read-only except the
 Gate-2 code change (`ring_controller.dart`, `socket_service.dart`) and its test.
 
@@ -20,7 +53,7 @@ worktree= single (D:/Dan D Pak)
 - Flutter → **3.44.4** stable; Dart present
 - DB layer: `server/db/connection.js` (facade `server/db.js`), heavy concerns in `server/db/*`
 
-### Startup cost (import probe, isolated temp DB)
+### Earlier startup cost (superseded by Gate 4 measurement above)
 ```
 db.js imported     : ~205 ms
 migrate()          : ~11,557 ms   ← 11.5 s on a FRESH empty DB
