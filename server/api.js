@@ -5,6 +5,7 @@ import * as Auth from './services/auth.js';
 import * as History from './services/history.js';
 import { logSystem } from './services/systemLogs.js';
 import { currentRequestMetadata } from './core/requestContext.js';
+import { requireImageSignature } from './core/imageValidation.js';
 import { registerInventoryRoutes } from './modules/inventory/routes.js';
 import { registerInvoiceRoutes } from './modules/invoices/routes.js';
 import { registerPaymentRoutes } from './modules/payments/routes.js';
@@ -207,6 +208,7 @@ function saveBase64Image(req, { dir, urlBase, prefix, auditAction, registerAs })
   const buf = Buffer.from(String(data), 'base64');
   if (!buf.byteLength) throw new Error('File ảnh rỗng');
   if (buf.byteLength > AVATAR_MAX_BYTES) throw new Error('Ảnh quá lớn, tối đa 20MB');
+  requireImageSignature(buf, mime_type);
   const stored = `${uid(prefix)}${SECURE_MIME_EXT[mime_type] || '.jpg'}`;
   fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(nodePath.join(dir, stored), buf);

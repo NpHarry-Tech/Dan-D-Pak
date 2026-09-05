@@ -10,6 +10,7 @@ import '../../providers/auth_provider.dart';
 import '../../services/api_service.dart';
 import '../../ui/file_pick.dart';
 import '../../ui/app_theme.dart';
+import '../../ui/aspect_safe_thumbnail.dart';
 import '../online/marketplace_connect_panel.dart';
 import 'settings_erp_panel.dart';
 import 'settings_tab.dart';
@@ -451,31 +452,18 @@ Widget _integrationLogo(IntegrationDef def, double size, double fallbackSize) {
   final url =
       def.imageUrl == null ? null : '${DanDpakDefaults.baseUrl}${def.imageUrl}';
   Widget fallback() => Text(def.icon, style: TextStyle(fontSize: fallbackSize));
+  ImageProvider? image;
   if (url != null) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(4),
-      child: Image.network(
-        url,
-        width: size,
-        height: size,
-        fit: BoxFit.contain,
-        errorBuilder: (context, error, stackTrace) => fallback(),
-      ),
-    );
+    image = NetworkImage(url);
+  } else if (def.imageAsset != null) {
+    image = AssetImage(def.imageAsset!);
   }
-  if (def.imageAsset != null) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(4),
-      child: Image.asset(
-        def.imageAsset!,
-        width: size,
-        height: size,
-        fit: BoxFit.contain,
-        errorBuilder: (context, error, stackTrace) => fallback(),
-      ),
-    );
-  }
-  return fallback();
+  return AspectSafeThumbnail(
+    width: size,
+    height: size,
+    image: image,
+    fallback: fallback(),
+  );
 }
 
 class IntegrationsPanel extends StatefulWidget {

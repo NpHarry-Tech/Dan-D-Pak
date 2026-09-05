@@ -9,6 +9,37 @@ function text(value, max = 500) { return String(value ?? '').trim().slice(0, max
 function json(value) { return JSON.stringify(value ?? null); }
 function parse(value, fallback) { try { return value ? JSON.parse(value) : fallback; } catch { return fallback; } }
 function hash(value) { return crypto.createHash('sha256').update(json(value)).digest('hex'); }
+
+export function normalizeAttachments(value) {
+  const items = value == null ? [] : value;
+  if (!Array.isArray(items)) throw Object.assign(new Error('Danh sách tệp đính kèm không hợp lệ.'), { status: 400 });
+  if (items.length > 10) throw Object.assign(new Error('Tối đa 10 tệp đính kèm mỗi tin nhắn.'), { status: 413 });
+  let totalBytes = 0;
+  return items.map((item) => {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) {
+      throw Object.assign(new Error('Tệp đính kèm không hợp lệ.'), { status: 400 });
+    }
+    const size = Math.max(0, Number(item.size || item.file_size || 0));
+    if (!Number.isFinite(size) || size > 20 * 1024 * 1024) {
+      throw Object.assign(new Error('Tệp đính kèm vượt quá 20MB.'), { status: 413 });
+    }
+    totalBytes += size;
+    if (totalBytes > 50 * 1024 * 1024) {
+      throw Object.assign(new Error('Tổng tệp đính kèm vượt quá 50MB.'), { status: 413 });
+    }
+    const url = text(item.url, 2048);
+    if (url && !/^https:\/\//i.test(url)) {
+      throw Object.assign(new Error('URL tệp đính kèm phải dùng HTTPS.'), { status: 400 });
+    }
+    return {
+      id: text(item.id, 240),
+      type: text(item.type || item.mime_type, 100),
+      name: text(item.name || item.filename, 255),
+      url,
+      size,
+    };
+  });
+}
 function requireConversation(id, branchId) {
   const row = db.prepare(`SELECT * FROM omni_conversations WHERE id=? AND branch_id=?`).get(id, branchId);
   if (!row) throw Object.assign(new Error('Không tìm thấy hội thoại Omni.'), { status: 404 });
@@ -53,16 +84,20 @@ export function ingestMessage(event, branchId = 'sala') {
   const provider = text(event.provider, 40).toLowerCase();
   const eventKey = text(event.event_key, 240);
   if (!provider || !eventKey) throw new Error('Sự kiện Omni thiếu provider/event_key.');
+  const scopedEventKey = `${text(branchId, 100)}:${eventKey}`;
   const payloadHash = hash(event);
-  const prior = db.prepare(`SELECT payload_hash,status FROM omni_events WHERE provider=? AND event_key=?`).get(provider, eventKey);
-  if (prior) {
-    if (prior.payload_hash !== payloadHash) throw Object.assign(new Error('Event key Omni bị dùng lại với payload khác.'), { status: 409 });
-    return { duplicate: true, status: prior.status };
-  }
   db.prepare('BEGIN IMMEDIATE').run();
   try {
+    // Recheck only after owning the write lock. Two server processes can both
+    // pass a pre-lock SELECT; this placement makes their webhook retry atomic.
+    const prior = db.prepare(`SELECT payload_hash,status FROM omni_events WHERE provider=? AND event_key=?`).get(provider, scopedEventKey);
+    if (prior) {
+      if (prior.payload_hash !== payloadHash) throw Object.assign(new Error('Event key Omni bị dùng lại với payload khác.'), { status: 409 });
+      db.prepare('COMMIT').run();
+      return { duplicate: true, status: prior.status };
+    }
     db.prepare(`INSERT INTO omni_events(id,provider,event_key,payload_hash,status,received_at)
-      VALUES (?,?,?,?, 'received',?)`).run(uid('omev_'), provider, eventKey, payloadHash, now());
+      VALUES (?,?,?,?, 'received',?)`).run(uid('omev_'), provider, scopedEventKey, payloadHash, now());
     const channel = upsertChannel({ provider, external_account_id: event.channel?.external_account_id,
       name: event.channel?.name, status: 'connected', capabilities: event.channel?.capabilities }, branchId);
     const externalUserId = text(event.identity?.external_user_id, 240);
@@ -95,18 +130,19 @@ export function ingestMessage(event, branchId = 'sala') {
     if (!externalMessageId) throw new Error('Tin nhắn thiếu mã ngoài.');
     const messageId = uid('omsg_');
     const direction = event.message?.direction === 'outbound' ? 'outbound' : 'inbound';
+    const attachments = normalizeAttachments(event.message?.attachments);
     db.prepare(`INSERT INTO omni_messages(id,conversation_id,external_message_id,direction,sender_type,message_type,body,
       attachments_json,delivery_status,sent_at,raw_json,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`)
       .run(messageId, conversation.id, externalMessageId, direction,
         text(event.message?.sender_type, 30) || (direction === 'inbound' ? 'customer' : 'agent'),
         text(event.message?.message_type, 30) || 'text', text(event.message?.body, 10000) || null,
-        json(event.message?.attachments || []), text(event.message?.delivery_status, 30) || 'received',
+        json(attachments), text(event.message?.delivery_status, 30) || 'received',
         event.message?.sent_at || now(), json(event.message?.raw || {}), now());
     db.prepare(`UPDATE omni_conversations SET identity_id=?,status=CASE WHEN ?='inbound' THEN 'open' ELSE status END,
       unread_count=unread_count+CASE WHEN ?='inbound' THEN 1 ELSE 0 END,last_message_at=?,updated_at=? WHERE id=?`)
       .run(identity.id, direction, direction, event.message?.sent_at || now(), now(), conversation.id);
     db.prepare(`UPDATE omni_events SET status='processed',processed_at=? WHERE provider=? AND event_key=?`)
-      .run(now(), provider, eventKey);
+      .run(now(), provider, scopedEventKey);
     db.prepare('COMMIT').run();
     const result = getConversation(conversation.id, branchId);
     emit('omni:conversation.updated', result, branchId);

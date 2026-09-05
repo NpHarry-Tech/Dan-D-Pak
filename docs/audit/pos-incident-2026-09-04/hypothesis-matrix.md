@@ -234,7 +234,11 @@ Each row: symptom → leading hypothesis → evidence → verdict → how to fal
   brief. Not a defect; an IA change requiring a feature/route/role parity map first.
 
 ### S11 — Settings thumbnails misaligned across aspect ratios
-- **Verdict:** **NEEDS-REPRO / low-risk.** Fix = centered constrained box + `BoxFit`
+- **Continuation verdict: VERIFIED (source).** Settings integration logos now use one
+  centered, constrained `AspectSafeThumbnail`: `contain` for logos, deliberate `cover`
+  for photos and an explicit missing fallback. Portrait/landscape/square/missing widget
+  contracts pass. Upload magic bytes and HTTP cache/ETag are runtime-tested separately.
+- **Earlier verdict (superseded):** **NEEDS-REPRO / low-risk.** Fix = centered constrained box + `BoxFit`
   chosen per asset + golden tests (portrait/landscape/square/missing). Next probe:
   settings image widgets under `screens/management/` and `screens/**/settings_*`.
 
@@ -253,6 +257,9 @@ Each row: symptom → leading hypothesis → evidence → verdict → how to fal
   [online_chat_section.dart:15-40, 206-232](../../../flutter-apps/dandpak_core/lib/src/screens/online/online_chat_section.dart#L15-L40).
   Test `test/chat_empty_state_test.dart` **6/6**; analyze clean. The UI now shows a distinct
   "Chưa kết nối kênh chat nào — vào Cài đặt…" for not-configured.
+- **Continuation hardening: VERIFIED (local).** Dedupe is branch-scoped and rechecked
+  under `BEGIN IMMEDIATE`; a two-process retry creates one message. Inbox/message reads
+  are branch isolated and attachment metadata is bounded, sanitized and HTTPS-only.
 - **Still BLOCKED:** ingest/send/realtime E2E against a real provider (no credentials
   in-session). The empty screen now tells the truth about *which* empty state it is.
 - **Falsify (remaining):** mock provider with real signature → 2 duplicate webhook ids = 1

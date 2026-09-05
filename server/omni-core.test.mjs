@@ -33,8 +33,36 @@ test('event key giong nhau nhung payload khac bi chan', () => {
   assert.throws(() => Omni.ingestMessage({ ...event, message: { ...event.message, body: 'payload khac' } }, 'sala'), /payload/);
 });
 
+test('dedupe is branch-scoped and inbox reads cannot cross branches', () => {
+  const other = Omni.ingestMessage(event, 'branch-b');
+  assert.equal(other.duplicate, false);
+  assert.equal(Omni.listConversations('sala').total, 1);
+  assert.equal(Omni.listConversations('branch-b').total, 1);
+  const sala = Omni.listConversations('sala').rows[0];
+  assert.equal(Omni.getConversation(sala.id, 'branch-b'), null);
+  assert.throws(() => Omni.listMessages(sala.id, 'branch-b'), (error) => error.status === 404);
+  assert.equal(db.prepare(`SELECT COUNT(*) n FROM omni_events`).get().n, 2);
+});
+
+test('attachments are bounded, sanitized and HTTPS-only', () => {
+  assert.deepEqual(Omni.normalizeAttachments([{
+    id: 'a1', filename: 'invoice.png', mime_type: 'image/png',
+    url: 'https://cdn.example/a.png', file_size: 1024,
+    ignored_secret: 'must-not-persist',
+  }]), [{
+    id: 'a1', name: 'invoice.png', type: 'image/png',
+    url: 'https://cdn.example/a.png', size: 1024,
+  }]);
+  assert.throws(() => Omni.normalizeAttachments(Array.from({ length: 11 }, () => ({}))),
+    (error) => error.status === 413);
+  assert.throws(() => Omni.normalizeAttachments([{ url: 'http://insecure.example/a', size: 1 }]),
+    (error) => error.status === 400);
+  assert.throws(() => Omni.normalizeAttachments([{ url: 'https://cdn.example/a', size: 21 * 1024 * 1024 }]),
+    (error) => error.status === 413);
+});
+
 test('gan nhan va mau tra loi dung chung loi Omni', () => {
-  const conversation = db.prepare(`SELECT id FROM omni_conversations`).get();
+  const conversation = db.prepare(`SELECT id FROM omni_conversations WHERE branch_id='sala'`).get();
   const tag = Omni.saveTag({ name: 'Khach VIP', color_token: 'accent' }, 'sala', 'test');
   const updated = Omni.setConversationTags(conversation.id, [tag.id], 'sala', 'test');
   assert.equal(updated.tags[0].name, 'Khach VIP');

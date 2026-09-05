@@ -21,6 +21,17 @@
   async restore, foreground attempt and taskbar flash fallback; the display process is
   deliberately exempt. Static runner contract tests are **3/3 pass**. Building/running
   an executable is **NEEDS-LIVE-CANARY** because installer/app build was not authorized.
+- Asset/thumbnail source is **VERIFIED locally**: uploads validate JPEG/PNG/WebP/GIF
+  magic bytes instead of trusting MIME, return `nosniff`, cache unique upload URLs for
+  one year with ETag/304, and revalidate bundled assets hourly. Settings integration
+  logos use one centered aspect-safe contract. Focused server/UI tests: **5/5 pass**.
+- Omni/chat source is **VERIFIED locally**: webhook dedupe acquires the write lock before
+  checking and scopes event keys by branch; two real Node processes produce one message.
+  Cross-branch reads return no data/404. Attachments are HTTPS-only and bounded (10,
+  20MB each, 50MB total). Real provider E2E remains **BLOCKED-EXTERNAL**.
+- Haravan fake-provider behavior is **VERIFIED locally**: structured redacted subscribe
+  diagnostics, outbound-session persistence, order/product idempotency and truthful
+  capability flags. Real dev-store subscribe remains **BLOCKED-EXTERNAL**.
 
 Ordered by risk and evidence. Each item states the invariant, the change, the test,
 and the rollback. Three **separate** rollout groups (never conflated): Production,

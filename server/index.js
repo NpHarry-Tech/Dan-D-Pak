@@ -39,6 +39,7 @@ import { maintainRetailCarts } from './services/retailCart.js';
 import { maintainRetailDrafts } from './services/retail.js';
 import { rateLimit } from './core/rateLimit.js';
 import { buildInfo } from './core/buildInfo.js';
+import { immutableUploadStaticOptions, bundledAssetStaticOptions } from './core/staticAssets.js';
 
 // Gzip middleware dùng Node built-in zlib — không cần thêm npm package.
 // Với 50 thiết bị, menu JSON ~50KB → ~8KB sau nén, giảm tải mạng LAN 80%.
@@ -329,10 +330,10 @@ app.get('/health', (req, res) => {
 
 app.use('/api', requestContextMiddleware, requestLogger, api);
 app.use('/api', apiNotFound);
-// During active development, always serve fresh HTML/CSS/JS (no stale browser cache).
+app.use('/uploads', express.static(storagePath('uploads'), immutableUploadStaticOptions));
+app.use('/assets', express.static(ENGINE_ASSETS, bundledAssetStaticOptions));
+// Non-asset fallthroughs must never retain a stale error/HTML response.
 app.use((req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
-app.use('/uploads', express.static(storagePath('uploads'), { etag: false, lastModified: false }));
-app.use('/assets', express.static(ENGINE_ASSETS, { etag: false, lastModified: false }));
 
 app.use(errorHandler);
 
