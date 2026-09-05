@@ -48,6 +48,7 @@ class _PhoneShiftControlScreenState extends State<PhoneShiftControlScreen> {
 
   bool _dangNap = true;
   bool _dangLuu = false;
+  bool _dangXacNhanKetCa = false;
   bool _daDoi = false;
   String? _loi;
 
@@ -135,6 +136,7 @@ class _PhoneShiftControlScreenState extends State<PhoneShiftControlScreen> {
 
   // ── Mở ca ───────────────────────────────────────────────────────────────
   Future<void> _moCa() async {
+    if (_dangLuu || _dangXacNhanKetCa) return;
     if (_shiftKey.isEmpty) {
       appToast(context, t('Chọn ca làm việc trước'), isError: true);
       return;
@@ -166,6 +168,8 @@ class _PhoneShiftControlScreenState extends State<PhoneShiftControlScreen> {
 
   // ── Kết ca ──────────────────────────────────────────────────────────────
   Future<void> _ketCa() async {
+    if (_dangLuu || _dangXacNhanKetCa) return;
+    setState(() => _dangXacNhanKetCa = true);
     final ok = await showPhoneSheet<bool>(
       context: context,
       title: t('Kết ca hiện tại?'),
@@ -191,11 +195,17 @@ class _PhoneShiftControlScreenState extends State<PhoneShiftControlScreen> {
         ),
       ),
     );
-    if (ok != true || !mounted) return;
+    if (!mounted) return;
+    if (ok != true) {
+      setState(() => _dangXacNhanKetCa = false);
+      return;
+    }
+    setState(() => _dangXacNhanKetCa = false);
     await _guiKetCa();
   }
 
   Future<void> _guiKetCa({String? pinQuanLy}) async {
+    if (_dangLuu) return;
     setState(() => _dangLuu = true);
     final auth = context.read<AuthProvider>();
     try {

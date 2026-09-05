@@ -66,5 +66,7 @@ api.post('/print/jobs/:id/print', printGuard, wrap((req) => Print.dispatchJob(re
 api.post('/print/jobs/:id/printed', printGuard, wrap((req) => Print.markPrinted(req.params.id, branch(req), actor(req))));
 // In lại phải ra ở MÁY ĐANG BẤM — truyền định danh máy xuống để service phân
 // giải lại tuyến, thay vì sao chép tuyến của bản in gốc (có thể là máy khác).
-api.post('/print/jobs/:id/reprint', printGuard, wrap((req) => Print.reprint(req.params.id, branch(req), { deviceId: deviceOf(req) })));
+api.post('/print/jobs/:id/reprint', printGuard, wrap((req) => Print.reprint(req.params.id, branch(req), {
+  deviceId: deviceOf(req), actor: actor(req),
+})));
 }

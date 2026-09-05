@@ -8,6 +8,7 @@ import '../../providers/auth_provider.dart';
 import '../../services/api_service.dart';
 import '../../widgets/online_only_gate.dart';
 import '../../services/black_box.dart';
+import '../../services/receipt_print_banner.dart';
 import '../../services/socket_service.dart';
 import '../../services/system_log.dart';
 import '../../ui/app_theme.dart';
@@ -667,6 +668,12 @@ class _PhoneSellScreenState extends State<PhoneSellScreen> {
         _paying = false;
         _step = _Step.done;
       });
+
+      trackReceiptPrintBanner(
+        api: _api,
+        receipt: Map<String, dynamic>.from(receipt),
+        orderId: orderId,
+      );
 
       // Server đã biết CHÍNH XÁC vì sao không in được (không tuyến nào nhận máy
       // in của máy này, máy chưa báo máy in nào…) và gửi kèm trong hóa đơn.

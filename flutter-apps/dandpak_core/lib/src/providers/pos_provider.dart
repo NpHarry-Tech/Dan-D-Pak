@@ -719,10 +719,12 @@ class PosProvider extends ChangeNotifier {
   // lúc mạng lag) tạo nhiều request/nhiều modal chồng nhau. Request có thể lâu
   // hơn mọi cửa sổ debounce nên PHẢI khoá theo "đang bay", không theo thời gian.
   final Set<String> _inFlightActions = {};
+  bool _disposed = false;
 
   /// Chạy [action] đúng MỘT lần cho mỗi [key] tại một thời điểm. Lần bấm sau khi
   /// lần trước CHƯA xong sẽ bị chặn (ném) thay vì gọi API/đẩy modal lần nữa.
   Future<T> singleFlight<T>(String key, Future<T> Function() action) async {
+    if (_disposed) throw StateError('Provider đã dispose.');
     if (_inFlightActions.contains(key)) {
       throw Exception('Đang xử lý, vui lòng chờ trong giây lát.');
     }
@@ -743,12 +745,14 @@ class PosProvider extends ChangeNotifier {
     required bool cashManual,
   }) {
     return singleFlight('shift:open', () async {
+      final generation = apiService.authGeneration;
       await apiService.openShiftCounts(
         shiftKey: shiftKey,
         counts: counts,
         openingCash: openingCash,
         cashManual: cashManual,
       );
+      if (_disposed || generation != apiService.authGeneration) return;
       await loadShift();
     });
   }
@@ -760,12 +764,14 @@ class PosProvider extends ChangeNotifier {
     String? managerOverridePin,
   }) {
     return singleFlight('shift:close', () async {
+      final generation = apiService.authGeneration;
       await apiService.closeShiftCounts(
         shiftKey: shiftKey,
         counts: counts,
         closingCash: closingCash,
         managerOverridePin: managerOverridePin,
       );
+      if (_disposed || generation != apiService.authGeneration) return;
       await loadShift();
     });
   }
@@ -804,5 +810,12 @@ class PosProvider extends ChangeNotifier {
       dlog("Error opening cash drawer: $e");
       rethrow;
     }
+  }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    _inFlightActions.clear();
+    super.dispose();
   }
 }

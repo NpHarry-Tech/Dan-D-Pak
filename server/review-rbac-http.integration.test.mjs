@@ -189,6 +189,7 @@ test('dangerous and administrative endpoints reject reviewer with 403', async ()
     ['/api/settings/branches', 'GET'],
     ['/api/settings/integrations', 'GET'],
     ['/api/database/status', 'GET'],
+    ['/api/print/jobs/missing/reprint', 'POST', {}],
   ];
   for (const [path, method, body] of checks) {
     const response = await request(path, {

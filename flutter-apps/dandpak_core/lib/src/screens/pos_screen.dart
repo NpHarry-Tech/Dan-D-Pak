@@ -186,7 +186,7 @@ class _PosScreenState extends State<PosScreen> {
   }
 
   void _openShiftDialog() {
-    showDialog(context: context, builder: (_) => ShiftDialog());
+    ShiftDialog.show(context);
   }
 
   RetailCustomer? _checkoutCustomer(Map<String, dynamic>? raw) {

@@ -7,8 +7,8 @@ import '../../api_client.dart';
 import '../../models/retail_models.dart';
 import '../../providers/customer_display_controller.dart';
 import '../../services/api_service.dart';
-import '../../services/black_box.dart';
 import '../../services/card_terminal_service.dart';
+import '../../services/receipt_print_banner.dart';
 import '../../services/socket_service.dart';
 import '../../services/system_log.dart';
 import '../../ui/app_theme.dart';
@@ -788,36 +788,11 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
         // như treo dù tiền đã nhận đủ). In diễn ra song song ở nền; lỗi in (nếu có)
         // báo qua thông báo riêng thay vì chặn đóng màn.
         Navigator.of(context).pop(Map<String, dynamic>.from(receipt));
-        final paymentId = '${receipt['payment_id'] ?? ''}'.trim();
-        final printStatus = '${receipt['print_status'] ?? ''}'.trim();
-        if (paymentId.isNotEmpty &&
-            (printStatus == 'queued' || printStatus == 'claimed')) {
-          AppNotifier.show(
-            title: t('Đã thanh toán · đang chờ máy in xác nhận'),
-            body: t('Banner này tự đổi khi agent báo đã in hoặc in lỗi.'),
-            osNotify: false,
-            duration: const Duration(minutes: 10),
-          );
-          unawaited(widget.api.waitForReceiptPrint(paymentId).then((state) {
-            final status = '${state['status'] ?? ''}';
-            if (status == 'printed') {
-              AppNotifier.show(
-                title: t('Hóa đơn đã in'),
-                osNotify: false,
-              );
-            } else if (status == 'failed') {
-              AppNotifier.show(
-                title: t('Đã thanh toán · in hóa đơn thất bại'),
-                body: '${state['error'] ?? ''}',
-                isError: true,
-                osNotify: false,
-              );
-            }
-          }).catchError((Object error) {
-            // Trạng thái in không được phép làm thay đổi kết quả thanh toán.
-            BlackBox.add('print', 'khong theo doi duoc trang thai in: $error');
-          }));
-        }
+        trackReceiptPrintBanner(
+          api: widget.api,
+          receipt: Map<String, dynamic>.from(receipt),
+          orderId: orderId,
+        );
         if (shouldPrint) {
           unawaited(widget.api
               .forcePrintReceiptJob(orderId: orderId, billNo: billNo)

@@ -960,7 +960,7 @@ class _RetailScreenState extends State<RetailScreen>
     final api = context.read<ApiService>();
     await pos.loadShift();
     if (!mounted) return;
-    await showDialog<void>(context: context, builder: (_) => ShiftDialog());
+    await ShiftDialog.show(context);
     if (!mounted) return;
     await pos.loadShift();
     final shift = await api.getCurrentShift().catchError((_) => null);

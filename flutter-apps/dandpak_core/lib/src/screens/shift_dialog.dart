@@ -48,7 +48,27 @@ String _fmtTime(dynamic iso) {
 // The backend is branch-scoped, so both surfaces read/write one shift and one
 // cash drawer per branch — they stay in sync automatically.
 class ShiftDialog extends StatefulWidget {
-  ShiftDialog({super.key});
+  const ShiftDialog({super.key});
+
+  static Future<void>? _openRoute;
+
+  /// Route singleton dùng chung cho mọi surface. Nhiều tap/shortcut trong cùng
+  /// một frame đều nhận cùng Future và không thể chồng nhiều dialog.
+  static Future<void> show(BuildContext context) {
+    final current = _openRoute;
+    if (current != null) return current;
+    final opened = showDialog<void>(
+      context: context,
+      builder: (_) => const ShiftDialog(),
+    );
+    _openRoute = opened;
+    return opened.whenComplete(() {
+      if (identical(_openRoute, opened)) _openRoute = null;
+    });
+  }
+
+  @visibleForTesting
+  static bool get routeOpen => _openRoute != null;
 
   @override
   State<ShiftDialog> createState() => _ShiftDialogState();
@@ -60,6 +80,7 @@ class _ShiftDialogState extends State<ShiftDialog> {
   String _shiftKey = '';
   List<Map<String, dynamic>> _drawerEntries = [];
   bool _busy = false;
+  bool _confirmingClose = false;
 
   @override
   void initState() {
@@ -163,6 +184,7 @@ class _ShiftDialogState extends State<ShiftDialog> {
   }
 
   Future<void> _openShift(PosProvider pos, List<int> denoms) async {
+    if (_busy || _confirmingClose) return;
     setState(() => _busy = true);
     try {
       await pos.openShiftCounts(
@@ -234,12 +256,19 @@ class _ShiftDialogState extends State<ShiftDialog> {
   }
 
   Future<void> _closeShift(PosProvider pos, List<int> denoms) async {
+    if (_busy || _confirmingClose) return;
+    setState(() => _confirmingClose = true);
     final confirmed =
         await _confirm(t('Kết ca hiện tại? Hệ thống sẽ chốt báo cáo ca.'));
-    if (!confirmed || !mounted) {
+    if (!mounted) return;
+    if (!confirmed) {
+      setState(() => _confirmingClose = false);
       return;
     }
-    setState(() => _busy = true);
+    setState(() {
+      _confirmingClose = false;
+      _busy = true;
+    });
     final auth = context.read<AuthProvider>();
     try {
       await pos.closeShiftCounts(
@@ -379,17 +408,23 @@ class _ShiftDialogState extends State<ShiftDialog> {
               Row(
                 children: [
                   OutlinedButton(
-                    onPressed: _busy ? null : () => Navigator.of(context).pop(),
+                    onPressed: (_busy || _confirmingClose)
+                        ? null
+                        : () => Navigator.of(context).pop(),
                     child: Text(t('Đóng')),
                   ),
                   Spacer(),
                   if (isOpen)
                     FilledButton(
-                      onPressed: _busy ? null : () => _closeShift(pos, denoms),
+                      onPressed: (_busy || _confirmingClose)
+                          ? null
+                          : () => _closeShift(pos, denoms),
                       style: FilledButton.styleFrom(
                           backgroundColor: DanColors.late,
                           minimumSize: Size(120, 44)),
-                      child: _busy ? _Spinner() : Text(t('Kết ca')),
+                      child: (_busy || _confirmingClose)
+                          ? _Spinner()
+                          : Text(t('Kết ca')),
                     )
                   else
                     FilledButton(

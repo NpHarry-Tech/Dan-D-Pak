@@ -9,6 +9,7 @@ import 'app_log.dart';
 import 'black_box.dart';
 import 'connectivity_status.dart';
 import 'system_log.dart';
+import 'receipt_print_tracker.dart';
 
 /// Synthetic event dispatched to every listener when the socket RECONNECTS
 /// after a drop: events missed while offline are gone, so each screen must
@@ -31,6 +32,8 @@ class SocketService {
     'table:updated',
     'staff:call',
     'payment:done',
+    'print:done',
+    'print:failed',
     'shift:updated',
     // Đồng bộ danh mục/cấu hình đa thiết bị: sửa món/tắt món giữa giờ,
     // nhập-xuất kho, voucher, đổi settings — mọi máy tự làm tươi.
@@ -129,6 +132,7 @@ class SocketService {
         }
         dlog('Realtime event received: $event');
         BlackBox.add('socket', event);
+        ReceiptPrintTracker.instance.reconcileRealtime(event, payload);
 
         // Settings đổi từ máy khác → nạp lại cấu hình âm báo tại đây luôn
         // (SocketService sở hữu sound config).

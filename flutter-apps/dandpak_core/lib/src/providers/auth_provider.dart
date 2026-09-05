@@ -12,6 +12,7 @@ import '../services/pending_update.dart';
 import '../services/socket_service.dart';
 import '../services/tenant_scope.dart';
 import '../services/system_log.dart';
+import '../services/receipt_print_tracker.dart';
 import '../utils/translation.dart';
 
 class AuthProvider extends ChangeNotifier {
@@ -214,6 +215,7 @@ class AuthProvider extends ChangeNotifier {
     }
     final tenantChanged = TenantScope.originChanged(_serverUrl, normalized);
     if (tenantChanged) {
+      ReceiptPrintTracker.instance.cancel();
       await AppUpdater.prepareForServerOriginChange(
         fromBaseUrl: _serverUrl,
         toBaseUrl: normalized,
@@ -267,6 +269,7 @@ class AuthProvider extends ChangeNotifier {
   }
 
   Future<void> selectBranch(String branchId) async {
+    if (_selectedBranchId != branchId) ReceiptPrintTracker.instance.cancel();
     _selectedBranchId = branchId;
     apiService.setBranchId(branchId);
     await LocalStore.instance.setString(_tk('branch_id'), branchId);
@@ -293,6 +296,7 @@ class AuthProvider extends ChangeNotifier {
 
   Future<void> login(String username, String pin, String branchId,
       {String? preferredLang}) async {
+    ReceiptPrintTracker.instance.cancel();
     _isLoading = true;
     notifyListeners();
 
@@ -384,6 +388,7 @@ class AuthProvider extends ChangeNotifier {
   }
 
   Future<void> logout({bool keepBranch = false}) async {
+    ReceiptPrintTracker.instance.cancel();
     _isLoading = true;
     notifyListeners();
 
@@ -417,6 +422,7 @@ class AuthProvider extends ChangeNotifier {
 
   @override
   void dispose() {
+    ReceiptPrintTracker.instance.cancel();
     SocketService().removeListener(_onSocketEvent);
     super.dispose();
   }

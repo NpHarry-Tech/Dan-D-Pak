@@ -6,7 +6,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:dandpak_core/src/services/api_service.dart';
 
 void main() {
-  test('20 GET cùng path đang bay → chạy đúng MỘT lần, mọi caller cùng kết quả', () async {
+  test('20 GET cùng path đang bay → chạy đúng MỘT lần, mọi caller cùng kết quả',
+      () async {
     final api = ApiService();
     var runs = 0;
     final gate = Completer<dynamic>();
@@ -15,7 +16,8 @@ void main() {
       return gate.future;
     }
 
-    final futures = List.generate(20, (_) => api.coalesceGet('/api/shifts/current', run));
+    final futures =
+        List.generate(20, (_) => api.coalesceGet('/api/shifts/current', run));
     expect(runs, 1, reason: 'chỉ MỘT request dù 20 lời gọi đồng thời');
 
     gate.complete({'ok': true});
@@ -53,7 +55,8 @@ void main() {
     gb.complete(2);
   });
 
-  test('lỗi cũng dọn bảng → cho phép thử lại, không kẹt future lỗi cũ', () async {
+  test('lỗi cũng dọn bảng → cho phép thử lại, không kẹt future lỗi cũ',
+      () async {
     final api = ApiService();
     var runs = 0;
     await expectLater(
@@ -68,6 +71,47 @@ void main() {
       return Future.value('ok');
     });
     expect(ok, 'ok');
-    expect(runs, 2, reason: 'lần 2 phải chạy lại chứ không dùng lại future lỗi');
+    expect(runs, 2,
+        reason: 'lần 2 phải chạy lại chứ không dùng lại future lỗi');
+  });
+
+  test('token/branch/tenant rotation tách future và xóa scope cũ', () async {
+    final api = ApiService();
+    final oldGate = Completer<dynamic>();
+    var runs = 0;
+    api.coalesceGet('/same?q=1', () {
+      runs++;
+      return oldGate.future;
+    });
+
+    api.setToken('session-a');
+    final tokenFuture = api.coalesceGet('/same?q=1', () async {
+      runs++;
+      return 'token';
+    });
+    api.setBranchId('branch-b');
+    final branchFuture = api.coalesceGet('/same?q=1', () async {
+      runs++;
+      return 'branch';
+    });
+    api.setBaseUrl('https://tenant-b.example');
+    final tenantFuture = api.coalesceGet('/same?q=1', () async {
+      runs++;
+      return 'tenant';
+    });
+
+    expect(await tokenFuture, 'token');
+    expect(await branchFuture, 'branch');
+    expect(await tenantFuture, 'tenant');
+    expect(runs, 4);
+    oldGate.complete('stale');
+  });
+
+  test('query khác nhau không coalesce', () async {
+    final api = ApiService();
+    var runs = 0;
+    final one = api.coalesceGet('/search?q=one', () async => ++runs);
+    final two = api.coalesceGet('/search?q=two', () async => ++runs);
+    expect(await Future.wait([one, two]), [1, 2]);
   });
 }

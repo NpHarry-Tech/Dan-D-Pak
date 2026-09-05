@@ -3103,11 +3103,11 @@ export function markPrinted(id, branch_id = 'sala', actor = 'manual') {
   return job;
 }
 
-export function reprint(id, branch_id = 'sala', { deviceId = '' } = {}) {
+export function reprint(id, branch_id = 'sala', { deviceId = '', actor = '' } = {}) {
   const j = getJob(id);
   if (!j) throw new Error('Print job không tồn tại');
   if (j.branch_id !== branch_id) throw new Error('Print job không thuộc chi nhánh hiện tại');
-  audit('print.reprint', { job: id, device: deviceId || '' }, branch_id);
+  audit('print.reprint', { job: id, device: deviceId || '' }, branch_id, actor);
   const payload = { ...(j.payload || {}), reprint: true };
   if (j.type === 'receipt') payload.print_config = printConfigForJob(getPrintConfig(branch_id));
 

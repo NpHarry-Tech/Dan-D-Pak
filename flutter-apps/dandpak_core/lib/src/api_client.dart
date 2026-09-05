@@ -88,6 +88,11 @@ class DanDpakApiClient {
   static String? Function()? correlationIdProvider;
   static Map<String, String> Function()? deviceMetadataProvider;
 
+  /// Tăng mỗi khi tenant/token/branch đổi. Async response mang generation cũ
+  /// không được phép nhập chung với phiên đăng nhập mới.
+  int _authGeneration = 0;
+  int get authGeneration => _authGeneration;
+
   static void _trace(http.Response response) {
     final cb = onRequestTrace;
     if (cb == null) return;
@@ -155,15 +160,27 @@ class DanDpakApiClient {
   }
 
   void setBaseUrl(String url) {
-    baseUrl = normalizeBaseUrl(url);
+    final next = normalizeBaseUrl(url);
+    if (baseUrl == next) return;
+    baseUrl = next;
+    _invalidateRequestScope();
   }
 
   void setToken(String? userToken) {
+    if (token == userToken) return;
     token = userToken;
+    _invalidateRequestScope();
   }
 
   void setBranchId(String? id) {
+    if (branchId == id) return;
     branchId = id;
+    _invalidateRequestScope();
+  }
+
+  void _invalidateRequestScope() {
+    _authGeneration++;
+    _inFlightGets.clear();
   }
 
   Uri uri(String path) {
@@ -329,14 +346,21 @@ class DanDpakApiClient {
   /// xong (thành công hay lỗi) để lần sau gọi mới. Chỉ dùng cho GET an toàn
   /// (đọc-thuần) — KHÔNG dùng cho mutation.
   Future<dynamic> coalesceGet(String key, Future<dynamic> Function() run) {
-    final existing = _inFlightGets[key];
+    // `key` chứa path+query do caller truyền; phần prefix cô lập tenant,
+    // branch và phiên auth. Không đưa raw token vào bộ nhớ/log.
+    final scopedKey = 'GET|$baseUrl|${branchId ?? ''}|g$_authGeneration|$key';
+    final existing = _inFlightGets[scopedKey];
     if (existing != null) return existing;
     final fut = run();
-    _inFlightGets[key] = fut;
+    _inFlightGets[scopedKey] = fut;
     // Dọn bảng khi xong (thành công HAY lỗi). Nhánh dọn nuốt lỗi để không phát
     // sinh unhandled rejection — lỗi vẫn tới đúng caller qua `fut`.
-    unawaited(fut.then((_) {}, onError: (Object _, StackTrace __) {}).whenComplete(() {
-      if (identical(_inFlightGets[key], fut)) _inFlightGets.remove(key);
+    unawaited(fut
+        .then((_) {}, onError: (Object _, StackTrace __) {})
+        .whenComplete(() {
+      if (identical(_inFlightGets[scopedKey], fut)) {
+        _inFlightGets.remove(scopedKey);
+      }
     }));
     return fut;
   }
