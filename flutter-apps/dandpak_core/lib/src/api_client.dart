@@ -340,17 +340,48 @@ class DanDpakApiClient {
 
   // GET đọc-thuần đang bay, gộp theo path (single-flight). Xem coalesceGet.
   final Map<String, Future<dynamic>> _inFlightGets = {};
+  int _coalescedGetHits = 0;
+  int _coalescedGetRuns = 0;
+  int get coalescedGetHits => _coalescedGetHits;
+  int get coalescedGetRuns => _coalescedGetRuns;
+
+  static String _normalizedGetKey(String raw) {
+    final parsed = Uri.parse(raw);
+    final pairs = <MapEntry<String, String>>[];
+    for (final name in parsed.queryParametersAll.keys.toList()..sort()) {
+      final values = [...parsed.queryParametersAll[name] ?? const <String>[]]
+        ..sort();
+      for (final value in values) {
+        pairs.add(MapEntry(name, value));
+      }
+    }
+    final query = pairs
+        .map((pair) => '${Uri.encodeQueryComponent(pair.key)}='
+            '${Uri.encodeQueryComponent(pair.value)}')
+        .join('&');
+    return '${parsed.replace(queryParameters: const <String, String>{})}'
+        '${query.isEmpty ? '' : '?$query'}';
+  }
 
   /// Gộp các GET CÙNG [key] đang bay: nhiều lời gọi trong lúc một request chưa
   /// về sẽ DÙNG CHUNG một Future thay vì bắn thêm request. Dọn khỏi bảng khi
   /// xong (thành công hay lỗi) để lần sau gọi mới. Chỉ dùng cho GET an toàn
   /// (đọc-thuần) — KHÔNG dùng cho mutation.
-  Future<dynamic> coalesceGet(String key, Future<dynamic> Function() run) {
+  Future<dynamic> coalesceGet(
+    String key,
+    Future<dynamic> Function() run, {
+    String representationVariant = '',
+  }) {
     // `key` chứa path+query do caller truyền; phần prefix cô lập tenant,
     // branch và phiên auth. Không đưa raw token vào bộ nhớ/log.
-    final scopedKey = 'GET|$baseUrl|${branchId ?? ''}|g$_authGeneration|$key';
+    final scopedKey = 'GET|$baseUrl|${branchId ?? ''}|g$_authGeneration|'
+        '${_normalizedGetKey(key)}|variant=$representationVariant';
     final existing = _inFlightGets[scopedKey];
-    if (existing != null) return existing;
+    if (existing != null) {
+      _coalescedGetHits++;
+      return existing;
+    }
+    _coalescedGetRuns++;
     final fut = run();
     _inFlightGets[scopedKey] = fut;
     // Dọn bảng khi xong (thành công HAY lỗi). Nhánh dọn nuốt lỗi để không phát

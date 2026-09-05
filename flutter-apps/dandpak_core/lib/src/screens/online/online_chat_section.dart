@@ -47,7 +47,10 @@ class OnlineChatSection extends StatefulWidget {
 
 class _OnlineChatSectionState extends State<OnlineChatSection> {
   final SocketService _socket = SocketService();
-  final Debouncer _refresh = Debouncer();
+  final Debouncer _refresh = Debouncer(
+    delay: const Duration(milliseconds: 1500),
+    maxWait: const Duration(seconds: 5),
+  );
   final Debouncer _searchDebounce = Debouncer();
   final _search = TextEditingController();
 
@@ -86,12 +89,15 @@ class _OnlineChatSectionState extends State<OnlineChatSection> {
   void _onSocket(String event, dynamic payload) {
     if (_disposed || !mounted) return;
     if (event.startsWith('omni:')) {
+      final auth = context.read<AuthProvider>();
+      final scope = '${auth.serverUrl}|${auth.selectedBranchId}|'
+          '${auth.currentUser?.id ?? ''}|omni-chat';
       _refresh(() {
         if (!_disposed && mounted) {
           _load(silent: true);
           if (_selectedId.isNotEmpty) _openThread(_selectedId, silent: true);
         }
-      });
+      }, key: scope);
     }
   }
 
@@ -254,8 +260,8 @@ class _OnlineChatSectionState extends State<OnlineChatSection> {
         );
       case ChatListState.notConfigured:
         return OnlineEmpty(
-          t('Chưa kết nối kênh chat nào — vào Cài đặt → Kết nối để thêm Facebook/Zalo/Shopee…'),
-          icon: Icons.link_off);
+            t('Chưa kết nối kênh chat nào — vào Cài đặt → Kết nối để thêm Facebook/Zalo/Shopee…'),
+            icon: Icons.link_off);
       case ChatListState.empty:
         return OnlineEmpty(t('Chưa có hội thoại'), icon: Icons.forum_outlined);
       case ChatListState.hasData:

@@ -151,7 +151,16 @@ connector (Haravan/chat) E2E remains **BLOCKED** pending credentials — see
   all **PASS** (regex-on-diff only — **not** a comprehensive scan; no gitleaks/trufflehog
   installed). No orphan test processes (2 `node` = MCP servers).
 
-**Continuation gates:**
+**Continuation gates (2026-09-05 update supersedes stale NOT DONE lines below):**
+- Import mapping now has actual runtime-generated golden XLSX coverage; printing status
+  reconciliation/banner, close-shift route singleton, rotating Secret Vault, atomic
+  migration and the 1.5 s scoped refresh buffer are implemented and focused-tested.
+- GET coalescing now normalizes query ordering, separates representation variants, and
+  measures 20 callers → 1 request. Debounce + GET focused tests: **11/11 pass**.
+- External/physical proof remains explicit: CRM/chat provider E2E, credentialed Haravan,
+  production-sized restore and real printer/display/device canaries.
+
+**Earlier continuation snapshot (retained for chronology):**
 - **Gate 1 — AES-256-GCM Secret Vault: VERIFIED (source) + PARTIAL.** `core/crypto.js`
   proven (9/9 real crypto tests: round-trip, cross-tenant AAD swap fail, wrong-key fail,
   tamper fail, fail-closed). **Gaps NOT DONE:** `key_id`/rotation, full per-caller AAD

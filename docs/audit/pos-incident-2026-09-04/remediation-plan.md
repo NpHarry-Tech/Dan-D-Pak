@@ -1,5 +1,19 @@
 # Remediation Plan — POS Incident 2026-09-04
 
+## Continuation status (2026-09-05; supersedes stale DESIGNED/NOT DONE labels below)
+
+- Gate 5 is **VERIFIED locally**. Opt-in GET single-flight includes method, base URL,
+  branch, auth generation, normalized path/query and an explicit representation variant
+  for locale/content-vary cases. Scope changes clear inflight entries; success/error
+  completion also removes them. Measured test: 20 callers → 1 request / 19 coalesced.
+- Keyed trailing-edge buffering is used only for Online Orders and Omni Chat noisy
+  realtime refreshes: 1,500 ms trailing delay, 5,000 ms maximum wait; key = server
+  origin + branch + user + stream. It exposes flush/cancel/dispose and counters for
+  received, executed, coalesced, cancelled, errors and total latency.
+- Fake-clock tests cover exact 1499/1500/1501 ms boundaries, continuous burst,
+  final-event render, different keys, logout/branch cancellation, exception and dispose.
+  Payment, close-shift, confirmation, inventory and print ACK remain immediate.
+
 Ordered by risk and evidence. Each item states the invariant, the change, the test,
 and the rollback. Three **separate** rollout groups (never conflated): Production,
 Shopee Review, External connectors.

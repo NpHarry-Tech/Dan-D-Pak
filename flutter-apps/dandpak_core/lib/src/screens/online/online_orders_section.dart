@@ -24,7 +24,10 @@ class OnlineOrdersSection extends StatefulWidget {
 
 class _OnlineOrdersSectionState extends State<OnlineOrdersSection> {
   final SocketService _socket = SocketService();
-  final Debouncer _refresh = Debouncer();
+  final Debouncer _refresh = Debouncer(
+    delay: const Duration(milliseconds: 1500),
+    maxWait: const Duration(seconds: 5),
+  );
   final Debouncer _searchDebounce = Debouncer();
   final TextEditingController _search = TextEditingController();
 
@@ -65,12 +68,15 @@ class _OnlineOrdersSectionState extends State<OnlineOrdersSection> {
         event.startsWith('order:') ||
         event == 'payment:done' ||
         event == kSyncReconnected) {
+      final auth = context.read<AuthProvider>();
+      final scope = '${auth.serverUrl}|${auth.selectedBranchId}|'
+          '${auth.currentUser?.id ?? ''}|online-orders';
       _refresh(() {
         if (!_disposed && mounted) {
           _loadSummary();
           _load(silent: true);
         }
-      });
+      }, key: scope);
     }
   }
 

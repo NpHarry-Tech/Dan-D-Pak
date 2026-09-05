@@ -20,6 +20,9 @@ void main() {
         List.generate(20, (_) => api.coalesceGet('/api/shifts/current', run));
     expect(runs, 1, reason: 'chỉ MỘT request dù 20 lời gọi đồng thời');
 
+    expect(api.coalescedGetRuns, 1);
+    expect(api.coalescedGetHits, 19,
+        reason: 'request amplification: 20 callers -> 1 request');
     gate.complete({'ok': true});
     final results = await Future.wait(futures);
     for (final r in results) {
@@ -113,5 +116,27 @@ void main() {
     final one = api.coalesceGet('/search?q=one', () async => ++runs);
     final two = api.coalesceGet('/search?q=two', () async => ++runs);
     expect(await Future.wait([one, two]), [1, 2]);
+  });
+
+  test('equivalent query order coalesces but response locale does not',
+      () async {
+    final api = ApiService();
+    var runs = 0;
+    final gate = Completer<dynamic>();
+    final one = api.coalesceGet('/search?b=2&a=1', () {
+      runs++;
+      return gate.future;
+    }, representationVariant: 'locale=vi');
+    final reordered = api.coalesceGet('/search?a=1&b=2', () {
+      runs++;
+      return Future.value('must-not-run');
+    }, representationVariant: 'locale=vi');
+    final english = api.coalesceGet('/search?a=1&b=2', () async {
+      runs++;
+      return 'en';
+    }, representationVariant: 'locale=en');
+    expect(runs, 2);
+    gate.complete('vi');
+    expect(await Future.wait([one, reordered, english]), ['vi', 'vi', 'en']);
   });
 }
