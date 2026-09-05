@@ -2,7 +2,7 @@ import crypto from 'node:crypto';
 import zlib from 'node:zlib';
 import { db } from './connection.js';
 import { logger } from '../core/logger.js';
-import { currentRequestMetadata } from '../core/requestContext.js';
+import { currentRequestMetadata, currentRequestUser } from '../core/requestContext.js';
 import {
   appendAuditArchive, readRecentAuditArchive, listAuditBranches, listArchivedMonths,
   listAuditDayMonths, hasMonthlyArchive, writeMonthlyArchive, readMonthlyArchive,
@@ -23,6 +23,63 @@ const TECHNICAL_ONLY_ACTIONS = new Set([
   'settings.template_autosave',
 ]);
 
+const SECRET_FIELD = /(^|_)(authorization|cookie|password|passphrase|pin|secret|token|private_key|access_key|refresh_token)(_|$)/i;
+
+export function sanitizeAuditDetail(value, depth = 0, seen = new WeakSet()) {
+  if (value == null || typeof value === 'number' || typeof value === 'boolean') return value;
+  if (typeof value === 'string') return value.slice(0, 20_000);
+  if (depth >= 8) return '[TRUNCATED]';
+  if (typeof value !== 'object') return String(value).slice(0, 20_000);
+  if (seen.has(value)) return '[CIRCULAR]';
+  seen.add(value);
+  if (Array.isArray(value)) {
+    return value.slice(0, 200).map((item) => sanitizeAuditDetail(item, depth + 1, seen));
+  }
+  const out = {};
+  for (const [key, item] of Object.entries(value).slice(0, 300)) {
+    out[key] = SECRET_FIELD.test(key) ? '[REDACTED]' : sanitizeAuditDetail(item, depth + 1, seen);
+  }
+  return out;
+}
+
+function domainSnapshot(detail, branchId) {
+  if (!detail || typeof detail !== 'object' || Array.isArray(detail)) return {};
+  const snapshot = {};
+  try {
+    const orderId = detail.order_id || detail.order;
+    if (orderId) {
+      const order = db.prepare(`SELECT id,bill_no,table_id,total,status FROM orders WHERE id=? AND branch_id=?`).get(orderId, branchId);
+      if (order) {
+        snapshot.order_id ??= order.id;
+        snapshot.bill_no ??= order.bill_no || '';
+        snapshot.table_id ??= order.table_id || '';
+        snapshot.order_total ??= order.total;
+        snapshot.order_state ??= order.status;
+      }
+    }
+    const tableId = detail.table_id || snapshot.table_id;
+    if (tableId) {
+      const table = db.prepare(`SELECT code,zone FROM tables WHERE id=? AND branch_id=?`).get(tableId, branchId);
+      if (table) {
+        snapshot.table_name = table.code || tableId;
+        snapshot.table_zone = table.zone || '';
+      }
+    }
+    const itemId = detail.item_id || (String(detail.item || '').startsWith('oi_') ? detail.item : null);
+    if (itemId) {
+      const item = db.prepare(`SELECT id,name,item_code,qty,unit_price FROM order_items WHERE id=?`).get(itemId);
+      if (item) {
+        snapshot.item_id ??= item.id;
+        snapshot.item_name ??= item.name || '';
+        snapshot.item_sku ??= item.item_code || '';
+        snapshot.quantity ??= item.qty;
+        snapshot.price ??= item.unit_price;
+      }
+    }
+  } catch { /* schema bootstrap/background action: caller detail remains usable */ }
+  return snapshot;
+}
+
 // Dựng bản ghi audit (id + metadata thiết bị + detail đã chuẩn hoá). Trả null nếu
 // action nằm trong TECHNICAL_ONLY (không vào Nhật ký hoạt động). KHÔNG ghi DB/emit.
 export function buildAuditEntry(action, detail, branch_id = 'sala', actor = 'system') {
@@ -31,16 +88,30 @@ export function buildAuditEntry(action, detail, branch_id = 'sala', actor = 'sys
   const created_at = now();
   let enriched = detail;
   try {
+    const context = currentRequestMetadata();
+    const user = currentRequestUser();
     const metadata = Object.fromEntries(
-      Object.entries(currentRequestMetadata()).filter(([, value]) => value),
+      Object.entries(context).filter(([, value]) => value),
     );
-    if (Object.keys(metadata).length) {
-      enriched = detail && typeof detail === 'object' && !Array.isArray(detail)
-        ? { ...metadata, ...detail }
-        : { ...metadata, detail };
-    }
+    let branchName = '';
+    try { branchName = db.prepare(`SELECT name FROM branches WHERE id=?`).get(branch_id)?.name || ''; } catch {}
+    const base = detail && typeof detail === 'object' && !Array.isArray(detail) ? detail : { detail };
+    enriched = {
+      ...domainSnapshot(base, branch_id),
+      ...base,
+      ...metadata,
+      event_id: id,
+      request_id: metadata.correlation_id || id,
+      actor_id: user?.id || user?.username || actor,
+      actor_name: user?.name || user?.username || actor,
+      actor_role: user?.role || '',
+      branch_id,
+      branch_name: branchName,
+      timestamp: created_at,
+      audit_source: base.source || metadata.platform || 'server',
+    };
   } catch { /* ngoài request (worker/cron) — không có thiết bị */ }
-  const cleanDetail = typeof enriched === 'string' ? enriched : JSON.stringify(enriched);
+  const cleanDetail = JSON.stringify(sanitizeAuditDetail(enriched));
   return { id, branch_id, actor, action, detail: cleanDetail, created_at };
 }
 
@@ -83,6 +154,22 @@ export function runDocumentTx(writeFn) {
 export function audit(action, detail, branch_id = 'sala', actor = 'system') {
   const entry = buildAuditEntry(action, detail, branch_id, actor);
   if (!entry) return null;
+  if (db.isTransaction) {
+    // Inside a business transaction audit is mandatory: an INSERT failure must
+    // escape so the caller rolls the mutation back. Durable archive + realtime
+    // are deferred until the synchronous transaction has committed; a rollback
+    // leaves no row, therefore no success event or archive footprint.
+    insertAuditRow(entry);
+    queueMicrotask(() => {
+      try {
+        const committed = db.prepare(`SELECT 1 ok FROM audit_log WHERE id=?`).get(entry.id);
+        if (committed) auditPostCommit(entry);
+      } catch (e) {
+        logger.warn('audit post-transaction finalization failed', { message: e.message });
+      }
+    });
+    return { id: entry.id, created_at: entry.created_at };
+  }
   appendAuditArchive(entry); // durable FIRST (semantics cũ)
   try {
     insertAuditRow(entry);

@@ -234,6 +234,7 @@ function insertLines(po_id, lines) {
 }
 
 export function confirmPurchaseOrder(id, branch_id = 'sala', user = {}) {
+  return inTransaction(() => {
   const po = db.prepare(`SELECT * FROM purchase_orders WHERE id=? AND branch_id=?`).get(id, branch_id);
   if (!po) throw new Error('Đơn mua không tồn tại');
   if (po.status !== 'draft') throw new Error('Chỉ xác nhận được đơn ở trạng thái nháp');
@@ -241,11 +242,13 @@ export function confirmPurchaseOrder(id, branch_id = 'sala', user = {}) {
   audit('purchase.confirm', { id, code: po.code }, branch_id, user?.username || user?.name);
   emit('purchase:updated', { id }, branch_id);
   return getPurchaseOrder(id, branch_id);
+  });
 }
 
 // Receive goods (full or partial). Each received line flows through the existing
 // inventory receiving functions → updates stock, lots and stock_movements.
 export function receivePurchaseOrder(id, body = {}, branch_id = 'sala', user = {}) {
+  return inTransaction(() => {
   const po = db.prepare(`SELECT * FROM purchase_orders WHERE id=? AND branch_id=?`).get(id, branch_id);
   if (!po) throw new Error('Đơn mua không tồn tại');
   if (!['confirmed', 'received'].includes(po.status)) throw new Error('Cần xác nhận đơn trước khi nhận hàng');
@@ -292,11 +295,13 @@ export function receivePurchaseOrder(id, body = {}, branch_id = 'sala', user = {
   emit('purchase:updated', { id }, branch_id);
   emit('inventory:updated', { source: 'purchase', po: id }, branch_id);
   return getPurchaseOrder(id, branch_id);
+  });
 }
 
 // "Hoàn thành" kiểu KiotViet: từ phiếu nháp -> xác nhận -> nhận đủ toàn bộ dòng
 // hàng vào kho trong MỘT bước (lô/HSD lấy từ khai báo trên dòng phiếu).
 export function completePurchaseOrder(id, body = {}, branch_id = 'sala', user = {}) {
+  return inTransaction(() => {
   const po = db.prepare(`SELECT * FROM purchase_orders WHERE id=? AND branch_id=?`).get(id, branch_id);
   if (!po) throw new Error('Đơn mua không tồn tại');
   if (po.status === 'cancelled') throw new Error('Đơn đã hủy');
@@ -308,9 +313,11 @@ export function completePurchaseOrder(id, body = {}, branch_id = 'sala', user = 
     .filter(r => r.qty > 0);
   if (!receipts.length) throw new Error('Không còn dòng hàng nào để nhận');
   return receivePurchaseOrder(id, { warehouse_id: body.warehouse_id, receipts }, branch_id, user);
+  });
 }
 
 export function recordPurchasePayment(id, body = {}, branch_id = 'sala', user = {}) {
+  return inTransaction(() => {
   const po = db.prepare(`SELECT * FROM purchase_orders WHERE id=? AND branch_id=?`).get(id, branch_id);
   if (!po) throw new Error('Đơn mua không tồn tại');
   if (po.status === 'cancelled') throw new Error('Đơn đã hủy, không ghi nhận thanh toán');
@@ -346,9 +353,11 @@ export function recordPurchasePayment(id, body = {}, branch_id = 'sala', user = 
   emit('purchase:updated', { id }, branch_id);
   if (drawer_entry_id) emit('shift:updated', { source: 'purchase' }, branch_id);
   return getPurchaseOrder(id, branch_id);
+  });
 }
 
 export function cancelPurchaseOrder(id, branch_id = 'sala', user = {}) {
+  return inTransaction(() => {
   const po = db.prepare(`SELECT * FROM purchase_orders WHERE id=? AND branch_id=?`).get(id, branch_id);
   if (!po) throw new Error('Đơn mua không tồn tại');
   if (po.status === 'received') throw new Error('Đơn đã nhận hàng, không thể hủy');
@@ -358,9 +367,11 @@ export function cancelPurchaseOrder(id, branch_id = 'sala', user = {}) {
   audit('purchase.cancel', { id, code: po.code }, branch_id, user?.username || user?.name);
   emit('purchase:updated', { id }, branch_id);
   return getPurchaseOrder(id, branch_id);
+  });
 }
 
 export function deletePurchaseOrder(id, branch_id = 'sala', user = {}) {
+  return inTransaction(() => {
   const po = db.prepare(`SELECT * FROM purchase_orders WHERE id=? AND branch_id=?`).get(id, branch_id);
   if (!po) throw new Error('Đơn mua không tồn tại');
   if (po.status !== 'draft') throw new Error('Chỉ xóa được đơn ở trạng thái nháp');
@@ -369,6 +380,7 @@ export function deletePurchaseOrder(id, branch_id = 'sala', user = {}) {
   audit('purchase.delete', { id, code: po.code }, branch_id, user?.username || user?.name);
   emit('purchase:updated', { id, deleted: true }, branch_id);
   return { ok: true };
+  });
 }
 
 // ═══ Trả hàng nhập (KiotViet PurchaseReturns) ═══════════════════════════════
@@ -494,6 +506,7 @@ function insertReturnLines(pr_id, lines) {
 // "Hoàn thành" phiếu trả: xuất kho các dòng hàng trong kho (adhoc bỏ qua) rồi
 // chốt trạng thái returned. refund_received = tiền NCC đã hoàn (mặc định = total).
 export function completePurchaseReturn(id, body = {}, branch_id = 'sala', user = {}) {
+  return inTransaction(() => {
   const pr = db.prepare(`SELECT * FROM purchase_returns WHERE id=? AND branch_id=?`).get(id, branch_id);
   if (!pr) throw new Error('Phiếu trả hàng không tồn tại');
   if (pr.status !== 'draft') throw new Error('Phiếu đã trả hàng hoặc đã hủy');
@@ -522,9 +535,11 @@ export function completePurchaseReturn(id, body = {}, branch_id = 'sala', user =
   audit('purchase_return.complete', { id, code: pr.code, document: docInfo, refund }, branch_id, user?.username || user?.name);
   emit('purchase:updated', { return_id: id }, branch_id);
   return getPurchaseReturn(id, branch_id);
+  });
 }
 
 export function cancelPurchaseReturn(id, branch_id = 'sala', user = {}) {
+  return inTransaction(() => {
   const pr = db.prepare(`SELECT * FROM purchase_returns WHERE id=? AND branch_id=?`).get(id, branch_id);
   if (!pr) throw new Error('Phiếu trả hàng không tồn tại');
   if (pr.status !== 'draft') throw new Error('Chỉ hủy được phiếu ở trạng thái Phiếu tạm');
@@ -532,9 +547,11 @@ export function cancelPurchaseReturn(id, branch_id = 'sala', user = {}) {
   audit('purchase_return.cancel', { id, code: pr.code }, branch_id, user?.username || user?.name);
   emit('purchase:updated', { return_id: id }, branch_id);
   return getPurchaseReturn(id, branch_id);
+  });
 }
 
 export function deletePurchaseReturn(id, branch_id = 'sala', user = {}) {
+  return inTransaction(() => {
   const pr = db.prepare(`SELECT * FROM purchase_returns WHERE id=? AND branch_id=?`).get(id, branch_id);
   if (!pr) throw new Error('Phiếu trả hàng không tồn tại');
   if (pr.status !== 'draft') throw new Error('Chỉ xóa được phiếu ở trạng thái Phiếu tạm');
@@ -543,4 +560,5 @@ export function deletePurchaseReturn(id, branch_id = 'sala', user = {}) {
   audit('purchase_return.delete', { id, code: pr.code }, branch_id, user?.username || user?.name);
   emit('purchase:updated', { return_id: id, deleted: true }, branch_id);
   return { ok: true };
+  });
 }

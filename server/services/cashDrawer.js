@@ -1,4 +1,4 @@
-import { db, uid, now, audit } from '../db.js';
+import { db, uid, now, audit, inTransaction } from '../db.js';
 import { cleanText } from '../core/util.js';
 import { archiveCashDrawerEntry } from './archive.js';
 import { businessDateEndUtc, businessDateStartUtc } from '../core/businessClock.js';
@@ -301,6 +301,7 @@ export function listEntries(branch_id = 'sala', query = {}) {
   return decorateEntries(rows);
 }
 export function createEntry(kind, body = {}, user = {}, branch_id = 'sala') {
+  return inTransaction(() => {
   if (!['expense', 'reimbursement'].includes(kind)) throw new Error('Loại giao dịch két không hợp lệ');
   const sh = activeShift(branch_id);
   if (!sh) throw new Error('Cần mở ca trước khi ghi nhận thu/chi tiền két');
@@ -390,7 +391,6 @@ export function createEntry(kind, body = {}, user = {}, branch_id = 'sala') {
       amount: x.amount,
     }));
   }
-  archiveCashDrawerEntry(entry);
   audit(kind === 'expense' ? 'cash.expense' : 'cash.reimbursement', {
     id: entry.id,
     shift_id: entry.shift_id,
@@ -405,5 +405,15 @@ export function createEntry(kind, body = {}, user = {}, branch_id = 'sala') {
     balance_after: entry.balance_after,
     drawer_total_note: entry.drawer_total_note,
   }, branch_id, user?.username || user?.name || 'system');
+  // Archive only after the owning (possibly outer) transaction commits. This
+  // prevents a durable false-success footprint when mandatory audit insertion
+  // or a later caller step rolls the cash mutation back.
+  queueMicrotask(() => {
+    try {
+      const committed = db.prepare(`SELECT 1 ok FROM cash_drawer_entries WHERE id=?`).get(entry.id);
+      if (committed) archiveCashDrawerEntry(entry);
+    } catch { /* the SQLite row remains the source of truth */ }
+  });
   return decorateEntry(entry);
+  });
 }

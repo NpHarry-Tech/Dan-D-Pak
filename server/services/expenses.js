@@ -3,7 +3,7 @@
 // (reusing cashDrawer.js) so the drawer balance stays correct and nothing is
 // double-counted; a 'direct' expense (kế toán chi trực tiếp / chuyển khoản) is
 // recorded in the ledger only and never touches the drawer.
-import { db, uid, now, audit } from '../db.js';
+import { db, uid, now, audit, inTransaction } from '../db.js';
 import { intval } from '../core/util.js';
 import { emit } from '../realtime.js';
 import { getCustomer } from './customers.js';
@@ -140,6 +140,7 @@ function resolvePayee(payee_id, branch_id) {
 }
 
 export function createExpense(body = {}, branch_id = 'sala', user = {}) {
+  return inTransaction(() => {
   const amount = intval(body.amount);
   if (amount <= 0) throw new Error('Số tiền chi phải lớn hơn 0');
   const source = SOURCES.includes(body.source) ? body.source : 'direct';
@@ -196,9 +197,11 @@ export function createExpense(body = {}, branch_id = 'sala', user = {}) {
     } catch { /* lập chỉ mục Tài liệu KHÔNG được chặn việc ghi khoản chi */ }
   }
   return expenseOut(db.prepare(`SELECT * FROM expenses WHERE id=?`).get(id));
+  });
 }
 
 export function updateExpense(id, body = {}, branch_id = 'sala', user = {}) {
+  return inTransaction(() => {
   const e = db.prepare(`SELECT * FROM expenses WHERE id=? AND branch_id=?`).get(id, branch_id);
   if (!e) throw new Error('Khoản chi không tồn tại');
   if (e.drawer_entry_id) throw new Error('Khoản chi này đã trừ vào két — chỉnh sửa trong sổ quỹ/ca để không lệch tiền mặt');
@@ -224,9 +227,11 @@ export function updateExpense(id, body = {}, branch_id = 'sala', user = {}) {
     } catch { /* best-effort */ }
   }
   return expenseOut(db.prepare(`SELECT * FROM expenses WHERE id=?`).get(id));
+  });
 }
 
 export function deleteExpense(id, branch_id = 'sala', user = {}) {
+  return inTransaction(() => {
   const e = db.prepare(`SELECT * FROM expenses WHERE id=? AND branch_id=?`).get(id, branch_id);
   if (!e) throw new Error('Khoản chi không tồn tại');
   if (e.drawer_entry_id) throw new Error('Khoản chi này đã trừ vào két — không xóa từ Chi phí để tránh lệch quỹ');
@@ -234,4 +239,5 @@ export function deleteExpense(id, branch_id = 'sala', user = {}) {
   audit('expense.delete', { id, code: e.code }, branch_id, user?.username || user?.name);
   emit('expenses:updated', { id, deleted: true }, branch_id);
   return { ok: true };
+  });
 }

@@ -709,35 +709,42 @@ export function updateSku(id, body, branch_id = 'sala') {
 }
 
 export function receiveStock(inventory_item_id, qty, branch_id = 'sala', options = {}) {
-  receiveGeneric('inventory', inventory_item_id, qty, branch_id, options);
-  checkAlerts(branch_id, [{ stockType: 'inventory', id: inventory_item_id }]);
-  emit('inventory:updated', { ids: [inventory_item_id] }, branch_id);
-  return getItem('inventory', inventory_item_id, branch_id);
+  return inTransaction(() => {
+    receiveGeneric('inventory', inventory_item_id, qty, branch_id, options);
+    checkAlerts(branch_id, [{ stockType: 'inventory', id: inventory_item_id }]);
+    emit('inventory:updated', { ids: [inventory_item_id] }, branch_id);
+    return getItem('inventory', inventory_item_id, branch_id);
+  });
 }
 
 export function receiveSku(sku_id, qty, branch_id = 'sala', options = {}) {
-  receiveGeneric('sku', sku_id, qty, branch_id, options);
-  checkAlerts(branch_id, [{ stockType: 'sku', id: sku_id }]);
-  emit('inventory:updated', { ids: [sku_id] }, branch_id);
-  return getItem('sku', sku_id, branch_id);
+  return inTransaction(() => {
+    receiveGeneric('sku', sku_id, qty, branch_id, options);
+    checkAlerts(branch_id, [{ stockType: 'sku', id: sku_id }]);
+    emit('inventory:updated', { ids: [sku_id] }, branch_id);
+    return getItem('sku', sku_id, branch_id);
+  });
 }
 
 export function issueStock(stockType, item_id, qty, branch_id = 'sala', options = {}) {
-  const consumed = issueGeneric(normalizeStockType(stockType), item_id, qty, branch_id, options);
-  checkAlerts(branch_id, [{ stockType: normalizeStockType(stockType), id: item_id }]);
-  emit('inventory:updated', { ids: [item_id] }, branch_id);
-  return consumed;
+  return inTransaction(() => {
+    const consumed = issueGeneric(normalizeStockType(stockType), item_id, qty, branch_id, options);
+    checkAlerts(branch_id, [{ stockType: normalizeStockType(stockType), id: item_id }]);
+    emit('inventory:updated', { ids: [item_id] }, branch_id);
+    return consumed;
+  });
 }
 
 export function adjustStock(inventory_item_id, newStock, branch_id = 'sala', options = {}) {
-  return setStockLevel('inventory', inventory_item_id, newStock, branch_id, options);
+  return inTransaction(() => setStockLevel('inventory', inventory_item_id, newStock, branch_id, options));
 }
 
 export function adjustSku(sku_id, newStock, branch_id = 'sala', options = {}) {
-  return setStockLevel('sku', sku_id, newStock, branch_id, options);
+  return inTransaction(() => setStockLevel('sku', sku_id, newStock, branch_id, options));
 }
 
 export function returnSku(sku_id, qty, ref, branch_id = 'sala', options = {}) {
+  return inTransaction(() => {
   const lot = options.lot_id ? db.prepare(`SELECT * FROM stock_lots WHERE id=? AND branch_id=? AND item_type='sku' AND item_id=?`)
     .get(options.lot_id, branch_id, sku_id) : null;
   receiveGeneric('sku', sku_id, qty, branch_id, {
@@ -753,6 +760,7 @@ export function returnSku(sku_id, qty, ref, branch_id = 'sala', options = {}) {
     supplier: lot?.supplier || options.supplier,
   });
   emit('inventory:updated', { ids: [sku_id] }, branch_id);
+  });
 }
 
 // Chuyển hàng giữa 2 kho. Nhận MỘT mặt hàng (body.item_id/qty — tương thích cũ)

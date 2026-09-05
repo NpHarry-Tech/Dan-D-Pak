@@ -993,11 +993,36 @@ String _auditDetailLabel(String key) {
     'platform': 'Nền tảng',
     'os_version': 'Hệ điều hành',
     'correlation_id': 'Mã truy vết',
+    'event_id': 'Mã sự kiện',
+    'request_id': 'Mã yêu cầu',
+    'actor_id': 'Mã người thao tác',
+    'actor_name': 'Người thao tác',
+    'actor_role': 'Vai trò',
+    'branch_id': 'Mã chi nhánh',
+    'branch_name': 'Chi nhánh',
+    'table_id': 'Mã bàn',
+    'table_name': 'Tên bàn',
+    'table_zone': 'Khu vực bàn',
+    'order_id': 'Mã đơn hàng',
+    'bill_no': 'Số hóa đơn',
+    'item_id': 'Mã dòng hàng',
+    'item_name': 'Tên hàng hóa / món',
+    'item_sku': 'SKU',
+    'quantity': 'Số lượng',
+    'price': 'Đơn giá',
+    'previous_state': 'Trạng thái trước',
+    'new_state': 'Trạng thái mới',
+    'reason': 'Lý do',
+    'timestamp': 'Thời điểm',
+    'audit_source': 'Nguồn thao tác',
   };
   return t(labels[key] ?? key);
 }
 
-bool _isEncrypted(dynamic value) => _s(value).startsWith('__ENC__:');
+bool _isEncrypted(dynamic value) {
+  final text = _s(value);
+  return text.startsWith('__ENC__:') || text.startsWith('__ENC_GCM__:');
+}
 
 bool _isErrorAction(String action) {
   return action == 'system.error' || action.endsWith('.error');

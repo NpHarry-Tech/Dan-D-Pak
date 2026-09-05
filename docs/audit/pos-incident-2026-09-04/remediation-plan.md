@@ -42,6 +42,12 @@
   Flutter rejects duplicate and out-of-order envelopes before notification/ring/state
   listeners, while legacy payloads remain accepted. Server/Dart focused tests **10/10**;
   physical multi-device network interruption remains **NEEDS-LIVE-CANARY**.
+- Audit completeness is **VERIFIED locally** for the shared contract and high-risk
+  mutation paths: identity/device/branch/request/domain snapshots are centralized,
+  secret fields are recursively redacted, transactional audit failures escape and
+  roll back stock/expense/payment/order changes, and activity realtime is post-commit.
+  Vietnamese detail labels cover the new fields. Focused server checks **20/20** plus
+  inventory/retail/shift regression **37/37**; see `audit-completeness-matrix.md`.
 
 Ordered by risk and evidence. Each item states the invariant, the change, the test,
 and the rollback. Three **separate** rollout groups (never conflated): Production,
