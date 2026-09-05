@@ -9,7 +9,7 @@ import {
   deleteMonthlyArchive, readDayEntriesForMonth, deleteDayFilesForMonth,
 } from '../services/archive.js';
 import { now, uid } from './ids.js';
-import { decryptSecret, encryptSecret } from '../core/crypto.js';
+import { decryptSecret, encryptSecret, secretContext } from '../core/crypto.js';
 import { businessPeriodStartUtc } from '../core/businessClock.js';
 import { publishRealtime } from '../core/realtimeBus.js';
 
@@ -122,14 +122,18 @@ const legacyAuditKey = process.env.AUDIT_LOG_KEY || process.env.SESSION_SECRET |
   (process.env.NODE_ENV === 'production' ? '' : 'development-only-audit-key');
 if (!legacyAuditKey) throw new Error('Production requires AUDIT_LOG_KEY, SESSION_SECRET, or DATA_ENCRYPTION_KEY');
 const SECRET_KEY = crypto.scryptSync(legacyAuditKey, 'salt', 32);
+const AUDIT_VAULT_CONTEXT = [
+  secretContext({ tenant: 'system', provider: 'audit', record: 'archive', field: 'compressed_detail' }),
+  'audit-log',
+];
 
 export function encryptCompress(text) {
   try {
     const compressed = zlib.gzipSync(Buffer.from(text, 'utf8'));
-    return '__ENC_GCM__:' + encryptSecret(compressed.toString('base64'), 'audit-log');
+    return '__ENC_GCM__:' + encryptSecret(compressed.toString('base64'), AUDIT_VAULT_CONTEXT);
   } catch (e) {
     logger.error('audit compression/encryption failed', { message: e.message });
-    return text;
+    throw new Error('Audit archive encryption failed', { cause: e });
   }
 }
 
@@ -137,7 +141,7 @@ export function decryptDecompress(encText) {
   if (encText?.startsWith('__ENC_GCM__:')) {
     try {
       const compressed = Buffer.from(
-        decryptSecret(encText.slice('__ENC_GCM__:'.length), 'audit-log'),
+        decryptSecret(encText.slice('__ENC_GCM__:'.length), AUDIT_VAULT_CONTEXT),
         'base64',
       );
       return zlib.gunzipSync(compressed).toString('utf8');

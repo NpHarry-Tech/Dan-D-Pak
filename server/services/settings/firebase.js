@@ -4,13 +4,16 @@
 // secret tích hợp (Haravan…) — không lưu file .json thô trên đĩa máy chủ, và
 // không bao giờ trả nguyên văn qua API (xem getSettings: chỉ trả cờ đã cấu hình).
 import { db, now, audit } from '../../db.js';
-import { decryptSecret, encryptSecret } from '../../core/crypto.js';
+import { decryptSecret, encryptSecret, secretContext } from '../../core/crypto.js';
 import { FIREBASE_SERVICE_ACCOUNT_KEY } from './shared.js';
 
 const FIREBASE_REQUIRED_FIELDS = ['project_id', 'private_key', 'client_email'];
 
 function firebaseSecretContext(branch_id) {
-  return `settings:${branch_id}:${FIREBASE_SERVICE_ACCOUNT_KEY}`;
+  return [
+    secretContext({ tenant: branch_id, provider: 'firebase', record: FIREBASE_SERVICE_ACCOUNT_KEY, field: 'service_account' }),
+    `settings:${branch_id}:${FIREBASE_SERVICE_ACCOUNT_KEY}`,
+  ];
 }
 
 /** Đọc + giải mã service-account (dùng NỘI BỘ để khởi tạo firebase-admin và

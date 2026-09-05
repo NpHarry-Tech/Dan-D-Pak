@@ -1,98 +1,130 @@
-// SECRET VAULT AES-256-GCM — kiểm THẬT (round-trip/tamper/cross-tenant/sai-key/
-// fail-closed), KHÔNG phải regex trên source. Không migrate DB thật; chỉ test hàm
-// core/crypto.js. Chứng minh các bất biến bảo mật của gate AES-GCM.
 import assert from 'node:assert/strict';
+import crypto from 'node:crypto';
 import test from 'node:test';
 
-const KEY_A = 'a1'.repeat(32); // 64 hex = 32 byte (AES-256)
+const KEY_A = 'a1'.repeat(32);
 const KEY_B = 'b2'.repeat(32);
-process.env.DATA_ENCRYPTION_KEY = KEY_A;
 
-const PREFIX = 'enc:v1:';
-const { encryptSecret, decryptSecret, isEncrypted, encryptBytes, decryptBytes } =
-  await import('./core/crypto.js');
+function useKey(id, key, previous = {}) {
+  process.env.DATA_ENCRYPTION_ACTIVE_KEY_ID = id;
+  process.env.DATA_ENCRYPTION_KEY = key;
+  process.env.DATA_ENCRYPTION_PREVIOUS_KEYS = JSON.stringify(previous);
+  delete process.env.DATA_ENCRYPTION_KEYS;
+}
+useKey('key-a', KEY_A);
 
-test('round-trip đúng ngữ cảnh trả về plaintext gốc', () => {
-  const enc = encryptSecret('super-token', 'haravan:shopA:access');
-  assert.ok(enc.startsWith(PREFIX), 'envelope có version prefix');
-  assert.notEqual(enc, 'super-token', 'không được lưu plaintext');
-  assert.equal(decryptSecret(enc, 'haravan:shopA:access'), 'super-token');
+const {
+  decryptBytes, decryptSecret, encryptBytes, encryptSecret, envelopeInfo,
+  isEncrypted, needsReencryption, reencryptSecret, secretContext,
+} = await import('./core/crypto.js');
+const { migrateSecretRecords, planSecretMigration } = await import('./core/secretMigration.js');
+
+const ctx = (overrides = {}) => secretContext({
+  tenant: 'tenant-a', provider: 'haravan', record: 'shop-a', field: 'access_token',
+  ...overrides,
 });
 
-test('envelope AES-256-GCM: IV 12 byte, tag 16 byte, nonce NGẪU NHIÊN mỗi lần', () => {
-  const e1 = encryptSecret('x', 'ctx');
-  const e2 = encryptSecret('x', 'ctx');
-  assert.notEqual(e1, e2, 'nonce ngẫu nhiên → hai lần mã hoá cùng plaintext KHÁC ciphertext');
-  const [iv, tag, ct] = e1.slice(PREFIX.length).split('.').map(s => Buffer.from(s, 'base64url'));
-  assert.equal(iv.length, 12, 'IV 96-bit');
-  assert.equal(tag.length, 16, 'auth tag 128-bit');
-  assert.ok(ct.length >= 1);
+test.afterEach(() => useKey('key-a', KEY_A));
+
+test('v2 round-trip has key_id, random 96-bit nonce and 128-bit tag', () => {
+  const one = encryptSecret('super-token', ctx());
+  const two = encryptSecret('super-token', ctx());
+  assert.notEqual(one, two);
+  assert.deepEqual(envelopeInfo(one), { encrypted: true, version: 2, keyId: 'key-a' });
+  const [, iv, tag, ciphertext] = one.slice('enc:v2:'.length).split('.').map(v => Buffer.from(v, 'base64url'));
+  assert.equal(iv.length, 12);
+  assert.equal(tag.length, 16);
+  assert.ok(ciphertext.length > 0);
+  assert.equal(decryptSecret(one, ctx()), 'super-token');
 });
 
-test('CROSS-TENANT SWAP: ciphertext tenant A không giải mã dưới context tenant B', () => {
-  const enc = encryptSecret('tokenA', 'tenant:A|provider:haravan|field:access|v1');
-  assert.throws(() => decryptSecret(enc, 'tenant:B|provider:haravan|field:access|v1'),
-    /.*/, 'AAD khác (đổi tenant) phải làm xác thực GCM thất bại');
-  // đúng context vẫn giải mã được
-  assert.equal(decryptSecret(enc, 'tenant:A|provider:haravan|field:access|v1'), 'tokenA');
+test('same ciphertext cannot move across tenant/provider/record/field', () => {
+  const encrypted = encryptSecret('secret', ctx());
+  for (const altered of [
+    ctx({ tenant: 'tenant-b' }), ctx({ provider: 'shopee' }),
+    ctx({ record: 'shop-b' }), ctx({ field: 'refresh_token' }),
+  ]) assert.throws(() => decryptSecret(encrypted, altered));
 });
 
-test('SAI KEY → decrypt FAIL, tuyệt đối không lộ plaintext', () => {
-  const enc = encryptSecret('secret', 'ctx');
-  process.env.DATA_ENCRYPTION_KEY = KEY_B;
-  try {
-    assert.throws(() => decryptSecret(enc, 'ctx'), /.*/, 'key khác phải fail (không trả plaintext)');
-  } finally {
-    process.env.DATA_ENCRYPTION_KEY = KEY_A;
-  }
-});
-
-test('TAMPER iv / tag / ciphertext → FAIL (không fallback plaintext)', () => {
-  const enc = encryptSecret('secret-value', 'ctx');
-  const parts = enc.slice(PREFIX.length).split('.');
-  for (let i = 0; i < 3; i++) {
-    const b = Buffer.from(parts[i], 'base64url');
-    b[0] ^= 0xff; // lật 1 byte
-    const tampered = PREFIX + parts.map((p, j) => (j === i ? b.toString('base64url') : p)).join('.');
-    assert.throws(() => decryptSecret(tampered, 'ctx'), /.*/, `sửa phần ${i} phải bị GCM chặn`);
-  }
-});
-
-test('THIẾU KEY → fail-closed (không tự sinh key, không plaintext)', () => {
-  const saved = process.env.DATA_ENCRYPTION_KEY;
+test('wrong/missing key and missing AAD fail closed', () => {
+  const encrypted = encryptSecret('secret', ctx());
+  useKey('key-a', KEY_B);
+  assert.throws(() => decryptSecret(encrypted, ctx()));
   delete process.env.DATA_ENCRYPTION_KEY;
-  try {
-    assert.throws(() => encryptSecret('x', 'ctx'), /DATA_ENCRYPTION_KEY is required/);
-  } finally {
-    process.env.DATA_ENCRYPTION_KEY = saved;
+  assert.throws(() => decryptSecret(encrypted, ctx()), /DATA_ENCRYPTION_KEY is required/);
+  useKey('key-a', KEY_A);
+  assert.throws(() => encryptSecret('secret', ''), /context/);
+});
+
+test('tamper key_id/nonce/tag/ciphertext is rejected', () => {
+  const encrypted = encryptSecret('secret', ctx());
+  const parts = encrypted.slice('enc:v2:'.length).split('.');
+  for (let index = 0; index < parts.length; index++) {
+    const bytes = Buffer.from(parts[index], 'base64url');
+    bytes[0] ^= 0xff;
+    const tampered = 'enc:v2:' + parts.map((part, i) => i === index ? bytes.toString('base64url') : part).join('.');
+    assert.throws(() => decryptSecret(tampered, ctx()));
   }
 });
 
-test('KEY sai độ dài → fail-closed', () => {
-  const saved = process.env.DATA_ENCRYPTION_KEY;
-  process.env.DATA_ENCRYPTION_KEY = 'tooshort';
-  try {
-    assert.throws(() => encryptSecret('x', 'ctx'), /must be 32 bytes/);
-  } finally {
-    process.env.DATA_ENCRYPTION_KEY = saved;
+test('malformed, unsupported and plaintext values are rejected', () => {
+  for (const value of ['enc:v2:x', 'enc:v2:....', 'enc:v99:anything', 'legacy-plaintext']) {
+    assert.throws(() => decryptSecret(value, ctx()));
   }
-});
-
-test('encryptBytes/decryptBytes: round-trip + context + tamper', () => {
-  const data = Buffer.from([0, 1, 2, 255, 254, 10, 13]);
-  const enc = encryptBytes(data, 'file:doc1');
-  assert.deepEqual(decryptBytes(enc, 'file:doc1'), data);
-  assert.throws(() => decryptBytes(enc, 'file:doc2'), /.*/, 'context khác → fail');
-  const t = Buffer.from(enc); t[t.length - 1] ^= 0xff; // sửa ciphertext cuối
-  assert.throws(() => decryptBytes(t, 'file:doc1'), /.*/, 'tamper → fail');
-});
-
-test('KHÔNG double-encrypt; decrypt giá trị chưa mã hoá là passthrough di trú (KHÔNG fallback khi FAIL)', () => {
-  const enc = encryptSecret('x', 'ctx');
-  assert.equal(encryptSecret(enc, 'ctx'), enc, 'đã mã hoá thì không mã hoá lại');
-  // passthrough CHỈ cho giá trị CHƯA từng mã hoá (di trú legacy) — KHÁC với việc
-  // một enc: hợp lệ bị hỏng: cái đó phải THROW (đã kiểm ở test tamper/sai-key).
-  assert.equal(decryptSecret('legacy-plaintext', 'ctx'), 'legacy-plaintext');
-  assert.equal(isEncrypted(enc), true);
+  assert.equal(isEncrypted('enc:v99:anything'), true);
   assert.equal(isEncrypted('legacy-plaintext'), false);
+});
+
+test('rotation decrypts previous key and re-encrypts to active key id', () => {
+  useKey('old', KEY_A);
+  const oldEnvelope = encryptSecret('rotate-me', ctx());
+  useKey('new', KEY_B, { old: KEY_A });
+  assert.equal(decryptSecret(oldEnvelope, ctx()), 'rotate-me');
+  assert.equal(needsReencryption(oldEnvelope), true);
+  const rotated = reencryptSecret(oldEnvelope, ctx());
+  assert.equal(envelopeInfo(rotated).keyId, 'new');
+  assert.equal(decryptSecret(rotated, ctx()), 'rotate-me');
+});
+
+test('legacy v1 decrypts through previous key without plaintext fallback', () => {
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv('aes-256-gcm', Buffer.from(KEY_A, 'hex'), iv);
+  cipher.setAAD(Buffer.from('legacy-context'));
+  const ciphertext = Buffer.concat([cipher.update('legacy-value'), cipher.final()]);
+  const legacy = 'enc:v1:' + [iv, cipher.getAuthTag(), ciphertext].map(v => v.toString('base64url')).join('.');
+  useKey('new', KEY_B, { old: KEY_A });
+  assert.equal(decryptSecret(legacy, [ctx(), 'legacy-context']), 'legacy-value');
+  assert.equal(needsReencryption(legacy), true);
+});
+
+test('binary v2 round-trip, key id, AAD and tamper', () => {
+  const source = Buffer.from([0, 1, 2, 255, 10]);
+  const encrypted = encryptBytes(source, ctx({ field: 'file' }));
+  assert.equal(encrypted.subarray(0, 8).toString('ascii'), 'DDPENC02');
+  assert.deepEqual(decryptBytes(encrypted, ctx({ field: 'file' })), source);
+  assert.throws(() => decryptBytes(encrypted, ctx({ field: 'other' })));
+  const tampered = Buffer.from(encrypted);
+  tampered[tampered.length - 1] ^= 0xff;
+  assert.throws(() => decryptBytes(tampered, ctx({ field: 'file' })));
+});
+
+test('migration dry-run is redacted; apply is idempotent and transactional', () => {
+  const records = [
+    { id: '1', field: 'access_token', value: 'cleartext-value', context: ctx() },
+    { id: '2', field: 'empty', value: '', context: ctx({ field: 'empty' }) },
+  ];
+  const dry = migrateSecretRecords({ records, dryRun: true, write: () => assert.fail() });
+  assert.equal(dry.changed, 0);
+  assert.equal(dry.plan[0].state, 'legacy-plaintext');
+  assert.ok(!JSON.stringify(dry).includes('cleartext-value'));
+
+  const stored = new Map(records.map(row => [row.id, row.value]));
+  const write = (record, value) => stored.set(record.id, value);
+  const first = migrateSecretRecords({ records, dryRun: false, write, transaction: fn => fn() });
+  assert.equal(first.changed, 1);
+  assert.equal(decryptSecret(stored.get('1'), ctx()), 'cleartext-value');
+  records[0].value = stored.get('1');
+  assert.equal(migrateSecretRecords({ records, dryRun: false, write }).changed, 0);
+
+  assert.throws(() => planSecretMigration([{ id: 'bad', field: 'x', value: 'enc:v2:bad', context: ctx() }]));
 });

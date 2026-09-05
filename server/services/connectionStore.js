@@ -1,7 +1,7 @@
 // Kho lưu trữ kết nối marketplace dùng chung.
 // Chỉ module backend nội bộ được lấy token thô; API bên ngoài chỉ dùng publicConnection().
 import { db, uid, now } from '../db.js';
-import { encryptSecret, decryptSecret } from '../core/crypto.js';
+import { encryptSecret, decryptSecret, secretContext } from '../core/crypto.js';
 
 let ready = false;
 
@@ -36,8 +36,11 @@ export function ensureConnectionStore() {
   ready = true;
 }
 
-function tokenContext(provider, shopId, kind) {
-  return `${provider}:${shopId}:${kind}`;
+function tokenContext(provider, shopId, kind, branchId = '') {
+  return [
+    secretContext({ tenant: branchId || 'legacy', provider, record: shopId, field: `${kind}_token` }),
+    `${provider}:${shopId}:${kind}`,
+  ];
 }
 
 function decrypted(row) {
@@ -45,9 +48,9 @@ function decrypted(row) {
   return {
     ...row,
     access_token: row.access_token_enc
-      ? decryptSecret(row.access_token_enc, tokenContext(row.provider, row.shop_id, 'access')) : '',
+      ? decryptSecret(row.access_token_enc, tokenContext(row.provider, row.shop_id, 'access', row.branch_id)) : '',
     refresh_token: row.refresh_token_enc
-      ? decryptSecret(row.refresh_token_enc, tokenContext(row.provider, row.shop_id, 'refresh')) : '',
+      ? decryptSecret(row.refresh_token_enc, tokenContext(row.provider, row.shop_id, 'refresh', row.branch_id)) : '',
   };
 }
 
@@ -128,8 +131,8 @@ export function upsertAuthorizedConnection({
   const shop = String(shopId || '').trim();
   const existing = db.prepare(`SELECT id FROM marketplace_connections WHERE provider=? AND shop_id=?`).get(prov, shop);
   const id = existing?.id || uid('mpconn_');
-  const accessEnc = accessToken ? encryptSecret(accessToken, tokenContext(prov, shop, 'access')) : null;
-  const refreshEnc = refreshToken ? encryptSecret(refreshToken, tokenContext(prov, shop, 'refresh')) : null;
+  const accessEnc = accessToken ? encryptSecret(accessToken, tokenContext(prov, shop, 'access', branchId)) : null;
+  const refreshEnc = refreshToken ? encryptSecret(refreshToken, tokenContext(prov, shop, 'refresh', branchId)) : null;
 
   if (existing) {
     db.prepare(`UPDATE marketplace_connections SET
@@ -161,10 +164,10 @@ export function updateConnectionTokens(id, {
   const row = db.prepare(`SELECT * FROM marketplace_connections WHERE id=?`).get(String(id));
   if (!row) throw new Error('Không tìm thấy kết nối marketplace.');
   const accessEnc = accessToken
-    ? encryptSecret(accessToken, tokenContext(row.provider, row.shop_id, 'access'))
+    ? encryptSecret(accessToken, tokenContext(row.provider, row.shop_id, 'access', row.branch_id))
     : row.access_token_enc;
   const refreshEnc = refreshToken
-    ? encryptSecret(refreshToken, tokenContext(row.provider, row.shop_id, 'refresh'))
+    ? encryptSecret(refreshToken, tokenContext(row.provider, row.shop_id, 'refresh', row.branch_id))
     : row.refresh_token_enc;
   db.prepare(`UPDATE marketplace_connections SET
       access_token_enc=?, refresh_token_enc=?,

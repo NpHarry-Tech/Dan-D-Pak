@@ -4,7 +4,7 @@ import { safeEqual } from '../core/util.js';
 import { env } from '../config/env.js';
 import { emit } from '../realtime.js';
 import { getIntegrationChannel } from './settings.js';
-import { decryptSecret, encryptSecret, isEncrypted } from '../core/crypto.js';
+import { decryptSecret, encryptSecret, isEncrypted, secretContext } from '../core/crypto.js';
 import { recordPurchase, reversePurchase } from './customers.js';
 import { payOrder } from './payments.js';
 
@@ -74,15 +74,22 @@ function installedShop(shopDomain) {
   return db.prepare(`SELECT * FROM haravan_shops WHERE shop_domain=? AND active=1`).get(shop) || null;
 }
 
+function tokenContext(shopDomain, branchId, field) {
+  return [
+    secretContext({ tenant: branchId || 'ONLINE', provider: 'haravan', record: shopDomain, field: `${field}_token` }),
+    `haravan:${shopDomain}:${field}`,
+  ];
+}
+
 function config(shopDomain = '') {
   const installed = installedShop(shopDomain);
   const fallback = legacyConfig();
   if (installed) {
     if (!isEncrypted(installed.access_token) ||
         (installed.refresh_token && !isEncrypted(installed.refresh_token))) {
-      const access = encryptSecret(installed.access_token, `haravan:${installed.shop_domain}:access`);
+      const access = encryptSecret(installed.access_token, tokenContext(installed.shop_domain, installed.branch_id, 'access'));
       const refresh = installed.refresh_token
-        ? encryptSecret(installed.refresh_token, `haravan:${installed.shop_domain}:refresh`)
+        ? encryptSecret(installed.refresh_token, tokenContext(installed.shop_domain, installed.branch_id, 'refresh'))
         : null;
       db.prepare(`UPDATE haravan_shops SET access_token=?,refresh_token=?,updated_at=? WHERE id=?`)
         .run(access, refresh, now(), installed.id);
@@ -92,8 +99,8 @@ function config(shopDomain = '') {
     return {
     enabled: true,
     shopDomain: installed.shop_domain,
-    accessToken: decryptSecret(installed.access_token, `haravan:${installed.shop_domain}:access`),
-    refreshToken: decryptSecret(installed.refresh_token || '', `haravan:${installed.shop_domain}:refresh`),
+    accessToken: decryptSecret(installed.access_token, tokenContext(installed.shop_domain, installed.branch_id, 'access')),
+    refreshToken: decryptSecret(installed.refresh_token || '', tokenContext(installed.shop_domain, installed.branch_id, 'refresh')),
     webhookSecret: env.HARAVAN_CLIENT_SECRET || fallback.webhookSecret,
     clientId: env.HARAVAN_CLIENT_ID || fallback.clientId,
     clientSecret: env.HARAVAN_CLIENT_SECRET || fallback.clientSecret,
@@ -247,6 +254,7 @@ export async function oauthCallback({ code, state, shop, redirect_uri }) {
   const shopDomain = normShop(shop || claims.org_name || claims.org_domain || claims.shop_domain || claims.domain || '');
   if (!shopDomain) throw new Error('Haravan OAuth did not return shop domain; pass ?shop=your-shop.myharavan.com to callback.');
   const expiresAt = tokens.expires_in ? new Date(Date.now() + Number(tokens.expires_in) * 1000).toISOString() : null;
+  const targetBranch = stateData.branch_id || legacyConfig().defaultBranchId;
   db.prepare(`INSERT INTO haravan_shops
     (id,shop_domain,org_id,branch_id,access_token,refresh_token,scope,token_type,expires_at,location_id,api_base,installed_at,updated_at,active,raw_payload)
     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
@@ -254,9 +262,9 @@ export async function oauthCallback({ code, state, shop, redirect_uri }) {
       org_id=excluded.org_id,branch_id=excluded.branch_id,access_token=excluded.access_token,
       refresh_token=excluded.refresh_token,scope=excluded.scope,token_type=excluded.token_type,
       expires_at=excluded.expires_at,api_base=excluded.api_base,updated_at=excluded.updated_at,active=1,raw_payload=excluded.raw_payload`)
-    .run(uid('hshop_'), shopDomain, cleanId(claims.org_id || claims.orgid || ''), stateData.branch_id || legacyConfig().defaultBranchId,
-      encryptSecret(tokens.access_token, `haravan:${shopDomain}:access`),
-      tokens.refresh_token ? encryptSecret(tokens.refresh_token, `haravan:${shopDomain}:refresh`) : null,
+    .run(uid('hshop_'), shopDomain, cleanId(claims.org_id || claims.orgid || ''), targetBranch,
+      encryptSecret(tokens.access_token, tokenContext(shopDomain, targetBranch, 'access')),
+      tokens.refresh_token ? encryptSecret(tokens.refresh_token, tokenContext(shopDomain, targetBranch, 'refresh')) : null,
       tokens.scope || '', tokens.token_type || 'Bearer',
       expiresAt, legacyConfig().locationId || null, legacyConfig().apiBase, now(), now(), 1, json({ tokens: { ...tokens, access_token: '***', refresh_token: tokens.refresh_token ? '***' : undefined }, claims }));
   audit('haravan.oauth.install', { shop_domain: shopDomain, scope: tokens.scope || '' }, stateData.branch_id || legacyConfig().defaultBranchId, 'haravan');

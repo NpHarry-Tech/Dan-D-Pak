@@ -12,7 +12,7 @@
 // trong DB được giữ nguyên (xem mergeIntegrationsForSave).
 import { db, now, audit } from '../../db.js';
 import { emit } from '../../realtime.js';
-import { decryptSecret, encryptSecret, isEncrypted } from '../../core/crypto.js';
+import { decryptSecret, encryptSecret, isEncrypted, secretContext } from '../../core/crypto.js';
 import {
   INTEGRATIONS_KEY, bool, str, plainObject, writeJsonSetting,
 } from './shared.js';
@@ -32,10 +32,18 @@ function mapIntegrationSecrets(value, branchId, encrypt, path = []) {
   const out = {};
   for (const [key, item] of Object.entries(value)) {
     const nextPath = [...path, key];
-    const context = `settings:${branchId}:${nextPath.join('.')}`;
+    const provider = path[0] === 'channels' ? (path[1] || 'settings') : 'settings';
+    const context = [
+      secretContext({ tenant: branchId, provider, record: path.slice(0, -1).join('.') || 'integrations', field: key }),
+      `settings:${branchId}:${nextPath.join('.')}`,
+    ];
     if (SECRET_SETTING_KEYS.test(key) && typeof item === 'string' && item) {
       if (encrypt) {
         out[key] = encryptSecret(item, context);
+      } else if (!isEncrypted(item)) {
+        // Legacy plaintext is recognized explicitly so the caller can migrate
+        // it immediately. decryptSecret itself remains fail-closed.
+        out[key] = item;
       } else {
         try {
           out[key] = decryptSecret(item, context);

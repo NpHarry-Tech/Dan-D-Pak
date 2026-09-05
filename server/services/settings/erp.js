@@ -5,7 +5,7 @@
 // Mặc định enabled=false → không đụng gì hệ thống cho tới khi cửa hàng cấu hình.
 import { audit } from '../../db.js';
 import { emit } from '../../realtime.js';
-import { decryptSecret, encryptSecret, isEncrypted } from '../../core/crypto.js';
+import { decryptSecret, encryptSecret, isEncrypted, secretContext } from '../../core/crypto.js';
 import { readJsonSetting, writeJsonSetting } from './shared.js';
 
 export const ERP_CONFIG_KEY = 'erp_config';
@@ -27,6 +27,10 @@ const DEFAULTS = {
   defaultCustomerNo: '',           // số khách lẻ mặc định trong BC
   postAutomatically: true,         // gọi action Post sau khi tạo document
 };
+
+function erpSecretContext(branchId) {
+  return [secretContext({ tenant: branchId, provider: 'business_central', record: ERP_CONFIG_KEY, field: 'clientSecret' }), `erp:${branchId}:secret`];
+}
 
 function str(v, max = 400) { return String(v ?? '').trim().slice(0, max); }
 
@@ -59,7 +63,7 @@ export function getErpConfig(branch_id = 'sala') {
 export function getErpRuntimeConfig(branch_id = 'sala') {
   const cfg = getErpConfig(branch_id);
   let secret = cfg.clientSecret || '';
-  try { if (isEncrypted(secret)) secret = decryptSecret(secret, `erp:${branch_id}:secret`); } catch { secret = ''; }
+  try { if (isEncrypted(secret)) secret = decryptSecret(secret, erpSecretContext(branch_id)); } catch { secret = ''; }
   return { ...cfg, clientSecret: secret, branch_id };
 }
 
@@ -78,7 +82,7 @@ export function updateErpConfig(body = {}, branch_id = 'sala') {
   if (!incoming || incoming === '********') {
     next.clientSecret = cur.clientSecret;          // giữ nguyên
   } else if (!isEncrypted(incoming)) {
-    next.clientSecret = encryptSecret(incoming, `erp:${branch_id}:secret`);
+    next.clientSecret = encryptSecret(incoming, erpSecretContext(branch_id));
   } else {
     next.clientSecret = incoming;
   }

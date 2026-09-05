@@ -1,49 +1,67 @@
-# Security Inventory — Secret Vault (continuation gate 1/8)
+# Security inventory — AES-256-GCM secret vault
 
-Read-only assessment of the existing secret-at-rest crypto, plus what a full
-AES-256-GCM Secret Vault gate still requires. No production/review DB was migrated.
+Local verification date: 2026-09-05. No production/review database, credential,
+deployment, or live provider was accessed.
 
-## What exists — `server/core/crypto.js`
+## Vault invariants
 
-A genuine authenticated-encryption vault (not a stub):
-
-| Requirement | Status | Where |
+| Control | Status | Evidence |
 |---|---|---|
-| AES-256-GCM | **VERIFIED (source)** | `createCipheriv('aes-256-gcm', …)` — crypto.js:21,44 |
-| Random 96-bit nonce per message | **VERIFIED** | `randomBytes(12)` — crypto.js:20,43; test: two encrypts of same value differ |
-| 256-bit key from env | **VERIFIED** | `DATA_ENCRYPTION_KEY`, 32 bytes hex/base64 — crypto.js:5-12 |
-| Authentication tag (128-bit) | **VERIFIED** | `getAuthTag`/`setAuthTag`; test asserts 16-byte tag |
-| Versioned envelope | **VERIFIED** | string `enc:v1:` prefix; bytes `DDPENC01` header |
-| AAD binding | **VERIFIED (mechanism)** | `setAAD(context)` — callers pass e.g. `haravan:${shop}:access` |
-| Missing key → fail-closed | **VERIFIED** | throws `DATA_ENCRYPTION_KEY is required` |
-| Wrong key → fail (no plaintext) | **VERIFIED** | GCM tag verification → `final()` throws |
-| Tamper (iv/tag/ct/AAD) → fail | **VERIFIED** | test flips a byte in each part → throws |
-| Cross-tenant ciphertext swap → fail | **VERIFIED (when context binds tenant)** | AAD mismatch → throws |
-| No silent plaintext fallback on failure | **VERIFIED** | decrypt of a valid-but-corrupt `enc:` throws; only *never-encrypted* legacy values pass through (migration) |
+| AES-256-GCM, random 96-bit nonce, 128-bit tag | VERIFIED | `server/core/crypto.js`; runtime crypto tests |
+| Versioned envelope with `key_id` | VERIFIED | new writes are `enc:v2:<base64url-key-id>.<nonce>.<tag>.<ciphertext>` |
+| Active + previous key rotation | VERIFIED | `DATA_ENCRYPTION_ACTIVE_KEY_ID`, `DATA_ENCRYPTION_KEY(S)`, `DATA_ENCRYPTION_PREVIOUS_KEYS`; old-key decrypt/re-encrypt test |
+| Mandatory AAD | VERIFIED | empty context throws; credential callers bind tenant/provider/record/field/version |
+| Missing/wrong key, tamper, malformed/unsupported envelope | VERIFIED | all fail closed; no plaintext return |
+| Legacy plaintext handling | VERIFIED | `decryptSecret` rejects it; only the explicit migration path accepts and immediately encrypts it |
+| v1 compatibility | VERIFIED | v1 is decrypt-only and may use a configured previous key/legacy AAD; new writes are v2 |
+| Binary encrypted backups/files | VERIFIED | `DDPENC02` carries key id; v1 remains decrypt-only |
+| Encryption failure fallback | VERIFIED | secret decrypt and audit archive encryption throw; audit no longer returns plaintext after encryption failure |
 
-Tests (real crypto round-trips, not source regex):
-`server/crypto-secret-vault.test.mjs` — **9/9 pass**.
+## Complete caller/storage inventory
 
-## Gaps vs the full gate — HONEST status
+| Storage/caller | Secret fields | v2 AAD record identity | Public behavior | Status |
+|---|---|---|---|---|
+| `marketplace_connections` / `connectionStore.js` | `access_token_enc`, `refresh_token_enc` | branch + provider + shop + token field | `publicConnection` omits both tokens | VERIFIED |
+| `app_settings.integrations_config` / `settings/integrations.js` | password, secretKey, apiKey, checksumKey, clientSecret, accessToken, refreshToken, webhookSecret, verifyToken (recursive) | branch + channel + object path + field | masked value only | VERIFIED |
+| `app_settings.erp_config` / `settings/erp.js` | Business Central `clientSecret` | branch + provider + config record + field | `********` + configured flag | VERIFIED |
+| `app_settings.firebase_service_account` / `settings/firebase.js` | whole service-account JSON | branch + firebase + setting record + field | status/configured only | VERIFIED |
+| `haravan_shops` / `haravanConnector.js` | access/refresh token | branch + Haravan + shop domain + token field | connector status never returns raw tokens | VERIFIED (fake provider) |
+| compacted audit archive / `db/audit.js` | compressed audit detail | system + audit + archive + detail field | internal decrypt only | VERIFIED |
+| `services/integrations.reference.js` | duplicate reference implementation | none at runtime | no imports/callers found by repository-wide search | NOT A RUNTIME CALLER |
 
-- **`key_id` / key rotation — NOT DONE.** The envelope carries a *version* (`v1`) but no
-  `key_id`. Rotation would need a v2 envelope carrying `key_id`, a key registry (id → key),
-  backward-compatible v1 decrypt, and an **idempotent dry-run re-encrypt** migration.
-  Not implemented; would touch the envelope format and every stored secret (prod-data
-  implications) — must be a dedicated, canaried change. **PARTIAL.**
-- **AAD completeness across ALL callers — NOT AUDITED.** The mechanism binds whatever
-  `context` the caller passes. Spot-checked: `haravanConnector` binds
-  `haravan:${shop}:access|refresh` (shop-scoped → cross-shop swap fails). A full audit that
-  *every* secret field (Shopee/Lazada/TikTok/Meta/Zalo/ERP/Firebase in
-  `connectionStore.js`, `settings/*`) binds tenant+provider+field+version is **remaining**.
-- **prod/review key separation — operational, NOT verified in-session.** Achieved by
-  distinct `DATA_ENCRYPTION_KEY` env per deployment; not exercised here (no deploy).
-  **NEEDS-LIVE-CANARY.**
-- **"No plaintext in DB/API/log" end-to-end — PARTIAL.** Unit level proven (values are
-  stored as `enc:v1:` after `encryptSecret`); a full sweep asserting no provider secret is
-  ever persisted or logged in the clear is **remaining**.
+Provider secrets supplied only through deployment environment variables are not
+database fields. They remain outside API payloads and are covered by central redaction.
+`server/diagnostic-redaction.test.mjs` verifies token/secret/password/API-key removal.
 
-## Verdict
-Secret-at-rest core is **VERIFIED (source)** for AES-256-GCM/AAD/tamper/fail-closed. The
-**key_id + rotation + full-caller-AAD audit** portions are **PARTIAL / NOT DONE** and are
-the real remaining work for this gate. No production or review DB was touched.
+## Migration and rollback design
+
+`server/core/secretMigration.js` provides the reusable migration primitive:
+
+1. Inventory rows with stable `id`, `field`, exact AAD `context`, and value.
+2. Dry-run validates every encrypted envelope and emits only redacted states
+   (`empty`, `legacy-plaintext`, `reencrypt-vN`, `current`) plus key id.
+3. A real run decrypts/validates all candidates before writes, then executes all
+   writes inside the caller-supplied database transaction.
+4. Current active-key v2 rows are skipped, so restart/retry is idempotent and resumable.
+5. Keep the previous key configured until a ciphertext-only backup is created,
+   restored into an isolated copy, integrity-checked, and all rows report `current`.
+6. Rollback restores that encrypted backup and the previous active-key environment;
+   never downgrade by writing plaintext or deleting the previous key first.
+
+No real migration was run in this task. Applying it to a production copy and proving
+backup/restore is **NEEDS-LIVE-CANARY** and requires explicit database/credential authority.
+
+## Runtime evidence
+
+- `crypto-secret-vault.test.mjs`: 9/9 — round trip/randomness, every AAD dimension,
+  wrong/missing key, nonce/tag/ciphertext/key-id tamper, malformed/unsupported/plaintext,
+  rotation/previous-key/v1, binary envelope, dry-run/idempotency.
+- `secret-vault-callers.test.mjs`: 2/2 — real isolated SQLite writes for integrations,
+  ERP and marketplace; no raw value in DB public payload or audit.
+- `firebase-settings-regression.test.mjs`: 4/4.
+- Haravan fake-provider suites: 3 files, 5/5.
+- `diagnostic-redaction.test.mjs`: 6/6.
+
+Production and review must use different random key material. Their example configs use
+different key ids, but inspecting or rotating deployed key material is intentionally
+**BLOCKED-EXTERNAL** in this local-only task.

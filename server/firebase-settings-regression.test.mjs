@@ -37,7 +37,7 @@ test('Firebase service-account is stored encrypted, never leaks plaintext via ge
   const row = db.prepare(
     `SELECT value FROM app_settings WHERE branch_id='sala' AND key='firebase_service_account'`
   ).get();
-  assert.ok(row.value.startsWith('enc:v1:'), 'must be encrypted at rest');
+  assert.ok(row.value.startsWith('enc:v2:'), 'must use the key-id envelope at rest');
   assert.equal(row.value.includes('FAKEKEYFORTEST'), false, 'ciphertext must not contain the raw key');
 
   const decoded = Settings.getFirebaseServiceAccount('sala');
