@@ -180,9 +180,10 @@ Each row: symptom → leading hypothesis → evidence → verdict → how to fal
 ### S8 — Excel import: many "Khớp mã", column shift, absurd total 633,705,997,308.678đ
 - **Hypothesis:** Client Excel parser mis-parses money (decimal-comma vs thousands
   separator) and/or maps by fragile column position, concatenating cells → giant number.
-- **Evidence:** import tests exist — `flutter-apps/dandpak_core/test/kv_import_orchestration_test.dart`,
-  `kv_excel_compatibility_test.dart`. Exact defective parse line NOT yet identified.
-- **Verdict:** **PARTIALLY FIXED.** Two independent issues:
+- **Evidence:** runtime golden/import tests cover the three reported codes `91120090`,
+  `91080092`, `91010579`, reordered/missing/duplicate headers, typed/formula cells,
+  leading zero, CSV quoting and both numeric locales.
+- **Verdict:** **VERIFIED locally.** Three independent protections:
   - **(a) Locale parse bug — FIXED + TESTED.** `kvParseNum` only did `,`→`.` then
     `num.tryParse`, so VN-grouped money mis-scaled 1000× (`"1.000.000"`→`1.0`) and mixed
     `"1.234,56"`→`null`. Rewrote it locale-aware (last separator = decimal; grouped forms
@@ -199,11 +200,13 @@ Each row: symptom → leading hypothesis → evidence → verdict → how to fal
     [kv_shared.dart:35-49, 471](../../../flutter-apps/dandpak_core/lib/src/screens/warehouse/kv_shared.dart#L35-L49),
     [purchase_doc_form_page.dart:245-259](../../../flutter-apps/dandpak_core/lib/src/screens/purchase/purchase_doc_form_page.dart#L245-L259).
     Test `test/import_plausibility_test.dart` **4/4**; analyze clean.
-  - **Remaining:** header-based (not positional) column mapping needs the actual failing
-    xlsx to pin — not fabricated. The plausibility guard now catches the *symptom* (garbage
-    value) fail-closed regardless of which column shifted.
-- **Falsify (remaining):** golden fixture with a barcode in the cost column → the commit is
-  refused (already enforced by `_save`); confirm header-mapping once the real file exists.
+  - **(c) Header mapping/archive/atomicity — FIXED + TESTED.** Stocktake, purchase and
+    warehouse issue resolve named aliases only (no positional fallback), report exact
+    row/column/value, archive before preview mutation, dedupe same archived file in one
+    form, and server header+lines save inside one transaction. Fault injection proves
+    purchase/stocktake line failure rolls the header back.
+- **Live boundary:** replaying the exact customer workbook is **NEEDS-LIVE-CANARY**; the
+  deterministic golden reproducer is complete and no longer blocks local completion.
 
 ### S9 — Floor plan differs POS vs Settings (tables missing/clipped, ratio drifts) — **FIXED + TESTED**
 - **Root cause (proven):** POS and the editor already share the grid geometry

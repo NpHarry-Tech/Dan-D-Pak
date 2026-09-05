@@ -991,7 +991,7 @@ function replaceStocktakeLines(session_id, lines) {
 }
 
 // Tạo mới hoặc sửa phiếu kiểm kho NHÁP. body.id => update (chỉ khi còn draft).
-export function saveStocktakeSession(body = {}, branch_id = 'sala', user = {}) {
+function saveStocktakeSessionUnsafe(body = {}, branch_id = 'sala', user = {}) {
   const warehouse_id = String(body.warehouse_id || '').trim();
   if (!warehouse_id) throw new Error('Thiếu kho kiểm');
   const wh = db.prepare(`SELECT id FROM warehouses WHERE id=? AND branch_id=?`).get(warehouse_id, branch_id);
@@ -1025,6 +1025,10 @@ export function saveStocktakeSession(body = {}, branch_id = 'sala', user = {}) {
   audit('stocktake.create', { session: sid, code, warehouse_id, lines: lines.length }, branch_id, actorName);
   emit('inventory:updated', { stocktake: sid }, branch_id);
   return getStocktakeSession(sid, branch_id);
+}
+
+export function saveStocktakeSession(body = {}, branch_id = 'sala', user = {}) {
+  return inTransaction(() => saveStocktakeSessionUnsafe(body, branch_id, user));
 }
 
 // "Cân bằng kho": tính lại chênh lệch tại thời điểm duyệt rồi nhập/xuất bù để

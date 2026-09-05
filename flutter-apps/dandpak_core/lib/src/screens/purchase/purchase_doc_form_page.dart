@@ -42,6 +42,7 @@ class PurchaseDocFormPage extends StatefulWidget {
 }
 
 class _PurchaseDocFormPageState extends State<PurchaseDocFormPage> {
+  final Set<String> _completedImportArchives = {};
   bool get _isReturn => widget.mode == PurchaseDocMode.purchaseReturn;
 
   String? _warehouseId;
@@ -246,7 +247,8 @@ class _PurchaseDocFormPageState extends State<PurchaseDocFormPage> {
     // FAIL-CLOSED (Gate-6): chặn HOÀN THÀNH khi có đơn giá vô lý (nghi lệch cột /
     // mã vạch lọt vào cột giá — sự cố "633 tỷ"). Nháp vẫn lưu được để sửa sau.
     if (complete) {
-      final bad = _lines.where((l) => l.qtyNum > 0 && l.costWarning != null).toList();
+      final bad =
+          _lines.where((l) => l.qtyNum > 0 && l.costWarning != null).toList();
       if (bad.isNotEmpty) {
         final f = bad.first;
         _toast(
@@ -880,12 +882,29 @@ class _PurchaseDocFormPageState extends State<PurchaseDocFormPage> {
     try {
       final data = await kvPickSpreadsheetData();
       if (data == null) return;
+      const codeAliases = ['Mã sản phẩm', 'Mã hàng', 'Product code'];
+      const barcodeAliases = ['Mã vạch', 'Barcode'];
+      const qtyAliases = ['Số lượng', 'Quantity'];
+      const costAliases = ['Đơn giá nhập', 'Đơn giá', 'Unit cost'];
+      data.validateHeaders();
+      data.requireAny([codeAliases, barcodeAliases], target: 'Mã hàng');
+      data.requireColumn(qtyAliases, target: 'Số lượng');
+      if (!_isReturn) data.requireColumn(costAliases, target: 'Đơn giá nhập');
       // BẮT BUỘC lưu file GỐC trước; lỗi → DỪNG nhập, KHÔNG đổi dữ liệu Kho.
+      var archiveId = '';
       try {
-        await kvArchiveImportFile(api, data, sourceScreen: 'Kho — Nhập hàng');
+        final archived = await kvArchiveImportFile(api, data,
+            sourceScreen: 'Kho — Nhập hàng');
+        archiveId = '${archived['id'] ?? archived['document_id'] ?? ''}';
+        if (archiveId.isNotEmpty &&
+            _completedImportArchives.contains(archiveId)) {
+          _toast(t('File này đã được nạp vào phiếu hiện tại.'));
+          return;
+        }
       } catch (_) {
         if (mounted) {
-          _toast(t('Không lưu được file gốc vào Tài liệu — đã HỦY nhập. Thử lại.'),
+          _toast(
+              t('Không lưu được file gốc vào Tài liệu — đã HỦY nhập. Thử lại.'),
               error: true);
         }
         return;
@@ -898,23 +917,33 @@ class _PurchaseDocFormPageState extends State<PurchaseDocFormPage> {
       }
       var added = 0;
       final missed = <String>[];
-      for (final r in data.rows) {
-        String value(List<String> names, int old) =>
-            data.cell(r, names, fallback: old);
+      for (final entry in data.rows.indexed) {
+        final (rowIndex, r) = entry;
+        String value(List<String> names) => data.cell(r, names);
+        final parsedQty =
+            data.numberCell(r, rowIndex, qtyAliases, target: 'Số lượng');
+        if (parsedQty <= 0) {
+          throw KvImportException(
+              'Dòng ${rowIndex + 2}, giá trị số lượng "$parsedQty": phải lớn hơn 0.');
+        }
+        final parsedCost = data.columns(costAliases).isEmpty
+            ? 0
+            : data.numberCell(r, rowIndex, costAliases,
+                target: 'Đơn giá nhập', required: _isReturn ? false : true);
         final row = <String, String>{
-          'code': value(['Mã sản phẩm', 'Mã hàng', 'Product code'], 0),
-          'barcode': value(['Mã vạch', 'Barcode'], -1),
-          'name': value(['Tên sản phẩm', 'Tên hàng', 'Product name'], -1),
-          'brand': value(['Thương hiệu', 'Brand'], -1),
-          'category': value(['Phân loại', 'Nhóm hàng', 'Category'], -1),
-          'unit': value(['ĐVT', 'Đơn vị', 'Unit'], -1),
-          'qty': value(['Số lượng', 'Quantity'], 1),
-          'cost': value(['Đơn giá nhập', 'Đơn giá', 'Unit cost'], 2),
-          'price': value(['Giá bán mặc định', 'Giá bán', 'Sale price'], -1),
-          'price_pre_tax': value(['Giá bán trước VAT', 'Pre-tax price'], -1),
-          'vat': value(['VAT (%)', 'VAT'], -1),
-          'lot': value(['Lô', 'Số lô', 'Lot'], 3),
-          'expiry': value(['Hạn sử dụng', 'HSD', 'Expiry date'], 4),
+          'code': value(codeAliases),
+          'barcode': value(barcodeAliases),
+          'name': value(['Tên sản phẩm', 'Tên hàng', 'Product name']),
+          'brand': value(['Thương hiệu', 'Brand']),
+          'category': value(['Phân loại', 'Nhóm hàng', 'Category']),
+          'unit': value(['ĐVT', 'Đơn vị', 'Unit']),
+          'qty': '$parsedQty',
+          'cost': parsedCost == 0 ? '' : '$parsedCost',
+          'price': value(['Giá bán mặc định', 'Giá bán', 'Sale price']),
+          'price_pre_tax': value(['Giá bán trước VAT', 'Pre-tax price']),
+          'vat': value(['VAT (%)', 'VAT']),
+          'lot': value(['Lô', 'Số lô', 'Lot']),
+          'expiry': value(['Hạn sử dụng', 'HSD', 'Expiry date']),
         };
         for (var column = 0; column < data.headers.length; column++) {
           final header = data.headers[column].trim();
@@ -967,6 +996,7 @@ class _PurchaseDocFormPageState extends State<PurchaseDocFormPage> {
               ? t('Đã nạp $added dòng — $unmatched dòng CHƯA KHỚP MÃ, bấm "Khớp mã" trên từng dòng')
               : t('Đã nạp $added dòng từ file'))
           : t('Đã nạp $added dòng; không thấy mã: ${missed.take(5).join(", ")}${missed.length > 5 ? "…" : ""}');
+      if (archiveId.isNotEmpty) _completedImportArchives.add(archiveId);
       _toast(msg, error: missed.isNotEmpty && added == 0);
     } catch (e) {
       _toast(

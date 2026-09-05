@@ -1,7 +1,7 @@
 // Purchase (Mua hàng): supplier purchase orders that post into the existing
 // inventory receiving flow when goods arrive. Supplier is a partner from the
 // shared Contacts directory; công nợ NCC = total - amount_paid.
-import { db, uid, now, audit } from '../db.js';
+import { db, uid, now, audit, inTransaction } from '../db.js';
 import { intval } from '../core/util.js';
 import { emit } from '../realtime.js';
 import { getCustomer } from './customers.js';
@@ -178,7 +178,7 @@ function buildLines(rawLines = []) {
 }
 
 // Create or update a DRAFT purchase order. Confirmed/received POs are locked.
-export function savePurchaseOrder(body = {}, branch_id = 'sala', user = {}) {
+function savePurchaseOrderUnsafe(body = {}, branch_id = 'sala', user = {}) {
   const supplier = resolveSupplier(str(body.supplier_id, 80), branch_id);
   const supplierName = supplier.name || str(body.supplier_name_manual, 200) || 'Không có NCC';
   const lines = buildLines(body.lines);
@@ -219,6 +219,10 @@ export function savePurchaseOrder(body = {}, branch_id = 'sala', user = {}) {
   audit('purchase.create', { id, code, supplier: fields.supplier_name, total: fields.total }, branch_id, user?.username || user?.name);
   emit('purchase:updated', { id, created: true }, branch_id);
   return getPurchaseOrder(id, branch_id);
+}
+
+export function savePurchaseOrder(body = {}, branch_id = 'sala', user = {}) {
+  return inTransaction(() => savePurchaseOrderUnsafe(body, branch_id, user));
 }
 
 function insertLines(po_id, lines) {
@@ -435,7 +439,7 @@ export function getPurchaseReturn(id, branch_id = 'sala') {
 }
 
 // Tạo/sửa phiếu trả hàng NHÁP. body.id => update (chỉ khi còn draft).
-export function savePurchaseReturn(body = {}, branch_id = 'sala', user = {}) {
+function savePurchaseReturnUnsafe(body = {}, branch_id = 'sala', user = {}) {
   const supplier = resolveSupplier(str(body.supplier_id, 80), branch_id);
   const supplierName = supplier.name || str(body.supplier_name_manual, 200) || 'Không có NCC';
   const lines = buildReturnLines(body.lines);
@@ -475,6 +479,10 @@ export function savePurchaseReturn(body = {}, branch_id = 'sala', user = {}) {
   audit('purchase_return.create', { id, code, supplier: fields.supplier_name, total: fields.total }, branch_id, user?.username || user?.name);
   emit('purchase:updated', { return_id: id, created: true }, branch_id);
   return getPurchaseReturn(id, branch_id);
+}
+
+export function savePurchaseReturn(body = {}, branch_id = 'sala', user = {}) {
+  return inTransaction(() => savePurchaseReturnUnsafe(body, branch_id, user));
 }
 
 function insertReturnLines(pr_id, lines) {

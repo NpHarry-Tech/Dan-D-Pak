@@ -101,7 +101,7 @@ Status vocabulary (used consistently across all four dossier files):
 | S5 | `/api/shifts/current` 4.7–28.7 s pile-ups | **VERIFIED (source)** — client coalescing + server payload cap (577 KB→61 KB, −89%; benchmarked p95 ≤24 ms → CPU/indexes never the cause) | `get_coalesce_test.dart` 3/3 · `shift-report-bill-cap.test.mjs` 3/3 |
 | S6 | "Kết ca" stacked calls/modals | **PARTIAL** — client single-flight VERIFIED; **UI route/modal singleton + server conditional-close not done** | `shift_single_flight_test.dart` 3/3 |
 | S7 | Multiple Desktop instances | **NOT RUN** — named mutex implemented in C++; **Windows build/run verification not performed** (no mid-phase build) | inspection only |
-| S8 | Import "633 billion" | **PARTIAL** — locale parser + fail-closed plausibility guard VERIFIED; **header-based column mapping needs the real xlsx** | `kv_parse_num_locale_test.dart` 8/8 · `import_plausibility_test.dart` 4/4 |
+| S8 | Import "633 billion" | **VERIFIED** — non-positional header mapping + golden reported SKUs + CSV/XLSX typing/locale + archive/retry/transaction rollback | import Flutter 21/21 · `inventory-transaction.test.mjs` 14/14 |
 | S9 | Floor plan clipped / ratio drift | **PARTIAL** — pure geometry (`floorCellSize`) VERIFIED; **widget/golden multi-viewport test NOT RUN** | `floor_cell_size_test.dart` 6/6 (pure) |
 | S12 | Chat blank "Chưa có hội thoại" | **PARTIAL** — empty-state taxonomy VERIFIED (source); **live provider ingest/send E2E BLOCKED-EXTERNAL** | `chat_empty_state_test.dart` 6/6 (pure) |
 | S13 | Haravan subscribe fails opaquely | **PARTIAL** — structured redacted diagnostics VERIFIED (source); **live subscribe BLOCKED-EXTERNAL** (needs dev store) | `haravan-subscribe-diagnostics.test.mjs` 3/3 |

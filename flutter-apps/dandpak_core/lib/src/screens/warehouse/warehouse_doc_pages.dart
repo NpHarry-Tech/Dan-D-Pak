@@ -399,6 +399,7 @@ class WarehouseDocFormPage extends StatefulWidget {
 }
 
 class _WarehouseDocFormPageState extends State<WarehouseDocFormPage> {
+  final Set<String> _completedImportArchives = {};
   String? _fromId;
   String? _toId;
   List<Map<String, dynamic>> _items = [];
@@ -511,23 +512,33 @@ class _WarehouseDocFormPageState extends State<WarehouseDocFormPage> {
     try {
       final data = await kvPickSpreadsheetData();
       if (data == null) return;
+      const codeAliases = ['Mã sản phẩm', 'Mã hàng', 'Product code'];
+      const barcodeAliases = ['Mã vạch', 'Barcode'];
+      const qtyAliases = ['Số lượng', 'Quantity'];
+      data.validateHeaders();
+      data.requireAny([codeAliases, barcodeAliases], target: 'Mã hàng');
+      data.requireColumn(qtyAliases, target: 'Số lượng');
       // BẮT BUỘC lưu file GỐC trước; archive lỗi → runImport KHÔNG chạy (Kho không đổi).
       await kvArchiveThenImport(api, data,
           sourceScreen: 'Kho — Xuất kho',
-          runImport: () async {
+          completedArchiveIds: _completedImportArchives, runImport: () async {
         final byCode = <String, Map<String, dynamic>>{};
         for (final it in _items) {
-          for (final k in [kvs(it['code']), kvs(it['barcode']), kvs(it['id'])]) {
+          for (final k in [
+            kvs(it['code']),
+            kvs(it['barcode']),
+            kvs(it['id'])
+          ]) {
             if (k.isNotEmpty) byCode[k.toLowerCase()] = it;
           }
         }
         var added = 0;
         final missed = <String>[];
         setState(() {
-          for (final r in data.rows) {
-            final code = data.cell(r, ['Mã sản phẩm', 'Mã hàng', 'Product code'],
-                fallback: 0);
-            final barcode = data.cell(r, ['Mã vạch', 'Barcode']);
+          for (final entry in data.rows.indexed) {
+            final (rowIndex, r) = entry;
+            final code = data.cell(r, codeAliases);
+            final barcode = data.cell(r, barcodeAliases);
             if (code.isEmpty && barcode.isEmpty) continue;
             final item =
                 byCode[code.toLowerCase()] ?? byCode[barcode.toLowerCase()];
@@ -536,11 +547,14 @@ class _WarehouseDocFormPageState extends State<WarehouseDocFormPage> {
               continue;
             }
             final qty =
-                kvParseNum(data.cell(r, ['Số lượng', 'Quantity'], fallback: 1)) ??
-                    1;
+                data.numberCell(r, rowIndex, qtyAliases, target: 'Số lượng');
+            if (qty <= 0) {
+              throw KvImportException(
+                  'Dòng ${rowIndex + 2}, giá trị số lượng "$qty": phải lớn hơn 0.');
+            }
             _lines.add(KvDocLine(item, _isRetailWh ? 'sku' : 'inventory',
-                initialQty: qty <= 0 ? 1 : qty,
-                lot: data.cell(r, ['Lô', 'Số lô', 'Lot'], fallback: 2),
+                initialQty: qty,
+                lot: data.cell(r, ['Lô', 'Số lô', 'Lot']),
                 exp: data.cell(r, ['Hạn sử dụng', 'HSD', 'Expiry date'])));
             added++;
           }

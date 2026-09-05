@@ -56,10 +56,11 @@ commit; audit-row insertion is mandatory and can roll back the financial transac
 - Ensure the cancel handler writes món name/SKU/qty/table/bill/actor/reason **in the same
   transaction** as the mutation; failures never write a success audit.
 
-## Priority 6 — Excel/CSV import fail-closed + accurate preview (Gate 6) — NEEDS-REPRO
-- Reproduce the `633,705,997,308.678` case in `test/kv_import_orchestration_test.dart`
-  first; fix decimal/locale + header-based (not positional) mapping; archive→parse→
-  validate→preview→confirm→commit; commit callback must not fire on validation failure.
+## Priority 6 — Excel/CSV import fail-closed + accurate preview (Gate 6) — VERIFIED
+- Header/alias mapping is non-positional across stocktake/purchase/issue; golden XLSX
+  includes the three reported SKUs. CSV, locale, typed/formula cells, exact diagnostics,
+  archive-before-import, retry dedupe and transactional server save are covered by tests.
+- Exact customer workbook replay remains **NEEDS-LIVE-CANARY**, not a local code gap.
 
 ## Priority 7 — Floor plan parity (Gate 7) — NEEDS-REPRO then implement
 - One canonical coordinate model from Settings; POS = viewport transform only; golden

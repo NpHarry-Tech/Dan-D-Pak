@@ -223,6 +223,33 @@ test('không cho chuyển nhiều hơn tồn thực tế ở kho nguồn', () =>
   assert.equal(tonKho('sku_ck', 'wh_a'), 6, 'tồn giữ nguyên sau khi bị từ chối');
 });
 
+test('save import preview rolls back purchase/stocktake header when a line fails', () => {
+  const poBefore = db.prepare(`SELECT COUNT(*) n FROM purchase_orders`).get().n;
+  db.exec(`CREATE TEMP TRIGGER fail_import_po BEFORE INSERT ON purchase_order_lines
+    WHEN NEW.item_id='boom' BEGIN SELECT RAISE(ABORT, 'injected import line failure'); END;`);
+  assert.throws(() => Purchase.savePurchaseOrder({
+    supplier_name_manual: 'Import rollback test',
+    lines: [
+      { item_type: 'adhoc', item_id: 'ok', name: 'OK', qty: 1, unit_cost: 10 },
+      { item_type: 'adhoc', item_id: 'boom', name: 'Boom', qty: 1, unit_cost: 20 },
+    ],
+  }, 'sala'), /injected import line failure/);
+  assert.equal(db.prepare(`SELECT COUNT(*) n FROM purchase_orders`).get().n, poBefore,
+    'header and first line must roll back together');
+  db.exec(`DROP TRIGGER fail_import_po`);
+
+  const stocktakeBefore = db.prepare(`SELECT COUNT(*) n FROM stocktake_sessions`).get().n;
+  db.exec(`CREATE TEMP TRIGGER fail_import_stocktake BEFORE INSERT ON stocktake_lines
+    WHEN NEW.item_id='sku_ck' BEGIN SELECT RAISE(ABORT, 'injected stocktake line failure'); END;`);
+  assert.throws(() => Inv.saveStocktakeSession({
+    warehouse_id: 'wh_a',
+    lines: [{ stock_type: 'sku', item_id: 'sku_ck', counted_qty: 6 }],
+  }, 'sala'), /injected stocktake line failure/);
+  assert.equal(db.prepare(`SELECT COUNT(*) n FROM stocktake_sessions`).get().n,
+    stocktakeBefore, 'stocktake header must not survive a failed line');
+  db.exec(`DROP TRIGGER fail_import_stocktake`);
+});
+
 test('tồn kho được định tuyến theo từng kho, kho đã hết không fallback về tồn tổng', () => {
   Inv.createSku({ id: 'sku_route', name: 'Hàng định tuyến', price: 1000, warehouse_id: 'wh_a' }, 'sala');
   Inv.receiveSku('sku_route', 5, 'sala', { warehouse_id: 'wh_a', lot_no: 'ROUTE' });

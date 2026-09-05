@@ -59,6 +59,7 @@ class _StocktakeLine {
 }
 
 class _StocktakeFormPageState extends State<StocktakeFormPage> {
+  final Set<String> _completedImportArchives = {};
   String? _warehouseId;
   List<Map<String, dynamic>> _items = [];
   final List<_StocktakeLine> _lines = [];
@@ -273,25 +274,34 @@ class _StocktakeFormPageState extends State<StocktakeFormPage> {
     try {
       final data = await kvPickSpreadsheetData();
       if (data == null) return;
+      const codeAliases = ['Mã sản phẩm', 'Mã hàng', 'Product code'];
+      const barcodeAliases = ['Mã vạch', 'Barcode'];
+      const qtyAliases = ['Số lượng thực tế', 'Số lượng', 'Quantity'];
+      data.validateHeaders();
+      data.requireAny([codeAliases, barcodeAliases], target: 'Mã hàng');
+      data.requireColumn(qtyAliases, target: 'Số lượng thực tế');
       // BẮT BUỘC lưu file GỐC vào Tài liệu TRƯỚC; archive lỗi → kvArchiveThenImport
       // ném và KHÔNG chạy runImport (dữ liệu Kho không đổi — fail-closed).
       await kvArchiveThenImport(api, data,
           sourceScreen: 'Kho — Nhập kiểm kho',
-          runImport: () async {
-        final canonical = data.rows.map((r) => [
-              data.cell(r, ['Mã sản phẩm', 'Mã hàng', 'Product code'],
-                  fallback: 0),
-              data.cell(r, ['Số lượng thực tế', 'Số lượng', 'Quantity'],
-                  fallback: 1),
-              for (var lot = 1; lot <= 2; lot++) ...[
-                data.cell(r, ['Lô $lot', 'Lot $lot'],
-                    fallback: 1 + (lot - 1) * 3 + 1),
-                data.cell(r, ['Hạn sử dụng $lot', 'HSD $lot', 'Expiry date $lot'],
-                    fallback: 1 + (lot - 1) * 3 + 2),
-                data.cell(r, ['Số lượng $lot', 'Quantity $lot'],
-                    fallback: 1 + (lot - 1) * 3 + 3),
-              ],
-            ]);
+          completedArchiveIds: _completedImportArchives, runImport: () async {
+        final canonical = data.rows.indexed.map((entry) {
+          final (rowIndex, r) = entry;
+          final code = data.cell(r, codeAliases);
+          final barcode = data.cell(r, barcodeAliases);
+          final qty = data.numberCell(r, rowIndex, qtyAliases,
+              target: 'Số lượng thực tế', required: false);
+          return [
+            code.isNotEmpty ? code : barcode,
+            qty == 0 ? '' : '$qty',
+            for (var lot = 1; lot <= 2; lot++) ...[
+              data.cell(r, ['Lô $lot', 'Lot $lot']),
+              data.cell(
+                  r, ['Hạn sử dụng $lot', 'HSD $lot', 'Expiry date $lot']),
+              data.cell(r, ['Số lượng $lot', 'Quantity $lot']),
+            ],
+          ];
+        });
         _applyImport(canonical.map((r) => r.join('\t')).join('\n'));
       });
     } catch (e) {

@@ -18,8 +18,20 @@ class _ThrowingApi extends ApiService {
   }
 }
 
+class _IdempotentArchiveApi extends ApiService {
+  @override
+  Future<dynamic> postJson(
+    String path, {
+    Object? body,
+    Duration timeout = DanDpakApiClient.defaultTimeout,
+    String? errorMessage,
+  }) async =>
+      <String, dynamic>{'id': 'same-content-document'};
+}
+
 void main() {
-  test('kvArchiveThenImport: archive FAIL => runImport (đổi dữ liệu Kho) KHÔNG được gọi',
+  test(
+      'kvArchiveThenImport: archive FAIL => runImport (đổi dữ liệu Kho) KHÔNG được gọi',
       () async {
     final api = _ThrowingApi();
     final data = KvSpreadsheetData(
@@ -32,8 +44,8 @@ void main() {
     );
     var importRan = false;
     await expectLater(
-      kvArchiveThenImport(api, data,
-          sourceScreen: 'Kho — Test', runImport: () async {
+      kvArchiveThenImport(api, data, sourceScreen: 'Kho — Test',
+          runImport: () async {
         importRan = true;
       }),
       throwsA(isA<Exception>()),
@@ -45,17 +57,40 @@ void main() {
   test('kvArchiveThenImport: KHÔNG có bytes => ném, runImport KHÔNG được gọi',
       () async {
     final api = _ThrowingApi();
-    final data = KvSpreadsheetData(['h'], [
+    final data = KvSpreadsheetData([
+      'h'
+    ], [
       ['a']
     ]); // no bytes
     var importRan = false;
     await expectLater(
-      kvArchiveThenImport(api, data,
-          sourceScreen: 'x', runImport: () async {
+      kvArchiveThenImport(api, data, sourceScreen: 'x', runImport: () async {
         importRan = true;
       }),
       throwsA(isA<Exception>()),
     );
     expect(importRan, isFalse);
+  });
+
+  test('retry cùng archive trong một form không nạp dòng hai lần', () async {
+    final api = _IdempotentArchiveApi();
+    final completed = <String>{};
+    final data = KvSpreadsheetData(
+      ['Mã hàng', 'Số lượng'],
+      [
+        ['00060', '2']
+      ],
+      fileName: 'same.xlsx',
+      bytes: Uint8List.fromList([8, 9, 10]),
+    );
+    var imports = 0;
+    Future<void> run() => kvArchiveThenImport(api, data,
+        sourceScreen: 'Kho — Test',
+        completedArchiveIds: completed,
+        runImport: () async => imports++);
+    await run();
+    await run();
+    expect(imports, 1);
+    expect(completed, {'same-content-document'});
   });
 }

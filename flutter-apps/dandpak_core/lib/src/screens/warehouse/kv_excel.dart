@@ -12,6 +12,7 @@ import 'package:share_plus/share_plus.dart';
 import '../../services/api_service.dart';
 import '../../ui/app_theme.dart';
 import '../../utils/translation.dart';
+import 'kv_shared.dart';
 
 /// Đọc/ghi Excel cho các phiếu Kho (Kiểm kho / Nhập hàng / Xuất hàng):
 ///   - [kvPickSpreadsheetRows]  : nút "Chọn file dữ liệu" — đọc .xlsx thành
@@ -34,10 +35,27 @@ String _cellText(xl.Data? cell) {
   }
   if (v is xl.DoubleCellValue) {
     final d = v.value;
-    return d == d.roundToDouble() ? d.round().toString() : d.toString();
+    return d == d.roundToDouble()
+        ? _formattedInteger(cell!, d.round())
+        : d.toString();
   }
-  if (v is xl.IntCellValue) return v.value.toString();
+  if (v is xl.IntCellValue) return _formattedInteger(cell!, v.value);
+  if (v is xl.FormulaCellValue) {
+    final formula = v.formula.trim().replaceFirst(RegExp(r'^='), '');
+    final quoted = RegExp(r'^"(.*)"$').firstMatch(formula);
+    if (quoted != null) return quoted.group(1)!;
+    if (num.tryParse(formula) != null) return formula;
+    return '=$formula';
+  }
   return v.toString().trim();
+}
+
+String _formattedInteger(xl.Data cell, int value) {
+  final format = cell.cellStyle?.numberFormat.formatCode ?? '';
+  if (RegExp(r'^0+$').hasMatch(format)) {
+    return value.toString().padLeft(format.length, '0');
+  }
+  return value.toString();
 }
 
 /// Microsoft Excel đôi khi ghi một custom numFmt với ID built-in (ví dụ 43).
@@ -89,16 +107,61 @@ class KvSpreadsheetData {
   // File GỐC được chọn — giữ lại để LƯU vào kho Tài liệu (không bỏ đi sau khi parse).
   final String fileName;
   final Uint8List? bytes;
-  const KvSpreadsheetData(this.headers, this.rows, {this.fileName = '', this.bytes});
+  const KvSpreadsheetData(this.headers, this.rows,
+      {this.fileName = '', this.bytes});
 
   int column(List<String> aliases) {
-    String norm(String value) => value
-        .toLowerCase()
-        .trim()
-        .replaceAll(RegExp(r'[^a-z0-9à-ỹ]+', unicode: true), ' ')
-        .replaceAll(RegExp(r'\s+'), ' ');
-    final wanted = aliases.map(norm).toSet();
-    return headers.indexWhere((h) => wanted.contains(norm(h)));
+    final wanted = aliases.map(kvNormalizeHeader).toSet();
+    return headers.indexWhere((h) => wanted.contains(kvNormalizeHeader(h)));
+  }
+
+  List<int> columns(List<String> aliases) {
+    final wanted = aliases.map(kvNormalizeHeader).toSet();
+    return [
+      for (var i = 0; i < headers.length; i++)
+        if (wanted.contains(kvNormalizeHeader(headers[i]))) i,
+    ];
+  }
+
+  void validateHeaders() {
+    final seen = <String, int>{};
+    for (var index = 0; index < headers.length; index++) {
+      final normalized = kvNormalizeHeader(headers[index]);
+      if (normalized.isEmpty) continue;
+      final previous = seen[normalized];
+      if (previous != null) {
+        throw KvImportException(
+            'Trùng tiêu đề cột "${headers[index]}" tại cột ${previous + 1} và ${index + 1}.');
+      }
+      seen[normalized] = index;
+    }
+  }
+
+  int requireColumn(List<String> aliases, {required String target}) {
+    final matches = columns(aliases);
+    if (matches.isEmpty) {
+      throw KvImportException(
+          'Thiếu cột bắt buộc "$target" (chấp nhận: ${aliases.join(', ')}).');
+    }
+    if (matches.length > 1) {
+      throw KvImportException(
+          'Nhiều cột cùng ánh xạ vào "$target": ${matches.map((i) => '${headers[i]} [cột ${i + 1}]').join(', ')}.');
+    }
+    return matches.single;
+  }
+
+  void requireAny(List<List<String>> groups, {required String target}) {
+    for (final aliases in groups) {
+      final matches = columns(aliases);
+      if (matches.length > 1) {
+        throw KvImportException(
+            'Nhiều cột cùng ánh xạ vào "$target": ${matches.map((i) => '${headers[i]} [cột ${i + 1}]').join(', ')}.');
+      }
+    }
+    if (!groups.any((aliases) => columns(aliases).isNotEmpty)) {
+      throw KvImportException(
+          'Thiếu định danh "$target"; cần ít nhất một cột mã sản phẩm hoặc mã vạch.');
+    }
   }
 
   String cell(List<String> row, List<String> aliases, {int fallback = -1}) {
@@ -106,29 +169,131 @@ class KvSpreadsheetData {
     final resolved = index >= 0 ? index : fallback;
     return resolved >= 0 && resolved < row.length ? row[resolved].trim() : '';
   }
+
+  num numberCell(List<String> row, int rowIndex, List<String> aliases,
+      {required String target, bool required = true}) {
+    final columnIndex = requireColumn(aliases, target: target);
+    final raw = columnIndex < row.length ? row[columnIndex].trim() : '';
+    final parsed = kvParseNum(raw);
+    if (parsed == null) {
+      if (!required && raw.isEmpty) return 0;
+      throw KvImportException(
+          'Dòng ${rowIndex + 2}, cột ${columnIndex + 1} (${headers[columnIndex]}), giá trị "$raw": không phải số hợp lệ.');
+    }
+    return parsed;
+  }
+
+  List<Map<String, Object>> previewMapping(Map<String, List<String>> schema) =>
+      [
+        for (final entry in schema.entries)
+          {
+            'target': entry.key,
+            'source_column':
+                column(entry.value) < 0 ? '' : headers[column(entry.value)],
+            'source_index':
+                column(entry.value) < 0 ? -1 : column(entry.value) + 1,
+          }
+      ];
 }
 
-Future<KvSpreadsheetData?> kvPickSpreadsheetData() async {
-  final picked = await FilePicker.platform.pickFiles(
-    type: FileType.custom,
-    allowedExtensions: ['xlsx'],
-    withData: true,
-  );
-  if (picked == null || picked.files.isEmpty) return null;
-  final f = picked.files.first;
-  final bytes = f.bytes ?? await File(f.path!).readAsBytes();
-  final raw = Uint8List.fromList(bytes);
-  final book = kvDecodeSpreadsheet(raw);
-  if (book.tables.isEmpty) throw Exception(t('File không có sheet nào'));
+class KvImportException implements Exception {
+  final String message;
+  const KvImportException(this.message);
+  @override
+  String toString() => message;
+}
+
+String kvNormalizeHeader(String value) => value
+    .toLowerCase()
+    .trim()
+    .replaceAll(RegExp(r'[^a-z0-9à-ỹ]+', unicode: true), ' ')
+    .replaceAll(RegExp(r'\s+'), ' ');
+
+List<List<String>> _parseDelimited(String text) {
+  final first = text
+      .split(RegExp(r'\r?\n'))
+      .firstWhere((line) => line.trim().isNotEmpty, orElse: () => '');
+  final delimiter = first.contains('\t')
+      ? '\t'
+      : (','.allMatches(first).length >= ';'.allMatches(first).length
+          ? ','
+          : ';');
+  final rows = <List<String>>[];
+  var row = <String>[];
+  var field = StringBuffer();
+  var quoted = false;
+  for (var i = 0; i < text.length; i++) {
+    final char = text[i];
+    if (char == '"') {
+      if (quoted && i + 1 < text.length && text[i + 1] == '"') {
+        field.write('"');
+        i++;
+      } else {
+        quoted = !quoted;
+      }
+    } else if (!quoted && char == delimiter) {
+      row.add(field.toString());
+      field = StringBuffer();
+    } else if (!quoted && (char == '\n' || char == '\r')) {
+      if (char == '\r' && i + 1 < text.length && text[i + 1] == '\n') i++;
+      row.add(field.toString());
+      field = StringBuffer();
+      if (row.any((value) => value.trim().isNotEmpty)) rows.add(row);
+      row = <String>[];
+    } else {
+      field.write(char);
+    }
+  }
+  if (quoted) throw const KvImportException('CSV có dấu nháy kép chưa đóng.');
+  row.add(field.toString());
+  if (row.any((value) => value.trim().isNotEmpty)) rows.add(row);
+  return rows;
+}
+
+KvSpreadsheetData kvSpreadsheetDataFromBytes(Uint8List bytes, String fileName) {
+  if (fileName.toLowerCase().endsWith('.csv')) {
+    final table = _parseDelimited(utf8.decode(bytes, allowMalformed: false));
+    if (table.isEmpty) {
+      throw const KvImportException('File CSV không có dữ liệu.');
+    }
+    return KvSpreadsheetData(
+      table.first.map((value) => value.trim()).toList(),
+      table
+          .skip(1)
+          .map((row) => row.map((value) => value.trim()).toList())
+          .toList(),
+      fileName: fileName,
+      bytes: bytes,
+    );
+  }
+  final book = kvDecodeSpreadsheet(bytes);
+  if (book.tables.isEmpty) {
+    throw KvImportException(t('File không có sheet nào'));
+  }
   final sheet = book.tables[book.tables.keys.first]!;
   final headers =
       sheet.maxRows == 0 ? <String>[] : sheet.row(0).map(_cellText).toList();
   final rows = <List<String>>[];
   for (var r = 1; r < sheet.maxRows; r++) {
     final cells = sheet.row(r).map(_cellText).toList();
-    if (!cells.every((c) => c.isEmpty)) rows.add(cells);
+    if (!cells.every((cell) => cell.isEmpty)) rows.add(cells);
   }
-  return KvSpreadsheetData(headers, rows, fileName: f.name, bytes: raw);
+  return KvSpreadsheetData(headers, rows, fileName: fileName, bytes: bytes);
+}
+
+Future<KvSpreadsheetData?> kvPickSpreadsheetData() async {
+  final picked = await FilePicker.platform.pickFiles(
+    type: FileType.custom,
+    allowedExtensions: ['xlsx', 'csv'],
+    withData: true,
+  );
+  if (picked == null || picked.files.isEmpty) return null;
+  final f = picked.files.first;
+  final bytes = f.bytes ?? await File(f.path!).readAsBytes();
+  final raw = Uint8List.fromList(bytes);
+  final data = kvSpreadsheetDataFromBytes(raw, f.name);
+  data.validateHeaders();
+  return data;
 }
 
 /// LƯU file import GỐC vào kho Tài liệu (DMS) bằng quyền tối thiểu của nhân viên
@@ -144,8 +309,9 @@ Future<Map<String, dynamic>> kvArchiveImportFile(
   if (raw == null || raw.isEmpty) {
     throw Exception(t('Không đọc được file để lưu vào Tài liệu'));
   }
-  const xlsxMime =
-      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+  final xlsxMime = data.fileName.toLowerCase().endsWith('.csv')
+      ? 'text/csv'
+      : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
   return api.importUploadDocument(
     dataBase64: base64Encode(raw),
     originalName: data.fileName.isEmpty ? 'import.xlsx' : data.fileName,
@@ -163,9 +329,17 @@ Future<void> kvArchiveThenImport(
   KvSpreadsheetData data, {
   required String sourceScreen,
   required Future<void> Function() runImport,
+  Set<String>? completedArchiveIds,
 }) async {
-  await kvArchiveImportFile(api, data, sourceScreen: sourceScreen); // throws => runImport skipped
+  final archived = await kvArchiveImportFile(api, data,
+      sourceScreen: sourceScreen); // throws => runImport skipped
+  final archiveId = '${archived['id'] ?? archived['document_id'] ?? ''}';
+  if (archiveId.isNotEmpty &&
+      completedArchiveIds?.contains(archiveId) == true) {
+    return;
+  }
   await runImport();
+  if (archiveId.isNotEmpty) completedArchiveIds?.add(archiveId);
 }
 
 /// Mở hộp thoại chọn file .xlsx và trả về các dòng (bỏ dòng tiêu đề nếu
@@ -173,25 +347,9 @@ Future<void> kvArchiveThenImport(
 Future<List<List<String>>?> kvPickSpreadsheetRows({
   bool skipHeader = true,
 }) async {
-  if (skipHeader) return (await kvPickSpreadsheetData())?.rows;
-  final picked = await FilePicker.platform.pickFiles(
-    type: FileType.custom,
-    allowedExtensions: ['xlsx'],
-    withData: true,
-  );
-  if (picked == null || picked.files.isEmpty) return null;
-  final f = picked.files.first;
-  final bytes = f.bytes ?? await File(f.path!).readAsBytes();
-  final book = kvDecodeSpreadsheet(Uint8List.fromList(bytes));
-  if (book.tables.isEmpty) throw Exception(t('File không có sheet nào'));
-  final sheet = book.tables[book.tables.keys.first]!;
-  final rows = <List<String>>[];
-  for (var r = skipHeader ? 1 : 0; r < sheet.maxRows; r++) {
-    final cells = sheet.row(r).map(_cellText).toList();
-    if (cells.every((c) => c.isEmpty)) continue;
-    rows.add(cells);
-  }
-  return rows;
+  final data = await kvPickSpreadsheetData();
+  if (data == null) return null;
+  return skipHeader ? data.rows : [data.headers, ...data.rows];
 }
 
 /// Loại file mẫu — cùng khung "Mã hàng + Số lượng", khác cột phụ.
