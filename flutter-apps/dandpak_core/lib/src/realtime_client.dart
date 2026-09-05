@@ -1,10 +1,14 @@
 import 'package:socket_io_client/socket_io_client.dart' as io;
+import 'services/realtime_event_guard.dart';
 
 class DanDpakRealtimeClient {
   io.Socket? _socket;
   final List<void Function()> _listeners = [];
+  final RealtimeEventGuard _eventGuard = RealtimeEventGuard();
 
   bool isConnected = false;
+
+  void resetResumeCursor() => _eventGuard.reset();
 
   /// Định danh thiết bị dùng cho ràng buộc phiên phía server. Nối ở bootstrap
   /// (cùng chỗ với DanDpakApiClient.deviceMetadataProvider) để mọi màn hình gọi
@@ -75,6 +79,8 @@ class DanDpakRealtimeClient {
     _socket!.onConnect((_) {
       isConnected = true;
       onConnectionChanged?.call(true);
+      final cursor = _eventGuard.lastEventId;
+      if (cursor != null) _socket!.emit('realtime:resume', {'after': cursor});
     });
     _socket!.onDisconnect((_) {
       isConnected = false;
@@ -83,9 +89,17 @@ class DanDpakRealtimeClient {
     _socket!.onConnectError((err) {
       onEvent?.call('connect_error', err);
     });
+    _socket!.on('realtime:resync_required', (data) {
+      _eventGuard.reset();
+      onEvent?.call('realtime:resync_required', data);
+    });
+    _socket!.on('realtime:resume_complete', (data) {
+      onEvent?.call('realtime:resume_complete', data);
+    });
 
     for (final event in events) {
       _socket!.on(event, (data) {
+        if (!_eventGuard.accept(data)) return;
         onEvent?.call(event, data);
         for (final listener in List<void Function()>.from(_listeners)) {
           listener();

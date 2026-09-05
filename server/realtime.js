@@ -7,8 +7,10 @@ import { userFor, canAccessBranch } from './services/auth.js';
 import { normalizeIp } from './core/util.js';
 import { logger } from './core/logger.js';
 import { setRealtimeEmitter } from './core/realtimeBus.js';
+import { RealtimeEventJournal } from './core/realtimeEvents.js';
 
 let io = null;
+const realtimeJournal = new RealtimeEventJournal();
 
 // Hai phòng theo chi nhánh:
 //   staffRoom  = 'branch:<id>'        → thiết bị NHÂN VIÊN (đã đăng nhập token). Nhận
@@ -168,6 +170,24 @@ export function initRealtime(httpServer) {
       logDeviceConnect(branch, device, cleanIp(socket.handshake.address));
       emitPresenceThrottled(branch);
 
+      socket.on('realtime:resume', (request = {}) => {
+        const replay = realtimeJournal.replay(branch, String(request?.after || ''));
+        if (replay.status !== 'replay') {
+          socket.emit('realtime:resync_required', {
+            reason: replay.reason,
+            branch_id: branch,
+            server_instance: realtimeJournal.instanceId,
+          });
+          return;
+        }
+        for (const record of replay.records) socket.emit(record.event, record.payload);
+        socket.emit('realtime:resume_complete', {
+          replayed: replay.records.length,
+          branch_id: branch,
+          server_instance: realtimeJournal.instanceId,
+        });
+      });
+
       socket.on('disconnect', () => {
         try {
           emitPresenceThrottled(branch);
@@ -187,13 +207,15 @@ export function initRealtime(httpServer) {
 export function emit(event, payload, branch = 'sala') {
   try {
     if (!io) return;
+    const record = realtimeJournal.record(event, payload, branch);
+    const enrichedPayload = record.payload;
     // Nhân viên: đầy đủ, nguyên vẹn.
-    io.to(staffRoom(branch)).emit(event, payload);
+    io.to(staffRoom(branch)).emit(event, enrichedPayload);
     // Kiosk khách: chỉ sự kiện whitelist + đã xoá PII, và chỉ khi có kiosk đang kết nối.
     if (IPAD_EVENTS.has(event)) {
       const room = ipadRoom(branch);
       if (io.sockets.adapter.rooms.get(room)?.size) {
-        io.to(room).emit(event, sanitizeForIpad(event, payload));
+        io.to(room).emit(event, sanitizeForIpad(event, enrichedPayload));
       }
     }
   } catch (err) {
@@ -210,7 +232,7 @@ function emitPresence(branch) {
       const d = s?.data?.device || 'unknown';
       devices[d] = (devices[d] || 0) + 1;
     }
-    io.to(staffRoom(branch)).emit('presence', { count: sockets.length, devices });
+    emit('presence', { count: sockets.length, devices }, branch);
   } catch (err) {
     logger.warn('socket emitPresence error', { message: err.message });
   }

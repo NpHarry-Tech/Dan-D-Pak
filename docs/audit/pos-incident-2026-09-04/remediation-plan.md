@@ -36,6 +36,12 @@
   Sales and Management entries with role-aware preference while retaining the complete
   permission-filtered module grid. Phone keeps its dedicated RBAC shell. Inventory and
   preservation evidence is in `feature-preservation-matrix.md`; focused tests **15/15**.
+- Realtime systemic hardening is **VERIFIED locally**: every central broadcast carries
+  stable event/branch/entity/version metadata; a bounded per-branch journal replays a
+  reconnect cursor or explicitly requests full resync after expiry/server restart.
+  Flutter rejects duplicate and out-of-order envelopes before notification/ring/state
+  listeners, while legacy payloads remain accepted. Server/Dart focused tests **10/10**;
+  physical multi-device network interruption remains **NEEDS-LIVE-CANARY**.
 
 Ordered by risk and evidence. Each item states the invariant, the change, the test,
 and the rollback. Three **separate** rollout groups (never conflated): Production,

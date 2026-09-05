@@ -10,6 +10,14 @@ Verdict legend:
 
 Each row: symptom → leading hypothesis → evidence → verdict → how to falsify.
 
+### Continuation — systemic realtime loss/reorder
+- **Verdict: VERIFIED (local).** Central Socket.IO broadcasts now append `_rt` with a
+  stable `event_id`, branch, entity, monotonic version and server instance. A bounded
+  branch journal supports reconnect replay; an expired or pre-restart cursor emits an
+  explicit full-resync signal. Flutter deduplicates and rejects out-of-order versions
+  before any business sound, ring or screen callback. Journal isolation/restart and
+  client guard tests pass; physical WAN/server restart is **NEEDS-LIVE-CANARY**.
+
 ---
 
 ### S1 — Tablet self-order confirmed, but sound keeps repeating — **FIXED + TESTED**

@@ -29,9 +29,14 @@ class SocketService {
     'order:pending',
     'order:updated',
     'order:item',
+    'kds:refresh',
+    'kds:alert',
     'table:updated',
     'staff:call',
     'payment:done',
+    'payment:auto',
+    'payment:customer_claimed',
+    'payment:config',
     'print:done',
     'print:failed',
     'shift:updated',
@@ -48,6 +53,9 @@ class SocketService {
     'inventory:alert',
     'invoice:issued',
     'online:new',
+    'online:order',
+    'online:updated',
+    'omni:conversation.updated',
     // Nhật ký hoạt động realtime: server phát sau khi ghi audit_log → màn Nhật ký
     // hiện dòng mới ngay (dedupe theo id khi reconnect resync). Gồm cả dòng
     // "Cập nhật thành công" (app.update_success).
@@ -93,6 +101,11 @@ class SocketService {
       return;
     }
 
+    if (_baseUrl != baseUrl || _branch != branch || _token != token) {
+      // A cursor belongs to one authenticated tenant/branch stream only.
+      _client.resetResumeCursor();
+    }
+
     _baseUrl = baseUrl;
     _branch = branch;
     _token = token;
@@ -130,6 +143,12 @@ class SocketService {
           _logConnectErrorOnce(payload);
           return;
         }
+        if (event == 'realtime:resync_required') {
+          dlog('Realtime cursor unavailable → full resync required.');
+          _dispatch(kSyncReconnected, payload);
+          return;
+        }
+        if (event == 'realtime:resume_complete') return;
         dlog('Realtime event received: $event');
         BlackBox.add('socket', event);
         ReceiptPrintTracker.instance.reconcileRealtime(event, payload);
