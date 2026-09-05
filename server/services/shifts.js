@@ -90,8 +90,17 @@ export function closeShift(body = {}, user = {}, branch_id = 'sala') {
   const closing_cash = Number.isFinite(Number(body.closing_cash)) ? Math.max(0, parseInt(body.closing_cash) || 0) : cashTotal(counts);
   const report = shiftReport(shift.id, branch_id);
   const closed_at = now();
-  db.prepare(`UPDATE shifts SET shift_key=?, shift_label=?, closing_cash=?, closing_count_json=?, status='closed', closed_at=? WHERE id=?`)
+  // KẾT CA CÓ ĐIỀU KIỆN: chỉ đóng khi ca còn 'open'. Trong runtime một tiến trình,
+  // getActiveShift() đã chặn lần hai (trả null → ném ở trên); điều kiện này là lưới
+  // an toàn cho triển khai NHIỀU tiến trình: hai request kết ca đồng thời chỉ một
+  // cái đổi được trạng thái, cái còn lại changes=0 → 409 rõ ràng, KHÔNG ghi đè
+  // closing_cash/counts của lần kết hợp lệ và KHÔNG kết ca hai lần.
+  const closed = db.prepare(`UPDATE shifts SET shift_key=?, shift_label=?, closing_cash=?, closing_count_json=?, status='closed', closed_at=? WHERE id=? AND status='open'`)
     .run(picked.key, picked.label, closing_cash, JSON.stringify(counts), closed_at, shift.id);
+  if (closed.changes === 0) {
+    throw Object.assign(new Error('Ca này vừa được kết ở nơi khác rồi.'),
+      { status: 409, code: 'SHIFT_ALREADY_CLOSED' });
+  }
   const day_report = operationDayReport(branch_id, closed_at);
   audit('shift.close', {
     shift: picked.label,
