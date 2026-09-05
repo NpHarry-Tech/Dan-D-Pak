@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, rmSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
+import { dirname, isAbsolute, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 
@@ -26,6 +26,7 @@ process.env.DATA_ENCRYPTION_KEY =
 
 const children = [];
 const serverOutputs = new Map();
+const serverDbPaths = []; // SQLITE_PATH thực sự truyền cho từng process (chứng minh dùng CHUNG một DB)
 const tokens = new Map();
 let db;
 
@@ -52,14 +53,16 @@ function killTree(pid) {
 }
 
 function startServer(port) {
+  const childEnv = {
+    ...process.env,
+    PORT: String(port),
+    API_BASE_URL: `http://127.0.0.1:${port}`,
+    DEPLOYMENT_TARGET: 'local',
+  };
+  serverDbPaths.push(childEnv.SQLITE_PATH);
   const child = spawn(process.execPath, ['index.js'], {
     cwd: SERVER_DIR,
-    env: {
-      ...process.env,
-      PORT: String(port),
-      API_BASE_URL: `http://127.0.0.1:${port}`,
-      DEPLOYMENT_TARGET: 'local',
-    },
+    env: childEnv,
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   let output = '';
@@ -98,12 +101,23 @@ async function request(base, path, { method = 'GET', body, auth = tokens.get(bas
     });
   } catch (error) {
     const port = Number(new URL(base).port);
-    return { status: 0, data: { network_error: error?.message, server_output: serverOutputs.get(port)?.().slice(-3000) } };
+    return { base, status: 0, data: { network_error: error?.message, server_output: serverOutputs.get(port)?.().slice(-3000) } };
   }
   const text = await response.text();
   let data;
   try { data = JSON.parse(text); } catch { data = text; }
-  return { status: response.status, data };
+  return { base, status: response.status, data };
+}
+
+// Chứng minh 150 request THẬT SỰ được chia cho CẢ HAI process (không phải một
+// server nuốt hết còn server kia chết): tập base của các phản hồi phải gồm đủ 2.
+function assertSplitAcrossBothProcesses(responses) {
+  const bases = new Set(responses.map(r => r.base));
+  assert.equal(bases.size, 2, `request phải được xử lý bởi CẢ HAI process, thấy: ${[...bases].join(', ')}`);
+  for (const base of BASES) {
+    assert.ok(responses.some(r => r.base === base && r.status !== 0),
+      `process ${base} phải xử lý ít nhất một request (không chết/không ECONNRESET toàn bộ)`);
+  }
 }
 
 function insertFnbOrder(id, tableId) {
@@ -170,12 +184,23 @@ test.before(async () => {
   }
 });
 
+test('hai server CHIA SẺ đúng một file DB TUYỆT ĐỐI (không phải hai temp DB riêng)', () => {
+  assert.equal(serverDbPaths.length, 2, 'đã spawn đúng hai server process');
+  assert.ok(isAbsolute(serverDbPaths[0]), `SQLITE_PATH phải tuyệt đối: ${serverDbPaths[0]}`);
+  assert.equal(serverDbPaths[0], serverDbPaths[1], 'HAI process phải trỏ CÙNG một file DB');
+  assert.equal(serverDbPaths[0], DBP, 'và đó là DB dùng chung của test');
+  assert.ok(existsSync(DBP), 'file DB chung phải tồn tại thật trên đĩa');
+  // Bằng chứng gián tiếp mạnh hơn: các test dưới đọc cardinality qua `db` (mở trên
+  // DBP) và THẤY các hàng do request HTTP tới CẢ HAI server ghi vào — cùng một file.
+});
+
 test('50 HTTP payments cùng key qua hai server → một payment/outbox/invoice', async () => {
   const responses = await Promise.all(Array.from({ length: 50 }, (_, index) =>
     request(BASES[index % 2], '/api/orders/order_same_key/pay', {
       method: 'POST', key: 'same-http-payment',
       body: { lines: [{ method: 'cash', amount: 50000 }] },
     })));
+  assertSplitAcrossBothProcesses(responses);
   assert.ok(responses.every(response => response.status === 200),
     JSON.stringify(responses.filter(response => response.status !== 200).slice(0, 3)));
   assert.equal(new Set(responses.map(response => response.data.payment_id)).size, 1);
@@ -193,6 +218,7 @@ test('50 HTTP payments khác key qua hai server → một success, còn lại 40
       method: 'POST', key: `different-http-payment-${index}`,
       body: { lines: [{ method: 'cash', amount: 50000 }] },
     })));
+  assertSplitAcrossBothProcesses(responses);
   assert.equal(responses.filter(response => response.status === 200).length, 1);
   const conflicts = responses.filter(response => response.status === 409);
   assert.equal(conflicts.length, 49);
@@ -215,6 +241,7 @@ test('Retail 50 HTTP retries qua hai server → một order/payment/stock mutati
         payments: [{ method: 'cash', amount: 20000 }],
       },
     })));
+  assertSplitAcrossBothProcesses(responses);
   assert.ok(responses.every(response => response.status === 200),
     JSON.stringify(responses.filter(response => response.status !== 200).slice(0, 3)));
   const order = db.prepare(`SELECT id FROM orders WHERE branch_id=? AND client_request_id=?`)
