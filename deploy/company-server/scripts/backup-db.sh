@@ -16,7 +16,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-if docker compose ps | grep -q "app"; then
+if [ -n "$(docker compose ps -q app)" ]; then
   docker compose exec -T app sqlite3 /app/server-data/store.db \
     ".backup $PLAIN"
   docker compose exec -T app node server/scripts/encrypt-file.js \
