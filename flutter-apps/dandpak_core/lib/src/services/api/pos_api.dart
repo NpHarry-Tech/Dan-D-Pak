@@ -160,8 +160,8 @@ extension ApiServicePosApi on ApiService {
 
   Future<Map<String, dynamic>?> getCurrentShift() async {
     // GET nặng, hay bị bấm dồn → gộp yêu cầu đang bay (single-flight).
-    final body = await getJson('/api/shifts/current',
-        errorMessage: 'Failed to load shift', coalesce: true);
+    final body = await getJsonCoalesced('/api/shifts/current',
+        errorMessage: 'Failed to load shift');
     if (body is! Map) return null;
 
     final shift = body['shift'];
@@ -206,8 +206,8 @@ extension ApiServicePosApi on ApiService {
   /// Whole shift snapshot: { shift, config, report, day_report, drawer,
   /// opening_suggestion }.
   Future<Map<String, dynamic>> getShiftState() async {
-    return mapFrom(await getJson('/api/shifts/current',
-        errorMessage: 'Không tải được ca làm việc', coalesce: true));
+    return mapFrom(await getJsonCoalesced('/api/shifts/current',
+        errorMessage: 'Không tải được ca làm việc'));
   }
 
   Future<Map<String, dynamic>> openShiftCounts({

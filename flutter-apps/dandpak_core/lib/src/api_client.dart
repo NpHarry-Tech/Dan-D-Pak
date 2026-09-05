@@ -341,22 +341,9 @@ class DanDpakApiClient {
     return fut;
   }
 
-  /// [coalesce]=true → gộp yêu cầu đang bay theo path (vd /shifts/current bị bấm
-  /// dồn: 20 cú bấm → 1 request). Mặc định TẮT để không đổi hành vi nơi khác.
+  // CHỮ KÝ getJson GIỮ NGUYÊN như bản gốc (nhiều fake trong test override lại nó);
+  // tính năng gộp yêu cầu được tách sang getJsonCoalesced để KHÔNG phá override.
   Future<dynamic> getJson(
-    String path, {
-    Duration timeout = defaultTimeout,
-    String? errorMessage,
-    bool coalesce = false,
-  }) {
-    if (!coalesce) {
-      return _getJsonOnce(path, timeout: timeout, errorMessage: errorMessage);
-    }
-    return coalesceGet(path,
-        () => _getJsonOnce(path, timeout: timeout, errorMessage: errorMessage));
-  }
-
-  Future<dynamic> _getJsonOnce(
     String path, {
     Duration timeout = defaultTimeout,
     String? errorMessage,
@@ -376,6 +363,18 @@ class DanDpakApiClient {
       }
     }
     throw lastNetworkError!;
+  }
+
+  /// Như [getJson] nhưng GỘP các GET cùng path đang bay (single-flight): vd
+  /// /shifts/current bị bấm dồn → 20 cú bấm chỉ bắn 1 request. Tách RIÊNG khỏi
+  /// getJson để không đổi chữ ký (mọi fake override trong test giữ nguyên).
+  Future<dynamic> getJsonCoalesced(
+    String path, {
+    Duration timeout = defaultTimeout,
+    String? errorMessage,
+  }) {
+    return coalesceGet(path,
+        () => getJson(path, timeout: timeout, errorMessage: errorMessage));
   }
 
   Future<dynamic> postJson(
