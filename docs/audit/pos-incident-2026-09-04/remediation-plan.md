@@ -13,6 +13,14 @@
 - Fake-clock tests cover exact 1499/1500/1501 ms boundaries, continuous burst,
   final-event render, different keys, logout/branch cancellation, exception and dispose.
   Payment, close-shift, confirmation, inventory and print ACK remain immediate.
+- Floor Settings and POS now use one `FloorViewportGeometry`; saved `(pos_x,pos_y)`
+  always stays in grid units and only the viewport transform changes. Responsive widget
+  tests cover 1366×768, 1920×1080, ultrawide, tablet portrait/landscape and DPI=2;
+  focused floor/layout tests are **20/20 pass**.
+- Windows runner singleton source is hardened for minimized/hung first windows with
+  async restore, foreground attempt and taskbar flash fallback; the display process is
+  deliberately exempt. Static runner contract tests are **3/3 pass**. Building/running
+  an executable is **NEEDS-LIVE-CANARY** because installer/app build was not authorized.
 
 Ordered by risk and evidence. Each item states the invariant, the change, the test,
 and the rollback. Three **separate** rollout groups (never conflated): Production,

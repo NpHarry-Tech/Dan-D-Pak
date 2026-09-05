@@ -21,7 +21,8 @@ void main() {
   });
 
   test('chiều cao VÔ HẠN (trong vùng cuộn dọc) → chỉ theo bề rộng', () {
-    final cell = floorCellSize(maxWidth: 1600, maxHeight: double.infinity, rows: 10);
+    final cell =
+        floorCellSize(maxWidth: 1600, maxHeight: double.infinity, rows: 10);
     expect(cell, 100); // 1600/16
   });
 
@@ -41,6 +42,26 @@ void main() {
         final c = floorCellSize(maxWidth: w, maxHeight: h, rows: 6);
         expect(c, greaterThan(0));
       }
+    }
+  });
+
+  test('canonical geometry maps the same saved coordinates for editor and POS',
+      () {
+    for (final viewport in [
+      (1366.0, 768.0),
+      (1920.0, 1080.0),
+      (2560.0, 1080.0),
+      (768.0, 1024.0),
+      (1024.0, 768.0),
+    ]) {
+      final editor = FloorViewportGeometry.fromViewport(
+          maxWidth: viewport.$1, maxHeight: viewport.$2, rows: 8);
+      final pos = FloorViewportGeometry.fromViewport(
+          maxWidth: viewport.$1, maxHeight: viewport.$2, rows: 8);
+      expect(editor.cell, pos.cell);
+      expect(editor.tableRect(3.25, 4.5), pos.tableRect(3.25, 4.5));
+      expect(editor.canvasWidth / editor.cell, kFloorCols);
+      expect(editor.canvasHeight / editor.cell, 8);
     }
   });
 }

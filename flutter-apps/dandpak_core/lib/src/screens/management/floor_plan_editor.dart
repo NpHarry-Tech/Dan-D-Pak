@@ -411,54 +411,85 @@ class FloorPlanEditorState extends State<FloorPlanEditor> {
           child: Padding(
             padding: const EdgeInsets.all(14),
             child: LayoutBuilder(builder: (context, c) {
-              final cellW = c.maxWidth / kFloorCols;
+              var maxY = 0.0;
+              for (final table in _placed) {
+                if (_dy(table) > maxY) maxY = _dy(table);
+              }
+              final geometry = FloorViewportGeometry.fromViewport(
+                maxWidth: c.maxWidth,
+                maxHeight: c.maxHeight,
+                rows: (maxY + 1).ceil(),
+              );
+              final cellW = geometry.cell;
               final cellH = cellW; // ô vuông
               final tableW = cellW * kTableCells;
               final tableH = cellH * 1.0;
 
-              return DragTarget<String>(
-                // Thả bàn từ khay vào bất kỳ điểm nào của canvas.
-                onAcceptWithDetails: (d) {
-                  final box = _canvasKey.currentContext?.findRenderObject()
-                      as RenderBox?;
-                  if (box == null) return;
-                  final local = box.globalToLocal(d.offset);
-                  final idx =
-                      _tables.indexWhere((t) => asText(t['id']) == d.data);
-                  if (idx < 0) return;
-                  _markMoved(idx, local.dx / cellW, local.dy / cellH);
-                  _snap(idx);
-                },
-                builder: (context, cand, rej) {
-                  return Container(
-                    key: _canvasKey,
-                    decoration: BoxDecoration(
-                      color: DanColors.surface2,
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(
-                          color: cand.isNotEmpty
-                              ? DanColors.brand
-                              : DanColors.border),
-                    ),
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(10),
-                      child: Stack(
-                        children: [
-                          // Nền lưới: các dấu "+" ở giao điểm.
-                          Positioned.fill(
-                            child: CustomPaint(
-                              painter:
-                                  _PlusGridPainter(cellW: cellW, cellH: cellH),
-                            ),
-                          ),
-                          for (final tb in _placed)
-                            _positionedTable(tb, cellW, cellH, tableW, tableH),
-                        ],
+              final canvas = SizedBox(
+                width: geometry.canvasWidth,
+                height: geometry.canvasHeight > c.maxHeight
+                    ? geometry.canvasHeight
+                    : c.maxHeight,
+                child: DragTarget<String>(
+                  // Thả bàn từ khay vào bất kỳ điểm nào của canvas.
+                  onAcceptWithDetails: (d) {
+                    final box = _canvasKey.currentContext?.findRenderObject()
+                        as RenderBox?;
+                    if (box == null) return;
+                    final local = box.globalToLocal(d.offset);
+                    final idx =
+                        _tables.indexWhere((t) => asText(t['id']) == d.data);
+                    if (idx < 0) return;
+                    _markMoved(idx, local.dx / cellW, local.dy / cellH);
+                    _snap(idx);
+                  },
+                  builder: (context, cand, rej) {
+                    return Container(
+                      key: _canvasKey,
+                      decoration: BoxDecoration(
+                        color: DanColors.surface2,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                            color: cand.isNotEmpty
+                                ? DanColors.brand
+                                : DanColors.border),
                       ),
-                    ),
-                  );
-                },
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(10),
+                        child: Stack(
+                          children: [
+                            // Nền lưới: các dấu "+" ở giao điểm.
+                            Positioned.fill(
+                              child: CustomPaint(
+                                painter: _PlusGridPainter(
+                                    cellW: cellW, cellH: cellH),
+                              ),
+                            ),
+                            for (final tb in _placed)
+                              _positionedTable(
+                                  tb, cellW, cellH, tableW, tableH),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
               );
+              Widget viewport = canvas;
+              if (geometry.canvasHeight > c.maxHeight + 1) {
+                viewport = SingleChildScrollView(child: canvas);
+              }
+              if (geometry.canvasWidth > c.maxWidth + 1) {
+                return SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: SizedBox(
+                    width: geometry.canvasWidth,
+                    height: c.maxHeight,
+                    child: viewport,
+                  ),
+                );
+              }
+              return Align(alignment: Alignment.topCenter, child: viewport);
             }),
           ),
         ),

@@ -9,6 +9,8 @@ library;
 
 import 'dart:math' as math;
 
+import 'package:flutter/widgets.dart';
+
 /// Số cột lưới mô phỏng bề ngang màn POS. Ô = bề rộng khả dụng / kFloorCols,
 /// và Ô VUÔNG (cao = rộng). Bàn đặt tại (pos_x, pos_y) theo đơn vị ô.
 const int kFloorCols = 16;
@@ -39,4 +41,50 @@ double floorCellSize({
   final fit = math.min(byWidth, byHeight);
   final chosen = fit.isFinite ? fit : byWidth;
   return math.max(chosen, minCell);
+}
+
+/// Canonical grid-to-viewport transform shared by Settings and POS.
+/// Saved coordinates remain grid units; screens only change this transform.
+class FloorViewportGeometry {
+  const FloorViewportGeometry._({
+    required this.cell,
+    required this.rows,
+    required this.canvasWidth,
+    required this.canvasHeight,
+  });
+
+  factory FloorViewportGeometry.fromViewport({
+    required double maxWidth,
+    required double maxHeight,
+    required int rows,
+    int cols = kFloorCols,
+    double minCell = 60,
+  }) {
+    final safeRows = math.max(1, rows);
+    final cell = floorCellSize(
+      maxWidth: maxWidth,
+      maxHeight: maxHeight,
+      rows: safeRows,
+      cols: cols,
+      minCell: minCell,
+    );
+    return FloorViewportGeometry._(
+      cell: cell,
+      rows: safeRows,
+      canvasWidth: cols * cell,
+      canvasHeight: safeRows * cell,
+    );
+  }
+
+  final double cell;
+  final int rows;
+  final double canvasWidth;
+  final double canvasHeight;
+
+  Rect tableRect(double gridX, double gridY, {double gap = 8}) => Rect.fromLTWH(
+        gridX * cell,
+        gridY * cell,
+        cell * kTableCells - gap,
+        cell - gap,
+      );
 }

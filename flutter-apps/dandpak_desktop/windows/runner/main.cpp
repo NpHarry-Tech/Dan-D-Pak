@@ -7,6 +7,26 @@
 #include "flutter_window.h"
 #include "utils.h"
 
+namespace {
+void ActivateExistingWindow(HWND existing) {
+  if (existing == nullptr) return;
+  // Async restore does not wait on a hung UI thread. If foreground activation
+  // is refused, flash the taskbar so the second launch gives visible feedback.
+  if (::IsIconic(existing)) ::ShowWindowAsync(existing, SW_RESTORE);
+  bool activated = false;
+  if (!::IsHungAppWindow(existing)) {
+    ::SetWindowPos(existing, HWND_TOP, 0, 0, 0, 0,
+                   SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
+    activated = ::SetForegroundWindow(existing) != FALSE;
+  }
+  if (!activated) {
+    FLASHWINFO flash = {sizeof(FLASHWINFO), existing,
+                        FLASHW_TRAY | FLASHW_TIMERNOFG, 3, 0};
+    ::FlashWindowEx(&flash);
+  }
+}
+}  // namespace
+
 int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
                       _In_ wchar_t *command_line, _In_ int show_command) {
   // Attach to console when present (e.g., 'flutter run') or create a
@@ -38,12 +58,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
     if (single_instance_mutex == nullptr ||
         ::GetLastError() == ERROR_ALREADY_EXISTS) {
       HWND existing = ::FindWindowW(nullptr, L"Dan-D Pak POS");
-      if (existing != nullptr) {
-        if (::IsIconic(existing)) {
-          ::ShowWindow(existing, SW_RESTORE);
-        }
-        ::SetForegroundWindow(existing);
-      }
+      ActivateExistingWindow(existing);
       if (single_instance_mutex != nullptr) {
         ::CloseHandle(single_instance_mutex);
       }
@@ -69,6 +84,10 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   Win32Window::Size size(width, height);
   if (!window.Create(customer_display ? L"Màn hình phụ" : L"Dan-D Pak POS",
                      origin, size)) {
+    if (single_instance_mutex != nullptr) {
+      ::CloseHandle(single_instance_mutex);
+    }
+    ::CoUninitialize();
     return EXIT_FAILURE;
   }
   window.SetQuitOnClose(true);
