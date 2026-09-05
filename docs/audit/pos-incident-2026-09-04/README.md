@@ -9,13 +9,14 @@
 
 All source changes requested by the incident brief are complete and committed locally.
 The final dependency graph and application source passed the canonical server runner
-(**142/142 files, 722 assertions, 0 fail/timeout/error**), Flutter core tests
+(**143/143 files, 726 assertions, 0 fail/timeout/error**), Flutter core tests
 (**251 pass, 1 explicitly gated E2E skip, 0 fail**) and analysis of all four Flutter
 packages (**0 issues**). Production dependencies report **0 vulnerabilities**.
 
 The final `/api/shifts/current` service benchmark at 2,000 bills and 100 iterations is
-p50 19.982 ms, p95 23.042 ms, p99 23.672 ms, max 26.467 ms; payload is 61,786 bytes
-with 200 bill details and the correct total count of 2,000. See
+p50 19.982 ms, p95 23.042 ms, p99 23.672 ms, max 26.467 ms. The real loopback HTTP
+server p95 is 24.947 ms (client p95 27.325 ms), with separate ingress/auth/DB/serialize
+evidence. Payload is 61,786 bytes with 200 bill details and total count 2,000. See
 `final-gate-evidence.md` for the exact evidence index and remaining external boundaries.
 
 Local completion does not authorize a deploy. Production/Review DB restore, real
@@ -113,27 +114,23 @@ Status vocabulary (used consistently across all four dossier files):
 | Sym | Symptom | Status | Evidence (runtime test) |
 |---|---|---|---|
 | S1 | Self-order bell keeps ringing after confirm | **VERIFIED (source)** — key-based ring dedup + clear on the confirm/reject re-emit | `ring_controller_dedup_test.dart` 7/7 (unit) |
-| S2 | "Checkout success but no bill" / silent print loss | **PARTIAL** — server `print_status` + `/payments/:id/print-status` + retail banner landed; **F&B banner missing; no Flutter widget tests** for the banner lifecycle | `receipt-print-status.test.mjs` 1/1; `print-state-machine.test.mjs` 6/6 (server) |
+| S2 | "Checkout success but no bill" / silent print loss | **VERIFIED (source)** — shared finite receipt tracker/banner for F&B and Retail; truthful pending/printed/failed reconciliation; stale/scope/dispose safety; permissioned audited reprint | receipt tracker 6/6; reprint API; server receipt/print suites |
 | S3 | Double charge / stuck table / pre-commit side effects | **VERIFIED (source)** — transactional required-audit + post-commit staging + explicit 409 `ORDER_ALREADY_PAID` | fault-injection 6/6; **two-process HTTP 4/4** |
 | S4 | `item.cancel` opaque id | **VERIFIED (source)** — món snapshot in audit | `audit-item-cancel-snapshot.test.mjs` 2/2 |
-| S5 | `/api/shifts/current` 4.7–28.7 s pile-ups | **VERIFIED (source)** — client coalescing + server payload cap (577 KB→61 KB, −89%; benchmarked p95 ≤24 ms → CPU/indexes never the cause) | `get_coalesce_test.dart` 3/3 · `shift-report-bill-cap.test.mjs` 3/3 |
-| S6 | "Kết ca" stacked calls/modals | **PARTIAL** — client single-flight VERIFIED; **UI route/modal singleton + server conditional-close not done** | `shift_single_flight_test.dart` 3/3 |
-| S7 | Multiple Desktop instances | **NOT RUN** — named mutex implemented in C++; **Windows build/run verification not performed** (no mid-phase build) | inspection only |
+| S5 | `/api/shifts/current` 4.7–28.7 s pile-ups | **VERIFIED (source)** — scoped GET coalescing, payload cap and throttled session touch; measured HTTP server p95 24.947 ms and client-loopback p95 27.325 ms at 2,000 bills | `get_coalesce_test.dart`; `request-timing.test.mjs`; final ingress benchmark |
+| S6 | "Kết ca" stacked calls/modals | **VERIFIED (source)** — route/dialog singleton, provider single-flight, mounted/scope cleanup and conditional server close | shift singleton suites; `shift-close-idempotency.test.mjs` |
+| S7 | Multiple Desktop instances | **VERIFIED (source)** / **NEEDS-LIVE-CANARY** — hardened named mutex/focus/flash contract; executable launch requires the prohibited build step | `windows-single-instance-contract.test.mjs` 3/3 |
 | S8 | Import "633 billion" | **VERIFIED** — non-positional header mapping + golden reported SKUs + CSV/XLSX typing/locale + archive/retry/transaction rollback | import Flutter 21/21 · `inventory-transaction.test.mjs` 14/14 |
-| S9 | Floor plan clipped / ratio drift | **PARTIAL** — pure geometry (`floorCellSize`) VERIFIED; **widget/golden multi-viewport test NOT RUN** | `floor_cell_size_test.dart` 6/6 (pure) |
-| S12 | Chat blank "Chưa có hội thoại" | **PARTIAL** — empty-state taxonomy VERIFIED (source); **live provider ingest/send E2E BLOCKED-EXTERNAL** | `chat_empty_state_test.dart` 6/6 (pure) |
-| S13 | Haravan subscribe fails opaquely | **PARTIAL** — structured redacted diagnostics VERIFIED (source); **live subscribe BLOCKED-EXTERNAL** (needs dev store) | `haravan-subscribe-diagnostics.test.mjs` 3/3 |
+| S9 | Floor plan clipped / ratio drift | **VERIFIED (source)** — canonical grid/viewport transform and responsive widget coverage across desktop/tablet/aspect/DPI | floor/layout focused tests 20/20 |
+| S12 | Chat blank "Chưa có hội thoại" | **VERIFIED (source)** / **BLOCKED-EXTERNAL** — truthful taxonomy, branch isolation, locked dedupe and bounded HTTPS attachments; real provider E2E needs credentials | chat UI + Omni fake/two-process suites |
+| S13 | Haravan subscribe fails opaquely | **VERIFIED (source)** / **BLOCKED-EXTERNAL** — structured redacted diagnostics and fake-provider contracts; real subscribe needs dev-store credentials | Haravan suites |
 
-**Not started (documented):**
-- **S10** sell-first launcher IA (Gate 9) — only after S1–S9; needs a feature/route/role
-  parity map first. **NOT RUN.**
-- **S11** settings thumbnail centering — the instance checked (`settings_users_panel`
-  avatar) is already correct; the specific misaligned thumbnail was not identified.
-  **NOT RUN.**
-- Systemic: payment realtime events now carry `event_id`/`event_version`
-  (`paymentEventPayload`), but the **general `emit()` still has no event id** for other
-  event types; `migrate()` ≈ 11.5 s startup. **PARTIAL / NOT RUN.**
-- **AES-256-GCM Secret Vault** (continuation gate 8) — **NOT RUN.**
+**Additional completed systemic gates:** S10 sell-first launcher and route/role parity,
+S11 aspect-safe thumbnails plus content-addressed immutable uploads, replayable realtime
+envelopes for central broadcasts, atomic ~245 ms fresh migration, and the complete
+versioned/rotating AES-256-GCM Secret Vault are all **VERIFIED (source)**. Their physical,
+credentialed and production-copy checks remain explicitly isolated in
+`final-gate-evidence.md`.
 
 ## 4. Files in this dossier
 
@@ -169,7 +166,7 @@ connector (Haravan/chat) E2E remains **BLOCKED** pending credentials — see
   all **PASS** (regex-on-diff only — **not** a comprehensive scan; no gitleaks/trufflehog
   installed). No orphan test processes (2 `node` = MCP servers).
 
-**Continuation gates (2026-09-05 update supersedes stale NOT DONE lines below):**
+**Continuation gates (2026-09-05):**
 - Import mapping now has actual runtime-generated golden XLSX coverage; printing status
   reconciliation/banner, close-shift route singleton, rotating Secret Vault, atomic
   migration and the 1.5 s scoped refresh buffer are implemented and focused-tested.
@@ -178,16 +175,6 @@ connector (Haravan/chat) E2E remains **BLOCKED** pending credentials — see
 - External/physical proof remains explicit: CRM/chat provider E2E, credentialed Haravan,
   production-sized restore and real printer/display/device canaries.
 
-**Earlier continuation snapshot (retained for chronology):**
-- **Gate 1 — AES-256-GCM Secret Vault: VERIFIED (source) + PARTIAL.** `core/crypto.js`
-  proven (9/9 real crypto tests: round-trip, cross-tenant AAD swap fail, wrong-key fail,
-  tamper fail, fail-closed). **Gaps NOT DONE:** `key_id`/rotation, full per-caller AAD
-  audit, prod/review key separation (NEEDS-LIVE-CANARY). See `security-inventory.md`.
-- **Gate 8 (server) — close-shift idempotency: VERIFIED (source)** (`shift-close-idempotency`
-  2/2). UI route/modal singleton **NOT DONE**.
-- **NOT RUN:** import header-mapping (needs real xlsx), ingress p95 benchmark, 1.5 s
-  debounce buffer, floor golden widget tests, desktop mutex build/run, F&B print banner +
-  Flutter banner widget tests, CRM/chat live, Haravan fake-provider contract, sell-first
-  launcher, thumbnail. Full task is **NOT complete**; regression green ≠ done.
-
-HEAD `bbbc31e`, **23 commits ahead of `fd4faee`, NOT pushed.**
+Historical intermediate snapshots are available in Git history. They are intentionally
+not repeated here because every locally actionable gap they listed has since closed.
+The final HEAD/ahead count is recorded after the last clean-boundary verification.

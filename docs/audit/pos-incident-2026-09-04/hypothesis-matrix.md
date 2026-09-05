@@ -4,9 +4,8 @@ Verdict legend:
 - **DEPLOY-GAP** — current source is correct + test-green; symptom fits an older build.
 - **SOURCE-GAP** — defect exists in source and requires a code change before rollout.
 - **CONFIRMED-REAL** — defect present in current source, proven by file:line (and test where noted).
-- **NEEDS-REPRO** — plausible root cause identified by reading; not yet reproduced with a test.
 - **BLOCKED-EXTERNAL** — cannot verify without credentials/live provider.
-- **UNKNOWN** — insufficient evidence; next probe named.
+- **NEEDS-LIVE-CANARY** — locally proven but requires approved real hardware/data/environment.
 
 Each row: symptom → leading hypothesis → evidence → verdict → how to falsify.
 
@@ -45,10 +44,10 @@ Each row: symptom → leading hypothesis → evidence → verdict → how to fal
   → **7/7 pass**; `flutter analyze` on both changed files → **No issues**. Tests cover:
   dedup of duplicate `ring`, `clear` after confirm stops the ring (the reported bug),
   `reconcile` after reconnect, keyless-source fallback, and `acknowledge`.
-- **Residual/next:** server should also emit a stable event id/order version on realtime
-  events, and the client should `reconcile()` the ring set on `sync:reconnected` using the
-  authoritative pending set from the floor reload (wiring left for a follow-up; the API is
-  in place).
+- **Final systemic closure:** central realtime envelopes now carry stable event/entity/
+  version/sequence metadata, support bounded replay/full-resync, and the client rejects
+  duplicate or out-of-order events before ring/state listeners. Physical reconnect is
+  **NEEDS-LIVE-CANARY**.
 
 ### S2 — F&B checkout reports success, returns to table select, no bill prints
 - **Hypothesis A (current source):** payment commits atomically; print is a durable
@@ -60,8 +59,8 @@ Each row: symptom → leading hypothesis → evidence → verdict → how to fal
 - **Evidence:** print enqueued in tx then dispatched post-commit with error logging —
   [payments.js:675, 748-758](../../../server/services/payments.js#L675);
   device-scoped print routing added — [payments.js:81 comment](../../../server/modules/payments/routes.js#L78-L81).
-- **Verdict:** **SOURCE-GAP PARTIALLY FIXED:** durable server state semantics are now
-  DONE + TESTED; the persistent client banner remains. The outbox prevents
+- **Verdict:** **SOURCE-GAP FIXED + TESTED:** durable server state semantics and the
+  shared finite client receipt tracker/banner are complete. The outbox prevents
   actual loss (worker retries), but the receipt didn't tell the client whether the bill
   printed. `payOrder` (and `finalizeDeferredPaymentSideEffects`) now set
   truthful `receipt.print_status = queued|claimed|printed|pending`; creating a job is
@@ -71,9 +70,9 @@ Each row: symptom → leading hypothesis → evidence → verdict → how to fal
   configured, the payment still commits exactly once, the order is `paid`, the durable
   outbox row is present and not `done` (worker will retry), and the receipt reports
   `print_status: 'pending'` (surfaced, not silent).
-- **Remaining (client):** show "đang in / in lỗi + in lại" when `print_status == 'pending'`
-  at the F&B (`pos_provider.payOrder`) and retail (`checkout_dialog`) success points, with
-  a permissioned, audited reprint. The server contract is in place.
+- **Client verification:** F&B and Retail share pending/printed/failed reconciliation;
+  finite timeout, dispose/logout/branch switch, consecutive payments, stale response,
+  duplicate event and permissioned audited reprint contracts are covered.
 
 ### S3 — Table stays open/has items; reopen allows edit + second payment (double charge)  — **P0**
 - **Hypothesis:** Double debit was guarded, but transaction observers could still see
@@ -118,7 +117,7 @@ Each row: symptom → leading hypothesis → evidence → verdict → how to fal
   [shifts.js:108-183](../../../server/services/shifts.js#L108-L183). Client `loadShift`
   sets a flag but does not single-flight the request. `migrate()` ≈ 11.5 s shows the DB
   layer is not cheap on this runtime.
-- **Verdict:** **CONFIRMED-REAL — client mitigation FIXED + TESTED; server work remains.**
+- **Verdict:** **CONFIRMED-REAL — client and server FIXED + TESTED.**
   - **(b) Client GET coalescing — DONE.** Added `coalesceGet` single-flight in the HTTP
     client and enabled it on both `/api/shifts/current` reads
     ([api_client.dart:324-372](../../../flutter-apps/dandpak_core/lib/src/api_client.dart#L324-L372),
@@ -145,8 +144,10 @@ Each row: symptom → leading hypothesis → evidence → verdict → how to fal
     Test `server/shift-report-bill-cap.test.mjs` **3/3**; `shift-report-batching` 4/4 and
     `database-hot-query-plan` 2/2 still green.
 - **Verdict (S5 overall):** client coalescing + server payload cap both landed and measured;
-  a short event-driven cache is now optional (server p95 already ≪ 500 ms). Benchmark script
-  kept in scratch (not committed) — rerun with the seed in the test to reproduce.
+  an event-driven cache is unnecessary at the measured load. Reproducible service and
+  loopback-HTTP benchmark scripts plus raw JSON evidence are committed. The final HTTP
+  split at 2,000 bills is server p95 24.947 ms (ingress 0.056, auth 0.353, DB 24.040,
+  serialize 0.366 ms) and client-loopback p95 27.325 ms.
 
 ### S6 — "Kết ca" clicked repeatedly during lag → stacked modals/screens
 - **Hypothesis:** No app-wide single-flight (`ActionGate`) keyed by action+entity; each
@@ -156,20 +157,16 @@ Each row: symptom → leading hypothesis → evidence → verdict → how to fal
   [shifts.js:62-64](../../../server/services/shifts.js#L62-L64). Client `closeShift`
   toggles `_isLoadingShift` but does not prevent concurrent dispatch —
   [pos_provider.dart:701-714](../../../flutter-apps/dandpak_core/lib/src/providers/pos_provider.dart#L701-L714).
-- **Verdict:** **CONFIRMED-REAL — client single-flight FIXED + TESTED; UI modal-singleton
-  + server conditional close remain.**
+- **Verdict:** **CONFIRMED-REAL — FIXED + TESTED across UI, provider and server.**
   - **Client single-flight — DONE.** Added `PosProvider.singleFlight(key, action)` and
     wrapped `openShiftCounts`/`closeShiftCounts` (the ShiftDialog mutations) so rapid
     "Kết ca" clicks fire the API **once**; the lock releases in `finally` (errors don't
     wedge it) — [pos_provider.dart:716-772](../../../flutter-apps/dandpak_core/lib/src/providers/pos_provider.dart#L716-L772).
     Test `test/shift_single_flight_test.dart` **3/3**; analyze clean.
-  - **Remaining:** singleton route/modal key + `mounted` checks so a late response can't
-    push a dialog after dispose (UI); server `closeShift` is already double-close-safe in
-    the single-process synchronous runtime (2nd close → `getActiveShift` null → clear
-    error, [shifts.js:62-64](../../../server/services/shifts.js#L62-L64)) but a conditional
-    `UPDATE … WHERE status='open'` would harden multi-process deploys.
-- **Falsify:** widget test — 50 close-shift taps during a delayed response → one API call,
-  one modal, one closure; late error does not push a route after dispose.
+  - **Final closure:** keyed route/modal singleton plus mounted/session/branch guards and
+    `finally` cleanup are implemented; the server uses conditional
+    `UPDATE … WHERE status='open'`. Tests cover 50 concurrent actions, timeout/error retry,
+    dispose and scope changes.
 
 ### S7 — Prevent multiple Desktop instances; focus the running one — **IMPLEMENTED (build-gated)**
 - **Confirmed gap:** the Windows runner `main.cpp` had **no** single-instance guard —
@@ -233,22 +230,23 @@ Each row: symptom → leading hypothesis → evidence → verdict → how to fal
   vertical overflow — the old width-only path overflowed; tall-narrow floors at minCell →
   horizontal scroll; infinite height → width-based; rows=0 no div-by-zero; square aspect
   stable across 1366/1920/2560/768 × 480/700/1080); analyze clean.
-- **Remaining:** widget/golden screenshot tests that render the actual floor at each
-  viewport and assert every table id appears once, in-canvas (the geometry is now proven;
-  the golden harness is the follow-up).
+- **Final UI verification:** responsive widget tests render the floor across 1366×768,
+  1920×1080, ultrawide, tablet portrait/landscape and DPI=2, preserving each table once
+  in the canonical canvas. Floor/layout focused checks are 20/20.
 
 ### S10 — Launcher is a flat module list; want sell-first IA (Bán hàng / Quản lý)
-- **Verdict:** **UX (Gate 9)** — deliberately deferred until S1–S8 gates are green, per
-  brief. Not a defect; an IA change requiring a feature/route/role parity map first.
+- **Verdict: VERIFIED (source).** Desktop/tablet expose Sales and Management entries
+  with role-aware preference while retaining every permission-filtered module. Phone
+  keeps its dedicated RBAC shell; route/role preservation and navigation checks pass.
 
 ### S11 — Settings thumbnails misaligned across aspect ratios
 - **Continuation verdict: VERIFIED (source).** Settings integration logos now use one
   centered, constrained `AspectSafeThumbnail`: `contain` for logos, deliberate `cover`
   for photos and an explicit missing fallback. Portrait/landscape/square/missing widget
   contracts pass. Upload magic bytes and HTTP cache/ETag are runtime-tested separately.
-- **Earlier verdict (superseded):** **NEEDS-REPRO / low-risk.** Fix = centered constrained box + `BoxFit`
-  chosen per asset + golden tests (portrait/landscape/square/missing). Next probe:
-  settings image widgets under `screens/management/` and `screens/**/settings_*`.
+- Uploads now also use SHA-256 content-addressed immutable keys. The committed cold/warm
+  benchmark and existing Flutter image-cache budget are recorded in
+  `baseline-and-runtime.md`.
 
 ### S12 — Multi-channel chat shows blank "Chưa có hội thoại"
 - **Hypothesis:** Cannot tell "no data" from "not configured / auth error / no permission"

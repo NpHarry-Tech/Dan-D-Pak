@@ -19,6 +19,46 @@ Status: **VERIFIED (source)** on Win32, Node v24.14.1, SQLite 3.51.2. Raw eviden
 `final-performance-benchmark.json`. This does not substitute for production disk,
 network, concurrency and host-load canaries, which remain **NEEDS-LIVE-CANARY**.
 
+### Final loopback HTTP phase split
+
+Command: `node scripts/benchmark-shift-http.mjs 2000 100`. Diagnostics are opt-in via
+`REQUEST_TIMING_DIAGNOSTICS=1` and disabled by default. Ten warm-up calls are excluded.
+
+| Phase | p50 | p95 | p99 | max |
+|---|---:|---:|---:|---:|
+| Ingress/router | 0.034 ms | 0.056 ms | 0.079 ms | 0.091 ms |
+| Auth/session | 0.254 ms | 0.353 ms | 0.377 ms | 0.414 ms |
+| DB/service | 20.611 ms | 24.040 ms | 25.330 ms | 25.475 ms |
+| JSON serialize | 0.267 ms | 0.366 ms | 1.403 ms | 1.774 ms |
+| Server total-to-serialized-body | 21.247 ms | 24.947 ms | 25.940 ms | 25.991 ms |
+| Client loopback total | 23.183 ms | 27.325 ms | 27.888 ms | 76.493 ms |
+
+The response echoed every correlation ID, retained 61,786 bytes / 200 detail rows /
+2,000 total bills, and exposed timing only in the isolated diagnostic environment.
+Before the auth fix, a 10-bill probe measured auth p95 52.823 ms because `attachUser`
+and `requireAuth` repeated session validation and synchronously persisted `last_seen` on
+every GET. Guard identity reuse plus a one-minute session-touch interval reduced that
+phase to sub-millisecond while preserving the seven-day idle timeout. Raw evidence:
+`final-ingress-benchmark.json`.
+
+### Final asset cache benchmark
+
+Command: `node scripts/benchmark-assets-cache.mjs`. Thirty distinct 256 KiB
+content-addressed files measure the cold 200 path; 100 conditional requests measure the
+warm ETag/304 path.
+
+| Path | p50 | p95 | p99 | max |
+|---|---:|---:|---:|---:|
+| Cold unique 200 | 2.129 ms | 8.691 ms | 30.116 ms | 30.116 ms |
+| Warm conditional 304 | 0.392 ms | 0.702 ms | 1.286 ms | 3.603 ms |
+
+Flutter's existing `PerfMode` uses the framework LRU image cache and lowers its budget
+to 48 MiB / 300 images on constrained devices; thumbnails request bounded decode widths.
+The app does not own a separate persistent disk cache, so there is no unbounded custom
+disk store or app-owned corrupt-cache index to evict. Server content-addressed URLs,
+ETag revalidation and bundled fallbacks provide invalidation/recovery/offline behavior.
+Raw evidence: `final-assets-benchmark.json`.
+
 ## Gate 4 database measurements (continuation 2026-09-05)
 
 All measurements below used isolated temporary SQLite files; no production or

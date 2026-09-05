@@ -1,4 +1,4 @@
-## dandpak_core
+=== flutter-apps/dandpak_core ===
 Resolving dependencies...
 Downloading packages...
   _flutterfire_internals 1.3.59 (1.3.77 available)
@@ -7,7 +7,7 @@ Downloading packages...
   code_assets 1.2.1 (2.0.0 available)
   cross_file 0.3.5+4 (0.3.5+5 available)
   dbus 0.7.14 (0.7.15 available)
-  file_picker 10.3.10 (12.1.3 available)
+  file_picker 10.3.10 (12.2.0 available)
   file_selector_linux 0.9.4 (0.9.4+1 available)
   file_selector_macos 0.9.5 (0.9.5+1 available)
   file_selector_windows 0.9.3+5 (0.9.3+6 available)
@@ -21,7 +21,7 @@ Downloading packages...
   hooks 2.0.2 (2.2.0 available)
   html 0.15.6 (0.15.7 available)
   image 4.3.0 (4.9.2 available)
-  image_picker_android 0.8.13+19 (0.8.13+21 available)
+  image_picker_android 0.8.13+19 (0.8.13+22 available)
   image_picker_ios 0.8.13+6 (0.8.13+7 available)
   intl 0.19.0 (0.20.3 available)
   jni 1.0.0 (1.0.3 available)
@@ -47,14 +47,14 @@ Downloading packages...
   socket_io_common 2.0.3 (3.1.1 available)
   stack_trace 1.12.1 (1.12.2 available)
   synchronized 3.4.1 (3.4.1+2 available)
-  test_api 0.7.11 (0.7.13 available)
+  test_api 0.7.11 (0.7.14 available)
   url_launcher_linux 3.2.2 (3.2.3 available)
   url_launcher_windows 3.1.5 (3.1.6 available)
   uuid 4.5.3 (4.6.0 available)
   vector_math 2.2.0 (2.4.2 available)
   video_player 2.12.0 (2.14.0 available)
-  video_player_android 2.11.0 (2.12.1 available)
-  video_player_avfoundation 2.11.0 (2.11.1 available)
+  video_player_android 2.11.0 (2.12.2 available)
+  video_player_avfoundation 2.11.0 (2.12.0 available)
   vm_service 15.2.0 (15.3.0 available)
   win32 5.15.0 (6.4.0 available)
   xml 6.6.1 (7.0.1 available)
@@ -63,8 +63,8 @@ Got dependencies!
 58 packages have newer versions incompatible with dependency constraints.
 Try `flutter pub outdated` for more information.
 Analyzing dandpak_core...
-No issues found! (ran in 67.0s)
-## dandpak_desktop
+No issues found! (ran in 10.4s)
+=== flutter-apps/dandpak_desktop ===
 Resolving dependencies...
 Downloading packages...
   _flutterfire_internals 1.3.59 (1.3.77 available)
@@ -73,7 +73,7 @@ Downloading packages...
   code_assets 1.2.1 (2.0.0 available)
   cross_file 0.3.5+4 (0.3.5+5 available)
   dbus 0.7.14 (0.7.15 available)
-  file_picker 10.3.10 (12.1.3 available)
+  file_picker 10.3.10 (12.2.0 available)
   file_selector_linux 0.9.4 (0.9.4+1 available)
   file_selector_macos 0.9.5 (0.9.5+1 available)
   file_selector_windows 0.9.3+5 (0.9.3+6 available)
@@ -87,7 +87,7 @@ Downloading packages...
   hooks 2.0.2 (2.2.0 available)
   html 0.15.6 (0.15.7 available)
   image 4.3.0 (4.9.2 available)
-  image_picker_android 0.8.13+19 (0.8.13+21 available)
+  image_picker_android 0.8.13+19 (0.8.13+22 available)
   image_picker_ios 0.8.13+6 (0.8.13+7 available)
   intl 0.19.0 (0.20.3 available)
   jni 1.0.0 (1.0.3 available)
@@ -113,14 +113,14 @@ Downloading packages...
   socket_io_common 2.0.3 (3.1.1 available)
   stack_trace 1.12.1 (1.12.2 available)
   synchronized 3.4.1 (3.4.1+2 available)
-  test_api 0.7.11 (0.7.13 available)
+  test_api 0.7.11 (0.7.14 available)
   url_launcher_linux 3.2.2 (3.2.3 available)
   url_launcher_windows 3.1.5 (3.1.6 available)
   uuid 4.5.3 (4.6.0 available)
   vector_math 2.2.0 (2.4.2 available)
   video_player 2.11.1 (2.14.0 available)
-  video_player_android 2.10.0 (2.12.1 available)
-  video_player_avfoundation 2.10.0 (2.11.1 available)
+  video_player_android 2.10.0 (2.12.2 available)
+  video_player_avfoundation 2.10.0 (2.12.0 available)
   vm_service 15.2.0 (15.3.0 available)
   win32 5.15.0 (6.4.0 available)
   xml 6.6.1 (7.0.1 available)
@@ -129,8 +129,8 @@ Got dependencies!
 58 packages have newer versions incompatible with dependency constraints.
 Try `flutter pub outdated` for more information.
 Analyzing dandpak_desktop...
-No issues found! (ran in 4.7s)
-## dandpak_tablet
+No issues found! (ran in 4.3s)
+=== flutter-apps/dandpak_tablet ===
 Resolving dependencies...
 Downloading packages...
   _flutterfire_internals 1.3.59 (1.3.77 available)
@@ -139,7 +139,7 @@ Downloading packages...
   code_assets 1.2.1 (2.0.0 available)
   cross_file 0.3.5+4 (0.3.5+5 available)
   dbus 0.7.14 (0.7.15 available)
-  file_picker 10.3.10 (12.1.3 available)
+  file_picker 10.3.10 (12.2.0 available)
   file_selector_linux 0.9.4 (0.9.4+1 available)
   file_selector_macos 0.9.5 (0.9.5+1 available)
   file_selector_windows 0.9.3+5 (0.9.3+6 available)
@@ -153,7 +153,7 @@ Downloading packages...
   hooks 2.0.2 (2.2.0 available)
   html 0.15.6 (0.15.7 available)
   image 4.3.0 (4.9.2 available)
-  image_picker_android 0.8.13+19 (0.8.13+21 available)
+  image_picker_android 0.8.13+19 (0.8.13+22 available)
   image_picker_ios 0.8.13+6 (0.8.13+7 available)
   intl 0.19.0 (0.20.3 available)
   jni 1.0.0 (1.0.3 available)
@@ -179,14 +179,14 @@ Downloading packages...
   socket_io_common 2.0.3 (3.1.1 available)
   stack_trace 1.12.1 (1.12.2 available)
   synchronized 3.4.1 (3.4.1+2 available)
-  test_api 0.7.11 (0.7.13 available)
+  test_api 0.7.11 (0.7.14 available)
   url_launcher_linux 3.2.2 (3.2.3 available)
   url_launcher_windows 3.1.5 (3.1.6 available)
   uuid 4.5.3 (4.6.0 available)
   vector_math 2.2.0 (2.4.2 available)
   video_player 2.11.1 (2.14.0 available)
-  video_player_android 2.10.0 (2.12.1 available)
-  video_player_avfoundation 2.10.0 (2.11.1 available)
+  video_player_android 2.10.0 (2.12.2 available)
+  video_player_avfoundation 2.10.0 (2.12.0 available)
   vm_service 15.2.0 (15.3.0 available)
   win32 5.15.0 (6.4.0 available)
   xml 6.6.1 (7.0.1 available)
@@ -195,8 +195,8 @@ Got dependencies!
 58 packages have newer versions incompatible with dependency constraints.
 Try `flutter pub outdated` for more information.
 Analyzing dandpak_tablet...
-No issues found! (ran in 2.5s)
-## dandpak_phone
+No issues found! (ran in 2.3s)
+=== flutter-apps/dandpak_phone ===
 Resolving dependencies...
 Downloading packages...
   _flutterfire_internals 1.3.59 (1.3.77 available)
@@ -205,7 +205,7 @@ Downloading packages...
   code_assets 1.2.1 (2.0.0 available)
   cross_file 0.3.5+4 (0.3.5+5 available)
   dbus 0.7.14 (0.7.15 available)
-  file_picker 10.3.10 (12.1.3 available)
+  file_picker 10.3.10 (12.2.0 available)
   file_selector_linux 0.9.4 (0.9.4+1 available)
   file_selector_macos 0.9.5 (0.9.5+1 available)
   file_selector_windows 0.9.3+5 (0.9.3+6 available)
@@ -219,7 +219,7 @@ Downloading packages...
   hooks 2.0.2 (2.2.0 available)
   html 0.15.6 (0.15.7 available)
   image 4.3.0 (4.9.2 available)
-  image_picker_android 0.8.13+19 (0.8.13+21 available)
+  image_picker_android 0.8.13+19 (0.8.13+22 available)
   image_picker_ios 0.8.13+6 (0.8.13+7 available)
   intl 0.19.0 (0.20.3 available)
   jni 1.0.0 (1.0.3 available)
@@ -245,14 +245,14 @@ Downloading packages...
   socket_io_common 2.0.3 (3.1.1 available)
   stack_trace 1.12.1 (1.12.2 available)
   synchronized 3.4.1 (3.4.1+2 available)
-  test_api 0.7.11 (0.7.13 available)
+  test_api 0.7.11 (0.7.14 available)
   url_launcher_linux 3.2.2 (3.2.3 available)
   url_launcher_windows 3.1.5 (3.1.6 available)
   uuid 4.5.3 (4.6.0 available)
   vector_math 2.2.0 (2.4.2 available)
   video_player 2.11.1 (2.14.0 available)
-  video_player_android 2.10.0 (2.12.1 available)
-  video_player_avfoundation 2.10.0 (2.11.1 available)
+  video_player_android 2.10.0 (2.12.2 available)
+  video_player_avfoundation 2.10.0 (2.12.0 available)
   vm_service 15.2.0 (15.3.0 available)
   win32 5.15.0 (6.4.0 available)
   xml 6.6.1 (7.0.1 available)
@@ -261,4 +261,4 @@ Got dependencies!
 58 packages have newer versions incompatible with dependency constraints.
 Try `flutter pub outdated` for more information.
 Analyzing dandpak_phone...
-No issues found! (ran in 3.0s)
+No issues found! (ran in 2.5s)

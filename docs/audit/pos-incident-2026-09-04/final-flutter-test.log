@@ -6,7 +6,7 @@ Downloading packages...
   code_assets 1.2.1 (2.0.0 available)
   cross_file 0.3.5+4 (0.3.5+5 available)
   dbus 0.7.14 (0.7.15 available)
-  file_picker 10.3.10 (12.1.3 available)
+  file_picker 10.3.10 (12.2.0 available)
   file_selector_linux 0.9.4 (0.9.4+1 available)
   file_selector_macos 0.9.5 (0.9.5+1 available)
   file_selector_windows 0.9.3+5 (0.9.3+6 available)
@@ -20,7 +20,7 @@ Downloading packages...
   hooks 2.0.2 (2.2.0 available)
   html 0.15.6 (0.15.7 available)
   image 4.3.0 (4.9.2 available)
-  image_picker_android 0.8.13+19 (0.8.13+21 available)
+  image_picker_android 0.8.13+19 (0.8.13+22 available)
   image_picker_ios 0.8.13+6 (0.8.13+7 available)
   intl 0.19.0 (0.20.3 available)
   jni 1.0.0 (1.0.3 available)
@@ -46,14 +46,14 @@ Downloading packages...
   socket_io_common 2.0.3 (3.1.1 available)
   stack_trace 1.12.1 (1.12.2 available)
   synchronized 3.4.1 (3.4.1+2 available)
-  test_api 0.7.11 (0.7.13 available)
+  test_api 0.7.11 (0.7.14 available)
   url_launcher_linux 3.2.2 (3.2.3 available)
   url_launcher_windows 3.1.5 (3.1.6 available)
   uuid 4.5.3 (4.6.0 available)
   vector_math 2.2.0 (2.4.2 available)
   video_player 2.12.0 (2.14.0 available)
-  video_player_android 2.11.0 (2.12.1 available)
-  video_player_avfoundation 2.11.0 (2.11.1 available)
+  video_player_android 2.11.0 (2.12.2 available)
+  video_player_avfoundation 2.11.0 (2.12.0 available)
   vm_service 15.2.0 (15.3.0 available)
   win32 5.15.0 (6.4.0 available)
   xml 6.6.1 (7.0.1 available)
@@ -65,260 +65,263 @@ Try `flutter pub outdated` for more information.
 00:00 +0: D:/Dan D Pak/flutter-apps/dandpak_core/test/admin_login_layout_test.dart: admin keypad and submit stay visible on SM-T225 landscape
 00:00 +1: D:/Dan D Pak/flutter-apps/dandpak_core/test/admin_login_layout_test.dart: admin keypad and submit stay visible on SM-T225 landscape
 00:00 +2: D:/Dan D Pak/flutter-apps/dandpak_core/test/admin_login_layout_test.dart: admin keypad and submit stay visible on SM-T225 landscape
-00:01 +3: D:/Dan D Pak/flutter-apps/dandpak_core/test/admin_login_layout_test.dart: admin keypad and submit stay visible on SM-T225 landscape
-00:01 +3: D:/Dan D Pak/flutter-apps/dandpak_core/test/app_updater_test.dart: AppUpdater.checkForUpdate and getBytes e2e integration test
+00:00 +3: D:/Dan D Pak/flutter-apps/dandpak_core/test/admin_login_layout_test.dart: admin keypad and submit stay visible on SM-T225 landscape
+00:00 +3: D:/Dan D Pak/flutter-apps/dandpak_core/test/app_updater_test.dart: AppUpdater.checkForUpdate and getBytes e2e integration test
   Skip: Cần server local :3000 + release build 2 — chạy với --dart-define=E2E=true
-00:01 +3 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/admin_login_layout_test.dart: admin keypad and submit stay visible on SM-T225 landscape
-00:01 +4 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/aspect_safe_thumbnail_test.dart: logo/photo contracts stay centered and constrained
-00:02 +5 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/aspect_safe_thumbnail_test.dart: missing image renders the explicit fallback
-00:03 +6 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/barcode_scanner_config_test.dart: scanner keeps analysing frames and limits work to retail formats
-00:03 +7 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/barcode_scanner_config_test.dart: invalid frame does not make a later valid barcode unusable
-00:03 +8 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/barcode_scanner_config_test.dart: camera error offers an in-place controller restart
-00:06 +9 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/bo_dau_may_in_test.dart: chu Đ/đ KHONG bao gio bien thanh y
-00:06 +10 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/bo_dau_may_in_test.dart: bo dau dung cho ca sau nhom nguyen am
-00:06 +11 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/bo_dau_may_in_test.dart: so tien va ky tu ASCII giu nguyen
-00:06 +12 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/bo_dau_may_in_test.dart: chu HOA giu nguyen chu HOA sau khi bo dau
-00:06 +13 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/bo_dau_may_in_test.dart: moi chu co dau deu co anh xa — khong chu nao bi nuot
-00:09 +14 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/build_diagnostics_card_test.dart: normal production diagnostics exposes only app/version/build
-00:10 +15 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/build_diagnostics_card_test.dart: authorized admin must explicitly open redacted diagnostics
-00:10 +16 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/business_datetime_test.dart: UTC boundary converts to Vietnam business day
-00:10 +17 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/business_datetime_test.dart: UTC boundary converts to Vietnam business day
-00:10 +18 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/business_datetime_test.dart: UTC boundary converts to Vietnam business day
-00:10 +19 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/business_datetime_test.dart: canonical date, minute, second and time formats
-00:10 +20 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/business_datetime_test.dart: null and invalid values fail gracefully
-00:10 +21 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/business_datetime_test.dart: Vietnam wall-clock converts back to canonical UTC independent of host
-00:10 +22 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/catalogue_chi_tablet_test.dart: tablet MO duoc catalogue
-00:10 +23 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/catalogue_chi_tablet_test.dart: phone KHONG thay catalogue
-00:11 +24 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/catalogue_chi_tablet_test.dart: desktop hien tat ca module NHUNG van cam catalogue
-00:11 +25 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/catalogue_chi_tablet_test.dart: danh sach CAM thang danh sach CHO PHEP khi hai ben mau thuan
-00:11 +26 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/catalogue_chi_tablet_test.dart: khong khai disabledModuleKeys thi khong doi hanh vi cu
-00:11 +27 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/chat_empty_state_test.dart: đang tải → loading (ưu tiên cao nhất)
-00:12 +28 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/chat_empty_state_test.dart: lỗi (không tải) → error
-00:12 +29 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/chat_empty_state_test.dart: có hội thoại → hasData (kể cả khi caps chưa biết)
-00:12 +30 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/chat_empty_state_test.dart: ĐÃ biết caps + không kênh nào → notConfigured (không phải "chưa có hội thoại")
-00:12 +31 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/chat_empty_state_test.dart: có kênh nhưng chưa có hội thoại → empty
-00:12 +32 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/chat_empty_state_test.dart: CHƯA biết caps → empty (không dám khẳng định "chưa kết nối")
-00:14 +33 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/checkout_payment_method_selection_test.dart: đổi phương thức thay dòng đủ tiền cũ và xóa metadata ngân hàng
-00:14 +34 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/checkout_payment_method_selection_test.dart: quy tắc dùng được cho phương thức mới, không viết cứng bank cash
-00:14 +35 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/checkout_payment_method_selection_test.dart: giữ nguyên nhiều dòng hoặc dòng trả một phần để hỗ trợ split tender
-00:15 +36 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/connectivity_status_test.dart: two consecutive transport failures mark endpoint unreachable
-00:15 +37 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/connectivity_status_test.dart: any HTTP response restores reachability without hiding HTTP health
-00:15 +38 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/connectivity_status_test.dart: three consecutive 5xx responses mark API unhealthy and success recovers
-00:15 +39 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/connectivity_status_test.dart: 401 invalidates auth while later authorized HTTP restores it
-00:18 +40 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/customer_display_smoke_test.dart: secondary window keeps its native frame stable at runtime
-00:18 +41 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/customer_display_smoke_test.dart: idle (no ads) shows welcome
-00:18 +42 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/customer_display_smoke_test.dart: order mode shows items + total with diacritics
-00:19 +43 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/customer_display_smoke_test.dart: payment mode renders a QR
-00:19 +44 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/customer_display_smoke_test.dart: payment paid shows confirmation
-00:19 +45 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/debouncer_buffer_test.dart: 1499/1500/1501ms boundaries are exact and final event wins
-00:19 +46 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/debouncer_buffer_test.dart: continuous burst flushes at maximum wait
-00:19 +47 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/debouncer_buffer_test.dart: different scope keys never coalesce
-00:19 +48 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/debouncer_buffer_test.dart: logout/branch switch cancel, explicit flush, and dispose are safe
-00:19 +49 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/debouncer_buffer_test.dart: action exception is measured and does not poison later events
-00:21 +50 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/diagnostic_redaction_test.dart: client diagnostic redaction never preserves token fragments
-00:21 +51 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/diagnostic_redaction_test.dart: client diagnostic redaction removes private key blocks
-00:22 +52 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/floor_cell_size_test.dart: màn RỘNG-THẤP: fit theo chiều cao → KHÔNG tràn dọc (bug cũ tràn)
-00:22 +53 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/floor_cell_size_test.dart: màn CAO-HẸP: fit theo bề rộng, không nhỏ hơn minCell → cuộn ngang
-00:22 +54 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/floor_cell_size_test.dart: chiều cao VÔ HẠN (trong vùng cuộn dọc) → chỉ theo bề rộng
-00:22 +55 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/floor_cell_size_test.dart: không có hàng nào (rows<=0) → theo bề rộng, không chia 0
-00:22 +56 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/floor_cell_size_test.dart: màn siêu nhỏ → không nhỏ hơn minCell
-00:22 +57 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/floor_cell_size_test.dart: ô luôn VUÔNG nên tỉ lệ giữ nguyên bất kể màn hình (giá trị > 0)
-00:22 +58 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/floor_cell_size_test.dart: canonical geometry maps the same saved coordinates for editor and POS
-00:24 +59 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/floor_responsive_widget_test.dart: desktop-1366x768 preserves every table and grid ratio
-00:24 +60 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/floor_responsive_widget_test.dart: full-hd-1920x1080 preserves every table and grid ratio
-00:24 +61 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/floor_responsive_widget_test.dart: ultrawide-2560x1080 preserves every table and grid ratio
-00:24 +62 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/floor_responsive_widget_test.dart: tablet-portrait preserves every table and grid ratio
-00:24 +63 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/floor_responsive_widget_test.dart: tablet-landscape preserves every table and grid ratio
-00:26 +64 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/get_coalesce_test.dart: 20 GET cùng path đang bay → chạy đúng MỘT lần, mọi caller cùng kết quả
-00:27 +65 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/get_coalesce_test.dart: path KHÁC nhau KHÔNG gộp
-00:27 +66 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/get_coalesce_test.dart: lỗi cũng dọn bảng → cho phép thử lại, không kẹt future lỗi cũ
-00:27 +67 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/get_coalesce_test.dart: token/branch/tenant rotation tách future và xóa scope cũ
-00:27 +68 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/get_coalesce_test.dart: query khác nhau không coalesce
-00:27 +69 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/get_coalesce_test.dart: equivalent query order coalesces but response locale does not
-00:27 +70 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/import_plausibility_test.dart: kvImplausibleAmountReason giá hợp lý / trống → null
-00:27 +71 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/import_plausibility_test.dart: kvImplausibleAmountReason mã vạch / số quá lớn → có lý do
-00:27 +72 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/import_plausibility_test.dart: kvImplausibleAmountReason âm → có lý do
-00:27 +73 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/import_plausibility_test.dart: KvDocLine.costWarning gắn cờ đơn giá vô lý, bỏ qua giá thường
-00:41 +74 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/kv_excel_compatibility_test.dart: đọc được XLSX Microsoft có custom numFmtId 43
-00:42 +75 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/kv_excel_compatibility_test.dart: header lookup hỗ trợ mẫu mới và alias mẫu cũ
-00:42 +76 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/kv_excel_compatibility_test.dart: golden XLSX keeps reported SKUs and maps reordered columns by header
-00:42 +77 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/kv_excel_compatibility_test.dart: numeric identifier format preserves leading zero; literal formula is read
-00:42 +78 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/kv_excel_compatibility_test.dart: CSV supports quotes/leading zero/vi-US locale and mapping preview
-00:42 +79 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/kv_excel_compatibility_test.dart: duplicate/missing headers and bad cells fail with exact location/value
-00:44 +80 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/kv_import_orchestration_test.dart: kvArchiveThenImport: archive FAIL => runImport (đổi dữ liệu Kho) KHÔNG được gọi
-00:44 +81 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/kv_import_orchestration_test.dart: kvArchiveThenImport: KHÔNG có bytes => ném, runImport KHÔNG được gọi
-00:44 +82 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/kv_import_orchestration_test.dart: retry cùng archive trong một form không nạp dòng hai lần
-00:45 +83 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/kv_parse_num_locale_test.dart: nhóm nghìn vi-VN đọc đúng (KHÔNG sai 1000 lần)
-00:45 +84 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/kv_parse_num_locale_test.dart: nhóm nghìn en-US đọc đúng
-00:45 +85 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/kv_parse_num_locale_test.dart: thập phân cả hai locale
-00:45 +86 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/kv_parse_num_locale_test.dart: hỗn hợp: dấu sau cùng là thập phân
-00:45 +87 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/kv_parse_num_locale_test.dart: số nguyên thuần từ Excel (toString) giữ nguyên
-00:46 +88 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/kv_parse_num_locale_test.dart: ký hiệu tiền tệ / phần trăm được bỏ
-00:46 +89 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/kv_parse_num_locale_test.dart: âm giữ dấu
-00:46 +90 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/kv_parse_num_locale_test.dart: rỗng / rác trả null (không đoán)
-00:47 +91 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/lat_trang_sach_test.dart: vuot sang TRAI thi qua trang SAU
-00:47 +92 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/lat_trang_sach_test.dart: vuot sang TRAI thi qua trang SAU
-00:47 +93 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/launcher_entry_panel_test.dart: shows both entry choices and cashier sales action works
-00:48 +94 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/launcher_entry_panel_test.dart: shows both entry choices and cashier sales action works
-00:48 +95 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/launcher_entry_panel_test.dart: shows both entry choices and cashier sales action works
-00:48 +96 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/launcher_entry_panel_test.dart: shows both entry choices and cashier sales action works
-00:48 +97 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/launcher_entry_panel_test.dart: shows both entry choices and cashier sales action works
-00:48 +98 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/lat_trang_sach_test.dart: cham vao trang KHONG lam lat trang
-00:48 +99 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/launcher_entry_panel_test.dart: wraps on narrow touch layout without overflow
-00:49 +100 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/manager_pin_dialog_test.dart: thao tác nhạy cảm luôn hiện ô PIN
-00:51 +101 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/online_only_write_gate_test.dart: mặc định online: cho phép ghi
-00:51 +102 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/online_only_write_gate_test.dart: mất đường truyền ⇒ chặn ghi + lý do rõ
-00:51 +103 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/online_only_write_gate_test.dart: server ốm (5xx liên tục) ⇒ chặn ghi
-00:51 +104 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/online_only_write_gate_test.dart: hết phiên (401) ⇒ chặn ghi
-00:51 +105 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/online_only_write_gate_test.dart: BLIP socket realtime KHÔNG được chặn bán hàng (HTTP vẫn sống)
-00:53 +106 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/phone_doc_form_test.dart: Hàng hóa mới thiếu tên thì KHÔNG gửi
-00:54 +107 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/phone_doc_form_test.dart: Hàng hóa mới gửi đúng route và trường server đọc
-00:54 +108 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/phone_doc_form_test.dart: Phiếu nhập phiếu rỗng thì nút Lưu bị khoá
-00:54 +109 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/phone_doc_form_test.dart: Phiếu nhập gửi dòng hàng đúng định dạng buildLines()
-00:55 +110 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/phone_doc_form_test.dart: Phiếu chuyển kho thiếu kho thì KHÔNG gửi
-00:55 +111 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/phone_doc_form_test.dart: Phiếu chuyển kho kho xuất trùng kho nhận thì KHÔNG gửi
-00:55 +112 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/phone_doc_form_test.dart: Phiếu chuyển kho phiếu hợp lệ gửi đúng from/to và dòng hàng
-00:57 +113 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/phone_form_test.dart: Chi phí KHÔNG gửi lên server khi số tiền bằng 0
-00:58 +114 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/phone_form_test.dart: Chi phí gửi ĐÚNG tên trường server đọc
-00:58 +115 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/phone_form_test.dart: Chi phí chọn "Chi từ két" đổi nguồn chi gửi lên
-00:58 +116 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/phone_form_test.dart: Chi phí số tiền gõ có dấu chấm vẫn hiểu đúng
-00:59 +117 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/phone_form_test.dart: Chi phí server báo lỗi thì Ở LẠI màn, không mất dữ liệu đã gõ
-00:59 +118 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/phone_form_test.dart: Đối tác thiếu tên thì KHÔNG gửi
-00:59 +119 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/phone_form_test.dart: Đối tác khách hàng gửi partner_type=customer
-00:59 +120 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/phone_form_test.dart: Đối tác nhà cung cấp gửi partner_type=supplier
-01:01 +121 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/phone_list_pagination_test.dart: phone history loads subsequent server pages without replacing page one
-01:03 +122 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/phone_printers_test.dart: màn Máy in dựng gọn trên màn 6 inch
-01:04 +123 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/phone_printer_setup_test.dart: may in LAN thieu ten thi KHONG luu
-01:04 +124 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/phone_printer_setup_test.dart: may in LAN thieu ten thi KHONG luu
-01:04 +125 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/phone_printer_setup_test.dart: may in LAN thieu ten thi KHONG luu
-01:04 +126 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/phone_printer_setup_test.dart: may in LAN thieu ten thi KHONG luu
-01:05 +127 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/phone_printer_setup_test.dart: may in LAN thieu ten thi KHONG luu
-01:05 +128 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/phone_printer_setup_test.dart: may in LAN thieu ten thi KHONG luu
-01:05 +129 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/phone_printer_setup_test.dart: may in LAN thieu ten thi KHONG luu
-01:05 +130 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/phone_printers_test.dart: in lại từ chi tiết lệnh in gọi đúng endpoint
-01:05 +131 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/phone_printer_setup_test.dart: may in LAN IP sai dinh dang thi KHONG luu
-01:05 +132 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/phone_printers_test.dart: mở két gọi đúng endpoint
-01:05 +133 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/phone_printer_setup_test.dart: SUA may in LAN thi ghi de dung tuyen do, khong de ra tuyen moi
-01:06 +134 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/phone_printer_setup_test.dart: XOA may in chi bo dung tuyen do
-01:06 +135 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/phone_printer_setup_test.dart: giu nguyen phan cau hinh khac cua print_config
-01:06 +136 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/phone_printer_setup_test.dart: THEM MOI mac dinh la may in cua may nay, KHONG hoi IP
-01:07 +137 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/phone_sell_flow_test.dart: định dạng tiền ngăn cách hàng nghìn kiểu Việt Nam
-01:07 +138 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/phone_sell_flow_test.dart: định dạng tiền làm tròn về số nguyên đồng, không để lẻ xu trên bill
-01:07 +139 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/phone_sell_flow_test.dart: màn bán lẻ dựng gọn trên màn 6 inch, không tràn khung
-01:08 +140 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/phone_sell_flow_test.dart: ảnh SKU tương đối dùng đúng URL server
-01:08 +141 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/phone_sell_flow_test.dart: hàng hết tồn KHÔNG thêm được vào giỏ
-01:08 +142 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/phone_sell_flow_test.dart: thêm hàng → giỏ → thanh toán tiền mặt gửi ĐÚNG dữ liệu server
-01:08 +143 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/phone_sell_flow_test.dart: nút In trên giỏ điện thoại gửi lệnh in tạm tính
-01:09 +144 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/phone_sell_flow_test.dart: khách đưa THIẾU tiền thì không cho hoàn tất
-01:09 +145 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/phone_sell_flow_test.dart: CHƯA MỞ CA thì không thu tiền được
-01:10 +146 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/phone_sell_flow_test.dart: tăng/giảm số lượng trong giỏ đổi đúng thành tiền
-01:10 +147 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/phone_sell_flow_test.dart: chọn khách có ưu đãi thì thu ĐÚNG số đã giảm
-01:10 +148 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/phone_sell_flow_test.dart: CartLine tính thành tiền từ giá SKU thật
-01:10 +149 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/phone_sell_flow_test.dart: chia tiền 2 phương thức gửi đúng mảng payments
-01:11 +150 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/phone_sell_flow_test.dart: màn Trả hàng phone gửi đúng body retailReturn
-01:16 +151 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/phone_shell_test.dart: màn Tổng quan đọc ĐÚNG tên trường dashboard của server
-01:17 +152 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/phone_shell_test.dart: màn Ca & két đọc số tiền trong summary, không phải ở gốc
-01:17 +153 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/phone_shell_test.dart: màn Hàng hóa dựng gọn và hiện tồn thật
-01:17 +154 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/phone_shell_test.dart: màn Hóa đơn dựng gọn
-01:17 +155 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/phone_shell_test.dart: màn Nhà cung cấp hiện công nợ
-01:17 +156 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/phone_shell_test.dart: màn Chi phí dựng gọn
-01:17 +157 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/phone_shell_test.dart: màn Ca & két dựng gọn
-01:17 +158 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/phone_shell_test.dart: THU NGÂN KHÔNG thấy Hàng hóa (thiếu module.warehouse)
-01:18 +159 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/phone_shell_test.dart: QUẢN LÝ thấy đủ 5 mục
-01:18 +160 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/phone_shell_test.dart: Nhiều hơn mở được Nhập hàng, Báo cáo và Máy in
-01:18 +161 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/phone_shell_test.dart: Báo cáo phone đọc đúng contract summary + sections của server
-01:18 +162 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/phone_shell_test.dart: người KHÔNG có quyền nào vẫn vào được, chỉ thấy Nhiều hơn
-01:20 +163 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/phone_update_row_test.dart: server co ban MOI HON -> moi cap nhat
+00:00 +3 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/admin_login_layout_test.dart: admin keypad and submit stay visible on SM-T225 landscape
+00:02 +4 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/aspect_safe_thumbnail_test.dart: logo/photo contracts stay centered and constrained
+00:03 +5 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/aspect_safe_thumbnail_test.dart: logo/photo contracts stay centered and constrained
+00:03 +6 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/aspect_safe_thumbnail_test.dart: logo/photo contracts stay centered and constrained
+00:03 +7 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/aspect_safe_thumbnail_test.dart: logo/photo contracts stay centered and constrained
+00:03 +8 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/aspect_safe_thumbnail_test.dart: missing image renders the explicit fallback
+00:03 +9 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/bo_dau_may_in_test.dart: chu Đ/đ KHONG bao gio bien thanh y
+00:03 +10 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/bo_dau_may_in_test.dart: bo dau dung cho ca sau nhom nguyen am
+00:03 +11 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/bo_dau_may_in_test.dart: so tien va ky tu ASCII giu nguyen
+00:03 +12 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/bo_dau_may_in_test.dart: chu HOA giu nguyen chu HOA sau khi bo dau
+00:03 +13 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/bo_dau_may_in_test.dart: moi chu co dau deu co anh xa — khong chu nao bi nuot
+00:04 +14 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/build_diagnostics_card_test.dart: normal production diagnostics exposes only app/version/build
+00:05 +15 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/build_diagnostics_card_test.dart: authorized admin must explicitly open redacted diagnostics
+00:05 +16 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/build_diagnostics_card_test.dart: diagnostic policy requires role and permission
+00:05 +17 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/build_diagnostics_card_test.dart: advanced identifiers are shortened/masked
+00:07 +18 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/business_datetime_test.dart: UTC boundary converts to Vietnam business day
+00:07 +19 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/business_datetime_test.dart: canonical date, minute, second and time formats
+00:07 +20 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/business_datetime_test.dart: null and invalid values fail gracefully
+00:07 +21 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/business_datetime_test.dart: Vietnam wall-clock converts back to canonical UTC independent of host
+00:08 +22 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/catalogue_chi_tablet_test.dart: tablet MO duoc catalogue
+00:08 +23 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/catalogue_chi_tablet_test.dart: phone KHONG thay catalogue
+00:08 +24 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/catalogue_chi_tablet_test.dart: desktop hien tat ca module NHUNG van cam catalogue
+00:08 +25 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/catalogue_chi_tablet_test.dart: danh sach CAM thang danh sach CHO PHEP khi hai ben mau thuan
+00:08 +26 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/catalogue_chi_tablet_test.dart: khong khai disabledModuleKeys thi khong doi hanh vi cu
+00:13 +27 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/chat_empty_state_test.dart: đang tải → loading (ưu tiên cao nhất)
+00:13 +28 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/chat_empty_state_test.dart: lỗi (không tải) → error
+00:13 +29 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/chat_empty_state_test.dart: có hội thoại → hasData (kể cả khi caps chưa biết)
+00:13 +30 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/chat_empty_state_test.dart: ĐÃ biết caps + không kênh nào → notConfigured (không phải "chưa có hội thoại")
+00:13 +31 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/chat_empty_state_test.dart: có kênh nhưng chưa có hội thoại → empty
+00:13 +32 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/chat_empty_state_test.dart: CHƯA biết caps → empty (không dám khẳng định "chưa kết nối")
+00:16 +33 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/checkout_payment_method_selection_test.dart: đổi phương thức thay dòng đủ tiền cũ và xóa metadata ngân hàng
+00:16 +34 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/checkout_payment_method_selection_test.dart: quy tắc dùng được cho phương thức mới, không viết cứng bank cash
+00:16 +35 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/checkout_payment_method_selection_test.dart: giữ nguyên nhiều dòng hoặc dòng trả một phần để hỗ trợ split tender
+00:17 +36 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/connectivity_status_test.dart: two consecutive transport failures mark endpoint unreachable
+00:17 +37 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/connectivity_status_test.dart: any HTTP response restores reachability without hiding HTTP health
+00:17 +38 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/connectivity_status_test.dart: three consecutive 5xx responses mark API unhealthy and success recovers
+00:17 +39 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/connectivity_status_test.dart: 401 invalidates auth while later authorized HTTP restores it
+00:19 +40 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/customer_display_smoke_test.dart: secondary window keeps its native frame stable at runtime
+00:19 +41 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/customer_display_smoke_test.dart: idle (no ads) shows welcome
+00:20 +42 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/customer_display_smoke_test.dart: order mode shows items + total with diacritics
+00:20 +43 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/customer_display_smoke_test.dart: payment mode renders a QR
+00:20 +44 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/customer_display_smoke_test.dart: payment paid shows confirmation
+00:23 +45 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/debouncer_buffer_test.dart: 1499/1500/1501ms boundaries are exact and final event wins
+00:23 +46 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/debouncer_buffer_test.dart: continuous burst flushes at maximum wait
+00:23 +47 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/debouncer_buffer_test.dart: different scope keys never coalesce
+00:23 +48 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/debouncer_buffer_test.dart: logout/branch switch cancel, explicit flush, and dispose are safe
+00:23 +49 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/debouncer_buffer_test.dart: action exception is measured and does not poison later events
+00:24 +50 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/diagnostic_redaction_test.dart: client diagnostic redaction never preserves token fragments
+00:24 +51 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/diagnostic_redaction_test.dart: client diagnostic redaction removes private key blocks
+00:25 +52 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/floor_cell_size_test.dart: màn RỘNG-THẤP: fit theo chiều cao → KHÔNG tràn dọc (bug cũ tràn)
+00:25 +53 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/floor_cell_size_test.dart: màn CAO-HẸP: fit theo bề rộng, không nhỏ hơn minCell → cuộn ngang
+00:25 +54 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/floor_cell_size_test.dart: chiều cao VÔ HẠN (trong vùng cuộn dọc) → chỉ theo bề rộng
+00:25 +55 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/floor_cell_size_test.dart: không có hàng nào (rows<=0) → theo bề rộng, không chia 0
+00:25 +56 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/floor_cell_size_test.dart: màn siêu nhỏ → không nhỏ hơn minCell
+00:25 +57 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/floor_cell_size_test.dart: ô luôn VUÔNG nên tỉ lệ giữ nguyên bất kể màn hình (giá trị > 0)
+00:25 +58 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/floor_cell_size_test.dart: canonical geometry maps the same saved coordinates for editor and POS
+00:27 +59 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/floor_responsive_widget_test.dart: desktop-1366x768 preserves every table and grid ratio
+00:28 +60 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/floor_responsive_widget_test.dart: full-hd-1920x1080 preserves every table and grid ratio
+00:28 +61 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/floor_responsive_widget_test.dart: ultrawide-2560x1080 preserves every table and grid ratio
+00:28 +62 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/floor_responsive_widget_test.dart: tablet-portrait preserves every table and grid ratio
+00:28 +63 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/floor_responsive_widget_test.dart: tablet-landscape preserves every table and grid ratio
+00:29 +64 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/get_coalesce_test.dart: 20 GET cùng path đang bay → chạy đúng MỘT lần, mọi caller cùng kết quả
+00:29 +65 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/get_coalesce_test.dart: path KHÁC nhau KHÔNG gộp
+00:29 +66 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/get_coalesce_test.dart: lỗi cũng dọn bảng → cho phép thử lại, không kẹt future lỗi cũ
+00:29 +67 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/get_coalesce_test.dart: token/branch/tenant rotation tách future và xóa scope cũ
+00:29 +68 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/get_coalesce_test.dart: query khác nhau không coalesce
+00:29 +69 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/get_coalesce_test.dart: equivalent query order coalesces but response locale does not
+00:31 +70 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/import_plausibility_test.dart: kvImplausibleAmountReason giá hợp lý / trống → null
+00:31 +71 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/import_plausibility_test.dart: kvImplausibleAmountReason mã vạch / số quá lớn → có lý do
+00:31 +72 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/import_plausibility_test.dart: kvImplausibleAmountReason âm → có lý do
+00:31 +73 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/import_plausibility_test.dart: KvDocLine.costWarning gắn cờ đơn giá vô lý, bỏ qua giá thường
+00:34 +74 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/kv_excel_compatibility_test.dart: đọc được XLSX Microsoft có custom numFmtId 43
+00:34 +75 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/kv_excel_compatibility_test.dart: header lookup hỗ trợ mẫu mới và alias mẫu cũ
+00:34 +76 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/kv_excel_compatibility_test.dart: golden XLSX keeps reported SKUs and maps reordered columns by header
+00:34 +77 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/kv_excel_compatibility_test.dart: numeric identifier format preserves leading zero; literal formula is read
+00:34 +78 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/kv_excel_compatibility_test.dart: CSV supports quotes/leading zero/vi-US locale and mapping preview
+00:34 +79 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/kv_excel_compatibility_test.dart: duplicate/missing headers and bad cells fail with exact location/value
+00:38 +80 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/kv_import_orchestration_test.dart: kvArchiveThenImport: archive FAIL => runImport (đổi dữ liệu Kho) KHÔNG được gọi
+00:38 +81 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/kv_import_orchestration_test.dart: kvArchiveThenImport: KHÔNG có bytes => ném, runImport KHÔNG được gọi
+00:38 +82 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/kv_import_orchestration_test.dart: retry cùng archive trong một form không nạp dòng hai lần
+00:38 +83 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/kv_parse_num_locale_test.dart: nhóm nghìn vi-VN đọc đúng (KHÔNG sai 1000 lần)
+00:38 +84 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/kv_parse_num_locale_test.dart: nhóm nghìn en-US đọc đúng
+00:38 +85 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/kv_parse_num_locale_test.dart: thập phân cả hai locale
+00:38 +86 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/kv_parse_num_locale_test.dart: hỗn hợp: dấu sau cùng là thập phân
+00:38 +87 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/kv_parse_num_locale_test.dart: số nguyên thuần từ Excel (toString) giữ nguyên
+00:38 +88 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/kv_parse_num_locale_test.dart: ký hiệu tiền tệ / phần trăm được bỏ
+00:38 +89 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/kv_parse_num_locale_test.dart: âm giữ dấu
+00:38 +90 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/kv_parse_num_locale_test.dart: rỗng / rác trả null (không đoán)
+00:39 +91 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/lat_trang_sach_test.dart: vuot sang TRAI thi qua trang SAU
+00:40 +92 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/lat_trang_sach_test.dart: vuot sang TRAI thi qua trang SAU
+00:40 +93 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/launcher_entry_panel_test.dart: shows both entry choices and cashier sales action works
+00:40 +94 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/launcher_entry_panel_test.dart: shows both entry choices and cashier sales action works
+00:40 +95 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/launcher_entry_panel_test.dart: shows both entry choices and cashier sales action works
+00:41 +96 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/launcher_entry_panel_test.dart: shows both entry choices and cashier sales action works
+00:41 +97 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/launcher_entry_panel_test.dart: shows both entry choices and cashier sales action works
+00:41 +98 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/lat_trang_sach_test.dart: cham vao trang KHONG lam lat trang
+00:41 +99 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/launcher_entry_panel_test.dart: wraps on narrow touch layout without overflow
+00:41 +100 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/manager_pin_dialog_test.dart: thao tác nhạy cảm luôn hiện ô PIN
+00:42 +101 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/manager_pin_dialog_test.dart: thao tác nhạy cảm luôn hiện ô PIN
+00:42 +102 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/manager_pin_dialog_test.dart: thao tác nhạy cảm luôn hiện ô PIN
+00:42 +103 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/manager_pin_dialog_test.dart: thao tác nhạy cảm luôn hiện ô PIN
+00:42 +104 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/manager_pin_dialog_test.dart: thao tác nhạy cảm luôn hiện ô PIN
+00:42 +105 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/manager_pin_dialog_test.dart: thao tác nhạy cảm luôn hiện ô PIN
+00:43 +106 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/phone_doc_form_test.dart: Hàng hóa mới thiếu tên thì KHÔNG gửi
+00:44 +107 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/phone_doc_form_test.dart: Hàng hóa mới gửi đúng route và trường server đọc
+00:45 +108 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/phone_doc_form_test.dart: Phiếu nhập phiếu rỗng thì nút Lưu bị khoá
+00:45 +109 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/phone_doc_form_test.dart: Phiếu nhập gửi dòng hàng đúng định dạng buildLines()
+00:45 +110 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/phone_doc_form_test.dart: Phiếu chuyển kho thiếu kho thì KHÔNG gửi
+00:45 +111 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/phone_doc_form_test.dart: Phiếu chuyển kho kho xuất trùng kho nhận thì KHÔNG gửi
+00:46 +112 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/phone_doc_form_test.dart: Phiếu chuyển kho phiếu hợp lệ gửi đúng from/to và dòng hàng
+00:48 +113 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/phone_form_test.dart: Chi phí KHÔNG gửi lên server khi số tiền bằng 0
+00:49 +114 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/phone_form_test.dart: Chi phí gửi ĐÚNG tên trường server đọc
+00:50 +115 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/phone_form_test.dart: Chi phí chọn "Chi từ két" đổi nguồn chi gửi lên
+00:50 +116 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/phone_form_test.dart: Chi phí số tiền gõ có dấu chấm vẫn hiểu đúng
+00:50 +117 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/phone_form_test.dart: Chi phí server báo lỗi thì Ở LẠI màn, không mất dữ liệu đã gõ
+00:50 +118 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/phone_form_test.dart: Đối tác thiếu tên thì KHÔNG gửi
+00:51 +119 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/phone_form_test.dart: Đối tác khách hàng gửi partner_type=customer
+00:51 +120 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/phone_form_test.dart: Đối tác nhà cung cấp gửi partner_type=supplier
+00:52 +121 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/phone_list_pagination_test.dart: phone history loads subsequent server pages without replacing page one
+00:54 +122 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/phone_printers_test.dart: màn Máy in dựng gọn trên màn 6 inch
+00:55 +123 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/phone_printers_test.dart: LUÔN hỏi trạng thái thật (live=1)
+00:55 +124 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/phone_printers_test.dart: hiện NGUYÊN VĂN lý do của server, không tự chế
+00:55 +125 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/phone_printers_test.dart: máy in KHÔNG sẵn sàng thì nút In thử bị khoá
+00:55 +126 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/phone_printers_test.dart: đánh dấu rõ máy in nào cắm vào MÁY NÀY
+00:55 +127 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/phone_printers_test.dart: bấm In thử gọi đúng endpoint của máy in đó
+00:56 +128 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/phone_printers_test.dart: lịch sử hiện trạng thái và cho xem lý do lỗi
+00:56 +129 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/phone_printers_test.dart: in lại từ chi tiết lệnh in gọi đúng endpoint
+00:56 +130 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/phone_printers_test.dart: mở két gọi đúng endpoint
+00:57 +131 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/phone_printer_setup_test.dart: may in LAN thieu ten thi KHONG luu
+00:58 +132 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/phone_printer_setup_test.dart: may in LAN IP sai dinh dang thi KHONG luu
+00:58 +133 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/phone_printer_setup_test.dart: SUA may in LAN thi ghi de dung tuyen do, khong de ra tuyen moi
+00:59 +134 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/phone_printer_setup_test.dart: XOA may in chi bo dung tuyen do
+00:59 +135 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/phone_printer_setup_test.dart: XOA may in chi bo dung tuyen do
+00:59 +136 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/phone_printer_setup_test.dart: XOA may in chi bo dung tuyen do
+00:59 +137 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/phone_sell_flow_test.dart: màn bán lẻ dựng gọn trên màn 6 inch, không tràn khung
+00:59 +138 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/phone_sell_flow_test.dart: màn bán lẻ dựng gọn trên màn 6 inch, không tràn khung
+00:59 +139 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/phone_sell_flow_test.dart: màn bán lẻ dựng gọn trên màn 6 inch, không tràn khung
+01:01 +140 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/phone_sell_flow_test.dart: ảnh SKU tương đối dùng đúng URL server
+01:01 +141 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/phone_sell_flow_test.dart: hàng hết tồn KHÔNG thêm được vào giỏ
+01:01 +142 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/phone_sell_flow_test.dart: thêm hàng → giỏ → thanh toán tiền mặt gửi ĐÚNG dữ liệu server
+01:02 +143 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/phone_sell_flow_test.dart: nút In trên giỏ điện thoại gửi lệnh in tạm tính
+01:02 +144 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/phone_sell_flow_test.dart: khách đưa THIẾU tiền thì không cho hoàn tất
+01:02 +145 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/phone_sell_flow_test.dart: CHƯA MỞ CA thì không thu tiền được
+01:03 +146 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/phone_sell_flow_test.dart: tăng/giảm số lượng trong giỏ đổi đúng thành tiền
+01:03 +147 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/phone_sell_flow_test.dart: chọn khách có ưu đãi thì thu ĐÚNG số đã giảm
+01:03 +148 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/phone_sell_flow_test.dart: CartLine tính thành tiền từ giá SKU thật
+01:03 +149 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/phone_sell_flow_test.dart: chia tiền 2 phương thức gửi đúng mảng payments
+01:04 +150 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/phone_sell_flow_test.dart: màn Trả hàng phone gửi đúng body retailReturn
+01:05 +151 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/phone_shell_test.dart: màn Tổng quan đọc ĐÚNG tên trường dashboard của server
+01:05 +152 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/phone_shell_test.dart: màn Ca & két đọc số tiền trong summary, không phải ở gốc
+01:05 +153 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/phone_shell_test.dart: màn Hàng hóa dựng gọn và hiện tồn thật
+01:06 +154 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/phone_shell_test.dart: màn Hóa đơn dựng gọn
+01:06 +155 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/phone_shell_test.dart: màn Nhà cung cấp hiện công nợ
+01:06 +156 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/phone_shell_test.dart: màn Chi phí dựng gọn
+01:06 +157 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/phone_shell_test.dart: màn Ca & két dựng gọn
+01:06 +158 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/phone_shell_test.dart: THU NGÂN KHÔNG thấy Hàng hóa (thiếu module.warehouse)
+01:06 +159 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/phone_shell_test.dart: QUẢN LÝ thấy đủ 5 mục
+01:07 +160 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/phone_shell_test.dart: Nhiều hơn mở được Nhập hàng, Báo cáo và Máy in
+01:07 +161 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/phone_shell_test.dart: Báo cáo phone đọc đúng contract summary + sections của server
+01:07 +162 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/phone_shell_test.dart: người KHÔNG có quyền nào vẫn vào được, chỉ thấy Nhiều hơn
+01:09 +163 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/phone_update_row_test.dart: server co ban MOI HON -> moi cap nhat
 khong gui duoc thong bao cap nhat (bo qua): TimeoutException after 0:00:03.000000: Future not completed
-01:20 +164 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/phone_update_row_test.dart: server CUNG build -> KHONG moi cap nhat
-01:21 +165 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/phone_update_row_test.dart: server build THAP HON -> KHONG moi ha cap
-01:21 +166 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/phone_update_row_test.dart: hien so hieu ban DANG CHAY de doi chieu
-01:21 +167 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/phone_update_row_test.dart: hien ghi chu cua ban moi truoc khi tai
-01:21 +168 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/phone_update_row_test.dart: ban BAT BUOC thi noi ro la bat buoc
-01:21 +169 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/phone_update_row_test.dart: dung gon trong man 6 inch, khong tran khung
-01:32 +170 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/pos_1024x768_layout_test.dart: màn Khách hàng dựng gọn trong 1024x768, không tràn khung
-01:33 +171 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/pos_1024x768_layout_test.dart: ở 1024x768 cột lọc thu vào nút "Bộ lọc" để nhường chỗ cho bảng
-01:33 +172 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/pos_1024x768_layout_test.dart: màn Chi phí dựng gọn trong 1024x768, không tràn khung
-01:33 +173 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/pos_1024x768_layout_test.dart: màn Hóa đơn dựng gọn trong 1024x768, không tràn khung
-01:33 +174 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/pos_1024x768_layout_test.dart: màn Mua hàng dựng gọn trong 1024x768, không tràn khung
-01:33 +175 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/pos_1024x768_layout_test.dart: màn Cơ sở dữ liệu dựng gọn trong 1024x768, không tràn khung
-01:33 +176 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/pos_1024x768_layout_test.dart: màn Máy in dựng gọn trong 1024x768, không tràn khung
-01:33 +177 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/pos_1024x768_layout_test.dart: màn hình rộng vẫn giữ cột lọc hiện thẳng như cũ
-01:35 +178 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/print_designer_smoke_test.dart: PrintTemplateDesigner: visual preview (logo + QR + diacritics)
-01:40 +179 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/promotion_advisory_ui_test.dart: section "Lưu ý pháp lý" render LINK từ cấu hình server (không hardcode)
-01:42 +180 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/promotion_advisory_ui_test.dart: CTKM % vượt ngưỡng → banner CẢNH BÁO, nút Lưu VẪN bật (không chặn)
-01:42 +181 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/promotion_presentation_test.dart: promotion presentation exposes business facts and hides internals
-01:42 +182 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/promotion_presentation_test.dart: invalid object dump string is never shown
-01:42 +183 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/promotion_presentation_test.dart: discount-only promotion remains understandable
-01:45 +184 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/realtime_event_guard_test.dart: drops duplicate and out-of-order events before UI side effects
-01:45 +185 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/realtime_event_guard_test.dart: versions are isolated by branch and legacy payload remains compatible
-01:46 +186 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/receipt_print_tracker_test.dart: pending -> claimed -> printed and duplicate states are harmless
-01:46 +187 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/receipt_print_tracker_test.dart: pending -> failed preserves physical print error
-01:46 +188 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/receipt_print_tracker_test.dart: timeout is finite and endpoint errors never become payment failure
-01:46 +189 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/receipt_print_tracker_test.dart: cancel/dispose stops late response
-01:46 +190 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/receipt_print_tracker_test.dart: new payment supersedes old stale response
-01:46 +191 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/receipt_print_tracker_test.dart: branch/logout scope cancel and unrelated realtime do not wake poll
-01:47 +192 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/receipt_reprint_api_test.dart: in lại hóa đơn gọi thẳng luồng receipt chuẩn, không dò 50 job cũ
-01:47 +193 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/receipt_reprint_api_test.dart: job đã xếp hàng cho agent không bị báo nhầm là in thất bại
-01:47 +194 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/release_update_isolation_test.dart: 1: local 79 + Prod 82 mandatory shows update
-01:47 +195 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/release_update_isolation_test.dart: 2: local 82 + Prod 82 mandatory never gates
-01:47 +196 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/release_update_isolation_test.dart: 3 and 6: Review mandatory cannot leak after switch to Prod
-01:47 +197 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/release_update_isolation_test.dart: 4: local 90 + Prod 82 never forces downgrade
-01:47 +198 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/release_update_isolation_test.dart: 5: Prod then Review fetches Review 90, not Prod cache 82
-01:47 +199 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/release_update_isolation_test.dart: 7: stale Review URL is rejected after switching to Production
-01:47 +200 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/release_update_isolation_test.dart: 8: restart after Review to Prod recomputes current origin
-01:47 +201 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/release_update_isolation_test.dart: 9: auth lifecycle is not part of release identity
-01:47 +202 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/release_update_isolation_test.dart: 10: Phone Tablet Windows use different release keys
-01:47 +203 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/release_update_isolation_test.dart: origin includes scheme and non-default port
-01:47 +204 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/release_update_isolation_test.dart: in-flight Review response is discarded after origin changes
-01:47 +204 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/release_update_isolation_test.dart: 5: Prod then Review fetches Review 90, not Prod cache 82
-khong luu duoc release cache da scope (bo qua): PathAccessException: Cannot open file, path = 'C:\Users\PC\AppData\Roaming\Dan D Pak POS ERP\flutter_pos.json.tmp' (OS Error: The process cannot access the file because it is being used by another process, errno = 32)
-01:47 +204 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/release_update_isolation_test.dart: 8: restart after Review to Prod recomputes current origin
-khong luu duoc release cache da scope (bo qua): PathAccessException: Cannot open file, path = 'C:\Users\PC\AppData\Roaming\Dan D Pak POS ERP\flutter_pos.json.tmp' (OS Error: The process cannot access the file because it is being used by another process, errno = 32)
-01:48 +205 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/retail_canonical_render_test.dart: render đọc nguyên priced_lines + pricing từ server
-01:48 +206 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/retail_canonical_render_test.dart: total lấy TỪ server, KHÔNG tự cộng dòng ở client
-01:48 +207 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/retail_canonical_render_test.dart: dòng: promo label/amount, price_override, lot lấy đúng
-01:48 +208 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/retail_canonical_render_test.dart: snapshot rỗng → render rỗng, tổng 0
-01:48 +209 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/retail_canonical_render_test.dart: payload structural KHÔNG kèm giá client cho ADD_LINE
-01:48 +210 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/retail_canonical_render_test.dart: price_override được phép gửi (server xác thực + định giá lại)
-01:49 +211 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/retail_order_session_test.dart: nhãn dùng display_sequence SERVER, không tabs.length+1
-01:49 +212 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/retail_order_session_test.dart: applyCommand ADOPT canonical revision+snapshot (không merge đoán)
-01:49 +213 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/retail_order_session_test.dart: ORDER_VERSION_CONFLICT → reload canonical, vẫn editable
-01:49 +214 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/retail_order_session_test.dart: EDIT_LEASE_LOST → read-only + reload
-01:49 +215 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/retail_order_session_test.dart: ORDER_FINALIZED → read-only, status paid
-01:49 +216 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/retail_order_session_test.dart: order.paid event → read-only; order KHÁC không ảnh hưởng
-01:49 +217 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/retail_order_session_test.dart: reconnect → reload canonical, KHÔNG giữ stale local
-01:49 +218 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/retail_order_session_test.dart: order.lease.revoked cho device mình → read-only
-01:49 +219 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/retail_order_session_test.dart: pricing getters đọc canonical (server-authoritative) từ snapshot
-01:50 +220 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/retail_order_session_test.dart: heartbeat mất lease → read-only
-01:50 +221 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/retail_order_session_test.dart: ADD_LINE → renderCanonical hiện total SERVER + line_id để CHANGE_QTY
-01:50 +222 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/retail_order_session_test.dart: takeover: lease-lost → tiếp quản → hết read-only, sửa lại được
-01:50 +223 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/retail_order_session_test.dart: takeover thất bại (đơn đã paid) → vẫn read-only
-01:50 +224 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/retail_order_session_test.dart: order.paid (socket) → session read-only, render vẫn đọc được để in
-01:50 +225 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/ring_controller_dedup_test.dart: cùng một đơn tới hai lần (redelivery/reconnect) KHÔNG cộng dồn
-01:50 +226 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/ring_controller_dedup_test.dart: hai đơn khác nhau → đếm 2; gỡ từng đơn → giảm đúng
-01:50 +227 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/ring_controller_dedup_test.dart: XÁC NHẬN món → clear đúng đơn thì chuông tắt (bug chính)
-01:50 +228 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/ring_controller_dedup_test.dart: clear đơn không tồn tại thì không sao, không âm
-01:50 +229 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/ring_controller_dedup_test.dart: reconcile kéo về đúng tập việc server đang chờ (reconnect)
-01:50 +230 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/ring_controller_dedup_test.dart: acknowledge xoá tất cả (bấm chuông xem hết)
-01:50 +231 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/ring_controller_dedup_test.dart: nguồn không có mã (ring rỗng) VẪN reo, không dedup, reconcile giữ lại
-01:51 +232 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/search_test.dart: search folds Vietnamese, whitespace, tokens and boundaries
-01:51 +233 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/search_test.dart: stale async responses are rejected
-01:53 +234 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/settings_permissions_smoke_test.dart: permission editor fits narrow sheets without ListTile errors
-01:56 +235 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/settings_warehouse_responsive_test.dart: trình chỉnh bill màn nhỏ dùng hai chế độ, không ép hai pane
-01:58 +236 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/settings_warehouse_responsive_test.dart: header kho không bẻ chữ thành cột dọc trên màn hẹp
-01:58 +237 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/shift_dialog_route_singleton_test.dart: 50 lần mở đồng thời chỉ tạo một ShiftDialog route
-02:00 +238 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/shift_single_flight_test.dart: bấm dồn cùng hành động → chỉ chạy MỘT lần, lần sau bị chặn
-02:00 +239 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/shift_single_flight_test.dart: xong rồi thì lần bấm mới chạy lại; lỗi cũng thả khoá
-02:00 +240 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/shift_single_flight_test.dart: hành động KHÁC key không chặn nhau
-02:00 +241 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/shift_single_flight_test.dart: 50 close đồng thời chỉ gửi một mutation; đổi session bỏ response cũ
-02:00 +242 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/shift_single_flight_test.dart: dispose khi close đang bay không áp state muộn và cleanup an toàn
-02:01 +243 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/tenant_scope_test.dart: TenantScope.resolveServerUrl (§E precedence) TEST4/5: fresh install → build default (review→api-review, prod→api)
-02:01 +244 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/tenant_scope_test.dart: TenantScope.resolveServerUrl (§E precedence) TEST6: review build + stale PRODUCTION legacy → KHÔNG bị đưa về production
-02:01 +245 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/tenant_scope_test.dart: TenantScope.resolveServerUrl (§E precedence) legacy CÙNG origin build default → migrate an toàn
-02:01 +246 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/tenant_scope_test.dart: TenantScope.resolveServerUrl (§E precedence) savedForBuild (user đổi thủ công) thắng legacy
-02:01 +247 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/tenant_scope_test.dart: TenantScope.resolveServerUrl (§E precedence) host LAN/IP hạ tầng bị bỏ qua → build default
-02:01 +248 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/tenant_scope_test.dart: TenantScope namespacing (§B/§C — TEST1/3 isolation) tenantKey khác nhau theo origin → token/branch KHÔNG dùng chung
-02:01 +249 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/tenant_scope_test.dart: TenantScope namespacing (§B/§C — TEST1/3 isolation) serverUrlKey khác nhau theo build → review/prod build không đè server_url
-02:01 +250 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/tenant_scope_test.dart: TenantScope namespacing (§B/§C — TEST1/3 isolation) originChanged phát hiện đổi tenant
-02:03 +251 ~1: All tests passed!
+01:10 +164 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/phone_update_row_test.dart: server CUNG build -> KHONG moi cap nhat
+01:10 +165 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/phone_update_row_test.dart: server build THAP HON -> KHONG moi ha cap
+01:10 +166 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/phone_update_row_test.dart: hien so hieu ban DANG CHAY de doi chieu
+01:11 +167 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/phone_update_row_test.dart: hien ghi chu cua ban moi truoc khi tai
+01:11 +168 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/phone_update_row_test.dart: ban BAT BUOC thi noi ro la bat buoc
+01:11 +169 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/phone_update_row_test.dart: dung gon trong man 6 inch, khong tran khung
+01:14 +170 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/pos_1024x768_layout_test.dart: màn Khách hàng dựng gọn trong 1024x768, không tràn khung
+01:15 +171 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/pos_1024x768_layout_test.dart: ở 1024x768 cột lọc thu vào nút "Bộ lọc" để nhường chỗ cho bảng
+01:15 +172 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/pos_1024x768_layout_test.dart: màn Chi phí dựng gọn trong 1024x768, không tràn khung
+01:15 +173 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/pos_1024x768_layout_test.dart: màn Hóa đơn dựng gọn trong 1024x768, không tràn khung
+01:15 +174 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/pos_1024x768_layout_test.dart: màn Mua hàng dựng gọn trong 1024x768, không tràn khung
+01:16 +175 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/pos_1024x768_layout_test.dart: màn Cơ sở dữ liệu dựng gọn trong 1024x768, không tràn khung
+01:16 +176 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/pos_1024x768_layout_test.dart: màn Máy in dựng gọn trong 1024x768, không tràn khung
+01:16 +177 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/pos_1024x768_layout_test.dart: màn hình rộng vẫn giữ cột lọc hiện thẳng như cũ
+01:18 +178 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/print_designer_smoke_test.dart: PrintTemplateDesigner: visual preview (logo + QR + diacritics)
+01:23 +179 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/promotion_advisory_ui_test.dart: section "Lưu ý pháp lý" render LINK từ cấu hình server (không hardcode)
+01:24 +180 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/promotion_advisory_ui_test.dart: CTKM % vượt ngưỡng → banner CẢNH BÁO, nút Lưu VẪN bật (không chặn)
+01:29 +181 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/promotion_presentation_test.dart: promotion presentation exposes business facts and hides internals
+01:29 +182 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/promotion_presentation_test.dart: invalid object dump string is never shown
+01:29 +183 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/promotion_presentation_test.dart: discount-only promotion remains understandable
+01:31 +184 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/realtime_event_guard_test.dart: drops duplicate and out-of-order events before UI side effects
+01:31 +185 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/realtime_event_guard_test.dart: versions are isolated by branch and legacy payload remains compatible
+01:32 +186 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/receipt_print_tracker_test.dart: pending -> claimed -> printed and duplicate states are harmless
+01:32 +187 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/receipt_print_tracker_test.dart: pending -> failed preserves physical print error
+01:32 +188 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/receipt_print_tracker_test.dart: timeout is finite and endpoint errors never become payment failure
+01:32 +189 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/receipt_print_tracker_test.dart: cancel/dispose stops late response
+01:32 +190 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/receipt_print_tracker_test.dart: new payment supersedes old stale response
+01:32 +191 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/receipt_print_tracker_test.dart: branch/logout scope cancel and unrelated realtime do not wake poll
+01:33 +192 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/receipt_reprint_api_test.dart: in lại hóa đơn gọi thẳng luồng receipt chuẩn, không dò 50 job cũ
+01:33 +193 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/receipt_reprint_api_test.dart: job đã xếp hàng cho agent không bị báo nhầm là in thất bại
+01:37 +194 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/release_update_isolation_test.dart: 1: local 79 + Prod 82 mandatory shows update
+01:37 +195 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/release_update_isolation_test.dart: 2: local 82 + Prod 82 mandatory never gates
+01:37 +196 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/release_update_isolation_test.dart: 3 and 6: Review mandatory cannot leak after switch to Prod
+01:37 +197 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/release_update_isolation_test.dart: 4: local 90 + Prod 82 never forces downgrade
+01:37 +198 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/release_update_isolation_test.dart: 5: Prod then Review fetches Review 90, not Prod cache 82
+01:37 +199 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/release_update_isolation_test.dart: 7: stale Review URL is rejected after switching to Production
+01:37 +199 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/release_update_isolation_test.dart: 2: local 82 + Prod 82 mandatory never gates
+khong luu duoc release cache da scope (bo qua): FileSystemException: Cannot open file, path = 'C:\Users\PC\AppData\Roaming\Dan D Pak POS ERP\flutter_pos.json' (OS Error: The requested operation cannot be performed on a file with a user-mapped section open, errno = 1224)
+01:37 +200 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/release_update_isolation_test.dart: 8: restart after Review to Prod recomputes current origin
+01:37 +200 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/release_update_isolation_test.dart: 3 and 6: Review mandatory cannot leak after switch to Prod
+khong luu duoc release cache da scope (bo qua): FileSystemException: Cannot open file, path = 'C:\Users\PC\AppData\Roaming\Dan D Pak POS ERP\flutter_pos.json' (OS Error: The requested operation cannot be performed on a file with a user-mapped section open, errno = 1224)
+khong luu duoc release cache da scope (bo qua): FileSystemException: Cannot open file, path = 'C:\Users\PC\AppData\Roaming\Dan D Pak POS ERP\flutter_pos.json' (OS Error: The requested operation cannot be performed on a file with a user-mapped section open, errno = 1224)
+01:37 +200 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/release_update_isolation_test.dart: 1: local 79 + Prod 82 mandatory shows update
+khong luu duoc release cache da scope (bo qua): FileSystemException: Cannot open file, path = 'C:\Users\PC\AppData\Roaming\Dan D Pak POS ERP\flutter_pos.json' (OS Error: The requested operation cannot be performed on a file with a user-mapped section open, errno = 1224)
+01:37 +201 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/release_update_isolation_test.dart: 9: auth lifecycle is not part of release identity
+01:37 +202 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/release_update_isolation_test.dart: 10: Phone Tablet Windows use different release keys
+01:37 +203 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/release_update_isolation_test.dart: origin includes scheme and non-default port
+01:37 +204 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/release_update_isolation_test.dart: in-flight Review response is discarded after origin changes
+01:37 +205 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/retail_canonical_render_test.dart: render đọc nguyên priced_lines + pricing từ server
+01:37 +206 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/retail_canonical_render_test.dart: total lấy TỪ server, KHÔNG tự cộng dòng ở client
+01:37 +207 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/retail_canonical_render_test.dart: dòng: promo label/amount, price_override, lot lấy đúng
+01:37 +208 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/retail_canonical_render_test.dart: snapshot rỗng → render rỗng, tổng 0
+01:37 +209 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/retail_canonical_render_test.dart: payload structural KHÔNG kèm giá client cho ADD_LINE
+01:37 +210 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/retail_canonical_render_test.dart: price_override được phép gửi (server xác thực + định giá lại)
+01:39 +211 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/retail_order_session_test.dart: nhãn dùng display_sequence SERVER, không tabs.length+1
+01:39 +212 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/retail_order_session_test.dart: applyCommand ADOPT canonical revision+snapshot (không merge đoán)
+01:39 +213 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/retail_order_session_test.dart: ORDER_VERSION_CONFLICT → reload canonical, vẫn editable
+01:39 +214 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/retail_order_session_test.dart: EDIT_LEASE_LOST → read-only + reload
+01:39 +215 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/retail_order_session_test.dart: ORDER_FINALIZED → read-only, status paid
+01:39 +216 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/retail_order_session_test.dart: order.paid event → read-only; order KHÁC không ảnh hưởng
+01:39 +217 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/retail_order_session_test.dart: reconnect → reload canonical, KHÔNG giữ stale local
+01:39 +218 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/retail_order_session_test.dart: order.lease.revoked cho device mình → read-only
+01:39 +219 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/retail_order_session_test.dart: pricing getters đọc canonical (server-authoritative) từ snapshot
+01:39 +220 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/retail_order_session_test.dart: heartbeat mất lease → read-only
+01:39 +221 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/retail_order_session_test.dart: ADD_LINE → renderCanonical hiện total SERVER + line_id để CHANGE_QTY
+01:39 +222 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/retail_order_session_test.dart: takeover: lease-lost → tiếp quản → hết read-only, sửa lại được
+01:39 +223 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/retail_order_session_test.dart: takeover thất bại (đơn đã paid) → vẫn read-only
+01:39 +224 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/retail_order_session_test.dart: order.paid (socket) → session read-only, render vẫn đọc được để in
+01:40 +225 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/ring_controller_dedup_test.dart: cùng một đơn tới hai lần (redelivery/reconnect) KHÔNG cộng dồn
+01:40 +226 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/ring_controller_dedup_test.dart: hai đơn khác nhau → đếm 2; gỡ từng đơn → giảm đúng
+01:40 +227 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/ring_controller_dedup_test.dart: XÁC NHẬN món → clear đúng đơn thì chuông tắt (bug chính)
+01:40 +228 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/ring_controller_dedup_test.dart: clear đơn không tồn tại thì không sao, không âm
+01:40 +229 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/ring_controller_dedup_test.dart: reconcile kéo về đúng tập việc server đang chờ (reconnect)
+01:40 +230 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/ring_controller_dedup_test.dart: acknowledge xoá tất cả (bấm chuông xem hết)
+01:40 +231 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/ring_controller_dedup_test.dart: nguồn không có mã (ring rỗng) VẪN reo, không dedup, reconcile giữ lại
+01:41 +232 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/search_test.dart: search folds Vietnamese, whitespace, tokens and boundaries
+01:41 +233 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/search_test.dart: stale async responses are rejected
+01:43 +234 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/settings_permissions_smoke_test.dart: permission editor fits narrow sheets without ListTile errors
+01:46 +235 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/settings_warehouse_responsive_test.dart: trình chỉnh bill màn nhỏ dùng hai chế độ, không ép hai pane
+01:48 +236 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/settings_warehouse_responsive_test.dart: header kho không bẻ chữ thành cột dọc trên màn hẹp
+01:52 +237 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/shift_dialog_route_singleton_test.dart: 50 lần mở đồng thời chỉ tạo một ShiftDialog route
+01:56 +238 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/shift_single_flight_test.dart: bấm dồn cùng hành động → chỉ chạy MỘT lần, lần sau bị chặn
+01:56 +239 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/shift_single_flight_test.dart: xong rồi thì lần bấm mới chạy lại; lỗi cũng thả khoá
+01:56 +240 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/shift_single_flight_test.dart: hành động KHÁC key không chặn nhau
+01:56 +241 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/shift_single_flight_test.dart: 50 close đồng thời chỉ gửi một mutation; đổi session bỏ response cũ
+01:56 +242 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/shift_single_flight_test.dart: dispose khi close đang bay không áp state muộn và cleanup an toàn
+01:56 +243 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/tenant_scope_test.dart: TenantScope.resolveServerUrl (§E precedence) TEST4/5: fresh install → build default (review→api-review, prod→api)
+01:56 +244 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/tenant_scope_test.dart: TenantScope.resolveServerUrl (§E precedence) TEST6: review build + stale PRODUCTION legacy → KHÔNG bị đưa về production
+01:56 +245 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/tenant_scope_test.dart: TenantScope.resolveServerUrl (§E precedence) legacy CÙNG origin build default → migrate an toàn
+01:56 +246 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/tenant_scope_test.dart: TenantScope.resolveServerUrl (§E precedence) savedForBuild (user đổi thủ công) thắng legacy
+01:56 +247 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/tenant_scope_test.dart: TenantScope.resolveServerUrl (§E precedence) host LAN/IP hạ tầng bị bỏ qua → build default
+01:56 +248 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/tenant_scope_test.dart: TenantScope namespacing (§B/§C — TEST1/3 isolation) tenantKey khác nhau theo origin → token/branch KHÔNG dùng chung
+01:56 +249 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/tenant_scope_test.dart: TenantScope namespacing (§B/§C — TEST1/3 isolation) serverUrlKey khác nhau theo build → review/prod build không đè server_url
+01:56 +250 ~1: D:/Dan D Pak/flutter-apps/dandpak_core/test/tenant_scope_test.dart: TenantScope namespacing (§B/§C — TEST1/3 isolation) originChanged phát hiện đổi tenant
+01:57 +251 ~1: All tests passed!

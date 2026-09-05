@@ -70,7 +70,7 @@ different key ids, but inspecting or rotating deployed key material is intention
 
 | Check | Result | Evidence |
 |---|---|---|
-| `npm audit --omit=dev` before remediation | **PARTIAL** — 9 moderate, 0 high/critical | `final-npm-audit-before.json` |
+| `npm audit --omit=dev` before remediation | **VERIFIED (measurement)** — 9 moderate, 0 high/critical | `final-npm-audit-before.json` |
 | Supported dependency refresh | **VERIFIED (source)** — `firebase-admin` 14.3.0 and `@google-cloud/storage` 7.22.0 | `package-lock.json` |
 | Vulnerable transitive ranges | **VERIFIED (source)** — overrides resolve `qs` 6.16.0 and `uuid` 11.1.1 | `package.json`; `npm ls ...` |
 | `npm audit --omit=dev` after remediation | **VERIFIED (source)** — 0 vulnerabilities | `final-npm-audit-after.json` |

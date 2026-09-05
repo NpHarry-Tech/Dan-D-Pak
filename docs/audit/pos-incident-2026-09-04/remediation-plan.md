@@ -2,22 +2,23 @@
 
 ## Final local gate (2026-09-05)
 
-- Server canonical isolated runner: **VERIFIED (source)** — 142/142 files, 722/722
+- Server canonical isolated runner: **VERIFIED (source)** — 143/143 files, 726/726
   assertions, 0 fail, 0 timeout, 0 error on the final dependency lockfile.
 - Flutter core: **VERIFIED (source)** — 251 pass, 0 fail, 1 E2E-only skip; analyze is
   clean for core, desktop, tablet and phone.
 - Production dependency audit: **VERIFIED (source)** — 0 vulnerabilities after the
   supported Firebase dependency refresh and bounded `qs`/`uuid` overrides.
-- Performance: **VERIFIED (source)** — shift-current service p95 23.042 ms and max
-  26.467 ms at 2,000 bills; 61,786-byte bounded payload.
+- Performance: **VERIFIED (source)** — shift-current service p95 23.042 ms; loopback
+  HTTP server p95 24.947 ms and client p95 27.325 ms at 2,000 bills. Ingress/auth/DB/
+  serialize are measured separately; payload is bounded to 61,786 bytes.
 - Deployment/build/live provider/real DB/device validation was not authorized and
   remains **NEEDS-LIVE-CANARY** or **BLOCKED-EXTERNAL**. Production and Review stay HOLD.
 
-The reproducible evidence index is `final-gate-evidence.md`. Historical DESIGNED/NOT
-DONE sections below are retained for chronology and are superseded by the continuation
-status plus this final gate where they conflict.
+The reproducible evidence index is `final-gate-evidence.md`. The ordered sections below
+record the original risk sequence; their headings and the continuation status carry the
+authoritative completion state.
 
-## Continuation status (2026-09-05; supersedes stale DESIGNED/NOT DONE labels below)
+## Continuation status (2026-09-05)
 
 - Gate 5 is **VERIFIED locally**. Opt-in GET single-flight includes method, base URL,
   branch, auth generation, normalized path/query and an explicit representation variant
@@ -40,8 +41,11 @@ status plus this final gate where they conflict.
   an executable is **NEEDS-LIVE-CANARY** because installer/app build was not authorized.
 - Asset/thumbnail source is **VERIFIED locally**: uploads validate JPEG/PNG/WebP/GIF
   magic bytes instead of trusting MIME, return `nosniff`, cache unique upload URLs for
-  one year with ETag/304, and revalidate bundled assets hourly. Settings integration
-  logos use one centered aspect-safe contract. Focused server/UI tests: **5/5 pass**.
+  one year with ETag/304, use SHA-256 content-addressed version keys, and revalidate bundled assets hourly. Settings integration
+  logos use one centered aspect-safe contract. Flutter already applies an LRU image-cache
+  budget (48 MiB / 300 images on constrained devices) and bounded thumbnail decode sizes;
+  no custom persistent disk cache exists. Cold-200 p95 is 8.691 ms and warm-304 p95 is
+  0.702 ms for 256 KiB assets. Focused server/UI contracts are green.
 - Omni/chat source is **VERIFIED locally**: webhook dedupe acquires the write lock before
   checking and scopes event keys by branch; two real Node processes produce one message.
   Cross-branch reads return no data/404. Attachments are HTTPS-only and bounded (10,
@@ -93,7 +97,7 @@ commit; audit-row insertion is mandatory and can roll back the financial transac
 - **Follow-up:** emit stable event id/order version server-side; `reconcile()` the ring
   set on `sync:reconnected` from the floor reload.
 
-## Priority 2 — `/api/shifts/current` latency (Gate 5) — DESIGNED, not yet implemented
+## Priority 2 — `/api/shifts/current` latency (Gate 5) — VERIFIED (source)
 - **Root cause:** heavy per-call aggregation ([shifts.js:108-183](../../../server/services/shifts.js#L108-L183))
   × no client GET coalescing × SQLite single-writer contention.
 - **Plan (in order, benchmark-gated):**
@@ -105,7 +109,7 @@ commit; audit-row insertion is mandatory and can roll back the financial transac
      real numbers if unmet — do not tune the metric.**
 - **Do NOT** add indexes blindly or VACUUM/checkpoint production.
 
-## Priority 3 — App-wide single-flight + close-shift idempotency (Gate 3/6-S6) — DESIGNED
+## Priority 3 — App-wide single-flight + close-shift idempotency (Gate 3/6-S6) — VERIFIED (source)
 - **Invariant:** one click ⇒ one API call, one route/modal; late responses never push a
   route after dispose; mutation endpoints (esp. close-shift) are idempotent/conditional.
 - **Plan:** shared `ActionGate`/single-flight keyed by action+entity for checkout,
@@ -114,11 +118,11 @@ commit; audit-row insertion is mandatory and can roll back the financial transac
 - **Test:** 50 close-shift clicks during a delayed response → one call/one modal/one
   closure; retry after failure works once.
 
-## Priority 4 — Desktop single-instance (Gate 3) — NEEDS-REPRO then implement
+## Priority 4 — Desktop single-instance (Gate 3) — VERIFIED (source) / NEEDS-LIVE-CANARY
 - Probe `flutter-apps/dandpak_desktop/windows/runner/` for a named OS mutex; if absent,
   add `CreateMutex` + activate/focus-first-instance IPC; second launch focuses & exits.
 
-## Priority 5 — Audit `item.cancel` snapshot (Gate 4) — NEEDS-REPRO then implement
+## Priority 5 — Audit `item.cancel` snapshot (Gate 4) — VERIFIED (source)
 - Ensure the cancel handler writes món name/SKU/qty/table/bill/actor/reason **in the same
   transaction** as the mutation; failures never write a success audit.
 
@@ -128,7 +132,7 @@ commit; audit-row insertion is mandatory and can roll back the financial transac
   archive-before-import, retry dedupe and transactional server save are covered by tests.
 - Exact customer workbook replay remains **NEEDS-LIVE-CANARY**, not a local code gap.
 
-## Priority 7 — Floor plan parity (Gate 7) — NEEDS-REPRO then implement
+## Priority 7 — Floor plan parity (Gate 7) — VERIFIED (source)
 - One canonical coordinate model from Settings; POS = viewport transform only; golden
   tests at 1366×768 / 1920×1080 / ultrawide / tablet portrait+landscape / DPI.
 
