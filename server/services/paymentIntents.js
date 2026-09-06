@@ -203,6 +203,23 @@ export function markIntent(id, state, { provider = null, provider_transaction_id
   return db.prepare(`SELECT * FROM payment_intents WHERE id=?`).get(id);
 }
 
+// Thu ngân đổi phương thức RA KHỎI QR/chuyển khoản (sang tiền mặt/Visa/voucher)
+// mà QR vừa xem vẫn còn AWAITING_FUNDS thì đơn "đang chờ QR" đó sẽ chặn thanh
+// toán mới (xem activeIntentForOrder ở payOrder) cho tới khi hết hạn (mặc định
+// 15 phút) — bắt thu ngân phải chờ hoặc gặp lỗi khó hiểu. Hủy tay ngay khi đổi
+// ý cho phép thu tiền mặt/Visa ngay, không phải đợi PaymentIntent tự hết hạn.
+// Vô hại nếu gọi trên intent đã ở trạng thái cuối (SUCCEEDED/EXPIRED/...): trả
+// nguyên trạng, không ghi đè kết quả đã có.
+export function cancelIntent(id, branch_id = 'sala') {
+  const intent = resolveIntent(id, branch_id);
+  if (!intent) return null;
+  if (!ACTIVE_STATES.includes(intent.state)) return intent;
+  const stamp = now();
+  db.prepare(`UPDATE payment_intents SET state='CANCELLED',cancelled_at=?,updated_at=? WHERE id=?`)
+    .run(stamp, stamp, id);
+  return resolveIntent(id, branch_id);
+}
+
 export function expireDueIntents(at = now()) {
   return db.prepare(`UPDATE payment_intents SET state='EXPIRED',cancelled_at=?,updated_at=?
     WHERE state IN ('CREATED','QR_PRESENTED','AWAITING_FUNDS') AND expires_at IS NOT NULL AND expires_at<=?`)

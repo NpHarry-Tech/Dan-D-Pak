@@ -1,6 +1,5 @@
 import 'package:dandpak_core/src/models/app_models.dart';
-import 'package:dandpak_core/src/screens/launcher_entry_panel.dart';
-import 'package:flutter/material.dart';
+import 'package:dandpak_core/src/screens/launcher_screen.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 AppModule module(String key, {bool visible = true, String status = 'active'}) =>
@@ -33,38 +32,14 @@ void main() {
         'retail');
   });
 
-  testWidgets('shows both entry choices and cashier sales action works',
-      (tester) async {
-    AppModule? opened;
-    await tester.pumpWidget(MaterialApp(
-        home: Scaffold(
-            body: LauncherEntryPanel(
-      role: 'cashier',
-      modules: [module('admin'), module('pos'), module('warehouse')],
-      onOpen: (value) => opened = value,
-    ))));
-
-    expect(find.text('Bán hàng'), findsOneWidget);
-    expect(find.text('Quản lý'), findsOneWidget);
-    expect(find.text('Ưu tiên'), findsOneWidget);
-    await tester.tap(find.byKey(const Key('launcher-entry-sales')));
-    expect(opened?.key, 'pos');
-    expect(tester.takeException(), isNull);
-  });
-
-  testWidgets('wraps on narrow touch layout without overflow', (tester) async {
-    tester.view.physicalSize = const Size(360, 640);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
-    await tester.pumpWidget(MaterialApp(
-        home: SingleChildScrollView(
-            child: LauncherEntryPanel(
-      role: 'manager',
-      modules: [module('admin'), module('retail')],
-      onOpen: (_) {},
-    ))));
-    expect(find.byType(LauncherEntryPanel), findsOneWidget);
-    expect(tester.takeException(), isNull);
+  test('sellFirstModules đưa module bán hàng lên trước, module quản trị sau',
+      () {
+    final ordered = sellFirstModules('cashier', [
+      module('warehouse'),
+      module('pos'),
+      module('contacts'),
+      module('retail'),
+    ]);
+    expect(ordered.map((m) => m.key).toList(), ['pos', 'retail', 'warehouse', 'contacts']);
   });
 }

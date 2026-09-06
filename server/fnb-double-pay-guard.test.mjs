@@ -36,6 +36,8 @@ const BR = 'sala';
 // Bỏ ràng buộc ca để tập trung vào bất biến thu tiền kép.
 AppSettings.updateSettings({ operations_config: { shifts: { requireOpenShift: false } } }, BR);
 
+const PaymentIntents = await import('./services/paymentIntents.js');
+
 const Catalog = await import('./services/catalog.js');
 const nhom = Catalog.createCategory({ name: 'Test' }, BR);
 db.prepare(`INSERT INTO menu_items (id,branch_id,category_id,name,price) VALUES (?,?,?,?,?)`)
@@ -166,6 +168,68 @@ test('realtime NÉM SAU commit → payment vẫn committed, receipt canonical, k
     { idempotency_key: 'rt-throw', cashier: 'thu-ngan' }, BR);
   assert.equal(r2.payment_id, receipt.payment_id, 'retry trả đúng payment đã commit');
   assert.equal(soKhoanThu(o.id), 1, 'retry không tạo khoản thu thứ hai');
+});
+
+// Sự cố báo cáo 2026-09-06 (bàn A02, 150.000đ): thu ngân chọn "Chuyển khoản"
+// trước (tạo PaymentIntent QR ở server), rồi đổi ý sang "Tiền mặt" và bấm Xác
+// nhận — client cũ vẫn gửi kèm payment_intent_id CŨ của QR đã bỏ dở. Server
+// từ chối đúng (409 PAYMENT_INTENT_FINALIZE_INCOMPLETE, rollback sạch — test
+// dưới chứng minh), NHƯNG dialog cũ coi MỌI lỗi 409 là "đã thanh toán trước
+// đó" và tự đóng như thành công — bàn/món thật ra vẫn còn nguyên, chưa hề thu
+// tiền. Test này khoá lại đúng hành vi SERVER (rollback sạch, không thu tiền,
+// không đổi trạng thái) mà client phải tôn trọng thay vì đoán mò theo mã HTTP.
+test('cash kèm payment_intent_id CŨ của QR đã bỏ dở → 409 FINALIZE_INCOMPLETE, rollback sạch, không thu tiền', () => {
+  AppSettings.updateSettings({ operations_config: {
+    shifts: { requireOpenShift: false },
+    payment: { bankCode: 'TESTBANK', bankAccount: '0011002233' },
+  } }, BR);
+  const o = moDon();
+  const intent = PaymentIntents.createPaymentIntent({
+    branch_id: BR, order_id: o.id, amount: 50000, method: 'qrcode',
+  });
+  assert.equal(intent.state, 'AWAITING_FUNDS');
+
+  assert.throws(
+    () => Pay.payOrder(o.id, [{ method: 'cash', amount: 50000 }], {
+      idempotency_key: 'stale-intent-cash', cashier: 'thu-ngan', payment_intent_id: intent.id,
+    }, BR),
+    (err) => {
+      assert.equal(err.status, 409);
+      assert.equal(err.code, 'PAYMENT_INTENT_FINALIZE_INCOMPLETE');
+      return true;
+    },
+    'dòng cash kèm payment_intent_id của QR phải bị từ chối (không có dòng bank/qrcode để chốt intent)');
+
+  assert.equal(trangThai(o.id), 'open', 'transaction phải rollback sạch — đơn KHÔNG được ở trạng thái paid/partially_paid');
+  assert.equal(soKhoanThu(o.id), 0, 'không được giữ lại payment nào sau rollback');
+  assert.equal(db.prepare(`SELECT COUNT(*) n FROM audit_log WHERE action='payment.done' AND detail LIKE ?`)
+    .get(`%${o.id}%`).n, 0, 'không được ghi payment.done cho giao dịch đã rollback');
+
+  // Chỉ xoá payment_intent_id ở CLIENT là CHƯA đủ: intent vẫn AWAITING_FUNDS
+  // trên server sau rollback nên tiếp tục CHẶN cash mới (409
+  // PAYMENT_INTENT_TAKEOVER_REQUIRED) — đúng chuỗi triệu chứng người dùng báo
+  // (bấm tiền mặt nhiều lần đều gặp 409, chỉ chuyển khoản mới thật sự chốt).
+  assert.throws(
+    () => Pay.payOrder(o.id, [{ method: 'cash', amount: 50000 }], {
+      idempotency_key: 'stale-intent-cash-retry-no-intent', cashier: 'thu-ngan',
+    }, BR),
+    (err) => {
+      assert.equal(err.status, 409);
+      assert.equal(err.code, 'PAYMENT_INTENT_TAKEOVER_REQUIRED');
+      return true;
+    },
+    'intent còn active thì cash không kèm payment_intent_id vẫn phải bị chặn');
+  assert.equal(trangThai(o.id), 'open');
+
+  // Fix ĐÚNG: client phải HỦY hẳn PaymentIntent (API mới) trước khi đổi sang
+  // tiền mặt — sau đó thanh toán mới thật sự đi qua, chốt đúng một lần.
+  PaymentIntents.cancelIntent(intent.id, BR);
+  const retry = Pay.payOrder(o.id, [{ method: 'cash', amount: 50000 }], {
+    idempotency_key: 'stale-intent-cash-retry-cancelled', cashier: 'thu-ngan',
+  }, BR);
+  assert.equal(retry.fully_settled, true);
+  assert.equal(trangThai(o.id), 'paid');
+  assert.equal(soKhoanThu(o.id), 1, 'chỉ một khoản thu — các lần thất bại trước không để lại dấu vết');
 });
 
 test('Retail audit failure rolls back order, stock, payment and all side effects', () => {

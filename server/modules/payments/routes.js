@@ -117,6 +117,15 @@ export function registerPaymentRoutes(api, {
   api.post('/tables/:id/request-payment', wrap((req) => { Pay.requestPayment(req.params.id, visibleBranch(req)); return { ok: true }; }));
   api.post('/orders/:id/payment-qr', guard('pay'), wrap((req) => Pay.generateCustomerPaymentQr(req.params.id, req.body || {}, branch(req))));
   api.get('/orders/:id/payment-intent', guard('pay'), wrap((req) => PaymentIntents.intentStatusForOrder(req.params.id, branch(req))));
+  // Thu ngân đổi phương thức ra khỏi QR/chuyển khoản: hủy hẳn PaymentIntent đang
+  // chờ để thanh toán tiền mặt/Visa/voucher ngay không bị PAYMENT_INTENT_TAKEOVER_REQUIRED
+  // chặn cho tới khi hết hạn tự nhiên (15 phút).
+  api.post('/orders/:id/payment-intent/cancel', guard('pay'), wrap((req) => {
+    const branch_id = branch(req);
+    const active = PaymentIntents.activeIntentForOrder(req.params.id, branch_id);
+    if (active) PaymentIntents.cancelIntent(active.id, branch_id);
+    return { ok: true, cancelled: !!active };
+  }));
   api.post('/payment-qr', wrap((req) => Pay.buildStandalonePaymentQr(req.body || {}, visibleBranch(req))));
   api.post('/orders/:id/customer-qr-pay', wrap((req) => Pay.customerQrPay(req.params.id, req.body || {}, visibleBranch(req))));
 

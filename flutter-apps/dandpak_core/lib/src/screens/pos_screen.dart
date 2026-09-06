@@ -221,11 +221,27 @@ class _PosScreenState extends State<PosScreen> {
   Future<void> _afterCheckout(
       PosProvider pos, Map<String, dynamic>? receipt) async {
     if (receipt == null) return;
-    await pos.selectTable(null);
+    // Trả một PHẦN (split tender chưa đủ, hoặc thu ngân bấm Xác nhận khi còn
+    // thiếu tiền) → đơn vẫn 'partially_paid' trên server, bàn vẫn phải coi là
+    // ĐANG DÙNG (còn bill mở). Chỉ giải phóng bàn (chọn lại null) khi đã chốt
+    // đủ — nếu không, thu ngân tưởng xong nhưng khách vẫn còn nợ mà bàn lại
+    // hiện trống, có thể bị người khác xếp khách mới vào ngồi đè.
+    final fullySettled = receipt['fully_settled'] != false;
+    final table = pos.selectedTable;
+    if (fullySettled) {
+      await pos.selectTable(null);
+    } else if (table != null) {
+      await pos.selectTable(table); // refresh: còn nợ bao nhiêu, đơn vẫn mở
+    }
     await pos.loadFloor();
     await pos.loadShift();
     if (!mounted) return;
-    _toast('Đã thanh toán ${_vnd(receipt['total'] ?? 0)}');
+    if (fullySettled) {
+      _toast('Đã thanh toán ${_vnd(receipt['total'] ?? receipt['paid_total'] ?? 0)}');
+    } else {
+      final remaining = receipt['remaining_due'] ?? 0;
+      _toast(t('Đã nhận một phần. Còn thiếu ${_vnd(remaining)}'));
+    }
     final printError = '${receipt['print_error'] ?? ''}'.trim();
     if (printError.isNotEmpty) {
       _toast(t('Đã thanh toán, nhưng chưa in được: $printError'));
@@ -1341,38 +1357,53 @@ class _PosScreenState extends State<PosScreen> {
             child: LayoutBuilder(
               builder: (context, constraints) {
                 final compact = constraints.maxWidth < 980;
-                if (compact) {
-                  return ListView(
-                    padding: EdgeInsets.all(10),
-                    children: [
-                      RepaintBoundary(child: _floorMap()),
-                      SizedBox(height: 12),
-                      SizedBox(
-                          height: 520,
-                          child: RepaintBoundary(child: _billPane())),
-                    ],
-                  );
-                }
+                // Panel đơn chỉ chiếm chỗ khi thật sự có bàn đang chọn — trước
+                // đây luôn giữ một cột cố định (kể cả rỗng, chỉ hiện "Chọn một
+                // bàn để xem bill"), bóp sơ đồ bàn hẹp lại không cần thiết.
+                // Selector RIÊNG (không watch cả PosProvider ở build() phía
+                // trên) để chỉ đúng quyết định hiện/ẩn panel rebuild theo lựa
+                // chọn bàn, không kéo theo cả màn hình.
+                return Selector<PosProvider, bool>(
+                  selector: (_, p) => p.selectedTable != null,
+                  builder: (context, hasSelection, __) {
+                    if (compact) {
+                      return ListView(
+                        padding: EdgeInsets.all(10),
+                        children: [
+                          RepaintBoundary(child: _floorMap()),
+                          if (hasSelection) ...[
+                            SizedBox(height: 12),
+                            SizedBox(
+                                height: 520,
+                                child: RepaintBoundary(child: _billPane())),
+                          ],
+                        ],
+                      );
+                    }
 
-                return Padding(
-                  padding: EdgeInsets.all(12),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Expanded(child: RepaintBoundary(child: _floorMap())),
-                      ResizablePane(
-                        storageKey: 'fnb',
-                        maxAvailable: constraints.maxWidth,
-                        minWidth: 360,
-                        maxWidth: 720,
-                        defaultWidth: math.min(
-                          632.0,
-                          math.max(380.0, constraints.maxWidth * 0.335),
-                        ),
-                        child: RepaintBoundary(child: _billPane()),
+                    return Padding(
+                      padding: EdgeInsets.all(12),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Expanded(child: RepaintBoundary(child: _floorMap())),
+                          if (hasSelection) ...[
+                            ResizablePane(
+                              storageKey: 'fnb',
+                              maxAvailable: constraints.maxWidth,
+                              minWidth: 360,
+                              maxWidth: 720,
+                              defaultWidth: math.min(
+                                632.0,
+                                math.max(380.0, constraints.maxWidth * 0.335),
+                              ),
+                              child: RepaintBoundary(child: _billPane()),
+                            ),
+                          ],
+                        ],
                       ),
-                    ],
-                  ),
+                    );
+                  },
                 );
               },
             ),

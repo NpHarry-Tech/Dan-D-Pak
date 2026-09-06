@@ -7,7 +7,6 @@ import '../../api_client.dart';
 import '../../models/retail_models.dart';
 import '../../providers/customer_display_controller.dart';
 import '../../services/api_service.dart';
-import '../../services/card_terminal_service.dart';
 import '../../services/receipt_print_banner.dart';
 import '../../services/socket_service.dart';
 import '../../services/system_log.dart';
@@ -127,7 +126,6 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
   bool _invoiceEnabled = false;
   bool _paying = false;
   bool _qrLoading = false;
-  bool _posLoading = false;
   Map<String, dynamic>? _qrData;
   String? _paymentIntentId;
   String? _qrError;
@@ -343,11 +341,6 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
             .contains(m.key);
   }
 
-  bool get _isPos {
-    final m = _currentMethod;
-    return m.kind == 'pos' || ['card', 'visa', 'pos_card'].contains(m.key);
-  }
-
   num get _adjustment => retailN(_adjustmentCtrl.text.trim())
       .clamp(0, (widget.total + widget.manualDiscount).toDouble());
   num get _payable => (widget.total - _adjustment).clamp(0, double.infinity);
@@ -540,53 +533,11 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
     }
   }
 
-  Future<void> _chargePos() async {
-    final card = _paymentCfg['cardTerminal'] is Map
-        ? Map<String, dynamic>.from(_paymentCfg['cardTerminal'])
-        : <String, dynamic>{};
-    final mode =
-        retailS(card['mode']).isEmpty ? 'manual' : retailS(card['mode']);
-    final terminal = retailS(card['terminalName']).isEmpty
-        ? retailS(_paymentCfg['posTerminalName'])
-        : retailS(card['terminalName']);
-    final ip = card['ip']?.toString();
-    final portVal = card['port'];
-    final port =
-        portVal is int ? portVal : int.tryParse(portVal?.toString() ?? '');
-
-    setState(() => _posLoading = true);
-    try {
-      final result = await CardTerminalService.charge(
-        amount: _pendingAmount.toDouble(),
-        reference: _refCtrl.text.trim().isEmpty
-            ? _defaultReference(_method)
-            : _refCtrl.text.trim(),
-        billNo: widget.invoiceLabel,
-        terminalName: terminal,
-        mode: mode,
-        ip: ip,
-        port: port,
-      );
-      if (!mounted) return;
-      if (retailB(result['approved'])) {
-        final ref = [
-          retailS(result['txnId']),
-          retailS(result['approval']),
-          retailS(result['rrn']),
-        ].where((s) => s.isNotEmpty).join(' / ');
-        _addLine(_pendingAmount, ref: ref.isEmpty ? _refCtrl.text.trim() : ref);
-        _toast(t('Máy POS đã duyệt giao dịch'));
-      } else {
-        _toast(
-            retailS(result['error']).isEmpty
-                ? t('Nhập approval code thủ công rồi thêm dòng thanh toán')
-                : retailS(result['error']),
-            error: true);
-      }
-    } finally {
-      if (mounted) setState(() => _posLoading = false);
-    }
-  }
+  // Visa xác nhận đơn giản như tiền mặt: nhập số tiền → "Thêm dòng" → "Xác
+  // nhận" (nút chung phía dưới, dùng chung cho mọi phương thức). KHÔNG còn gọi
+  // máy POS/bắt approval code — vẫn ghi đúng method='visa' trên bill/lịch
+  // sử/log/báo cáo (server không cộng dòng visa vào két tiền mặt, xem
+  // cashDrawer.js chỉ tính method='cash').
 
   void _addLine(num amount, {String? ref}) {
     if (amount <= 0) {
@@ -808,24 +759,39 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
     } catch (e) {
       if (!mounted) return;
       setState(() => _paying = false);
-      // Unknown outcome: the request may have committed before the connection
-      // dropped. Query the canonical order/intent before allowing another try.
-      if (effectiveOrderId != null && e is ApiException && e.isNetworkIssue) {
+      // Unknown outcome: the request may have committed (hoặc bị server từ
+      // chối/rollback THẬT) trước khi ta biết kết quả — KHÔNG được suy diễn
+      // theo statusCode. Luôn hỏi lại canonical order để biết THẬT đã paid hay
+      // chưa, dù lỗi là mất mạng, 409 (ORDER_ALREADY_PAID/ALREADY_SETTLED —
+      // NHƯNG CŨNG có thể là PAYMENT_INTENT_TAKEOVER_REQUIRED/
+      // PAYMENT_INTENT_FINALIZE_INCOMPLETE, tức đơn KHÔNG hề được chốt, giao
+      // dịch đã bị rollback toàn bộ) hay bất kỳ lỗi nào khác. Trước đây MỌI
+      // 409 bị coi là "đã thanh toán rồi" và tự đóng dialog như thành công —
+      // khiến bàn/món "biến mất khỏi màn hình" trong khi đơn vẫn đang mở thật
+      // trên server (không thu được tiền, không tạo bill/log/audit).
+      if (effectiveOrderId != null) {
         try {
           final order = await widget.api.getOrderById(effectiveOrderId.trim());
           if (!mounted) return;
           if (order['status']?.toString() == 'paid') {
-            _toast(t('Hoa don da thanh toan thanh cong.'));
+            _toast(t('Hoá đơn đã được thanh toán (chuyển khoản tự động hoặc thiết bị khác).'));
             Navigator.of(context).pop(Map<String, dynamic>.from(order));
             return;
           }
-          final intent =
-              await widget.api.orderPaymentIntent(effectiveOrderId.trim());
-          if (!mounted) return;
-          final state = intent['state']?.toString() ?? 'UNKNOWN';
-          _toast(
-              t('Chua xac dinh ket qua thanh toan ($state). Gio hang duoc giu nguyen; vui long kiem tra lai, khong thu tien lan nua.'),
-              error: true);
+          // Đơn THẬT SỰ chưa đóng — hiện đúng lý do server từ chối để thu ngân
+          // sửa (vd đổi lại đúng phương thức QR đang chờ, hoặc bấm lại), KHÔNG
+          // đóng dialog, KHÔNG báo "đã thanh toán".
+          if (e is ApiException && e.isNetworkIssue) {
+            final intent =
+                await widget.api.orderPaymentIntent(effectiveOrderId.trim());
+            if (!mounted) return;
+            final state = intent['state']?.toString() ?? 'UNKNOWN';
+            _toast(
+                t('Chua xac dinh ket qua thanh toan ($state). Gio hang duoc giu nguyen; vui long kiem tra lai, khong thu tien lan nua.'),
+                error: true);
+          } else {
+            _toast(e.toString().replaceFirst('Exception: ', ''), error: true);
+          }
           return;
         } catch (_) {
           if (!mounted) return;
@@ -833,24 +799,6 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
               t('Mat ket noi khi xac nhan. Gio hang duoc giu nguyen; hay kiem tra lich su truoc khi thu tien lai.'),
               error: true);
           return;
-        }
-      }
-      // 409 ALREADY_SETTLED: bill vua bi webhook SePay/Casso/payOS hoac thiet bi
-      // khac dong truoc khi request nay toi kip (thua vai giay) — khong phai loi
-      // thao tac cua thu ngan, chi can dong dialog nhu da thanh toan xong.
-      if (effectiveOrderId != null &&
-          e is ApiException &&
-          e.statusCode == 409) {
-        try {
-          final order = await widget.api.getOrderById(effectiveOrderId.trim());
-          if (!mounted) return;
-          _toast(t(
-              'Hoá đơn đã được thanh toán trước đó (chuyển khoản tự động hoặc thiết bị khác)'));
-          Navigator.of(context)
-              .pop({'total': order['total'] ?? widget.total.round()});
-          return;
-        } catch (_) {
-          // Không lấy được order mới nhất — vẫn báo lỗi rõ ràng bên dưới thay vì im lặng.
         }
       }
       _toast(e.toString().replaceFirst('Exception: ', ''), error: true);
@@ -1166,6 +1114,28 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                       _startPaymentStatusPolling();
                     } else {
                       _stopPaymentStatusPolling();
+                      // Đổi RA KHỎI chuyển khoản/QR: PaymentIntent vừa xem (nếu có)
+                      // vẫn còn AWAITING_FUNDS trên server — nếu không hủy hẳn, nó
+                      // tiếp tục chặn thanh toán tiền mặt/Visa/voucher tiếp theo
+                      // (server từ chối PAYMENT_INTENT_TAKEOVER_REQUIRED) cho tới
+                      // khi tự hết hạn (15 phút). Sự cố THẬT (bàn A02, 06/09/2026):
+                      // thu ngân xem QR rồi đổi sang tiền mặt, xác nhận bị server
+                      // từ chối (transaction rollback sạch, KHÔNG thu được tiền) —
+                      // nhưng dialog cũ coi MỌI lỗi 409 là "đã thanh toán trước đó"
+                      // và tự đóng như thành công. Hủy tay ở đây để lần xác nhận
+                      // tiếp theo đi thẳng, không cần biết lỗi 409 nào nữa.
+                      final orderId = _effectiveOrderId;
+                      final hadIntent = retailS(_paymentIntentId).isNotEmpty;
+                      _paymentIntentId = null;
+                      if (hadIntent && orderId != null && orderId.isNotEmpty) {
+                        try {
+                          await widget.api.cancelOrderPaymentIntent(orderId);
+                        } catch (_) {
+                          // Không hủy được (mất mạng/đã hết hạn/đã dùng) — không
+                          // chặn thao tác; _confirm() vẫn tự xác minh trạng thái
+                          // thật nếu payOrder() sau đó bị từ chối.
+                        }
+                      }
                     }
                   },
                 ),
@@ -1203,10 +1173,6 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
           if (_isQr) ...[
             SizedBox(height: 10),
             _qrHelper(),
-          ],
-          if (_isPos) ...[
-            SizedBox(height: 10),
-            _posHelper(),
           ],
         ],
       ),
@@ -1343,42 +1309,6 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                 ),
               ],
             ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _posHelper() {
-    final terminal = retailS(_paymentCfg['posTerminalName']).isEmpty
-        ? t('Máy POS')
-        : retailS(_paymentCfg['posTerminalName']);
-    return Container(
-      padding: EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: DanColors.surface2,
-        borderRadius: BorderRadius.circular(DanRadius.md),
-        border: Border.all(color: DanColors.border),
-      ),
-      child: Row(
-        children: [
-          Icon(Icons.credit_card, color: DanColors.brand),
-          SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              t('$terminal · nhập approval code nếu quẹt thủ công.'),
-              style: TextStyle(fontSize: 12.5, color: DanColors.muted),
-            ),
-          ),
-          OutlinedButton.icon(
-            onPressed: _posLoading ? null : _chargePos,
-            icon: _posLoading
-                ? SizedBox(
-                    width: 15,
-                    height: 15,
-                    child: CircularProgressIndicator(strokeWidth: 2))
-                : Icon(Icons.tap_and_play_outlined, size: 16),
-            label: Text(t('Gọi máy POS')),
           ),
         ],
       ),

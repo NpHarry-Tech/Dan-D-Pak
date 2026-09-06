@@ -706,6 +706,33 @@ class _PhoneSellScreenState extends State<PhoneSellScreen> {
     } catch (e) {
       if (!mounted) return;
       setState(() => _paying = false);
+      // Đơn NHÁP đã có sẵn trên server (draft, tạo lúc chọn QR) trước khi gọi
+      // payOrder() — request có thể đã CHỐT XONG ở server trước khi phản hồi
+      // rớt (mất mạng) hoặc trước khi client kịp hiểu lỗi. Hỏi lại canonical
+      // order: nếu đã 'paid' thật thì đây là thành công, KHÔNG được hiện lỗi
+      // rồi để thu ngân bấm thu lại lần hai (thu trùng tiền khách).
+      final draft = _draftOrderId;
+      if (draft != null && draft.isNotEmpty) {
+        try {
+          final order = await _api.getOrderById(draft);
+          if (!mounted) return;
+          if (order['status']?.toString() == 'paid') {
+            final orderId = '${order['id'] ?? order['order_id'] ?? draft}';
+            _stopWaitingForBank();
+            setState(() {
+              _receipt = Map<String, dynamic>.from(order);
+              _paying = false;
+              _step = _Step.done;
+            });
+            trackReceiptPrintBanner(
+                api: _api, receipt: Map<String, dynamic>.from(order), orderId: orderId);
+            appToast(context, t('Hoá đơn đã được thanh toán.'));
+            return;
+          }
+        } catch (_) {
+          // Không xác nhận lại được — vẫn hiện lỗi bên dưới thay vì im lặng.
+        }
+      }
       appToast(context, e.toString().replaceFirst('Exception: ', ''),
           isError: true);
     }

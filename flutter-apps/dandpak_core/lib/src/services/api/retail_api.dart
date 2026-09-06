@@ -124,6 +124,15 @@ extension ApiServiceRetailApi on ApiService {
         errorMessage: 'Khong kiem tra duoc trang thai chuyen khoan'));
   }
 
+  /// Hủy PaymentIntent (QR/chuyển khoản) đang chờ của đơn — gọi khi thu ngân
+  /// đổi phương thức RA KHỎI QR sang tiền mặt/Visa/voucher, để lần xác nhận
+  /// tiếp theo không bị chặn bởi QR đã xem qua nhưng chưa hoàn tất (server từ
+  /// chối PAYMENT_INTENT_TAKEOVER_REQUIRED cho tới khi intent tự hết hạn).
+  Future<void> cancelOrderPaymentIntent(String orderId) async {
+    await postJson('/api/orders/${Uri.encodeComponent(orderId)}/payment-intent/cancel',
+        errorMessage: 'Không hủy được yêu cầu chuyển khoản đang chờ');
+  }
+
   Future<Map<String, dynamic>> getPayosPaymentStatus(String orderCode) async {
     return mapFrom(await getJson(
         '/api/payos/payment-status/${Uri.encodeComponent(orderCode)}',

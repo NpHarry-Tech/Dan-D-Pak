@@ -36,34 +36,40 @@ class _FloorMap extends StatelessWidget {
 
   bool get _allMode => selectedZoneId.isEmpty || selectedZoneId == 'all';
 
-  Widget _zoneRailButton(
-      {required String label,
-      required bool active,
-      required VoidCallback onTap}) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 6),
-      child: Material(
-        color: active ? DanColors.brandDim : DanColors.surface,
+  /// Dropdown khu vực — thay cho rail dọc bên trái cũ. Đứng ngay sau tiêu đề
+  /// "Sơ đồ bàn" nên gọn hơn hẳn: trả lại toàn bộ bề rộng còn lại cho sơ đồ
+  /// bàn thay vì phải chừa một cột 138px cố định chỉ để chọn khu vực.
+  Widget _zoneDropdown() {
+    final value = _allMode ? 'all' : selectedZoneId;
+    final items = <DropdownMenuItem<String>>[
+      DropdownMenuItem(value: 'all', child: Text(t('Tất cả'))),
+      for (final z in zones) DropdownMenuItem(value: z.id, child: Text(z.name)),
+    ];
+    // Khu vực đang chọn có thể không còn trong danh sách zones hiện tại (đã bị
+    // xoá/đổi tên) — DropdownButton bắt buộc value phải khớp một item, không
+    // thì ném lỗi assertion. Thêm tạm mục đó để không vỡ dropdown.
+    final hasValue = items.any((item) => item.value == value);
+    if (!hasValue) {
+      items.add(DropdownMenuItem(value: value, child: Text(value)));
+    }
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10),
+      decoration: BoxDecoration(
+        color: DanColors.surface2,
         borderRadius: BorderRadius.circular(9),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(9),
-          onTap: onTap,
-          child: Container(
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(9),
-              border: Border.all(
-                  color: active ? DanColors.brand : DanColors.border),
-            ),
-            child: Text(label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: active ? FontWeight.w800 : FontWeight.w600,
-                    color: active ? DanColors.brand : DanColors.text)),
-          ),
+        border: Border.all(color: DanColors.border),
+      ),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<String>(
+          value: value,
+          isDense: true,
+          icon: Icon(Icons.expand_more, size: 18, color: DanColors.muted),
+          style: TextStyle(
+              fontSize: 13, fontWeight: FontWeight.w800, color: DanColors.text),
+          onChanged: (v) {
+            if (v != null) onSelectZone(v);
+          },
+          items: items,
         ),
       ),
     );
@@ -161,10 +167,17 @@ class _FloorMap extends StatelessWidget {
                     mainAxisAlignment: MainAxisAlignment.center,
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        t('Sơ đồ bàn'),
-                        style: TextStyle(
-                            fontSize: 14, fontWeight: FontWeight.w800),
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            t('Sơ đồ bàn'),
+                            style: TextStyle(
+                                fontSize: 14, fontWeight: FontWeight.w800),
+                          ),
+                          SizedBox(width: 10),
+                          _zoneDropdown(),
+                        ],
                       ),
                       SizedBox(height: 2),
                       Text(
@@ -197,33 +210,7 @@ class _FloorMap extends StatelessWidget {
             ),
           ),
           SizedBox(height: 12),
-          // THANH KHU VỰC BÊN TRÁI + nội dung bên phải.
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              SizedBox(
-                width: 138,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    _zoneRailButton(
-                      label: t('Tất cả'),
-                      active: _allMode,
-                      onTap: () => onSelectZone('all'),
-                    ),
-                    for (final z in zones)
-                      _zoneRailButton(
-                        label: z.name,
-                        active: !_allMode && selectedZoneId == z.id,
-                        onTap: () => onSelectZone(z.id),
-                      ),
-                  ],
-                ),
-              ),
-              SizedBox(width: 12),
-              Expanded(child: content),
-            ],
-          ),
+          content,
         ],
       ),
     );

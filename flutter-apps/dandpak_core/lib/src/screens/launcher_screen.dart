@@ -19,7 +19,6 @@ import 'database/database_screen.dart';
 import 'expenses/expenses_screen.dart';
 import 'invoices/invoices_screen.dart';
 import 'kds/kds_screen.dart';
-import 'launcher_entry_panel.dart';
 import 'management/management_screen.dart';
 import 'management/settings_screen.dart';
 import 'online/online_shell.dart';
@@ -32,6 +31,61 @@ import 'retail/retail_screen.dart';
 import 'self_order/self_order_table_screen.dart';
 import 'warehouse/warehouse_screen.dart';
 import '../services/black_box.dart';
+
+// Sắp xếp module bán hàng (POS/Retail/Online/KDS) lên trước trong lưới danh
+// mục thống nhất, ưu tiên đúng module phù hợp vai trò (vd bếp → KDS trước).
+const _sellingKeys = <String>{'pos', 'retail', 'online', 'kds'};
+const _backOfficeKeys = <String>{
+  'admin',
+  'settings',
+  'contacts',
+  'warehouse',
+  'purchase',
+  'expenses',
+  'invoice',
+  'accounting',
+  'database',
+  'printing',
+};
+
+AppModule? preferredSellingModule(String role, Iterable<AppModule> modules) {
+  final visible = modules.where((m) => m.visible && m.isActive).toList();
+  final order = switch (role) {
+    'kitchen' => const ['kds', 'pos', 'retail', 'online'],
+    'online_manager' || 'marketplace_operator' => const [
+        'online',
+        'retail',
+        'pos',
+        'kds'
+      ],
+    _ => const ['pos', 'retail', 'online', 'kds'],
+  };
+  for (final key in order) {
+    for (final module in visible) {
+      if (module.key == key) return module;
+    }
+  }
+  return null;
+}
+
+List<AppModule> sellFirstModules(String role, Iterable<AppModule> modules) {
+  final list = modules.toList();
+  int lane(AppModule module) {
+    if (_sellingKeys.contains(module.key)) return 0;
+    if (_backOfficeKeys.contains(module.key)) return 1;
+    return 2;
+  }
+
+  list.sort((a, b) {
+    final byLane = lane(a).compareTo(lane(b));
+    if (byLane != 0) return byLane;
+    final preferred = preferredSellingModule(role, list)?.key;
+    if (a.key == preferred) return -1;
+    if (b.key == preferred) return 1;
+    return 0;
+  });
+  return list;
+}
 
 String _moduleGroupLabel(AppModuleGroup group) {
   final labels = {
@@ -426,14 +480,24 @@ class _LauncherScreenState extends State<LauncherScreen> {
         .where((m) => AppFlavor.current.showsModule(m.key))
         .toList();
 
-    final blocks = <Widget>[
-      LauncherEntryPanel(
-        role: auth.currentUser?.role ?? '',
-        modules: visible,
-        onOpen: _openModule,
-      ),
-    ];
-    for (final group in catalog.groups) {
+    // Một danh mục thống nhất, không còn hai thẻ "Bán hàng"/"Quản lý" dư phía
+    // trên rồi lặp lại chính các module đó trong lưới bên dưới. "Cài đặt" theo
+    // sort mặc định của server (70/80, gần cuối) bị chôn dưới Kho/Tài chính —
+    // đưa lên vị trí thứ ba (ngay sau Cốt lõi + Bán hàng) để FnB, Bán lẻ và
+    // Cài đặt đều truy cập rõ ràng, không phải cuộn hết trang.
+    const groupPriority = ['essentials', 'sales', 'settings'];
+    final groups = [...catalog.groups]..sort((a, b) {
+        final ia = groupPriority.indexOf(a.key);
+        final ib = groupPriority.indexOf(b.key);
+        if (ia != -1 || ib != -1) {
+          return (ia == -1 ? groupPriority.length : ia)
+              .compareTo(ib == -1 ? groupPriority.length : ib);
+        }
+        return 0;
+      });
+
+    final blocks = <Widget>[];
+    for (final group in groups) {
       final modules = sellFirstModules(
         auth.currentUser?.role ?? '',
         visible.where((m) => m.group == group.key && m.isActive),
