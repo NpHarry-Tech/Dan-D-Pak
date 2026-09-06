@@ -35,6 +35,12 @@ mkdirSync(dirname(DB_PATH), { recursive: true });
 export const DB_READ_ONLY = process.env.DATABASE_READ_ONLY === 'true';
 const rawDb = new DatabaseSync(DB_PATH, { readOnly: DB_READ_ONLY });
 
+// The unwrapped DatabaseSync handle. node:sqlite's native backup() reads the
+// instance's internal fields directly, so it MUST be given the real handle —
+// passing the `db` Proxy below aborts the process with a V8 fatal
+// (GetAlignedPointerFromInternalField). Use this for backup()/native APIs only.
+export const rawDatabase = rawDb;
+
 // Preserve raw SQL callers while exposing actual commit/savepoint boundaries.
 export const db = new Proxy(rawDb, {
   get(target, property) {
