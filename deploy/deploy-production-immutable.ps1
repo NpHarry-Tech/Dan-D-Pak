@@ -98,7 +98,8 @@ loaded_id=`$(docker image inspect '$imageTag' -f '{{.Id}}')
 if [ "`$loaded_id" != '$($manifest.imageId)' ]; then echo 'Loaded image ID mismatch.' >&2; exit 32; fi
 rollback() {
   echo 'New image failed; restoring verified previous image.' >&2
-  APP_IMAGE='$expectedRollbackImage' docker compose -f docker-compose.yml -f '$remoteOverride' up -d --no-build --wait app
+  export APP_IMAGE='$expectedRollbackImage'
+  docker compose -f docker-compose.yml -f '$remoteOverride' up -d --no-build --wait app
   rollback_container=`$(docker compose -f docker-compose.yml -f '$remoteOverride' ps -q app)
   rollback_image=`$(docker inspect -f '{{.Image}}' "`$rollback_container")
   if [ "`$rollback_image" != '$expectedRollbackImageId' ]; then
@@ -108,7 +109,8 @@ rollback() {
   docker compose -f docker-compose.yml -f '$remoteOverride' exec -T app node -e "fetch('http://127.0.0.1:3000/health').then(async r=>{const b=await r.json();process.exit(r.ok&&b.ok&&b.database&&b.database.ok?0:1)}).catch(()=>process.exit(1))"
 }
 trap rollback ERR
-APP_IMAGE='$imageTag' docker compose -f docker-compose.yml -f '$remoteOverride' up -d --no-build --wait app
+export APP_IMAGE='$imageTag'
+docker compose -f docker-compose.yml -f '$remoteOverride' up -d --no-build --wait app
 active_container=`$(docker compose -f docker-compose.yml -f '$remoteOverride' ps -q app)
 active_image=`$(docker inspect -f '{{.Image}}' "`$active_container")
 if [ "`$active_image" != "`$loaded_id" ]; then echo 'Activated container image ID mismatch.' >&2; exit 34; fi
