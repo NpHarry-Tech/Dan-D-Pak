@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
 import '../../models/retail_models.dart';
+import '../../providers/auth_provider.dart';
 import '../../services/api_service.dart';
 import '../../ui/app_theme.dart';
 import '../../ui/format.dart';
@@ -523,7 +525,15 @@ class _PromotionSettingsPanelState extends State<PromotionSettingsPanel> {
                 t('SKU trong combo'),
                 [
                   for (final s in _skus)
-                    {'id': s.id, 'name': s.name, 'barcode': s.barcode}
+                    {
+                      'id': s.id,
+                      'name': s.name,
+                      'barcode': s.barcode,
+                      'image': s.image,
+                      'price': s.price,
+                      'stock': s.stock,
+                      'unit': s.unit,
+                    }
                 ],
                 idKey: 'id',
                 labelKeys: ['name', 'barcode'],
@@ -1004,6 +1014,17 @@ class _PromotionSettingsPanelState extends State<PromotionSettingsPanel> {
     return fallback;
   }
 
+  // Ảnh SKU lưu đường dẫn TƯƠNG ĐỐI (/uploads/products/...) — phải ghép địa chỉ
+  // máy chủ mới tải được, cùng pattern với self_order/_soImageUrl và
+  // menu_item_dialogs/_absoluteImageUrl (thiếu bước này ảnh luôn rơi vào ô
+  // trống dù server có ảnh thật).
+  String? _scopeImageUrl(String serverUrl, String raw) {
+    if (raw.isEmpty) return null;
+    if (raw.startsWith('http') || raw.startsWith('data:')) return raw;
+    final base = serverUrl.replaceFirst(RegExp(r'/$'), '');
+    return '$base${raw.startsWith('/') ? '' : '/'}$raw';
+  }
+
   Future<Set<String>?> _pickScopeIds({
     required String title,
     required List<Map<String, dynamic>> rows,
@@ -1012,45 +1033,123 @@ class _PromotionSettingsPanelState extends State<PromotionSettingsPanel> {
     required List<String> labelKeys,
   }) {
     var draft = Set<String>.of(selected);
+    var query = '';
+    final serverUrl = context.read<AuthProvider>().serverUrl;
     return showDialog<Set<String>>(
       context: context,
       builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setLocal) => AlertDialog(
-          backgroundColor: DanColors.surface,
-          title: Text(title),
-          content: SizedBox(
-            width: dialogWidth(context, 440),
-            child: ListView(
-              shrinkWrap: true,
-              children: [
-                for (final row in rows)
-                  CheckboxListTile(
-                    dense: true,
-                    value: draft.contains(asText(row[idKey])),
-                    title: Text(_scopeLabel(row, labelKeys,
-                        fallback: asText(row[idKey]))),
-                    onChanged: (on) => setLocal(() {
-                      final id = asText(row[idKey]);
-                      on == true ? draft.add(id) : draft.remove(id);
-                    }),
+        builder: (ctx, setLocal) {
+          // DÙNG CHUNG search engine của Retail (foldSearch/searchMatchesAny,
+          // xem combo_support.dart) — KHÔNG viết thuật toán tìm mới.
+          final q = foldSearch(query);
+          final filtered = q.isEmpty
+              ? rows
+              : rows
+                  .where((row) => searchMatchesAny(
+                      [for (final k in labelKeys) row[k]], q))
+                  .toList();
+          return AlertDialog(
+            backgroundColor: DanColors.surface,
+            title: Text(title),
+            content: SizedBox(
+              width: dialogWidth(context, 440),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    autofocus: true,
+                    onChanged: (v) => setLocal(() => query = v),
+                    decoration: InputDecoration(
+                      isDense: true,
+                      hintText: t('Tìm tên / SKU / mã vạch'),
+                      prefixIcon: Icon(Icons.search, size: 18),
+                      border: OutlineInputBorder(),
+                    ),
                   ),
-              ],
+                  SizedBox(height: 8),
+                  Flexible(
+                    child: ListView.separated(
+                      shrinkWrap: true,
+                      itemCount: filtered.length,
+                      separatorBuilder: (_, __) =>
+                          Divider(height: 1, color: DanColors.border),
+                      itemBuilder: (_, i) {
+                        final row = filtered[i];
+                        final id = asText(row[idKey]);
+                        final image =
+                            _scopeImageUrl(serverUrl, asText(row['image']));
+                        final subtitle = _scopeSubtitle(row);
+                        return CheckboxListTile(
+                          dense: subtitle.isEmpty,
+                          controlAffinity: ListTileControlAffinity.leading,
+                          secondary: row.containsKey('image')
+                              ? ClipRRect(
+                                  borderRadius: BorderRadius.circular(6),
+                                  child: image != null
+                                      ? Image.network(image,
+                                          width: 34,
+                                          height: 34,
+                                          fit: BoxFit.cover,
+                                          errorBuilder: (_, __, ___) =>
+                                              _scopeImagePlaceholder())
+                                      : _scopeImagePlaceholder(),
+                                )
+                              : null,
+                          value: draft.contains(id),
+                          title: Text(
+                              _scopeLabel(row, labelKeys, fallback: id)),
+                          subtitle:
+                              subtitle.isEmpty ? null : Text(subtitle),
+                          onChanged: (on) => setLocal(() {
+                            on == true ? draft.add(id) : draft.remove(id);
+                          }),
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ),
-          actions: [
-            TextButton(
-                onPressed: () => setLocal(() => draft = <String>{}),
-                child: Text(t('Tất cả'))),
-            TextButton(
-                onPressed: () => Navigator.of(ctx).pop(),
-                child: Text(t('Hủy'))),
-            FilledButton(
-                onPressed: () => Navigator.of(ctx).pop(draft),
-                child: Text(t('Áp dụng'))),
-          ],
-        ),
+            actions: [
+              TextButton(
+                  onPressed: () => setLocal(() => draft = <String>{}),
+                  child: Text(t('Bỏ chọn tất cả'))),
+              TextButton(
+                  onPressed: () => Navigator.of(ctx).pop(),
+                  child: Text(t('Hủy'))),
+              FilledButton(
+                  onPressed: () => Navigator.of(ctx).pop(draft),
+                  child: Text(t('Áp dụng'))),
+            ],
+          );
+        },
       ),
     );
+  }
+
+  Widget _scopeImagePlaceholder() => Container(
+        width: 34,
+        height: 34,
+        color: DanColors.surface2,
+        alignment: Alignment.center,
+        child: Icon(Icons.inventory_2_outlined,
+            size: 16, color: DanColors.muted),
+      );
+
+  // Gộp barcode/giá/tồn kho thành 1 dòng phụ — chỉ hiện field nào có mặt
+  // trong row (picker dùng chung cho SKU/nhóm hàng/chi nhánh/nhân viên nên
+  // không phải row nào cũng có đủ các field này).
+  String _scopeSubtitle(Map<String, dynamic> row) {
+    final parts = <String>[];
+    final barcode = asText(row['barcode']).trim();
+    if (barcode.isNotEmpty) parts.add(barcode);
+    if (row.containsKey('price')) parts.add(Fmt.money(row['price'] as num));
+    if (row.containsKey('stock')) {
+      final unit = asText(row['unit']).trim();
+      parts.add(
+          '${t('Tồn')}: ${Fmt.int0(row['stock'] as num)}${unit.isEmpty ? '' : ' $unit'}');
+    }
+    return parts.join(' · ');
   }
 
   Widget _field(TextEditingController controller, String label,

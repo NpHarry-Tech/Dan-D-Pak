@@ -3,13 +3,26 @@
 // gom các thành phần thành 1 dòng combo. Thành phần là CartLine gắn `comboId` nên
 // checkout gửi như hàng thường + `selected_combos` để server áp đúng combo.
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
 import '../../models/retail_models.dart';
+import '../../providers/auth_provider.dart';
 import '../../ui/app_theme.dart';
 import '../../ui/format.dart';
 // foldSearch/searchMatches (utils/search.dart) được re-export qua translation.dart —
 // dùng CHUNG search engine của Retail, KHÔNG viết thuật toán tìm mới.
 import '../../utils/translation.dart';
+
+// Ảnh SKU lưu đường dẫn TƯƠNG ĐỐI (/uploads/products/...) — phải ghép địa chỉ
+// máy chủ mới tải được (cùng pattern self_order/_soImageUrl,
+// menu_item_dialogs/_absoluteImageUrl); thiếu bước này ảnh luôn rơi vào ô
+// trống dù server có ảnh thật.
+String? _comboImageUrl(String serverUrl, String raw) {
+  if (raw.isEmpty) return null;
+  if (raw.startsWith('http') || raw.startsWith('data:')) return raw;
+  final base = serverUrl.replaceFirst(RegExp(r'/$'), '');
+  return '$base${raw.startsWith('/') ? '' : '/'}$raw';
+}
 
 // SKU đủ điều kiện cho 1 combo: id nằm trong danh sách SKU HOẶC nhóm hàng khớp.
 List<Sku> comboEligibleSkus(RetailVoucher v, List<Sku> skus) {
@@ -151,6 +164,7 @@ class _ComboPickerDialogState extends State<ComboPickerDialog> {
   Widget build(BuildContext context) {
     final ready = _sum == _n && _count > 0;
     final unit = comboUnitPrice(widget.voucher, _gross);
+    final serverUrl = context.read<AuthProvider>().serverUrl;
     return AlertDialog(
       title: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -199,14 +213,15 @@ class _ComboPickerDialogState extends State<ComboPickerDialog> {
                   itemBuilder: (_, i) {
                     final s = items[i];
                     final n = _per[s.id] ?? 0;
+                    final image = _comboImageUrl(serverUrl, s.image);
                     return Padding(
                       padding: EdgeInsets.symmetric(vertical: 6),
                       child: Row(
                         children: [
                           ClipRRect(
                             borderRadius: BorderRadius.circular(6),
-                            child: s.image.isNotEmpty
-                                ? Image.network(s.image,
+                            child: image != null
+                                ? Image.network(image,
                                     width: 34,
                                     height: 34,
                                     fit: BoxFit.cover,
