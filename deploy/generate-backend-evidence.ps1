@@ -1,4 +1,4 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param(
   [Parameter(Mandatory = $true)][string]$ImageTar,
   [Parameter(Mandatory = $true)][string]$ImageManifest,
