@@ -3,7 +3,7 @@ description: "Dan-D Pak Phone POS Application."
 publish_to: 'none'
 # Public/updater release name: 2026.09.08.01 (see lib/app_version.dart).
 # Pub accepts SemVer's three numeric components only.
-version: 2026.9.8+91
+version: 2026.9.8+92
 
 environment:
   sdk: '>=3.3.0 <4.0.0'
