@@ -1647,7 +1647,7 @@ class _PhoneSellScreenState extends State<PhoneSellScreen> {
                   padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
                   children: [
                     Padding(
-                      padding: const EdgeInsets.only(bottom: 10),
+                      padding: const EdgeInsets.only(bottom: 7),
                       child: _KhachRow(
                         label: _nhanKhach,
                         sub: _customer == null
@@ -1681,7 +1681,7 @@ class _PhoneSellScreenState extends State<PhoneSellScreen> {
                               ),
                       ),
                     Padding(
-                      padding: const EdgeInsets.only(bottom: 10),
+                      padding: const EdgeInsets.only(bottom: 7),
                       child: _KhachRow(
                         icon: Icons.card_giftcard,
                         label: t('Voucher / CTKM'),
@@ -1695,7 +1695,7 @@ class _PhoneSellScreenState extends State<PhoneSellScreen> {
                       ),
                     ),
                     Padding(
-                      padding: const EdgeInsets.only(bottom: 10),
+                      padding: const EdgeInsets.only(bottom: 7),
                       child: _KhachRow(
                         icon: Icons.local_offer_outlined,
                         label: t('Giảm giá'),
@@ -1707,13 +1707,13 @@ class _PhoneSellScreenState extends State<PhoneSellScreen> {
                       ),
                     ),
                     Padding(
-                      padding: const EdgeInsets.only(bottom: 10),
+                      padding: const EdgeInsets.only(bottom: 7),
                       child: _KhachRow(
                         icon: Icons.notes_outlined,
                         label: t('Ghi chú'),
-                        sub: _note.isEmpty
-                            ? t('Chạm để nhập ghi chú')
-                            : '${t('Ghi chú')}: $_note',
+                        // Sub KHÔNG lặp lại "Ghi chú:" — _KhachRow đã tự ghép
+                        // "Ghi chú · <sub>" thành 1 dòng.
+                        sub: _note.isEmpty ? t('Chạm để nhập ghi chú') : _note,
                         onTap: _editNote,
                       ),
                     ),
@@ -2714,43 +2714,44 @@ class _KhachRow extends StatelessWidget {
         onTap: onTap,
         borderRadius: BorderRadius.circular(10),
         child: Container(
-          padding: const EdgeInsets.all(12),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
           decoration: BoxDecoration(
             border: Border.all(color: DanColors.border),
             borderRadius: BorderRadius.circular(10),
           ),
           child: Row(
             children: [
-              Icon(icon, size: 19, color: DanColors.muted),
-              const SizedBox(width: 11),
+              Icon(icon, size: 17, color: DanColors.muted),
+              const SizedBox(width: 9),
               Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(label,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
+                // 1 DÒNG DUY NHẤT (nhãn · phụ đề) — trước đây xếp 2 dòng khiến 4
+                // dòng khách/voucher/giảm giá/ghi chú chiếm gần hết màn hình phone.
+                child: Text.rich(
+                  TextSpan(children: [
+                    TextSpan(
+                        text: label,
                         style: const TextStyle(
-                            fontSize: 13.5, fontWeight: FontWeight.w800)),
+                            fontSize: 13,
+                            fontWeight: FontWeight.w800,
+                            color: DanColors.text)),
                     if (sub.isNotEmpty)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 2),
-                        child: Text(sub,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                                fontSize: 11, color: DanColors.muted)),
-                      ),
-                  ],
+                      TextSpan(
+                          text: '  ·  $sub',
+                          style: const TextStyle(
+                              fontSize: 12, color: DanColors.muted)),
+                  ]),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
+              const SizedBox(width: 6),
               Text(action ?? t('Đổi'),
                   style: const TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.w800,
                       color: DanColors.brand)),
-              const SizedBox(width: 4),
-              const Icon(Icons.chevron_right, size: 17, color: DanColors.faint),
+              const SizedBox(width: 2),
+              const Icon(Icons.chevron_right, size: 16, color: DanColors.faint),
             ],
           ),
         ),
