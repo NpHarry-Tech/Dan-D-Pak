@@ -4,6 +4,7 @@ import test from 'node:test';
 
 test('activity log keeps domain audit and drops duplicate technical noise', () => {
   const api = readFileSync(new URL('./api.js', import.meta.url), 'utf8');
+  const errors = readFileSync(new URL('./core/errors.js', import.meta.url), 'utf8');
   const reports = readFileSync(new URL('./services/reports.js', import.meta.url), 'utf8');
   const logs = readFileSync(new URL('./services/systemLogs.js', import.meta.url), 'utf8');
   const routes = readFileSync(new URL('./modules/audit/routes.js', import.meta.url), 'utf8');
@@ -12,8 +13,12 @@ test('activity log keeps domain audit and drops duplicate technical noise', () =
   // Expected 4xx business errors (wrong PIN, out of stock, ...) still skip the log —
   // but an UNEXPECTED system error (TypeError/ERR_* from Node/SQLite) that happens to
   // surface as 4xx (no .status set) must still be logged, or it's invisible forever.
+  // isUnexpectedSystemError lives in core/errors.js (shared with errorPayload's own
+  // internal/business classification — see diagnostic-redaction.test.mjs) and api.js
+  // imports it rather than keeping a second, drift-prone copy.
   assert.match(api, /if \(status < 500 && !isUnexpectedSystemError\(e\)\) return/);
-  assert.match(api, /function isUnexpectedSystemError/);
+  assert.match(api, /import \{ errorPayload, isUnexpectedSystemError \} from '\.\/core\/errors\.js'/);
+  assert.match(errors, /export function isUnexpectedSystemError/);
   assert.doesNotMatch(api, /audit\('system\.error'/);
   for (const action of [
     'system.error',

@@ -559,14 +559,10 @@ class _MenuPickerDialogState extends State<_MenuPickerDialog> {
           modifiers: [],
           isRetail: true,
         );
-        final ok = await widget.onAdd(item);
+        await widget.onAdd(item);
         if (!mounted) return;
-        if (ok) {
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-              content: Text('+1 ${item.name}'),
-              duration: Duration(milliseconds: 900),
-              backgroundColor: DanColors.text));
-        }
+        // Giỏ hàng nhúng cạnh picker tự cập nhật realtime — không cần SnackBar
+        // "+1 tên món" nữa (F&B POS đặt món không hiện thông báo trừ khi lỗi).
         _searchCtrl.clear();
         _search = '';
         _loadNextPage(isRefresh: true);
@@ -592,14 +588,8 @@ class _MenuPickerDialogState extends State<_MenuPickerDialog> {
       await _tryBarcodeAdd(raw);
       return;
     }
-    final ok = await widget.onAdd(candidate);
+    await widget.onAdd(candidate);
     if (!mounted) return;
-    if (ok) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('+1 ${candidate.name}'),
-          duration: Duration(milliseconds: 900),
-          backgroundColor: DanColors.text));
-    }
     _searchCtrl.clear();
     _search = '';
     await _loadNextPage(isRefresh: true);
@@ -869,17 +859,13 @@ class _MenuPickerDialogState extends State<_MenuPickerDialog> {
                           item: item,
                           price: _vnd(item.price),
                           onTap: () async {
-                            final added = await widget.onAdd(item);
-                            if (!context.mounted) return;
-                            if (added) {
-                              // Nhúng cạnh giỏ hàng nên KHÔNG đóng sau mỗi lần
-                              // thêm — cho phép bấm liên tiếp nhiều món, giỏ
-                              // hàng bên cạnh tự cập nhật theo thời gian thực.
-                              ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                                  content: Text('+1 ${item.name}'),
-                                  duration: Duration(milliseconds: 900),
-                                  backgroundColor: DanColors.text));
-                            }
+                            // Nhúng cạnh giỏ hàng nên KHÔNG đóng sau mỗi lần
+                            // thêm — cho phép bấm liên tiếp nhiều món, giỏ
+                            // hàng bên cạnh tự cập nhật theo thời gian thực.
+                            // Không hiện SnackBar "+1 tên món": giỏ đã hiện
+                            // ngay bên cạnh, thông báo thêm chỉ gây vướng khi
+                            // bấm liên tiếp nhiều món (đúng góp ý người dùng).
+                            await widget.onAdd(item);
                           },
                         );
                       },

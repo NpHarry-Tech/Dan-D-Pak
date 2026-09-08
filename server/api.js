@@ -37,7 +37,7 @@ import { registerDatabaseRoutes } from './modules/database/routes.js';
 import { registerErpRoutes } from './modules/erp/routes.js';
 import { registerDocumentRoutes, fileCashDrawerReceipt, registerStorageFileOrRollback } from './modules/documents/routes.js';
 import * as Haravan from './services/haravanConnector.js';
-import { errorPayload } from './core/errors.js';
+import { errorPayload, isUnexpectedSystemError } from './core/errors.js';
 import fs from 'node:fs';
 import { sanitizeText, sanitizeUrl } from './core/redaction.js';
 import nodePath from 'node:path';
@@ -148,12 +148,6 @@ function scopedUserBody(req) {
 // day la thong bao ro rang cho nguoi dung, khong phai su co. Nhung loi he thong
 // KHONG CHU DINH (TypeError, loi bind SQLite ERR_*, ...) van bi tra ve HTTP 400
 // (vi e.status khong duoc set) nhung PHAI duoc log, neu khong se vo hinh mai mai.
-function isUnexpectedSystemError(e) {
-  if (e instanceof TypeError || e instanceof RangeError || e instanceof ReferenceError) return true;
-  const code = String(e?.code || '');
-  return code.startsWith('ERR_');
-}
-
 function logRequestError(req, e) {
   try {
     const status = e?.status || 400;

@@ -860,7 +860,10 @@ export function cancelItem(item_id, reason, branch_id = 'sala', actor = 'system'
     table_id: beforeCancel?.table_id || null,
     bill_no: beforeCancel?.bill_no || null,
   }, branch_id, actor);
-  if (cancelledItem.station !== 'retail') {
+  // Món còn 'pending_confirm' CHƯA từng gửi bếp (chưa bấm "Gửi món vào bếp") —
+  // bếp chưa hề nhận phiếu nào cho món này nên không có gì để "hủy" trên giấy.
+  // In phiếu hủy ở đây chỉ đúng cho món ĐÃ gửi bếp thật sự (new/preparing/…).
+  if (cancelledItem.station !== 'retail' && cancelledItem.status !== 'pending_confirm') {
     printKitchenUpdate(beforeCancel, [{ ...cancelledItem, cancelled: true }], branch_id, actor,
       'cancel_item');
   }
@@ -882,6 +885,62 @@ export function cancelItem(item_id, reason, branch_id = 'sala', actor = 'system'
   archiveOrder(order);
   emit('order:updated', order, branch_id);
   return order;
+}
+
+/** HỦY NHIỀU MÓN CÙNG LÚC — nút "Xác nhận" dùng khi thu ngân chọn nhiều món
+ *  rồi hủy chung một lượt: mọi món ĐÃ từng gửi bếp trong lượt này gộp vào
+ *  ĐÚNG MỘT phiếu hủy (thay vì mỗi món một phiếu rời như hủy tuần tự từng
+ *  món). Món còn 'pending_confirm' (chưa từng gửi bếp) bị loại khỏi phiếu vì
+ *  không có gì để retract — giống cancelItem một món. In NGAY khi hàm này
+ *  chạy (không hoãn) để bếp luôn được báo kịp thời, không phụ thuộc bước nào
+ *  khác của người dùng. */
+export function cancelItemsBatch(order_id, item_ids, reason, branch_id = 'sala', actor = 'system') {
+  const cleanReason = String(reason || '').trim() || 'Nhân viên hủy';
+  const ids = Array.isArray(item_ids) ? [...new Set(item_ids.filter(Boolean))] : [];
+  if (!ids.length) throw new Error('Chưa chọn món để hủy');
+  const rows = db.prepare(
+    `SELECT * FROM order_items WHERE order_id=? AND status!='cancelled' AND id IN (${ids.map(() => '?').join(',')})`
+  ).all(order_id, ...ids);
+  if (!rows.length) throw new Error('Không có món để hủy');
+  const beforeCancel = getOrder(order_id);
+  if (!beforeCancel) throw new Error('Bill không tồn tại hoặc đã đóng');
+
+  for (const row of rows) {
+    setItemStatus(row.id, 'cancelled', branch_id, actor);
+    audit('item.cancel', {
+      item: row.id,
+      reason: cleanReason,
+      item_name: row.name || null,
+      sku: row.sku_id || row.item_code || null,
+      qty: row.qty ?? null,
+      unit_price: row.unit_price ?? null,
+      station: row.station || null,
+      order_id,
+      table_id: beforeCancel.table_id || null,
+      bill_no: beforeCancel.bill_no || null,
+    }, branch_id, actor);
+  }
+  recomputeTotals(order_id);
+
+  const printable = rows.filter(r => r.station !== 'retail' && r.status !== 'pending_confirm');
+  if (printable.length) {
+    printKitchenUpdate(beforeCancel, printable.map(r => ({ ...r, cancelled: true })), branch_id, actor,
+      'cancel_item');
+  }
+
+  const ord = db.prepare(`SELECT id, table_id, status FROM orders WHERE id=?`).get(order_id);
+  if (ord && ord.status === 'open') {
+    const activeLeft = db.prepare(`SELECT COUNT(*) n FROM order_items WHERE order_id=? AND status!='cancelled'`).get(order_id).n;
+    if (!activeLeft) {
+      db.prepare(`UPDATE orders SET status='void', subtotal=0, goods_amount=0, vat_amount=0, total=0 WHERE id=?`).run(order_id);
+      if (ord.table_id) setTableByOpenOrders(ord.table_id, branch_id);
+    }
+  }
+
+  const full = getOrder(order_id);
+  archiveOrder(full);
+  emit('order:updated', full, branch_id);
+  return full;
 }
 
 export function createStaffCall(table_id, reason, branch_id = 'sala') {

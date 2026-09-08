@@ -54,6 +54,10 @@ class _PosScreenState extends State<PosScreen> {
   bool _pickingMenu = false;
   bool _pickerIsRetail = false;
   String _pickerTitle = '';
+  // Chọn nhiều món để hủy chung 1 lượt → gộp thành 1 phiếu hủy bếp thay vì
+  // mỗi món 1 phiếu rời (xem PosProvider.cancelCartItems).
+  bool _multiCancelMode = false;
+  final Set<CartItem> _multiCancelSelection = {};
 
   @override
   void initState() {
@@ -267,7 +271,7 @@ class _PosScreenState extends State<PosScreen> {
         await pos.selectTable(selected);
       }
       if (pos.cart.any((item) => item.status == 'pending_confirm')) {
-        if (mounted) _toast(t('Gửi món vào bếp/bar trước khi thanh toán.'));
+        if (mounted) _toast(t('Xác nhận món trước khi thanh toán.'));
         return;
       }
       if (pos.activeOrderId == null || pos.cartTotal <= 0) {
@@ -1034,6 +1038,70 @@ class _PosScreenState extends State<PosScreen> {
     }
   }
 
+  void _toggleMultiCancelMode() {
+    setState(() {
+      _multiCancelMode = !_multiCancelMode;
+      _multiCancelSelection.clear();
+    });
+  }
+
+  void _toggleCancelSelection(CartItem item) {
+    setState(() {
+      if (!_multiCancelSelection.remove(item)) {
+        _multiCancelSelection.add(item);
+      }
+    });
+  }
+
+  // Hủy NHIỀU món đã chọn cùng lúc — gộp 1 phiếu hủy bếp (xem
+  // PosProvider.cancelCartItems). Quyền/PIN/lý do dùng MỨC MẠNH NHẤT trong
+  // các món đã chọn, giống hệt logic của _cancelItem cho 1 món.
+  Future<void> _confirmMultiCancel() async {
+    if (_multiCancelSelection.isEmpty) return;
+    final pos = context.read<PosProvider>();
+    final auth = context.read<AuthProvider>();
+    final items = _multiCancelSelection.toList();
+    String? pin;
+    var reason = t('Nhân viên hủy');
+
+    final anySent =
+        items.any((i) => i.persisted && i.status != 'pending_confirm');
+    if (anySent) {
+      final made =
+          items.any((i) => ['preparing', 'ready', 'served'].contains(i.status));
+      final needPerm = made ? 'void.made' : 'void';
+      final selfHasPerm = auth.hasPermission(needPerm);
+      if (!selfHasPerm) {
+        pin = await requestManagerPin(
+          context,
+          made
+              ? t('Xóa ${items.length} món (có món ĐÃ chế biến). Cần PIN người có quyền "xóa món đã chế biến".')
+              : t('Hủy ${items.length} món đã gửi bếp. Cần PIN người có quyền hủy món.'),
+        );
+        if (pin == null) return;
+      }
+      reason = await _promptText(
+            title: t('Lý do hủy món'),
+            label: t('Lý do'),
+            initial: reason,
+          ) ??
+          reason;
+    }
+    try {
+      await pos.cancelCartItems(items, reason: reason, managerPin: pin);
+      if (mounted) _toast(t('Đã hủy ${items.length} món.'));
+    } catch (e) {
+      if (mounted) _toast(t('Không hủy được món: ${_cleanError(e)}'));
+    } finally {
+      if (mounted) {
+        setState(() {
+          _multiCancelMode = false;
+          _multiCancelSelection.clear();
+        });
+      }
+    }
+  }
+
   // GHI CHÚ DÒNG + CHỈNH GIÁ DÒNG (đồng bộ với Retail). Bấm vào một món trong bill
   // để mở. Chỉ sửa món NHÁP (chưa gửi bếp) — món đã gửi phải hủy rồi thêm lại,
   // tránh lệch với bill đã lưu trên server.
@@ -1338,6 +1406,11 @@ class _PosScreenState extends State<PosScreen> {
         onPayment: _openCheckoutDialog,
         openingPayment: _openingPayment,
         onClose: () => pos.selectTable(null),
+        multiCancelMode: _multiCancelMode,
+        multiCancelSelection: _multiCancelSelection,
+        onToggleMultiCancelMode: _toggleMultiCancelMode,
+        onToggleCancelSelection: _toggleCancelSelection,
+        onConfirmMultiCancel: _confirmMultiCancel,
       ),
     );
   }

@@ -23,6 +23,11 @@ class _BillPane extends StatelessWidget {
     required this.onPayment,
     required this.openingPayment,
     required this.onClose,
+    required this.multiCancelMode,
+    required this.multiCancelSelection,
+    required this.onToggleMultiCancelMode,
+    required this.onToggleCancelSelection,
+    required this.onConfirmMultiCancel,
   });
 
   final PosProvider pos;
@@ -44,6 +49,12 @@ class _BillPane extends StatelessWidget {
   final VoidCallback onPayment;
   final bool openingPayment;
   final VoidCallback onClose;
+  // Chọn nhiều món để hủy chung 1 phiếu (xem _PosScreenState._confirmMultiCancel).
+  final bool multiCancelMode;
+  final Set<CartItem> multiCancelSelection;
+  final VoidCallback onToggleMultiCancelMode;
+  final ValueChanged<CartItem> onToggleCancelSelection;
+  final VoidCallback onConfirmMultiCancel;
 
   @override
   Widget build(BuildContext context) {
@@ -101,6 +112,23 @@ class _BillPane extends StatelessWidget {
                             ? DanColors.muted
                             : DanColors.doing,
               ),
+              if (hasItems) ...[
+                SizedBox(width: 4),
+                IconButton(
+                  tooltip: multiCancelMode
+                      ? t('Thoát chọn nhiều món để hủy')
+                      : t('Chọn nhiều món để hủy'),
+                  constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+                  onPressed: onToggleMultiCancelMode,
+                  icon: Icon(
+                    multiCancelMode
+                        ? Icons.close_fullscreen
+                        : Icons.playlist_remove,
+                    size: 20,
+                    color: multiCancelMode ? DanColors.late : null,
+                  ),
+                ),
+              ],
               SizedBox(width: 4),
               IconButton(
                 tooltip: t('Đóng bill đang xem'),
@@ -232,10 +260,30 @@ class _BillPane extends StatelessWidget {
                       money: money,
                       onCancel: () => onCancelItem(item),
                       onEdit: () => onEditItem(item),
+                      selectMode: multiCancelMode,
+                      selected: multiCancelSelection.contains(item),
+                      onToggleSelect: () => onToggleCancelSelection(item),
                     );
                   },
                 ),
         ),
+        if (multiCancelMode)
+          Padding(
+            padding: EdgeInsets.fromLTRB(12, 0, 12, 12),
+            child: SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                onPressed: multiCancelSelection.isEmpty
+                    ? null
+                    : onConfirmMultiCancel,
+                style: FilledButton.styleFrom(backgroundColor: DanColors.late),
+                icon: Icon(Icons.close, size: 17),
+                label: Text(multiCancelSelection.isEmpty
+                    ? t('Chọn món để hủy')
+                    : t('Hủy ${multiCancelSelection.length} món đã chọn')),
+              ),
+            ),
+          ),
         if (hasItems)
           _BillFooter(
             subtotal: pos.cartSubtotal,
@@ -324,12 +372,19 @@ class _BillItemRow extends StatelessWidget {
     required this.money,
     required this.onCancel,
     required this.onEdit,
+    this.selectMode = false,
+    this.selected = false,
+    this.onToggleSelect,
   });
 
   final CartItem item;
   final String Function(num value) money;
   final VoidCallback onCancel;
   final VoidCallback onEdit;
+  // Chọn nhiều món để hủy chung 1 phiếu — xem _PosScreenState._confirmMultiCancel.
+  final bool selectMode;
+  final bool selected;
+  final VoidCallback? onToggleSelect;
 
   @override
   Widget build(BuildContext context) {
@@ -339,18 +394,29 @@ class _BillItemRow extends StatelessWidget {
       if (item.notes.isNotEmpty) '📝 ${item.notes}',
     ].join(' · ');
     return InkWell(
-      onTap: onEdit,
+      onTap: selectMode ? onToggleSelect : onEdit,
       borderRadius: BorderRadius.circular(10),
       child: Container(
         padding: EdgeInsets.fromLTRB(11, 9, 7, 9),
         decoration: BoxDecoration(
-          color: DanColors.surface2,
+          color: selected
+              ? DanColors.late.withValues(alpha: .10)
+              : DanColors.surface2,
           borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: DanColors.border),
+          border: Border.all(
+              color: selected ? DanColors.late : DanColors.border),
         ),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
+            if (selectMode) ...[
+              Icon(
+                selected ? Icons.check_circle : Icons.circle_outlined,
+                size: 20,
+                color: selected ? DanColors.late : DanColors.faint,
+              ),
+              SizedBox(width: 8),
+            ],
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -408,15 +474,17 @@ class _BillItemRow extends StatelessWidget {
                 ],
               ),
             ),
-            SizedBox(width: 6),
-            IconButton(
-              onPressed: onCancel,
-              tooltip: item.persisted ? t('Hủy món') : t('Xóa món nháp'),
-              icon: Icon(Icons.close, size: 18),
-              color: DanColors.faint,
-              constraints: BoxConstraints.tightFor(width: 32, height: 32),
-              padding: EdgeInsets.zero,
-            ),
+            if (!selectMode) ...[
+              SizedBox(width: 6),
+              IconButton(
+                onPressed: onCancel,
+                tooltip: item.persisted ? t('Hủy món') : t('Xóa món nháp'),
+                icon: Icon(Icons.close, size: 18),
+                color: DanColors.faint,
+                constraints: BoxConstraints.tightFor(width: 32, height: 32),
+                padding: EdgeInsets.zero,
+              ),
+            ],
           ],
         ),
       ),
@@ -541,8 +609,8 @@ class _BillFooter extends StatelessWidget {
               width: double.infinity,
               child: FilledButton.icon(
                 onPressed: saving ? null : onSendKitchen,
-                icon: Icon(Icons.local_fire_department_outlined, size: 17),
-                label: Text(t('Gửi món vào bếp')),
+                icon: Icon(Icons.check_circle_outline, size: 17),
+                label: Text(t('Xác nhận')),
               ),
             ),
             SizedBox(height: 8),
@@ -582,7 +650,7 @@ class _BillFooter extends StatelessWidget {
                           strokeWidth: 2, color: Colors.white),
                     )
                   : Text(hasPending
-                      ? t('Gửi món vào bếp trước khi thanh toán')
+                      ? t('Xác nhận món trước khi thanh toán')
                       : '${t('Thanh toán')} · ${money(total)}'),
             ),
           ),

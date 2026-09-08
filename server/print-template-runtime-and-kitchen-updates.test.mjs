@@ -110,6 +110,46 @@ test('real cancelItem and moveTable business flows create kitchen update tickets
   assert.match(JSON.stringify(moveDoc.blocks), /BÀN Z91 => BÀN Z92/);
 });
 
+// Món còn 'pending_confirm' chưa hề được "Gửi món vào bếp" — bếp CHƯA từng
+// nhận phiếu nào cho món này. Hủy lúc này không được in phiếu hủy (không có gì
+// để retract) — bug thật gặp trên production trước khi sửa.
+test('cancelItem does not print a cancellation ticket for an item never sent to the kitchen', () => {
+  db.prepare(`INSERT INTO tables(id,branch_id,zone,code,status) VALUES(?,?,?,?,?)`).run('tb-c', 'sala', 'Trệt', 'Z93', 'busy');
+  const stamp = new Date().toISOString();
+  db.prepare(`INSERT INTO orders(id,branch_id,table_id,channel,status,pay_ref,created_at) VALUES(?,?,?,?,?,?,?)`)
+    .run('o-cancel-unsent', 'sala', 'tb-c', 'dine_in', 'open', 'Dan160826023', stamp);
+  db.prepare(`INSERT INTO order_items(id,order_id,name,qty,unit_price,station,status,created_at) VALUES(?,?,?,?,?,?,?,?)`)
+    .run('oi-cancel-unsent', 'o-cancel-unsent', 'Món chưa gửi bếp', 1, 10000, 'kitchen', 'pending_confirm', stamp);
+  const jobsBefore = Print.listJobs('sala', 200).length;
+  Orders.cancelItem('oi-cancel-unsent', 'Khách đổi ý', 'sala', 'Nhan vien A');
+  const jobsAfter = Print.listJobs('sala', 200).length;
+  assert.equal(jobsAfter, jobsBefore, 'không được tạo job in nào cho món chưa từng gửi bếp');
+});
+
+// Thu ngân chọn NHIỀU món (đã gửi bếp) rồi hủy chung 1 lượt qua nút Xác nhận
+// — phải gộp thành ĐÚNG 1 phiếu hủy, không phải N phiếu rời (đúng yêu cầu
+// "hủy 2 món cùng lúc thì bấm xác nhận 1 lần" của người dùng). Món còn
+// pending_confirm trong cùng lượt hủy vẫn bị loại khỏi phiếu (chưa từng gửi
+// bếp — không có gì để retract).
+test('cancelItemsBatch cancels multiple sent items with exactly one combined ticket', () => {
+  db.prepare(`INSERT INTO tables(id,branch_id,zone,code,status) VALUES(?,?,?,?,?)`).run('tb-d', 'sala', 'Trệt', 'Z94', 'busy');
+  const stamp = new Date().toISOString();
+  db.prepare(`INSERT INTO orders(id,branch_id,table_id,channel,status,pay_ref,created_at) VALUES(?,?,?,?,?,?,?)`)
+    .run('o-cancel-batch', 'sala', 'tb-d', 'dine_in', 'open', 'Dan160826024', stamp);
+  db.prepare(`INSERT INTO order_items(id,order_id,name,qty,unit_price,station,status,created_at) VALUES(?,?,?,?,?,?,?,?)`)
+    .run('oi-batch-1', 'o-cancel-batch', 'Món đã gửi A', 1, 10000, 'kitchen', 'new', stamp);
+  db.prepare(`INSERT INTO order_items(id,order_id,name,qty,unit_price,station,status,created_at) VALUES(?,?,?,?,?,?,?,?)`)
+    .run('oi-batch-2', 'o-cancel-batch', 'Món đã gửi B', 1, 15000, 'kitchen', 'new', stamp);
+  db.prepare(`INSERT INTO order_items(id,order_id,name,qty,unit_price,station,status,created_at) VALUES(?,?,?,?,?,?,?,?)`)
+    .run('oi-batch-3', 'o-cancel-batch', 'Món chưa gửi C', 1, 20000, 'kitchen', 'pending_confirm', stamp);
+  Orders.cancelItemsBatch('o-cancel-batch', ['oi-batch-1', 'oi-batch-2', 'oi-batch-3'], 'Khách đổi ý', 'sala', 'Nhan vien A');
+  const newJobs = Print.listJobs('sala', 200).filter((j) => j.payload.order_id === 'o-cancel-batch');
+  assert.equal(newJobs.length, 1, 'phải gộp 2 món đã gửi bếp vào ĐÚNG 1 phiếu hủy');
+  assert.equal(newJobs[0].payload.items.length, 2, 'phiếu hủy chỉ chứa 2 món đã từng gửi bếp, không có món pending_confirm');
+  const statuses = db.prepare(`SELECT status FROM order_items WHERE order_id='o-cancel-batch'`).all().map((r) => r.status);
+  assert.deepEqual(new Set(statuses), new Set(['cancelled']));
+});
+
 test('GDI agent applies the requested physical -2mm left offset and strikeout font', () => {
   const source = readFileSync(new URL('./agent.cjs', import.meta.url), 'utf8');
   assert.match(source, /offsetMm \* 3\.937007874/);

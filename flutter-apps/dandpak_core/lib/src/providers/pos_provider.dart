@@ -643,7 +643,13 @@ class PosProvider extends ChangeNotifier {
   }
 
   Future<void> confirmActiveOrder() async {
+    // Đẩy nốt món vừa thêm còn nằm cục bộ trước khi xác nhận — nếu vòng
+    // submit trước đó lỡ lỗi mạng, món sẽ bị BỎ SÓT khỏi phiếu bếp trong khi
+    // người dùng tưởng đã bấm "gửi hết" (bug thật: submit lỗi âm thầm, bấm
+    // Xác nhận chỉ gửi phần đã lên server, phần lỗi nằm lại giỏ không ai biết).
+    await submitOrder();
     if (_activeOrderId == null) return;
+    if (!_cart.any((c) => c.status == 'pending_confirm')) return;
     // Gửi bếp = flow có correlationId (request confirm + phiếu bếp in ra).
     await SystemLog.runFlow('send_kitchen', () async {
       final order =
@@ -665,6 +671,33 @@ class PosProvider extends ChangeNotifier {
       return;
     }
     await apiService.cancelItem(item.orderItemId, reason,
+        managerPin: managerPin);
+    await reloadActiveOrder();
+  }
+
+  // Hủy NHIỀU món đã chọn cùng lúc — gộp thành 1 phiếu hủy bếp thay vì mỗi
+  // món 1 phiếu rời khi hủy tuần tự (đúng góp ý người dùng: chọn nhiều rồi
+  // hủy 1 lần). Món nháp cục bộ (chưa persisted) chỉ cần xóa khỏi giỏ, không
+  // gọi server; phần còn lại gộp vào MỘT lệnh cancelItemsBatch duy nhất.
+  Future<void> cancelCartItems(
+    List<CartItem> items, {
+    String reason = 'Nhân viên hủy',
+    String? managerPin,
+  }) async {
+    if (items.isEmpty) return;
+    final drafts = items.where((c) => !c.persisted).toList();
+    for (final draft in drafts) {
+      _cart.remove(draft);
+    }
+    final persistedIds = items
+        .where((c) => c.persisted)
+        .map((c) => c.orderItemId)
+        .toList();
+    if (persistedIds.isEmpty) {
+      notifyListeners();
+      return;
+    }
+    await apiService.cancelItemsBatch(_activeOrderId!, persistedIds, reason,
         managerPin: managerPin);
     await reloadActiveOrder();
   }

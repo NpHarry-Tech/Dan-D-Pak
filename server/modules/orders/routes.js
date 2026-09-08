@@ -234,6 +234,51 @@ api.post('/orders/items/:id/cancel', guard('sell'), wrap((req) => {
   return res;
 }));
 
+// HỦY NHIỀU MÓN 1 LẦN — thu ngân chọn nhiều dòng rồi hủy chung, gộp thành
+// ĐÚNG 1 phiếu hủy bếp (xem cancelItemsBatch). Quyền = MẠNH NHẤT trong các
+// món đã chọn, giống hệt logic phân quyền của /items/:id/cancel ở trên.
+api.post('/orders/:id/items/cancel-batch', guard('sell'), wrap((req) => {
+  const branch_id = visibleBranch(req);
+  const orderId = req.params.id;
+  const itemIds = Array.isArray(req.body.item_ids) ? req.body.item_ids : [];
+  if (!itemIds.length) throw new Error('Chưa chọn món để hủy');
+  const rows = db.prepare(
+    `SELECT * FROM order_items WHERE order_id=? AND status!='cancelled' AND id IN (${itemIds.map(() => '?').join(',')})`
+  ).all(orderId, ...itemIds);
+  if (!rows.length) throw new Error('Không có món để hủy');
+
+  const needsMade = rows.some(r => ['preparing', 'ready', 'served'].includes(r.status));
+  const needsVoid = rows.some(r => r.status !== 'pending_confirm');
+  const needPerm = needsMade ? 'void.made' : (needsVoid ? 'void' : null);
+  if (needPerm) {
+    const actorOk = Auth.canUser(req.user, needPerm);
+    if (!actorOk) {
+      const pin = req.body.pin;
+      const label = needsMade
+        ? 'xóa món ĐÃ chế biến (quyền "void.made")'
+        : 'hủy món đã gửi (quyền "void")';
+      if (!pin) {
+        const e = new Error(`Cần quyền hoặc PIN của người có quyền để ${label}.`);
+        e.code = 'PERM_REQUIRED';
+        throw e;
+      }
+      const approver = Auth.verifyPinHasPerm(String(pin), needPerm, branch_id);
+      if (!approver) {
+        throw new Error(`PIN không đúng hoặc người đó không có quyền ${label}.`);
+      }
+      audit('order.item.cancel.approved', {
+        items: rows.map(r => r.id), status: needsMade ? 'made' : 'sent', perm: needPerm,
+        approved_by: approver.username || approver.name,
+      }, branch_id, actor(req));
+    }
+  }
+  const res = Orders.cancelItemsBatch(orderId, itemIds, req.body.reason || 'Nhân viên hủy', branch_id, actor(req));
+  for (const station of new Set(rows.map(r => r.station))) {
+    emit('kds:refresh', { station }, branch_id);
+  }
+  return res;
+}));
+
 api.post('/orders/items/:id/kds-dismiss', guard('kds'), wrap((req) => {
   const branch_id = visibleBranch(req);
   const itemId = req.params.id;

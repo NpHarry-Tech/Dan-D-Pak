@@ -61,3 +61,18 @@ test('4xx business details remain useful but are recursively sanitized', () => {
   assert.equal(payload.details.apiKey, '[REDACTED]');
   assert.equal(JSON.stringify(payload).includes('do-not-show'), false);
 });
+
+// orders.js/inventory.js/payments.js… ném `throw new Error('lý do')` KHÔNG gán
+// .status ở HÀNG TRĂM chỗ — đây là quy ước chuẩn của codebase để báo lỗi
+// nghiệp vụ, không phải sự cố hệ thống. Trước khi sửa, errorPayload từng coi
+// MỌI Error không .status là "internal" và thay bằng "Request failed" chung
+// chung, khiến người dùng không bao giờ biết lý do thật (vd hết hàng, order
+// trống). Đây là bug đã gặp thực tế trên production, không được tái diễn.
+test('plain business Error without .status reaches the client with its real message', () => {
+  for (const msg of ['Order trống', 'Hết hàng: Cá Thu Chiên Sốt Cà (còn 0)', 'SKU không tồn tại: sku_123']) {
+    const payload = errorPayload(new Error(msg));
+    assert.equal(payload.message, msg);
+    assert.equal(payload.error, msg);
+    assert.equal(payload.code, 'BAD_REQUEST');
+  }
+});

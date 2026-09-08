@@ -333,6 +333,22 @@ extension ApiServicePosApi on ApiService {
     );
   }
 
+  // Hủy NHIỀU món cùng lúc (chọn nhiều rồi bấm Xác nhận) — gộp thành 1 phiếu
+  // hủy bếp thay vì mỗi món 1 phiếu rời. Xem cancelItemsBatch phía server.
+  Future<Map<String, dynamic>> cancelItemsBatch(
+      String orderId, List<String> itemIds, String reason,
+      {String? managerPin}) async {
+    return mapFrom(await postJson(
+      '/api/orders/$orderId/items/cancel-batch',
+      body: {
+        'item_ids': itemIds,
+        'reason': reason,
+        if (managerPin != null) 'pin': managerPin,
+      },
+      errorMessage: 'Không hủy được các món đã chọn',
+    ));
+  }
+
   // Sửa ghi chú món ĐÃ gửi bếp (đồng bộ với ghi chú món nháp ở F&B POS).
   Future<void> updateItemNote(String itemId, String note) async {
     await postJson(
