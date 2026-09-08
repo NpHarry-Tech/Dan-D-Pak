@@ -145,7 +145,10 @@ api.get('/orders/:id/receipt/text', guard('pay'), wrap((req) => {
   const receipt = History.orderReceipt(req.params.id, branch_id);
   if (req.query.reprint === '1' || req.query.reprint === 'true') receipt.reprint = true;
   if (!receipt.print_config) receipt.print_config = AppSettings.getPrintConfig(branch_id);
-  return { text: Print.renderJobText({ type: 'receipt', payload: receipt }) };
+  // branch_id PHẢI truyền vào (không để renderJobText tự mặc định 'sala') —
+  // thiếu tham số này khiến chi nhánh khác 'sala' thấy preview render bằng
+  // cấu hình/mẫu in của CHI NHÁNH SAI, lệch hẳn so với bill gốc.
+  return { text: Print.renderJobText({ type: 'receipt', payload: receipt }, branch_id) };
 }));
 api.post('/orders/:id/receipt/print', guard('pay'), wrap((req) => {
   const branch_id = branch(req);

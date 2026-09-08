@@ -7,7 +7,7 @@ import { logSystem } from './services/systemLogs.js';
 import { currentRequestMetadata } from './core/requestContext.js';
 import { markAuthAttached, sendTimedJson, timedAuth } from './core/requestTiming.js';
 import { contentAddressedAssetName } from './core/staticAssets.js';
-import { detectImageMime, requireImageSignature } from './core/imageValidation.js';
+import { detectImageMime } from './core/imageValidation.js';
 import sharp from 'sharp';
 import { registerInventoryRoutes } from './modules/inventory/routes.js';
 import { registerInvoiceRoutes } from './modules/invoices/routes.js';
@@ -202,17 +202,22 @@ const wrap = (fn) => (req, res) => {
 // Lưu ảnh gửi lên dạng base64 (≤20MB, đúng mime ảnh) vào thư mục uploads và trả
 // URL công khai. Helper DÙNG CHUNG cho avatar nhân viên (settings), ảnh món
 // (catalog) và avatar đối tác (contacts) — truyền vào các module đó.
-async function saveBase64Image(req, { dir, urlBase, prefix, auditAction, registerAs }) {
+export async function saveBase64Image(req, { dir, urlBase, prefix, auditAction, registerAs }) {
   const { data, mime_type, original_name } = req.body || {};
   if (!data || !original_name) throw new Error('Thiếu dữ liệu ảnh');
-  const declaredMime = mime_type === 'image/heic' ? 'image/heif' : mime_type;
   if (!AVATAR_ALLOWED_MIME.has(mime_type)) throw new Error(`Định dạng ảnh không được hỗ trợ: ${mime_type}`);
   const buf = Buffer.from(String(data), 'base64');
   if (!buf.byteLength) throw new Error('File ảnh rỗng');
   if (buf.byteLength > AVATAR_MAX_BYTES) throw new Error('Ảnh quá lớn, tối đa 20MB');
+  // Xác thực theo BYTE THẬT (detectImageMime), KHÔNG theo mime_type client tự
+  // khai — picker/nén ảnh trên tablet/phone thường trả về đuôi file không khớp
+  // encoding thật (vd chọn .png nhưng ảnh đã bị nén lại thành JPEG/WebP), khiến
+  // requireImageSignature(buf, mime_type_client_khai) từ chối ảnh HỢP LỆ. Bản
+  // thân detectImageMime() trả về non-null ĐÃ LÀ bằng chứng khớp signature với
+  // một định dạng raster an toàn trong danh sách cho phép — không cần khớp
+  // thêm với nhãn mime_type do client gửi kèm.
   const detectedMime = detectImageMime(buf);
   if (!detectedMime) throw new Error('File không phải ảnh raster được hỗ trợ (SVG không được phép)');
-  requireImageSignature(buf, declaredMime);
   let normalized;
   try {
     normalized = await sharp(buf, { animated: detectedMime === 'image/gif', limitInputPixels: 80_000_000 })

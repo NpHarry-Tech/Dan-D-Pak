@@ -62,6 +62,27 @@ test('ghi chú đơn đi xuyên suốt tới nội dung bill, ngay trước lờ
   assert.ok(text.toLowerCase().indexOf('ghi chú:') < text.toLowerCase().indexOf('cảm ơn'));
 });
 
+// Bug thật: route GET /orders/:id/receipt/text (dùng cho preview "In lại bill"
+// ở Kế toán/Lịch sử) gọi renderJobText(job) KHÔNG truyền branch_id — hàm tự
+// mặc định 'sala', khiến chi nhánh khác thấy preview render bằng CẤU HÌNH/MẪU
+// CỦA SALA thay vì của chính chi nhánh mình. Test khóa lại: truyền branch_id
+// đúng phải ra tên cửa hàng của 'moi'; thiếu tham số (mô phỏng lỗi cũ) lại lộ
+// ra tên cửa hàng của 'sala'.
+test('renderJobText của bill KHÔNG được âm thầm rơi về cấu hình sala khi thiếu branch_id', () => {
+  Settings.updateSettings({ print_config: { bill: { storeName: 'SALA GOC' } } }, 'sala');
+  Settings.updateSettings({ print_config: { bill: { storeName: 'CHI NHANH MOI' } } }, 'moi');
+
+  const receipt = History.orderReceipt('order_note', 'moi');
+  const dungBranch = Print.renderJobText({ type: 'receipt', payload: receipt }, 'moi');
+  assert.match(dungBranch, /CHI NHANH MOI/);
+  assert.doesNotMatch(dungBranch, /SALA GOC/);
+
+  // Mô phỏng lỗi CŨ (route quên truyền branch_id) — PHẢI khác branch đúng để
+  // chứng minh tham số branch_id thật sự có tác dụng, không phải no-op.
+  const thieuBranchId = Print.renderJobText({ type: 'receipt', payload: receipt });
+  assert.match(thieuBranchId, /SALA GOC/);
+});
+
 test('query routing từ chối chi nhánh sai thay vì âm thầm rơi về sala', () => {
   assert.throws(() => Auth.publicBranch({ headers: { 'x-branch-id': 'khong-ton-tai' } }), /không tồn tại/);
   assert.throws(() => Auth.resolveBranch({

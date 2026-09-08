@@ -39,7 +39,6 @@ class InvoicesScreen extends StatefulWidget {
 }
 
 class _InvoicesScreenState extends State<InvoicesScreen> {
-  static const _manualPrinter = WindowsDocumentPrintService();
   List<Map<String, dynamic>> _invoices = [];
   String _status = '';
   String _search = '';
@@ -750,17 +749,27 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
               dialogContext,
               title,
               onPrint: () async {
-                if (receiptText.trim().isEmpty) {
-                  appToast(context, t('Không tải được nội dung bill'),
-                      isError: true);
-                  return;
-                }
-                final result = await _manualPrinter.showReceipt(
-                    text: receiptText, title: title);
-                if (result != ManualPrintResult.opened && mounted) {
-                  appToast(context,
-                      t('Không thể mở bản xem trước in hiện đại của Windows.'),
-                      isError: true);
+                // Gửi qua ĐÚNG hàng đợi in đã cấu hình (máy in bill thật, cùng
+                // engine ESC/POS/driver với lúc thanh toán) — KHÔNG dùng hộp
+                // thoại in chung của Windows nữa: hộp thoại đó không hiểu khổ
+                // giấy cuộn liên tục của máy in nhiệt, ra bản in/preview sai
+                // hẳn so với bill gốc (đúng lỗi người dùng gặp).
+                try {
+                  final jobs = await api.printOrderReceipt(orderId);
+                  if (mounted) {
+                    appToast(
+                        context,
+                        jobs.isEmpty
+                            ? t('Đã gửi lệnh in lại hóa đơn')
+                            : t('Đã gửi ${jobs.length} lệnh in lại hóa đơn'));
+                  }
+                } catch (e) {
+                  if (mounted) {
+                    appToast(
+                        context,
+                        t('Không gửi được lệnh in lại hóa đơn: ${e.toString().replaceFirst('Exception: ', '')}'),
+                        isError: true);
+                  }
                 }
               },
               printLabel: t('In lại bill'),

@@ -267,12 +267,15 @@ void main() {
     await tester.tap(find.text('Giảm hạt điều · 10%'));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('Ghi chú'));
+    // Dòng "Ghi chú" giờ gộp nhãn+phụ đề vào 1 Text.rich (xem _KhachRow) nên
+    // phải tìm theo findRichText — find.text mặc định chỉ khớp Text.data.
+    await tester.tap(find.textContaining('Ghi chú', findRichText: true));
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField), 'ABC123456XYZ');
     await tester.tap(find.text('Lưu'));
     await tester.pumpAndSettle();
-    expect(find.text('Ghi chú: ABC123456XYZ'), findsOneWidget);
+    expect(find.text('Ghi chú  ·  ABC123456XYZ', findRichText: true),
+        findsOneWidget);
 
     expect(find.text('In'), findsOneWidget);
     await tester.tap(find.text('In'));
