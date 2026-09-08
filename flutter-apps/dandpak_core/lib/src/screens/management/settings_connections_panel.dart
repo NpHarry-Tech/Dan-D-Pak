@@ -130,6 +130,9 @@ class _ConnectionsPanelState extends State<ConnectionsPanel> {
   Map<String, dynamic> _ops = {};
   Map<String, dynamic> _printConfig = {};
   List<Map<String, dynamic>> _printers = [];
+  // Trạm chế biến của chi nhánh (Bếp/Bar/... do người dùng tự đặt) — máy in
+  // phiếu bếp chọn nhận job của (những) trạm nào trong danh sách này.
+  List<Map<String, dynamic>> _stations = [];
   // Máy in đang XỔ chi tiết (theo index). Mặc định GỘP hết cho gọn khi nhiều máy.
   final Set<int> _expandedPrinters = {};
   List<Map<String, dynamic>> _systemPrinters = [];
@@ -227,9 +230,19 @@ class _ConnectionsPanelState extends State<ConnectionsPanel> {
       final health = await widget.api.probe('/health');
       final settings =
           Map<String, dynamic>.from(await widget.api.getAppSettings());
+      // Best-effort: ai không có quyền quản lý thực đơn vẫn xem/sửa được máy in,
+      // chỉ là không thấy multi-select trạm (ẩn khi danh sách rỗng).
+      List<Map<String, dynamic>> stations = [];
+      try {
+        stations = (await widget.api.getProductionStations())
+            .whereType<Map>()
+            .map((e) => Map<String, dynamic>.from(e))
+            .toList();
+      } catch (_) {}
       if (!mounted) return;
       setState(() {
         _health = health;
+        _stations = stations;
         _ops = settings['operations_config'] is Map
             ? Map<String, dynamic>.from(settings['operations_config'])
             : {};
@@ -399,8 +412,6 @@ class _ConnectionsPanelState extends State<ConnectionsPanel> {
             SizedBox(height: 16),
             _twoCol(_devicesPanel(), _cardPosPanel()),
             SizedBox(height: 16),
-            _printerStatusPanel(),
-            SizedBox(height: 16),
             _printerRegistryPanel(),
             SizedBox(height: 16),
             _recentJobsPanel(),
@@ -549,80 +560,6 @@ class _ConnectionsPanelState extends State<ConnectionsPanel> {
         _infoRow('Realtime', _pill(rt, DanColors.done)),
         Divider(height: 18, color: DanColors.border),
         _infoRow(t('Lưu trữ lâu dài'), _pill(lt, DanColors.done)),
-      ]),
-    );
-  }
-
-  // ── Trạng thái máy in (dùng printerStatuses từ API) ──
-  Widget _printerStatusPanel() {
-    final printers = (_status['printerStatuses'] is List)
-        ? (_status['printerStatuses'] as List).whereType<Map>().toList()
-        : <Map>[];
-    return Panel(
-      title: t('Trạng thái máy in'),
-      child: printers.isEmpty
-          ? Padding(
-              padding: EdgeInsets.symmetric(vertical: 14),
-              child: Text(
-                  t('Chưa có máy in nào được cấu hình trong Danh mục in'),
-                  style: TextStyle(color: DanColors.faint)))
-          : Column(children: [for (final p in printers) _printerStatusRow(p)]),
-    );
-  }
-
-  Widget _printerStatusRow(Map p) {
-    final label =
-        asText(p['label']).isNotEmpty ? asText(p['label']) : asText(p['name']);
-    final location = asText(p['location']);
-    final connection = asText(p['connection']);
-    final ip = asText(p['ip']);
-    final port = asInt(p['port']) > 0 ? asInt(p['port']) : 9100;
-    final output = _outputLabels[asText(p['output'])] ?? asText(p['output']);
-    final state = asText(p['state']);
-    final statusText = asText(p['statusText']);
-    final online = asFlag(p['online']);
-
-    final (statusLabel, statusColor) = switch (state) {
-      'ok' => (t('Kết nối'), DanColors.done),
-      'warn' => (t('Cảnh báo'), DanColors.doing),
-      'bad' => (t('Mất kết nối'), DanColors.late),
-      _ => online
-          ? (t('Kết nối'), DanColors.done)
-          : (t('Không kết nối'), DanColors.late),
-    };
-
-    final connDetail = connection == 'lan'
-        ? (ip.isNotEmpty ? '$ip:$port' : t('Chưa có IP'))
-        : connection == 'system'
-            ? (asText(p['systemName']).isNotEmpty
-                ? asText(p['systemName'])
-                : t('Máy in hệ thống'))
-            : t('Trình duyệt');
-
-    return Padding(
-      padding: EdgeInsets.symmetric(vertical: 8),
-      child: Row(children: [
-        Icon(Icons.print_outlined, size: 18, color: DanColors.muted),
-        SizedBox(width: 10),
-        Expanded(
-          child:
-              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(label.isNotEmpty ? label : t('Máy in'),
-                style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
-            Text(
-              [
-                if (location.isNotEmpty) location,
-                if (output.isNotEmpty) output,
-                connDetail
-              ].join(' · '),
-              style: TextStyle(fontSize: 11, color: DanColors.muted),
-            ),
-            if (statusText.isNotEmpty && state != 'ok')
-              Text(statusText,
-                  style: TextStyle(fontSize: 11, color: DanColors.late)),
-          ]),
-        ),
-        _pill(statusLabel, statusColor),
       ]),
     );
   }
@@ -1056,8 +993,40 @@ class _ConnectionsPanelState extends State<ConnectionsPanel> {
         .join(' · ');
   }
 
-  Widget _printerCardHeader(int index, PrinterControllers ctrl,
+  Map? _livePrinter(Map<String, dynamic> printer, PrinterControllers ctrl) {
+    final statuses = (_status['printerStatuses'] is List)
+        ? (_status['printerStatuses'] as List).whereType<Map>()
+        : const Iterable<Map>.empty();
+    final id = ctrl.id.text.trim();
+    final device = asText(printer['primaryDeviceId']);
+    final systemName = ctrl.systemName.text.trim();
+    for (final status in statuses) {
+      if (id.isNotEmpty && asText(status['id']) == id) return status;
+      final statusDevice = asText(status['primaryDeviceId'] ??
+          status['device_id'] ??
+          status['deviceId']);
+      final statusSystem = asText(
+          status['systemName'] ?? status['system_name'] ?? status['name']);
+      if (device.isNotEmpty &&
+          systemName.isNotEmpty &&
+          statusDevice == device &&
+          statusSystem == systemName) return status;
+    }
+    return null;
+  }
+
+  Widget _printerCardHeader(
+      int index, Map<String, dynamic> printer, PrinterControllers ctrl,
       {bool expanded = true, VoidCallback? onToggle}) {
+    final live = _livePrinter(printer, ctrl);
+    final online = live != null && asFlag(live['online']);
+    final state = live == null ? '' : asText(live['state']);
+    final statusLabel = state == 'warn'
+        ? t('Cảnh báo')
+        : (online ? t('Kết nối') : t('Mất kết nối'));
+    final statusColor = state == 'warn'
+        ? DanColors.doing
+        : (online ? DanColors.done : DanColors.late);
     return Container(
       padding: EdgeInsets.symmetric(horizontal: 8, vertical: 10),
       decoration: BoxDecoration(
@@ -1096,6 +1065,8 @@ class _ConnectionsPanelState extends State<ConnectionsPanel> {
           ),
           Row(
             children: [
+              _pill(statusLabel, statusColor),
+              SizedBox(width: 8),
               if (ctrl.id.text.isNotEmpty)
                 TextButton.icon(
                   onPressed: () => _testPrinter(ctrl.id.text.trim()),
@@ -1414,6 +1385,7 @@ class _ConnectionsPanelState extends State<ConnectionsPanel> {
       int index, Map<String, dynamic> p, PrinterControllers ctrl) {
     final conn = asText(p['connection']);
     final output = asText(p['output']);
+    final live = _livePrinter(p, ctrl);
 
     return Container(
       margin: EdgeInsets.only(bottom: 16),
@@ -1425,7 +1397,7 @@ class _ConnectionsPanelState extends State<ConnectionsPanel> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          _printerCardHeader(index, ctrl,
+          _printerCardHeader(index, p, ctrl,
               expanded: _expandedPrinters.contains(index),
               onToggle: () => setState(() {
                     if (!_expandedPrinters.remove(index)) {
@@ -1438,6 +1410,30 @@ class _ConnectionsPanelState extends State<ConnectionsPanel> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
+                  if (live != null) ...[
+                    Text(
+                      [
+                        if (asText(live['deviceName'] ?? live['device_name'])
+                            .isNotEmpty)
+                          asText(live['deviceName'] ?? live['device_name']),
+                        if (asText(live['systemName'] ??
+                                live['system_name'] ??
+                                live['name'])
+                            .isNotEmpty)
+                          asText(live['systemName'] ??
+                              live['system_name'] ??
+                              live['name']),
+                        if (asText(live['lastSeenAt'] ?? live['last_seen_at'])
+                            .isNotEmpty)
+                          '${t('Lần cuối')}: ${asText(live['lastSeenAt'] ?? live['last_seen_at'])}',
+                        if (asText(live['statusText'] ?? live['status_text'])
+                            .isNotEmpty)
+                          asText(live['statusText'] ?? live['status_text']),
+                      ].join(' · '),
+                      style: TextStyle(fontSize: 11.5, color: DanColors.muted),
+                    ),
+                    SizedBox(height: 12),
+                  ],
                   _printerFieldRow(700, [
                     _printerIdField(ctrl),
                     _printerConnField(p, conn),
@@ -1453,6 +1449,10 @@ class _ConnectionsPanelState extends State<ConnectionsPanel> {
                   ],
                   _printerLabelLocationRow(ctrl),
                   SizedBox(height: 12),
+                  if (output == 'kitchen_ticket') ...[
+                    _printerStationsField(p),
+                    SizedBox(height: 12),
+                  ],
                   _printerPaperField(p),
                   SizedBox(height: 12),
                   _printerPrimaryDeviceField(p),
@@ -1499,6 +1499,49 @@ class _ConnectionsPanelState extends State<ConnectionsPanel> {
         SizedBox(width: 4),
         Text(label, style: TextStyle(fontSize: 12.5)),
       ],
+    );
+  }
+
+  // Máy in phiếu bếp nhận job của (những) trạm chế biến nào. Rỗng = không giới
+  // hạn, dùng tuyến ngầm cũ (kitchen/bar) để không đổi hành vi máy in đã cấu
+  // hình từ trước; chọn ít nhất 1 trạm là chuyển sang định tuyến theo trạm.
+  Widget _printerStationsField(Map<String, dynamic> p) {
+    if (_stations.isEmpty) return const SizedBox.shrink();
+    final selected = (p['stations'] is List)
+        ? Set<String>.from((p['stations'] as List).map((e) => asText(e)))
+        : <String>{};
+    return _printerField(
+      t('Trạm chế biến nhận job'),
+      Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final s in _stations)
+                FilterChip(
+                  label: Text(asText(s['name']).isEmpty
+                      ? asText(s['code'])
+                      : asText(s['name'])),
+                  selected: selected.contains(asText(s['code'])),
+                  onSelected: (on) => setState(() {
+                    final code = asText(s['code']);
+                    if (on) {
+                      selected.add(code);
+                    } else {
+                      selected.remove(code);
+                    }
+                    p['stations'] = selected.toList();
+                  }),
+                ),
+            ],
+          ),
+          SizedBox(height: 4),
+          Text(t('Để trống = dùng tuyến mặc định (Bếp/Bar) như trước.'),
+              style: TextStyle(fontSize: 11, color: DanColors.faint)),
+        ],
+      ),
     );
   }
 
@@ -1680,6 +1723,9 @@ class _ConnectionsPanelState extends State<ConnectionsPanel> {
         'label': ctrl.label.text.trim(),
         'type': ctrl.label.text.trim(),
         'output': p['output'] ?? 'custom',
+        'stations': (p['stations'] is List)
+            ? List<String>.from((p['stations'] as List).map((e) => asText(e)))
+            : <String>[],
         'location': ctrl.location.text.trim(),
         'active': p['active'] == true,
         'auto': p['auto'] == true,

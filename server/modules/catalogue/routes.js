@@ -173,9 +173,9 @@ export function registerCatalogueRoutes(api, {
    * riêng trong catalogue thì ba màn kia không thấy, và người đi tìm chỗ cấu
    * hình thanh toán cũng không nghĩ tới đó.
    */
-  api.post('/settings/catalogue/qr-upload', gac, wrap((req) => {
+  api.post('/settings/catalogue/qr-upload', gac, wrap(async (req) => {
     const b = branch(req);
-    const { url } = saveBase64Image(req, {
+    const { url } = await saveBase64Image(req, {
       dir: CATALOGUE_UPLOADS_DIR, urlBase: '/uploads/catalogue',
       prefix: 'qr_', auditAction: 'catalogue.qr_upload',
     });
@@ -194,12 +194,13 @@ export function registerCatalogueRoutes(api, {
    * THÊM MỘT TRANG catalogue — mỗi lần một tấm ảnh.
    * Xem chú thích ở BookMenu.addBookPage() về việc vì sao không import cả thư mục.
    */
-  api.post('/settings/book-menu/page', gac, wrap((req) => {
+  api.post('/settings/book-menu/page', gac, wrap(async (req) => {
     const b = branch(req);
-    const out = BookMenu.addBookPage(req.body, b, () => saveBase64Image(req, {
+    const savedImage = await saveBase64Image(req, {
       dir: CATALOGUE_UPLOADS_DIR, urlBase: '/uploads/catalogue',
       prefix: 'page_', auditAction: 'book_menu.page_upload',
-    }));
+    });
+    const out = BookMenu.addBookPage(req.body, b, () => savedImage);
     emit('book-menu:updated', { activeBookId: out.activeBookId }, b);
     return out;
   }));

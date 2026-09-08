@@ -888,6 +888,33 @@ export function migrate(targetDb = globalDb) {
   addColumnIfMissing('menu_items', 'option_groups_json', `TEXT DEFAULT '[]'`);
   // Ẩn RIÊNG khỏi Tablet Self-Order (vẫn hiện ở F&B POS) — menu khách khác nội bộ.
   addColumnIfMissing('menu_items', 'self_order_hidden', 'INTEGER NOT NULL DEFAULT 0');
+  // Trạm chế biến là entity theo chi nhánh; giữ cột `station` legacy làm snapshot
+  // code để client cũ tiếp tục hoạt động trong lúc chuyển đổi.
+  addColumnIfMissing('menu_items', 'station_id', 'TEXT');
+  addColumnIfMissing('categories', 'default_station_id', 'TEXT');
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS production_stations (
+      id TEXT PRIMARY KEY,
+      branch_id TEXT NOT NULL,
+      code TEXT NOT NULL,
+      name TEXT NOT NULL,
+      active INTEGER NOT NULL DEFAULT 1,
+      sort INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      updated_at TEXT,
+      UNIQUE(branch_id, code)
+    );
+    CREATE INDEX IF NOT EXISTS idx_production_stations_branch
+      ON production_stations(branch_id, active, sort);
+  `);
+  const stationBranches = db.prepare(`SELECT id FROM branches`).all();
+  const insertStation = db.prepare(`INSERT OR IGNORE INTO production_stations
+    (id,branch_id,code,name,active,sort,created_at) VALUES (?,?,?,?,1,?,?)`);
+  for (const row of stationBranches) {
+    for (const [code, name, sort] of [['kitchen','Bếp',10], ['bar','Bar',20]]) {
+      insertStation.run(`station_${row.id}_${code}`, row.id, code, name, sort, now());
+    }
+  }
 
   addColumnIfMissing('inventory_items', 'warehouse_id', 'TEXT');
   addColumnIfMissing('inventory_items', 'item_type', `TEXT NOT NULL DEFAULT 'ingredient'`);
@@ -1206,6 +1233,7 @@ export function migrate(targetDb = globalDb) {
   // Số hóa đơn đầu vào của NCC (KiotViet: "Số hóa đơn đầu vào").
   addColumnIfMissing('purchase_orders', 'invoice_no', 'TEXT');
   addColumnIfMissing('purchase_order_lines', 'lot_no', 'TEXT');
+  addColumnIfMissing('purchase_order_lines', 'mfg_date', 'TEXT');
   addColumnIfMissing('purchase_order_lines', 'expiry_date', 'TEXT');
   addColumnIfMissing('cash_drawer_entries', 'invoice_image', 'TEXT');
   addColumnIfMissing('cash_drawer_entries', 'reimburses_entry_id', 'TEXT');

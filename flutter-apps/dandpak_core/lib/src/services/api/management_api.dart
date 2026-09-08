@@ -65,6 +65,23 @@ extension ApiServiceManagementApi on ApiService {
         errorMessage: 'Không tải được thực đơn'));
   }
 
+  Future<List<dynamic>> getProductionStations() async {
+    return listFrom(await getJson('/api/menu/stations',
+        errorMessage: 'Không tải được trạm chế biến'));
+  }
+
+  Future<Map<String, dynamic>> createProductionStation(
+      Map<String, dynamic> body) async {
+    return mapFrom(await postJson('/api/menu/stations',
+        body: body, errorMessage: 'Không tạo được trạm chế biến'));
+  }
+
+  Future<Map<String, dynamic>> updateProductionStation(
+      String id, Map<String, dynamic> body) async {
+    return mapFrom(await postJson('/api/menu/stations/$id/update',
+        body: body, errorMessage: 'Không cập nhật được trạm chế biến'));
+  }
+
   Future<Map<String, dynamic>> uploadMenuImage({
     required String originalName,
     required String mimeType,

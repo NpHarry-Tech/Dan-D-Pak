@@ -1096,7 +1096,7 @@ extension _PrintDesignerMethods on _PrintTemplateDesignerState {
               sw('showNote', t('Ghi chú')),
             ]),
             Text(
-              t('Bảng "Tên món | SL" có viền, tự liệt kê mọi món của phiếu.'),
+              t('Danh sách món, số lượng, yêu cầu thêm và ghi chú theo đúng thứ tự in.'),
               style: TextStyle(
                   fontSize: 10.5, color: DanColors.faint, height: 1.3),
             ),
@@ -1619,24 +1619,15 @@ extension _PrintDesignerMethods on _PrintTemplateDesignerState {
         'copy': '1/1',
       };
 
-  // Bản xem trước BẢNG MÓN — dựng đúng như kitchenTableLines ở server để "setting"
-  // khớp "bản in". Danh sách món là mẫu cố định cho dễ hình dung.
+  // Preview semantic list — không giả bảng bằng ký tự +-|.
   String _kitchenItemsSample(Map row) {
     final showQty = row['showQty'] != false && row['showQty'] != '0';
     final showMods = row['showMods'] != false && row['showMods'] != '0';
     final showNote = row['showNote'] != false && row['showNote'] != '0';
     final width = _sampleWidth;
-    const slW = 3;
-    final nameW = (showQty ? width - slW - 3 : width - 2).clamp(8, 60);
-    String bar() =>
-        showQty ? '+${'-' * nameW}+${'-' * slW}+' : '+${'-' * nameW}+';
-    String cell(String name, String sl) {
-      final nm =
-          name.length > nameW ? name.substring(0, nameW) : name.padRight(nameW);
-      if (!showQty) return '|$nm|';
-      final s = sl.length > slW ? sl.substring(0, slW) : sl.padLeft(slW);
-      return '|$nm|$s|';
-    }
+    final nameW = (width - (showQty ? 4 : 0)).clamp(8, 60);
+    String clipped(String value) =>
+        value.length > nameW ? value.substring(0, nameW) : value;
 
     final sample = [
       {
@@ -1647,14 +1638,14 @@ extension _PrintDesignerMethods on _PrintTemplateDesignerState {
       },
       {'name': t('Mì Bò Kho Việt Nam'), 'qty': '1', 'mods': '', 'note': ''},
     ];
-    final lines = <String>[bar(), cell('Tên món', showQty ? 'SL' : ''), bar()];
+    final lines = <String>[];
     for (final it in sample) {
-      lines.add(cell(' ${it['name']}', showQty ? (it['qty'] ?? '') : ''));
+      lines.add(clipped('${showQty ? '${it['qty']} x ' : ''}${it['name']}'));
       if (showMods && (it['mods'] ?? '').isNotEmpty)
-        lines.add(cell('   + ${it['mods']}', ''));
+        lines.add(clipped('  + ${it['mods']}'));
       if (showNote && (it['note'] ?? '').isNotEmpty)
-        lines.add(cell('   Ghi chú: ${it['note']}', ''));
-      lines.add(bar());
+        lines.add(clipped('  Ghi chú: ${it['note']}'));
+      lines.add('-' * width);
     }
     return lines.join('\n');
   }

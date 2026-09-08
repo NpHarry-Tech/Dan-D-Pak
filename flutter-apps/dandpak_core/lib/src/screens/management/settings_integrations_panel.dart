@@ -582,7 +582,19 @@ class _IntegrationsPanelState extends State<IntegrationsPanel> {
         originalName: name,
         mimeType: n.endsWith('.png')
             ? 'image/png'
-            : (n.endsWith('.webp') ? 'image/webp' : 'image/jpeg'),
+            : n.endsWith('.webp')
+                ? 'image/webp'
+                : n.endsWith('.gif')
+                    ? 'image/gif'
+                    : n.endsWith('.bmp')
+                        ? 'image/bmp'
+                        : (n.endsWith('.tif') || n.endsWith('.tiff'))
+                            ? 'image/tiff'
+                            : n.endsWith('.heic')
+                                ? 'image/heic'
+                                : n.endsWith('.heif')
+                                    ? 'image/heif'
+                                    : 'image/jpeg',
         base64Data: base64Encode(bytes),
       );
       if (!mounted) return;

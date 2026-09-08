@@ -7,6 +7,167 @@ class _RecipeRow {
   _RecipeRow(this.ingredientId, this.qty);
 }
 
+class _StationManagerDialog extends StatefulWidget {
+  final ApiService api;
+  final List<Map<String, dynamic>> stations;
+
+  const _StationManagerDialog({required this.api, required this.stations});
+
+  @override
+  State<_StationManagerDialog> createState() => _StationManagerDialogState();
+}
+
+class _StationManagerDialogState extends State<_StationManagerDialog> {
+  late List<Map<String, dynamic>> _stations;
+  final _name = TextEditingController();
+  bool _busy = false;
+  bool _changed = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _stations =
+        widget.stations.map((e) => Map<String, dynamic>.from(e)).toList();
+  }
+
+  @override
+  void dispose() {
+    _name.dispose();
+    super.dispose();
+  }
+
+  Future<void> _add() async {
+    final name = _name.text.trim();
+    if (name.isEmpty || _busy) return;
+    setState(() => _busy = true);
+    try {
+      final saved = await widget.api.createProductionStation({'name': name});
+      if (!mounted) return;
+      setState(() {
+        _stations.add(saved);
+        _name.clear();
+        _changed = true;
+      });
+    } catch (e) {
+      if (mounted) appToast(context, e.toString(), isError: true);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _rename(Map<String, dynamic> station) async {
+    final controller = TextEditingController(text: '${station['name']}');
+    final name = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(t('Đổi tên trạm')),
+        content: TextField(controller: controller, autofocus: true),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context), child: Text(t('Hủy'))),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, controller.text.trim()),
+            child: Text(t('Lưu')),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (name == null || name.isEmpty) return;
+    final saved = await widget.api
+        .updateProductionStation('${station['id']}', {'name': name});
+    if (!mounted) return;
+    setState(() {
+      final index = _stations.indexWhere((s) => s['id'] == station['id']);
+      if (index >= 0) _stations[index] = saved;
+      _changed = true;
+    });
+  }
+
+  Future<void> _toggle(Map<String, dynamic> station) async {
+    final active = station['active'] != 0;
+    try {
+      final saved = await widget.api.updateProductionStation(
+        '${station['id']}',
+        {'active': !active},
+      );
+      if (!mounted) return;
+      setState(() {
+        final index = _stations.indexWhere((s) => s['id'] == station['id']);
+        if (index >= 0) _stations[index] = saved;
+        _changed = true;
+      });
+    } catch (e) {
+      if (mounted) appToast(context, e.toString(), isError: true);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text(t('Trạm chế biến')),
+      content: SizedBox(
+        width: 520,
+        height: 430,
+        child: Column(
+          children: [
+            Expanded(
+              child: ListView.builder(
+                itemCount: _stations.length,
+                itemBuilder: (_, index) {
+                  final station = _stations[index];
+                  final active = station['active'] != 0;
+                  return ListTile(
+                    leading: Icon(Icons.soup_kitchen_outlined,
+                        color: active ? DanColors.brand : DanColors.faint),
+                    title: Text('${station['name']}'),
+                    subtitle: Text('${station['code']}'),
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        IconButton(
+                          tooltip: t('Đổi tên'),
+                          onPressed: () => _rename(station),
+                          icon: const Icon(Icons.edit_outlined),
+                        ),
+                        Switch(
+                            value: active, onChanged: (_) => _toggle(station)),
+                      ],
+                    ),
+                  );
+                },
+              ),
+            ),
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _name,
+                    decoration: InputDecoration(hintText: t('Tên trạm mới')),
+                    onSubmitted: (_) => _add(),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                FilledButton.icon(
+                  onPressed: _busy ? null : _add,
+                  icon: const Icon(Icons.add),
+                  label: Text(t('Thêm')),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context, _changed),
+          child: Text(t('Đóng')),
+        ),
+      ],
+    );
+  }
+}
+
 class _AddonRow {
   String kind;
   String type;
@@ -65,6 +226,9 @@ String _mimeForFileName(String name) {
   if (lower.endsWith('.png')) return 'image/png';
   if (lower.endsWith('.webp')) return 'image/webp';
   if (lower.endsWith('.gif')) return 'image/gif';
+  if (lower.endsWith('.bmp')) return 'image/bmp';
+  if (lower.endsWith('.tif') || lower.endsWith('.tiff')) return 'image/tiff';
+  if (lower.endsWith('.heic') || lower.endsWith('.heif')) return 'image/heic';
   return 'image/jpeg';
 }
 

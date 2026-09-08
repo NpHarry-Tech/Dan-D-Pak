@@ -48,7 +48,7 @@ extension ApiServiceSelfOrderApi on ApiService {
     required String? orderType,
     required List<Map<String, dynamic>> items,
     Map<String, dynamic>? customer,
-    String source = 'staff_pos',
+    String source = 'cashier',
   }) async {
     return mapFrom(await postJson(
       '/api/orders',

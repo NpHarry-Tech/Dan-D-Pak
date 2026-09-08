@@ -184,7 +184,13 @@ export function createOrUpdateOrder(options) {
   // order_id: nối món vào ĐÚNG đơn đang mở này (dùng khi GỘP giỏ Retail vào bill F&B,
   // kể cả bill mang về không có bàn). Không truyền thì giữ nguyên hành vi cũ: tìm đơn
   // mở theo bàn, không có thì tạo đơn mới.
-  const { branch_id = 'sala', table_id, order_id = null, channel = 'dine_in', source = 'staff_pos', require_confirm = false, items, actor = 'system', skipTransaction = false, linked_pos_device, linked_printer_id } = options;
+  const { branch_id = 'sala', table_id, order_id = null, channel = 'dine_in', source: rawSource = 'cashier', require_confirm = false, items, actor = 'system', skipTransaction = false, linked_pos_device, linked_printer_id } = options;
+  const source = ({ staff_pos: 'cashier', customer_ipad: 'customer_tablet', ipad: 'customer_tablet' })[
+    String(rawSource || '')
+  ] || String(rawSource || 'cashier');
+  if (!new Set(['cashier', 'customer_tablet', 'self_order', 'sync', 'external_channel']).has(source)) {
+    throw new Error('Nguồn tạo đơn không hợp lệ');
+  }
   if (!items?.length) throw new Error('Order trống');
   requireOpenShiftForSales(branch_id);
 
@@ -216,7 +222,17 @@ export function createOrUpdateOrder(options) {
   }
 
   try {
-    const needsStaffConfirm = source === 'customer_ipad' || require_confirm === true || (source === 'staff_pos' && !!table_id);
+    const customerOrigin = source === 'customer_tablet' || source === 'self_order';
+    // needsStaffConfirm quyết định TRẠNG THÁI món (pending_confirm chờ "Gửi món
+    // vào bếp" hay served/new gửi bếp ngay) — áp dụng cho MỌI nguồn khi có bàn,
+    // vì đây là bước dàn món trước khi gửi bếp của nghiệp vụ dine-in bình
+    // thường (nhân viên gõ món vẫn phải bấm "Gửi món vào bếp"), không phải cơ
+    // chế riêng của self-order. Tách biệt với notifyCustomerPending bên dưới —
+    // đó mới là thứ quyết định có bắn thông báo "Khách tự gọi món" hay không.
+    const needsStaffConfirm = customerOrigin || require_confirm === true || !!table_id;
+    // Chỉ khách tự gọi món qua tablet mới cần nhân viên được BÁO cross-device;
+    // nhân viên tự thêm món trên chính máy mình thì không cần tự báo cho mình.
+    const notifyCustomerPending = customerOrigin;
 
     // BẢO MẬT — thiết bị tự gọi món nằm trong tay KHÁCH, phải coi mọi trường
     // trong body là do khách kiểm soát (app có thể bị hook, hoặc gọi thẳng API
@@ -227,7 +243,7 @@ export function createOrUpdateOrder(options) {
     //   - sku_id   : thêm hàng retail tuỳ ý vào bill (khách chỉ được gọi món
     //                trong thực đơn, qua menu_item_id).
     //   - linked_* : trỏ bill sang máy POS/máy in khác.
-    if (source === 'customer_ipad') {
+    if (customerOrigin) {
       if (order_id) throw new Error('Thiết bị tự gọi món không được gộp vào bill có sẵn.');
       if (items.some(line => line?.sku_id)) {
         throw new Error('Thiết bị tự gọi món chỉ được gọi món trong thực đơn.');
@@ -334,9 +350,14 @@ export function createOrUpdateOrder(options) {
     const printable = created.filter(i => i.status === 'new' && i.station !== 'retail');
     if (printable.length) deferSideEffect(() => printKitchenTickets(full, printable, branch_id, actor));
     deferSideEffect(() => printCupLabels(full, created, branch_id));
-    publishEvent('order:new', { order: full, newItems: created, isNew, pendingConfirm: needsStaffConfirm }, branch_id);
-    if (needsStaffConfirm) {
-      publishEvent('order:pending', { order: full, newItems: created }, branch_id);
+    publishEvent('order:new', {
+      order: full, newItems: created, isNew,
+      pendingConfirm: needsStaffConfirm,
+      origin: source,
+      customerPending: notifyCustomerPending,
+    }, branch_id);
+    if (notifyCustomerPending) {
+      publishEvent('order:pending', { order: full, newItems: created, origin: source }, branch_id);
       // A2: PUSH FCM để nhân viên nhận thông báo cả khi ĐÃ TẮT app/khoá máy
       // (socket/AppNotifier chỉ chạy khi app đang mở). Lọc THEO ĐỊNH TUYẾN trong
       // Cài đặt (category 'fnb_order'). Best-effort, không chặn.

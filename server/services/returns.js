@@ -10,6 +10,7 @@ import { getOrder } from './orders.js';
 import { returnSku } from './inventory.js';
 import { reverseOrderPayments } from './payments.js';
 import { emit } from '../realtime.js';
+import { orderLineAllocations, unitMoneySlice } from './tax.js';
 
 function err(message, status = 400, code = undefined) {
   const e = new Error(message); e.status = status; if (code) e.code = code; return e;
@@ -54,7 +55,72 @@ function ensure() {
     CREATE INDEX IF NOT EXISTS idx_order_return_items_ret ON order_return_items(return_id);
     CREATE INDEX IF NOT EXISTS idx_order_return_items_order ON order_return_items(original_order_id);
   `);
+  const cols = new Set(db.prepare(`PRAGMA table_info(order_return_items)`).all().map(c => c.name));
+  for (const [name, type] of [
+    ['gross_amount', 'INTEGER NOT NULL DEFAULT 0'],
+    ['promotion_amount', 'INTEGER NOT NULL DEFAULT 0'],
+    ['net_unit_price', 'INTEGER NOT NULL DEFAULT 0'],
+    ['vat_amount', 'INTEGER NOT NULL DEFAULT 0'],
+    ['pricing_hash', 'TEXT'],
+  ]) {
+    if (!cols.has(name)) db.exec(`ALTER TABLE order_return_items ADD COLUMN ${name} ${type}`);
+  }
   ready = true;
+}
+
+function paidSaleSnapshot(order_id, fallbackOrder = null) {
+  const row = db.prepare(`SELECT pricing_hash,snapshot_json FROM sale_snapshots
+    WHERE order_id=? ORDER BY paid_at DESC,rowid DESC LIMIT 1`).get(order_id);
+  if (row) {
+    try {
+      const snapshot = JSON.parse(row.snapshot_json || '{}');
+      if (Array.isArray(snapshot.items)) return { snapshot, pricing_hash: row.pricing_hash || null };
+    } catch { /* legacy/corrupt snapshot: deterministic fallback below */ }
+  }
+  const order = fallbackOrder || getOrder(order_id);
+  return {
+    snapshot: { items: order?.items || [], discount: Number(order?.discount) || 0, total: Number(order?.total) || 0 },
+    pricing_hash: null,
+  };
+}
+
+function saleAllocations(order_id, fallbackOrder = null) {
+  const { snapshot, pricing_hash } = paidSaleSnapshot(order_id, fallbackOrder);
+  const allocations = orderLineAllocations(snapshot.items || [], snapshot.discount || 0);
+  return {
+    pricing_hash,
+    total: Number(snapshot.total) || allocations.reduce((sum, line) => sum + line.net, 0),
+    byId: new Map(allocations.map(line => [String(line.item.id || line.item.order_item_id || ''), line])),
+  };
+}
+
+// Quote dùng chung cho UI và createReturn. `unit_refunds` là dãy số nguyên đồng
+// còn có thể hoàn; UI cộng N phần tử đầu khi người dùng chọn N sản phẩm.
+export function returnQuote(order_id) {
+  ensure();
+  const order = getOrder(order_id);
+  if (!order) throw err('Đơn không tồn tại', 404);
+  const returned = returnedQtyMap(order_id);
+  const sale = saleAllocations(order_id, order);
+  return order.items.filter(item => item.status !== 'cancelled').map(item => {
+    const sold = Math.max(0, Math.trunc(Number(item.qty) || 0));
+    const already = Math.max(0, Math.trunc(Number(returned[item.id]) || 0));
+    const allocation = sale.byId.get(String(item.id)) || {
+      gross: sold * Number(item.unit_price || 0), promotion: 0,
+      net: sold * Number(item.unit_price || 0), vat: 0,
+    };
+    return {
+      order_item_id: item.id,
+      gross_amount: allocation.gross,
+      promotion_amount: allocation.promotion,
+      net_amount: allocation.net,
+      vat_amount: allocation.vat,
+      net_unit_price: sold ? Math.floor(allocation.net / sold) : 0,
+      unit_refunds: unitMoneySlice(allocation.net, sold, already, sold - already),
+      unit_vat_refunds: unitMoneySlice(allocation.vat, sold, already, sold - already),
+      pricing_hash: sale.pricing_hash,
+    };
+  });
 }
 
 // Số lượng ĐÃ trả theo từng order_item_id (đọc trong transaction để chống race).
@@ -176,6 +242,7 @@ export function createReturn(order_id, {
       : order.items.map(it => ({ order_item_id: it.id, qty: Number(it.qty) - (already[it.id] || 0), disposition: 'restock' }));
 
     const lines = [];
+    const sale = saleAllocations(order_id, order);
     for (const reqLine of src) {
       const it = byId.get(reqLine.order_item_id);
       if (!it) throw err('Dòng món không thuộc đơn: ' + reqLine.order_item_id, 400);
@@ -183,16 +250,32 @@ export function createReturn(order_id, {
       const wanted = Number(reqLine.qty) || 0;
       if (wanted <= 0) continue;
       if (wanted > remaining) throw err(`Trả vượt số đã bán: ${it.name} (còn ${remaining})`, 400); // §8
+      const allocation = sale.byId.get(String(it.id)) || {
+        gross: Number(it.qty) * Number(it.unit_price || 0), promotion: 0,
+        net: Number(it.qty) * Number(it.unit_price || 0), vat: 0,
+      };
+      const netUnits = unitMoneySlice(allocation.net, it.qty, already[it.id] || 0, wanted);
+      const grossUnits = unitMoneySlice(allocation.gross, it.qty, already[it.id] || 0, wanted);
+      const vatUnits = unitMoneySlice(allocation.vat, it.qty, already[it.id] || 0, wanted);
+      const amount = netUnits.reduce((sum, value) => sum + value, 0);
+      const grossAmount = grossUnits.reduce((sum, value) => sum + value, 0);
       lines.push({
         it, qty: wanted,
         disposition: reqLine.disposition === 'damaged' ? 'damaged' : 'restock',
-        amount: wanted * Number(it.unit_price || 0),
+        amount,
+        grossAmount,
+        promotionAmount: Math.max(0, grossAmount - amount),
+        vatAmount: vatUnits.reduce((sum, value) => sum + value, 0),
+        netUnitPrice: wanted ? Math.floor(amount / wanted) : 0,
       });
     }
     if (!lines.length) throw err('Không có món hợp lệ để trả (có thể đã trả hết).', 400);
 
     const refund_total = lines.reduce((s, l) => s + l.amount, 0);
-    if (refundedTotal(order_id) + refund_total > Number(order.total || 0) + 0.5) {
+    const paidAmount = Number(db.prepare(`SELECT COALESCE(SUM(pl.amount),0) total
+      FROM payment_lines pl JOIN payments p ON p.id=pl.payment_id
+      WHERE p.order_id=? AND pl.amount>0`).get(order_id)?.total || sale.total || order.total || 0);
+    if (refundedTotal(order_id) + refund_total > paidAmount + 0.5) {
       throw err('Hoàn vượt số tiền đã thanh toán của bill', 400); // §10
     }
 
@@ -220,11 +303,13 @@ export function createReturn(order_id, {
         refund_method, JSON.stringify(breakdown), now(), actor, approved_by, idempotency_key);
 
     const insItem = db.prepare(`INSERT INTO order_return_items
-      (id,return_id,original_order_id,order_item_id,sku_id,name,qty,unit_price,amount,disposition,branch_id)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?)`);
+      (id,return_id,original_order_id,order_item_id,sku_id,name,qty,unit_price,amount,disposition,branch_id,
+       gross_amount,promotion_amount,net_unit_price,vat_amount,pricing_hash)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
     for (const l of lines) {
       insItem.run(uid('reti_'), rid, order_id, l.it.id, l.it.sku_id || null, l.it.name,
-        l.qty, Number(l.it.unit_price || 0), l.amount, l.disposition, branch_id);
+        l.qty, Number(l.it.unit_price || 0), l.amount, l.disposition, branch_id,
+        l.grossAmount, l.promotionAmount, l.netUnitPrice, l.vatAmount, sale.pricing_hash);
       if (l.disposition === 'restock' && l.it.sku_id && l.it.status !== 'cancelled') {
         returnSku(l.it.sku_id, l.qty, rid, branch_id, { lot_id: l.it.lot_id }); // §9 restock once
       }

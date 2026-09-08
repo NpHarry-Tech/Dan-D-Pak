@@ -430,6 +430,7 @@ class KvDocLine {
   final TextEditingController qty;
   final TextEditingController cost;
   final TextEditingController lotNo;
+  final TextEditingController mfgDate;
   final TextEditingController expiry;
   late String selectedUnit;
 
@@ -438,12 +439,14 @@ class KvDocLine {
       num? initialCost,
       String? initialUnit,
       String? lot,
+      String? mfg,
       String? exp})
       : qty = TextEditingController(
             text: initialQty == null ? '1' : kvNumText(initialQty)),
         cost = TextEditingController(
             text: initialCost == null ? '' : kvNumText(initialCost)),
         lotNo = TextEditingController(text: lot ?? ''),
+        mfgDate = TextEditingController(text: mfg ?? ''),
         expiry = TextEditingController(text: exp ?? '') {
     selectedUnit = (initialUnit == null || initialUnit.isEmpty)
         ? (kvs(item['_picked_unit']).isEmpty
@@ -492,6 +495,7 @@ class KvDocLine {
     qty.dispose();
     cost.dispose();
     lotNo.dispose();
+    mfgDate.dispose();
     expiry.dispose();
   }
 }

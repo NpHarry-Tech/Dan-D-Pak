@@ -1,18 +1,22 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { hasImageSignature, requireImageSignature } from './core/imageValidation.js';
+import { detectImageMime, hasImageSignature, requireImageSignature } from './core/imageValidation.js';
 
 const samples = {
   'image/jpeg': Buffer.from('ffd8ffe000104a464946', 'hex'),
   'image/png': Buffer.from('89504e470d0a1a0a0000000d49484452', 'hex'),
   'image/webp': Buffer.from('524946460400000057454250', 'hex'),
   'image/gif': Buffer.from('4749463839610100', 'hex'),
+  'image/bmp': Buffer.from('424d360000000000000036000000', 'hex'),
+  'image/tiff': Buffer.from('49492a0008000000', 'hex'),
+  'image/heif': Buffer.from('00000018667479706865696300000000', 'hex'),
 };
 
 test('accepted upload MIME types require matching binary magic', () => {
   for (const [mime, bytes] of Object.entries(samples)) {
     assert.equal(hasImageSignature(bytes, mime), true, mime);
     assert.doesNotThrow(() => requireImageSignature(bytes, mime));
+    assert.equal(detectImageMime(bytes), mime);
   }
 });
 

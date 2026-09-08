@@ -500,7 +500,7 @@ class PosProvider extends ChangeNotifier {
       final payload = {
         if (_activeOrderId != null) 'id': _activeOrderId,
         'table_id': _selectedTable!.id,
-        'source': 'staff_pos',
+        'source': 'cashier',
         'items': orderItems,
         // Server bắt PIN Quản lý/Chủ khi có dòng chỉnh giá.
         if (hasOverride && _lineOverridePin != null)

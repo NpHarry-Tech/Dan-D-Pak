@@ -529,7 +529,7 @@ export function findSkuByBarcode(barcode, branch_id = 'sala', filters = {}) {
       : null;
 }
 
-export function createInventoryItem(body, branch_id = 'sala') {
+function createInventoryItemUnsafe(body, branch_id = 'sala') {
   if (!body.name) throw new Error('Thiếu tên mặt hàng');
   const id = body.id || uid('i_');
   const warehouse_id = body.warehouse_id || fallbackWarehouse(branch_id, 'inventory');
@@ -554,6 +554,10 @@ export function createInventoryItem(body, branch_id = 'sala') {
   audit('inventory.item.create', { id, name: body.name, item_type }, branch_id);
   emit('inventory:updated', { ids: [id] }, branch_id);
   return getItem('inventory', id, branch_id);
+}
+
+export function createInventoryItem(body, branch_id = 'sala') {
+  return inTransaction(() => createInventoryItemUnsafe(body, branch_id));
 }
 
 export function updateInventoryItem(id, body, branch_id = 'sala') {
@@ -598,7 +602,7 @@ export function deleteInventoryItem(id, branch_id = 'sala') {
   return { ok: true, deleted: id, name: cur.name };
 }
 
-export function createSku(body, branch_id = 'sala') {
+function createSkuUnsafe(body, branch_id = 'sala') {
   if (!body.name) throw new Error('Thiếu tên SKU');
   if (body.warehouse_id) requireWarehouse(branch_id, body.warehouse_id, 'retail');
   assertMaxLength(body.name, 200, 'Tên SKU');
@@ -641,6 +645,10 @@ export function createSku(body, branch_id = 'sala') {
   audit('sku.create', { id, name: body.name }, branch_id);
   emit('inventory:updated', { ids: [id] }, branch_id);
   return getItem('sku', id, branch_id);
+}
+
+export function createSku(body, branch_id = 'sala') {
+  return inTransaction(() => createSkuUnsafe(body, branch_id));
 }
 
 export function deleteSku(id, branch_id = 'sala') {

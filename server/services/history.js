@@ -2,7 +2,7 @@
 // Read-only over orders/payments/invoices — like KiotViet "Lịch sử bán hàng" / Odoo orders.
 import { db } from '../db.js';
 import { getPrintConfig } from './settings.js';
-import { returnedQtyByItem } from './returns.js';
+import { returnedQtyByItem, returnQuote } from './returns.js';
 
 function customerNameOf(raw) {
   try {
@@ -166,13 +166,15 @@ export function orderReceipt(order_id, branch_id = 'sala') {
   const table = o.table_id ? db.prepare(`SELECT code FROM tables WHERE id=?`).get(o.table_id) : null;
 
   const returnedByItem = returnedQtyByItem(order_id);
+  const quoteByItem = new Map(returnQuote(order_id).map(q => [q.order_item_id, q]));
   const items = db.prepare(`SELECT oi.id AS order_item_id,oi.name,oi.qty,oi.unit_price,oi.orig_price,oi.note,oi.vat_rate,oi.mods_json,oi.promo_json,oi.menu_item_id,oi.sku_id,oi.item_code,oi.item_barcode,oi.station,
       COALESCE(oi.unit_snapshot,CASE WHEN oi.sku_id IS NOT NULL THEN 'cái' ELSE 'phần' END) unit
     FROM order_items oi
     WHERE oi.order_id=? AND oi.status!='cancelled' ORDER BY oi.created_at`).all(order_id)
     .map(i => { let mods = []; try { mods = JSON.parse(i.mods_json || '[]'); } catch {}
       let promo = null; try { promo = JSON.parse(i.promo_json || 'null'); } catch {}
-      return { ...i, mods, promo, returned_qty: returnedByItem[i.order_item_id] || 0,
+      const quote = quoteByItem.get(i.order_item_id) || {};
+      return { ...i, ...quote, mods, promo, returned_qty: returnedByItem[i.order_item_id] || 0,
         line_total: i.qty * i.unit_price, kind: i.sku_id ? 'retail' : 'fnb' }; });
 
   const lines = db.prepare(`SELECT pl.method, COALESCE(pl.tendered_amount,pl.amount) amount, pl.reference FROM payment_lines pl

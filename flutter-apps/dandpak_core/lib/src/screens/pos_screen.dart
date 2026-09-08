@@ -1,7 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart' show HapticFeedback;
+import 'package:flutter/services.dart' show HapticFeedback, LogicalKeyboardKey;
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
@@ -237,7 +237,8 @@ class _PosScreenState extends State<PosScreen> {
     await pos.loadShift();
     if (!mounted) return;
     if (fullySettled) {
-      _toast('Đã thanh toán ${_vnd(receipt['total'] ?? receipt['paid_total'] ?? 0)}');
+      _toast(
+          'Đã thanh toán ${_vnd(receipt['total'] ?? receipt['paid_total'] ?? 0)}');
     } else {
       final remaining = receipt['remaining_due'] ?? 0;
       _toast(t('Đã nhận một phần. Còn thiếu ${_vnd(remaining)}'));
@@ -1253,6 +1254,7 @@ class _PosScreenState extends State<PosScreen> {
         isFree: _isFree,
         isPaying: _isPaying,
         isCalling: _isCalling,
+        onClearSelection: () => context.read<PosProvider>().selectTable(null),
       ),
     );
   }
@@ -1283,6 +1285,7 @@ class _PosScreenState extends State<PosScreen> {
         onEditItem: _editCartItem,
         onPayment: _openCheckoutDialog,
         openingPayment: _openingPayment,
+        onClose: () => pos.selectTable(null),
       ),
     );
   }
@@ -1295,120 +1298,132 @@ class _PosScreenState extends State<PosScreen> {
     // order edit only rebuilds the bill, not the floor map.
     final auth = context.watch<AuthProvider>();
 
-    return Scaffold(
-      backgroundColor: DanColors.bg,
-      body: Column(
-        children: [
-          RepaintBoundary(
-            child: DanModuleTopBar(
-              brandName: auth.selectedBranch.name,
-              title: 'POS Cashier',
-              subtitle: '',
-              titleIcon: Icons.credit_card,
-              userName:
-                  auth.currentUser?.name ?? auth.currentUser?.username ?? '',
-              userRole: roleLabel(auth.currentUser?.role ?? ''),
-              online: true,
-              onBack: () => Navigator.of(context).maybePop(),
-              onLogout: () => auth.logout(),
-              actions: [
-                Badge(
-                  isLabelVisible: _pendingCount > 0,
-                  label: Text('$_pendingCount'),
-                  backgroundColor: DanColors.late,
-                  textColor: Colors.white,
-                  child: DanTopBarIconButton(
-                    icon: Icons.notifications_none,
-                    onPressed: _openPendingConfirmDialog,
-                  ),
-                ),
-                Selector<PosProvider, bool>(
-                  selector: (_, p) => p.currentShift != null,
-                  builder: (context, shiftOpen, __) {
-                    final width = MediaQuery.of(context).size.width;
-                    final label = shiftOpen
-                        ? (width < 1100 ? t('Ca mở') : t('Ca: đang mở'))
-                        : (width < 1100 ? t('Ca đóng') : t('Ca: chưa mở'));
-                    return DanTopBarButton(
-                      label: label,
-                      danger: !shiftOpen,
-                      success: shiftOpen,
-                      minWidth: width < 1100 ? 0 : 132,
-                      onPressed: _openShiftDialog,
-                    );
-                  },
-                ),
-                DanTopBarButton(
-                  label: t('Lịch sử'),
-                  icon: Icons.receipt_long_outlined,
-                  onPressed: _openOrderHistoryDialog,
-                ),
-                // t("Màn hình phụ") chuyển vào Cài đặt → Màn hình phụ (dùng chung
-                // FnB + Retail): mở/cấu hình màn 2 tại một chỗ duy nhất.
-                Selector<PosProvider, int>(
-                  selector: (_, p) => _openCount(p.tables),
-                  builder: (_, n, __) =>
-                      DanTopBarCountChip(label: '$n ${t('BÀN MỞ')}'),
-                ),
-              ],
-            ),
-          ),
-          Expanded(
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                final compact = constraints.maxWidth < 980;
-                // Panel đơn chỉ chiếm chỗ khi thật sự có bàn đang chọn — trước
-                // đây luôn giữ một cột cố định (kể cả rỗng, chỉ hiện "Chọn một
-                // bàn để xem bill"), bóp sơ đồ bàn hẹp lại không cần thiết.
-                // Selector RIÊNG (không watch cả PosProvider ở build() phía
-                // trên) để chỉ đúng quyết định hiện/ẩn panel rebuild theo lựa
-                // chọn bàn, không kéo theo cả màn hình.
-                return Selector<PosProvider, bool>(
-                  selector: (_, p) => p.selectedTable != null,
-                  builder: (context, hasSelection, __) {
-                    if (compact) {
-                      return ListView(
-                        padding: EdgeInsets.all(10),
-                        children: [
-                          RepaintBoundary(child: _floorMap()),
-                          if (hasSelection) ...[
-                            SizedBox(height: 12),
-                            SizedBox(
-                                height: 520,
-                                child: RepaintBoundary(child: _billPane())),
-                          ],
-                        ],
-                      );
-                    }
-
-                    return Padding(
-                      padding: EdgeInsets.all(12),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          Expanded(child: RepaintBoundary(child: _floorMap())),
-                          if (hasSelection) ...[
-                            ResizablePane(
-                              storageKey: 'fnb',
-                              maxAvailable: constraints.maxWidth,
-                              minWidth: 360,
-                              maxWidth: 720,
-                              defaultWidth: math.min(
-                                632.0,
-                                math.max(380.0, constraints.maxWidth * 0.335),
-                              ),
-                              child: RepaintBoundary(child: _billPane()),
-                            ),
-                          ],
-                        ],
+    return CallbackShortcuts(
+      bindings: {
+        const SingleActivator(LogicalKeyboardKey.escape): () =>
+            context.read<PosProvider>().selectTable(null),
+      },
+      child: Focus(
+        autofocus: true,
+        child: Scaffold(
+          backgroundColor: DanColors.bg,
+          body: Column(
+            children: [
+              RepaintBoundary(
+                child: DanModuleTopBar(
+                  brandName: auth.selectedBranch.name,
+                  title: 'POS Cashier',
+                  subtitle: '',
+                  titleIcon: Icons.credit_card,
+                  userName: auth.currentUser?.name ??
+                      auth.currentUser?.username ??
+                      '',
+                  userRole: roleLabel(auth.currentUser?.role ?? ''),
+                  online: true,
+                  onBack: () => Navigator.of(context).maybePop(),
+                  onLogout: () => auth.logout(),
+                  actions: [
+                    Badge(
+                      isLabelVisible: _pendingCount > 0,
+                      label: Text('$_pendingCount'),
+                      backgroundColor: DanColors.late,
+                      textColor: Colors.white,
+                      child: DanTopBarIconButton(
+                        icon: Icons.notifications_none,
+                        onPressed: _openPendingConfirmDialog,
                       ),
+                    ),
+                    Selector<PosProvider, bool>(
+                      selector: (_, p) => p.currentShift != null,
+                      builder: (context, shiftOpen, __) {
+                        final width = MediaQuery.of(context).size.width;
+                        final label = shiftOpen
+                            ? (width < 1100 ? t('Ca mở') : t('Ca: đang mở'))
+                            : (width < 1100 ? t('Ca đóng') : t('Ca: chưa mở'));
+                        return DanTopBarButton(
+                          label: label,
+                          danger: !shiftOpen,
+                          success: shiftOpen,
+                          minWidth: width < 1100 ? 0 : 132,
+                          onPressed: _openShiftDialog,
+                        );
+                      },
+                    ),
+                    DanTopBarButton(
+                      label: t('Lịch sử'),
+                      icon: Icons.receipt_long_outlined,
+                      onPressed: _openOrderHistoryDialog,
+                    ),
+                    // t("Màn hình phụ") chuyển vào Cài đặt → Màn hình phụ (dùng chung
+                    // FnB + Retail): mở/cấu hình màn 2 tại một chỗ duy nhất.
+                    Selector<PosProvider, int>(
+                      selector: (_, p) => _openCount(p.tables),
+                      builder: (_, n, __) =>
+                          DanTopBarCountChip(label: '$n ${t('BÀN MỞ')}'),
+                    ),
+                  ],
+                ),
+              ),
+              Expanded(
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final compact = constraints.maxWidth < 980;
+                    // Panel đơn chỉ chiếm chỗ khi thật sự có bàn đang chọn — trước
+                    // đây luôn giữ một cột cố định (kể cả rỗng, chỉ hiện "Chọn một
+                    // bàn để xem bill"), bóp sơ đồ bàn hẹp lại không cần thiết.
+                    // Selector RIÊNG (không watch cả PosProvider ở build() phía
+                    // trên) để chỉ đúng quyết định hiện/ẩn panel rebuild theo lựa
+                    // chọn bàn, không kéo theo cả màn hình.
+                    return Selector<PosProvider, bool>(
+                      selector: (_, p) => p.selectedTable != null,
+                      builder: (context, hasSelection, __) {
+                        if (compact) {
+                          return ListView(
+                            padding: EdgeInsets.all(10),
+                            children: [
+                              RepaintBoundary(child: _floorMap()),
+                              if (hasSelection) ...[
+                                SizedBox(height: 12),
+                                SizedBox(
+                                    height: 520,
+                                    child: RepaintBoundary(child: _billPane())),
+                              ],
+                            ],
+                          );
+                        }
+
+                        return Padding(
+                          padding: EdgeInsets.all(12),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              Expanded(
+                                  child: RepaintBoundary(child: _floorMap())),
+                              if (hasSelection) ...[
+                                ResizablePane(
+                                  storageKey: 'fnb',
+                                  maxAvailable: constraints.maxWidth,
+                                  minWidth: 360,
+                                  maxWidth: 720,
+                                  defaultWidth: math.min(
+                                    632.0,
+                                    math.max(
+                                        380.0, constraints.maxWidth * 0.335),
+                                  ),
+                                  child: RepaintBoundary(child: _billPane()),
+                                ),
+                              ],
+                            ],
+                          ),
+                        );
+                      },
                     );
                   },
-                );
-              },
-            ),
+                ),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }

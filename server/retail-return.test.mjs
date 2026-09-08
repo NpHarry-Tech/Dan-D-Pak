@@ -118,3 +118,22 @@ test('full return (items rỗng) → refund = total, bill gốc vẫn tồn tạ
   assert.equal(rets.length, 1);
   assert.ok(rets[0].items.length >= 1);
 });
+
+test('P0: bill gross 240.000đ, promotion 40.000đ chỉ hoàn đúng net 200.000đ', () => {
+  Inventory.createSku({ id: 'sku_p0_a', name: 'P0 A', price: 200000, stock: 10 }, 'sala');
+  Inventory.createSku({ id: 'sku_p0_b', name: 'P0 B', price: 20000, stock: 10 }, 'sala');
+  Inventory.createSku({ id: 'sku_p0_c', name: 'P0 C', price: 20000, stock: 10 }, 'sala');
+  const paid = Retail.checkout({
+    items: [{ sku_id: 'sku_p0_a', qty: 1 }, { sku_id: 'sku_p0_b', qty: 1 },
+      { sku_id: 'sku_p0_c', qty: 1 }],
+    manual_discount: 40000,
+    payments: [{ method: 'cash', amount: 200000 }],
+    branch_id: 'sala', cashier: 'tester', client_request_id: 'p0_' + Math.random(),
+  });
+  const orderId = paid.order_id || paid.id;
+  const quote = Returns.returnQuote(orderId);
+  assert.equal(quote.reduce((sum, line) => sum + line.net_amount, 0), 200000);
+  const result = Returns.createReturn(orderId, { branch_id: 'sala', actor: 'tester' });
+  assert.equal(result.refund_total, 200000);
+  assert.ok(result.refund_total <= paid.total);
+});

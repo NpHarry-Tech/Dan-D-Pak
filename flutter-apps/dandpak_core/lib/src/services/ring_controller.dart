@@ -71,18 +71,17 @@ class RingController {
   /// Kéo tập việc-chưa-xem về ĐÚNG sự thật từ server (gọi khi reconnect / tải lại
   /// sơ đồ bàn). Giữ lại các khóa ẩn danh (server không biết chúng).
   void reconcile(Iterable<String> keys) {
-    final next = keys
-        .map((e) => e.trim())
-        .where((e) => e.isNotEmpty)
-        .toSet()
+    final next = keys.map((e) => e.trim()).where((e) => e.isNotEmpty).toSet()
       ..addAll(_keys.where((k) => k.startsWith('_anon:')));
     if (next.length == _keys.length && next.every(_keys.contains)) return;
     _keys
       ..clear()
       ..addAll(next);
     pending.value = _keys.length;
-    if (_keys.isEmpty) _stop();
-    else _startLoop();
+    if (_keys.isEmpty)
+      _stop();
+    else
+      _startLoop();
   }
 
   /// Nhân viên bấm chuông xem hết → ngưng hẳn, xoá mọi khóa.
@@ -281,7 +280,10 @@ class _RingingBellState extends State<_RingingBell>
       color: Colors.transparent,
       child: InkWell(
         borderRadius: BorderRadius.circular(40),
-        onTap: () => RingController.instance.acknowledge(),
+        onTap: () {
+          RingController.instance.acknowledge();
+          AppNotifier.onOpenRequested?.call();
+        },
         child: AnimatedBuilder(
           animation: _c,
           builder: (context, _) {

@@ -171,6 +171,7 @@ function buildLines(rawLines = []) {
       // Lô/HSD khai ngay khi lập phiếu (KiotViet: "kb - 25/06/2028 - SL: 24")
       // — dùng làm mặc định khi nhận hàng vào kho.
       lot_no: str(r.lot_no, 80) || null,
+      mfg_date: str(r.mfg_date, 30) || null,
       expiry_date: str(r.expiry_date, 30) || null,
     });
   }
@@ -227,10 +228,10 @@ export function savePurchaseOrder(body = {}, branch_id = 'sala', user = {}) {
 
 function insertLines(po_id, lines) {
   const ins = db.prepare(`INSERT INTO purchase_order_lines
-    (id,po_id,item_type,item_id,name,unit,item_code,item_barcode,qty,unit_cost,received_qty,line_total,lot_no,expiry_date)
-    VALUES (?,?,?,?,?,?,?,?,?,?,0,?,?,?)`);
+    (id,po_id,item_type,item_id,name,unit,item_code,item_barcode,qty,unit_cost,received_qty,line_total,lot_no,mfg_date,expiry_date)
+    VALUES (?,?,?,?,?,?,?,?,?,?,0,?,?,?,?)`);
   for (const l of lines) ins.run(uid('pol_'), po_id, l.item_type, l.item_id, l.name, l.unit,
-    l.item_code, l.item_barcode, l.qty, l.unit_cost, l.line_total, l.lot_no, l.expiry_date);
+    l.item_code, l.item_barcode, l.qty, l.unit_cost, l.line_total, l.lot_no, l.mfg_date, l.expiry_date);
 }
 
 export function confirmPurchaseOrder(id, branch_id = 'sala', user = {}) {
@@ -257,6 +258,10 @@ export function receivePurchaseOrder(id, body = {}, branch_id = 'sala', user = {
 
   const lines = db.prepare(`SELECT * FROM purchase_order_lines WHERE po_id=?`).all(id);
   const byId = new Map(lines.map(l => [l.id, l]));
+  const remainingByLine = new Map(lines.map(l => [
+    l.id,
+    Math.max(0, qtyNum(l.qty) - qtyNum(l.received_qty)),
+  ]));
   // body.receipts: [{ line_id, qty, lot_no?, expiry_date? }]
   const receipts = Array.isArray(body.receipts) ? body.receipts : [];
   if (!receipts.length) throw new Error('Không có dòng hàng nào để nhận');
@@ -265,7 +270,10 @@ export function receivePurchaseOrder(id, body = {}, branch_id = 'sala', user = {
   for (const r of receipts) {
     const line = byId.get(str(r.line_id, 80));
     if (!line) continue;
-    const outstanding = Math.max(0, qtyNum(line.qty) - qtyNum(line.received_qty));
+    // A single PO line may be allocated to several lots in the same request.
+    // Track the remaining quantity locally so the combined allocations can
+    // never over-receive the ordered quantity before the DB update is reread.
+    const outstanding = remainingByLine.get(line.id) || 0;
     const recvQty = Math.min(outstanding, qtyNum(r.qty));
     if (recvQty <= 0) continue;
     const opts = {
@@ -276,6 +284,7 @@ export function receivePurchaseOrder(id, body = {}, branch_id = 'sala', user = {
       warehouse_id,
       // Lô/HSD: ưu tiên giá trị nhập lúc nhận; không có thì lấy khai báo trên dòng phiếu.
       lot_no: str(r.lot_no, 80) || line.lot_no || undefined,
+      mfg_date: str(r.mfg_date, 30) || line.mfg_date || undefined,
       expiry_date: str(r.expiry_date, 30) || line.expiry_date || undefined,
     };
     // Hàng ngoài kho (adhoc): chỉ ghi nhận đã nhận, KHÔNG nhập vào kho (không có item kho).
@@ -283,7 +292,15 @@ export function receivePurchaseOrder(id, body = {}, branch_id = 'sala', user = {
     else if (line.item_type === 'sku') receiveSku(line.item_id, recvQty, branch_id, opts);
     else receiveStock(line.item_id, recvQty, branch_id, opts);
     db.prepare(`UPDATE purchase_order_lines SET received_qty=received_qty+? WHERE id=?`).run(recvQty, line.id);
-    touched.push({ line_id: line.id, name: line.name, qty: recvQty });
+    remainingByLine.set(line.id, Math.max(0, outstanding - recvQty));
+    touched.push({
+      line_id: line.id,
+      name: line.name,
+      qty: recvQty,
+      lot_no: opts.lot_no || null,
+      mfg_date: opts.mfg_date || null,
+      expiry_date: opts.expiry_date || null,
+    });
   }
   if (!touched.length) throw new Error('Số lượng nhận không hợp lệ (đã nhận đủ hoặc bằng 0)');
 

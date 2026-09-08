@@ -22,13 +22,6 @@ import '../../utils/translation.dart';
 part 'menu_item_dialogs.dart';
 part 'menu_shared.dart';
 
-Map<String, String> get _stationLabels => {
-      'kitchen': t('Bếp'),
-      'bar': 'Bar',
-      'salad': t('Salad/Lạnh'),
-      'beverage': 'Beverage',
-    };
-
 /// Management → Thực đơn tab. Port of the web FnB menu management:
 /// item list with availability/hide/delete, create/edit form (image, price,
 /// station, recipe, schedule) and category management.
@@ -43,6 +36,7 @@ class MenuTab extends StatefulWidget {
 class _MenuTabState extends State<MenuTab> {
   MenuManageData? _data;
   List<IngredientRef> _ingredients = [];
+  List<Map<String, dynamic>> _stations = [];
   String? _error;
   bool _loading = true;
   String _search = '';
@@ -64,6 +58,7 @@ class _MenuTabState extends State<MenuTab> {
       final results = await Future.wait([
         widget.api.getMenuManage(),
         widget.api.getIngredients(),
+        widget.api.getProductionStations(),
       ]);
       if (!mounted) return;
       setState(() {
@@ -71,6 +66,10 @@ class _MenuTabState extends State<MenuTab> {
         _ingredients = (results[1] as List)
             .whereType<Map>()
             .map((e) => IngredientRef.fromJson(Map<String, dynamic>.from(e)))
+            .toList();
+        _stations = (results[2] as List)
+            .whereType<Map>()
+            .map((e) => Map<String, dynamic>.from(e))
             .toList();
         _loading = false;
       });
@@ -152,6 +151,7 @@ class _MenuTabState extends State<MenuTab> {
         categories: data.categories,
         items: data.items,
         ingredients: _ingredients,
+        stations: _stations,
         serverUrl: serverUrl,
       ),
     );
@@ -167,6 +167,22 @@ class _MenuTabState extends State<MenuTab> {
           _CategoryManagerDialog(api: widget.api, categories: data.categories),
     );
     if (changed == true) _load();
+  }
+
+  Future<void> _openStations() async {
+    final changed = await showDialog<bool>(
+      context: context,
+      builder: (_) =>
+          _StationManagerDialog(api: widget.api, stations: _stations),
+    );
+    if (changed == true) _load();
+  }
+
+  String _stationName(String code) {
+    for (final station in _stations) {
+      if ('${station['code']}' == code) return '${station['name']}';
+    }
+    return code;
   }
 
   @override
@@ -229,6 +245,7 @@ class _MenuTabState extends State<MenuTab> {
                       item: items[i],
                       categoryName: _categoryName(items[i].categoryId),
                       serverUrl: serverUrl,
+                      stationName: _stationName(items[i].station),
                       onEdit: () => _openForm(items[i]),
                       onToggleHidden: () => _toggleHidden(items[i]),
                       onDelete: () => _delete(items[i]),
@@ -311,6 +328,13 @@ class _MenuTabState extends State<MenuTab> {
             style: OutlinedButton.styleFrom(minimumSize: Size(0, 44)),
           ),
           SizedBox(width: 8),
+          OutlinedButton.icon(
+            onPressed: _openStations,
+            icon: Icon(Icons.soup_kitchen_outlined, size: 16),
+            label: Text(t('Trạm chế biến')),
+            style: OutlinedButton.styleFrom(minimumSize: Size(0, 44)),
+          ),
+          SizedBox(width: 8),
           FilledButton.icon(
             onPressed: () => _openForm(),
             icon: Icon(Icons.add, size: 18),
@@ -327,6 +351,7 @@ class _MenuRow extends StatelessWidget {
   final AdminMenuItem item;
   final String categoryName;
   final String serverUrl;
+  final String stationName;
   final VoidCallback onEdit;
   final VoidCallback onToggleHidden;
   final VoidCallback onDelete;
@@ -336,6 +361,7 @@ class _MenuRow extends StatelessWidget {
     required this.item,
     required this.categoryName,
     required this.serverUrl,
+    required this.stationName,
     required this.onEdit,
     required this.onToggleHidden,
     required this.onDelete,
@@ -380,7 +406,7 @@ class _MenuRow extends StatelessWidget {
                 ),
                 SizedBox(height: 3),
                 Text(
-                  '${categoryName.isNotEmpty ? '$categoryName · ' : ''}${Fmt.money(item.price)} · ${_stationLabels[item.station] ?? item.station}',
+                  '${categoryName.isNotEmpty ? '$categoryName · ' : ''}${Fmt.money(item.price)} · $stationName',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(fontSize: 11.5, color: DanColors.faint),

@@ -7,7 +7,8 @@ import { logSystem } from './services/systemLogs.js';
 import { currentRequestMetadata } from './core/requestContext.js';
 import { markAuthAttached, sendTimedJson, timedAuth } from './core/requestTiming.js';
 import { contentAddressedAssetName } from './core/staticAssets.js';
-import { requireImageSignature } from './core/imageValidation.js';
+import { detectImageMime, requireImageSignature } from './core/imageValidation.js';
+import sharp from 'sharp';
 import { registerInventoryRoutes } from './modules/inventory/routes.js';
 import { registerInvoiceRoutes } from './modules/invoices/routes.js';
 import { registerPaymentRoutes } from './modules/payments/routes.js';
@@ -46,7 +47,10 @@ const MENU_UPLOADS_DIR = storagePath('uploads', 'menu');
 const PRODUCT_UPLOADS_DIR = storagePath('uploads', 'products');
 const CATALOGUE_UPLOADS_DIR = storagePath('uploads', 'catalogue');
 const CUSTOMER_DISPLAY_UPLOADS_DIR = storagePath('uploads', 'customer-display');
-const AVATAR_ALLOWED_MIME = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);
+const AVATAR_ALLOWED_MIME = new Set([
+  'image/jpeg', 'image/png', 'image/webp', 'image/gif',
+  'image/bmp', 'image/tiff', 'image/heif', 'image/heic',
+]);
 const AVATAR_MAX_BYTES = 20 * 1024 * 1024;
 
 const SECURE_MIME_EXT = {
@@ -204,17 +208,32 @@ const wrap = (fn) => (req, res) => {
 // Lưu ảnh gửi lên dạng base64 (≤20MB, đúng mime ảnh) vào thư mục uploads và trả
 // URL công khai. Helper DÙNG CHUNG cho avatar nhân viên (settings), ảnh món
 // (catalog) và avatar đối tác (contacts) — truyền vào các module đó.
-function saveBase64Image(req, { dir, urlBase, prefix, auditAction, registerAs }) {
+async function saveBase64Image(req, { dir, urlBase, prefix, auditAction, registerAs }) {
   const { data, mime_type, original_name } = req.body || {};
   if (!data || !original_name) throw new Error('Thiếu dữ liệu ảnh');
+  const declaredMime = mime_type === 'image/heic' ? 'image/heif' : mime_type;
   if (!AVATAR_ALLOWED_MIME.has(mime_type)) throw new Error(`Định dạng ảnh không được hỗ trợ: ${mime_type}`);
   const buf = Buffer.from(String(data), 'base64');
   if (!buf.byteLength) throw new Error('File ảnh rỗng');
   if (buf.byteLength > AVATAR_MAX_BYTES) throw new Error('Ảnh quá lớn, tối đa 20MB');
-  requireImageSignature(buf, mime_type);
-  const stored = contentAddressedAssetName(prefix, buf, SECURE_MIME_EXT[mime_type] || '.jpg');
+  const detectedMime = detectImageMime(buf);
+  if (!detectedMime) throw new Error('File không phải ảnh raster được hỗ trợ (SVG không được phép)');
+  requireImageSignature(buf, declaredMime);
+  let normalized;
+  try {
+    normalized = await sharp(buf, { animated: detectedMime === 'image/gif', limitInputPixels: 80_000_000 })
+      .rotate() // áp EXIF orientation trước khi loại metadata nguy hiểm
+      .webp({ quality: 88, effort: 4 })
+      .toBuffer();
+  } catch (error) {
+    const e = new Error(`Không giải mã được ảnh ${detectedMime}; hãy đổi sang JPG/PNG/WebP`);
+    e.status = 400; e.code = 'IMAGE_DECODE_UNSUPPORTED'; e.cause = error;
+    throw e;
+  }
+  const normalizedMime = 'image/webp';
+  const stored = contentAddressedAssetName(prefix, normalized, '.webp');
   fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(nodePath.join(dir, stored), buf);
+  fs.writeFileSync(nodePath.join(dir, stored), normalized);
   const url = `${urlBase}/${stored}`;
   const branch_id = branch(req);
   // registerAs được TRUYỀN CÓ CHỦ ĐÍCH chỉ ở các đường upload cần lập chỉ mục vào
@@ -231,8 +250,8 @@ function saveBase64Image(req, { dir, urlBase, prefix, auditAction, registerAs })
         branch_id,
         name: registerAs.name || original_name,
         original_name,
-        mime_type,
-        file_size: buf.byteLength,
+        mime_type: normalizedMime,
+        file_size: normalized.byteLength,
         storageRelPath: rel,
         source: registerAs.source || 'upload',
         source_screen: registerAs.screen || '',
@@ -240,15 +259,15 @@ function saveBase64Image(req, { dir, urlBase, prefix, auditAction, registerAs })
         uploaded_by: req.user?.username || req.user?.id || 'system',
         uploaded_by_name: actor(req) || 'Hệ thống',
         auditAction,
-        auditDetail: { url, original_name, size: buf.byteLength },
+        auditDetail: { url, original_name, source_mime: detectedMime, size: normalized.byteLength },
         auditActor: actor(req),
       },
     });
   } else {
     // Upload không lập chỉ mục Tài liệu (avatar/QR/…): ghi audit như cũ.
-    audit(auditAction, { url, original_name, size: buf.byteLength }, branch_id, actor(req));
+    audit(auditAction, { url, original_name, source_mime: detectedMime, size: normalized.byteLength }, branch_id, actor(req));
   }
-  return { ok: true, url, size: buf.byteLength };
+  return { ok: true, url, size: normalized.byteLength, mime_type: normalizedMime, source_mime: detectedMime, revision: stored };
 }
 
 registerTaxRoutes(api, { wrap, guard });

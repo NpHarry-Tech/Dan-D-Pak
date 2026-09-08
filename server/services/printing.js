@@ -542,27 +542,8 @@ function kitchenTableLines(p = {}, W = 40, opt = {}) {
   const showQty = opt.showQty !== false && opt.showQty !== '0';
   const showMods = opt.showMods !== false && opt.showMods !== '0';
   const showNote = opt.showNote !== false && opt.showNote !== '0';
-  const SL_W = 3;
-  // Viền chiếm 3 dấu '|' khi có cột SL (| tên | sl |), 2 dấu khi không (| tên |).
-  const NAME_W = showQty ? Math.max(8, W - SL_W - 3) : Math.max(8, W - 2);
-  const border = showQty
-    ? `+${'-'.repeat(NAME_W)}+${'-'.repeat(SL_W)}+`
-    : `+${'-'.repeat(NAME_W)}+`;
-  // Ô bảng: bù khoảng trắng theo bề rộng THẬT (marker [[..]] không tính). CỠ CHỮ
-  // TO do renderTicket bọc [[S3]] quanh CẢ PHIẾU (2x rộng+cao) — ở đây chỉ lo IN
-  // ĐẬM. (Đường template tự quản cỡ chữ riêng nên bảng món giữ nguyên khi qua đó.)
-  const cell = (name, sl, { bold = false } = {}) => {
-    const nmVis = String(name);
-    const nm = bold ? `[[B1]]${nmVis}[[B0]]` : nmVis;
-    const nmPad = ' '.repeat(Math.max(0, NAME_W - nmVis.length));
-    if (!showQty) return `|${nm}${nmPad}|`;
-    const slVis = String(sl ?? '');
-    const slStr = (bold && slVis) ? `[[B1]]${slVis}[[B0]]` : slVis;
-    const slPad = ' '.repeat(Math.max(0, SL_W - slVis.length));
-    return `|${nm}${nmPad}|${slPad}${slStr}|`;
-  };
-
-  const rows = [border, cell('Tên món', showQty ? 'SL' : '', { bold: true }), border];
+  const NAME_W = Math.max(8, W - (showQty ? 5 : 0));
+  const rows = [];
   const items = (Array.isArray(p.items) && p.items.length) ? p.items : [{ ...p }];
   for (const i of items) {
     const cancelled = i.cancelled === true
@@ -571,22 +552,23 @@ function kitchenTableLines(p = {}, W = 40, opt = {}) {
     const strike = (value) => cancelled
       ? [...String(value || '')].map(ch => ch === ' ' ? ch : `${ch}\u0336`).join('')
       : String(value || '');
-    const nameLines = wrap(strike(i.name || ''), NAME_W - 1);
+    const qty = showQty ? `${strike(i.qty || 1)} x ` : '';
+    const nameLines = wrap(`${qty}${strike(i.name || '')}`, NAME_W);
     (nameLines.length ? nameLines : ['']).forEach((ln, idx) => {
-      rows.push(cell(` ${ln}`, idx === 0 ? strike(i.qty || 1) : '', { bold: idx === 0 }));
+      rows.push(idx === 0 ? `[[B1]]${ln}[[B0]]` : `  ${ln}`);
     });
     // YÊU CẦU THÊM (mods) ngay dưới món.
     if (showMods) {
       const mods = itemMods(i);
       if (mods.length) {
-        for (const ln of wrap(`+ ${mods.join(', ')}`, NAME_W - 3)) rows.push(cell(`   ${ln}`, ''));
+        for (const ln of wrap(`+ ${mods.join(', ')}`, NAME_W - 2)) rows.push(`  ${ln}`);
       }
     }
     // GHI CHÚ dưới yêu cầu thêm.
     if (showNote && i.note) {
-      for (const ln of wrap(`Ghi chú: ${i.note}`, NAME_W - 3)) rows.push(cell(`   ${ln}`, ''));
+      for (const ln of wrap(`Ghi chú: ${i.note}`, NAME_W - 2)) rows.push(`  ${ln}`);
     }
-    rows.push(border);
+    rows.push(line('-', W));
   }
   return rows;
 }
@@ -3219,14 +3201,15 @@ export function printKitchenTickets(order, items, branch_id = 'sala', staff = ''
   } catch { /* realtime lỗi không chặn in */ }
 
   const k = getPrintConfig(branch_id).kitchen || {};
-  const split = k.splitPerItem !== '0' && k.splitPerItem !== false;
-  const perUnit = k.perUnit !== '0' && k.perUnit !== false;
   const showStaff = k.showStaff !== '0' && k.showStaff !== false;
 
   // Trạm (kitchen/bar) → tuyến in THẬT. Tôn trọng máy in cắm tại thiết bị trước (preferDevice).
   const rows = printerRows(branch_id);
   const resolvedStation = new Map();
   const stationPrinterId = (station) => {
+    const explicit = rows.find(printer => printer.active !== false &&
+      Array.isArray(printer.stations) && printer.stations.map(String).includes(String(station)));
+    if (explicit) return explicit.id;
     const legacyId = STATION_PRINTER[station] || 'kitchen';
     if (!resolvedStation.has(legacyId)) {
       const found = resolvePrinterForOutput('kitchen_ticket', branch_id, {
@@ -3265,47 +3248,37 @@ export function printKitchenTickets(order, items, branch_id = 'sala', staff = ''
     date: `${String(storeNow.day).padStart(2, '0')}/${String(storeNow.month).padStart(2, '0')}/${storeNow.year}`,
   };
 
-  // Chế độ gộp cũ: 1 phiếu / trạm in.
-  if (!split) {
-    const byPrinter = {};
-    for (const it of kitchenItems) {
-      const p = stationPrinterId(it.station);
-      if (!p) { warnNoStation(it.station); continue; }
-      (byPrinter[p] ||= []).push(it);
-    }
-    for (const [printer, list] of Object.entries(byPrinter)) {
-      createJob({
-        printer, type: 'kitchen_ticket',
-        title: `Bàn ${base.table} · #${base.seq}`,
-        payload: {
-          ...base, station: printer.toUpperCase(),
-          items: list.map(i => ({
-            qty: i.qty, name: i.name, note: i.note, mods: itemMods(i),
-            cancelled: i.cancelled === true,
-          })),
-        }, branch_id,
-      });
-    }
-    return;
-  }
-
-  // Tách từng món: mỗi món (mỗi phần nếu perUnit) ra 1 tem riêng.
+  // Một lần gửi = một ticket cho mỗi đích + station, chứa toàn bộ món MỚI của
+  // đích đó. `items` do order service truyền chỉ gồm delta vừa xác nhận nên món
+  // cũ không bị in lại. Bỏ chế độ legacy splitPerItem/perUnit vì nó tạo hàng
+  // chục job cho một thao tác và làm preview không thể khớp bản in.
+  const groups = new Map();
   for (const it of kitchenItems) {
     const printer = stationPrinterId(it.station);
     if (!printer) { warnNoStation(it.station); continue; }
-    const copies = perUnit ? Math.min(Math.max(1, parseInt(it.qty) || 1), 30) : 1;
-    for (let i = 0; i < copies; i++) {
-      createJob({
-        printer, type: 'kitchen_ticket',
-        title: `Bàn ${base.table} · ${it.name}`,
-        payload: {
-          ...base, station: printer.toUpperCase(),
-          name: it.name, qty: it.qty, mods: itemMods(it), note: it.note || '',
-          cancelled: it.cancelled === true,
-          copy: copies > 1 ? `${i + 1}/${copies}` : '',
-        }, branch_id,
-      });
-    }
+    const station = String(it.station || 'kitchen');
+    const key = `${printer}\u0000${station}`;
+    if (!groups.has(key)) groups.set(key, { printer, station, items: [] });
+    groups.get(key).items.push(it);
+  }
+  for (const group of groups.values()) {
+    createJob({
+      printer: group.printer,
+      type: 'kitchen_ticket',
+      title: `Bàn ${base.table} · #${base.seq}`,
+      payload: {
+        ...base,
+        station: group.station.toUpperCase(),
+        items: group.items.map(i => ({
+          qty: i.qty,
+          name: i.name,
+          note: i.note,
+          mods: itemMods(i),
+          cancelled: i.cancelled === true,
+        })),
+      },
+      branch_id,
+    });
   }
 }
 

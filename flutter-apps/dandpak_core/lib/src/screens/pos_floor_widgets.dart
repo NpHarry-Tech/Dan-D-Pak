@@ -16,6 +16,7 @@ class _FloorMap extends StatelessWidget {
     required this.isFree,
     required this.isPaying,
     required this.isCalling,
+    required this.onClearSelection,
   });
 
   final List<TableModel> tables;
@@ -33,6 +34,7 @@ class _FloorMap extends StatelessWidget {
   final bool Function(TableModel table) isFree;
   final bool Function(TableModel table) isPaying;
   final bool Function(TableModel table) isCalling;
+  final VoidCallback onClearSelection;
 
   bool get _allMode => selectedZoneId.isEmpty || selectedZoneId == 'all';
 
@@ -148,70 +150,75 @@ class _FloorMap extends StatelessWidget {
             );
     }
 
-    return SingleChildScrollView(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Container(
-            constraints: BoxConstraints(minHeight: 64),
-            padding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-            decoration: BoxDecoration(
-              color: DanColors.surface,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: DanColors.border),
-            ),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            t('Sơ đồ bàn'),
-                            style: TextStyle(
-                                fontSize: 14, fontWeight: FontWeight.w800),
-                          ),
-                          SizedBox(width: 10),
-                          _zoneDropdown(),
-                        ],
-                      ),
-                      SizedBox(height: 2),
-                      Text(
-                        '$total ${t('bàn')} · ${math.max(0, total - open)} ${t('trống')}',
-                        style: TextStyle(
-                          color: DanColors.muted,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w500,
+    return GestureDetector(
+      behavior: HitTestBehavior.translucent,
+      onTap: onClearSelection,
+      child: SingleChildScrollView(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Container(
+              constraints: BoxConstraints(minHeight: 64),
+              padding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: BoxDecoration(
+                color: DanColors.surface,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: DanColors.border),
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              t('Sơ đồ bàn'),
+                              style: TextStyle(
+                                  fontSize: 14, fontWeight: FontWeight.w800),
+                            ),
+                            SizedBox(width: 10),
+                            _zoneDropdown(),
+                          ],
                         ),
-                      ),
+                        SizedBox(height: 2),
+                        Text(
+                          '$total ${t('bàn')} · ${math.max(0, total - open)} ${t('trống')}',
+                          style: TextStyle(
+                            color: DanColors.muted,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    alignment: WrapAlignment.end,
+                    children: [
+                      _StatusPill(
+                          label: '$open ${t('ĐANG DÙNG')}',
+                          color: DanColors.doing),
+                      _StatusPill(
+                          label: '$paying ${t('CHỜ THU')}', muted: true),
+                      if (calling > 0)
+                        _StatusPill(
+                            label: '$calling ${t('ĐANG GỌI')}',
+                            color: DanColors.late),
                     ],
                   ),
-                ),
-                Wrap(
-                  spacing: 6,
-                  runSpacing: 6,
-                  alignment: WrapAlignment.end,
-                  children: [
-                    _StatusPill(
-                        label: '$open ${t('ĐANG DÙNG')}',
-                        color: DanColors.doing),
-                    _StatusPill(label: '$paying ${t('CHỜ THU')}', muted: true),
-                    if (calling > 0)
-                      _StatusPill(
-                          label: '$calling ${t('ĐANG GỌI')}',
-                          color: DanColors.late),
-                  ],
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
-          SizedBox(height: 12),
-          content,
-        ],
+            SizedBox(height: 12),
+            content,
+          ],
+        ),
       ),
     );
   }

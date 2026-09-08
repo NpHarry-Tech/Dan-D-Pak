@@ -296,6 +296,13 @@ export function sanitizePrintConfig(raw = {}) {
       label: str(p?.label || p?.type || `Printer ${i + 1}`, 120),
       type: str(p?.type || p?.label || '', 120),
       output: inferPrinterOutput(p),
+      // Trạm chế biến (production_stations.code) mà máy in "Phiếu bếp" này nhận
+      // job — rỗng = không giới hạn, dùng tuyến ngầm cũ (kitchen/bar) để giữ
+      // đúng hành vi các cấu hình đã lưu từ trước. Xem stationPrinterId ở
+      // printing.js: đây là nguồn quyết định routing, KHÔNG suy luận ở client.
+      stations: Array.isArray(p?.stations)
+        ? [...new Set(p.stations.map(s => str(s, 40)).filter(Boolean))].slice(0, 20)
+        : [],
       location: str(p?.location || '', 120),
       active: bool(p?.active, true),
       auto: bool(p?.auto, false),

@@ -160,7 +160,7 @@ class KvSpreadsheetData {
     }
     if (!groups.any((aliases) => columns(aliases).isNotEmpty)) {
       throw KvImportException(
-          'Thiếu định danh "$target"; cần ít nhất một cột mã sản phẩm hoặc mã vạch.');
+          'Thiếu định danh "$target"; cần ít nhất một cột nhận diện được hỗ trợ.');
     }
   }
 

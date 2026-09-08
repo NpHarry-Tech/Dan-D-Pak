@@ -1401,11 +1401,7 @@ class _SkuEditDialog extends StatefulWidget {
 
 class _SkuEditDialogState extends State<_SkuEditDialog> {
   late final TextEditingController name, code, barcode, brand, category, unit;
-  late final TextEditingController cost, price, vat, minStock, openingStock;
-
-  /// Tồn kho hiện tại của hàng ĐÃ CÓ — sửa ở đây là đặt lại tồn (kiểm kho).
-  late final TextEditingController tonKho;
-  late final num _tonBanDau;
+  late final TextEditingController cost, price, vat, minStock;
 
   /// GIỚI THIỆU SẢN PHẨM — đoạn văn KHÁCH đọc trên màn catalogue ngoài quầy
   /// (thành phần, xuất xứ, cách dùng). Khác ghi chú nội bộ: cái này ra ngoài.
@@ -1415,7 +1411,6 @@ class _SkuEditDialogState extends State<_SkuEditDialog> {
   /// sử dụng" vừa khai tồn đầu kỳ mà không có ngày — thiếu ô này thì người dùng
   /// gặp lỗi "Tồn đầu kỳ của hàng bắt buộc HSD phải có hạn sử dụng" mà không có
   /// chỗ nào để nhập ngày.
-  DateTime? expiryDate;
   final units = <_SkuUnitCtrls>[];
   bool includesVat = true;
   bool trackLot = false;
@@ -1439,9 +1434,6 @@ class _SkuEditDialogState extends State<_SkuEditDialog> {
     price = c(s['price']);
     vat = c(s['vat']);
     minStock = c(s['min_stock']);
-    openingStock = c('');
-    _tonBanDau = _n(s['stock']);
-    tonKho = c(widget.sku == null ? '' : _tonBanDau.toString());
     description = c(s['description']);
     includesVat = s['price_includes_vat'] != 0;
     trackLot = s['track_lot'] == 1 || s['track_lot'] == true;
@@ -1453,21 +1445,6 @@ class _SkuEditDialogState extends State<_SkuEditDialog> {
     }
     // Ô "Hạn sử dụng lô tồn đầu kỳ" chỉ hiện khi có tồn đầu kỳ > 0, nên phải
     // dựng lại form ngay lúc con số đó vượt qua 0 (và khi bị xoá về rỗng).
-    openingStock.addListener(() {
-      final co = _num(openingStock) > 0;
-      if (co != _coTonDauKy && mounted) setState(() => _coTonDauKy = co);
-    });
-  }
-
-  bool _coTonDauKy = false;
-
-  /// Ai được đặt lại tồn: người sửa hàng hoá hoặc người điều chỉnh tồn kho —
-  /// khớp đúng guardAny('warehouse.item','inventory.adjust') của route
-  /// /api/skus/:id/adjust, để nút không hiện ra rồi bấm vào bị server từ chối.
-  bool get _duocSuaTon {
-    final auth = context.read<AuthProvider>();
-    return auth.hasPermission('warehouse.item') ||
-        auth.hasPermission('inventory.adjust');
   }
 
   @override
@@ -1483,8 +1460,6 @@ class _SkuEditDialogState extends State<_SkuEditDialog> {
       price,
       vat,
       minStock,
-      openingStock,
-      tonKho,
       description
     ]) {
       c.dispose();
@@ -1514,7 +1489,13 @@ class _SkuEditDialogState extends State<_SkuEditDialog> {
               ? 'image/webp'
               : ext.endsWith('.gif')
                   ? 'image/gif'
-                  : 'image/jpeg';
+                  : ext.endsWith('.bmp')
+                      ? 'image/bmp'
+                      : (ext.endsWith('.tif') || ext.endsWith('.tiff'))
+                          ? 'image/tiff'
+                          : (ext.endsWith('.heic') || ext.endsWith('.heif'))
+                              ? 'image/heic'
+                              : 'image/jpeg';
       final out = await context.read<ApiService>().uploadSkuImage(
           originalName: file.uri.pathSegments.last,
           mimeType: mime,
@@ -1544,17 +1525,6 @@ class _SkuEditDialogState extends State<_SkuEditDialog> {
             isError: true);
         return;
       }
-    }
-    // Bắt lỗi NGAY TRÊN FORM thay vì để server ném ra sau khi bấm Lưu — người
-    // dùng thấy ô nào thiếu, không phải đoán từ câu báo lỗi.
-    if (widget.sku == null &&
-        expiryRequired &&
-        _num(openingStock) > 0 &&
-        expiryDate == null) {
-      appToast(context,
-          t('Hàng bắt buộc hạn sử dụng: phải chọn HSD cho lô tồn đầu kỳ'),
-          isError: true);
-      return;
     }
     setState(() => busy = true);
     try {
@@ -1589,12 +1559,6 @@ class _SkuEditDialogState extends State<_SkuEditDialog> {
         ],
       };
       if (widget.sku == null) {
-        body['opening_stock'] = _num(openingStock);
-        // Server dựng lô 'OPENING' cho tồn đầu kỳ; hàng bắt buộc HSD thì lô đó
-        // phải có ngày hết hạn, nếu không server từ chối tạo.
-        if (expiryDate != null) {
-          body['expiry_date'] = expiryDate!.toIso8601String().split('T').first;
-        }
         await context.read<ApiService>().createSku(body);
       } else {
         final id = widget.sku!['id'].toString();
@@ -1603,19 +1567,6 @@ class _SkuEditDialogState extends State<_SkuEditDialog> {
         } else {
           // Nguyên liệu/vật dụng → endpoint /inventory.
           await context.read<ApiService>().updateInventoryItem(id, body);
-        }
-        // Tồn đi đường RIÊNG: update chỉ sửa hồ sơ mặt hàng, đổi tồn phải
-        // sinh bút toán kiểm kho để còn truy được ai chỉnh và lệch bao nhiêu.
-        if (!trackLot && _duocSuaTon && tonKho.text.trim().isNotEmpty) {
-          final moi = _num(tonKho);
-          if ((moi - _tonBanDau).abs() > 0.000001) {
-            if (!mounted) return;
-            if (widget.isRetail) {
-              await context.read<ApiService>().adjustSkuStock(id, moi);
-            } else {
-              await context.read<ApiService>().adjustInventoryStock(id, moi);
-            }
-          }
         }
       }
       if (mounted) Navigator.of(context).pop(true);
@@ -1732,6 +1683,9 @@ class _SkuEditDialogState extends State<_SkuEditDialog> {
         width: 920,
         height: 650,
         child: ListView(children: [
+          Text(t('Thông tin hàng hóa'),
+              style: const TextStyle(fontWeight: FontWeight.w900)),
+          const SizedBox(height: 10),
           Wrap(spacing: 12, runSpacing: 12, children: [
             _field('Tên sản phẩm', name, width: 422),
             _field('Mã sản phẩm', code),
@@ -1739,25 +1693,17 @@ class _SkuEditDialogState extends State<_SkuEditDialog> {
             _pickField('Thương hiệu', brand, widget.brands),
             _pickField('Nhóm hàng', category, widget.categories),
             _field('Đơn vị gốc', unit),
-            _field('Giá nhập', cost, number: true),
+            _field('Giá mua tham chiếu', cost, number: true),
             _field(includesVat ? 'Giá bán sau VAT' : 'Giá bán trước VAT', price,
                 number: true),
             _field('VAT (%)', vat, number: true),
             _field('Định mức tồn thấp nhất', minStock, number: true),
-            if (widget.sku == null)
-              _field('Tồn đầu kỳ', openingStock, number: true),
-            // SỬA TỒN NGAY TẠI ĐÂY cho hàng đã có.
-            //
-            // Trước đây form chỉ cho nhập "Tồn đầu kỳ" lúc TẠO hàng; mở lại một
-            // mặt hàng cũ thì không còn ô nào chỉnh tồn, phải đi đường kiểm kho.
-            // Người có quyền sửa hàng hoá thì cũng phải sửa được con số tồn.
-            //
-            // Hàng quản lý theo LÔ không sửa thẳng ở đây: tồn của nó là tổng các
-            // lô, đặt đại một con số thì không biết trừ vào lô nào — phải đi qua
-            // phiếu kiểm kho để chỉ rõ từng lô.
-            if (widget.sku != null && !trackLot && _duocSuaTon)
-              _field('Tồn kho', tonKho, number: true),
           ]),
+          const SizedBox(height: 8),
+          Text(
+            t('Tồn đầu kỳ và điều chỉnh tồn được lập tại Nhập hàng/Kiểm kho để có mã chứng từ, người thực hiện và lịch sử lô.'),
+            style: TextStyle(fontSize: 11.5, color: DanColors.muted),
+          ),
           // Đoạn giới thiệu này hiện ở cột phải màn catalogue khách — chỗ khách
           // đọc trước khi bấm "Thêm vào giỏ". Để trống thì cột đó chỉ có tên,
           // giá và tình trạng hàng.
@@ -1803,32 +1749,6 @@ class _SkuEditDialogState extends State<_SkuEditDialog> {
               value: expiryRequired,
               onChanged: (v) => setState(() => expiryRequired = v),
               title: Text(t('Bắt buộc hạn sử dụng')),
-            ),
-          // Chỉ hỏi HSD khi thật sự cần: hàng mới + bắt buộc HSD + có tồn đầu
-          // kỳ. Hỏi lúc nào cũng hỏi thì form dài ra mà đa số không dùng tới.
-          if (widget.sku == null && expiryRequired && _num(openingStock) > 0)
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              title: Text(t('Hạn sử dụng lô tồn đầu kỳ')),
-              subtitle: Text(expiryDate == null
-                  ? t('Chưa chọn — bắt buộc với hàng quản lý hạn sử dụng')
-                  : '${expiryDate!.day.toString().padLeft(2, '0')}/'
-                      '${expiryDate!.month.toString().padLeft(2, '0')}/'
-                      '${expiryDate!.year}'),
-              trailing: Icon(Icons.event_outlined),
-              onTap: busy
-                  ? null
-                  : () async {
-                      final now = DateTime.now();
-                      final picked = await showDatePicker(
-                        context: context,
-                        initialDate:
-                            expiryDate ?? now.add(const Duration(days: 180)),
-                        firstDate: now,
-                        lastDate: DateTime(now.year + 10),
-                      );
-                      if (picked != null) setState(() => expiryDate = picked);
-                    },
             ),
           SwitchListTile(
             contentPadding: EdgeInsets.zero,

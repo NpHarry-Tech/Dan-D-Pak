@@ -70,7 +70,7 @@ class _PurchaseDocFormPageState extends State<PurchaseDocFormPage> {
         _invoiceNo.text.trim(),
         _vatOn ? _vatCtrl.text.trim() : '',
         for (final l in _lines)
-          '${l.id}|${l.qty.text}|${l.cost.text}|${l.lotNo.text}|${l.expiry.text}',
+          '${l.id}|${l.qty.text}|${l.cost.text}|${l.lotNo.text}|${l.mfgDate.text}|${l.expiry.text}',
       ].join('');
 
   bool get _dirty => _stateSig() != _baseline;
@@ -206,6 +206,7 @@ class _PurchaseDocFormPageState extends State<PurchaseDocFormPage> {
             initialCost: kvn(l['unit_cost']),
             initialUnit: kvs(l['unit']),
             lot: kvs(l['lot_no']),
+            mfg: kvs(l['mfg_date']),
             exp: kvs(l['expiry_date'])));
       }
     });
@@ -236,9 +237,10 @@ class _PurchaseDocFormPageState extends State<PurchaseDocFormPage> {
       _toast(t('Chọn nhà cung cấp hoặc nhập tên nơi mua'), error: true);
       return;
     }
-    // Chưa khớp mã thì item_id rỗng → không nhập kho được. Bắt khớp hết trước.
+    // Nháp là vùng staging: cho phép giữ dòng chưa khớp/lỗi để người dùng sửa
+    // tiếp. Chỉ khi Hoàn thành mới cần mọi dòng có item_id hợp lệ.
     final unmatched = _lines.where((l) => l.item['_unmatched'] == true).length;
-    if (unmatched > 0) {
+    if (complete && unmatched > 0) {
       _toast(
           t('Còn $unmatched dòng CHƯA KHỚP MÃ — bấm "Khớp mã" trên từng dòng trước khi Hoàn thành'),
           error: true);
@@ -270,6 +272,8 @@ class _PurchaseDocFormPageState extends State<PurchaseDocFormPage> {
         'unit_cost': l.costNum,
         if (!_isReturn && l.lotNo.text.trim().isNotEmpty)
           'lot_no': l.lotNo.text.trim(),
+        if (!_isReturn && l.mfgDate.text.trim().isNotEmpty)
+          'mfg_date': _normalizeDate(l.mfgDate.text.trim()),
         if (!_isReturn && l.expiry.text.trim().isNotEmpty)
           'expiry_date': _normalizeDate(l.expiry.text.trim()),
       });
@@ -453,6 +457,8 @@ class _PurchaseDocFormPageState extends State<PurchaseDocFormPage> {
                                         if (!_isReturn) ...[
                                           SizedBox(width: 8),
                                           kvHeaderCell(t('Lô'), width: 78),
+                                          SizedBox(width: 8),
+                                          kvHeaderCell(t('NSX'), width: 90),
                                           SizedBox(width: 8),
                                           kvHeaderCell('HSD', width: 106),
                                         ],
@@ -811,7 +817,7 @@ class _PurchaseDocFormPageState extends State<PurchaseDocFormPage> {
   }
 
   void _mergeImportedLine(Map<String, dynamic> item, num qty, num? cost,
-      String lot, String expiry) {
+      String lot, String mfg, String expiry) {
     final same = _lines
         .where((line) =>
             line.id == kvs(item['id']) &&
@@ -823,6 +829,7 @@ class _PurchaseDocFormPageState extends State<PurchaseDocFormPage> {
           initialQty: qty,
           initialCost: cost ?? kvn(item['cost']),
           lot: lot,
+          mfg: mfg,
           exp: expiry));
       return;
     }
@@ -853,6 +860,7 @@ class _PurchaseDocFormPageState extends State<PurchaseDocFormPage> {
         initialQty: qty,
         initialCost: kvParseNum(row['cost'] ?? ''),
         lot: _isReturn ? '' : row['lot'],
+        mfg: _isReturn ? '' : row['mfg'],
         exp: _isReturn ? '' : row['expiry']);
   }
 
@@ -870,6 +878,7 @@ class _PurchaseDocFormPageState extends State<PurchaseDocFormPage> {
         initialQty: l.qtyNum,
         initialCost: l.costNum,
         lot: l.lotNo.text,
+        mfg: l.mfgDate.text,
         exp: l.expiry.text);
     setState(() {
       _lines[i].dispose();
@@ -887,9 +896,14 @@ class _PurchaseDocFormPageState extends State<PurchaseDocFormPage> {
       const qtyAliases = ['Số lượng', 'Quantity'];
       const costAliases = ['Đơn giá nhập', 'Đơn giá', 'Unit cost'];
       data.validateHeaders();
-      data.requireAny([codeAliases, barcodeAliases], target: 'Mã hàng');
+      // Có thể nhận diện bằng mã, barcode hoặc tên. Việc khớp chính xác diễn ra
+      // trong staging; thiếu cả ba mới là lỗi cấu trúc không thể tiếp tục.
+      data.requireAny([
+        codeAliases,
+        barcodeAliases,
+        ['Tên sản phẩm', 'Tên hàng', 'Product name']
+      ], target: 'Mã hàng / tên hàng');
       data.requireColumn(qtyAliases, target: 'Số lượng');
-      if (!_isReturn) data.requireColumn(costAliases, target: 'Đơn giá nhập');
       // BẮT BUỘC lưu file GỐC trước; lỗi → DỪNG nhập, KHÔNG đổi dữ liệu Kho.
       var archiveId = '';
       try {
@@ -920,16 +934,19 @@ class _PurchaseDocFormPageState extends State<PurchaseDocFormPage> {
       for (final entry in data.rows.indexed) {
         final (rowIndex, r) = entry;
         String value(List<String> names) => data.cell(r, names);
-        final parsedQty =
-            data.numberCell(r, rowIndex, qtyAliases, target: 'Số lượng');
-        if (parsedQty <= 0) {
-          throw KvImportException(
-              'Dòng ${rowIndex + 2}, giá trị số lượng "$parsedQty": phải lớn hơn 0.');
+        final qtyRaw = value(qtyAliases);
+        final parsedQty = kvParseNum(qtyRaw);
+        final costRaw = value(costAliases);
+        final parsedCost = kvParseNum(costRaw);
+        final rowWarnings = <String>[];
+        if (parsedQty == null || parsedQty <= 0) {
+          rowWarnings.add(
+              'Dòng ${rowIndex + 2}: Số lượng "$qtyRaw" phải là số lớn hơn 0');
         }
-        final parsedCost = data.columns(costAliases).isEmpty
-            ? 0
-            : data.numberCell(r, rowIndex, costAliases,
-                target: 'Đơn giá nhập', required: _isReturn ? false : true);
+        if (costRaw.isNotEmpty && parsedCost == null) {
+          rowWarnings.add(
+              'Dòng ${rowIndex + 2}: Đơn giá nhập "$costRaw" không hợp lệ');
+        }
         final row = <String, String>{
           'code': value(codeAliases),
           'barcode': value(barcodeAliases),
@@ -937,13 +954,17 @@ class _PurchaseDocFormPageState extends State<PurchaseDocFormPage> {
           'brand': value(['Thương hiệu', 'Brand']),
           'category': value(['Phân loại', 'Nhóm hàng', 'Category']),
           'unit': value(['ĐVT', 'Đơn vị', 'Unit']),
-          'qty': '$parsedQty',
-          'cost': parsedCost == 0 ? '' : '$parsedCost',
+          'qty': parsedQty == null ? qtyRaw : '$parsedQty',
+          // Giá nhập là tùy chọn. SKU đã có sẽ giữ giá gần nhất từ master;
+          // SKU mới dùng 0 và được cảnh báo trong staging, không chặn đọc file.
+          'cost': parsedCost == null || parsedCost == 0 ? '' : '$parsedCost',
           'price': value(['Giá bán mặc định', 'Giá bán', 'Sale price']),
           'price_pre_tax': value(['Giá bán trước VAT', 'Pre-tax price']),
           'vat': value(['VAT (%)', 'VAT']),
           'lot': value(['Lô', 'Số lô', 'Lot']),
+          'mfg': value(['Ngày sản xuất', 'NSX', 'Mfg date']),
           'expiry': value(['Hạn sử dụng', 'HSD', 'Expiry date']),
+          if (rowWarnings.isNotEmpty) '_warning': rowWarnings.join('; '),
         };
         for (var column = 0; column < data.headers.length; column++) {
           final header = data.headers[column].trim();
@@ -972,12 +993,24 @@ class _PurchaseDocFormPageState extends State<PurchaseDocFormPage> {
             if (item != null) break;
           }
           final rawQty = kvParseNum(row['qty'] ?? '') ?? 0;
-          final qty = rawQty > 0 ? rawQty : 1;
+          final qty = rawQty > 0 ? rawQty : 0;
           if (item != null) {
-            _mergeImportedLine(item, qty, kvParseNum(row['cost'] ?? ''),
-                _isReturn ? '' : row['lot']!, _isReturn ? '' : row['expiry']!);
+            _mergeImportedLine(
+                item,
+                qty,
+                kvParseNum(row['cost'] ?? ''),
+                _isReturn ? '' : row['lot']!,
+                _isReturn ? '' : row['mfg']!,
+                _isReturn ? '' : row['expiry']!);
+            if (rowWarnings.isNotEmpty) {
+              final staged = _lines.lastWhere((l) => l.id == kvs(item!['id']));
+              staged.item['_import_warning'] = rowWarnings.join('; ');
+            }
           } else {
             _lines.add(_unmatchedLine(row, qty));
+            if (rowWarnings.isNotEmpty) {
+              _lines.last.item['_import_warning'] = rowWarnings.join('; ');
+            }
           }
           added++;
         } catch (rowErr) {
@@ -1045,11 +1078,23 @@ class _PurchaseDocFormPageState extends State<PurchaseDocFormPage> {
           ),
           SizedBox(width: 8),
           Expanded(
-            child: Text(l.name,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                    fontSize: 12.5, fontWeight: FontWeight.w600, height: 1.2)),
+            child: Row(children: [
+              Expanded(
+                child: Text(l.name,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w600,
+                        height: 1.2)),
+              ),
+              if ('${l.item['_import_warning'] ?? ''}'.isNotEmpty)
+                Tooltip(
+                  message: '${l.item['_import_warning']}',
+                  child: const Icon(Icons.warning_amber_rounded,
+                      size: 17, color: DanColors.doing),
+                ),
+            ]),
           ),
           SizedBox(
             width: 92,
@@ -1078,6 +1123,13 @@ class _PurchaseDocFormPageState extends State<PurchaseDocFormPage> {
                 align: TextAlign.left,
                 number: false,
                 hint: t('Lô')),
+            SizedBox(width: 8),
+            KvCellInput(
+                controller: l.mfgDate,
+                width: 90,
+                align: TextAlign.left,
+                number: false,
+                hint: 'dd/mm/yyyy'),
             SizedBox(width: 8),
             KvCellInput(
                 controller: l.expiry,

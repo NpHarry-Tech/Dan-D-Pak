@@ -395,6 +395,10 @@ class _BookMenuPanelState extends State<BookMenuPanel> {
     if (n.endsWith('.png')) return 'image/png';
     if (n.endsWith('.webp')) return 'image/webp';
     if (n.endsWith('.gif')) return 'image/gif';
+    if (n.endsWith('.bmp')) return 'image/bmp';
+    if (n.endsWith('.tif') || n.endsWith('.tiff')) return 'image/tiff';
+    if (n.endsWith('.heic')) return 'image/heic';
+    if (n.endsWith('.heif')) return 'image/heif';
     return 'image/jpeg';
   }
 

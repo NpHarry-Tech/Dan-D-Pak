@@ -90,7 +90,7 @@ Add-Type -AssemblyName System.Windows.Forms | Out-Null
 [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new()
 \$f = New-Object System.Windows.Forms.OpenFileDialog
 \$f.Title = '$title'
-\$f.Filter = 'Anh (*.jpg;*.jpeg;*.png;*.webp;*.gif)|*.jpg;*.jpeg;*.png;*.webp;*.gif'
+\$f.Filter = 'Anh (*.jpg;*.jpeg;*.png;*.webp;*.gif;*.bmp;*.tif;*.tiff;*.heic;*.heif)|*.jpg;*.jpeg;*.png;*.webp;*.gif;*.bmp;*.tif;*.tiff;*.heic;*.heif'
 \$f.Multiselect = \$false
 if (\$f.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output \$f.FileName }
 ''';
@@ -197,6 +197,9 @@ String _mimeForPath(String path) {
   if (p.endsWith('.png')) return 'image/png';
   if (p.endsWith('.webp')) return 'image/webp';
   if (p.endsWith('.gif')) return 'image/gif';
+  if (p.endsWith('.bmp')) return 'image/bmp';
+  if (p.endsWith('.tif') || p.endsWith('.tiff')) return 'image/tiff';
+  if (p.endsWith('.heic') || p.endsWith('.heif')) return 'image/heic';
   if (p.endsWith('.pdf')) return 'application/pdf';
   return 'image/jpeg';
 }

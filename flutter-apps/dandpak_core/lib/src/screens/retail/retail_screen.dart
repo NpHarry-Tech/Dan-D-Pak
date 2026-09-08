@@ -1110,6 +1110,16 @@ class _RetailScreenState extends State<RetailScreen>
         'code': '${raw['item_code'] ?? raw['item_barcode'] ?? ''}',
         'image': skuId.isNotEmpty ? skuImg[skuId] : null,
         'unit_price': (raw['unit_price'] as num?)?.toInt() ?? 0,
+        'gross_amount': (raw['gross_amount'] as num?)?.toInt() ?? 0,
+        'promotion_amount': (raw['promotion_amount'] as num?)?.toInt() ?? 0,
+        'net_amount': (raw['net_amount'] as num?)?.toInt() ?? 0,
+        'net_unit_price': (raw['net_unit_price'] as num?)?.toInt() ??
+            (raw['unit_price'] as num?)?.toInt() ??
+            0,
+        'unit_refunds': raw['unit_refunds'] is List
+            ? List<int>.from((raw['unit_refunds'] as List)
+                .map((value) => (value as num?)?.toInt() ?? 0))
+            : <int>[],
         'sold': sold,
         'returned': returned,
         'qty': 0, // SL sẽ trả (thu ngân chọn +/-)

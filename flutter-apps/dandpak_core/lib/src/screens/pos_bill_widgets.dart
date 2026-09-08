@@ -22,6 +22,7 @@ class _BillPane extends StatelessWidget {
     required this.onEditItem,
     required this.onPayment,
     required this.openingPayment,
+    required this.onClose,
   });
 
   final PosProvider pos;
@@ -42,6 +43,7 @@ class _BillPane extends StatelessWidget {
   final ValueChanged<CartItem> onEditItem;
   final VoidCallback onPayment;
   final bool openingPayment;
+  final VoidCallback onClose;
 
   @override
   Widget build(BuildContext context) {
@@ -70,7 +72,7 @@ class _BillPane extends StatelessWidget {
           ),
           child: Row(
             children: [
-              Icon(Icons.chair_alt_outlined, size: 17, color: DanColors.late),
+              Icon(Icons.chair_alt_outlined, size: 22, color: DanColors.late),
               SizedBox(width: 8),
               Expanded(
                 child: Text(
@@ -98,6 +100,13 @@ class _BillPane extends StatelessWidget {
                         : isFree(table)
                             ? DanColors.muted
                             : DanColors.doing,
+              ),
+              SizedBox(width: 4),
+              IconButton(
+                tooltip: t('Đóng bill đang xem'),
+                constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+                onPressed: onClose,
+                icon: const Icon(Icons.close, size: 20),
               ),
             ],
           ),

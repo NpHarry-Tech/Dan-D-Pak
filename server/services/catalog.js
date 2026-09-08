@@ -446,7 +446,11 @@ export function createCategory(body, branch_id = 'sala') {
   if (!name) throw new Error('Thiếu tên danh mục');
   const id = 'c_' + Math.random().toString(36).slice(2, 8);
   const sort = (db.prepare(`SELECT COALESCE(MAX(sort),0)+1 n FROM categories WHERE branch_id=?`).get(branch_id).n) || 1;
-  db.prepare(`INSERT INTO categories (id,branch_id,name,icon,sort) VALUES (?,?,?,?,?)`).run(id, branch_id, name, body.icon || '🍽️', sort);
+  const stationId = String(body.default_station_id || '').trim() || null;
+  if (stationId && !db.prepare(`SELECT 1 FROM production_stations WHERE id=? AND branch_id=? AND active=1`).get(stationId, branch_id)) {
+    throw new Error('Trạm mặc định không thuộc chi nhánh hoặc đã ẩn');
+  }
+  db.prepare(`INSERT INTO categories (id,branch_id,name,icon,sort,default_station_id) VALUES (?,?,?,?,?,?)`).run(id, branch_id, name, body.icon || '🍽️', sort, stationId);
   cacheBust('menu:');
   audit('category.create', { id, name }, branch_id);
   return db.prepare(`SELECT * FROM categories WHERE id=? AND branch_id=?`).get(id, branch_id);
@@ -454,8 +458,14 @@ export function createCategory(body, branch_id = 'sala') {
 export function updateCategory(id, body, branch_id = 'sala') {
   const cur = db.prepare(`SELECT * FROM categories WHERE id=? AND branch_id=?`).get(id, branch_id);
   if (!cur) throw new Error('Danh mục không tồn tại');
-  db.prepare(`UPDATE categories SET name=?, icon=? WHERE id=? AND branch_id=?`).run(
-    String(body.name || '').trim() || cur.name, body.icon || cur.icon, id, branch_id);
+  const stationId = body.default_station_id === undefined
+    ? cur.default_station_id
+    : (String(body.default_station_id || '').trim() || null);
+  if (stationId && !db.prepare(`SELECT 1 FROM production_stations WHERE id=? AND branch_id=? AND active=1`).get(stationId, branch_id)) {
+    throw new Error('Trạm mặc định không thuộc chi nhánh hoặc đã ẩn');
+  }
+  db.prepare(`UPDATE categories SET name=?, icon=?, default_station_id=? WHERE id=? AND branch_id=?`).run(
+    String(body.name || '').trim() || cur.name, body.icon || cur.icon, stationId, id, branch_id);
   cacheBust('menu:');
   audit('category.update', { id }, branch_id);
   return db.prepare(`SELECT * FROM categories WHERE id=? AND branch_id=?`).get(id, branch_id);

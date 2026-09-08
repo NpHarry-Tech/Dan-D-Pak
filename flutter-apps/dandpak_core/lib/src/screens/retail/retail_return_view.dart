@@ -8,8 +8,19 @@ part of 'retail_screen.dart';
 // giữ nguyên (backend returns.js). setState -> rebuild().
 extension _RetailReturnView on _RetailScreenState {
   List<Map<String, dynamic>> get _returnLines => _tab.returnLines;
-  int get _returnTotal => _returnLines.fold(0,
-      (s, l) => s + ((l['qty'] as int? ?? 0) * (l['unit_price'] as int? ?? 0)));
+  int _selectedRefund(Map<String, dynamic> line) {
+    final qty = line['qty'] as int? ?? 0;
+    final units = line['unit_refunds'];
+    if (units is List) {
+      return units
+          .take(qty)
+          .fold<int>(0, (sum, value) => sum + ((value as num?)?.toInt() ?? 0));
+    }
+    return qty * (line['net_unit_price'] as int? ?? 0);
+  }
+
+  int get _returnTotal =>
+      _returnLines.fold(0, (sum, line) => sum + _selectedRefund(line));
 
   Widget _returnCartPanel() {
     return Container(
@@ -86,8 +97,18 @@ extension _RetailReturnView on _RetailScreenState {
                       overflow: TextOverflow.ellipsis),
                   SizedBox(height: 2),
                   Text(
-                      '${l['code'] ?? l['sku_id'] ?? ''} · ${Fmt.money(l['unit_price'] as int? ?? 0)}',
+                      '${l['code'] ?? l['sku_id'] ?? ''} · ${t('Giá gốc')} ${Fmt.money(l['unit_price'] as int? ?? 0)}',
                       style: TextStyle(fontSize: 11, color: DanColors.faint)),
+                  if ((l['promotion_amount'] as int? ?? 0) > 0)
+                    Text(
+                        '${t('Khuyến mãi')} -${Fmt.money(l['promotion_amount'] as int? ?? 0)} · ${t('Thực hoàn')} ${Fmt.money(_selectedRefund({
+                              ...l,
+                              'qty': 1
+                            }))}',
+                        style: TextStyle(
+                            fontSize: 11,
+                            color: DanColors.brand,
+                            fontWeight: FontWeight.w700)),
                   Text(
                       '${t('Đã bán')} $sold · ${t('Đã trả')} $returned · ${t('Còn')} $remaining',
                       style: TextStyle(fontSize: 11, color: DanColors.faint)),

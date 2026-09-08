@@ -48,8 +48,8 @@ test('mau kitchen co phan tu items -> server render THEO MAU + bang mon co du mo
   assert.match(plain, /BAN A04/i);
   assert.match(plain, /So TT: 36a/);
   // Bang mon co CA HAI mon + so luong.
-  assert.match(plain, /\| Trà đào cam sả\s+\|\s*2\|/);
-  assert.match(plain, /\| Mì Bò Kho Việt Nam\s+\|\s*1\|/);
+  assert.match(plain, /2 x Trà đào cam sả/);
+  assert.match(plain, /1 x Mì Bò Kho Việt Nam/);
   // Yeu cau them + ghi chu.
   assert.match(plain, /Ít đá/);
   assert.match(plain, /Ghi chú: không ống hút/);
@@ -76,7 +76,7 @@ test('mau kitchen CLONE cu (khong co items) -> FALLBACK renderTicket, mon van in
   // Fallback renderTicket: ca phieu bọc [[S3]] (chu to gap doi) + header + bang.
   assert.match(raw, /^\[\[S3\]\]/);
   assert.match(plain, /TẦNG TRỆT/);
-  assert.match(plain, /Tên món\s+\|\s*SL\|/);
+  assert.doesNotMatch(plain, /Tên món\s+\|\s*SL\|/);
   // Width nua giay -> ten dai wrap, kiem chuoi NGAN (khong tach dong).
   assert.match(plain, /Trà đào cam sả/);
   assert.match(plain, /Mì Bò Kho/);
@@ -86,5 +86,5 @@ test('khong cau hinh mau kitchen -> renderTicket dung san (khong doi hanh vi cu)
   const raw = Print.renderJobText({ type: 'kitchen_ticket', branch_id: 'ktpl-none', payload: PAYLOAD },
     'ktpl-none', { widthMm: 80 });
   assert.match(raw, /^\[\[S3\]\]/);
-  assert.match(Print.stripMarks(raw), /Tên món\s+\|\s*SL\|/);
+  assert.match(Print.stripMarks(raw), /2 x Trà đào cam sả/);
 });

@@ -59,27 +59,58 @@ function allocateLines(amount, weights) {
   return result;
 }
 
-export function orderVatTotals(items = [], discount = 0) {
-  const active = items.filter(item => item.status !== 'cancelled' && Number(item.qty) > 0 && Number(item.unit_price) > 0);
-  const lineGrosses = active.map(item => multiplyMoney(Math.max(0, Number(item.unit_price) || 0), Math.max(0, Number(item.qty) || 0)));
-  const subtotal = lineGrosses.reduce((sum, value) => sum + value, 0);
+// Phân bổ giá trị ròng bất biến theo từng dòng bán. Cùng một thuật toán được
+// dùng khi chốt VAT, hiển thị màn trả hàng và ghi refund; nhờ vậy không có ba
+// cách làm tròn khác nhau. Phần dư luôn đi theo thứ tự dòng snapshot.
+export function orderLineAllocations(items = [], discount = 0) {
+  const active = items.filter(item => item.status !== 'cancelled' && Number(item.qty) > 0);
+  const grosses = active.map(item => multiplyMoney(
+    Math.max(0, Number(item.unit_price) || 0),
+    Math.max(0, Number(item.qty) || 0),
+  ));
+  const subtotal = grosses.reduce((sum, value) => sum + value, 0);
   const totalDiscount = Math.min(subtotal, Math.max(0, money(discount)));
-  const total = subtotal - totalDiscount;
-  if (!subtotal || !total) return { subtotal, goods_amount: total, vat_amount: 0, total };
   const linePromos = active.map((item, index) =>
-    Math.min(lineGrosses[index], Math.max(0, money(item?.promo?.amount || 0))));
-  const promoTotal = linePromos.reduce((sum, value) => sum + value, 0);
-  const specificDiscount = Math.min(totalDiscount, promoTotal);
+    Math.min(grosses[index], Math.max(0, money(item?.promo?.amount || 0))));
+  const specificDiscount = Math.min(totalDiscount,
+    linePromos.reduce((sum, value) => sum + value, 0));
   const specific = allocateLines(specificDiscount, linePromos);
   const remainingDiscount = totalDiscount - specific.reduce((sum, value) => sum + value, 0);
-  const remainingShares = allocateLines(remainingDiscount,
-    lineGrosses.map((value, index) => linePromos[index] ? 0 : value));
-  let vat_amount = 0;
-  active.forEach((item, index) => {
-    const lineGross = lineGrosses[index];
-    const discountedGross = lineGross - specific[index] - remainingShares[index];
-    vat_amount += vatFromGross(discountedGross, item.vat_rate);
+  const general = allocateLines(remainingDiscount,
+    grosses.map((value, index) => linePromos[index] ? 0 : value));
+  return active.map((item, index) => {
+    const gross = grosses[index];
+    const promotion = specific[index] + general[index];
+    const net = Math.max(0, gross - promotion);
+    return {
+      item,
+      gross,
+      promotion,
+      net,
+      vat: vatFromGross(net, item.vat_rate),
+    };
   });
+}
+
+// Chia một line total nguyên đồng thành từng đơn vị. Đơn vị đầu nhận phần dư;
+// partial return nối tiếp dùng offset số lượng đã trả nên tổng cuối cùng luôn
+// đúng tuyệt đối bằng line total, kể cả giá ròng không chia hết cho số lượng.
+export function unitMoneySlice(total, soldQty, offset = 0, count = 0) {
+  const qty = Math.max(0, Math.trunc(Number(soldQty) || 0));
+  if (!qty) return [];
+  const amount = Math.max(0, Math.round(Number(total) || 0));
+  const base = Math.floor(amount / qty);
+  const remainder = amount - base * qty;
+  const from = Math.max(0, Math.min(qty, Math.trunc(Number(offset) || 0)));
+  const take = Math.max(0, Math.min(qty - from, Math.trunc(Number(count) || 0)));
+  return Array.from({ length: take }, (_, index) => base + (from + index < remainder ? 1 : 0));
+}
+
+export function orderVatTotals(items = [], discount = 0) {
+  const allocations = orderLineAllocations(items, discount);
+  const subtotal = allocations.reduce((sum, line) => sum + line.gross, 0);
+  const total = allocations.reduce((sum, line) => sum + line.net, 0);
+  const vat_amount = allocations.reduce((sum, line) => sum + line.vat, 0);
   return { subtotal, goods_amount: total - vat_amount, vat_amount, total };
 }
 

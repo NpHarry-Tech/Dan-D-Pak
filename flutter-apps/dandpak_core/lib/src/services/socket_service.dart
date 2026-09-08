@@ -247,7 +247,10 @@ class SocketService {
           event == 'online:new' ||
           event == 'online:order';
       AppNotifier.show(
-          title: info.title, body: info.body, showViewAction: actionable);
+          title: info.title,
+          body: info.body,
+          inApp: event != 'order:pending',
+          showViewAction: actionable);
     } catch (e) {
       dlog('notifyBusiness error: $e');
     }

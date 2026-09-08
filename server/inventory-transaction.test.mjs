@@ -91,6 +91,35 @@ test('không nhập mã lot thì cùng HSD dùng AUTO lot ổn định để c�
   assert.equal(lots[0].qty_on_hand, 6);
 });
 
+test('một dòng phiếu mua nhận vào nhiều lô không được vượt số lượng đặt', () => {
+  Inv.createSku({ id: 'sku_po_multilot', name: 'Hàng nhiều lô', price: 1000,
+    stock: 0, warehouse_id: 'wh_a', track_lot: true }, 'sala');
+  const po = Purchase.savePurchaseOrder({
+    supplier_name_manual: 'NCC nhiều lô',
+    warehouse_id: 'wh_a',
+    lines: [{ item_type: 'sku', item_id: 'sku_po_multilot', name: 'Hàng nhiều lô',
+      qty: 10, unit_cost: 500 }],
+  }, 'sala', { name: 'Tester' });
+  Purchase.confirmPurchaseOrder(po.id, 'sala', { name: 'Tester' });
+  const line = Purchase.getPurchaseOrder(po.id, 'sala').lines[0];
+  const received = Purchase.receivePurchaseOrder(po.id, {
+    warehouse_id: 'wh_a',
+    receipts: [
+      { line_id: line.id, qty: 6, lot_no: 'LOT-1', mfg_date: '2026-09-01', expiry_date: '2027-09-01' },
+      { line_id: line.id, qty: 8, lot_no: 'LOT-2', mfg_date: '2026-09-02', expiry_date: '2027-09-02' },
+    ],
+  }, 'sala', { name: 'Tester' });
+
+  assert.equal(received.lines[0].received_qty, 10);
+  assert.equal(tonKho('sku_po_multilot', 'wh_a'), 10);
+  const lots = db.prepare(`SELECT lot_no,mfg_date,expiry_date,qty_on_hand FROM stock_lots
+    WHERE item_id='sku_po_multilot' ORDER BY lot_no`).all();
+  assert.deepEqual(lots.map(lot => ({ ...lot })), [
+    { lot_no: 'LOT-1', mfg_date: '2026-09-01', expiry_date: '2027-09-01', qty_on_hand: 6 },
+    { lot_no: 'LOT-2', mfg_date: '2026-09-02', expiry_date: '2027-09-02', qty_on_hand: 4 },
+  ]);
+});
+
 test('xóa danh mục kho chỉ ngừng sử dụng, không xóa chứng từ và lịch sử đã phát sinh', () => {
   Inv.createInventoryItem({ id: 'inv_history', name: 'Nguyên liệu lúc nhập', unit: 'kg',
     barcode: 'INV-HISTORY', warehouse_id: 'wh_k', opening_stock: 0 }, 'sala');

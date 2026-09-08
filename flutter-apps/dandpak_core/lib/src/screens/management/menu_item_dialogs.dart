@@ -7,6 +7,7 @@ class _ItemFormDialog extends StatefulWidget {
   final List<AdminCategory> categories;
   final List<AdminMenuItem> items;
   final List<IngredientRef> ingredients;
+  final List<Map<String, dynamic>> stations;
   final String serverUrl;
 
   _ItemFormDialog({
@@ -15,6 +16,7 @@ class _ItemFormDialog extends StatefulWidget {
     required this.categories,
     required this.items,
     required this.ingredients,
+    required this.stations,
     required this.serverUrl,
   });
 
@@ -71,7 +73,14 @@ class _ItemFormDialogState extends State<_ItemFormDialog> {
     _categoryId = i?.categoryId.isNotEmpty == true
         ? i!.categoryId
         : (widget.categories.isNotEmpty ? widget.categories.first.id : '');
-    _station = _stationLabels.containsKey(i?.station) ? i!.station : 'kitchen';
+    final activeStations =
+        widget.stations.where((s) => s['active'] != 0).toList();
+    final knownCodes = activeStations.map((s) => '${s['code']}').toSet();
+    _station = knownCodes.contains(i?.station)
+        ? i!.station
+        : (activeStations.isNotEmpty
+            ? '${activeStations.first['code']}'
+            : 'kitchen');
     _hidden = i?.hidden ?? false;
     _priceIncludesVat = i?.priceIncludesVat ?? true;
     final s = i?.schedule ?? MenuSchedule();
@@ -482,7 +491,13 @@ class _ItemFormDialogState extends State<_ItemFormDialog> {
   }
 
   bool get pvHidden => _hidden;
-  String get pvStationLabel => _stationLabels[_station] ?? _station;
+  String get pvStationLabel {
+    for (final station in widget.stations) {
+      if ('${station['code']}' == _station) return '${station['name']}';
+    }
+    return _station;
+  }
+
   String get pvCategory => _categoryName;
   String get pvServerUrl => widget.serverUrl;
   List<String> get pvIngredients => _parseList(_ingredients.text);
@@ -562,8 +577,12 @@ class _ItemFormDialogState extends State<_ItemFormDialog> {
             isExpanded: true,
             decoration: InputDecoration(isDense: true),
             items: [
-              for (final e in _stationLabels.entries)
-                DropdownMenuItem(value: e.key, child: Text(e.value)),
+              for (final station
+                  in widget.stations.where((s) => s['active'] != 0))
+                DropdownMenuItem(
+                  value: '${station['code']}',
+                  child: Text('${station['name']}'),
+                ),
             ],
             onChanged: (v) => setState(() => _station = v ?? _station),
           ),
@@ -710,7 +729,7 @@ Add-Type -AssemblyName System.Windows.Forms
 [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new()
 $dialog = New-Object System.Windows.Forms.OpenFileDialog
 $dialog.Title = t('Chọn ảnh món')
-$dialog.Filter = t('Ảnh (*.jpg;*.jpeg;*.png;*.webp;*.gif)|*.jpg;*.jpeg;*.png;*.webp;*.gif')
+$dialog.Filter = t('Ảnh (*.jpg;*.jpeg;*.png;*.webp;*.gif;*.bmp;*.tif;*.tiff;*.heic;*.heif)|*.jpg;*.jpeg;*.png;*.webp;*.gif;*.bmp;*.tif;*.tiff;*.heic;*.heif')
 $dialog.Multiselect = $false
 if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
   Write-Output $dialog.FileName
