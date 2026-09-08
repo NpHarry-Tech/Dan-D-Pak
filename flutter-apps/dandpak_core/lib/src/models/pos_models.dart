@@ -256,8 +256,11 @@ class CartItem {
   int qty;
   final List<Modifier> selectedModifiers;
   String notes;
-  final String orderItemId;
-  final String status;
+  // Server gán sau khi submitOrder() thành công (rỗng = còn ở giỏ cục bộ,
+  // chưa lưu). KHÔNG final: PosProvider cần gán id/status thật vào ĐÚNG dòng
+  // vừa gửi mà không phải thay cả object (xem PosProvider._mergeSubmittedItems).
+  String orderItemId;
+  String status;
   final String station;
   // CHỈNH GIÁ DÒNG (giảm giá trực tiếp trên món, như Retail): giá bán/đơn vị đã
   // đổi. null = giữ giá niêm yết. Sửa được nên KHÔNG final.

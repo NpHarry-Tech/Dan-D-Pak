@@ -277,6 +277,11 @@ class SocketService {
       case 'order:new':
         final order = p['order'] is Map ? p['order'] as Map : p;
         if (s(order['channel']) == 'retail') return null;
+        // Cùng lý do với _handleSoundNotification: món mới THÊM (chưa bấm
+        // "Gửi món vào bếp") không cần banner — chỉ báo lúc thật sự gửi bếp.
+        final pendingConfirm = p['pendingConfirm'] == true;
+        final confirmed = p['confirmed'] == true;
+        if (pendingConfirm && !confirmed) return null;
         return (
           category: 'fnb_order',
           title: 'Đơn mới tại bàn / POS',
@@ -367,13 +372,18 @@ class SocketService {
     if (event == 'kds:alert') RingController.instance.flashKds();
     final cfg = _soundConfig;
     if (cfg == null) return;
-    if (event == 'order:new' &&
-        payload is Map &&
-        (payload['order'] is Map
-                ? payload['order']['channel']
-                : payload['channel']) ==
-            'retail') {
-      return;
+    if (event == 'order:new' && payload is Map) {
+      final channel = payload['order'] is Map
+          ? payload['order']['channel']
+          : payload['channel'];
+      if (channel == 'retail') return;
+      // Món vừa THÊM VÀO GIỎ (còn "chờ xác nhận") chưa thật sự gửi bếp — nhân
+      // viên vẫn phải bấm "Gửi món vào bếp" mới in. Kêu tít ngay lúc thêm gây
+      // cảm giác "món tự xong" sai; chỉ kêu khi payload có confirmed=true
+      // (đúng thời điểm bấm "Gửi món vào bếp", xem orders.js#confirmPendingItems).
+      final pendingConfirm = payload['pendingConfirm'] == true;
+      final confirmed = payload['confirmed'] == true;
+      if (pendingConfirm && !confirmed) return;
     }
 
     final globalEnabled = cfg['enabled'] ?? true;

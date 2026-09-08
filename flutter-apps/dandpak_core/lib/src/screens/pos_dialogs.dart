@@ -486,18 +486,24 @@ class _PendingConfirmDialogState extends State<_PendingConfirmDialog> {
   }
 }
 
+// KHÔNG còn là modal Dialog — nhúng thẳng vào vị trí sơ đồ bàn (thay
+// _floorMap()) để giỏ hàng bên cạnh LUÔN hiện + bấm được trong lúc chọn món
+// (trước đây showDialog() phủ kín màn hình, che mất giỏ hàng). widget.onClose
+// thay cho Navigator.pop() để quay lại sơ đồ bàn.
 class _MenuPickerDialog extends StatefulWidget {
   final String title;
   final PosProvider pos;
   final ApiService api;
   final Future<bool> Function(MenuItem) onAdd;
   final bool isRetail;
+  final VoidCallback onClose;
 
   _MenuPickerDialog({
     required this.title,
     required this.pos,
     required this.api,
     required this.onAdd,
+    required this.onClose,
     this.isRetail = false,
   });
 
@@ -742,21 +748,25 @@ class _MenuPickerDialogState extends State<_MenuPickerDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return Dialog(
-      backgroundColor: DanColors.surface,
-      insetPadding: EdgeInsets.all(24),
-      shape: RoundedRectangleBorder(
+    return Container(
+      decoration: BoxDecoration(
+        color: DanColors.surface,
         borderRadius: BorderRadius.circular(14),
-        side: BorderSide(color: DanColors.border),
+        border: Border.all(color: DanColors.border),
       ),
-      child: ConstrainedBox(
-        constraints: BoxConstraints(maxWidth: 980, maxHeight: 720),
-        child: Column(
+      clipBehavior: Clip.antiAlias,
+      child: Column(
           children: [
             Padding(
               padding: EdgeInsets.fromLTRB(18, 16, 14, 12),
               child: Row(
                 children: [
+                  IconButton(
+                    onPressed: widget.onClose,
+                    icon: Icon(Icons.arrow_back),
+                    color: DanColors.muted,
+                    tooltip: t('Về sơ đồ bàn'),
+                  ),
                   Expanded(
                     child: Text(
                       widget.title,
@@ -765,12 +775,6 @@ class _MenuPickerDialogState extends State<_MenuPickerDialog> {
                         fontWeight: FontWeight.w800,
                       ),
                     ),
-                  ),
-                  IconButton(
-                    onPressed: () => Navigator.of(context).pop(),
-                    icon: Icon(Icons.close),
-                    color: DanColors.muted,
-                    tooltip: t('Đóng'),
                   ),
                 ],
               ),
@@ -866,8 +870,15 @@ class _MenuPickerDialogState extends State<_MenuPickerDialog> {
                           price: _vnd(item.price),
                           onTap: () async {
                             final added = await widget.onAdd(item);
-                            if (added && context.mounted) {
-                              Navigator.of(context).pop();
+                            if (!context.mounted) return;
+                            if (added) {
+                              // Nhúng cạnh giỏ hàng nên KHÔNG đóng sau mỗi lần
+                              // thêm — cho phép bấm liên tiếp nhiều món, giỏ
+                              // hàng bên cạnh tự cập nhật theo thời gian thực.
+                              ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                                  content: Text('+1 ${item.name}'),
+                                  duration: Duration(milliseconds: 900),
+                                  backgroundColor: DanColors.text));
                             }
                           },
                         );
@@ -876,7 +887,6 @@ class _MenuPickerDialogState extends State<_MenuPickerDialog> {
             ),
           ],
         ),
-      ),
     );
   }
 }

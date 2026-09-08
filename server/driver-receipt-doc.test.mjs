@@ -100,9 +100,13 @@ test('phiếu bếp trên máy driver → driverDoc font LỚN qua GDI (khong ph
   const flat = JSON.stringify(doc.blocks);
   assert.match(flat, /Phở bò tái/);
   assert.match(flat, /BÀN A1/);
-  // Tên món cỡ LỚN (>=18pt) — điểm khác ESC/POS (bị giới hạn 2x).
-  assert.ok(doc.blocks.some((b) => b.type === 'row' && (b.cols || []).some((c) => (c.size || 0) >= 18)),
-    'tên món phải cỡ lớn');
+  // Tên món "{qty} x {tên}" MỘT dòng — ĐÚNG cấu trúc kitchenTableLines
+  // (ESC/POS) và preview thiết kế mẫu, không phải bảng 2 cột riêng (đã đổi
+  // 2026-09-08 vì bảng 2 cột làm bản in driver lệch hẳn preview). Vẫn cỡ LỚN
+  // (>=18pt) — điểm khác ESC/POS (bị giới hạn 2x).
+  assert.ok(
+    doc.blocks.some((b) => b.type === 'text' && b.text === '2 x Phở bò tái' && (b.size || 0) >= 18),
+    'tên món phải là dòng "{qty} x {tên}" cỡ lớn, không phải bảng 2 cột');
   assert.ok(j.text && j.text.length > 0, 'vẫn có text ESC/POS fallback');
 });
 

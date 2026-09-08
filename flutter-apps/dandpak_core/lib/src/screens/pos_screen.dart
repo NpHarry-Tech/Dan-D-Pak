@@ -49,6 +49,11 @@ class _PosScreenState extends State<PosScreen> {
   bool _configDirty = false;
   int _pendingCount = 0;
   bool _openingPayment = false;
+  // Chọn món thay cho sơ đồ bàn (KHÔNG dùng showDialog) để giỏ hàng cạnh bên
+  // luôn hiện + bấm được trong lúc thêm món — xem _MenuPickerDialog.
+  bool _pickingMenu = false;
+  bool _pickerIsRetail = false;
+  String _pickerTitle = '';
 
   @override
   void initState() {
@@ -1037,19 +1042,55 @@ class _PosScreenState extends State<PosScreen> {
     // Món đã gửi bếp: CHỈ cho sửa ghi chú (qua API, không đụng tiền). Chỉnh giá chỉ
     // áp cho món NHÁP chưa gửi — tránh lệch tiền trên bill đã lưu.
     final sent = item.persisted;
+    // +/- số lượng chỉ đổi state CỤC BỘ của sheet (không đụng giỏ hàng ngay) —
+    // để người dùng có thể giảm về 0 rồi đổi ý bấm + lại mà không bị mất món
+    // giữa chừng. Chốt thật (xoá nếu về 0 / cập nhật SL) khi sheet đóng.
+    int draftQty = item.qty;
     final action = await showModalBottomSheet<String>(
       context: context,
       backgroundColor: DanColors.surface,
-      builder: (_) => SafeArea(
+      builder: (_) => StatefulBuilder(
+        builder: (context, setSheetState) => SafeArea(
         child: Column(mainAxisSize: MainAxisSize.min, children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 14, 16, 4),
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: Text('${item.qty}× ${item.item.name}',
-                  style: const TextStyle(fontWeight: FontWeight.w800)),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(item.item.name,
+                      style: const TextStyle(fontWeight: FontWeight.w800)),
+                ),
+                if (!sent) ...[
+                  IconButton(
+                    tooltip: t('Giảm'),
+                    onPressed: () => setSheetState(() {
+                      if (draftQty > 0) draftQty--;
+                    }),
+                    icon: const Icon(Icons.remove_circle_outline),
+                  ),
+                  SizedBox(
+                    width: 26,
+                    child: Text('$draftQty',
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(fontWeight: FontWeight.w900)),
+                  ),
+                  IconButton(
+                    tooltip: t('Tăng'),
+                    onPressed: () => setSheetState(() => draftQty++),
+                    icon: const Icon(Icons.add_circle_outline),
+                  ),
+                ] else
+                  Text('${item.qty}×',
+                      style: const TextStyle(fontWeight: FontWeight.w800)),
+              ],
             ),
           ),
+          if (!sent && draftQty <= 0)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+              child: Text(t('Số lượng 0 — đóng bảng này sẽ xoá món khỏi giỏ.'),
+                  style: TextStyle(fontSize: 11.5, color: DanColors.late)),
+            ),
           ListTile(
             leading: const Icon(Icons.edit_note),
             title: Text(t('Ghi chú món')),
@@ -1081,8 +1122,17 @@ class _PosScreenState extends State<PosScreen> {
           const SizedBox(height: 8),
         ]),
       ),
+      ),
     );
-    if (action == null || !mounted) return;
+    if (!mounted) return;
+    if (!sent && draftQty <= 0) {
+      pos.removeFromCart(item);
+      return;
+    }
+    if (!sent && draftQty != item.qty) {
+      pos.updateQty(item, draftQty);
+    }
+    if (action == null) return;
     if (action == 'note') {
       final note = await _promptText(
         title: t('Ghi chú "${item.item.name}"'),
@@ -1125,22 +1175,24 @@ class _PosScreenState extends State<PosScreen> {
     }
   }
 
-  Future<void> _showMenuPicker(
-      {required String title, bool isRetail = false}) async {
-    final pos = context.read<PosProvider>();
-    final api = context.read<ApiService>();
+  void _showMenuPicker({required String title, bool isRetail = false}) {
+    setState(() {
+      _pickingMenu = true;
+      _pickerIsRetail = isRetail;
+      _pickerTitle = title;
+    });
+  }
 
-    await showDialog<void>(
-      context: context,
-      builder: (dialogContext) {
-        return _MenuPickerDialog(
-          title: title,
-          pos: pos,
-          api: api,
-          onAdd: _addMenuItem,
-          isRetail: isRetail,
-        );
-      },
+  void _closeMenuPicker() => setState(() => _pickingMenu = false);
+
+  Widget _menuPickerPanel() {
+    return _MenuPickerDialog(
+      title: _pickerTitle,
+      pos: context.read<PosProvider>(),
+      api: context.read<ApiService>(),
+      onAdd: _addMenuItem,
+      isRetail: _pickerIsRetail,
+      onClose: _closeMenuPicker,
     );
   }
 
@@ -1381,7 +1433,12 @@ class _PosScreenState extends State<PosScreen> {
                           return ListView(
                             padding: EdgeInsets.all(10),
                             children: [
-                              RepaintBoundary(child: _floorMap()),
+                              _pickingMenu
+                                  ? SizedBox(
+                                      height: 560,
+                                      child: RepaintBoundary(
+                                          child: _menuPickerPanel()))
+                                  : RepaintBoundary(child: _floorMap()),
                               if (hasSelection) ...[
                                 SizedBox(height: 12),
                                 SizedBox(
@@ -1398,7 +1455,10 @@ class _PosScreenState extends State<PosScreen> {
                             crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: [
                               Expanded(
-                                  child: RepaintBoundary(child: _floorMap())),
+                                  child: RepaintBoundary(
+                                      child: _pickingMenu
+                                          ? _menuPickerPanel()
+                                          : _floorMap())),
                               if (hasSelection) ...[
                                 ResizablePane(
                                   storageKey: 'fnb',

@@ -212,16 +212,19 @@ export function buildKitchenDoc(p = {}, printCfg = {}, opts = {}) {
   const blocks = [];
   const template = printCfg?.templates?.kitchen_ticket || p.print_config?.templates?.kitchen_ticket;
   const items = Array.isArray(p.items) && p.items.length ? p.items : [{ ...p }];
+  // "{qty} x {tên món}" MỘT dòng — ĐÚNG cùng cấu trúc với kitchenTableLines
+  // (ESC/POS) và preview thiết kế mẫu (_kitchenItemsSample). Trước đây dựng
+  // "row" 2 cột (tên trái, SL to bên phải) là MỘT bố cục hoàn toàn khác — dù
+  // to dễ đọc, nó khiến bản in Windows-driver không khớp preview lẫn bản in
+  // ESC/POS, đúng lỗi "preview khác thực tế". Vẫn giữ chữ THẬT TO (size 22)
+  // để bếp đọc từ xa, chỉ đổi cấu trúc dòng cho khớp.
   const appendItems = () => {
     for (const i of items) {
       const qty = Number(i.qty) || 1;
       const cancelled = i.cancelled === true
         || String(i.status || '').toLowerCase() === 'cancelled'
         || p.update_kind === 'cancel_item';
-      blocks.push({ type: 'row', cols: [
-        { text: String(i.name || ''), flex: 5, align: 'left', size: 20, bold: true, strike: cancelled },
-        { text: String(qty), flex: 2, align: 'right', size: 26, bold: true, strike: cancelled },
-      ] });
+      blocks.push({ type: 'text', text: `${qty} x ${String(i.name || '')}`, size: 22, bold: true, strike: cancelled });
       const mods = modsToText(i.mods || i.modifiers);
       if (mods) blocks.push({ type: 'text', text: `+ ${mods}`, size: 13, strike: cancelled });
       const note = i.note || i.lineNote;

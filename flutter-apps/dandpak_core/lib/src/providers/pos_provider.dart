@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
 
@@ -462,61 +463,134 @@ class PosProvider extends ChangeNotifier {
     return aNames.difference(bNames).isEmpty;
   }
 
-  // Submit order to backend
+  // Gõ nhanh nhiều món (tap liên tiếp trong "Thêm món FnB") gọi submitOrder()
+  // nhiều lần gần như cùng lúc. Trước đây mỗi lần gọi bắn NGAY một request
+  // riêng — request sau không biết request trước đã/sắp lưu món nào, nên gửi
+  // TRÙNG các món "chưa persisted"; và vì _applyOrderDetails() THAY THẾ toàn
+  // bộ _cart bằng response, một response CŨ (ít món hơn) trả về SAU một
+  // response MỚI (nhiều món hơn) sẽ xoá mất các món vừa thêm — đúng triệu
+  // chứng "chọn nhanh nhiều món thì rớt món". Chỉ CHO PHÉP một request submit
+  // chạy tại một thời điểm; các lệnh gọi đến trong lúc đang chạy được gộp lại
+  // thành một vòng chạy tiếp theo (không bắn request song song, không áp
+  // response cũ đè lên state mới).
+  bool _submitRunning = false;
+  bool _submitAgainNeeded = false;
+  final List<Completer<void>> _submitWaiters = [];
+
   Future<void> submitOrder() async {
     if (_selectedTable == null) return;
+    if (_submitRunning) {
+      _submitAgainNeeded = true;
+      final waiter = Completer<void>();
+      _submitWaiters.add(waiter);
+      return waiter.future;
+    }
+    _submitRunning = true;
     _isSavingOrder = true;
     notifyListeners();
-
     try {
-      final unsaved = _cart.where((c) => !c.persisted).toList();
-      if (unsaved.isEmpty) {
-        _isSavingOrder = false;
-        notifyListeners();
-        return;
+      await _drainSubmitQueue();
+    } finally {
+      _submitRunning = false;
+      _isSavingOrder = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> _drainSubmitQueue() async {
+    while (true) {
+      _submitAgainNeeded = false;
+      final waiters = List<Completer<void>>.from(_submitWaiters);
+      _submitWaiters.clear();
+      try {
+        await _submitOrderOnce();
+        for (final w in waiters) {
+          if (!w.isCompleted) w.complete();
+        }
+      } catch (e, s) {
+        for (final w in waiters) {
+          if (!w.isCompleted) w.completeError(e, s);
+        }
+        rethrow;
       }
+      if (!_submitAgainNeeded && _submitWaiters.isEmpty) return;
+    }
+  }
 
-      final List<Map<String, dynamic>> orderItems = unsaved
-          .map((c) => {
-                if (c.item.isRetail)
-                  'sku_id': c.item.id
-                else
-                  'menu_item_id': c.item.id,
-                'qty': c.qty,
-                'note': c.notes,
-                // CHỈNH GIÁ DÒNG: gửi giá đã đổi; server tự lấy giá niêm yết làm
-                // orig_price để bill in "gốc → sau đổi". Không chỉnh thì bỏ qua.
-                if (c.hasPriceOverride) 'price': c.unitPriceOverride,
-                'mods': c.selectedModifiers
-                    .map((m) => {
-                          'name': m.name,
-                          'price': m.price,
-                        })
-                    .toList(),
-              })
-          .toList();
+  Future<void> _submitOrderOnce() async {
+    final unsaved = _cart.where((c) => !c.persisted).toList();
+    if (unsaved.isEmpty) return;
 
-      final hasOverride = unsaved.any((c) => c.hasPriceOverride);
-      final payload = {
-        if (_activeOrderId != null) 'id': _activeOrderId,
-        'table_id': _selectedTable!.id,
-        'source': 'cashier',
-        'items': orderItems,
-        // Server bắt PIN Quản lý/Chủ khi có dòng chỉnh giá.
-        if (hasOverride && _lineOverridePin != null)
-          'security_pin': _lineOverridePin,
-      };
+    final List<Map<String, dynamic>> orderItems = unsaved
+        .map((c) => {
+              if (c.item.isRetail)
+                'sku_id': c.item.id
+              else
+                'menu_item_id': c.item.id,
+              'qty': c.qty,
+              'note': c.notes,
+              // CHỈNH GIÁ DÒNG: gửi giá đã đổi; server tự lấy giá niêm yết làm
+              // orig_price để bill in "gốc → sau đổi". Không chỉnh thì bỏ qua.
+              if (c.hasPriceOverride) 'price': c.unitPriceOverride,
+              'mods': c.selectedModifiers
+                  .map((m) => {
+                        'name': m.name,
+                        'price': m.price,
+                      })
+                  .toList(),
+            })
+        .toList();
 
-      final orderRes = await apiService.createOrUpdateOrder(payload);
-      _applyOrderDetails(orderRes);
+    final hasOverride = unsaved.any((c) => c.hasPriceOverride);
+    final payload = {
+      if (_activeOrderId != null) 'id': _activeOrderId,
+      'table_id': _selectedTable!.id,
+      'source': 'cashier',
+      'items': orderItems,
+      // Server bắt PIN Quản lý/Chủ khi có dòng chỉnh giá.
+      if (hasOverride && _lineOverridePin != null)
+        'security_pin': _lineOverridePin,
+    };
 
-      await loadFloor();
-      _isSavingOrder = false;
-      notifyListeners();
-    } catch (e) {
-      _isSavingOrder = false;
-      notifyListeners();
-      rethrow;
+    final orderRes = await apiService.createOrUpdateOrder(payload);
+    // KHÔNG dùng _applyOrderDetails() (thay CẢ _cart bằng response) — món
+    // khách vừa thêm cục bộ TRONG LÚC request này đang bay (đã ở _cart, chưa
+    // kịp gửi vì đang chờ lượt submit tiếp theo) sẽ bị response NÀY (chưa hề
+    // biết tới chúng) xoá mất nếu ghi đè cả danh sách. Chỉ gán id/trạng thái
+    // server trả về vào ĐÚNG các dòng vừa gửi (unsaved), giữ nguyên phần còn
+    // lại của giỏ hàng.
+    _mergeSubmittedItems(orderRes, unsaved);
+    notifyListeners();
+    await loadFloor();
+  }
+
+  void _mergeSubmittedItems(
+      Map<String, dynamic> orderDetails, List<CartItem> sent) {
+    _activeOrderId = orderDetails['id']?.toString();
+    _activeBillNo = orderDetails['bill_no']?.toString();
+    _activeDiscount = _doubleValue(orderDetails['discount']);
+    final custFromServer = _readCustomer(orderDetails);
+    if (custFromServer != null) _selectedCustomer = custFromServer;
+
+    final List<dynamic> items = orderDetails['items'] ?? [];
+    final knownIds = _cart
+        .map((c) => c.orderItemId)
+        .where((id) => id.isNotEmpty)
+        .toSet();
+    // Dòng "mới" = server trả về nhưng client CHƯA biết id (chưa gán cho món
+    // nào trong giỏ) — đó chính là các dòng vừa được chèn cho lượt gửi này.
+    // Server chèn ĐÚNG theo thứ tự payload đã gửi nên ghép vị trí là an toàn.
+    final freshRows = items
+        .where((i) => i is Map && i['status']?.toString() != 'cancelled')
+        .map((raw) => Map<String, dynamic>.from(raw as Map))
+        .where((row) => !knownIds.contains(row['id']?.toString() ?? ''))
+        .toList();
+    final count = sent.length < freshRows.length ? sent.length : freshRows.length;
+    for (var i = 0; i < count; i++) {
+      final row = freshRows[i];
+      final cartItem = sent[i];
+      cartItem.orderItemId = row['id']?.toString() ?? '';
+      cartItem.status = row['status']?.toString() ?? '';
     }
   }
 
