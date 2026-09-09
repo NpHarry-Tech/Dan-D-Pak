@@ -25,6 +25,32 @@ $sshKeygenExe = if (Test-Path "$nativeSshDir\ssh-keygen.exe") { "$nativeSshDir\s
 $sshExe = if (Test-Path "$nativeSshDir\ssh.exe") { "$nativeSshDir\ssh.exe" } else { 'ssh' }
 $scpExe = if (Test-Path "$nativeSshDir\scp.exe") { "$nativeSshDir\scp.exe" } else { 'scp' }
 
+# Run a multi-line bash script on the remote host via "bash -s" on STDIN. NOT
+# "$script | & $sshExe ..." - PowerShell re-inserts \r\n when serializing a
+# string through a pipe into a native process (regardless of the string's own
+# content already being LF-only), corrupting values bash assigns from those
+# lines even though the script appears to "run fine" on screen. Use .NET
+# Process directly and write STDIN by hand for exact control over the bytes sent.
+function Invoke-RemoteBashScript {
+  param([string]$SshExe, [string[]]$SshOptions, [string]$Target, [string]$Script)
+  $allArgs = @($SshOptions) + @($Target, 'bash -s')
+  $quoted = $allArgs | ForEach-Object { if ($_ -match '[\s"]') { '"' + ($_ -replace '"', '\"') + '"' } else { $_ } }
+  $psi = New-Object System.Diagnostics.ProcessStartInfo
+  $psi.FileName = $SshExe
+  $psi.Arguments = ($quoted -join ' ')
+  $psi.RedirectStandardInput = $true
+  $psi.RedirectStandardOutput = $true
+  $psi.RedirectStandardError = $true
+  $psi.UseShellExecute = $false
+  $proc = [System.Diagnostics.Process]::Start($psi)
+  $proc.StandardInput.Write(($Script -replace "`r`n", "`n"))
+  $proc.StandardInput.Close()
+  $stdout = $proc.StandardOutput.ReadToEnd()
+  $stderr = $proc.StandardError.ReadToEnd()
+  $proc.WaitForExit()
+  return [PSCustomObject]@{ Stdout = $stdout; Stderr = $stderr; ExitCode = $proc.ExitCode }
+}
+
 $verified = & (Join-Path $PSScriptRoot 'verify-backend-evidence.ps1') `
   -Evidence $Evidence -ExpectedHost $HostName | ConvertFrom-Json
 if (-not $verified.ok) { throw 'NO_GO: backend evidence did not verify.' }
@@ -155,13 +181,10 @@ docker compose -f docker-compose.yml -f '$remoteOverride' exec -T app node -e "f
 trap - ERR
 docker image inspect '$rollbackTag' --format '{{.Id}}'
 "@
-  # Pipe the multi-line script over STDIN ("bash -s"), not as a single
-  # command-line argument - PowerShell's argument escaping for a multi-line
-  # string passed to ssh.exe does not round-trip correctly and produces bash
-  # syntax errors on the remote end (confirmed while testing the sibling
-  # rollback-probe script in generate-backend-evidence.ps1).
-  $remote | & $sshExe @sshOptions $target 'bash -s'
-  if ($LASTEXITCODE -ne 0) { throw 'DEPLOY_FAILED: remote activation failed; rollback was requested.' }
+  $deployResult = Invoke-RemoteBashScript -SshExe $sshExe -SshOptions $sshOptions -Target $target -Script $remote
+  Write-Host $deployResult.Stdout
+  if ($deployResult.Stderr) { Write-Host $deployResult.Stderr -ForegroundColor DarkGray }
+  if ($deployResult.ExitCode -ne 0) { throw 'DEPLOY_FAILED: remote activation failed; rollback was requested.' }
   Write-Output ([ordered]@{ ok=$true; gateScope='backend'; deployedCommit=$commit; imageTag=$imageTag; imageId=[string]$manifest.imageId; rollbackTag=$rollbackTag } | ConvertTo-Json -Compress)
 } finally {
   Remove-Item -LiteralPath $knownHosts -Force -ErrorAction SilentlyContinue

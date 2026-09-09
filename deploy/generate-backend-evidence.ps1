@@ -36,6 +36,32 @@ $sshKeygenExe = if (Test-Path "$nativeSshDir\ssh-keygen.exe") { "$nativeSshDir\s
 $sshExe = if (Test-Path "$nativeSshDir\ssh.exe") { "$nativeSshDir\ssh.exe" } else { 'ssh' }
 $scpExe = if (Test-Path "$nativeSshDir\scp.exe") { "$nativeSshDir\scp.exe" } else { 'scp' }
 
+# Chạy 1 script bash nhiều dòng trên máy xa qua "bash -s" nhận từ STDIN. KHÔNG
+# dùng "$script | & $sshExe ..." — PowerShell tự chèn lại \r\n khi serialize
+# 1 string qua pipe vào tiến trình native (bất kể nội dung string đã là LF
+# thuần), khiến \r lẫn vào GIÁ TRỊ biến bash gán từ các dòng đó dù script vẫn
+# "chạy được" nhìn qua console. Dùng thẳng Process .NET + ghi STDIN thủ công
+# để kiểm soát chính xác byte gửi đi, không qua lớp serialize nào của PowerShell.
+function Invoke-RemoteBashScript {
+  param([string]$SshExe, [string[]]$SshOptions, [string]$Target, [string]$Script)
+  $allArgs = @($SshOptions) + @($Target, 'bash -s')
+  $quoted = $allArgs | ForEach-Object { if ($_ -match '[\s"]') { '"' + ($_ -replace '"', '\"') + '"' } else { $_ } }
+  $psi = New-Object System.Diagnostics.ProcessStartInfo
+  $psi.FileName = $SshExe
+  $psi.Arguments = ($quoted -join ' ')
+  $psi.RedirectStandardInput = $true
+  $psi.RedirectStandardOutput = $true
+  $psi.RedirectStandardError = $true
+  $psi.UseShellExecute = $false
+  $proc = [System.Diagnostics.Process]::Start($psi)
+  $proc.StandardInput.Write(($Script -replace "`r`n", "`n"))
+  $proc.StandardInput.Close()
+  $stdout = $proc.StandardOutput.ReadToEnd()
+  $stderr = $proc.StandardError.ReadToEnd()
+  $proc.WaitForExit()
+  return [PSCustomObject]@{ Stdout = $stdout; Stderr = $stderr; ExitCode = $proc.ExitCode }
+}
+
 if ([string]::IsNullOrWhiteSpace([string]$env:DATA_ENCRYPTION_KEY)) {
   throw 'NO_GO: $env:DATA_ENCRYPTION_KEY chưa được set trong phiên PowerShell này.'
 }
@@ -137,12 +163,11 @@ echo "ROLLBACK_IMAGE_ID=`$image_id"
 echo "ROLLBACK_IMAGE_TAG=`$image_tag"
 echo "ROLLBACK_HEALTH=`$health_ok"
 "@
-  # Truyền script nhiều dòng qua STDIN ("bash -s"), KHÔNG truyền như 1 tham số
-  # dòng lệnh — PowerShell escape tham số nhiều dòng cho ssh.exe không đúng,
-  # sinh ra lỗi cú pháp bash phía xa (dấu ngoặc/nháy bị cắt giữa chừng).
-  $rollbackProbe = ($rollbackScript | & $sshExe @sshOptions $target 'bash -s') -join "`n"
-  Write-Host $rollbackProbe
-  if ($LASTEXITCODE -ne 0) { throw 'NO_GO: không đọc được thông tin image đang chạy trên production.' }
+  $rollbackResult = Invoke-RemoteBashScript -SshExe $sshExe -SshOptions $sshOptions -Target $target -Script $rollbackScript
+  Write-Host $rollbackResult.Stdout
+  if ($rollbackResult.Stderr) { Write-Host $rollbackResult.Stderr -ForegroundColor DarkGray }
+  if ($rollbackResult.ExitCode -ne 0) { throw 'NO_GO: không đọc được thông tin image đang chạy trên production.' }
+  $rollbackProbe = $rollbackResult.Stdout
   $rollbackImageId = (($rollbackProbe -split "`n") | Where-Object { $_ -match '^ROLLBACK_IMAGE_ID=(.+)$' } | Select-Object -Last 1) -replace '^ROLLBACK_IMAGE_ID=', ''
   $rollbackImageTag = (($rollbackProbe -split "`n") | Where-Object { $_ -match '^ROLLBACK_IMAGE_TAG=(.+)$' } | Select-Object -Last 1) -replace '^ROLLBACK_IMAGE_TAG=', ''
   $rollbackHealth = (($rollbackProbe -split "`n") | Where-Object { $_ -match '^ROLLBACK_HEALTH=(.+)$' } | Select-Object -Last 1) -replace '^ROLLBACK_HEALTH=', ''
