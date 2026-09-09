@@ -298,6 +298,22 @@ class _PosScreenState extends State<PosScreen> {
         }
         return;
       }
+      // Đã chọn CTKM nhưng chưa có số đã preview (mất mạng, hoặc server chưa
+      // có route preview mới) → CHẶN thanh toán thay vì mở dialog với tổng
+      // tiền SAI (chưa trừ CTKM) — thu ngân thu đủ giá gốc trong khi server
+      // vẫn áp CTKM lúc chốt sẽ lệch tiền/đơn rơi vào 'partially_paid' oan.
+      final hasVoucherPick =
+          pos.orderVoucherId != null || pos.lineVouchers.isNotEmpty;
+      if (hasVoucherPick && pos.discountPlan == null) {
+        await pos.refreshDiscountPreview();
+      }
+      if (hasVoucherPick && pos.discountPlan == null) {
+        if (mounted) {
+          _toast(t(
+              'Không tính được CTKM đã chọn. Bỏ chọn CTKM hoặc thử lại trước khi thanh toán.'));
+        }
+        return;
+      }
       if (!mounted) return;
       await _afterCheckout(pos, await _showCheckoutDialog(pos));
     } catch (e) {
