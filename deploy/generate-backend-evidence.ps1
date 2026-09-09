@@ -137,7 +137,10 @@ echo "ROLLBACK_IMAGE_ID=`$image_id"
 echo "ROLLBACK_IMAGE_TAG=`$image_tag"
 echo "ROLLBACK_HEALTH=`$health_ok"
 "@
-  $rollbackProbe = (& $sshExe @sshOptions $target $rollbackScript) -join "`n"
+  # Truyền script nhiều dòng qua STDIN ("bash -s"), KHÔNG truyền như 1 tham số
+  # dòng lệnh — PowerShell escape tham số nhiều dòng cho ssh.exe không đúng,
+  # sinh ra lỗi cú pháp bash phía xa (dấu ngoặc/nháy bị cắt giữa chừng).
+  $rollbackProbe = ($rollbackScript | & $sshExe @sshOptions $target 'bash -s') -join "`n"
   Write-Host $rollbackProbe
   if ($LASTEXITCODE -ne 0) { throw 'NO_GO: không đọc được thông tin image đang chạy trên production.' }
   $rollbackImageId = (($rollbackProbe -split "`n") | Where-Object { $_ -match '^ROLLBACK_IMAGE_ID=(.+)$' } | Select-Object -Last 1) -replace '^ROLLBACK_IMAGE_ID=', ''

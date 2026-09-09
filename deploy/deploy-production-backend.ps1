@@ -155,7 +155,12 @@ docker compose -f docker-compose.yml -f '$remoteOverride' exec -T app node -e "f
 trap - ERR
 docker image inspect '$rollbackTag' --format '{{.Id}}'
 "@
-  & $sshExe @sshOptions $target $remote
+  # Pipe the multi-line script over STDIN ("bash -s"), not as a single
+  # command-line argument - PowerShell's argument escaping for a multi-line
+  # string passed to ssh.exe does not round-trip correctly and produces bash
+  # syntax errors on the remote end (confirmed while testing the sibling
+  # rollback-probe script in generate-backend-evidence.ps1).
+  $remote | & $sshExe @sshOptions $target 'bash -s'
   if ($LASTEXITCODE -ne 0) { throw 'DEPLOY_FAILED: remote activation failed; rollback was requested.' }
   Write-Output ([ordered]@{ ok=$true; gateScope='backend'; deployedCommit=$commit; imageTag=$imageTag; imageId=[string]$manifest.imageId; rollbackTag=$rollbackTag } | ConvertTo-Json -Compress)
 } finally {
