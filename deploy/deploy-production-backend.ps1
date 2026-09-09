@@ -43,11 +43,27 @@ if ([int]$manifest.formatVersion -ne 1 -or $manifest.platform -ne 'linux/amd64' 
 
 $knownHosts = Join-Path ([IO.Path]::GetTempPath()) ("dandpak-known-hosts-" + [IO.Path]::GetRandomFileName())
 try {
-  & ssh-keyscan -T 10 -t ed25519 $HostName 2>$null | Set-Content -LiteralPath $knownHosts -Encoding ascii
+  # ssh-keyscan writes its "# host:port SSH-2.0-..." banner to STDERR - normal,
+  # not an error. But $ErrorActionPreference='Stop' promotes that line to a
+  # terminating error BEFORE "2>$null" can discard it (Windows PowerShell 5.1
+  # quirk with native commands). Relax the preference just for these two calls.
+  $prevEAP = $ErrorActionPreference
+  $ErrorActionPreference = 'Continue'
+  try {
+    & ssh-keyscan -T 10 -t ed25519 $HostName 2>$null | Set-Content -LiteralPath $knownHosts -Encoding ascii
+  } finally {
+    $ErrorActionPreference = $prevEAP
+  }
   if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $knownHosts)) {
     throw 'NO_GO: could not obtain production SSH host key for pinned comparison.'
   }
-  $fingerprintText = (& ssh-keygen -lf $knownHosts -E sha256 2>&1) -join "`n"
+  $prevEAP = $ErrorActionPreference
+  $ErrorActionPreference = 'Continue'
+  try {
+    $fingerprintText = (& ssh-keygen -lf $knownHosts -E sha256 2>&1) -join "`n"
+  } finally {
+    $ErrorActionPreference = $prevEAP
+  }
   if ($LASTEXITCODE -ne 0 -or $fingerprintText -notmatch [regex]::Escape($expectedFingerprint)) {
     throw 'NO_GO: production SSH host key does not match the pinned fingerprint.'
   }

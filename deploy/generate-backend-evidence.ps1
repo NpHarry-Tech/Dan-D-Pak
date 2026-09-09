@@ -52,11 +52,27 @@ Write-Host '== [1/5] Chạy backup thật + tự xác minh trên production ==' 
 $knownHosts = Join-Path ([IO.Path]::GetTempPath()) ('dandpak-known-hosts-' + [IO.Path]::GetRandomFileName())
 $target = "$SshUser@$HostName"
 try {
-  & ssh-keyscan -T 10 -t ed25519 $HostName 2>$null | Set-Content -LiteralPath $knownHosts -Encoding ascii
+  # ssh-keyscan ghi dòng banner "# host:port SSH-2.0-..." ra STDERR — bình
+  # thường, không phải lỗi. Nhưng $ErrorActionPreference='Stop' biến NGAY dòng
+  # đó thành lỗi dừng script TRƯỚC KHI "2>$null" kịp nuốt nó (đặc thù
+  # PowerShell 5.1 với lệnh native). Hạ tạm về 'Continue' chỉ cho lệnh này.
+  $prevEAP = $ErrorActionPreference
+  $ErrorActionPreference = 'Continue'
+  try {
+    & ssh-keyscan -T 10 -t ed25519 $HostName 2>$null | Set-Content -LiteralPath $knownHosts -Encoding ascii
+  } finally {
+    $ErrorActionPreference = $prevEAP
+  }
   if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $knownHosts)) {
     throw 'NO_GO: không lấy được SSH host key của production.'
   }
-  $fingerprintText = (& ssh-keygen -lf $knownHosts -E sha256 2>&1) -join "`n"
+  $prevEAP = $ErrorActionPreference
+  $ErrorActionPreference = 'Continue'
+  try {
+    $fingerprintText = (& ssh-keygen -lf $knownHosts -E sha256 2>&1) -join "`n"
+  } finally {
+    $ErrorActionPreference = $prevEAP
+  }
   if ($LASTEXITCODE -ne 0 -or $fingerprintText -notmatch [regex]::Escape($expectedFingerprint)) {
     throw 'NO_GO: SSH host key của production không khớp fingerprint đã pin.'
   }
