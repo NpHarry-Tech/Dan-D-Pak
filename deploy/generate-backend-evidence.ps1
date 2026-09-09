@@ -28,6 +28,16 @@ param(
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 $expectedFingerprint = 'SHA256:fmDCv6ehU4KpbB+pV7uVvFbC+M0SM6OF8YINwuAkRZM'
+# Máy có cả 2 bộ ssh: bản Git for Windows (MSYS/Cygwin, PATH đứng trước) và bản
+# Windows OpenSSH gốc. Bản MSYS chạy KHÔNG ổn định dưới ConPTY (cửa sổ terminal
+# thật của Windows Terminal) cho các lệnh không tương tác như ssh-keyscan — hay
+# bị treo/rớt output dù chạy tay ssh bình thường vẫn login được (vì login mở
+# pty thật, còn keyscan thì không). Ép dùng thẳng bản Windows gốc cho ổn định.
+$nativeSshDir = 'C:\Windows\System32\OpenSSH'
+$sshKeyscanExe = if (Test-Path "$nativeSshDir\ssh-keyscan.exe") { "$nativeSshDir\ssh-keyscan.exe" } else { 'ssh-keyscan' }
+$sshKeygenExe = if (Test-Path "$nativeSshDir\ssh-keygen.exe") { "$nativeSshDir\ssh-keygen.exe" } else { 'ssh-keygen' }
+$sshExe = if (Test-Path "$nativeSshDir\ssh.exe") { "$nativeSshDir\ssh.exe" } else { 'ssh' }
+$scpExe = if (Test-Path "$nativeSshDir\scp.exe") { "$nativeSshDir\scp.exe" } else { 'scp' }
 
 if ([string]::IsNullOrWhiteSpace([string]$env:DATA_ENCRYPTION_KEY)) {
   throw 'NO_GO: $env:DATA_ENCRYPTION_KEY chưa được set trong phiên PowerShell này.'
@@ -69,7 +79,7 @@ try {
     $prevEAP = $ErrorActionPreference
     $ErrorActionPreference = 'Continue'
     try {
-      & ssh-keyscan -T (10 * $attempt) -t ed25519 $HostName 2>$null | Set-Content -LiteralPath $knownHosts -Encoding ascii
+      & $sshKeyscanExe -T (10 * $attempt) -t ed25519 $HostName 2>$null | Set-Content -LiteralPath $knownHosts -Encoding ascii
     } finally {
       $ErrorActionPreference = $prevEAP
     }
@@ -84,7 +94,7 @@ try {
   $prevEAP = $ErrorActionPreference
   $ErrorActionPreference = 'Continue'
   try {
-    $fingerprintText = (& ssh-keygen -lf $knownHosts -E sha256 2>&1) -join "`n"
+    $fingerprintText = (& $sshKeygenExe -lf $knownHosts -E sha256 2>&1) -join "`n"
   } finally {
     $ErrorActionPreference = $prevEAP
   }
@@ -93,7 +103,7 @@ try {
   }
   $sshOptions = @('-o', "UserKnownHostsFile=$knownHosts", '-o', 'StrictHostKeyChecking=yes')
 
-  $backupOutput = (& ssh @sshOptions $target "cd '$RemoteRoot/deploy/company-server' && ./scripts/backup-db.sh") -join "`n"
+  $backupOutput = (& $sshExe @sshOptions $target "cd '$RemoteRoot/deploy/company-server' && ./scripts/backup-db.sh") -join "`n"
   Write-Host $backupOutput
   if ($LASTEXITCODE -ne 0) { throw 'NO_GO: backup-db.sh thất bại trên production.' }
   $remoteBackupLine = ($backupOutput -split "`n") | Where-Object { $_ -match 'Encrypted backup verified: (.+)$' } | Select-Object -Last 1
@@ -107,7 +117,7 @@ try {
   $localBackupDir = Join-Path ([IO.Path]::GetTempPath()) ('ddp-evidence-backup-' + [IO.Path]::GetRandomFileName())
   New-Item -ItemType Directory -Path $localBackupDir | Out-Null
   $localBackup = Join-Path $localBackupDir $backupFileName
-  & scp @sshOptions "${target}:$RemoteRoot/deploy/company-server/$remoteBackupRelative" $localBackup
+  & $scpExe @sshOptions "${target}:$RemoteRoot/deploy/company-server/$remoteBackupRelative" $localBackup
   if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $localBackup)) { throw 'NO_GO: kéo backup về máy thất bại.' }
 
   Write-Host '== [3/5] Diễn tập migration bằng bản backup thật vừa kéo về ==' -ForegroundColor Cyan
@@ -129,7 +139,7 @@ echo "ROLLBACK_IMAGE_ID=`$image_id"
 echo "ROLLBACK_IMAGE_TAG=`$image_tag"
 echo "ROLLBACK_HEALTH=`$health_ok"
 "@
-  $rollbackProbe = (& ssh @sshOptions $target $rollbackScript) -join "`n"
+  $rollbackProbe = (& $sshExe @sshOptions $target $rollbackScript) -join "`n"
   Write-Host $rollbackProbe
   if ($LASTEXITCODE -ne 0) { throw 'NO_GO: không đọc được thông tin image đang chạy trên production.' }
   $rollbackImageId = (($rollbackProbe -split "`n") | Where-Object { $_ -match '^ROLLBACK_IMAGE_ID=(.+)$' } | Select-Object -Last 1) -replace '^ROLLBACK_IMAGE_ID=', ''

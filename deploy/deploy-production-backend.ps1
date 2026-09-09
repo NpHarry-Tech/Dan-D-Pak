@@ -17,6 +17,15 @@ param(
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 $expectedFingerprint = 'SHA256:fmDCv6ehU4KpbB+pV7uVvFbC+M0SM6OF8YINwuAkRZM'
+# Prefer the native Windows OpenSSH client over Git for Windows' MSYS-compiled
+# one (which comes first on PATH here) - the MSYS build is unreliable under
+# Windows Terminal's ConPTY for non-interactive commands like ssh-keyscan (an
+# interactive `ssh` login still works fine since it allocates a real pty).
+$nativeSshDir = 'C:\Windows\System32\OpenSSH'
+$sshKeyscanExe = if (Test-Path "$nativeSshDir\ssh-keyscan.exe") { "$nativeSshDir\ssh-keyscan.exe" } else { 'ssh-keyscan' }
+$sshKeygenExe = if (Test-Path "$nativeSshDir\ssh-keygen.exe") { "$nativeSshDir\ssh-keygen.exe" } else { 'ssh-keygen' }
+$sshExe = if (Test-Path "$nativeSshDir\ssh.exe") { "$nativeSshDir\ssh.exe" } else { 'ssh' }
+$scpExe = if (Test-Path "$nativeSshDir\scp.exe") { "$nativeSshDir\scp.exe" } else { 'scp' }
 
 $verified = & (Join-Path $PSScriptRoot 'verify-backend-evidence.ps1') `
   -Evidence $Evidence -ExpectedHost $HostName | ConvertFrom-Json
@@ -54,7 +63,7 @@ try {
     $prevEAP = $ErrorActionPreference
     $ErrorActionPreference = 'Continue'
     try {
-      & ssh-keyscan -T (10 * $attempt) -t ed25519 $HostName 2>$null | Set-Content -LiteralPath $knownHosts -Encoding ascii
+      & $sshKeyscanExe -T (10 * $attempt) -t ed25519 $HostName 2>$null | Set-Content -LiteralPath $knownHosts -Encoding ascii
     } finally {
       $ErrorActionPreference = $prevEAP
     }
@@ -69,7 +78,7 @@ try {
   $prevEAP = $ErrorActionPreference
   $ErrorActionPreference = 'Continue'
   try {
-    $fingerprintText = (& ssh-keygen -lf $knownHosts -E sha256 2>&1) -join "`n"
+    $fingerprintText = (& $sshKeygenExe -lf $knownHosts -E sha256 2>&1) -join "`n"
   } finally {
     $ErrorActionPreference = $prevEAP
   }
@@ -81,9 +90,9 @@ try {
   $stage = "$RemoteRoot/releases/server-$commit"
   $target = "$SshUser@$HostName"
   $sshOptions = @('-o', "UserKnownHostsFile=$knownHosts", '-o', 'StrictHostKeyChecking=yes')
-  & ssh @sshOptions $target "mkdir -p '$stage'"
+  & $sshExe @sshOptions $target "mkdir -p '$stage'"
   if ($LASTEXITCODE -ne 0) { throw 'NO_GO: cannot create immutable remote staging directory.' }
-  & scp @sshOptions $tarPath $manifestPath `
+  & $scpExe @sshOptions $tarPath $manifestPath `
     (Join-Path $root 'deploy\company-server\docker-compose.immutable.yml') `
     "${target}:$stage/"
   if ($LASTEXITCODE -ne 0) { throw 'NO_GO: immutable image upload failed.' }
@@ -147,7 +156,7 @@ docker compose -f docker-compose.yml -f '$remoteOverride' exec -T app node -e "f
 trap - ERR
 docker image inspect '$rollbackTag' --format '{{.Id}}'
 "@
-  & ssh @sshOptions $target $remote
+  & $sshExe @sshOptions $target $remote
   if ($LASTEXITCODE -ne 0) { throw 'DEPLOY_FAILED: remote activation failed; rollback was requested.' }
   Write-Output ([ordered]@{ ok=$true; gateScope='backend'; deployedCommit=$commit; imageTag=$imageTag; imageId=[string]$manifest.imageId; rollbackTag=$rollbackTag } | ConvertTo-Json -Compress)
 } finally {
