@@ -136,7 +136,7 @@ try {
 set -euo pipefail
 cd '$RemoteRoot/deploy/company-server'
 echo '$expectedTarHash  $remoteTar' | sha256sum -c -
-backup_output=`$(./scripts/backup-db.sh)
+backup_output=`$(./scripts/backup-db.sh </dev/null)
 echo "`$backup_output"
 live_backup_sha=`$(printf '%s\n' "`$backup_output" | sed -n 's/^BACKUP_SHA256=//p' | tail -n 1)
 live_restored_sha=`$(printf '%s\n' "`$backup_output" | sed -n 's/^RESTORED_DB_SHA256=//p' | tail -n 1)
@@ -149,22 +149,22 @@ printf 'created_at_utc=%s\nbackup_sha256=%s\nrestored_db_sha256=%s\n' \
   "`$(date -u +%Y-%m-%dT%H:%M:%SZ)" "`$live_backup_sha" "`$live_restored_sha" \
   > '$stage/live-backup-evidence.txt'
 chmod 600 '$stage/live-backup-evidence.txt'
-current_container=`$(docker compose ps -q app)
+current_container=`$(docker compose ps -q app </dev/null)
 if [ -z "`$current_container" ]; then echo 'Current app container is missing; refusing deploy.' >&2; exit 31; fi
-current_image=`$(docker inspect -f '{{.Image}}' "`$current_container")
-expected_rollback_id=`$(docker image inspect '$expectedRollbackImage' -f '{{.Id}}')
+current_image=`$(docker inspect -f '{{.Image}}' "`$current_container" </dev/null)
+expected_rollback_id=`$(docker image inspect '$expectedRollbackImage' -f '{{.Id}}' </dev/null)
 if [ "`$expected_rollback_id" != '$expectedRollbackImageId' ]; then echo 'Rollback tag no longer matches rehearsed immutable image ID.' >&2; exit 36; fi
 if [ "`$current_image" != "`$expected_rollback_id" ]; then echo 'Running image does not match rehearsed rollback image.' >&2; exit 33; fi
-docker tag "`$current_image" '$rollbackTag'
-docker load --input '$remoteTar'
-loaded_id=`$(docker image inspect '$imageTag' -f '{{.Id}}')
+docker tag "`$current_image" '$rollbackTag' </dev/null
+docker load --input '$remoteTar' </dev/null
+loaded_id=`$(docker image inspect '$imageTag' -f '{{.Id}}' </dev/null)
 if [ "`$loaded_id" != '$($manifest.imageId)' ]; then echo 'Loaded image ID mismatch.' >&2; exit 32; fi
 rollback() {
   echo 'New image failed; restoring verified previous image.' >&2
   export APP_IMAGE='$expectedRollbackImage'
-  docker compose -f docker-compose.yml -f '$remoteOverride' up -d --no-build --wait app
-  rollback_container=`$(docker compose -f docker-compose.yml -f '$remoteOverride' ps -q app)
-  rollback_image=`$(docker inspect -f '{{.Image}}' "`$rollback_container")
+  docker compose -f docker-compose.yml -f '$remoteOverride' up -d --no-build --wait app </dev/null
+  rollback_container=`$(docker compose -f docker-compose.yml -f '$remoteOverride' ps -q app </dev/null)
+  rollback_image=`$(docker inspect -f '{{.Image}}' "`$rollback_container" </dev/null)
   if [ "`$rollback_image" != '$expectedRollbackImageId' ]; then
     echo 'CRITICAL: rollback container does not match rehearsed immutable image ID.' >&2
     return 41
@@ -173,13 +173,13 @@ rollback() {
 }
 trap rollback ERR
 export APP_IMAGE='$imageTag'
-docker compose -f docker-compose.yml -f '$remoteOverride' up -d --no-build --wait app
-active_container=`$(docker compose -f docker-compose.yml -f '$remoteOverride' ps -q app)
-active_image=`$(docker inspect -f '{{.Image}}' "`$active_container")
+docker compose -f docker-compose.yml -f '$remoteOverride' up -d --no-build --wait app </dev/null
+active_container=`$(docker compose -f docker-compose.yml -f '$remoteOverride' ps -q app </dev/null)
+active_image=`$(docker inspect -f '{{.Image}}' "`$active_container" </dev/null)
 if [ "`$active_image" != "`$loaded_id" ]; then echo 'Activated container image ID mismatch.' >&2; exit 34; fi
 docker compose -f docker-compose.yml -f '$remoteOverride' exec -T app node -e "fetch('http://127.0.0.1:3000/health').then(async r=>{const b=await r.json();const x=b.build||{};const ok=r.ok&&b.ok&&b.database&&b.database.ok&&x.gitCommit==='$commit'&&x.sourceTreeSha256==='$expectedSourceHash'&&x.buildTimeUtc==='$expectedBuiltAt'&&x.schemaVersion===$expectedSchemaVersion;process.exit(ok?0:1)}).catch(()=>process.exit(1))" </dev/null
 trap - ERR
-docker image inspect '$rollbackTag' --format '{{.Id}}'
+docker image inspect '$rollbackTag' --format '{{.Id}}' </dev/null
 "@
   $deployResult = Invoke-RemoteBashScript -SshExe $sshExe -SshOptions $sshOptions -Target $target -Script $remote
   Write-Host $deployResult.Stdout
