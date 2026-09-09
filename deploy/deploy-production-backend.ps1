@@ -18,11 +18,9 @@ $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 $expectedFingerprint = 'SHA256:fmDCv6ehU4KpbB+pV7uVvFbC+M0SM6OF8YINwuAkRZM'
 # Prefer the native Windows OpenSSH client over Git for Windows' MSYS-compiled
-# one (which comes first on PATH here) - the MSYS build is unreliable under
-# Windows Terminal's ConPTY for non-interactive commands like ssh-keyscan (an
-# interactive `ssh` login still works fine since it allocates a real pty).
+# one (which comes first on PATH here) for ssh/scp/ssh-keygen. ssh-keyscan is
+# not used at all anymore - see the [host key] step below for why.
 $nativeSshDir = 'C:\Windows\System32\OpenSSH'
-$sshKeyscanExe = if (Test-Path "$nativeSshDir\ssh-keyscan.exe") { "$nativeSshDir\ssh-keyscan.exe" } else { 'ssh-keyscan' }
 $sshKeygenExe = if (Test-Path "$nativeSshDir\ssh-keygen.exe") { "$nativeSshDir\ssh-keygen.exe" } else { 'ssh-keygen' }
 $sshExe = if (Test-Path "$nativeSshDir\ssh.exe") { "$nativeSshDir\ssh.exe" } else { 'ssh' }
 $scpExe = if (Test-Path "$nativeSshDir\scp.exe") { "$nativeSshDir\scp.exe" } else { 'scp' }
@@ -52,28 +50,29 @@ if ([int]$manifest.formatVersion -ne 1 -or $manifest.platform -ne 'linux/amd64' 
 
 $knownHosts = Join-Path ([IO.Path]::GetTempPath()) ("dandpak-known-hosts-" + [IO.Path]::GetRandomFileName())
 try {
-  # ssh-keyscan writes its "# host:port SSH-2.0-..." banner to STDERR - normal,
-  # not an error. But $ErrorActionPreference='Stop' promotes that line to a
-  # terminating error BEFORE "2>$null" can discard it (Windows PowerShell 5.1
-  # quirk with native commands). Relax the preference just for these two calls.
-  # A transient network hiccup can also make -T 10 return only the "#" banner
-  # without the real key line - retry a few times with a longer timeout first.
-  $gotHostKey = $false
-  for ($attempt = 1; $attempt -le 3; $attempt++) {
-    $prevEAP = $ErrorActionPreference
-    $ErrorActionPreference = 'Continue'
-    try {
-      & $sshKeyscanExe -T (10 * $attempt) -t ed25519 $HostName 2>$null | Set-Content -LiteralPath $knownHosts -Encoding ascii
-    } finally {
-      $ErrorActionPreference = $prevEAP
-    }
-    $hasRealKeyLine = (Test-Path -LiteralPath $knownHosts) -and
-      (Get-Content -LiteralPath $knownHosts | Where-Object { $_ -notmatch '^\s*#' -and $_.Trim() -ne '' })
-    if ($LASTEXITCODE -eq 0 -and $hasRealKeyLine) { $gotHostKey = $true; break }
-    Write-Host "  (attempt $attempt did not get a real host key, retrying...)" -ForegroundColor DarkYellow
+  # ssh-keyscan (MSYS build or native Windows build, both tried) consistently
+  # fails to return the real key line in this environment - drop the network
+  # dependency entirely. If this machine has ever SSH'd into production
+  # manually (required once, before first use of this script - "verify by
+  # hand once, then automate"), Windows' default known_hosts already has the
+  # real key cached - read it directly, no network round-trip needed.
+  $defaultKnownHosts = Join-Path $env:USERPROFILE '.ssh\known_hosts'
+  if (-not (Test-Path -LiteralPath $defaultKnownHosts)) {
+    throw "NO_GO: $defaultKnownHosts not found - SSH into $SshUser@$HostName manually at least once (to verify the host key by hand) then retry."
   }
+  $prevEAP = $ErrorActionPreference
+  $ErrorActionPreference = 'Continue'
+  try {
+    & $sshKeygenExe -F $HostName -f $defaultKnownHosts 2>$null |
+      Where-Object { $_ -notmatch '^\s*#' -and $_.Trim() -ne '' } |
+      Set-Content -LiteralPath $knownHosts -Encoding ascii
+  } finally {
+    $ErrorActionPreference = $prevEAP
+  }
+  $gotHostKey = (Test-Path -LiteralPath $knownHosts) -and
+    (Get-Content -LiteralPath $knownHosts | Where-Object { $_.Trim() -ne '' })
   if (-not $gotHostKey) {
-    throw 'NO_GO: could not obtain production SSH host key for pinned comparison.'
+    throw "NO_GO: default known_hosts has no key for $HostName - SSH into production manually at least once then retry."
   }
   $prevEAP = $ErrorActionPreference
   $ErrorActionPreference = 'Continue'

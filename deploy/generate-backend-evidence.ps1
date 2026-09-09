@@ -29,12 +29,9 @@ $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 $expectedFingerprint = 'SHA256:fmDCv6ehU4KpbB+pV7uVvFbC+M0SM6OF8YINwuAkRZM'
 # Máy có cả 2 bộ ssh: bản Git for Windows (MSYS/Cygwin, PATH đứng trước) và bản
-# Windows OpenSSH gốc. Bản MSYS chạy KHÔNG ổn định dưới ConPTY (cửa sổ terminal
-# thật của Windows Terminal) cho các lệnh không tương tác như ssh-keyscan — hay
-# bị treo/rớt output dù chạy tay ssh bình thường vẫn login được (vì login mở
-# pty thật, còn keyscan thì không). Ép dùng thẳng bản Windows gốc cho ổn định.
+# Windows OpenSSH gốc. Ép dùng thẳng bản Windows gốc cho ổn định (ssh/scp/
+# ssh-keygen) — riêng ssh-keyscan bị bỏ hẳn, xem lý do ở bước [1/5] bên dưới.
 $nativeSshDir = 'C:\Windows\System32\OpenSSH'
-$sshKeyscanExe = if (Test-Path "$nativeSshDir\ssh-keyscan.exe") { "$nativeSshDir\ssh-keyscan.exe" } else { 'ssh-keyscan' }
 $sshKeygenExe = if (Test-Path "$nativeSshDir\ssh-keygen.exe") { "$nativeSshDir\ssh-keygen.exe" } else { 'ssh-keygen' }
 $sshExe = if (Test-Path "$nativeSshDir\ssh.exe") { "$nativeSshDir\ssh.exe" } else { 'ssh' }
 $scpExe = if (Test-Path "$nativeSshDir\scp.exe") { "$nativeSshDir\scp.exe" } else { 'scp' }
@@ -68,28 +65,29 @@ Write-Host '== [1/5] Chạy backup thật + tự xác minh trên production ==' 
 $knownHosts = Join-Path ([IO.Path]::GetTempPath()) ('dandpak-known-hosts-' + [IO.Path]::GetRandomFileName())
 $target = "$SshUser@$HostName"
 try {
-  # ssh-keyscan ghi dòng banner "# host:port SSH-2.0-..." ra STDERR — bình
-  # thường, không phải lỗi. Nhưng $ErrorActionPreference='Stop' biến NGAY dòng
-  # đó thành lỗi dừng script TRƯỚC KHI "2>$null" kịp nuốt nó (đặc thù
-  # PowerShell 5.1 với lệnh native). Hạ tạm về 'Continue' chỉ cho lệnh này.
-  # Mạng chập chờn nhất thời có thể khiến -T 10 không kịp lấy dòng key thật (chỉ
-  # còn lại dòng "#" banner) — thử lại vài lần với timeout dài hơn trước khi bỏ cuộc.
-  $gotHostKey = $false
-  for ($attempt = 1; $attempt -le 3; $attempt++) {
-    $prevEAP = $ErrorActionPreference
-    $ErrorActionPreference = 'Continue'
-    try {
-      & $sshKeyscanExe -T (10 * $attempt) -t ed25519 $HostName 2>$null | Set-Content -LiteralPath $knownHosts -Encoding ascii
-    } finally {
-      $ErrorActionPreference = $prevEAP
-    }
-    $hasRealKeyLine = (Test-Path -LiteralPath $knownHosts) -and
-      (Get-Content -LiteralPath $knownHosts | Where-Object { $_ -notmatch '^\s*#' -and $_.Trim() -ne '' })
-    if ($LASTEXITCODE -eq 0 -and $hasRealKeyLine) { $gotHostKey = $true; break }
-    Write-Host "  (lần $attempt chưa lấy được host key thật, thử lại...)" -ForegroundColor DarkYellow
+  # ssh-keyscan (dù bản MSYS hay bản gốc Windows) liên tục không lấy được dòng
+  # key thật trong môi trường này (đã thử cả 2, đều fail) — bỏ hẳn phụ thuộc
+  # vào nó. Nếu máy này ĐÃ từng SSH tay vào production (bắt buộc trước khi
+  # chạy script này lần đầu — đúng nguyên tắc "xác minh thủ công 1 lần, sau
+  # đó tự động"), known_hosts MẶC ĐỊNH của Windows đã có sẵn key thật — đọc
+  # thẳng từ đó, KHÔNG cần request mạng nào để lấy key nữa.
+  $defaultKnownHosts = Join-Path $env:USERPROFILE '.ssh\known_hosts'
+  if (-not (Test-Path -LiteralPath $defaultKnownHosts)) {
+    throw "NO_GO: chưa tìm thấy $defaultKnownHosts — hãy SSH tay vào $target ít nhất 1 lần (để xác minh host key thủ công) rồi chạy lại."
   }
+  $prevEAP = $ErrorActionPreference
+  $ErrorActionPreference = 'Continue'
+  try {
+    & $sshKeygenExe -F $HostName -f $defaultKnownHosts 2>$null |
+      Where-Object { $_ -notmatch '^\s*#' -and $_.Trim() -ne '' } |
+      Set-Content -LiteralPath $knownHosts -Encoding ascii
+  } finally {
+    $ErrorActionPreference = $prevEAP
+  }
+  $gotHostKey = (Test-Path -LiteralPath $knownHosts) -and
+    (Get-Content -LiteralPath $knownHosts | Where-Object { $_.Trim() -ne '' })
   if (-not $gotHostKey) {
-    throw 'NO_GO: không lấy được SSH host key của production.'
+    throw "NO_GO: known_hosts mặc định chưa có key của $HostName — hãy SSH tay vào production ít nhất 1 lần rồi chạy lại."
   }
   $prevEAP = $ErrorActionPreference
   $ErrorActionPreference = 'Continue'
