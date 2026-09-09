@@ -33,7 +33,13 @@ if ([string]::IsNullOrWhiteSpace([string]$env:DATA_ENCRYPTION_KEY)) {
   throw 'NO_GO: $env:DATA_ENCRYPTION_KEY chưa được set trong phiên PowerShell này.'
 }
 
-$commit = (& git -C $root rev-parse HEAD 2>$null).Trim()
+$prevEAP = $ErrorActionPreference
+$ErrorActionPreference = 'Continue'
+try {
+  $commit = (& git -C $root rev-parse HEAD 2>$null).Trim()
+} finally {
+  $ErrorActionPreference = $prevEAP
+}
 if ($LASTEXITCODE -ne 0 -or $commit -notmatch '^[0-9a-f]{40}$') { throw 'NO_GO: không lấy được Git commit hiện tại.' }
 $dirty = @(& git -C $root status --porcelain=v1 --untracked-files=all) |
   Where-Object { $_ -notmatch '^\?\? (\.codex-test-temp/|tmp/|runtime/|artifacts/)' }
@@ -56,14 +62,23 @@ try {
   # thường, không phải lỗi. Nhưng $ErrorActionPreference='Stop' biến NGAY dòng
   # đó thành lỗi dừng script TRƯỚC KHI "2>$null" kịp nuốt nó (đặc thù
   # PowerShell 5.1 với lệnh native). Hạ tạm về 'Continue' chỉ cho lệnh này.
-  $prevEAP = $ErrorActionPreference
-  $ErrorActionPreference = 'Continue'
-  try {
-    & ssh-keyscan -T 10 -t ed25519 $HostName 2>$null | Set-Content -LiteralPath $knownHosts -Encoding ascii
-  } finally {
-    $ErrorActionPreference = $prevEAP
+  # Mạng chập chờn nhất thời có thể khiến -T 10 không kịp lấy dòng key thật (chỉ
+  # còn lại dòng "#" banner) — thử lại vài lần với timeout dài hơn trước khi bỏ cuộc.
+  $gotHostKey = $false
+  for ($attempt = 1; $attempt -le 3; $attempt++) {
+    $prevEAP = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+      & ssh-keyscan -T (10 * $attempt) -t ed25519 $HostName 2>$null | Set-Content -LiteralPath $knownHosts -Encoding ascii
+    } finally {
+      $ErrorActionPreference = $prevEAP
+    }
+    $hasRealKeyLine = (Test-Path -LiteralPath $knownHosts) -and
+      (Get-Content -LiteralPath $knownHosts | Where-Object { $_ -notmatch '^\s*#' -and $_.Trim() -ne '' })
+    if ($LASTEXITCODE -eq 0 -and $hasRealKeyLine) { $gotHostKey = $true; break }
+    Write-Host "  (lần $attempt chưa lấy được host key thật, thử lại...)" -ForegroundColor DarkYellow
   }
-  if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $knownHosts)) {
+  if (-not $gotHostKey) {
     throw 'NO_GO: không lấy được SSH host key của production.'
   }
   $prevEAP = $ErrorActionPreference

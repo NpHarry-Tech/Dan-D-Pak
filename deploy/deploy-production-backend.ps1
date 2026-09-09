@@ -47,14 +47,23 @@ try {
   # not an error. But $ErrorActionPreference='Stop' promotes that line to a
   # terminating error BEFORE "2>$null" can discard it (Windows PowerShell 5.1
   # quirk with native commands). Relax the preference just for these two calls.
-  $prevEAP = $ErrorActionPreference
-  $ErrorActionPreference = 'Continue'
-  try {
-    & ssh-keyscan -T 10 -t ed25519 $HostName 2>$null | Set-Content -LiteralPath $knownHosts -Encoding ascii
-  } finally {
-    $ErrorActionPreference = $prevEAP
+  # A transient network hiccup can also make -T 10 return only the "#" banner
+  # without the real key line - retry a few times with a longer timeout first.
+  $gotHostKey = $false
+  for ($attempt = 1; $attempt -le 3; $attempt++) {
+    $prevEAP = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+      & ssh-keyscan -T (10 * $attempt) -t ed25519 $HostName 2>$null | Set-Content -LiteralPath $knownHosts -Encoding ascii
+    } finally {
+      $ErrorActionPreference = $prevEAP
+    }
+    $hasRealKeyLine = (Test-Path -LiteralPath $knownHosts) -and
+      (Get-Content -LiteralPath $knownHosts | Where-Object { $_ -notmatch '^\s*#' -and $_.Trim() -ne '' })
+    if ($LASTEXITCODE -eq 0 -and $hasRealKeyLine) { $gotHostKey = $true; break }
+    Write-Host "  (attempt $attempt did not get a real host key, retrying...)" -ForegroundColor DarkYellow
   }
-  if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $knownHosts)) {
+  if (-not $gotHostKey) {
     throw 'NO_GO: could not obtain production SSH host key for pinned comparison.'
   }
   $prevEAP = $ErrorActionPreference

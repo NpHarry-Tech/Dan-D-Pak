@@ -1,4 +1,4 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param(
   [Parameter(Mandatory = $true)][string]$Evidence,
   [string]$ExpectedHost = '42.96.18.70',
@@ -25,7 +25,13 @@ if (-not (Test-Path -LiteralPath $Evidence -PathType Leaf)) { throw "NO_GO: evid
 try { $gate = Get-Content -LiteralPath $Evidence -Raw | ConvertFrom-Json }
 catch { throw "NO_GO: evidence JSON is invalid: $($_.Exception.Message)" }
 
-$commit = (& git -C $root rev-parse HEAD 2>$null).Trim()
+$prevEAP = $ErrorActionPreference
+$ErrorActionPreference = 'Continue'
+try {
+  $commit = (& git -C $root rev-parse HEAD 2>$null).Trim()
+} finally {
+  $ErrorActionPreference = $prevEAP
+}
 if ($LASTEXITCODE -ne 0 -or $commit -notmatch '^[0-9a-f]{40}$') { throw 'NO_GO: cannot resolve current Git commit.' }
 $dirty = @(& git -C $root status --porcelain=v1 --untracked-files=all) |
   Where-Object { $_ -notmatch '^\?\? (\.codex-test-temp/|tmp/|runtime/|artifacts/)' }
