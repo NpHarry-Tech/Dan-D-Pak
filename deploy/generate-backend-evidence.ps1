@@ -158,7 +158,7 @@ container=`$(docker compose ps -q app)
 if [ -z "`$container" ]; then echo 'NO_APP_CONTAINER' >&2; exit 1; fi
 image_id=`$(docker inspect -f '{{.Image}}' "`$container")
 image_tag=`$(docker inspect -f '{{index .RepoTags 0}}' "`$image_id" 2>/dev/null || echo "`$image_id")
-health_ok=`$(docker compose exec -T app node -e "fetch('http://localhost:3000/health').then(async r=>{const b=await r.json();process.exit(r.ok&&b.ok&&b.database&&b.database.ok?0:1)}).catch(()=>process.exit(1))" >/dev/null 2>&1 && echo yes || echo no)
+health_ok=`$(docker compose exec -T app node -e "fetch('http://localhost:3000/health').then(async r=>{const b=await r.json();process.exit(r.ok&&b.ok&&b.database&&b.database.ok?0:1)}).catch(()=>process.exit(1))" </dev/null >/dev/null 2>&1 && echo yes || echo no)
 echo "ROLLBACK_IMAGE_ID=`$image_id"
 echo "ROLLBACK_IMAGE_TAG=`$image_tag"
 echo "ROLLBACK_HEALTH=`$health_ok"
