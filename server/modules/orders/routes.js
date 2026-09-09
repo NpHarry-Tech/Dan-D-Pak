@@ -2,7 +2,7 @@
 // Business rules stay in services/orders.js (+ history/printing/settings). This
 // module only wires HTTP shape → services, giữ NGUYÊN hành vi như khi còn ở api.js.
 import * as Orders from '../../services/orders.js';
-import { reverseOrderPayments } from '../../services/payments.js';
+import { reverseOrderPayments, buildOrderDiscountPlan } from '../../services/payments.js';
 import * as Auth from '../../services/auth.js';
 import * as History from '../../services/history.js';
 import * as Print from '../../services/printing.js';
@@ -180,6 +180,24 @@ api.get('/orders/:id', guardAny('sell', 'pay', 'kds', 'order.view'), wrap((req) 
     const e = new Error('Đơn hàng không tồn tại'); e.status = 404; throw e;
   }
   return order;
+}));
+// Preview giảm giá/CTKM cho đơn F&B TRƯỚC khi thanh toán — CHỈ ĐỌC (không ghi gì),
+// dùng CHUNG engine với Retail (buildOrderDiscountPlan) để bill pane hiện đúng số
+// tiền sẽ thu trước khi thu ngân bấm Thanh toán (voucher/CTKM chọn thử được, không
+// bị khoá bởi quyền 'discount' — quyền đó chỉ chặn lúc ÁP THẬT ở /orders/:id/pay).
+api.post('/orders/:id/discount-preview', guardAny('sell', 'pay'), wrap((req) => {
+  const branch_id = branch(req);
+  const order = Orders.getOrder(req.params.id);
+  if (order && !Auth.canAccessBranch(req.user, order.branch_id)) {
+    const e = new Error('Đơn hàng không tồn tại'); e.status = 404; throw e;
+  }
+  return buildOrderDiscountPlan(req.params.id, {
+    voucher_id: req.body?.voucher_id || null,
+    line_vouchers: req.body?.line_vouchers || null,
+    manual_discount: Number(req.body?.manual_discount) || 0,
+    customer: req.body?.customer || null,
+    branch_id,
+  });
 }));
 api.post('/orders/:id/confirm', guard('order.confirm'), wrap((req) => Orders.confirmPendingItems(req.params.id, req.body.item_ids, branch(req), actor(req))));
 api.post('/orders/:id/reject', guard('order.confirm'), wrap((req) => Orders.rejectPendingItems(req.params.id, req.body.item_ids, req.body.reason, branch(req), actor(req))));

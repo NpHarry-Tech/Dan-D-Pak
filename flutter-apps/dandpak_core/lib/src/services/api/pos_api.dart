@@ -66,6 +66,29 @@ extension ApiServicePosApi on ApiService {
     ));
   }
 
+  /// Preview giảm giá/CTKM cho đơn F&B TRƯỚC khi thanh toán — CHỈ ĐỌC, dùng
+  /// CHUNG engine với Retail (server: buildOrderDiscountPlan) nên số hiện ra
+  /// đúng y số sẽ thu khi bấm Thanh toán với cùng voucher/khách đã chọn.
+  Future<Map<String, dynamic>> orderDiscountPreview(
+    String orderId, {
+    String? voucherId,
+    Map<String, String>? lineVouchers,
+    double manualDiscount = 0,
+    Map<String, dynamic>? customer,
+  }) async {
+    return mapFrom(await postJson(
+      '/api/orders/$orderId/discount-preview',
+      body: {
+        if (voucherId != null) 'voucher_id': voucherId,
+        if (lineVouchers != null && lineVouchers.isNotEmpty)
+          'line_vouchers': lineVouchers,
+        'manual_discount': manualDiscount,
+        if (customer != null) 'customer': customer,
+      },
+      errorMessage: 'Không tính được giảm giá',
+    ));
+  }
+
   Future<Map<String, dynamic>> moveTable(
       String fromTableId, String toTableId) async {
     return mapFrom(await postJson(

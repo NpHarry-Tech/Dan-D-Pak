@@ -4,6 +4,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart' hide Category;
 import '../models/pos_models.dart';
+import '../models/retail_models.dart';
 import '../services/api_service.dart';
 import '../services/app_log.dart';
 import '../services/local_store.dart';
@@ -39,6 +40,17 @@ class PosProvider extends ChangeNotifier {
   // PIN Quản lý/Chủ đã nhập khi chỉnh giá dòng — gửi kèm submit (server bắt PIN).
   String? _lineOverridePin;
   Map<String, dynamic>? _selectedCustomer;
+
+  // CTKM/voucher cho đơn F&B — dùng CHUNG engine với Retail (buildOrderDiscountPlan
+  // ở server). orderVoucherId = CTKM áp cả bill; lineVouchers = CTKM sản phẩm CHỈ
+  // áp được cho dòng hàng retail (item.isRetail, có sku_id) đã gửi bếp/lưu (persisted:
+  // server ghép theo order_item_id) — món F&B thường (không sku_id) không dính được,
+  // đúng luật ở vouchers.js. _discountPlan là kết quả preview mới nhất từ server.
+  List<RetailVoucher> _activeVouchers = [];
+  String? _orderVoucherId;
+  final Map<String, String> _lineVouchers = {};
+  Map<String, dynamic>? _discountPlan;
+  bool _isPreviewingDiscount = false;
 
   bool _isLoadingFloor = false;
   bool _isLoadingMenu = false;
@@ -294,6 +306,9 @@ class PosProvider extends ChangeNotifier {
     _activeBillNo = null;
     _activeDiscount = 0.0;
     _selectedCustomer = null;
+    _orderVoucherId = null;
+    _lineVouchers.clear();
+    _discountPlan = null;
     notifyListeners();
 
     if (table == null) return;
@@ -448,12 +463,121 @@ class PosProvider extends ChangeNotifier {
   void setDiscount(double amount) {
     _activeDiscount = amount;
     notifyListeners();
+    refreshDiscountPreview();
   }
 
   void setCustomer(Map<String, dynamic>? customer) {
     _selectedCustomer =
         customer == null ? null : Map<String, dynamic>.from(customer);
     notifyListeners();
+    refreshDiscountPreview();
+  }
+
+  // ── CTKM/voucher (dùng CHUNG engine với Retail — xem services/payments.js
+  // buildOrderDiscountPlan) ──────────────────────────────────────────────────
+  List<RetailVoucher> get activeVouchers => _activeVouchers;
+  String? get orderVoucherId => _orderVoucherId;
+  Map<String, String> get lineVouchers => _lineVouchers;
+  bool get isPreviewingDiscount => _isPreviewingDiscount;
+
+  /// Danh sách CTKM ÁP ĐƯỢC cho toàn bill (scope 'order') — CTKM sản phẩm
+  /// (sku/all_sku/combo) chỉ chọn được TỪNG DÒNG retail, xem [lineVoucherOptionsFor].
+  List<RetailVoucher> get orderVoucherOptions =>
+      _activeVouchers.where((v) => v.isOrder).toList();
+
+  /// CTKM sản phẩm áp được cho MỘT dòng retail cụ thể trong đơn F&B (dòng
+  /// thêm qua "Thêm retail", có sku_id) — món F&B thường không có lựa chọn nào
+  /// vì server luôn từ chối (đúng luật ở vouchers.js).
+  List<RetailVoucher> lineVoucherOptionsFor(CartItem item) {
+    if (!item.item.isRetail) return const [];
+    return _activeVouchers
+        .where((v) => v.isSku || v.isAllSku)
+        .where((v) => v.appliesToSku(item.item.id))
+        .toList();
+  }
+
+  /// Kết quả preview mới nhất từ server (subtotal/discount/total/appliedSkuPromos…).
+  Map<String, dynamic>? get discountPlan => _discountPlan;
+  List<Map<String, dynamic>> get appliedPromos {
+    final list = _discountPlan?['appliedSkuPromos'];
+    return list is List
+        ? list
+            .whereType<Map>()
+            .map((e) => Map<String, dynamic>.from(e))
+            .toList()
+        : const [];
+  }
+
+  /// Giảm giá/Tổng cộng HIỂN THỊ: dùng plan đã preview (gồm voucher + ưu đãi
+  /// khách + giảm tay) nếu có, không thì rơi về giảm tay đơn thuần như cũ.
+  double get displayDiscount {
+    final d = _discountPlan?['discount'];
+    return d is num ? d.toDouble() : _activeDiscount;
+  }
+
+  double get displayTotal {
+    final t = _discountPlan?['total'];
+    return t is num ? t.toDouble() : cartTotal;
+  }
+
+  Future<void> loadActiveVouchers() async {
+    try {
+      final rows = await apiService.getActiveVouchers();
+      _activeVouchers = rows
+          .whereType<Map>()
+          .map((e) => RetailVoucher.fromJson(Map<String, dynamic>.from(e)))
+          .toList();
+      notifyListeners();
+    } catch (e) {
+      dlog('Error loading active vouchers: $e');
+    }
+  }
+
+  void setOrderVoucher(String? voucherId) {
+    _orderVoucherId = voucherId;
+    notifyListeners();
+    refreshDiscountPreview();
+  }
+
+  /// [voucherId] null = bỏ CTKM đang chọn cho dòng này.
+  void setLineVoucher(CartItem item, String? voucherId) {
+    if (item.orderItemId.isEmpty) return; // chưa gửi bếp/lưu → chưa có gì để áp
+    if (voucherId == null || voucherId.isEmpty) {
+      _lineVouchers.remove(item.orderItemId);
+    } else {
+      _lineVouchers[item.orderItemId] = voucherId;
+    }
+    notifyListeners();
+    refreshDiscountPreview();
+  }
+
+  /// Gọi lại server tính THỬ giảm giá (KHÔNG ghi gì) mỗi khi voucher/khách/giảm
+  /// tay đổi, để bill pane hiện đúng số tiền sẽ thu trước khi bấm Thanh toán.
+  Future<void> refreshDiscountPreview() async {
+    final orderId = _activeOrderId;
+    if (orderId == null) {
+      _discountPlan = null;
+      notifyListeners();
+      return;
+    }
+    _isPreviewingDiscount = true;
+    notifyListeners();
+    try {
+      final plan = await apiService.orderDiscountPreview(
+        orderId,
+        voucherId: _orderVoucherId,
+        lineVouchers: _lineVouchers,
+        manualDiscount: _activeDiscount,
+        customer: _selectedCustomer,
+      );
+      _discountPlan = plan;
+    } catch (e) {
+      dlog('Error previewing discount: $e');
+      _discountPlan = null;
+    } finally {
+      _isPreviewingDiscount = false;
+      notifyListeners();
+    }
   }
 
   bool _areModifiersEqual(List<Modifier> a, List<Modifier> b) {
@@ -562,6 +686,11 @@ class PosProvider extends ChangeNotifier {
     _mergeSubmittedItems(orderRes, unsaved);
     notifyListeners();
     await loadFloor();
+    // Giỏ vừa đổi (thêm/gửi món mới) → số CTKM đã preview trước đó không còn
+    // đúng nữa (subtotal đổi), làm mới ngay để bill pane không hiện số cũ.
+    if (_orderVoucherId != null || _lineVouchers.isNotEmpty) {
+      unawaited(refreshDiscountPreview());
+    }
   }
 
   void _mergeSubmittedItems(
@@ -603,6 +732,9 @@ class PosProvider extends ChangeNotifier {
     _applyOrderDetails(orderDetails);
     await loadFloor();
     notifyListeners();
+    if (_orderVoucherId != null || _lineVouchers.isNotEmpty) {
+      unawaited(refreshDiscountPreview());
+    }
   }
 
   Future<void> moveSelectedTable(String targetTableId) async {
@@ -718,7 +850,9 @@ class PosProvider extends ChangeNotifier {
     if (targetOrderId == null || targetOrderId.isEmpty) {
       throw Exception('Thiếu mã hóa đơn để thanh toán.');
     }
-    final amountDue = math.max(0.0, totalOverride ?? cartTotal);
+    // displayTotal đã gồm CTKM/voucher preview (nếu có chọn) — cartTotal thuần
+    // chỉ trừ giảm tay nên thu thiếu nếu chốt số theo nó lúc có voucher.
+    final amountDue = math.max(0.0, totalOverride ?? displayTotal);
     final installmentAmount = math.max(0.0, paidAmount);
     if (amountDue <= 0 || installmentAmount <= 0) {
       throw Exception('Hóa đơn không có số tiền cần thanh toán.');
@@ -751,6 +885,8 @@ class PosProvider extends ChangeNotifier {
             }
           ],
           'discount': discountOverride ?? _activeDiscount,
+          if (_orderVoucherId != null) 'voucher_id': _orderVoucherId,
+          if (_lineVouchers.isNotEmpty) 'line_vouchers': _lineVouchers,
           if ((customerOverride ?? _selectedCustomer) != null)
             'customer': customerOverride ?? _selectedCustomer,
           if (securityPin != null && securityPin.isNotEmpty)
@@ -769,6 +905,9 @@ class PosProvider extends ChangeNotifier {
           _activeBillNo = null;
           _activeDiscount = 0.0;
           _selectedCustomer = null;
+          _orderVoucherId = null;
+          _lineVouchers.clear();
+          _discountPlan = null;
         } else {
           await reloadActiveOrder();
         }

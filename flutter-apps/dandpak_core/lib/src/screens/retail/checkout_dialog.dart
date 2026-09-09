@@ -68,6 +68,10 @@ class CheckoutDialog extends StatefulWidget {
   // (một finalizer, idempotent). null = đơn legacy (không canonical).
   final String? mdOrderId;
   final String? mdDeviceId;
+  // CTKM sản phẩm CHỌN THEO DÒNG cho đơn ĐÃ CÓ SẴN (orderId, vd F&B) —
+  // { <order_item_id>: <voucher_id> }. Đơn Bán lẻ MỚI (orderId null) đã tự gửi
+  // voucher theo dòng qua cart[].voucherId, KHÔNG cần field này.
+  final Map<String, String> lineVouchers;
 
   CheckoutDialog({
     super.key,
@@ -94,6 +98,7 @@ class CheckoutDialog extends StatefulWidget {
     this.cartVersion,
     this.mdOrderId,
     this.mdDeviceId,
+    this.lineVouchers = const {},
   });
 
   bool get existingOrder => orderId?.trim().isNotEmpty == true;
@@ -715,6 +720,8 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                 // lần nữa lên trên phần tự tính — double-count, "Số tiền thanh toán
                 // không tiền mặt vượt quá số còn nợ" dù thu đúng đủ tiền.
                 'voucher_id': widget.voucher?.id,
+                if (widget.lineVouchers.isNotEmpty)
+                  'line_vouchers': widget.lineVouchers,
                 'manual_discount': _adjustment.round(),
                 'customer': widget.customer?.toCheckoutCustomer(),
                 'invoice_customer': invoiceCustomer,

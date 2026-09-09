@@ -876,3 +876,91 @@ class _MenuPickerDialogState extends State<_MenuPickerDialog> {
     );
   }
 }
+
+/// Chọn CTKM cho F&B — dùng chung [RetailVoucher] + engine server với Retail
+/// (chỉ giao diện khác cho phù hợp F&B: danh sách rút gọn, không cần nhập mã
+/// tay như "Voucher ngoài" bên Retail, vì CTKM chọn tại quầy luôn đã ACTIVE).
+/// Trả về: null = đóng không đổi gì, '' = bỏ chọn CTKM, id = CTKM vừa chọn.
+class _FnbVoucherPickerDialog extends StatelessWidget {
+  final String title;
+  final List<RetailVoucher> vouchers;
+  final String? selectedId;
+
+  _FnbVoucherPickerDialog({
+    required this.title,
+    required this.vouchers,
+    required this.selectedId,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      backgroundColor: DanColors.surface,
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxWidth: 480, maxHeight: 560),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: EdgeInsets.fromLTRB(20, 18, 14, 10),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      title,
+                      style: TextStyle(fontSize: 17, fontWeight: FontWeight.w900),
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    icon: Icon(Icons.close, color: DanColors.faint),
+                  ),
+                ],
+              ),
+            ),
+            Divider(height: 1, color: DanColors.border),
+            Flexible(
+              child: vouchers.isEmpty
+                  ? Padding(
+                      padding: EdgeInsets.all(24),
+                      child: Text(
+                        t('Chưa có CTKM nào đang chạy áp được ở đây.'),
+                        style: TextStyle(color: DanColors.muted),
+                        textAlign: TextAlign.center,
+                      ),
+                    )
+                  : ListView(
+                      shrinkWrap: true,
+                      padding: EdgeInsets.symmetric(vertical: 8),
+                      children: [
+                        ListTile(
+                          leading: Icon(Icons.block, color: DanColors.faint),
+                          title: Text(t('Không áp dụng CTKM')),
+                          selected: selectedId == null || selectedId!.isEmpty,
+                          onTap: () => Navigator.of(context).pop(''),
+                        ),
+                        for (final v in vouchers)
+                          ListTile(
+                            leading: Icon(Icons.local_activity_outlined,
+                                color: DanColors.brand),
+                            title: Text(v.name,
+                                style: TextStyle(fontWeight: FontWeight.w700)),
+                            subtitle: Text(
+                              v.scheduleLabel,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            selected: selectedId == v.id,
+                            selectedTileColor:
+                                DanColors.brand.withValues(alpha: .08),
+                            onTap: () => Navigator.of(context).pop(v.id),
+                          ),
+                      ],
+                    ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}

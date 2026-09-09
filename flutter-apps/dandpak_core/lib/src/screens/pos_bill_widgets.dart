@@ -16,6 +16,8 @@ class _BillPane extends StatelessWidget {
     required this.onSplit,
     required this.onCustomer,
     required this.onDiscount,
+    required this.onVoucher,
+    required this.onPickLineVoucher,
     required this.onPrint,
     required this.onSendKitchen,
     required this.onCancelItem,
@@ -42,6 +44,8 @@ class _BillPane extends StatelessWidget {
   final VoidCallback onSplit;
   final VoidCallback onCustomer;
   final VoidCallback onDiscount;
+  final VoidCallback onVoucher;
+  final ValueChanged<CartItem> onPickLineVoucher;
   final VoidCallback onPrint;
   final VoidCallback onSendKitchen;
   final ValueChanged<CartItem> onCancelItem;
@@ -263,6 +267,19 @@ class _BillPane extends StatelessWidget {
                       selectMode: multiCancelMode,
                       selected: multiCancelSelection.contains(item),
                       onToggleSelect: () => onToggleCancelSelection(item),
+                      // CTKM sản phẩm (combo/mua-X-tặng-1) chỉ áp được cho dòng
+                      // retail (có sku_id) — món F&B thường không có lựa chọn.
+                      appliedLineVoucherName: pos.lineVouchers
+                              .containsKey(item.orderItemId)
+                          ? pos.activeVouchers
+                              .where((v) =>
+                                  v.id == pos.lineVouchers[item.orderItemId])
+                              .map((v) => v.name)
+                              .firstOrNull
+                          : null,
+                      onPickVoucher: item.item.isRetail && item.persisted
+                          ? () => onPickLineVoucher(item)
+                          : null,
                     );
                   },
                 ),
@@ -287,9 +304,11 @@ class _BillPane extends StatelessWidget {
         if (hasItems)
           _BillFooter(
             subtotal: pos.cartSubtotal,
-            discount: pos.activeDiscount,
+            // displayDiscount/displayTotal gồm CTKM/voucher đã preview (nếu có
+            // chọn) — rơi về giảm tay thuần khi chưa chọn CTKM nào.
+            discount: pos.displayDiscount,
             vat: pos.cartVat,
-            total: pos.cartTotal,
+            total: pos.displayTotal,
             saving: pos.isSavingOrder || openingPayment,
             // Nút Thanh toán KHÔNG còn chết khi còn món chưa gửi bếp — nó bấm được
             // và báo rõ "gửi bếp trước" (xem _BillFooter). Trước đây nút trơ ra,
@@ -298,8 +317,16 @@ class _BillPane extends StatelessWidget {
             customer: pos.selectedCustomer,
             hasPending: hasPending,
             money: money,
+            voucherName: pos.orderVoucherId == null
+                ? null
+                : pos.activeVouchers
+                    .where((v) => v.id == pos.orderVoucherId)
+                    .map((v) => v.name)
+                    .firstOrNull,
+            previewingDiscount: pos.isPreviewingDiscount,
             onCustomer: onCustomer,
             onDiscount: onDiscount,
+            onVoucher: onVoucher,
             onPrint: onPrint,
             onSendKitchen: onSendKitchen,
             onPayment: onPayment,
@@ -375,6 +402,8 @@ class _BillItemRow extends StatelessWidget {
     this.selectMode = false,
     this.selected = false,
     this.onToggleSelect,
+    this.appliedLineVoucherName,
+    this.onPickVoucher,
   });
 
   final CartItem item;
@@ -385,6 +414,10 @@ class _BillItemRow extends StatelessWidget {
   final bool selectMode;
   final bool selected;
   final VoidCallback? onToggleSelect;
+  // CTKM sản phẩm cho dòng RETAIL (có sku_id) trong đơn F&B — null = dòng
+  // không đủ điều kiện (món F&B thường/chưa gửi bếp) nên không hiện icon.
+  final String? appliedLineVoucherName;
+  final VoidCallback? onPickVoucher;
 
   @override
   Widget build(BuildContext context) {
@@ -469,6 +502,47 @@ class _BillItemRow extends StatelessWidget {
                         Text(meta,
                             style: TextStyle(
                                 color: DanColors.muted, fontSize: 11)),
+                      if (onPickVoucher != null)
+                        InkWell(
+                          onTap: onPickVoucher,
+                          borderRadius: BorderRadius.circular(99),
+                          child: Container(
+                            padding: EdgeInsets.symmetric(
+                                horizontal: 8, vertical: 3),
+                            decoration: BoxDecoration(
+                              color: DanColors.brand.withValues(
+                                  alpha:
+                                      appliedLineVoucherName != null ? .13 : 0),
+                              borderRadius: BorderRadius.circular(99),
+                              border: Border.all(
+                                color: appliedLineVoucherName != null
+                                    ? DanColors.brand
+                                    : DanColors.border,
+                              ),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.card_giftcard,
+                                    size: 11,
+                                    color: appliedLineVoucherName != null
+                                        ? DanColors.brand
+                                        : DanColors.muted),
+                                SizedBox(width: 3),
+                                Text(
+                                  appliedLineVoucherName ?? t('CTKM'),
+                                  style: TextStyle(
+                                    fontSize: 10.5,
+                                    fontWeight: FontWeight.w800,
+                                    color: appliedLineVoucherName != null
+                                        ? DanColors.brand
+                                        : DanColors.muted,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
                     ],
                   ),
                 ],
@@ -545,8 +619,11 @@ class _BillFooter extends StatelessWidget {
     required this.customer,
     required this.hasPending,
     required this.money,
+    this.voucherName,
+    this.previewingDiscount = false,
     required this.onCustomer,
     required this.onDiscount,
+    required this.onVoucher,
     required this.onPrint,
     required this.onSendKitchen,
     required this.onPayment,
@@ -561,8 +638,12 @@ class _BillFooter extends StatelessWidget {
   final Map<String, dynamic>? customer;
   final bool hasPending;
   final String Function(num value) money;
+  // CTKM/voucher đang áp cho cả bill — null = chưa chọn.
+  final String? voucherName;
+  final bool previewingDiscount;
   final VoidCallback onCustomer;
   final VoidCallback onDiscount;
+  final VoidCallback onVoucher;
   final VoidCallback onPrint;
   final VoidCallback onSendKitchen;
   final VoidCallback onPayment;
@@ -578,9 +659,16 @@ class _BillFooter extends StatelessWidget {
         children: [
           _CustomerLine(customer: customer, onTap: onCustomer),
           SizedBox(height: 8),
+          _VoucherLine(voucherName: voucherName, onTap: onVoucher),
+          SizedBox(height: 8),
           _BillTotalLine(label: t('Tạm tính'), value: money(subtotal)),
           if (discount > 0)
-            _BillTotalLine(label: t('Giảm giá'), value: '-${money(discount)}'),
+            _BillTotalLine(
+              label: previewingDiscount
+                  ? '${t('Giảm giá')} (${t('đang tính')}…)'
+                  : t('Giảm giá'),
+              value: '-${money(discount)}',
+            ),
           if (vat > 0)
             _BillTotalLine(label: t('Trong đó VAT'), value: money(vat)),
           SizedBox(height: 5),
@@ -708,6 +796,66 @@ class _CustomerLine extends StatelessWidget {
                 padding: EdgeInsets.symmetric(horizontal: 10),
               ),
               child: Text(t('Chọn khách')),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// CTKM/voucher áp cho CẢ BILL (scope 'order') — dùng chung engine với
+/// Retail (server: buildOrderDiscountPlan/vouchers.js), chỉ giao diện khác
+/// cho phù hợp F&B. CTKM sản phẩm (combo/mua-X-tặng-1) chọn TỪNG DÒNG retail,
+/// xem icon trên _BillItemRow — món F&B thường không dính được (đúng luật).
+class _VoucherLine extends StatelessWidget {
+  _VoucherLine({required this.voucherName, required this.onTap});
+
+  final String? voucherName;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final applied = voucherName != null && voucherName!.isNotEmpty;
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(10),
+      child: Container(
+        padding: EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+        decoration: BoxDecoration(
+          color: applied
+              ? DanColors.brand.withValues(alpha: .08)
+              : DanColors.surface2,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+              color: applied ? DanColors.brand : DanColors.border),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.local_activity_outlined,
+                size: 16,
+                color: applied ? DanColors.brand : DanColors.muted),
+            SizedBox(width: 7),
+            Expanded(
+              child: Text(
+                applied ? voucherName! : t('Chưa chọn CTKM'),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w800,
+                  color: applied ? DanColors.brand : null,
+                ),
+              ),
+            ),
+            SizedBox(width: 8),
+            OutlinedButton(
+              onPressed: onTap,
+              style: OutlinedButton.styleFrom(
+                minimumSize: Size(0, 34),
+                padding: EdgeInsets.symmetric(horizontal: 10),
+              ),
+              child: Text(t('Chọn CTKM')),
             ),
           ],
         ),

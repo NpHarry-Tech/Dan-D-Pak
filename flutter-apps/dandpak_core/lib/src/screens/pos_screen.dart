@@ -74,6 +74,7 @@ class _PosScreenState extends State<PosScreen> {
       pos.loadMenu();
       pos.loadShift();
       pos.loadOperationsConfig();
+      pos.loadActiveVouchers();
 
       _socketService.connect(
         baseUrl: auth.serverUrl,
@@ -103,6 +104,7 @@ class _PosScreenState extends State<PosScreen> {
         event == 'table:updated' ||
         event == 'payment:done' ||
         event == 'shift:updated' ||
+        event == 'vouchers:updated' ||
         _menuDirty ||
         _configDirty) {
       _socketRefresh(() {
@@ -112,6 +114,7 @@ class _PosScreenState extends State<PosScreen> {
         pos.loadShift();
         if (_menuDirty) pos.loadMenu();
         if (_configDirty) pos.loadOperationsConfig();
+        if (event == 'vouchers:updated') pos.loadActiveVouchers();
         _menuDirty = false;
         _configDirty = false;
         _loadPendingCount();
@@ -204,6 +207,17 @@ class _PosScreenState extends State<PosScreen> {
   }
 
   Future<Map<String, dynamic>?> _showCheckoutDialog(PosProvider pos) {
+    // Có preview CTKM (đã chọn voucher đơn/dòng) → hiện đúng số đã tính server-
+    // authoritative; chưa chọn gì thì rơi về giảm tay thuần như trước đây.
+    final plan = pos.discountPlan;
+    final breakdown = plan?['breakdown'] is Map
+        ? Map<String, dynamic>.from(plan!['breakdown'] as Map)
+        : null;
+    final orderVoucher = pos.orderVoucherId == null
+        ? null
+        : pos.activeVouchers
+            .where((v) => v.id == pos.orderVoucherId)
+            .firstOrNull;
     return showDialog<Map<String, dynamic>>(
       context: context,
       builder: (_) => CheckoutDialog(
@@ -212,17 +226,19 @@ class _PosScreenState extends State<PosScreen> {
         operationsConfig: pos.operationsConfig ?? {},
         invoiceLabel: pos.activeBillNo ?? pos.activeOrderId ?? 'POS',
         customer: _checkoutCustomer(pos.selectedCustomer),
-        voucher: null,
+        voucher: orderVoucher,
         subtotal: pos.cartSubtotal,
-        productDiscount: 0,
-        orderDiscount: pos.activeDiscount,
-        customerDiscount: 0,
-        manualDiscount: 0,
-        total: pos.cartTotal,
+        productDiscount: (breakdown?['product_promos'] as num?) ?? 0,
+        orderDiscount:
+            (breakdown?['voucher'] as num?) ?? pos.activeDiscount,
+        customerDiscount: (breakdown?['customer_perk'] as num?) ?? 0,
+        manualDiscount: (breakdown?['manual'] as num?) ?? 0,
+        total: pos.displayTotal,
         vatAmount: pos.cartVat,
         orderId: pos.activeOrderId,
         itemCount: pos.cart.length,
         channelLabel: 'Checkout',
+        lineVouchers: pos.lineVouchers,
       ),
     );
   }
@@ -238,6 +254,7 @@ class _PosScreenState extends State<PosScreen> {
     final fullySettled = receipt['fully_settled'] != false;
     final table = pos.selectedTable;
     if (fullySettled) {
+      if (_pickingMenu) _closeMenuPicker();
       await pos.selectTable(null);
     } else if (table != null) {
       await pos.selectTable(table); // refresh: còn nợ bao nhiêu, đơn vẫn mở
@@ -811,6 +828,40 @@ class _PosScreenState extends State<PosScreen> {
     pos.setDiscount(math.max(0, amount));
   }
 
+  /// Chọn CTKM áp cho CẢ BILL (scope 'order') — dùng chung engine với Retail
+  /// (server: buildOrderDiscountPlan), chỉ khác giao diện cho phù hợp F&B.
+  Future<void> _pickOrderVoucher() async {
+    final pos = context.read<PosProvider>();
+    final result = await showDialog<String>(
+      context: context,
+      builder: (_) => _FnbVoucherPickerDialog(
+        title: t('Chọn CTKM cho cả bill'),
+        vouchers: pos.orderVoucherOptions,
+        selectedId: pos.orderVoucherId,
+      ),
+    );
+    if (result == null) return;
+    pos.setOrderVoucher(result.isEmpty ? null : result);
+  }
+
+  /// CTKM SẢN PHẨM (combo/mua-X-tặng-1) — chỉ áp được cho dòng RETAIL thêm qua
+  /// "Thêm retail" trong đơn F&B (có sku_id); món F&B thường không có lựa chọn
+  /// nào vì server luôn từ chối (đúng luật ở vouchers.js).
+  Future<void> _pickLineVoucher(CartItem item) async {
+    final pos = context.read<PosProvider>();
+    final options = pos.lineVoucherOptionsFor(item);
+    final result = await showDialog<String>(
+      context: context,
+      builder: (_) => _FnbVoucherPickerDialog(
+        title: t('CTKM cho "${item.item.name}"'),
+        vouchers: options,
+        selectedId: pos.lineVouchers[item.orderItemId],
+      ),
+    );
+    if (result == null) return;
+    pos.setLineVoucher(item, result.isEmpty ? null : result);
+  }
+
   Future<String?> _promptText({
     required String title,
     required String label,
@@ -1374,7 +1425,12 @@ class _PosScreenState extends State<PosScreen> {
         isFree: _isFree,
         isPaying: _isPaying,
         isCalling: _isCalling,
-        onClearSelection: () => context.read<PosProvider>().selectTable(null),
+        onClearSelection: () {
+          // Đóng bàn thì panel thêm món/retail bên trái phải ẩn theo — 2 phần
+          // đó phụ thuộc nhân quả vào bàn đang chọn, không tự đứng riêng được.
+          if (_pickingMenu) _closeMenuPicker();
+          context.read<PosProvider>().selectTable(null);
+        },
       ),
     );
   }
@@ -1399,13 +1455,18 @@ class _PosScreenState extends State<PosScreen> {
         onSplit: _splitBill,
         onCustomer: _pickCustomer,
         onDiscount: _setDiscount,
+        onVoucher: _pickOrderVoucher,
+        onPickLineVoucher: _pickLineVoucher,
         onPrint: _printTempBill,
         onSendKitchen: _sendKitchen,
         onCancelItem: _cancelItem,
         onEditItem: _editCartItem,
         onPayment: _openCheckoutDialog,
         openingPayment: _openingPayment,
-        onClose: () => pos.selectTable(null),
+        onClose: () {
+          if (_pickingMenu) _closeMenuPicker();
+          pos.selectTable(null);
+        },
         multiCancelMode: _multiCancelMode,
         multiCancelSelection: _multiCancelSelection,
         onToggleMultiCancelMode: _toggleMultiCancelMode,
@@ -1425,8 +1486,10 @@ class _PosScreenState extends State<PosScreen> {
 
     return CallbackShortcuts(
       bindings: {
-        const SingleActivator(LogicalKeyboardKey.escape): () =>
-            context.read<PosProvider>().selectTable(null),
+        const SingleActivator(LogicalKeyboardKey.escape): () {
+          if (_pickingMenu) _closeMenuPicker();
+          context.read<PosProvider>().selectTable(null);
+        },
       },
       child: Focus(
         autofocus: true,
