@@ -248,7 +248,16 @@ class _BillPane extends StatelessWidget {
               ),
             ),
           ),
+        // flex CAO HƠN footer bên dưới: trên màn thấp (tablet), danh sách món
+        // ưu tiên được nhiều chỗ hơn — trước đây footer (Container không co
+        // giãn) cứ đòi đủ chiều cao tự nhiên của nó, gặp màn thấp thì Expanded
+        // ở đây bị ép về 0 và cả danh sách món BIẾN MẤT hoàn toàn (không báo
+        // lỗi ở bản release) dù bill vẫn có món, tổng tiền vẫn đúng — cashier
+        // tưởng chọn món xong mà không thấy gì hiện lên. Đổi footer thành
+        // Flexible+cuộn riêng bên dưới để 2 bên CHIA SẺ chỗ trống thay vì bên
+        // này chiếm hết của bên kia.
         Expanded(
+          flex: 3,
           child: !hasItems
               ? _BillEmpty(
                   title: t('Bàn chưa có order'),
@@ -308,35 +317,45 @@ class _BillPane extends StatelessWidget {
               ),
             ),
           ),
+        // Flexible (loose) + cuộn riêng: footer có khách/CTKM/tổng/nút thanh
+        // toán — nội dung dài dần theo tính năng (mới thêm dòng CTKM hôm nay).
+        // Trên màn rộng vẫn hiện đủ như cũ (thừa chỗ thì không cuộn); trên màn
+        // thấp mà tổng chiều cao không đủ, PHẦN NÀY tự cuộn thay vì cướp hết
+        // chỗ của danh sách món phía trên (xem Expanded flex:3 ở trên).
         if (hasItems)
-          _BillFooter(
-            subtotal: pos.cartSubtotal,
-            // displayDiscount/displayTotal gồm CTKM/voucher đã preview (nếu có
-            // chọn) — rơi về giảm tay thuần khi chưa chọn CTKM nào.
-            discount: pos.displayDiscount,
-            vat: pos.cartVat,
-            total: pos.displayTotal,
-            saving: pos.isSavingOrder || openingPayment,
-            // Nút Thanh toán KHÔNG còn chết khi còn món chưa gửi bếp — nó bấm được
-            // và báo rõ "gửi bếp trước" (xem _BillFooter). Trước đây nút trơ ra,
-            // thu ngân bấm không thấy gì nên tưởng lỗi.
-            canPay: hasItems && !openingPayment,
-            customer: pos.selectedCustomer,
-            hasPending: hasPending,
-            money: money,
-            voucherName: pos.orderVoucherId == null
-                ? null
-                : pos.activeVouchers
-                    .where((v) => v.id == pos.orderVoucherId)
-                    .map((v) => v.name)
-                    .firstOrNull,
-            previewingDiscount: pos.isPreviewingDiscount,
-            onCustomer: onCustomer,
-            onDiscount: onDiscount,
-            onVoucher: onVoucher,
-            onPrint: onPrint,
-            onSendKitchen: onSendKitchen,
-            onPayment: onPayment,
+          Flexible(
+            flex: 2,
+            child: SingleChildScrollView(
+              child: _BillFooter(
+                subtotal: pos.cartSubtotal,
+                // displayDiscount/displayTotal gồm CTKM/voucher đã preview (nếu có
+                // chọn) — rơi về giảm tay thuần khi chưa chọn CTKM nào.
+                discount: pos.displayDiscount,
+                vat: pos.cartVat,
+                total: pos.displayTotal,
+                saving: pos.isSavingOrder || openingPayment,
+                // Nút Thanh toán KHÔNG còn chết khi còn món chưa gửi bếp — nó bấm được
+                // và báo rõ "gửi bếp trước" (xem _BillFooter). Trước đây nút trơ ra,
+                // thu ngân bấm không thấy gì nên tưởng lỗi.
+                canPay: hasItems && !openingPayment,
+                customer: pos.selectedCustomer,
+                hasPending: hasPending,
+                money: money,
+                voucherName: pos.orderVoucherId == null
+                    ? null
+                    : pos.activeVouchers
+                        .where((v) => v.id == pos.orderVoucherId)
+                        .map((v) => v.name)
+                        .firstOrNull,
+                previewingDiscount: pos.isPreviewingDiscount,
+                onCustomer: onCustomer,
+                onDiscount: onDiscount,
+                onVoucher: onVoucher,
+                onPrint: onPrint,
+                onSendKitchen: onSendKitchen,
+                onPayment: onPayment,
+              ),
+            ),
           ),
       ],
     );
