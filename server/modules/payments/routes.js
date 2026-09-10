@@ -60,6 +60,7 @@ export function registerPaymentRoutes(api, {
       line_vouchers: lineVouchers,
       manual_discount: manualDiscount,
       customer: req.body.customer || null,
+      selected_combos: Array.isArray(req.body.selected_combos) ? req.body.selected_combos : null,
       branch_id,
     });
     // Ghi voucher đơn + CTKM từng dòng vào đơn để hóa đơn/lịch sử hiện giống Retail.

@@ -52,6 +52,11 @@ class PosProvider extends ChangeNotifier {
   Map<String, dynamic>? _discountPlan;
   bool _isPreviewingDiscount = false;
 
+  // Combo (Option B, giống Retail — xem combo_support.dart): các dòng cùng
+  // comboId trong _cart gộp thành 1 combo. selectedComboIds gửi server để
+  // server CHỈ áp đúng combo đã chọn (không tự áp thêm combo khác).
+  int _comboSeq = 0;
+
   bool _isLoadingFloor = false;
   bool _isLoadingMenu = false;
   bool _isLoadingShift = false;
@@ -569,6 +574,10 @@ class PosProvider extends ChangeNotifier {
         lineVouchers: _lineVouchers,
         manualDiscount: _activeDiscount,
         customer: _selectedCustomer,
+        // LUÔN gửi (kể cả rỗng) để ép opt-in giống Retail POS — không gửi gì
+        // thì server coi null = tự áp MỌI combo khớp giỏ (hành vi cũ), có thể
+        // áp nhầm combo thu ngân chưa hề chọn.
+        selectedCombos: selectedComboIds,
       );
       _discountPlan = plan;
     } catch (e) {
@@ -688,7 +697,7 @@ class PosProvider extends ChangeNotifier {
     await loadFloor();
     // Giỏ vừa đổi (thêm/gửi món mới) → số CTKM đã preview trước đó không còn
     // đúng nữa (subtotal đổi), làm mới ngay để bill pane không hiện số cũ.
-    if (_orderVoucherId != null || _lineVouchers.isNotEmpty) {
+    if (_hasActivePromoSelection) {
       unawaited(refreshDiscountPreview());
     }
   }
@@ -732,7 +741,7 @@ class PosProvider extends ChangeNotifier {
     _applyOrderDetails(orderDetails);
     await loadFloor();
     notifyListeners();
-    if (_orderVoucherId != null || _lineVouchers.isNotEmpty) {
+    if (_hasActivePromoSelection) {
       unawaited(refreshDiscountPreview());
     }
   }
@@ -832,6 +841,81 @@ class PosProvider extends ChangeNotifier {
     await apiService.cancelItemsBatch(_activeOrderId!, persistedIds, reason,
         managerPin: managerPin);
     await reloadActiveOrder();
+  }
+
+  // ── Combo (Option B, dùng CHUNG với Retail — xem combo_support.dart) ───────
+  // Combo là 1 item bấm chọn ở "Thêm retail": khách/thu ngân chọn đủ N SKU
+  // (vị nào cũng được) trong tập cho phép, giỏ gộp các SKU đó thành 1 nhóm
+  // gắn chung comboId. Server áp CHÍNH XÁC giá combo qua selected_combos (xem
+  // buildOrderDiscountPlan) — y hệt cách Retail POS đã làm.
+  List<RetailVoucher> get comboVouchers =>
+      _activeVouchers.where((v) => v.isCombo && v.comboQty > 0).toList();
+
+  Map<String, List<CartItem>> get comboItemGroups {
+    final map = <String, List<CartItem>>{};
+    for (final c in _cart) {
+      if (c.comboId != null) (map[c.comboId!] ??= <CartItem>[]).add(c);
+    }
+    return map;
+  }
+
+  List<String> get selectedComboIds =>
+      comboItemGroups.keys.map((id) => id.split('#').first).toSet().toList();
+
+  bool get _hasActivePromoSelection =>
+      _orderVoucherId != null ||
+      _lineVouchers.isNotEmpty ||
+      selectedComboIds.isNotEmpty;
+
+  int comboCountFor(String comboId) {
+    final lines = comboItemGroups[comboId] ?? const [];
+    if (lines.isEmpty || lines.first.comboPer <= 0) return 0;
+    return lines.first.qty ~/ lines.first.comboPer;
+  }
+
+  /// Ghi combo vào giỏ: mỗi SKU chọn thành 1 CartItem (isRetail) gắn cùng
+  /// comboId. [existingId] khác null = SỬA combo cũ (xoá nhóm cũ rồi ghi lại,
+  /// giữ nguyên comboId để không tạo dòng mới trên server một cách vô ích).
+  void applyCombo(RetailVoucher v, Map<Sku, int> perCombo, int count,
+      {String? existingId}) {
+    final chosen = perCombo.entries.where((e) => e.value > 0).toList();
+    if (chosen.isEmpty || count <= 0) return;
+    final comboId = existingId ?? '${v.id}#${_comboSeq++}';
+    if (existingId != null) _cart.removeWhere((c) => c.comboId == existingId);
+    for (final e in chosen) {
+      final sku = e.key;
+      final perUnit = e.value;
+      final menuItem = MenuItem(
+        id: sku.id,
+        code: sku.barcode,
+        name: sku.name,
+        price: sku.price.toDouble(),
+        vatRate: sku.vatRate.toDouble(),
+        categoryId: sku.category,
+        imageUrl: sku.image,
+        modifiers: const [],
+        isRetail: true,
+      );
+      _cart.add(CartItem(
+        item: menuItem,
+        qty: perUnit * count,
+        selectedModifiers: const [],
+        comboId: comboId,
+        comboName: v.displayName,
+        comboPer: perUnit,
+      ));
+    }
+    notifyListeners();
+  }
+
+  /// Xoá cả nhóm combo. Dòng chưa lưu (nháp) chỉ cần bỏ khỏi giỏ cục bộ; dòng
+  /// đã lưu (persisted) phải hủy qua server (gộp 1 phiếu, giống hủy nhiều món
+  /// thường — xem cancelCartItems) vì đã có order_item thật cần đối soát.
+  Future<void> removeCombo(String comboId,
+      {String reason = 'Hủy combo', String? managerPin}) async {
+    final group = (comboItemGroups[comboId] ?? const []).toList();
+    if (group.isEmpty) return;
+    await cancelCartItems(group, reason: reason, managerPin: managerPin);
   }
 
   Future<void> payOrder(

@@ -21,6 +21,7 @@ class _BillPane extends StatelessWidget {
     required this.onPrint,
     required this.onSendKitchen,
     required this.onCancelItem,
+    required this.onCancelCombo,
     required this.onEditItem,
     required this.onPayment,
     required this.openingPayment,
@@ -49,6 +50,7 @@ class _BillPane extends StatelessWidget {
   final VoidCallback onPrint;
   final VoidCallback onSendKitchen;
   final ValueChanged<CartItem> onCancelItem;
+  final ValueChanged<CartItem> onCancelCombo;
   final ValueChanged<CartItem> onEditItem;
   final VoidCallback onPayment;
   final bool openingPayment;
@@ -262,13 +264,17 @@ class _BillPane extends StatelessWidget {
                     return _BillItemRow(
                       item: item,
                       money: money,
-                      onCancel: () => onCancelItem(item),
+                      onCancel: item.isCombo
+                          ? () => onCancelCombo(item)
+                          : () => onCancelItem(item),
                       onEdit: () => onEditItem(item),
                       selectMode: multiCancelMode,
                       selected: multiCancelSelection.contains(item),
                       onToggleSelect: () => onToggleCancelSelection(item),
                       // CTKM sản phẩm (combo/mua-X-tặng-1) chỉ áp được cho dòng
                       // retail (có sku_id) — món F&B thường không có lựa chọn.
+                      // Dòng đã thuộc 1 combo thì không chọn CTKM riêng nữa (đỡ
+                      // rối — server cũng không cộng dồn 2 ưu đãi trên cùng dòng).
                       appliedLineVoucherName: pos.lineVouchers
                               .containsKey(item.orderItemId)
                           ? pos.activeVouchers
@@ -277,9 +283,10 @@ class _BillPane extends StatelessWidget {
                               .map((v) => v.name)
                               .firstOrNull
                           : null,
-                      onPickVoucher: item.item.isRetail && item.persisted
-                          ? () => onPickLineVoucher(item)
-                          : null,
+                      onPickVoucher:
+                          item.item.isRetail && item.persisted && !item.isCombo
+                              ? () => onPickLineVoucher(item)
+                              : null,
                     );
                   },
                 ),
@@ -502,6 +509,28 @@ class _BillItemRow extends StatelessWidget {
                         Text(meta,
                             style: TextStyle(
                                 color: DanColors.muted, fontSize: 11)),
+                      if (item.comboName != null)
+                        Container(
+                          padding:
+                              EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: DanColors.brand.withValues(alpha: .13),
+                            borderRadius: BorderRadius.circular(99),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.card_giftcard,
+                                  size: 11, color: DanColors.brand),
+                              SizedBox(width: 3),
+                              Text(item.comboName!,
+                                  style: TextStyle(
+                                      fontSize: 10.5,
+                                      fontWeight: FontWeight.w800,
+                                      color: DanColors.brand)),
+                            ],
+                          ),
+                        ),
                       if (onPickVoucher != null)
                         InkWell(
                           onTap: onPickVoucher,
@@ -552,7 +581,9 @@ class _BillItemRow extends StatelessWidget {
               SizedBox(width: 6),
               IconButton(
                 onPressed: onCancel,
-                tooltip: item.persisted ? t('Hủy món') : t('Xóa món nháp'),
+                tooltip: item.isCombo
+                    ? t('Hủy cả combo')
+                    : (item.persisted ? t('Hủy món') : t('Xóa món nháp')),
                 icon: Icon(Icons.close, size: 18),
                 color: DanColors.faint,
                 constraints: BoxConstraints.tightFor(width: 32, height: 32),

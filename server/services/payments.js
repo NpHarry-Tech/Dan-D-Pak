@@ -334,6 +334,11 @@ export function buildOrderDiscountPlan(order_id, {
   line_vouchers = null,
   manual_discount = 0,
   customer = null,
+  // Combo (Option B, giống Retail): id các combo THU NGÂN đã CHỌN qua "Thêm
+  // retail" trong đơn F&B — null = áp MỌI combo khớp giỏ (hành vi cũ/an toàn
+  // cho catalogue tự động); mảng = CHỈ áp đúng combo đã chọn (đối soát rõ ràng
+  // với những gì thu ngân thấy trên màn hình, không tự áp thêm combo khác).
+  selected_combos = null,
   branch_id = 'sala',
 } = {}) {
   const order = getOrder(order_id);
@@ -356,7 +361,9 @@ export function buildOrderDiscountPlan(order_id, {
     try { cust = JSON.parse(order.customer_json); } catch { /* JSON hỏng → bỏ */ }
   }
   if (cust?.id) cust = getCustomer(cust.id, branch_id) || cust;
-  const plan = buildDiscountPlan(lines, { voucher_id, customer: cust, manual_discount, branch_id });
+  const plan = buildDiscountPlan(lines, {
+    voucher_id, customer: cust, manual_discount, branch_id, selected_combos,
+  });
   return { ...plan, lines, customer: cust };
 }
 

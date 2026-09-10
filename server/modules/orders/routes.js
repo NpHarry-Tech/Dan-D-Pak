@@ -196,6 +196,7 @@ api.post('/orders/:id/discount-preview', guardAny('sell', 'pay'), wrap((req) => 
     line_vouchers: req.body?.line_vouchers || null,
     manual_discount: Number(req.body?.manual_discount) || 0,
     customer: req.body?.customer || null,
+    selected_combos: Array.isArray(req.body?.selected_combos) ? req.body.selected_combos : null,
     branch_id,
   });
 }));

@@ -265,6 +265,11 @@ class CartItem {
   // CHỈNH GIÁ DÒNG (giảm giá trực tiếp trên món, như Retail): giá bán/đơn vị đã
   // đổi. null = giữ giá niêm yết. Sửa được nên KHÔNG final.
   double? unitPriceOverride;
+  // Combo (Option B, giống Retail — xem combo_support.dart): các dòng cùng
+  // comboId gộp thành 1 combo trong giỏ. null = dòng thường, không thuộc combo.
+  final String? comboId;
+  final String? comboName;
+  final int comboPer;
 
   CartItem({
     required this.item,
@@ -275,7 +280,12 @@ class CartItem {
     this.status = '',
     this.station = '',
     this.unitPriceOverride,
+    this.comboId,
+    this.comboName,
+    this.comboPer = 1,
   });
+
+  bool get isCombo => comboId != null;
 
   bool get persisted => orderItemId.isNotEmpty;
 

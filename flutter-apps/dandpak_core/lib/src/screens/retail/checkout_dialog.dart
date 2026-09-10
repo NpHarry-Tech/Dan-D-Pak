@@ -722,6 +722,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                 'voucher_id': widget.voucher?.id,
                 if (widget.lineVouchers.isNotEmpty)
                   'line_vouchers': widget.lineVouchers,
+                'selected_combos': widget.selectedCombos,
                 'manual_discount': _adjustment.round(),
                 'customer': widget.customer?.toCheckoutCustomer(),
                 'invoice_customer': invoiceCustomer,

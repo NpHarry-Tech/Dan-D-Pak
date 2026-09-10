@@ -603,6 +603,78 @@ class _MenuPickerDialogState extends State<_MenuPickerDialog> {
     }
   }
 
+  // Dải combo trên đầu "Thêm retail" — y hệt Retail POS (combo_support.dart),
+  // chỉ khác chỗ đặt cho gọn trong picker F&B. Bấm 1 combo → chọn đủ N SKU rồi
+  // gộp thành 1 nhóm trong giỏ; server tự áp đúng giá combo khi thanh toán.
+  Widget _comboBar() {
+    return Container(
+      height: 44,
+      margin: EdgeInsets.fromLTRB(18, 10, 18, 0),
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: widget.pos.comboVouchers.length,
+        separatorBuilder: (_, __) => SizedBox(width: 8),
+        itemBuilder: (_, i) {
+          final v = widget.pos.comboVouchers[i];
+          return ActionChip(
+            avatar: Icon(Icons.card_giftcard, size: 18, color: DanColors.brand),
+            label: Text(
+              '${v.displayName} · ${t('chọn')} ${v.comboQty}',
+              style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12.5),
+            ),
+            backgroundColor: DanColors.brand.withValues(alpha: 0.10),
+            side: BorderSide(color: DanColors.brand.withValues(alpha: 0.35)),
+            onPressed: () => _openComboPicker(v),
+          );
+        },
+      ),
+    );
+  }
+
+  Future<void> _openComboPicker(RetailVoucher v) async {
+    List<Sku> eligible;
+    try {
+      final res = await widget.api
+          .getSkusPaginated(page: 1, limit: 2000, channel: 'fnb_retail');
+      final all = (res['items'] as List? ?? [])
+          .whereType<Map>()
+          .map((e) => Sku.fromJson(Map<String, dynamic>.from(e)))
+          .toList();
+      eligible = comboEligibleSkus(v, all);
+    } catch (_) {
+      eligible = const [];
+    }
+    if (!mounted) return;
+    if (eligible.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(t('Combo chưa có sản phẩm phù hợp trong kho')),
+        backgroundColor: DanColors.late,
+      ));
+      return;
+    }
+    final result = await showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (_) => ComboPickerDialog(voucher: v, eligible: eligible),
+    );
+    if (result == null || !mounted) return;
+    widget.pos.applyCombo(
+      v,
+      result['perCombo'] as Map<Sku, int>,
+      result['count'] as int,
+    );
+    try {
+      await widget.pos.submitOrder();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(t(
+              'Không lưu được đơn: ${e.toString().replaceFirst('Exception: ', '')}')),
+          backgroundColor: DanColors.late,
+        ));
+      }
+    }
+  }
+
   Future<void> _loadNextPage({bool isRefresh = false}) async {
     if (_loadingPage) return;
     if (!isRefresh && !_hasMore) return;
@@ -798,6 +870,8 @@ class _MenuPickerDialogState extends State<_MenuPickerDialog> {
                 onSubmitted: widget.isRetail ? _submitRetailSearch : (_) {},
               ),
             ),
+            if (widget.isRetail && widget.pos.comboVouchers.isNotEmpty)
+              _comboBar(),
             if (!widget.isRetail)
               SizedBox(
                 height: 58,

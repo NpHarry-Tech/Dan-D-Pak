@@ -75,6 +75,7 @@ extension ApiServicePosApi on ApiService {
     Map<String, String>? lineVouchers,
     double manualDiscount = 0,
     Map<String, dynamic>? customer,
+    List<String>? selectedCombos,
   }) async {
     return mapFrom(await postJson(
       '/api/orders/$orderId/discount-preview',
@@ -84,6 +85,7 @@ extension ApiServicePosApi on ApiService {
           'line_vouchers': lineVouchers,
         'manual_discount': manualDiscount,
         if (customer != null) 'customer': customer,
+        if (selectedCombos != null) 'selected_combos': selectedCombos,
       },
       errorMessage: 'Không tính được giảm giá',
     ));

@@ -22,6 +22,7 @@ import '../widgets/scan_button.dart';
 import 'floor_layout.dart'; // kFloorCols, kTableCells — khớp sơ đồ với Cài đặt
 import 'order_history_dialog.dart';
 import 'retail/checkout_dialog.dart';
+import 'retail/combo_support.dart';
 import 'shift_dialog.dart';
 import '../services/black_box.dart';
 import '../utils/translation.dart';
@@ -239,6 +240,7 @@ class _PosScreenState extends State<PosScreen> {
         itemCount: pos.cart.length,
         channelLabel: 'Checkout',
         lineVouchers: pos.lineVouchers,
+        selectedCombos: pos.selectedComboIds,
       ),
     );
   }
@@ -302,8 +304,9 @@ class _PosScreenState extends State<PosScreen> {
       // có route preview mới) → CHẶN thanh toán thay vì mở dialog với tổng
       // tiền SAI (chưa trừ CTKM) — thu ngân thu đủ giá gốc trong khi server
       // vẫn áp CTKM lúc chốt sẽ lệch tiền/đơn rơi vào 'partially_paid' oan.
-      final hasVoucherPick =
-          pos.orderVoucherId != null || pos.lineVouchers.isNotEmpty;
+      final hasVoucherPick = pos.orderVoucherId != null ||
+          pos.lineVouchers.isNotEmpty ||
+          pos.selectedComboIds.isNotEmpty;
       if (hasVoucherPick && pos.discountPlan == null) {
         await pos.refreshDiscountPreview();
       }
@@ -1105,6 +1108,49 @@ class _PosScreenState extends State<PosScreen> {
     }
   }
 
+  /// Hủy CẢ combo cùng lúc (tất cả dòng SKU cùng comboId) — cùng cổng quyền
+  /// PIN/lý do như hủy nhiều món thường (_confirmMultiCancel), vì combo cũng
+  /// chỉ là các dòng retail bình thường gộp chung 1 nhóm.
+  Future<void> _cancelComboGroup(CartItem item) async {
+    if (item.comboId == null) return;
+    final pos = context.read<PosProvider>();
+    final auth = context.read<AuthProvider>();
+    final group = (pos.comboItemGroups[item.comboId!] ?? const []).toList();
+    if (group.isEmpty) return;
+    String? pin;
+    var reason = t('Nhân viên hủy');
+
+    final anySent =
+        group.any((i) => i.persisted && i.status != 'pending_confirm');
+    if (anySent) {
+      final made =
+          group.any((i) => ['preparing', 'ready', 'served'].contains(i.status));
+      final needPerm = made ? 'void.made' : 'void';
+      final selfHasPerm = auth.hasPermission(needPerm);
+      if (!selfHasPerm) {
+        pin = await requestManagerPin(
+          context,
+          made
+              ? t('Xóa combo (có món ĐÃ chế biến). Cần PIN người có quyền "xóa món đã chế biến".')
+              : t('Hủy combo đã gửi bếp. Cần PIN người có quyền hủy món.'),
+        );
+        if (pin == null) return;
+      }
+      reason = await _promptText(
+            title: t('Lý do hủy combo'),
+            label: t('Lý do'),
+            initial: reason,
+          ) ??
+          reason;
+    }
+    try {
+      await pos.removeCombo(item.comboId!, reason: reason, managerPin: pin);
+      if (mounted) _toast(t('Đã hủy combo.'));
+    } catch (e) {
+      if (mounted) _toast(t('Không hủy được combo: ${_cleanError(e)}'));
+    }
+  }
+
   void _toggleMultiCancelMode() {
     setState(() {
       _multiCancelMode = !_multiCancelMode;
@@ -1476,6 +1522,7 @@ class _PosScreenState extends State<PosScreen> {
         onPrint: _printTempBill,
         onSendKitchen: _sendKitchen,
         onCancelItem: _cancelItem,
+        onCancelCombo: _cancelComboGroup,
         onEditItem: _editCartItem,
         onPayment: _openCheckoutDialog,
         openingPayment: _openingPayment,
