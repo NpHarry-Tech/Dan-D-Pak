@@ -3261,11 +3261,18 @@ export function printKitchenTickets(order, items, branch_id = 'sala', staff = ''
     if (!groups.has(key)) groups.set(key, { printer, station, items: [] });
     groups.get(key).items.push(it);
   }
+  // Nhãn "Hủy món" ngay trên title — màn "Job in gần đây" (Cài đặt > Kết nối)
+  // chỉ hiện title 1 dòng, KHÔNG mở payload chi tiết. Trước đây phiếu hủy và
+  // phiếu gửi món mới hiện y hệt nhau ("Phiếu bếp · Bàn X · #seq") nên không
+  // ai phân biệt được đâu là phiếu thật đã gửi bếp, đâu là phiếu hủy — đúng
+  // nguồn cơn hiểu lầm "xóa món chưa gửi vẫn in phiếu hủy" khi thật ra job đó
+  // là job gửi món khác trong cùng khung giờ.
+  const kindSuffix = updateKind === 'cancel_item' ? ' · Hủy món' : '';
   for (const group of groups.values()) {
     createJob({
       printer: group.printer,
       type: 'kitchen_ticket',
-      title: `Bàn ${base.table} · #${base.seq}`,
+      title: `Bàn ${base.table} · #${base.seq}${kindSuffix}`,
       payload: {
         ...base,
         station: group.station.toUpperCase(),
