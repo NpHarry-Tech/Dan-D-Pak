@@ -290,52 +290,69 @@ export function createOrUpdateOrder(options) {
       (id,order_id,menu_item_id,sku_id,item_code,item_barcode,unit_snapshot,name,emoji,qty,unit_price,vat_rate,station,sla_minutes,note,mods_json,status,lot_id,promo_json,orig_price,created_at,source)
       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
 
+    // Mỗi DÒNG được validate/ghi ĐỘC LẬP — 1 dòng lỗi nghiệp vụ (hết hàng, món
+    // tạm hết, chưa tới giờ bán…) chỉ BỎ QUA đúng dòng đó, không kéo sập các
+    // dòng khác trong CÙNG một lượt gửi (bug thật: nhân viên gõ nhanh nhiều
+    // món, request coalesce nhiều dòng làm 1 — trước đây 1 dòng hết hàng làm
+    // toàn bộ lượt gửi rollback, món hợp lệ đi kèm cũng mất theo, hiện "Không
+    // lưu được đơn" dù chỉ 1 món thật sự có vấn đề). Chỉ khi TẤT CẢ dòng đều
+    // lỗi (created rỗng) mới coi là thất bại toàn bộ và throw.
     const created = [];
+    const skipped = [];
+    let lineIndex = -1;
     for (const line of items) {
-      const qty = Math.max(1, parseInt(line.qty) || 1);
-      const id = uid('oi_');
-      if (line.sku_id) {
-        const sku = db.prepare(`SELECT * FROM skus WHERE id=? AND branch_id=? AND active=1`).get(line.sku_id, branch_id);
-        if (!sku) throw new Error('SKU không tồn tại: ' + line.sku_id);
-        // Production invariant: không bán âm kho ở bất kỳ kênh nào. Tầng kho
-        // vẫn kiểm tra lại trong transaction payment để chống concurrent sale.
-        if (sku.stock < qty) throw new Error(`Hết hàng: ${sku.name} (còn ${sku.stock})`);
-        const lotId = line.lot_id || null;
-        validateSkuLot(sku, qty, lotId, branch_id);
-        // Giá theo bảng giá kênh: đơn retail thuần dùng cấu hình 'retail',
-        // retail thêm trong đơn F&B (order bàn) dùng cấu hình 'fnb_retail'.
-        const priced = applyChannelPrice(
-          sku, branch_id, order.channel === 'retail' ? 'retail' : 'fnb_retail');
-        const serverPrice = Number(priced.price) || 0;
-        // CHỈNH GIÁ DÒNG: dùng line.price nếu client gửi (route đã xác thực PIN
-        // Quản lý). orig_price = giá niêm yết để bill in "gốc → sau đổi". Cho phép
-        // 0đ (hàng tặng/khuyến mãi 100%) — bỏ chặn "chưa có giá" khi có chỉnh giá.
-        const hasOverride = line.price !== undefined && line.price !== null;
-        const unitPrice = hasOverride ? Math.max(0, Math.round(Number(line.price))) : serverPrice;
-        const origPrice = (line.orig_price !== undefined && line.orig_price !== null)
-          ? Math.round(Number(line.orig_price)) : serverPrice;
-        if (!hasOverride && serverPrice <= 0) throw new Error(`SKU chưa có giá bán: ${sku.name}`);
-        const lineNote = String(line.note || '').trim().slice(0, 200) || null;
-        insItem.run(id, order.id, null, sku.id, sku.code || null, sku.barcode || null, sku.unit || 'cái', sku.name, sku.emoji, qty, unitPrice, Number(sku.vat) || 0, 'retail', 0, lineNote, '[]',
-          needsStaffConfirm ? 'pending_confirm' : 'served', lotId, line.promo ? JSON.stringify(line.promo) : null, origPrice, now(), source);
-      } else {
-        const mi = getMenuItemForOrder(line.menu_item_id, branch_id);
-        const mods = resolveOrderMods(line.mods, mi);
-        const modSum = mods.reduce((s, m) => s + m.price, 0);
-        const listedPrice = salePrice(mi.price, mi.vat_rate, mi.price_includes_vat) + modSum;
-        // CHỈNH GIÁ DÒNG cho món F&B — ĐỒNG BỘ với nhánh SKU/Retail ở trên. Dùng
-        // line.price nếu client gửi (route đã xác thực PIN Quản lý). orig_price =
-        // giá niêm yết (đã gồm modifier) để bill in "gốc → sau đổi". KHÔNG gửi
-        // override thì y hệt hành vi cũ (unit = orig = giá niêm yết).
-        const hasOverride = line.price !== undefined && line.price !== null;
-        const unitPrice = hasOverride ? Math.max(0, Math.round(Number(line.price))) : listedPrice;
-        const origPrice = (line.orig_price !== undefined && line.orig_price !== null)
-          ? Math.round(Number(line.orig_price)) : listedPrice;
-        const lineNote = String(line.note || '').trim().slice(0, 200) || null;
-        insItem.run(id, order.id, mi.id, null, mi.code || null, mi.barcode || null, mi.unit || 'phần', mi.name, mi.emoji, qty, unitPrice, Number(mi.vat_rate) || 0, mi.station, mi.sla_minutes,
-          lineNote, JSON.stringify(mods), needsStaffConfirm ? 'pending_confirm' : 'new', null, null, origPrice, now(), source);
+      lineIndex++;
+      try {
+        const qty = Math.max(1, parseInt(line.qty) || 1);
+        const id = uid('oi_');
+        if (line.sku_id) {
+          const sku = db.prepare(`SELECT * FROM skus WHERE id=? AND branch_id=? AND active=1`).get(line.sku_id, branch_id);
+          if (!sku) throw new Error('SKU không tồn tại: ' + line.sku_id);
+          // Production invariant: không bán âm kho ở bất kỳ kênh nào. Tầng kho
+          // vẫn kiểm tra lại trong transaction payment để chống concurrent sale.
+          if (sku.stock < qty) throw new Error(`Hết hàng: ${sku.name} (còn ${sku.stock})`);
+          const lotId = line.lot_id || null;
+          validateSkuLot(sku, qty, lotId, branch_id);
+          // Giá theo bảng giá kênh: đơn retail thuần dùng cấu hình 'retail',
+          // retail thêm trong đơn F&B (order bàn) dùng cấu hình 'fnb_retail'.
+          const priced = applyChannelPrice(
+            sku, branch_id, order.channel === 'retail' ? 'retail' : 'fnb_retail');
+          const serverPrice = Number(priced.price) || 0;
+          // CHỈNH GIÁ DÒNG: dùng line.price nếu client gửi (route đã xác thực PIN
+          // Quản lý). orig_price = giá niêm yết để bill in "gốc → sau đổi". Cho phép
+          // 0đ (hàng tặng/khuyến mãi 100%) — bỏ chặn "chưa có giá" khi có chỉnh giá.
+          const hasOverride = line.price !== undefined && line.price !== null;
+          const unitPrice = hasOverride ? Math.max(0, Math.round(Number(line.price))) : serverPrice;
+          const origPrice = (line.orig_price !== undefined && line.orig_price !== null)
+            ? Math.round(Number(line.orig_price)) : serverPrice;
+          if (!hasOverride && serverPrice <= 0) throw new Error(`SKU chưa có giá bán: ${sku.name}`);
+          const lineNote = String(line.note || '').trim().slice(0, 200) || null;
+          insItem.run(id, order.id, null, sku.id, sku.code || null, sku.barcode || null, sku.unit || 'cái', sku.name, sku.emoji, qty, unitPrice, Number(sku.vat) || 0, 'retail', 0, lineNote, '[]',
+            needsStaffConfirm ? 'pending_confirm' : 'served', lotId, line.promo ? JSON.stringify(line.promo) : null, origPrice, now(), source);
+        } else {
+          const mi = getMenuItemForOrder(line.menu_item_id, branch_id);
+          const mods = resolveOrderMods(line.mods, mi);
+          const modSum = mods.reduce((s, m) => s + m.price, 0);
+          const listedPrice = salePrice(mi.price, mi.vat_rate, mi.price_includes_vat) + modSum;
+          // CHỈNH GIÁ DÒNG cho món F&B — ĐỒNG BỘ với nhánh SKU/Retail ở trên. Dùng
+          // line.price nếu client gửi (route đã xác thực PIN Quản lý). orig_price =
+          // giá niêm yết (đã gồm modifier) để bill in "gốc → sau đổi". KHÔNG gửi
+          // override thì y hệt hành vi cũ (unit = orig = giá niêm yết).
+          const hasOverride = line.price !== undefined && line.price !== null;
+          const unitPrice = hasOverride ? Math.max(0, Math.round(Number(line.price))) : listedPrice;
+          const origPrice = (line.orig_price !== undefined && line.orig_price !== null)
+            ? Math.round(Number(line.orig_price)) : listedPrice;
+          const lineNote = String(line.note || '').trim().slice(0, 200) || null;
+          insItem.run(id, order.id, mi.id, null, mi.code || null, mi.barcode || null, mi.unit || 'phần', mi.name, mi.emoji, qty, unitPrice, Number(mi.vat_rate) || 0, mi.station, mi.sla_minutes,
+            lineNote, JSON.stringify(mods), needsStaffConfirm ? 'pending_confirm' : 'new', null, null, origPrice, now(), source);
+        }
+        created.push(db.prepare(`SELECT * FROM order_items WHERE id=?`).get(id));
+      } catch (lineErr) {
+        skipped.push({ index: lineIndex, reason: lineErr.message });
       }
-      created.push(db.prepare(`SELECT * FROM order_items WHERE id=?`).get(id));
+    }
+    if (!created.length) {
+      throw new Error(skipped.map(s => s.reason).join('; ') || 'Order trống');
     }
 
     recomputeTotals(order.id);
@@ -343,9 +360,14 @@ export function createOrUpdateOrder(options) {
       db.prepare(`UPDATE tables SET status='busy' WHERE id=?`).run(table_id);
       publishEvent('table:updated', getTableState(table_id), branch_id);
     }
-    recordAudit(needsStaffConfirm ? 'order.pending' : 'order.send', { order: order.id, items: created.length, source }, actor);
+    recordAudit(needsStaffConfirm ? 'order.pending' : 'order.send',
+      { order: order.id, items: created.length, source, skipped: skipped.length ? skipped : undefined }, actor);
 
     const full = getOrder(order.id);
+    // Dòng nào bị bỏ qua (xem vòng lặp ở trên) — client dùng để gỡ đúng dòng
+    // nháp tương ứng khỏi giỏ cục bộ và báo lý do CHÍNH XÁC, thay vì hiểu lầm
+    // "cả đơn không lưu được" khi thật ra các dòng khác đã lưu bình thường.
+    full.skipped_items = skipped;
     deferSideEffect(() => archiveOrder(full));
     const printable = created.filter(i => i.status === 'new' && i.station !== 'retail');
     if (printable.length) deferSideEffect(() => printKitchenTickets(full, printable, branch_id, actor));

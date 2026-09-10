@@ -7,8 +7,10 @@ import '../models/pos_models.dart';
 import '../models/retail_models.dart';
 import '../services/api_service.dart';
 import '../services/app_log.dart';
+import '../services/app_notifier.dart';
 import '../services/local_store.dart';
 import '../services/system_log.dart';
+import '../utils/translation.dart';
 
 double _doubleValue(dynamic value) {
   if (value is num) return value.toDouble();
@@ -710,6 +712,40 @@ class PosProvider extends ChangeNotifier {
     final custFromServer = _readCustomer(orderDetails);
     if (custFromServer != null) _selectedCustomer = custFromServer;
 
+    // Dòng nào server BỎ QUA (hết hàng/tạm hết/chưa tới giờ bán…) — server chỉ
+    // loại đúng dòng đó, KHÔNG kéo sập cả lượt gửi (xem createOrUpdateOrder).
+    // Gỡ đúng dòng nháp tương ứng khỏi giỏ (không thể lưu được) và báo rõ lý
+    // do, thay vì để nó kẹt mãi ở trạng thái "Mới" với lỗi chung chung.
+    final List<dynamic> skippedRaw = orderDetails['skipped_items'] ?? [];
+    if (skippedRaw.isNotEmpty) {
+      final reasons = <String>[];
+      for (final raw in skippedRaw) {
+        if (raw is! Map) continue;
+        final idx = int.tryParse(raw['index']?.toString() ?? '');
+        if (idx == null || idx < 0 || idx >= sent.length) continue;
+        final bad = sent[idx];
+        reasons.add(raw['reason']?.toString() ?? bad.item.name);
+        _cart.remove(bad);
+      }
+      if (reasons.isNotEmpty) {
+        AppNotifier.show(
+          title: t('Không lưu được một số món'),
+          body: reasons.join('; '),
+          isError: true,
+          osNotify: false,
+        );
+      }
+    }
+    final skippedIndexes = skippedRaw
+        .whereType<Map>()
+        .map((raw) => int.tryParse(raw['index']?.toString() ?? ''))
+        .whereType<int>()
+        .toSet();
+    final stillSent = [
+      for (var i = 0; i < sent.length; i++)
+        if (!skippedIndexes.contains(i)) sent[i],
+    ];
+
     final List<dynamic> items = orderDetails['items'] ?? [];
     final knownIds = _cart
         .map((c) => c.orderItemId)
@@ -717,16 +753,18 @@ class PosProvider extends ChangeNotifier {
         .toSet();
     // Dòng "mới" = server trả về nhưng client CHƯA biết id (chưa gán cho món
     // nào trong giỏ) — đó chính là các dòng vừa được chèn cho lượt gửi này.
-    // Server chèn ĐÚNG theo thứ tự payload đã gửi nên ghép vị trí là an toàn.
+    // Server chèn ĐÚNG theo thứ tự payload đã gửi (trừ các dòng bị bỏ qua ở
+    // trên) nên ghép vị trí với `stillSent` là an toàn.
     final freshRows = items
         .where((i) => i is Map && i['status']?.toString() != 'cancelled')
         .map((raw) => Map<String, dynamic>.from(raw as Map))
         .where((row) => !knownIds.contains(row['id']?.toString() ?? ''))
         .toList();
-    final count = sent.length < freshRows.length ? sent.length : freshRows.length;
+    final count =
+        stillSent.length < freshRows.length ? stillSent.length : freshRows.length;
     for (var i = 0; i < count; i++) {
       final row = freshRows[i];
-      final cartItem = sent[i];
+      final cartItem = stillSent[i];
       cartItem.orderItemId = row['id']?.toString() ?? '';
       cartItem.status = row['status']?.toString() ?? '';
     }
