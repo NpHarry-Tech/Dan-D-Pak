@@ -234,7 +234,17 @@ class MenuItem {
     var mods = json['modifiers'] ?? json['toppings'];
     List<Modifier> parsedMods = [];
     if (mods is List) {
-      parsedMods = mods.map((m) => Modifier.fromJson(m)).toList();
+      // Server gộp CHUNG "Món ăn kèm & Extra" (group kỹ thuật '__addon__', xem
+      // ADDON_MOD_GROUP/catalog.js) vào cùng mảng modifiers để Self-Order dùng
+      // 1 đường resolveOrderMods duy nhất. F&B POS (nhân viên tự thêm món) thì
+      // KHÔNG dùng — nhân viên thêm món tuỳ ý, không cần bị chặn qua popup chọn
+      // món ăn kèm vốn chỉ thiết kế cho khách trên tablet self-order. Lọc bỏ ở
+      // đây để dialog "chọn modifier" (pos_screen.dart#_addMenuItem) chỉ còn
+      // hiện cho NHÓM TÙY CHỌN thật (size/topping/combo), đúng hành vi cũ.
+      parsedMods = mods
+          .where((m) => m is Map && m['group'] != '__addon__')
+          .map((m) => Modifier.fromJson(m))
+          .toList();
     }
     return MenuItem(
       id: json['id'] ?? '',
