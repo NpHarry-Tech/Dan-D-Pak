@@ -287,8 +287,8 @@ export function createOrUpdateOrder(options) {
     }
 
     const insItem = db.prepare(`INSERT INTO order_items
-      (id,order_id,menu_item_id,sku_id,item_code,item_barcode,unit_snapshot,name,emoji,qty,unit_price,vat_rate,station,sla_minutes,note,mods_json,status,lot_id,promo_json,orig_price,created_at)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
+      (id,order_id,menu_item_id,sku_id,item_code,item_barcode,unit_snapshot,name,emoji,qty,unit_price,vat_rate,station,sla_minutes,note,mods_json,status,lot_id,promo_json,orig_price,created_at,source)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
 
     const created = [];
     for (const line of items) {
@@ -317,7 +317,7 @@ export function createOrUpdateOrder(options) {
         if (!hasOverride && serverPrice <= 0) throw new Error(`SKU chưa có giá bán: ${sku.name}`);
         const lineNote = String(line.note || '').trim().slice(0, 200) || null;
         insItem.run(id, order.id, null, sku.id, sku.code || null, sku.barcode || null, sku.unit || 'cái', sku.name, sku.emoji, qty, unitPrice, Number(sku.vat) || 0, 'retail', 0, lineNote, '[]',
-          needsStaffConfirm ? 'pending_confirm' : 'served', lotId, line.promo ? JSON.stringify(line.promo) : null, origPrice, now());
+          needsStaffConfirm ? 'pending_confirm' : 'served', lotId, line.promo ? JSON.stringify(line.promo) : null, origPrice, now(), source);
       } else {
         const mi = getMenuItemForOrder(line.menu_item_id, branch_id);
         const mods = resolveOrderMods(line.mods, mi);
@@ -333,7 +333,7 @@ export function createOrUpdateOrder(options) {
           ? Math.round(Number(line.orig_price)) : listedPrice;
         const lineNote = String(line.note || '').trim().slice(0, 200) || null;
         insItem.run(id, order.id, mi.id, null, mi.code || null, mi.barcode || null, mi.unit || 'phần', mi.name, mi.emoji, qty, unitPrice, Number(mi.vat_rate) || 0, mi.station, mi.sla_minutes,
-          lineNote, JSON.stringify(mods), needsStaffConfirm ? 'pending_confirm' : 'new', null, null, origPrice, now());
+          lineNote, JSON.stringify(mods), needsStaffConfirm ? 'pending_confirm' : 'new', null, null, origPrice, now(), source);
       }
       created.push(db.prepare(`SELECT * FROM order_items WHERE id=?`).get(id));
     }
@@ -431,6 +431,11 @@ export function getOrder(order_id) {
   return order;
 }
 
+// Chuông/badge "chờ xác nhận" chỉ dành để BÁO NHÂN VIÊN về món KHÁCH TỰ GỌI
+// (self-order/tablet) — món nhân viên tự thêm trên chính máy mình (source
+// 'cashier') CŨNG ở status pending_confirm (chờ bấm "Xác nhận" gửi bếp) nhưng
+// KHÔNG cần tự báo cho chính mình (xem notifyCustomerPending ở trên); vẫn xử
+// lý bình thường qua nút "Xác nhận" ngay tại bàn, không qua danh sách này.
 export function listPendingConfirmations(branch_id = 'sala') {
   const rows = db.prepare(`
     SELECT oi.*, o.created_at AS order_created, o.table_id, o.channel, t.code AS table_code, t.zone AS zone
@@ -438,6 +443,7 @@ export function listPendingConfirmations(branch_id = 'sala') {
     JOIN orders o ON o.id=oi.order_id
     LEFT JOIN tables t ON t.id=o.table_id
     WHERE o.branch_id=? AND o.status IN ('open','partially_paid') AND oi.status='pending_confirm'
+      AND oi.source IN ('customer_tablet','self_order')
     ORDER BY oi.created_at`).all(branch_id)
     .map(r => ({ ...r, mods: parseJson(r.mods_json, []), promo: parseJson(r.promo_json, null) }));
   const groups = new Map();

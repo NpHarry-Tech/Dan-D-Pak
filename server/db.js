@@ -1129,6 +1129,10 @@ export function migrate(targetDb = globalDb) {
     (SELECT s.vat FROM skus s WHERE s.id=order_items.sku_id), 0)
     WHERE vat_rate IS NULL AND order_id IN (SELECT id FROM orders WHERE status='open')`).run();
   addColumnIfMissing('order_items', 'kds_dismissed', 'INTEGER DEFAULT 0');
+  // Nguồn gốc dòng món (source lúc tạo: 'cashier'/'customer_tablet'/'self_order'/...)
+  // — để "chuông chờ xác nhận" chỉ báo món KHÁCH tự gọi, không báo món nhân
+  // viên vừa tự tay thêm trên chính máy mình (xem getPendingConfirmations()).
+  addColumnIfMissing('order_items', 'source', 'TEXT');
   // SƠ ĐỒ BÀN kéo-thả: vị trí theo LƯỚI (ô x,y) + kích thước ô (w,h). -1 = CHƯA
   // xếp vị trí (nằm trong khay "bàn chưa xếp"). Khu vực là bảng RIÊNG (zones) để
   // tạo khu vực rỗng vẫn hiện, không phụ thuộc có bàn hay không.
