@@ -112,6 +112,34 @@ class _MenuTabState extends State<MenuTab> {
     }
   }
 
+  Future<void> _toggleDineIn(AdminMenuItem item) async {
+    try {
+      await widget.api.setMenuChannels(item.id, dineIn: !item.availableDineIn);
+      _load();
+    } catch (e) {
+      _toast(e.toString().replaceFirst('Exception: ', ''), error: true);
+    }
+  }
+
+  Future<void> _toggleTakeaway(AdminMenuItem item) async {
+    try {
+      await widget.api
+          .setMenuChannels(item.id, takeaway: !item.availableTakeaway);
+      _load();
+    } catch (e) {
+      _toast(e.toString().replaceFirst('Exception: ', ''), error: true);
+    }
+  }
+
+  Future<void> _updateSort(AdminMenuItem item, int sort) async {
+    try {
+      await widget.api.setMenuSort(item.id, sort);
+      _load();
+    } catch (e) {
+      _toast(e.toString().replaceFirst('Exception: ', ''), error: true);
+    }
+  }
+
   Future<void> _delete(AdminMenuItem item) async {
     final pin = await requestManagerPin(
         context, t('Xóa món ăn "${item.name}". Cần PIN Manager hoặc Admin.'));
@@ -250,6 +278,9 @@ class _MenuTabState extends State<MenuTab> {
                       onToggleHidden: () => _toggleHidden(items[i]),
                       onDelete: () => _delete(items[i]),
                       onToggleAvailability: () => _toggleAvailability(items[i]),
+                      onToggleDineIn: () => _toggleDineIn(items[i]),
+                      onToggleTakeaway: () => _toggleTakeaway(items[i]),
+                      onChangeSort: (sort) => _updateSort(items[i], sort),
                     ),
                   ),
                 ),
@@ -347,7 +378,7 @@ class _MenuTabState extends State<MenuTab> {
   }
 }
 
-class _MenuRow extends StatelessWidget {
+class _MenuRow extends StatefulWidget {
   final AdminMenuItem item;
   final String categoryName;
   final String serverUrl;
@@ -356,6 +387,9 @@ class _MenuRow extends StatelessWidget {
   final VoidCallback onToggleHidden;
   final VoidCallback onDelete;
   final VoidCallback onToggleAvailability;
+  final VoidCallback onToggleDineIn;
+  final VoidCallback onToggleTakeaway;
+  final ValueChanged<int> onChangeSort;
 
   _MenuRow({
     required this.item,
@@ -366,7 +400,53 @@ class _MenuRow extends StatelessWidget {
     required this.onToggleHidden,
     required this.onDelete,
     required this.onToggleAvailability,
+    required this.onToggleDineIn,
+    required this.onToggleTakeaway,
+    required this.onChangeSort,
   });
+
+  @override
+  State<_MenuRow> createState() => _MenuRowState();
+}
+
+class _MenuRowState extends State<_MenuRow> {
+  late final TextEditingController _sortCtrl;
+
+  AdminMenuItem get item => widget.item;
+  String get categoryName => widget.categoryName;
+  String get serverUrl => widget.serverUrl;
+  String get stationName => widget.stationName;
+  VoidCallback get onEdit => widget.onEdit;
+  VoidCallback get onToggleHidden => widget.onToggleHidden;
+  VoidCallback get onDelete => widget.onDelete;
+  VoidCallback get onToggleAvailability => widget.onToggleAvailability;
+
+  @override
+  void initState() {
+    super.initState();
+    _sortCtrl = TextEditingController(text: item.sort.toString());
+  }
+
+  @override
+  void didUpdateWidget(covariant _MenuRow oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.item.sort != item.sort &&
+        int.tryParse(_sortCtrl.text.trim()) != item.sort) {
+      _sortCtrl.text = item.sort.toString();
+    }
+  }
+
+  @override
+  void dispose() {
+    _sortCtrl.dispose();
+    super.dispose();
+  }
+
+  String _updatedAtLabel() {
+    if (item.updatedAt.isEmpty) return '—';
+    final d = DateTime.tryParse(item.updatedAt);
+    return d == null ? '—' : Fmt.dmyHm(d.toLocal());
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -377,64 +457,147 @@ class _MenuRow extends StatelessWidget {
         border: Border.all(color: DanColors.border),
         borderRadius: BorderRadius.circular(DanRadius.md),
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _Thumb(item: item, serverUrl: serverUrl),
-          SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
+          Row(
+            children: [
+              _Thumb(item: item, serverUrl: serverUrl),
+              SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Flexible(
-                      child: Text(item.name,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                              fontSize: 14.5, fontWeight: FontWeight.w800)),
+                    Row(
+                      children: [
+                        Flexible(
+                          child: Text(item.name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                  fontSize: 14.5, fontWeight: FontWeight.w800)),
+                        ),
+                        if (item.hidden) ...[
+                          SizedBox(width: 6),
+                          _Chip(t('Ẩn'), DanColors.muted),
+                        ],
+                        if (!item.scheduleAvailable) ...[
+                          SizedBox(width: 6),
+                          _Chip(t('Ngoài lịch'), DanColors.doing),
+                        ],
+                      ],
                     ),
-                    if (item.hidden) ...[
-                      SizedBox(width: 6),
-                      _Chip(t('Ẩn'), DanColors.muted),
-                    ],
-                    if (!item.scheduleAvailable) ...[
-                      SizedBox(width: 6),
-                      _Chip(t('Ngoài lịch'), DanColors.doing),
-                    ],
+                    SizedBox(height: 3),
+                    Text(
+                      '${categoryName.isNotEmpty ? '$categoryName · ' : ''}${Fmt.money(item.price)} · $stationName',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(fontSize: 11.5, color: DanColors.faint),
+                    ),
                   ],
                 ),
-                SizedBox(height: 3),
-                Text(
-                  '${categoryName.isNotEmpty ? '$categoryName · ' : ''}${Fmt.money(item.price)} · $stationName',
+              ),
+              SizedBox(width: 8),
+              TextButton(onPressed: onEdit, child: Text(t('Sửa'))),
+              TextButton(
+                  onPressed: onToggleHidden,
+                  child: Text(item.hidden ? t('Hiện') : t('Ẩn'))),
+              TextButton(
+                onPressed: onDelete,
+                style: TextButton.styleFrom(foregroundColor: DanColors.late),
+                child: Text(t('Xóa')),
+              ),
+            ],
+          ),
+          SizedBox(height: 8),
+          Divider(height: 1, color: DanColors.border),
+          SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  '${t('Mã')}: ${item.code.isEmpty ? '—' : item.code}   ·   '
+                  '${t('Cập nhật')}: ${_updatedAtLabel()}',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: TextStyle(fontSize: 11.5, color: DanColors.faint),
+                  style: TextStyle(fontSize: 11, color: DanColors.faint),
                 ),
-              ],
-            ),
-          ),
-          SizedBox(width: 8),
-          TextButton(onPressed: onEdit, child: Text(t('Sửa'))),
-          TextButton(
-              onPressed: onToggleHidden,
-              child: Text(item.hidden ? t('Hiện') : t('Ẩn'))),
-          TextButton(
-            onPressed: onDelete,
-            style: TextButton.styleFrom(foregroundColor: DanColors.late),
-            child: Text(t('Xóa')),
-          ),
-          SizedBox(width: 4),
-          Tooltip(
-            message: item.available ? t('Đang bán') : t('Tạm hết'),
-            child: Switch(
-              value: item.available,
-              activeThumbColor: DanColors.done,
-              onChanged: (_) => onToggleAvailability(),
-            ),
+              ),
+              SizedBox(width: 8),
+              Text(t('TT'),
+                  style: TextStyle(fontSize: 11, color: DanColors.faint)),
+              SizedBox(width: 4),
+              SizedBox(
+                width: 52,
+                height: 32,
+                child: TextField(
+                  controller: _sortCtrl,
+                  keyboardType: TextInputType.number,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 12),
+                  decoration: InputDecoration(
+                    isDense: true,
+                    contentPadding: EdgeInsets.symmetric(vertical: 6),
+                  ),
+                  onSubmitted: (v) =>
+                      widget.onChangeSort(int.tryParse(v.trim()) ?? item.sort),
+                ),
+              ),
+              SizedBox(width: 14),
+              _MiniSwitch(
+                label: t('Tại chỗ'),
+                value: item.availableDineIn,
+                onChanged: widget.onToggleDineIn,
+              ),
+              SizedBox(width: 10),
+              _MiniSwitch(
+                label: t('Mang đi'),
+                value: item.availableTakeaway,
+                onChanged: widget.onToggleTakeaway,
+              ),
+              SizedBox(width: 14),
+              Tooltip(
+                message: item.available ? t('Đang bán') : t('Tạm hết'),
+                child: Switch(
+                  value: item.available,
+                  activeThumbColor: DanColors.done,
+                  onChanged: (_) => onToggleAvailability(),
+                ),
+              ),
+            ],
           ),
         ],
       ),
+    );
+  }
+}
+
+class _MiniSwitch extends StatelessWidget {
+  final String label;
+  final bool value;
+  final VoidCallback onChanged;
+  _MiniSwitch(
+      {required this.label, required this.value, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(label,
+            style: TextStyle(
+              fontSize: 11,
+              color: value ? DanColors.muted : DanColors.faint,
+            )),
+        Transform.scale(
+          scale: 0.75,
+          child: Switch(
+            value: value,
+            activeThumbColor: DanColors.brand,
+            onChanged: (_) => onChanged(),
+          ),
+        ),
+      ],
     );
   }
 }

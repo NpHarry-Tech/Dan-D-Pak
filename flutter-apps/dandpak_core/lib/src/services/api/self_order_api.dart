@@ -143,7 +143,13 @@ extension ApiServiceSelfOrderApi on ApiService {
             item['ingredients'] is List ? item['ingredients'] as List : [],
         allergens: item['allergens'] is List ? item['allergens'] as List : [],
         modifiers: item['modifiers'] is List ? item['modifiers'] as List : [],
-        addons: item['addons'] is List ? item['addons'] as List : [],
+        addons: (item['addons'] is List)
+            ? (item['addons'] as List)
+                .whereType<Map>()
+                .map((e) => SoAddon.fromJson(Map<String, dynamic>.from(e)))
+                .where((a) => a.available && a.name.isNotEmpty)
+                .toList()
+            : const <SoAddon>[],
         optionGroups: (item['option_groups'] is List)
             ? (item['option_groups'] as List)
                 .whereType<Map>()

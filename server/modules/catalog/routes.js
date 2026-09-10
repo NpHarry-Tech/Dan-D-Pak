@@ -2,7 +2,7 @@
 // Nghiệp vụ ở services/catalog.js (+ ghi menu_items trực tiếp qua db). Giữ NGUYÊN hành vi.
 import * as Catalog from '../../services/catalog.js';
 import * as Auth from '../../services/auth.js';
-import { db, uid, audit } from '../../db.js';
+import { db, uid, audit, now } from '../../db.js';
 import { emit } from '../../realtime.js';
 
 export function registerCatalogRoutes(api, { wrap, guard, branch, visibleBranch, actor, saveBase64Image, MENU_UPLOADS_DIR }) {
@@ -89,12 +89,13 @@ api.post('/menu', guard('menu.manage'), wrap(async (req) => {
     translations: b.translations,
   });
   db.prepare(`INSERT INTO menu_items
-    (id,branch_id,category_id,name,emoji,image,description,price,price_includes_vat,vat_rate,station,station_id,sla_minutes,available,hidden,self_order_hidden,ingredients_json,allergens_json,schedule_json,modifiers_json,addons_json,option_groups_json,translations_json,sort)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
+    (id,branch_id,category_id,name,code,emoji,image,description,price,price_includes_vat,vat_rate,station,station_id,sla_minutes,available,available_dine_in,available_takeaway,hidden,self_order_hidden,ingredients_json,allergens_json,schedule_json,modifiers_json,addons_json,option_groups_json,translations_json,sort,updated_at)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
     id,
     branch_id,
     b.category_id,
     b.name,
+    String(b.code || '').trim().slice(0, 40) || null,
     b.emoji || '🍽️',
     b.image || null,
     b.description || null,
@@ -105,6 +106,8 @@ api.post('/menu', guard('menu.manage'), wrap(async (req) => {
     station.id,
     parseInt(b.sla_minutes) || 10,
     b.available === false ? 0 : 1,
+    b.available_dine_in === false ? 0 : 1,
+    b.available_takeaway === false ? 0 : 1,
     b.hidden ? 1 : 0,
     b.self_order_hidden ? 1 : 0,
     JSON.stringify(Catalog.parseList(b.ingredients)),
@@ -114,7 +117,8 @@ api.post('/menu', guard('menu.manage'), wrap(async (req) => {
     JSON.stringify(Catalog.normalizeAddons(b.addons)),
     JSON.stringify(Catalog.normalizeOptionGroups(b.option_groups)),
     JSON.stringify(translations),
-    sort);
+    sort,
+    now());
   Catalog.replaceRecipe(id, b.recipe || [], branch_id);
   audit('menu.create', { id, name: b.name }, branch_id, actor(req));
   Catalog.cacheBust('menu:');
@@ -145,10 +149,12 @@ api.post('/menu/:id/update', guard('menu.manage'), wrap(async (req) => {
     translations: b.translations !== undefined ? b.translations : cur.translations_json,
   });
   db.prepare(`UPDATE menu_items SET
-      name=?, emoji=?, image=?, description=?, price=?, price_includes_vat=?, vat_rate=?, category_id=?, station=?, station_id=?, sla_minutes=?,
-      ingredients_json=?, allergens_json=?, schedule_json=?, hidden=?, self_order_hidden=?, addons_json=?, option_groups_json=?, translations_json=?
+      name=?, code=?, emoji=?, image=?, description=?, price=?, price_includes_vat=?, vat_rate=?, category_id=?, station=?, station_id=?, sla_minutes=?,
+      ingredients_json=?, allergens_json=?, schedule_json=?, hidden=?, self_order_hidden=?, addons_json=?, option_groups_json=?, translations_json=?,
+      available_dine_in=?, available_takeaway=?, sort=?, updated_at=?
     WHERE id=? AND branch_id=?`).run(
     nextName,
+    b.code !== undefined ? (String(b.code || '').trim().slice(0, 40) || null) : cur.code,
     v('emoji', cur.emoji),
     b.image !== undefined ? (b.image || null) : cur.image,
     nextDescription || null,
@@ -167,6 +173,10 @@ api.post('/menu/:id/update', guard('menu.manage'), wrap(async (req) => {
     b.addons !== undefined ? JSON.stringify(Catalog.normalizeAddons(b.addons)) : (cur.addons_json || '[]'),
     b.option_groups !== undefined ? JSON.stringify(Catalog.normalizeOptionGroups(b.option_groups)) : (cur.option_groups_json || '[]'),
     JSON.stringify(translations),
+    b.available_dine_in !== undefined ? (b.available_dine_in ? 1 : 0) : (cur.available_dine_in ?? 1),
+    b.available_takeaway !== undefined ? (b.available_takeaway ? 1 : 0) : (cur.available_takeaway ?? 1),
+    b.sort !== undefined ? (parseInt(b.sort) || 0) : cur.sort,
+    now(),
     req.params.id, branch_id);
   if (Array.isArray(b.recipe)) Catalog.replaceRecipe(req.params.id, b.recipe || [], branch_id);
   audit('menu.update', { id: req.params.id }, branch_id, actor(req));
@@ -184,6 +194,36 @@ api.post('/menu/:id/availability', guard('menu.manage'), wrap((req) => {
   audit('menu.availability', { id: item.id, available: !!item.available }, branch_id, actor(req));
   emit('menu:updated', { id: item.id, available: !!item.available, name: item.name }, branch_id);
   return { id: item.id, available: !!item.available };
+}));
+
+// Bán tại chỗ / mang đi — toggle nhanh KHÔNG cần PIN, giống /availability (chỉ
+// đổi trạng thái hiển thị/tham khảo, không đụng giá/tiền nên không cần cổng PIN).
+api.post('/menu/:id/channels', guard('menu.manage'), wrap((req) => {
+  const branch_id = branch(req);
+  const cur = db.prepare(`SELECT available_dine_in,available_takeaway FROM menu_items WHERE id=? AND branch_id=?`).get(req.params.id, branch_id);
+  if (!cur) throw new Error('Món không tồn tại');
+  const dineIn = req.body.available_dine_in !== undefined ? (req.body.available_dine_in ? 1 : 0) : cur.available_dine_in;
+  const takeaway = req.body.available_takeaway !== undefined ? (req.body.available_takeaway ? 1 : 0) : cur.available_takeaway;
+  db.prepare(`UPDATE menu_items SET available_dine_in=?, available_takeaway=?, updated_at=? WHERE id=? AND branch_id=?`)
+    .run(dineIn, takeaway, now(), req.params.id, branch_id);
+  const item = Catalog.getMenuItem(req.params.id, {}, branch_id);
+  audit('menu.channels', { id: item.id, available_dine_in: item.available_dine_in, available_takeaway: item.available_takeaway }, branch_id, actor(req));
+  emit('menu:updated', { id: item.id }, branch_id);
+  return { id: item.id, available_dine_in: item.available_dine_in, available_takeaway: item.available_takeaway };
+}));
+
+// Thứ tự hiển thị — kéo/gõ số trực tiếp trong danh sách Thực đơn, không cần PIN
+// (chỉ đổi thứ tự sắp xếp, không phải giá/tiền).
+api.post('/menu/:id/sort', guard('menu.manage'), wrap((req) => {
+  const branch_id = branch(req);
+  const sort = parseInt(req.body.sort);
+  if (!Number.isFinite(sort)) throw new Error('Thứ tự không hợp lệ');
+  const cur = db.prepare(`SELECT id FROM menu_items WHERE id=? AND branch_id=?`).get(req.params.id, branch_id);
+  if (!cur) throw new Error('Món không tồn tại');
+  db.prepare(`UPDATE menu_items SET sort=?, updated_at=? WHERE id=? AND branch_id=?`).run(sort, now(), req.params.id, branch_id);
+  audit('menu.sort', { id: req.params.id, sort }, branch_id, actor(req));
+  emit('menu:updated', { id: req.params.id, sort }, branch_id);
+  return { id: req.params.id, sort };
 }));
 
 api.post('/menu/:id/price', guard('menu.manage'), wrap((req) => {

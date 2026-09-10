@@ -891,6 +891,18 @@ export function migrate(targetDb = globalDb) {
   // Trạm chế biến là entity theo chi nhánh; giữ cột `station` legacy làm snapshot
   // code để client cũ tiếp tục hoạt động trong lúc chuyển đổi.
   addColumnIfMissing('menu_items', 'station_id', 'TEXT');
+  // Mã món (nhập tay, giống mã SKU bên retail) — hiện ở danh sách Thực đơn +
+  // "Mã món" trong panel chi tiết Self-Order (trước đây luôn rỗng cho món F&B).
+  addColumnIfMissing('menu_items', 'code', 'TEXT');
+  // Bán tại chỗ / Bán mang đi TÁCH RIÊNG (trước chỉ có 1 cờ `available` chung) —
+  // hiện tại CHỈ lưu trạng thái + hiển thị trong danh sách Thực đơn, giống bảng
+  // của iPOS; CHƯA có luồng đặt món "mang về" riêng để gắn thêm chặn bán theo
+  // kênh (hệ thống hiện chỉ có 1 luồng đặt món F&B), nên 2 cờ này chưa ảnh hưởng
+  // gì tới việc đặt món — mặc định BẬT cả hai để không đổi hành vi món cũ.
+  addColumnIfMissing('menu_items', 'available_dine_in', 'INTEGER NOT NULL DEFAULT 1');
+  addColumnIfMissing('menu_items', 'available_takeaway', 'INTEGER NOT NULL DEFAULT 1');
+  // Thời gian cập nhật gần nhất — tự stamp mỗi lần sửa món (services/catalog.js).
+  addColumnIfMissing('menu_items', 'updated_at', 'TEXT');
   addColumnIfMissing('categories', 'default_station_id', 'TEXT');
   db.exec(`
     CREATE TABLE IF NOT EXISTS production_stations (

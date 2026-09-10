@@ -342,6 +342,7 @@ class MenuOptionGroup {
 
 class AdminMenuItem {
   final String id;
+  final String code;
   final String name;
   final String emoji;
   final String image;
@@ -353,8 +354,12 @@ class AdminMenuItem {
   final String station;
   final int slaMinutes;
   final bool available;
+  final bool availableDineIn;
+  final bool availableTakeaway;
   final bool hidden;
   final bool scheduleAvailable;
+  final int sort;
+  final String updatedAt;
   final List<String> ingredients;
   final List<String> allergens;
   final List<RecipeLine> recipe;
@@ -366,6 +371,7 @@ class AdminMenuItem {
 
   const AdminMenuItem({
     required this.id,
+    this.code = '',
     required this.name,
     required this.emoji,
     required this.image,
@@ -377,8 +383,12 @@ class AdminMenuItem {
     required this.station,
     required this.slaMinutes,
     required this.available,
+    this.availableDineIn = true,
+    this.availableTakeaway = true,
     required this.hidden,
     required this.scheduleAvailable,
+    this.sort = 0,
+    this.updatedAt = '',
     required this.ingredients,
     required this.allergens,
     required this.recipe,
@@ -394,6 +404,7 @@ class AdminMenuItem {
     final addonsRaw = j['addons'];
     return AdminMenuItem(
       id: _str(j['id']),
+      code: _str(j['code']),
       name: _str(j['name']),
       emoji: _str(j['emoji']),
       image: _str(j['image']),
@@ -406,10 +417,16 @@ class AdminMenuItem {
       station: _str(j['station']).isEmpty ? 'kitchen' : _str(j['station']),
       slaMinutes: _int(j['sla_minutes'] ?? 10),
       available: j['available'] != 0 && j['available'] != false,
+      availableDineIn:
+          j['available_dine_in'] != 0 && j['available_dine_in'] != false,
+      availableTakeaway:
+          j['available_takeaway'] != 0 && j['available_takeaway'] != false,
       hidden: j['hidden'] == 1 || j['hidden'] == true,
       scheduleAvailable: j['schedule_available'] == null
           ? true
           : (j['schedule_available'] != false && j['schedule_available'] != 0),
+      sort: _int(j['sort'] ?? 0),
+      updatedAt: _str(j['updated_at']),
       ingredients: _strList(j['ingredients']),
       allergens: _strList(j['allergens']),
       recipe: (recipeRaw is List)

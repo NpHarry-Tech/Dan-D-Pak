@@ -135,6 +135,23 @@ extension ApiServiceManagementApi on ApiService {
         body: {'hidden': hidden}, errorMessage: 'Không cập nhật được ẩn/hiện');
   }
 
+  /// Bán tại chỗ / mang đi — toggle nhanh, KHÔNG cần PIN (chỉ đổi hiển thị,
+  /// không đụng giá/tiền). null = giữ nguyên giá trị hiện có của cờ đó.
+  Future<void> setMenuChannels(String itemId,
+      {bool? dineIn, bool? takeaway}) async {
+    await postJson('/api/menu/$itemId/channels',
+        body: {
+          if (dineIn != null) 'available_dine_in': dineIn,
+          if (takeaway != null) 'available_takeaway': takeaway,
+        },
+        errorMessage: 'Không cập nhật được kênh bán');
+  }
+
+  Future<void> setMenuSort(String itemId, int sort) async {
+    await postJson('/api/menu/$itemId/sort',
+        body: {'sort': sort}, errorMessage: 'Không cập nhật được thứ tự');
+  }
+
   Future<Map<String, dynamic>> createMenuItem(Map<String, dynamic> body) async {
     return mapFrom(await postJson('/api/menu',
         body: body, errorMessage: 'Không tạo được món'));

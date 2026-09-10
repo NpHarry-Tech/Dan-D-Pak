@@ -63,6 +63,36 @@ class SoOptionGroup {
       );
 }
 
+// Món ăn kèm & Extra (server: addons_json) — flat list ĐỘC LẬP, khách chọn từng
+// món riêng (không "chọn 1 trong nhóm" như option groups). Server validate qua
+// CHUNG resolveOrderMods bằng group kỹ thuật cố định — xem kAddonModGroup.
+const kAddonModGroup = '__addon__';
+
+class SoAddon {
+  final String key;
+  final String name;
+  final String kind; // combo (món có sẵn) | extra (topping/thêm)
+  final String type; // paid | free
+  final int price;
+  final bool available;
+  SoAddon({
+    required this.key,
+    required this.name,
+    required this.kind,
+    required this.type,
+    required this.price,
+    this.available = true,
+  });
+  factory SoAddon.fromJson(Map<String, dynamic> j) => SoAddon(
+        key: (j['key'] ?? '').toString(),
+        name: (j['name'] ?? '').toString(),
+        kind: j['kind'] == 'combo' ? 'combo' : 'extra',
+        type: j['type'] == 'free' ? 'free' : 'paid',
+        price: _soIntValue(j['sale_price'] ?? j['price']),
+        available: j['available'] != false,
+      );
+}
+
 class SoMenuItem {
   final String id;
   final String name;
@@ -78,7 +108,7 @@ class SoMenuItem {
   final List<dynamic> ingredients;
   final List<dynamic> allergens;
   final List<dynamic> modifiers;
-  final List<dynamic> addons;
+  final List<SoAddon> addons;
   final List<SoOptionGroup> optionGroups;
 
   SoMenuItem({
@@ -117,7 +147,13 @@ class SoMenuItem {
           json['ingredients'] is List ? json['ingredients'] as List : [],
       allergens: json['allergens'] is List ? json['allergens'] as List : [],
       modifiers: json['modifiers'] is List ? json['modifiers'] as List : [],
-      addons: json['addons'] is List ? json['addons'] as List : [],
+      addons: (json['addons'] is List)
+          ? (json['addons'] as List)
+              .whereType<Map>()
+              .map((e) => SoAddon.fromJson(Map<String, dynamic>.from(e)))
+              .where((a) => a.available && a.name.isNotEmpty)
+              .toList()
+          : <SoAddon>[],
       optionGroups: (json['option_groups'] is List)
           ? (json['option_groups'] as List)
               .whereType<Map>()

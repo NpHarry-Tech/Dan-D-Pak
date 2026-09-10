@@ -25,6 +25,7 @@ class _ItemFormDialog extends StatefulWidget {
 }
 
 class _ItemFormDialogState extends State<_ItemFormDialog> {
+  late final TextEditingController _code;
   late final TextEditingController _name;
   late final TextEditingController _price;
   late final TextEditingController _vatRate;
@@ -38,6 +39,8 @@ class _ItemFormDialogState extends State<_ItemFormDialog> {
   late String _categoryId;
   late String _station;
   late bool _hidden;
+  late bool _availableDineIn;
+  late bool _availableTakeaway;
   late bool _priceIncludesVat;
   late String _schedMode;
   late final TextEditingController _start;
@@ -59,6 +62,7 @@ class _ItemFormDialogState extends State<_ItemFormDialog> {
   void initState() {
     super.initState();
     final i = widget.item;
+    _code = TextEditingController(text: i?.code ?? '');
     _name = TextEditingController(text: i?.name ?? '');
     _price = TextEditingController(
         text: i != null ? i.price.round().toString() : '');
@@ -82,6 +86,8 @@ class _ItemFormDialogState extends State<_ItemFormDialog> {
             ? '${activeStations.first['code']}'
             : 'kitchen');
     _hidden = i?.hidden ?? false;
+    _availableDineIn = i?.availableDineIn ?? true;
+    _availableTakeaway = i?.availableTakeaway ?? true;
     _priceIncludesVat = i?.priceIncludesVat ?? true;
     final s = i?.schedule ?? MenuSchedule();
     _schedMode = {'always', 'daily', 'weekly', 'date'}.contains(s.mode)
@@ -144,6 +150,7 @@ class _ItemFormDialogState extends State<_ItemFormDialog> {
   @override
   void dispose() {
     for (final c in [
+      _code,
       _name,
       _price,
       _vatRate,
@@ -215,6 +222,7 @@ class _ItemFormDialogState extends State<_ItemFormDialog> {
     if (pin == null) return;
 
     final body = <String, dynamic>{
+      'code': _code.text.trim(),
       'name': _name.text.trim(),
       'price': int.tryParse(_price.text.trim()) ?? 0,
       'vat_rate': num.tryParse(_vatRate.text.trim()) ?? 0,
@@ -229,6 +237,8 @@ class _ItemFormDialogState extends State<_ItemFormDialog> {
       'ingredients': _parseList(_ingredients.text),
       'allergens': _parseList(_allergens.text),
       'hidden': _hidden,
+      'available_dine_in': _availableDineIn,
+      'available_takeaway': _availableTakeaway,
       'schedule': {
         'mode': _schedMode,
         'start': _start.text.trim(),
@@ -342,7 +352,19 @@ class _ItemFormDialogState extends State<_ItemFormDialog> {
                     child: ListView(
                       padding: EdgeInsets.all(20),
                       children: [
-                        _field(t('Tên món'), _name, hint: t('VD: Bún bò Huế')),
+                        Row(
+                          children: [
+                            SizedBox(
+                              width: 140,
+                              child: _field(t('Mã món'), _code,
+                                  hint: t('VD: 0200104')),
+                            ),
+                            SizedBox(width: 12),
+                            Expanded(
+                                child: _field(t('Tên món'), _name,
+                                    hint: t('VD: Bún bò Huế'))),
+                          ],
+                        ),
                         Row(
                           children: [
                             Expanded(
@@ -428,6 +450,32 @@ class _ItemFormDialogState extends State<_ItemFormDialog> {
                                   fontSize: 11.5, color: DanColors.faint)),
                           onChanged: (v) =>
                               setState(() => _selfOrderHidden = !v),
+                        ),
+                        SwitchListTile(
+                          contentPadding: EdgeInsets.zero,
+                          value: _availableDineIn,
+                          activeThumbColor: DanColors.brand,
+                          title: Text(t('Bán tại chỗ'),
+                              style: TextStyle(
+                                  fontSize: 13.5, fontWeight: FontWeight.w700)),
+                          onChanged: (v) =>
+                              setState(() => _availableDineIn = v),
+                        ),
+                        SwitchListTile(
+                          contentPadding: EdgeInsets.zero,
+                          value: _availableTakeaway,
+                          activeThumbColor: DanColors.brand,
+                          title: Text(t('Bán mang đi'),
+                              style: TextStyle(
+                                  fontSize: 13.5, fontWeight: FontWeight.w700)),
+                          subtitle: Text(
+                              t('Hiện lưu trạng thái để tham khảo/báo cáo — hệ '
+                                  'thống chưa có luồng đặt món "mang về" riêng '
+                                  'để tự chặn bán theo kênh.'),
+                              style: TextStyle(
+                                  fontSize: 11.5, color: DanColors.faint)),
+                          onChanged: (v) =>
+                              setState(() => _availableTakeaway = v),
                         ),
                       ],
                     ),
@@ -751,6 +799,12 @@ if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
       children: [
         Text(t('Món ăn kèm & Extra'),
             style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
+        SizedBox(height: 2),
+        Text(
+          t('Hiện khi khách bấm chọn món trên Tablet Self-Order — khách tick '
+              'từng món độc lập (không phải "chọn 1 trong nhóm" như Nhóm tùy chọn bên dưới).'),
+          style: TextStyle(fontSize: 11, color: DanColors.faint),
+        ),
         SizedBox(height: 6),
         if (_addons.isEmpty)
           Padding(

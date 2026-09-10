@@ -224,6 +224,12 @@ class _ItemDetailPanel extends StatelessWidget {
   // Trạng thái chọn tùy chọn do MÀN (Stateful) giữ: groupKey -> tập optionKey.
   final Map<String, Set<String>> selected;
   final void Function(SoOptionGroup group, SoOptionItem option) onToggleOption;
+  // Món ăn kèm & Extra đã chọn (độc lập từng món, không theo nhóm) + số lượng
+  // muốn thêm cùng lúc (khách gọi 5-7 phần thì chọn 1 lần, khỏi bấm lại nhiều lần).
+  final Set<String> selectedAddons;
+  final void Function(SoAddon addon) onToggleAddon;
+  final int qty;
+  final ValueChanged<int> onQtyChange;
 
   _ItemDetailPanel({
     required this.item,
@@ -235,6 +241,10 @@ class _ItemDetailPanel extends StatelessWidget {
     required this.onAdd,
     this.selected = const {},
     required this.onToggleOption,
+    this.selectedAddons = const {},
+    required this.onToggleAddon,
+    required this.qty,
+    required this.onQtyChange,
   });
 
   int get _optionsTotal {
@@ -246,6 +256,66 @@ class _ItemDetailPanel extends StatelessWidget {
       }
     }
     return sum;
+  }
+
+  int get _addonsTotal {
+    var sum = 0;
+    for (final a in item.addons) {
+      if (selectedAddons.contains(a.key)) sum += a.price;
+    }
+    return sum;
+  }
+
+  int get _unitPrice => item.price + _optionsTotal + _addonsTotal;
+  int get _grandTotal => _unitPrice * qty;
+
+  Widget _addonsBlock() {
+    if (item.addons.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: EdgeInsets.only(bottom: 14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(lang.addonsLabel,
+              style: TextStyle(
+                  fontSize: 13.5,
+                  fontWeight: FontWeight.w900,
+                  color: Color(0xFF1A2230))),
+          SizedBox(height: 6),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final a in item.addons)
+                _OptionChip(
+                  label: a.name,
+                  price: a.price,
+                  selected: selectedAddons.contains(a.key),
+                  single: false,
+                  onTap: () => onToggleAddon(a),
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _qtyStepper() {
+    return Row(
+      children: [
+        _QtyBtn(icon: Icons.remove, onTap: () => onQtyChange(qty - 1)),
+        Padding(
+          padding: EdgeInsets.symmetric(horizontal: 14),
+          child: Text('$qty',
+              style: TextStyle(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w900,
+                  color: Color(0xFF1A2230))),
+        ),
+        _QtyBtn(icon: Icons.add, onTap: () => onQtyChange(qty + 1)),
+      ],
+    );
   }
 
   Widget _optionGroupBlock(SoOptionGroup g) {
@@ -314,7 +384,6 @@ class _ItemDetailPanel extends StatelessWidget {
     }
 
     add(lang.categoryLabel, categoryLabel);
-    add(lang.descriptionLabel, item.description ?? '');
     add(lang.codeLabel, _itemCode);
     add(lang.ingredientsLabel, _joinList(item.ingredients));
     add(lang.allergensLabel, _joinList(item.allergens));
@@ -346,7 +415,7 @@ class _ItemDetailPanel extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           SizedBox(
-            height: 250,
+            height: 288,
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -382,15 +451,15 @@ class _ItemDetailPanel extends StatelessWidget {
                         ),
                         SizedBox(height: 6),
                         Text(
-                          _optionsTotal > 0
-                              ? t('đ${item.price + _optionsTotal}')
-                              : t('đ${item.price}'),
+                          t('đ$_unitPrice'),
                           style: TextStyle(
                             fontSize: 24,
                             fontWeight: FontWeight.w900,
                             color: Color(0xFF0891B2),
                           ),
                         ),
+                        SizedBox(height: 10),
+                        _qtyStepper(),
                         SizedBox(height: 12),
                         Expanded(
                           child: Text(
@@ -419,6 +488,9 @@ class _ItemDetailPanel extends StatelessWidget {
                   // Nhóm tùy chọn "Trên" trước thông tin món.
                   for (final g in item.optionGroups)
                     if (g.position == 'top') _optionGroupBlock(g),
+                  // Món ăn kèm & Extra — flat list độc lập, luôn hiện SAU nhóm
+                  // tùy chọn "trên" và TRƯỚC thông tin món (mã, nguyên liệu…).
+                  _addonsBlock(),
                   for (final row in _rows) _infoRow(row.$1, row.$2),
                   // Nhóm tùy chọn "Dưới" sau thông tin món.
                   for (final g in item.optionGroups)
@@ -433,9 +505,7 @@ class _ItemDetailPanel extends StatelessWidget {
               onPressed: onAdd,
               icon: Icon(Icons.add_shopping_cart, size: 18),
               label: Text(
-                _optionsTotal > 0
-                    ? '${lang.addToCartBtn} · đ${item.price + _optionsTotal}'
-                    : lang.addToCartBtn,
+                '${lang.addToCartBtn} · đ$_grandTotal',
                 style: TextStyle(fontSize: 15, fontWeight: FontWeight.w900),
               ),
               style: FilledButton.styleFrom(

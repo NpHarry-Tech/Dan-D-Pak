@@ -57,6 +57,9 @@ class _SelfOrderMenuScreenState extends State<SelfOrderMenuScreen> {
   SoMenuItem? _detailItem;
   // Tùy chọn khách đang chọn ở panel chi tiết: groupKey -> tập optionKey.
   final Map<String, Set<String>> _detailSel = {};
+  // Món ăn kèm & Extra đã chọn (độc lập, không theo nhóm) + số lượng muốn thêm.
+  final Set<String> _detailAddons = {};
+  int _detailQty = 1;
   bool _loading = true;
   String? _error;
   bool _sending = false;
@@ -280,16 +283,34 @@ class _SelfOrderMenuScreenState extends State<SelfOrderMenuScreen> {
     }
     _lastTappedItemId = item.id;
     _lastItemTapAt = now;
+    // Món không có nhóm tùy chọn lẫn món ăn kèm/extra → khỏi hỏi gì thêm, vào
+    // thẳng giỏ hàng như trước đây (panel chi tiết chỉ cần khi có gì để chọn).
+    if (item.optionGroups.isEmpty && item.addons.isEmpty) {
+      _addItem(item);
+      return;
+    }
     setState(() {
       _detailItem = item;
       // Mở món mới → reset lựa chọn; nhóm "chọn 1 bắt buộc" tự chọn sẵn cái đầu.
       _detailSel.clear();
+      _detailAddons.clear();
+      _detailQty = 1;
       for (final g in item.optionGroups) {
         if (g.single && g.required && g.options.isNotEmpty) {
           _detailSel[g.key] = {g.options.first.key};
         }
       }
     });
+  }
+
+  void _toggleAddon(SoAddon addon) {
+    setState(() {
+      if (!_detailAddons.remove(addon.key)) _detailAddons.add(addon.key);
+    });
+  }
+
+  void _setDetailQty(int qty) {
+    setState(() => _detailQty = qty < 1 ? 1 : qty);
   }
 
   // Bấm một tùy chọn: nhóm "chọn 1" thay thế; nhóm nhiều thì bật/tắt (tôn trọng max).
@@ -341,12 +362,22 @@ class _SelfOrderMenuScreenState extends State<SelfOrderMenuScreen> {
         }
       }
     }
+    // Món ăn kèm & Extra đã chọn — cùng group kỹ thuật với server (kAddonModGroup)
+    // để resolveOrderMods khớp đúng dòng, không bị từ chối "không có trong thực đơn".
+    for (final a in item.addons) {
+      if (_detailAddons.contains(a.key)) {
+        mods.add(
+            SoModifierOption(group: kAddonModGroup, name: a.name, price: a.price));
+      }
+    }
     setState(() {
       // Món có tùy chọn = KHÔNG gộp (mỗi cấu hình là 1 dòng riêng).
-      _cart.add(
-          SoCartItem(item: item, qty: 1, notes: '', selectedModifiers: mods));
+      _cart.add(SoCartItem(
+          item: item, qty: _detailQty, notes: '', selectedModifiers: mods));
       _detailItem = null;
       _detailSel.clear();
+      _detailAddons.clear();
+      _detailQty = 1;
     });
   }
 
@@ -822,8 +853,15 @@ class _SelfOrderMenuScreenState extends State<SelfOrderMenuScreen> {
                                         serverUrl: widget.serverUrl,
                                         selected: _detailSel,
                                         onToggleOption: _toggleOption,
-                                        onClose: () =>
-                                            setState(() => _detailItem = null),
+                                        selectedAddons: _detailAddons,
+                                        onToggleAddon: _toggleAddon,
+                                        qty: _detailQty,
+                                        onQtyChange: _setDetailQty,
+                                        onClose: () => setState(() {
+                                          _detailItem = null;
+                                          _detailAddons.clear();
+                                          _detailQty = 1;
+                                        }),
                                         onAdd: () =>
                                             _addDetailItem(_detailItem!),
                                       ),

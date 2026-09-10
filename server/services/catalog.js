@@ -10,6 +10,9 @@ const _cache = new Map(); // key -> { value, expiresAt }
 const MENU_TTL     = 10_000; // 10 giây
 const SETTINGS_TTL = 15_000; // 15 giây
 export const MENU_TRANSLATION_LANGS = ['vi', 'en', 'zh', 'ja', 'ko'];
+// Group kỹ thuật cố định cho mod validate của "Món ăn kèm & Extra" (addons) —
+// KHÔNG hiện cho khách, chỉ để resolveOrderMods khớp đúng dòng addon đã chọn.
+export const ADDON_MOD_GROUP = '__addon__';
 
 function cacheGet(key) {
   const e = _cache.get(key);
@@ -138,11 +141,19 @@ export function normalizeMenuItem(row, { forCustomer = false, includeRecipe = fa
   const vatRate = Number(row.vat_rate) || 0;
   // NHÓM TÙY CHỌN hợp nhất (size/đá + topping + combo) — nguồn chính cho Self-Order.
   const optionGroups = enrichOptionGroups(row.option_groups_json, row.branch_id, vatRate, priceIncludesVat);
+  // Món ăn kèm & Extra — flat list riêng (không nhóm/không min-max), khách chọn
+  // độc lập từng món trên Self-Order (xem ADDON_MOD_GROUP dưới đây).
+  const addons = enrichAddons(row.addons_json, row.branch_id, vatRate, priceIncludesVat);
   // FLATTEN nhóm -> modifiers phẳng (group=tên nhóm, name=tên option) để
   // resolveOrderMods VALIDATE + tính giá tự động, KHÔNG phải sửa logic đặt món.
   // Gộp cả modifiers_json cũ để tương thích ngược.
   const flatFromGroups = optionGroups.flatMap(g =>
     g.options.map(o => ({ group: g.name, name: o.name, price: o.price, sale_price: o.sale_price })));
+  // Addon đã chọn cũng validate qua CHUNG đường resolveOrderMods — group kỹ thuật cố
+  // định (không dịch, không hiện cho khách) để client + server khớp đúng 1 dòng.
+  const flatFromAddons = addons
+    .filter(a => a.available && a.name)
+    .map(a => ({ group: ADDON_MOD_GROUP, name: a.name, price: a.price, sale_price: a.sale_price }));
   const legacyMods = safeJson(row.modifiers_json, []).map(mod => ({
     ...mod, sale_price: salePrice(mod.price, vatRate, priceIncludesVat),
   }));
@@ -151,15 +162,17 @@ export function normalizeMenuItem(row, { forCustomer = false, includeRecipe = fa
     price_includes_vat: priceIncludesVat,
     sale_price: salePrice(row.price, vatRate, priceIncludesVat),
     available_flag: !!row.available,
+    available_dine_in: row.available_dine_in !== 0,
+    available_takeaway: row.available_takeaway !== 0,
     hidden: !!row.hidden,
     self_order_hidden: !!row.self_order_hidden,
     available: forCustomer ? canOrder : !!row.available,
     can_order: canOrder,
     schedule_available: scheduleAvailable,
     availability_reason: !visible ? 'hidden' : !row.available ? 'manual' : !scheduleAvailable ? 'schedule' : null,
-    modifiers: [...legacyMods, ...flatFromGroups],
+    modifiers: [...legacyMods, ...flatFromGroups, ...flatFromAddons],
     option_groups: optionGroups,
-    addons: enrichAddons(row.addons_json, row.branch_id),
+    addons,
     ingredients: ingredients.length ? ingredients : (recipe || []).map(r => r.name),
     allergens: safeJson(row.allergens_json, []),
     schedule,
@@ -370,7 +383,7 @@ export function normalizeOptionGroups(raw) {
   })).filter(g => g.name && g.options.length);
 }
 
-export function enrichAddons(addonsRaw, branch_id = 'sala') {
+export function enrichAddons(addonsRaw, branch_id = 'sala', vatRate = 0, priceIncludesVat = true) {
   const list = safeJson(addonsRaw, []) || [];
   return (Array.isArray(list) ? list : []).map(a => {
     const out = {
@@ -390,6 +403,8 @@ export function enrichAddons(addonsRaw, branch_id = 'sala') {
       }
     }
     if (out.type === 'free') out.price = 0;
+    // Cùng công thức VAT với option groups — Self-Order thu đúng giá đã gồm VAT.
+    out.sale_price = salePrice(out.price, vatRate, priceIncludesVat);
     return out;
   });
 }
