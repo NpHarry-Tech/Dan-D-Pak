@@ -1,5 +1,7 @@
 import 'package:intl/intl.dart';
 
+import '../utils/translation.dart';
+
 /// Shared number/money formatting that mirrors web `money()` / `moneyShort()`.
 class Fmt {
   Fmt._();
@@ -27,8 +29,10 @@ class Fmt {
   static final DateFormat _hm = DateFormat('HH:mm');
   static final DateFormat _hms = DateFormat('HH:mm:ss');
   static final DateFormat _dmyHm = DateFormat('HH:mm dd/MM/yyyy');
+  static final DateFormat _dmyHmZh = DateFormat('yyyy年MM月dd日 HH:mm');
 
   static String hm(DateTime t) => _hm.format(t);
   static String hms(DateTime t) => _hms.format(t);
-  static String dmyHm(DateTime t) => _dmyHm.format(t);
+  static String dmyHm(DateTime t) =>
+      L10n.currentLocale == 'zh' ? _dmyHmZh.format(t) : _dmyHm.format(t);
 }

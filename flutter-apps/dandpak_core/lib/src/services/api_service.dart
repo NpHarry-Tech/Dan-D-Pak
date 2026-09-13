@@ -1,6 +1,7 @@
 import '../primitives.dart';
 import '../models/app_models.dart';
 import '../screens/self_order/self_order_models.dart';
+import '../utils/translation.dart';
 
 // Mỗi phần nghiệp vụ (POS, Quản lý, Cài đặt, Bán lẻ, Liên hệ, Mua hàng, Chi
 // phí, Online, Tài liệu, CSDL, Máy in, Self-Order, Kho, Hoá đơn…) sống ở

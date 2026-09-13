@@ -213,7 +213,7 @@ class _OverviewTabState extends State<_OverviewTab>
                     Icons.rule_folder_outlined)),
           ]),
           const SizedBox(height: 16),
-          _card(t('Tiền theo tài khoản ($periodLabel)'), [
+          _card('${t('Tiền theo tài khoản')} ($periodLabel)', [
             if (byAccount.isEmpty)
               Padding(
                   padding: const EdgeInsets.symmetric(vertical: 8),
@@ -247,7 +247,7 @@ class _OverviewTabState extends State<_OverviewTab>
               ),
           ]),
           const SizedBox(height: 12),
-          _card(t('Chi theo danh mục ($periodLabel)'), [
+          _card('${t('Chi theo danh mục')} ($periodLabel)', [
             if (byCat.isEmpty)
               Padding(
                   padding: const EdgeInsets.symmetric(vertical: 8),

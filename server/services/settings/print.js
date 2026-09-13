@@ -14,6 +14,10 @@ import {
 // ── 1. Schema mặc định ──────────────────────────────────────────────────────
 const DEFAULT_PRINT_CONFIG = {
   version: 1,
+  // Ngôn ngữ CHỮ IN RA trên bill/tem/phiếu — độc lập với ngôn ngữ giao diện app
+  // (đổi ngôn ngữ app không được làm đổi ngôn ngữ khách hàng nhìn thấy trên
+  // giấy). Xem services/printI18n.js + receipt_doc.js (buildReceiptDoc, v.v.).
+  printLang: 'vi',
   einvoice: {
     provider: 'MISA',
     taxCode: '',
@@ -285,6 +289,7 @@ export function sanitizePrintConfig(raw = {}) {
   return {
     version: 1,
     updated_at: input.updated_at || null,
+    printLang: ['vi', 'en', 'zh'].includes(input.printLang) ? input.printLang : 'vi',
     einvoice: mergePlain(DEFAULT_PRINT_CONFIG.einvoice, input.einvoice),
     labels: mergePlain(DEFAULT_PRINT_CONFIG.labels, input.labels),
     kitchen: mergePlain(DEFAULT_PRINT_CONFIG.kitchen, input.kitchen),
@@ -368,6 +373,7 @@ export function autoSaveTemplate(body = {}, branch_id = 'sala') {
   const current = getPrintConfig(branch_id);
   const next = sanitizePrintConfig({
     ...current,
+    printLang: body.printLang !== undefined ? body.printLang : current.printLang,
     bill: body.bill ? mergePlain(current.bill, body.bill) : current.bill,
     labels: body.labels ? mergePlain(current.labels, body.labels) : current.labels,
     templates: {

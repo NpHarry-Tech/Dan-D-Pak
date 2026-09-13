@@ -97,14 +97,21 @@ const money = (n) => Math.round(Number(n) || 0);
 const fold = (s) => String(s ?? '').toLowerCase()
   .normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/đ/g, 'd');
 
+function loadClassifyRules(branch_id) {
+  return db.prepare(`SELECT * FROM money_rules WHERE enabled=1 AND (branch_id=? OR branch_id='')
+    ORDER BY priority ASC, created_at ASC`).all(branch_id);
+}
+
 // Rule engine: trả {category, cost_center} đầu tiên khớp (ưu tiên priority nhỏ).
-function classify(branch_id, { direction, text }) {
+// `rules` truyền sẵn khi gọi TRONG VÒNG LẶP (reclassifyLedger) để khỏi truy
+// vấn + biên dịch lại SQL cho từng dòng — bảng money_rules chỉ vài chục dòng,
+// không đổi giữa các lần lặp.
+function classify(branch_id, { direction, text }, rules) {
   ensure();
   const hay = fold(text);
   if (!hay) return {};
-  const rules = db.prepare(`SELECT * FROM money_rules WHERE enabled=1 AND (branch_id=? OR branch_id='')
-    ORDER BY priority ASC, created_at ASC`).all(branch_id);
-  for (const r of rules) {
+  const list = rules || loadClassifyRules(branch_id);
+  for (const r of list) {
     if (r.direction && r.direction !== direction) continue;
     if (hay.includes(fold(r.pattern))) {
       return { category: r.category || null, cost_center: r.cost_center || null };
@@ -392,11 +399,12 @@ export function deleteMoneyRule(id, branch_id = 'sala', actor = 'system') {
 // Phân loại lại toàn bộ ledger theo rule hiện tại (sau khi sửa rule).
 export function reclassifyLedger(branch_id = 'sala') {
   ensure();
+  const rules = loadClassifyRules(branch_id);
   const rows = db.prepare(`SELECT id,direction,counterparty,note FROM money_transactions WHERE branch_id=?`).all(branch_id);
   const upd = db.prepare(`UPDATE money_transactions SET category=?, cost_center=COALESCE(?, cost_center) WHERE id=?`);
   let changed = 0;
   for (const r of rows) {
-    const cls = classify(branch_id, { direction: r.direction, text: `${r.counterparty || ''} ${r.note || ''}` });
+    const cls = classify(branch_id, { direction: r.direction, text: `${r.counterparty || ''} ${r.note || ''}` }, rules);
     if (cls.category || cls.cost_center) { upd.run(cls.category || null, cls.cost_center || null, r.id); changed++; }
   }
   return { reclassified: changed };

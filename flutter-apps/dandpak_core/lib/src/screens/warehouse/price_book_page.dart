@@ -223,8 +223,8 @@ class _PriceBookPageState extends State<PriceBookPage> {
                   TextField(
                     controller: vatCtrl,
                     keyboardType: TextInputType.number,
-                    decoration:
-                        InputDecoration(labelText: 'VAT (%)', isDense: true),
+                    decoration: InputDecoration(
+                        labelText: t('VAT (%)'), isDense: true),
                   ),
                   SwitchListTile(
                     contentPadding: EdgeInsets.zero,
@@ -359,7 +359,7 @@ class _PriceBookPageState extends State<PriceBookPage> {
                 kvHeaderCell(t('Giá vốn'), width: 96, align: TextAlign.right),
                 kvHeaderCell(t('Giá nhập cuối'),
                     width: 104, align: TextAlign.right),
-                kvHeaderCell('VAT', width: 56, align: TextAlign.center),
+                kvHeaderCell(t('VAT'), width: 56, align: TextAlign.center),
                 kvHeaderCell(t('Giá bán'), width: 104, align: TextAlign.right),
                 SizedBox(width: 44),
               ]),

@@ -102,7 +102,11 @@ class _ManualConfirmDialogState extends State<_ManualConfirmDialog> {
   String _time(dynamic iso) {
     final d = DateTime.tryParse('${iso ?? ''}')?.toLocal();
     if (d == null) return '';
-    return '${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')} ${d.day}/${d.month}';
+    final hm =
+        '${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}';
+    return L10n.currentLocale == 'zh'
+        ? '$hm ${d.month}月${d.day}日'
+        : '$hm ${d.day}/${d.month}';
   }
 
   void _submit() {

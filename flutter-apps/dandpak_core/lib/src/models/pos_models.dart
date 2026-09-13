@@ -1,3 +1,5 @@
+import '../utils/translation.dart';
+
 double _doubleValue(dynamic value) {
   if (value is num) return value.toDouble();
   return double.tryParse(value?.toString() ?? '') ?? 0.0;
@@ -63,7 +65,7 @@ class User {
       username: json['username'] ?? '',
       role: json['role'] ?? '',
       branchId: json['branch_id'] ?? '',
-      lang: json['lang'] == 'en' ? 'en' : 'vi',
+      lang: L10n.clean(json['lang']?.toString() ?? 'vi'),
       branchIds: branchIdsRaw is List
           ? branchIdsRaw.map((b) => b.toString()).toList()
           : <String>[
@@ -217,6 +219,13 @@ class MenuItem {
   final String imageUrl;
   final List<Modifier> modifiers;
   final bool isRetail;
+  // Món "hidden" giờ vẫn được server gửi về cho F&B POS (chỉ Self-Order mới
+  // bị lọc bỏ hẳn) — nhân viên cần THẤY món để biết nó đang tắt, không phải
+  // biến mất. `available` gộp sẵn cả hidden/tạm hết/ngoài lịch bán từ server
+  // (xem normalizeMenuItem#canOrder), `availabilityReason` cho biết lý do
+  // ('hidden' | 'manual' | 'schedule' | null) để hiện tooltip phù hợp.
+  final bool available;
+  final String? availabilityReason;
 
   MenuItem({
     required this.id,
@@ -228,6 +237,8 @@ class MenuItem {
     required this.imageUrl,
     required this.modifiers,
     this.isRetail = false,
+    this.available = true,
+    this.availabilityReason,
   });
 
   factory MenuItem.fromJson(Map<String, dynamic> json) {
@@ -257,6 +268,10 @@ class MenuItem {
       imageUrl: json['image_url'] ?? json['image'] ?? '',
       modifiers: parsedMods,
       isRetail: json['is_retail'] ?? false,
+      // Mặc định true: hàng retail (SKU) và các nơi khác dùng MenuItem.fromJson
+      // với payload không có trường này thì không được vô tình bị coi là khoá.
+      available: json['available'] as bool? ?? true,
+      availabilityReason: json['availability_reason'] as String?,
     );
   }
 }

@@ -15,7 +15,8 @@ extension ApiServiceManagementApi on ApiService {
 
   /// Report center catalog (list of available reports).
   Future<Map<String, dynamic>> getReportsCatalog() async {
-    return mapFrom(await getJson('/api/reports/catalog',
+    final qs = Uri(queryParameters: {'lang': L10n.currentLocale}).query;
+    return mapFrom(await getJson('/api/reports/catalog?$qs',
         errorMessage: 'Không tải được danh mục báo cáo'));
   }
 
@@ -29,6 +30,7 @@ extension ApiServiceManagementApi on ApiService {
   }) async {
     final qs = Uri(queryParameters: {
       'type': type,
+      'lang': L10n.currentLocale,
       if (period != null && period.isNotEmpty) 'period': period,
       if (from != null && from.isNotEmpty) 'from': from,
       if (to != null && to.isNotEmpty) 'to': to,
@@ -50,6 +52,7 @@ extension ApiServiceManagementApi on ApiService {
     final qs = Uri(queryParameters: {
       'type': type,
       'format': format,
+      'lang': L10n.currentLocale,
       if (period != null && period.isNotEmpty) 'period': period,
       if (from != null && from.isNotEmpty) 'from': from,
       if (to != null && to.isNotEmpty) 'to': to,
@@ -145,11 +148,6 @@ extension ApiServiceManagementApi on ApiService {
           if (takeaway != null) 'available_takeaway': takeaway,
         },
         errorMessage: 'Không cập nhật được kênh bán');
-  }
-
-  Future<void> setMenuSort(String itemId, int sort) async {
-    await postJson('/api/menu/$itemId/sort',
-        body: {'sort': sort}, errorMessage: 'Không cập nhật được thứ tự');
   }
 
   Future<Map<String, dynamic>> createMenuItem(Map<String, dynamic> body) async {

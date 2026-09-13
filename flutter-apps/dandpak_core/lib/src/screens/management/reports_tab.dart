@@ -22,13 +22,13 @@ class ReportsTab extends StatefulWidget {
 
 class _ReportsTabState extends State<ReportsTab> {
   static final _periodKeys = ['day', 'week', 'month', 'quarter', 'year'];
-  static final _periodLabels = [
-    t('Ngày'),
-    t('Tuần'),
-    t('Tháng'),
-    t('Quý'),
-    t('Năm')
-  ];
+  static List<String> get _periodLabels => [
+        t('Ngày'),
+        t('Tuần'),
+        t('Tháng'),
+        t('Quý'),
+        t('Năm')
+      ];
   static final _ymd = DateFormat('yyyy-MM-dd');
 
   ReportCatalog? _catalog;

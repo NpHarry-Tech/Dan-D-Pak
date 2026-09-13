@@ -107,7 +107,9 @@ class _CashExpenseDialogState extends State<CashExpenseDialog> {
                 OutlinedButton.icon(
                   onPressed: _pickAt,
                   icon: Icon(Icons.event, size: 16),
-                  label: Text(DateFormat('dd/MM/yyyy HH:mm').format(_at)),
+                  label: Text(L10n.currentLocale == 'zh'
+                      ? DateFormat('yyyy年MM月dd日 HH:mm').format(_at)
+                      : DateFormat('dd/MM/yyyy HH:mm').format(_at)),
                   style: OutlinedButton.styleFrom(
                       alignment: Alignment.centerLeft,
                       minimumSize: Size.fromHeight(42)),
@@ -535,7 +537,10 @@ class _CashReimbursementDialogState extends State<CashReimbursementDialog> {
                 OutlinedButton.icon(
                   onPressed: _pickAt,
                   icon: Icon(Icons.event, size: 15),
-                  label: Text(DateFormat('dd/MM HH:mm').format(_at),
+                  label: Text(
+                      L10n.currentLocale == 'zh'
+                          ? DateFormat('MM月dd日 HH:mm').format(_at)
+                          : DateFormat('dd/MM HH:mm').format(_at),
                       style: TextStyle(fontSize: 12)),
                   style: OutlinedButton.styleFrom(
                       minimumSize: Size.fromHeight(40)),

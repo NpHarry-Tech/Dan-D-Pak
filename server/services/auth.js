@@ -171,6 +171,11 @@ export const PERMISSIONS = [
   { key: 'kds', label: 'Sử dụng màn hình bếp (KDS)' },
   { key: 'reports', label: 'Báo cáo — xem toàn bộ trung tâm báo cáo' },
   ...REPORT_PERMISSIONS,
+  // Tách riêng khỏi 'reports' (quyền XEM): resolve đối soát bank, tạo/xoá rule
+  // phân loại, sửa nghĩa vụ định kỳ là hành động SỬA dòng tiền, không nên đi
+  // chung với quyền xem báo cáo — nếu không, một vai trò "chỉ xem báo cáo"
+  // trong tương lai vô tình được luôn quyền sửa/xoá ở Money.
+  { key: 'money.manage', label: 'Dòng tiền — quản lý quy tắc, đối soát bank, nghĩa vụ định kỳ' },
   { key: 'contacts.create', label: 'Danh bạ — tạo mới khách hàng, nhà cung cấp, nhân viên' },
   { key: 'contacts.edit', label: 'Danh bạ — chỉnh sửa thông tin khách hàng, nhà cung cấp, nhân viên' },
   { key: 'contacts.delete', label: 'Danh bạ — xóa khách hàng, nhà cung cấp, nhân viên' },
@@ -227,16 +232,6 @@ export const TENANT_ADMIN_PERMS = new Set([
 // reviewer cần để thiết lập kênh. Bí mật (Partner Key/secret/token) KHÔNG lộ nhờ
 // MASK ở tầng API (getPublicIntegrations), không phải nhờ cấm quyền.
 
-// BRANCH FULL ACCESS = toàn bộ quyền NGHIỆP VỤ trong (các) chi nhánh được cấp,
-// nhưng KHÔNG quản trị tenant và KHÔNG xem secret tích hợp thô. Tính TỪ catalog
-// nên không bao giờ stale: thêm quyền nghiệp vụ mới thì tự thuộc branch full
-// access (trừ khi liệt kê vào TENANT_ADMIN_PERMS). Dùng cho vai trò như
-// shopee_reviewer (full functional trong 1 branch review) — thay cho việc chép
-// tay 82 quyền hay danh sách cứng dễ lỗi thời (§19/§40).
-export function branchFullAccessPerms() {
-  return [...new Set(ALL_PERMS)].filter(p => !TENANT_ADMIN_PERMS.has(p));
-}
-
 // Display roles with plain-language names.
 export const ROLES = [
   { key: 'owner', label: 'Admin', note: 'Toàn quyền hệ thống, không thể chỉnh.' },
@@ -255,7 +250,7 @@ const DEFAULT_ROLE_PERMS = {
     'menu.manage', 'inventory.adjust', 'warehouse.manage',
     'refund', 'void', 'void.made', 'discount',
     'table.move', 'bill.split', 'order.view', 'order.confirm',
-    'reports', 'invoice', 'online', 'sell', 'pay', 'audit.view', 'settings.manage',
+    'reports', 'money.manage', 'invoice', 'online', 'sell', 'pay', 'audit.view', 'settings.manage',
     'contacts.create', 'contacts.edit', 'contacts.delete', 'settings.loyalty', 'settings.promotions',
     'settings.warehouse',
     'warehouse.item', 'warehouse.receive', 'warehouse.issue', 'warehouse.transfer',
@@ -439,6 +434,19 @@ function seedNewWarehousePerms() {
   }
 }
 seedNewWarehousePerms();
+
+// Backfill 'money.manage' cho bản đã chạy (§ tách quyền sửa Money khỏi 'reports'
+// xem-báo-cáo — xem seedRolePerms ở trên). Cấp cho vai trò đã từng thấy module
+// Kế toán/Dòng tiền ('module.accounting'), để không âm thầm rút quyền sửa mà
+// họ đang dùng hàng ngày.
+function seedMoneyManagePerm() {
+  const ins = db.prepare(`INSERT OR IGNORE INTO role_perms (role,perm) VALUES (?,?)`);
+  const roles = db.prepare(`SELECT DISTINCT role FROM role_perms WHERE perm='module.accounting'`)
+    .all().map(r => r.role);
+  if (!roles.includes('manager')) roles.push('manager');
+  for (const role of roles) ins.run(role, 'money.manage');
+}
+seedMoneyManagePerm();
 
 let permCache = null;
 function loadPerms() {
@@ -994,7 +1002,7 @@ export function updateUser(id, body, branch_id = 'sala', actor = null) {
 }
 
 export function updateOwnLang(user_id, lang, branch_id = 'sala') {
-  const clean = lang === 'en' ? 'en' : 'vi';
+  const clean = ['vi', 'en', 'zh'].includes(lang) ? lang : 'vi';
   const cur = db.prepare(`SELECT * FROM users WHERE id=? AND active=1`).get(user_id);
   if (!cur) throw new Error('Người dùng không tồn tại');
   db.prepare(`UPDATE users SET lang=? WHERE id=?`).run(clean, user_id);

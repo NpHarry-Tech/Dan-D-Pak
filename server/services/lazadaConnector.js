@@ -18,17 +18,36 @@ import { payOrder } from './payments.js';
 import { getIntegrationChannel, updateIntegrations } from './settings.js';
 import { listBranches } from './branches.js';
 import { upsertExternalProduct } from './online.js';
+import {
+  findConnectionByProviderShop, findRuntimeConnectionByProviderBranch, findRuntimeConnectionByProviderShop, updateConnectionTokens, withConnectionRefreshLease,
+} from './connectionStore.js';
+import {
+  enqueueMarketplaceWebhook, quarantineMarketplaceWebhook, registerMarketplaceWebhookProcessor,
+} from './marketplaceWebhookInbox.js';
+import {
+  marketplaceWritesEnabled, recordMappingRequired, recordOrderFinancials,
+} from './marketplaceSafety.js';
 
 const PROVIDER = 'lazada';
 const AUTH_BASE = 'https://auth.lazada.com/rest';
 const AUTHORIZE_URL = 'https://auth.lazada.com/oauth/authorize';
+const API_BASES = Object.freeze({
+  VN: 'https://api.lazada.vn/rest', SG: 'https://api.lazada.sg/rest',
+  MY: 'https://api.lazada.com.my/rest', TH: 'https://api.lazada.co.th/rest',
+  ID: 'https://api.lazada.co.id/rest', PH: 'https://api.lazada.com.ph/rest',
+});
 
 const money = (n) => Math.round(Number(n) || 0);
 const cleanId = (v) => String(v ?? '').trim();
 const json = (v) => JSON.stringify(v ?? null);
 
-export function lazadaConfig(branchId = 'sala') {
+export function lazadaConfig(branchId = 'sala', { shopId = '' } = {}) {
   const c = getIntegrationChannel('lazada', branchId) || {};
+  const connection = shopId
+    ? findRuntimeConnectionByProviderShop(PROVIDER, shopId)
+    : findRuntimeConnectionByProviderBranch(PROVIDER, branchId);
+  const selected = connection?.selected_shop || {};
+  const region = (cleanId(selected.region) || cleanId(c.region) || 'VN').toUpperCase();
   // App Key/Secret là credential CẤP NỀN TẢNG: ưu tiên ENV (Dan-D Pak đăng ký
   // app Lazada 1 lần), fallback per-branch để migrate. Xem shopeeConfig.
   const envAppId = String(process.env.LAZADA_APP_KEY || '').trim();
@@ -38,12 +57,16 @@ export function lazadaConfig(branchId = 'sala') {
     environment: String(process.env.LAZADA_ENV || '').trim() || cleanId(c.environment) || 'sandbox',
     appId: envAppId || cleanId(c.appId),         // Lazada app_key
     secretKey: envSecret || cleanId(c.secretKey), // app_secret
-    sellerId: cleanId(c.sellerId),
-    accessToken: cleanId(c.accessToken),
-    refreshToken: cleanId(c.refreshToken),
-    webhookSecret: cleanId(c.webhookSecret) || cleanId(c.secretKey),
-    apiBase: (cleanId(c.apiBase) || 'https://api.lazada.vn/rest').replace(/\/+$/, ''),
-    region: cleanId(c.region) || 'VN',
+    sellerId: cleanId(selected.external_shop_id) || cleanId(c.sellerId),
+    accessToken: cleanId(connection?.access_token) || cleanId(c.accessToken),
+    refreshToken: cleanId(connection?.refresh_token) || cleanId(c.refreshToken),
+    webhookSecret: cleanId(process.env.LAZADA_WEBHOOK_SECRET) || envSecret || cleanId(c.webhookSecret) || cleanId(c.secretKey),
+    // Never accept an API host from Flutter/branch settings. Region comes from
+    // the authorized account and resolves through this server-side allowlist.
+    apiBase: API_BASES[region] || API_BASES.VN,
+    region,
+    connectionId: connection?.id || '',
+    tokenSource: connection ? 'connection_platform' : 'legacy_settings',
   };
 }
 
@@ -96,11 +119,12 @@ async function call(cfg, apiPath, { method = 'GET', extra = {}, protectedApi = t
 }
 
 // ── OAuth ───────────────────────────────────────────────────────────────────
-export function lazadaAuthLink(branchId, redirect) {
+export function lazadaAuthLink(branchId, redirect, state = '') {
   const cfg = lazadaConfig(branchId);
   assertConfigured(cfg);
   const params = new URLSearchParams({
     response_type: 'code', force_auth: 'true', redirect_uri: redirect, client_id: cfg.appId,
+    ...(state ? { state: String(state) } : {}),
   });
   return `${AUTHORIZE_URL}?${params.toString()}`;
 }
@@ -130,26 +154,48 @@ export async function exchangeLazadaCodeRaw(branchId, code) {
   assertConfigured(cfg);
   const data = await call(cfg, '/auth/token/create', { method: 'POST', extra: { code: cleanId(code) }, protectedApi: false, useAuthBase: true, branchId });
   if (!data.access_token) throw new Error(`Lazada token exchange thất bại: ${data.message || data.code || 'unknown'}`);
-  const info = Array.isArray(data.country_user_info) ? data.country_user_info[0] : null;
-  const sellerId = info?.seller_id || data.account_id || '';
-  return {
-    shop_id: String(sellerId),
+  const infos = Array.isArray(data.country_user_info) ? data.country_user_info : [];
+  const shops = (infos.length ? infos : [{ seller_id: data.account_id }]).map(info => ({
+    shop_id: String(info?.seller_id || data.account_id || ''),
     shop_name: String(info?.name || info?.short_code || ''),
+    region: String(info?.country || info?.country_code || 'VN').toUpperCase(),
+    metadata: { account_platform: info?.account_platform, short_code: info?.short_code },
+  })).filter(shop => shop.shop_id);
+  return {
+    external_account_id: String(data.account_id || shops[0]?.shop_id || ''),
+    shops,
     access_token: data.access_token,
     refresh_token: data.refresh_token,
     expire_in: Number(data.expires_in) || 0,
+    refresh_expire_in: Number(data.refresh_expires_in) || 0,
+    granted_scopes: Array.isArray(data.scope) ? data.scope : cleanId(data.scope).split(/[ ,]+/).filter(Boolean),
+    environment: cfg.environment,
   };
 }
 
+const refreshFlights = new Map();
 export async function lazadaRefreshToken(branchId) {
   const cfg = lazadaConfig(branchId);
   assertConfigured(cfg);
   if (!cfg.refreshToken) throw new Error('Lazada thiếu refresh_token.');
-  const data = await call(cfg, '/auth/token/refresh', { method: 'POST', extra: { refresh_token: cfg.refreshToken }, protectedApi: false, useAuthBase: true, branchId });
-  if (!data.access_token) throw new Error(`Lazada refresh token thất bại: ${data.message || data.code || 'unknown'}`);
-  persistTokens(branchId, { sellerId: cfg.sellerId, accessToken: data.access_token, refreshToken: data.refresh_token || cfg.refreshToken });
-  audit('lazada.oauth.refresh', { seller_id: cfg.sellerId }, branchId, 'lazada');
-  return { expires_in: data.expires_in };
+  const key = cfg.connectionId || `legacy:${branchId}`;
+  if (refreshFlights.has(key)) return refreshFlights.get(key);
+  const flight = withConnectionRefreshLease(cfg.connectionId, async () => {
+    const data = await call(cfg, '/auth/token/refresh', { method: 'POST', extra: { refresh_token: cfg.refreshToken }, protectedApi: false, useAuthBase: true, branchId });
+    if (!data.access_token) throw new Error(`Lazada refresh token thất bại: ${data.message || data.code || 'unknown'}`);
+    if (cfg.connectionId) {
+      updateConnectionTokens(cfg.connectionId, { accessToken: data.access_token,
+        refreshToken: data.refresh_token || cfg.refreshToken,
+        accessExpiresAt: Number(data.expires_in) > 0 ? new Date(Date.now() + Number(data.expires_in) * 1000).toISOString() : null,
+        refreshExpiresAt: Number(data.refresh_expires_in) > 0 ? new Date(Date.now() + Number(data.refresh_expires_in) * 1000).toISOString() : null });
+    } else {
+      persistTokens(branchId, { sellerId: cfg.sellerId, accessToken: data.access_token, refreshToken: data.refresh_token || cfg.refreshToken });
+    }
+    audit('lazada.oauth.refresh', { seller_id: cfg.sellerId, connection_id: cfg.connectionId || null }, branchId, 'lazada');
+    return { expires_in: data.expires_in };
+  }).finally(() => refreshFlights.delete(key));
+  refreshFlights.set(key, flight);
+  return flight;
 }
 
 // ── Ánh xạ SKU ──────────────────────────────────────────────────────────────
@@ -160,16 +206,18 @@ function lazadaSkuForLine(line, sellerId, branchId) {
     WHERE provider=? AND shop_domain=? AND external_product_id=? AND external_variant_id=?`)
     .get(PROVIDER, String(sellerId), extProduct, extVariant);
   if (mapped?.internal_variant_id && !String(mapped.internal_variant_id).startsWith('lzd_')) return mapped.internal_variant_id;
-  const code = cleanId(line.shop_sku || line.sku);
-  if (code) {
-    const s = db.prepare(`SELECT id FROM skus WHERE (barcode=? OR id=?) AND branch_id=? AND active=1`).get(code, code, branchId);
-    if (s) return s.id;
+  const sellerSku = cleanId(line.shop_sku || line.sku);
+  if (sellerSku) {
+    const matches = db.prepare(`SELECT id FROM skus WHERE code=? AND branch_id=? AND active=1 LIMIT 2`).all(sellerSku, branchId);
+    if (matches.length === 1) return matches[0].id;
   }
-  const name = cleanId(line.name);
-  if (name) {
-    const s = db.prepare(`SELECT id FROM skus WHERE LOWER(name)=LOWER(?) AND branch_id=? AND active=1`).get(name, branchId);
-    if (s) return s.id;
+  const barcode = cleanId(line.sku_id);
+  if (barcode) {
+    const matches = db.prepare(`SELECT id FROM skus WHERE barcode=? AND branch_id=? AND active=1 LIMIT 2`).all(barcode, branchId);
+    if (matches.length === 1) return matches[0].id;
   }
+  recordMappingRequired({ provider: PROVIDER, shopId: sellerId, productId: extProduct,
+    variantId: extVariant, sellerSku, barcode, name: line.name });
   return null;
 }
 
@@ -179,7 +227,6 @@ const WORKFLOW = {
   delivered: 'delivered', canceled: 'cancelled', failed: 'cancelled', returned: 'return_refund',
   lost_by_3pl: 'shipping', damaged_by_3pl: 'shipping',
 };
-const PAID_STATUSES = new Set(['pending', 'packed', 'ready_to_ship', 'ready_to_ship_pending', 'shipped', 'delivered']);
 
 function representativeStatus(order) {
   const list = Array.isArray(order.statuses) ? order.statuses.map(s => cleanId(s).toLowerCase()) : [cleanId(order.status).toLowerCase()];
@@ -198,7 +245,7 @@ export function syncLazadaOrder(order, items, sellerId, branchId = 'sala') {
   // Lazada trả 1 dòng / 1 đơn vị → gộp theo SKU.
   const grouped = new Map();
   for (const it of (Array.isArray(items) ? items : [])) {
-    const key = cleanId(it.shop_sku || it.sku || it.sku_id || it.name);
+    const key = cleanId(it.shop_sku || it.sku || it.sku_id || it.order_item_id || `${it.product_id}:${grouped.size}`);
     const cur = grouped.get(key) || { line: it, qty: 0, item_ids: [] };
     cur.qty += 1;
     cur.item_ids.push(it.order_item_id);
@@ -208,7 +255,8 @@ export function syncLazadaOrder(order, items, sellerId, branchId = 'sala') {
   const subtotal = lines.reduce((s, g) => s + money(g.line.paid_price || g.line.item_price || 0) * g.qty, 0);
   const total = money(order.price || subtotal);
   const discount = Math.max(0, subtotal - total);
-  const paid = PAID_STATUSES.has(status);
+  const buyerPaymentStatus = cleanId(order.payment_status).toLowerCase();
+  const paid = buyerPaymentStatus === 'paid' || buyerPaymentStatus === 'completed';
   const voided = status === 'canceled' || status === 'failed';
   const customerJson = json({
     id: null,
@@ -262,7 +310,7 @@ export function syncLazadaOrder(order, items, sellerId, branchId = 'sala') {
         'success', json({ order, items }), now(), now());
 
     const workflow = WORKFLOW[status] || 'pending';
-    const locked = workflow !== 'pending';
+    const locked = marketplaceWritesEnabled(PROVIDER, seller, 'fulfillment_write') && workflow !== 'pending';
     db.prepare(`INSERT INTO online_order_state (order_id,workflow_status,locked_at,created_at,updated_at)
       VALUES (?,?,?,?,?) ON CONFLICT(order_id) DO UPDATE SET
         workflow_status=CASE
@@ -271,10 +319,22 @@ export function syncLazadaOrder(order, items, sellerId, branchId = 'sala') {
           ELSE excluded.workflow_status END,
         locked_at=COALESCE(online_order_state.locked_at,excluded.locked_at),updated_at=excluded.updated_at`)
       .run(internalId, workflow, locked ? now() : null, now(), now());
+    recordOrderFinancials({ provider: PROVIDER, shopId: seller, orderId,
+      currency: order.currency || lines[0]?.line?.currency,
+      buyerPaymentStatus, fulfillmentStatus: status,
+      components: {
+        item_original: lines.reduce((sum, g) => sum + money(g.line.item_price) * g.qty, 0),
+        seller_item_discount: lines.reduce((sum, g) => sum + money(g.line.seller_discount) * g.qty, 0),
+        platform_item_discount: lines.reduce((sum, g) => sum + money(g.line.platform_discount) * g.qty, 0),
+        seller_order_voucher: money(order.voucher_seller), platform_order_voucher: money(order.voucher_platform),
+        shipping_buyer: money(order.shipping_fee), shipping_seller: money(order.shipping_fee_original),
+        tax: money(order.tax), fees: money(order.fees), refunded: money(order.refund_amount),
+        expected_receivable: money(order.payout), order_total: total,
+      } });
     db.prepare('COMMIT').run();
 
     let settlement = null;
-    if (paid) {
+    if (paid && marketplaceWritesEnabled(PROVIDER, seller, 'payment_settlement_write')) {
       const canonical = db.prepare(`SELECT status FROM orders WHERE id=?`).get(internalId);
       const hasPayment = db.prepare(`SELECT 1 FROM payments WHERE order_id=? LIMIT 1`).get(internalId);
       if (canonical?.status !== 'paid' || !hasPayment) {
@@ -292,13 +352,13 @@ export function syncLazadaOrder(order, items, sellerId, branchId = 'sala') {
     emit('stats:dirty', {}, branchId);
     return { internal_order_id: internalId, order_id: orderId, status, settlement };
   } catch (err) {
-    db.prepare('ROLLBACK').run();
+    try { db.prepare('ROLLBACK').run(); } catch { /* already committed */ }
     throw err;
   }
 }
 
-export async function pullLazadaOrders(branchId = 'sala', { since = '' } = {}) {
-  const cfg = lazadaConfig(branchId);
+export async function pullLazadaOrders(branchId = 'sala', { since = '', shopId = '' } = {}) {
+  const cfg = lazadaConfig(branchId, { shopId });
   assertAuthorized(cfg);
   const createdAfter = since || new Date(Date.now() - 15 * 86400 * 1000).toISOString();
   const limit = 50;
@@ -329,8 +389,8 @@ export async function pullLazadaOrders(branchId = 'sala', { since = '' } = {}) {
 // ── Kéo SẢN PHẨM (listing) về external_products ──────────────────────────────
 // /products/get (filter=all, offset, limit≤50). Mỗi sku là một biến thể
 // (variant = SkuId), SellerSku/ShopSku là mã để đối chiếu kho.
-export async function pullLazadaProducts(branchId = 'sala', { limit = 50, maxPages = 30 } = {}) {
-  const cfg = lazadaConfig(branchId);
+export async function pullLazadaProducts(branchId = 'sala', { limit = 50, maxPages = 30, shopId = '' } = {}) {
+  const cfg = lazadaConfig(branchId, { shopId });
   assertAuthorized(cfg);
   const seller = String(cfg.sellerId || '');
   const take = Math.min(50, limit);
@@ -371,53 +431,84 @@ export async function pullLazadaProducts(branchId = 'sala', { limit = 50, maxPag
 
 // ── Webhook push ─────────────────────────────────────────────────────────────
 function branchForSeller(sellerId) {
-  const wanted = String(sellerId);
-  for (const b of listBranches({ all: true })) {
-    if (lazadaConfig(b.id).sellerId === wanted) return b.id;
+  const wanted = String(sellerId || '').trim();
+  if (!wanted) { const e = new Error('Lazada push thiếu seller_id.'); e.status = 400; throw e; }
+  const connection = findConnectionByProviderShop(PROVIDER, wanted);
+  if (connection) {
+    const mapping = db.prepare(`SELECT branch_id FROM marketplace_shop_mappings m
+      JOIN marketplace_shops s ON s.id=m.shop_id WHERE m.connection_id=? AND s.external_shop_id=? AND m.enabled=1`)
+      .get(connection.id, wanted);
+    if (mapping?.branch_id) return mapping.branch_id;
   }
-  return 'sala';
+  const legacyBranches = new Set([
+    ...listBranches({ all: true }).map(branch => branch.id),
+    ...db.prepare(`SELECT branch_id FROM app_settings WHERE key='integrations_config'`).all().map(row => row.branch_id),
+  ]);
+  for (const id of legacyBranches) {
+    if (cleanId((getIntegrationChannel('lazada', id) || {}).sellerId) === wanted) return id;
+  }
+  const e = new Error(`Không có ánh xạ Lazada cho seller_id=${wanted}.`); e.status = 404; throw e;
 }
 function safeEqualHex(a, b) {
   const x = Buffer.from(cleanId(a), 'utf8'); const y = Buffer.from(cleanId(b), 'utf8');
   return x.length === y.length && crypto.timingSafeEqual(x, y);
 }
 
-// Lazada push ký body bằng HMAC-SHA256(app_secret) trong header (sha256). Verify
-// best-effort; dù verify hay không, luồng ĐÁNG TIN là kéo lại đơn (idempotent).
+// Lazada push ký body bằng HMAC-SHA256(app_secret) trong header (sha256).
+// BẢO MẬT (fail-closed): thiếu header chữ ký hoặc chưa có webhookSecret →
+// TỪ CHỐI thẳng, không được coi là "bỏ qua verify rồi vẫn xử lý" — nếu không,
+// bất kỳ ai cũng POST được trade_order_id tuỳ ý để ép server gọi API Lazada
+// bằng token thật của cửa hàng (webhookSecret luôn có sẵn khi đã kết nối, vì
+// nó fallback về secretKey — thứ bắt buộc phải có để OAuth hoạt động).
 export async function handleLazadaPush(rawBody, headers = {}) {
   let payload = {};
   try { payload = JSON.parse(Buffer.isBuffer(rawBody) ? rawBody.toString('utf8') : String(rawBody || '{}')); }
   catch { const e = new Error('Lazada push body không hợp lệ.'); e.status = 400; throw e; }
   const sellerId = cleanId(payload.seller_id || payload.sellerId);
-  const branchId = branchForSeller(sellerId);
+  let branchId;
+  try { branchId = branchForSeller(sellerId); }
+  catch (error) {
+    quarantineMarketplaceWebhook(PROVIDER, rawBody, { shopId: sellerId, reason: error.message });
+    throw error;
+  }
   const cfg = lazadaConfig(branchId);
   const provided = cleanId(headers['authorization'] || headers['x-lazada-signature'] || headers['sha256']);
-  if (provided && cfg.webhookSecret) {
-    const body = Buffer.isBuffer(rawBody) ? rawBody.toString('utf8') : String(rawBody || '');
-    const expect = crypto.createHmac('sha256', cfg.webhookSecret).update(body).digest('hex');
-    if (!safeEqualHex(expect, provided) && !safeEqualHex(expect.toUpperCase(), provided)) {
-      audit('lazada.push.rejected', { seller_id: sellerId, reason: 'bad_signature' }, branchId, 'lazada');
-      const e = new Error('Sai chữ ký push Lazada.'); e.status = 401; throw e;
-    }
+  if (!provided || !cfg.webhookSecret) {
+    audit('lazada.push.rejected', { seller_id: sellerId, reason: 'missing_signature' }, branchId, 'lazada');
+    const e = new Error('Thiếu chữ ký push Lazada.'); e.status = 401; throw e;
   }
-  // message_type / data.trade_order_id → kéo lại đơn để đồng bộ.
+  const body = Buffer.isBuffer(rawBody) ? rawBody.toString('utf8') : String(rawBody || '');
+  const expect = crypto.createHmac('sha256', cfg.webhookSecret).update(body).digest('hex');
+  if (!safeEqualHex(expect, provided) && !safeEqualHex(expect.toUpperCase(), provided)) {
+    audit('lazada.push.rejected', { seller_id: sellerId, reason: 'bad_signature' }, branchId, 'lazada');
+    const e = new Error('Sai chữ ký push Lazada.'); e.status = 401; throw e;
+  }
+  const connection = findConnectionByProviderShop(PROVIDER, sellerId);
+  const eventType = cleanId(payload.message_type || payload.type || 'UNKNOWN');
+  const providerEventId = cleanId(payload.message_id || payload.event_id || payload.id);
+  const accepted = enqueueMarketplaceWebhook({ provider: PROVIDER,
+    connectionId: connection?.id || '', shopId: sellerId, eventType, providerEventId, rawBody });
+  audit('lazada.push.accepted', { seller_id: sellerId, type: eventType, duplicate: accepted.duplicate }, branchId, 'lazada');
+  return { ...accepted, handled: true };
+}
+
+async function processLazadaWebhookRow(row) {
+  const payload = JSON.parse(row.raw_payload || '{}');
+  const branchId = branchForSeller(row.external_shop_id);
+  const cfg = lazadaConfig(branchId, { shopId: row.external_shop_id });
   const orderId = cleanId(payload.data?.trade_order_id || payload.data?.order_id || payload.trade_order_id);
   if (orderId && cfg.accessToken) {
-    try {
-      const o = await call(cfg, '/order/get', { extra: { order_id: orderId }, branchId });
-      const order = o.data || null;
-      if (order) {
-        const itemsData = await call(cfg, '/order/items/get', { extra: { order_id: orderId }, branchId });
-        const r = syncLazadaOrder(order, itemsData.data || [], cfg.sellerId, branchId);
-        return { handled: true, order: r.order_id };
-      }
-    } catch (e) {
-      audit('lazada.push.sync_error', { seller_id: sellerId, order_id: orderId, error: e.message }, branchId, 'lazada');
+    const response = await call(cfg, '/order/get', { extra: { order_id: orderId }, branchId });
+    if (response.data) {
+      const items = await call(cfg, '/order/items/get', { extra: { order_id: orderId }, branchId });
+      syncLazadaOrder(response.data, items.data || [], cfg.sellerId, branchId);
     }
   }
-  audit('lazada.push', { seller_id: sellerId, type: payload.message_type }, branchId, 'lazada');
-  return { handled: true };
+  db.prepare(`UPDATE marketplace_connections SET last_event_at=?,updated_at=? WHERE id=?`)
+    .run(now(), now(), row.connection_id || '');
 }
+
+registerMarketplaceWebhookProcessor(PROVIDER, processLazadaWebhookRow);
 
 // ── AWB / tem vận đơn (PDF base64) ──────────────────────────────────────────
 export async function lazadaWaybill(branchId = 'sala', orderItemIds = [], { docType = 'shippingLabel' } = {}) {

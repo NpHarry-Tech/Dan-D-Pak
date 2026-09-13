@@ -159,7 +159,7 @@ class _SystemLogDetailDialogState extends State<_SystemLogDetailDialog> {
   bool _resolving = false;
 
   // Các field hiển thị theo thứ tự spec — bỏ field rỗng cho gọn.
-  static final _fieldLabels = <(String, String)>[
+  static List<(String, String)> get _fieldLabels => <(String, String)>[
     ('event_type', t('Loại sự kiện')),
     ('source', t('Nguồn')),
     ('level', t('Mức độ')),

@@ -537,11 +537,13 @@ extension _PrintDesignerMethods on _PrintTemplateDesignerState {
     final template = _copyMap(_template);
     final bill = _copyMap(_bill);
     final labels = _copyMap(_labels);
+    final printLang = asText(_printConfig['printLang']);
     _saveDebounce.run(() => _saveNow(
           kind: kind,
           template: template,
           bill: bill,
           labels: labels,
+          printLang: printLang,
         ));
     _rebuild(() => _saveState = t('Đang chờ lưu'));
   }
@@ -551,6 +553,7 @@ extension _PrintDesignerMethods on _PrintTemplateDesignerState {
     Map<String, dynamic>? template,
     Map<String, dynamic>? bill,
     Map<String, dynamic>? labels,
+    String? printLang,
   }) async {
     _saveDebounce.cancel();
     final saveKind = kind ?? _kind;
@@ -564,6 +567,7 @@ extension _PrintDesignerMethods on _PrintTemplateDesignerState {
       final body = {
         'kind': saveKind,
         'template': saveTemplate,
+        'printLang': printLang ?? asText(_printConfig['printLang']),
         if (saveKind == 'bill')
           'bill': bill ?? _bill
         else
@@ -614,6 +618,7 @@ extension _PrintDesignerMethods on _PrintTemplateDesignerState {
                   onChanged: (_) => _scheduleSave(),
                 ),
               ),
+              _printLangDropdown(),
               _modeButton('bill', 'Bill', Icons.receipt_long_outlined),
               _modeButton('kitchen_ticket', t('Phiếu bếp'),
                   Icons.soup_kitchen_outlined),
@@ -685,6 +690,38 @@ extension _PrintDesignerMethods on _PrintTemplateDesignerState {
           DropdownMenuItem(value: 'A5', child: Text('A5')),
         ],
         onChanged: (v) => v == null ? null : _applyPaper(v),
+      ),
+    );
+  }
+
+  // Ngôn ngữ CHỮ IN RA trên Bill/tem/phiếu — độc lập với ngôn ngữ giao diện
+  // app đang chọn (top bar). Đổi ngôn ngữ app không đổi thứ khách nhìn thấy
+  // trên giấy; chỉ ô này mới đổi. Xem server/services/printI18n.js.
+  Widget _printLangDropdown() {
+    const labels = {'vi': 'Tiếng Việt', 'en': 'English', 'zh': '中文'};
+    final current = labels.containsKey(asText(_printConfig['printLang']))
+        ? asText(_printConfig['printLang'])
+        : 'vi';
+    return SizedBox(
+      width: 180,
+      child: DropdownButtonFormField<String>(
+        key: ValueKey('printLang_$current'),
+        initialValue: current,
+        isExpanded: true,
+        decoration: InputDecoration(
+          labelText: t('Ngôn ngữ in trên giấy'),
+          isDense: true,
+          border: OutlineInputBorder(),
+        ),
+        items: [
+          for (final e in labels.entries)
+            DropdownMenuItem(value: e.key, child: Text(e.value)),
+        ],
+        onChanged: (v) {
+          if (v == null) return;
+          _rebuild(() => _printConfig['printLang'] = v);
+          _scheduleSave();
+        },
       ),
     );
   }

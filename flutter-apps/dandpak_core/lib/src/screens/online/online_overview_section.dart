@@ -53,7 +53,7 @@ class _OnlineOverviewSectionState extends State<OnlineOverviewSection> {
     if (_error != null) {
       return Padding(
         padding: const EdgeInsets.all(40),
-        child: InlineMessage(t('Không tải được tổng quan ($_error)'),
+        child: InlineMessage('${t('Không tải được tổng quan')} ($_error)',
             error: true, onRetry: _load),
       );
     }

@@ -363,7 +363,7 @@ class _ModuleSwitch extends StatelessWidget {
         onChanged: onChanged,
         activeThumbColor: DanColors.done,
         secondary: Icon(icon, color: value ? DanColors.brand : DanColors.muted),
-        title: Text(title,
+        title: Text(t(title),
             style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w800)),
         subtitle: Text(subtitle,
             style: TextStyle(fontSize: 11.5, color: DanColors.faint)),

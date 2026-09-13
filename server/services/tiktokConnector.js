@@ -15,6 +15,15 @@ import { payOrder } from './payments.js';
 import { getIntegrationChannel, updateIntegrations } from './settings.js';
 import { listBranches } from './branches.js';
 import { upsertExternalProduct } from './online.js';
+import {
+  findConnectionByProviderShop, findRuntimeConnectionByProviderBranch, findRuntimeConnectionByProviderShop, updateConnectionTokens, withConnectionRefreshLease,
+} from './connectionStore.js';
+import {
+  enqueueMarketplaceWebhook, quarantineMarketplaceWebhook, registerMarketplaceWebhookProcessor,
+} from './marketplaceWebhookInbox.js';
+import {
+  marketplaceWritesEnabled, recordMappingRequired, recordOrderFinancials,
+} from './marketplaceSafety.js';
 
 const PROVIDER = 'tiktokshop';
 const AUTH_BASE = 'https://auth.tiktok-shops.com';
@@ -26,21 +35,27 @@ const cleanId = (v) => String(v ?? '').trim();
 const json = (v) => JSON.stringify(v ?? null);
 const nowUnix = () => Math.floor(Date.now() / 1000);
 
-export function tiktokConfig(branchId = 'sala') {
+export function tiktokConfig(branchId = 'sala', { shopId = '' } = {}) {
   const c = getIntegrationChannel('tiktokshop', branchId) || {};
+  const connection = shopId
+    ? findRuntimeConnectionByProviderShop(PROVIDER, shopId)
+    : findRuntimeConnectionByProviderBranch(PROVIDER, branchId);
+  const selected = connection?.selected_shop || {};
   return {
     enabled: c.enabled === true,
-    environment: cleanId(c.environment) || 'sandbox',
-    appId: cleanId(c.appId),
-    serviceId: cleanId(c.serviceId),
-    secretKey: cleanId(c.secretKey),
-    shopId: cleanId(c.shopId),
-    shopCipher: cleanId(c.shopCipher),
-    accessToken: cleanId(c.accessToken),
-    refreshToken: cleanId(c.refreshToken),
-    webhookSecret: cleanId(c.webhookSecret) || cleanId(c.secretKey),
+    environment: cleanId(process.env.TIKTOK_SHOP_ENV) || cleanId(c.environment) || 'sandbox',
+    appId: cleanId(process.env.TIKTOK_SHOP_APP_KEY) || cleanId(c.appId),
+    serviceId: cleanId(process.env.TIKTOK_SHOP_SERVICE_ID) || cleanId(c.serviceId),
+    secretKey: cleanId(process.env.TIKTOK_SHOP_APP_SECRET) || cleanId(c.secretKey),
+    shopId: cleanId(selected.external_shop_id) || cleanId(c.shopId),
+    shopCipher: cleanId(selected.shop_cipher) || cleanId(c.shopCipher),
+    accessToken: cleanId(connection?.access_token) || cleanId(c.accessToken),
+    refreshToken: cleanId(connection?.refresh_token) || cleanId(c.refreshToken),
+    webhookSecret: cleanId(process.env.TIKTOK_SHOP_WEBHOOK_SECRET) || cleanId(process.env.TIKTOK_SHOP_APP_SECRET) || cleanId(c.webhookSecret) || cleanId(c.secretKey),
     apiBase: (cleanId(c.apiBase) || 'https://open-api.tiktokglobalshop.com').replace(/\/+$/, ''),
-    region: cleanId(c.region) || 'VN',
+    region: cleanId(selected.region) || cleanId(c.region) || 'VN',
+    connectionId: connection?.id || '',
+    tokenSource: connection ? 'connection_platform' : 'legacy_settings',
   };
 }
 function assertConfigured(cfg) {
@@ -88,17 +103,37 @@ async function call(cfg, path, { method = 'GET', query = {}, body = null, branch
 }
 
 // ── OAuth (token endpoints KHÔNG ký) ────────────────────────────────────────
-export function tiktokAuthLink(branchId, _redirect) {
+export function tiktokAuthLink(branchId, _redirect, stateValue = '') {
   const cfg = tiktokConfig(branchId);
   assertConfigured(cfg);
   // TikTok Shop dùng service_id (khai ở Partner Center) cho link ủy quyền.
   const sid = cfg.serviceId || cfg.appId;
-  return `${AUTHORIZE_URL}?service_id=${encodeURIComponent(sid)}`;
+  const state = cleanId(stateValue) || (() => { try { return new URL(_redirect).searchParams.get('state') || ''; } catch { return ''; } })();
+  return `${AUTHORIZE_URL}?${new URLSearchParams({ service_id: sid, ...(state ? { state } : {}) }).toString()}`;
 }
 function persistTokens(branchId, patch) {
   updateIntegrations({ channels: { tiktokshop: patch } }, branchId);
 }
 export async function tiktokExchangeToken(branchId, authCode) {
+  const result = await exchangeTiktokCodeRaw(branchId, authCode);
+  const first = result.shops[0];
+  // Compatibility for an explicitly enabled legacy callback only. Shared OAuth
+  // stores these credentials in the encrypted marketplace vault instead.
+  persistTokens(branchId, {
+    accessToken: result.access_token,
+    refreshToken: result.refresh_token,
+    ...(result.shops.length === 1 ? { shopId: first.shop_id, shopCipher: first.shop_cipher } : {}),
+  });
+  audit('tiktok.oauth.token.legacy', { shop_count: result.shops.length }, branchId, 'tiktok');
+  return { ok: true, expire_in: result.access_expires_at };
+}
+
+function unixExpiry(value) {
+  const seconds = Number(value || 0);
+  return seconds > 1_000_000_000 ? new Date(seconds * 1000).toISOString() : null;
+}
+
+export async function exchangeTiktokCodeRaw(branchId, authCode) {
   const cfg = tiktokConfig(branchId);
   assertConfigured(cfg);
   const q = new URLSearchParams({ app_key: cfg.appId, app_secret: cfg.secretKey, auth_code: cleanId(authCode), grant_type: 'authorized_code' });
@@ -106,28 +141,60 @@ export async function tiktokExchangeToken(branchId, authCode) {
   const data = await res.json().catch(() => ({}));
   const d = data.data || {};
   if (!d.access_token) throw new Error(`TikTok token exchange thất bại: ${data.message || data.code || 'unknown'}`);
-  persistTokens(branchId, { accessToken: d.access_token, refreshToken: d.refresh_token });
-  // Lấy shop_cipher đầu tiên của seller để gọi API shop.
+  const tokenCfg = { ...cfg, accessToken: d.access_token, refreshToken: d.refresh_token, shopCipher: '' };
+  let response;
   try {
-    const shops = await call(tiktokConfig(branchId), `/authorization/${VERSION}/shops`, { branchId });
-    const shop = shops.data?.shops?.[0];
-    if (shop) persistTokens(branchId, { shopId: String(shop.id || ''), shopCipher: String(shop.cipher || '') });
-  } catch { /* seller có thể cần chọn shop sau */ }
-  audit('tiktok.oauth.token', {}, branchId, 'tiktok');
-  return { ok: true, expire_in: d.access_token_expire_in };
+    response = await call(tokenCfg, `/authorization/${VERSION}/shops`, {});
+  } catch (error) {
+    const classified = new Error(`Không lấy được danh sách gian hàng TikTok Shop: ${error.message}`);
+    classified.code = 'TIKTOK_SHOP_DISCOVERY_FAILED';
+    throw classified;
+  }
+  const shops = (response.data?.shops || []).map(shop => ({
+    shop_id: cleanId(shop.id), shop_cipher: cleanId(shop.cipher), shop_name: cleanId(shop.name),
+    region: cleanId(shop.region) || cfg.region,
+    metadata: { seller_type: shop.seller_type, code: shop.code },
+  })).filter(shop => shop.shop_id && shop.shop_cipher);
+  if (!shops.length) {
+    const error = new Error('Tài khoản TikTok Shop không trả về gian hàng được ủy quyền.');
+    error.code = 'TIKTOK_NO_AUTHORIZED_SHOPS';
+    throw error;
+  }
+  return {
+    external_account_id: cleanId(d.open_id), access_token: d.access_token,
+    refresh_token: d.refresh_token, access_expires_at: unixExpiry(d.access_token_expire_in),
+    refresh_expires_at: unixExpiry(d.refresh_token_expire_in),
+    granted_scopes: Array.isArray(d.granted_scopes) ? d.granted_scopes : cleanId(d.granted_scopes).split(',').filter(Boolean),
+    environment: cfg.environment,
+    shops,
+  };
 }
+
+const refreshFlights = new Map();
 export async function tiktokRefreshToken(branchId) {
   const cfg = tiktokConfig(branchId);
   assertConfigured(cfg);
   if (!cfg.refreshToken) throw new Error('TikTok thiếu refresh_token.');
-  const q = new URLSearchParams({ app_key: cfg.appId, app_secret: cfg.secretKey, refresh_token: cfg.refreshToken, grant_type: 'refresh_token' });
-  const res = await fetch(`${AUTH_BASE}/api/v2/token/refresh?${q.toString()}`);
-  const data = await res.json().catch(() => ({}));
-  const d = data.data || {};
-  if (!d.access_token) throw new Error(`TikTok refresh thất bại: ${data.message || data.code || 'unknown'}`);
-  persistTokens(branchId, { accessToken: d.access_token, refreshToken: d.refresh_token || cfg.refreshToken });
-  audit('tiktok.oauth.refresh', {}, branchId, 'tiktok');
-  return { ok: true };
+  const key = cfg.connectionId || `legacy:${branchId}`;
+  if (refreshFlights.has(key)) return refreshFlights.get(key);
+  const flight = withConnectionRefreshLease(cfg.connectionId, async () => {
+    const q = new URLSearchParams({ app_key: cfg.appId, app_secret: cfg.secretKey, refresh_token: cfg.refreshToken, grant_type: 'refresh_token' });
+    const res = await fetch(`${AUTH_BASE}/api/v2/token/refresh?${q.toString()}`);
+    const data = await res.json().catch(() => ({}));
+    const d = data.data || {};
+    if (!d.access_token) throw new Error(`TikTok refresh thất bại: ${data.message || data.code || 'unknown'}`);
+    if (cfg.connectionId) {
+      updateConnectionTokens(cfg.connectionId, { accessToken: d.access_token,
+        refreshToken: d.refresh_token || cfg.refreshToken,
+        accessExpiresAt: unixExpiry(d.access_token_expire_in), refreshExpiresAt: unixExpiry(d.refresh_token_expire_in) });
+    } else {
+      persistTokens(branchId, { accessToken: d.access_token, refreshToken: d.refresh_token || cfg.refreshToken });
+    }
+    audit('tiktok.oauth.refresh', { connection_id: cfg.connectionId || null }, branchId, 'tiktok');
+    return { ok: true };
+  }).finally(() => refreshFlights.delete(key));
+  refreshFlights.set(key, flight);
+  return flight;
 }
 
 // ── Ánh xạ SKU ──────────────────────────────────────────────────────────────
@@ -136,17 +203,24 @@ function tiktokSkuForLine(line, shopId, branchId) {
     WHERE provider=? AND shop_domain=? AND external_product_id=? AND external_variant_id=?`)
     .get(PROVIDER, String(shopId), cleanId(line.product_id), cleanId(line.sku_id));
   if (mapped?.internal_variant_id && !String(mapped.internal_variant_id).startsWith('ttk_')) return mapped.internal_variant_id;
-  const code = cleanId(line.seller_sku || line.sku_id);
-  if (code) { const s = db.prepare(`SELECT id FROM skus WHERE (barcode=? OR id=?) AND branch_id=? AND active=1`).get(code, code, branchId); if (s) return s.id; }
-  const name = cleanId(line.product_name || line.sku_name);
-  if (name) { const s = db.prepare(`SELECT id FROM skus WHERE LOWER(name)=LOWER(?) AND branch_id=? AND active=1`).get(name, branchId); if (s) return s.id; }
+  const sellerSku = cleanId(line.seller_sku);
+  if (sellerSku) {
+    const matches = db.prepare(`SELECT id FROM skus WHERE code=? AND branch_id=? AND active=1 LIMIT 2`).all(sellerSku, branchId);
+    if (matches.length === 1) return matches[0].id;
+  }
+  const barcode = cleanId(line.sku_id);
+  if (barcode) {
+    const matches = db.prepare(`SELECT id FROM skus WHERE barcode=? AND branch_id=? AND active=1 LIMIT 2`).all(barcode, branchId);
+    if (matches.length === 1) return matches[0].id;
+  }
+  recordMappingRequired({ provider: PROVIDER, shopId, productId: line.product_id,
+    variantId: line.sku_id, sellerSku, barcode, name: line.product_name || line.sku_name });
   return null;
 }
 const WORKFLOW = {
   UNPAID: 'pending', ON_HOLD: 'pending', AWAITING_SHIPMENT: 'processed', AWAITING_COLLECTION: 'ready_to_ship',
   PARTIALLY_SHIPPING: 'shipping', IN_TRANSIT: 'shipping', DELIVERED: 'delivered', COMPLETED: 'delivered', CANCELLED: 'cancelled',
 };
-const PAID = new Set(['AWAITING_SHIPMENT', 'AWAITING_COLLECTION', 'PARTIALLY_SHIPPING', 'IN_TRANSIT', 'DELIVERED', 'COMPLETED']);
 
 export function syncTiktokOrder(order, shopId, branchId = 'sala') {
   const orderId = cleanId(order.id);
@@ -157,7 +231,7 @@ export function syncTiktokOrder(order, shopId, branchId = 'sala') {
   const raw = Array.isArray(order.line_items) ? order.line_items : [];
   const grouped = new Map();
   for (const it of raw) {
-    const key = cleanId(it.seller_sku || it.sku_id || it.product_name);
+    const key = cleanId(it.seller_sku || it.sku_id || it.id || `${it.product_id}:${grouped.size}`);
     const cur = grouped.get(key) || { line: it, qty: 0, ids: [] };
     cur.qty += Number(it.quantity || 1); cur.ids.push(it.id); grouped.set(key, cur);
   }
@@ -165,7 +239,8 @@ export function syncTiktokOrder(order, shopId, branchId = 'sala') {
   const subtotal = lines.reduce((s, g) => s + money(g.line.sale_price || g.line.original_price || 0) * g.qty, 0);
   const total = money(order.payment?.total_amount || order.total_amount || subtotal);
   const discount = Math.max(0, subtotal - total);
-  const paid = PAID.has(status);
+  const buyerPaymentStatus = cleanId(order.payment?.status || order.payment_status).toUpperCase();
+  const paid = buyerPaymentStatus === 'PAID' || buyerPaymentStatus === 'COMPLETED';
   const voided = status === 'CANCELLED';
   const customerJson = json({
     id: null, name: cleanId(addr.name), phone: cleanId(addr.phone_number), email: '',
@@ -200,15 +275,31 @@ export function syncTiktokOrder(order, shopId, branchId = 'sala') {
       VALUES (?,?,?,?,?,?,?,?,?,?)
       ON CONFLICT(provider, shop_domain, external_order_id) DO UPDATE SET internal_order_id=excluded.internal_order_id,external_order_code=excluded.external_order_code,sync_status=excluded.sync_status,raw_payload=excluded.raw_payload,updated_at=excluded.updated_at`)
       .run(uid('eo_'), PROVIDER, shop, orderId, internalId, orderId, 'success', json(order), now(), now());
-    const workflow = WORKFLOW[status] || 'pending'; const locked = workflow !== 'pending';
+    const workflow = WORKFLOW[status] || 'pending';
+    const locked = marketplaceWritesEnabled(PROVIDER, shop, 'fulfillment_write') && workflow !== 'pending';
     db.prepare(`INSERT INTO online_order_state (order_id,workflow_status,locked_at,created_at,updated_at) VALUES (?,?,?,?,?)
       ON CONFLICT(order_id) DO UPDATE SET workflow_status=CASE WHEN excluded.workflow_status IN ('shipping','delivered','cancelled','return_refund') THEN excluded.workflow_status
         WHEN online_order_state.workflow_status IN ('preparing','ready_to_ship') THEN online_order_state.workflow_status ELSE excluded.workflow_status END,
         locked_at=COALESCE(online_order_state.locked_at,excluded.locked_at),updated_at=excluded.updated_at`)
       .run(internalId, workflow, locked ? now() : null, now(), now());
+    recordOrderFinancials({ provider: PROVIDER, shopId: shop, orderId,
+      currency: order.payment?.currency || order.currency,
+      buyerPaymentStatus, fulfillmentStatus: status,
+      components: {
+        item_original: subtotal,
+        seller_item_discount: money(order.payment?.seller_discount),
+        platform_item_discount: money(order.payment?.platform_discount),
+        seller_order_voucher: money(order.payment?.seller_order_discount),
+        platform_order_voucher: money(order.payment?.platform_order_discount),
+        shipping_buyer: money(order.payment?.shipping_fee),
+        shipping_seller: money(order.payment?.seller_shipping_fee),
+        tax: money(order.payment?.tax), fees: money(order.payment?.fees),
+        refunded: money(order.payment?.refund_amount), expected_receivable: money(order.payment?.seller_payment_amount),
+        order_total: total,
+      } });
     db.prepare('COMMIT').run();
     let settlement = null;
-    if (paid) {
+    if (paid && marketplaceWritesEnabled(PROVIDER, shop, 'payment_settlement_write')) {
       const canonical = db.prepare(`SELECT status FROM orders WHERE id=?`).get(internalId);
       const hasPayment = db.prepare(`SELECT 1 FROM payments WHERE order_id=? LIMIT 1`).get(internalId);
       if (canonical?.status !== 'paid' || !hasPayment) {
@@ -222,11 +313,11 @@ export function syncTiktokOrder(order, shopId, branchId = 'sala') {
     emit('online:new', { id: internalId, provider: PROVIDER, ref: orderId, branch_id: branchId }, branchId);
     emit('stats:dirty', {}, branchId);
     return { internal_order_id: internalId, order_id: orderId, status, settlement };
-  } catch (err) { db.prepare('ROLLBACK').run(); throw err; }
+  } catch (err) { try { db.prepare('ROLLBACK').run(); } catch { /* already committed */ } throw err; }
 }
 
-export async function pullTiktokOrders(branchId = 'sala', { since = '' } = {}) {
-  const cfg = tiktokConfig(branchId);
+export async function pullTiktokOrders(branchId = 'sala', { since = '', shopId = '' } = {}) {
+  const cfg = tiktokConfig(branchId, { shopId });
   assertAuthorized(cfg);
   const createTimeGe = since ? Math.floor(new Date(since).getTime() / 1000) : nowUnix() - 15 * 86400;
   const orderIds = [];
@@ -254,8 +345,8 @@ export async function pullTiktokOrders(branchId = 'sala', { since = '' } = {}) {
 // ── Kéo SẢN PHẨM (listing) về external_products ──────────────────────────────
 // products/search (v202309). Mỗi sku là biến thể (variant = sku.id), seller_sku
 // là mã đối chiếu kho. Ảnh best-effort từ main_images (search có thể không trả).
-export async function pullTiktokProducts(branchId = 'sala', { pageSize = 50, maxPages = 30 } = {}) {
-  const cfg = tiktokConfig(branchId);
+export async function pullTiktokProducts(branchId = 'sala', { pageSize = 50, maxPages = 30, shopId = '' } = {}) {
+  const cfg = tiktokConfig(branchId, { shopId });
   assertAuthorized(cfg);
   const shop = String(cfg.shopId || '');
   let pageToken = '', page = 0, synced = 0;
@@ -293,16 +384,35 @@ export async function pullTiktokProducts(branchId = 'sala', { pageSize = 50, max
 
 // ── Webhook ──────────────────────────────────────────────────────────────────
 function branchForShop(shopId) {
-  const wanted = String(shopId);
-  for (const b of listBranches({ all: true })) if (tiktokConfig(b.id).shopId === wanted) return b.id;
-  return 'sala';
+  const wanted = String(shopId || '').trim();
+  if (!wanted) { const e = new Error('TikTok webhook thiếu shop_id.'); e.status = 400; throw e; }
+  const connection = findConnectionByProviderShop(PROVIDER, wanted);
+  if (connection) {
+    const mapping = db.prepare(`SELECT branch_id FROM marketplace_shop_mappings m
+      JOIN marketplace_shops s ON s.id=m.shop_id WHERE m.connection_id=? AND s.external_shop_id=? AND m.enabled=1`)
+      .get(connection.id, wanted);
+    if (mapping?.branch_id) return mapping.branch_id;
+  }
+  // Temporary migration compatibility: legacy is accepted only on an exact
+  // configured shop match. There is deliberately no default-branch fallback.
+  const legacyBranches = new Set([
+    ...listBranches({ all: true }).map(branch => branch.id),
+    ...db.prepare(`SELECT branch_id FROM app_settings WHERE key='integrations_config'`).all().map(row => row.branch_id),
+  ]);
+  for (const id of legacyBranches) if (cleanId((getIntegrationChannel('tiktokshop', id) || {}).shopId) === wanted) return id;
+  const e = new Error(`Không có ánh xạ TikTok Shop cho shop_id=${wanted}.`); e.status = 404; throw e;
 }
 export async function handleTiktokWebhook(rawBody, headers = {}) {
   let payload = {};
   try { payload = JSON.parse(Buffer.isBuffer(rawBody) ? rawBody.toString('utf8') : String(rawBody || '{}')); }
   catch { const e = new Error('TikTok webhook body không hợp lệ.'); e.status = 400; throw e; }
   const shopId = cleanId(payload.shop_id);
-  const branchId = branchForShop(shopId);
+  let branchId;
+  try { branchId = branchForShop(shopId); }
+  catch (error) {
+    quarantineMarketplaceWebhook(PROVIDER, rawBody, { shopId, reason: error.message });
+    throw error;
+  }
   const cfg = tiktokConfig(branchId);
   const provided = cleanId(headers['authorization'] || headers['Authorization']);
   const body = Buffer.isBuffer(rawBody) ? rawBody.toString('utf8') : String(rawBody || '');
@@ -311,18 +421,30 @@ export async function handleTiktokWebhook(rawBody, headers = {}) {
     audit('tiktok.webhook.rejected', { shop_id: shopId, reason: 'bad_signature' }, branchId, 'tiktok');
     const e = new Error('Sai chữ ký webhook TikTok.'); e.status = 401; throw e;
   }
-  // type 1 = ORDER_STATUS_CHANGE. Kéo lại chi tiết đơn (idempotent).
+  const connection = findConnectionByProviderShop(PROVIDER, shopId);
+  const eventType = cleanId(payload.type || payload.event_type || 'UNKNOWN');
+  const providerEventId = cleanId(payload.event_id || payload.id);
+  const accepted = enqueueMarketplaceWebhook({ provider: PROVIDER,
+    connectionId: connection?.id || '', shopId, eventType, providerEventId, rawBody });
+  audit('tiktok.webhook.accepted', { shop_id: shopId, type: eventType, duplicate: accepted.duplicate }, branchId, 'tiktok');
+  return { ...accepted, handled: true };
+}
+
+async function processTiktokWebhookRow(row) {
+  const payload = JSON.parse(row.raw_payload || '{}');
+  const branchId = branchForShop(row.external_shop_id);
+  const cfg = tiktokConfig(branchId, { shopId: row.external_shop_id });
   const orderId = cleanId(payload.data?.order_id);
   if (orderId && cfg.accessToken && cfg.shopCipher) {
-    try {
-      const detail = await call(cfg, `/order/${VERSION}/orders`, { query: { ids: orderId }, branchId });
-      const o = detail.data?.orders?.[0];
-      if (o) { const r = syncTiktokOrder(o, cfg.shopId, branchId); return { handled: true, order: r.order_id }; }
-    } catch (e) { audit('tiktok.webhook.sync_error', { order_id: orderId, error: e.message }, branchId, 'tiktok'); }
+    const detail = await call(cfg, `/order/${VERSION}/orders`, { query: { ids: orderId }, branchId });
+    const order = detail.data?.orders?.[0];
+    if (order) syncTiktokOrder(order, cfg.shopId, branchId);
   }
-  audit('tiktok.webhook', { shop_id: shopId, type: payload.type }, branchId, 'tiktok');
-  return { handled: true };
+  db.prepare(`UPDATE marketplace_connections SET last_event_at=?,updated_at=? WHERE id=?`)
+    .run(now(), now(), row.connection_id || '');
 }
+
+registerMarketplaceWebhookProcessor(PROVIDER, processTiktokWebhookRow);
 
 // ── Shipping label ───────────────────────────────────────────────────────────
 export async function tiktokWaybill(branchId = 'sala', orderId, { size = 'A6' } = {}) {

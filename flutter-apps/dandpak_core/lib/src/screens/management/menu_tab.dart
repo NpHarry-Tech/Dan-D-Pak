@@ -43,6 +43,12 @@ class _MenuTabState extends State<MenuTab> {
   String? _filterCategoryId;
   String _subTab = 'items';
 
+  // Bảo vệ khỏi race condition: mỗi _load() mang một số thứ tự riêng, chỉ áp
+  // dụng kết quả nếu đó vẫn là lần gọi mới nhất — tránh việc bấm bật/tắt liên
+  // tiếp khiến một response CŨ về sau lại ghi đè lên trạng thái MỚI hơn.
+  int _loadSeq = 0;
+  final Set<String> _busyIds = {};
+
   @override
   void initState() {
     super.initState();
@@ -50,6 +56,7 @@ class _MenuTabState extends State<MenuTab> {
   }
 
   Future<void> _load() async {
+    final seq = ++_loadSeq;
     setState(() {
       _loading = true;
       _error = null;
@@ -60,7 +67,7 @@ class _MenuTabState extends State<MenuTab> {
         widget.api.getIngredients(),
         widget.api.getProductionStations(),
       ]);
-      if (!mounted) return;
+      if (!mounted || seq != _loadSeq) return;
       setState(() {
         _data = MenuManageData.fromJson(results[0] as Map<String, dynamic>);
         _ingredients = (results[1] as List)
@@ -74,7 +81,7 @@ class _MenuTabState extends State<MenuTab> {
         _loading = false;
       });
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted || seq != _loadSeq) return;
       setState(() {
         _error = e.toString().replaceFirst('Exception: ', '');
         _loading = false;
@@ -92,53 +99,58 @@ class _MenuTabState extends State<MenuTab> {
   void _toast(String msg, {bool error = false}) =>
       appToast(context, msg, isError: error);
 
-  Future<void> _toggleAvailability(AdminMenuItem item) async {
+  // Khoá theo item.id trong lúc mutate+reload để tránh 2 lần bấm liên tiếp
+  // (cùng món hoặc khác món) tính toán !value trên cùng một snapshot cũ, và
+  // để UI (switch/nút) tự vô hiệu hoá cho tới khi danh sách đã tải lại xong.
+  Future<void> _withBusy(String itemId, Future<void> Function() action) async {
+    if (_busyIds.contains(itemId)) return;
+    setState(() => _busyIds.add(itemId));
     try {
-      await widget.api.setMenuAvailability(item.id, !item.available);
-      _toast(item.available ? t('Đã tắt món') : t('Đã bật món'));
-      _load();
-    } catch (e) {
-      _toast(e.toString().replaceFirst('Exception: ', ''), error: true);
+      await action();
+    } finally {
+      if (mounted) setState(() => _busyIds.remove(itemId));
     }
   }
 
-  Future<void> _toggleHidden(AdminMenuItem item) async {
-    try {
-      await widget.api.setMenuHidden(item.id, !item.hidden);
-      _toast(item.hidden ? t('Đã hiện món') : t('Đã ẩn món'));
-      _load();
-    } catch (e) {
-      _toast(e.toString().replaceFirst('Exception: ', ''), error: true);
-    }
-  }
+  Future<void> _toggleAvailability(AdminMenuItem item) => _withBusy(item.id, () async {
+        try {
+          await widget.api.setMenuAvailability(item.id, !item.available);
+          _toast(item.available ? t('Đã tắt món') : t('Đã bật món'));
+          await _load();
+        } catch (e) {
+          _toast(e.toString().replaceFirst('Exception: ', ''), error: true);
+        }
+      });
 
-  Future<void> _toggleDineIn(AdminMenuItem item) async {
-    try {
-      await widget.api.setMenuChannels(item.id, dineIn: !item.availableDineIn);
-      _load();
-    } catch (e) {
-      _toast(e.toString().replaceFirst('Exception: ', ''), error: true);
-    }
-  }
+  Future<void> _toggleHidden(AdminMenuItem item) => _withBusy(item.id, () async {
+        try {
+          await widget.api.setMenuHidden(item.id, !item.hidden);
+          _toast(item.hidden ? t('Đã hiện món') : t('Đã ẩn món'));
+          await _load();
+        } catch (e) {
+          _toast(e.toString().replaceFirst('Exception: ', ''), error: true);
+        }
+      });
 
-  Future<void> _toggleTakeaway(AdminMenuItem item) async {
-    try {
-      await widget.api
-          .setMenuChannels(item.id, takeaway: !item.availableTakeaway);
-      _load();
-    } catch (e) {
-      _toast(e.toString().replaceFirst('Exception: ', ''), error: true);
-    }
-  }
+  Future<void> _toggleDineIn(AdminMenuItem item) => _withBusy(item.id, () async {
+        try {
+          await widget.api
+              .setMenuChannels(item.id, dineIn: !item.availableDineIn);
+          await _load();
+        } catch (e) {
+          _toast(e.toString().replaceFirst('Exception: ', ''), error: true);
+        }
+      });
 
-  Future<void> _updateSort(AdminMenuItem item, int sort) async {
-    try {
-      await widget.api.setMenuSort(item.id, sort);
-      _load();
-    } catch (e) {
-      _toast(e.toString().replaceFirst('Exception: ', ''), error: true);
-    }
-  }
+  Future<void> _toggleTakeaway(AdminMenuItem item) => _withBusy(item.id, () async {
+        try {
+          await widget.api
+              .setMenuChannels(item.id, takeaway: !item.availableTakeaway);
+          await _load();
+        } catch (e) {
+          _toast(e.toString().replaceFirst('Exception: ', ''), error: true);
+        }
+      });
 
   Future<void> _delete(AdminMenuItem item) async {
     final pin = await requestManagerPin(
@@ -271,6 +283,7 @@ class _MenuTabState extends State<MenuTab> {
                     separatorBuilder: (_, __) => SizedBox(height: 8),
                     itemBuilder: (_, i) => _MenuRow(
                       item: items[i],
+                      busy: _busyIds.contains(items[i].id),
                       categoryName: _categoryName(items[i].categoryId),
                       serverUrl: serverUrl,
                       stationName: _stationName(items[i].station),
@@ -280,7 +293,6 @@ class _MenuTabState extends State<MenuTab> {
                       onToggleAvailability: () => _toggleAvailability(items[i]),
                       onToggleDineIn: () => _toggleDineIn(items[i]),
                       onToggleTakeaway: () => _toggleTakeaway(items[i]),
-                      onChangeSort: (sort) => _updateSort(items[i], sort),
                     ),
                   ),
                 ),
@@ -380,6 +392,7 @@ class _MenuTabState extends State<MenuTab> {
 
 class _MenuRow extends StatefulWidget {
   final AdminMenuItem item;
+  final bool busy;
   final String categoryName;
   final String serverUrl;
   final String stationName;
@@ -389,10 +402,10 @@ class _MenuRow extends StatefulWidget {
   final VoidCallback onToggleAvailability;
   final VoidCallback onToggleDineIn;
   final VoidCallback onToggleTakeaway;
-  final ValueChanged<int> onChangeSort;
 
   _MenuRow({
     required this.item,
+    this.busy = false,
     required this.categoryName,
     required this.serverUrl,
     required this.stationName,
@@ -402,7 +415,6 @@ class _MenuRow extends StatefulWidget {
     required this.onToggleAvailability,
     required this.onToggleDineIn,
     required this.onToggleTakeaway,
-    required this.onChangeSort,
   });
 
   @override
@@ -410,9 +422,8 @@ class _MenuRow extends StatefulWidget {
 }
 
 class _MenuRowState extends State<_MenuRow> {
-  late final TextEditingController _sortCtrl;
-
   AdminMenuItem get item => widget.item;
+  bool get busy => widget.busy;
   String get categoryName => widget.categoryName;
   String get serverUrl => widget.serverUrl;
   String get stationName => widget.stationName;
@@ -420,27 +431,6 @@ class _MenuRowState extends State<_MenuRow> {
   VoidCallback get onToggleHidden => widget.onToggleHidden;
   VoidCallback get onDelete => widget.onDelete;
   VoidCallback get onToggleAvailability => widget.onToggleAvailability;
-
-  @override
-  void initState() {
-    super.initState();
-    _sortCtrl = TextEditingController(text: item.sort.toString());
-  }
-
-  @override
-  void didUpdateWidget(covariant _MenuRow oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.item.sort != item.sort &&
-        int.tryParse(_sortCtrl.text.trim()) != item.sort) {
-      _sortCtrl.text = item.sort.toString();
-    }
-  }
-
-  @override
-  void dispose() {
-    _sortCtrl.dispose();
-    super.dispose();
-  }
 
   String _updatedAtLabel() {
     if (item.updatedAt.isEmpty) return '—';
@@ -500,10 +490,10 @@ class _MenuRowState extends State<_MenuRow> {
               SizedBox(width: 8),
               TextButton(onPressed: onEdit, child: Text(t('Sửa'))),
               TextButton(
-                  onPressed: onToggleHidden,
+                  onPressed: busy ? null : onToggleHidden,
                   child: Text(item.hidden ? t('Hiện') : t('Ẩn'))),
               TextButton(
-                onPressed: onDelete,
+                onPressed: busy ? null : onDelete,
                 style: TextButton.styleFrom(foregroundColor: DanColors.late),
                 child: Text(t('Xóa')),
               ),
@@ -523,37 +513,17 @@ class _MenuRowState extends State<_MenuRow> {
                   style: TextStyle(fontSize: 11, color: DanColors.faint),
                 ),
               ),
-              SizedBox(width: 8),
-              Text(t('TT'),
-                  style: TextStyle(fontSize: 11, color: DanColors.faint)),
-              SizedBox(width: 4),
-              SizedBox(
-                width: 52,
-                height: 32,
-                child: TextField(
-                  controller: _sortCtrl,
-                  keyboardType: TextInputType.number,
-                  textAlign: TextAlign.center,
-                  style: TextStyle(fontSize: 12),
-                  decoration: InputDecoration(
-                    isDense: true,
-                    contentPadding: EdgeInsets.symmetric(vertical: 6),
-                  ),
-                  onSubmitted: (v) =>
-                      widget.onChangeSort(int.tryParse(v.trim()) ?? item.sort),
-                ),
-              ),
               SizedBox(width: 14),
               _MiniSwitch(
                 label: t('Tại chỗ'),
                 value: item.availableDineIn,
-                onChanged: widget.onToggleDineIn,
+                onChanged: busy ? null : widget.onToggleDineIn,
               ),
               SizedBox(width: 10),
               _MiniSwitch(
                 label: t('Mang đi'),
                 value: item.availableTakeaway,
-                onChanged: widget.onToggleTakeaway,
+                onChanged: busy ? null : widget.onToggleTakeaway,
               ),
               SizedBox(width: 14),
               Tooltip(
@@ -561,7 +531,7 @@ class _MenuRowState extends State<_MenuRow> {
                 child: Switch(
                   value: item.available,
                   activeThumbColor: DanColors.done,
-                  onChanged: (_) => onToggleAvailability(),
+                  onChanged: busy ? null : (_) => onToggleAvailability(),
                 ),
               ),
             ],
@@ -575,9 +545,8 @@ class _MenuRowState extends State<_MenuRow> {
 class _MiniSwitch extends StatelessWidget {
   final String label;
   final bool value;
-  final VoidCallback onChanged;
-  _MiniSwitch(
-      {required this.label, required this.value, required this.onChanged});
+  final VoidCallback? onChanged;
+  _MiniSwitch({required this.label, required this.value, this.onChanged});
 
   @override
   Widget build(BuildContext context) {
@@ -594,7 +563,7 @@ class _MiniSwitch extends StatelessWidget {
           child: Switch(
             value: value,
             activeThumbColor: DanColors.brand,
-            onChanged: (_) => onChanged(),
+            onChanged: onChanged == null ? null : (_) => onChanged!(),
           ),
         ),
       ],

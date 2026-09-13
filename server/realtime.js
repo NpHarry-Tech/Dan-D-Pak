@@ -2,7 +2,7 @@
 // live events: new orders, item status changes, table/payment/menu/inventory updates.
 import { Server } from 'socket.io';
 import { env } from './config/env.js';
-import { audit } from './db.js';
+import { db, audit } from './db.js';
 import { userFor, canAccessBranch } from './services/auth.js';
 import { normalizeIp } from './core/util.js';
 import { logger } from './core/logger.js';
@@ -84,6 +84,35 @@ function logDeviceConnect(branch, device, ip) {
 
 const presenceTimers = new Map(); // branch -> timeout
 
+// BẢO MẬT: device='ipad' kết nối KHÔNG token (thiết bị công cộng đặt tại bàn —
+// xem lý do ở io.use bên dưới) và tự khai branch muốn nghe. branch_id không hề
+// bí mật (GET /api/branches công khai), nên KHÔNG có gì chặn một client BẤT KỲ
+// trên internet nối vào để nghe lén hoạt động vận hành (tên món/SL/số bàn —
+// KHÔNG payment/PII, đã lọc) của MỌI chi nhánh, không riêng chi nhánh của nó.
+// Đóng gọn hoàn toàn cần một cơ chế GHÉP ĐÔI thiết bị↔chi nhánh thật sự (quyết
+// định sản phẩm, chưa có hạ tầng) — ở đây giảm bán kính nổ bằng hai lớp rẻ,
+// không ảnh hưởng kiosk hợp lệ: (1) từ chối branch không tồn tại (chặn dò vét
+// id ngẫu nhiên), (2) giới hạn tốc độ KẾT NỐI theo IP (không giới hạn tin nhắn
+// của phiên đã nối — kiosk hợp lệ nối 1 lần rồi giữ kết nối lâu dài).
+const ipadConnectBuckets = new Map(); // ip -> { count, resetAt }
+const IPAD_CONNECT_WINDOW_MS = 5 * 60_000;
+const IPAD_CONNECT_MAX = 20;
+export function ipadConnectAllowed(ip) {
+  const key = ip || 'unknown';
+  const at = Date.now();
+  let e = ipadConnectBuckets.get(key);
+  if (!e || e.resetAt <= at) { e = { count: 0, resetAt: at + IPAD_CONNECT_WINDOW_MS }; ipadConnectBuckets.set(key, e); }
+  e.count += 1;
+  return e.count <= IPAD_CONNECT_MAX;
+}
+setInterval(() => {
+  const at = Date.now();
+  for (const [k, v] of ipadConnectBuckets) if (v.resetAt <= at) ipadConnectBuckets.delete(k);
+}, 5 * 60_000).unref();
+export function branchExists(branchId) {
+  return !!db.prepare(`SELECT 1 FROM branches WHERE id=?`).get(branchId);
+}
+
 function emitPresenceThrottled(branch) {
   if (presenceTimers.has(branch)) return;
   
@@ -121,6 +150,13 @@ export function initRealtime(httpServer) {
       const device = socket.handshake.auth?.device || socket.handshake.query?.device || 'unknown';
       // iPad là thiết bị công cộng đặt tại bàn, không cần xác thực token nhân viên
       if (device === 'ipad') {
+        if (!ipadConnectAllowed(normalizeIp(socket.handshake.address))) {
+          return next(new Error('Quá nhiều kết nối, vui lòng thử lại sau.'));
+        }
+        const branch = socket.handshake.auth?.branch || socket.handshake.query?.branch || 'sala';
+        if (!branchExists(branch)) {
+          return next(new Error('Chi nhánh không tồn tại.'));
+        }
         return next();
       }
 

@@ -8,6 +8,15 @@ export function parseJson(raw, fallback) {
   try { return raw ? JSON.parse(raw) : fallback; } catch { return fallback; }
 }
 
+// Escape để chèn an toàn vào text node / thuộc tính HTML (nháy đơn lẫn nháy
+// kép). Dùng ở MỌI chỗ dựng res.send(`<html>...`) với giá trị không đáng tin
+// (query param OAuth callback, dữ liệu do người dùng nhập) — thiếu bước này là
+// XSS phản chiếu ngay trên domain thật của server.
+export function escapeHtml(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
 // Đọc header không phân biệt hoa/thường (Express hạ sẵn, nhưng webhook/test có thể gửi khác).
 export function headerVal(headers = {}, name) {
   if (!headers) return '';

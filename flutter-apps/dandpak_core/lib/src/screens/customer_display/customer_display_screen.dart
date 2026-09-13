@@ -374,7 +374,7 @@ class _CustomerDisplayScreenState extends State<CustomerDisplayScreen> {
                     if (d.tax > 0) ...[
                       SizedBox(height: 6),
                       Text(
-                          '${t('Tiền hàng')}: ${_money(d.subtotal)}  ·  VAT: ${_money(d.tax)}',
+                          '${t('Tiền hàng')}: ${_money(d.subtotal)}  ·  ${t('VAT')}: ${_money(d.tax)}',
                           style:
                               TextStyle(fontSize: 14, color: DanColors.muted)),
                     ],
@@ -637,7 +637,7 @@ class _OrderHeaderRow extends StatelessWidget {
                   Text(t('ĐƠN GIÁ'), textAlign: TextAlign.right, style: style)),
           Expanded(
               flex: 1,
-              child: Text('SL', textAlign: TextAlign.center, style: style)),
+              child: Text(t('SL'), textAlign: TextAlign.center, style: style)),
           Expanded(
               flex: 2,
               child: Text(t('THÀNH TIỀN'),

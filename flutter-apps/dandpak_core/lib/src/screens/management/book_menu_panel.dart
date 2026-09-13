@@ -1041,18 +1041,17 @@ class _BookMenuPanelState extends State<BookMenuPanel> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        DropdownButtonFormField<String>(
-          initialValue: selectedItem,
-          isExpanded: true,
-          decoration: InputDecoration(
-              labelText: t('Món được mở khi bấm'), isDense: true),
-          items: [
+        DropdownMenu<String>(
+          initialSelection: selectedItem,
+          expandedInsets: EdgeInsets.zero,
+          enableFilter: true,
+          inputDecorationTheme: InputDecorationTheme(isDense: true),
+          hintText: t('Món được mở khi bấm'),
+          dropdownMenuEntries: [
             for (final item in _items)
-              DropdownMenuItem(
-                  value: item.id,
-                  child: Text(item.name, overflow: TextOverflow.ellipsis)),
+              DropdownMenuEntry(value: item.id, label: item.name),
           ],
-          onChanged: (v) => setState(() => hs[_khoaHang] = v ?? ''),
+          onSelected: (v) => setState(() => hs[_khoaHang] = v ?? ''),
         ),
         SizedBox(height: 10),
         TextFormField(

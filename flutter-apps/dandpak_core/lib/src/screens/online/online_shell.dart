@@ -123,7 +123,7 @@ class _OnlineShellState extends State<OnlineShell> {
         lastGroup = group;
         tiles.add(Padding(
           padding: const EdgeInsets.fromLTRB(16, 16, 12, 6),
-          child: Text(group.toUpperCase(),
+          child: Text(t(group).toUpperCase(),
               style: const TextStyle(
                   fontSize: 10.5,
                   fontWeight: FontWeight.w800,
@@ -164,10 +164,10 @@ class _OnlineShellState extends State<OnlineShell> {
       ));
     }
     return ListView(padding: const EdgeInsets.only(bottom: 20), children: [
-      const Padding(
-        padding: EdgeInsets.fromLTRB(16, 14, 12, 4),
-        child: Text('BÁN ONLINE',
-            style: TextStyle(
+      Padding(
+        padding: const EdgeInsets.fromLTRB(16, 14, 12, 4),
+        child: Text(t('BÁN ONLINE'),
+            style: const TextStyle(
                 fontSize: 13,
                 fontWeight: FontWeight.w900,
                 color: DanColors.text)),

@@ -252,7 +252,7 @@ class _NotificationSettingsPanelState extends State<NotificationSettingsPanel> {
 
   String _soundName(String id) {
     for (final c in _soundsCatalog) {
-      if (asText(c['id']) == id) return asText(c['name']);
+      if (asText(c['id']) == id) return t(asText(c['name']));
     }
     return id;
   }
@@ -443,7 +443,7 @@ class _NotificationSettingsPanelState extends State<NotificationSettingsPanel> {
               Text(ev[2],
                   style:
                       TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700)),
-              Text(t('Âm: ${_soundName(sound)}'),
+              Text('${t('Âm')}: ${_soundName(sound)}',
                   style: TextStyle(fontSize: 11.5, color: DanColors.faint)),
             ],
           ),
@@ -467,7 +467,7 @@ class _NotificationSettingsPanelState extends State<NotificationSettingsPanel> {
               for (final c in _soundsCatalog)
                 DropdownMenuItem(
                     value: asText(c['id']),
-                    child: Text(asText(c['name']),
+                    child: Text(t(asText(c['name'])),
                         overflow: TextOverflow.ellipsis)),
             ],
             onChanged: on

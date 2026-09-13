@@ -18,6 +18,7 @@ api.get('/print/printers', printGuard, wrap((req) => Print.listPrinters(branch(r
   force: req.query.force === '1',
   deviceId: deviceOf(req),
   scope: privileged(req) ? 'all' : 'device',
+  lang: String(req.query.lang || 'vi'),
 })));
 api.post('/print/printers/:id/test', printGuard, wrap((req) => {
   Print.assertPrinterUsableBy(req.params.id, branch(req), {

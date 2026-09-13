@@ -8,6 +8,7 @@ import zlib from 'node:zlib';
 import { db, DB_WAS_EMPTY, migrate, reconcileAuditFromArchive, compactAuditToMonthly, purgeAuditBeyondRetention, backupDatabase } from './db.js';
 import { seedShopeeReview } from './db/reviewSeed.js';
 import { tenantMiddleware } from './services/tenantContext.js';
+import { escapeHtml } from './core/util.js';
 import { initRealtime } from './realtime.js';
 import { api } from './api.js';
 import { startSyncEngine } from './services/sync.js';
@@ -16,9 +17,10 @@ import {
   oauthCallback as haravanOauthCallback, startHaravanWorker, maintainHaravanLogs,
 } from './services/haravanConnector.js';
 import { receiveShopeePush, startShopeePushWorker, shopeeExchangeToken } from './services/shopeeConnector.js';
-import { handleCallback as handleMarketplaceCallback } from './services/connectionPlatform.js';
+import { startMarketplaceWebhookWorker } from './services/marketplaceWebhookInbox.js';
+import { handleCallback as handleMarketplaceCallback, migrateLegacyMarketplaceConnections, refreshExpiringMarketplaceTokens } from './services/connectionPlatform.js';
 import { handleLazadaPush, lazadaExchangeToken } from './services/lazadaConnector.js';
-import { handleTiktokWebhook, tiktokExchangeToken } from './services/tiktokConnector.js';
+import { handleTiktokWebhook } from './services/tiktokConnector.js';
 import { verifyMetaSubscribe, handleMetaWebhook } from './services/metaConnector.js';
 import { handleZaloWebhook } from './services/zaloConnector.js';
 import { backfillPaidBills, processInvoiceQueue } from './services/einvoice.js';
@@ -73,6 +75,7 @@ globalThis.__DANDPAK_STARTED_AT = new Date().toISOString();
 
 assertSecureProductionEnv();
 migrate();
+migrateLegacyMarketplaceConnections();
 // Self-heal the footprint log after an unclean shutdown: replay any entries the
 // durable NDJSON archive kept but SQLite's WAL lost on power loss (idempotent).
 try {
@@ -208,16 +211,26 @@ app.use(express.json({ limit: '35mb' })); // DMS cho phép file 25MB → base64 
 // TikTok Shop OAuth redirect: seller authorize xong → kèm ?code= (auth_code).
 app.get('/auth/tiktok/callback', async (req, res) => {
   try {
-    const branchId = req.query.branch_id || req.query.branch || req.query.state || 'sala';
-    await tiktokExchangeToken(branchId, req.query.code || req.query.auth_code);
-    res.status(200).send('TikTok Shop đã kết nối. Có thể đóng cửa sổ này.');
+    const state = String(req.query.state || '');
+    if (!state.startsWith('mpatt_')) {
+      const error = new Error('Phiên kết nối TikTok Shop không hợp lệ. Hãy bắt đầu lại từ nút Kết nối.');
+      error.status = 400;
+      throw error;
+    }
+    const out = await handleMarketplaceCallback('tiktokshop', req.query);
+    res.status(200).send(connectedHtml('TikTok Shop', out.shop_id));
   } catch (err) { res.status(err.status || 400).send(err.message || 'TikTok OAuth failed'); }
 });
 
 // Trang xác nhận kết nối (đóng lại, app tự cập nhật qua poll).
 function connectedHtml(name, shop) {
+  // BẢO MẬT (XSS phản chiếu): name/shop từng chèn thẳng KHÔNG escape vào HTML
+  // trả về nguyên domain server — provider trả shop_id/shop_name không đáng tin
+  // tuyệt đối (một số coi là free-text). Luôn escape trước khi chèn.
+  const safeName = escapeHtml(name);
+  const safeShop = shop ? ` (shop ${escapeHtml(shop)})` : '';
   return `<html><body style="font-family:sans-serif;text-align:center;padding:40px">` +
-    `<h2>✓ Đã kết nối ${name}${shop ? ` (shop ${shop})` : ''}</h2>` +
+    `<h2>✓ Đã kết nối ${safeName}${safeShop}</h2>` +
     `<p>Quay lại ứng dụng Dan-D Pak — kết nối sẽ tự cập nhật. Có thể đóng cửa sổ này.</p></body></html>`;
 }
 
@@ -238,7 +251,7 @@ app.get('/auth/lazada/callback', async (req, res) => {
     }
     const branchId = req.query.branch_id || req.query.branch || 'sala';
     const out = await lazadaExchangeToken(branchId, req.query.code);
-    res.status(200).send(`Lazada đã kết nối seller ${out.seller_id}. Có thể đóng cửa sổ này.`);
+    res.status(200).send(`Lazada đã kết nối seller ${escapeHtml(out.seller_id)}. Có thể đóng cửa sổ này.`);
   } catch (err) {
     res.status(err.status || 400).send(err.message || 'Lazada OAuth failed');
   }
@@ -266,7 +279,7 @@ app.get('/auth/shopee/callback', async (req, res) => {
     }
     const branchId = req.query.branch_id || req.query.branch || 'sala';
     const out = await shopeeExchangeToken(branchId, req.query.code, req.query.shop_id);
-    res.status(200).send(`Shopee đã kết nối shop ${out.shop_id}. Có thể đóng cửa sổ này.`);
+    res.status(200).send(`Shopee đã kết nối shop ${escapeHtml(out.shop_id)}. Có thể đóng cửa sổ này.`);
   } catch (err) {
     res.status(err.status || 400).send(err.message || 'Shopee OAuth failed');
   }
@@ -282,7 +295,7 @@ app.get('/auth/haravan/install', (req, res) => {
 app.get('/auth/haravan/callback', async (req, res) => {
   try {
     const out = await haravanOauthCallback(req.query);
-    res.status(200).send(`Haravan connected: ${out.shopDomain}`);
+    res.status(200).send(`Haravan connected: ${escapeHtml(out.shopDomain)}`);
   } catch (err) {
     res.status(err.status || 400).send(err.message || 'Haravan OAuth failed');
   }
@@ -351,6 +364,9 @@ if (env.OFFLINE_DECOMMISSIONED) {
 }
 startHaravanWorker();
 startShopeePushWorker();
+startMarketplaceWebhookWorker();
+refreshExpiringMarketplaceTokens().catch(() => {});
+setInterval(() => refreshExpiringMarketplaceTokens().catch(() => {}), 60_000).unref();
 startErpWorker();   // ERP outbox → Business Central (no-op khi chưa cấu hình/tắt)
 
 // Vòng đời nhật ký hoạt động (giữ tối đa 3 năm / 36 tháng):

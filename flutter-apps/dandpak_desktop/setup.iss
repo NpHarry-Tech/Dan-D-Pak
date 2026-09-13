@@ -1,10 +1,19 @@
+; MyAppVersion truyen tu build-desktop.ps1 qua /DMyAppVersion=<kAppVersionName>
+; de AppVersion LUON khop app_version.dart -- truoc day gia tri nay hardcode
+; nen publish-release.ps1 bao nham "khong tim thay phien ban" o MOI lan phat
+; hanh Windows, khien canh bao that (neu co) cung bi bo qua theo phan xa.
+; Fallback literal chi dung khi ai do compile thu cong trong Inno IDE.
+#ifndef MyAppVersion
+  #define MyAppVersion "2026.09.08.01"
+#endif
+
 [Setup]
 AppId={{DANDPAK-POS-DESKTOP-APP}}
 AppName=Dan-D Pak POS
-; PH?I d?i k�m kAppBuildNumber/kAppVersionName trong lib/app_version.dart.
-; publish-release.ps1 d?c s? build t? app_version.dart r?i d?i chi?u v?i file
-; dem l�n � l?ch l� m�y POS roi v�o v�ng l?p c?p nh?t v� t?n.
-AppVersion=2026.09.08.01
+; PHAI doi kem kAppBuildNumber/kAppVersionName trong lib/app_version.dart.
+; publish-release.ps1 doc so build tu app_version.dart roi doi chieu voi file
+; dem len -- lech la may POS roi vao vong lap cap nhat vo tan.
+AppVersion={#MyAppVersion}
 DefaultDirName={commonpf}\DanDPakPOS
 DefaultGroupName=Dan-D Pak POS
 OutputDir=..\..\artifacts\releases

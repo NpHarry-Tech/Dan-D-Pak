@@ -221,8 +221,11 @@ extension ApiServiceSettingsApi on ApiService {
 
   Future<Map<String, dynamic>> getConnectionsStatus(
       {bool force = false}) async {
-    return mapFrom(await getJson(
-        '/api/settings/connections/status${force ? '?force=1' : ''}',
+    final qs = Uri(queryParameters: {
+      if (force) 'force': '1',
+      'lang': L10n.currentLocale,
+    }).query;
+    return mapFrom(await getJson('/api/settings/connections/status?$qs',
         errorMessage: 'Không tải được trạng thái kết nối'));
   }
 

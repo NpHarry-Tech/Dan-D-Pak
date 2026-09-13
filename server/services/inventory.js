@@ -518,8 +518,16 @@ export function findSkuByBarcode(barcode, branch_id = 'sala', filters = {}) {
   const channelWarehouseIds =
       forcedWh ? null : channelWarehouseFilter(branch_id, mapChannel);
   const wantWh = filters.warehouse_id || forcedWh;
-  const rows = db.prepare(`SELECT * FROM skus WHERE branch_id=? AND active=1 ORDER BY name`).all(branch_id)
-    .filter(s => s.barcode === barcode || parseUnits(s).some(u => u.barcode === barcode));
+  // Đường nhanh CÓ INDEX (idx_skus_branch_barcode): mã vạch chính của SKU
+  // trúng ngay một lượt SELECT, không cần tải + JSON.parse units_json của cả
+  // chi nhánh mỗi lần quét — đây là thao tác gọi NHIỀU NHẤT ở quầy bán lẻ.
+  // Chỉ rơi xuống quét toàn bộ (chậm hơn) khi mã vạch KHÔNG khớp cột chính,
+  // tức đang quét mã của một ĐƠN VỊ PHỤ (thùng/lô…) — hiếm gặp hơn nhiều.
+  const exact = db.prepare(`SELECT * FROM skus WHERE branch_id=? AND active=1 AND barcode=? ORDER BY name`)
+    .all(branch_id, barcode);
+  const rows = exact.length ? exact
+    : db.prepare(`SELECT * FROM skus WHERE branch_id=? AND active=1 ORDER BY name`).all(branch_id)
+        .filter(s => parseUnits(s).some(u => u.barcode === barcode));
   const row = rows
     .filter(s => !wantWh || (s.warehouse_id || fallbackWarehouse(branch_id, 'sku')) === wantWh)
     .find(s => !channelWarehouseIds || channelWarehouseIds.includes(s.warehouse_id || fallbackWarehouse(branch_id, 'sku')));

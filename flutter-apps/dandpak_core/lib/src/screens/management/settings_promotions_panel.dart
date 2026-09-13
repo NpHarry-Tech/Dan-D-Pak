@@ -912,19 +912,16 @@ class _PromotionSettingsPanelState extends State<PromotionSettingsPanel> {
 
   Widget _skuDropdown() {
     final value = _skus.any((s) => s.id == _skuId) ? _skuId : null;
-    return DropdownButtonFormField<String>(
+    return DropdownMenu<String>(
       key: ValueKey('sku:$_scope:$_skuId:${_skus.length}'),
-      initialValue: value,
-      isExpanded: true,
-      decoration: InputDecoration(labelText: t('SKU áp dụng')),
-      items: [
-        for (final s in _skus)
-          DropdownMenuItem(
-            value: s.id,
-            child: Text(s.name, maxLines: 1, overflow: TextOverflow.ellipsis),
-          ),
+      initialSelection: value,
+      expandedInsets: EdgeInsets.zero,
+      enableFilter: true,
+      hintText: t('SKU áp dụng'),
+      dropdownMenuEntries: [
+        for (final s in _skus) DropdownMenuEntry(value: s.id, label: s.name),
       ],
-      onChanged: (v) => setState(() {
+      onSelected: (v) => setState(() {
         _skuId = v ?? '';
         _lotNo = '';
       }),

@@ -15,7 +15,7 @@ bool _managerPinOpen = false;
 /// voucher...) bắt buộc PIN thật và không cho phiên quản lý tự duyệt; bỏ qua
 /// ở client khiến backend từ chối nhưng người dùng không có chỗ để nhập.
 Future<String?> requestManagerPin(BuildContext context, String reason,
-    {String label = 'PIN Manager / Admin', bool selfPinOnly = false}) async {
+    {String label = 'PIN Quản lý / Admin', bool selfPinOnly = false}) async {
   // Dùng Navigator ROOT toàn cục (ổn định) thay cho context nơi gọi — context đó
   // có thể đã bị dispose/nằm sau await khiến showDialog im lặng không hiện (§16).
   final dialogContext = appNavigatorKey.currentContext ?? context;
@@ -62,7 +62,7 @@ Future<String?> requestManagerPin(BuildContext context, String reason,
                   LengthLimitingTextInputFormatter(8),
                 ],
                 decoration: InputDecoration(
-                  labelText: label,
+                  labelText: t(label),
                   prefixIcon: Icon(Icons.lock_outline),
                 ),
                 onSubmitted: (_) => submit(),

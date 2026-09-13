@@ -24,6 +24,11 @@ dependencies:
   barcode_widget: ^2.0.4
   # Lưu bền preferences trên Android/iOS (server_url, token…).
   path_provider: ^2.1.5
+  # Lưu auth_token trong Keychain/Keystore/Credential Manager của OS (mã hoá
+  # phần cứng) thay vì file JSON thường — máy root/jailbreak hay đọc backup app
+  # không lấy được token trần. Các preference khác (server_url, branch_id…)
+  # không nhạy cảm, vẫn ở LocalStore JSON như cũ.
+  flutter_secure_storage: ^9.2.2
   # Quét mã vạch/QR bằng camera (ML Kit/AVFoundation) — không có bản Windows,
   # desktop tự bỏ qua.
   # Production pin: nâng phiên bản chỉ sau canary camera trên thiết bị thật.

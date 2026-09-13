@@ -54,7 +54,11 @@ export function listMenu(options = {}) {
   const parsedLimit = parseInt(limit) || 40;
 
   if (parsedPage !== null && parsedPage > 0) {
-    const categories = db.prepare(`SELECT * FROM categories WHERE branch_id=? ORDER BY sort`).all(branch_id);
+    const allCategories = db.prepare(`SELECT * FROM categories WHERE branch_id=? ORDER BY sort`).all(branch_id);
+    // NHÓM MÓN ẩn khỏi Self-Order (self_order_hidden) loại luôn cả nhóm lẫn
+    // món bên trong khỏi menu khách — F&B POS không bị ảnh hưởng.
+    const categories = selfOrder ? allCategories.filter(c => !c.self_order_hidden) : allCategories;
+    const hiddenCategoryIds = selfOrder ? new Set(allCategories.filter(c => c.self_order_hidden).map(c => c.id)) : null;
 
     let sql = `SELECT * FROM menu_items WHERE branch_id=?`;
     const params = [branch_id];
@@ -63,10 +67,12 @@ export function listMenu(options = {}) {
       sql += ` AND deleted_at IS NULL`;
     }
 
-    if (forCustomer) {
-      sql += ` AND hidden = 0`;
-    }
+    // `hidden` chỉ thật sự LOẠI món khỏi kết quả cho Self-Order (khách hàng).
+    // F&B POS vẫn nhận đủ món hidden — có cờ `hidden`/`available`/
+    // `availability_reason` để tự làm mờ + khoá chọn — vì nhân viên cần thấy
+    // món đang tắt để biết lý do, không phải mất tích khỏi màn order.
     if (selfOrder) {
+      sql += ` AND hidden = 0`;
       sql += ` AND self_order_hidden = 0`;
     }
 
@@ -79,7 +85,8 @@ export function listMenu(options = {}) {
 
     const offset = (parsedPage - 1) * parsedLimit;
     const search = searchTokens(q);
-    const allRows = db.prepare(sql).all(...params);
+    const allRows = db.prepare(sql).all(...params)
+      .filter(r => !hiddenCategoryIds || !hiddenCategoryIds.has(r.category_id));
     const filteredRows = search
       ? allRows.filter(row => matchesSearch(menuSearchValues(row), search))
       : allRows;
@@ -99,11 +106,14 @@ export function listMenu(options = {}) {
   const cacheKey = `menu:${branch_id}:${forCustomer ? 'pub' : 'adm'}:${selfOrder ? 'so' : 'all'}:${includeDeleted ? 'all' : 'live'}:${menuLang}`;
   const cached = cacheGet(cacheKey);
   if (cached) return cached;
-  const categories = db.prepare(`SELECT * FROM categories WHERE branch_id=? ORDER BY sort`).all(branch_id);
+  const allCategories = db.prepare(`SELECT * FROM categories WHERE branch_id=? ORDER BY sort`).all(branch_id);
+  const categories = selfOrder ? allCategories.filter(c => !c.self_order_hidden) : allCategories;
+  const hiddenCategoryIds = selfOrder ? new Set(allCategories.filter(c => c.self_order_hidden).map(c => c.id)) : null;
   const rows = db.prepare(`SELECT * FROM menu_items WHERE branch_id=? ORDER BY sort`).all(branch_id)
     .filter(r => includeDeleted || !r.deleted_at)
-    .filter(r => !forCustomer || !r.hidden)
-    .filter(r => !selfOrder || !r.self_order_hidden);
+    .filter(r => !selfOrder || !r.hidden)
+    .filter(r => !selfOrder || !r.self_order_hidden)
+    .filter(r => !hiddenCategoryIds || !hiddenCategoryIds.has(r.category_id));
   return cacheSet(cacheKey, { categories, items: rows.map(r => normalizeMenuItem(r, { forCustomer, includeRecipe: !forCustomer, lang: menuLang })) }, MENU_TTL);
 }
 
@@ -335,6 +345,10 @@ function enrichOptionGroups(raw, branch_id, vatRate, priceIncludesVat) {
     key: String(g.key || ''),
     name: String(g.name || ''),
     position: g.position === 'bottom' ? 'bottom' : 'top',
+    // 'price' (mặc định) = cộng giá vào dòng món hiện tại, như trước giờ.
+    // 'combo' = mỗi lựa chọn tách thành 1 order_items RIÊNG (giá/trạm/hủy độc
+    // lập) — xem resolveOrderMods() trong orders.js.
+    mode: g.mode === 'combo' ? 'combo' : 'price',
     min: Math.max(0, Number(g.min) || 0),
     max: Math.max(0, Number(g.max) || 0), // 0 = không giới hạn
     options: (Array.isArray(g.options) ? g.options : []).map(o => {
@@ -363,24 +377,44 @@ function enrichOptionGroups(raw, branch_id, vatRate, priceIncludesVat) {
   }));
 }
 
+// Nhóm mode:'combo' không được link tới 1 món mà bản thân món đó lại CÓ nhóm
+// combo riêng — chỉ cho lồng 1 cấp, tránh combo-trong-combo đệ quy khi in/hủy.
+function refHasComboGroup(ref_item_id) {
+  if (!ref_item_id) return false;
+  const r = db.prepare(`SELECT option_groups_json FROM menu_items WHERE id=?`).get(ref_item_id);
+  if (!r) return false;
+  const groups = safeJson(r.option_groups_json, []) || [];
+  return (Array.isArray(groups) ? groups : []).some(g => g && g.mode === 'combo');
+}
+
 // Lưu: chuẩn hoá mảng nhóm tùy chọn từ client (bỏ nhóm/option rỗng, ép kiểu).
 export function normalizeOptionGroups(raw) {
   const list = Array.isArray(raw) ? raw : (safeJson(raw, []) || []);
-  return (Array.isArray(list) ? list : []).map((g, gi) => ({
-    key: String(g.key || `g${gi}`).slice(0, 40),
-    name: String(g.name || '').trim().slice(0, 60),
-    position: g.position === 'bottom' ? 'bottom' : 'top',
-    min: Math.max(0, parseInt(g.min) || 0),
-    max: Math.max(0, parseInt(g.max) || 0),
-    options: (Array.isArray(g.options) ? g.options : []).map((o, oi) => ({
+  return (Array.isArray(list) ? list : []).map((g, gi) => {
+    const mode = g.mode === 'combo' ? 'combo' : 'price';
+    const options = (Array.isArray(g.options) ? g.options : []).map((o, oi) => ({
       key: String(o.key || `o${oi}`).slice(0, 40),
       name: String(o.name || '').trim().slice(0, 80),
       type: o.type === 'free' ? 'free' : 'paid',
       price: o.type === 'free' ? 0 : Math.max(0, Math.round(Number(o.price) || 0)),
       ref_item_id: o.ref_item_id ? String(o.ref_item_id) : null,
       emoji: o.emoji ? String(o.emoji).slice(0, 8) : null,
-    })).filter(o => o.name || o.ref_item_id),
-  })).filter(g => g.name && g.options.length);
+      // Nhóm 'combo': mỗi lựa chọn BẮT BUỘC link món thật (giá/trạm lấy từ đó).
+    })).filter(o => mode === 'combo' ? !!o.ref_item_id : (o.name || o.ref_item_id));
+    if (mode === 'combo') {
+      const nested = options.find(o => refHasComboGroup(o.ref_item_id));
+      if (nested) throw new Error(`Món "${nested.name || nested.ref_item_id}" đã có nhóm "Món đi kèm" riêng — không thể lồng combo trong combo.`);
+    }
+    return {
+      key: String(g.key || `g${gi}`).slice(0, 40),
+      name: String(g.name || '').trim().slice(0, 60),
+      position: g.position === 'bottom' ? 'bottom' : 'top',
+      mode,
+      min: Math.max(0, parseInt(g.min) || 0),
+      max: Math.max(0, parseInt(g.max) || 0),
+      options,
+    };
+  }).filter(g => g.name && g.options.length);
 }
 
 export function enrichAddons(addonsRaw, branch_id = 'sala', vatRate = 0, priceIncludesVat = true) {
@@ -465,7 +499,8 @@ export function createCategory(body, branch_id = 'sala') {
   if (stationId && !db.prepare(`SELECT 1 FROM production_stations WHERE id=? AND branch_id=? AND active=1`).get(stationId, branch_id)) {
     throw new Error('Trạm mặc định không thuộc chi nhánh hoặc đã ẩn');
   }
-  db.prepare(`INSERT INTO categories (id,branch_id,name,icon,sort,default_station_id) VALUES (?,?,?,?,?,?)`).run(id, branch_id, name, body.icon || '🍽️', sort, stationId);
+  const selfOrderHidden = body.self_order_hidden ? 1 : 0;
+  db.prepare(`INSERT INTO categories (id,branch_id,name,icon,sort,default_station_id,self_order_hidden) VALUES (?,?,?,?,?,?,?)`).run(id, branch_id, name, body.icon || '🍽️', sort, stationId, selfOrderHidden);
   cacheBust('menu:');
   audit('category.create', { id, name }, branch_id);
   return db.prepare(`SELECT * FROM categories WHERE id=? AND branch_id=?`).get(id, branch_id);
@@ -479,8 +514,11 @@ export function updateCategory(id, body, branch_id = 'sala') {
   if (stationId && !db.prepare(`SELECT 1 FROM production_stations WHERE id=? AND branch_id=? AND active=1`).get(stationId, branch_id)) {
     throw new Error('Trạm mặc định không thuộc chi nhánh hoặc đã ẩn');
   }
-  db.prepare(`UPDATE categories SET name=?, icon=?, default_station_id=? WHERE id=? AND branch_id=?`).run(
-    String(body.name || '').trim() || cur.name, body.icon || cur.icon, stationId, id, branch_id);
+  const selfOrderHidden = body.self_order_hidden === undefined
+    ? cur.self_order_hidden
+    : (body.self_order_hidden ? 1 : 0);
+  db.prepare(`UPDATE categories SET name=?, icon=?, default_station_id=?, self_order_hidden=? WHERE id=? AND branch_id=?`).run(
+    String(body.name || '').trim() || cur.name, body.icon || cur.icon, stationId, selfOrderHidden, id, branch_id);
   cacheBust('menu:');
   audit('category.update', { id }, branch_id);
   return db.prepare(`SELECT * FROM categories WHERE id=? AND branch_id=?`).get(id, branch_id);

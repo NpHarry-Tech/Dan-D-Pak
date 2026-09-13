@@ -351,12 +351,19 @@ class _SelfOrderMenuScreenState extends State<SelfOrderMenuScreen> {
         return;
       }
     }
-    // Dựng danh sách tùy chọn đã chọn (group+name để server validate, price để tính).
+    // Dựng danh sách tùy chọn đã chọn: nhóm 'price' cộng giá vào dòng hiện tại
+    // (mods, như trước giờ); nhóm 'combo' (Món đi kèm) tách thành dòng RIÊNG
+    // khi gửi đơn — xem comboChildren trên SoCartItem + _sendOrder bên dưới.
     final mods = <SoModifierOption>[];
+    final comboChildren = <SoComboChild>[];
     for (final g in item.optionGroups) {
       final sel = _detailSel[g.key] ?? const <String>{};
       for (final o in g.options) {
-        if (sel.contains(o.key)) {
+        if (!sel.contains(o.key)) continue;
+        if (g.isCombo) {
+          comboChildren
+              .add(SoComboChild(refItemId: o.refItemId, name: o.name, price: o.price));
+        } else {
           mods.add(
               SoModifierOption(group: g.name, name: o.name, price: o.price));
         }
@@ -373,7 +380,11 @@ class _SelfOrderMenuScreenState extends State<SelfOrderMenuScreen> {
     setState(() {
       // Món có tùy chọn = KHÔNG gộp (mỗi cấu hình là 1 dòng riêng).
       _cart.add(SoCartItem(
-          item: item, qty: _detailQty, notes: '', selectedModifiers: mods));
+          item: item,
+          qty: _detailQty,
+          notes: '',
+          selectedModifiers: mods,
+          comboChildren: comboChildren));
       _detailItem = null;
       _detailSel.clear();
       _detailAddons.clear();
@@ -426,6 +437,47 @@ class _SelfOrderMenuScreenState extends State<SelfOrderMenuScreen> {
     });
   }
 
+  // GHI CHÚ RIÊNG cho 1 món đi kèm trong combo (vd "salad không sốt") — món đi
+  // kèm không đổi được số lượng/không xóa riêng được, nhưng vẫn note được.
+  Future<void> _editComboChildNote(int cartIndex, int childIndex) async {
+    if (cartIndex < 0 || cartIndex >= _cart.length) return;
+    final children = _cart[cartIndex].comboChildren;
+    if (childIndex < 0 || childIndex >= children.length) return;
+    final child = children[childIndex];
+    final ctrl = TextEditingController(text: child.note);
+    final note = await showDialog<String>(
+      context: context,
+      builder: (dc) => AlertDialog(
+        title: Text('${t('Ghi chú')}: ${child.name}'),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          maxLength: 200,
+          minLines: 1,
+          maxLines: 3,
+          decoration: InputDecoration(
+            hintText: t('Ví dụ: ít đá, không hành, ít cay…'),
+          ),
+          onSubmitted: (v) => Navigator.pop(dc, v.trim()),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dc), child: Text(t('Hủy'))),
+          FilledButton(
+              onPressed: () => Navigator.pop(dc, ctrl.text.trim()),
+              child: Text(t('Lưu'))),
+        ],
+      ),
+    );
+    ctrl.dispose();
+    if (note == null || !mounted) return;
+    setState(() {
+      if (cartIndex < _cart.length &&
+          childIndex < _cart[cartIndex].comboChildren.length) {
+        _cart[cartIndex].comboChildren[childIndex].note = note;
+      }
+    });
+  }
+
   Future<void> _sendOrder() async {
     if (_cart.isEmpty) return;
     setState(() => _sending = true);
@@ -439,6 +491,12 @@ class _SelfOrderMenuScreenState extends State<SelfOrderMenuScreen> {
                 'mods': [
                   for (final m in c.selectedModifiers)
                     {'group': m.group, 'name': m.name},
+                ],
+                // Món đi kèm (combo) → server tách thành dòng RIÊNG, tự lấy
+                // giá/trạm của CHÍNH món đó (xem resolveOrderCombo).
+                'combo': [
+                  for (final ch in c.comboChildren)
+                    {'ref_item_id': ch.refItemId, 'note': ch.note},
                 ],
               })
           .toList();
@@ -548,6 +606,11 @@ class _SelfOrderMenuScreenState extends State<SelfOrderMenuScreen> {
                 onQtyChange: changeQty,
                 onNote: (i) {
                   _editNote(i).then((_) {
+                    if (mounted) setModalState(() {});
+                  });
+                },
+                onChildNote: (i, ci) {
+                  _editComboChildNote(i, ci).then((_) {
                     if (mounted) setModalState(() {});
                   });
                 },
@@ -949,6 +1012,8 @@ class _SelfOrderMenuScreenState extends State<SelfOrderMenuScreen> {
                                       item: _cart[i],
                                       onQtyChange: (q) => _changeQty(i, q),
                                       onNote: () => _editNote(i),
+                                      onChildNote: (ci) =>
+                                          _editComboChildNote(i, ci),
                                     ),
                                   ),
                           ),

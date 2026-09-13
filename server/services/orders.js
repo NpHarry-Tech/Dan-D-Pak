@@ -178,6 +178,48 @@ function resolveOrderMods(rawMods, mi) {
   });
 }
 
+// Nhóm mode:'combo' (Món đi kèm) KHÔNG đi qua mods (cộng giá vào dòng hiện tại)
+// — mỗi lựa chọn tách thành 1 order_items RIÊNG (giá/trạm/hủy độc lập, xem
+// insItem loop bên dưới). rawCombo: [{ref_item_id, note}]. Trả về danh sách đã
+// khớp đúng 1 option combo của món cha + validate đủ min/không vượt max từng
+// nhóm — giống hệt cách resolveOrderMods bảo mật giá, KHÔNG tin dữ liệu client.
+function resolveOrderCombo(rawCombo, mi) {
+  const raw = Array.isArray(rawCombo) ? rawCombo : [];
+  const comboGroups = (Array.isArray(mi.option_groups) ? mi.option_groups : []).filter(g => g.mode === 'combo');
+  if (!raw.length) {
+    const missing = comboGroups.find(g => g.min > 0);
+    if (missing) throw new Error(`Thiếu lựa chọn bắt buộc cho nhóm "${missing.name}" của "${mi.name}"`);
+    return [];
+  }
+  if (!comboGroups.length) throw new Error(`"${mi.name}" không có món đi kèm để chọn`);
+  const byRef = new Map();
+  for (const g of comboGroups) {
+    for (const o of g.options) {
+      if (o.ref_item_id) byRef.set(o.ref_item_id, { group: g, option: o });
+    }
+  }
+  const perGroupCount = new Map();
+  const seen = new Set();
+  const resolved = [];
+  for (const c of raw) {
+    const refId = String(c?.ref_item_id ?? '').trim();
+    const hit = byRef.get(refId);
+    if (!hit) throw new Error(`Món đi kèm không hợp lệ cho "${mi.name}": ${refId}`);
+    if (hit.option.available === false) throw new Error(`Món đi kèm tạm hết: ${hit.option.name}`);
+    const dedupeKey = `${hit.group.key}::${refId}`;
+    if (seen.has(dedupeKey)) throw new Error(`Đã chọn trùng món đi kèm cho "${mi.name}".`);
+    seen.add(dedupeKey);
+    perGroupCount.set(hit.group.key, (perGroupCount.get(hit.group.key) || 0) + 1);
+    resolved.push({ ref_item_id: refId, note: String(c?.note ?? '').trim().slice(0, 200) || null });
+  }
+  for (const g of comboGroups) {
+    const n = perGroupCount.get(g.key) || 0;
+    if (n < g.min) throw new Error(`Nhóm "${g.name}" của "${mi.name}" cần chọn tối thiểu ${g.min} món.`);
+    if (g.max > 0 && n > g.max) throw new Error(`Nhóm "${g.name}" của "${mi.name}" chỉ được chọn tối đa ${g.max} món.`);
+  }
+  return resolved;
+}
+
 // items: [{menu_item_id, qty, note, mods:[{group,name}]}] or [{sku_id, qty}]
 // Lưu ý: `price` trong mods (nếu client gửi) bị BỎ QUA — xem resolveOrderMods.
 export function createOrUpdateOrder(options) {
@@ -287,8 +329,8 @@ export function createOrUpdateOrder(options) {
     }
 
     const insItem = db.prepare(`INSERT INTO order_items
-      (id,order_id,menu_item_id,sku_id,item_code,item_barcode,unit_snapshot,name,emoji,qty,unit_price,vat_rate,station,sla_minutes,note,mods_json,status,lot_id,promo_json,orig_price,created_at,source)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
+      (id,order_id,menu_item_id,sku_id,item_code,item_barcode,unit_snapshot,name,emoji,qty,unit_price,vat_rate,station,sla_minutes,note,mods_json,status,lot_id,promo_json,orig_price,created_at,source,parent_item_id)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
 
     // Mỗi DÒNG được validate/ghi ĐỘC LẬP — 1 dòng lỗi nghiệp vụ (hết hàng, món
     // tạm hết, chưa tới giờ bán…) chỉ BỎ QUA đúng dòng đó, không kéo sập các
@@ -328,10 +370,14 @@ export function createOrUpdateOrder(options) {
           if (!hasOverride && serverPrice <= 0) throw new Error(`SKU chưa có giá bán: ${sku.name}`);
           const lineNote = String(line.note || '').trim().slice(0, 200) || null;
           insItem.run(id, order.id, null, sku.id, sku.code || null, sku.barcode || null, sku.unit || 'cái', sku.name, sku.emoji, qty, unitPrice, Number(sku.vat) || 0, 'retail', 0, lineNote, '[]',
-            needsStaffConfirm ? 'pending_confirm' : 'served', lotId, line.promo ? JSON.stringify(line.promo) : null, origPrice, now(), source);
+            needsStaffConfirm ? 'pending_confirm' : 'served', lotId, line.promo ? JSON.stringify(line.promo) : null, origPrice, now(), source, null);
         } else {
           const mi = getMenuItemForOrder(line.menu_item_id, branch_id);
           const mods = resolveOrderMods(line.mods, mi);
+          // Resolve + validate TRƯỚC khi ghi dòng cha — lỗi combo (thiếu bắt buộc,
+          // vượt max, món ref hết hàng) phải làm SKIP CẢ DÒNG, không để lại món
+          // chính mồ côi (thiếu món đi kèm bắt buộc) trong đơn.
+          const comboSel = resolveOrderCombo(line.combo, mi).map(c => ({ ...c, childMi: getMenuItemForOrder(c.ref_item_id, branch_id) }));
           const modSum = mods.reduce((s, m) => s + m.price, 0);
           const listedPrice = salePrice(mi.price, mi.vat_rate, mi.price_includes_vat) + modSum;
           // CHỈNH GIÁ DÒNG cho món F&B — ĐỒNG BỘ với nhánh SKU/Retail ở trên. Dùng
@@ -344,7 +390,22 @@ export function createOrUpdateOrder(options) {
             ? Math.round(Number(line.orig_price)) : listedPrice;
           const lineNote = String(line.note || '').trim().slice(0, 200) || null;
           insItem.run(id, order.id, mi.id, null, mi.code || null, mi.barcode || null, mi.unit || 'phần', mi.name, mi.emoji, qty, unitPrice, Number(mi.vat_rate) || 0, mi.station, mi.sla_minutes,
-            lineNote, JSON.stringify(mods), needsStaffConfirm ? 'pending_confirm' : 'new', null, null, origPrice, now(), source);
+            lineNote, JSON.stringify(mods), needsStaffConfirm ? 'pending_confirm' : 'new', null, null, origPrice, now(), source, null);
+          // Món đi kèm (combo): mỗi lựa chọn là 1 order_items riêng, SỐ LƯỢNG
+          // BẰNG số lượng món chính (đặt 2x combo = 2x mỗi món đi kèm) — cùng
+          // quy ước qty×unit_price của mọi dòng khác (xem orderVatTotals).
+          // Giá/trạm/SLA lấy từ CHÍNH món con (không phải món cha) để phiếu bếp
+          // tự tách đúng trạm (printKitchenTickets group theo station của TỪNG
+          // dòng, không đổi gì bên đó) và hủy dây chuyền theo món cha (xem
+          // cancelItem/cancelItemsBatch).
+          for (const child of comboSel) {
+            const childId = uid('oi_');
+            const childPrice = salePrice(child.childMi.price, child.childMi.vat_rate, child.childMi.price_includes_vat);
+            insItem.run(childId, order.id, child.childMi.id, null, child.childMi.code || null, child.childMi.barcode || null, child.childMi.unit || 'phần',
+              child.childMi.name, child.childMi.emoji, qty, childPrice, Number(child.childMi.vat_rate) || 0, child.childMi.station, child.childMi.sla_minutes,
+              child.note, '[]', needsStaffConfirm ? 'pending_confirm' : 'new', null, null, childPrice, now(), source, id);
+            created.push(db.prepare(`SELECT * FROM order_items WHERE id=?`).get(childId));
+          }
         }
         created.push(db.prepare(`SELECT * FROM order_items WHERE id=?`).get(id));
       } catch (lineErr) {
@@ -869,6 +930,19 @@ export function setItemStatus(item_id, status, branch_id = 'sala', actor = 'syst
 export function cancelItem(item_id, reason, branch_id = 'sala', actor = 'system') {
   const cancelledItem = db.prepare(`SELECT * FROM order_items WHERE id=?`).get(item_id);
   if (!cancelledItem) throw new Error('Item không tồn tại');
+  // Món đi kèm (combo) không tự hủy riêng được — chỉ hủy CÙNG món chính (xem
+  // dưới). UI Self-Order/POS không lộ nút hủy trên dòng đi kèm, nhưng server
+  // không tin client: chặn cứng nếu request cố tình nhắm trực tiếp vào nó.
+  if (cancelledItem.parent_item_id) {
+    throw new Error('Món đi kèm không thể huỷ riêng — huỷ món chính để huỷ cả nhóm.');
+  }
+  // Hủy món chính → hủy dây chuyền toàn bộ món đi kèm còn active của nó, gộp
+  // chung MỘT phiếu hủy theo trạm (xem cancelItemsBatch — đã có logic gộp này).
+  const childIds = db.prepare(`SELECT id FROM order_items WHERE parent_item_id=? AND status!='cancelled'`)
+    .all(item_id).map(r => r.id);
+  if (childIds.length) {
+    return cancelItemsBatch(cancelledItem.order_id, [item_id, ...childIds], reason, branch_id, actor);
+  }
   const beforeCancel = getOrder(cancelledItem.order_id);
   setItemStatus(item_id, 'cancelled', branch_id, actor);
   const item = db.prepare(`SELECT order_id FROM order_items WHERE id=?`).get(item_id);
@@ -924,12 +998,24 @@ export function cancelItem(item_id, reason, branch_id = 'sala', actor = 'system'
  *  khác của người dùng. */
 export function cancelItemsBatch(order_id, item_ids, reason, branch_id = 'sala', actor = 'system') {
   const cleanReason = String(reason || '').trim() || 'Nhân viên hủy';
-  const ids = Array.isArray(item_ids) ? [...new Set(item_ids.filter(Boolean))] : [];
+  let ids = Array.isArray(item_ids) ? [...new Set(item_ids.filter(Boolean))] : [];
   if (!ids.length) throw new Error('Chưa chọn món để hủy');
+  // Chọn hủy món chính (có combo) mà KHÔNG chọn kèm món đi kèm của nó — tự bổ
+  // sung các món đi kèm còn active vào cùng lượt, dây chuyền theo món chính.
+  const childRows = db.prepare(
+    `SELECT id FROM order_items WHERE order_id=? AND status!='cancelled' AND parent_item_id IN (${ids.map(() => '?').join(',')})`
+  ).all(order_id, ...ids);
+  if (childRows.length) ids = [...new Set([...ids, ...childRows.map(r => r.id)])];
   const rows = db.prepare(
     `SELECT * FROM order_items WHERE order_id=? AND status!='cancelled' AND id IN (${ids.map(() => '?').join(',')})`
   ).all(order_id, ...ids);
   if (!rows.length) throw new Error('Không có món để hủy');
+  // Món đi kèm bị nhắm hủy riêng (không đi cùng món chính trong CÙNG lượt) —
+  // chặn cứng, giống cancelItem một món (xem chú thích ở đó).
+  const idSet = new Set(ids);
+  if (rows.some(r => r.parent_item_id && !idSet.has(r.parent_item_id))) {
+    throw new Error('Món đi kèm không thể huỷ riêng — huỷ món chính để huỷ cả nhóm.');
+  }
   const beforeCancel = getOrder(order_id);
   if (!beforeCancel) throw new Error('Bill không tồn tại hoặc đã đóng');
 

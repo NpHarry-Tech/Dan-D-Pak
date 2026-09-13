@@ -38,6 +38,14 @@ class AppNotifier {
   /// NHẢY THẲNG vào mục xử lý, khỏi tự đi tìm.
   static VoidCallback? onOpenRequested;
 
+  /// TRUE khi thiết bị đang chạy màn Self-Order (khách tự gọi món) — kiosk
+  /// công cộng đăng nhập bằng phiên NHÂN VIÊN nên vẫn nhận đủ mọi thông báo
+  /// định tuyến theo vai trò (đơn mới, gọi nhân viên, thanh toán…) dù màn
+  /// đang hiện cho KHÁCH xem. Banner "Xem" hiện lên giữa lúc khách đang gọi
+  /// món khiến khách bấm nhầm vào, gây lỗi thao tác. Launcher bật cờ này
+  /// NGAY trước khi vào kiosk và tắt lại khi thoát hẳn về màn chọn module.
+  static bool suppressed = false;
+
   static void show({
     required String title,
     String body = '',
@@ -49,6 +57,7 @@ class AppNotifier {
     // true = banner có nút "Xem" bấm để nhảy vào mục thông báo (onOpenRequested).
     bool showViewAction = false,
   }) {
+    if (suppressed) return;
     if (osNotify) _osNotification(title, body, androidNotify);
     if (inApp) _inAppBanner(title, body, isError, showViewAction, duration);
   }

@@ -704,34 +704,54 @@ function parseBirthday(value) {
   return { month: parseInt(m[2]), day: parseInt(m[1]) };
 }
 
-function hasCustomerUsedVoucher(customer, voucherId, branch_id = 'sala') {
-  if (!customer || !voucherId) return false;
-  const needles = [];
-  if (customer.id) needles.push(`%"id":"${likeEscape(customer.id)}"%`);
-  if (customer.phone) needles.push(`%"phone":"${likeEscape(customer.phone)}"%`);
-  if (!needles.length) return false;
-  const promoNeedle = `%"voucher_id":"${likeEscape(voucherId)}"%`;
-  for (const needle of needles) {
-    const orderVoucher = db.prepare(`
-      SELECT 1 FROM orders
-      WHERE branch_id=? AND status='paid' AND voucher_id=? AND customer_json LIKE ? ESCAPE '\\'
-      LIMIT 1`).get(branch_id, voucherId, needle);
-    if (orderVoucher) return true;
-    const lineVoucher = db.prepare(`
-      SELECT 1
-      FROM order_items oi
-      JOIN orders o ON o.id=oi.order_id
-      WHERE o.branch_id=? AND o.status='paid'
-        AND o.customer_json LIKE ? ESCAPE '\\'
-        AND oi.promo_json LIKE ? ESCAPE '\\'
-      LIMIT 1`).get(branch_id, needle, promoNeedle);
-    if (lineVoucher) return true;
-  }
-  return false;
+function customerRedemptionKeys(customer) {
+  const keys = [];
+  if (customer?.id) keys.push(`id:${customer.id}`);
+  if (customer?.phone) keys.push(`phone:${customer.phone}`);
+  return keys;
 }
 
-function likeEscape(value) {
-  return String(value || '').replace(/[\\%_]/g, ch => `\\${ch}`).replace(/"/g, '\\"');
+// HIỆU NĂNG: trước đây LIKE-scan KHÔNG INDEX toàn bộ orders/order_items mỗi
+// lần sửa giỏ hàng ở POS (mọi ADD_LINE/CHANGE_QTY gọi hàm này) — chậm dần vô
+// hạn theo số đơn tích luỹ nhiều năm. Giờ tra bảng voucher_redemptions
+// (index-backed, xem db.js) — được ghi mỗi khi đơn CHỐT THANH TOÁN qua
+// recordVoucherRedemptions() bên dưới, và đã bù lịch sử lúc migrate().
+function hasCustomerUsedVoucher(customer, voucherId, branch_id = 'sala') {
+  if (!customer || !voucherId) return false;
+  const keys = customerRedemptionKeys(customer);
+  if (!keys.length) return false;
+  const placeholders = keys.map(() => '?').join(',');
+  const row = db.prepare(`SELECT 1 FROM voucher_redemptions
+    WHERE branch_id=? AND voucher_id=? AND customer_key IN (${placeholders}) LIMIT 1`)
+    .get(branch_id, voucherId, ...keys);
+  return !!row;
+}
+
+// Gọi ĐÚNG MỘT LẦN, tại thời điểm đơn CHỐT THANH TOÁN (payOrder() trong
+// payments.js, khi status chuyển sang 'paid') — không gọi ở mọi nơi tính
+// giá/preview, tránh ghi nhận "đã dùng" cho đơn chưa thật sự trả tiền.
+// Ghi cả voucher cấp ĐƠN (orders.voucher_id) lẫn cấp DÒNG (order_items.promo_json).
+export function recordVoucherRedemptions(order_id, branch_id = 'sala') {
+  const order = db.prepare(`SELECT voucher_id, customer_json FROM orders WHERE id=? AND branch_id=?`)
+    .get(order_id, branch_id);
+  if (!order) return;
+  let customer = null;
+  try { customer = JSON.parse(order.customer_json || 'null'); } catch { customer = null; }
+  const keys = customerRedemptionKeys(customer);
+  if (!keys.length) return;
+  const ins = db.prepare(`INSERT OR IGNORE INTO voucher_redemptions
+    (id, branch_id, voucher_id, customer_key, order_id, redeemed_at) VALUES (?,?,?,?,?,?)`);
+  const at = now();
+  const voucherIds = new Set();
+  if (order.voucher_id) voucherIds.add(order.voucher_id);
+  const lines = db.prepare(`SELECT promo_json FROM order_items WHERE order_id=? AND promo_json IS NOT NULL`).all(order_id);
+  for (const l of lines) {
+    const promo = parseJson(l.promo_json, null);
+    if (promo?.voucher_id) voucherIds.add(promo.voucher_id);
+  }
+  for (const voucherId of voucherIds) {
+    for (const key of keys) ins.run(uid('vred_'), branch_id, voucherId, key, order_id, at);
+  }
 }
 
 function scheduleLabel(v) {

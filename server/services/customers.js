@@ -90,12 +90,6 @@ export function getCustomer(id, branch_id = 'sala') {
   return normalizeRow(db.prepare(`SELECT * FROM customers WHERE id=? AND branch_id=?`).get(id, branch_id));
 }
 
-export function findByTaxCode(tax_code, branch_id = 'sala') {
-  const tc = String(tax_code || '').trim();
-  if (!tc) return null;
-  return normalizeRow(db.prepare(`SELECT * FROM customers WHERE branch_id=? AND tax_code=?`).get(branch_id, tc));
-}
-
 export function findByPhone(phone, branch_id = 'sala') {
   const digits = String(phone || '').replace(/\D/g, '');
   if (!digits) return null;

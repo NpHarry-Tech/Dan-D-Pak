@@ -215,6 +215,29 @@ extension ApiServiceOnlineApi on ApiService {
         errorMessage: 'Không ngắt kết nối được');
   }
 
+  Future<Map<String, dynamic>> getMarketplaceMappingOptions() async =>
+      mapFrom(await getJson('/api/marketplace/mapping-options',
+          errorMessage: 'Không tải được chi nhánh và kho'));
+
+  Future<Map<String, dynamic>> mapMarketplaceShop(
+      String id, String shopId, String branchId, String warehouseId) async {
+    return mapFrom(await postJson('/api/marketplace/connections/$id/map-shop',
+        body: {
+          'shop_id': shopId,
+          'branch_id': branchId,
+          'warehouse_id': warehouseId
+        },
+        errorMessage: 'Không ánh xạ được gian hàng'));
+  }
+
+  Future<Map<String, dynamic>> initialSyncMarketplace(String id) async =>
+      mapFrom(await postJson('/api/marketplace/connections/$id/initial-sync',
+          body: const {}, errorMessage: 'Đồng bộ lần đầu thất bại'));
+
+  Future<Map<String, dynamic>> reconcileMarketplace(String id) async => mapFrom(
+      await postJson('/api/marketplace/connections/$id/reconcile',
+          body: const {}, errorMessage: 'Đối soát sàn thất bại'));
+
   /// Kéo listing sản phẩm từ sàn về để liên kết (Shopee/Lazada/TikTok).
   Future<Map<String, dynamic>> syncOnlineProducts(String provider) async {
     final path = switch (provider) {

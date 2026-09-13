@@ -230,7 +230,7 @@ extension _RetailSaleCartView on _RetailScreenState {
             _openCustomerPicker,
           ),
           _clickRow(
-            'Voucher',
+            t('Voucher'),
             totals.orderVoucher?.displayName ?? t('Thêm'),
             _pickOrderVoucher,
             accent: totals.orderVoucher != null,
@@ -259,7 +259,7 @@ extension _RetailSaleCartView on _RetailScreenState {
                 '-${Fmt.money(totals.productDiscount)}',
                 accent: DanColors.doing),
           if (totals.orderDiscount > 0)
-            _totalRow(totals.orderVoucher?.name ?? 'Voucher',
+            _totalRow(totals.orderVoucher?.name ?? t('Voucher'),
                 '-${Fmt.money(totals.orderDiscount)}',
                 accent: DanColors.done),
           if (totals.customerDiscount > 0)

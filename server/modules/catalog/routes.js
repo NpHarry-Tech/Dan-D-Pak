@@ -189,6 +189,11 @@ api.post('/menu/:id/availability', guard('menu.manage'), wrap((req) => {
   const branch_id = branch(req);
   const { available } = req.body;
   db.prepare(`UPDATE menu_items SET available=? WHERE id=? AND branch_id=?`).run(available ? 1 : 0, req.params.id, branch_id);
+  // THIẾU dòng này là nguyên nhân nút gạt "Đang bán/Tạm hết" tự nhảy về trạng
+  // thái cũ: DB đã ghi đúng, nhưng listMenu() cache 10s (xem catalog.js) trả
+  // lại dữ liệu CŨ cho lần fetch-lại ngay sau khi bấm — y hệt mọi mutation
+  // khác trong file này (vd /menu/:id ở trên) đều tự bust cache.
+  Catalog.cacheBust('menu:');
   const item = Catalog.getMenuItem(req.params.id, {}, branch_id);
   if (!item) throw new Error('Món không tồn tại');
   audit('menu.availability', { id: item.id, available: !!item.available }, branch_id, actor(req));
@@ -206,6 +211,7 @@ api.post('/menu/:id/channels', guard('menu.manage'), wrap((req) => {
   const takeaway = req.body.available_takeaway !== undefined ? (req.body.available_takeaway ? 1 : 0) : cur.available_takeaway;
   db.prepare(`UPDATE menu_items SET available_dine_in=?, available_takeaway=?, updated_at=? WHERE id=? AND branch_id=?`)
     .run(dineIn, takeaway, now(), req.params.id, branch_id);
+  Catalog.cacheBust('menu:');
   const item = Catalog.getMenuItem(req.params.id, {}, branch_id);
   audit('menu.channels', { id: item.id, available_dine_in: item.available_dine_in, available_takeaway: item.available_takeaway }, branch_id, actor(req));
   emit('menu:updated', { id: item.id }, branch_id);
@@ -221,6 +227,7 @@ api.post('/menu/:id/sort', guard('menu.manage'), wrap((req) => {
   const cur = db.prepare(`SELECT id FROM menu_items WHERE id=? AND branch_id=?`).get(req.params.id, branch_id);
   if (!cur) throw new Error('Món không tồn tại');
   db.prepare(`UPDATE menu_items SET sort=?, updated_at=? WHERE id=? AND branch_id=?`).run(sort, now(), req.params.id, branch_id);
+  Catalog.cacheBust('menu:');
   audit('menu.sort', { id: req.params.id, sort }, branch_id, actor(req));
   emit('menu:updated', { id: req.params.id, sort }, branch_id);
   return { id: req.params.id, sort };

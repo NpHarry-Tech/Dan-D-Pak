@@ -212,9 +212,14 @@ class _DanDateTimeDialogState extends State<_DanDateTimeDialog> {
   }
 
   static const _weekdays = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'];
+  static const _weekdaysZh = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
   String _fmt(DateTime d) {
-    final wd = _weekdays[(d.weekday - 1) % 7];
     String two(int n) => n.toString().padLeft(2, '0');
+    if (L10n.currentLocale == 'zh') {
+      final wd = _weekdaysZh[(d.weekday - 1) % 7];
+      return '$wd, ${d.year}年${two(d.month)}月${two(d.day)}日 ${two(d.hour)}:${two(d.minute)}';
+    }
+    final wd = _weekdays[(d.weekday - 1) % 7];
     return '$wd, ${two(d.day)}/${two(d.month)}/${d.year} ${two(d.hour)}:${two(d.minute)}';
   }
 }

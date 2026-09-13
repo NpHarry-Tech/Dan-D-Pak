@@ -1,14 +1,14 @@
 import { db, now } from '../db.js';
 import writeExcelFile from 'write-excel-file/node';
-import PDFDocument from 'pdfkit';
 import { execFile } from 'child_process';
-import { existsSync } from 'fs';
 import { promisify } from 'util';
 import { mkdtemp, writeFile, readFile, rm } from 'fs/promises';
 import os from 'os';
 import path from 'path';
 import { businessDate, businessDateStartUtc, businessDateTimeSeconds,
   businessDisplayDate, businessParts } from '../core/businessClock.js';
+import { localizeReportData } from './reportI18n.js';
+import { escapeHtml as esc } from '../core/util.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -42,9 +42,6 @@ export const REPORTS = [
   { key: 'staff', group: 'staff', label: 'Báo cáo nhân viên', description: 'Tài khoản, vai trò, ca làm, doanh thu theo ca.' },
 ];
 
-function esc(s) {
-  return String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-}
 function csvText(s) {
   return String(s ?? '').replace(/\s+/g, ' ').trim();
 }
@@ -1167,8 +1164,13 @@ export function products(branch_id = 'sala') {
 export function warehouses(branch_id = 'sala') {
   return db.prepare(`SELECT id, name, type FROM warehouses WHERE branch_id=? AND active=1 ORDER BY sort,name`).all(branch_id);
 }
-export function catalog(branch_id = 'sala') {
-  return { groups: REPORT_GROUPS, reports: REPORTS, products: products(branch_id), warehouses: warehouses(branch_id) };
+export function catalog(branch_id = 'sala', lang = 'vi') {
+  return {
+    groups: localizeReportData(REPORT_GROUPS, lang),
+    reports: localizeReportData(REPORTS, lang),
+    products: products(branch_id),
+    warehouses: warehouses(branch_id),
+  };
 }
 function buildSingleReport(type = 'sales_overview', branch_id = 'sala', query = {}) {
   if (['sales_fnb', 'sales_retail', 'sales_by_product'].includes(type)) type = 'sales_overview';
@@ -1195,8 +1197,10 @@ function buildSingleReport(type = 'sales_overview', branch_id = 'sala', query = 
 export function buildReport(type = 'sales_overview', scopeInput = 'sala', query = {}) {
   const scope = normalizeScope(scopeInput);
   const branchIds = scope.branch_ids.length ? scope.branch_ids : ['sala'];
-  if (branchIds.length === 1) return withScope(buildSingleReport(type, branchIds[0], query), normalizeScope(branchIds[0]));
-  return combineBranchReports(type, scope, query, branchIds.map(id => buildSingleReport(type, id, query)));
+  const report = branchIds.length === 1
+    ? withScope(buildSingleReport(type, branchIds[0], query), normalizeScope(branchIds[0]))
+    : combineBranchReports(type, scope, query, branchIds.map(id => buildSingleReport(type, id, query)));
+  return localizeReportData(report, query.lang);
 }
 function tableHtml(sec) {
   return `<h2>${esc(sec.title)}</h2><table><thead><tr>${sec.columns.map(c => `<th class="${c.align === 'right' ? 'r' : ''}">${esc(c.label)}</th>`).join('')}</tr></thead><tbody>${sec.rows.length ? sec.rows.map(r => `<tr>${sec.columns.map(c => `<td class="${c.align === 'right' ? 'r' : ''}">${esc(reportDisplayValue(c, r[c.key]))}</td>`).join('')}</tr>`).join('') : `<tr><td colspan="${sec.columns.length}" class="empty">Không có dữ liệu</td></tr>`}</tbody></table>`;
@@ -1375,9 +1379,6 @@ export async function renderReportXlsx(report) {
     fontSize: 10,
   }).toBuffer());
 }
-export function renderReportXls(report) {
-  return renderReportXlsx(report);
-}
 export function renderReportDoc(report) {
   const html = renderReportHtml(report, { mode: 'doc' });
   return Buffer.from('\ufeff' + html, 'utf8');
@@ -1432,95 +1433,3 @@ export async function renderReportPdf(report) {
   }
 }
 
-export async function renderReportPdfKit(report) {
-  const doc = new PDFDocument({ size: 'A4', layout: 'landscape', margin: 28, bufferPages: true });
-  const chunks = [];
-  doc.on('data', c => chunks.push(c));
-  const done = new Promise((resolve, reject) => {
-    doc.on('end', () => resolve(Buffer.concat(chunks)));
-    doc.on('error', reject);
-  });
-  const regular = path.resolve(process.cwd(), 'flutter-apps/dandpak_desktop/assets/fonts/BeVietnamPro-Regular.ttf');
-  const bold = path.resolve(process.cwd(), 'flutter-apps/dandpak_desktop/assets/fonts/BeVietnamPro-Bold.ttf');
-  const hasFont = existsSync(regular) && existsSync(bold);
-  if (hasFont) {
-    doc.registerFont('ReportRegular', regular);
-    doc.registerFont('ReportBold', bold);
-  }
-  const font = (weight = 'regular') => doc.font(hasFont ? (weight === 'bold' ? 'ReportBold' : 'ReportRegular') : (weight === 'bold' ? 'Helvetica-Bold' : 'Helvetica'));
-  const pageWidth = () => doc.page.width - doc.page.margins.left - doc.page.margins.right;
-  const ensure = (height) => {
-    if (doc.y + height > doc.page.height - doc.page.margins.bottom) doc.addPage();
-  };
-
-  font('bold');
-  doc.fontSize(18).fillColor('#172033').text(report.title || 'Báo cáo');
-  font();
-  doc.fontSize(9).fillColor('#667085')
-    .text(`Kỳ báo cáo: ${report.range?.label || ''}`)
-    .text(`Xuất lúc: ${dateTime(report.generated_at)}`);
-  doc.moveDown(.7);
-
-  const gap = 8;
-  const cardWidth = (pageWidth() - gap * 3) / 4;
-  let cardX = doc.page.margins.left;
-  let cardY = doc.y;
-  for (const [i, s] of (report.summary || []).entries()) {
-    if (i > 0 && i % 4 === 0) {
-      cardX = doc.page.margins.left;
-      cardY += 48;
-    }
-    doc.roundedRect(cardX, cardY, cardWidth, 40, 5).strokeColor('#D9DEE7').stroke();
-    font();
-    doc.fontSize(8).fillColor('#667085').text(String(s.label || ''), cardX + 8, cardY + 7, { width: cardWidth - 16 });
-    font('bold');
-    doc.fontSize(11).fillColor('#172033').text(String(s.value ?? ''), cardX + 8, cardY + 22, { width: cardWidth - 16 });
-    cardX += cardWidth + gap;
-  }
-  doc.y = cardY + 54;
-
-  const drawTable = (sec) => {
-    ensure(52);
-    font('bold');
-    doc.fontSize(12).fillColor('#172033').text(sec.title || 'Chi tiết');
-    doc.moveDown(.35);
-    const cols = (sec.columns || []).slice(0, 10);
-    if (!cols.length) return;
-    const rightCount = cols.filter(c => c.align === 'right').length;
-    const baseWidths = cols.map(c => c.align === 'right' ? 70 : Math.max(72, (pageWidth() - 70 * rightCount) / Math.max(1, cols.length - rightCount)));
-    const scale = pageWidth() / baseWidths.reduce((a, b) => a + b, 0);
-    const widths = baseWidths.map(w => w * scale);
-    const drawRow = (values, header = false) => {
-      const startY = doc.y;
-      const heights = values.map((v, i) => doc.heightOfString(String(v ?? ''), { width: widths[i] - 8 }) + 10);
-      const rowHeight = Math.max(header ? 24 : 22, Math.min(58, Math.max(...heights)));
-      ensure(rowHeight + 2);
-      let x = doc.page.margins.left;
-      for (let i = 0; i < cols.length; i++) {
-        doc.rect(x, doc.y, widths[i], rowHeight).fillAndStroke(header ? '#EFF6FF' : '#FFFFFF', '#D9DEE7');
-        font(header ? 'bold' : 'regular');
-        doc.fontSize(header ? 8 : 7.6).fillColor(header ? '#445065' : '#172033')
-          .text(String(values[i] ?? ''), x + 4, doc.y + 5, {
-            width: widths[i] - 8,
-            height: rowHeight - 8,
-            align: cols[i].align === 'right' ? 'right' : 'left',
-          });
-        x += widths[i];
-      }
-      doc.y = startY + rowHeight;
-    };
-    drawRow(cols.map(c => c.label), true);
-    const rows = (sec.rows || []).slice(0, 400);
-    if (!rows.length) drawRow(['Không có dữ liệu']);
-    for (const row of rows) drawRow(cols.map(c => reportDisplayValue(c, row[c.key])));
-    if ((sec.rows || []).length > rows.length) {
-      font();
-      doc.fontSize(8).fillColor('#667085').text(`Còn ${sec.rows.length - rows.length} dòng, vui lòng xem trong Excel/Google Sheet.`);
-    }
-    doc.moveDown(.8);
-  };
-
-  for (const sec of report.sections || []) drawTable(sec);
-  doc.end();
-  return done;
-}

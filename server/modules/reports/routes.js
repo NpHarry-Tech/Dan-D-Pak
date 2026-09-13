@@ -33,7 +33,7 @@ function requireReportType(req, type) {
   if (!canViewReport(req, type)) throw reportForbidden();
 }
 function reportCatalogForUser(req) {
-  const catalog = ReportCenter.catalog(branch(req));
+  const catalog = ReportCenter.catalog(branch(req), req.query.lang);
   const allowed = new Set(Auth.userBranchIds(req.user));
   const branches = Branches.listBranches()
     .filter(b => allowed.has(b.id))

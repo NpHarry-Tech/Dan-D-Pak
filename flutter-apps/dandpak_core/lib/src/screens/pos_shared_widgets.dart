@@ -109,6 +109,16 @@ class _MenuPickCard extends StatelessWidget {
   final String price;
   final VoidCallback onTap;
 
+  // Món ẩn/tạm hết/ngoài giờ bán vẫn hiện trên F&B POS (server không lọc bỏ
+  // nữa — chỉ Self-Order mới bị ẩn hẳn) để nhân viên biết món này tồn tại và
+  // vì sao không đặt được, thay vì nó biến mất khó hiểu.
+  String? _reasonLabel() => switch (item.availabilityReason) {
+        'hidden' => t('Ẩn'),
+        'manual' => t('Tạm hết'),
+        'schedule' => t('Ngoài lịch'),
+        _ => null,
+      };
+
   @override
   Widget build(BuildContext context) {
     // Ảnh món lưu ở server dạng đường dẫn tương đối (/uploads/menu/...). Trên
@@ -120,55 +130,90 @@ class _MenuPickCard extends StatelessWidget {
             raw.startsWith('data:'))
         ? raw
         : '${context.read<AuthProvider>().serverUrl}${raw.startsWith('/') ? '' : '/'}$raw';
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(12),
-      child: Container(
-        padding: EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: DanColors.surface,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: DanColors.border),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(
-              child: Center(
-                // Món chưa có ảnh: ô trống phẳng, không icon placeholder.
-                child: resolvedUrl.isEmpty
-                    ? SizedBox.shrink()
-                    : Image.network(
-                        resolvedUrl,
-                        fit: BoxFit.contain,
-                        // Decode at thumbnail size (not full-res) so a big menu
-                        // doesn't exhaust RAM/CPU on weak POS hardware.
-                        cacheWidth: 240,
-                        filterQuality: FilterQuality.low,
-                        gaplessPlayback: true,
-                        errorBuilder: (_, __, ___) => SizedBox.shrink(),
+    final disabled = !item.available;
+    final card = Container(
+      padding: EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: DanColors.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: DanColors.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: Center(
+              // Món chưa có ảnh: ô trống phẳng, không icon placeholder.
+              child: resolvedUrl.isEmpty
+                  ? SizedBox.shrink()
+                  : Image.network(
+                      resolvedUrl,
+                      fit: BoxFit.contain,
+                      // Decode at thumbnail size (not full-res) so a big menu
+                      // doesn't exhaust RAM/CPU on weak POS hardware.
+                      cacheWidth: 240,
+                      filterQuality: FilterQuality.low,
+                      gaplessPlayback: true,
+                      errorBuilder: (_, __, ___) => SizedBox.shrink(),
+                    ),
+            ),
+          ),
+          SizedBox(height: 8),
+          Text(
+            item.name,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800),
+          ),
+          SizedBox(height: 3),
+          Text(
+            price,
+            style: TextStyle(
+              color: DanColors.brand,
+              fontFamily: 'JetBrains Mono',
+              fontSize: 12,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ],
+      ),
+    );
+    if (!disabled) {
+      return InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: card,
+      );
+    }
+    final reason = _reasonLabel();
+    return Opacity(
+      opacity: 0.45,
+      child: Stack(
+        children: [
+          ImageFiltered(
+            imageFilter: ImageFilter.blur(sigmaX: 1.2, sigmaY: 1.2),
+            child: IgnorePointer(child: card),
+          ),
+          Positioned.fill(
+            child: Center(
+              child: reason == null
+                  ? SizedBox.shrink()
+                  : Container(
+                      padding:
+                          EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: .55),
+                        borderRadius: BorderRadius.circular(999),
                       ),
-              ),
+                      child: Text(reason,
+                          style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w800)),
+                    ),
             ),
-            SizedBox(height: 8),
-            Text(
-              item.name,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800),
-            ),
-            SizedBox(height: 3),
-            Text(
-              price,
-              style: TextStyle(
-                color: DanColors.brand,
-                fontFamily: 'JetBrains Mono',
-                fontSize: 12,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show HapticFeedback, LogicalKeyboardKey;
@@ -872,7 +873,7 @@ class _PosScreenState extends State<PosScreen> {
     final result = await showDialog<String>(
       context: context,
       builder: (_) => _FnbVoucherPickerDialog(
-        title: t('CTKM cho "${item.item.name}"'),
+        title: '${t('CTKM cho')} "${item.item.name}"',
         vouchers: options,
         selectedId: pos.lineVouchers[item.orderItemId],
       ),
@@ -1084,8 +1085,8 @@ class _PosScreenState extends State<PosScreen> {
         pin = await requestManagerPin(
           context,
           made
-              ? t('Xóa món ĐÃ chế biến "${item.item.name}". Cần PIN người có quyền "xóa món đã chế biến".')
-              : t('Hủy món "${item.item.name}". Cần PIN người có quyền hủy món.'),
+              ? '${t('Xóa món ĐÃ chế biến')} "${item.item.name}". ${t('Cần PIN người có quyền "xóa món đã chế biến".')}'
+              : '${t('Hủy món')} "${item.item.name}". ${t('Cần PIN người có quyền hủy món.')}',
         );
         if (pin == null) return;
       }
@@ -1563,7 +1564,7 @@ class _PosScreenState extends State<PosScreen> {
               RepaintBoundary(
                 child: DanModuleTopBar(
                   brandName: auth.selectedBranch.name,
-                  title: 'POS Cashier',
+                  title: t('POS Cashier'),
                   subtitle: '',
                   titleIcon: Icons.credit_card,
                   userName: auth.currentUser?.name ??

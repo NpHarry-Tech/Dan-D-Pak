@@ -14,7 +14,11 @@ import 'online_shared.dart';
 /// Các sàn dùng kết nối "1 chạm" (Connection Platform) thay cho form Partner
 /// ID/Key. Màn "Liên kết" (IntegrationsPanel) render nút Kết nối 1-chạm cho các
 /// key này thay vì form credential.
-const Set<String> kMarketplaceOneClickProviders = {'shopee', 'lazada'};
+const Set<String> kMarketplaceOneClickProviders = {
+  'shopee',
+  'lazada',
+  'tiktokshop'
+};
 
 /// Kết nối sàn "1 chạm" DÙNG CHUNG (Connection Platform). Người dùng KHÔNG nhập
 /// Partner ID/Key/Token — chỉ bấm Kết nối → đăng nhập sàn → đồng ý → xong. Token
@@ -150,6 +154,143 @@ class _MarketplaceConnectPanelState extends State<MarketplaceConnectPanel> {
     }
   }
 
+  Future<void> _mapShop(Map<String, dynamic> connection) async {
+    try {
+      final options =
+          await context.read<ApiService>().getMarketplaceMappingOptions();
+      final mappedIds = oList(connection['mappings'])
+          .map((row) => oStr(row['external_shop_id']))
+          .toSet();
+      final available = oList(connection['shops'])
+          .where((row) => !mappedIds.contains(oStr(row['external_shop_id'])))
+          .toList();
+      final shops = available.isEmpty ? oList(connection['shops']) : available;
+      final branches = oList(options['branches']);
+      final warehouses = oList(options['warehouses']);
+      if (shops.isEmpty || branches.isEmpty || warehouses.isEmpty) {
+        throw Exception(
+            t('Cần ít nhất một gian hàng, chi nhánh và kho đang hoạt động.'));
+      }
+      var shopId = oStr(shops.first['external_shop_id']);
+      var branchId = oStr(branches.first['id']);
+      var warehouseId = oStr(warehouses.first['id']);
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => StatefulBuilder(
+            builder: (context, setLocal) => AlertDialog(
+                  title: Text(t('Ánh xạ gian hàng → chi nhánh → kho')),
+                  content: SizedBox(
+                      width: 480,
+                      child: Column(mainAxisSize: MainAxisSize.min, children: [
+                        DropdownButtonFormField<String>(
+                          initialValue: shopId,
+                          decoration:
+                              InputDecoration(labelText: t('Gian hàng')),
+                          items: [
+                            for (final shop in shops)
+                              DropdownMenuItem(
+                                  value: oStr(shop['external_shop_id']),
+                                  child: Text(oStr(shop['shop_name']).isEmpty
+                                      ? oStr(shop['external_shop_id'])
+                                      : oStr(shop['shop_name'])))
+                          ],
+                          onChanged: (value) =>
+                              setLocal(() => shopId = value ?? shopId),
+                        ),
+                        const SizedBox(height: 12),
+                        DropdownButtonFormField<String>(
+                          initialValue: branchId,
+                          decoration:
+                              InputDecoration(labelText: t('Chi nhánh')),
+                          items: [
+                            for (final item in branches)
+                              DropdownMenuItem(
+                                  value: oStr(item['id']),
+                                  child: Text(oStr(item['name'])))
+                          ],
+                          onChanged: (value) =>
+                              setLocal(() => branchId = value ?? branchId),
+                        ),
+                        const SizedBox(height: 12),
+                        DropdownButtonFormField<String>(
+                          initialValue: warehouseId,
+                          decoration:
+                              InputDecoration(labelText: t('Kho xuất hàng')),
+                          items: [
+                            for (final item in warehouses)
+                              DropdownMenuItem(
+                                  value: oStr(item['id']),
+                                  child: Text(oStr(item['name'])))
+                          ],
+                          onChanged: (value) => setLocal(
+                              () => warehouseId = value ?? warehouseId),
+                        ),
+                        const SizedBox(height: 12),
+                        Text(t('Mặc định chạy shadow mode: chưa trừ kho, ghi thanh toán hoặc đẩy dữ liệu lên sàn.'),
+                            style: const TextStyle(
+                                fontSize: 12, color: DanColors.muted)),
+                      ])),
+                  actions: [
+                    TextButton(
+                        onPressed: () => Navigator.pop(dialogContext, false),
+                        child: Text(t('Hủy'))),
+                    FilledButton(
+                        onPressed: () => Navigator.pop(dialogContext, true),
+                        child: Text(t('Xác nhận ánh xạ'))),
+                  ],
+                )),
+      );
+      if (confirmed != true) return;
+      setState(() => _busy = true);
+      await context.read<ApiService>().mapMarketplaceShop(
+          oStr(connection['id']), shopId, branchId, warehouseId);
+      await _load();
+      widget.onChanged?.call();
+    } catch (error) {
+      if (mounted)
+        appToast(context, error.toString().replaceFirst('Exception: ', ''),
+            isError: true);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _initialSync(Map<String, dynamic> connection) async {
+    setState(() => _busy = true);
+    try {
+      await context
+          .read<ApiService>()
+          .initialSyncMarketplace(oStr(connection['id']));
+      if (mounted) appToast(context, t('Đồng bộ shadow lần đầu hoàn tất'));
+      await _load();
+      widget.onChanged?.call();
+    } catch (error) {
+      if (mounted)
+        appToast(context, error.toString().replaceFirst('Exception: ', ''),
+            isError: true);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _reconcile(Map<String, dynamic> connection) async {
+    setState(() => _busy = true);
+    try {
+      await context
+          .read<ApiService>()
+          .reconcileMarketplace(oStr(connection['id']));
+      if (mounted) appToast(context, t('Đối soát sàn hoàn tất'));
+      await _load();
+    } catch (error) {
+      if (mounted) {
+        appToast(context, error.toString().replaceFirst('Exception: ', ''),
+            isError: true);
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final e = widget.embedded;
@@ -233,50 +374,77 @@ class _MarketplaceConnectPanelState extends State<MarketplaceConnectPanel> {
         border: Border.all(color: DanColors.border),
         borderRadius: BorderRadius.circular(DanRadius.md),
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(active ? Icons.check_circle : Icons.error_outline,
-              size: 20, color: active ? DanColors.done : DanColors.late),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                    oStr(c['shop_name']).isEmpty
-                        ? '${t('Gian hàng')} ${oStr(c['shop_id'])}'
-                        : oStr(c['shop_name']),
-                    style: const TextStyle(
-                        fontSize: 13.5, fontWeight: FontWeight.w800)),
-                const SizedBox(height: 2),
-                Text(
-                    'Shop ID: ${oStr(c['shop_id'])} · ${t('Chi nhánh')}: ${oStr(c['branch_id'])}',
-                    style:
-                        const TextStyle(fontSize: 11, color: DanColors.faint)),
-              ],
-            ),
-          ),
-          OnlinePill(active ? t('Hoạt động') : _statusLabel(status),
-              active ? DanColors.done : DanColors.late),
-          if (!active) ...[
-            const SizedBox(width: 8),
-            OutlinedButton.icon(
-              onPressed: _busy ? null : _connect,
-              icon: const Icon(Icons.refresh, size: 15),
-              label: Text(t('Kết nối lại')),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: DanColors.late,
-                side: const BorderSide(color: DanColors.late),
-                visualDensity: VisualDensity.compact,
+          Row(children: [
+            Icon(active ? Icons.check_circle : Icons.error_outline,
+                size: 20, color: active ? DanColors.done : DanColors.late),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                      oStr(c['shop_name']).isEmpty
+                          ? '${t('Gian hàng')} ${oStr(c['shop_id'])}'
+                          : oStr(c['shop_name']),
+                      style: const TextStyle(
+                          fontSize: 13.5, fontWeight: FontWeight.w800)),
+                  const SizedBox(height: 2),
+                  Text(
+                      'Shop ID: ${oStr(c['shop_id'])} · ${t('Chi nhánh')}: ${oStr(c['branch_id'])}',
+                      style: const TextStyle(
+                          fontSize: 11, color: DanColors.faint)),
+                ],
               ),
             ),
-          ],
-          const SizedBox(width: 8),
-          IconButton(
-            tooltip: t('Ngắt kết nối'),
-            onPressed: () => _disconnect(c),
-            icon: const Icon(Icons.link_off, size: 18, color: DanColors.faint),
-          ),
+            OnlinePill(active ? t('Hoạt động') : _statusLabel(status),
+                active ? DanColors.done : DanColors.late),
+            const SizedBox(width: 8),
+            IconButton(
+              tooltip: t('Ngắt kết nối'),
+              onPressed: () => _disconnect(c),
+              icon:
+                  const Icon(Icons.link_off, size: 18, color: DanColors.faint),
+            ),
+          ]),
+          const SizedBox(height: 8),
+          Text(
+              '${t('Môi trường')}: ${oStr(c['environment'])}  ·  ${t('Kho')}: ${oList(c['mappings']).isEmpty ? t('Chưa ánh xạ') : oStr(oList(c['mappings']).first['warehouse_id'])}',
+              style: const TextStyle(fontSize: 11, color: DanColors.faint)),
+          Text(
+              '${t('Sự kiện cuối')}: ${oStr(c['last_event_at']).isEmpty ? '—' : oStr(c['last_event_at'])}  ·  ${t('Đối soát cuối')}: ${oStr(c['last_reconciliation_at']).isEmpty ? '—' : oStr(c['last_reconciliation_at'])}',
+              style: const TextStyle(fontSize: 11, color: DanColors.faint)),
+          const SizedBox(height: 8),
+          Wrap(spacing: 8, runSpacing: 8, children: [
+            if (status == 'pending_shop_selection' ||
+                status == 'pending_mapping')
+              FilledButton.icon(
+                  onPressed: _busy ? null : () => _mapShop(c),
+                  icon: const Icon(Icons.account_tree_outlined, size: 16),
+                  label: Text(t('Chọn shop và ánh xạ kho'))),
+            if (status == 'initial_sync')
+              FilledButton.icon(
+                  onPressed: _busy ? null : () => _initialSync(c),
+                  icon: const Icon(Icons.sync, size: 16),
+                label: Text(t('Đồng bộ lần đầu'))),
+            if (active)
+              OutlinedButton.icon(
+                  onPressed: _busy ? null : () => _reconcile(c),
+                  icon: const Icon(Icons.sync, size: 15),
+                  label: Text(t('Đối soát ngay'))),
+            if (active && oList(c['shops']).length > oList(c['mappings']).length)
+              OutlinedButton.icon(
+                  onPressed: _busy ? null : () => _mapShop(c),
+                  icon: const Icon(Icons.add_business_outlined, size: 15),
+                  label: Text(t('Ánh xạ shop khác'))),
+            if (status == 'reauthorization_required' || status == 'degraded')
+              OutlinedButton.icon(
+                  onPressed: _busy ? null : _connect,
+                  icon: const Icon(Icons.refresh, size: 15),
+                  label: Text(t('Kết nối lại'))),
+          ]),
         ],
       ),
     );
@@ -284,6 +452,12 @@ class _MarketplaceConnectPanelState extends State<MarketplaceConnectPanel> {
 
   String _statusLabel(String s) => switch (s) {
         'auth_expired' || 'reauth_required' => t('Cần kết nối lại'),
+        'reauthorization_required' => t('Cần kết nối lại'),
+        'pending_shop_selection' => t('Chờ chọn gian hàng'),
+        'pending_mapping' => t('Chờ ánh xạ kho'),
+        'pending_permissions' => t('Chờ kiểm tra quyền'),
+        'initial_sync' => t('Chờ đồng bộ lần đầu'),
+        'degraded' => t('Cần kiểm tra'),
         'error' => t('Lỗi'),
         'connecting' => t('Đang kết nối'),
         _ => s,

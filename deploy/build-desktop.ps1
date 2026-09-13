@@ -114,7 +114,7 @@ try {
   $releaseDir = Join-Path $root "artifacts\releases\$artifactFlavor"
   New-Item -ItemType Directory -Force -Path $releaseDir | Out-Null
   $outputBase = "dan-d-pak-pos-$artifactFlavor-setup-b$build"
-  & $iscc "/O$releaseDir" "/F$outputBase" 'setup.iss'
+  & $iscc "/O$releaseDir" "/F$outputBase" "/DMyAppVersion=$version" 'setup.iss'
   if ($LASTEXITCODE -ne 0) { throw "Dong goi installer that bai (ma loi $LASTEXITCODE)" }
 } finally {
   $ErrorActionPreference = $prevEap2

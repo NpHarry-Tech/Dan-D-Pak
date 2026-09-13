@@ -358,7 +358,7 @@ api.get('/settings/connections/status', guardAny('settings.connections'), wrap(a
   const [internetCheck, systemPrinters, printerStatuses] = await Promise.all([
     System.checkInternet({ force }),
     System.listSystemPrinters({ force, branch: branch(req) }),
-    Print.listPrinters(branch(req), { live: true, force }).catch(() => []),
+    Print.listPrinters(branch(req), { live: true, force, lang: String(req.query.lang || 'vi') }).catch(() => []),
   ]);
   return {
     serverIps,

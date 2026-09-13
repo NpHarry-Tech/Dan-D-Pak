@@ -329,7 +329,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
       _PayMethod('cash', t('Tiền mặt'), 'cash', true),
       _PayMethod('bank', t('Chuyển khoản'), 'qr', true),
       _PayMethod('visa', 'Visa', 'pos', true),
-      _PayMethod('voucher', 'Voucher', 'voucher', true),
+      _PayMethod('voucher', t('Voucher'), 'voucher', true),
     ];
   }
 

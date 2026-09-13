@@ -577,7 +577,7 @@ class _OnlineOrdersSectionState extends State<OnlineOrdersSection> {
                               ),
                               const SizedBox(height: 2),
                               Text(
-                                'SL: ${oNum(firstItem['qty']).toInt()}'
+                                '${t('SL')}: ${oNum(firstItem['qty']).toInt()}'
                                 '${itemCount > 1 ? '  ·  +${itemCount - 1} ${t('sản phẩm khác')}' : ''}',
                                 style: const TextStyle(
                                     fontSize: 11.5, color: DanColors.muted),

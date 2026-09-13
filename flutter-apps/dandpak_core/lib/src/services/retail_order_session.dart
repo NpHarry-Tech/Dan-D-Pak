@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 
 import '../api_client.dart';
+import '../utils/translation.dart';
 import 'api_service.dart';
 
 /// Step 2 multi-device — MỘT TAB bán lẻ = MỘT canonical order trên server.
@@ -40,7 +41,8 @@ class RetailOrderSession extends ChangeNotifier {
         snapshot = snapshot ?? <String, dynamic>{};
 
   /// Nhãn hiển thị = display_sequence SERVER cấp (KHÔNG BAO GIỜ tabs.length+1).
-  String get label => 'Hóa đơn ${displaySequence.toString().padLeft(2, '0')}';
+  String get label =>
+      '${t('Hóa đơn')} ${displaySequence.toString().padLeft(2, '0')}';
 
   // §3: giá canonical do SERVER áp (priceCart) — client CHỈ RENDER, không tự tính.
   Map<String, dynamic> get pricing =>

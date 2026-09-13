@@ -50,6 +50,26 @@ test('auth-link tro dung Lazada oauth authorize voi client_id', () => {
   assert.equal(u.searchParams.get('response_type'), 'code');
 });
 
+test('push khong chu ky bi TU CHOI (fail-closed), khong duoc coi la "bo qua verify roi van xu ly"', async () => {
+  Settings.updateIntegrations({ channels: { lazada: { enabled: true,
+    appId: APP_KEY, secretKey: APP_SECRET, sellerId: 'push-777' } } }, 'push-branch');
+  const body = JSON.stringify({ seller_id: 'push-777', data: { trade_order_id: 'evil-order' } });
+
+  await assert.rejects(
+    () => Lazada.handleLazadaPush(body, {}),
+    (err) => { assert.equal(err.status, 401); return true; },
+  );
+
+  await assert.rejects(
+    () => Lazada.handleLazadaPush(body, { 'x-lazada-signature': 'not-the-real-signature' }),
+    (err) => { assert.equal(err.status, 401); return true; },
+  );
+
+  const validSig = crypto.createHmac('sha256', APP_SECRET).update(body).digest('hex');
+  const result = await Lazada.handleLazadaPush(body, { 'x-lazada-signature': validSig });
+  assert.equal(result.handled, true);
+});
+
 test('capability chuyen trang thai theo credential, khong gia vo da ket noi', () => {
   // Bat dau lai o chi nhanh khac de trang thai sach.
   let cap = Lazada.lazadaCapabilities('br1');

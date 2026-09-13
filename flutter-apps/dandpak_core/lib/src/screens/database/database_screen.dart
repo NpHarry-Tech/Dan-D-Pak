@@ -82,7 +82,9 @@ String _humanSize(num bytes) {
 
 String _two(int value) => value.toString().padLeft(2, '0');
 
-String _dmy(DateTime d) => '${_two(d.day)}/${_two(d.month)}/${d.year}';
+String _dmy(DateTime d) => L10n.currentLocale == 'zh'
+    ? '${d.year}年${_two(d.month)}月${_two(d.day)}日'
+    : '${_two(d.day)}/${_two(d.month)}/${d.year}';
 
 String _hm(DateTime d) => '${_two(d.hour)}:${_two(d.minute)}';
 
@@ -96,17 +98,17 @@ class DatabaseScreen extends StatefulWidget {
 class _DatabaseScreenState extends State<DatabaseScreen> {
   int _tab = 0;
 
-  static final _titles = [
-    t('Cơ sở dữ liệu'),
-    t('Nhật ký hoạt động'),
-    t('Tài liệu'),
-  ];
+  static List<String> get _titles => [
+        t('Cơ sở dữ liệu'),
+        t('Nhật ký hoạt động'),
+        t('Tài liệu'),
+      ];
 
-  static final _descriptions = [
-    t('Theo dõi máy chủ dữ liệu đang chọn, sao lưu cấu hình và thống kê hệ thống.'),
-    t('Lịch sử thao tác hệ thống, lỗi phát sinh và truy vết theo thời gian.'),
-    t('Kho tài liệu nội bộ dùng cho vận hành và đào tạo.'),
-  ];
+  static List<String> get _descriptions => [
+        t('Theo dõi máy chủ dữ liệu đang chọn, sao lưu cấu hình và thống kê hệ thống.'),
+        t('Lịch sử thao tác hệ thống, lỗi phát sinh và truy vết theo thời gian.'),
+        t('Kho tài liệu nội bộ dùng cho vận hành và đào tạo.'),
+      ];
 
   @override
   Widget build(BuildContext context) {

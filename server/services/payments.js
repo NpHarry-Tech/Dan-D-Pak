@@ -13,7 +13,7 @@ import { resolveQrProvider } from './qrProvider.js';
 import { getActiveShift } from './shifts.js';
 import { archiveOrder, archivePayment } from './archive.js';
 import { getCustomer, recordPurchase } from './customers.js';
-import { buildDiscountPlan } from './vouchers.js';
+import { buildDiscountPlan, recordVoucherRedemptions } from './vouchers.js';
 import * as einvoice from './einvoice.js';
 import { receiptTaxBlock } from './tax.js';
 import { logSystem } from './systemLogs.js';
@@ -686,7 +686,12 @@ export function payOrder(order_id, lines, options = {}, branch_id = 'sala') {
     // SỐ HOÁ ĐƠN CẤP TẠI ĐÂY — đúng lúc doanh thu phát sinh, không sớm hơn.
     // Trả một phần thì chưa cấp: đơn vẫn đang mở, huỷ giữa chừng thì không được
     // tiêu số nào.
-    if (fullySettled) capSoBillKhiThanhToan(order_id, fresh.branch_id || branch_id);
+    if (fullySettled) {
+      capSoBillKhiThanhToan(order_id, fresh.branch_id || branch_id);
+      // Ghi nhận voucher "1 lần/khách" đã DÙNG — đúng lúc chốt thanh toán thật
+      // (không ghi ở preview/tính giá), để lần sau khách không dùng lại được.
+      recordVoucherRedemptions(order_id, fresh.branch_id || branch_id);
+    }
 
     if (paymentIntent) {
       if (!fullySettled || !intentPaymentLineId) {

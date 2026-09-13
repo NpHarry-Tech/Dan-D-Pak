@@ -448,7 +448,7 @@ extension _RetailCanonicalOrders on _RetailScreenState {
                 : t('Bán cho người tiêu dùng'),
             ro ? () {} : _canonicalPickCustomer,
           ),
-          _clickRow('Voucher', t('Thêm'), ro ? () {} : _canonicalPickVoucher),
+          _clickRow(t('Voucher'), t('Thêm'), ro ? () {} : _canonicalPickVoucher),
           _clickRow(
               t('Giảm giá'), t('Thêm'), ro ? () {} : _canonicalManualDiscount),
           _clickRow('${t('Ghi chú')}:', _tab.note, ro ? () {} : _canonicalNote,

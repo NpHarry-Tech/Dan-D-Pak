@@ -123,28 +123,6 @@ String _moduleLabel(AppModule module) {
   return t(labels[module.key] ?? module.label);
 }
 
-String _moduleDescription(AppModule module) {
-  final descriptions = {
-    'admin': 'Dashboard, báo cáo nhanh, menu, vận hành và cài đặt hằng ngày.',
-    'contacts': 'Danh bạ khách hàng, nhà cung cấp, điện thoại, MST và địa chỉ.',
-    'pos': 'Bàn, order, giảm giá, thanh toán, in bill và realtime với bếp.',
-    'retail': 'Bán lẻ, mã vạch, lô/HSD, voucher và đổi trả.',
-    'catalogue':
-        'Màn khách ngoài quầy: khách tự lật catalogue, chọn hàng và gọi thanh toán.',
-    'kds': 'Màn hình bếp/bar, SLA và trạng thái món realtime.',
-    'online':
-        'Đơn Shopee/TikTok/Lazada/Tiki/Haravan, hàng hóa, đối soát, chat đa kênh và thiết lập kênh (Dan-D Pak Omni).',
-    'warehouse': 'Quản lý kho BCM/showroom/bếp, SKU, lô/HSD và tồn tối thiểu.',
-    'purchase': 'Đơn mua, nhập kho và công nợ nhà cung cấp.',
-    'expenses': 'Sổ chi phí theo danh mục, quỹ két và đối soát.',
-    'printing': 'Máy in bếp/bar/hóa đơn, in lại, cấu hình bill và tem nhãn.',
-    'invoice': 'Hóa đơn điện tử, trạng thái phát hành, tra cứu và hủy.',
-    'accounting': 'Sổ kế toán, thuế, thanh toán, ca và báo cáo tài chính.',
-    'database': 'Sao lưu, phục hồi, reset giao dịch và tài liệu hệ thống.',
-  };
-  return t(descriptions[module.key] ?? module.description);
-}
-
 class LauncherScreen extends StatefulWidget {
   LauncherScreen({super.key});
 
@@ -227,7 +205,7 @@ class _LauncherScreenState extends State<LauncherScreen> {
     }
   }
 
-  void _openModule(AppModule module) {
+  Future<void> _openModule(AppModule module) async {
     if (!module.isActive) return;
     if (module.key == 'pos') {
       Navigator.of(context)
@@ -271,14 +249,25 @@ class _LauncherScreenState extends State<LauncherScreen> {
     if (module.key == 'ipad') {
       // Man NHAN VIEN chon ban cho khach tu goi mon (native Flutter kiosk).
       final auth = context.read<AuthProvider>();
-      Navigator.of(context).push(MaterialPageRoute(
-          settings: RouteSettings(name: '/so-table'),
-          fullscreenDialog: true,
-          builder: (_) => SelfOrderTableScreen(
-                serverUrl: auth.serverUrl,
-                branchId: auth.selectedBranchId,
-                staffToken: auth.token,
-              )));
+      // Kiosk dùng CHUNG phiên đăng nhập của nhân viên nên vẫn nhận thông báo
+      // định tuyến theo vai trò dù màn đang hiện cho KHÁCH — tắt hẳn thông
+      // báo (banner + OS) suốt thời gian ở trong kiosk, tránh khách bấm nhầm
+      // banner "Xem" hiện giữa lúc đang gọi món. Bật lại khi thoát hẳn kiosk
+      // (Future của push chỉ resolve khi nhân viên thoát bằng PIN, popUntil
+      // về '/so-table' rồi Back tiếp — xem self_order_staff_exit.dart).
+      AppNotifier.suppressed = true;
+      try {
+        await Navigator.of(context).push(MaterialPageRoute(
+            settings: RouteSettings(name: '/so-table'),
+            fullscreenDialog: true,
+            builder: (_) => SelfOrderTableScreen(
+                  serverUrl: auth.serverUrl,
+                  branchId: auth.selectedBranchId,
+                  staffToken: auth.token,
+                )));
+      } finally {
+        AppNotifier.suppressed = false;
+      }
       return;
     }
     if (module.key == 'warehouse') {
@@ -685,20 +674,7 @@ class _ModuleCard extends StatelessWidget {
                     fontWeight: FontWeight.w900,
                     height: 1.15),
               ),
-              SizedBox(height: tablet ? 10 : 8),
-              Expanded(
-                child: Text(
-                  _moduleDescription(module),
-                  maxLines: tablet ? 5 : 4,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: DanColors.muted,
-                    fontSize: 13,
-                    height: 1.45,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              ),
+              if (!enabled) SizedBox(height: tablet ? 10 : 8),
               if (!enabled)
                 Text(
                   t('Đang nằm trong roadmap'),
@@ -766,12 +742,6 @@ class NativeModulePlaceholder extends StatelessWidget {
                   Text(
                     _moduleLabel(module),
                     style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900),
-                  ),
-                  SizedBox(height: 8),
-                  Text(
-                    _moduleDescription(module),
-                    textAlign: TextAlign.center,
-                    style: TextStyle(color: DanColors.muted, height: 1.5),
                   ),
                   SizedBox(height: 18),
                   Text(

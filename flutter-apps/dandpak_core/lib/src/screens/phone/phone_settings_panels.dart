@@ -1205,7 +1205,7 @@ class _PhoneNotifySettingsScreenState extends State<PhoneNotifySettingsScreen> {
 
   String _tenAm(String id) {
     for (final c in _khoAm) {
-      if (_s(c['id']) == id) return _s(c['name']);
+      if (_s(c['id']) == id) return t(_s(c['name']));
     }
     return id;
   }
@@ -1216,11 +1216,12 @@ class _PhoneNotifySettingsScreenState extends State<PhoneNotifySettingsScreen> {
       context: context,
       title: t('Chọn âm báo'),
       builder: (c) => PhonePickList(
-        options: [for (final s in _khoAm) _s(s['name'])],
+        options: [for (final s in _khoAm) t(_s(s['name']))],
         selected: _tenAm(_s(_am[key]?['sound'])),
         onPick: (v) {
           Navigator.of(c).pop();
-          final id = _s(_khoAm.firstWhere((s) => _s(s['name']) == v)['id']);
+          final id =
+              _s(_khoAm.firstWhere((s) => t(_s(s['name'])) == v)['id']);
           _doi(() => _am[key]?['sound'] = id);
           _ngheThu(id);
         },

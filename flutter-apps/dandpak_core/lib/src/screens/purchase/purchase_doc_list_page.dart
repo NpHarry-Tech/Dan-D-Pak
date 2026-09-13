@@ -704,7 +704,7 @@ class _PurchaseDocListPageState extends State<PurchaseDocListPage> {
                                       color: DanColors.surface2,
                                       borderRadius: BorderRadius.circular(5)),
                                   child: Text(
-                                      '${kvs(l['lot_no'])}${kvs(l['expiry_date']).isNotEmpty ? ' - ${kvShortDate(kvs(l['expiry_date']))}' : ''} - SL: ${Fmt.int0(kvn(l['qty']))}',
+                                      '${kvs(l['lot_no'])}${kvs(l['expiry_date']).isNotEmpty ? ' - ${kvShortDate(kvs(l['expiry_date']))}' : ''} - ${t('SL')}: ${Fmt.int0(kvn(l['qty']))}',
                                       style: TextStyle(
                                           fontSize: 10.5,
                                           color: DanColors.muted)),

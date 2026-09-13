@@ -1,7 +1,8 @@
 import 'translation_map.dart';
+import 'translation_map_zh.dart';
 export 'search.dart';
 
-const supportedAppLangs = ['vi', 'en'];
+const supportedAppLangs = ['vi', 'en', 'zh'];
 
 // Global translation helper
 String t(String key) {
@@ -85,10 +86,87 @@ const _fallbackPhrases = <MapEntry<String, String>>[
   MapEntry('Lỗi', 'Error'),
 ];
 
+const _fallbackPhrasesZh = <MapEntry<String, String>>[
+  MapEntry('Không tải được', '无法加载'),
+  MapEntry('Không tải thêm được', '无法加载更多'),
+  MapEntry('Không lưu được', '无法保存'),
+  MapEntry('Không mở được', '无法打开'),
+  MapEntry('Không gửi được', '无法发送'),
+  MapEntry('Không in được', '无法打印'),
+  MapEntry('Không chuyển được', '无法转移'),
+  MapEntry('Không gộp được', '无法合并'),
+  MapEntry('Không tách được', '无法拆分'),
+  MapEntry('Không hủy được', '无法取消'),
+  MapEntry('Không tìm thấy', '未找到'),
+  MapEntry('Đã thanh toán, nhưng chưa in được', '已付款，但打印失败'),
+  MapEntry('Đã chuyển bàn', '已换桌'),
+  MapEntry('Đã gộp bàn', '已合并桌台'),
+  MapEntry('Đã hủy món', '已取消菜品'),
+  MapEntry('Đã gửi', '已发送'),
+  MapEntry('Đã tạo nhóm', '已创建分组'),
+  MapEntry('Cập nhật nhân viên', '更新员工'),
+  MapEntry('Cập nhật tài khoản', '更新账户'),
+  MapEntry('Cập nhật danh mục', '更新分类'),
+  MapEntry('Cập nhật món', '更新菜品'),
+  MapEntry('Cập nhật bàn', '更新桌台'),
+  MapEntry('Cập nhật kho', '更新仓库'),
+  MapEntry('Cập nhật quyền mặc định vai trò', '更新角色默认权限'),
+  MapEntry('Tạo tài khoản', '创建账户'),
+  MapEntry('Tạo danh mục', '创建分类'),
+  MapEntry('Tạo món mới', '创建新菜品'),
+  MapEntry('Tạo món', '创建菜品'),
+  MapEntry('Tạo bàn', '创建桌台'),
+  MapEntry('Tạo kho', '创建仓库'),
+  MapEntry('Tách bill bàn', '拆分桌台账单'),
+  MapEntry('Chuyển bàn', '换桌'),
+  MapEntry('Gộp bàn', '合并桌台'),
+  MapEntry('Chuyển tới', '转到'),
+  MapEntry('Chuyển đến', '移动到'),
+  MapEntry('Khách bàn', '桌台顾客'),
+  MapEntry('đang gọi', '来电中'),
+  MapEntry('đang dùng', '使用中'),
+  MapEntry('đăng nhập vào hệ thống', '登录系统'),
+  MapEntry('đăng xuất khỏi hệ thống', '退出系统'),
+  MapEntry('vừa kết nối vào hệ thống', '已连接到系统'),
+  MapEntry('lệnh in lại hóa đơn', '账单重打任务'),
+  MapEntry('chi nhánh', '分店'),
+  MapEntry('dòng', '行'),
+  MapEntry('bảng', '桌'),
+  MapEntry('hàng', '行'),
+  MapEntry('ngày', '天'),
+  MapEntry('giấy', '秒'),
+  MapEntry('trễ', '延迟'),
+  MapEntry('món', '项'),
+  MapEntry('bàn', '桌'),
+  MapEntry('chỗ', '位'),
+  MapEntry('Từ:', '从：'),
+  MapEntry('Đến:', '到：'),
+  MapEntry('Từ', '从'),
+  MapEntry('Đến', '到'),
+  MapEntry('Tháng', '月'),
+  MapEntry('Quý', '季度'),
+  MapEntry('Năm', '年'),
+  MapEntry('lúc', '于'),
+  MapEntry('giảm', '折扣'),
+  MapEntry('Tối thiểu', '最低'),
+  MapEntry('Tồn', '库存'),
+  MapEntry('Số lượng', '数量'),
+  MapEntry('Hiện tại', '当前'),
+  MapEntry('Server lỗi', '服务器错误'),
+  MapEntry('Thiết bị & POS đang hoạt động', '设备和POS运行中'),
+  MapEntry('người có ghi đè', '有覆盖设置的用户'),
+  MapEntry('ghi đè', '覆盖'),
+  MapEntry('Âm:', '声音：'),
+  MapEntry('Bàn', '桌台'),
+  MapEntry('HĐ', '发票'),
+  MapEntry('Lỗi', '错误'),
+];
+
 class L10n {
   static String currentLocale = 'vi';
 
-  static String clean(String lang) => lang == 'en' ? 'en' : 'vi';
+  static String clean(String lang) =>
+      lang == 'en' ? 'en' : (lang == 'zh' ? 'zh' : 'vi');
 
   static void setLocale(String lang) {
     currentLocale = clean(lang);
@@ -98,13 +176,14 @@ class L10n {
     if (currentLocale == 'vi') {
       return key;
     }
-    // Check in the generated translation map
-    final translated = viToEnMap[key];
+    final map = currentLocale == 'zh' ? viToZhMap : viToEnMap;
+    final translated = map[key];
     if (translated != null && translated.isNotEmpty) {
       return translated;
     }
+    final phrases = currentLocale == 'zh' ? _fallbackPhrasesZh : _fallbackPhrases;
     var fallback = key;
-    for (final phrase in _fallbackPhrases) {
+    for (final phrase in phrases) {
       fallback = fallback.replaceAll(phrase.key, phrase.value);
     }
     return fallback == key ? key : fallback;

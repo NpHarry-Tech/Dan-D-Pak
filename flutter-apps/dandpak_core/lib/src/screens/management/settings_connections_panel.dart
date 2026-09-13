@@ -501,7 +501,7 @@ class _ConnectionsPanelState extends State<ConnectionsPanel> {
         Divider(height: 18, color: DanColors.border),
         // Realtime tách riêng — socket rớt KHÔNG có nghĩa là API/mạng hỏng.
         _infoRow(
-            'Realtime (socket)',
+            t('Realtime (socket)'),
             ValueListenableBuilder<bool>(
               valueListenable: SocketService().connected,
               builder: (_, on, __) => on
@@ -557,7 +557,7 @@ class _ConnectionsPanelState extends State<ConnectionsPanel> {
         _infoRow(
             t('Cơ sở dữ liệu'), _pill('$db · $dbMode mode', DanColors.done)),
         Divider(height: 18, color: DanColors.border),
-        _infoRow('Realtime', _pill(rt, DanColors.done)),
+        _infoRow(t('Realtime'), _pill(rt, DanColors.done)),
         Divider(height: 18, color: DanColors.border),
         _infoRow(t('Lưu trữ lâu dài'), _pill(lt, DanColors.done)),
       ]),
@@ -972,21 +972,21 @@ class _ConnectionsPanelState extends State<ConnectionsPanel> {
     if (index < 0 || index >= _printers.length) return '';
     final p = _printers[index];
     final conn = asText(p['connection']);
-    final connLabel = const {
-          'system': 'Máy OS',
+    final connLabel = {
+          'system': t('Máy OS'),
           'lan': 'LAN',
-          'browser': 'Trình duyệt',
+          'browser': t('Trình duyệt'),
         }[conn] ??
         conn;
-    final outLabel = const {
-      'kitchen_ticket': 'Phiếu bếp',
-      'receipt': 'Hóa đơn',
-      'cup_label': 'Tem ly',
-      'product_label': 'Tem sản phẩm',
-      'shipping_label': 'Tem vận đơn',
-      'runner': 'Chạy món',
-      'report': 'Báo cáo',
-      'custom': 'Khác',
+    final outLabel = {
+      'kitchen_ticket': t('Phiếu bếp'),
+      'receipt': t('Hóa đơn'),
+      'cup_label': t('Tem ly'),
+      'product_label': t('Tem sản phẩm'),
+      'shipping_label': t('Tem vận đơn'),
+      'runner': t('Chạy món'),
+      'report': t('Báo cáo'),
+      'custom': t('Khác'),
     }[asText(p['output'])];
     return [connLabel, outLabel]
         .where((e) => e != null && e.isNotEmpty)

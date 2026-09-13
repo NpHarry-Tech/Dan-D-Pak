@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../ui/app_theme.dart';
+import '../../utils/translation.dart';
 
 // ── Ép kiểu an toàn từ JSON ───────────────────────────────────────────────
 String oStr(dynamic v) => v?.toString() ?? '';
@@ -95,7 +96,7 @@ class OnlinePill extends StatelessWidget {
         color: color.withValues(alpha: .12),
         borderRadius: BorderRadius.circular(6),
       ),
-      child: Text(label,
+      child: Text(t(label),
           style: TextStyle(
               fontSize: 11, fontWeight: FontWeight.w800, color: color)),
     );

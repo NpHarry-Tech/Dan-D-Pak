@@ -42,16 +42,16 @@ class _WarehouseSettingsPanelState extends State<WarehouseSettingsPanel> {
   bool _active = true;
   Set<String> _selectedChannels = {'retail'};
 
-  static List<(String, String)> _allChannels = [
-    ('ipad', 'iPad self-order'),
+  static List<(String, String)> get _allChannels => [
+    ('ipad', t('iPad self-order')),
     ('pos', t('POS nhà hàng')),
-    ('retail', 'Retail POS'),
+    ('retail', t('Retail POS')),
     ('online', t('Kênh online chung')),
-    ('grabmerchant', 'GrabFood / GrabMerchant'),
-    ('shopeefood', 'ShopeeFood'),
-    ('befood', 'beFood'),
-    ('grabmart', 'GrabMart'),
-    ('website', 'Website order'),
+    ('grabmerchant', t('GrabFood / GrabMerchant')),
+    ('shopeefood', t('ShopeeFood')),
+    ('befood', t('beFood')),
+    ('grabmart', t('GrabMart')),
+    ('website', t('Website order')),
   ];
 
   @override

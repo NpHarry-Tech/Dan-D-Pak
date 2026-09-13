@@ -586,7 +586,7 @@ extension _WarehouseScreenMethods on _WarehouseScreenState {
                 width: _wPre,
                 child: h(t('Giá trước thuế'), align: TextAlign.right)),
           if (_isRetailWh && _colVat)
-            SizedBox(width: _wVat, child: h('VAT', align: TextAlign.center)),
+            SizedBox(width: _wVat, child: h(t('VAT'), align: TextAlign.center)),
           if (_isRetailWh && _colAfterTax)
             SizedBox(
                 width: _wAfter,

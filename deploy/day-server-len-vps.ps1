@@ -99,6 +99,19 @@ for ($lanThu = 1; $lanThu -le 3; $lanThu++) {
 }
 if (-not $scpOk) { throw "scp that bai sau 3 lan (ma loi $LASTEXITCODE)" }
 
+# package.json/package-lock.json NAM O GOC REPO (ngoai server/) nen truoc day
+# KHONG duoc day theo overlay nay -> VPS giu ban package.json CU vinh vien, du
+# dependencies moi (vd "sharp") da co trong code server/ tu lau. Docker cache
+# lop "RUN npm ci" theo hash package*.json nen khong bao gio phat hien thieu -
+# container chi sap khi dung DEN module thieu do (SU CO THAT 12/09/2026: crash
+# vong lap ERR_MODULE_NOT_FOUND 'sharp', production down vai phut). Phai day
+# CUNG LUC voi server/ moi lan deploy de hai ben khong bao gio lech nhau.
+Write-Host "Dang day package.json/package-lock.json (chong lech dependency)..." -ForegroundColor Cyan
+$pkgJson = Join-Path $goc 'package.json'
+$pkgLock = Join-Path $goc 'package-lock.json'
+& scp $pkgJson $pkgLock "${May}:$ThuMucTrenVps/"
+if ($LASTEXITCODE -ne 0) { throw "scp package.json/package-lock.json that bai (ma loi $LASTEXITCODE)" }
+
 Write-Host "Dang kiem tra va dung lai container tren VPS..." -ForegroundColor Cyan
 # Sao lưu DB TRƯỚC, rồi mới dựng lại.
 $lenh = @"
@@ -126,7 +139,10 @@ cd $ThuMucTrenVps/deploy/company-server
 docker compose up -d --build
 "@
 & ssh $May $lenh
-if ($LASTEXITCODE -ne 0) { throw "Lenh tren VPS that bai (ma loi $LASTEXITCODE)" }
+if ($LASTEXITCODE -ne 0) {
+  throw "Lenh tren VPS that bai (ma loi $LASTEXITCODE) - container co the dang CRASH LOOP (production down). " +
+    "Kiem tra ngay: ssh $May `"cd $ThuMucTrenVps/deploy/company-server && docker compose ps && docker compose logs app --tail 80`""
+}
 
 Write-Host ""
 Write-Host "Xong. Kiem tra tu may nay:" -ForegroundColor Green

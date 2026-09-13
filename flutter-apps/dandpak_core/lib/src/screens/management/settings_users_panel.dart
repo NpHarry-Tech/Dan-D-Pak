@@ -3,7 +3,9 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:provider/provider.dart';
 
+import '../../providers/auth_provider.dart';
 import '../../services/api_service.dart';
 import '../../ui/app_theme.dart';
 import '../../ui/file_pick.dart';
@@ -490,7 +492,7 @@ class _RoleDefaultsPanel extends StatelessWidget {
               ),
               TextButton(
                 onPressed: () => onEdit(key),
-                child: Text(isOwner ? 'Xem' : t('Sửa')),
+                child: Text(isOwner ? t('Xem') : t('Sửa')),
               ),
               if (custom)
                 IconButton(
@@ -624,7 +626,7 @@ class _UserFormDialogState extends State<_UserFormDialog> {
         : (roleKeys.contains('cashier')
             ? 'cashier'
             : (roleKeys.isNotEmpty ? roleKeys.first : 'cashier'));
-    _lang = asText(user?['lang']) == 'en' ? 'en' : 'vi';
+    _lang = L10n.clean(asText(user?['lang']));
     _avatar = asText(user?['avatar']);
     _active = user == null ? true : asFlag(user['active']);
     _selectedPerms = _initialPerms(user, _role);
@@ -736,7 +738,13 @@ class _UserFormDialogState extends State<_UserFormDialog> {
     setState(() => _saving = true);
     try {
       if (_isEdit) {
-        await widget.api.updateSettingsUser(asText(widget.user!['id']), body);
+        final userId = asText(widget.user!['id']);
+        await widget.api.updateSettingsUser(userId, body);
+        // Đổi ngôn ngữ hiển thị NGAY nếu người vừa sửa chính là người đang
+        // đăng nhập trên máy này — không phải đợi đăng xuất/đăng nhập lại.
+        if (mounted) {
+          context.read<AuthProvider>().syncOwnLanguageIfSelf(userId, _lang);
+        }
       } else {
         await widget.api.createSettingsUser(body);
       }
@@ -983,8 +991,9 @@ class _UserFormDialogState extends State<_UserFormDialog> {
           items: [
             DropdownMenuItem(value: 'vi', child: Text(t('Tiếng Việt'))),
             DropdownMenuItem(value: 'en', child: Text('English')),
+            DropdownMenuItem(value: 'zh', child: Text('中文')),
           ],
-          onChanged: (v) => setState(() => _lang = v == 'en' ? 'en' : 'vi'),
+          onChanged: (v) => setState(() => _lang = L10n.clean(v ?? 'vi')),
         ),
       ],
     );

@@ -1,5 +1,6 @@
 // ─────────────────────────────────────────────────────────────────────────
 import { businessDateTime } from '../core/businessClock.js';
+import { printTr } from './printI18n.js';
 // SEMANTIC RECEIPT DOCUMENT — mô hình hoá đơn có CẤU TRÚC (không phải chuỗi
 // ASCII căn bằng khoảng trắng). Dùng cho WindowsDriverBackend: agent Windows
 // render bằng GDI + font TrueType (Segoe UI/Roboto), đo cột bằng MeasureString.
@@ -21,10 +22,10 @@ function giaChuaVat(gia, vatRate) {
   const r = Number(vatRate) || 0;
   return r > 0 ? Math.round(Number(gia || 0) / (1 + r / 100)) : Math.round(Number(gia || 0));
 }
-function methodLabel(m) {
-  return ({ cash: 'Tiền mặt', card: 'Máy POS', qrcode: 'QR', qr: 'QR', voucher: 'Voucher',
-    internet_banking: 'Internet Banking', momo: 'MoMo', zalopay: 'ZaloPay', visa: 'Visa',
-    bank_transfer: 'Chuyển khoản' }[m]) || m || '-';
+function methodLabel(m, tr = (s) => s) {
+  return ({ cash: tr('Tiền mặt'), card: tr('Máy POS'), qrcode: tr('QR'), qr: tr('QR'), voucher: tr('Voucher'),
+    internet_banking: tr('Internet Banking'), momo: tr('MoMo'), zalopay: tr('ZaloPay'), visa: tr('Visa'),
+    bank_transfer: tr('Chuyển khoản') }[m]) || m || '-';
 }
 
 // Giảm giá toàn bill (khớp orderWideDiscount ở printing.js: ưu tiên trường tường minh).
@@ -120,11 +121,11 @@ const B = {
 // Tên món luôn nằm một dòng riêng. Dòng số bên dưới dùng toàn bộ bề ngang:
 // Đơn giá sát trái · SL giữa-trái · T.Tiền khóa sát mép phải.
 const COL = { price: 5, qty: 2, amount: 5 };
-function itemHeaderRow() {
+function itemHeaderRow(tr = (s) => s) {
   return B.row([
-    { text: 'Đơn giá', flex: COL.price, align: 'left', bold: true },
-    { text: 'SL', flex: COL.qty, align: 'center', bold: true },
-    { text: 'T.Tiền', flex: COL.amount, align: 'right', bold: true },
+    { text: tr('Đơn giá'), flex: COL.price, align: 'left', bold: true },
+    { text: tr('SL'), flex: COL.qty, align: 'center', bold: true },
+    { text: tr('T.Tiền'), flex: COL.amount, align: 'right', bold: true },
   ]);
 }
 function itemRow(qty, unitExcl, amountExcl) {
@@ -148,7 +149,7 @@ function promotedItemRows(name, ctkm, qty, beforeUnit, afterUnit, amountExcl) {
   ];
 }
 
-function pushItemBlocks(blocks, items) {
+function pushItemBlocks(blocks, items, tr = (s) => s) {
   const list = Array.isArray(items) ? items : [];
   const comboGroups = new Map();
   const normal = [];
@@ -195,12 +196,12 @@ function pushItemBlocks(blocks, items) {
     } else {
       blocks.push(B.text(name, { size: 9 }));
       blocks.push(itemRow(qty, unitExcl, amountExcl));
-      if (ctkm) blocks.push(B.text(`   CTKM: ${ctkm}`, { size: 8, italic: true }));
+      if (ctkm) blocks.push(B.text(`   ${tr('CTKM: ')}${ctkm}`, { size: 8, italic: true }));
     }
     const mods = modsToText(i.mods || i.modifiers);
     if (mods) blocks.push(B.text(`   + ${mods}`, { size: 8 }));
     const note = i.note || i.lineNote;
-    if (note) blocks.push(B.text(`   Ghi chú: ${note}`, { size: 8, italic: true }));
+    if (note) blocks.push(B.text(`   ${tr('Ghi chú: ')}${note}`, { size: 8, italic: true }));
   }
 }
 
@@ -208,6 +209,7 @@ function pushItemBlocks(blocks, items) {
 // bị giới hạn 2x của ESC/POS). Tên món + số lượng THẬT TO, mượt, để bếp đọc từ
 // xa. Chỉ dùng khi máy in bếp là máy Windows đặt renderMode='driver'.
 export function buildKitchenDoc(p = {}, printCfg = {}, opts = {}) {
+  const tr = printTr(printCfg);
   const font = opts.font || printCfg?.driverFont || 'Segoe UI';
   const blocks = [];
   const template = printCfg?.templates?.kitchen_ticket || p.print_config?.templates?.kitchen_ticket;
@@ -228,7 +230,7 @@ export function buildKitchenDoc(p = {}, printCfg = {}, opts = {}) {
       const mods = modsToText(i.mods || i.modifiers);
       if (mods) blocks.push({ type: 'text', text: `+ ${mods}`, size: 13, strike: cancelled });
       const note = i.note || i.lineNote;
-      if (note) blocks.push({ type: 'text', text: `Ghi chú: ${note}`, size: 13, italic: true, strike: cancelled });
+      if (note) blocks.push({ type: 'text', text: `${tr('Ghi chú: ')}${note}`, size: 13, italic: true, strike: cancelled });
       blocks.push({ type: 'line', style: 'dot' });
     }
   };
@@ -242,19 +244,19 @@ export function buildKitchenDoc(p = {}, printCfg = {}, opts = {}) {
     }, { items: appendItems });
     return { font, blocks, offsetMm: Number(printCfg?.labels?.offsetMm ?? -2) || -2 };
   }
-  const zone = String(p.zone || p.station || 'KHU VỰC').toUpperCase();
+  const zone = String(p.zone || p.station || tr('KHU VỰC')).toUpperCase();
   blocks.push({ type: 'text', text: zone, size: 18, bold: true, align: 'center' });
   if (p.table) {
-    blocks.push({ type: 'text', text: `BÀN ${String(p.table).toUpperCase()}`, size: 26, bold: true, align: 'center' });
+    blocks.push({ type: 'text', text: `${tr('BÀN ')}${String(p.table).toUpperCase()}`, size: 26, bold: true, align: 'center' });
   }
   blocks.push({ type: 'space', h: 4 });
   const time = p.time || '';
   const seq = p.seq != null ? String(p.seq) : '';
   blocks.push({ type: 'row', cols: [
-    { text: time ? `Giờ: ${time}` : '', flex: 1, align: 'left', size: 11 },
-    { text: seq ? `Số TT: ${seq}` : '', flex: 1, align: 'right', size: 11, bold: true },
+    { text: time ? `${tr('Giờ: ')}${time}` : '', flex: 1, align: 'left', size: 11 },
+    { text: seq ? `${tr('Số TT: ')}${seq}` : '', flex: 1, align: 'right', size: 11, bold: true },
   ] });
-  if (p.staff) blocks.push({ type: 'text', text: `NV: ${p.staff}`, size: 10 });
+  if (p.staff) blocks.push({ type: 'text', text: `${tr('NV: ')}${p.staff}`, size: 10 });
   if (p.copy) blocks.push({ type: 'text', text: `(${p.copy})`, size: 10, align: 'center' });
   blocks.push({ type: 'line', style: 'solid' });
 
@@ -267,32 +269,33 @@ export function buildKitchenDoc(p = {}, printCfg = {}, opts = {}) {
 // ESC/POS. Mã vận đơn + COD in font lớn cho dễ quét/đọc. Tương đương
 // renderShippingLabel (ESC/POS) nhưng dạng block có align/flex thật.
 export function buildShippingLabelDoc(p = {}, printCfg = {}, opts = {}) {
+  const tr = printTr(printCfg);
   const font = opts.font || printCfg?.driverFont || 'Segoe UI';
   const blocks = [];
-  const provider = String(p.providerLabel || p.provider || 'ONLINE').toUpperCase();
+  const provider = String(p.providerLabel || p.provider || tr('ONLINE')).toUpperCase();
   blocks.push({ type: 'text', text: provider, size: 18, bold: true, align: 'center' });
   if (p.shopName) blocks.push({ type: 'text', text: String(p.shopName), size: 12, align: 'center' });
   blocks.push({ type: 'line', style: 'solid' });
-  if (p.carrier) blocks.push({ type: 'text', text: `ĐVVC: ${p.carrier}`, size: 13, bold: true, align: 'center' });
+  if (p.carrier) blocks.push({ type: 'text', text: `${tr('ĐVVC: ')}${p.carrier}`, size: 13, bold: true, align: 'center' });
   if (p.trackingNumber) {
-    blocks.push({ type: 'text', text: 'MÃ VẬN ĐƠN', size: 11, align: 'center' });
+    blocks.push({ type: 'text', text: tr('MÃ VẬN ĐƠN'), size: 11, align: 'center' });
     blocks.push({ type: 'text', text: String(p.trackingNumber), size: 26, bold: true, align: 'center' });
   }
-  if (p.orderCode) blocks.push({ type: 'text', text: `Mã đơn: ${p.orderCode}`, size: 12 });
+  if (p.orderCode) blocks.push({ type: 'text', text: `${tr('Mã đơn: ')}${p.orderCode}`, size: 12 });
   blocks.push({ type: 'line', style: 'dot' });
-  blocks.push({ type: 'text', text: 'NGƯỜI NHẬN', size: 11, bold: true });
+  blocks.push({ type: 'text', text: tr('NGƯỜI NHẬN'), size: 11, bold: true });
   const r = p.receiver || {};
   blocks.push({ type: 'text', text: `${r.name || ''}  ${r.phone || ''}`.trim(), size: 15, bold: true });
   if (r.address) blocks.push({ type: 'text', text: String(r.address), size: 13 });
   blocks.push({ type: 'line', style: 'dot' });
-  blocks.push({ type: 'text', text: 'NGƯỜI GỬI', size: 11, bold: true });
+  blocks.push({ type: 'text', text: tr('NGƯỜI GỬI'), size: 11, bold: true });
   const s = p.sender || {};
   blocks.push({ type: 'text', text: `${s.name || ''}  ${s.phone || ''}`.trim(), size: 12 });
   if (s.address) blocks.push({ type: 'text', text: String(s.address), size: 11 });
   const items = Array.isArray(p.items) ? p.items : [];
   if (items.length) {
     blocks.push({ type: 'line', style: 'dot' });
-    blocks.push({ type: 'text', text: 'SẢN PHẨM', size: 11, bold: true });
+    blocks.push({ type: 'text', text: tr('SẢN PHẨM'), size: 11, bold: true });
     for (const it of items) {
       blocks.push({ type: 'row', cols: [
         { text: String(it.name || ''), flex: 5, align: 'left', size: 12 },
@@ -302,18 +305,18 @@ export function buildShippingLabelDoc(p = {}, printCfg = {}, opts = {}) {
   }
   blocks.push({ type: 'line', style: 'solid' });
   if (Number(p.codAmount || 0) > 0) {
-    blocks.push({ type: 'text', text: 'THU HỘ (COD)', size: 16, bold: true, align: 'center' });
+    blocks.push({ type: 'text', text: tr('THU HỘ (COD)'), size: 16, bold: true, align: 'center' });
     blocks.push({ type: 'text', text: money(p.codAmount), size: 24, bold: true, align: 'center' });
   } else {
-    blocks.push({ type: 'text', text: 'ĐÃ THANH TOÁN — KHÔNG THU COD', size: 12, bold: true, align: 'center' });
+    blocks.push({ type: 'text', text: tr('ĐÃ THANH TOÁN — KHÔNG THU COD'), size: 12, bold: true, align: 'center' });
   }
-  if (p.weight) blocks.push({ type: 'text', text: `Khối lượng: ${p.weight}g`, size: 11 });
+  if (p.weight) blocks.push({ type: 'text', text: `${tr('Khối lượng: ')}${p.weight}g`, size: 11 });
   if (p.note) {
     blocks.push({ type: 'line', style: 'dot' });
     blocks.push({ type: 'text', text: String(p.note), size: 11 });
   }
   blocks.push({ type: 'line', style: 'solid' });
-  blocks.push({ type: 'text', text: 'Cảm ơn quý khách', size: 11, align: 'center' });
+  blocks.push({ type: 'text', text: tr('Cảm ơn quý khách'), size: 11, align: 'center' });
   return { font, blocks, offsetMm: Number(printCfg?.labels?.offsetMm ?? -2) || -2 };
 }
 
@@ -321,33 +324,34 @@ export function buildShippingLabelDoc(p = {}, printCfg = {}, opts = {}) {
 // "PHIẾU CHI", KHÔNG VAT; ghi rõ người chi/ngày giờ/lý do + dòng (item·ĐG·SL·
 // thành tiền) + tổng cộng.
 export function buildExpenseVoucherDoc(p = {}, printCfg = {}, opts = {}) {
+  const tr = printTr(printCfg);
   const font = opts.font || printCfg?.driverFont || 'Segoe UI';
   const blocks = [];
   if (p.shopName) blocks.push({ type: 'text', text: String(p.shopName), size: 15, bold: true, align: 'center' });
   if (p.address) blocks.push({ type: 'text', text: String(p.address), size: 11, align: 'center' });
-  if (p.phone) blocks.push({ type: 'text', text: `ĐT: ${p.phone}`, size: 11, align: 'center' });
+  if (p.phone) blocks.push({ type: 'text', text: `${tr('ĐT: ')}${p.phone}`, size: 11, align: 'center' });
   blocks.push({ type: 'line', style: 'solid' });
-  blocks.push({ type: 'text', text: 'PHIẾU CHI', size: 22, bold: true, align: 'center' });
+  blocks.push({ type: 'text', text: tr('PHIẾU CHI'), size: 22, bold: true, align: 'center' });
   blocks.push({ type: 'line', style: 'solid' });
-  if (p.code) blocks.push({ type: 'text', text: `Số phiếu: ${p.code}`, size: 12 });
+  if (p.code) blocks.push({ type: 'text', text: `${tr('Số phiếu: ')}${p.code}`, size: 12 });
   if (p.datetime) {
-    try { blocks.push({ type: 'text', size: 12, text: `Ngày giờ chi: ${businessDateTime(p.datetime)}` }); } catch {}
+    try { blocks.push({ type: 'text', size: 12, text: `${tr('Ngày giờ chi: ')}${businessDateTime(p.datetime)}` }); } catch {}
   }
-  if (p.payer) blocks.push({ type: 'text', text: `Người chi: ${p.payer}`, size: 12 });
-  if (p.payee) blocks.push({ type: 'text', text: `Bên nhận/NCC: ${p.payee}`, size: 12 });
-  if (p.reason) blocks.push({ type: 'text', text: `Lý do: ${p.reason}`, size: 12 });
+  if (p.payer) blocks.push({ type: 'text', text: `${tr('Người chi: ')}${p.payer}`, size: 12 });
+  if (p.payee) blocks.push({ type: 'text', text: `${tr('Bên nhận/NCC: ')}${p.payee}`, size: 12 });
+  if (p.reason) blocks.push({ type: 'text', text: `${tr('Lý do: ')}${p.reason}`, size: 12 });
   blocks.push({ type: 'line', style: 'dot' });
   const qty = Number(p.qty || 1);
   const unit = Number(p.unitPrice != null ? p.unitPrice : p.amount || 0);
   const lineTotal = Number(p.amount || unit * qty);
   blocks.push({ type: 'row', cols: [
-    { text: 'Nội dung', flex: 5, align: 'left', size: 11, bold: true },
-    { text: 'ĐG', flex: 3, align: 'right', size: 11, bold: true },
-    { text: 'SL', flex: 1, align: 'right', size: 11, bold: true },
-    { text: 'Thành tiền', flex: 3, align: 'right', size: 11, bold: true },
+    { text: tr('Nội dung'), flex: 5, align: 'left', size: 11, bold: true },
+    { text: tr('ĐG'), flex: 3, align: 'right', size: 11, bold: true },
+    { text: tr('SL'), flex: 1, align: 'right', size: 11, bold: true },
+    { text: tr('Thành tiền'), flex: 3, align: 'right', size: 11, bold: true },
   ] });
   blocks.push({ type: 'row', cols: [
-    { text: String(p.item || 'Chi phí'), flex: 5, align: 'left', size: 12 },
+    { text: String(p.item || tr('Chi phí')), flex: 5, align: 'left', size: 12 },
     { text: money(unit), flex: 3, align: 'right', size: 12 },
     { text: String(qty), flex: 1, align: 'right', size: 12 },
     { text: money(lineTotal), flex: 3, align: 'right', size: 12 },
@@ -355,19 +359,19 @@ export function buildExpenseVoucherDoc(p = {}, printCfg = {}, opts = {}) {
   blocks.push({ type: 'line', style: 'dot' });
   const total = Number(p.total != null ? p.total : lineTotal);
   blocks.push({ type: 'row', cols: [
-    { text: 'TỔNG CỘNG', flex: 3, align: 'left', size: 15, bold: true },
+    { text: tr('TỔNG CỘNG'), flex: 3, align: 'left', size: 15, bold: true },
     { text: money(total), flex: 4, align: 'right', size: 16, bold: true },
   ] });
-  if (p.totalWords) blocks.push({ type: 'text', text: `Bằng chữ: ${p.totalWords}`, size: 11, italic: true });
+  if (p.totalWords) blocks.push({ type: 'text', text: `${tr('Bằng chữ: ')}${p.totalWords}`, size: 11, italic: true });
   blocks.push({ type: 'space', h: 10 });
   blocks.push({ type: 'row', cols: [
-    { text: 'Người lập phiếu', flex: 1, align: 'center', size: 11 },
-    { text: 'Người nhận', flex: 1, align: 'center', size: 11 },
+    { text: tr('Người lập phiếu'), flex: 1, align: 'center', size: 11 },
+    { text: tr('Người nhận'), flex: 1, align: 'center', size: 11 },
   ] });
   blocks.push({ type: 'space', h: 6 });
   blocks.push({ type: 'row', cols: [
-    { text: '(Ký, họ tên)', flex: 1, align: 'center', size: 10 },
-    { text: '(Ký, họ tên)', flex: 1, align: 'center', size: 10 },
+    { text: tr('(Ký, họ tên)'), flex: 1, align: 'center', size: 10 },
+    { text: tr('(Ký, họ tên)'), flex: 1, align: 'center', size: 10 },
   ] });
   return { font, blocks, offsetMm: Number(printCfg?.labels?.offsetMm ?? -2) || -2 };
 }
@@ -375,26 +379,27 @@ export function buildExpenseVoucherDoc(p = {}, printCfg = {}, opts = {}) {
 // PHIẾU TRẢ HÀNG (driver/GDI) — giống bill nhưng tiêu đề "PHIẾU TRẢ HÀNG", nhiều
 // dòng món, TỔNG HOÀN. Bill gốc KHÔNG bị xoá; phiếu này chỉ ghi nhận trả hàng.
 export function buildReturnVoucherDoc(p = {}, printCfg = {}, opts = {}) {
+  const tr = printTr(printCfg);
   const font = opts.font || printCfg?.driverFont || 'Segoe UI';
   const blocks = [];
   if (p.shopName) blocks.push({ type: 'text', text: String(p.shopName), size: 15, bold: true, align: 'center' });
   if (p.address) blocks.push({ type: 'text', text: String(p.address), size: 11, align: 'center' });
-  if (p.phone) blocks.push({ type: 'text', text: `ĐT: ${p.phone}`, size: 11, align: 'center' });
+  if (p.phone) blocks.push({ type: 'text', text: `${tr('ĐT: ')}${p.phone}`, size: 11, align: 'center' });
   blocks.push({ type: 'line', style: 'solid' });
-  blocks.push({ type: 'text', text: 'PHIẾU TRẢ HÀNG', size: 20, bold: true, align: 'center' });
+  blocks.push({ type: 'text', text: tr('PHIẾU TRẢ HÀNG'), size: 20, bold: true, align: 'center' });
   blocks.push({ type: 'line', style: 'solid' });
-  if (p.code) blocks.push({ type: 'text', text: `Bill gốc: ${p.code}`, size: 12 });
+  if (p.code) blocks.push({ type: 'text', text: `${tr('Bill gốc: ')}${p.code}`, size: 12 });
   if (p.datetime) {
-    try { blocks.push({ type: 'text', size: 12, text: `Ngày giờ trả: ${businessDateTime(p.datetime)}` }); } catch {}
+    try { blocks.push({ type: 'text', size: 12, text: `${tr('Ngày giờ trả: ')}${businessDateTime(p.datetime)}` }); } catch {}
   }
-  if (p.actor) blocks.push({ type: 'text', text: `Người lập: ${p.actor}`, size: 12 });
-  if (p.approvedBy) blocks.push({ type: 'text', text: `Quản lý duyệt: ${p.approvedBy}`, size: 12 });
+  if (p.actor) blocks.push({ type: 'text', text: `${tr('Người lập: ')}${p.actor}`, size: 12 });
+  if (p.approvedBy) blocks.push({ type: 'text', text: `${tr('Quản lý duyệt: ')}${p.approvedBy}`, size: 12 });
   blocks.push({ type: 'line', style: 'dot' });
   blocks.push({ type: 'row', cols: [
-    { text: 'Mặt hàng', flex: 5, align: 'left', size: 11, bold: true },
-    { text: 'ĐG', flex: 3, align: 'right', size: 11, bold: true },
-    { text: 'SL', flex: 1, align: 'right', size: 11, bold: true },
-    { text: 'Thành tiền', flex: 3, align: 'right', size: 11, bold: true },
+    { text: tr('Mặt hàng'), flex: 5, align: 'left', size: 11, bold: true },
+    { text: tr('ĐG'), flex: 3, align: 'right', size: 11, bold: true },
+    { text: tr('SL'), flex: 1, align: 'right', size: 11, bold: true },
+    { text: tr('Thành tiền'), flex: 3, align: 'right', size: 11, bold: true },
   ] });
   for (const it of (Array.isArray(p.items) ? p.items : [])) {
     blocks.push({ type: 'row', cols: [
@@ -406,19 +411,19 @@ export function buildReturnVoucherDoc(p = {}, printCfg = {}, opts = {}) {
   }
   blocks.push({ type: 'line', style: 'dot' });
   blocks.push({ type: 'row', cols: [
-    { text: 'TỔNG HOÀN', flex: 3, align: 'left', size: 15, bold: true },
+    { text: tr('TỔNG HOÀN'), flex: 3, align: 'left', size: 15, bold: true },
     { text: money(p.total || 0), flex: 4, align: 'right', size: 16, bold: true },
   ] });
-  if (p.refundMethod) blocks.push({ type: 'text', text: `Hoàn qua: ${p.refundMethod}`, size: 11 });
+  if (p.refundMethod) blocks.push({ type: 'text', text: `${tr('Hoàn qua: ')}${p.refundMethod}`, size: 11 });
   blocks.push({ type: 'space', h: 10 });
   blocks.push({ type: 'row', cols: [
-    { text: 'Người lập phiếu', flex: 1, align: 'center', size: 11 },
-    { text: 'Người nhận', flex: 1, align: 'center', size: 11 },
+    { text: tr('Người lập phiếu'), flex: 1, align: 'center', size: 11 },
+    { text: tr('Người nhận'), flex: 1, align: 'center', size: 11 },
   ] });
   blocks.push({ type: 'space', h: 6 });
   blocks.push({ type: 'row', cols: [
-    { text: '(Ký, họ tên)', flex: 1, align: 'center', size: 10 },
-    { text: '(Ký, họ tên)', flex: 1, align: 'center', size: 10 },
+    { text: tr('(Ký, họ tên)'), flex: 1, align: 'center', size: 10 },
+    { text: tr('(Ký, họ tên)'), flex: 1, align: 'center', size: 10 },
   ] });
   return { font, blocks, offsetMm: Number(printCfg?.labels?.offsetMm ?? -2) || -2 };
 }
@@ -450,15 +455,16 @@ export function sampleReceiptPayload() {
  * @returns { font, blocks[] }
  */
 export function buildReceiptDoc(p = {}, printCfg = {}, opts = {}) {
+  const tr = printTr(printCfg);
   const cfg = printCfg?.bill || p.print_config?.bill || {};
   const font = opts.font || printCfg?.driverFont || 'Segoe UI';
   const blocks = [];
   const template = printCfg?.templates?.bill || p.print_config?.templates?.bill;
   if (templateRows(template).length && opts.vars) {
     const appendItems = () => {
-      blocks.push(itemHeaderRow());
+      blocks.push(itemHeaderRow(tr));
       blocks.push(B.line('dot'));
-      pushItemBlocks(blocks, p.items || []);
+      pushItemBlocks(blocks, p.items || [], tr);
     };
     appendTemplate(blocks, template, opts.vars, { items: appendItems });
     return { font, blocks, offsetMm: Number(printCfg?.bill?.offsetMm ?? -2) || -2 };
@@ -473,48 +479,48 @@ export function buildReceiptDoc(p = {}, printCfg = {}, opts = {}) {
   blocks.push(B.text(storeName, { size: 16, bold: true, align: 'center' }));
   if (storeSubtitle) blocks.push(B.text(storeSubtitle, { size: 9, align: 'center' }));
   if (address) blocks.push(B.text(address, { size: 8, align: 'center' }));
-  const contact = [cfg.phone ? `ĐT: ${cfg.phone}` : '', cfg.taxCode ? `MST: ${cfg.taxCode}` : '']
+  const contact = [cfg.phone ? `${tr('ĐT: ')}${cfg.phone}` : '', cfg.taxCode ? `${tr('MST: ')}${cfg.taxCode}` : '']
     .filter(Boolean).join('   ');
   if (contact) blocks.push(B.text(contact, { size: 8, align: 'center' }));
   blocks.push(B.space(3));
 
-  const title = p.preview ? 'HÓA ĐƠN TẠM TÍNH'
-    : `HÓA ĐƠN THANH TOÁN${reprint ? ' (IN LẠI)' : ''}`;
+  const title = p.preview ? tr('HÓA ĐƠN TẠM TÍNH')
+    : `${tr('HÓA ĐƠN THANH TOÁN')}${reprint ? tr(' (IN LẠI)') : ''}`;
   blocks.push(B.text(title, { size: 11, bold: true, align: 'center' }));
   blocks.push(B.space(3));
 
   // ── Thông tin đơn ──
   const billNo = p.preview ? '' : (p.bill_no || p.number || '');
-  const place = p.table_code ? `Bàn ${p.table_code}` : (p.channel || 'POS');
+  const place = p.table_code ? `${tr('Bàn ')}${p.table_code}` : (p.channel || 'POS');
   if (billNo || place) {
     blocks.push(B.row([
-      { text: billNo ? `Số HĐ: ${billNo}` : '', flex: 1, align: 'left' },
+      { text: billNo ? `${tr('Số HĐ: ')}${billNo}` : '', flex: 1, align: 'left' },
       { text: place, flex: 1, align: 'right' },
     ]));
   }
   const when = p.time || p.paid_at || p.created_at || '';
   blocks.push(B.row([
-    { text: p.cashier ? `Thu ngân: ${p.cashier}` : '', flex: 1, align: 'left' },
+    { text: p.cashier ? `${tr('Thu ngân: ')}${p.cashier}` : '', flex: 1, align: 'left' },
     { text: String(when), flex: 1, align: 'right' },
   ]));
 
   const customer = p.customer || {};
   const isInvoice = !!(customer.tax_code || customer.invoice_request);
   if (isInvoice) {
-    if (customer.name) blocks.push(B.text(`Khách hàng: ${customer.name}`, { size: 8 }));
-    if (customer.company) blocks.push(B.text(`Công ty: ${customer.company}`, { size: 8 }));
-    if (customer.tax_code) blocks.push(B.text(`MST: ${customer.tax_code}`, { size: 8 }));
-    if (customer.address) blocks.push(B.text(`Địa chỉ: ${customer.address}`, { size: 8 }));
+    if (customer.name) blocks.push(B.text(`${tr('Khách hàng: ')}${customer.name}`, { size: 8 }));
+    if (customer.company) blocks.push(B.text(`${tr('Công ty: ')}${customer.company}`, { size: 8 }));
+    if (customer.tax_code) blocks.push(B.text(`${tr('MST: ')}${customer.tax_code}`, { size: 8 }));
+    if (customer.address) blocks.push(B.text(`${tr('Địa chỉ: ')}${customer.address}`, { size: 8 }));
   } else if (customer.name || customer.phone) {
     const c = [customer.name, customer.phone].filter(Boolean).join(' - ');
-    blocks.push(B.text(`Khách hàng: ${c}`, { size: 8 }));
+    blocks.push(B.text(`${tr('Khách hàng: ')}${c}`, { size: 8 }));
   }
 
   // ── Bảng món ──
   blocks.push(B.line('solid'));
-  blocks.push(itemHeaderRow());
+  blocks.push(itemHeaderRow(tr));
   blocks.push(B.line('dot'));
-  pushItemBlocks(blocks, p.items || []);
+  pushItemBlocks(blocks, p.items || [], tr);
   blocks.push(B.line('solid'));
 
   // ── Tổng kết ──
@@ -522,7 +528,7 @@ export function buildReceiptDoc(p = {}, printCfg = {}, opts = {}) {
   const vatAmount = Number(p.vat_amount ?? p.tax?.vat_amount) || 0;
   const goodsAmount = Number(p.goods_amount) || Math.max(0, total - vatAmount);
   const orderDiscount = orderWideDiscount(p);
-  const orderPromoName = p.voucher?.name || p.voucher_code || 'Giảm giá';
+  const orderPromoName = p.voucher?.name || p.voucher_code || tr('Giảm giá');
   const mucThue = [...new Set((p.items || []).map((i) => Number(i.vat_rate) || 0).filter((r) => r > 0))];
   const vatRate = mucThue.length === 1 ? mucThue[0] : 0;
 
@@ -531,23 +537,23 @@ export function buildReceiptDoc(p = {}, printCfg = {}, opts = {}) {
     { text: value, flex: 4, align: 'right', ...(o.bold ? { bold: true } : {}), ...(o.size ? { size: o.size } : {}) },
   ]);
 
-  blocks.push(totalsRow('Tổng tiền hàng', money(goodsAmount)));
-  if (vatAmount > 0) blocks.push(totalsRow(`VAT${vatRate ? ` (${vatRate}%)` : ''}`, money(vatAmount)));
+  blocks.push(totalsRow(tr('Tổng tiền hàng'), money(goodsAmount)));
+  if (vatAmount > 0) blocks.push(totalsRow(`${tr('VAT')}${vatRate ? ` (${vatRate}%)` : ''}`, money(vatAmount)));
   if (orderDiscount > 0) blocks.push(totalsRow(`${orderPromoName}`, `-${money(orderDiscount)}`));
-  blocks.push(totalsRow('TỔNG CỘNG', money(total), { bold: true, size: 13 }));
+  blocks.push(totalsRow(tr('TỔNG CỘNG'), money(total), { bold: true, size: 13 }));
 
   const lines = Array.isArray(p.lines) ? p.lines : [];
   if (lines.length) {
-    blocks.push(totalsRow('Hình thức', lines.map((l) => methodLabel(l.method)).join(', ')));
+    blocks.push(totalsRow(tr('Hình thức'), lines.map((l) => methodLabel(l.method, tr)).join(', ')));
   }
   const linesPaid = lines.reduce((s, l) => s + (Number(l.amount) || 0), 0);
   const paid = Number(p.paid ?? (linesPaid || total)) || 0;
   const change = Number(p.change ?? Math.max(0, paid - total)) || 0;
-  if (paid) blocks.push(totalsRow('Tiền khách đưa', money(paid)));
-  if (change > 0) blocks.push(totalsRow('Tiền trả khách', money(change)));
+  if (paid) blocks.push(totalsRow(tr('Tiền khách đưa'), money(paid)));
+  if (change > 0) blocks.push(totalsRow(tr('Tiền trả khách'), money(change)));
 
   blocks.push(B.space(2));
-  blocks.push(B.text(`Bằng chữ: ${p.total_words || ''}`.trimEnd(), { size: 8, italic: true }));
+  blocks.push(B.text(`${tr('Bằng chữ: ')}${p.total_words || ''}`.trimEnd(), { size: 8, italic: true }));
 
   // ── Chân bill ──
   blocks.push(B.space(3));
@@ -557,7 +563,7 @@ export function buildReceiptDoc(p = {}, printCfg = {}, opts = {}) {
     if (cfg.qrNote) blocks.push(B.text(cfg.qrNote, { size: 8, align: 'center' }));
     blocks.push(B.qr(qrData));
   }
-  const footer = cfg.footer || 'Xin cảm ơn và hẹn gặp lại';
+  const footer = cfg.footer || tr('Xin cảm ơn và hẹn gặp lại');
   blocks.push(B.text(footer, { size: 10, align: 'center' }));
 
   return { font, blocks, offsetMm: Number(printCfg?.bill?.offsetMm ?? -2) || -2 };

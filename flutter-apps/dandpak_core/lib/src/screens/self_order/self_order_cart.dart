@@ -12,18 +12,28 @@ class SoCartItem {
   int qty;
   String notes;
   final List<SoModifierOption> selectedModifiers;
+  // Món đi kèm (option_groups mode:'combo') đã chọn — mỗi phần tử tách thành
+  // 1 dòng RIÊNG trên đơn khi gửi (server tự set giá/trạm theo CHÍNH món đó).
+  // Lồng dưới dòng cha (không phải cart item riêng) để xóa/tăng-giảm dòng cha
+  // tự kéo theo, khỏi cần khớp id cha-con phía client.
+  final List<SoComboChild> comboChildren;
 
   SoCartItem({
     required this.item,
     this.qty = 1,
     this.notes = '',
     List<SoModifierOption>? selectedModifiers,
-  }) : selectedModifiers = selectedModifiers ?? [];
+    List<SoComboChild>? comboChildren,
+  })  : selectedModifiers = selectedModifiers ?? [],
+        comboChildren = comboChildren ?? [];
 
   int get singlePrice {
     int price = item.price;
     for (var mod in selectedModifiers) {
       price += mod.price;
+    }
+    for (var c in comboChildren) {
+      price += c.price;
     }
     return price;
   }
@@ -36,8 +46,30 @@ class SoCartItem {
       qty: qty,
       notes: notes,
       selectedModifiers: List.from(selectedModifiers),
+      comboChildren: comboChildren.map((c) => c.copy()).toList(),
     );
   }
+}
+
+// Một món đi kèm đã chọn cho 1 dòng combo. Số lượng LUÔN bằng số lượng món
+// chính (đặt N combo = N mỗi món đi kèm) — không có ô số lượng riêng, không
+// xóa được riêng lẻ (xóa cả dòng cha mới xóa theo), nhưng vẫn ghi chú riêng
+// được (vd "salad không sốt").
+class SoComboChild {
+  final String refItemId;
+  final String name;
+  final int price;
+  String note;
+
+  SoComboChild({
+    required this.refItemId,
+    required this.name,
+    required this.price,
+    this.note = '',
+  });
+
+  SoComboChild copy() =>
+      SoComboChild(refItemId: refItemId, name: name, price: price, note: note);
 }
 
 class SoModifierOption {

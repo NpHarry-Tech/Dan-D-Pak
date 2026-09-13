@@ -289,13 +289,7 @@ class AuthProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> setLoginLanguage(String lang) async {
-    _setLanguage(lang);
-    await LocalStore.instance.setString('app_lang', _language);
-  }
-
-  Future<void> login(String username, String pin, String branchId,
-      {String? preferredLang}) async {
+  Future<void> login(String username, String pin, String branchId) async {
     ReceiptPrintTracker.instance.cancel();
     _isLoading = true;
     notifyListeners();
@@ -314,14 +308,6 @@ class AuthProvider extends ChangeNotifier {
 
       apiService.setToken(_token);
       apiService.setBranchId(branchId);
-      if (preferredLang != null &&
-          L10n.clean(preferredLang) != _currentUser!.lang) {
-        final updated = await apiService.updateMyLanguage(preferredLang);
-        _currentUser = User.fromJson({
-          ...Map<String, dynamic>.from(updated),
-          if (res['perms'] is List) 'perms': res['perms'],
-        });
-      }
       _setLanguage(_currentUser!.lang, notify: false);
       await _loadBranchModules();
       _syncLogContext();
@@ -373,6 +359,31 @@ class AuthProvider extends ChangeNotifier {
     _language = L10n.clean(lang);
     L10n.setLocale(_language);
     if (notify) notifyListeners();
+  }
+
+  /// Gọi ngay sau khi lưu thông tin nhân viên trong màn Quản lý nhân sự — nếu
+  /// người vừa sửa CHÍNH LÀ người đang đăng nhập trên máy này thì đổi ngôn ngữ
+  /// hiển thị NGAY LẬP TỨC thay vì phải đăng xuất/đăng nhập lại hoặc khởi động
+  /// lại app mới thấy đổi. `home:` ở bootstrap.dart bọc trong Consumer<AuthProvider>
+  /// nên notifyListeners() ở đây rebuild lại toàn bộ cây màn hình đang hiện.
+  void syncOwnLanguageIfSelf(String userId, String lang) {
+    if (_currentUser?.id != userId || L10n.clean(lang) == _language) return;
+    _setLanguage(lang);
+  }
+
+  /// Đổi ngôn ngữ hiển thị của CHÍNH phiên đang đăng nhập — dùng cho ô chọn
+  /// ngôn ngữ đặt ngay trên thanh topbar (DanModuleTopBar), để không phải mở
+  /// sâu vào Nhân sự & Phân quyền → sửa chính mình mới đổi được.
+  Future<void> updateMyLanguageNow(String lang) async {
+    if (L10n.clean(lang) == _language) return;
+    final updated = await apiService.updateMyLanguage(lang);
+    if (_currentUser != null) {
+      _currentUser = User.fromJson({
+        ...Map<String, dynamic>.from(updated),
+        'perms': _currentUser!.permissions,
+      });
+    }
+    _setLanguage(lang);
   }
 
   /// Mọi dòng nhật ký hệ thống từ giờ mang đúng user/chi nhánh hiện tại.

@@ -6,7 +6,11 @@ extension ApiServicePrintingApi on ApiService {
   /// điều kiện — đúng nguyên nhân màn Máy in từng báo "Sẵn sàng" khi máy POS
   /// còn chưa mở app. Timeout nới ra vì có thể phải dò TCP máy in LAN.
   Future<List<dynamic>> getPrinters({bool live = true}) async {
-    return listFrom(await getJson('/api/print/printers${live ? '?live=1' : ''}',
+    final qs = Uri(queryParameters: {
+      if (live) 'live': '1',
+      'lang': L10n.currentLocale,
+    }).query;
+    return listFrom(await getJson('/api/print/printers?$qs',
         timeout: Duration(seconds: live ? 8 : 3),
         errorMessage: 'Không tải được máy in'));
   }

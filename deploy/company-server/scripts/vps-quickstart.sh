@@ -52,9 +52,13 @@ if command -v ufw >/dev/null 2>&1; then
   ufw allow 22/tcp >/dev/null
   ufw allow 80/tcp >/dev/null
   ufw allow 443/tcp >/dev/null
-  ufw allow 3000/tcp >/dev/null   # app POS nhập IP trần tự nối :3000
+  # KHÔNG mở 3000/tcp ra internet: server chỉ expose 3000 nội bộ cho Caddy (xem
+  # docker-compose.yml); app truy cập qua Caddy ở cổng 80/443, không cần 3000
+  # ra ngoài. Mở thêm 3000 chỉ tạo lỗ hổng HTTP trần không TLS mà không phục vụ
+  # đường dùng thật nào — BẢO MẬT (đã dò thấy 2026-09-13, chưa từng bị khai
+  # thác vì VPS thật không chạy script này, nhưng script vẫn phải an toàn).
   ufw --force enable >/dev/null
-  echo "[quickstart] Tường lửa: chỉ mở 22 (SSH), 80, 443, 3000."
+  echo "[quickstart] Tường lửa: chỉ mở 22 (SSH), 80, 443."
 fi
 
 echo "[quickstart] Chờ server sẵn sàng..."

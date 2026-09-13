@@ -117,6 +117,24 @@ class DanDpakApiClient {
   DanDpakApiClient({String baseUrl = defaultBaseUrl, this.token, this.branchId})
       : baseUrl = normalizeBaseUrl(baseUrl);
 
+  // Chỉ coi là "mạng LAN riêng" (không TLS được vì không có domain/cert công
+  // khai) khi đúng là dải IP riêng theo RFC1918/loopback/link-local. Một IP
+  // CÔNG KHAI (VD IP trần của VPS) trông giống hệt về mặt cú pháp (4 nhóm số)
+  // nhưng KHÔNG được coi là an toàn để ép về http — nếu không, nhân viên gõ
+  // nhầm IP trần của server thật (thay vì domain) sẽ âm thầm gửi PIN đăng
+  // nhập + đơn hàng qua mạng KHÔNG MÃ HOÁ ra thẳng internet.
+  static bool _isPrivateIPv4(String host) {
+    final m = RegExp(r'^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$').firstMatch(host);
+    if (m == null) return false;
+    final parts = List.generate(4, (i) => int.tryParse(m.group(i + 1)!) ?? -1);
+    if (parts.any((p) => p < 0 || p > 255)) return false;
+    final a = parts[0], b = parts[1];
+    return a == 10 || a == 127 || a == 0 ||
+        (a == 172 && b >= 16 && b <= 31) ||
+        (a == 192 && b == 168) ||
+        (a == 169 && b == 254);
+  }
+
   static String normalizeBaseUrl(String url) {
     var trimmed = url.trim();
     if (trimmed.isEmpty) return defaultBaseUrl;
@@ -131,17 +149,20 @@ class DanDpakApiClient {
     // Remove trailing slash
     trimmed = trimmed.replaceFirst(RegExp(r'/$'), '');
 
-    // Add protocol if missing
+    // Add protocol if missing — mặc định https cho domain/IP CÔNG KHAI (bị
+    // nghe lén là mất mật khẩu/đơn hàng thật); chỉ mặc định http cho LAN riêng
+    // /localhost, nơi vốn không thể có chứng chỉ TLS hợp lệ.
     if (!trimmed.startsWith('http://') && !trimmed.startsWith('https://')) {
-      trimmed = 'http://$trimmed';
+      final hostPart = trimmed.split('/').first.split(':').first;
+      final defaultScheme =
+          (hostPart == 'localhost' || _isPrivateIPv4(hostPart)) ? 'http' : 'https';
+      trimmed = '$defaultScheme://$trimmed';
     }
 
     try {
       final uri = Uri.parse(trimmed);
       final host = uri.host;
-      final isIpOrLocalhost = RegExp(
-        r'^(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}|localhost)$',
-      ).hasMatch(host);
+      final isIpOrLocalhost = host == 'localhost' || _isPrivateIPv4(host);
 
       if (isIpOrLocalhost) {
         // Force http for raw IP / localhost because SSL is not used on LAN/localhost.

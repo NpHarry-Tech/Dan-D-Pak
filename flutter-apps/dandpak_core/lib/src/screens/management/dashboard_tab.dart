@@ -29,20 +29,20 @@ class _DashboardTabState extends State<DashboardTab> {
     'byQuarter',
     'byYear'
   ];
-  static final _trendLabels = [
-    t('Ngày'),
-    t('Tuần'),
-    t('Tháng'),
-    t('Quý'),
-    t('Năm')
-  ];
-  static final _trendSub = {
-    'byDay': t('7 ngày gần nhất'),
-    'byWeek': t('8 tuần gần nhất'),
-    'byMonth': t('12 tháng gần nhất'),
-    'byQuarter': t('8 quý gần nhất'),
-    'byYear': t('5 năm gần nhất'),
-  };
+  static List<String> get _trendLabels => [
+        t('Ngày'),
+        t('Tuần'),
+        t('Tháng'),
+        t('Quý'),
+        t('Năm')
+      ];
+  static Map<String, String> get _trendSub => {
+        'byDay': t('7 ngày gần nhất'),
+        'byWeek': t('8 tuần gần nhất'),
+        'byMonth': t('12 tháng gần nhất'),
+        'byQuarter': t('8 quý gần nhất'),
+        'byYear': t('5 năm gần nhất'),
+      };
 
   DashboardData? _data;
   TrendsData? _trends;
@@ -509,10 +509,11 @@ class _TopItemHeader extends StatelessWidget {
         Expanded(child: Text(t('MÓN'), style: style)),
         SizedBox(
             width: 56,
-            child: Text('SL', style: style, textAlign: TextAlign.right)),
+            child: Text(t('SL'), style: style, textAlign: TextAlign.right)),
         SizedBox(
             width: 120,
-            child: Text('DOANH THU', style: style, textAlign: TextAlign.right)),
+            child:
+                Text(t('DOANH THU'), style: style, textAlign: TextAlign.right)),
       ],
     );
   }

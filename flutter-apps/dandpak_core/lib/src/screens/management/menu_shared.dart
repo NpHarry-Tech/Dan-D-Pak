@@ -168,24 +168,7 @@ class _StationManagerDialogState extends State<_StationManagerDialog> {
   }
 }
 
-class _AddonRow {
-  String kind;
-  String type;
-  String price;
-  String refItemId;
-  String name;
-  bool available;
-  _AddonRow({
-    required this.kind,
-    required this.type,
-    required this.price,
-    this.refItemId = '',
-    this.name = '',
-    this.available = true,
-  });
-}
-
-// Trình sửa NHÓM TÙY CHỌN (size/topping/combo) cho Self-Order.
+// Trình sửa NHÓM TÙY CHỌN (món đi kèm/combo) cho Self-Order.
 int _optSeq = 0;
 
 class _OptItemRow {
@@ -207,6 +190,9 @@ class _OptGroupRow {
   String key;
   String name;
   String position; // top | bottom
+  // Luôn 'combo' (món đi kèm, tách dòng riêng) — không còn 'price' (cộng giá
+  // vào món) nữa, giữ field để khớp với MenuOptionGroup/server.
+  String mode;
   String min;
   String max;
   List<_OptItemRow> options;
@@ -214,6 +200,7 @@ class _OptGroupRow {
     String? key,
     this.name = '',
     this.position = 'top',
+    this.mode = 'combo',
     this.min = '0',
     this.max = '0',
     List<_OptItemRow>? options,
@@ -306,50 +293,71 @@ class _CategoryManagerDialogState extends State<_CategoryManagerDialog> {
       builder: (ctx) {
         final icon = TextEditingController(text: c.icon);
         final name = TextEditingController(text: c.name);
-        return AlertDialog(
-          backgroundColor: DanColors.surface,
-          title: Text(t('Sửa danh mục')),
-          content: SizedBox(
-            width: 360,
-            child: Row(
-              children: [
-                SizedBox(
-                  width: 64,
-                  child: TextField(
-                    controller: icon,
-                    textAlign: TextAlign.center,
-                    decoration: InputDecoration(labelText: 'Icon'),
+        var selfOrderHidden = c.selfOrderHidden;
+        return StatefulBuilder(
+          builder: (ctx, setLocal) => AlertDialog(
+            backgroundColor: DanColors.surface,
+            title: Text(t('Sửa danh mục')),
+            content: SizedBox(
+              width: 360,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Row(
+                    children: [
+                      SizedBox(
+                        width: 64,
+                        child: TextField(
+                          controller: icon,
+                          textAlign: TextAlign.center,
+                          decoration: InputDecoration(labelText: 'Icon'),
+                        ),
+                      ),
+                      SizedBox(width: 10),
+                      Expanded(
+                        child: TextField(
+                          controller: name,
+                          autofocus: true,
+                          decoration: InputDecoration(labelText: t('Tên nhóm')),
+                          onSubmitted: (_) => Navigator.of(ctx).pop(AdminCategory(
+                            id: c.id,
+                            name: name.text.trim(),
+                            icon: icon.text.trim(),
+                            selfOrderHidden: selfOrderHidden,
+                          )),
+                        ),
+                      ),
+                    ],
                   ),
-                ),
-                SizedBox(width: 10),
-                Expanded(
-                  child: TextField(
-                    controller: name,
-                    autofocus: true,
-                    decoration: InputDecoration(labelText: t('Tên nhóm')),
-                    onSubmitted: (_) => Navigator.of(ctx).pop(AdminCategory(
-                      id: c.id,
-                      name: name.text.trim(),
-                      icon: icon.text.trim(),
-                    )),
+                  // Ẩn cả nhóm khỏi Tablet Self-Order (khách hàng); F&B POS vẫn
+                  // thấy nhóm và món bên trong như bình thường.
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    value: !selfOrderHidden,
+                    activeThumbColor: DanColors.brand,
+                    title: Text(t('Hiện ở Tablet Self-Order'),
+                        style: TextStyle(fontSize: 13.5)),
+                    onChanged: (v) =>
+                        setLocal(() => selfOrderHidden = !v),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
+            actions: [
+              TextButton(
+                  onPressed: () => Navigator.of(ctx).pop(),
+                  child: Text(t('Hủy'))),
+              FilledButton(
+                onPressed: () => Navigator.of(ctx).pop(AdminCategory(
+                  id: c.id,
+                  name: name.text.trim(),
+                  icon: icon.text.trim(),
+                  selfOrderHidden: selfOrderHidden,
+                )),
+                child: Text(t('Lưu')),
+              ),
+            ],
           ),
-          actions: [
-            TextButton(
-                onPressed: () => Navigator.of(ctx).pop(),
-                child: Text(t('Hủy'))),
-            FilledButton(
-              onPressed: () => Navigator.of(ctx).pop(AdminCategory(
-                id: c.id,
-                name: name.text.trim(),
-                icon: icon.text.trim(),
-              )),
-              child: Text(t('Lưu')),
-            ),
-          ],
         );
       },
     );
@@ -363,12 +371,17 @@ class _CategoryManagerDialogState extends State<_CategoryManagerDialog> {
       await widget.api.updateCategory(c.id, {
         'name': draft.name,
         'icon': icon,
+        'self_order_hidden': draft.selfOrderHidden,
         'security_pin': pin,
       });
       setState(() {
         final idx = _cats.indexWhere((x) => x.id == c.id);
         if (idx >= 0) {
-          _cats[idx] = AdminCategory(id: c.id, name: draft.name, icon: icon);
+          _cats[idx] = AdminCategory(
+              id: c.id,
+              name: draft.name,
+              icon: icon,
+              selfOrderHidden: draft.selfOrderHidden);
         }
         _changed = true;
       });
@@ -405,8 +418,20 @@ class _CategoryManagerDialogState extends State<_CategoryManagerDialog> {
                     ListTile(
                       contentPadding: EdgeInsets.zero,
                       leading: Text(c.icon, style: TextStyle(fontSize: 22)),
-                      title: Text(c.name,
-                          style: TextStyle(fontWeight: FontWeight.w700)),
+                      title: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Flexible(
+                            child: Text(c.name,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(fontWeight: FontWeight.w700)),
+                          ),
+                          if (c.selfOrderHidden) ...[
+                            SizedBox(width: 6),
+                            _Chip(t('Ẩn self-order'), DanColors.muted),
+                          ],
+                        ],
+                      ),
                       trailing: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [

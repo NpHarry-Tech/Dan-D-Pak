@@ -310,9 +310,9 @@ class _OnlineProductsSectionState extends State<OnlineProductsSection> {
               initialValue: _provider,
               isExpanded: true,
               decoration:
-                  const InputDecoration(isDense: true, labelText: 'Sàn'),
+                  InputDecoration(isDense: true, labelText: t('Sàn')),
               items: [
-                const DropdownMenuItem(value: '', child: Text('Tất cả sàn')),
+                DropdownMenuItem(value: '', child: Text(t('Tất cả sàn'))),
                 for (final key in const [
                   'haravan',
                   'shopee',

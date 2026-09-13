@@ -142,8 +142,3 @@ export function takeoverLease(branch_id, resource, { device, user_id = '', user_
     throw err;
   }
 }
-
-export function leaseStatus(branch_id, resource, { at = now() } = {}) {
-  const cur = db.prepare(`SELECT * FROM retail_edit_lease WHERE branch_id=? AND resource=?`).get(branch_id, String(resource));
-  return isActive(cur, at) ? holderView(cur) : null;
-}

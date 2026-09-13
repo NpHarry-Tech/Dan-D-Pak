@@ -108,10 +108,3 @@ export function assertNotCheckingOut(branch_id, resource, { at = now() } = {}) {
     e.status = 409; e.code = 'ORDER_ALREADY_CHECKING_OUT'; e.holder = holder(cur); throw e;
   }
 }
-
-export function checkoutLockStatus(branch_id, resource, { at = now() } = {}) {
-  const cur = db.prepare(`SELECT * FROM retail_checkout_lock WHERE branch_id=? AND resource=?`).get(branch_id, String(resource));
-  if (!cur) return null;
-  if (cur.status === 'paid') return { status: 'paid', ...holder(cur) };
-  return active(cur, at) ? { status: 'locked', ...holder(cur) } : null;
-}

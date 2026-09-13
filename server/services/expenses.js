@@ -8,7 +8,7 @@ import { intval } from '../core/util.js';
 import { emit } from '../realtime.js';
 import { getCustomer } from './customers.js';
 import { createEntry as createDrawerEntry } from './cashDrawer.js';
-import { saveDocumentReference } from '../modules/documents/routes.js';
+import { saveDocumentReference, fileCashDrawerReceipt } from '../modules/documents/routes.js';
 import { matchesSearch, searchTokens } from '../core/search.js';
 import { businessDateEndUtc, businessDateStartUtc } from '../core/businessClock.js';
 
@@ -171,6 +171,12 @@ export function createExpense(body = {}, branch_id = 'sala', user = {}) {
     }, user, branch_id);
     drawer_entry_id = entry.id;
     method = 'cash';
+    // Lập chỉ mục ảnh hóa đơn vào kho Tài liệu ngay khi tạo — createDrawerEntry()
+    // (dùng chung với sổ quỹ) chỉ ghi invoice_image vào cash_drawer_entries, KHÔNG
+    // tự gọi fileCashDrawerReceipt (hàm đó chỉ được route /cash-drawer/expense gọi).
+    if (invoice_image) {
+      try { fileCashDrawerReceipt(entry, branch_id, user); } catch { /* không chặn ghi khoản chi */ }
+    }
   }
 
   const id = uid('exp_');

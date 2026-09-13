@@ -1,6 +1,8 @@
 // Retail SKU, lot, customer, voucher, cart, and payment models.
 // They mirror the JSON contracts used by Flutter retail screen and /api/retail/checkout.
 
+import '../utils/translation.dart';
+
 String retailS(dynamic v) => v?.toString() ?? '';
 
 num retailN(dynamic v) {
@@ -700,12 +702,12 @@ class RetailSaleTab {
   /// SERVER cấp (display_sequence). KHÔNG dùng `id` cục bộ/tabs.length+1 làm số
   /// hiển thị — tab chưa có order canonical thì hiện "Hóa đơn mới".
   String get title => isReturn
-      ? 'Trả hàng ${id.toString().padLeft(2, '0')}'
+      ? '${t('Trả hàng')} ${id.toString().padLeft(2, '0')}'
       : deviceName.isNotEmpty
           ? deviceName
           : serverSequence != null
-              ? 'Hóa đơn ${serverSequence!.toString().padLeft(2, '0')}'
-              : 'Hóa đơn ${id.toString().padLeft(2, '0')}';
+              ? '${t('Hóa đơn')} ${serverSequence!.toString().padLeft(2, '0')}'
+              : '${t('Hóa đơn')} ${id.toString().padLeft(2, '0')}';
 
   /// Dòng phụ nhỏ dưới nhãn tab: tên khách nếu khách đã nhập thông tin.
   /// Chưa nhập thì để trống — mặc định vẫn là bán cho người tiêu dùng.

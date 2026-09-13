@@ -42,7 +42,7 @@ class _SettingsSection {
 }
 
 class _SettingsTabState extends State<SettingsTab> {
-  static final _sections = [
+  static List<_SettingsSection> get _sections => [
     _SettingsSection(
         'users',
         t('Nhân sự & Phân quyền'),
@@ -280,7 +280,7 @@ class LoyaltyPromotionsPanel extends StatelessWidget {
               isScrollable: true,
               tabs: [
                 Tab(text: t('Tích điểm')),
-                Tab(text: 'CTKM / Voucher'),
+                Tab(text: t('CTKM / Voucher')),
               ],
             ),
           ),

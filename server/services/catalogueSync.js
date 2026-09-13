@@ -67,12 +67,23 @@ function validateRows(table, rows) {
 }
 
 function insertRows(table, rows) {
+  // Cache statement đã biên dịch theo BỘ CỘT — snapshot restore có thể chèn
+  // hàng chục nghìn dòng (customers, stock_lots…) trong MỘT transaction; biên
+  // dịch lại SQL cho từng dòng là phí vô ích khi các dòng cùng bảng hầu như
+  // luôn cùng bộ cột (đến từ SELECT * phía nguồn).
+  const stmtCache = new Map();
   for (const row of rows) {
     const columns = Object.keys(row);
     if (!columns.length) continue;
-    db.prepare(
-      `INSERT INTO ${q(table)}(${columns.map(q).join(',')}) VALUES(${columns.map(() => '?').join(',')})`,
-    ).run(...columns.map((column) => row[column]));
+    const key = columns.join(',');
+    let stmt = stmtCache.get(key);
+    if (!stmt) {
+      stmt = db.prepare(
+        `INSERT INTO ${q(table)}(${columns.map(q).join(',')}) VALUES(${columns.map(() => '?').join(',')})`,
+      );
+      stmtCache.set(key, stmt);
+    }
+    stmt.run(...columns.map((column) => row[column]));
   }
 }
 
@@ -143,5 +154,3 @@ export function applyCatalogueSnapshot(snapshot, branchId = 'sala') {
     throw error;
   }
 }
-
-export const catalogueSafeSettingKeys = SAFE_SETTING_KEYS;

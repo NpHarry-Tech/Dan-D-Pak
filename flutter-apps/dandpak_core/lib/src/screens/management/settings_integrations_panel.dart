@@ -158,7 +158,7 @@ List<IntegrationDef> get _integrationDefs => [
       IntegrationDef(
           key: 'website',
           icon: '🌐',
-          name: 'Website / QR order',
+          name: t('Website / QR order'),
           desc: t(
               'Kênh đặt món từ website, QR bàn, landing page hoặc kiosk tự gọi món.'),
           type: 'website',
@@ -380,7 +380,7 @@ Map<String, List<String>> _channelTextFields = {
 String _fieldLabel(String key) {
   switch (key) {
     case 'apiBase':
-      return 'API Base URL';
+      return t('API Base URL');
     case 'taxCode':
       return t('Mã số thuế');
     case 'companyName':
@@ -390,45 +390,45 @@ String _fieldLabel(String key) {
     case 'password':
       return t('Mật khẩu / Token / Password');
     case 'appId':
-      return 'App ID';
+      return t('App ID');
     case 'secretKey':
-      return 'Secret Key';
+      return t('Secret Key');
     case 'clientId':
-      return 'Client ID (x-client-id)';
+      return t('Client ID (x-client-id)');
     case 'apiKey':
-      return 'API Key (x-api-key / Authorization)';
+      return t('API Key (x-api-key / Authorization)');
     case 'checksumKey':
-      return 'Checksum Key';
+      return t('Checksum Key');
     case 'returnUrl':
       return t('Return URL (Thành công)');
     case 'cancelUrl':
       return t('Cancel URL (Hủy thanh toán)');
     case 'webhookSecret':
-      return 'Webhook Secret / Secure Token';
+      return t('Webhook Secret / Secure Token');
     case 'verifyToken':
-      return 'Webhook Verify Token';
+      return t('Webhook Verify Token');
     case 'accessToken':
-      return 'Access Token';
+      return t('Access Token');
     case 'refreshToken':
-      return 'Refresh Token';
+      return t('Refresh Token');
     case 'partnerId':
-      return 'Partner ID';
+      return t('Partner ID');
     case 'shopId':
-      return 'Shop ID';
+      return t('Shop ID');
     case 'shopCipher':
-      return 'Shop Cipher';
+      return t('Shop Cipher');
     case 'sellerId':
-      return 'Seller ID';
+      return t('Seller ID');
     case 'pageId':
-      return 'Page ID';
+      return t('Page ID');
     case 'igUserId':
-      return 'Instagram User ID';
+      return t('Instagram User ID');
     case 'oaId':
-      return 'Zalo OA ID';
+      return t('Zalo OA ID');
     case 'locationId':
-      return 'Haravan Location ID';
+      return t('Haravan Location ID');
     case 'shopDomain':
-      return 'Shop Domain';
+      return t('Shop Domain');
     case 'defaultBranchId':
       return t('Chi nhánh mặc định');
     case 'accountNumber':
@@ -436,13 +436,13 @@ String _fieldLabel(String key) {
     case 'bankCode':
       return t('Mã ngân hàng (VCB, MB, ACB...)');
     case 'publicUrl':
-      return 'Public URL (Website)';
+      return t('Public URL (Website)');
     case 'merchantId':
-      return 'Merchant ID';
+      return t('Merchant ID');
     case 'storeId':
-      return 'Store ID';
+      return t('Store ID');
     case 'clientSecret':
-      return 'Client Secret';
+      return t('Client Secret');
     default:
       return _prettyField(key);
   }
@@ -926,7 +926,7 @@ class _IntegrationsPanelState extends State<IntegrationsPanel> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  def.name,
+                  t(def.name),
                   style: TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w800,
@@ -1012,7 +1012,7 @@ class _IntegrationsPanelState extends State<IntegrationsPanel> {
                     ),
                   );
                 },
-                child: Text('Copy'),
+                child: Text(t('Copy')),
               ),
             ],
           ),
@@ -1815,7 +1815,7 @@ class _IntegrationsPanelState extends State<IntegrationsPanel> {
       title = t('Cách hoạt động (Đường B — tự đối soát)');
       steps = [
         t('Khách quét QR VietQR và chuyển khoản kèm nội dung DANBILL+mã bill (sinh tự động trên màn thanh toán).'),
-        t('${def.name} phát hiện tiền về tài khoản → gọi Webhook URL ở trên.'),
+        '${def.name} ${t('phát hiện tiền về tài khoản → gọi Webhook URL ở trên.')}',
         t('Hệ thống khớp đúng bill theo nội dung; đủ tiền thì tự đóng bill, in hoá đơn, đẩy realtime cho POS/iPad.'),
         t('Giao dịch không khớp / chưa đủ tiền được ghi vào nhật ký để đối soát thủ công.')
       ];
@@ -1924,7 +1924,7 @@ class _IntegrationsPanelState extends State<IntegrationsPanel> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  def.name,
+                                  t(def.name),
                                   style: TextStyle(
                                     fontWeight: isSelected
                                         ? FontWeight.w800

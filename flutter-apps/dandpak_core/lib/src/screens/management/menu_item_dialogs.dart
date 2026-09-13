@@ -48,7 +48,6 @@ class _ItemFormDialogState extends State<_ItemFormDialog> {
   late final TextEditingController _date;
   late Set<String> _days;
   late List<_RecipeRow> _recipe;
-  late List<_AddonRow> _addons;
   late bool _selfOrderHidden;
   late List<_OptGroupRow> _optionGroups;
   late Map<String, Map<String, String>> _translations;
@@ -100,22 +99,15 @@ class _ItemFormDialogState extends State<_ItemFormDialog> {
     _recipe = (i?.recipe ?? [])
         .map((r) => _RecipeRow(r.inventoryItemId, r.qty.toString()))
         .toList();
-    _addons = (i?.addons ?? [])
-        .map((a) => _AddonRow(
-              kind: a.kind == 'combo' ? 'combo' : 'extra',
-              type: a.type == 'free' ? 'free' : 'paid',
-              price: a.price.round().toString(),
-              refItemId: a.refItemId,
-              name: a.name,
-              available: a.available,
-            ))
-        .toList();
     _selfOrderHidden = i?.selfOrderHidden ?? false;
     _optionGroups = (i?.optionGroups ?? [])
         .map((g) => _OptGroupRow(
               key: g.key,
               name: g.name,
               position: g.position == 'bottom' ? 'bottom' : 'top',
+              // Mọi nhóm giờ LUÔN là "món đi kèm" (tách phiếu riêng) — không
+              // còn lựa chọn nào khác, kể cả nhóm cũ từng lưu mode 'price'.
+              mode: 'combo',
               min: g.min.toString(),
               max: g.max.toString(),
               options: g.options
@@ -254,44 +246,30 @@ class _ItemFormDialogState extends State<_ItemFormDialog> {
               'qty': double.tryParse(r.qty) ?? 0
             },
       ],
-      'addons': [
-        for (final a in _addons)
-          if ((a.kind == 'combo' && a.refItemId.isNotEmpty) ||
-              (a.kind != 'combo' && a.name.trim().isNotEmpty))
-            {
-              'kind': a.kind == 'combo' ? 'combo' : 'extra',
-              'type': a.type == 'free' ? 'free' : 'paid',
-              'price':
-                  a.type == 'free' ? 0 : (int.tryParse(a.price.trim()) ?? 0),
-              'ref_item_id': a.kind == 'combo' ? a.refItemId : null,
-              'name': a.name.trim(),
-              'available': a.available,
-            },
-      ],
+      // 'addons' (Món ăn kèm & Extra) KHÔNG gửi nữa — bỏ khỏi form theo yêu cầu
+      // (route giữ nguyên addons_json cũ khi field này vắng mặt, xem menu/:id/update).
       'self_order_hidden': _selfOrderHidden,
       'option_groups': [
+        // Mọi nhóm giờ LUÔN là "món đi kèm" (tách phiếu riêng) — mode gửi lên
+        // luôn là 'combo' bất kể state cũ, và chỉ tính option ĐÃ link món
+        // (server cũng bắt buộc điều này, xem normalizeOptionGroups).
         for (final g in _optionGroups)
           if (g.name.trim().isNotEmpty &&
-              g.options.any(
-                  (o) => o.name.trim().isNotEmpty || o.refItemId.isNotEmpty))
+              g.options.any((o) => o.refItemId.isNotEmpty))
             {
               'key': g.key,
               'name': g.name.trim(),
               'position': g.position,
+              'mode': 'combo',
               'min': int.tryParse(g.min.trim()) ?? 0,
               'max': int.tryParse(g.max.trim()) ?? 0,
               'options': [
                 for (final o in g.options)
-                  if (o.name.trim().isNotEmpty || o.refItemId.isNotEmpty)
+                  if (o.refItemId.isNotEmpty)
                     {
                       'key': o.key,
                       'name': o.name.trim(),
-                      'type': o.type == 'free' ? 'free' : 'paid',
-                      'price': o.type == 'free'
-                          ? 0
-                          : (int.tryParse(o.price.trim()) ?? 0),
-                      'ref_item_id':
-                          o.refItemId.isNotEmpty ? o.refItemId : null,
+                      'ref_item_id': o.refItemId,
                     },
               ],
             },
@@ -380,8 +358,8 @@ class _ItemFormDialogState extends State<_ItemFormDialog> {
                         Row(
                           children: [
                             Expanded(
-                                child:
-                                    _field('VAT (%)', _vatRate, number: true)),
+                                child: _field(t('VAT (%)'), _vatRate,
+                                    number: true)),
                             SizedBox(width: 12),
                             Expanded(
                               child: SwitchListTile(
@@ -420,8 +398,6 @@ class _ItemFormDialogState extends State<_ItemFormDialog> {
                         ),
                         SizedBox(height: 6),
                         _recipeEditor(),
-                        SizedBox(height: 14),
-                        _addonsEditor(),
                         SizedBox(height: 14),
                         _optionGroupsEditor(),
                         SizedBox(height: 14),
@@ -791,159 +767,6 @@ if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
     return result.stdout.toString().trim();
   }
 
-  Widget _addonsEditor() {
-    final otherItems =
-        widget.items.where((m) => m.id != widget.item?.id).toList();
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(t('Món ăn kèm & Extra'),
-            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
-        SizedBox(height: 2),
-        Text(
-          t('Hiện khi khách bấm chọn món trên Tablet Self-Order — khách tick '
-              'từng món độc lập (không phải "chọn 1 trong nhóm" như Nhóm tùy chọn bên dưới).'),
-          style: TextStyle(fontSize: 11, color: DanColors.faint),
-        ),
-        SizedBox(height: 6),
-        if (_addons.isEmpty)
-          Padding(
-            padding: EdgeInsets.only(bottom: 8),
-            child: Text(t('Chưa có món kèm / extra.'),
-                style: TextStyle(color: DanColors.faint, fontSize: 12)),
-          ),
-        for (var i = 0; i < _addons.length; i++)
-          Padding(
-            padding: EdgeInsets.only(bottom: 8),
-            child: Row(
-              children: [
-                SizedBox(
-                  width: 116,
-                  child: DropdownButtonFormField<String>(
-                    initialValue: _addons[i].kind,
-                    isExpanded: true,
-                    decoration: InputDecoration(isDense: true),
-                    items: [
-                      DropdownMenuItem(
-                          value: 'combo', child: Text(t('Ăn kèm'))),
-                      DropdownMenuItem(value: 'extra', child: Text('Extra')),
-                    ],
-                    onChanged: (v) => setState(() {
-                      _addons[i].kind = v ?? 'extra';
-                      if (_addons[i].kind == 'combo' &&
-                          _addons[i].refItemId.isEmpty &&
-                          otherItems.isNotEmpty) {
-                        _addons[i].refItemId = otherItems.first.id;
-                        _addons[i].name = otherItems.first.name;
-                      }
-                    }),
-                  ),
-                ),
-                SizedBox(width: 8),
-                Expanded(
-                  child: _addons[i].kind == 'combo'
-                      ? DropdownButtonFormField<String>(
-                          initialValue: otherItems
-                                  .any((m) => m.id == _addons[i].refItemId)
-                              ? _addons[i].refItemId
-                              : null,
-                          isExpanded: true,
-                          decoration: InputDecoration(
-                              isDense: true, hintText: t('Chọn món')),
-                          items: [
-                            for (final item in otherItems)
-                              DropdownMenuItem(
-                                value: item.id,
-                                child: Text(item.name,
-                                    overflow: TextOverflow.ellipsis),
-                              ),
-                          ],
-                          onChanged: (v) => setState(() {
-                            _addons[i].refItemId = v ?? '';
-                            for (final item in otherItems) {
-                              if (item.id == v) {
-                                _addons[i].name = item.name;
-                                break;
-                              }
-                            }
-                          }),
-                        )
-                      : TextField(
-                          controller:
-                              TextEditingController(text: _addons[i].name)
-                                ..selection = TextSelection.collapsed(
-                                    offset: _addons[i].name.length),
-                          decoration: InputDecoration(
-                              isDense: true,
-                              hintText: t('Tên extra / topping')),
-                          onChanged: (v) => _addons[i].name = v,
-                        ),
-                ),
-                SizedBox(width: 8),
-                SizedBox(
-                  width: 112,
-                  child: DropdownButtonFormField<String>(
-                    initialValue: _addons[i].type,
-                    isExpanded: true,
-                    decoration: InputDecoration(isDense: true),
-                    items: [
-                      DropdownMenuItem(
-                          value: 'paid', child: Text(t('Mua thêm'))),
-                      DropdownMenuItem(
-                          value: 'free', child: Text(t('Tặng kèm'))),
-                    ],
-                    onChanged: (v) => setState(() {
-                      _addons[i].type = v ?? 'paid';
-                      if (_addons[i].type == 'free') _addons[i].price = '0';
-                    }),
-                  ),
-                ),
-                SizedBox(width: 8),
-                SizedBox(
-                  width: 82,
-                  child: TextField(
-                    enabled: _addons[i].type != 'free',
-                    controller: TextEditingController(text: _addons[i].price)
-                      ..selection = TextSelection.collapsed(
-                          offset: _addons[i].price.length),
-                    keyboardType: TextInputType.number,
-                    decoration:
-                        InputDecoration(isDense: true, hintText: t('Giá')),
-                    onChanged: (v) => _addons[i].price = v,
-                  ),
-                ),
-                IconButton(
-                  onPressed: () => setState(() => _addons.removeAt(i)),
-                  icon: Icon(Icons.remove_circle_outline,
-                      color: DanColors.late, size: 20),
-                ),
-              ],
-            ),
-          ),
-        Align(
-          alignment: Alignment.centerLeft,
-          child: TextButton.icon(
-            onPressed: () => setState(() {
-              if (otherItems.isNotEmpty) {
-                _addons.add(_AddonRow(
-                  kind: 'combo',
-                  type: 'paid',
-                  price: '0',
-                  refItemId: otherItems.first.id,
-                  name: otherItems.first.name,
-                ));
-              } else {
-                _addons.add(_AddonRow(kind: 'extra', type: 'paid', price: '0'));
-              }
-            }),
-            icon: Icon(Icons.add, size: 16),
-            label: Text(t('Thêm món kèm / extra')),
-          ),
-        ),
-      ],
-    );
-  }
-
   Widget _recipeEditor() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -958,21 +781,20 @@ if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
               children: [
                 Expanded(
                   flex: 3,
-                  child: DropdownButtonFormField<String>(
-                    initialValue: _recipe[i].ingredientId.isEmpty
+                  child: DropdownMenu<String>(
+                    initialSelection: _recipe[i].ingredientId.isEmpty
                         ? null
                         : _recipe[i].ingredientId,
-                    isExpanded: true,
-                    decoration: InputDecoration(
-                        isDense: true, hintText: t('Nguyên liệu')),
-                    items: [
+                    expandedInsets: EdgeInsets.zero,
+                    enableFilter: true,
+                    inputDecorationTheme: InputDecorationTheme(isDense: true),
+                    hintText: t('Nguyên liệu'),
+                    dropdownMenuEntries: [
                       for (final ing in widget.ingredients)
-                        DropdownMenuItem(
-                            value: ing.id,
-                            child: Text('${ing.name} (${ing.unit})',
-                                overflow: TextOverflow.ellipsis)),
+                        DropdownMenuEntry(
+                            value: ing.id, label: '${ing.name} (${ing.unit})'),
                     ],
-                    onChanged: (v) =>
+                    onSelected: (v) =>
                         setState(() => _recipe[i].ingredientId = v ?? ''),
                   ),
                 ),
@@ -984,7 +806,8 @@ if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
                       ..selection = TextSelection.collapsed(
                           offset: _recipe[i].qty.length),
                     keyboardType: TextInputType.number,
-                    decoration: InputDecoration(isDense: true, hintText: 'SL'),
+                    decoration:
+                        InputDecoration(isDense: true, hintText: t('SL')),
                     onChanged: (v) => _recipe[i].qty = v,
                   ),
                 ),
@@ -1018,11 +841,11 @@ if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(t('Nhóm tùy chọn (size / topping / combo)'),
+        Text(t('Nhóm món đi kèm (combo/Set)'),
             style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
         SizedBox(height: 2),
         Text(
-            t('Khách chọn khi đặt ở Self-Order. "Chọn 1" cho size; "Nhiều" cho topping. Bật 🔗 để lựa chọn là một món (combo).'),
+            t('Khách chọn khi đặt ở Self-Order. Mỗi lựa chọn phải link 1 món có sẵn trong thực đơn — khi đặt, món đó tách thành dòng riêng, tự vào đúng máy in trạm của nó.'),
             style: TextStyle(fontSize: 10.5, color: DanColors.faint)),
         SizedBox(height: 8),
         for (var gi = 0; gi < _optionGroups.length; gi++)
@@ -1041,7 +864,6 @@ if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
 
   Widget _optionGroupCard(int gi, List<AdminMenuItem> otherItems) {
     final g = _optionGroups[gi];
-    final single = g.min == '1' && g.max == '1';
     return Container(
       key: ValueKey('optg_${g.key}'),
       margin: EdgeInsets.only(bottom: 10),
@@ -1087,27 +909,33 @@ if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
                 showSelectedIcon: false,
                 onSelectionChanged: (s) => setState(() => g.position = s.first),
               ),
-              _segLabel(t('Kiểu chọn')),
-              SegmentedButton<bool>(
-                style: const ButtonStyle(visualDensity: VisualDensity.compact),
-                segments: [
-                  ButtonSegment(value: true, label: Text(t('Chọn 1'))),
-                  ButtonSegment(value: false, label: Text(t('Nhiều'))),
-                ],
-                selected: {single},
-                showSelectedIcon: false,
-                onSelectionChanged: (s) => setState(() {
-                  if (s.first) {
-                    g.min = '1';
-                    g.max = '1';
-                  } else {
-                    g.min = '0';
-                    g.max = '0';
-                  }
-                }),
-              ),
             ],
           ),
+          SizedBox(height: 8),
+          Row(children: [
+            Expanded(
+              child: TextFormField(
+                key: ValueKey('optgmin_${g.key}'),
+                initialValue: g.min,
+                keyboardType: TextInputType.number,
+                decoration: InputDecoration(
+                    isDense: true, labelText: t('Yêu cầu (tối thiểu)')),
+                onChanged: (v) => g.min = v,
+              ),
+            ),
+            SizedBox(width: 10),
+            Expanded(
+              child: TextFormField(
+                key: ValueKey('optgmax_${g.key}'),
+                initialValue: g.max,
+                keyboardType: TextInputType.number,
+                decoration: InputDecoration(
+                    isDense: true,
+                    labelText: t('Tối đa (0 = không giới hạn)')),
+                onChanged: (v) => g.max = v,
+              ),
+            ),
+          ]),
           SizedBox(height: 8),
           for (var oi = 0; oi < g.options.length; oi++)
             _optionRow(g, oi, otherItems),
@@ -1124,83 +952,52 @@ if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
     );
   }
 
+  // Mọi nhóm giờ đều là "món đi kèm" (tách phiếu riêng) — mỗi lựa chọn BẮT
+  // BUỘC link 1 món thật, giá lấy từ chính món đó (server tự lấy khi đặt món,
+  // không cho sửa tay ở đây để tránh lệch với giá thật của món).
   Widget _optionRow(_OptGroupRow g, int oi, List<AdminMenuItem> otherItems) {
     final o = g.options[oi];
-    final isCombo = o.refItemId.isNotEmpty;
+    AdminMenuItem? linkedItem;
+    for (final m in otherItems) {
+      if (m.id == o.refItemId) {
+        linkedItem = m;
+        break;
+      }
+    }
     return Padding(
       key: ValueKey('opti_${o.key}'),
       padding: EdgeInsets.only(bottom: 6),
       child: Row(children: [
         Expanded(
-          child: isCombo
-              ? DropdownButtonFormField<String>(
-                  initialValue: otherItems.any((m) => m.id == o.refItemId)
-                      ? o.refItemId
-                      : null,
-                  isExpanded: true,
-                  decoration: InputDecoration(
-                      isDense: true, hintText: t('Chọn món combo')),
-                  items: [
-                    for (final m in otherItems)
-                      DropdownMenuItem(
-                          value: m.id,
-                          child: Text(m.name, overflow: TextOverflow.ellipsis)),
-                  ],
-                  onChanged: (v) => setState(() {
-                    o.refItemId = v ?? '';
-                    final m = otherItems.firstWhere((x) => x.id == v,
-                        orElse: () => otherItems.first);
-                    o.name = m.name;
-                  }),
-                )
-              : TextFormField(
-                  key: ValueKey('optiname_${o.key}'),
-                  initialValue: o.name,
-                  decoration: InputDecoration(
-                      isDense: true, hintText: t('Tên (vd Lớn, Trân châu)')),
-                  onChanged: (v) => o.name = v,
-                ),
-        ),
-        IconButton(
-          tooltip: t('Lựa chọn là một món (combo)'),
-          visualDensity: VisualDensity.compact,
-          onPressed: () => setState(() {
-            if (isCombo) {
-              o.refItemId = '';
-            } else if (otherItems.isNotEmpty) {
-              o.refItemId = otherItems.first.id;
-              if (o.name.isEmpty) o.name = otherItems.first.name;
-            }
-          }),
-          icon: Icon(Icons.link,
-              size: 18, color: isCombo ? DanColors.brand : DanColors.faint),
-        ),
-        SizedBox(
-          width: 96,
-          child: DropdownButtonFormField<String>(
-            initialValue: o.type,
-            isExpanded: true,
-            decoration: InputDecoration(isDense: true),
-            items: [
-              DropdownMenuItem(value: 'paid', child: Text(t('Tính phí'))),
-              DropdownMenuItem(value: 'free', child: Text(t('Miễn phí'))),
+          child: DropdownMenu<String>(
+            initialSelection: otherItems.any((m) => m.id == o.refItemId)
+                ? o.refItemId
+                : null,
+            expandedInsets: EdgeInsets.zero,
+            enableFilter: true,
+            inputDecorationTheme: InputDecorationTheme(isDense: true),
+            hintText: t('Chọn món đi kèm'),
+            dropdownMenuEntries: [
+              for (final m in otherItems)
+                DropdownMenuEntry(value: m.id, label: m.name),
             ],
-            onChanged: (v) => setState(() {
-              o.type = v ?? 'paid';
-              if (o.type == 'free') o.price = '0';
+            onSelected: (v) => setState(() {
+              o.refItemId = v ?? '';
+              final m = otherItems.firstWhere((x) => x.id == v,
+                  orElse: () => otherItems.first);
+              o.name = m.name;
             }),
           ),
         ),
-        SizedBox(width: 6),
         SizedBox(
-          width: 80,
-          child: TextFormField(
-            key: ValueKey('optiprice_${o.key}'),
-            enabled: o.type != 'free',
-            initialValue: o.price,
-            keyboardType: TextInputType.number,
-            decoration: InputDecoration(isDense: true, suffixText: 'đ'),
-            onChanged: (v) => o.price = v,
+          width: 90,
+          child: Text(
+            linkedItem != null
+                ? '${linkedItem.price.round()}đ'
+                : t('Chưa chọn món'),
+            textAlign: TextAlign.right,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(fontSize: 12, color: DanColors.muted),
           ),
         ),
         IconButton(

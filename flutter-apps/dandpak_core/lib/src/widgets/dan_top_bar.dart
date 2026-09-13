@@ -3,6 +3,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../providers/auth_provider.dart';
 import '../services/api_service.dart';
 import '../services/app_updater.dart';
 import '../services/socket_service.dart';
@@ -103,6 +104,8 @@ class DanModuleTopBar extends StatelessWidget implements PreferredSizeWidget {
                         ),
                       ),
                     ),
+                    _LanguageDropdown(),
+                    SizedBox(width: 8),
                     _UpdateChip(),
                     SizedBox(width: 8),
                     if (actions.isNotEmpty)
@@ -263,6 +266,73 @@ class DanTopBarIconButton extends StatelessWidget {
         child: icon != null
             ? Icon(icon, size: 18, color: DanColors.text)
             : Text(label, style: TextStyle(fontSize: 15)),
+      ),
+    );
+  }
+}
+
+/// Đổi ngôn ngữ ngay trên topbar — không phải mở sâu vào Nhân sự & Phân
+/// quyền → sửa chính mình mới đổi được. Đặt cạnh biểu tượng bánh răng/tiêu
+/// đề module, kiểu thả xuống thay vì nhóm nút chọn như màn đăng nhập.
+class _LanguageDropdown extends StatefulWidget {
+  _LanguageDropdown();
+
+  @override
+  State<_LanguageDropdown> createState() => _LanguageDropdownState();
+}
+
+class _LanguageDropdownState extends State<_LanguageDropdown> {
+  bool _busy = false;
+
+  static const _labels = {'vi': 'Tiếng Việt', 'en': 'English', 'zh': '中文'};
+
+  Future<void> _change(String? lang) async {
+    if (lang == null || _busy) return;
+    setState(() => _busy = true);
+    try {
+      await context.read<AuthProvider>().updateMyLanguageNow(lang);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text(e.toString().replaceFirst('Exception: ', '')),
+            backgroundColor: DanColors.late));
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final lang = context.watch<AuthProvider>().language;
+    return Container(
+      height: 34,
+      padding: EdgeInsets.symmetric(horizontal: 10),
+      decoration: BoxDecoration(
+        color: DanColors.surface2,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: DanColors.border2),
+      ),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<String>(
+          value: _labels.containsKey(lang) ? lang : 'vi',
+          isDense: true,
+          icon: _busy
+              ? SizedBox(
+                  width: 12,
+                  height: 12,
+                  child: CircularProgressIndicator(strokeWidth: 2))
+              : Icon(Icons.expand_more, size: 16, color: DanColors.muted),
+          style: TextStyle(
+              fontSize: 12.5,
+              fontWeight: FontWeight.w800,
+              color: DanColors.text),
+          items: [
+            for (final entry in _labels.entries)
+              DropdownMenuItem(value: entry.key, child: Text(entry.value)),
+          ],
+          onChanged: _busy ? null : _change,
+        ),
       ),
     );
   }

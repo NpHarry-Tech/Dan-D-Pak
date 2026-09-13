@@ -48,11 +48,10 @@ class _LoginGateScreenState extends State<LoginGateScreen> {
     });
   }
 
-  Future<void> _login(String username, String pin, {String? lang}) async {
+  Future<void> _login(String username, String pin) async {
     final auth = context.read<AuthProvider>();
     try {
-      await auth.login(username, pin, auth.selectedBranchId,
-          preferredLang: lang);
+      await auth.login(username, pin, auth.selectedBranchId);
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -65,7 +64,6 @@ class _LoginGateScreenState extends State<LoginGateScreen> {
   }
 
   Future<void> _openPin(User user) async {
-    final auth = context.read<AuthProvider>();
     final res = await showDialog<Map<String, String>?>(
       context: context,
       barrierDismissible: false,
@@ -77,7 +75,7 @@ class _LoginGateScreenState extends State<LoginGateScreen> {
     // ảnh + tên + id — xem listLoginUsers), nên gửi `id` làm định danh. Server
     // chấp nhận cả hai, `username` chỉ còn dùng cho ô đăng nhập thủ công.
     final identifier = user.username.isNotEmpty ? user.username : user.id;
-    await _login(identifier, res['pin'] ?? '', lang: auth.language);
+    await _login(identifier, res['pin'] ?? '');
   }
 
   Future<void> _openAdminLogin() async {
@@ -88,8 +86,7 @@ class _LoginGateScreenState extends State<LoginGateScreen> {
       builder: (_) => AdminLoginDialog(),
     );
     if (creds == null || !mounted) return;
-    await _login(creds['username'] ?? '', creds['pin'] ?? '',
-        lang: context.read<AuthProvider>().language);
+    await _login(creds['username'] ?? '', creds['pin'] ?? '');
   }
 
   List<User> _visibleUsers(List<User> all) {
@@ -142,11 +139,6 @@ class _LoginGateScreenState extends State<LoginGateScreen> {
                                   ? branch.name
                                   : branch.id,
                               onChange: auth.changeBranch,
-                            ),
-                            SizedBox(height: 10),
-                            _LanguagePicker(
-                              value: auth.language,
-                              onChanged: auth.setLoginLanguage,
                             ),
                             SizedBox(height: 16),
                             if (_error == null &&
@@ -301,26 +293,6 @@ class _SearchField extends StatelessWidget {
         hintText: t('Tìm nhân viên theo tên hoặc tài khoản...'),
         prefixIcon: Icon(Icons.search, size: 20, color: DanColors.faint),
       ),
-    );
-  }
-}
-
-class _LanguagePicker extends StatelessWidget {
-  final String value;
-  final ValueChanged<String> onChanged;
-
-  _LanguagePicker({required this.value, required this.onChanged});
-
-  @override
-  Widget build(BuildContext context) {
-    return SegmentedButton<String>(
-      segments: [
-        ButtonSegment(value: 'vi', label: Text(t('Tiếng Việt'))),
-        ButtonSegment(value: 'en', label: Text('English')),
-      ],
-      selected: {L10n.clean(value)},
-      onSelectionChanged: (v) => onChanged(v.first),
-      showSelectedIcon: false,
     );
   }
 }

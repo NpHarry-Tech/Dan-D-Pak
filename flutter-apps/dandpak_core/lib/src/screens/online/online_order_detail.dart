@@ -227,7 +227,7 @@ class _OnlineOrderDetailDialogState extends State<OnlineOrderDetailDialog> {
         _kv('Đơn vị vận chuyển', oStr(ship['carrier'])),
         _kv('Mã vận đơn', tracking),
         _kv('Trạng thái giao',
-            workflowMeta(oStr(_op['workflow_status'])).label),
+            t(workflowMeta(oStr(_op['workflow_status'])).label)),
         _kv('Người xử lý', oStr(_op['assignee_name'])),
         const SizedBox(height: 12),
         Row(children: [
@@ -254,8 +254,9 @@ class _OnlineOrderDetailDialogState extends State<OnlineOrderDetailDialog> {
               children: [
                 Text(oStr(it['name']), style: const TextStyle(fontSize: 12.5)),
                 if (unmapped)
-                  const Text('Chưa liên kết SKU',
-                      style: TextStyle(fontSize: 11, color: Color(0xFFB91C1C))),
+                  Text(t('Chưa liên kết SKU'),
+                      style: const TextStyle(
+                          fontSize: 11, color: Color(0xFFB91C1C))),
               ],
             ),
           ),
@@ -279,7 +280,7 @@ class _OnlineOrderDetailDialogState extends State<OnlineOrderDetailDialog> {
         children: [
           SizedBox(
               width: 130,
-              child: Text(k,
+              child: Text(t(k),
                   style:
                       const TextStyle(fontSize: 12.5, color: DanColors.muted))),
           Expanded(child: Text(v, style: const TextStyle(fontSize: 12.5))),

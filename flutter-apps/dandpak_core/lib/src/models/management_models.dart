@@ -187,12 +187,18 @@ class AdminCategory {
   final String id;
   final String name;
   final String icon;
+  final bool selfOrderHidden;
   const AdminCategory(
-      {required this.id, required this.name, required this.icon});
+      {required this.id,
+      required this.name,
+      required this.icon,
+      this.selfOrderHidden = false});
   factory AdminCategory.fromJson(Map<String, dynamic> j) => AdminCategory(
         id: _str(j['id']),
         name: _str(j['name']),
         icon: _str(j['icon']),
+        selfOrderHidden: j['self_order_hidden'] == true ||
+            j['self_order_hidden'] == 1,
       );
 }
 
@@ -305,6 +311,10 @@ class MenuOptionGroup {
   final String key;
   final String name;
   final String position; // top | bottom
+  // 'price' (mặc định) = cộng giá vào dòng món hiện tại (như trước giờ).
+  // 'combo' = mỗi lựa chọn tách thành 1 món RIÊNG trên đơn (giá/trạm/hủy độc
+  // lập) — "Món đi kèm" kiểu iPOS. Bắt buộc mọi option link món thật.
+  final String mode;
   final int min;
   final int max;
   final List<MenuOptionItem> options;
@@ -312,14 +322,17 @@ class MenuOptionGroup {
     required this.key,
     required this.name,
     required this.position,
+    this.mode = 'price',
     required this.min,
     required this.max,
     required this.options,
   });
+  bool get isCombo => mode == 'combo';
   factory MenuOptionGroup.fromJson(Map<String, dynamic> j) => MenuOptionGroup(
         key: _str(j['key']),
         name: _str(j['name']),
         position: _str(j['position']) == 'bottom' ? 'bottom' : 'top',
+        mode: _str(j['mode']) == 'combo' ? 'combo' : 'price',
         min: _int(j['min'] ?? 0),
         max: _int(j['max'] ?? 0),
         options: (j['options'] is List)
@@ -334,6 +347,7 @@ class MenuOptionGroup {
         'key': key,
         'name': name,
         'position': position,
+        'mode': mode,
         'min': min,
         'max': max,
         'options': options.map((o) => o.toJson()).toList(),

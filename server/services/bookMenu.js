@@ -1,8 +1,11 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { lookup } from 'node:dns/promises';
+import sharp from 'sharp';
 import { storagePath } from '../config/env.js';
 import { db, now, uid, audit } from '../db.js';
+import { detectImageMime } from '../core/imageValidation.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const SERVER_ROOT = join(__dirname, '..');
@@ -298,17 +301,77 @@ function normalizedPubhtml5Base(rawUrl) {
   return u;
 }
 
+// BẢO MẬT (SSRF): import PubHTML5 tải URL do người dùng nhập, và trang sau đó
+// (files/large/<n>) đến từ config.js — TỨC LÀ do máy chủ ở URL đó tự quyết định,
+// không chỉ do người nhập ban đầu. Nếu không chặn, một host công khai (vượt qua
+// vòng kiểm đầu) vẫn có thể trỏ trang kế tiếp vào IP nội bộ/metadata cloud để ép
+// server này tải hộ. Chặn TẠI MỖI fetch, không chỉ ở URL gốc.
+function isPrivateIp(ip, family) {
+  if (family === 4 || (family !== 6 && ip.includes('.'))) {
+    const [a, b] = ip.split('.').map(Number);
+    return a === 10 || a === 127 || a === 0 ||
+      (a === 172 && b >= 16 && b <= 31) ||
+      (a === 192 && b === 168) ||
+      (a === 169 && b === 254);
+  }
+  const lower = ip.toLowerCase();
+  if (lower === '::1' || lower === '::') return true;
+  if (lower.startsWith('fe80:') || lower.startsWith('fc') || lower.startsWith('fd')) return true;
+  if (lower.startsWith('::ffff:')) return isPrivateIp(lower.slice(7), 4);
+  return false;
+}
+
+async function assertPublicHttpUrl(url) {
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+    throw new Error('Chỉ chấp nhận link http/https.');
+  }
+  let addrs;
+  try { addrs = await lookup(url.hostname, { all: true }); }
+  catch { throw new Error(`Không phân giải được tên miền: ${url.hostname}`); }
+  if (addrs.some(({ address, family }) => isPrivateIp(address, family))) {
+    throw new Error('URL trỏ tới địa chỉ mạng nội bộ, không được phép tải.');
+  }
+}
+
 function parsePubhtml5Config(source) {
   const match = /var\s+htmlConfig\s*=\s*({[\s\S]*?});?\s*$/.exec(source.trim());
   if (!match) throw new Error('Không đọc được config PubHTML5');
   return JSON.parse(match[1]);
 }
 
-async function downloadFile(url, file) {
+// ponytail: cap kiem tra dung tren buffer da tai (khong phai stream that), nen
+// van ton bang thong/RAM toi da PAGE_MAX_BYTES cho MOI trang truoc khi bi tu
+// choi — nang cap len kiem tra Content-Length + doc theo stream neu can chan
+// tu som hon.
+const PAGE_MAX_BYTES = 15 * 1024 * 1024;
+const PAGE_MAX_COUNT = 200;
+
+// BAO MAT (upload file ban / XSS luu tru): trang PubHTML5 tai ve KHONG duoc
+// tin — ca URL (da chan SSRF o assertPublicHttpUrl) lan NOI DUNG lan TEN FILE
+// (ten file do chinh may chu do quyet dinh qua config.js, ke tan cong kiem
+// soat duoc mot khi da qua vong chan SSRF). Truoc day ghi thang byte tai ve
+// voi DUOI FILE lay tu ten do server tra ve — mot server cong khai (qua duoc
+// SSRF) co the tra ve "01.html"/"01.svg" thay vi anh, va file do bi phuc vu y
+// nguyen tai /uploads/menu-books/... tren CHINH DOMAIN cua server => XSS luu
+// tru. Fix: bat buoc noi dung phai la anh raster that (detectImageMime) roi
+// GIAI MA + MA HOA LAI qua sharp thanh .webp — giong HET pipeline anh upload
+// thu cong (saveBase64Image trong api.js) — dam bao duoi file luon co dinh va
+// noi dung luon la anh sach, khong con byte goc cua nguon khong dang tin.
+async function downloadImage(url) {
+  await assertPublicHttpUrl(url);
   const res = await fetch(url);
   if (!res.ok) throw new Error(`Không tải được trang menu: ${url}`);
+  const len = Number(res.headers.get('content-length') || 0);
+  if (len > PAGE_MAX_BYTES) throw new Error('Trang menu quá lớn, vượt giới hạn cho phép.');
   const buf = Buffer.from(await res.arrayBuffer());
-  writeFileSync(file, buf);
+  if (buf.byteLength > PAGE_MAX_BYTES) throw new Error('Trang menu quá lớn, vượt giới hạn cho phép.');
+  const detectedMime = detectImageMime(buf);
+  if (!detectedMime) throw new Error('Trang menu tải về không phải ảnh raster hợp lệ.');
+  const normalized = await sharp(buf, { animated: detectedMime === 'image/gif', limitInputPixels: 80_000_000 })
+    .rotate()
+    .webp({ quality: 88, effort: 4 })
+    .toBuffer();
+  return normalized;
 }
 
 /**
@@ -322,10 +385,12 @@ export async function importPubhtml5(rawUrl, title, branch_id = 'sala', rawKind 
   const kind = bookKind(rawKind);
   const base = normalizedPubhtml5Base(rawUrl);
   const configUrl = new URL('javascript/config.js', base);
+  await assertPublicHttpUrl(configUrl);
   const res = await fetch(configUrl);
   if (!res.ok) throw new Error('Không tải được PubHTML5 config');
   const htmlConfig = parsePubhtml5Config(await res.text());
-  const pages = Array.isArray(htmlConfig.fliphtml5_pages) ? htmlConfig.fliphtml5_pages : [];
+  const pages = (Array.isArray(htmlConfig.fliphtml5_pages) ? htmlConfig.fliphtml5_pages : [])
+    .slice(0, PAGE_MAX_COUNT);
   if (!pages.length) throw new Error('PubHTML5 không có trang menu để import');
 
   const bookId = uid('book_');
@@ -336,9 +401,11 @@ export async function importPubhtml5(rawUrl, title, branch_id = 'sala', rawKind 
     const name = Array.isArray(pages[i].n) ? pages[i].n[0] : pages[i].n;
     if (!name) continue;
     const pageUrl = new URL(`files/large/${name}`, base);
-    const ext = name.includes('.') ? name.slice(name.lastIndexOf('.')) : '.webp';
-    const localName = `${String(i + 1).padStart(2, '0')}${ext}`;
-    await downloadFile(pageUrl, join(outDir, localName));
+    // Ten file luon CO DINH ".webp" — KHONG lay theo duoi remote tra ve (xem
+    // vi sao trong downloadImage()).
+    const localName = `${String(i + 1).padStart(2, '0')}.webp`;
+    const normalized = await downloadImage(pageUrl);
+    writeFileSync(join(outDir, localName), normalized);
     localPages.push({ id: `p_${i + 1}`, src: `/uploads/menu-books/${bookId}/${localName}`, label: `Trang ${i + 1}` });
   }
   if (!localPages.length) throw new Error('Không import được trang menu nào');

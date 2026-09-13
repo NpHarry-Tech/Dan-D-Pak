@@ -38,10 +38,10 @@ registerCatalogRoutes(api, {
   MENU_UPLOADS_DIR: '/tmp',
 });
 
-function call(key, { params = {}, body = {}, user = { id: 'u_mgr', username: 'mgr', name: 'Manager', role: 'manager' }, branch = BR } = {}) {
+function call(key, { params = {}, body = {}, query = {}, user = { id: 'u_mgr', username: 'mgr', name: 'Manager', role: 'manager' }, branch = BR } = {}) {
   const h = routes[key];
   if (!h) throw new Error(`route không tồn tại: ${key}`);
-  return h({ params, body, user, __branch: branch, headers: {}, get: () => null });
+  return h({ params, body, query, user, __branch: branch, headers: {}, get: () => null });
 }
 
 test('tao mon: code/sort/updated_at duoc luu, available_dine_in/takeaway mac dinh BAT', async () => {
@@ -94,4 +94,45 @@ test('/menu/:id/sort: doi thu tu doc lap, KHONG can PIN', async () => {
   assert.equal(r.sort, 7);
   const row = db.prepare(`SELECT sort FROM menu_items WHERE id=?`).get(created.id);
   assert.equal(row.sort, 7);
+});
+
+test('mon hidden: F&B POS van thay (mo, khoa chon), Self-Order thi mat hoan toan', async () => {
+  const created = await call('POST /menu', {
+    body: { name: 'Mon an thu', category_id: 'cat_x', price: 25000, security_pin: '7777' },
+  });
+  await call('POST /menu/:id/hide', { params: { id: created.id }, body: { hidden: true } });
+
+  const posMenu = await call('GET /menu', { query: {} });
+  const posItem = posMenu.items.find(i => i.id === created.id);
+  assert.ok(posItem, 'F&B POS phai VAN thay mon da an, khong duoc bien mat khoi danh sach');
+  assert.equal(posItem.hidden, true);
+  assert.equal(posItem.available, false, 'mon an thi khong the dat (can_order/available = false)');
+  assert.equal(posItem.availability_reason, 'hidden');
+
+  const selfOrderMenu = await call('GET /menu', { query: { self_order: '1' } });
+  const soItem = selfOrderMenu.items.find(i => i.id === created.id);
+  assert.equal(soItem, undefined, 'Self-Order (khach hang) phai LOC BO hoan toan mon da an');
+});
+
+test('danh muc an khoi Self-Order: F&B POS van thay ca nhom lan mon, Self-Order mat het', async () => {
+  const cat = await call('POST /categories', {
+    body: { name: 'Nhom an thu', security_pin: '7777' },
+  });
+  const updated = await call('POST /categories/:id/update', {
+    params: { id: cat.id },
+    body: { self_order_hidden: true, security_pin: '7777' },
+  });
+  assert.equal(updated.self_order_hidden, 1);
+
+  const item = await call('POST /menu', {
+    body: { name: 'Mon trong nhom an', category_id: cat.id, price: 15000, security_pin: '7777' },
+  });
+
+  const posMenu = await call('GET /menu', { query: {} });
+  assert.ok(posMenu.categories.some(c => c.id === cat.id), 'F&B POS van thay nhom da an self-order');
+  assert.ok(posMenu.items.some(i => i.id === item.id), 'F&B POS van thay mon trong nhom da an self-order');
+
+  const selfOrderMenu = await call('GET /menu', { query: { self_order: '1' } });
+  assert.ok(!selfOrderMenu.categories.some(c => c.id === cat.id), 'Self-Order phai LOC BO nhom da an');
+  assert.ok(!selfOrderMenu.items.some(i => i.id === item.id), 'Self-Order phai LOC BO ca mon trong nhom da an');
 });

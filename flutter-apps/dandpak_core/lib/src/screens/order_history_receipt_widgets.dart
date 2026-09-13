@@ -165,8 +165,8 @@ class _ReceiptCard extends StatelessWidget {
               if (_n(receipt['vat_amount']) > 0)
                 _sumLine(
                     _n(receipt['vat_rate']) > 0
-                        ? 'Trong đó VAT (${_n(receipt['vat_rate']).round()}%)'
-                        : 'Trong đó VAT',
+                        ? '${t('Trong đó VAT')} (${_n(receipt['vat_rate']).round()}%)'
+                        : t('Trong đó VAT'),
                     receipt['vat_amount']),
               _sumLine(t('TỔNG THANH TOÁN'), receipt['total'], grand: true),
               if (_s(receipt['total_words']).isNotEmpty) ...[

@@ -904,6 +904,9 @@ export function migrate(targetDb = globalDb) {
   // Thời gian cập nhật gần nhất — tự stamp mỗi lần sửa món (services/catalog.js).
   addColumnIfMissing('menu_items', 'updated_at', 'TEXT');
   addColumnIfMissing('categories', 'default_station_id', 'TEXT');
+  // Ẩn cả NHÓM MÓN khỏi Tablet Self-Order (vẫn hiện ở F&B POS) — cùng cơ chế
+  // với menu_items.self_order_hidden, nhưng áp dụng cho toàn bộ danh mục.
+  addColumnIfMissing('categories', 'self_order_hidden', 'INTEGER NOT NULL DEFAULT 0');
   db.exec(`
     CREATE TABLE IF NOT EXISTS production_stations (
       id TEXT PRIMARY KEY,
@@ -1317,6 +1320,12 @@ export function migrate(targetDb = globalDb) {
   // order_items: KDS gọi mỗi vài giây; pending_confirm polling
   db.exec(`CREATE INDEX IF NOT EXISTS idx_order_items_order ON order_items(order_id, created_at);`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_order_items_status ON order_items(status, created_at);`);
+  // skus/menu_items: KHÔNG CÓ index nào trước đây (kể cả branch_id) — mọi
+  // truy vấn catalogue (quét mã vạch, liệt kê, checkout) full-table-scan qua
+  // SKU/món của MỌI chi nhánh, không riêng chi nhánh đang thao tác.
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_skus_branch_active ON skus(branch_id, active);`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_skus_branch_barcode ON skus(branch_id, barcode);`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_menu_items_branch ON menu_items(branch_id);`);
   // Once a bill is final, transaction facts answer "what was sold then" and
   // cannot follow later catalogue edits. Kitchen lifecycle fields remain mutable.
   db.exec(`CREATE TRIGGER IF NOT EXISTS trg_paid_order_items_facts_immutable
@@ -1893,6 +1902,71 @@ export function migrate(targetDb = globalDb) {
   // document cho bản ghi nguồn này chưa" rồi bỏ qua nếu có (xử lý ở tầng code).
   db.exec(`CREATE INDEX IF NOT EXISTS idx_docfiles_related
     ON document_files(branch_id, related_type, related_id);`);
+
+  // Món "đi kèm" của combo (option_groups_json mode:'combo') là 1 order_items
+  // RIÊNG (để có station/giá/hủy độc lập, phiếu bếp tự tách đúng trạm) nhưng vẫn
+  // gắn về món chính để: (a) hủy món chính hủy dây chuyền theo, (b) hủy món đi
+  // kèm riêng bị chặn. Tự tham chiếu, không ràng buộc FK (order_items có thể hủy
+  // mềm/giữ lại lịch sử).
+  addColumnIfMissing('order_items', 'parent_item_id', 'TEXT');
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_order_items_parent ON order_items(parent_item_id);`);
+
+  // Voucher "dùng 1 lần/khách" trước đây kiểm bằng LIKE-scan KHÔNG INDEX toàn
+  // bộ lịch sử orders/order_items mỗi lần sửa giỏ hàng ở POS (mọi lần
+  // ADD_LINE/CHANGE_QTY) — chậm dần vô hạn theo số đơn tích luỹ. Bảng
+  // redemption tra O(1) qua index thay thế (xem services/vouchers.js).
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS voucher_redemptions (
+      id TEXT PRIMARY KEY,
+      branch_id TEXT NOT NULL,
+      voucher_id TEXT NOT NULL,
+      customer_key TEXT NOT NULL,
+      order_id TEXT NOT NULL,
+      redeemed_at TEXT NOT NULL,
+      UNIQUE(branch_id, voucher_id, customer_key, order_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_voucher_redemptions_lookup
+      ON voucher_redemptions(branch_id, voucher_id, customer_key);
+  `);
+  // Bù lịch sử MỘT LẦN (chỉ khi bảng còn trống): quét lại toàn bộ đơn đã trả
+  // có dùng voucher (cấp đơn hoặc cấp dòng) — để khách KHÔNG dùng lại được
+  // voucher "1 lần" đã dùng từ TRƯỚC khi bảng này tồn tại. Idempotent, an
+  // toàn chạy lại (nhưng sẽ no-op ngay vì bảng hết trống sau lần đầu).
+  (function backfillVoucherRedemptions() {
+    const already = db.prepare(`SELECT COUNT(*) n FROM voucher_redemptions`).get().n;
+    if (already) return;
+    const ins = db.prepare(`INSERT OR IGNORE INTO voucher_redemptions
+      (id, branch_id, voucher_id, customer_key, order_id, redeemed_at) VALUES (?,?,?,?,?,?)`);
+    const keysFor = (customerJson) => {
+      let c; try { c = JSON.parse(customerJson || '{}') || {}; } catch { c = {}; }
+      const keys = [];
+      if (c.id) keys.push(`id:${c.id}`);
+      if (c.phone) keys.push(`phone:${c.phone}`);
+      return keys;
+    };
+    const orderRows = db.prepare(`SELECT id, branch_id, voucher_id, customer_json,
+      COALESCE(paid_at, created_at) AS at FROM orders
+      WHERE status='paid' AND voucher_id IS NOT NULL AND voucher_id!=''`).all();
+    for (const o of orderRows) {
+      for (const key of keysFor(o.customer_json)) {
+        ins.run(uid('vred_'), o.branch_id, o.voucher_id, key, o.id, o.at || now());
+      }
+    }
+    const lineRows = db.prepare(`
+      SELECT oi.promo_json AS promo_json, o.id AS order_id, o.branch_id AS branch_id,
+        o.customer_json AS customer_json, COALESCE(o.paid_at, o.created_at) AS at
+      FROM order_items oi JOIN orders o ON o.id = oi.order_id
+      WHERE o.status='paid' AND oi.promo_json IS NOT NULL AND oi.promo_json != '' AND oi.promo_json != 'null'
+    `).all();
+    for (const r of lineRows) {
+      let promo; try { promo = JSON.parse(r.promo_json); } catch { promo = null; }
+      const voucherId = promo?.voucher_id;
+      if (!voucherId) continue;
+      for (const key of keysFor(r.customer_json)) {
+        ins.run(uid('vred_'), r.branch_id, voucherId, key, r.order_id, r.at || now());
+      }
+    }
+  })();
 
   // Một authority phiên bản duy nhất cho schema hợp nhất. Bảng schema_migrations
   // cũ (nếu DB production có) chỉ còn là lịch sử; không còn runner thứ hai đọc nó.

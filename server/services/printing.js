@@ -16,6 +16,8 @@ import { logSystem } from './systemLogs.js';
 import { receiptTaxNote } from './tax.js';
 import { buildReceiptDoc, buildKitchenDoc, buildShippingLabelDoc, buildExpenseVoucherDoc, buildReturnVoucherDoc, sampleReceiptPayload } from './receipt_doc.js';
 import { businessDateTime, businessParts, businessTime } from '../core/businessClock.js';
+import { translatePrinterStatus } from './printerI18n.js';
+import { printTr } from './printI18n.js';
 
 const execFileAsync = promisify(execFile);
 const STATION_PRINTER = { kitchen: 'kitchen', salad: 'kitchen', bar: 'bar', beverage: 'bar' };
@@ -676,8 +678,8 @@ function labelWidthCharsFrom(labels = {}) {
   return 40;
 }
 
-function methodLabel(m) {
-  return { cash: 'Tiền mặt', card: 'Máy POS', qrcode: 'QR', qr: 'QR', voucher: 'Voucher', internet_banking: 'Internet Banking', momo: 'MoMo', zalopay: 'ZaloPay', visa: 'Visa' }[m] || m || '-';
+function methodLabel(m, tr = (s) => s) {
+  return { cash: tr('Tiền mặt'), card: tr('Máy POS'), qrcode: tr('QR'), qr: tr('QR'), voucher: tr('Voucher'), internet_banking: tr('Internet Banking'), momo: tr('MoMo'), zalopay: tr('ZaloPay'), visa: tr('Visa') }[m] || m || '-';
 }
 
 function replaceVars(text = '', vars = {}) {
@@ -890,9 +892,10 @@ function gachNgang(s) {
 }
 
 /** Bề ngang THẬT trên giấy: dấu gạch ngang tổ hợp chồng lên ký tự trước nên
- *  không chiếm thêm cột. */
+ *  không chiếm thêm cột; ký tự CJK (khi in trên giấy = tiếng Trung) chiếm 2 cột
+ *  như displayWidth() — xem đó để biết vì sao cần tính riêng cho chữ Hán. */
 function beRong(s) {
-  return String(s ?? '').replace(/̶/g, '').length;
+  return displayWidth(String(s ?? '').replace(/̶/g, ''));
 }
 
 const QTY_W = 3;
@@ -968,12 +971,12 @@ function tachHang(i) {
   ];
 }
 
-function danhSachHang(items, W) {
+function danhSachHang(items, W, tr = (s) => s) {
   const rows = [
     // Tiêu đề cột 3 phần: SL (trái) · Đơn giá (giữa) · Thành tiền (phải) — canh
     // khớp đúng cột số ở thân bill (dongSoLieu 2 cột tiền), kèm gạch trên/dưới.
     '-'.repeat(W),
-    dongGiaSlThanhTien('Đơn giá', 'SL', 'T.Tiền', W),
+    dongGiaSlThanhTien(tr('Đơn giá'), tr('SL'), tr('T.Tiền'), W),
     '-'.repeat(W),
   ];
   // GOM COMBO: các món cùng một combo (promo.type='combo', cùng tên) in chung
@@ -1011,7 +1014,7 @@ function danhSachHang(items, W) {
       const { qty, promo, thuTu } = phan;
       rows.push(...wrap(tenHang(i, thuTu), W));
       const ctkm = promo?.name || promo?.code || '';
-      if (ctkm) rows.push(...wrap(`CTKM: ${ctkm}`, W));
+      if (ctkm) rows.push(...wrap(`${tr('CTKM: ')}${ctkm}`, W));
 
       // GIÁ NIÊM YẾT (gốc) vs GIÁ BÁN (đã CHỈNH GIÁ dòng nếu có). unit_price là giá
       // thu; orig_price là giá niêm yết. Nếu khác nhau → hiện cả gốc → sau đổi.
@@ -1039,7 +1042,7 @@ function danhSachHang(items, W) {
             so(giaChuaVat(sauKm * qty, i.vat_rate)), W));
         } else {
           rows.push(dongGiaSlThanhTien(so(sauChuaVat), qty, so(giaChuaVat(sauKm * qty, i.vat_rate)), W));
-          rows.push(...wrap(`  Giá gốc: ${gachNgang(so(niemYetChuaVat))}`, W));
+          rows.push(...wrap(`  ${tr('Giá gốc: ')}${gachNgang(so(niemYetChuaVat))}`, W));
         }
       } else {
         rows.push(dongGiaSlThanhTien(so(niemYetChuaVat), qty, so(giaChuaVat(banGia * qty, i.vat_rate)), W));
@@ -1047,7 +1050,7 @@ function danhSachHang(items, W) {
 
       // GHI CHÚ RIÊNG dòng (thu ngân nhập cho từng món) — in ngay dưới dòng hàng.
       if (i.note && String(i.note).trim()) {
-        rows.push(...wrap(`  Ghi chú: ${String(i.note).trim()}`, W));
+        rows.push(...wrap(`  ${tr('Ghi chú: ')}${String(i.note).trim()}`, W));
       }
     }
   }
@@ -1055,6 +1058,7 @@ function danhSachHang(items, W) {
 }
 
 function receiptVars(p = {}, widthOverride = 0, cfgChiNhanh = null) {
+  const tr = printTr(cfgChiNhanh);
   const tpl = cfgChiNhanh?.templates?.bill || p.print_config?.templates?.bill || {};
   // widthOverride = bề ngang THẬT của máy in sẽ in phiếu. Trước đây luôn dùng
   // templateWidthChars nên K57 (32 ký tự) vẫn format ở 40 → dòng dài hơn giấy,
@@ -1063,7 +1067,7 @@ function receiptVars(p = {}, widthOverride = 0, cfgChiNhanh = null) {
   const cfg = cfgChiNhanh?.bill || p.print_config?.bill || {};
   const d = p.paid_at || p.created_at ? new Date(p.paid_at || p.created_at) : new Date();
 
-  const items = danhSachHang(p.items || [], W);
+  const items = danhSachHang(p.items || [], W, tr);
 
   // CÀI ĐẶT CHI NHÁNH LÀ NGUỒN CHÍNH, không phải bản chụp trong đơn.
   //
@@ -1073,7 +1077,7 @@ function receiptVars(p = {}, widthOverride = 0, cfgChiNhanh = null) {
   // trống — lúc đó bản chụp là thứ duy nhất còn lại.
   const storeName = cfg.storeName || p.company?.name || p.branch || 'DAN D PAK';
   const storeSubtitle = cfg.storeSubtitle || '';
-  const footer = cfg.footer || 'Xin cảm ơn và hẹn gặp lại';
+  const footer = cfg.footer || tr('Xin cảm ơn và hẹn gặp lại');
   const taxNote = receiptTaxNote(cfg);
   const qrNote = cfg.qrNote || '';
   const showQr = cfg.showQr !== '0' && !p.preview;
@@ -1081,12 +1085,12 @@ function receiptVars(p = {}, widthOverride = 0, cfgChiNhanh = null) {
   const lines = Array.isArray(p.lines) ? p.lines : [];
   const collectionLines = lines.filter(line => Number(line.amount) > 0);
   const refundLines = lines.filter(line => Number(line.amount) < 0);
-  const collectionMethods = [...new Set(collectionLines.map(line => methodLabel(line.method)))];
+  const collectionMethods = [...new Set(collectionLines.map(line => methodLabel(line.method, tr)))];
   const returnMark = String(p.return_status || '').toUpperCase() === 'FULL'
-    ? 'ĐÃ HOÀN HÀNG TOÀN BỘ'
+    ? tr('ĐÃ HOÀN HÀNG TOÀN BỘ')
     : String(p.return_status || '').toUpperCase() === 'PARTIAL'
-      ? 'ĐÃ HOÀN HÀNG MỘT PHẦN'
-      : refundLines.length ? 'ĐÃ HOÀN HÀNG' : '';
+      ? tr('ĐÃ HOÀN HÀNG MỘT PHẦN')
+      : refundLines.length ? tr('ĐÃ HOÀN HÀNG') : '';
   const total = Number(p.total) || 0;
   const vatAmount = Number(p.vat_amount ?? p.tax?.vat_amount) || 0;
   const subtotal = Number(p.subtotal) || 0;
@@ -1099,7 +1103,7 @@ function receiptVars(p = {}, widthOverride = 0, cfgChiNhanh = null) {
     .map(i => Number(i.vat_rate) || 0).filter(r => r > 0))];
   const vatRate = mucThue.length === 1 ? mucThue[0] : 0;
   const orderDiscount = orderWideDiscount(p);
-  const orderPromoName = p.voucher?.name || p.voucher_code || 'Giảm giá toàn bill';
+  const orderPromoName = p.voucher?.name || p.voucher_code || tr('Giảm giá toàn bill');
   const linesPaid = lines.reduce((s, l) => s + (Number(l.amount) || 0), 0);
   const paid = Number(p.paid ?? (linesPaid || total)) || 0;
   const change = Number(p.change ?? Math.max(0, paid - total)) || 0;
@@ -1108,7 +1112,7 @@ function receiptVars(p = {}, widthOverride = 0, cfgChiNhanh = null) {
   const billNo = p.bill_no || p.number || '';
 
   const paymentLines = collectionLines.length
-    ? collectionLines.map(l => rightPad(`${danMethod(l.method)}(VND) - ${money(l.amount)}`, W)).join('\n')
+    ? collectionLines.map(l => rightPad(`${danMethod(l.method, tr)}(VND) - ${money(l.amount)}`, W)).join('\n')
     : '';
 
   const customer = p.customer || {};
@@ -1116,16 +1120,16 @@ function receiptVars(p = {}, widthOverride = 0, cfgChiNhanh = null) {
   let customerInfoBlock = '';
   if (isInvoice) {
     const linesArr = [];
-    if (customer.name) linesArr.push(`Khách hàng: ${customer.name}`);
-    if (customer.company) linesArr.push(`Công ty: ${customer.company}`);
-    if (customer.tax_code) linesArr.push(`MST: ${customer.tax_code}`);
-    if (customer.address) linesArr.push(`Địa chỉ: ${customer.address}`);
-    if (customer.email) linesArr.push(`Email: ${customer.email}`);
-    if (customer.phone) linesArr.push(`SĐT: ${customer.phone}`);
+    if (customer.name) linesArr.push(`${tr('Khách hàng: ')}${customer.name}`);
+    if (customer.company) linesArr.push(`${tr('Công ty: ')}${customer.company}`);
+    if (customer.tax_code) linesArr.push(`${tr('MST: ')}${customer.tax_code}`);
+    if (customer.address) linesArr.push(`${tr('Địa chỉ: ')}${customer.address}`);
+    if (customer.email) linesArr.push(`${tr('Email: ')}${customer.email}`);
+    if (customer.phone) linesArr.push(`${tr('SĐT: ')}${customer.phone}`);
     customerInfoBlock = linesArr.join('\n');
   } else {
-    const linesArr = [`Khách hàng: ${customer.name || 'Bán cho người tiêu dùng'}`];
-    if (customer.phone) linesArr.push(`SĐT: ${customer.phone}`);
+    const linesArr = [`${tr('Khách hàng: ')}${customer.name || tr('Bán cho người tiêu dùng')}`];
+    if (customer.phone) linesArr.push(`${tr('SĐT: ')}${customer.phone}`);
     customerInfoBlock = linesArr.join('\n');
   }
 
@@ -1149,8 +1153,8 @@ function receiptVars(p = {}, widthOverride = 0, cfgChiNhanh = null) {
     // — trước đây mẫu ghi "(in lại)" còn phiếu không dùng mẫu ghi "(IN LẠI)",
     // cùng một cửa hàng in ra hai kiểu.
     billTitle: p.preview
-      ? 'HÓA ĐƠN TẠM TÍNH'
-      : `HÓA ĐƠN THANH TOÁN${reprint ? ' (IN LẠI)' : ''}`,
+      ? tr('HÓA ĐƠN TẠM TÍNH')
+      : `${tr('HÓA ĐƠN THANH TOÁN')}${reprint ? tr(' (IN LẠI)') : ''}`,
     billTitleAscii: p.preview
       ? 'HOA DON TAM TINH'
       : `HOA DON THANH TOAN${reprint ? ' (IN LAI)' : ''}`,
@@ -1158,7 +1162,7 @@ function receiptVars(p = {}, widthOverride = 0, cfgChiNhanh = null) {
     reprintMarkAscii: reprint ? '(in lai)' : '',
     billNo: p.preview ? '' : billNo,
     number: p.preview ? '' : billNo,
-    place: p.table_code ? `Bàn ${p.table_code}` : (p.channel || 'POS'),
+    place: p.table_code ? `${tr('Bàn ')}${p.table_code}` : (p.channel || 'POS'),
     cashier: p.cashier || '',
     date: vnDate(d),
     timeOnly: vnTime(d),
@@ -1170,25 +1174,25 @@ function receiptVars(p = {}, widthOverride = 0, cfgChiNhanh = null) {
     // Tiền hàng là tổng giá CHƯA VAT (goods_amount) — cùng gốc với cột đơn giá
     // ở thân bill. Lấy `subtotal` (đã gồm VAT) thì hai phần không cộng khớp và
     // khách nhìn ra ngay là bill sai.
-    subtotalLine: labelValue('Tổng tiền hàng:', so(goodsAmount), W),
+    subtotalLine: labelValue(tr('Tổng tiền hàng:'), so(goodsAmount), W),
     vatAmount: money(vatAmount),
     vatLine: vatAmount > 0
-      ? labelValue(`VAT${vatRate ? ` (${vatRate}%)` : ''}:`, so(vatAmount), W)
+      ? labelValue(`${tr('VAT')}${vatRate ? ` (${vatRate}%)` : ''}:`, so(vatAmount), W)
       : '',
     orderPromoName,
     orderPromoAmount: money(orderDiscount),
     orderPromoLine: orderDiscount > 0 ? labelValue(`${orderPromoName}:`, `-${money(orderDiscount)}`, W) : '',
     total: money(total),
     grandTotal: money(total),
-    totalLine: labelValue('TỔNG TIỀN:', so(total), W),
-    grandTotalLine: labelValue('Tổng thanh toán:', so(total), W),
-    totalWordsLine: `Bằng chữ: ${p.total_words || moneyToWords(total)}`,
+    totalLine: labelValue(tr('TỔNG TIỀN:'), so(total), W),
+    grandTotalLine: labelValue(tr('Tổng thanh toán:'), so(total), W),
+    totalWordsLine: `${tr('Bằng chữ: ')}${p.total_words || moneyToWords(total)}`,
     methodLine: collectionMethods.length
-      ? `${labelValue('Hình thức thanh toán:', collectionMethods.join(', '), W)}${returnMark ? `\n${center(returnMark, W)}` : ''}`
+      ? `${labelValue(tr('Hình thức thanh toán:'), collectionMethods.join(', '), W)}${returnMark ? `\n${center(returnMark, W)}` : ''}`
       : returnMark ? center(returnMark, W) : '',
     paymentLines,
-    paidLine: labelValue('Tiền khách đưa:', money(paid), W),
-    changeLine: labelValue('Tiền trả khách:', money(change), W),
+    paidLine: labelValue(tr('Tiền khách đưa:'), money(paid), W),
+    changeLine: labelValue(tr('Tiền trả khách:'), money(change), W),
     method: collectionMethods.join(', '),
     footer,
     footerC: center(footer, W),
@@ -1203,7 +1207,7 @@ function receiptVars(p = {}, widthOverride = 0, cfgChiNhanh = null) {
     // Nhãn "Ghi chú:" LUÔN in kèm ba dòng trống, kể cả khi chưa nhập gì — bếp
     // và thu ngân viết tay lên đó. Bỏ hẳn khối này khi không có nội dung thì tờ
     // bill không còn chỗ ghi, đúng thứ người dùng vẫn phải viết ra lề giấy.
-    noteBlock: `Ghi chú:${p.note ? ` ${p.note}` : ''}\n\n\n`,
+    noteBlock: `${tr('Ghi chú:')}${p.note ? ` ${p.note}` : ''}\n\n\n`,
     qrNote,
     qrNoteC: showQr ? wrap(qrNote, W).map(l => center(l, W)).join('\n') : '',
     invoiceLookupUrl: p.invoice?.lookup_url || p.invoice?.lookup_code || billNo,
@@ -1211,7 +1215,7 @@ function receiptVars(p = {}, widthOverride = 0, cfgChiNhanh = null) {
     // ghi rõ người mua là "Bán cho người tiêu dùng" (không được để trống) — trống
     // khiến tờ bill/hóa đơn thiếu thông tin người mua, sai quy định. Khách có khai
     // (xuất hóa đơn) thì customer.name đã có, giữ nguyên.
-    customerName: customer.name || 'Bán cho người tiêu dùng',
+    customerName: customer.name || tr('Bán cho người tiêu dùng'),
     customerTaxCode: customer.tax_code || '',
     customerInfoBlock,
   };
@@ -1240,17 +1244,34 @@ function labelVars(p = {}) {
 
 // ---- Dan "HÓA ĐƠN THANH TOÁN" thermal receipt (42-col, ESC/POS ASCII) ----
 const DAN_W = 42, DAN_NAME = 17, DAN_QTY = 2, DAN_PRICE = 9, DAN_AMT = 10;
-function danMethod(m) {
-  return { cash: 'TIỀN MẶT', card: 'THẺ', visa: 'THẺ', qrcode: 'CHUYỂN KHOẢN', qr: 'CHUYỂN KHOẢN', bank_transfer: 'CHUYỂN KHOẢN', internet_banking: 'CHUYỂN KHOẢN', momo: 'MOMO', zalopay: 'ZALOPAY', voucher: 'VOUCHER' }[m] || (m ? String(m).toUpperCase() : 'TIỀN MẶT');
+function danMethod(m, tr = (s) => s) {
+  return { cash: tr('TIỀN MẶT'), card: tr('THẺ'), visa: tr('THẺ'), qrcode: tr('CHUYỂN KHOẢN'), qr: tr('CHUYỂN KHOẢN'), bank_transfer: tr('CHUYỂN KHOẢN'), internet_banking: tr('CHUYỂN KHOẢN'), momo: tr('MOMO'), zalopay: tr('ZALOPAY'), voucher: tr('VOUCHER') }[m] || (m ? String(m).toUpperCase() : tr('TIỀN MẶT'));
 }
 // GIỮ NGUYÊN DẤU TIẾNG VIỆT. Bản cũ gọi ascii() ở đây nên nửa tờ bill mất dấu
 // (dòng tiền, dòng khách hàng) còn nửa kia — chữ lấy thẳng từ mẫu người dùng
 // thiết kế — vẫn có dấu. Bề rộng cột không đổi: chữ tiếng Việt dựng sẵn
 // (precomposed) vẫn là MỘT ký tự, bỏ dấu hay không cũng cùng độ dài.
 function rightPad(s, w = DAN_W) { s = String(s ?? ''); return s.length >= w ? s : ' '.repeat(w - s.length) + s; }
+// Chinese (and other CJK) glyphs render at roughly DOUBLE the cell width of a
+// Latin character on thermal-printer fonts — counting them as 1 via `.length`
+// (fine for Vietnamese/English, both effectively 1 cell/char) would under-pad
+// and misalign the right-hand value column once `in trên giấy` is set to
+// tiếng Trung. displayWidth() counts wide/fullwidth ranges as 2 cells so
+// labelValue() keeps padding correctly regardless of print language.
+function displayWidth(s) {
+  let w = 0;
+  for (const ch of String(s ?? '')) {
+    const cp = ch.codePointAt(0);
+    const wide = (cp >= 0x1100 && cp <= 0x115F) || (cp >= 0x2E80 && cp <= 0xA4CF) ||
+      (cp >= 0xAC00 && cp <= 0xD7A3) || (cp >= 0xF900 && cp <= 0xFAFF) ||
+      (cp >= 0xFF00 && cp <= 0xFF60) || (cp >= 0xFFE0 && cp <= 0xFFE6);
+    w += wide ? 2 : 1;
+  }
+  return w;
+}
 function labelValue(label, value, w = DAN_W) {
   label = String(label ?? ''); value = String(value ?? '');
-  const gap = Math.max(1, w - label.length - value.length);
+  const gap = Math.max(1, w - displayWidth(label) - displayWidth(value));
   return label + ' '.repeat(gap) + value;
 }
 // ── NGÀY GIỜ TRÊN GIẤY LÀ GIỜ CỬA HÀNG, KHÔNG PHẢI GIỜ MÁY CHỦ ─────────────
@@ -2444,7 +2465,7 @@ export function maintainPrintJobs({ days = 30, maxRows = 50_000 } = {}) {
 }
 
 export async function listPrinters(branch_id = 'sala', {
-  live = false, force = false, deviceId = '', scope = 'all',
+  live = false, force = false, deviceId = '', scope = 'all', lang = 'vi',
 } = {}) {
   const configured = printerRows(branch_id);
   const agentMode = env.PRINT_DISPATCH === 'agent';
@@ -2532,7 +2553,8 @@ export async function listPrinters(branch_id = 'sala', {
     }
 
     return {
-      ...p, connection, target, online, status, state, statusText,
+      ...p, connection, target, online, status, state,
+      statusText: translatePrinterStatus(statusText, lang),
       system: match || null,
       // MÁY NÀO đang cắm tuyến này — để app hiện đúng "của máy nào" và để
       // chặn máy khác thao tác (xem assertPrinterUsableBy).

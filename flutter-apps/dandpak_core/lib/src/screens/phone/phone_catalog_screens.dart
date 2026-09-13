@@ -587,7 +587,7 @@ class _PhoneInvoiceDetailScreenState extends State<PhoneInvoiceDetailScreen> {
                               final sub = [
                                 if (code.isNotEmpty) code,
                                 '${phoneInt(_n(raw['qty']))} × ${phoneMoney(_n(raw['unit_price']))}',
-                                if (vr > 0) 'VAT ${phoneInt(vr)}%',
+                                if (vr > 0) '${t('VAT')} ${phoneInt(vr)}%',
                               ].join(' · ');
                               return PhoneListRow(
                                 title: _s(raw['name']),

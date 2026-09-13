@@ -392,6 +392,9 @@ export function isMaskedIntegrationSecret(v) {
 function maskSecretValue(v) {
   const s = str(v, 500);
   if (!s) return '';
+  // Bí mật ngắn (mật khẩu, webhook secret dạng token thủ công) thì lộ 4 ký tự
+  // cuối là lộ một phần đáng kể — chỉ lộ đuôi khi đủ dài để vô hại.
+  if (s.length <= 12) return MASKED_SECRET_PREFIX;
   return `${MASKED_SECRET_PREFIX}${s.slice(-4)}`;
 }
 

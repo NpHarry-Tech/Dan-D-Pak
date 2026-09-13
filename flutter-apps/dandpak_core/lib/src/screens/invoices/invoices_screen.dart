@@ -564,9 +564,9 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
     return Column(children: [
       Row(children: [
         cell(t('Mặt hàng'), flex: 4, b: true),
-        cell('SL', a: TextAlign.right, b: true),
+        cell(t('SL'), a: TextAlign.right, b: true),
         cell(t('Đơn giá'), flex: 2, a: TextAlign.right, b: true),
-        cell('VAT', flex: 2, a: TextAlign.right, b: true),
+        cell(t('VAT'), flex: 2, a: TextAlign.right, b: true),
         cell(t('Thành tiền'), flex: 2, a: TextAlign.right, b: true),
         cell(t('Đã trả'), a: TextAlign.right, b: true),
       ]),

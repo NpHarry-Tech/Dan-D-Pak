@@ -571,26 +571,25 @@ class _PurchaseDocFormPageState extends State<PurchaseDocFormPage> {
         Row(
           children: [
             Expanded(
-              child: DropdownButtonFormField<String?>(
-                initialValue: _supplierId,
-                isExpanded: true,
-                decoration: InputDecoration(
-                    labelText: t('Tìm nhà cung cấp'),
+              child: DropdownMenu<String?>(
+                initialSelection: _supplierId,
+                expandedInsets: EdgeInsets.zero,
+                enableFilter: true,
+                inputDecorationTheme: InputDecorationTheme(
                     isDense: true,
                     contentPadding:
                         EdgeInsets.symmetric(horizontal: 10, vertical: 8)),
-                items: [
-                  DropdownMenuItem(
-                      value: null,
-                      child: Text(t('— Mua chợ / nhập tên tay —'))),
+                hintText: t('Tìm nhà cung cấp'),
+                dropdownMenuEntries: [
+                  DropdownMenuEntry(
+                      value: null, label: t('— Mua chợ / nhập tên tay —')),
                   for (final s in _suppliers)
-                    DropdownMenuItem(
+                    DropdownMenuEntry(
                         value: kvs(s['id']),
-                        child: Text(
-                            '${kvs(s['company']).isNotEmpty ? '${kvs(s['company'])} · ' : ''}${kvs(s['name'])}',
-                            overflow: TextOverflow.ellipsis)),
+                        label:
+                            '${kvs(s['company']).isNotEmpty ? '${kvs(s['company'])} · ' : ''}${kvs(s['name'])}'),
                 ],
-                onChanged: (v) => setState(() => _supplierId = v),
+                onSelected: (v) => setState(() => _supplierId = v),
               ),
             ),
             SizedBox(width: 6),

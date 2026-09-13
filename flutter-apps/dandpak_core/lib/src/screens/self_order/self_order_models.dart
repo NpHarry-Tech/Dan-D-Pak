@@ -7,19 +7,23 @@ int _soIntValue(dynamic value) {
   return double.tryParse(value?.toString() ?? '')?.toInt() ?? 0;
 }
 
-// Một lựa chọn trong nhóm (size/topping/combo). price = sale_price (đã gồm VAT).
+// Một lựa chọn trong nhóm (size/topping/món đi kèm). price = sale_price (đã gồm VAT).
 class SoOptionItem {
   final String key;
   final String name;
   final String type; // paid | free
   final int price;
   final bool available;
+  // Nhóm mode 'combo': id món thật được link — gửi lên server trong 'combo'
+  // khi đặt món (server tự lấy giá/trạm của CHÍNH món này, không dùng price ở đây).
+  final String refItemId;
   SoOptionItem({
     required this.key,
     required this.name,
     required this.type,
     required this.price,
     this.available = true,
+    this.refItemId = '',
   });
   factory SoOptionItem.fromJson(Map<String, dynamic> j) => SoOptionItem(
         key: (j['key'] ?? '').toString(),
@@ -27,6 +31,7 @@ class SoOptionItem {
         type: j['type'] == 'free' ? 'free' : 'paid',
         price: _soIntValue(j['sale_price'] ?? j['price']),
         available: j['available'] != false,
+        refItemId: (j['ref_item_id'] ?? '').toString(),
       );
 }
 
@@ -34,6 +39,9 @@ class SoOptionGroup {
   final String key;
   final String name;
   final String position; // top | bottom
+  // 'price' (mặc định) = cộng giá vào dòng món hiện tại. 'combo' = mỗi lựa
+  // chọn tách thành 1 món RIÊNG trên đơn (giá/trạm/hủy độc lập) — "Món đi kèm".
+  final String mode;
   final int min;
   final int max; // 0 = không giới hạn
   final List<SoOptionItem> options;
@@ -41,16 +49,19 @@ class SoOptionGroup {
     required this.key,
     required this.name,
     required this.position,
+    this.mode = 'price',
     required this.min,
     required this.max,
     required this.options,
   });
+  bool get isCombo => mode == 'combo';
   bool get single => min == 1 && max == 1;
   bool get required => min >= 1;
   factory SoOptionGroup.fromJson(Map<String, dynamic> j) => SoOptionGroup(
         key: (j['key'] ?? '').toString(),
         name: (j['name'] ?? '').toString(),
         position: j['position'] == 'bottom' ? 'bottom' : 'top',
+        mode: j['mode'] == 'combo' ? 'combo' : 'price',
         min: _soIntValue(j['min']),
         max: _soIntValue(j['max']),
         options: (j['options'] is List)

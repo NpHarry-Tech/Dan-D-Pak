@@ -22,6 +22,8 @@ class _CartPanel extends StatelessWidget {
   final VoidCallback onClear;
   final void Function(int index, int qty) onQtyChange;
   final void Function(int index) onNote;
+  // Sửa ghi chú của 1 món đi kèm trong combo: (chỉ số dòng giỏ, chỉ số món đi kèm).
+  final void Function(int cartIndex, int childIndex) onChildNote;
   final VoidCallback? onSend;
   final VoidCallback? onCheckout;
 
@@ -35,6 +37,7 @@ class _CartPanel extends StatelessWidget {
     required this.onClear,
     required this.onQtyChange,
     required this.onNote,
+    required this.onChildNote,
     required this.onSend,
     required this.onCheckout,
   });
@@ -86,6 +89,7 @@ class _CartPanel extends StatelessWidget {
                     item: cart[i],
                     onQtyChange: (q) => onQtyChange(i, q),
                     onNote: () => onNote(i),
+                    onChildNote: (ci) => onChildNote(i, ci),
                   ),
                 ),
         ),
@@ -318,6 +322,23 @@ class _ItemDetailPanel extends StatelessWidget {
     );
   }
 
+  // Nhóm size/topping đơn giản (min=1/max=1 hoặc 0/0) giữ nhãn cũ; nhóm combo
+  // hoặc bất kỳ nhóm nào có min/max tuỳ chỉnh hiện rõ số lượng — đúng kiểu
+  // "Yêu cầu X / Tối đa Y" khách cần thấy trước khi chọn món đi kèm.
+  String _groupHint(SoOptionGroup g) {
+    // Dịch phần CHỮ CỐ ĐỊNH trước, rồi mới ghép số — t() so khớp nguyên văn
+    // tiếng Việt làm khoá, ghép số vào TRƯỚC khi gọi t() sẽ không bao giờ khớp.
+    if (g.single) return g.required ? t('(bắt buộc chọn 1)') : t('(chọn 1)');
+    if (g.required) {
+      return g.max > 0
+          ? '(${t('chọn tối thiểu')} ${g.min}, ${t('tối đa')} ${g.max})'
+          : '(${t('chọn tối thiểu')} ${g.min})';
+    }
+    return g.max > 0
+        ? '(${t('tùy chọn, tối đa')} ${g.max})'
+        : t('(tùy chọn)');
+  }
+
   Widget _optionGroupBlock(SoOptionGroup g) {
     final sel = selected[g.key] ?? const <String>{};
     return Padding(
@@ -332,10 +353,7 @@ class _ItemDetailPanel extends StatelessWidget {
                     fontWeight: FontWeight.w900,
                     color: Color(0xFF1A2230))),
             SizedBox(width: 6),
-            Text(
-                g.required
-                    ? (g.single ? t('(bắt buộc chọn 1)') : t('(bắt buộc)'))
-                    : (g.single ? t('(chọn 1)') : t('(tùy chọn)')),
+            Text(_groupHint(g),
                 style: TextStyle(fontSize: 11, color: Color(0xFF9AA3B2))),
           ]),
           SizedBox(height: 6),
@@ -717,65 +735,126 @@ class _CartRow extends StatelessWidget {
   final SoCartItem item;
   final ValueChanged<int> onQtyChange;
   final VoidCallback onNote;
-  _CartRow(
-      {required this.item, required this.onQtyChange, required this.onNote});
+  // Sửa ghi chú của món đi kèm thứ [childIndex] trong dòng combo này.
+  final ValueChanged<int> onChildNote;
+  _CartRow({
+    required this.item,
+    required this.onQtyChange,
+    required this.onNote,
+    required this.onChildNote,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return Row(
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(item.item.name,
-                  style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      color: Color(0xFF1A2230),
-                      fontSize: 13)),
-              // Tùy chọn khách đã chọn (Size: Lớn · +Trân châu…).
-              if (item.selectedModifiers.isNotEmpty)
-                Text(item.selectedModifiers.map((m) => m.name).join(' · '),
-                    style: TextStyle(
-                        color: Color(0xFF677084), fontSize: 11, height: 1.25)),
-              Text(t('đ${item.totalPrice}'),
-                  style: TextStyle(
-                      color: Color(0xFF0891B2),
-                      fontWeight: FontWeight.bold,
-                      fontSize: 12)),
-              // Ghi chú của khách cho món (vd "ít đá, không hành") — bấm để sửa.
-              GestureDetector(
-                onTap: onNote,
-                child: Padding(
-                  padding: EdgeInsets.only(top: 3),
-                  child: Row(mainAxisSize: MainAxisSize.min, children: [
-                    Icon(Icons.edit_note, size: 15, color: Color(0xFF0891B2)),
-                    SizedBox(width: 3),
-                    Text(item.notes.isEmpty ? t('Thêm ghi chú') : item.notes,
+        Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(item.item.name,
+                      style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xFF1A2230),
+                          fontSize: 13)),
+                  // Tùy chọn khách đã chọn (Size: Lớn · +Trân châu…).
+                  if (item.selectedModifiers.isNotEmpty)
+                    Text(item.selectedModifiers.map((m) => m.name).join(' · '),
                         style: TextStyle(
-                            fontSize: 11.5,
-                            color: item.notes.isEmpty
-                                ? Color(0xFF677084)
-                                : Color(0xFF1A2230),
-                            fontStyle: item.notes.isEmpty
-                                ? FontStyle.italic
-                                : FontStyle.normal)),
-                  ]),
+                            color: Color(0xFF677084),
+                            fontSize: 11,
+                            height: 1.25)),
+                  Text(t('đ${item.totalPrice}'),
+                      style: TextStyle(
+                          color: Color(0xFF0891B2),
+                          fontWeight: FontWeight.bold,
+                          fontSize: 12)),
+                  // Ghi chú của khách cho món (vd "ít đá, không hành") — bấm để sửa.
+                  GestureDetector(
+                    onTap: onNote,
+                    child: Padding(
+                      padding: EdgeInsets.only(top: 3),
+                      child: Row(mainAxisSize: MainAxisSize.min, children: [
+                        Icon(Icons.edit_note,
+                            size: 15, color: Color(0xFF0891B2)),
+                        SizedBox(width: 3),
+                        Text(
+                            item.notes.isEmpty ? t('Thêm ghi chú') : item.notes,
+                            style: TextStyle(
+                                fontSize: 11.5,
+                                color: item.notes.isEmpty
+                                    ? Color(0xFF677084)
+                                    : Color(0xFF1A2230),
+                                fontStyle: item.notes.isEmpty
+                                    ? FontStyle.italic
+                                    : FontStyle.normal)),
+                      ]),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Row(children: [
+              _QtyBtn(
+                  icon: Icons.remove, onTap: () => onQtyChange(item.qty - 1)),
+              Padding(
+                padding: EdgeInsets.symmetric(horizontal: 10),
+                child: Text('${item.qty}',
+                    style: TextStyle(
+                        fontWeight: FontWeight.bold, color: Color(0xFF1A2230))),
+              ),
+              _QtyBtn(icon: Icons.add, onTap: () => onQtyChange(item.qty + 1)),
+            ]),
+          ],
+        ),
+        // Món đi kèm (combo) — dòng KHOÁ: không có nút +/- số lượng (luôn bằng
+        // món chính), không xóa riêng được (xóa món chính mới xóa theo), nhưng
+        // vẫn ghi chú riêng được (vd "salad không sốt").
+        for (var ci = 0; ci < item.comboChildren.length; ci++)
+          Padding(
+            padding: EdgeInsets.only(top: 6, left: 14),
+            child: Row(children: [
+              Icon(Icons.subdirectory_arrow_right,
+                  size: 14, color: Color(0xFF9AA3B2)),
+              SizedBox(width: 4),
+              Expanded(
+                child: GestureDetector(
+                  onTap: () => onChildNote(ci),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                          '${item.comboChildren[ci].name} × ${item.qty}',
+                          style: TextStyle(
+                              color: Color(0xFF1A2230),
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600)),
+                      Row(mainAxisSize: MainAxisSize.min, children: [
+                        Icon(Icons.edit_note,
+                            size: 13, color: Color(0xFF0891B2)),
+                        SizedBox(width: 3),
+                        Text(
+                            item.comboChildren[ci].note.isEmpty
+                                ? t('Thêm ghi chú')
+                                : item.comboChildren[ci].note,
+                            style: TextStyle(
+                                fontSize: 11,
+                                color: item.comboChildren[ci].note.isEmpty
+                                    ? Color(0xFF677084)
+                                    : Color(0xFF1A2230),
+                                fontStyle: item.comboChildren[ci].note.isEmpty
+                                    ? FontStyle.italic
+                                    : FontStyle.normal)),
+                      ]),
+                    ],
+                  ),
                 ),
               ),
-            ],
+            ]),
           ),
-        ),
-        Row(children: [
-          _QtyBtn(icon: Icons.remove, onTap: () => onQtyChange(item.qty - 1)),
-          Padding(
-            padding: EdgeInsets.symmetric(horizontal: 10),
-            child: Text('${item.qty}',
-                style: TextStyle(
-                    fontWeight: FontWeight.bold, color: Color(0xFF1A2230))),
-          ),
-          _QtyBtn(icon: Icons.add, onTap: () => onQtyChange(item.qty + 1)),
-        ]),
       ],
     );
   }

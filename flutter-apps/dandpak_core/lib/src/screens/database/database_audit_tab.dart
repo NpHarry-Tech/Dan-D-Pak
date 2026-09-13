@@ -22,7 +22,7 @@ class _AuditLogTabState extends State<_AuditLogTab> {
 
   // Bộ lọc loại log — mỗi chip ánh xạ sang nguồn audit/system_logs và nhóm sự kiện.
   // filter server-side (levels / sources / event_types).
-  static final _filters = <(String, String)>[
+  static List<(String, String)> get _filters => <(String, String)>[
     ('all', t('Tất cả')),
     ('user', t('Hoạt động người dùng')),
     ('system', t('Hệ thống')),
@@ -340,11 +340,11 @@ class _AuditLogTabState extends State<_AuditLogTab> {
       case 'week':
         return '${_dmy(from)} - ${_dmy(to)}';
       case 'month':
-        return t('Tháng ${from.month}/${from.year}');
+        return '${t('Tháng')} ${from.month}/${from.year}';
       case 'quarter':
-        return t('Quý ${((from.month - 1) ~/ 3) + 1}/${from.year}');
+        return '${t('Quý')} ${((from.month - 1) ~/ 3) + 1}/${from.year}';
       case 'year':
-        return t('Năm ${from.year}');
+        return '${t('Năm')} ${from.year}';
     }
     return t('Tất cả lịch sử');
   }
@@ -570,7 +570,7 @@ class _AuditLogTabState extends State<_AuditLogTab> {
                   fontWeight: FontWeight.w800,
                 ),
               ),
-              label: Text('Reset'),
+              label: Text(t('Reset')),
             ),
           ),
         ],
