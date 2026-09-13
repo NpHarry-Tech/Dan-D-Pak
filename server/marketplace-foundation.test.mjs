@@ -117,6 +117,87 @@ test('durable marketplace inbox deduplicates and retries outside the HTTP receiv
   assert.equal(calls, 1);
 });
 
+test('durable marketplace inbox recovers after a processor crash', async () => {
+  let calls = 0;
+  Inbox.registerMarketplaceWebhookProcessor('fixture-retry', async () => {
+    calls++;
+    if (calls === 1) throw new Error('simulated worker crash');
+  });
+  Inbox.enqueueMarketplaceWebhook({ provider: 'fixture-retry', connectionId: 'c2', shopId: 's2',
+    eventType: 'ORDER', providerEventId: 'event-retry-1', rawBody: '{"id":2}' });
+  assert.deepEqual(await Inbox.processMarketplaceWebhookQueue(), { processed: 0, failed: 1 });
+  const row = db.prepare(`SELECT * FROM marketplace_webhook_inbox
+    WHERE provider='fixture-retry' AND provider_event_id='event-retry-1'`).get();
+  assert.equal(row.status, 'retrying');
+  assert.equal(row.retry_count, 1);
+  assert.ok(row.raw_payload);
+
+  db.prepare(`UPDATE marketplace_webhook_inbox SET next_retry_at=? WHERE id=?`)
+    .run(new Date(0).toISOString(), row.id);
+  assert.deepEqual(await Inbox.processMarketplaceWebhookQueue(), { processed: 1, failed: 0 });
+  const recovered = db.prepare(`SELECT status,raw_payload,error FROM marketplace_webhook_inbox WHERE id=?`).get(row.id);
+  assert.equal(recovered.status, 'success');
+  assert.equal(recovered.raw_payload, null);
+  assert.equal(recovered.error, null);
+});
+
+test('callback rejects wrong provider, expiry and seller denial before token exchange', async () => {
+  const wrongProvider = Platform.startConnect('tiktokshop', {
+    branch_id: 'mp-branch', user_id: 'owner-1', redirectBase: 'https://pos.example',
+  });
+  await assert.rejects(() => Platform.handleCallback('lazada', {
+    state: wrongProvider.attempt_id, code: 'unused',
+  }), error => error.status === 400);
+
+  const expired = Platform.startConnect('tiktokshop', {
+    branch_id: 'mp-branch', user_id: 'owner-1', redirectBase: 'https://pos.example',
+  });
+  db.prepare(`UPDATE marketplace_auth_attempts SET expires_at=? WHERE id=?`)
+    .run(new Date(0).toISOString(), expired.attempt_id);
+  await assert.rejects(() => Platform.handleCallback('tiktokshop', {
+    state: expired.attempt_id, auth_code: 'unused',
+  }), error => error.status === 410);
+
+  const denied = Platform.startConnect('tiktokshop', {
+    branch_id: 'mp-branch', user_id: 'owner-1', redirectBase: 'https://pos.example',
+  });
+  await assert.rejects(() => Platform.handleCallback('tiktokshop', {
+    state: denied.attempt_id, error: 'access_denied',
+  }), error => error.status === 400);
+  assert.equal(Platform.attemptStatus(denied.attempt_id).status, 'denied');
+});
+
+test('reconciliation pulls mapped shops with overlap and advances the durable watermark', async () => {
+  const connection = Platform.listConnections('tiktokshop', 'mp-branch').connections
+    .find(row => row.mappings.some(mapping => mapping.external_shop_id === 'SHOP-B'));
+  Platform.completeInitialSync(connection.id, 'mp-branch', {
+    orders: { pulled: 0 }, products: { synced: 0 },
+  }, 'test');
+  db.prepare(`UPDATE marketplace_connections SET last_reconciliation_at=? WHERE id=?`)
+    .run(new Date(Date.now() - 60 * 60 * 1000).toISOString(), connection.id);
+
+  const originalFetch = globalThis.fetch;
+  let requestedSince = '';
+  globalThis.fetch = async (url, options = {}) => {
+    const parsed = new URL(String(url));
+    assert.match(parsed.pathname, /\/order\/202309\/orders\/search$/);
+    requestedSince = JSON.parse(options.body || '{}').create_time_ge || '';
+    return jsonResponse({ code: 0, data: { orders: [], next_page_token: '' } });
+  };
+  try {
+    const result = await Platform.reconcileDueMarketplaceConnections();
+    assert.deepEqual(result, { checked: 1, completed: 1, failed: 0 });
+    assert.ok(Number(requestedSince) > 0);
+    const cursor = db.prepare(`SELECT watermark_at FROM marketplace_sync_cursors
+      WHERE connection_id=? AND external_shop_id='SHOP-B' AND capability='orders_read'`).get(connection.id);
+    assert.ok(Date.parse(cursor.watermark_at) > 0);
+    assert.equal(Platform.listConnections('tiktokshop', 'mp-branch').connections
+      .find(row => row.id === connection.id).status, 'active');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test('shadow order sync records evidence and mapping_required without creating payment', () => {
   const result = TikTok.syncTiktokOrder({
     id: 'TT-ORDER-SHADOW', status: 'AWAITING_SHIPMENT', payment_status: 'PAID', currency: 'VND',

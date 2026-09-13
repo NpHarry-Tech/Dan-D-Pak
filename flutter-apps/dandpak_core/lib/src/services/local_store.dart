@@ -1,7 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:path_provider/path_provider.dart';
 
 /// Tiny key-value preference store persisted as one JSON file.
@@ -17,15 +16,24 @@ class LocalStore {
 
   Map<String, dynamic>? _cache;
   File? _fileCache;
-  static const _secure = FlutterSecureStorage();
 
   // BAO MAT: auth_token (kể cả biến thể theo tenant "t::<origin>::auth_token"
-  // và khoá legacy không namespace) đi qua Keychain/Keystore/Credential Manager
-  // của OS — mã hoá phần cứng — thay vì nằm trần trong file JSON. Mọi
-  // preference KHÁC (server_url, branch_id…) không nhạy cảm, vẫn ở file JSON
-  // như cũ — không đổi hành vi, không cần sửa nơi gọi.
+  // và khoá legacy không namespace) đi qua Keychain/Keystore của OS thay vì
+  // nằm trần trong file JSON — CHỈ khi app đã "cắm" một backend thật vào các
+  // ô dưới đây. dandpak_core KHÔNG phụ thuộc trực tiếp gói flutter_secure_storage
+  // (gói đó là plugin liên nền tảng — riêng bản Windows cần component ATL của
+  // Visual Studio, không có sẵn trên máy build, và desktop cũng không cần nó vì
+  // đã tự xoá token khi đóng cửa sổ). Chỉ app tablet/phone (main.dart) mới
+  // import gói thật và gán các hàm này lúc khởi động; desktop không gán gì cả
+  // → auth_token của desktop tiếp tục nằm trong file JSON như trước.
+  static Future<String?> Function(String key)? secureRead;
+  static Future<void> Function(String key, String value)? secureWrite;
+  static Future<void> Function(String key)? secureDelete;
+  static Future<Set<String>> Function()? secureKeys;
+
   bool _isSensitive(String key) =>
-      key == 'auth_token' || key.endsWith('::auth_token');
+      secureRead != null &&
+      (key == 'auth_token' || key.endsWith('::auth_token'));
 
   /// Nơi lưu preferences. Trên Android/iOS DÙNG THƯ MỤC HỖ TRỢ ỨNG DỤNG (bền qua
   /// cập nhật app) — TUYỆT ĐỐI không dùng systemTemp vì trên Android nó là
@@ -78,7 +86,7 @@ class LocalStore {
 
   Future<String?> getString(String key) async {
     if (_isSensitive(key)) {
-      final secureValue = await _secure.read(key: key);
+      final secureValue = await secureRead!(key);
       if (secureValue != null) return secureValue;
       // Bù MỘT LẦN cho máy đã cài từ trước: token cũ còn nằm trong file JSON
       // (từ bản chưa có secure storage) — chuyển sang secure rồi xoá khỏi
@@ -86,7 +94,7 @@ class LocalStore {
       final data = await _read();
       final legacyValue = data[key];
       if (legacyValue is String && legacyValue.isNotEmpty) {
-        await _secure.write(key: key, value: legacyValue);
+        await secureWrite!(key, legacyValue);
         final next = Map<String, dynamic>.from(data)..remove(key);
         await _write(next);
         return legacyValue;
@@ -100,7 +108,7 @@ class LocalStore {
 
   Future<void> setString(String key, String value) async {
     if (_isSensitive(key)) {
-      await _secure.write(key: key, value: value);
+      await secureWrite!(key, value);
       return;
     }
     final data = Map<String, dynamic>.from(await _read());
@@ -110,7 +118,7 @@ class LocalStore {
 
   Future<void> remove(String key) async {
     if (_isSensitive(key)) {
-      await _secure.delete(key: key);
+      await secureDelete!(key);
       return;
     }
     final data = Map<String, dynamic>.from(await _read());
@@ -122,9 +130,10 @@ class LocalStore {
     final data = Map<String, dynamic>.from(await _read());
     data.removeWhere((key, _) => predicate(key));
     await _write(data);
-    final secureAll = await _secure.readAll();
-    for (final key in secureAll.keys) {
-      if (predicate(key)) await _secure.delete(key: key);
+    if (secureKeys == null) return;
+    final keys = await secureKeys!();
+    for (final key in keys) {
+      if (predicate(key)) await secureDelete!(key);
     }
   }
 }

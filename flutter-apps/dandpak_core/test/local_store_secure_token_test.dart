@@ -1,75 +1,40 @@
-// BAO MAT: auth_token phai di qua secure storage (Keychain/Keystore), KHONG
-// nam trong file JSON thuong — may root/jailbreak hay doc backup app khong
-// duoc lay token tran. Fake platform o day thay the kenh native that de test
-// khong can chay tren thiet bi.
+// BAO MAT: auth_token phai di qua secure storage that (Keystore/Keychain) —
+// KHONG nam trong file JSON thuong — may root/jailbreak hay doc backup app
+// khong duoc lay token tran. dandpak_core khong tu phu thuoc goi
+// flutter_secure_storage (chi app tablet/phone moi "cam" no vao qua
+// LocalStore.secureRead/secureWrite/... trong main.dart — xem local_store.dart
+// de biet ly do: ban Windows cua goi do can component ATL rieng khong co san
+// tren may build). Test nay gia lap dung cai "o cam" do bang mot Map thuong.
 import 'package:dandpak_core/src/services/local_store.dart';
-import 'package:flutter_secure_storage_platform_interface/flutter_secure_storage_platform_interface.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-class _FakeSecureStoragePlatform extends FlutterSecureStoragePlatform {
-  final Map<String, String> store = {};
-
-  @override
-  Future<void> write({
-    required String key,
-    required String value,
-    required Map<String, String> options,
-  }) async {
-    store[key] = value;
-  }
-
-  @override
-  Future<String?> read({
-    required String key,
-    required Map<String, String> options,
-  }) async =>
-      store[key];
-
-  @override
-  Future<bool> containsKey({
-    required String key,
-    required Map<String, String> options,
-  }) async =>
-      store.containsKey(key);
-
-  @override
-  Future<void> delete({
-    required String key,
-    required Map<String, String> options,
-  }) async {
-    store.remove(key);
-  }
-
-  @override
-  Future<Map<String, String>> readAll({
-    required Map<String, String> options,
-  }) async =>
-      Map<String, String>.from(store);
-
-  @override
-  Future<void> deleteAll({required Map<String, String> options}) async {
-    store.clear();
-  }
-}
-
 void main() {
-  TestWidgetsFlutterBinding.ensureInitialized();
-  late _FakeSecureStoragePlatform fakeSecure;
+  late Map<String, String> fakeSecure;
 
   setUp(() {
-    fakeSecure = _FakeSecureStoragePlatform();
-    FlutterSecureStoragePlatform.instance = fakeSecure;
+    fakeSecure = {};
+    LocalStore.secureRead = (key) async => fakeSecure[key];
+    LocalStore.secureWrite = (key, value) async => fakeSecure[key] = value;
+    LocalStore.secureDelete = (key) async => fakeSecure.remove(key);
+    LocalStore.secureKeys = () async => fakeSecure.keys.toSet();
+  });
+
+  tearDown(() {
+    LocalStore.secureRead = null;
+    LocalStore.secureWrite = null;
+    LocalStore.secureDelete = null;
+    LocalStore.secureKeys = null;
   });
 
   test('auth_token duoc ghi vao secure storage, khong vao file JSON thuong', () async {
     await LocalStore.instance.setString('t::https://x::auth_token', 'secret-abc');
-    expect(fakeSecure.store.values, contains('secret-abc'));
+    expect(fakeSecure.values, contains('secret-abc'));
     expect(await LocalStore.instance.getString('t::https://x::auth_token'), 'secret-abc');
   });
 
   test('key khong nhay cam (branch_id) khong dong nao cham toi secure storage', () async {
     await LocalStore.instance.setString('t::https://x::branch_id', 'sala');
-    expect(fakeSecure.store, isEmpty);
+    expect(fakeSecure, isEmpty);
     expect(await LocalStore.instance.getString('t::https://x::branch_id'), 'sala');
   });
 
@@ -77,13 +42,27 @@ void main() {
     await LocalStore.instance.setString('auth_token', 'legacy-token');
     await LocalStore.instance.remove('auth_token');
     expect(await LocalStore.instance.getString('auth_token'), isNull);
-    expect(fakeSecure.store, isEmpty);
+    expect(fakeSecure, isEmpty);
   });
 
   test('removeWhere() cung don duoc key nhay cam trong secure storage', () async {
     await LocalStore.instance.setString('t::https://x::auth_token', 'tok1');
     await LocalStore.instance
         .removeWhere((key) => key.startsWith('t::https://x::'));
-    expect(fakeSecure.store, isEmpty);
+    expect(fakeSecure, isEmpty);
+  });
+
+  test('khong "cam" secure storage (vd desktop) thi auth_token o nguyen JSON thuong', () async {
+    // dandpak_desktop khong goi LocalStore.secureWrite = ... trong main.dart —
+    // mo phong dung tinh huong do bang cach KHONG gan gi (null, nhu mac dinh).
+    LocalStore.secureRead = null;
+    LocalStore.secureWrite = null;
+    LocalStore.secureDelete = null;
+    LocalStore.secureKeys = null;
+    await LocalStore.instance.setString('t::desktop::auth_token', 'plain-on-desktop');
+    expect(fakeSecure, isEmpty,
+        reason: 'chua cam secure storage thi khong the nao ghi vao do duoc');
+    expect(await LocalStore.instance.getString('t::desktop::auth_token'),
+        'plain-on-desktop');
   });
 }

@@ -1,8 +1,12 @@
 # TikTok Shop + Lazada current state and delivery record
 
-Audit HEAD: `b6ee2f45042a738b41c7b9cada1253ecfc8a1e4d` (2026-09-13).
+Audit started at `b6ee2f45042a738b41c7b9cada1253ecfc8a1e4d` (2026-09-13).
 The worktree already contained many owner changes; implementation was additive
 and did not reset, checkout, build, publish or deploy.
+
+During implementation, an external workspace process committed the in-flight
+changes as `cb26858f09860d6326a7835e7e91fcce9eef54d9`, then committed the
+reconciliation worker as `51f3856`. Those commits were not rewritten or reset.
 
 ## Current-state audit
 
@@ -48,3 +52,16 @@ seller tokens without deleting order history.
 Verdict: **READY_FOR_OWNER_CREDENTIALS**. It is not production-ready and no
 outbound/write capability is enabled.
 
+## Verification record
+
+- Focused marketplace suite: callback replay/provider/expiry/denial, encrypted
+  vault, multi-shop mapping, token refresh concurrency, unknown-shop quarantine,
+  inbox dedupe/crash recovery, reconciliation overlap/watermark, exact-SKU shadow
+  order evidence.
+- Full server suite: 809/809 passed before the final focused additions; the full
+  suite is rerun on the final working tree before handoff.
+- Flutter: `flutter analyze` reported no issues; 261 tests passed and one
+  environment-dependent updater E2E test was skipped. No Flutter behavior changed
+  after that run.
+- No production credential, seller authorization, app review, subscription,
+  deployment or real marketplace mutation was attempted.

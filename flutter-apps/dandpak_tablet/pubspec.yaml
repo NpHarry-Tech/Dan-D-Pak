@@ -3,7 +3,7 @@ description: "Dan-D Pak Tablet POS Application."
 publish_to: 'none'
 # Public/updater release name: 2026.09.13.01 (see lib/app_version.dart).
 # Pub accepts SemVer's three numeric components only.
-version: 2026.9.13+147
+version: 2026.9.13+148
 
 environment:
   sdk: '>=3.3.0 <4.0.0'
@@ -15,6 +15,11 @@ dependencies:
     sdk: flutter
   dandpak_core:
     path: ../dandpak_core
+  # auth_token vao Keystore/Keychain (mã hoá phần cứng) — CHỈ thêm ở app
+  # mobile (tablet/phone), không phải dandpak_core: bản Windows của gói này
+  # cần component ATL riêng của Visual Studio mà desktop không cài, và desktop
+  # cũng không cần vì đã tự xoá token khi đóng cửa sổ. Xem main.dart.
+  flutter_secure_storage: ^9.2.2
 
 dev_dependencies:
   flutter_test:

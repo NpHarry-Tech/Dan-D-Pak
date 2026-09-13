@@ -1,5 +1,6 @@
 import 'package:dandpak_core/dandpak_core.dart';
 import 'package:flutter/widgets.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import 'app_version.dart';
 import 'sunmi_print.dart';
@@ -11,6 +12,14 @@ import 'sunmi_print.dart';
 /// `enabledModuleKeys` để đổi số lượng module hiển thị.
 Future<void> main(List<String> args) async {
   WidgetsFlutterBinding.ensureInitialized();
+  // Cắm secure storage thật cho auth_token (Keystore Android/Keychain iOS) —
+  // dandpak_core không tự phụ thuộc gói này (xem local_store.dart) nên phải
+  // gán ở đây trước khi app khởi động.
+  const secure = FlutterSecureStorage();
+  LocalStore.secureRead = (key) => secure.read(key: key);
+  LocalStore.secureWrite = (key, value) => secure.write(key: key, value: value);
+  LocalStore.secureDelete = (key) => secure.delete(key: key);
+  LocalStore.secureKeys = () async => (await secure.readAll()).keys.toSet();
   const identityMigration = 'phone_device_identity_v2';
   final store = LocalStore.instance;
   if (await store.getString(identityMigration) != 'done') {

@@ -28,7 +28,14 @@ import {
 const PROVIDER = 'tiktokshop';
 const AUTH_BASE = 'https://auth.tiktok-shops.com';
 const AUTHORIZE_URL = 'https://services.tiktokshop.com/open/authorize';
-const VERSION = '202309';
+// Keep versions capability-local: TikTok can retire or advance one API family
+// without forcing an unrelated authorization/order/fulfillment migration.
+const API_VERSION = Object.freeze({
+  authorization: '202309',
+  order: '202309',
+  product: '202309',
+  fulfillment: '202309',
+});
 
 const money = (n) => Math.round(Number(n) || 0);
 const cleanId = (v) => String(v ?? '').trim();
@@ -144,7 +151,7 @@ export async function exchangeTiktokCodeRaw(branchId, authCode) {
   const tokenCfg = { ...cfg, accessToken: d.access_token, refreshToken: d.refresh_token, shopCipher: '' };
   let response;
   try {
-    response = await call(tokenCfg, `/authorization/${VERSION}/shops`, {});
+    response = await call(tokenCfg, `/authorization/${API_VERSION.authorization}/shops`, {});
   } catch (error) {
     const classified = new Error(`Không lấy được danh sách gian hàng TikTok Shop: ${error.message}`);
     classified.code = 'TIKTOK_SHOP_DISCOVERY_FAILED';
@@ -323,7 +330,7 @@ export async function pullTiktokOrders(branchId = 'sala', { since = '', shopId =
   const orderIds = [];
   let pageToken = '';
   do {
-    const search = await call(cfg, `/order/${VERSION}/orders/search`, {
+    const search = await call(cfg, `/order/${API_VERSION.order}/orders/search`, {
       method: 'POST', query: { page_size: 50, ...(pageToken ? { page_token: pageToken } : {}) },
       body: { create_time_ge: createTimeGe }, branchId,
     });
@@ -333,7 +340,7 @@ export async function pullTiktokOrders(branchId = 'sala', { since = '', shopId =
   const results = [];
   for (let i = 0; i < orderIds.length; i += 50) {
     const ids = orderIds.slice(i, i + 50);
-    const detail = await call(cfg, `/order/${VERSION}/orders`, { query: { ids: ids.join(',') }, branchId });
+    const detail = await call(cfg, `/order/${API_VERSION.order}/orders`, { query: { ids: ids.join(',') }, branchId });
     for (const o of detail.data?.orders || []) {
       try { results.push(syncTiktokOrder(o, cfg.shopId, branchId)); }
       catch (e) { audit('tiktok.order.sync_error', { order_id: o.id, error: e.message }, branchId, 'tiktok'); }
@@ -351,7 +358,7 @@ export async function pullTiktokProducts(branchId = 'sala', { pageSize = 50, max
   const shop = String(cfg.shopId || '');
   let pageToken = '', page = 0, synced = 0;
   do {
-    const search = await call(cfg, `/product/${VERSION}/products/search`, {
+    const search = await call(cfg, `/product/${API_VERSION.product}/products/search`, {
       method: 'POST', query: { page_size: Math.min(100, pageSize), ...(pageToken ? { page_token: pageToken } : {}) },
       body: { status: 'ACTIVATE' }, branchId });
     for (const p of search.data?.products || []) {
@@ -436,7 +443,7 @@ async function processTiktokWebhookRow(row) {
   const cfg = tiktokConfig(branchId, { shopId: row.external_shop_id });
   const orderId = cleanId(payload.data?.order_id);
   if (orderId && cfg.accessToken && cfg.shopCipher) {
-    const detail = await call(cfg, `/order/${VERSION}/orders`, { query: { ids: orderId }, branchId });
+    const detail = await call(cfg, `/order/${API_VERSION.order}/orders`, { query: { ids: orderId }, branchId });
     const order = detail.data?.orders?.[0];
     if (order) syncTiktokOrder(order, cfg.shopId, branchId);
   }
@@ -450,7 +457,7 @@ registerMarketplaceWebhookProcessor(PROVIDER, processTiktokWebhookRow);
 export async function tiktokWaybill(branchId = 'sala', orderId, { size = 'A6' } = {}) {
   const cfg = tiktokConfig(branchId);
   assertAuthorized(cfg);
-  const data = await call(cfg, `/fulfillment/${VERSION}/orders/${encodeURIComponent(cleanId(orderId))}/shipping_document`,
+  const data = await call(cfg, `/fulfillment/${API_VERSION.fulfillment}/orders/${encodeURIComponent(cleanId(orderId))}/shipping_document`,
     { query: { document_type: 'SHIPPING_LABEL', document_size: size }, branchId });
   const url = cfg && data.data?.doc_url;
   if (url) { const r = await fetch(url); return Buffer.from(await r.arrayBuffer()); }
