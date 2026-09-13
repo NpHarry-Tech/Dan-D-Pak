@@ -18,7 +18,7 @@ import {
 } from './services/haravanConnector.js';
 import { receiveShopeePush, startShopeePushWorker, shopeeExchangeToken } from './services/shopeeConnector.js';
 import { startMarketplaceWebhookWorker } from './services/marketplaceWebhookInbox.js';
-import { handleCallback as handleMarketplaceCallback, migrateLegacyMarketplaceConnections, refreshExpiringMarketplaceTokens } from './services/connectionPlatform.js';
+import { handleCallback as handleMarketplaceCallback, migrateLegacyMarketplaceConnections, reconcileDueMarketplaceConnections, refreshExpiringMarketplaceTokens } from './services/connectionPlatform.js';
 import { handleLazadaPush, lazadaExchangeToken } from './services/lazadaConnector.js';
 import { handleTiktokWebhook } from './services/tiktokConnector.js';
 import { verifyMetaSubscribe, handleMetaWebhook } from './services/metaConnector.js';
@@ -367,6 +367,8 @@ startShopeePushWorker();
 startMarketplaceWebhookWorker();
 refreshExpiringMarketplaceTokens().catch(() => {});
 setInterval(() => refreshExpiringMarketplaceTokens().catch(() => {}), 60_000).unref();
+setTimeout(() => reconcileDueMarketplaceConnections().catch(() => {}), 5000).unref();
+setInterval(() => reconcileDueMarketplaceConnections().catch(() => {}), 5 * 60_000).unref();
 startErpWorker();   // ERP outbox → Business Central (no-op khi chưa cấu hình/tắt)
 
 // Vòng đời nhật ký hoạt động (giữ tối đa 3 năm / 36 tháng):

@@ -428,13 +428,14 @@ class _MarketplaceConnectPanelState extends State<MarketplaceConnectPanel> {
               FilledButton.icon(
                   onPressed: _busy ? null : () => _initialSync(c),
                   icon: const Icon(Icons.sync, size: 16),
-                label: Text(t('Đồng bộ lần đầu'))),
+                  label: Text(t('Đồng bộ lần đầu'))),
             if (active)
               OutlinedButton.icon(
                   onPressed: _busy ? null : () => _reconcile(c),
                   icon: const Icon(Icons.sync, size: 15),
                   label: Text(t('Đối soát ngay'))),
-            if (active && oList(c['shops']).length > oList(c['mappings']).length)
+            if (active &&
+                oList(c['shops']).length > oList(c['mappings']).length)
               OutlinedButton.icon(
                   onPressed: _busy ? null : () => _mapShop(c),
                   icon: const Icon(Icons.add_business_outlined, size: 15),

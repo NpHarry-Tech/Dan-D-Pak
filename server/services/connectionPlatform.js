@@ -363,6 +363,47 @@ export function migrateLegacyMarketplaceConnections() {
   return { migrated };
 }
 
+export async function reconcileDueMarketplaceConnections({ limit = 10 } = {}) {
+  ensure();
+  const due = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+  const rows = db.prepare(`SELECT * FROM marketplace_connections
+    WHERE status='active' AND (last_reconciliation_at IS NULL OR last_reconciliation_at<=?)
+    ORDER BY COALESCE(last_reconciliation_at,authorized_at,created_at) LIMIT ?`).all(due, Math.max(1, Math.min(50, limit)));
+  let completed = 0;
+  let failed = 0;
+  for (const row of rows) {
+    const mappings = db.prepare(`SELECT s.external_shop_id,m.branch_id FROM marketplace_shop_mappings m
+      JOIN marketplace_shops s ON s.id=m.shop_id WHERE m.connection_id=? AND m.enabled=1`).all(row.id);
+    const prior = Date.parse(row.last_reconciliation_at || '');
+    const since = Number.isFinite(prior) ? new Date(prior - 10 * 60 * 1000).toISOString() : '';
+    try {
+      let pulled = 0;
+      for (const mapping of mappings) {
+        if (row.provider === 'tiktokshop') {
+          const mod = await import('./tiktokConnector.js');
+          pulled += Number((await mod.pullTiktokOrders(mapping.branch_id, { since, shopId: mapping.external_shop_id })).pulled || 0);
+        } else if (row.provider === 'lazada') {
+          const mod = await import('./lazadaConnector.js');
+          pulled += Number((await mod.pullLazadaOrders(mapping.branch_id, { since, shopId: mapping.external_shop_id })).pulled || 0);
+        } else continue;
+        db.prepare(`INSERT INTO marketplace_sync_cursors(connection_id,external_shop_id,capability,cursor,watermark_at,updated_at)
+          VALUES (?,?, 'orders_read',NULL,?,?) ON CONFLICT(connection_id,external_shop_id,capability)
+          DO UPDATE SET watermark_at=excluded.watermark_at,updated_at=excluded.updated_at`)
+          .run(row.id, mapping.external_shop_id, now(), now());
+      }
+      completeReconciliation(row.id, row.branch_id, { orders: { pulled } }, 'reconciliation_worker');
+      completed++;
+    } catch (error) {
+      db.prepare(`UPDATE marketplace_connections SET status='degraded',error=?,updated_at=? WHERE id=?`)
+        .run(String(error?.message || error).slice(0, 500), now(), row.id);
+      audit('mp.reconciliation.failed', { provider: row.provider, connection_id: row.id,
+        error: error?.message }, row.branch_id, 'reconciliation_worker');
+      failed++;
+    }
+  }
+  return { checked: rows.length, completed, failed };
+}
+
 export function disconnect(id, branch_id = 'sala', actor = 'system') {
   ensure();
   const current = findConnectionById(id, branch_id);

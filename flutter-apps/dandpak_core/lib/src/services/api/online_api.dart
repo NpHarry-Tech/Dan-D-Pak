@@ -234,8 +234,8 @@ extension ApiServiceOnlineApi on ApiService {
       mapFrom(await postJson('/api/marketplace/connections/$id/initial-sync',
           body: const {}, errorMessage: 'Đồng bộ lần đầu thất bại'));
 
-  Future<Map<String, dynamic>> reconcileMarketplace(String id) async => mapFrom(
-      await postJson('/api/marketplace/connections/$id/reconcile',
+  Future<Map<String, dynamic>> reconcileMarketplace(String id) async =>
+      mapFrom(await postJson('/api/marketplace/connections/$id/reconcile',
           body: const {}, errorMessage: 'Đối soát sàn thất bại'));
 
   /// Kéo listing sản phẩm từ sàn về để liên kết (Shopee/Lazada/TikTok).
