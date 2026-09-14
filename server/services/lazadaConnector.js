@@ -461,8 +461,21 @@ function safeEqualHex(a, b) {
 // bằng token thật của cửa hàng (webhookSecret luôn có sẵn khi đã kết nối, vì
 // nó fallback về secretKey — thứ bắt buộc phải có để OAuth hoạt động).
 export async function handleLazadaPush(rawBody, headers = {}) {
+  const body = Buffer.isBuffer(rawBody) ? rawBody.toString('utf8') : String(rawBody || '');
+  const provided = cleanId(headers['authorization'] || headers['x-lazada-signature'] || headers['sha256']);
+  const platformSecret = cleanId(process.env.LAZADA_WEBHOOK_SECRET)
+    || cleanId(process.env.LAZADA_APP_SECRET);
+  if (platformSecret) {
+    const expected = crypto.createHmac('sha256', platformSecret).update(body).digest('hex');
+    if (!provided || (!safeEqualHex(expected, provided) && !safeEqualHex(expected.toUpperCase(), provided))) {
+      audit('lazada.push.rejected', { reason: provided ? 'bad_signature' : 'missing_signature' }, '', 'lazada');
+      const error = new Error(provided ? 'Sai chá»¯ kÃ½ push Lazada.' : 'Thiáº¿u chá»¯ kÃ½ push Lazada.');
+      error.status = 401;
+      throw error;
+    }
+  }
   let payload = {};
-  try { payload = JSON.parse(Buffer.isBuffer(rawBody) ? rawBody.toString('utf8') : String(rawBody || '{}')); }
+  try { payload = JSON.parse(body || '{}'); }
   catch { const e = new Error('Lazada push body không hợp lệ.'); e.status = 400; throw e; }
   const sellerId = cleanId(payload.seller_id || payload.sellerId);
   let branchId;
@@ -472,14 +485,12 @@ export async function handleLazadaPush(rawBody, headers = {}) {
     throw error;
   }
   const cfg = lazadaConfig(branchId);
-  const provided = cleanId(headers['authorization'] || headers['x-lazada-signature'] || headers['sha256']);
-  if (!provided || !cfg.webhookSecret) {
+  if (!platformSecret && (!provided || !cfg.webhookSecret)) {
     audit('lazada.push.rejected', { seller_id: sellerId, reason: 'missing_signature' }, branchId, 'lazada');
     const e = new Error('Thiếu chữ ký push Lazada.'); e.status = 401; throw e;
   }
-  const body = Buffer.isBuffer(rawBody) ? rawBody.toString('utf8') : String(rawBody || '');
   const expect = crypto.createHmac('sha256', cfg.webhookSecret).update(body).digest('hex');
-  if (!safeEqualHex(expect, provided) && !safeEqualHex(expect.toUpperCase(), provided)) {
+  if (!platformSecret && !safeEqualHex(expect, provided) && !safeEqualHex(expect.toUpperCase(), provided)) {
     audit('lazada.push.rejected', { seller_id: sellerId, reason: 'bad_signature' }, branchId, 'lazada');
     const e = new Error('Sai chữ ký push Lazada.'); e.status = 401; throw e;
   }

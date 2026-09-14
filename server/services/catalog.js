@@ -526,8 +526,16 @@ export function updateCategory(id, body, branch_id = 'sala') {
 export function deleteCategory(id, branch_id = 'sala') {
   const cur = db.prepare(`SELECT * FROM categories WHERE id=? AND branch_id=?`).get(id, branch_id);
   if (!cur) throw new Error('Danh mục không tồn tại');
-  const used = db.prepare(`SELECT COUNT(*) n FROM menu_items WHERE category_id=? AND branch_id=? AND deleted_at IS NULL`).get(id, branch_id).n;
-  if (used) throw new Error(`Không thể xóa: còn ${used} món trong danh mục này. Hãy chuyển/xóa món trước.`);
+  const active = db.prepare(`SELECT COUNT(*) n FROM menu_items WHERE category_id=? AND branch_id=? AND deleted_at IS NULL`).get(id, branch_id).n;
+  if (active) throw new Error(`Không thể xóa: còn ${active} món trong danh mục này. Hãy chuyển/xóa món trước.`);
+  // Món đã lưu trữ (deleted_at khác NULL, còn lịch sử đơn hàng) VẪN giữ
+  // category_id — cổng toàn vẹn dữ liệu (initCriticalIntegrityGuards) chặn
+  // xoá danh mục cha khi còn bản ghi con nào tham chiếu, kể cả đã lưu trữ.
+  // Kiểm ở đây để báo đúng lý do NGAY, thay vì để lỗi SQLite thô rơi xuống.
+  const archived = db.prepare(`SELECT COUNT(*) n FROM menu_items WHERE category_id=? AND branch_id=? AND deleted_at IS NOT NULL`).get(id, branch_id).n;
+  if (archived) {
+    throw new Error(`Không thể xóa: danh mục này từng có ${archived} món đã lưu trữ (còn lịch sử đơn hàng) — phải giữ nguyên liên kết, không thể xóa danh mục đã từng dùng.`);
+  }
   db.prepare(`DELETE FROM categories WHERE id=? AND branch_id=?`).run(id, branch_id);
   cacheBust('menu:');
   audit('category.delete', { id, name: cur.name }, branch_id);

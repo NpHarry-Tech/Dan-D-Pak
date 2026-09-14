@@ -175,7 +175,10 @@ export function listPublicConnections(provider, branchId) {
 export function findConnectionById(id, branchId = '') {
   ensureConnectionStore();
   const row = branchId
-    ? db.prepare(`SELECT * FROM marketplace_connections WHERE id=? AND branch_id=?`).get(String(id), String(branchId))
+    ? db.prepare(`SELECT c.* FROM marketplace_connections c WHERE c.id=? AND (
+        c.branch_id=? OR EXISTS (SELECT 1 FROM marketplace_shop_mappings m
+          WHERE m.connection_id=c.id AND m.branch_id=? AND m.enabled=1))`)
+      .get(String(id), String(branchId), String(branchId))
     : db.prepare(`SELECT * FROM marketplace_connections WHERE id=?`).get(String(id));
   return decrypted(row);
 }
@@ -311,9 +314,9 @@ export function mapConnectionShop(id, { externalShopId, branchId, warehouseId, i
     .run(uid('mpmap_'), connection.id, shop.id, branch.id, warehouse.id,
       JSON.stringify({ source: 'pos', safety_stock: 0, ...inventoryPolicy }), now(), now());
   db.prepare(`UPDATE marketplace_shops SET status='selected',updated_at=? WHERE id=?`).run(now(), shop.id);
-  db.prepare(`UPDATE marketplace_connections SET branch_id=?,shop_name=?,
+  db.prepare(`UPDATE marketplace_connections SET shop_name=?,
     status=CASE WHEN status='active' THEN 'active' ELSE 'initial_sync' END,updated_at=? WHERE id=?`)
-    .run(branch.id, shop.shop_name || connection.shop_name || '', now(), connection.id);
+    .run(shop.shop_name || connection.shop_name || '', now(), connection.id);
   return publicConnection(db.prepare(`SELECT * FROM marketplace_connections WHERE id=?`).get(connection.id));
 }
 
@@ -373,8 +376,10 @@ export function updateConnectionTokens(id, {
 
 export function updateConnectionSettingsStore(id, settings = {}, branchId) {
   ensureConnectionStore();
-  const row = db.prepare(`SELECT * FROM marketplace_connections WHERE id=? AND branch_id=?`)
-    .get(String(id), String(branchId));
+  const row = db.prepare(`SELECT c.* FROM marketplace_connections c WHERE c.id=? AND (
+      c.branch_id=? OR EXISTS (SELECT 1 FROM marketplace_shop_mappings m
+        WHERE m.connection_id=c.id AND m.branch_id=? AND m.enabled=1))`)
+    .get(String(id), String(branchId), String(branchId));
   if (!row) throw new Error('Không tìm thấy kết nối.');
   let current = {};
   try { current = row.settings_json ? JSON.parse(row.settings_json) : {}; } catch { current = {}; }

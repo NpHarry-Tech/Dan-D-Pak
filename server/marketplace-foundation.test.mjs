@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import crypto from 'node:crypto';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -18,6 +19,9 @@ migrate();
 db.prepare(`INSERT OR IGNORE INTO branches(id,name,active,sort) VALUES ('mp-branch','Marketplace',1,1)`).run();
 db.prepare(`INSERT OR IGNORE INTO warehouses(id,branch_id,code,name,type,active,sort)
   VALUES ('mp-wh','mp-branch','ONLINE','Kho online','retail',1,1)`).run();
+db.prepare(`INSERT OR IGNORE INTO branches(id,name,active,sort) VALUES ('mp-branch-2','Marketplace 2',1,2)`).run();
+db.prepare(`INSERT OR IGNORE INTO warehouses(id,branch_id,code,name,type,active,sort)
+  VALUES ('mp-wh-2','mp-branch-2','ONLINE2','Kho online 2','retail',1,1)`).run();
 
 const Platform = await import('./services/connectionPlatform.js');
 const Store = await import('./services/connectionStore.js');
@@ -77,10 +81,36 @@ test('TikTok shared callback is one-use, stores encrypted account tokens and req
 
 test('unknown TikTok shop is quarantined and never routed to sala', async () => {
   const body = Buffer.from(JSON.stringify({ shop_id: 'UNKNOWN-SHOP', type: 'ORDER_STATUS_CHANGE', data: {} }));
-  await assert.rejects(() => TikTok.handleTiktokWebhook(body, {}), error => error.status === 404);
+  const authorization = crypto.createHmac('sha256', 'TT-SECRET')
+    .update('TT-APP' + body.toString('utf8')).digest('hex');
+  await assert.rejects(() => TikTok.handleTiktokWebhook(body, { authorization }), error => error.status === 404);
   const row = db.prepare(`SELECT external_shop_id,reason FROM marketplace_webhook_quarantine ORDER BY received_at DESC LIMIT 1`).get();
   assert.equal(row.external_shop_id, 'UNKNOWN-SHOP');
   assert.match(row.reason, /Không có ánh xạ/);
+});
+
+test('shared TikTok webhook authenticates raw bytes before parsing or routing JSON', async () => {
+  const invalidJson = Buffer.from('{not-json');
+  await assert.rejects(() => TikTok.handleTiktokWebhook(invalidJson, { authorization: 'bad' }),
+    error => error.status === 401);
+  const authorization = crypto.createHmac('sha256', 'TT-SECRET')
+    .update('TT-APP' + invalidJson.toString('utf8')).digest('hex');
+  await assert.rejects(() => TikTok.handleTiktokWebhook(invalidJson, { authorization }),
+    error => error.status === 400);
+});
+
+test('mapping another shop to another branch preserves vault decryption and scopes access through mapping', () => {
+  const connection = Platform.listConnections('tiktokshop', 'mp-branch').connections[0];
+  const mapped = Platform.selectAndMapShop(connection.id, {
+    shop_id: 'SHOP-A', branch_id: 'mp-branch', warehouse_id: 'mp-wh-2',
+  }, 'mp-branch-2', 'owner-2');
+  assert.equal(mapped.branch_id, 'mp-branch');
+  assert.ok(mapped.mappings.some(mapping => mapping.external_shop_id === 'SHOP-A'
+    && mapping.branch_id === 'mp-branch-2' && mapping.warehouse_id === 'mp-wh-2'));
+  const runtime = Store.findRuntimeConnectionByProviderBranch('tiktokshop', 'mp-branch-2');
+  assert.equal(runtime.access_token, 'ACCESS-SECRET-VALUE');
+  assert.equal(runtime.selected_shop.external_shop_id, 'SHOP-A');
+  assert.equal(Platform.listConnections('tiktokshop', 'mp-branch-2').connections[0].id, connection.id);
 });
 
 test('concurrent TikTok refresh is single-flight and rotates vault tokens atomically', async () => {
@@ -102,6 +132,23 @@ test('concurrent TikTok refresh is single-flight and rotates vault tokens atomic
     assert.equal(db.prepare(`SELECT COUNT(*) count FROM marketplace_token_refresh_locks`).get().count, 0);
   } finally {
     globalThis.fetch = originalFetch;
+  }
+});
+
+test('refresh contention does not falsely require seller reauthorization', async () => {
+  const connection = Platform.listConnections('tiktokshop', 'mp-branch').connections[0];
+  db.prepare(`UPDATE marketplace_connections SET access_expires_at=?,status='initial_sync' WHERE id=?`)
+    .run(new Date(0).toISOString(), connection.id);
+  db.prepare(`INSERT OR REPLACE INTO marketplace_token_refresh_locks(connection_id,owner_id,expires_at)
+    VALUES (?,?,?)`).run(connection.id, 'another-worker', new Date(Date.now() + 60_000).toISOString());
+  try {
+    assert.deepEqual(await Platform.refreshExpiringMarketplaceTokens(), { checked: 1, refreshed: 0 });
+    const status = Platform.listConnections('tiktokshop', 'mp-branch').connections[0].status;
+    assert.equal(status, 'initial_sync');
+  } finally {
+    db.prepare(`DELETE FROM marketplace_token_refresh_locks WHERE connection_id=?`).run(connection.id);
+    db.prepare(`UPDATE marketplace_connections SET access_expires_at=? WHERE id=?`)
+      .run(new Date(Date.now() + 3600_000).toISOString(), connection.id);
   }
 });
 
@@ -139,6 +186,23 @@ test('durable marketplace inbox recovers after a processor crash', async () => {
   assert.equal(recovered.status, 'success');
   assert.equal(recovered.raw_payload, null);
   assert.equal(recovered.error, null);
+});
+
+test('durable marketplace inbox reclaims a row left processing by a dead worker', async () => {
+  let calls = 0;
+  Inbox.registerMarketplaceWebhookProcessor('fixture-dead-worker', async () => { calls++; });
+  Inbox.enqueueMarketplaceWebhook({ provider: 'fixture-dead-worker', connectionId: 'c3', shopId: 's3',
+    eventType: 'ORDER', providerEventId: 'event-dead-worker-1', rawBody: '{"id":3}' });
+  db.prepare(`UPDATE marketplace_webhook_inbox SET status='processing',processing_started_at=?
+    WHERE provider='fixture-dead-worker' AND provider_event_id='event-dead-worker-1'`)
+    .run(new Date(0).toISOString());
+  assert.deepEqual(await Inbox.processMarketplaceWebhookQueue(), { processed: 1, failed: 0 });
+  const recovered = db.prepare(`SELECT status,retry_count,raw_payload FROM marketplace_webhook_inbox
+    WHERE provider='fixture-dead-worker' AND provider_event_id='event-dead-worker-1'`).get();
+  assert.equal(recovered.status, 'success');
+  assert.equal(recovered.retry_count, 1);
+  assert.equal(recovered.raw_payload, null);
+  assert.equal(calls, 1);
 });
 
 test('callback rejects wrong provider, expiry and seller denial before token exchange', async () => {

@@ -6,7 +6,9 @@ and did not reset, checkout, build, publish or deploy.
 
 During implementation, an external workspace process committed the in-flight
 changes as `cb26858f09860d6326a7835e7e91fcce9eef54d9`, then committed the
-reconciliation worker as `51f3856`. Those commits were not rewritten or reset.
+reconciliation worker as `51f3856`. A later external release commit `c62ea5c`
+also included the then-current marketplace tests/docs. Those commits were not
+rewritten or reset.
 
 ## Current-state audit
 
@@ -58,9 +60,10 @@ outbound/write capability is enabled.
   vault, multi-shop mapping, token refresh concurrency, unknown-shop quarantine,
   inbox dedupe/crash recovery, reconciliation overlap/watermark, exact-SKU shadow
   order evidence.
-- Full server suite: 809/809 passed before the final focused additions; the full
-  suite is rerun on the final working tree before handoff.
-- Flutter: `flutter analyze` reported no issues; 261 tests passed and one
+- Full server suite: 812/812 passed before the final multi-branch/worker-lease
+  regression additions; the focused marketplace suite then passed 15/15. The
+  full suite is rerun once more on the final working tree before handoff.
+- Flutter: `flutter analyze` reported no issues; 262 tests passed and one
   environment-dependent updater E2E test was skipped. No Flutter behavior changed
   after that run.
 - No production credential, seller authorization, app review, subscription,

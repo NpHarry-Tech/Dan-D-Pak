@@ -21,6 +21,7 @@ export function ensureMarketplaceWebhookInbox() {
       error TEXT,
       received_at TEXT NOT NULL,
       next_retry_at TEXT,
+      processing_started_at TEXT,
       processed_at TEXT,
       UNIQUE(provider,external_shop_id,event_type,provider_event_id)
     );
@@ -35,6 +36,10 @@ export function ensureMarketplaceWebhookInbox() {
       received_at TEXT NOT NULL
     );
   `);
+  const columns = new Set(db.prepare(`PRAGMA table_info(marketplace_webhook_inbox)`).all().map(column => column.name));
+  if (!columns.has('processing_started_at')) {
+    db.exec(`ALTER TABLE marketplace_webhook_inbox ADD COLUMN processing_started_at TEXT`);
+  }
 }
 
 function rawText(rawBody) {
@@ -76,6 +81,15 @@ export async function processMarketplaceWebhookQueue(limit = 25) {
   let processed = 0;
   let failed = 0;
   try {
+    // A process can die after claiming a row. Reclaim an expired processing
+    // lease on the next worker start so an accepted event never stays stuck.
+    const stale = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+    db.prepare(`UPDATE marketplace_webhook_inbox SET
+      status=CASE WHEN retry_count+1>=12 THEN 'dead_letter' ELSE 'retrying' END,
+      retry_count=retry_count+1,error='worker_lease_expired',
+      next_retry_at=CASE WHEN retry_count+1>=12 THEN NULL ELSE ? END,processing_started_at=NULL
+      WHERE status='processing' AND (processing_started_at IS NULL OR processing_started_at<=?)`)
+      .run(now(), stale);
     for (let i = 0; i < Math.max(1, Math.min(100, Number(limit) || 25)); i++) {
       const row = db.prepare(`SELECT * FROM marketplace_webhook_inbox
         WHERE status IN ('received','retrying')
@@ -84,13 +98,13 @@ export async function processMarketplaceWebhookQueue(limit = 25) {
       if (!row) break;
       const processor = processors.get(row.provider);
       if (!processor) break;
-      const claimed = db.prepare(`UPDATE marketplace_webhook_inbox SET status='processing'
-        WHERE id=? AND status IN ('received','retrying')`).run(row.id).changes;
+      const claimed = db.prepare(`UPDATE marketplace_webhook_inbox SET status='processing',processing_started_at=?
+        WHERE id=? AND status IN ('received','retrying')`).run(now(), row.id).changes;
       if (!claimed) continue;
       try {
         await processor(row);
         db.prepare(`UPDATE marketplace_webhook_inbox SET
-          status='success',raw_payload=NULL,error=NULL,processed_at=?,next_retry_at=NULL WHERE id=?`)
+          status='success',raw_payload=NULL,error=NULL,processed_at=?,next_retry_at=NULL,processing_started_at=NULL WHERE id=?`)
           .run(now(), row.id);
         processed++;
       } catch (error) {
@@ -98,7 +112,7 @@ export async function processMarketplaceWebhookQueue(limit = 25) {
         const dead = retry >= 12;
         const delay = Math.min(3600, 5 * (2 ** Math.min(retry - 1, 9)));
         const next = new Date(Date.now() + delay * 1000).toISOString();
-        db.prepare(`UPDATE marketplace_webhook_inbox SET status=?,retry_count=?,error=?,next_retry_at=? WHERE id=?`)
+        db.prepare(`UPDATE marketplace_webhook_inbox SET status=?,retry_count=?,error=?,next_retry_at=?,processing_started_at=NULL WHERE id=?`)
           .run(dead ? 'dead_letter' : 'retrying', retry,
             String(error?.message || error).slice(0, 500), dead ? null : next, row.id);
         audit('marketplace.webhook.process_failed', {

@@ -410,8 +410,23 @@ function branchForShop(shopId) {
   const e = new Error(`Không có ánh xạ TikTok Shop cho shop_id=${wanted}.`); e.status = 404; throw e;
 }
 export async function handleTiktokWebhook(rawBody, headers = {}) {
+  const body = Buffer.isBuffer(rawBody) ? rawBody.toString('utf8') : String(rawBody || '');
+  const provided = cleanId(headers['authorization'] || headers['Authorization']);
+  const platformAppId = cleanId(process.env.TIKTOK_SHOP_APP_KEY);
+  const platformSecret = cleanId(process.env.TIKTOK_SHOP_WEBHOOK_SECRET)
+    || cleanId(process.env.TIKTOK_SHOP_APP_SECRET);
+  // Shared platform credentials are global, so authenticate bytes before using
+  // any untrusted JSON field for tenant/shop routing.
+  if (platformAppId && platformSecret) {
+    const expected = crypto.createHmac('sha256', platformSecret).update(platformAppId + body).digest('hex');
+    if (!provided || provided.length !== expected.length
+      || !crypto.timingSafeEqual(Buffer.from(provided), Buffer.from(expected))) {
+      audit('tiktok.webhook.rejected', { reason: 'bad_signature' }, '', 'tiktok');
+      const error = new Error('Sai chá»¯ kÃ½ webhook TikTok.'); error.status = 401; throw error;
+    }
+  }
   let payload = {};
-  try { payload = JSON.parse(Buffer.isBuffer(rawBody) ? rawBody.toString('utf8') : String(rawBody || '{}')); }
+  try { payload = JSON.parse(body || '{}'); }
   catch { const e = new Error('TikTok webhook body không hợp lệ.'); e.status = 400; throw e; }
   const shopId = cleanId(payload.shop_id);
   let branchId;
@@ -421,10 +436,11 @@ export async function handleTiktokWebhook(rawBody, headers = {}) {
     throw error;
   }
   const cfg = tiktokConfig(branchId);
-  const provided = cleanId(headers['authorization'] || headers['Authorization']);
-  const body = Buffer.isBuffer(rawBody) ? rawBody.toString('utf8') : String(rawBody || '');
-  const expect = crypto.createHmac('sha256', cfg.secretKey).update(cfg.appId + body).digest('hex');
-  if (!provided || provided.length !== expect.length || !crypto.timingSafeEqual(Buffer.from(provided), Buffer.from(expect))) {
+  // Legacy branch credentials cannot be selected without the shop field. Keep
+  // this compatibility path only when platform credentials are not configured.
+  const expect = crypto.createHmac('sha256', cfg.webhookSecret).update(cfg.appId + body).digest('hex');
+  if ((!platformAppId || !platformSecret)
+    && (!provided || provided.length !== expect.length || !crypto.timingSafeEqual(Buffer.from(provided), Buffer.from(expect)))) {
     audit('tiktok.webhook.rejected', { shop_id: shopId, reason: 'bad_signature' }, branchId, 'tiktok');
     const e = new Error('Sai chữ ký webhook TikTok.'); e.status = 401; throw e;
   }

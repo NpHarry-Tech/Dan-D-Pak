@@ -250,7 +250,10 @@ export function updateConnectionSettings(id, settings = {}, branch_id = 'sala', 
 
 export function selectAndMapShop(id, input = {}, branch_id = 'sala', actor = 'system') {
   ensure();
-  const targetBranch = String(input.branch_id || branch_id);
+  // The authenticated request branch is authoritative. This prevents a caller
+  // with permission in one branch from mapping a shop into another branch by
+  // changing JSON input.
+  const targetBranch = String(branch_id);
   const out = mapConnectionShop(id, {
     externalShopId: input.shop_id,
     branchId: targetBranch,
@@ -309,7 +312,10 @@ export function completeReconciliation(id, branch_id, result = {}, actor = 'syst
 export async function refreshExpiringMarketplaceTokens() {
   ensure();
   const threshold = new Date(Date.now() + 10 * 60 * 1000).toISOString();
-  const rows = db.prepare(`SELECT id,provider,branch_id FROM marketplace_connections
+  const rows = db.prepare(`SELECT c.id,c.provider,c.branch_id,
+      COALESCE((SELECT m.branch_id FROM marketplace_shop_mappings m
+        WHERE m.connection_id=c.id AND m.enabled=1 ORDER BY m.updated_at DESC LIMIT 1),c.branch_id) runtime_branch_id
+    FROM marketplace_connections c
     WHERE status IN ('initial_sync','active','degraded') AND access_expires_at IS NOT NULL
       AND access_expires_at<=? ORDER BY access_expires_at LIMIT 20`).all(threshold);
   let refreshed = 0;
@@ -317,16 +323,19 @@ export async function refreshExpiringMarketplaceTokens() {
     try {
       if (row.provider === 'tiktokshop') {
         const mod = await import('./tiktokConnector.js');
-        await mod.tiktokRefreshToken(row.branch_id);
+        await mod.tiktokRefreshToken(row.runtime_branch_id);
       } else if (row.provider === 'lazada') {
         const mod = await import('./lazadaConnector.js');
-        await mod.lazadaRefreshToken(row.branch_id);
+        await mod.lazadaRefreshToken(row.runtime_branch_id);
       } else if (row.provider === 'shopee') {
         const mod = await import('./shopeeConnector.js');
-        await mod.shopeeRefreshToken(row.branch_id);
+        await mod.shopeeRefreshToken(row.runtime_branch_id);
       } else continue;
       refreshed++;
     } catch (error) {
+      // Another process owns the short refresh lease. It will rotate the shared
+      // vault tokens; this is not evidence that seller authorization was lost.
+      if (error?.code === 'MARKETPLACE_REFRESH_IN_PROGRESS') continue;
       db.prepare(`UPDATE marketplace_connections SET status='reauthorization_required',error=?,updated_at=? WHERE id=?`)
         .run(String(error?.message || error).slice(0, 500), now(), row.id);
       audit('mp.token.refresh_failed', { provider: row.provider, connection_id: row.id,
