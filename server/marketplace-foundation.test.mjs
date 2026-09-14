@@ -26,7 +26,9 @@ db.prepare(`INSERT OR IGNORE INTO warehouses(id,branch_id,code,name,type,active,
 const Platform = await import('./services/connectionPlatform.js');
 const Store = await import('./services/connectionStore.js');
 const TikTok = await import('./services/tiktokConnector.js');
+const Lazada = await import('./services/lazadaConnector.js');
 const Inbox = await import('./services/marketplaceWebhookInbox.js');
+const Settings = await import('./services/settings.js');
 
 function jsonResponse(body) {
   return { json: async () => body };
@@ -74,6 +76,66 @@ test('TikTok shared callback is one-use, stores encrypted account tokens and req
     const runtime = Store.findRuntimeConnectionByProviderBranch('tiktokshop', 'mp-branch');
     assert.equal(runtime.selected_shop.external_shop_id, 'SHOP-B');
     assert.equal(runtime.selected_shop.shop_cipher, 'CIPHER-B');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('TikTok callback fails clearly when authorization returns zero shops or an invalid code', async () => {
+  const originalFetch = globalThis.fetch;
+  try {
+    const zero = Platform.startConnect('tiktokshop', {
+      branch_id: 'mp-branch', user_id: 'owner-1', redirectBase: 'https://pos.example',
+    });
+    globalThis.fetch = async url => String(url).includes('/api/v2/token/get')
+      ? jsonResponse({ code: 0, data: { access_token: 'ZERO-ACCESS', refresh_token: 'ZERO-REFRESH', open_id: 'OPEN-ZERO' } })
+      : jsonResponse({ code: 0, data: { shops: [] } });
+    await assert.rejects(() => Platform.handleCallback('tiktokshop', {
+      state: zero.attempt_id, auth_code: 'ZERO-SHOPS',
+    }), error => error.code === 'TIKTOK_NO_AUTHORIZED_SHOPS');
+    assert.equal(Platform.attemptStatus(zero.attempt_id).status, 'error');
+
+    const invalid = Platform.startConnect('tiktokshop', {
+      branch_id: 'mp-branch', user_id: 'owner-1', redirectBase: 'https://pos.example',
+    });
+    globalThis.fetch = async () => jsonResponse({ code: 10007, message: 'invalid auth code' });
+    await assert.rejects(() => Platform.handleCallback('tiktokshop', {
+      state: invalid.attempt_id, auth_code: 'INVALID',
+    }), /invalid auth code/);
+    assert.equal(Platform.attemptStatus(invalid.attempt_id).status, 'error');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('single authorized shop still requires explicit valid branch and warehouse mapping', async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async url => String(url).includes('/api/v2/token/get')
+    ? jsonResponse({ code: 0, data: { access_token: 'ONE-ACCESS', refresh_token: 'ONE-REFRESH',
+      open_id: 'OPEN-ONE', granted_scopes: ['seller.authorization.info'] } })
+    : jsonResponse({ code: 0, data: { shops: [
+      { id: 'SHOP-ONE', cipher: 'CIPHER-ONE', name: 'One', region: 'VN' },
+    ] } });
+  try {
+    const started = Platform.startConnect('tiktokshop', {
+      branch_id: 'mp-branch', user_id: 'owner-1', redirectBase: 'https://pos.example',
+    });
+    const result = await Platform.handleCallback('tiktokshop', {
+      state: started.attempt_id, auth_code: 'ONE-SHOP',
+    });
+    const connection = Platform.listConnections('tiktokshop', 'mp-branch').connections
+      .find(row => row.id === result.connection_id);
+    assert.equal(connection.status, 'pending_mapping');
+    assert.equal(connection.shops.length, 1);
+    assert.equal(connection.capabilities.find(capability => capability.capability === 'inventory_write').status,
+      'blocked');
+    assert.throws(() => Platform.selectAndMapShop(connection.id, {
+      shop_id: 'SHOP-ONE', warehouse_id: 'mp-wh-2',
+    }, 'mp-branch', 'owner-1'), /Kho/);
+    assert.equal(Platform.selectAndMapShop(connection.id, {
+      shop_id: 'SHOP-ONE', warehouse_id: 'mp-wh',
+    }, 'mp-branch', 'owner-1').status, 'initial_sync');
+    Platform.disconnect(connection.id, 'mp-branch', 'owner-1');
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -237,6 +299,11 @@ test('reconciliation pulls mapped shops with overlap and advances the durable wa
   Platform.completeInitialSync(connection.id, 'mp-branch', {
     orders: { pulled: 0 }, products: { synced: 0 },
   }, 'test');
+  assert.equal(Platform.listConnections('tiktokshop', 'mp-branch').connections
+    .find(row => row.id === connection.id).status, 'initial_sync');
+  Platform.completeInitialSync(connection.id, 'mp-branch-2', {
+    orders: { pulled: 0 }, products: { synced: 0 },
+  }, 'test');
   db.prepare(`UPDATE marketplace_connections SET last_reconciliation_at=? WHERE id=?`)
     .run(new Date(Date.now() - 60 * 60 * 1000).toISOString(), connection.id);
 
@@ -268,7 +335,10 @@ test('shadow order sync records evidence and mapping_required without creating p
     recipient_address: { name: 'Buyer' },
     line_items: [{ id: 'L1', product_id: 'P1', sku_id: 'BC-NOT-MAPPED', seller_sku: 'SKU-NOT-MAPPED',
       product_name: 'Do not match by name', quantity: 1, sale_price: 100000 }],
-    payment: { status: 'PAID', total_amount: 100000, platform_discount: 5000 },
+    payment: { status: 'PAID', total_amount: 100000, seller_discount: 1000,
+      platform_discount: 5000, seller_order_discount: 2000, platform_order_discount: 3000,
+      shipping_fee: 4000, seller_shipping_fee: 500, tax: 600, fees: 700,
+      refund_amount: 800, seller_payment_amount: 90400 },
   }, 'SHOP-B', 'mp-branch');
   assert.ok(result.internal_order_id);
   assert.equal(db.prepare(`SELECT COUNT(*) count FROM payments WHERE order_id=?`).get(result.internal_order_id).count, 0);
@@ -278,5 +348,108 @@ test('shadow order sync records evidence and mapping_required without creating p
     FROM marketplace_order_financials WHERE external_order_id='TT-ORDER-SHADOW'`).get();
   assert.equal(financial.buyer_payment_status, 'PAID');
   assert.equal(financial.settlement_status, 'unreconciled');
-  assert.equal(JSON.parse(financial.components_json).platform_item_discount, 5000);
+  assert.deepEqual(JSON.parse(financial.components_json), {
+    item_original: 100000,
+    seller_item_discount: 1000,
+    platform_item_discount: 5000,
+    seller_order_voucher: 2000,
+    platform_order_voucher: 3000,
+    shipping_buyer: 4000,
+    shipping_seller: 500,
+    tax: 600,
+    fees: 700,
+    refunded: 800,
+    expected_receivable: 90400,
+    order_total: 100000,
+  });
+});
+
+test('provider cancellation remains evidence-only in shadow mode', () => {
+  const result = TikTok.syncTiktokOrder({
+    id: 'TT-ORDER-CANCELLED-SHADOW', status: 'CANCELLED', payment_status: 'PAID', currency: 'VND',
+    line_items: [{ id: 'L2', product_id: 'P2', sku_id: 'UNMAPPED-2', seller_sku: 'UNMAPPED-2',
+      product_name: 'Cancelled item', quantity: 1, sale_price: 50000 }],
+    payment: { status: 'PAID', total_amount: 50000, refund_amount: 50000 },
+  }, 'SHOP-B', 'mp-branch');
+  const order = db.prepare(`SELECT status,online_status FROM orders WHERE id=?`).get(result.internal_order_id);
+  assert.equal(order.status, 'open');
+  assert.equal(order.online_status, 'CANCELLED');
+  assert.equal(db.prepare(`SELECT COUNT(*) count FROM payments WHERE order_id=?`)
+    .get(result.internal_order_id).count, 0);
+  db.prepare(`UPDATE orders SET status='paid' WHERE id=?`).run(result.internal_order_id);
+  db.prepare(`UPDATE online_order_state SET locked_at=? WHERE order_id=?`)
+    .run(new Date().toISOString(), result.internal_order_id);
+  TikTok.syncTiktokOrder({
+    id: 'TT-ORDER-CANCELLED-SHADOW', status: 'CANCELLED', payment_status: 'PAID',
+    line_items: [], payment: { status: 'PAID', total_amount: 50000, refund_amount: 50000 },
+  }, 'SHOP-B', 'mp-branch');
+  assert.equal(db.prepare(`SELECT status FROM orders WHERE id=?`).get(result.internal_order_id).status,
+    'paid');
+});
+
+test('Lazada cancellation also remains evidence-only in shadow mode', () => {
+  const result = Lazada.syncLazadaOrder({
+    order_id: 'LZD-ORDER-CANCELLED-SHADOW', status: 'canceled', payment_status: 'paid',
+    currency: 'VND', price: 70000, refund_amount: 70000,
+  }, [{ order_item_id: 'LI-1', product_id: 'LP-1', sku_id: 'LS-1', shop_sku: 'UNMAPPED-LZD',
+    name: 'Cancelled Lazada item', paid_price: 70000, item_price: 70000 }],
+  'LZD-SHADOW', 'mp-branch');
+  const order = db.prepare(`SELECT status,online_status FROM orders WHERE id=?`).get(result.internal_order_id);
+  assert.equal(order.status, 'open');
+  assert.equal(order.online_status, 'canceled');
+  assert.equal(db.prepare(`SELECT COUNT(*) count FROM payments WHERE order_id=?`)
+    .get(result.internal_order_id).count, 0);
+});
+
+test('disconnect and reconnect clear secrets but preserve mappings and cursors', () => {
+  const before = Platform.listConnections('tiktokshop', 'mp-branch-2').connections[0];
+  const mappingCount = db.prepare(`SELECT COUNT(*) count FROM marketplace_shop_mappings
+    WHERE connection_id=?`).get(before.id).count;
+  const cursorCount = db.prepare(`SELECT COUNT(*) count FROM marketplace_sync_cursors
+    WHERE connection_id=?`).get(before.id).count;
+
+  Platform.disconnect(before.id, 'mp-branch-2', 'owner-2');
+  const disconnected = db.prepare(`SELECT status,access_token_enc,refresh_token_enc
+    FROM marketplace_connections WHERE id=?`).get(before.id);
+  assert.equal(disconnected.status, 'disconnected');
+  assert.equal(disconnected.access_token_enc, null);
+  assert.equal(disconnected.refresh_token_enc, null);
+
+  const reconnected = Store.upsertAuthorizedConnection({
+    provider: 'tiktokshop', branchId: 'mp-branch', shopId: before.shop_id,
+    externalAccountId: before.external_account_id, environment: 'sandbox',
+    accessToken: 'ACCESS-RECONNECTED', refreshToken: 'REFRESH-RECONNECTED',
+    status: 'pending_shop_selection', shops: [
+      { shop_id: 'SHOP-A', shop_cipher: 'CIPHER-A', region: 'VN' },
+      { shop_id: 'SHOP-B', shop_cipher: 'CIPHER-B', region: 'VN' },
+    ],
+  });
+  assert.equal(reconnected.id, before.id);
+  assert.equal(db.prepare(`SELECT COUNT(*) count FROM marketplace_shop_mappings
+    WHERE connection_id=?`).get(before.id).count, mappingCount);
+  assert.equal(db.prepare(`SELECT COUNT(*) count FROM marketplace_sync_cursors
+    WHERE connection_id=?`).get(before.id).count, cursorCount);
+  assert.equal(Store.findRuntimeConnectionByProviderBranch('tiktokshop', 'mp-branch').access_token,
+    'ACCESS-RECONNECTED');
+});
+
+test('legacy token migration atomically moves seller tokens into the vault and clears the old copy', () => {
+  db.prepare(`INSERT OR IGNORE INTO branches(id,name,active,sort) VALUES ('mp-legacy','Legacy',1,3)`).run();
+  Settings.updateIntegrations({ channels: { tiktokshop: {
+    enabled: true, appId: 'LEGACY-APP', secretKey: 'LEGACY-SECRET', shopId: 'LEGACY-SHOP',
+    shopCipher: 'LEGACY-CIPHER', accessToken: 'LEGACY-ACCESS', refreshToken: 'LEGACY-REFRESH',
+    environment: 'sandbox',
+  } } }, 'mp-legacy');
+  assert.equal(Platform.migrateLegacyMarketplaceConnections().migrated, 1);
+  const legacy = Settings.getIntegrationChannel('tiktokshop', 'mp-legacy');
+  assert.equal(legacy.accessToken, '');
+  assert.equal(legacy.refreshToken, '');
+  const connection = Store.findConnectionByProviderShop('tiktokshop', 'LEGACY-SHOP');
+  assert.equal(connection, null, 'legacy shop is intentionally pending explicit mapping');
+  const vault = db.prepare(`SELECT * FROM marketplace_connections
+    WHERE provider='tiktokshop' AND shop_id='LEGACY-SHOP'`).get();
+  assert.ok(vault.access_token_enc && !vault.access_token_enc.includes('LEGACY-ACCESS'));
+  assert.ok(vault.refresh_token_enc && !vault.refresh_token_enc.includes('LEGACY-REFRESH'));
+  assert.equal(Store.findConnectionById(vault.id).access_token, 'LEGACY-ACCESS');
+  assert.equal(Store.findConnectionById(vault.id).refresh_token, 'LEGACY-REFRESH');
 });

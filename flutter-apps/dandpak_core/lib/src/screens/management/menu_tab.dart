@@ -12,6 +12,7 @@ import '../../ui/app_theme.dart';
 import '../../ui/file_pick.dart';
 import '../../ui/format.dart';
 import '../../widgets/manager_pin_dialog.dart';
+import '../../widgets/search_pick_dialog.dart';
 import '../../widgets/side_sheet.dart';
 import '../self_order/self_order_strings.dart';
 import 'book_menu_panel.dart';

@@ -19,6 +19,11 @@ export function registerMarketplaceRoutes(api, { wrap, guardAny, branch, actor }
     let orders;
     let products;
     const shops = (connection.mappings || []).filter(mapping => mapping.branch_id === branchId);
+    if (['tiktokshop', 'lazada'].includes(connection.provider) && shops.length === 0) {
+      const error = new Error('Káº¿t ná»‘i chÆ°a cÃ³ gian hÃ ng Ä‘Æ°á»£c Ã¡nh xáº¡ vÃ o chi nhÃ¡nh nÃ y.');
+      error.status = 409;
+      throw error;
+    }
     if (connection.provider === 'tiktokshop') {
       const results = [];
       for (const mapping of shops) results.push({

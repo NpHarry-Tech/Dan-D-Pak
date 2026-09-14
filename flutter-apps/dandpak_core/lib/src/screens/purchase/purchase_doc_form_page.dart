@@ -6,6 +6,7 @@ import '../../services/api_service.dart';
 import '../../ui/app_theme.dart';
 import '../../ui/format.dart';
 import '../../utils/translation.dart';
+import '../../widgets/search_pick_dialog.dart';
 import '../warehouse/kv_excel.dart';
 import '../warehouse/kv_shared.dart';
 
@@ -571,25 +572,19 @@ class _PurchaseDocFormPageState extends State<PurchaseDocFormPage> {
         Row(
           children: [
             Expanded(
-              child: DropdownMenu<String?>(
-                initialSelection: _supplierId,
-                expandedInsets: EdgeInsets.zero,
-                enableFilter: true,
-                inputDecorationTheme: InputDecorationTheme(
-                    isDense: true,
-                    contentPadding:
-                        EdgeInsets.symmetric(horizontal: 10, vertical: 8)),
+              child: SearchPickField(
+                value: _supplierId ?? '',
                 hintText: t('Tìm nhà cung cấp'),
-                dropdownMenuEntries: [
-                  DropdownMenuEntry(
-                      value: null, label: t('— Mua chợ / nhập tên tay —')),
+                dialogTitle: t('Tìm nhà cung cấp'),
+                options: [
+                  SearchPickOption('', t('— Mua chợ / nhập tên tay —')),
                   for (final s in _suppliers)
-                    DropdownMenuEntry(
-                        value: kvs(s['id']),
-                        label:
-                            '${kvs(s['company']).isNotEmpty ? '${kvs(s['company'])} · ' : ''}${kvs(s['name'])}'),
+                    SearchPickOption(
+                        kvs(s['id']),
+                        '${kvs(s['company']).isNotEmpty ? '${kvs(s['company'])} · ' : ''}${kvs(s['name'])}'),
                 ],
-                onSelected: (v) => setState(() => _supplierId = v),
+                onChanged: (v) =>
+                    setState(() => _supplierId = (v == null || v.isEmpty) ? null : v),
               ),
             ),
             SizedBox(width: 6),

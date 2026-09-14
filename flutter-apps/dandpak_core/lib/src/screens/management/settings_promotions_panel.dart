@@ -7,6 +7,7 @@ import '../../services/api_service.dart';
 import '../../ui/app_theme.dart';
 import '../../ui/format.dart';
 import '../../widgets/manager_pin_dialog.dart';
+import '../../widgets/search_pick_dialog.dart';
 import 'management_widgets.dart';
 import 'settings_tab.dart';
 import '../../utils/translation.dart';
@@ -912,16 +913,14 @@ class _PromotionSettingsPanelState extends State<PromotionSettingsPanel> {
 
   Widget _skuDropdown() {
     final value = _skus.any((s) => s.id == _skuId) ? _skuId : null;
-    return DropdownMenu<String>(
-      key: ValueKey('sku:$_scope:$_skuId:${_skus.length}'),
-      initialSelection: value,
-      expandedInsets: EdgeInsets.zero,
-      enableFilter: true,
+    return SearchPickField(
+      value: value,
       hintText: t('SKU áp dụng'),
-      dropdownMenuEntries: [
-        for (final s in _skus) DropdownMenuEntry(value: s.id, label: s.name),
+      dialogTitle: t('SKU áp dụng'),
+      options: [
+        for (final s in _skus) SearchPickOption(s.id, s.name),
       ],
-      onSelected: (v) => setState(() {
+      onChanged: (v) => setState(() {
         _skuId = v ?? '';
         _lotNo = '';
       }),

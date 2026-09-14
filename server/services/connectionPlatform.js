@@ -9,6 +9,7 @@ import { emit } from '../realtime.js';
 import { shopeeConfig, shopeeAuthLink, exchangeShopeeCodeRaw } from './shopeeConnector.js';
 import { lazadaConfig, lazadaAuthLink, exchangeLazadaCodeRaw } from './lazadaConnector.js';
 import { tiktokConfig, tiktokAuthLink, exchangeTiktokCodeRaw } from './tiktokConnector.js';
+import { updateIntegrations } from './settings.js';
 import {
   ensureConnectionStore,
   upsertAuthorizedConnection,
@@ -199,7 +200,8 @@ export async function handleCallback(provider, params = {}) {
       shops: normalizedShops,
     });
     setConnectionCapability(connection.id, 'authorization', 'verified');
-    for (const capability of ['orders_read','products_read','inventory_write','fulfillment_write','returns_read','finance_read','payment_settlement_write']) {
+    for (const capability of ['orders_read','products_read','inventory_write','fulfillment_write',
+      'order_lifecycle_write','returns_read','finance_read','payment_settlement_write']) {
       setConnectionCapability(connection.id, capability, 'blocked',
         capability.endsWith('_write') ? 'Requires approved scope, sandbox evidence and owner approval.' : 'Pending capability probe.');
     }
@@ -279,12 +281,13 @@ export function completeInitialSync(id, branch_id, { orders, products } = {}, ac
   const connection = findConnectionById(id, branch_id);
   if (!connection) throw new Error('Không tìm thấy kết nối marketplace.');
   if (!['initial_sync','degraded'].includes(connection.status)) throw new Error('Kết nối chưa sẵn sàng đồng bộ lần đầu.');
+  const branchMappings = db.prepare(`SELECT s.external_shop_id FROM marketplace_shop_mappings m
+    JOIN marketplace_shops s ON s.id=m.shop_id
+    WHERE m.connection_id=? AND m.branch_id=? AND m.enabled=1`).all(id, branch_id);
+  if (!branchMappings.length) throw new Error('Kết nối chưa có gian hàng ánh xạ vào chi nhánh này.');
   setConnectionCapability(id, 'orders_read', 'verified');
   setConnectionCapability(id, 'products_read', 'verified');
-  db.prepare(`UPDATE marketplace_connections SET status='active',last_sync_at=?,last_reconciliation_at=?,last_verified_at=?,error=NULL,updated_at=? WHERE id=?`)
-    .run(now(), now(), now(), now(), id);
-  for (const mapping of db.prepare(`SELECT s.external_shop_id FROM marketplace_shop_mappings m
-    JOIN marketplace_shops s ON s.id=m.shop_id WHERE m.connection_id=? AND m.enabled=1`).all(id)) {
+  for (const mapping of branchMappings) {
     for (const capability of ['orders_read','products_read']) {
       db.prepare(`INSERT INTO marketplace_sync_cursors(connection_id,external_shop_id,capability,cursor,watermark_at,updated_at)
         VALUES (?,?,?,NULL,?,?) ON CONFLICT(connection_id,external_shop_id,capability)
@@ -292,6 +295,17 @@ export function completeInitialSync(id, branch_id, { orders, products } = {}, ac
         .run(id, mapping.external_shop_id, capability, now(), now());
     }
   }
+  const pending = db.prepare(`SELECT COUNT(*) count FROM marketplace_shop_mappings m
+    JOIN marketplace_shops s ON s.id=m.shop_id
+    WHERE m.connection_id=? AND m.enabled=1 AND (
+      NOT EXISTS (SELECT 1 FROM marketplace_sync_cursors c WHERE c.connection_id=m.connection_id
+        AND c.external_shop_id=s.external_shop_id AND c.capability='orders_read' AND c.watermark_at IS NOT NULL)
+      OR NOT EXISTS (SELECT 1 FROM marketplace_sync_cursors c WHERE c.connection_id=m.connection_id
+        AND c.external_shop_id=s.external_shop_id AND c.capability='products_read' AND c.watermark_at IS NOT NULL))`)
+    .get(id).count;
+  db.prepare(`UPDATE marketplace_connections SET status=?,last_sync_at=?,last_reconciliation_at=?,
+    last_verified_at=?,error=NULL,updated_at=? WHERE id=?`)
+    .run(pending === 0 ? 'active' : 'initial_sync', now(), now(), now(), now(), id);
   audit('mp.initial_sync.done', { provider: connection.provider, connection_id: id,
     orders: Number(orders?.pulled || 0), products: Number(products?.synced || 0) }, branch_id, actor);
   return publicConnection(db.prepare(`SELECT * FROM marketplace_connections WHERE id=?`).get(id));
@@ -365,6 +379,7 @@ export function migrateLegacyMarketplaceConnections() {
         status: 'pending_mapping', createdBy: 'legacy_migration',
         shops: [{ shop_id: shopId, shop_cipher: provider === 'tiktokshop' ? cfg.shopCipher : '', region: cfg.region }],
       });
+      updateIntegrations({ channels: { [provider]: { accessToken: '', refreshToken: '' } } }, branchId);
       audit('mp.legacy.vault_migrated', { provider, shop_id: shopId }, branchId, 'system');
       migrated++;
     }

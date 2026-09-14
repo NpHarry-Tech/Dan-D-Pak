@@ -12,6 +12,7 @@ import '../../ui/app_theme.dart';
 import 'management_widgets.dart';
 import '../../utils/translation.dart';
 import '../../ui/file_pick.dart';
+import '../../widgets/search_pick_dialog.dart';
 
 /// Trình dựng QUYỂN — dùng chung cho HAI loại:
 ///   kind 'fnb'    — Menu quyển nhà hàng, chấm điểm trỏ tới MÓN (menu_items)
@@ -1041,17 +1042,14 @@ class _BookMenuPanelState extends State<BookMenuPanel> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        DropdownMenu<String>(
-          initialSelection: selectedItem,
-          expandedInsets: EdgeInsets.zero,
-          enableFilter: true,
-          inputDecorationTheme: InputDecorationTheme(isDense: true),
+        SearchPickField(
+          value: selectedItem,
           hintText: t('Món được mở khi bấm'),
-          dropdownMenuEntries: [
-            for (final item in _items)
-              DropdownMenuEntry(value: item.id, label: item.name),
+          dialogTitle: t('Món được mở khi bấm'),
+          options: [
+            for (final item in _items) SearchPickOption(item.id, item.name),
           ],
-          onSelected: (v) => setState(() => hs[_khoaHang] = v ?? ''),
+          onChanged: (v) => setState(() => hs[_khoaHang] = v ?? ''),
         ),
         SizedBox(height: 10),
         TextFormField(

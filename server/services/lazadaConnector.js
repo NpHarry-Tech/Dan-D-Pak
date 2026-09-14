@@ -258,6 +258,7 @@ export function syncLazadaOrder(order, items, sellerId, branchId = 'sala') {
   const buyerPaymentStatus = cleanId(order.payment_status).toLowerCase();
   const paid = buyerPaymentStatus === 'paid' || buyerPaymentStatus === 'completed';
   const voided = status === 'canceled' || status === 'failed';
+  const canonicalVoided = voided && marketplaceWritesEnabled(PROVIDER, seller, 'order_lifecycle_write');
   const customerJson = json({
     id: null,
     name: cleanId(`${order.customer_first_name || ''} ${order.customer_last_name || ''}`) || cleanId(addr.first_name),
@@ -277,12 +278,17 @@ export function syncLazadaOrder(order, items, sellerId, branchId = 'sala') {
       db.prepare(`INSERT INTO orders
         (id,branch_id,table_id,channel,status,subtotal,discount,total,created_at,online_channel,online_ref,online_status,customer_json)
         VALUES (?,?,NULL,'online',?,?,?,?,?,?,?,?,?)`)
-        .run(internalId, branchId, voided ? 'void' : 'open', subtotal, discount, total,
+        .run(internalId, branchId, canonicalVoided ? 'void' : 'open', subtotal, discount, total,
           order.created_at || now(), PROVIDER, orderId, status, customerJson);
     } else {
       if (!priorState?.locked_at) db.prepare(`DELETE FROM order_items WHERE order_id=?`).run(internalId);
-      db.prepare(`UPDATE orders SET status=?,online_status=?,customer_json=? WHERE id=?`)
-        .run(voided ? 'void' : 'open', status, customerJson, internalId);
+      if (canonicalVoided) {
+        db.prepare(`UPDATE orders SET status='void',online_status=?,customer_json=? WHERE id=?`)
+          .run(status, customerJson, internalId);
+      } else {
+        db.prepare(`UPDATE orders SET online_status=?,customer_json=? WHERE id=?`)
+          .run(status, customerJson, internalId);
+      }
     }
 
     if (!priorState?.locked_at) {

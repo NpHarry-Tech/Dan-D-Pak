@@ -172,13 +172,17 @@ export function listPublicConnections(provider, branchId) {
   return rows.map(publicConnection);
 }
 
+function scopedConnectionRow(id, branchId) {
+  return db.prepare(`SELECT c.* FROM marketplace_connections c WHERE c.id=? AND (
+    c.branch_id=? OR EXISTS (SELECT 1 FROM marketplace_shop_mappings m
+      WHERE m.connection_id=c.id AND m.branch_id=? AND m.enabled=1))`)
+    .get(String(id), String(branchId), String(branchId));
+}
+
 export function findConnectionById(id, branchId = '') {
   ensureConnectionStore();
   const row = branchId
-    ? db.prepare(`SELECT c.* FROM marketplace_connections c WHERE c.id=? AND (
-        c.branch_id=? OR EXISTS (SELECT 1 FROM marketplace_shop_mappings m
-          WHERE m.connection_id=c.id AND m.branch_id=? AND m.enabled=1))`)
-      .get(String(id), String(branchId), String(branchId))
+    ? scopedConnectionRow(id, branchId)
     : db.prepare(`SELECT * FROM marketplace_connections WHERE id=?`).get(String(id));
   return decrypted(row);
 }
@@ -285,10 +289,19 @@ export function upsertAuthorizedConnection({
       VALUES (?,?,?,?,?,?,? ,?,?,?)
       ON CONFLICT(connection_id,external_shop_id) DO UPDATE SET
         shop_cipher=excluded.shop_cipher,shop_name=excluded.shop_name,region=excluded.region,
-        status=excluded.status,metadata_json=excluded.metadata_json,updated_at=excluded.updated_at`)
+        status=CASE WHEN marketplace_shops.status='selected' THEN 'selected' ELSE excluded.status END,
+        metadata_json=excluded.metadata_json,updated_at=excluded.updated_at`)
       .run(uid('mpshop_'), id, externalShopId, String(entry.shop_cipher || entry.cipher || ''),
         String(entry.shop_name || entry.name || ''), String(entry.region || region || 'VN'),
         String(entry.status || 'available'), JSON.stringify(entry.metadata || {}), now(), now());
+  }
+  if (existing && ['pending_shop_selection', 'pending_mapping'].includes(status)) {
+    const mapped = db.prepare(`SELECT 1 FROM marketplace_shop_mappings
+      WHERE connection_id=? AND enabled=1 LIMIT 1`).get(id);
+    if (mapped) {
+      db.prepare(`UPDATE marketplace_connections SET status='initial_sync',updated_at=? WHERE id=?`)
+        .run(now(), id);
+    }
   }
   return findConnectionById(id, branchId);
 }
@@ -376,10 +389,7 @@ export function updateConnectionTokens(id, {
 
 export function updateConnectionSettingsStore(id, settings = {}, branchId) {
   ensureConnectionStore();
-  const row = db.prepare(`SELECT c.* FROM marketplace_connections c WHERE c.id=? AND (
-      c.branch_id=? OR EXISTS (SELECT 1 FROM marketplace_shop_mappings m
-        WHERE m.connection_id=c.id AND m.branch_id=? AND m.enabled=1))`)
-    .get(String(id), String(branchId), String(branchId));
+  const row = scopedConnectionRow(id, branchId);
   if (!row) throw new Error('Không tìm thấy kết nối.');
   let current = {};
   try { current = row.settings_json ? JSON.parse(row.settings_json) : {}; } catch { current = {}; }
@@ -397,8 +407,7 @@ export function updateConnectionSettingsStore(id, settings = {}, branchId) {
 
 export function markConnectionDisconnected(id, branchId) {
   ensureConnectionStore();
-  const row = db.prepare(`SELECT * FROM marketplace_connections WHERE id=? AND branch_id=?`)
-    .get(String(id), String(branchId));
+  const row = scopedConnectionRow(id, branchId);
   if (!row) throw new Error('Không tìm thấy kết nối.');
   db.prepare(`UPDATE marketplace_connections SET
       status='disconnected', access_token_enc=NULL, refresh_token_enc=NULL,

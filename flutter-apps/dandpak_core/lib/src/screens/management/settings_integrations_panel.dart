@@ -478,8 +478,8 @@ class _IntegrationsPanelState extends State<IntegrationsPanel> {
   Map<String, Map<String, dynamic>> _channels = {};
   final Map<String, TextEditingController> _ctrls = {};
 
-  /// Trạng thái kết nối của các sàn "1 chạm" (shopee/lazada) — lấy từ Connection
-  /// Platform, không phải cờ enabled cũ. Dùng để hiện "Đã/Chưa kết nối" ở danh sách.
+  /// Trạng thái kết nối của các sàn "1 chạm" — lấy từ Connection Platform,
+  /// không phải cờ enabled cũ. Dùng để hiện "Đã/Chưa kết nối" ở danh sách.
   final Map<String, bool> _mpConnected = {};
 
   Future<void> _loadMarketplaceState() async {

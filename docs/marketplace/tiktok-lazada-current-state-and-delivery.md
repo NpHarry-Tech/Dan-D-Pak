@@ -7,8 +7,8 @@ and did not reset, checkout, build, publish or deploy.
 During implementation, an external workspace process committed the in-flight
 changes as `cb26858f09860d6326a7835e7e91fcce9eef54d9`, then committed the
 reconciliation worker as `51f3856`. A later external release commit `c62ea5c`
-also included the then-current marketplace tests/docs. Those commits were not
-rewritten or reset.
+and catalog commit `2e8fe7a` also included then-current marketplace files.
+Those commits were not rewritten or reset.
 
 ## Current-state audit
 
@@ -40,7 +40,7 @@ seller tokens without deleting order history.
 | Capability | TikTok Shop | Lazada |
 |---|---|---|
 | One-click authorization + encrypted vault | COMPLETE (fixture-tested; real credential pending) | COMPLETE (existing adapter; real credential pending) |
-| Multi-shop discovery and explicit mapping | COMPLETE contract/UI; READY_FOR_SANDBOX | COMPLETE contract/UI; READY_FOR_SANDBOX |
+| Multi-shop discovery and explicit mapping | COMPLETE contract/UI; owner credential and sandbox evidence BLOCKED | COMPLETE contract/UI; owner credential and sandbox evidence BLOCKED |
 | Token proactive refresh / rotation | COMPLETE contract; real rotation BLOCKED | COMPLETE contract; real rotation BLOCKED |
 | Read order/product shadow sync | PARTIAL; endpoint/app evidence BLOCKED | PARTIAL; endpoint/app evidence BLOCKED |
 | Durable webhook inbox | COMPLETE infrastructure; production signature evidence BLOCKED | COMPLETE infrastructure; production signature evidence BLOCKED |
@@ -51,8 +51,9 @@ seller tokens without deleting order history.
 | Cancellation/returns/refunds/claims | BLOCKED | BLOCKED |
 | Finance/fees/settlement reconciliation | BLOCKED | BLOCKED |
 
-Verdict: **READY_FOR_OWNER_CREDENTIALS**. It is not production-ready and no
-outbound/write capability is enabled.
+Verdict: **READY_FOR_OWNER_INPUT**. The exact owner steps, private environment
+locations and evidence gates are in `docs/marketplace/owner-credential-onboarding.md`.
+No outbound/write capability is enabled.
 
 ## Verification record
 
@@ -60,11 +61,16 @@ outbound/write capability is enabled.
   vault, multi-shop mapping, token refresh concurrency, unknown-shop quarantine,
   inbox dedupe/crash recovery, reconciliation overlap/watermark, exact-SKU shadow
   order evidence.
-- Full server suite on the final working tree: 822/822 passed. The focused
-  marketplace/social connector gate passed 23/23, including the final
-  multi-branch, pre-routing signature and worker-lease regressions.
+- Full server suite on the final working tree: 832/832 passed. The final focused
+  marketplace foundation gate passed 18/18, including zero/one/multiple shops,
+  multi-branch initial-sync gating, pre-routing signatures, worker leases,
+  evidence-only cancellations, disconnect/reconnect and legacy-token migration.
+- Lazada connector gate: 5/5 passed (TOP signing, auth URL, fail-closed webhook
+  signature and honest capability status).
+- Social connector gate: 6/6 passed, including TikTok API/webhook signing and
+  honest connector capability status.
 - Flutter: `flutter analyze` reported no issues; 262 tests passed and one
-  environment-dependent updater E2E test was skipped. No Flutter behavior changed
-  after that run.
+  environment-dependent updater E2E test was skipped. The two subsequent
+  marketplace copy/comment edits were formatted and analyzed with no issues.
 - No production credential, seller authorization, app review, subscription,
   deployment or real marketplace mutation was attempted.

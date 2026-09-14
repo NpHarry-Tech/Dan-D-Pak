@@ -781,20 +781,17 @@ if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
               children: [
                 Expanded(
                   flex: 3,
-                  child: DropdownMenu<String>(
-                    initialSelection: _recipe[i].ingredientId.isEmpty
+                  child: SearchPickField(
+                    value: _recipe[i].ingredientId.isEmpty
                         ? null
                         : _recipe[i].ingredientId,
-                    expandedInsets: EdgeInsets.zero,
-                    enableFilter: true,
-                    inputDecorationTheme: InputDecorationTheme(isDense: true),
                     hintText: t('Nguyên liệu'),
-                    dropdownMenuEntries: [
+                    dialogTitle: t('Nguyên liệu'),
+                    options: [
                       for (final ing in widget.ingredients)
-                        DropdownMenuEntry(
-                            value: ing.id, label: '${ing.name} (${ing.unit})'),
+                        SearchPickOption(ing.id, '${ing.name} (${ing.unit})'),
                     ],
-                    onSelected: (v) =>
+                    onChanged: (v) =>
                         setState(() => _recipe[i].ingredientId = v ?? ''),
                   ),
                 ),
@@ -969,19 +966,16 @@ if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
       padding: EdgeInsets.only(bottom: 6),
       child: Row(children: [
         Expanded(
-          child: DropdownMenu<String>(
-            initialSelection: otherItems.any((m) => m.id == o.refItemId)
+          child: SearchPickField(
+            value: otherItems.any((m) => m.id == o.refItemId)
                 ? o.refItemId
                 : null,
-            expandedInsets: EdgeInsets.zero,
-            enableFilter: true,
-            inputDecorationTheme: InputDecorationTheme(isDense: true),
             hintText: t('Chọn món đi kèm'),
-            dropdownMenuEntries: [
-              for (final m in otherItems)
-                DropdownMenuEntry(value: m.id, label: m.name),
+            dialogTitle: t('Chọn món đi kèm'),
+            options: [
+              for (final m in otherItems) SearchPickOption(m.id, m.name),
             ],
-            onSelected: (v) => setState(() {
+            onChanged: (v) => setState(() {
               o.refItemId = v ?? '';
               final m = otherItems.firstWhere((x) => x.id == v,
                   orElse: () => otherItems.first);

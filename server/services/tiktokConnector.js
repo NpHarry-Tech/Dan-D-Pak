@@ -249,6 +249,7 @@ export function syncTiktokOrder(order, shopId, branchId = 'sala') {
   const buyerPaymentStatus = cleanId(order.payment?.status || order.payment_status).toUpperCase();
   const paid = buyerPaymentStatus === 'PAID' || buyerPaymentStatus === 'COMPLETED';
   const voided = status === 'CANCELLED';
+  const canonicalVoided = voided && marketplaceWritesEnabled(PROVIDER, shop, 'order_lifecycle_write');
   const customerJson = json({
     id: null, name: cleanId(addr.name), phone: cleanId(addr.phone_number), email: '',
     address: cleanId(addr.full_address), provider: PROVIDER, shop_domain: shop,
@@ -261,11 +262,17 @@ export function syncTiktokOrder(order, shopId, branchId = 'sala') {
       internalId = uid('o_');
       db.prepare(`INSERT INTO orders (id,branch_id,table_id,channel,status,subtotal,discount,total,created_at,online_channel,online_ref,online_status,customer_json)
         VALUES (?,?,NULL,'online',?,?,?,?,?,?,?,?,?)`)
-        .run(internalId, branchId, voided ? 'void' : 'open', subtotal, discount, total,
+        .run(internalId, branchId, canonicalVoided ? 'void' : 'open', subtotal, discount, total,
           order.create_time ? new Date(order.create_time * 1000).toISOString() : now(), PROVIDER, orderId, status, customerJson);
     } else {
       if (!priorState?.locked_at) db.prepare(`DELETE FROM order_items WHERE order_id=?`).run(internalId);
-      db.prepare(`UPDATE orders SET status=?,online_status=?,customer_json=? WHERE id=?`).run(voided ? 'void' : 'open', status, customerJson, internalId);
+      if (canonicalVoided) {
+        db.prepare(`UPDATE orders SET status='void',online_status=?,customer_json=? WHERE id=?`)
+          .run(status, customerJson, internalId);
+      } else {
+        db.prepare(`UPDATE orders SET online_status=?,customer_json=? WHERE id=?`)
+          .run(status, customerJson, internalId);
+      }
     }
     if (!priorState?.locked_at) {
       const ins = db.prepare(`INSERT INTO order_items (id,order_id,menu_item_id,sku_id,item_code,item_barcode,unit_snapshot,name,emoji,qty,unit_price,vat_rate,station,sla_minutes,note,mods_json,status,created_at)
