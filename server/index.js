@@ -230,8 +230,8 @@ function connectedHtml(name, shop) {
   const safeName = escapeHtml(name);
   const safeShop = shop ? ` (shop ${escapeHtml(shop)})` : '';
   return `<html><body style="font-family:sans-serif;text-align:center;padding:40px">` +
-    `<h2>✓ Đã kết nối ${safeName}${safeShop}</h2>` +
-    `<p>Quay lại ứng dụng Dan-D Pak — kết nối sẽ tự cập nhật. Có thể đóng cửa sổ này.</p></body></html>`;
+    `<h2>✓ Đã cấp quyền ${safeName}${safeShop}</h2>` +
+    `<p>Quay lại Dan-D Pak để chọn gian hàng, ánh xạ chi nhánh/kho và đồng bộ lần đầu. Có thể đóng cửa sổ này.</p></body></html>`;
 }
 
 // Lazada OAuth redirect: seller authorize xong → Lazada gọi kèm ?code=.

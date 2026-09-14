@@ -104,7 +104,10 @@ class _MarketplaceConnectPanelState extends State<MarketplaceConnectPanel> {
             browserOpened: opened),
       );
       if (ok == true) {
-        if (mounted) appToast(context, '${t('Đã kết nối')} ${_meta.name}');
+        if (mounted) {
+          appToast(context,
+              '${t('Đã cấp quyền')} ${_meta.name} — ${t('tiếp tục chọn gian hàng và ánh xạ kho')}');
+        }
         await _load();
         widget.onChanged?.call();
       }

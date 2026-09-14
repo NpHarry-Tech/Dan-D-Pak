@@ -68,16 +68,45 @@ test('xoa danh muc con mon DANG HOAT DONG bao dung so luong', () => {
   );
 });
 
-test('xoa danh muc chi con mon DA LUU TRU (lich su don hang) bao ro ly do, khong phai "Request failed"', () => {
-  const cat = Catalog.createCategory({ name: 'Đã lưu trữ' }, B);
+test('xoa danh muc chi con mon DA LUU TRU: tu dong chuyen sang nhom "Đã lưu trữ" roi xoa duoc, khong con chan', () => {
+  const cat = Catalog.createCategory({ name: 'Mì cũ' }, B);
   db.prepare(`INSERT INTO menu_items (id, branch_id, category_id, name, price, deleted_at)
     VALUES ('mi_2', ?, ?, 'Món B', 10000, datetime('now'))`).run(B, cat.id);
+
+  const r = Catalog.deleteCategory(cat.id, B);
+  assert.equal(r.ok, true);
+  // Nhóm gốc phải mất hẳn.
+  assert.equal(db.prepare(`SELECT 1 FROM categories WHERE id=?`).get(cat.id), undefined);
+  // Món ẩn phải được CHUYỂN sang nhóm "Đã lưu trữ", không mất dữ liệu.
+  const moved = db.prepare(`SELECT category_id FROM menu_items WHERE id='mi_2'`).get();
+  const archivedCat = db.prepare(`SELECT * FROM categories WHERE branch_id=? AND name='Đã lưu trữ'`).get(B);
+  assert.ok(archivedCat, 'phải tự tạo nhóm "Đã lưu trữ"');
+  assert.equal(moved.category_id, archivedCat.id);
+});
+
+test('xoa nhieu nhom co mon an lien tiep deu don ve CHUNG mot nhom "Đã lưu trữ", khong tao nhom moi moi lan', () => {
+  const catA = Catalog.createCategory({ name: 'Nhóm A' }, B);
+  const catB = Catalog.createCategory({ name: 'Nhóm B' }, B);
+  db.prepare(`INSERT INTO menu_items (id, branch_id, category_id, name, price, deleted_at)
+    VALUES ('mi_a', ?, ?, 'Món A', 10000, datetime('now'))`).run(B, catA.id);
+  db.prepare(`INSERT INTO menu_items (id, branch_id, category_id, name, price, deleted_at)
+    VALUES ('mi_b', ?, ?, 'Món B2', 10000, datetime('now'))`).run(B, catB.id);
+  Catalog.deleteCategory(catA.id, B);
+  Catalog.deleteCategory(catB.id, B);
+  const archivedCats = db.prepare(`SELECT COUNT(*) n FROM categories WHERE branch_id=? AND name='Đã lưu trữ'`).get(B).n;
+  assert.equal(archivedCats, 1, 'chỉ một nhóm "Đã lưu trữ" duy nhất, không nhân bản');
+  const catIds = db.prepare(`SELECT DISTINCT category_id FROM menu_items WHERE id IN ('mi_a','mi_b')`).all();
+  assert.equal(catIds.length, 1, 'cả hai món phải nằm CHUNG một nhóm đã lưu trữ');
+});
+
+test('xoa CHINH nhom "Đã lưu trữ" khi con mon: van chan ro rang (khong tu chuyen sang chinh no)', () => {
+  const cat = Catalog.createCategory({ name: 'Nhóm C' }, B);
+  db.prepare(`INSERT INTO menu_items (id, branch_id, category_id, name, price, deleted_at)
+    VALUES ('mi_c', ?, ?, 'Món C', 10000, datetime('now'))`).run(B, cat.id);
+  Catalog.deleteCategory(cat.id, B); // dồn món vào "Đã lưu trữ"
+  const archivedCat = db.prepare(`SELECT * FROM categories WHERE branch_id=? AND name='Đã lưu trữ'`).get(B);
   assert.throws(
-    () => Catalog.deleteCategory(cat.id, B),
-    /1 món đã lưu trữ.*lịch sử đơn hàng/,
+    () => Catalog.deleteCategory(archivedCat.id, B),
+    /không thể tự chuyển sang chính nó/,
   );
-  // Đảm bảo lời hứa của thông báo là thật: KHÔNG bao giờ chạm được xuống tới
-  // trigger toàn vẹn dữ liệu (nếu chạm thì đây là bug khác — thông báo sai).
-  const stillExists = db.prepare(`SELECT 1 FROM categories WHERE id=?`).get(cat.id);
-  assert.ok(stillExists, 'danh mục phải còn nguyên vì bị chặn từ tầng JS, chưa tới DELETE');
 });

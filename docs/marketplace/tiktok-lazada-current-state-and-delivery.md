@@ -60,9 +60,9 @@ outbound/write capability is enabled.
   vault, multi-shop mapping, token refresh concurrency, unknown-shop quarantine,
   inbox dedupe/crash recovery, reconciliation overlap/watermark, exact-SKU shadow
   order evidence.
-- Full server suite: 812/812 passed before the final multi-branch/worker-lease
-  regression additions; the focused marketplace suite then passed 15/15. The
-  full suite is rerun once more on the final working tree before handoff.
+- Full server suite on the final working tree: 822/822 passed. The focused
+  marketplace/social connector gate passed 23/23, including the final
+  multi-branch, pre-routing signature and worker-lease regressions.
 - Flutter: `flutter analyze` reported no issues; 262 tests passed and one
   environment-dependent updater E2E test was skipped. No Flutter behavior changed
   after that run.

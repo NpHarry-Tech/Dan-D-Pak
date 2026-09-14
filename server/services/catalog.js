@@ -81,7 +81,11 @@ export function listMenu(options = {}) {
       params.push(String(category_id).trim());
     }
 
-    sql += ` ORDER BY sort`;
+    // Món đã ẩn (hidden=1) mặc định đẩy xuống CUỐI danh sách — F&B POS vẫn
+    // thấy đủ món ẩn (xem comment ở trên) nhưng không nên chen giữa món đang
+    // bán, gây khó quét mắt khi chọn món. Trong mỗi nhóm hiện/ẩn vẫn giữ thứ
+    // tự `sort` như cũ.
+    sql += ` ORDER BY hidden, sort`;
 
     const offset = (parsedPage - 1) * parsedLimit;
     const search = searchTokens(q);
@@ -109,7 +113,7 @@ export function listMenu(options = {}) {
   const allCategories = db.prepare(`SELECT * FROM categories WHERE branch_id=? ORDER BY sort`).all(branch_id);
   const categories = selfOrder ? allCategories.filter(c => !c.self_order_hidden) : allCategories;
   const hiddenCategoryIds = selfOrder ? new Set(allCategories.filter(c => c.self_order_hidden).map(c => c.id)) : null;
-  const rows = db.prepare(`SELECT * FROM menu_items WHERE branch_id=? ORDER BY sort`).all(branch_id)
+  const rows = db.prepare(`SELECT * FROM menu_items WHERE branch_id=? ORDER BY hidden, sort`).all(branch_id)
     .filter(r => includeDeleted || !r.deleted_at)
     .filter(r => !selfOrder || !r.hidden)
     .filter(r => !selfOrder || !r.self_order_hidden)
@@ -523,18 +527,36 @@ export function updateCategory(id, body, branch_id = 'sala') {
   audit('category.update', { id }, branch_id);
   return db.prepare(`SELECT * FROM categories WHERE id=? AND branch_id=?`).get(id, branch_id);
 }
+// Nhóm gộp CHUNG cho món đã lưu trữ mồ côi khi nhóm gốc của chúng bị xoá.
+// Đơn hàng cũ KHÔNG đọc category_id (order_items chụp thẳng tên/giá lúc bán,
+// xem createOrUpdateOrder) — món đã ẩn (deleted_at khác NULL) không còn hiện
+// ở đâu trong menu/self-order, nên nhóm nào chứa chúng không còn ý nghĩa
+// nghiệp vụ. Gộp về một nơi CỐ ĐỊNH thay vì chặn xoá vĩnh viễn nhóm gốc.
+const ARCHIVED_CATEGORY_ID_PREFIX = 'cat_archived_';
+function ensureArchivedCategory(branch_id) {
+  const id = ARCHIVED_CATEGORY_ID_PREFIX + branch_id;
+  const existing = db.prepare(`SELECT * FROM categories WHERE id=? AND branch_id=?`).get(id, branch_id);
+  if (existing) return existing;
+  db.prepare(`INSERT INTO categories (id,branch_id,name,icon,sort,self_order_hidden) VALUES (?,?,?,?,9999,1)`)
+    .run(id, branch_id, 'Đã lưu trữ', '📦');
+  return db.prepare(`SELECT * FROM categories WHERE id=? AND branch_id=?`).get(id, branch_id);
+}
 export function deleteCategory(id, branch_id = 'sala') {
   const cur = db.prepare(`SELECT * FROM categories WHERE id=? AND branch_id=?`).get(id, branch_id);
   if (!cur) throw new Error('Danh mục không tồn tại');
   const active = db.prepare(`SELECT COUNT(*) n FROM menu_items WHERE category_id=? AND branch_id=? AND deleted_at IS NULL`).get(id, branch_id).n;
   if (active) throw new Error(`Không thể xóa: còn ${active} món trong danh mục này. Hãy chuyển/xóa món trước.`);
-  // Món đã lưu trữ (deleted_at khác NULL, còn lịch sử đơn hàng) VẪN giữ
-  // category_id — cổng toàn vẹn dữ liệu (initCriticalIntegrityGuards) chặn
-  // xoá danh mục cha khi còn bản ghi con nào tham chiếu, kể cả đã lưu trữ.
-  // Kiểm ở đây để báo đúng lý do NGAY, thay vì để lỗi SQLite thô rơi xuống.
-  const archived = db.prepare(`SELECT COUNT(*) n FROM menu_items WHERE category_id=? AND branch_id=? AND deleted_at IS NOT NULL`).get(id, branch_id).n;
-  if (archived) {
-    throw new Error(`Không thể xóa: danh mục này từng có ${archived} món đã lưu trữ (còn lịch sử đơn hàng) — phải giữ nguyên liên kết, không thể xóa danh mục đã từng dùng.`);
+  // Món đã lưu trữ (deleted_at khác NULL) không còn hiện ở menu nào — chuyển
+  // sang nhóm "Đã lưu trữ" chung để giải phóng category_id, KHÔNG chặn xoá.
+  // Không tự chuyển nếu ĐANG xoá chính nhóm "Đã lưu trữ" đó (tránh chuyển nó
+  // sang chính nó) — trường hợp hiếm, giữ chặn với thông báo rõ ràng.
+  const archivedTarget = id === ARCHIVED_CATEGORY_ID_PREFIX + branch_id ? null : ensureArchivedCategory(branch_id);
+  if (archivedTarget) {
+    db.prepare(`UPDATE menu_items SET category_id=? WHERE category_id=? AND branch_id=? AND deleted_at IS NOT NULL`)
+      .run(archivedTarget.id, id, branch_id);
+  } else {
+    const archived = db.prepare(`SELECT COUNT(*) n FROM menu_items WHERE category_id=? AND branch_id=? AND deleted_at IS NOT NULL`).get(id, branch_id).n;
+    if (archived) throw new Error(`Không thể xóa: nhóm "Đã lưu trữ" đang chứa ${archived} món, không thể tự chuyển sang chính nó.`);
   }
   db.prepare(`DELETE FROM categories WHERE id=? AND branch_id=?`).run(id, branch_id);
   cacheBust('menu:');
