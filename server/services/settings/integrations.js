@@ -372,6 +372,17 @@ const DEFAULT_INTEGRATIONS = {
       apiBase: 'https://openapi.zalo.me/v3.0',
       note: '',
     },
+    // App "In-house IM Chat" TRÊN Lazada ISV Console — App Key/Secret RIÊNG với
+    // kênh 'lazada' (bán hàng), dù cùng một seller. Chỉ nhận tin (inbound); gửi
+    // trả lời ra ngoài CHƯA làm vì chưa xác nhận được endpoint/chữ ký chính thức.
+    lazadachat: {
+      enabled: false,
+      environment: 'production',
+      appId: '',          // Lazada IM App Key
+      secretKey: '',      // Lazada IM App Secret — ký HMAC-SHA256 push (tạm dùng scheme giống push đơn hàng)
+      webhookSecret: '',
+      note: '',
+    },
   },
 };
 

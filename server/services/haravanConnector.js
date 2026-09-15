@@ -14,7 +14,8 @@ const WEBHOOK_BASE = 'https://webhook.haravan.com';
 // Scope PHẢI khớp scope app đã đăng ký ở Haravan Partners, nếu không Haravan
 // trả invalid_scope. Quyền tài nguyên (com.read_orders…) KHÔNG nằm trong scope
 // OAuth mà được cấp qua `grant_service` + scope đã cấu hình của app.
-const DEFAULT_SCOPES = 'openid profile address email phone org userinfo grant_service wh_api';
+const LOGIN_SCOPES = 'openid profile email org userinfo offline_access';
+const DEFAULT_SCOPES = `${LOGIN_SCOPES} grant_service wh_api`;
 const SUPPORTED_TOPICS = new Set([
   'orders/create', 'orders/updated', 'orders/update', 'orders/cancelled', 'orders/cancel', 'orders/paid',
   'customers/create', 'customers/update',
@@ -37,6 +38,35 @@ function normShop(value) { return cleanId(value).replace(/^https?:\/\//, '').rep
 function hmac(rawBody, secret) { return crypto.createHmac('sha256', secret).update(rawBody).digest('base64'); }
 function base64urlJson(token) {
   try { return JSON.parse(Buffer.from(String(token).split('.')[1] || '', 'base64url').toString('utf8')); } catch { return {}; }
+}
+function scopeSet(value) {
+  return new Set(String(value || '').split(/[\s,]+/).map(cleanId).filter(Boolean));
+}
+function rolesFromClaims(claims = {}) {
+  const value = claims.role ?? claims.roles ?? [];
+  return (Array.isArray(value) ? value : [value]).map(v => cleanId(v).toLowerCase()).filter(Boolean);
+}
+function oauthStateSecret() {
+  const secret = cleanId(env.HARAVAN_CLIENT_SECRET);
+  if (!secret) throw new Error('HARAVAN_CLIENT_SECRET is not set');
+  return secret;
+}
+function createOAuthState(payload) {
+  const encoded = Buffer.from(json(payload)).toString('base64url');
+  const signature = crypto.createHmac('sha256', oauthStateSecret()).update(encoded).digest('base64url');
+  return `${encoded}.${signature}`;
+}
+function readOAuthState(value) {
+  const [encoded, supplied, extra] = String(value || '').split('.');
+  if (!encoded || !supplied || extra) throw Object.assign(new Error('Phiên kết nối Haravan không hợp lệ. Hãy kết nối lại từ Dan-D Pak.'), { status: 400 });
+  const expected = crypto.createHmac('sha256', oauthStateSecret()).update(encoded).digest('base64url');
+  if (!safeEqual(expected, supplied)) throw Object.assign(new Error('Phiên kết nối Haravan không hợp lệ. Hãy kết nối lại từ Dan-D Pak.'), { status: 400 });
+  let data;
+  try { data = JSON.parse(Buffer.from(encoded, 'base64url').toString('utf8')); } catch { data = null; }
+  if (!data || Date.now() - Number(data.ts || 0) > 15 * 60 * 1000 || Number(data.ts || 0) > Date.now() + 60_000) {
+    throw Object.assign(new Error('Phiên kết nối Haravan đã hết hạn. Hãy thử kết nối lại.'), { status: 400 });
+  }
+  return data;
 }
 function header(headers = {}, name) {
   const lower = name.toLowerCase();
@@ -72,6 +102,15 @@ function installedShop(shopDomain) {
   const shop = normShop(shopDomain);
   if (!shop) return null;
   return db.prepare(`SELECT * FROM haravan_shops WHERE shop_domain=? AND active=1`).get(shop) || null;
+}
+
+function assertShopBranch(shopDomain, branchId = '') {
+  if (!branchId) return;
+  const installed = installedShop(shopDomain);
+  if (!installed || installed.branch_id !== String(branchId)) {
+    const error = new Error('Gian hàng Haravan không thuộc chi nhánh đang thao tác.');
+    error.status = 403; throw error;
+  }
 }
 
 function tokenContext(shopDomain, branchId, field) {
@@ -215,14 +254,16 @@ export function installUrl({ branch_id = 'ONLINE', redirect_uri = '' } = {}) {
   const cfg = legacyConfig();
   if (!cfg.clientId) throw new Error('HARAVAN_CLIENT_ID is not set');
   const redirect = redirect_uri || `${env.APP_URL || env.API_BASE_URL || ''}/auth/haravan/callback`;
-  const state = Buffer.from(JSON.stringify({ branch_id, ts: Date.now(), n: crypto.randomBytes(8).toString('hex') })).toString('base64url');
+  const nonce = crypto.randomBytes(18).toString('base64url');
+  const state = createOAuthState({ branch_id, stage: 'login', ts: Date.now(), nonce });
   const u = new URL('/connect/authorize', AUTH_BASE);
-  u.searchParams.set('response_mode', 'query');
-  u.searchParams.set('response_type', 'code');
-  u.searchParams.set('scope', env.HARAVAN_SCOPES || DEFAULT_SCOPES);
+  u.searchParams.set('response_mode', 'form_post');
+  u.searchParams.set('response_type', 'code id_token');
+  u.searchParams.set('scope', LOGIN_SCOPES);
   u.searchParams.set('client_id', cfg.clientId);
   u.searchParams.set('redirect_uri', redirect);
   u.searchParams.set('state', state);
+  u.searchParams.set('nonce', nonce);
   return { url: u.toString(), state, redirect_uri: redirect };
 }
 
@@ -246,13 +287,66 @@ async function tokenExchange(code, redirect_uri) {
   return data;
 }
 
+async function refreshInstalledToken(shopDomain) {
+  const installed = installedShop(shopDomain);
+  const cfg = config(shopDomain);
+  if (!installed || !cfg.refreshToken || !cfg.clientId || !cfg.clientSecret) return false;
+  const body = new URLSearchParams({
+    grant_type: 'refresh_token', client_id: cfg.clientId,
+    client_secret: cfg.clientSecret, refresh_token: cfg.refreshToken,
+  });
+  const res = await fetch(`${AUTH_BASE}/connect/token`, {
+    method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body,
+  });
+  const tokens = await res.json().catch(() => ({}));
+  if (!res.ok || !tokens.access_token) return false;
+  const expiresAt = tokens.expires_in ? new Date(Date.now() + Number(tokens.expires_in) * 1000).toISOString() : null;
+  db.prepare(`UPDATE haravan_shops SET access_token=?,refresh_token=?,scope=?,token_type=?,expires_at=?,updated_at=? WHERE id=?`)
+    .run(encryptSecret(tokens.access_token, tokenContext(installed.shop_domain, installed.branch_id, 'access')),
+      encryptSecret(tokens.refresh_token || cfg.refreshToken, tokenContext(installed.shop_domain, installed.branch_id, 'refresh')),
+      tokens.scope || installed.scope || '', tokens.token_type || 'Bearer', expiresAt, now(), installed.id);
+  audit('haravan.oauth.refresh', { shop_domain: installed.shop_domain }, installed.branch_id, 'haravan');
+  return true;
+}
+
 export async function oauthCallback({ code, state, shop, redirect_uri }) {
   if (!code) throw new Error('missing_haravan_oauth_code');
-  const stateData = (() => { try { return JSON.parse(Buffer.from(String(state || ''), 'base64url').toString('utf8')); } catch { return {}; } })();
+  const stateData = readOAuthState(state);
   const tokens = await tokenExchange(code, redirect_uri || `${env.APP_URL || env.API_BASE_URL || ''}/auth/haravan/callback`);
   const claims = base64urlJson(tokens.id_token);
+  if (stateData.nonce && (!claims.nonce || !safeEqual(stateData.nonce, claims.nonce))) {
+    throw Object.assign(new Error('Haravan trả về nonce không hợp lệ. Hãy kết nối lại.'), { status: 400 });
+  }
   const shopDomain = normShop(shop || claims.org_name || claims.org_domain || claims.shop_domain || claims.domain || '');
   if (!shopDomain) throw new Error('Haravan OAuth did not return shop domain; pass ?shop=your-shop.myharavan.com to callback.');
+  if (stateData.stage === 'login') {
+    if (!rolesFromClaims(claims).includes('admin')) {
+      const error = new Error('Chỉ chủ cửa hàng/tài khoản Haravan có vai trò admin mới có thể cấp quyền webhook. Hãy đăng nhập lại bằng tài khoản chủ shop.');
+      error.status = 403; error.code = 'HARAVAN_OWNER_REQUIRED'; throw error;
+    }
+    const nonce = crypto.randomBytes(18).toString('base64url');
+    const nextState = createOAuthState({ branch_id: stateData.branch_id, stage: 'install', ts: Date.now(), nonce });
+    const u = new URL('/connect/authorize', AUTH_BASE);
+    u.searchParams.set('response_mode', 'form_post');
+    u.searchParams.set('response_type', 'code id_token');
+    const requested = scopeSet(env.HARAVAN_SCOPES || DEFAULT_SCOPES);
+    for (const required of scopeSet(DEFAULT_SCOPES)) requested.add(required);
+    u.searchParams.set('scope', [...requested].join(' '));
+    u.searchParams.set('client_id', legacyConfig().clientId);
+    u.searchParams.set('redirect_uri', redirect_uri || `${env.APP_URL || env.API_BASE_URL || ''}/auth/haravan/callback`);
+    u.searchParams.set('state', nextState);
+    u.searchParams.set('nonce', nonce);
+    const orgId = cleanId(claims.org_id || claims.orgid);
+    if (orgId) u.searchParams.set('orgid', orgId);
+    return { ok: true, continue_url: u.toString(), stage: 'install' };
+  }
+  if (stateData.stage !== 'install') throw Object.assign(new Error('Phiên cài đặt Haravan không hợp lệ.'), { status: 400 });
+  const granted = scopeSet(tokens.scope);
+  const missing = ['grant_service', 'wh_api'].filter(required => !granted.has(required));
+  if (missing.length) {
+    const error = new Error(`Haravan chưa cấp quyền ${missing.join(', ')}. Kiểm tra app đã đăng ký Webhook trong Haravan Partners và kết nối bằng tài khoản chủ shop/admin.`);
+    error.status = 403; error.code = 'HARAVAN_WEBHOOK_SCOPE_MISSING'; throw error;
+  }
   const expiresAt = tokens.expires_in ? new Date(Date.now() + Number(tokens.expires_in) * 1000).toISOString() : null;
   const targetBranch = stateData.branch_id || legacyConfig().defaultBranchId;
   db.prepare(`INSERT INTO haravan_shops
@@ -268,17 +362,23 @@ export async function oauthCallback({ code, state, shop, redirect_uri }) {
       tokens.scope || '', tokens.token_type || 'Bearer',
       expiresAt, legacyConfig().locationId || null, legacyConfig().apiBase, now(), now(), 1, json({ tokens: { ...tokens, access_token: '***', refresh_token: tokens.refresh_token ? '***' : undefined }, claims }));
   audit('haravan.oauth.install', { shop_domain: shopDomain, scope: tokens.scope || '' }, stateData.branch_id || legacyConfig().defaultBranchId, 'haravan');
-  await subscribeWebhook(shopDomain).catch(err => writeSyncLog({ shop_domain: shopDomain, topic: 'webhook/subscribe', status: 'failed', error_message: err.message }));
-  return { ok: true, shopDomain, branch_id: stateData.branch_id || legacyConfig().defaultBranchId };
+  try {
+    await subscribeWebhook(shopDomain);
+  } catch (err) {
+    db.prepare(`UPDATE haravan_shops SET webhook_status='error',webhook_error=?,webhook_checked_at=?,updated_at=? WHERE shop_domain=?`)
+      .run(cleanId(err.message).slice(0, 500), now(), now(), shopDomain);
+    return { ok: true, shopDomain, branch_id: targetBranch, webhook_status: 'error', warning: err.message };
+  }
+  return { ok: true, shopDomain, branch_id: targetBranch, webhook_status: 'subscribed' };
 }
 
 async function haravanRequest(path, { shopDomain = '', method = 'GET', body = null } = {}) {
-  const cfg = config(shopDomain);
+  let cfg = config(shopDomain);
   if (!cfg.accessToken) throw new Error('HARAVAN_ACCESS_TOKEN is not set');
   let lastError;
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
-      const res = await fetch(`${cfg.apiBase || 'https://apis.haravan.com'}${path}`, {
+      const request = () => fetch(`${cfg.apiBase || 'https://apis.haravan.com'}${path}`, {
         method,
         headers: {
           Authorization: `Bearer ${cfg.accessToken}`,
@@ -288,6 +388,11 @@ async function haravanRequest(path, { shopDomain = '', method = 'GET', body = nu
         },
         body: body ? json(body) : undefined,
       });
+      let res = await request();
+      if (res.status === 401 && await refreshInstalledToken(cfg.shopDomain)) {
+        cfg = config(cfg.shopDomain);
+        res = await request();
+      }
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error_description || data.error || data.message || `Haravan API ${res.status}`);
       return data;
@@ -306,17 +411,30 @@ function safeEndpoint(url) {
 }
 
 async function webhookSubscribeRequest(shopDomain, method = 'POST') {
-  const cfg = config(shopDomain);
+  let cfg = config(shopDomain);
   const url = `${WEBHOOK_BASE}/api/subscribe`;
   const shop = normShop(shopDomain || cfg.shopDomain);
+  const installed = installedShop(shop);
+  const granted = scopeSet(installed?.scope);
+  if (installed?.scope && !granted.has('wh_api')) {
+    const e = new Error('Token Haravan chưa có quyền wh_api. Hãy kết nối lại bằng tài khoản chủ shop/admin sau khi đăng ký Webhook trong Haravan Partners.');
+    e.status = 403;
+    e.code = 'HARAVAN_WEBHOOK_SCOPE_MISSING';
+    e.diagnostic = { stage: 'permission', method, endpoint: safeEndpoint(url), http_status: 403,
+      haravan_code: e.code, haravan_message: e.message, shop_domain: shop, latency_ms: 0 };
+    throw e;
+  }
   const startedAt = Date.now();
   let res;
   try {
-    res = await fetch(url, {
-      method,
+    const request = () => fetch(url, { method,
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${cfg.accessToken}` },
-      body: method === 'POST' ? '{}' : undefined,
-    });
+      body: method === 'POST' ? '{}' : undefined });
+    res = await request();
+    if (res.status === 401 && await refreshInstalledToken(shop)) {
+      cfg = config(shop);
+      res = await request();
+    }
   } catch (netErr) {
     // Lỗi mạng/DNS/TLS TRƯỚC khi có response — vẫn phải điều tra được.
     const e = new Error(`Haravan webhook ${method} loi mang: ${netErr.message}`);
@@ -329,7 +447,10 @@ async function webhookSubscribeRequest(shopDomain, method = 'POST') {
   const latency_ms = Date.now() - startedAt;
   const data = await res.json().catch(() => ({}));
   if (!res.ok || data.error === true) {
-    const message = String(data.message || data.error || `Haravan webhook ${res.status}`).slice(0, 200);
+    const fallback = res.status === 401
+      ? 'Haravan từ chối token webhook (401). Hãy kết nối lại bằng tài khoản chủ shop/admin và bảo đảm app có scope wh_api.'
+      : `Haravan webhook ${res.status}`;
+    const message = String(data.message || (typeof data.error === 'string' ? data.error : '') || fallback).slice(0, 500);
     const e = new Error(message);
     e.status = res.status;
     // Chẩn đoán CÓ CẤU TRÚC, đã REDACT (không bao giờ chứa access token — token chỉ
@@ -344,16 +465,21 @@ async function webhookSubscribeRequest(shopDomain, method = 'POST') {
   return data;
 }
 
-export async function subscribeWebhook(shopDomain = '') {
+export async function subscribeWebhook(shopDomain = '', branchId = '') {
   const shop = normShop(shopDomain || config(shopDomain).shopDomain);
+  assertShopBranch(shop, branchId);
   try {
     const data = await webhookSubscribeRequest(shopDomain, 'POST');
+    db.prepare(`UPDATE haravan_shops SET webhook_status='subscribed',webhook_error=NULL,webhook_checked_at=?,updated_at=? WHERE shop_domain=?`)
+      .run(now(), now(), shop);
     audit('haravan.webhook.subscribe', { shop_domain: shop }, defaultBranch(shopDomain), 'haravan');
     return data;
   } catch (err) {
     // "Nhận từ Haravan • 1" đỏ mà không rõ vì sao: ghi lại chẩn đoán có cấu trúc
     // (status/endpoint/haravan_message/latency, KHÔNG token) để còn điều tra được.
     try {
+      db.prepare(`UPDATE haravan_shops SET webhook_status='error',webhook_error=?,webhook_checked_at=?,updated_at=? WHERE shop_domain=?`)
+        .run(cleanId(err.message).slice(0, 500), now(), now(), shop);
       writeSyncLog({ shop_domain: shop, topic: 'webhook/subscribe', status: 'failed',
         error_message: err.message, raw_payload: err.diagnostic || null });
     } catch { /* logging must not mask the real error */ }
@@ -361,10 +487,13 @@ export async function subscribeWebhook(shopDomain = '') {
   }
 }
 
-export async function unsubscribeWebhook(shopDomain = '') {
+export async function unsubscribeWebhook(shopDomain = '', branchId = '') {
   const shop = normShop(shopDomain || config(shopDomain).shopDomain);
+  assertShopBranch(shop, branchId);
   try {
     const data = await webhookSubscribeRequest(shopDomain, 'DELETE');
+    db.prepare(`UPDATE haravan_shops SET webhook_status='unsubscribed',webhook_error=NULL,webhook_checked_at=?,updated_at=? WHERE shop_domain=?`)
+      .run(now(), now(), shop);
     audit('haravan.webhook.unsubscribe', { shop_domain: shop }, defaultBranch(shopDomain), 'haravan');
     return data;
   } catch (err) {
@@ -519,13 +648,16 @@ export function syncHaravanOrder(payload, topic = 'orders/create', shopDomain = 
         'retail', 0, line.note || null, now());
     }
 
+    const installed = installedShop(shop);
     db.prepare(`INSERT INTO external_orders
-      (id,provider,shop_domain,external_order_id,internal_order_id,external_order_code,sync_status,raw_payload,created_at,updated_at)
-      VALUES (?,?,?,?,?,?,?,?,?,?)
+      (id,provider,shop_domain,external_shop_id,shop_name,connection_id,external_order_id,internal_order_id,external_order_code,sync_status,raw_payload,created_at,updated_at)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
       ON CONFLICT(provider, shop_domain, external_order_id) DO UPDATE SET
         internal_order_id=excluded.internal_order_id,external_order_code=excluded.external_order_code,
+        external_shop_id=COALESCE(NULLIF(excluded.external_shop_id,''),external_orders.external_shop_id),
+        shop_name=COALESCE(NULLIF(excluded.shop_name,''),external_orders.shop_name),connection_id=COALESCE(NULLIF(excluded.connection_id,''),external_orders.connection_id),
         sync_status=excluded.sync_status,raw_payload=excluded.raw_payload,updated_at=excluded.updated_at`)
-      .run(uid('eo_'), PROVIDER, shop, externalId, internalId, externalCode, 'success', json(payload), now(), now());
+      .run(uid('eo_'), PROVIDER, shop, shop, shop, installed?.id || '', externalId, internalId, externalCode, 'success', json(payload), now(), now());
 
     const financialStatus = cleanId(payload.financial_status).toLowerCase();
     const fulfillmentStatus = cleanId(payload.fulfillment_status).toLowerCase();
@@ -842,11 +974,15 @@ async function pushPaidPosOrder(orderId, shopDomain = '') {
   } } });
   const remote = response.order || response;
   if (!remote?.id) throw new Error('Haravan order response missing id');
+  const installed = installedShop(shop);
   db.prepare(`INSERT INTO external_orders
-    (id,provider,shop_domain,external_order_id,internal_order_id,external_order_code,sync_status,raw_payload,created_at,updated_at)
-    VALUES (?,?,?,?,?,?,?,?,?,?) ON CONFLICT(provider,shop_domain,external_order_id) DO UPDATE SET
-    internal_order_id=excluded.internal_order_id,external_order_code=excluded.external_order_code,sync_status='success',raw_payload=excluded.raw_payload,updated_at=excluded.updated_at`)
-    .run(uid('eo_'), PROVIDER, shop, cleanId(remote.id), orderId, cleanId(remote.order_number || remote.name || bill), 'success', json(remote), now(), now());
+    (id,provider,shop_domain,external_shop_id,shop_name,connection_id,external_order_id,internal_order_id,external_order_code,sync_status,raw_payload,created_at,updated_at)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(provider,shop_domain,external_order_id) DO UPDATE SET
+    internal_order_id=excluded.internal_order_id,external_order_code=excluded.external_order_code,
+    external_shop_id=COALESCE(NULLIF(excluded.external_shop_id,''),external_orders.external_shop_id),
+    shop_name=COALESCE(NULLIF(excluded.shop_name,''),external_orders.shop_name),connection_id=COALESCE(NULLIF(excluded.connection_id,''),external_orders.connection_id),
+    sync_status='success',raw_payload=excluded.raw_payload,updated_at=excluded.updated_at`)
+    .run(uid('eo_'), PROVIDER, shop, shop, shop, installed?.id || '', cleanId(remote.id), orderId, cleanId(remote.order_number || remote.name || bill), 'success', json(remote), now(), now());
   return { external_order_id: cleanId(remote.id), bill_no: bill };
 }
 
@@ -994,19 +1130,23 @@ async function pullHaravanInventory({ shopDomain = '', delta = true, sessionId =
   return { shopDomain: shop, resource: 'inventory', queued, session_id: sessionId };
 }
 
-function shopsToSync(shopDomain = '') {
+function shopsToSync(shopDomain = '', branchId = '') {
   const shop = normShop(shopDomain);
   if (shop) return [shop];
-  const rows = db.prepare(`SELECT shop_domain FROM haravan_shops WHERE active=1 ORDER BY installed_at`).all().map(r => r.shop_domain);
+  const rows = branchId
+    ? db.prepare(`SELECT shop_domain FROM haravan_shops WHERE active=1 AND branch_id=? ORDER BY installed_at`).all(branchId).map(r => r.shop_domain)
+    : db.prepare(`SELECT shop_domain FROM haravan_shops WHERE active=1 ORDER BY installed_at`).all().map(r => r.shop_domain);
   const legacy = legacyConfig();
-  if (legacy.accessToken && legacy.shopDomain && !rows.includes(legacy.shopDomain)) rows.push(legacy.shopDomain);
-  if (!rows.length && legacy.accessToken) rows.push('');
+  const legacyBranchMatches = !legacy.accessToken || !branchId || defaultBranch(legacy.shopDomain) === String(branchId);
+  if (legacyBranchMatches && legacy.accessToken && legacy.shopDomain && !rows.includes(legacy.shopDomain)) rows.push(legacy.shopDomain);
+  if (legacyBranchMatches && !rows.length && legacy.accessToken) rows.push('');
   return rows;
 }
 
 async function pullForShops(resource, opts = {}) {
   const out = [];
-  for (const shop of shopsToSync(opts.shopDomain)) {
+  for (const shop of shopsToSync(opts.shopDomain, opts.branchId)) {
+    if (shop && opts.branchId) assertShopBranch(shop, opts.branchId);
     const cfg = config(shop);
     if (resource === 'orders' && !cfg.syncOrders) continue;
     if (resource === 'customers' && !cfg.syncCustomers) continue;
@@ -1033,16 +1173,17 @@ function drainHaravanQueue() {
   return processed;
 }
 
-export async function syncAllHaravan({ shopDomain = '', delta = true, subscribe = true } = {}) {
+export async function syncAllHaravan({ shopDomain = '', delta = true, subscribe = true, branchId = '' } = {}) {
   if (syncAllRunning) return { skipped: true, reason: 'sync_already_running' };
+  if (shopDomain) assertShopBranch(normShop(shopDomain), branchId);
   syncAllRunning = true;
   try {
     const results = [];
-    for (const shop of shopsToSync(shopDomain)) {
+    for (const shop of shopsToSync(shopDomain, branchId)) {
       const sessionId = uid('hvs_');
       const cfg = config(shop);
       if (!cfg.enabled || !cfg.accessToken) continue;
-      if (subscribe) await subscribeWebhook(shop).catch(err =>
+      if (subscribe && installedShop(shop)?.webhook_status !== 'subscribed') await subscribeWebhook(shop).catch(err =>
         writeWorkerFailureOnce('webhook/subscribe', err));
       if (cfg.syncProducts) results.push(await pullHaravanResource('products', { shopDomain: shop, delta, sessionId }));
       drainHaravanQueue();
@@ -1069,8 +1210,9 @@ function chunks(rows, size) {
   return out;
 }
 
-export async function pushInventoryToHaravan({ shopDomain = '', skuIds = [], reason = 'newproduct' } = {}) {
+export async function pushInventoryToHaravan({ shopDomain = '', skuIds = [], reason = 'newproduct', branchId = '' } = {}) {
   const shop = normShop(shopDomain || config().shopDomain);
+  if (shop && branchId) assertShopBranch(shop, branchId);
   const cfg = config(shop);
   if (!cfg.enabled || !cfg.syncInventory) return { shopDomain: shop, pushed: 0, skipped: 'inventory_sync_disabled' };
   if (!/^\d+$/.test(cleanId(cfg.locationId))) throw new Error('HARAVAN_LOCATION_ID is not set');
@@ -1106,9 +1248,9 @@ export async function pushInventoryToHaravan({ shopDomain = '', skuIds = [], rea
   return { shopDomain: shop, pushed };
 }
 
-export async function pushPendingInventoryChanges() {
+export async function pushPendingInventoryChanges({ branchId = '' } = {}) {
   const out = [];
-  for (const shop of shopsToSync()) {
+  for (const shop of shopsToSync('', branchId)) {
     const cfg = config(shop);
     if (!cfg.enabled || !cfg.syncInventory || !cfg.accessToken || !/^\d+$/.test(cleanId(cfg.locationId))) continue;
     const branch_id = defaultBranch(shop);
@@ -1127,15 +1269,22 @@ export async function pushPendingInventoryChanges() {
       ORDER BY rowid ASC LIMIT 500`).all(branch_id, lastRowid);
     if (!rows.length) continue;
     const skuIds = [...new Set(rows.map(r => r.inventory_item_id).filter(Boolean))];
-    if (skuIds.length) out.push(await pushInventoryToHaravan({ shopDomain: shop, skuIds, reason: 'newproduct' }));
+    if (skuIds.length) out.push(await pushInventoryToHaravan({ shopDomain: shop, skuIds, reason: 'newproduct', branchId }));
     upsertState(shop, 'inventory_push_rowid', rows[rows.length - 1].rowid);
   }
   return { results: out, pushed: out.reduce((sum, x) => sum + x.pushed, 0) };
 }
 
-export function status() {
-  const counts = db.prepare(`SELECT shop_domain,status,COUNT(*) c FROM sync_logs WHERE provider=? GROUP BY shop_domain,status`).all(PROVIDER);
-  const shops = db.prepare(`SELECT shop_domain,branch_id,scope,expires_at,location_id,active,installed_at,updated_at FROM haravan_shops ORDER BY installed_at DESC`).all();
+export function status(branchId = '') {
+  const counts = branchId
+    ? db.prepare(`SELECT shop_domain,status,COUNT(*) c FROM sync_logs WHERE provider=?
+        AND shop_domain IN (SELECT shop_domain FROM haravan_shops WHERE branch_id=?) GROUP BY shop_domain,status`).all(PROVIDER, branchId)
+    : db.prepare(`SELECT shop_domain,status,COUNT(*) c FROM sync_logs WHERE provider=? GROUP BY shop_domain,status`).all(PROVIDER);
+  const shops = branchId
+    ? db.prepare(`SELECT shop_domain,org_id,branch_id,scope,expires_at,location_id,active,installed_at,updated_at,
+        webhook_status,webhook_error,webhook_checked_at FROM haravan_shops WHERE branch_id=? ORDER BY installed_at DESC`).all(branchId)
+    : db.prepare(`SELECT shop_domain,org_id,branch_id,scope,expires_at,location_id,active,installed_at,updated_at,
+        webhook_status,webhook_error,webhook_checked_at FROM haravan_shops ORDER BY installed_at DESC`).all();
   const cfg = legacyConfig();
   return {
     enabled: cfg.enabled || shops.some(s => s.active),
@@ -1143,11 +1292,26 @@ export function status() {
     tokenConfigured: !!cfg.accessToken,
     webhookSecretConfigured: !!(cfg.webhookSecret || cfg.clientSecret),
     oauthConfigured: !!(cfg.clientId && cfg.clientSecret),
-    defaultBranchId: defaultBranch(),
+    defaultBranchId: (() => { try { return defaultBranch(); } catch { return cfg.defaultBranchId || ''; } })(),
     shops,
     counts,
     capabilities: haravanCapabilities(),
   };
+}
+
+export async function disconnectHaravanShop(shopDomain, branchId = '') {
+  const shop = normShop(shopDomain);
+  const installed = installedShop(shop);
+  if (!installed || (branchId && installed.branch_id !== branchId)) {
+    const error = new Error('Không tìm thấy gian hàng Haravan trong chi nhánh này.');
+    error.status = 404; throw error;
+  }
+  let warning = '';
+  try { await unsubscribeWebhook(shop); } catch (error) { warning = cleanId(error.message); }
+  db.prepare(`UPDATE haravan_shops SET active=0,access_token='',refresh_token=NULL,webhook_status='unsubscribed',
+    webhook_error=?,updated_at=? WHERE id=?`).run(warning || null, now(), installed.id);
+  audit('haravan.oauth.disconnect', { shop_domain: shop, warning: warning || null }, installed.branch_id, 'haravan');
+  return { ok: true, shop_domain: shop, warning: warning || null };
 }
 
 export function haravanCapabilities(branch_id = '') {
@@ -1311,25 +1475,34 @@ export async function performHaravanOrderAction({ internalOrderId, action, input
   return { action, internal_order_id: orderId, external_order_id: externalId, remote };
 }
 
-export function listSyncLogs(limit = 100) {
+export function listSyncLogs(limit = 100, branchId = '') {
+  const branchFilter = branchId
+    ? ` AND shop_domain IN (SELECT shop_domain FROM haravan_shops WHERE branch_id=?)`
+    : '';
   return db.prepare(`SELECT id,shop_domain,topic,external_id,status,error_message,retry_count,created_at,processed_at,direction,session_id
-    FROM sync_logs WHERE provider=? ORDER BY created_at DESC LIMIT ?`)
-    .all(PROVIDER, Math.max(1, Math.min(500, Number(limit) || 100)));
+    FROM sync_logs WHERE provider=?${branchFilter} ORDER BY created_at DESC LIMIT ?`)
+    .all(PROVIDER, ...(branchId ? [String(branchId)] : []), Math.max(1, Math.min(500, Number(limit) || 100)));
 }
 
-export function listSyncSessions(limit = 50) {
+export function listSyncSessions(limit = 50, branchId = '') {
+  const branchFilter = branchId
+    ? ` AND shop_domain IN (SELECT shop_domain FROM haravan_shops WHERE branch_id=?)`
+    : '';
   return db.prepare(`SELECT COALESCE(session_id,id) id,shop_domain,direction,
     MIN(created_at) started_at,MAX(COALESCE(processed_at,created_at)) updated_at,COUNT(*) total,
     SUM(status='success') success,SUM(status='failed') failed,SUM(status IN ('received','retrying')) pending,
     GROUP_CONCAT(DISTINCT topic) topics
-    FROM sync_logs WHERE provider=? GROUP BY COALESCE(session_id,id),shop_domain,direction
-    ORDER BY started_at DESC LIMIT ?`).all(PROVIDER, Math.max(1, Math.min(200, Number(limit) || 50)));
+    FROM sync_logs WHERE provider=?${branchFilter} GROUP BY COALESCE(session_id,id),shop_domain,direction
+    ORDER BY started_at DESC LIMIT ?`).all(PROVIDER, ...(branchId ? [String(branchId)] : []), Math.max(1, Math.min(200, Number(limit) || 50)));
 }
 
-export function syncSessionDetails(sessionId, limit = 200) {
+export function syncSessionDetails(sessionId, limit = 200, branchId = '') {
+  const branchFilter = branchId
+    ? ` AND shop_domain IN (SELECT shop_domain FROM haravan_shops WHERE branch_id=?)`
+    : '';
   return db.prepare(`SELECT id,shop_domain,topic,external_id,status,error_message,retry_count,created_at,processed_at,direction
-    FROM sync_logs WHERE provider=? AND COALESCE(session_id,id)=? ORDER BY created_at,id LIMIT ?`)
-    .all(PROVIDER, cleanId(sessionId), Math.max(1, Math.min(1000, Number(limit) || 200)));
+    FROM sync_logs WHERE provider=? AND COALESCE(session_id,id)=?${branchFilter} ORDER BY created_at,id LIMIT ?`)
+    .all(PROVIDER, cleanId(sessionId), ...(branchId ? [String(branchId)] : []), Math.max(1, Math.min(1000, Number(limit) || 200)));
 }
 
 // Payload webhook thành công chỉ hữu ích ngắn hạn để chẩn đoán/dedupe. Giữ row

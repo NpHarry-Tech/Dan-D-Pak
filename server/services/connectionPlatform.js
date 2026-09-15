@@ -276,14 +276,15 @@ export function mappingOptions(branch_id = 'sala') {
   return { branches: branch ? [branch] : [], warehouses };
 }
 
-export function completeInitialSync(id, branch_id, { orders, products } = {}, actor = 'system') {
+export function completeInitialSync(id, branch_id, { orders, products } = {}, actor = 'system', externalShopId = '') {
   ensure();
   const connection = findConnectionById(id, branch_id);
   if (!connection) throw new Error('Không tìm thấy kết nối marketplace.');
   if (!['initial_sync','degraded'].includes(connection.status)) throw new Error('Kết nối chưa sẵn sàng đồng bộ lần đầu.');
   const branchMappings = db.prepare(`SELECT s.external_shop_id FROM marketplace_shop_mappings m
     JOIN marketplace_shops s ON s.id=m.shop_id
-    WHERE m.connection_id=? AND m.branch_id=? AND m.enabled=1`).all(id, branch_id);
+    WHERE m.connection_id=? AND m.branch_id=? AND m.enabled=1
+      AND (?='' OR s.external_shop_id=?)`).all(id, branch_id, externalShopId, externalShopId);
   if (!branchMappings.length) throw new Error('Kết nối chưa có gian hàng ánh xạ vào chi nhánh này.');
   setConnectionCapability(id, 'orders_read', 'verified');
   setConnectionCapability(id, 'products_read', 'verified');
@@ -438,4 +439,26 @@ export function disconnect(id, branch_id = 'sala', actor = 'system') {
   audit('mp.disconnected', { provider: current.provider, connection_id: id, shop_id: current.shop_id }, branch_id, actor);
   emit('marketplace:disconnected', { provider: current.provider, connection_id: id }, branch_id);
   return { ok: true };
+}
+
+export function disconnectShop(id, externalShopId, branch_id = 'sala', actor = 'system') {
+  ensure();
+  const current = findConnectionById(id, branch_id);
+  if (!current) throw Object.assign(new Error('Không tìm thấy kết nối.'), { status: 404 });
+  const shop = db.prepare(`SELECT s.id,s.external_shop_id FROM marketplace_shops s
+    JOIN marketplace_shop_mappings m ON m.connection_id=s.connection_id AND m.shop_id=s.id
+    WHERE s.connection_id=? AND s.external_shop_id=? AND m.branch_id=? AND m.enabled=1 LIMIT 1`)
+    .get(String(id), String(externalShopId), String(branch_id));
+  if (!shop) throw Object.assign(new Error('Gian hàng không được kết nối với chi nhánh này.'), { status: 404 });
+  const totalShops = db.prepare(`SELECT COUNT(*) count FROM marketplace_shops WHERE connection_id=?`).get(String(id)).count;
+  if (Number(totalShops) === 1) return disconnect(id, branch_id, actor);
+  db.prepare(`UPDATE marketplace_shop_mappings SET enabled=0,updated_at=? WHERE connection_id=? AND shop_id=? AND branch_id=?`)
+    .run(now(), String(id), shop.id, String(branch_id));
+  db.prepare(`UPDATE marketplace_shops SET status='available',updated_at=? WHERE id=?`).run(now(), shop.id);
+  const remaining = db.prepare(`SELECT COUNT(*) count FROM marketplace_shop_mappings WHERE connection_id=? AND enabled=1`).get(String(id)).count;
+  db.prepare(`UPDATE marketplace_connections SET status=?,updated_at=? WHERE id=?`)
+    .run(Number(remaining) ? current.status : 'pending_mapping', now(), String(id));
+  audit('mp.shop.disconnected', { provider: current.provider, connection_id: id, shop_id: shop.external_shop_id }, branch_id, actor);
+  emit('marketplace:disconnected', { provider: current.provider, connection_id: id, shop_id: shop.external_shop_id }, branch_id);
+  return { ok: true, connection_id: id, shop_id: shop.external_shop_id };
 }

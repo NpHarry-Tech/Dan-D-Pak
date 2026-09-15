@@ -58,7 +58,8 @@ export function capabilities() {
       instagram_messaging: { inbound: false, outbound: false, status: 'pending_credentials_and_review', reason: 'Cần tài khoản Professional, Meta App và Advanced Access.' },
       zalo_oa: { inbound: false, outbound: false, status: 'pending_credentials_and_review', reason: 'Cần OA App, webhook secret và OA access token được cấp.' },
       shopee_shop: { inbound_orders: false, inbound_chat: false, status: 'pending_partner_approval', reason: 'Cần Shopee Open Platform Partner approval và thông tin ứng dụng; chat scope cấp riêng.' },
-      tiktok_shop: { inbound_orders: false, inbound_chat: false, status: 'pending_partner_approval', reason: 'Cần TikTok Shop Partner authorization; Business Messaging là scope riêng.' },
+      tiktok_shop: { inbound_orders: false, inbound_chat: false, status: 'pending_partner_scope', reason: 'Đã có code nhận NEW_MESSAGE qua webhook chung với đơn hàng (fail-closed nếu payload không khớp schema đoán), nhưng quyền seller.customer_service CHƯA Active trên Partner Center — TikTok không thể gửi event chat cho tới khi quyền này được cấp. Giữ false cho tới khi xác nhận quyền Active.' },
+      lazada_chat: { inbound: true, outbound: false, status: 'active_unverified_schema', reason: 'App "In-house IM Chat" đã tạo ở ISV Console; đã có route nhận push nhưng field payload chưa đối chiếu được với tài liệu chính thức (open.lazada.com yêu cầu đăng nhập) — cần kiểm tra lại khi có push thật đầu tiên.' },
     },
   };
 }

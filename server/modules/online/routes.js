@@ -36,6 +36,8 @@ api.post('/online/orders/:id/confirm-delivery', guard('online'), wrap((req) => O
 api.post('/online/orders/:id/return', guard('online'), wrap((req) => Online.returnOrder(req.params.id, branch(req))));
 api.get('/online/operations/summary', guardAny('online.order.manage', 'online'), wrap((req) =>
   Online.onlineOperationsSummary(visibleBranch(req))));
+api.get('/online/operations/sources', guardAny('online.order.manage', 'online'), wrap((req) =>
+  Online.onlineOrderSources(visibleBranch(req))));
 api.get('/online/operations/orders', guardAny('online.order.manage', 'online'), wrap((req) =>
   Online.listOnlineOperations(visibleBranch(req), req.query)));
 api.get('/online/operations/orders/:id', guardAny('online.order.manage', 'online'), wrap((req) =>

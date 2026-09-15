@@ -121,7 +121,11 @@ export function publicConnection(row) {
       metadata_json: undefined,
     }));
   const mappings = db.prepare(`SELECT m.id,m.shop_id,s.external_shop_id,s.shop_name,m.branch_id,m.warehouse_id,
-      m.inventory_policy_json,m.enabled,m.updated_at
+      m.inventory_policy_json,m.enabled,m.updated_at,
+      (SELECT watermark_at FROM marketplace_sync_cursors c WHERE c.connection_id=m.connection_id
+        AND c.external_shop_id=s.external_shop_id AND c.capability='orders_read') orders_synced_at,
+      (SELECT watermark_at FROM marketplace_sync_cursors c WHERE c.connection_id=m.connection_id
+        AND c.external_shop_id=s.external_shop_id AND c.capability='products_read') products_synced_at
     FROM marketplace_shop_mappings m JOIN marketplace_shops s ON s.id=m.shop_id
     WHERE m.connection_id=? ORDER BY s.shop_name,s.external_shop_id`).all(row.id).map(mapping => ({
       ...mapping, enabled: mapping.enabled === 1,

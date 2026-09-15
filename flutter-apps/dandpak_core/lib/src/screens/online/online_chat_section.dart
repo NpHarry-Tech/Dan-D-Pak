@@ -547,6 +547,8 @@ class _OnlineChatSectionState extends State<OnlineChatSection> {
         return 'shopee_shop';
       case 'tiktokshop':
         return 'tiktok_shop';
+      case 'lazadachat':
+        return 'lazada_chat';
       case 'haravan':
         return 'harasocial_chat';
       default:

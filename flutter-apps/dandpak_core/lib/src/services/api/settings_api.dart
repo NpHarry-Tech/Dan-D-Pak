@@ -1,6 +1,30 @@
 part of '../api_service.dart';
 
 extension ApiServiceSettingsApi on ApiService {
+  Future<Map<String, dynamic>> getHaravanStatus() async =>
+      mapFrom(await getJson('/api/v1/integrations/haravan/status',
+          errorMessage: 'Không tải được trạng thái Haravan'));
+
+  Future<Map<String, dynamic>> getHaravanInstallUrl() async =>
+      mapFrom(await getJson('/api/v1/integrations/haravan/install-url',
+          errorMessage: 'Không bắt đầu được kết nối Haravan'));
+
+  Future<Map<String, dynamic>> syncHaravanShop(String shopDomain) async =>
+      mapFrom(await postJson('/api/v1/integrations/haravan/sync-all',
+          body: {'shop_domain': shopDomain, 'delta': true, 'subscribe': true},
+          timeout: const Duration(minutes: 2),
+          errorMessage: 'Không đồng bộ được gian hàng Haravan'));
+
+  Future<Map<String, dynamic>> subscribeHaravanShop(String shopDomain) async =>
+      mapFrom(await postJson('/api/v1/integrations/haravan/subscribe-webhook',
+          body: {'shop_domain': shopDomain},
+          errorMessage: 'Không đăng ký được webhook Haravan'));
+
+  Future<Map<String, dynamic>> disconnectHaravanShop(String shopDomain) async =>
+      mapFrom(await deleteJson(
+          '/api/v1/integrations/haravan/shops/${Uri.encodeComponent(shopDomain)}',
+          errorMessage: 'Không ngắt được gian hàng Haravan'));
+
   Future<List<dynamic>> getHaravanSyncSessions({int limit = 50}) async =>
       listFrom(await getJson(
           '/api/v1/integrations/haravan/sync-sessions?limit=$limit',

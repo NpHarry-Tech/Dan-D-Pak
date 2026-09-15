@@ -1728,6 +1728,16 @@ export function migrate(targetDb = globalDb) {
   CREATE INDEX IF NOT EXISTS idx_customer_purchase_ledger_customer
     ON customer_purchase_ledger(branch_id,customer_id,created_at DESC);
   `);
+  // Snapshot the marketplace identity on the order link.  These values must
+  // survive a shop rename or a disconnected/deleted credential.
+  addColumnIfMissing('external_orders', 'external_shop_id', 'TEXT');
+  addColumnIfMissing('external_orders', 'shop_name', 'TEXT');
+  addColumnIfMissing('external_orders', 'connection_id', 'TEXT');
+  // Haravan OAuth/webhook health belongs to each installed shop, not to the
+  // connector as a whole.  Additive columns keep existing installations safe.
+  addColumnIfMissing('haravan_shops', 'webhook_status', "TEXT NOT NULL DEFAULT 'pending'");
+  addColumnIfMissing('haravan_shops', 'webhook_error', 'TEXT');
+  addColumnIfMissing('haravan_shops', 'webhook_checked_at', 'TEXT');
   // Job in được GIỮ CHỖ cho đúng một máy. Không có hai cột này thì nhiều Hardware
   // Agent cùng lấy một job và cùng in — mỗi phiếu ra hai lần. Xem pendingAgentJobs.
   addColumnIfMissing('print_jobs', 'claimed_by', 'TEXT');
@@ -1828,6 +1838,8 @@ export function migrate(targetDb = globalDb) {
   CREATE UNIQUE INDEX IF NOT EXISTS uniq_external_order_shop           ON external_orders(provider, shop_domain, external_order_id);
   CREATE UNIQUE INDEX IF NOT EXISTS uniq_external_customer_shop        ON external_customers(provider, shop_domain, external_customer_id);
   CREATE UNIQUE INDEX IF NOT EXISTS uniq_external_product_variant_shop ON external_products(provider, shop_domain, external_product_id, external_variant_id);
+  CREATE INDEX IF NOT EXISTS idx_external_orders_internal_updated ON external_orders(internal_order_id, updated_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_external_orders_source ON external_orders(provider, external_shop_id, shop_name);
   CREATE INDEX IF NOT EXISTS idx_sync_logs_provider_created       ON sync_logs(provider, created_at DESC);
   CREATE INDEX IF NOT EXISTS idx_sync_logs_queue                  ON sync_logs(provider, status, next_retry_at, created_at);
   CREATE INDEX IF NOT EXISTS idx_sync_logs_provider_shop_created  ON sync_logs(provider, shop_domain, created_at DESC);

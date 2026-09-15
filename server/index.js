@@ -20,6 +20,7 @@ import { receiveShopeePush, startShopeePushWorker, shopeeExchangeToken } from '.
 import { startMarketplaceWebhookWorker } from './services/marketplaceWebhookInbox.js';
 import { handleCallback as handleMarketplaceCallback, migrateLegacyMarketplaceConnections, reconcileDueMarketplaceConnections, refreshExpiringMarketplaceTokens } from './services/connectionPlatform.js';
 import { handleLazadaPush, lazadaExchangeToken } from './services/lazadaConnector.js';
+import { handleLazadaChatPush } from './services/lazadaChatConnector.js';
 import { handleTiktokWebhook } from './services/tiktokConnector.js';
 import { verifyMetaSubscribe, handleMetaWebhook } from './services/metaConnector.js';
 import { handleZaloWebhook } from './services/zaloConnector.js';
@@ -184,6 +185,18 @@ app.post('/webhooks/lazada', lazadaWebhookRateLimit, express.raw({ type: '*/*', 
     res.status(err.status || 400).send(err.message || 'Lazada push failed');
   }
 });
+// Lazada Chat (IM Open API) — App "In-house IM Chat" RIÊNG với app bán hàng ở
+// trên; chữ ký TẠM dùng cùng scheme HMAC(app_secret) như push đơn hàng Lazada
+// — CHƯA xác nhận được với tài liệu chính thức, xem lazadaChatConnector.js.
+const lazadaChatWebhookRateLimit = rateLimit({ key: 'lazada-chat-webhook', windowMs: 60_000, max: 600, message: 'rate_limited' });
+app.post('/webhooks/lazada-chat', lazadaChatWebhookRateLimit, express.raw({ type: '*/*', limit: '10mb' }), (req, res) => {
+  try {
+    handleLazadaChatPush(Buffer.isBuffer(req.body) ? req.body : Buffer.from(req.body || ''), req.headers);
+    res.status(200).send('OK');
+  } catch (err) {
+    res.status(err.status || 400).send(err.message || 'Lazada chat webhook failed');
+  }
+});
 // TikTok Shop webhook — Authorization = HMAC(app_secret, app_key+body); raw body.
 const tiktokWebhookRateLimit = rateLimit({ key: 'tiktok-webhook', windowMs: 60_000, max: 600, message: 'rate_limited' });
 app.post('/webhooks/tiktok', tiktokWebhookRateLimit, express.raw({ type: '*/*', limit: '10mb' }), async (req, res) => {
@@ -292,14 +305,17 @@ app.get('/auth/haravan/install', (req, res) => {
     res.status(err.status || 400).send(err.message || 'Haravan install failed');
   }
 });
-app.get('/auth/haravan/callback', async (req, res) => {
+const haravanOAuthCallback = async (req, res) => {
   try {
-    const out = await haravanOauthCallback(req.query);
-    res.status(200).send(`Haravan connected: ${escapeHtml(out.shopDomain)}`);
+    const out = await haravanOauthCallback({ ...req.query, ...req.body });
+    if (out.continue_url) return res.redirect(out.continue_url);
+    res.status(200).send(connectedHtml('Haravan', out.shopDomain));
   } catch (err) {
     res.status(err.status || 400).send(err.message || 'Haravan OAuth failed');
   }
-});
+};
+app.get('/auth/haravan/callback', haravanOAuthCallback);
+app.post('/auth/haravan/callback', express.urlencoded({ extended: false, limit: '32kb' }), haravanOAuthCallback);
 
 // LIVENESS: tiến trình còn sống? Không đụng DB/integration — luôn 200 nếu process
 // chạy. Dùng cho orchestrator restart. READINESS ở /health/ready. (mission #54)

@@ -10,7 +10,7 @@ process.env.SQLITE_PATH = join(temp, 'store.db');
 process.env.STORAGE_PATH = join(temp, 'storage');
 process.env.DATA_ENCRYPTION_KEY = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
 
-const { migrate } = await import('./db.js');
+const { db, migrate } = await import('./db.js');
 migrate();
 const Settings = await import('./services/settings.js');
 const Tiktok = await import('./services/tiktokConnector.js');
@@ -36,6 +36,50 @@ test('TikTok webhook: Authorization = HMAC(app_secret, app_key+body) accept/reje
   const ok = await Tiktok.handleTiktokWebhook(Buffer.from(body), { authorization: good });
   assert.equal(ok.handled, true);
   await assert.rejects(() => Tiktok.handleTiktokWebhook(Buffer.from(body), { authorization: 'bad' }), (e) => e.status === 401);
+});
+
+test('TikTok chat: NEW_MESSAGE (type 14) di qua CUNG webhook/chu ky, ingest vao Omni thay vi hang doi don hang', async () => {
+  Settings.updateIntegrations({ channels: { tiktokshop: { enabled: true, appId: 'AK2', secretKey: 'S2', shopId: 'SHOP2' } } }, 'ttk-chat-branch');
+  const body = JSON.stringify({
+    type: 14, shop_id: 'SHOP2', timestamp: 1700000000,
+    data: {
+      message_id: 'msg1', conversation_id: 'conv1', create_time: 1700000000, type: 'text',
+      sender: { role: 'BUYER', id: 'buyer1' }, content: { text: 'Ship khi nao vay shop?' },
+    },
+  });
+  const sig = crypto.createHmac('sha256', 'S2').update('AK2' + body).digest('hex');
+  const out = await Tiktok.handleTiktokWebhook(Buffer.from(body), { authorization: sig });
+  assert.equal(out.ingested, 1);
+  await assert.rejects(() => Tiktok.handleTiktokWebhook(Buffer.from(body), { authorization: 'bad' }), (e) => e.status === 401);
+});
+
+test('TikTok chat: NEW_MESSAGE khong co content/attachments (sai schema) bi bo qua, khong tao message rac', async () => {
+  Settings.updateIntegrations({ channels: { tiktokshop: { enabled: true, appId: 'AK3', secretKey: 'S3', shopId: 'SHOP3' } } }, 'ttk-chat-mismatch');
+  const body = JSON.stringify({
+    type: 14, shop_id: 'SHOP3', timestamp: 1700000000,
+    data: { message_id: 'msg-mismatch', conversation_id: 'conv-mismatch', create_time: 1700000000, some_unknown_field: 'x' },
+  });
+  const sig = crypto.createHmac('sha256', 'S3').update('AK3' + body).digest('hex');
+  const before = db.prepare(`SELECT COUNT(*) n FROM omni_messages`).get().n;
+  const out = await Tiktok.handleTiktokWebhook(Buffer.from(body), { authorization: sig });
+  assert.equal(out.handled, false);
+  assert.equal(out.reason, 'empty_body_schema_mismatch');
+  assert.equal(db.prepare(`SELECT COUNT(*) n FROM omni_messages`).get().n, before);
+});
+
+test('TikTok chat: retry cung mot push (khong co message_id) khong tao trung message (dedupe bang hash payload)', async () => {
+  Settings.updateIntegrations({ channels: { tiktokshop: { enabled: true, appId: 'AK4', secretKey: 'S4', shopId: 'SHOP4' } } }, 'ttk-chat-retry');
+  const body = JSON.stringify({
+    type: 14, shop_id: 'SHOP4', timestamp: 1700000001,
+    data: { conversation_id: 'conv-retry', create_time: 1700000001, sender: { role: 'BUYER', id: 'buyer-retry' }, content: { text: 'con hang khong shop' } },
+  });
+  const sig = crypto.createHmac('sha256', 'S4').update('AK4' + body).digest('hex');
+  const first = await Tiktok.handleTiktokWebhook(Buffer.from(body), { authorization: sig });
+  const retry = await Tiktok.handleTiktokWebhook(Buffer.from(body), { authorization: sig });
+  assert.equal(first.handled, true);
+  assert.equal(retry.handled, true);
+  assert.equal(db.prepare(`SELECT COUNT(*) n FROM omni_messages WHERE conversation_id IN
+    (SELECT id FROM omni_conversations WHERE external_conversation_id='conv-retry')`).get().n, 1);
 });
 
 // ── Meta (Facebook/Instagram) ───────────────────────────────────────────────

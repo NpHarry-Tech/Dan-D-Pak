@@ -17,28 +17,60 @@ class ProviderMeta {
   final String name;
   final Color color;
   final IconData icon;
-  const ProviderMeta(this.name, this.color, this.icon);
+  final String? imageAsset;
+  const ProviderMeta(this.name, this.color, this.icon, {this.imageAsset});
 }
 
 const Map<String, ProviderMeta> kProviderMeta = {
-  'haravan': ProviderMeta('Haravan', Color(0xFF2E7D32), Icons.public),
-  'website': ProviderMeta('Website', Color(0xFF0891B2), Icons.language),
-  'shopee': ProviderMeta('Shopee', Color(0xFFEE4D2D), Icons.storefront),
-  'tiktokshop':
-      ProviderMeta('TikTok Shop', Color(0xFF111111), Icons.music_note),
-  'lazada': ProviderMeta('Lazada', Color(0xFF0F146D), Icons.shopping_bag),
+  'haravan': ProviderMeta('Haravan', Color(0xFF2E7D32), Icons.store_outlined,
+      imageAsset: 'assets/brand/Haravan.png'),
+  'website': ProviderMeta('Website', Color(0xFF0891B2), Icons.language,
+      imageAsset: 'assets/brand/DanOnLogo.png'),
+  'shopee': ProviderMeta('Shopee', Color(0xFFEE4D2D), Icons.storefront,
+      imageAsset: 'assets/brand/shopee.png'),
+  'tiktokshop': ProviderMeta('TikTok Shop', Color(0xFF111111), Icons.storefront,
+      imageAsset: 'assets/brand/tiktok.png'),
+  'lazada': ProviderMeta('Lazada', Color(0xFF0F146D), Icons.shopping_bag,
+      imageAsset: 'assets/brand/Lazada.png'),
   'tiki': ProviderMeta('Tiki', Color(0xFF1A94FF), Icons.local_mall),
   'grabfood': ProviderMeta('GrabFood', Color(0xFF00B14F), Icons.fastfood),
-  'shopeefood': ProviderMeta('ShopeeFood', Color(0xFFEE4D2D), Icons.fastfood),
-  'facebook': ProviderMeta('Facebook', Color(0xFF1877F2), Icons.facebook),
-  'instagram': ProviderMeta('Instagram', Color(0xFFC13584), Icons.camera_alt),
-  'zalooa': ProviderMeta('Zalo OA', Color(0xFF0068FF), Icons.chat),
+  'shopeefood': ProviderMeta('ShopeeFood', Color(0xFFEE4D2D), Icons.fastfood,
+      imageAsset: 'assets/brand/shopeefoodlogo.png'),
+  'facebook': ProviderMeta('Facebook', Color(0xFF1877F2), Icons.facebook,
+      imageAsset: 'assets/brand/Facebook_Logo.png'),
+  'instagram': ProviderMeta('Instagram', Color(0xFFC13584), Icons.camera_alt,
+      imageAsset: 'assets/brand/Instagram_Glyph_Gradient.png'),
+  'zalooa': ProviderMeta('Zalo OA', Color(0xFF0068FF), Icons.chat,
+      imageAsset: 'assets/brand/Zalo_logo.png'),
+  'lazadachat': ProviderMeta('Lazada Chat', Color(0xFF0F146D), Icons.chat_bubble,
+      imageAsset: 'assets/brand/Lazada.png'),
 };
 
 ProviderMeta providerMeta(String key) =>
     kProviderMeta[key.toLowerCase()] ??
     ProviderMeta(
         key.isEmpty ? 'Kênh khác' : key, DanColors.muted, Icons.public);
+
+class ProviderLogo extends StatelessWidget {
+  final String provider;
+  final double size;
+  const ProviderLogo(this.provider, {this.size = 18, super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final meta = providerMeta(provider);
+    final fallback = Icon(meta.icon, size: size, color: meta.color);
+    if (meta.imageAsset == null) return fallback;
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(size * .22),
+      child: Image.asset(meta.imageAsset!,
+          width: size,
+          height: size,
+          fit: BoxFit.contain,
+          errorBuilder: (_, __, ___) => fallback),
+    );
+  }
+}
 
 // ── Trạng thái workflow đơn online ────────────────────────────────────────
 class WorkflowMeta {
@@ -114,11 +146,15 @@ class ProviderBadge extends StatelessWidget {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Icon(m.icon, size: 15, color: m.color),
+        ProviderLogo(provider, size: 17),
         const SizedBox(width: 5),
-        Text(shop.isNotEmpty ? shop : m.name,
-            style: TextStyle(
-                fontSize: 12.5, fontWeight: FontWeight.w700, color: m.color)),
+        Flexible(
+          child: Text(shop.isNotEmpty ? '${m.name} · $shop' : m.name,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                  fontSize: 12.5, fontWeight: FontWeight.w700, color: m.color)),
+        ),
       ],
     );
   }

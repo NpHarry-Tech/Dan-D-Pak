@@ -65,6 +65,7 @@ export function shopeeConfig(branchId = 'sala', { connectionId = '', shopId = ''
     connectionId: connection?.id || '',
     tokenSource: connection ? 'connection_platform' : 'legacy_settings',
     shopId: cleanId(connection?.shop_id || c.shopId),
+    shopName: cleanId(connection?.shop_name),
     accessToken: cleanId(connection?.access_token || c.accessToken),
     refreshToken: cleanId(connection?.refresh_token || c.refreshToken),
     accessExpiresAt: connection?.access_expires_at || null,
@@ -330,13 +331,16 @@ export function syncShopeeOrder(detail, shopId, branchId = 'sala') {
       }
     }
 
+    const sourceCfg = shopeeConfig(branchId, { shopId: shop });
     db.prepare(`INSERT INTO external_orders
-      (id,provider,shop_domain,external_order_id,internal_order_id,external_order_code,sync_status,raw_payload,created_at,updated_at)
-      VALUES (?,?,?,?,?,?,?,?,?,?)
+      (id,provider,shop_domain,external_shop_id,shop_name,connection_id,external_order_id,internal_order_id,external_order_code,sync_status,raw_payload,created_at,updated_at)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
       ON CONFLICT(provider, shop_domain, external_order_id) DO UPDATE SET
         internal_order_id=excluded.internal_order_id,external_order_code=excluded.external_order_code,
+        external_shop_id=COALESCE(NULLIF(excluded.external_shop_id,''),external_orders.external_shop_id),
+        shop_name=COALESCE(NULLIF(excluded.shop_name,''),external_orders.shop_name),connection_id=COALESCE(NULLIF(excluded.connection_id,''),external_orders.connection_id),
         sync_status=excluded.sync_status,raw_payload=excluded.raw_payload,updated_at=excluded.updated_at`)
-      .run(uid('eo_'), PROVIDER, shop, orderSn, internalId, orderSn, 'success', json(detail), now(), now());
+      .run(uid('eo_'), PROVIDER, shop, shop, sourceCfg.shopName, sourceCfg.connectionId, orderSn, internalId, orderSn, 'success', json(detail), now(), now());
 
     const workflow = WORKFLOW[status] || 'pending';
     const locked = workflow !== 'pending';

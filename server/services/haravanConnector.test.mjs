@@ -109,8 +109,8 @@ try {
     },
   }, 'sala');
   const publicHaravan = Settings.getPublicIntegrations('sala').channels.haravan;
-  assert.equal(publicHaravan.accessToken, '********1234');
-  assert.equal(publicHaravan.webhookSecret, '********5678');
+  assert.equal(publicHaravan.accessToken, '********');
+  assert.equal(publicHaravan.webhookSecret, '********');
   Settings.updateIntegrations({ channels: { haravan: publicHaravan } }, 'sala');
   assert.equal(Settings.getIntegrations('sala').channels.haravan.accessToken, 'tok_1234');
   assert.equal(Settings.getIntegrations('sala').channels.haravan.webhookSecret, 'sec_5678');

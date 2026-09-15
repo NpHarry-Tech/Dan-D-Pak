@@ -130,8 +130,9 @@ class _OnlineOrderDetailDialogState extends State<OnlineOrderDetailDialog> {
           padding: const EdgeInsets.symmetric(horizontal: 20),
           child: Row(
             children: [
-              ProviderBadge(oStr(_op['provider']),
-                  shop: oStr(_op['shop_domain'])),
+              Flexible(
+                  child: ProviderBadge(oStr(_op['provider']),
+                      shop: oStr(_op['shop_name']))),
               const SizedBox(width: 10),
               if (code.isNotEmpty)
                 Text('#$code',
@@ -195,6 +196,20 @@ class _OnlineOrderDetailDialogState extends State<OnlineOrderDetailDialog> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        Text(t('Nguồn đơn'),
+            style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13)),
+        const SizedBox(height: 6),
+        _kv('Nền tảng', providerMeta(oStr(_op['provider'])).name),
+        _kv('Gian hàng', oStr(_op['shop_name'])),
+        if (oStr(_op['shop_id']).isNotEmpty)
+          _kv('Shop ID', oStr(_op['shop_id'])),
+        _kv(
+            'Mã đơn trên đối tác',
+            oStr(_op['external_order_code']).isNotEmpty
+                ? oStr(_op['external_order_code'])
+                : oStr(_op['external_order_id'])),
+        _kv('Chi nhánh nhận đơn', oStr(_op['branch_id'])),
+        const Divider(height: 20, color: DanColors.border),
         _kv('Khách hàng', oStr(c['name'])),
         _kv('Điện thoại', oStr(c['phone'])),
         _kv('Địa chỉ', oStr(c['address'])),

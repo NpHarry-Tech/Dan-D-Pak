@@ -12,6 +12,7 @@ import '../../ui/file_pick.dart';
 import '../../ui/app_theme.dart';
 import '../../ui/aspect_safe_thumbnail.dart';
 import '../online/marketplace_connect_panel.dart';
+import '../online/haravan_connect_panel.dart';
 import 'settings_erp_panel.dart';
 import 'settings_tab.dart';
 import 'settings_value_utils.dart';
@@ -185,7 +186,7 @@ List<IntegrationDef> get _integrationDefs => [
           imageAsset: 'assets/brand/shopee.png'),
       IntegrationDef(
           key: 'tiktokshop',
-          icon: '🎵',
+          icon: 'T',
           name: 'TikTok Shop',
           desc: t(
               'TikTok Shop Partner: nhận đơn, đồng bộ hàng và tồn. Cần app được ủy quyền và shop cipher.'),
@@ -481,6 +482,7 @@ class _IntegrationsPanelState extends State<IntegrationsPanel> {
   /// Trạng thái kết nối của các sàn "1 chạm" — lấy từ Connection Platform,
   /// không phải cờ enabled cũ. Dùng để hiện "Đã/Chưa kết nối" ở danh sách.
   final Map<String, bool> _mpConnected = {};
+  bool _haravanConnected = false;
 
   Future<void> _loadMarketplaceState() async {
     for (final p in kMarketplaceOneClickProviders) {
@@ -494,6 +496,14 @@ class _IntegrationsPanelState extends State<IntegrationsPanel> {
       } catch (_) {
         // Chưa lấy được thì giữ nguyên trạng thái đã biết.
       }
+    }
+    try {
+      final status = await widget.api.getHaravanStatus();
+      final shops = (status['shops'] as List?) ?? const [];
+      _haravanConnected = shops.any((shop) =>
+          shop is Map && (shop['active'] == true || shop['active'] == 1));
+    } catch (_) {
+      // Keep the last known state when the connector status endpoint is offline.
     }
     if (mounted) setState(() {});
   }
@@ -1582,6 +1592,9 @@ class _IntegrationsPanelState extends State<IntegrationsPanel> {
     // ERP — Business Central dùng backend riêng (/erp/*), không theo hệ field
     // của các cổng thanh toán → render UI riêng, vẫn nằm trong khung "Liên kết".
     if (_selectedKey == 'erp') return ErpConfigView(api: widget.api);
+    if (_selectedKey == 'haravan') {
+      return HaravanConnectPanel(onChanged: _loadMarketplaceState);
+    }
     // Sàn TMĐT qua Connection Platform (Shopee/Lazada…): kết nối "1 chạm" — user
     // chỉ đăng nhập + đồng ý, KHÔNG nhập Partner ID/Key/token. Gộp thẳng vào detail
     // của màn Liên kết (một màn duy nhất), không dựng UI kết nối riêng.
@@ -1864,6 +1877,113 @@ class _IntegrationsPanelState extends State<IntegrationsPanel> {
     );
   }
 
+  bool _isConnectedOrEnabled(IntegrationDef def) {
+    final conf = _channels[def.key] ?? {};
+    return def.key == 'haravan'
+        ? _haravanConnected
+        : kMarketplaceOneClickProviders.contains(def.key)
+            ? (_mpConnected[def.key] ?? false)
+            : asFlag(conf['enabled']);
+  }
+
+  Widget _integrationList() => ListView.builder(
+        itemCount: _integrationDefs.length,
+        itemBuilder: (context, index) {
+          final def = _integrationDefs[index];
+          final isSelected = def.key == _selectedKey;
+          final enabled = _isConnectedOrEnabled(def);
+          return InkWell(
+            onTap: () => setState(() => _selectedKey = def.key),
+            child: Container(
+              color: isSelected ? DanColors.surface2 : Colors.transparent,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              child: Row(children: [
+                Container(
+                  width: 36,
+                  height: 36,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: DanColors.surface,
+                    borderRadius: BorderRadius.circular(DanRadius.sm),
+                    border: Border.all(color: DanColors.border),
+                  ),
+                  child: _integrationLogo(def, 24, 18),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(t(def.name),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontWeight:
+                                isSelected ? FontWeight.w800 : FontWeight.w600,
+                            fontSize: 14,
+                            color: DanColors.text,
+                          )),
+                      const SizedBox(height: 2),
+                      Text(
+                        enabled
+                            ? (def.key == 'haravan' ||
+                                    kMarketplaceOneClickProviders
+                                        .contains(def.key)
+                                ? t('Đã kết nối')
+                                : t('Đã bật'))
+                            : t('Chưa kết nối'),
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: enabled ? DanColors.done : DanColors.faint,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ]),
+            ),
+          );
+        },
+      );
+
+  Widget _compactIntegrationPicker() {
+    final selected = _integrationDefs.firstWhere(
+      (def) => def.key == _selectedKey,
+      orElse: () => _integrationDefs.first,
+    );
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 6),
+      child: DropdownButtonFormField<String>(
+        initialValue: selected.key,
+        isExpanded: true,
+        decoration: InputDecoration(
+          labelText: t('Kênh kết nối'),
+          border: const OutlineInputBorder(),
+          isDense: true,
+        ),
+        items: _integrationDefs
+            .map((def) => DropdownMenuItem(
+                  value: def.key,
+                  child: Row(children: [
+                    _integrationLogo(def, 22, 16),
+                    const SizedBox(width: 9),
+                    Expanded(
+                      child: Text(t(def.name),
+                          maxLines: 1, overflow: TextOverflow.ellipsis),
+                    ),
+                    if (_isConnectedOrEnabled(def))
+                      const Icon(Icons.check_circle,
+                          size: 15, color: DanColors.done),
+                  ]),
+                ))
+            .toList(),
+        onChanged: (value) {
+          if (value != null) setState(() => _selectedKey = value);
+        },
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return SettingsPanelScaffold(
@@ -1873,91 +1993,25 @@ class _IntegrationsPanelState extends State<IntegrationsPanel> {
         loading: _loading && _channels.isEmpty,
         error: _channels.isEmpty ? _error : null,
         onRetry: _load,
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
+        child: LayoutBuilder(builder: (context, constraints) {
+          if (constraints.maxWidth < 720) {
+            return Column(children: [
+              _compactIntegrationPicker(),
+              const Divider(height: 1),
+              Expanded(child: _buildDetailsPane()),
+            ]);
+          }
+          return Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
             Container(
               width: 300,
-              decoration: BoxDecoration(
-                border: Border(
-                  right: BorderSide(color: DanColors.border),
-                ),
+              decoration: const BoxDecoration(
+                border: Border(right: BorderSide(color: DanColors.border)),
               ),
-              child: ListView.builder(
-                itemCount: _integrationDefs.length,
-                itemBuilder: (context, index) {
-                  final def = _integrationDefs[index];
-                  final isSelected = def.key == _selectedKey;
-                  final conf = _channels[def.key] ?? {};
-                  final enabled =
-                      kMarketplaceOneClickProviders.contains(def.key)
-                          ? (_mpConnected[def.key] ?? false)
-                          : asFlag(conf['enabled']);
-
-                  return InkWell(
-                    onTap: () {
-                      setState(() {
-                        _selectedKey = def.key;
-                      });
-                    },
-                    child: Container(
-                      color:
-                          isSelected ? DanColors.surface2 : Colors.transparent,
-                      padding:
-                          EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                      child: Row(
-                        children: [
-                          Container(
-                            width: 36,
-                            height: 36,
-                            alignment: Alignment.center,
-                            decoration: BoxDecoration(
-                              color: DanColors.surface,
-                              borderRadius: BorderRadius.circular(DanRadius.sm),
-                              border: Border.all(color: DanColors.border),
-                            ),
-                            child: _integrationLogo(def, 24, 18),
-                          ),
-                          SizedBox(width: 14),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  t(def.name),
-                                  style: TextStyle(
-                                    fontWeight: isSelected
-                                        ? FontWeight.w800
-                                        : FontWeight.w600,
-                                    fontSize: 14,
-                                    color: DanColors.text,
-                                  ),
-                                ),
-                                SizedBox(height: 2),
-                                Text(
-                                  enabled ? t('Đã kết nối') : t('Chưa kết nối'),
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    color: enabled
-                                        ? DanColors.done
-                                        : DanColors.faint,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  );
-                },
-              ),
+              child: _integrationList(),
             ),
-            Expanded(
-              child: _buildDetailsPane(),
-            ),
-          ],
-        ),
+            Expanded(child: _buildDetailsPane()),
+          ]);
+        }),
       ),
     );
   }

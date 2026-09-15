@@ -24,6 +24,7 @@ import {
 import {
   marketplaceWritesEnabled, recordMappingRequired, recordOrderFinancials,
 } from './marketplaceSafety.js';
+import { ingestMessage } from './omni/core.js';
 
 const PROVIDER = 'tiktokshop';
 const AUTH_BASE = 'https://auth.tiktok-shops.com';
@@ -55,6 +56,7 @@ export function tiktokConfig(branchId = 'sala', { shopId = '' } = {}) {
     serviceId: cleanId(process.env.TIKTOK_SHOP_SERVICE_ID) || cleanId(c.serviceId),
     secretKey: cleanId(process.env.TIKTOK_SHOP_APP_SECRET) || cleanId(c.secretKey),
     shopId: cleanId(selected.external_shop_id) || cleanId(c.shopId),
+    shopName: cleanId(selected.shop_name) || cleanId(connection?.shop_name),
     shopCipher: cleanId(selected.shop_cipher) || cleanId(c.shopCipher),
     accessToken: cleanId(connection?.access_token) || cleanId(c.accessToken),
     refreshToken: cleanId(connection?.refresh_token) || cleanId(c.refreshToken),
@@ -285,10 +287,14 @@ export function syncTiktokOrder(order, shopId, branchId = 'sala') {
           money(l.sale_price || l.original_price || 0), Number(sku?.vat) || 0, `ttk_item:${g.ids.join(',')}`, now());
       }
     }
-    db.prepare(`INSERT INTO external_orders (id,provider,shop_domain,external_order_id,internal_order_id,external_order_code,sync_status,raw_payload,created_at,updated_at)
-      VALUES (?,?,?,?,?,?,?,?,?,?)
-      ON CONFLICT(provider, shop_domain, external_order_id) DO UPDATE SET internal_order_id=excluded.internal_order_id,external_order_code=excluded.external_order_code,sync_status=excluded.sync_status,raw_payload=excluded.raw_payload,updated_at=excluded.updated_at`)
-      .run(uid('eo_'), PROVIDER, shop, orderId, internalId, orderId, 'success', json(order), now(), now());
+    const sourceCfg = tiktokConfig(branchId, { shopId: shop });
+    db.prepare(`INSERT INTO external_orders (id,provider,shop_domain,external_shop_id,shop_name,connection_id,external_order_id,internal_order_id,external_order_code,sync_status,raw_payload,created_at,updated_at)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+      ON CONFLICT(provider, shop_domain, external_order_id) DO UPDATE SET internal_order_id=excluded.internal_order_id,external_order_code=excluded.external_order_code,
+        external_shop_id=COALESCE(NULLIF(excluded.external_shop_id,''),external_orders.external_shop_id),
+        shop_name=COALESCE(NULLIF(excluded.shop_name,''),external_orders.shop_name),connection_id=COALESCE(NULLIF(excluded.connection_id,''),external_orders.connection_id),
+        sync_status=excluded.sync_status,raw_payload=excluded.raw_payload,updated_at=excluded.updated_at`)
+      .run(uid('eo_'), PROVIDER, shop, shop, sourceCfg.shopName, sourceCfg.connectionId, orderId, internalId, orderId, 'success', json(order), now(), now());
     const workflow = WORKFLOW[status] || 'pending';
     const locked = marketplaceWritesEnabled(PROVIDER, shop, 'fulfillment_write') && workflow !== 'pending';
     db.prepare(`INSERT INTO online_order_state (order_id,workflow_status,locked_at,created_at,updated_at) VALUES (?,?,?,?,?)
@@ -416,6 +422,63 @@ function branchForShop(shopId) {
   for (const id of legacyBranches) if (cleanId((getIntegrationChannel('tiktokshop', id) || {}).shopId) === wanted) return id;
   const e = new Error(`Không có ánh xạ TikTok Shop cho shop_id=${wanted}.`); e.status = 404; throw e;
 }
+// ── Chat (Customer Service API) → Dan-D Pak Omni ────────────────────────────
+// Dùng CHUNG app/webhook/chữ ký với đơn hàng ở trên — TikTok gộp mọi event
+// (đơn, sản phẩm, chat) qua MỘT endpoint, khác Lazada (App riêng theo category).
+// Cần quyền `seller.customer_service` được cấp riêng cho app trên Partner Center.
+//
+// Envelope {type, tts_notification_id, shop_id, timestamp, data} và chữ ký đã
+// XÁC NHẬN qua nhiều nguồn kỹ thuật độc lập (khớp code hiện có). NEW_MESSAGE =
+// type số 14; trong `data` đã xác nhận: message_id, conversation_id, index,
+// create_time, type, visibility. CHƯA xác nhận được tên field người gửi/nội
+// dung tin nhắn (trang chính thức render bằng JS, không fetch được) — đoán tốt
+// nhất theo quy ước IM phổ biến, LUÔN giữ `raw: payload` để đối chiếu khi có
+// push thật đầu tiên.
+const CHAT_EVENT_TYPES = new Set(['14', 'NEW_MESSAGE', 'NEW_CONVERSATION']);
+
+function handleTiktokChatEvent(payload, shopId, branchId) {
+  const data = payload.data || {};
+  // Dedupe đáng tin cậy: hash body thô làm fallback (ổn định qua các lần TikTok
+  // retry webhook), không dùng Date.now() (khác mỗi lần gọi → mất khả năng
+  // chống trùng khi provider gửi lại cùng một event).
+  const fallbackMessageId = crypto.createHash('sha256').update(JSON.stringify(payload)).digest('hex').slice(0, 32);
+  const messageId = cleanId(data.message_id) || `${shopId}:${fallbackMessageId}`;
+  const conversationId = cleanId(data.conversation_id) || messageId;
+  const senderRole = cleanId(data.sender?.role || data.role || data.sender_type).toUpperCase();
+  const fromSeller = senderRole === 'SELLER' || senderRole === 'SHOP';
+  const buyerId = cleanId(data.sender?.id || data.sender?.user_id || data.participant_id
+    || data.buyer_id || data.from_id) || conversationId;
+  const sendTime = Number(data.create_time || payload.timestamp || 0);
+  const bodyText = cleanId(data.content?.text || data.content || data.text || data.message);
+  const attachments = data.content?.image_url ? [{ url: data.content.image_url }] : [];
+  if (!bodyText && attachments.length === 0) {
+    // Fail-closed: tên field người gửi/nội dung CHƯA xác nhận được với tài liệu
+    // chính thức (trang render JS) — TỪ CHỐI tạo message rỗng thay vì đoán bừa.
+    // Đối chiếu `raw` đã lưu ở omni_events khi có push thật để sửa lại field.
+    audit('tiktok.chat.skipped', { shop_id: shopId, reason: 'empty_body_schema_mismatch' }, branchId, 'tiktok');
+    return { handled: false, reason: 'empty_body_schema_mismatch' };
+  }
+  const res = ingestMessage({
+    provider: PROVIDER,
+    event_key: `${PROVIDER}:${shopId}:${messageId}`,
+    channel: { external_account_id: shopId, name: 'TikTok Shop' },
+    identity: { external_user_id: buyerId, display_name: cleanId(data.sender?.name) },
+    conversation: { external_conversation_id: conversationId },
+    message: {
+      external_message_id: messageId,
+      direction: fromSeller ? 'outbound' : 'inbound',
+      sender_type: fromSeller ? 'agent' : 'customer',
+      message_type: cleanId(data.type) || 'text',
+      body: bodyText,
+      attachments,
+      sent_at: sendTime ? new Date(sendTime > 1e12 ? sendTime : sendTime * 1000).toISOString() : undefined,
+      raw: payload,
+    },
+  }, branchId);
+  audit('tiktok.chat.accepted', { shop_id: shopId, conversation: res?.conversation?.id }, branchId, 'tiktok');
+  return { handled: true, ingested: 1, conversation: res?.conversation?.id };
+}
+
 export async function handleTiktokWebhook(rawBody, headers = {}) {
   const body = Buffer.isBuffer(rawBody) ? rawBody.toString('utf8') : String(rawBody || '');
   const provided = cleanId(headers['authorization'] || headers['Authorization']);
@@ -451,8 +514,11 @@ export async function handleTiktokWebhook(rawBody, headers = {}) {
     audit('tiktok.webhook.rejected', { shop_id: shopId, reason: 'bad_signature' }, branchId, 'tiktok');
     const e = new Error('Sai chữ ký webhook TikTok.'); e.status = 401; throw e;
   }
-  const connection = findConnectionByProviderShop(PROVIDER, shopId);
   const eventType = cleanId(payload.type || payload.event_type || 'UNKNOWN');
+  if (CHAT_EVENT_TYPES.has(eventType.toUpperCase())) {
+    return handleTiktokChatEvent(payload, shopId, branchId);
+  }
+  const connection = findConnectionByProviderShop(PROVIDER, shopId);
   const providerEventId = cleanId(payload.event_id || payload.id);
   const accepted = enqueueMarketplaceWebhook({ provider: PROVIDER,
     connectionId: connection?.id || '', shopId, eventType, providerEventId, rawBody });

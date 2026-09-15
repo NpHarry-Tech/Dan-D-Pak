@@ -169,6 +169,8 @@ export function normalizeWebhookPayload(payload) {
     return {
       channel: 'grabfood',
       ref: payload.orderID || payload.shortOrderNumber,
+      shop_id: String(payload.merchantID || payload.merchant_id || ''),
+      shop_name: String(payload.merchantName || payload.merchant_name || ''),
       customer: {
         name: customer.name || 'Khách hàng GrabFood',
         phone: customer.phone || '',
@@ -202,6 +204,8 @@ export function normalizeWebhookPayload(payload) {
     return {
       channel: 'shopeefood',
       ref: payload.order_id,
+      shop_id: String(payload.restaurant_id || ''),
+      shop_name: String(payload.restaurant_name || ''),
       customer: {
         name: customer.name || 'Khách hàng ShopeeFood',
         phone: customer.phone || '',
@@ -223,7 +227,10 @@ export function normalizeWebhookPayload(payload) {
       channel: payload.channel || 'website',
       ref: payload.ref || 'ON-' + Math.floor(Math.random() * 90000 + 10000),
       customer: payload.customer || {},
-      items: payload.items
+      items: payload.items,
+      shop_id: String(payload.shop_id || payload.store_id || payload.merchant_id || ''),
+      shop_name: String(payload.shop_name || payload.store_name || payload.merchant_name || ''),
+      connection_id: String(payload.connection_id || ''),
     };
   }
 
@@ -280,6 +287,20 @@ export function receive(payload, branch_id = 'sala', headers = {}) {
     
     db.prepare(`UPDATE orders SET subtotal=?, discount=?, total=?, online_channel=?, online_ref=?, online_status='received', customer_json=? WHERE id=?`)
       .run(subtotal, discount, total, channel, ref, JSON.stringify(norm.customer || {}), order.id);
+    const externalShopId = String(norm.shop_id || payload.shop_id || payload.store_id || payload.merchant_id || '');
+    const shopName = String(norm.shop_name || payload.shop_name || payload.store_name || payload.merchant_name || '');
+    const connectionId = String(norm.connection_id || payload.connection_id || '');
+    db.prepare(`INSERT INTO external_orders
+      (id,provider,shop_domain,external_shop_id,shop_name,connection_id,external_order_id,internal_order_id,external_order_code,sync_status,raw_payload,created_at,updated_at)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+      ON CONFLICT(provider,shop_domain,external_order_id) DO UPDATE SET
+        internal_order_id=excluded.internal_order_id,external_order_code=excluded.external_order_code,
+        external_shop_id=COALESCE(NULLIF(excluded.external_shop_id,''),external_orders.external_shop_id),
+        shop_name=COALESCE(NULLIF(excluded.shop_name,''),external_orders.shop_name),
+        connection_id=COALESCE(NULLIF(excluded.connection_id,''),external_orders.connection_id),
+        sync_status=excluded.sync_status,raw_payload=excluded.raw_payload,updated_at=excluded.updated_at`)
+      .run(uid('eo_'), channel, externalShopId, externalShopId, shopName, connectionId,
+        String(ref), order.id, String(ref), 'success', JSON.stringify(payload), now(), now());
     db.prepare(`INSERT INTO online_order_state(order_id,workflow_status,locked_at,created_at,updated_at)
       VALUES (?,'processed',?,?,?) ON CONFLICT(order_id) DO UPDATE SET
       workflow_status='processed',locked_at=COALESCE(online_order_state.locked_at,excluded.locked_at),updated_at=excluded.updated_at`)
@@ -412,12 +433,24 @@ function onlineOperationRow(row) {
   const paymentMethod = String(raw.payment_method || raw.gateway
     || (Array.isArray(raw.payment_gateway_names) ? raw.payment_gateway_names[0] : '')
     || raw.payment?.method || raw.payment_info?.method || '');
+  const provider = row.provider || row.online_channel || 'unknown';
+  const externalShopId = row.external_shop_id || row.shop_domain || '';
+  let shopName = row.shop_name || '';
+  if (!shopName && row.connection_id && externalShopId) {
+    shopName = db.prepare(`SELECT shop_name FROM marketplace_shops WHERE connection_id=? AND external_shop_id=? LIMIT 1`)
+      .get(row.connection_id, externalShopId)?.shop_name || '';
+  }
+  if (!shopName && provider === 'haravan') shopName = row.shop_domain || '';
+  if (!shopName) shopName = externalShopId ? `Gian hàng ${String(externalShopId).slice(-8)}` : 'Không xác định';
   return {
     id: row.id,
     bill_no: row.bill_no || null,
     branch_id: row.branch_id,
-    provider: row.provider || row.online_channel || 'unknown',
+    provider,
     shop_domain: row.shop_domain || '',
+    shop_id: externalShopId,
+    shop_name: shopName,
+    connection_id: row.connection_id || '',
     external_order_id: row.external_order_id || row.online_ref || '',
     external_order_code: row.external_order_code || row.online_ref || '',
     workflow_status: workflowStatus,
@@ -452,7 +485,7 @@ function onlineOperationRow(row) {
   };
 }
 
-const OPERATION_SELECT = `SELECT o.*,eo.provider,eo.shop_domain,eo.external_order_id,eo.external_order_code,
+const OPERATION_SELECT = `SELECT o.*,eo.provider,eo.shop_domain,eo.external_shop_id,eo.shop_name,eo.connection_id,eo.external_order_id,eo.external_order_code,
   eo.raw_payload external_raw,eo.updated_at external_updated_at,
   s.workflow_status local_workflow_status,s.assignee_user_id,s.locked_at,s.revision,s.updated_at state_updated_at,
   u.name assignee_name,
@@ -482,10 +515,10 @@ export function listOnlineOperations(branch_id = 'sala', query = {}) {
     params.push(wantedStatus);
   }
   if (provider) { conditions.push(`LOWER(COALESCE(eo.provider,o.online_channel,''))=?`); params.push(provider); }
-  if (shop) { conditions.push(`LOWER(COALESCE(eo.shop_domain,''))=?`); params.push(shop); }
+  if (shop) { conditions.push(`LOWER(COALESCE(NULLIF(eo.external_shop_id,''),eo.shop_domain,''))=?`); params.push(shop); }
   if (search) {
     conditions.push(`LOWER(COALESCE(o.bill_no,'')||' '||COALESCE(eo.external_order_id,'')||' '||
-      COALESCE(eo.external_order_code,'')||' '||COALESCE(o.customer_json,'')) LIKE ?`);
+      COALESCE(eo.external_order_code,'')||' '||COALESCE(eo.shop_name,'')||' '||COALESCE(eo.external_shop_id,'')||' '||COALESCE(o.customer_json,'')) LIKE ?`);
     params.push(`%${search}%`);
   }
   const suffix = conditions.length ? ` AND ${conditions.join(' AND ')}` : '';
@@ -517,6 +550,21 @@ export function onlineOperationsSummary(branch_id = 'sala') {
   const total = Object.entries(buckets).filter(([key]) => key !== 'product_attention')
     .reduce((sum, [, value]) => sum + value, 0);
   return { total, buckets, capabilities: { haravan: haravanCapabilities(branch_id) } };
+}
+
+export function onlineOrderSources(branch_id = 'sala') {
+  const rows = db.prepare(`SELECT DISTINCT LOWER(COALESCE(NULLIF(eo.provider,''),o.online_channel,'unknown')) provider,
+      COALESCE(NULLIF(eo.external_shop_id,''),eo.shop_domain,'') shop_id,
+      COALESCE(NULLIF(eo.shop_name,''),NULLIF(eo.shop_domain,''),'') shop_name
+    FROM orders o LEFT JOIN external_orders eo ON eo.id=(SELECT eo2.id FROM external_orders eo2
+      WHERE eo2.internal_order_id=o.id ORDER BY eo2.updated_at DESC,eo2.created_at DESC LIMIT 1)
+    WHERE o.branch_id=? AND o.channel='online'
+    ORDER BY provider,shop_name,shop_id`).all(String(branch_id));
+  return { sources: rows.map(row => ({
+    provider: row.provider,
+    shop_id: row.shop_id,
+    shop_name: row.shop_name || (row.shop_id ? `Gian hàng ${String(row.shop_id).slice(-8)}` : 'Không xác định'),
+  })) };
 }
 
 // ĐỐI SOÁT (reconciliation) — tổng hợp theo sàn từ đơn đã ghi nhận. Phí sàn và

@@ -433,6 +433,24 @@ test('disconnect and reconnect clear secrets but preserve mappings and cursors',
     'ACCESS-RECONNECTED');
 });
 
+test('disconnecting one authorized shop keeps the sibling shop and account token active', () => {
+  const connection = Platform.listConnections('tiktokshop', 'mp-branch-2').connections[0];
+  const result = Platform.disconnectShop(connection.id, 'SHOP-A', 'mp-branch-2', 'owner-2');
+  assert.equal(result.shop_id, 'SHOP-A');
+  const disabled = db.prepare(`SELECT enabled FROM marketplace_shop_mappings m
+    JOIN marketplace_shops s ON s.id=m.shop_id
+    WHERE m.connection_id=? AND s.external_shop_id='SHOP-A' AND m.branch_id='mp-branch-2'`)
+    .get(connection.id);
+  const sibling = db.prepare(`SELECT enabled FROM marketplace_shop_mappings m
+    JOIN marketplace_shops s ON s.id=m.shop_id
+    WHERE m.connection_id=? AND s.external_shop_id='SHOP-B' AND m.branch_id='mp-branch'`)
+    .get(connection.id);
+  assert.equal(disabled.enabled, 0);
+  assert.equal(sibling.enabled, 1);
+  assert.equal(Store.findRuntimeConnectionByProviderBranch('tiktokshop', 'mp-branch').access_token,
+    'ACCESS-RECONNECTED');
+});
+
 test('legacy token migration atomically moves seller tokens into the vault and clears the old copy', () => {
   db.prepare(`INSERT OR IGNORE INTO branches(id,name,active,sort) VALUES ('mp-legacy','Legacy',1,3)`).run();
   Settings.updateIntegrations({ channels: { tiktokshop: {

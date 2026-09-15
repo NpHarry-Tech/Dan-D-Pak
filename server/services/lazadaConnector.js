@@ -58,6 +58,7 @@ export function lazadaConfig(branchId = 'sala', { shopId = '' } = {}) {
     appId: envAppId || cleanId(c.appId),         // Lazada app_key
     secretKey: envSecret || cleanId(c.secretKey), // app_secret
     sellerId: cleanId(selected.external_shop_id) || cleanId(c.sellerId),
+    shopName: cleanId(selected.shop_name) || cleanId(connection?.shop_name),
     accessToken: cleanId(connection?.access_token) || cleanId(c.accessToken),
     refreshToken: cleanId(connection?.refresh_token) || cleanId(c.refreshToken),
     webhookSecret: cleanId(process.env.LAZADA_WEBHOOK_SECRET) || envSecret || cleanId(c.webhookSecret) || cleanId(c.secretKey),
@@ -306,13 +307,16 @@ export function syncLazadaOrder(order, items, sellerId, branchId = 'sala') {
       }
     }
 
+    const sourceCfg = lazadaConfig(branchId, { shopId: seller });
     db.prepare(`INSERT INTO external_orders
-      (id,provider,shop_domain,external_order_id,internal_order_id,external_order_code,sync_status,raw_payload,created_at,updated_at)
-      VALUES (?,?,?,?,?,?,?,?,?,?)
+      (id,provider,shop_domain,external_shop_id,shop_name,connection_id,external_order_id,internal_order_id,external_order_code,sync_status,raw_payload,created_at,updated_at)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
       ON CONFLICT(provider, shop_domain, external_order_id) DO UPDATE SET
         internal_order_id=excluded.internal_order_id,external_order_code=excluded.external_order_code,
+        external_shop_id=COALESCE(NULLIF(excluded.external_shop_id,''),external_orders.external_shop_id),
+        shop_name=COALESCE(NULLIF(excluded.shop_name,''),external_orders.shop_name),connection_id=COALESCE(NULLIF(excluded.connection_id,''),external_orders.connection_id),
         sync_status=excluded.sync_status,raw_payload=excluded.raw_payload,updated_at=excluded.updated_at`)
-      .run(uid('eo_'), PROVIDER, seller, orderId, internalId, cleanId(order.order_number || orderId),
+      .run(uid('eo_'), PROVIDER, seller, seller, sourceCfg.shopName, sourceCfg.connectionId, orderId, internalId, cleanId(order.order_number || orderId),
         'success', json({ order, items }), now(), now());
 
     const workflow = WORKFLOW[status] || 'pending';
@@ -436,7 +440,9 @@ export async function pullLazadaProducts(branchId = 'sala', { limit = 50, maxPag
 }
 
 // ── Webhook push ─────────────────────────────────────────────────────────────
-function branchForSeller(sellerId) {
+// Export: lazadaChatConnector.js dùng chung ánh xạ seller→branch này (cùng
+// seller Lazada, chỉ khác App đăng ký push — IM Chat là App riêng).
+export function branchForSeller(sellerId) {
   const wanted = String(sellerId || '').trim();
   if (!wanted) { const e = new Error('Lazada push thiếu seller_id.'); e.status = 400; throw e; }
   const connection = findConnectionByProviderShop(PROVIDER, wanted);

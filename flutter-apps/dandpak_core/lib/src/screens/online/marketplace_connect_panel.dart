@@ -157,7 +157,45 @@ class _MarketplaceConnectPanelState extends State<MarketplaceConnectPanel> {
     }
   }
 
-  Future<void> _mapShop(Map<String, dynamic> connection) async {
+  Future<void> _disconnectShop(
+      Map<String, dynamic> connection, Map<String, dynamic> shop) async {
+    final shopId = oStr(shop['external_shop_id']);
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: DanColors.surface,
+        title: Text(
+            '${t('Ngắt kết nối')} ${oStr(shop['shop_name']).isEmpty ? shopId : oStr(shop['shop_name'])}?'),
+        content: Text(t(
+            'Chỉ gian hàng này ngừng đồng bộ. Các gian hàng khác và lịch sử đơn vẫn được giữ nguyên.')),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: Text(t('Hủy'))),
+          FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: Text(t('Ngắt kết nối'))),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    try {
+      await context
+          .read<ApiService>()
+          .disconnectMarketplaceShop(oStr(connection['id']), shopId);
+      if (mounted) appToast(context, t('Đã ngắt kết nối gian hàng'));
+      await _load();
+      widget.onChanged?.call();
+    } catch (error) {
+      if (mounted) {
+        appToast(context, error.toString().replaceFirst('Exception: ', ''),
+            isError: true);
+      }
+    }
+  }
+
+  Future<void> _mapShop(Map<String, dynamic> connection,
+      [String preferredShopId = '']) async {
     try {
       final options =
           await context.read<ApiService>().getMarketplaceMappingOptions();
@@ -167,7 +205,13 @@ class _MarketplaceConnectPanelState extends State<MarketplaceConnectPanel> {
       final available = oList(connection['shops'])
           .where((row) => !mappedIds.contains(oStr(row['external_shop_id'])))
           .toList();
-      final shops = available.isEmpty ? oList(connection['shops']) : available;
+      final candidates =
+          available.isEmpty ? oList(connection['shops']) : available;
+      final shops = preferredShopId.isEmpty
+          ? candidates
+          : candidates
+              .where((row) => oStr(row['external_shop_id']) == preferredShopId)
+              .toList();
       final branches = oList(options['branches']);
       final warehouses = oList(options['warehouses']);
       if (shops.isEmpty || branches.isEmpty || warehouses.isEmpty) {
@@ -258,12 +302,13 @@ class _MarketplaceConnectPanelState extends State<MarketplaceConnectPanel> {
     }
   }
 
-  Future<void> _initialSync(Map<String, dynamic> connection) async {
+  Future<void> _initialSync(Map<String, dynamic> connection,
+      [String shopId = '']) async {
     setState(() => _busy = true);
     try {
       await context
           .read<ApiService>()
-          .initialSyncMarketplace(oStr(connection['id']));
+          .initialSyncMarketplace(oStr(connection['id']), shopId: shopId);
       if (mounted) appToast(context, t('Đồng bộ shadow lần đầu hoàn tất'));
       await _load();
       widget.onChanged?.call();
@@ -276,12 +321,13 @@ class _MarketplaceConnectPanelState extends State<MarketplaceConnectPanel> {
     }
   }
 
-  Future<void> _reconcile(Map<String, dynamic> connection) async {
+  Future<void> _reconcile(Map<String, dynamic> connection,
+      [String shopId = '']) async {
     setState(() => _busy = true);
     try {
       await context
           .read<ApiService>()
-          .reconcileMarketplace(oStr(connection['id']));
+          .reconcileMarketplace(oStr(connection['id']), shopId: shopId);
       if (mounted) appToast(context, t('Đối soát sàn hoàn tất'));
       await _load();
     } catch (error) {
@@ -312,27 +358,30 @@ class _MarketplaceConnectPanelState extends State<MarketplaceConnectPanel> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(children: [
-            Icon(_meta.icon, size: 22, color: _meta.color),
-            const SizedBox(width: 8),
-            Text(_meta.name,
-                style:
-                    const TextStyle(fontSize: 16, fontWeight: FontWeight.w900)),
-            const Spacer(),
-            if (!_loading)
-              FilledButton.icon(
-                onPressed: _busy ? null : _connect,
-                icon: _busy
-                    ? const SizedBox(
-                        width: 15,
-                        height: 15,
-                        child: CircularProgressIndicator(
-                            strokeWidth: 2, color: Colors.white))
-                    : const Icon(Icons.add_link, size: 16),
-                label: Text(
-                    _connections.isEmpty ? t('Kết nối') : t('Thêm gian hàng')),
-              ),
-          ]),
+          Wrap(
+              spacing: 10,
+              runSpacing: 8,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                ProviderLogo(_provider, size: 24),
+                Text(_meta.name,
+                    style: const TextStyle(
+                        fontSize: 16, fontWeight: FontWeight.w900)),
+                if (!_loading)
+                  FilledButton.icon(
+                    onPressed: _busy ? null : _connect,
+                    icon: _busy
+                        ? const SizedBox(
+                            width: 15,
+                            height: 15,
+                            child: CircularProgressIndicator(
+                                strokeWidth: 2, color: Colors.white))
+                        : const Icon(Icons.add_link, size: 16),
+                    label: Text(_connections.isEmpty
+                        ? t('Kết nối')
+                        : t('Kết nối thêm gian hàng')),
+                  ),
+              ]),
           const SizedBox(height: 6),
           Text(
             '${t('Kết nối gian hàng')} ${_meta.name} ${t('để đồng bộ đơn hàng, hàng hóa, tồn kho và giá bán. Bạn chỉ cần đăng nhập và đồng ý — không phải nhập Partner ID/Key hay token.')}',
@@ -346,30 +395,74 @@ class _MarketplaceConnectPanelState extends State<MarketplaceConnectPanel> {
           else if (_error != null)
             InlineMessage(_error!, error: true, onRetry: _load)
           else if (_connections.isEmpty)
-            Container(
-              padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 12),
-              decoration: BoxDecoration(
-                color: DanColors.surface2,
-                borderRadius: BorderRadius.circular(DanRadius.md),
-              ),
-              child: Row(children: [
-                const Icon(Icons.link_off, size: 18, color: DanColors.faint),
-                const SizedBox(width: 8),
-                Text(t('Chưa kết nối gian hàng nào'),
-                    style: const TextStyle(color: DanColors.muted)),
-              ]),
-            )
-          else
-            for (final c in _connections) _connectionCard(c),
+            _addConnectionCard()
+          else ...[
+            for (final c in _connections) ..._connectionCards(c),
+            _addConnectionCard(),
+          ],
         ],
       ),
     );
   }
 
-  Widget _connectionCard(Map<String, dynamic> c) {
+  Widget _addConnectionCard() => InkWell(
+        onTap: _busy ? null : _connect,
+        borderRadius: BorderRadius.circular(DanRadius.md),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
+          decoration: BoxDecoration(
+            color: DanColors.surface2,
+            border: Border.all(color: DanColors.border),
+            borderRadius: BorderRadius.circular(DanRadius.md),
+          ),
+          child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+            const Icon(Icons.add_business_outlined,
+                size: 18, color: DanColors.brand),
+            const SizedBox(width: 8),
+            Text(
+                _connections.isEmpty
+                    ? t('Kết nối gian hàng')
+                    : t('Kết nối thêm gian hàng'),
+                style: const TextStyle(
+                    color: DanColors.brand, fontWeight: FontWeight.w800)),
+          ]),
+        ),
+      );
+
+  List<Widget> _connectionCards(Map<String, dynamic> connection) {
+    final shops = oList(connection['shops']);
+    if (shops.isEmpty) return [_connectionCard(connection)];
+    return shops.map((shop) {
+      final shopId = oStr(shop['external_shop_id']);
+      Map<String, dynamic>? mapping;
+      for (final row in oList(connection['mappings'])) {
+        if (oStr(row['external_shop_id']) == shopId &&
+            row['enabled'] != false) {
+          mapping = row;
+          break;
+        }
+      }
+      return _connectionCard(connection, shop: shop, mapping: mapping);
+    }).toList();
+  }
+
+  Widget _connectionCard(Map<String, dynamic> c,
+      {Map<String, dynamic>? shop, Map<String, dynamic>? mapping}) {
     final status = oStr(c['status']);
-    final active = status == 'active' || status == 'connected';
+    final shopId = oStr(shop?['external_shop_id']).isNotEmpty
+        ? oStr(shop?['external_shop_id'])
+        : oStr(c['shop_id']);
+    final shopName = oStr(shop?['shop_name']).isNotEmpty
+        ? oStr(shop?['shop_name'])
+        : oStr(c['shop_name']);
+    final mapped = shop == null || mapping != null;
+    final shopSynced = mapping != null &&
+        oStr(mapping['orders_synced_at']).isNotEmpty &&
+        oStr(mapping['products_synced_at']).isNotEmpty;
+    final active =
+        mapped && (status == 'active' || status == 'connected' || shopSynced);
     return Container(
+      key: ValueKey('${oStr(c['id'])}:$shopId'),
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
@@ -389,60 +482,59 @@ class _MarketplaceConnectPanelState extends State<MarketplaceConnectPanel> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                      oStr(c['shop_name']).isEmpty
-                          ? '${t('Gian hàng')} ${oStr(c['shop_id'])}'
-                          : oStr(c['shop_name']),
+                      shopName.isEmpty ? '${t('Gian hàng')} $shopId' : shopName,
                       style: const TextStyle(
                           fontSize: 13.5, fontWeight: FontWeight.w800)),
                   const SizedBox(height: 2),
                   Text(
-                      'Shop ID: ${oStr(c['shop_id'])} · ${t('Chi nhánh')}: ${oStr(c['branch_id'])}',
+                      'Shop ID: $shopId · ${t('Chi nhánh')}: ${mapping == null ? t('Chưa ánh xạ') : oStr(mapping['branch_id'])}',
                       style: const TextStyle(
                           fontSize: 11, color: DanColors.faint)),
                 ],
               ),
             ),
-            OnlinePill(active ? t('Hoạt động') : _statusLabel(status),
+            OnlinePill(
+                active
+                    ? t('Hoạt động')
+                    : (!mapped ? t('Chưa ánh xạ') : _statusLabel(status)),
                 active ? DanColors.done : DanColors.late),
             const SizedBox(width: 8),
             IconButton(
               tooltip: t('Ngắt kết nối'),
-              onPressed: () => _disconnect(c),
+              onPressed: shop == null
+                  ? () => _disconnect(c)
+                  : (mapped ? () => _disconnectShop(c, shop) : null),
               icon:
                   const Icon(Icons.link_off, size: 18, color: DanColors.faint),
             ),
           ]),
           const SizedBox(height: 8),
           Text(
-              '${t('Môi trường')}: ${oStr(c['environment'])}  ·  ${t('Kho')}: ${oList(c['mappings']).isEmpty ? t('Chưa ánh xạ') : oStr(oList(c['mappings']).first['warehouse_id'])}',
+              '${t('Môi trường')}: ${oStr(c['environment'])}  ·  ${t('Kho')}: ${mapping == null ? t('Chưa ánh xạ') : oStr(mapping['warehouse_id'])}',
               style: const TextStyle(fontSize: 11, color: DanColors.faint)),
           Text(
               '${t('Sự kiện cuối')}: ${oStr(c['last_event_at']).isEmpty ? '—' : oStr(c['last_event_at'])}  ·  ${t('Đối soát cuối')}: ${oStr(c['last_reconciliation_at']).isEmpty ? '—' : oStr(c['last_reconciliation_at'])}',
               style: const TextStyle(fontSize: 11, color: DanColors.faint)),
           const SizedBox(height: 8),
           Wrap(spacing: 8, runSpacing: 8, children: [
-            if (status == 'pending_shop_selection' ||
-                status == 'pending_mapping')
+            if (!mapped ||
+                (shop == null &&
+                    (status == 'pending_shop_selection' ||
+                        status == 'pending_mapping')))
               FilledButton.icon(
-                  onPressed: _busy ? null : () => _mapShop(c),
+                  onPressed: _busy ? null : () => _mapShop(c, shopId),
                   icon: const Icon(Icons.account_tree_outlined, size: 16),
                   label: Text(t('Chọn shop và ánh xạ kho'))),
-            if (status == 'initial_sync')
+            if (mapped && !shopSynced && status == 'initial_sync')
               FilledButton.icon(
-                  onPressed: _busy ? null : () => _initialSync(c),
+                  onPressed: _busy ? null : () => _initialSync(c, shopId),
                   icon: const Icon(Icons.sync, size: 16),
                   label: Text(t('Đồng bộ lần đầu'))),
-            if (active)
+            if (active && shopSynced)
               OutlinedButton.icon(
-                  onPressed: _busy ? null : () => _reconcile(c),
+                  onPressed: _busy ? null : () => _reconcile(c, shopId),
                   icon: const Icon(Icons.sync, size: 15),
                   label: Text(t('Đối soát ngay'))),
-            if (active &&
-                oList(c['shops']).length > oList(c['mappings']).length)
-              OutlinedButton.icon(
-                  onPressed: _busy ? null : () => _mapShop(c),
-                  icon: const Icon(Icons.add_business_outlined, size: 15),
-                  label: Text(t('Ánh xạ shop khác'))),
             if (status == 'reauthorization_required' || status == 'degraded')
               OutlinedButton.icon(
                   onPressed: _busy ? null : _connect,

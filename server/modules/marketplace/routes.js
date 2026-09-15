@@ -15,10 +15,16 @@ function callbackBase() {
 }
 
 export function registerMarketplaceRoutes(api, { wrap, guardAny, branch, actor }) {
-  async function syncConnection(connection, branchId, since = '') {
+  async function syncConnection(connection, branchId, since = '', shopId = '') {
     let orders;
     let products;
-    const shops = (connection.mappings || []).filter(mapping => mapping.branch_id === branchId);
+    const shops = (connection.mappings || []).filter(mapping =>
+      mapping.branch_id === branchId && (!shopId || mapping.external_shop_id === shopId));
+    if (shopId && shops.length === 0) {
+      const error = new Error('Gian hàng không được ánh xạ vào chi nhánh này.');
+      error.status = 404;
+      throw error;
+    }
     if (['tiktokshop', 'lazada'].includes(connection.provider) && shops.length === 0) {
       const error = new Error('Káº¿t ná»‘i chÆ°a cÃ³ gian hÃ ng Ä‘Æ°á»£c Ã¡nh xáº¡ vÃ o chi nhÃ¡nh nÃ y.');
       error.status = 409;
@@ -86,8 +92,9 @@ export function registerMarketplaceRoutes(api, { wrap, guardAny, branch, actor }
       const connection = ConnectionPlatform.listConnections('', branchId).connections
         .find(row => row.id === req.params.id);
       if (!connection) throw new Error('Không tìm thấy kết nối marketplace.');
-      const { orders, products } = await syncConnection(connection, branchId, req.body?.since || '');
-      return ConnectionPlatform.completeInitialSync(req.params.id, branchId, { orders, products }, actor(req));
+      const shopId = String(req.body?.shop_id || '');
+      const { orders, products } = await syncConnection(connection, branchId, req.body?.since || '', shopId);
+      return ConnectionPlatform.completeInitialSync(req.params.id, branchId, { orders, products }, actor(req), shopId);
     }));
 
   api.post('/marketplace/connections/:id/reconcile',
@@ -99,11 +106,14 @@ export function registerMarketplaceRoutes(api, { wrap, guardAny, branch, actor }
       if (!connection) throw new Error('Không tìm thấy kết nối marketplace.');
       const prior = Date.parse(connection.last_reconciliation_at || '');
       const since = Number.isFinite(prior) ? new Date(prior - 10 * 60 * 1000).toISOString() : '';
-      const result = await syncConnection(connection, branchId, since);
+      const result = await syncConnection(connection, branchId, since, String(req.body?.shop_id || ''));
       return ConnectionPlatform.completeReconciliation(req.params.id, branchId, result, actor(req));
     }));
 
   api.delete('/marketplace/connections/:id',
     guardAny('marketplace.connect'),
     wrap(req => ConnectionPlatform.disconnect(req.params.id, branch(req), actor(req))));
+  api.delete('/marketplace/connections/:id/shops/:shop',
+    guardAny('marketplace.connect'),
+    wrap(req => ConnectionPlatform.disconnectShop(req.params.id, req.params.shop, branch(req), actor(req))));
 }

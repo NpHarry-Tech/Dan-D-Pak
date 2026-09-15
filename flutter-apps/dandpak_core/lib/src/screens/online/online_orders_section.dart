@@ -33,9 +33,11 @@ class _OnlineOrdersSectionState extends State<OnlineOrdersSection> {
 
   int _tab = 0;
   String _provider = '';
+  String _shop = '';
   String _query = '';
   Map<String, dynamic> _summary = {};
   List<Map<String, dynamic>> _orders = [];
+  List<Map<String, dynamic>> _sources = [];
   final Set<String> _selected = {}; // id đơn đang chọn (bulk)
   bool _loading = true;
   bool _loadedOnce = false;
@@ -49,6 +51,7 @@ class _OnlineOrdersSectionState extends State<OnlineOrdersSection> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _connectSocket();
       _loadSummary();
+      _loadSources();
       _load();
     });
   }
@@ -97,12 +100,20 @@ class _OnlineOrdersSectionState extends State<OnlineOrdersSection> {
     } catch (_) {}
   }
 
+  Future<void> _loadSources() async {
+    try {
+      final data = await context.read<ApiService>().getOnlineOrderSources();
+      if (mounted) setState(() => _sources = oList(data['sources']));
+    } catch (_) {}
+  }
+
   Future<void> _load({bool silent = false}) async {
     if (!silent) setState(() => _loading = true);
     try {
       final res = await context.read<ApiService>().getOnlineOperations(
             status: kOrderTabs[_tab].key,
             provider: _provider,
+            shopDomain: _shop,
             q: _query,
             limit: 100,
           );
@@ -371,67 +382,114 @@ class _OnlineOrdersSectionState extends State<OnlineOrdersSection> {
   }
 
   Widget _filterBar() {
+    final providerKeys = {
+      ..._sources
+          .map((row) => oStr(row['provider']))
+          .where((v) => v.isNotEmpty),
+      'haravan',
+      'website',
+      'shopee',
+      'tiktokshop',
+      'lazada',
+      'tiki'
+    }.toList()
+      ..sort();
+    final shops = _sources
+        .where((row) => _provider.isEmpty || oStr(row['provider']) == _provider)
+        .toList();
+    final channelField = DropdownButtonFormField<String>(
+      initialValue: _provider,
+      isExpanded: true,
+      decoration: const InputDecoration(isDense: true, labelText: 'Kênh'),
+      items: [
+        const DropdownMenuItem(value: '', child: Text('Tất cả kênh')),
+        for (final key in providerKeys)
+          DropdownMenuItem(
+              value: key,
+              child: Row(children: [
+                ProviderLogo(key, size: 18),
+                const SizedBox(width: 7),
+                Expanded(
+                    child: Text(providerMeta(key).name,
+                        maxLines: 1, overflow: TextOverflow.ellipsis)),
+              ])),
+      ],
+      onChanged: (v) {
+        setState(() {
+          _provider = v ?? '';
+          _shop = '';
+        });
+        _load();
+      },
+    );
+    final shopField = DropdownButtonFormField<String>(
+      initialValue:
+          shops.any((row) => oStr(row['shop_id']) == _shop) ? _shop : '',
+      isExpanded: true,
+      decoration: const InputDecoration(isDense: true, labelText: 'Gian hàng'),
+      items: [
+        const DropdownMenuItem(value: '', child: Text('Tất cả gian hàng')),
+        for (final row in shops)
+          DropdownMenuItem(
+              value: oStr(row['shop_id']),
+              child: Row(children: [
+                ProviderLogo(oStr(row['provider']), size: 18),
+                const SizedBox(width: 7),
+                Expanded(
+                    child: Text(oStr(row['shop_name']),
+                        maxLines: 1, overflow: TextOverflow.ellipsis)),
+              ])),
+      ],
+      onChanged: (v) {
+        setState(() => _shop = v ?? '');
+        _load();
+      },
+    );
+    final searchField = TextField(
+      controller: _search,
+      decoration: InputDecoration(
+          isDense: true,
+          hintText: t('Tìm mã đơn, tên khách, gian hàng…'),
+          prefixIcon: const Icon(Icons.search, size: 18)),
+      onChanged: (v) {
+        final q = v.trim();
+        _searchDebounce(() {
+          if (_disposed || !mounted || q == _query) return;
+          setState(() => _query = q);
+          _load();
+        });
+      },
+    );
+    final refresh = IconButton(
+      tooltip: t('Làm mới'),
+      onPressed: () {
+        _loadSummary();
+        _loadSources();
+        _load();
+      },
+      icon: const Icon(Icons.refresh),
+    );
     return Padding(
       padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
-      child: Row(
-        children: [
-          SizedBox(
-            width: 180,
-            child: DropdownButtonFormField<String>(
-              initialValue: _provider,
-              isExpanded: true,
-              decoration:
-                  const InputDecoration(isDense: true, labelText: 'Kênh'),
-              items: [
-                const DropdownMenuItem(value: '', child: Text('Tất cả kênh')),
-                for (final key in const [
-                  'haravan',
-                  'website',
-                  'shopee',
-                  'tiktokshop',
-                  'lazada',
-                  'tiki'
-                ])
-                  DropdownMenuItem(
-                      value: key, child: Text(providerMeta(key).name)),
-              ],
-              onChanged: (v) {
-                setState(() => _provider = v ?? '');
-                _load();
-              },
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: TextField(
-              controller: _search,
-              decoration: InputDecoration(
-                isDense: true,
-                hintText: t('Tìm mã đơn, tên khách…'),
-                prefixIcon: const Icon(Icons.search, size: 18),
-              ),
-              // Lọc real-time từng chữ (debounce nhẹ, tránh gọi server dồn dập).
-              onChanged: (v) {
-                final q = v.trim();
-                _searchDebounce(() {
-                  if (_disposed || !mounted || q == _query) return;
-                  setState(() => _query = q);
-                  _load();
-                });
-              },
-            ),
-          ),
-          const SizedBox(width: 8),
-          IconButton(
-            tooltip: t('Làm mới'),
-            onPressed: () {
-              _loadSummary();
-              _load();
-            },
-            icon: const Icon(Icons.refresh),
-          ),
-        ],
-      ),
+      child: LayoutBuilder(builder: (context, constraints) {
+        if (constraints.maxWidth < 680) {
+          return Column(children: [
+            channelField,
+            const SizedBox(height: 8),
+            shopField,
+            const SizedBox(height: 8),
+            Row(children: [Expanded(child: searchField), refresh])
+          ]);
+        }
+        return Row(children: [
+          SizedBox(width: 170, child: channelField),
+          const SizedBox(width: 10),
+          SizedBox(width: 200, child: shopField),
+          const SizedBox(width: 10),
+          Expanded(child: searchField),
+          refresh
+        ]);
+      }),
     );
   }
 
@@ -526,7 +584,9 @@ class _OnlineOrdersSectionState extends State<OnlineOrdersSection> {
                     // Gian hàng (logo sàn) · mã đơn (copy) · trạng thái
                     Row(
                       children: [
-                        ProviderBadge(provider, shop: oStr(o['shop_domain'])),
+                        Flexible(
+                            child: ProviderBadge(provider,
+                                shop: oStr(o['shop_name']))),
                         const SizedBox(width: 10),
                         if (code.isNotEmpty)
                           Flexible(

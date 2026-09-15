@@ -44,6 +44,11 @@ extension ApiServiceOnlineApi on ApiService {
         errorMessage: 'Không tải được tổng quan đơn'));
   }
 
+  Future<Map<String, dynamic>> getOnlineOrderSources() async {
+    return mapFrom(await getJson('/api/online/operations/sources',
+        errorMessage: 'Không tải được danh sách nguồn đơn'));
+  }
+
   Future<Map<String, dynamic>> getOnlineOperations({
     String status = '',
     String provider = '',
@@ -215,6 +220,13 @@ extension ApiServiceOnlineApi on ApiService {
         errorMessage: 'Không ngắt kết nối được');
   }
 
+  Future<void> disconnectMarketplaceShop(
+      String id, String externalShopId) async {
+    await deleteJson(
+        '/api/marketplace/connections/$id/shops/${Uri.encodeComponent(externalShopId)}',
+        errorMessage: 'Không ngắt kết nối được gian hàng');
+  }
+
   Future<Map<String, dynamic>> getMarketplaceMappingOptions() async =>
       mapFrom(await getJson('/api/marketplace/mapping-options',
           errorMessage: 'Không tải được chi nhánh và kho'));
@@ -230,13 +242,17 @@ extension ApiServiceOnlineApi on ApiService {
         errorMessage: 'Không ánh xạ được gian hàng'));
   }
 
-  Future<Map<String, dynamic>> initialSyncMarketplace(String id) async =>
+  Future<Map<String, dynamic>> initialSyncMarketplace(String id,
+          {String shopId = ''}) async =>
       mapFrom(await postJson('/api/marketplace/connections/$id/initial-sync',
-          body: const {}, errorMessage: 'Đồng bộ lần đầu thất bại'));
+          body: {if (shopId.isNotEmpty) 'shop_id': shopId},
+          errorMessage: 'Đồng bộ lần đầu thất bại'));
 
-  Future<Map<String, dynamic>> reconcileMarketplace(String id) async =>
+  Future<Map<String, dynamic>> reconcileMarketplace(String id,
+          {String shopId = ''}) async =>
       mapFrom(await postJson('/api/marketplace/connections/$id/reconcile',
-          body: const {}, errorMessage: 'Đối soát sàn thất bại'));
+          body: {if (shopId.isNotEmpty) 'shop_id': shopId},
+          errorMessage: 'Đối soát sàn thất bại'));
 
   /// Kéo listing sản phẩm từ sàn về để liên kết (Shopee/Lazada/TikTok).
   Future<Map<String, dynamic>> syncOnlineProducts(String provider) async {
