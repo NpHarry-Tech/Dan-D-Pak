@@ -46,11 +46,18 @@ try {
   # BuildKit attestation manifest-list). The immutable deploy pins identity with
   # loaded_id == manifest.imageId after the image is exported and re-loaded; an
   # attestation index digest would not survive export/load deterministically.
+  # Piped to Out-Null: newer Docker Desktop prints a "View build details:
+  # docker-desktop://..." hint to STDOUT after the build, which would otherwise
+  # ride the pipeline ahead of this script's final JSON and break the caller's
+  # ConvertFrom-Json. Build progress itself is on stderr (untouched, still
+  # visible live) — do NOT merge streams here (2>&1 + $ErrorActionPreference
+  # 'Stop' turns normal stderr progress into a terminating error, see
+  # build-desktop.ps1's vcvars/CMake warning-on-stderr issue).
   & docker build --platform linux/amd64 --pull=false --provenance=false --sbom=false `
     --build-arg "BUILD_GIT_COMMIT=$commit" `
     --build-arg "BUILD_SOURCE_SHA256=$sourceHash" `
     --build-arg "BUILD_TIME_UTC=$builtAtUtc" `
-    --tag $tag --file server/Dockerfile .
+    --tag $tag --file server/Dockerfile . | Out-Null
   if ($LASTEXITCODE -ne 0) { throw 'NO_GO: server image build failed.' }
 
   $imageId = (& docker image inspect $tag --format '{{.Id}}').Trim()
