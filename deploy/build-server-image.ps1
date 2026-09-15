@@ -21,7 +21,11 @@ $schemaVersion = [int]$schemaMatch.Groups[1].Value
 
 Push-Location $root
 try {
-  & npm audit --omit=dev --audit-level=high
+  # Piped through Write-Host (not Out-Null): stays visible live on screen but,
+  # unlike raw passthrough, does not join this script's own success stream —
+  # same "keep the final JSON the only thing on that stream" reasoning as the
+  # docker build fix below.
+  & npm audit --omit=dev --audit-level=high | ForEach-Object { Write-Host $_ }
   if ($LASTEXITCODE -ne 0) { throw 'NO_GO: high/critical production dependency vulnerability detected.' }
   # Production build uses the canonical deterministic backend runner.
   # Many integration tests start servers/workers and intentionally use timing,
@@ -32,7 +36,7 @@ try {
     throw 'NO_GO: canonical backend test runner is missing.'
   }
 
-  & node $canonicalRunner
+  & node $canonicalRunner | ForEach-Object { Write-Host $_ }
   if ($LASTEXITCODE -ne 0) {
     throw 'NO_GO: canonical server test suite failed.'
   }
@@ -77,7 +81,7 @@ try {
   if (-not $OutputDirectory) { $OutputDirectory = Join-Path $root 'artifacts\server' }
   New-Item -ItemType Directory -Force -Path $OutputDirectory | Out-Null
   $tar = Join-Path $OutputDirectory "dandpak-pos-server-$short.tar"
-  & docker save --output $tar $tag
+  & docker save --output $tar $tag | Out-Null
   if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $tar)) {
     throw 'NO_GO: failed to export immutable server image.'
   }
