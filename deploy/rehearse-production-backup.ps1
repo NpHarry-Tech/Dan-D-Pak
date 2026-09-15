@@ -13,6 +13,16 @@ if (-not (Test-Path -LiteralPath $backup -PathType Leaf)) {
 if ([string]::IsNullOrWhiteSpace([string]$env:DATA_ENCRYPTION_KEY)) {
   throw 'NO_GO: DATA_ENCRYPTION_KEY must be supplied through the process environment.'
 }
+# crypto.js's key ring files the raw key under DATA_ENCRYPTION_ACTIVE_KEY_ID/
+# DATA_ENCRYPTION_KEY_ID, defaulting to 'primary' if neither is set. A real
+# production backup is always encrypted under an id prefixed 'production-'
+# (enforced in server/config/env.js), so 'primary' can never match it — fail
+# here with an actionable message instead of surfacing decrypt-file.js's raw
+# "Encryption key id is unavailable: <id>" stack trace.
+if ([string]::IsNullOrWhiteSpace([string]$env:DATA_ENCRYPTION_ACTIVE_KEY_ID) -and
+    [string]::IsNullOrWhiteSpace([string]$env:DATA_ENCRYPTION_KEY_ID)) {
+  throw 'NO_GO: DATA_ENCRYPTION_ACTIVE_KEY_ID (or DATA_ENCRYPTION_KEY_ID) must also be set, matching the key id production encrypted this backup under.'
+}
 $fileName = [IO.Path]::GetFileName($backup)
 $legacyMatch = [regex]::Match($fileName, '^store_(\d{8}_\d{6})\.db\.enc$')
 $liveMatch = [regex]::Match($fileName, '^store-(\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2})\.db\.enc$')

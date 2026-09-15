@@ -21,11 +21,18 @@ test('encrypted backup wrapper proves restore and leaves no plaintext', {
     sqlite: process.env.SQLITE_PATH,
     storage: process.env.STORAGE_PATH,
     key: process.env.DATA_ENCRYPTION_KEY,
+    keyId: process.env.DATA_ENCRYPTION_ACTIVE_KEY_ID,
   };
   try {
     process.env.SQLITE_PATH = plain;
     process.env.STORAGE_PATH = join(temp, 'storage');
     process.env.DATA_ENCRYPTION_KEY = '0123456789abcdef'.repeat(4);
+    // rehearse-production-backup.ps1 now requires an active key id to be set
+    // (a real production backup is never encrypted under the bare 'primary'
+    // default - see server/config/env.js's 'production-' prefix requirement).
+    // Set one explicitly so encryptBytes() below and the spawned decrypt both
+    // resolve the same non-default id.
+    process.env.DATA_ENCRYPTION_ACTIVE_KEY_ID = 'rehearsal-test';
     const fixture = await import(`./db.js?encrypted-rehearsal=${Date.now()}`);
     fixture.migrate();
     fixture.db.close();
@@ -57,6 +64,8 @@ test('encrypted backup wrapper proves restore and leaves no plaintext', {
     else process.env.STORAGE_PATH = previous.storage;
     if (previous.key === undefined) delete process.env.DATA_ENCRYPTION_KEY;
     else process.env.DATA_ENCRYPTION_KEY = previous.key;
+    if (previous.keyId === undefined) delete process.env.DATA_ENCRYPTION_ACTIVE_KEY_ID;
+    else process.env.DATA_ENCRYPTION_ACTIVE_KEY_ID = previous.keyId;
     rmSync(temp, { recursive: true, force: true });
   }
 });
