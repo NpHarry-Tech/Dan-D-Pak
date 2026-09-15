@@ -27,6 +27,7 @@ import {
 import {
   marketplaceWritesEnabled, recordMappingRequired, recordOrderFinancials,
 } from './marketplaceSafety.js';
+import { orderIsPaid, reverseCancelledPaidOrder } from './returns.js';
 
 const PROVIDER = 'lazada';
 const AUTH_BASE = 'https://auth.lazada.com/rest';
@@ -273,6 +274,8 @@ export function syncLazadaOrder(order, items, sellerId, branchId = 'sala') {
     let internalId = db.prepare(`SELECT internal_order_id FROM external_orders WHERE provider=? AND shop_domain=? AND external_order_id=?`)
       .get(PROVIDER, seller, orderId)?.internal_order_id;
     const priorState = internalId ? db.prepare(`SELECT locked_at FROM online_order_state WHERE order_id=?`).get(internalId) : null;
+    // wasPaid=true ⇒ void thẳng bị chặn bên dưới, đảo qua reverseCancelledPaidOrder() sau COMMIT thay vì mất dấu vết tiền/kho.
+    const wasPaid = orderIsPaid(internalId);
 
     if (!internalId) {
       internalId = uid('o_');
@@ -283,7 +286,7 @@ export function syncLazadaOrder(order, items, sellerId, branchId = 'sala') {
           order.created_at || now(), PROVIDER, orderId, status, customerJson);
     } else {
       if (!priorState?.locked_at) db.prepare(`DELETE FROM order_items WHERE order_id=?`).run(internalId);
-      if (canonicalVoided) {
+      if (canonicalVoided && !wasPaid) {
         db.prepare(`UPDATE orders SET status='void',online_status=?,customer_json=? WHERE id=?`)
           .run(status, customerJson, internalId);
       } else {
@@ -357,6 +360,7 @@ export function syncLazadaOrder(order, items, sellerId, branchId = 'sala') {
         }, branchId);
       }
     }
+    if (canonicalVoided && wasPaid) reverseCancelledPaidOrder(internalId, branchId, PROVIDER, seller, orderId);
     audit('lazada.order.sync', { seller_id: seller, order_id: orderId, internal: internalId, status }, branchId, 'lazada');
     emit('online:new', { id: internalId, provider: PROVIDER, ref: orderId, branch_id: branchId }, branchId);
     emit('stats:dirty', {}, branchId);

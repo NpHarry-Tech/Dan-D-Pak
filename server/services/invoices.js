@@ -204,3 +204,22 @@ export function ledgerDetail(order_id, branch_id = 'sala') {
     available_actions: actions,
   };
 }
+
+/**
+ * Bỏ phần "nhật ký kỹ thuật" (mã lỗi/thông điệp lỗi thô từ MISA, lý do
+ * transition trong timeline) khỏi kết quả ledgerDetail() — dùng cho người chỉ
+ * có quyền invoice.view (không có invoice/pay/reports/settings.invoices hay
+ * invoice.technical_logs). Vẫn giữ nguyên trạng thái/số hóa đơn/dòng hàng/
+ * timeline dạng rút gọn (action, trạng thái, thời điểm) để không mất bối cảnh.
+ * Hàm THUẦN (không đọc quyền/DB) để test được độc lập với auth.
+ */
+export function redactTechnicalFields(detail) {
+  if (!detail) return detail;
+  return {
+    ...detail,
+    bill: detail.bill ? { ...detail.bill, error_code: undefined, error_message: undefined } : detail.bill,
+    timeline: Array.isArray(detail.timeline)
+      ? detail.timeline.map(({ reason, ...rest }) => rest)
+      : detail.timeline,
+  };
+}

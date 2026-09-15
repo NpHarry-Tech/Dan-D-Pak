@@ -70,7 +70,7 @@ class _SettingsTabState extends State<SettingsTab> {
         Icons.hub_outlined),
     _SettingsSection(
         'connections',
-        t('Kết nối'),
+        t('Cấu hình'),
         t('Trạng thái thiết bị, máy in và đồng bộ cloud.'),
         Icons.cable_outlined),
     _SettingsSection('warehouse', t('Kho & kênh bán'),

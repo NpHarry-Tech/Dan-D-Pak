@@ -129,6 +129,7 @@ class _ConnectionsPanelState extends State<ConnectionsPanel> {
   Map<String, dynamic> _status = {};
   Map<String, dynamic> _ops = {};
   Map<String, dynamic> _printConfig = {};
+  bool _savingIssueTiming = false;
   List<Map<String, dynamic>> _printers = [];
   // Trạm chế biến của chi nhánh (Bếp/Bar/... do người dùng tự đặt) — máy in
   // phiếu bếp chọn nhận job của (những) trạm nào trong danh sách này.
@@ -394,7 +395,7 @@ class _ConnectionsPanelState extends State<ConnectionsPanel> {
   @override
   Widget build(BuildContext context) {
     return SettingsPanelScaffold(
-      title: t('Kết nối'),
+      title: t('Cấu hình'),
       onRefresh: () => _load(force: true),
       child: settingsState(
         loading: _loading && _status.isEmpty,
@@ -411,6 +412,8 @@ class _ConnectionsPanelState extends State<ConnectionsPanel> {
             _twoCol(_networkPanel(), _storagePanel()),
             SizedBox(height: 16),
             _twoCol(_devicesPanel(), _cardPosPanel()),
+            SizedBox(height: 16),
+            _invoiceTimingPanel(),
             SizedBox(height: 16),
             _printerRegistryPanel(),
             SizedBox(height: 16),
@@ -1769,6 +1772,106 @@ class _ConnectionsPanelState extends State<ConnectionsPanel> {
         backgroundColor: DanColors.late,
       ));
     }
+  }
+
+  // ── Chính sách thời điểm phát hành HĐĐT ──
+  // Đọc/ghi qua CHÍNH _printConfig đã tải (giống _savePrinters): saveAppSettings
+  // THAY THẾ nguyên khối print_config mỗi lần gọi, không gộp với bản đã lưu, nên
+  // phải gửi kèm TOÀN BỘ _printConfig hiện có, chỉ đổi đúng một trường issueTiming.
+  String get _issueTiming {
+    final einv = _printConfig['einvoice'];
+    final v = einv is Map ? asText(einv['issueTiming']) : '';
+    return v == 'at_shift_close' ? 'at_shift_close' : 'at_payment';
+  }
+
+  Future<void> _saveIssueTiming(String value) async {
+    if (value == _issueTiming) return;
+    final pin = await settingsPin(
+        context, t('Xác nhận đổi thời điểm phát hành hóa đơn điện tử.'));
+    if (pin == null) return;
+    if (!mounted) return;
+
+    final newPrintConfig = Map<String, dynamic>.from(_printConfig);
+    final newEinvoice = newPrintConfig['einvoice'] is Map
+        ? Map<String, dynamic>.from(newPrintConfig['einvoice'])
+        : <String, dynamic>{};
+    newEinvoice['issueTiming'] = value;
+    newPrintConfig['einvoice'] = newEinvoice;
+
+    setState(() => _savingIssueTiming = true);
+    try {
+      await widget.api.saveAppSettings({
+        'print_config': newPrintConfig,
+        'security_pin': pin,
+      });
+      if (!mounted) return;
+      setState(() {
+        _printConfig = newPrintConfig;
+        _savingIssueTiming = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(t('Đã lưu chính sách phát hành hóa đơn')),
+        backgroundColor: DanColors.text,
+      ));
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _savingIssueTiming = false);
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(e.toString().replaceFirst('Exception: ', '')),
+        backgroundColor: DanColors.late,
+      ));
+    }
+  }
+
+  Widget _invoiceTimingPanel() {
+    final value = _issueTiming;
+    return Panel(
+      title: t('Thời điểm phát hành hóa đơn điện tử'),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        Text(
+          t(
+              'Áp dụng cho mọi bill của chi nhánh này. Đổi chính sách không ảnh hưởng hóa đơn đã phát hành hoặc đang xử lý.'),
+          style: TextStyle(fontSize: 12.5, color: DanColors.faint),
+        ),
+        SizedBox(height: 10),
+        IgnorePointer(
+          ignoring: _savingIssueTiming,
+          child: Opacity(
+            opacity: _savingIssueTiming ? .6 : 1,
+            child: DropdownButtonFormField<String>(
+              initialValue: value,
+              isExpanded: true,
+              decoration: InputDecoration(
+                isDense: true,
+                border: OutlineInputBorder(),
+              ),
+              items: [
+                DropdownMenuItem(
+                  value: 'at_payment',
+                  child: Text(t('Phát hành ngay sau thanh toán')),
+                ),
+                DropdownMenuItem(
+                  value: 'at_shift_close',
+                  child: Text(t('Phát hành khi kết ca')),
+                ),
+              ],
+              onChanged: (v) {
+                if (v != null) _saveIssueTiming(v);
+              },
+            ),
+          ),
+        ),
+        SizedBox(height: 6),
+        Text(
+          value == 'at_shift_close'
+              ? t(
+                  'Bill thanh toán trong ca được giữ chờ; khi kết ca, hệ thống lần lượt gửi MISA cho toàn bộ bill hợp lệ của ca và tự in phiếu xác nhận cho từng bill phát hành thành công.')
+              : t(
+                  'Mỗi bill thanh toán xong được gửi MISA ngay (trong vài giây) và tự in phiếu xác nhận khi có số hóa đơn.'),
+          style: TextStyle(fontSize: 12, color: DanColors.faint),
+        ),
+      ]),
+    );
   }
 
   // ── Job in gần đây ──

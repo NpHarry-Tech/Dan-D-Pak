@@ -25,6 +25,7 @@ import {
   marketplaceWritesEnabled, recordMappingRequired, recordOrderFinancials,
 } from './marketplaceSafety.js';
 import { ingestMessage } from './omni/core.js';
+import { orderIsPaid, reverseCancelledPaidOrder } from './returns.js';
 
 const PROVIDER = 'tiktokshop';
 const AUTH_BASE = 'https://auth.tiktok-shops.com';
@@ -260,6 +261,7 @@ export function syncTiktokOrder(order, shopId, branchId = 'sala') {
   try {
     let internalId = db.prepare(`SELECT internal_order_id FROM external_orders WHERE provider=? AND shop_domain=? AND external_order_id=?`).get(PROVIDER, shop, orderId)?.internal_order_id;
     const priorState = internalId ? db.prepare(`SELECT locked_at FROM online_order_state WHERE order_id=?`).get(internalId) : null;
+    const wasPaid = orderIsPaid(internalId);
     if (!internalId) {
       internalId = uid('o_');
       db.prepare(`INSERT INTO orders (id,branch_id,table_id,channel,status,subtotal,discount,total,created_at,online_channel,online_ref,online_status,customer_json)
@@ -268,7 +270,7 @@ export function syncTiktokOrder(order, shopId, branchId = 'sala') {
           order.create_time ? new Date(order.create_time * 1000).toISOString() : now(), PROVIDER, orderId, status, customerJson);
     } else {
       if (!priorState?.locked_at) db.prepare(`DELETE FROM order_items WHERE order_id=?`).run(internalId);
-      if (canonicalVoided) {
+      if (canonicalVoided && !wasPaid) {
         db.prepare(`UPDATE orders SET status='void',online_status=?,customer_json=? WHERE id=?`)
           .run(status, customerJson, internalId);
       } else {
@@ -329,6 +331,7 @@ export function syncTiktokOrder(order, shopId, branchId = 'sala') {
         }, branchId);
       }
     }
+    if (canonicalVoided && wasPaid) reverseCancelledPaidOrder(internalId, branchId, PROVIDER, shop, orderId);
     audit('tiktok.order.sync', { shop_id: shop, order_id: orderId, internal: internalId, status }, branchId, 'tiktok');
     emit('online:new', { id: internalId, provider: PROVIDER, ref: orderId, branch_id: branchId }, branchId);
     emit('stats:dirty', {}, branchId);

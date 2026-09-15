@@ -64,6 +64,7 @@ const TYPE_LABEL = {
   inventory_document: 'Phiếu kho',
   purchase: 'Phiếu mua hàng',
   refund: 'Hoàn / trả hàng',
+  invoice_confirmation: 'Xác nhận phát hành HĐĐT',
 };
 
 function parsePayload(raw) {
@@ -425,7 +426,7 @@ function nextPrinterInChain(job, branch_id, deviceId = '') {
 
 /** Loại phiếu (job.type) → loại đầu ra của tuyến in (printer.output). */
 function outputOfJobType(type) {
-  if (type === 'receipt' || type === 'test' || type === 'cash_drawer') return 'receipt';
+  if (type === 'receipt' || type === 'test' || type === 'cash_drawer' || type === 'invoice_confirmation') return 'receipt';
   if (type === 'cup_label') return 'cup_label';
   if (type === 'product_label') return 'product_label';
   if (type === 'runner') return 'runner';
@@ -1682,6 +1683,56 @@ function renderReturnVoucher(p = {}, W = 48) {
   return L.join('\n');
 }
 
+// Phiếu XÁC NHẬN PHÁT HÀNH HÓA ĐƠN — chỉ được tạo/in SAU KHI MISA đã trả
+// invoice_no thật (gọi từ einvoice.js đúng lúc invoice_status chuyển ISSUED,
+// không sớm hơn — không được lẫn với "phiếu yêu cầu/chờ phát hành"). Số liệu
+// dòng hàng/VAT lấy NGUYÊN từ payload đã thực sự gửi MISA (p.items/p.subtotal/
+// p.vatTotal), không tính lại ở đây, để tờ giấy khớp tuyệt đối hóa đơn đã phát hành.
+function renderInvoiceConfirmation(p = {}, W = 48) {
+  const L = [];
+  const push = (s = '') => L.push(ascii(String(s)));
+  if (p.shopName) push(center(ascii(p.shopName), W));
+  if (p.address) for (const ln of wrap(ascii(p.address), W)) push(center(ln, W));
+  if (p.phone) push(center(`ĐT: ${ascii(p.phone)}`, W));
+  push(line('=', W));
+  push(centerBig('ĐÃ PHÁT HÀNH HÓA ĐƠN', W));
+  push(line('=', W));
+  if (p.billNo) push(`Bill: ${ascii(p.billNo)}`);
+  if (p.branchName) push(...wrap(`Chi nhánh: ${ascii(p.branchName)}`, W));
+  if (p.shiftLabel) push(`Ca: ${ascii(p.shiftLabel)}`);
+  if (p.issuedAt) { try { push(`Phát hành lúc: ${businessDateTime(p.issuedAt)}`); } catch {} }
+  if (p.cashier) push(`Thu ngân: ${ascii(p.cashier)}`);
+  push(...wrap(`Khách hàng: ${ascii(p.buyerName || 'Bán cho người tiêu dùng')}`, W));
+  push(line('-', W));
+  for (const it of (Array.isArray(p.items) ? p.items : [])) {
+    if (it.itemType === 4) { push(...wrap(`  KM: ${ascii(it.name || '')}`, W)); continue; }
+    push(...wrap(ascii(it.name || ''), W));
+    if (it.code) push(`  Mã: ${ascii(it.code)}`);
+    push(`  SL ${it.qty ?? ''}   ĐG ${money(it.unitPrice || 0)}   VAT ${ascii(it.vatRateName || '')}`);
+    const thue = `Thuế ${money(it.vatAmount || 0)}`;
+    const tt = money(it.amount || 0);
+    push(`  ${thue}${tt.padStart(Math.max(1, W - 2 - thue.length))}`);
+  }
+  push(line('-', W));
+  const cotPhai = Math.max(12, Math.round(W * 0.45));
+  const cotTrai = Math.max(8, W - cotPhai);
+  push('Tạm tính:'.padEnd(cotTrai) + money(p.subtotal || 0).padStart(cotPhai));
+  push('Tiền VAT:'.padEnd(cotTrai) + money(p.vatTotal || 0).padStart(cotPhai));
+  if (Number(p.discount) > 0) {
+    push('Chiết khấu:'.padEnd(cotTrai) + `-${money(p.discount)}`.padStart(cotPhai));
+  }
+  push('TỔNG THANH TOÁN:'.padEnd(cotTrai) + money(p.total || 0).padStart(cotPhai));
+  if (p.paymentMethod) push(`Thanh toán: ${ascii(p.paymentMethod)}`);
+  push(line('=', W));
+  push(`Số hóa đơn: ${ascii(p.invoiceNo || '')}`);
+  if (p.template) push(`Mẫu số: ${ascii(p.template)}`);
+  if (p.series) push(`Ký hiệu: ${ascii(p.series)}`);
+  if (p.lookupCode) push(...wrap(`Mã tra cứu: ${ascii(p.lookupCode)}`, W));
+  push(line('=', W));
+  push('');
+  return L.join('\n');
+}
+
 export function renderJobText(job, branch_id = 'sala', printer = null) {
   const p = job.payload || {};
   if (job.type === 'expense_voucher') {
@@ -1691,6 +1742,10 @@ export function renderJobText(job, branch_id = 'sala', printer = null) {
   if (job.type === 'return_voucher') {
     const W = Number(printer?.widthMm) ? paperWidthCharsFrom({ widthMm: Number(printer.widthMm) }) : 48;
     return renderReturnVoucher(p, W);
+  }
+  if (job.type === 'invoice_confirmation') {
+    const W = Number(printer?.widthMm) ? paperWidthCharsFrom({ widthMm: Number(printer.widthMm) }) : 48;
+    return renderInvoiceConfirmation(p, W);
   }
   if (job.type === 'kitchen_ticket') {
     // Mẫu Phiếu bếp do cửa hàng thiết kế (templates.kitchen_ticket) ĐƯỢC ƯU TIÊN,
@@ -2751,6 +2806,7 @@ const JOB_TTL_MIN = {
   shipping_label: 120,
   receipt: 45,
   cash_drawer: 5,
+  invoice_confirmation: 45,
 };
 // In thử phải in được BẤT KỂ tạo lúc nào — nó là công cụ để soi máy in, người
 // đứng máy vừa bấm xong là chờ giấy ra.
@@ -3404,6 +3460,50 @@ export function enqueueReceiptPrint(receipt, branch_id = 'sala', { deviceId = ''
     VALUES (?,?,?,?,?,'queued',0,?)`)
     .run(id, branch_id, receipt.payment_id, JSON.stringify(receipt), String(deviceId || ''), now());
   return id;
+}
+
+/**
+ * In phiếu XÁC NHẬN PHÁT HÀNH HÓA ĐƠN — gọi bởi einvoice.js NGAY khi
+ * invoice_status chuyển ISSUED (đã có invoice_no thật từ MISA), không sớm
+ * hơn. Không dùng outbox bền như receipt: bản thân e_invoices đã là nguồn sự
+ * thật bất biến (không mất/lặp), phiếu chỉ là bản sao giấy — in lỗi thì dùng
+ * "In lại" (route /print/jobs/:id/reprint) chung của mọi loại phiếu.
+ *
+ * Gọi từ WORKER NỀN nên KHÔNG có deviceId của một máy POS cụ thể —
+ * resolveReceiptPrinter tự rơi về tuyến in hóa đơn mặc định của chi nhánh.
+ */
+export function printInvoiceConfirmation(order, data, branch_id = 'sala', { deviceId = '' } = {}) {
+  const linked = order.linked_printer_id ? printerById(order.linked_printer_id, branch_id) : null;
+  const linkedIsUsableHardware = linked && linked.active !== false && linked.connection !== 'browser';
+  const printer = (linkedIsUsableHardware ? linked : null) || resolveReceiptPrinter(branch_id, { deviceId });
+  if (!printer) {
+    logSystem({
+      level: 'error', source: 'printer', eventType: 'invoice_confirmation_printer_missing',
+      title: 'Không tìm được máy in — phiếu xác nhận HĐĐT KHÔNG tự in',
+      message: `Bill ${data.billNo || order.id} đã phát hành hóa đơn (Số: ${data.invoiceNo || ''}) nhưng chi nhánh chưa có tuyến in hóa đơn nào khả dụng.`,
+      branchId: branch_id, action: 'print:invoice_confirmation',
+      extra: { bill_no: data.billNo || '', order_id: order.id, invoice_no: data.invoiceNo || '' },
+    });
+    return null;
+  }
+  const cfg = getPrintConfig(branch_id) || {};
+  const header = cfg.bill || {};
+  return createJob({
+    printer: printer.id,
+    type: 'invoice_confirmation',
+    title: `Xác nhận HĐĐT #${data.billNo || order.id}`.slice(0, 120),
+    payload: {
+      shopName: header.shopName || header.name || 'Dan-D Pak',
+      address: header.address || '',
+      phone: header.phone || header.hotline || '',
+      ...data,
+    },
+    branch_id,
+    // Một hóa đơn chỉ phát hành ISSUED một lần (no-split invariant ở
+    // einvoice.js) → khóa idempotency theo order là đủ, replay/retry của
+    // worker không tạo thêm bản in thứ hai.
+    idempotency_key: `invconf:${branch_id}:${order.id}`,
+  });
 }
 
 /** Drain durable receipt intents. A failed attempt remains queued for retry. */

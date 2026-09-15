@@ -40,6 +40,10 @@ class InvoicesScreen extends StatefulWidget {
 
 class _InvoicesScreenState extends State<InvoicesScreen> {
   List<Map<String, dynamic>> _invoices = [];
+  // KPI đọc từ ĐÂY (tổng hợp thật trên toàn bộ dữ liệu đã lọc phía server), KHÔNG
+  // tự đếm lại trên _invoices — _invoices chỉ là TRANG đang tải (limit 100, có
+  // thể tải thêm), đếm trên đó thì KPI hụt số/đổi liên tục theo phân trang.
+  Map<String, dynamic> _summary = {};
   String _status = '';
   String _search = '';
   bool _loading = true;
@@ -127,6 +131,9 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
           _invoices = mapped;
           _page = 1;
         }
+        _summary = response['summary'] is Map
+            ? Map<String, dynamic>.from(response['summary'] as Map)
+            : {};
         _hasMore = _page < (_n(response['pages']).toInt().clamp(1, 1 << 30));
         _loading = false;
         _loadingMore = false;
@@ -169,13 +176,13 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
     final user = auth.currentUser;
     final branch = auth.selectedBranch;
 
-    final issued = _invoices.where((i) => _s(i['status']) == 'issued').toList();
-    final failed = _invoices.where((i) => _s(i['status']) == 'failed').toList();
-    final processing =
-        _invoices.where((i) => _s(i['status']) == 'processing').length;
-    final notIssued =
-        _invoices.where((i) => _s(i['status']) == 'not_issued').length;
-    final totalAmount = _invoices.fold<num>(0, (s, i) => s + _n(i['total']));
+    final totalBills = _n(_summary['total_bills']).toInt();
+    final notIssued = _n(_summary['not_issued']).toInt();
+    final processing = _n(_summary['processing']).toInt();
+    final issuedCount = _n(_summary['issued']).toInt();
+    final failedCount = _n(_summary['failed']).toInt();
+    final needsAttention = _n(_summary['needs_attention']).toInt();
+    final totalAmount = _n(_summary['total_amount']);
 
     return Scaffold(
       backgroundColor: DanColors.bg,
@@ -201,7 +208,7 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
                     width: width,
                     child: KpiCard(
                         label: t('Tổng bill'),
-                        value: Fmt.int0(_invoices.length))),
+                        value: Fmt.int0(totalBills))),
                 SizedBox(
                     width: width,
                     child: KpiCard(
@@ -215,19 +222,21 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
                     width: width,
                     child: KpiCard(
                         label: t('Đã phát hành'),
-                        value: Fmt.int0(issued.length),
+                        value: Fmt.int0(issuedCount),
                         valueColor: DanColors.done)),
                 SizedBox(
                     width: width,
                     child: KpiCard(
                         label: t('Phát hành lỗi'),
-                        value: Fmt.int0(failed.length),
-                        valueColor:
-                            failed.isEmpty ? DanColors.muted : DanColors.late)),
+                        value: Fmt.int0(failedCount),
+                        valueColor: failedCount == 0
+                            ? DanColors.muted
+                            : DanColors.late)),
                 SizedBox(
                     width: width,
                     child: KpiCard(
-                        label: t('Cần xử lý'), value: Fmt.int0(failed.length))),
+                        label: t('Cần xử lý'),
+                        value: Fmt.int0(needsAttention))),
                 SizedBox(
                     width: width,
                     child: KpiCard(
@@ -480,7 +489,7 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
                 ]),
                 const Divider(height: 20),
                 // Bảng item: tên/SKU/SL/đơn giá/VAT/thành tiền/đã trả
-                _itemsTable(items),
+                _itemsTable(items, _s(bill['einvoice_status'])),
                 const SizedBox(height: 10),
                 // Tổng
                 _totalsBlock(totals),
@@ -550,7 +559,61 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
             ])),
       );
 
-  Widget _itemsTable(List items) {
+  // Icon trạng thái HĐĐT THEO DÒNG HÀNG. Backend hiện KHÔNG có bảng mapping
+  // item→invoice-line (invoice_allocations.order_item_id luôn NULL — xem
+  // server/services/einvoice.js: "No-split invariant, mỗi order chỉ có đúng
+  // MỘT hóa đơn"). Vì một bill chỉ có tối đa một hóa đơn phủ TOÀN BỘ dòng
+  // hàng, trạng thái thật của từng item LUÔN TRÙNG trạng thái bill — đây
+  // không phải suy diễn tắt mà là toàn bộ sự thật đang có; nếu sau này hệ
+  // thống hỗ trợ xuất một phần, icon này phải đổi sang đọc mapping riêng.
+  ({IconData icon, Color color, String label}) _invoiceLineStatus(String raw) {
+    final s = raw.toUpperCase();
+    return switch (s) {
+      'ISSUED' => (
+          icon: Icons.verified_outlined,
+          color: DanColors.done,
+          label: t('Đã phát hành')
+        ),
+      'FAILED' => (
+          icon: Icons.error_outline,
+          color: DanColors.late,
+          label: t('Phát hành lỗi')
+        ),
+      'REVIEW_REQUIRED' => (
+          icon: Icons.report_problem_outlined,
+          color: DanColors.late,
+          label: t('Cần xử lý')
+        ),
+      'CANCELLED' => (
+          icon: Icons.block_outlined,
+          color: DanColors.muted,
+          label: t('Đã hủy')
+        ),
+      'QUEUED_FOR_SHIFT_CLOSE' => (
+          icon: Icons.schedule_outlined,
+          color: DanColors.muted,
+          label: t('Chờ kết ca')
+        ),
+      'QUEUED' || 'SENDING' || 'RETRYING' || 'PROCESSING' || 'CANCELLING' => (
+          icon: Icons.hourglass_top_outlined,
+          color: DanColors.doing,
+          label: t('Đang xử lý')
+        ),
+      'PENDING_PROVIDER' || 'PENDING_EDGE_SYNC' => (
+          icon: Icons.hourglass_empty_outlined,
+          color: DanColors.muted,
+          label: t('Chờ phát hành')
+        ),
+      _ => (
+          icon: Icons.remove_circle_outline,
+          color: DanColors.faint,
+          label: t('Chưa đưa vào hóa đơn')
+        ),
+    };
+  }
+
+  Widget _itemsTable(List items, [String einvoiceStatus = '']) {
+    final st = _invoiceLineStatus(einvoiceStatus);
     Widget cell(String s,
             {int flex = 1, TextAlign a = TextAlign.left, bool b = false}) =>
         Expanded(
@@ -580,9 +643,19 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
                 child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(_s(it['name']),
-                          style: const TextStyle(
-                              fontSize: 12, fontWeight: FontWeight.w600)),
+                      Row(mainAxisSize: MainAxisSize.min, children: [
+                        Flexible(
+                          child: Text(_s(it['name']),
+                              style: const TextStyle(
+                                  fontSize: 12, fontWeight: FontWeight.w600)),
+                        ),
+                        const SizedBox(width: 5),
+                        Tooltip(
+                          message: st.label,
+                          child: Icon(st.icon, size: 14, color: st.color,
+                              semanticLabel: st.label),
+                        ),
+                      ]),
                       if (_s(it['sku_id'] ??
                               it['item_barcode'] ??
                               it['item_code'])

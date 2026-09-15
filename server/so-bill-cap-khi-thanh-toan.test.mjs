@@ -121,6 +121,18 @@ test('don da thanh toan roi HOAN thi VAN giu so hoa don', () => {
   assert.equal(docDon(o.id).bill_no, so);
 });
 
+test('don ONLINE duoc cap so bill tien to DanOL, doc lap voi day so Dan cua Retail', () => {
+  const retail = moDon();
+  const soRetail = Orders.capSoBillKhiThanhToan(retail.id, BR);
+  assert.match(soRetail, /^Dan\d+$/, 'don retail van giu tien to Dan');
+
+  db.prepare(`INSERT INTO orders (id,branch_id,table_id,channel,status,subtotal,discount,total,created_at)
+    VALUES (?,?,NULL,'online','open',0,0,0,?)`).run('o_test_online_1', BR, new Date().toISOString());
+  const soOnline = Orders.capSoBillKhiThanhToan('o_test_online_1', BR);
+  assert.match(soOnline, /^DanOL\d+$/, 'don online phai mang tien to DanOL');
+  assert.notEqual(soOnline.replace(/^DanOL/, ''), '', 'phai co ngay+seq sau tien to');
+});
+
 test('don cu (truoc khi tach doi) van doi soat duoc bang bill_no', async () => {
   // Don da ton tai trong DB tu ban cu: co bill_no, khong co pay_ref.
   const o = moDon();

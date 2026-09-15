@@ -393,6 +393,18 @@ const Map<String, String> viToEnMap = {
   'Cơ sở dữ liệu & Tài liệu': 'Database & Documentation',
   'Cả hai': 'Both',
   'Cảm ơn quý khách • \${_money(d.total)}': 'Thank you • \${_money(d.total)}',
+  'Cấu hình': 'Configuration',
+  'Thời điểm phát hành hóa đơn điện tử': 'E-invoice issuance timing',
+  'Áp dụng cho mọi bill của chi nhánh này. Đổi chính sách không ảnh hưởng hóa đơn đã phát hành hoặc đang xử lý.':
+      'Applies to every bill at this branch. Changing the policy does not affect invoices already issued or in progress.',
+  'Phát hành ngay sau thanh toán': 'Issue immediately after payment',
+  'Phát hành khi kết ca': 'Issue at shift close',
+  'Bill thanh toán trong ca được giữ chờ; khi kết ca, hệ thống lần lượt gửi MISA cho toàn bộ bill hợp lệ của ca và tự in phiếu xác nhận cho từng bill phát hành thành công.':
+      'Bills paid during the shift are held; at shift close, the system submits every eligible bill to MISA one by one and automatically prints a confirmation slip for each successfully issued bill.',
+  'Mỗi bill thanh toán xong được gửi MISA ngay (trong vài giây) và tự in phiếu xác nhận khi có số hóa đơn.':
+      'Each bill is submitted to MISA right after payment (within seconds) and a confirmation slip prints automatically once an invoice number is issued.',
+  'Xác nhận đổi thời điểm phát hành hóa đơn điện tử.':
+      'Confirm changing the e-invoice issuance timing.',
   'CẤU HÌNH CHI TIẾT': 'DETAILED CONFIGURATION',
   'Cấu hình Server': 'Server configuration',
   'Cấu hình Server (Server)': 'Server Configuration (Server)',
@@ -1927,6 +1939,7 @@ const Map<String, String> viToEnMap = {
   'Đã lưu cấu hình tích điểm': 'Point accumulation configuration saved',
   'Đã lưu danh mục': 'Saved category',
   'Đã lưu danh mục in thành công': 'The print list has been saved successfully',
+  'Đã lưu chính sách phát hành hóa đơn': 'Invoice issuance policy saved',
   'Đã lưu hồ sơ kê khai thuế thành công!':
       'Tax declaration has been saved successfully!',
   'Đã lưu liên kết': 'Link saved',
@@ -2110,6 +2123,7 @@ const Map<String, String> viToEnMap = {
       'Retail sales, barcode, lot/expiry, voucher and returns.',
   'Bàn, order, giảm giá, thanh toán, in bill và realtime với bếp.':
       'Tables, orders, discounts, payment, receipts and kitchen realtime.',
+  'Cài đặt & nền tảng': 'Settings & Platform',
   'Công việc': 'Productivity',
   'Cốt lõi': 'Essentials',
   'Danh bạ khách hàng, nhà cung cấp, điện thoại, MST và địa chỉ.':
@@ -3832,6 +3846,18 @@ const Map<String, String> viToEnMap = {
   'Giao dịch kho': 'Inventory transactions',
   'Số hóa đơn': 'Invoice number',
   'Chưa có số HĐĐT': 'No e-invoice number yet',
+  'Đối tác': 'Partner',
+  'Mã đơn Dan D Pak': 'Dan D Pak order code',
+  'Mã đơn trên đối tác': 'Partner order code',
+  'Lịch sử & hóa đơn': 'History & invoice',
+  'Dòng thời gian': 'Timeline',
+  'Lịch sử thanh toán': 'Payment history',
+  'Trả hàng / Hoàn tiền': 'Return / Refund',
+  'Mẫu số': 'Template',
+  'Ký hiệu': 'Series',
+  'Mã tra cứu': 'Lookup code',
+  'Đơn chưa vào pipeline hóa đơn (chưa thanh toán hoặc đã hủy trước khi trả tiền).':
+      'Order has not entered the invoicing pipeline yet (not paid, or cancelled before payment).',
   'Trả một phần': 'Partial return',
   'Đã gửi lệnh in lại': 'Reprint job sent',
   'Chưa in được: \$err': 'Couldn\'t print: \$err',

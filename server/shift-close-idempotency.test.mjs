@@ -23,14 +23,14 @@ const user = { username: 'thu-ngan', name: 'Thu Ngan' };
 const closedShifts = () =>
   db.prepare(`SELECT closing_cash FROM shifts WHERE branch_id=? AND status='closed'`).all(BR);
 
-test('kết ca lần hai bị từ chối; đúng MỘT ca đóng; closing_cash không bị ghi đè', () => {
+test('kết ca lần hai bị từ chối; đúng MỘT ca đóng; closing_cash không bị ghi đè', async () => {
   Shifts.openShift({ shift_key: 'sang', opening_cash: 100000 }, user, BR);
-  const r1 = Shifts.closeShift({ shift_key: 'sang', closing_cash: 500000, counts: {} }, user, BR);
+  const r1 = await Shifts.closeShift({ shift_key: 'sang', closing_cash: 500000, counts: {} }, user, BR);
   assert.equal(r1.shift.status, 'closed');
   assert.equal(closedShifts().length, 1);
 
   // Lần kết ca thứ hai (bấm dồn / máy khác) với số tiền KHÁC → phải bị từ chối.
-  assert.throws(
+  await assert.rejects(
     () => Shifts.closeShift({ shift_key: 'sang', closing_cash: 999999, counts: {} }, user, BR),
     /Chua co ca dang mo|đã được kết|đã kết|SHIFT_ALREADY_CLOSED/i,
     'không được kết ca lần hai');

@@ -21,18 +21,26 @@ function todayDdMMyy() {
   const pad = (x) => String(x).padStart(2, '0');
   return pad(d.day) + pad(d.month) + String(d.year).slice(-2);
 }
-function billNoForSeq(seq) {
-  return `Dan${todayDdMMyy()}${String(seq).padStart(3, '0')}`;
+// Tiền tố mã bill theo kênh — đơn online mang tiền tố riêng (DanOL) để phân
+// biệt nguồn gốc ngay trên mã hiển thị, tách khỏi dãy số Retail/F&B (Dan).
+// Quyết định 2026-09-15: prefix "DanOL" do chủ dự án chọn.
+function billPrefixForChannel(channel) {
+  return channel === 'online' ? 'DanOL' : 'Dan';
 }
-// seq kế tiếp = MAX(seq đã có TRONG NGÀY) + 1. Tách đúng phần seq SAU tiền tố ngày
-// (Dan{ddMMyy}) — KHÔNG dùng \d+$ vì sẽ nuốt luôn 6 chữ số ngày. Dùng MAX (không COUNT)
-// để chịu được khoảng trống do xóa, và để retry-chống-trùng tăng dần khi đụng UNIQUE.
-function nextPaySeq(branch_id = 'sala') {
+function billNoForSeq(seq, prefix = 'Dan') {
+  return `${prefix}${todayDdMMyy()}${String(seq).padStart(3, '0')}`;
+}
+// seq kế tiếp = MAX(seq đã có TRONG NGÀY, CÙNG PREFIX) + 1. Mỗi prefix có dãy số
+// riêng (online đếm từ 001 độc lập với Retail/F&B, không tranh chấp/chia sẻ bộ
+// đếm). Tách đúng phần seq SAU tiền tố ngày (Dan{ddMMyy}) — KHÔNG dùng \d+$ vì sẽ
+// nuốt luôn 6 chữ số ngày. Dùng MAX (không COUNT) để chịu được khoảng trống do
+// xóa, và để retry-chống-trùng tăng dần khi đụng UNIQUE.
+function nextPaySeq(branch_id = 'sala', prefix = 'Dan') {
   const ddMMyy = todayDdMMyy();
   const { start, end } = businessDayBoundsUtc();
   const rows = db.prepare(`SELECT bill_no FROM orders WHERE branch_id=? AND bill_no LIKE ? AND created_at>=? AND created_at<?`)
-    .all(branch_id, `Dan${ddMMyy}%`, start.toISOString(), end.toISOString());
-  const re = new RegExp(`^Dan${ddMMyy}(\\d+)$`);
+    .all(branch_id, `${prefix}${ddMMyy}%`, start.toISOString(), end.toISOString());
+  const re = new RegExp(`^${prefix}${ddMMyy}(\\d+)$`);
   let max = 0;
   for (const r of rows) {
     const m = re.exec(r.bill_no || '');
@@ -91,15 +99,16 @@ function insertOpenOrder({ branch_id = 'sala', table_id = null, channel = 'dine_
  * Gọi lại nhiều lần trên cùng một đơn là vô hại: đã có số thì giữ nguyên.
  */
 export function capSoBillKhiThanhToan(order_id, branch_id = 'sala') {
-  const o = db.prepare(`SELECT id, branch_id, bill_no FROM orders WHERE id=?`).get(order_id);
+  const o = db.prepare(`SELECT id, branch_id, bill_no, channel FROM orders WHERE id=?`).get(order_id);
   if (!o) return null;
   if (o.bill_no) return o.bill_no; // đã có số rồi (VD thanh toán nhiều lần)
 
   const br = o.branch_id || branch_id;
-  let seq = nextPaySeq(br);
+  const prefix = billPrefixForChannel(o.channel);
+  let seq = nextPaySeq(br, prefix);
   const upd = db.prepare(`UPDATE orders SET bill_no=? WHERE id=? AND (bill_no IS NULL OR bill_no='')`);
   for (let lan = 0; ; lan++) {
-    const so = billNoForSeq(seq);
+    const so = billNoForSeq(seq, prefix);
     try {
       upd.run(so, order_id);
       const lai = db.prepare(`SELECT bill_no FROM orders WHERE id=?`).get(order_id);

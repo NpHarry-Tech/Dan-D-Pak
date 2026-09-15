@@ -25,6 +25,7 @@ import {
   updateConnectionTokens,
 } from './connectionStore.js';
 import { upsertExternalProduct } from './online.js';
+import { orderIsPaid, reverseCancelledPaidOrder } from './returns.js';
 
 const PROVIDER = 'shopee';
 const LIVE_BASE = 'https://partner.shopeemobile.com';
@@ -300,6 +301,7 @@ export function syncShopeeOrder(detail, shopId, branchId = 'sala') {
       .get(PROVIDER, shop, orderSn)?.internal_order_id;
     const priorState = internalId
       ? db.prepare(`SELECT locked_at FROM online_order_state WHERE order_id=?`).get(internalId) : null;
+    const wasPaid = orderIsPaid(internalId);
 
     if (!internalId) {
       internalId = uid('o_');
@@ -311,8 +313,18 @@ export function syncShopeeOrder(detail, shopId, branchId = 'sala') {
           PROVIDER, orderSn, status, customerJson);
     } else {
       if (!priorState?.locked_at) db.prepare(`DELETE FROM order_items WHERE order_id=?`).run(internalId);
-      db.prepare(`UPDATE orders SET status=?,online_status=?,customer_json=? WHERE id=?`)
-        .run(voided ? 'void' : 'open', status, customerJson, internalId);
+      if (wasPaid) {
+        // Đã 'paid' rồi (tiền/kho/hoá đơn thật) — status CHỈ được đổi sang
+        // 'void' qua reverseCancelledPaidOrder() (sau COMMIT, khi sàn báo huỷ
+        // thật). Các trạng thái vận đơn khác (SHIPPED/COMPLETED/TO_RETURN/...
+        // không nằm trong PAID_STATUSES) KHÔNG được phép ghi đè ngược về
+        // 'open' — đây chính là sự cố thật đã tìm thấy khi audit.
+        db.prepare(`UPDATE orders SET online_status=?,customer_json=? WHERE id=?`)
+          .run(status, customerJson, internalId);
+      } else {
+        db.prepare(`UPDATE orders SET status=?,online_status=?,customer_json=? WHERE id=?`)
+          .run(voided ? 'void' : 'open', status, customerJson, internalId);
+      }
     }
 
     if (!priorState?.locked_at) {
@@ -369,6 +381,7 @@ export function syncShopeeOrder(detail, shopId, branchId = 'sala') {
         }, branchId);
       }
     }
+    if (voided && wasPaid) reverseCancelledPaidOrder(internalId, branchId, PROVIDER, shop, orderSn);
     audit('shopee.order.sync', { shop_id: shop, order_sn: orderSn, order_id: internalId, status }, branchId, 'shopee');
     emit('online:new', { id: internalId, provider: PROVIDER, ref: orderSn, branch_id: branchId }, branchId);
     emit('stats:dirty', {}, branchId);

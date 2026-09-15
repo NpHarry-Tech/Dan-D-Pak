@@ -155,6 +155,14 @@ export const PERMISSIONS = [
   { key: 'warehouse.create', label: 'Kho — Tạo & sửa kho hàng' },
   { key: 'warehouse.delete', label: 'Kho — XÓA mặt hàng, SKU, phiếu kho, phiếu kiểm, bảng giá (nhạy cảm)' },
   { key: 'invoice', label: 'Xuất hóa đơn điện tử' },
+  // Quyền HĐĐT chi tiết theo từng thao tác (cấp riêng lẻ, cùng khuôn mẫu với
+  // warehouse.* ở trên). Route bảo vệ bằng guardAny(granular, coarse) nên ai
+  // đang có quyền cũ (invoice/pay) vẫn chạy bình thường — quyền mới để cấp/
+  // giới hạn tinh hơn (VD: thu ngân chỉ được xem, không được retry/hủy).
+  { key: 'invoice.view', label: 'HĐĐT — Xem danh sách và chi tiết hóa đơn' },
+  { key: 'invoice.retry', label: 'HĐĐT — Đồng bộ trạng thái và phát hành lại hóa đơn lỗi' },
+  { key: 'invoice.cancel', label: 'HĐĐT — Hủy hóa đơn đã phát hành' },
+  { key: 'invoice.technical_logs', label: 'HĐĐT — Xem nhật ký kỹ thuật (request/response gửi MISA)' },
   { key: 'online', label: 'Xử lý đơn hàng online' },
   { key: 'online.order.manage', label: 'Retail Online — xác nhận, đóng gói và cập nhật đơn' },
   { key: 'online.order.assign', label: 'Retail Online — phân công người xử lý đơn' },

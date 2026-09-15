@@ -7,6 +7,50 @@ import * as Misa from './misa/index.js';
 import { enqueueIssuedInvoice } from './haravanConnector.js';
 import { archiveInvoice, archiveOrder } from './archive.js';
 import { silentSaveFromInvoice } from './customers.js';
+import { printInvoiceConfirmation } from './printing.js';
+import { getBranch } from './branches.js';
+
+// Phiếu XÁC NHẬN PHÁT HÀNH — best-effort, KHÔNG được làm hỏng/chặn việc phát
+// hành hóa đơn (lỗi in chỉ log, không throw). Chỉ gọi NGAY sau khi
+// invoice_status đã thật sự chuyển ISSUED với invoice_no thật từ MISA — không
+// gọi ở bất kỳ thời điểm nào khác (không có "phiếu chờ phát hành" ở bản này).
+function firePrintInvoiceConfirmation(job, order, snapshot, misaCfg, result) {
+  try {
+    const totals = Misa.buildInvoiceLines(
+      Array.isArray(snapshot.items) ? snapshot.items : [],
+      snapshot.total,
+      Number(misaCfg?.defaultTaxRate) || 8,
+    );
+    const paymentRow = (Array.isArray(snapshot.payments) && snapshot.payments[0]) || {};
+    const shiftRow = paymentRow.shift_id
+      ? db.prepare(`SELECT shift_label FROM shifts WHERE id=?`).get(paymentRow.shift_id)
+      : null;
+    printInvoiceConfirmation(order, {
+      billNo: snapshot.bill?.code || order.bill_no || order.id,
+      branchName: getBranch(job.branch_id)?.name || job.branch_id,
+      shiftLabel: shiftRow?.shift_label || '',
+      issuedAt: now(),
+      cashier: paymentRow.cashier || '',
+      buyerName: snapshot.buyer?.name,
+      items: totals.lines.map(l => ({
+        itemType: l.ItemType, name: l.ItemName, code: l.ItemCode,
+        qty: l.Quantity, unitPrice: l.UnitPrice, amount: l.Amount,
+        vatRateName: l.VATRateName, vatAmount: l.VATAmount,
+      })),
+      subtotal: totals.totalAmountWithoutVAT,
+      vatTotal: totals.totalVATAmount,
+      discount: Number(snapshot.bill?.discount) || 0,
+      total: totals.grandTotal,
+      paymentMethod: Misa.paymentMethodName(snapshot.payments),
+      invoiceNo: result.invoice_no,
+      template: misaCfg?.templateId || '',
+      series: misaCfg?.series || '',
+      lookupCode: result.lookup_code,
+    }, job.branch_id, {});
+  } catch (e) {
+    audit('einvoice.print_confirmation_failed', { order: job.order_id, error: e.message }, job.branch_id);
+  }
+}
 
 const RETRY_BACKOFF = [10, 30, 60, 300, 900, 1800]; // seconds backoff
 const MAX_ATTEMPTS = 10;
@@ -214,7 +258,15 @@ export function createInvoiceRequest(order_id, customer_mode = 'WALK_IN', buyer_
   // VPS becomes the single provider authority after the sale snapshot is ACKed.
   const storeEdge = !!String(process.env.EDGE_HUB_ID || '').trim();
   const provider = storeEdge ? 'edge' : (providerReady ? 'misa' : 'pending');
-  const initialStatus = storeEdge ? 'PENDING_EDGE_SYNC' : (providerReady ? 'QUEUED' : 'PENDING_PROVIDER');
+  // Chính sách phát hành (Cài đặt → Cấu hình... → HĐĐT): 'at_payment' (mặc
+  // định, giữ nguyên hành vi hiện có) hay 'at_shift_close' (giữ lại, chỉ gửi
+  // MISA khi kết ca — xem issueShiftBatch). Store Edge luôn PENDING_EDGE_SYNC
+  // bất kể chính sách: edge không tự gọi MISA, VPS mới là nơi quyết định.
+  const issueTiming = storeEdge ? 'at_payment' : String(getPrintConfig(branch_id)?.einvoice?.issueTiming || 'at_payment');
+  const holdForShiftClose = providerReady && issueTiming === 'at_shift_close';
+  const initialStatus = storeEdge ? 'PENDING_EDGE_SYNC'
+    : holdForShiftClose ? 'QUEUED_FOR_SHIFT_CLOSE'
+    : (providerReady ? 'QUEUED' : 'PENDING_PROVIDER');
 
   // Snapshot request body for auditing
   const paymentSnapshot = db.prepare(`SELECT p.id,p.shift_id,p.cashier,p.created_at,pl.method,pl.amount,pl.tendered_amount,pl.reference
@@ -294,6 +346,8 @@ export function createInvoiceRequest(order_id, customer_mode = 'WALK_IN', buyer_
     new_status: initialStatus,
     reason: storeEdge
       ? `Store Edge ghi nhan hoa don dau ra — cho VPS dong bo (${customer_mode})`
+      : holdForShiftClose
+      ? `Đóng băng snapshot HĐĐT, giữ chờ kết ca theo chính sách "Phát hành khi kết ca" (${customer_mode})`
       : providerReady
       ? `Tạo yêu cầu HĐĐT tự động theo chế độ ${customer_mode}`
       : `Ghi nhận HĐ đầu ra (MISA chưa bật — chờ phát hành bù) theo chế độ ${customer_mode}`,
@@ -548,6 +602,7 @@ async function processJob(job) {
 
     emit('einvoice:issued', { id: job.id, order_id: job.order_id, invoice_no: result.invoice_no, status: 'ISSUED' }, job.branch_id);
     try { enqueueIssuedInvoice(job.id); } catch { /* Haravan không được chặn phát hành hóa đơn */ }
+    firePrintInvoiceConfirmation(job, order, snapshot, misaCfg, result);
     archiveOrder(order);
     return true;
 
@@ -720,6 +775,10 @@ export async function syncInvoiceStatus(e_invoice_id, branch_id = null) {
 
         emit('einvoice:issued', { id: e_invoice_id, order_id: job.order_id, invoice_no: statusResult.invoice_no, status: 'ISSUED' }, job.branch_id);
         try { enqueueIssuedInvoice(e_invoice_id); } catch { /* best effort outbox */ }
+        const syncedOrder = getOrder(job.order_id);
+        if (syncedOrder) {
+          firePrintInvoiceConfirmation(job, syncedOrder, parseJson(job.request_snapshot, {}), misaCfg, statusResult);
+        }
         return { ok: true, status: 'ISSUED', invoice_no: statusResult.invoice_no };
       }
     } catch (err) {
@@ -1049,7 +1108,9 @@ export function getShiftInvoiceSummary(branch_id = 'sala', shift_id) {
       COUNT(o.id) as total_bills,
       SUM(CASE WHEN e.invoice_status = 'ISSUED' THEN 1 ELSE 0 END) as issued_count,
       SUM(CASE WHEN e.invoice_status IN ('QUEUED', 'SENDING', 'RETRYING', 'PROCESSING',
-        'CANCELLING', 'PENDING_PROVIDER', 'PENDING_EDGE_SYNC') THEN 1 ELSE 0 END) as queued_count,
+        'CANCELLING', 'PENDING_PROVIDER', 'PENDING_EDGE_SYNC', 'QUEUED_FOR_SHIFT_CLOSE')
+        THEN 1 ELSE 0 END) as queued_count,
+      SUM(CASE WHEN e.invoice_status = 'QUEUED_FOR_SHIFT_CLOSE' THEN 1 ELSE 0 END) as queued_for_shift_close_count,
       SUM(CASE WHEN e.invoice_status = 'FAILED' THEN 1 ELSE 0 END) as failed_count,
       SUM(CASE WHEN e.id IS NULL OR e.invoice_status = 'NOT_CREATED' THEN 1 ELSE 0 END) as missing_count
     FROM orders o
@@ -1069,11 +1130,70 @@ export function getShiftInvoiceSummary(branch_id = 'sala', shift_id) {
     total_bills: stats.total_bills || 0,
     issued_count: stats.issued_count || 0,
     queued_count: stats.queued_count || 0,
+    // Bill đang bị GIỮ do chính sách "Phát hành khi kết ca" — chưa gửi MISA,
+    // sẽ được đưa vào hàng đợi thật khi issueShiftBatch() chạy (tự động, ngay
+    // trước bước can_close, xem closeShift() ở shifts.js).
+    queued_for_shift_close_count: stats.queued_for_shift_close_count || 0,
     failed_count: failed,
     missing_count: missing,
     // Strictly block closing if any PAID bills do not have an associated e-invoice record
     can_close: missing === 0 && failed === 0
   };
+}
+
+/**
+ * Chính sách "Phát hành khi kết ca" (settings.print.einvoice.issueTiming =
+ * 'at_shift_close'): các bill đã thanh toán trong ca CHỈ được đóng băng
+ * snapshot lúc thanh toán (createInvoiceRequest), CHƯA gọi MISA — trạng thái
+ * QUEUED_FOR_SHIFT_CLOSE. Hàm này được closeShift() gọi TRƯỚC bước kiểm tra
+ * can_close: thả các bill của CHÍNH ca này vào hàng đợi thật (QUEUED) rồi xử
+ * lý TUẦN TỰ (processJob vốn đã tuần tự — đúng yêu cầu giới hạn concurrency)
+ * cho tới khi không còn job nào tới lượt (đã gửi xong hoặc đang chờ backoff
+ * retry). Bill lỗi giữ nguyên trạng thái lỗi/retrying — KHÔNG bị mất, gate
+ * can_close hiện có (đã test) sẽ chặn kết ca nếu còn FAILED, y như chính sách
+ * phát hành ngay.
+ */
+export async function issueShiftBatch(branch_id = 'sala', shift_id, actor = 'system') {
+  const held = db.prepare(`SELECT e.id, e.order_id FROM e_invoices e
+    JOIN payments p ON p.order_id=e.order_id
+    WHERE e.branch_id=? AND p.shift_id=? AND e.invoice_status='QUEUED_FOR_SHIFT_CLOSE'`)
+    .all(branch_id, shift_id);
+  if (!held.length) return { released: 0, issued: 0, failed: 0, pending: 0 };
+
+  const releasedAt = now();
+  for (const row of held) {
+    const claim = db.prepare(`UPDATE e_invoices SET invoice_status='QUEUED',updated_at=?
+      WHERE id=? AND invoice_status='QUEUED_FOR_SHIFT_CLOSE'`).run(releasedAt, row.id);
+    if (!claim.changes) continue; // đã được nhả bởi một lượt kết ca khác (song song)
+    db.prepare(`UPDATE orders SET einvoice_status='QUEUED' WHERE id=?`).run(row.order_id);
+    writeAuditLog({
+      order_id: row.order_id, e_invoice_id: row.id, actor_id: actor, actor_role: 'manager',
+      action: 'SHIFT_BATCH_RELEASED', old_status: 'QUEUED_FOR_SHIFT_CLOSE', new_status: 'QUEUED',
+      reason: `Kết ca (shift ${shift_id}): đưa vào hàng đợi phát hành thật.`,
+    });
+  }
+  emit('einvoice:shift_batch_started', { shift_id, count: held.length }, branch_id);
+
+  const ids = held.map(r => r.id);
+  const placeholders = ids.map(() => '?').join(',');
+  // Chặn trên: mỗi bill tối đa một lượt xử lý thật trong MỘT lần gọi batch —
+  // lỗi tạm thời sẽ có next_retry_at trong tương lai nên vòng lặp tự dừng,
+  // không cần tới giới hạn này trong ca thực tế; chỉ để không treo vô hạn.
+  const guardMax = ids.length + 5;
+  for (let i = 0; i < guardMax; i++) {
+    const job = db.prepare(`SELECT * FROM e_invoices WHERE id IN (${placeholders})
+      AND invoice_status IN ('QUEUED','RETRYING') AND (next_retry_at IS NULL OR next_retry_at<=?)
+      ORDER BY created_at ASC LIMIT 1`).get(...ids, now());
+    if (!job) break;
+    await processJob(job);
+  }
+
+  const final = db.prepare(`SELECT invoice_status FROM e_invoices WHERE id IN (${placeholders})`).all(...ids);
+  const issued = final.filter(f => f.invoice_status === 'ISSUED').length;
+  const failed = final.filter(f => f.invoice_status === 'FAILED' || f.invoice_status === 'REVIEW_REQUIRED').length;
+  const pending = final.length - issued - failed;
+  emit('einvoice:shift_batch_done', { shift_id, released: held.length, issued, failed, pending }, branch_id);
+  return { released: held.length, issued, failed, pending };
 }
 
 /**

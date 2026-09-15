@@ -30,6 +30,12 @@ class _OnlineOrderDetailDialogState extends State<OnlineOrderDetailDialog> {
   bool _busy = false;
   String? _error;
   int _tab = 0;
+  // Lịch sử & hóa đơn — TÁI DÙNG /invoices/:id/detail (chỉ có dữ liệu khi đơn
+  // đã đi qua pipeline hóa đơn, tức đã 'paid'; đơn pending/hủy chưa từng thanh
+  // toán thì không có, giữ null để tab hiện trạng thái rỗng thay vì báo lỗi).
+  Map<String, dynamic>? _invoiceDetail;
+  bool _invoiceLoading = false;
+  bool _invoiceLoaded = false;
 
   @override
   void initState() {
@@ -105,6 +111,7 @@ class _OnlineOrderDetailDialogState extends State<OnlineOrderDetailDialog> {
 
   Widget _content() {
     final wf = workflowMeta(oStr(_op['workflow_status']));
+    final billNo = oStr(_op['bill_no']);
     final code = oStr(_op['external_order_code']).isNotEmpty
         ? oStr(_op['external_order_code'])
         : oStr(_op['external_order_id']);
@@ -128,18 +135,26 @@ class _OnlineOrderDetailDialogState extends State<OnlineOrderDetailDialog> {
         ),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 20),
-          child: Row(
+          child: Wrap(
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: 10,
+            runSpacing: 4,
             children: [
-              Flexible(
-                  child: ProviderBadge(oStr(_op['provider']),
-                      shop: oStr(_op['shop_name']))),
-              const SizedBox(width: 10),
-              if (code.isNotEmpty)
-                Text('#$code',
+              ProviderBadge(oStr(_op['provider']), shop: oStr(_op['shop_name'])),
+              // Mã đơn Dan D Pak (nội bộ) — LUÔN hiện trước, tách biệt mã đối
+              // tác: đây là mã dùng xuyên suốt POS/kế toán/kho/hóa đơn/in ấn.
+              if (billNo.isNotEmpty)
+                Text('#$billNo',
                     style: const TextStyle(
                         fontFamily: 'JetBrains Mono',
-                        fontWeight: FontWeight.w700)),
-              const Spacer(),
+                        fontWeight: FontWeight.w800,
+                        color: DanColors.brand)),
+              if (code.isNotEmpty)
+                Text('· ${t("Đối tác")}: #$code',
+                    style: const TextStyle(
+                        fontFamily: 'JetBrains Mono',
+                        fontWeight: FontWeight.w700,
+                        color: DanColors.muted)),
               OnlinePill(wf.label, wf.color),
             ],
           ),
@@ -148,17 +163,21 @@ class _OnlineOrderDetailDialogState extends State<OnlineOrderDetailDialog> {
         // Tabs
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 20),
-          child: Row(children: [
+          child: Wrap(spacing: 6, runSpacing: 6, children: [
             _tabBtn(0, t('Thông tin đơn hàng')),
-            const SizedBox(width: 6),
             _tabBtn(1, t('Thông tin vận chuyển')),
+            _tabBtn(2, t('Lịch sử & hóa đơn')),
           ]),
         ),
         const Divider(height: 18, color: DanColors.border),
         Flexible(
           child: SingleChildScrollView(
             padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
-            child: _tab == 0 ? _infoTab() : _shippingTab(),
+            child: switch (_tab) {
+              0 => _infoTab(),
+              1 => _shippingTab(),
+              _ => _historyTab(),
+            },
           ),
         ),
         const Divider(height: 1, color: DanColors.border),
@@ -170,7 +189,10 @@ class _OnlineOrderDetailDialogState extends State<OnlineOrderDetailDialog> {
   Widget _tabBtn(int i, String label) {
     final sel = _tab == i;
     return InkWell(
-      onTap: () => setState(() => _tab = i),
+      onTap: () {
+        setState(() => _tab = i);
+        if (i == 2) _loadInvoiceDetail();
+      },
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         decoration: BoxDecoration(
@@ -199,6 +221,7 @@ class _OnlineOrderDetailDialogState extends State<OnlineOrderDetailDialog> {
         Text(t('Nguồn đơn'),
             style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13)),
         const SizedBox(height: 6),
+        _kv('Mã đơn Dan D Pak', oStr(_op['bill_no'])),
         _kv('Nền tảng', providerMeta(oStr(_op['provider'])).name),
         _kv('Gian hàng', oStr(_op['shop_name'])),
         if (oStr(_op['shop_id']).isNotEmpty)
@@ -253,6 +276,128 @@ class _OnlineOrderDetailDialogState extends State<OnlineOrderDetailDialog> {
           ),
         ]),
       ],
+    );
+  }
+
+  Future<void> _loadInvoiceDetail() async {
+    if (_invoiceLoaded || _invoiceLoading) return;
+    setState(() => _invoiceLoading = true);
+    try {
+      final detail = await context.read<ApiService>().getInvoiceDetail(widget.orderId);
+      if (!mounted) return;
+      setState(() {
+        _invoiceDetail = detail;
+        _invoiceLoading = false;
+        _invoiceLoaded = true;
+      });
+    } catch (_) {
+      // Đơn chưa từng vào pipeline hóa đơn (chưa 'paid', hoặc đã hủy trước khi
+      // trả tiền) — KHÔNG phải lỗi, chỉ là chưa có gì để hiện (giữ null).
+      if (!mounted) return;
+      setState(() {
+        _invoiceDetail = null;
+        _invoiceLoading = false;
+        _invoiceLoaded = true;
+      });
+    }
+  }
+
+  Widget _historyTab() {
+    if (_invoiceLoading) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 30),
+        child: Center(child: CircularProgressIndicator()),
+      );
+    }
+    final detail = _invoiceDetail;
+    if (detail == null) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 20),
+        child: OnlineEmpty(
+          t('Đơn chưa vào pipeline hóa đơn (chưa thanh toán hoặc đã hủy trước khi trả tiền).'),
+          icon: Icons.receipt_long_outlined,
+        ),
+      );
+    }
+    final bill = oMap(detail['bill']);
+    final timeline = oList(detail['timeline']);
+    final payments = oList(detail['payment_history']);
+    final returns = oList(detail['returns']);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(t('Hóa đơn điện tử'),
+            style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13)),
+        const SizedBox(height: 6),
+        _kv('Trạng thái HĐĐT', oStr(bill['einvoice_status'])),
+        if (oStr(bill['invoice_no']).isNotEmpty)
+          _kv('Số hóa đơn', oStr(bill['invoice_no'])),
+        if (oStr(bill['invoice_template']).isNotEmpty)
+          _kv('Mẫu số', oStr(bill['invoice_template'])),
+        if (oStr(bill['invoice_series']).isNotEmpty)
+          _kv('Ký hiệu', oStr(bill['invoice_series'])),
+        if (oStr(bill['lookup_code']).isNotEmpty)
+          _kv('Mã tra cứu', oStr(bill['lookup_code'])),
+        const Divider(height: 20, color: DanColors.border),
+        Text(t('Dòng thời gian'),
+            style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13)),
+        const SizedBox(height: 6),
+        if (timeline.isEmpty)
+          Text(t('Chưa có sự kiện nào'),
+              style: const TextStyle(fontSize: 12.5, color: DanColors.faint))
+        else
+          for (final e in timeline) _timelineRow(e),
+        if (payments.isNotEmpty) ...[
+          const Divider(height: 20, color: DanColors.border),
+          Text(t('Lịch sử thanh toán'),
+              style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13)),
+          const SizedBox(height: 6),
+          for (final p in payments)
+            _kv(oStr(p['method']).isEmpty ? 'Thanh toán' : oStr(p['method']),
+                Fmt.money(oNum(p['amount']))),
+        ],
+        if (returns.isNotEmpty) ...[
+          const Divider(height: 20, color: DanColors.border),
+          Text(t('Trả hàng / Hoàn tiền'),
+              style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13)),
+          const SizedBox(height: 6),
+          for (final r in returns)
+            _kv(t('Hoàn tiền'), Fmt.money(oNum(r['refund_total']))),
+        ],
+      ],
+    );
+  }
+
+  Widget _timelineRow(Map<String, dynamic> e) {
+    final at = oStr(e['created_at']);
+    final action = oStr(e['action']);
+    final newStatus = oStr(e['new_status']);
+    final reason = oStr(e['reason']);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+              width: 130,
+              child: Text(at,
+                  style: const TextStyle(fontSize: 11, color: DanColors.faint))),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('$action${newStatus.isEmpty ? '' : ' → $newStatus'}',
+                    style: const TextStyle(
+                        fontSize: 12.5, fontWeight: FontWeight.w700)),
+                if (reason.isNotEmpty)
+                  Text(reason,
+                      style: const TextStyle(
+                          fontSize: 11.5, color: DanColors.muted)),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 

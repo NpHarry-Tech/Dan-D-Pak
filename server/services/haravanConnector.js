@@ -7,6 +7,7 @@ import { getIntegrationChannel } from './settings.js';
 import { decryptSecret, encryptSecret, isEncrypted, secretContext } from '../core/crypto.js';
 import { recordPurchase, reversePurchase } from './customers.js';
 import { payOrder } from './payments.js';
+import { orderIsPaid, reverseCancelledPaidOrder } from './returns.js';
 
 const PROVIDER = 'haravan';
 const AUTH_BASE = 'https://accounts.haravan.com';
@@ -593,6 +594,7 @@ export function syncHaravanOrder(payload, topic = 'orders/create', shopDomain = 
     const priorState = internalId
       ? db.prepare(`SELECT locked_at FROM online_order_state WHERE order_id=?`).get(internalId)
       : null;
+    const wasPaid = orderIsPaid(internalId);
     const subtotal = lines.reduce((sum, line) => sum + money(line.price) * Math.max(1, Number(line.quantity || 1)), 0);
     const discount = money(payload.total_discounts || payload.discount);
     const total = money(payload.total_price || payload.total || Math.max(0, subtotal - discount));
@@ -600,8 +602,11 @@ export function syncHaravanOrder(payload, topic = 'orders/create', shopDomain = 
     // Never mark an inbound order paid here. A paid web order must cross the
     // canonical payment boundary after this import transaction commits; that is
     // where stock, bill number, sale snapshot, reports and e-invoice are created.
-    const status = payload.cancelled_at || topic === 'orders/cancelled' || topic === 'orders/cancel'
+    const rawStatus = payload.cancelled_at || topic === 'orders/cancelled' || topic === 'orders/cancel'
       ? 'void' : 'open';
+    // Đơn đã 'paid' thì cột status CHỈ được ghi 'void' qua reverseCancelledPaidOrder()
+    // (sau COMMIT) — giữ nguyên 'paid' ở đây để không xoá dấu vết tiền/kho trước khi đảo.
+    const status = (wasPaid && rawStatus === 'void') ? 'paid' : rawStatus;
     const customerJson = json({
       id: customerId,
       name: payload.customer?.name || [payload.customer?.first_name, payload.customer?.last_name].filter(Boolean).join(' '),
@@ -706,7 +711,8 @@ export function syncHaravanOrder(payload, topic = 'orders/create', shopDomain = 
         }, branch_id);
       }
     }
-    if (status === 'void') reversePurchase(internalId, branch_id);
+    if (rawStatus === 'void') reversePurchase(internalId, branch_id);
+    if (rawStatus === 'void' && wasPaid) reverseCancelledPaidOrder(internalId, branch_id, PROVIDER, shop, externalId);
     audit('haravan.order.sync', { shop_domain: shop, external_order_id: externalId, order_id: internalId, topic }, branch_id, 'haravan');
     emit('online:new', { id: internalId, provider: PROVIDER, ref: externalId, branch_id }, branch_id);
     emit('stats:dirty', {}, branch_id);

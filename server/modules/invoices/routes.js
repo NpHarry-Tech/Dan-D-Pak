@@ -23,11 +23,11 @@ export function registerInvoiceRoutes(api, {
     return Einvoices.customerRequest(req.params.id, req.body || {}, visibleBranch(req));
   }));
 
-  api.get('/orders/:id/einvoice', guard('pay'), wrap((req) =>
+  api.get('/orders/:id/einvoice', guardAny('pay', 'invoice.view'), wrap((req) =>
     Einvoices.getInvoiceByOrder(req.params.id, branch(req))
   ));
 
-  api.post('/orders/:id/einvoice/retry', guard('pay'), wrap((req) => {
+  api.post('/orders/:id/einvoice/retry', guardAny('pay', 'invoice.retry'), wrap((req) => {
     const pin = req.body?.security_pin;
     const approvedBy = Auth.verifyManagerOwnerPin(pin, branch(req));
     if (!approvedBy) throw new Error('Can nhap PIN Manager hoac Admin de phat hanh lai hoa don.');
@@ -37,22 +37,22 @@ export function registerInvoiceRoutes(api, {
     return Einvoices.retryInvoice(req.body.e_invoice_id, actor(req), branch(req));
   }));
 
-  api.post('/einvoice/:id/sync', guard('pay'), wrap((req) =>
+  api.post('/einvoice/:id/sync', guardAny('pay', 'invoice.retry'), wrap((req) =>
     Einvoices.syncInvoiceStatus(req.params.id, branch(req))
   ));
 
-  api.post('/einvoice/:id/cancel', guard('pay'), wrap((req) => {
+  api.post('/einvoice/:id/cancel', guardAny('pay', 'invoice.cancel'), wrap((req) => {
     const pin = req.body?.security_pin;
     const approvedBy = Auth.verifyManagerOwnerPin(pin, branch(req));
     if (!approvedBy) throw new Error('Can nhap PIN Manager hoac Admin de huy hoa don.');
     return Einvoices.cancelInvoice(req.params.id, req.body.reason, actor(req), branch(req));
   }));
 
-  api.get('/einvoice/reconciliation', guardAny('reports', 'pay'), wrap((req) =>
+  api.get('/einvoice/reconciliation', guardAny('reports', 'pay', 'invoice.view'), wrap((req) =>
     Einvoices.getReconciliation(branch(req), req.query)
   ));
 
-  api.get('/einvoice/shift-summary', guard('pay'), wrap((req) =>
+  api.get('/einvoice/shift-summary', guardAny('pay', 'invoice.view'), wrap((req) =>
     Einvoices.getShiftInvoiceSummary(branch(req), req.query)
   ));
 
@@ -76,7 +76,16 @@ export function registerInvoiceRoutes(api, {
   // BẢO MẬT: danh sách HĐĐT chứa PII (tên, MST, địa chỉ, SĐT, email) + số tiền —
   // BẮT BUỘC đăng nhập & đúng quyền, và khóa theo chi nhánh. Trước đây 2 route này
   // để trống guard → bất kỳ ai (kể cả chưa đăng nhập) cũng liệt kê/đọc được hóa đơn.
-  api.get('/invoices', guardAny('invoice', 'pay', 'reports', 'settings.invoices'), wrap((req) => Invoices.ledger(branch(req), req.query)));
-  api.get('/invoices/:orderId/detail', guardAny('invoice', 'pay', 'reports', 'settings.invoices'), wrap((req) => Invoices.ledgerDetail(req.params.orderId, branch(req))));
-  api.get('/invoices/order/:id', guard('pay'), wrap((req) => Invoices.byOrder(req.params.id, branch(req))));
+  api.get('/invoices', guardAny('invoice', 'pay', 'reports', 'settings.invoices', 'invoice.view'), wrap((req) => Invoices.ledger(branch(req), req.query)));
+  api.get('/invoices/:orderId/detail', guardAny('invoice', 'pay', 'reports', 'settings.invoices', 'invoice.view'), wrap((req) => {
+    const detail = Invoices.ledgerDetail(req.params.orderId, branch(req));
+    // Nhật ký kỹ thuật là quyền RIÊNG (invoice.technical_logs) — ai chỉ có
+    // invoice.view (không có các quyền rộng hơn bên dưới) vẫn thấy đủ trạng
+    // thái/số hóa đơn/dòng hàng nhưng KHÔNG thấy chi tiết lỗi kỹ thuật.
+    const hasBroadAccess = ['invoice', 'pay', 'reports', 'settings.invoices']
+      .some((p) => Auth.canUser(req.user, p));
+    if (hasBroadAccess || Auth.canUser(req.user, 'invoice.technical_logs')) return detail;
+    return Invoices.redactTechnicalFields(detail);
+  }));
+  api.get('/invoices/order/:id', guardAny('pay', 'invoice.view'), wrap((req) => Invoices.byOrder(req.params.id, branch(req))));
 }

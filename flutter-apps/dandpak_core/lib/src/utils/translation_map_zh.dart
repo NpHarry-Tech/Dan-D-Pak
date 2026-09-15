@@ -393,6 +393,18 @@ const Map<String, String> viToZhMap = {
   'Cơ sở dữ liệu & Tài liệu': '数据库与文档',
   'Cả hai': '两者',
   'Cảm ơn quý khách • \${_money(d.total)}': '感谢惠顾 • \${_money(d.total)}',
+  'Cấu hình': '配置',
+  'Thời điểm phát hành hóa đơn điện tử': '电子发票开具时机',
+  'Áp dụng cho mọi bill của chi nhánh này. Đổi chính sách không ảnh hưởng hóa đơn đã phát hành hoặc đang xử lý.':
+      '适用于本分店的所有账单。更改政策不会影响已开具或处理中的发票。',
+  'Phát hành ngay sau thanh toán': '付款后立即开具',
+  'Phát hành khi kết ca': '交班时开具',
+  'Bill thanh toán trong ca được giữ chờ; khi kết ca, hệ thống lần lượt gửi MISA cho toàn bộ bill hợp lệ của ca và tự in phiếu xác nhận cho từng bill phát hành thành công.':
+      '班次内已付款的账单会先暂缓；交班时，系统会依次将该班次所有符合条件的账单提交至MISA，并为每张成功开具的账单自动打印确认单。',
+  'Mỗi bill thanh toán xong được gửi MISA ngay (trong vài giây) và tự in phiếu xác nhận khi có số hóa đơn.':
+      '每笔账单付款完成后会立即（几秒内）提交至MISA，一旦获得发票号码即自动打印确认单。',
+  'Xác nhận đổi thời điểm phát hành hóa đơn điện tử.':
+      '确认更改电子发票开具时机。',
   'CẤU HÌNH CHI TIẾT': '详细配置',
   'Cấu hình Server': '服务器配置',
   'Cấu hình Server (Server)': '服务器配置（Server）',
@@ -1926,6 +1938,7 @@ const Map<String, String> viToZhMap = {
   'Đã lưu cấu hình tích điểm': '积分配置已保存',
   'Đã lưu danh mục': '分类已保存',
   'Đã lưu danh mục in thành công': '打印类别已成功保存',
+  'Đã lưu chính sách phát hành hóa đơn': '发票开具政策已保存',
   'Đã lưu hồ sơ kê khai thuế thành công!':
       '税务申报资料已成功保存！',
   'Đã lưu liên kết': '关联已保存',
@@ -2109,6 +2122,7 @@ const Map<String, String> viToZhMap = {
       '零售、条码、批次/有效期、优惠券与退换货。',
   'Bàn, order, giảm giá, thanh toán, in bill và realtime với bếp.':
       '台桌、点单、折扣、结账、打印账单及与厨房的实时同步。',
+  'Cài đặt & nền tảng': '设置与平台',
   'Công việc': '工作事项',
   'Cốt lõi': '核心功能',
   'Danh bạ khách hàng, nhà cung cấp, điện thoại, MST và địa chỉ.':
@@ -3831,6 +3845,18 @@ const Map<String, String> viToZhMap = {
   'Giao dịch kho': '库存交易',
   'Số hóa đơn': '发票号码',
   'Chưa có số HĐĐT': '尚无电子发票号码',
+  'Đối tác': '合作平台',
+  'Mã đơn Dan D Pak': 'Dan D Pak 订单编号',
+  'Mã đơn trên đối tác': '平台订单编号',
+  'Lịch sử & hóa đơn': '历史与发票',
+  'Dòng thời gian': '时间线',
+  'Lịch sử thanh toán': '付款记录',
+  'Trả hàng / Hoàn tiền': '退货/退款',
+  'Mẫu số': '发票模板',
+  'Ký hiệu': '发票符号',
+  'Mã tra cứu': '查询码',
+  'Đơn chưa vào pipeline hóa đơn (chưa thanh toán hoặc đã hủy trước khi trả tiền).':
+      '订单尚未进入开票流程（尚未付款，或在付款前已取消）。',
   'Trả một phần': '部分退货',
   'Đã gửi lệnh in lại': '已发送重新打印指令',
   'Chưa in được: \$err': '无法打印：\$err',

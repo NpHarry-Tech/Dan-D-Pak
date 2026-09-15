@@ -348,6 +348,40 @@ export function createReturn(order_id, {
   }
 }
 
+// Đơn ĐÃ 'paid' mà sàn báo huỷ SAU đó không được void thẳng tay ở connector —
+// phải đảo qua reverseCancelledPaidOrder() SAU KHI commit. Dùng chung ở cả 4
+// connector (lazada/tiktok/shopee/haravan) để tránh 4 bản SELECT trùng nhau.
+export function orderIsPaid(order_id) {
+  return !!order_id && db.prepare(`SELECT 1 FROM orders WHERE id=? AND status='paid'`).get(order_id) != null;
+}
+
+/**
+ * Đơn ĐÃ 'paid' (tiền/tồn kho/hoá đơn thật đã ghi nhận) mà sàn TMĐT báo huỷ
+ * SAU ĐÓ — coi như một lần trả hàng toàn phần bắt buộc bởi sàn: đảo tiền, trả
+ * kho, giữ hoá đơn nếu chưa phát hành (createReturn đã làm cả ba, y hệt trả
+ * hàng thủ công tại quầy). Gọi hàm này SAU KHI transaction sync của connector
+ * đã COMMIT (createReturn tự mở transaction riêng, không lồng được).
+ *
+ * CHỈ khi đảo THÀNH CÔNG mới chuyển order sang 'void' — thất bại thì GIỮ
+ * NGUYÊN 'paid' (đúng thực tế: tiền/kho chưa được đảo) và ghi audit riêng để
+ * con người xử lý, không âm thầm che mất một đơn tiền/kho lệch sổ.
+ */
+export function reverseCancelledPaidOrder(order_id, branch_id, provider, shopId, externalOrderId) {
+  try {
+    createReturn(order_id, {
+      reason: `Đơn ${externalOrderId} bị huỷ trên ${provider} sau khi đã ghi nhận thanh toán nội bộ`,
+      branch_id, actor: 'system',
+      idempotency_key: `mp_cancel:${provider}:${shopId}:${externalOrderId}`,
+    });
+    db.prepare(`UPDATE orders SET status='void' WHERE id=? AND status='paid'`).run(order_id);
+    audit('marketplace.order.cancel_reversed',
+      { provider, shop_id: shopId, external_order_id: externalOrderId, order_id }, branch_id, provider);
+  } catch (e) {
+    audit('marketplace.order.cancel_reversal_failed',
+      { provider, shop_id: shopId, external_order_id: externalOrderId, order_id, error: e.message }, branch_id, provider);
+  }
+}
+
 // Với full-exact, reverseOrderPayments đảo đúng tender gốc; ghi lại breakdown để báo cáo.
 function tenderBalancesSnapshot(order_id, amount) {
   // Sau reverse, số dư về 0; tính breakdown = phần vừa đảo (âm) gộp theo method.

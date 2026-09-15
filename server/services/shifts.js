@@ -59,9 +59,14 @@ export function openShift(body = {}, user = {}, branch_id = 'sala') {
   return { shift: getActiveShift(branch_id), config: cfg };
 }
 
-export function closeShift(body = {}, user = {}, branch_id = 'sala') {
+export async function closeShift(body = {}, user = {}, branch_id = 'sala') {
   const shift = getActiveShift(branch_id);
   if (!shift) throw new Error('Chua co ca dang mo de ket ca.');
+
+  // Chính sách "Phát hành khi kết ca": thả các bill đang QUEUED_FOR_SHIFT_CLOSE
+  // của CHÍNH ca này vào hàng đợi thật rồi xử lý ngay (tuần tự). No-op tức thì
+  // nếu không có bill nào bị giữ (chính sách 'at_payment' — hành vi cũ nguyên vẹn).
+  const batch_summary = await einvoice.issueShiftBatch(branch_id, shift.id, user.username || user.name || 'system');
 
   // E-invoice compliance block check
   const stats = einvoice.getShiftInvoiceSummary(branch_id, shift.id);
@@ -111,7 +116,12 @@ export function closeShift(body = {}, user = {}, branch_id = 'sala') {
     day_revenue: day_report.total_revenue,
   }, branch_id, user.username || 'system');
   emit('shift:updated', { status: 'closed', shift_label: picked.label, day_report }, branch_id);
-  return { shift: publicShift(db.prepare(`SELECT * FROM shifts WHERE id=?`).get(shift.id)), report: { ...report, closing_cash }, day_report };
+  return {
+    shift: publicShift(db.prepare(`SELECT * FROM shifts WHERE id=?`).get(shift.id)),
+    report: { ...report, closing_cash },
+    day_report,
+    einvoice_batch: batch_summary,
+  };
 }
 
 export function currentShift(branch_id = 'sala') {
