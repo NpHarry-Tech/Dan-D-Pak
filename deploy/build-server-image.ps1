@@ -24,7 +24,7 @@ try {
   # Piped through Write-Host (not Out-Null): stays visible live on screen but,
   # unlike raw passthrough, does not join this script's own success stream —
   # same "keep the final JSON the only thing on that stream" reasoning as the
-  # docker build fix below.
+  # image-export step further down.
   & npm audit --omit=dev --audit-level=high | ForEach-Object { Write-Host $_ }
   if ($LASTEXITCODE -ne 0) { throw 'NO_GO: high/critical production dependency vulnerability detected.' }
   # Production build uses the canonical deterministic backend runner.
