@@ -4,11 +4,11 @@
 // coverage without a browser.
 
 export const LANGS = [
-  { code: 'vi', short: 'VI', name: 'Tiếng Việt' },
-  { code: 'en', short: 'EN', name: 'English' },
-  { code: 'zh', short: '中', name: '中文' },
-  { code: 'ja', short: 'JA', name: '日本語' },
-  { code: 'ko', short: 'KO', name: '한국어' },
+  { code: 'vi', short: 'VI', name: 'Tiếng Việt', flag: '/byod-assets/flags/vi.png' },
+  { code: 'en', short: 'EN', name: 'English', flag: '/byod-assets/flags/en.png' },
+  { code: 'zh', short: '中', name: '中文', flag: '/byod-assets/flags/zh.png' },
+  { code: 'ja', short: 'JA', name: '日本語', flag: '/byod-assets/flags/ja.png' },
+  { code: 'ko', short: 'KO', name: '한국어', flag: '/byod-assets/flags/ko.png' },
 ];
 // Phải khớp CHÍNH XÁC server/services/catalog.js:MENU_TRANSLATION_LANGS — đây
 // là danh sách ngôn ngữ server thật sự dịch tên/mô tả món.

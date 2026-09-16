@@ -242,7 +242,7 @@ function renderHeader() {
   const header = $('#app-header');
   if (state.screen === 'welcome' || !state.data) { header.classList.add('hidden'); return; }
   header.classList.remove('hidden');
-  $('#lang-short').textContent = (LANGS.find(l => l.code === state.lang) || LANGS[0]).short;
+  $('#lang-flag').src = (LANGS.find(l => l.code === state.lang) || LANGS[0]).flag;
   const d = state.data;
   const tableRows = d.cart?.table || [];
   const count = tableRows.reduce((s, r) => s + (r.qty || 0), 0);
@@ -319,7 +319,7 @@ function renderWelcome() {
   const hasAny = (d.cart?.table?.length || 0) > 0 || (d.orders?.length || 0) > 0;
   $('#screen-welcome').innerHTML = `
     <div class="welcome-top">
-      <button type="button" class="welcome-lang" data-act="open-lang">${icon('globe', 17)}<span>${esc((LANGS.find(l => l.code === state.lang) || LANGS[0]).name)}</span></button>
+      <button type="button" class="welcome-lang" data-act="open-lang"><img class="lang-flag" src="${attr((LANGS.find(l => l.code === state.lang) || LANGS[0]).flag)}" alt=""><span>${esc((LANGS.find(l => l.code === state.lang) || LANGS[0]).name)}</span></button>
     </div>
     <div class="welcome-body">
       <img class="welcome-logo" src="/assets/DanOnLogo.png" alt="Dan D Pak">
@@ -669,7 +669,7 @@ function languageSheetHtml() {
   return `<div class="sheet" role="dialog" aria-modal="true"><div class="sheet-grip"></div>
     <div class="sheet-title">${esc(t(state.lang, 'langTitle'))}</div>
     <div class="lang-list">${LANGS.map(l => `<button type="button" class="lang-row ${l.code === state.lang ? 'active' : ''}" data-act="pick-lang" data-lang="${l.code}">
-      <span class="lang-badge">${esc(l.short)}</span><span class="lang-name">${esc(l.name)}</span>${l.code === state.lang ? icon('check', 18, 'style="color:#D81F26"') : ''}
+      <img class="lang-flag lang-flag-lg" src="${attr(l.flag)}" alt=""><span class="lang-name">${esc(l.name)}</span>${l.code === state.lang ? icon('check', 18, 'style="color:#D81F26"') : ''}
     </button>`).join('')}</div>
   </div>`;
 }

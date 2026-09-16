@@ -11,6 +11,7 @@ process.env.BYOD_TOKEN_SECRET = 'test-only-byod-secret-with-at-least-32-chars';
 const { db, migrate } = await import('./db.js');
 const Orders = await import('./services/orders.js');
 const Byod = await import('./services/byod.js');
+const Catalog = await import('./services/catalog.js');
 migrate();
 
 db.prepare(`INSERT INTO categories(id,branch_id,name) VALUES('byod_cat','sala','Món chính')`).run();
@@ -39,6 +40,16 @@ test('API bootstrap lọc món nội bộ và không trả giá vốn/cấu hìn
   assert.ok(view.menu.some(i => i.id === 'byod_food'));
   assert.ok(!view.menu.some(i => i.id === 'byod_hidden'));
   assert.ok(view.menu.every(i => !('cost' in i) && !('station' in i)));
+});
+
+test('món hết hàng/chưa tới giờ bán ẩn HẲN khỏi menu BYOD (như Tablet Self Order), không hiện mờ "hết món"', () => {
+  db.prepare(`UPDATE menu_items SET available=0 WHERE id='byod_food'`).run();
+  Catalog.cacheBust('menu:');
+  const view = Byod.bootstrap(qr.token, deviceA, 'iPhone', 'vi');
+  assert.ok(!view.menu.some(i => i.id === 'byod_food'));
+  db.prepare(`UPDATE menu_items SET available=1 WHERE id='byod_food'`).run();
+  Catalog.cacheBust('menu:');
+  assert.ok(Byod.bootstrap(qr.token, deviceA, 'iPhone', 'vi').menu.some(i => i.id === 'byod_food'));
 });
 
 test('bootstrap trả tên category thật (không chỉ category_id) và không lộ field nội bộ', () => {

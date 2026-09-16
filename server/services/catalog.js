@@ -94,9 +94,13 @@ export function listMenu(options = {}) {
     const filteredRows = search
       ? allRows.filter(row => matchesSearch(menuSearchValues(row), search))
       : allRows;
-    const total = filteredRows.length;
-    const rows = filteredRows.slice(offset, offset + parsedLimit);
-    const items = rows.map(r => normalizeMenuItem(r, { forCustomer, includeRecipe: !forCustomer, lang: menuLang }));
+    // Self-Order/BYOD không hiện món "hết" dạng mờ/khoá — món không đặt được
+    // (ẩn, tạm hết, chưa tới khung giờ bán) biến mất hẳn khỏi danh sách khách
+    // thấy, y hệt món bị ẩn. F&B POS (forCustomer=false) không bị ảnh hưởng.
+    const normalizedAll = filteredRows.map(r => normalizeMenuItem(r, { forCustomer, includeRecipe: !forCustomer, lang: menuLang }));
+    const visibleAll = selfOrder ? normalizedAll.filter(i => i.can_order) : normalizedAll;
+    const total = visibleAll.length;
+    const items = visibleAll.slice(offset, offset + parsedLimit);
 
     return {
       categories,
@@ -118,7 +122,11 @@ export function listMenu(options = {}) {
     .filter(r => !selfOrder || !r.hidden)
     .filter(r => !selfOrder || !r.self_order_hidden)
     .filter(r => !hiddenCategoryIds || !hiddenCategoryIds.has(r.category_id));
-  return cacheSet(cacheKey, { categories, items: rows.map(r => normalizeMenuItem(r, { forCustomer, includeRecipe: !forCustomer, lang: menuLang })) }, MENU_TTL);
+  const items = rows.map(r => normalizeMenuItem(r, { forCustomer, includeRecipe: !forCustomer, lang: menuLang }));
+  // Xem comment ở nhánh phân trang phía trên: Self-Order/BYOD ẩn hẳn món
+  // không đặt được, không hiện mờ/khoá.
+  const visibleItems = selfOrder ? items.filter(i => i.can_order) : items;
+  return cacheSet(cacheKey, { categories, items: visibleItems }, MENU_TTL);
 }
 
 function menuSearchValues(row) {
