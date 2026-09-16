@@ -78,3 +78,16 @@ test('doi thu tu sap xep: fetch NGAY SAU do phai thay gia tri MOI', async () => 
   const after = await fetchAdminMenu();
   assert.equal(after.items.find(i => i.id === 'mi_t').sort, 42);
 });
+
+// /menu/:id/hide THIẾU cacheBust cho tới 2026-09-16 — nút "Ẩn/Hiện" tự nhảy
+// về trạng thái cũ, y hệt lỗi 3 route trên đã từng bị (xem comment đầu file).
+// Không test nào trong file này từng bắt được vì chưa ai viết. Thêm ở đây.
+test('an/hien mon (/menu/:id/hide): fetch NGAY SAU do phai thay gia tri MOI', async () => {
+  await fetchAdminMenu();
+  await routes.get('POST /menu/:id/hide')({
+    params: { id: 'mi_t' }, body: { hidden: true }, branch_id: B,
+  });
+  const after = await fetchAdminMenu();
+  assert.equal(after.items.find(i => i.id === 'mi_t').hidden, true,
+    'sau khi an mon, fetch lai NGAY phai thay hidden:true — khong duoc dinh cache 10s cu');
+});

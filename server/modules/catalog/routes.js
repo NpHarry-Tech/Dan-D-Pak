@@ -251,6 +251,9 @@ api.post('/menu/:id/price', guard('menu.manage'), wrap((req) => {
 api.post('/menu/:id/hide', guard('menu.manage'), wrap((req) => {
   const branch_id = branch(req);
   const item = Catalog.hideMenuItem(req.params.id, req.body.hidden !== false, branch_id);
+  // Thiếu dòng này là nguyên nhân nút "Ẩn/Hiện" tự nhảy về trạng thái cũ —
+  // y hệt bug đã sửa ở /availability phía trên (xem comment ở đó).
+  Catalog.cacheBust('menu:');
   emit('menu:updated', { id: req.params.id, hidden: item.hidden }, branch_id);
   return item;
 }));

@@ -123,30 +123,10 @@ class _MenuTabState extends State<MenuTab> {
         }
       });
 
-  Future<void> _toggleHidden(AdminMenuItem item) => _withBusy(item.id, () async {
-        try {
-          await widget.api.setMenuHidden(item.id, !item.hidden);
-          _toast(item.hidden ? t('Đã hiện món') : t('Đã ẩn món'));
-          await _load();
-        } catch (e) {
-          _toast(e.toString().replaceFirst('Exception: ', ''), error: true);
-        }
-      });
-
   Future<void> _toggleDineIn(AdminMenuItem item) => _withBusy(item.id, () async {
         try {
           await widget.api
               .setMenuChannels(item.id, dineIn: !item.availableDineIn);
-          await _load();
-        } catch (e) {
-          _toast(e.toString().replaceFirst('Exception: ', ''), error: true);
-        }
-      });
-
-  Future<void> _toggleTakeaway(AdminMenuItem item) => _withBusy(item.id, () async {
-        try {
-          await widget.api
-              .setMenuChannels(item.id, takeaway: !item.availableTakeaway);
           await _load();
         } catch (e) {
           _toast(e.toString().replaceFirst('Exception: ', ''), error: true);
@@ -289,11 +269,9 @@ class _MenuTabState extends State<MenuTab> {
                       serverUrl: serverUrl,
                       stationName: _stationName(items[i].station),
                       onEdit: () => _openForm(items[i]),
-                      onToggleHidden: () => _toggleHidden(items[i]),
                       onDelete: () => _delete(items[i]),
                       onToggleAvailability: () => _toggleAvailability(items[i]),
                       onToggleDineIn: () => _toggleDineIn(items[i]),
-                      onToggleTakeaway: () => _toggleTakeaway(items[i]),
                     ),
                   ),
                 ),
@@ -398,11 +376,9 @@ class _MenuRow extends StatefulWidget {
   final String serverUrl;
   final String stationName;
   final VoidCallback onEdit;
-  final VoidCallback onToggleHidden;
   final VoidCallback onDelete;
   final VoidCallback onToggleAvailability;
   final VoidCallback onToggleDineIn;
-  final VoidCallback onToggleTakeaway;
 
   _MenuRow({
     required this.item,
@@ -411,11 +387,9 @@ class _MenuRow extends StatefulWidget {
     required this.serverUrl,
     required this.stationName,
     required this.onEdit,
-    required this.onToggleHidden,
     required this.onDelete,
     required this.onToggleAvailability,
     required this.onToggleDineIn,
-    required this.onToggleTakeaway,
   });
 
   @override
@@ -429,7 +403,6 @@ class _MenuRowState extends State<_MenuRow> {
   String get serverUrl => widget.serverUrl;
   String get stationName => widget.stationName;
   VoidCallback get onEdit => widget.onEdit;
-  VoidCallback get onToggleHidden => widget.onToggleHidden;
   VoidCallback get onDelete => widget.onDelete;
   VoidCallback get onToggleAvailability => widget.onToggleAvailability;
 
@@ -491,9 +464,6 @@ class _MenuRowState extends State<_MenuRow> {
               SizedBox(width: 8),
               TextButton(onPressed: onEdit, child: Text(t('Sửa'))),
               TextButton(
-                  onPressed: busy ? null : onToggleHidden,
-                  child: Text(item.hidden ? t('Hiện') : t('Ẩn'))),
-              TextButton(
                 onPressed: busy ? null : onDelete,
                 style: TextButton.styleFrom(foregroundColor: DanColors.late),
                 child: Text(t('Xóa')),
@@ -515,25 +485,22 @@ class _MenuRowState extends State<_MenuRow> {
                 ),
               ),
               SizedBox(width: 14),
+              // Gộp "Ẩn/Hiện" (text button cũ) + nút gạt "Đang bán/Tạm hết"
+              // (trước không có nhãn chữ, chỉ có tooltip — vô hình trên máy
+              // cảm ứng) thành ĐÚNG 1 nút gạt duy nhất: bật = món hiển thị/
+              // đặt được, tắt = ẩn khỏi Self-Order/BYOD ngay. "Ẩn khỏi thực
+              // đơn (cả POS)" — hành động hiếm, chủ đích hơn — vẫn còn trong
+              // dialog Sửa món, không lặp lại ở đây.
+              _MiniSwitch(
+                label: t('Hiển thị'),
+                value: item.available,
+                onChanged: busy ? null : onToggleAvailability,
+              ),
+              SizedBox(width: 10),
               _MiniSwitch(
                 label: t('Tại chỗ'),
                 value: item.availableDineIn,
                 onChanged: busy ? null : widget.onToggleDineIn,
-              ),
-              SizedBox(width: 10),
-              _MiniSwitch(
-                label: t('Mang đi'),
-                value: item.availableTakeaway,
-                onChanged: busy ? null : widget.onToggleTakeaway,
-              ),
-              SizedBox(width: 14),
-              Tooltip(
-                message: item.available ? t('Đang bán') : t('Tạm hết'),
-                child: Switch(
-                  value: item.available,
-                  activeThumbColor: DanColors.done,
-                  onChanged: busy ? null : (_) => onToggleAvailability(),
-                ),
               ),
             ],
           ),
