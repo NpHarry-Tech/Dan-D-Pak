@@ -196,6 +196,24 @@ function cartComboNotes(row) {
 }
 
 // ---------------------------------------------------------------------------
+// Màn hình gắn vào lịch sử trình duyệt thật (history.pushState/popstate) — thiếu
+// cái này thì nút back của Safari/webview và cử chỉ vuốt-từ-mép không có gì để
+// lùi về (báo lỗi "2 nút back, 1 cái không hoạt động"), và trên iOS cử chỉ
+// vuốt-từ-mép còn có thể NUỐT MẤT cú chạm vào nút back nổi của ta (nút đặt gần
+// mép trái) do hệ thống tưởng nhầm là đang vuốt-back — "lúc được lúc không".
+// Giải pháp: cho vuốt-back/nút back hệ thống MỘT lịch sử thật để lùi, nút back
+// riêng của ta gọi thẳng history.back() nên luôn khớp hành vi với hệ thống.
+function navigate(screen, extra = {}) {
+  Object.assign(state, { screen, sheet: null }, extra);
+  history.pushState({ screen }, '');
+  render();
+}
+addEventListener('popstate', (e) => {
+  state.screen = e.state?.screen || 'welcome';
+  state.sheet = null;
+  render();
+});
+
 function render(opts = {}) {
   if (state.gate) { renderGate(); $('#app').classList.add('hidden'); return; }
   $('#gate-root').innerHTML = '';
@@ -458,14 +476,13 @@ function openItem(id) {
   if (!item.can_order) { showToast(`${t(state.lang, 'soldOut')} · ${item.name}`, 'warn'); return; }
   state.detailId = id;
   state.detail = { qty: 1, selections: new Map(), comboSelections: new Map(), addonSelections: new Set(), itemNote: '' };
-  state.screen = 'detail';
-  render();
+  navigate('detail');
   $('#screens').scrollTo({ top: 0 });
 }
 
 function renderDetail() {
   const item = menuById(state.detailId);
-  if (!item) { state.screen = 'menu'; render(); return; }
+  if (!item) { navigate('menu'); return; }
   const d = state.detail;
   const groups = item.option_groups || [];
 
@@ -516,7 +533,7 @@ function renderDetail() {
 
   $('#screen-detail').innerHTML = `
     <div class="detail-photo">
-      <button type="button" class="detail-back-btn" data-act="go-menu" aria-label="${attr(t(state.lang, 'back'))}">${icon('back', 19)}</button>
+      <button type="button" class="detail-back-btn" data-act="nav-back" aria-label="${attr(t(state.lang, 'back'))}">${icon('back', 19)}</button>
       ${item.image ? `<img src="${attr(item.image)}" alt="">` : `<span class="ph-icon">${icon('dish', 56, 'style="color:#DCD2C0"')}</span>`}
     </div>
     <div class="detail-head">
@@ -843,9 +860,8 @@ async function addItemToCart() {
     const cart = await api('/cart', { method: 'POST', body: JSON.stringify({ menu_item_id: item.id, qty: d.qty, note: d.itemNote, mods, combo }) });
     state.data.cart = cart;
     state.busyAdd = false;
-    state.screen = 'menu';
     saveDraft();
-    render();
+    navigate('menu');
     showToast(t(state.lang, 'addedToCart'));
   } catch (e) {
     state.busyAdd = false;
@@ -972,9 +988,12 @@ document.addEventListener('click', (e) => {
   switch (act) {
     case 'gate-retry': state.gate = null; render(); bootstrap(); break;
     case 'gate-reload': location.reload(); break;
-    case 'go-menu': state.screen = 'menu'; render(); $('#screens').scrollTo({ top: 0 }); break;
-    case 'go-welcome': state.screen = 'welcome'; render(); break;
-    case 'go-cart': state.screen = 'cart'; state.cartTab = 'cart'; render(); break;
+    case 'go-menu': navigate('menu'); $('#screens').scrollTo({ top: 0 }); break;
+    // "Back" thật sự (menu→welcome, chi tiết→menu) dùng history.back() thay vì
+    // push thêm — giữ lịch sử ĐÚNG ngăn xếp để vuốt-back/nút back hệ thống và
+    // nút back riêng của ta luôn khớp nhau (xem navigate() phía trên).
+    case 'go-welcome': case 'nav-back': history.back(); break;
+    case 'go-cart': navigate('cart', { cartTab: 'cart' }); break;
     case 'open-lang': state.sheet = 'language'; render(); break;
     case 'close-sheet': state.sheet = null; render(); break;
     case 'pick-lang': changeLang(t0.dataset.lang); break;
@@ -1035,7 +1054,7 @@ document.addEventListener('click', (e) => {
       break;
     }
     case 'confirm-send-table': doSubmit('table'); break;
-    case 'goto-ordered': state.sheet = null; state.cartTab = 'ordered'; state.screen = 'cart'; render(); break;
+    case 'goto-ordered': navigate('cart', { cartTab: 'ordered' }); break;
     case 'request-payment': doRequestPayment(); break;
     case 'call-staff': doCallStaff(); break;
     default: break;

@@ -212,8 +212,14 @@ function menuCategories(branchId, lang = 'vi') {
 }
 
 function safeMenu(branchId, lang = 'vi') {
+  // CHỈ loại tuỳ chọn combo/addon trỏ tới món đã ẨN KHỎI TOÀN HỆ THỐNG hoặc đã
+  // xoá — self_order_hidden nghĩa là "không cho đặt RIÊNG LẺ trên self-order",
+  // KHÔNG có nghĩa "không được chọn làm thành phần combo của món khác". Các món
+  // đặt tên "(CB) ..." được đánh self_order_hidden CHÍNH LÀ để làm việc này —
+  // gộp self_order_hidden vào forbidden xoá sạch mọi option combo trỏ tới
+  // chúng, tiêu đề nhóm vẫn hiện nhưng danh sách chọn rỗng hoàn toàn.
   const forbidden = new Set(db.prepare(`SELECT id FROM menu_items WHERE branch_id=?
-    AND (self_order_hidden=1 OR hidden=1 OR deleted_at IS NOT NULL)`).all(branchId).map(row => row.id));
+    AND (hidden=1 OR deleted_at IS NOT NULL)`).all(branchId).map(row => row.id));
   return menu(branchId, lang).map(item => {
     const optionGroups = (item.option_groups || []).map(group => ({
       ...group,

@@ -22,6 +22,14 @@ db.prepare(`INSERT INTO menu_items(id,branch_id,category_id,name,price,vat_rate,
   ]), JSON.stringify([{ name: 'Salad', price: 15000, available: true }]));
 db.prepare(`INSERT INTO menu_items(id,branch_id,category_id,name,price,self_order_hidden)
   VALUES('byod_hidden','sala','byod_cat','Món nhân viên',1,1)`).run();
+// Thành phần combo "(CB) ..." — self_order_hidden=1 vì KHÔNG được đặt riêng lẻ,
+// nhưng PHẢI vẫn chọn được như một lựa chọn combo của món khác (byod_combo).
+db.prepare(`INSERT INTO menu_items(id,branch_id,category_id,name,price,self_order_hidden)
+  VALUES('byod_combo_part','sala','byod_cat','(CB) Salad kèm',0,1)`).run();
+db.prepare(`INSERT INTO menu_items(id,branch_id,category_id,name,price,option_groups_json)
+  VALUES('byod_combo','sala','byod_cat','Combo trưa',150000,?)`).run(JSON.stringify([
+    { name: 'Khai vị', mode: 'combo', min: 0, max: 1, options: [{ ref_item_id: 'byod_combo_part', price: 0 }] },
+  ]));
 
 const table = Orders.createTable({ branch_id: 'sala', zone: 'Tầng trệt', code: 'BY01', seats: 4 });
 const deviceA = 'device_A_12345678901234567890';
@@ -58,6 +66,15 @@ test('bootstrap trả tên category thật (không chỉ category_id) và không
   const cat = view.categories.find(c => c.id === 'byod_cat');
   assert.equal(cat?.name, 'Món chính');
   assert.ok(view.categories.every(c => Object.keys(c).sort().join(',') === 'id,name'));
+});
+
+test('option combo trỏ tới món self_order_hidden VẪN chọn được (chỉ ẩn đặt riêng lẻ, không ẩn khỏi combo)', () => {
+  const view = Byod.bootstrap(qr.token, deviceA, 'iPhone', 'vi');
+  assert.ok(!view.menu.some(i => i.id === 'byod_combo_part'), 'thành phần combo không được hiện như món riêng');
+  const combo = view.menu.find(i => i.id === 'byod_combo');
+  const group = combo.option_groups.find(g => g.mode === 'combo');
+  assert.equal(group.options.length, 1, 'option combo trỏ tới món self_order_hidden phải còn trong danh sách chọn');
+  assert.equal(group.options[0].ref_item_id, 'byod_combo_part');
 });
 
 test('hai thiết bị có giỏ riêng/chung; không sửa được giỏ thiết bị khác; note chống HTML', () => {
