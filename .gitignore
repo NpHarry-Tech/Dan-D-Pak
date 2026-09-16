@@ -118,3 +118,7 @@ tmp/
 
 # Script scratch mot-lan cua Codex (vd: server/scripts/.codex-*.mjs) - khong commit
 server/scripts/.codex-*
+
+# Python bytecode cache - khong bao gio commit
+__pycache__/
+*.pyc
