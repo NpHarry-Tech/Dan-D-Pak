@@ -127,10 +127,13 @@ extension ApiServiceManagementApi on ApiService {
         errorMessage: 'Không import được menu quyền'));
   }
 
-  Future<void> setMenuAvailability(String itemId, bool available) async {
-    await postJson('/api/menu/$itemId/availability',
+  /// Trả về giá trị `available` MỚI (server trả lại) để UI cập nhật tại chỗ,
+  /// không cần load lại toàn bộ thực đơn chỉ vì gạt 1 nút.
+  Future<bool> setMenuAvailability(String itemId, bool available) async {
+    final r = mapFrom(await postJson('/api/menu/$itemId/availability',
         body: {'available': available},
-        errorMessage: 'Không cập nhật được trạng thái món');
+        errorMessage: 'Không cập nhật được trạng thái món'));
+    return r['available'] != false && r['available'] != 0;
   }
 
   Future<void> setMenuHidden(String itemId, bool hidden) async {
@@ -140,14 +143,16 @@ extension ApiServiceManagementApi on ApiService {
 
   /// Bán tại chỗ / mang đi — toggle nhanh, KHÔNG cần PIN (chỉ đổi hiển thị,
   /// không đụng giá/tiền). null = giữ nguyên giá trị hiện có của cờ đó.
-  Future<void> setMenuChannels(String itemId,
+  /// Trả về `available_dine_in` MỚI để UI cập nhật tại chỗ.
+  Future<bool> setMenuChannels(String itemId,
       {bool? dineIn, bool? takeaway}) async {
-    await postJson('/api/menu/$itemId/channels',
+    final r = mapFrom(await postJson('/api/menu/$itemId/channels',
         body: {
           if (dineIn != null) 'available_dine_in': dineIn,
           if (takeaway != null) 'available_takeaway': takeaway,
         },
-        errorMessage: 'Không cập nhật được kênh bán');
+        errorMessage: 'Không cập nhật được kênh bán'));
+    return r['available_dine_in'] != false && r['available_dine_in'] != 0;
   }
 
   Future<Map<String, dynamic>> createMenuItem(Map<String, dynamic> body) async {

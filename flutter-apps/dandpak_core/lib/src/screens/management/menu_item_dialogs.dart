@@ -210,7 +210,8 @@ class _ItemFormDialogState extends State<_ItemFormDialog> {
         context,
         _isEdit
             ? t('Cập nhật món "${_name.text.trim()}".')
-            : t('Tạo món mới "${_name.text.trim()}".'));
+            : t('Tạo món mới "${_name.text.trim()}".'),
+        selfApprove: true);
     if (pin == null) return;
 
     final body = <String, dynamic>{

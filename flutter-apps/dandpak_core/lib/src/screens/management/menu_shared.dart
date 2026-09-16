@@ -255,7 +255,8 @@ class _CategoryManagerDialogState extends State<_CategoryManagerDialog> {
   Future<void> _add() async {
     final name = _newName.text.trim();
     if (name.isEmpty) return;
-    final pin = await requestManagerPin(context, t('Tạo danh mục "$name".'));
+    final pin = await requestManagerPin(context, t('Tạo danh mục "$name".'),
+        selfApprove: true);
     if (pin == null) return;
     try {
       final c =
@@ -272,8 +273,9 @@ class _CategoryManagerDialogState extends State<_CategoryManagerDialog> {
   }
 
   Future<void> _delete(AdminCategory c) async {
-    final pin =
-        await requestManagerPin(context, t('Xóa danh mục "${c.name}".'));
+    final pin = await requestManagerPin(
+        context, t('Xóa danh mục "${c.name}".'),
+        selfApprove: true);
     if (pin == null) return;
     try {
       await widget.api.deleteCategory(c.id, pin);
@@ -363,8 +365,9 @@ class _CategoryManagerDialogState extends State<_CategoryManagerDialog> {
     );
     if (draft == null || draft.name.isEmpty) return;
     if (!mounted) return;
-    final pin =
-        await requestManagerPin(context, t('Cập nhật danh mục "${c.name}".'));
+    final pin = await requestManagerPin(
+        context, t('Cập nhật danh mục "${c.name}".'),
+        selfApprove: true);
     if (pin == null) return;
     try {
       final icon = draft.icon;

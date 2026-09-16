@@ -18,4 +18,12 @@ void main() {
     expect(find.byType(TextField), findsOneWidget);
     expect(find.text('Tạo kho mới'), findsOneWidget);
   });
+
+  test('canSelfApprovePin: chỉ owner/manager mới tự duyệt', () {
+    expect(canSelfApprovePin('owner'), isTrue);
+    expect(canSelfApprovePin('manager'), isTrue);
+    expect(canSelfApprovePin('cashier'), isFalse);
+    expect(canSelfApprovePin('warehouse'), isFalse);
+    expect(canSelfApprovePin(null), isFalse);
+  });
 }

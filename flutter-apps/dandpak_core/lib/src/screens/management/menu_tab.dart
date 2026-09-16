@@ -113,11 +113,25 @@ class _MenuTabState extends State<MenuTab> {
     }
   }
 
+  // Áp giá trị MỚI (server trả về) thẳng vào _data — không load lại cả thực
+  // đơn + nguyên liệu + trạm chế biến chỉ vì gạt 1 nút, đó là nguyên nhân lag.
+  void _applyItem(String id, AdminMenuItem Function(AdminMenuItem) update) {
+    final data = _data;
+    if (!mounted || data == null) return;
+    setState(() {
+      _data = MenuManageData(
+        data.categories,
+        [for (final i in data.items) i.id == id ? update(i) : i],
+      );
+    });
+  }
+
   Future<void> _toggleAvailability(AdminMenuItem item) => _withBusy(item.id, () async {
         try {
-          await widget.api.setMenuAvailability(item.id, !item.available);
-          _toast(item.available ? t('Đã tắt món') : t('Đã bật món'));
-          await _load();
+          final available =
+              await widget.api.setMenuAvailability(item.id, !item.available);
+          _toast(available ? t('Đã bật món') : t('Đã tắt món'));
+          _applyItem(item.id, (i) => i.copyWith(available: available));
         } catch (e) {
           _toast(e.toString().replaceFirst('Exception: ', ''), error: true);
         }
@@ -125,9 +139,9 @@ class _MenuTabState extends State<MenuTab> {
 
   Future<void> _toggleDineIn(AdminMenuItem item) => _withBusy(item.id, () async {
         try {
-          await widget.api
+          final dineIn = await widget.api
               .setMenuChannels(item.id, dineIn: !item.availableDineIn);
-          await _load();
+          _applyItem(item.id, (i) => i.copyWith(availableDineIn: dineIn));
         } catch (e) {
           _toast(e.toString().replaceFirst('Exception: ', ''), error: true);
         }
@@ -135,7 +149,8 @@ class _MenuTabState extends State<MenuTab> {
 
   Future<void> _delete(AdminMenuItem item) async {
     final pin = await requestManagerPin(
-        context, t('Xóa món ăn "${item.name}". Cần PIN Manager hoặc Admin.'));
+        context, t('Xóa món ăn "${item.name}". Cần PIN Manager hoặc Admin.'),
+        selfApprove: true);
     if (pin == null) return;
     try {
       final r = await widget.api.deleteMenuItem(item.id, pin);

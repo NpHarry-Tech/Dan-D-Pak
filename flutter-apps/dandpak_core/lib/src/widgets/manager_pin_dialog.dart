@@ -1,11 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:provider/provider.dart';
+import '../providers/auth_provider.dart';
 import '../ui/app_theme.dart'; // re-export: appNavigatorKey, AppNotifier, DanColors
 import '../utils/translation.dart';
 
 // Single-flight: chặn hai modal xác nhận quyền chồng nhau (double-tap / hai thao
 // tác đồng thời) — nguyên nhân modal "đè nhau" hoặc kẹt (§17).
 bool _managerPinOpen = false;
+
+/// Vai trò nào được phiên đang đăng nhập tự duyệt (khớp APPROVER_ROLES ở
+/// server/services/auth.js selfApprover). Tách hàm riêng để test được mà
+/// không cần dựng cả AuthProvider/ApiService.
+bool canSelfApprovePin(String? role) => role == 'owner' || role == 'manager';
 
 /// Prompts for a PIN to authorise a sensitive action.
 /// Returns the entered PIN, or null if cancelled. Mirrors the web
@@ -14,8 +21,20 @@ bool _managerPinOpen = false;
 /// Luôn hiển thị hộp nhập trên cả desktop/tablet/phone. Một số endpoint (kho,
 /// voucher...) bắt buộc PIN thật và không cho phiên quản lý tự duyệt; bỏ qua
 /// ở client khiến backend từ chối nhưng người dùng không có chỗ để nhập.
+///
+/// [selfApprove]: CHỈ bật ở nơi đã xác nhận backend dùng verifyManagerOwnerPin
+/// (tự duyệt theo phiên, PIN gõ vào bị bỏ qua nếu phiên đã là Quản lý/Admin) —
+/// khi đó phiên Quản lý/Admin bỏ qua hẳn hộp thoại (PIN gõ gì cũng bị backend
+/// ngó lơ, hỏi lại chỉ gây hiểu lầm). KHÔNG bật ở nơi cần PIN thật luôn (kho,
+/// voucher, ủy quyền trả hàng...) — các nơi đó vẫn phải hiện hộp nhập.
 Future<String?> requestManagerPin(BuildContext context, String reason,
-    {String label = 'PIN Quản lý / Admin', bool selfPinOnly = false}) async {
+    {String label = 'PIN Quản lý / Admin',
+    bool selfPinOnly = false,
+    bool selfApprove = false}) async {
+  if (selfApprove &&
+      canSelfApprovePin(context.read<AuthProvider>().currentUser?.role)) {
+    return '';
+  }
   // Dùng Navigator ROOT toàn cục (ổn định) thay cho context nơi gọi — context đó
   // có thể đã bị dispose/nằm sau await khiến showDialog im lặng không hiện (§16).
   final dialogContext = appNavigatorKey.currentContext ?? context;

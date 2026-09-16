@@ -469,6 +469,39 @@ class AdminMenuItem {
       translations: _translations(j['translations']),
     );
   }
+
+  /// Cập nhật tại chỗ sau khi gạt nút (available/availableDineIn) — tránh phải
+  /// load lại toàn bộ thực đơn chỉ để phản ánh 1 giá trị boolean đã đổi.
+  AdminMenuItem copyWith({bool? available, bool? availableDineIn}) =>
+      AdminMenuItem(
+        id: id,
+        code: code,
+        name: name,
+        emoji: emoji,
+        image: image,
+        description: description,
+        price: price,
+        vatRate: vatRate,
+        priceIncludesVat: priceIncludesVat,
+        categoryId: categoryId,
+        station: station,
+        slaMinutes: slaMinutes,
+        available: available ?? this.available,
+        availableDineIn: availableDineIn ?? this.availableDineIn,
+        availableTakeaway: availableTakeaway,
+        hidden: hidden,
+        scheduleAvailable: scheduleAvailable,
+        sort: sort,
+        updatedAt: updatedAt,
+        ingredients: ingredients,
+        allergens: allergens,
+        recipe: recipe,
+        schedule: schedule,
+        addons: addons,
+        optionGroups: optionGroups,
+        selfOrderHidden: selfOrderHidden,
+        translations: translations,
+      );
 }
 
 Map<String, Map<String, String>> _translations(dynamic raw) {
