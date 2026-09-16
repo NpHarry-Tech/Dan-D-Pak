@@ -53,6 +53,11 @@ api.post('/print/shipping-label',
     copies: req.body.copies || 1,
     deviceId: deviceOf(req),
   })));
+// Dữ liệu THUẦN để client tự dựng PDF tem vận đơn + gọi hộp thoại in của hệ
+// điều hành — không đụng hàng đợi/máy in, không bắt buộc cấu hình máy in tem.
+api.get('/print/shipping-label-data',
+  guardAny('online.order.manage', 'online', 'module.printing', 'settings.printers', 'pay'),
+  wrap((req) => Print.buildShippingLabelPayload(branch(req), req.query.order_id || '', req.query.size || '100x150')));
 api.post('/print/return-voucher',
   guardAny('refund', 'pay', 'reports', 'module.printing', 'settings.printers'),
   wrap((req) => Print.printReturnVoucher(branch(req), {

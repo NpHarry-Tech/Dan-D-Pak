@@ -2,6 +2,9 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
+import 'package:printing/printing.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
 
@@ -684,14 +687,18 @@ Future<void> showShippingLabelDialog(
             icon: const Icon(Icons.print, size: 16),
             label: Text(t('In')),
             onPressed: () async {
+              // Không còn bắt buộc cấu hình máy in tem trong hệ thống — lấy
+              // dữ liệu thuần, tự dựng PDF đúng khổ rồi mở hộp thoại in của hệ
+              // điều hành (giống nút "In" QR bàn BYOD), người dùng tự chọn máy in.
               try {
-                await ctx
+                final data = await ctx
                     .read<ApiService>()
-                    .printShippingLabel(orderId, size: size, copies: copies);
+                    .getShippingLabelData(orderId, size: size);
                 if (dialogCtx.mounted) Navigator.of(dialogCtx).pop();
-                if (context.mounted) {
-                  appToast(context, t('Đã gửi lệnh in tem vận đơn'));
-                }
+                await Printing.layoutPdf(
+                  name: 'tem-van-don-$orderId.pdf',
+                  onLayout: (_) => _shippingLabelPdf(data, copies).save(),
+                );
               } catch (e) {
                 if (context.mounted) {
                   appToast(
@@ -705,4 +712,85 @@ Future<void> showShippingLabelDialog(
       ),
     ),
   );
+}
+
+/// Dựng PDF tem vận đơn từ dữ liệu thuần (server/services/printing.js
+/// buildShippingLabelPayload) — khổ giấy đúng bằng paperWidthMm, KHÔNG cần
+/// máy in tem cấu hình sẵn; hộp thoại in của hệ điều hành lo phần chọn máy.
+pw.Document _shippingLabelPdf(Map<String, dynamic> data, int copies) {
+  final widthMm = (data['paperWidthMm'] as num?)?.toDouble() ?? 100;
+  final heightMm = widthMm >= 90 ? 150.0 : 130.0;
+  final receiver = Map<String, dynamic>.from(data['receiver'] as Map? ?? {});
+  final sender = Map<String, dynamic>.from(data['sender'] as Map? ?? {});
+  final items = (data['items'] as List? ?? [])
+      .map((e) => Map<String, dynamic>.from(e as Map))
+      .toList();
+  final doc = pw.Document();
+  pw.Page buildPage() => pw.Page(
+    pageFormat: PdfPageFormat(widthMm * PdfPageFormat.mm,
+        heightMm * PdfPageFormat.mm,
+        marginAll: 4 * PdfPageFormat.mm),
+    build: (_) => pw.Column(
+      crossAxisAlignment: pw.CrossAxisAlignment.start,
+      children: [
+        pw.Row(
+          mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+          children: [
+            pw.Text(oStr(data['shopName']),
+                style:
+                    pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold)),
+            pw.Text(oStr(data['providerLabel']),
+                style: const pw.TextStyle(fontSize: 9)),
+          ],
+        ),
+        pw.Divider(thickness: 0.6),
+        pw.Text('Ma don: ${oStr(data['orderCode'])}',
+            style:
+                pw.TextStyle(fontSize: 11, fontWeight: pw.FontWeight.bold)),
+        if (oStr(data['trackingNumber']).isNotEmpty)
+          pw.Text(
+              'Van don: ${oStr(data['trackingNumber'])}'
+              '${oStr(data['carrier']).isNotEmpty ? ' (${oStr(data['carrier'])})' : ''}',
+              style: const pw.TextStyle(fontSize: 9)),
+        pw.SizedBox(height: 6),
+        pw.Text('NGUOI NHAN',
+            style: pw.TextStyle(fontSize: 8, color: PdfColors.grey700)),
+        pw.Text('${oStr(receiver['name'])} - ${oStr(receiver['phone'])}',
+            style:
+                pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold)),
+        pw.Text(oStr(receiver['address']),
+            style: const pw.TextStyle(fontSize: 9)),
+        pw.SizedBox(height: 6),
+        pw.Text('NGUOI GUI',
+            style: pw.TextStyle(fontSize: 8, color: PdfColors.grey700)),
+        pw.Text('${oStr(sender['name'])} - ${oStr(sender['phone'])}',
+            style: const pw.TextStyle(fontSize: 9)),
+        pw.Text(oStr(sender['address']),
+            style: const pw.TextStyle(fontSize: 8)),
+        pw.Divider(thickness: 0.6),
+        for (final it in items)
+          pw.Text('- ${oStr(it['name'])} x${it['qty']}',
+              style: const pw.TextStyle(fontSize: 8)),
+        pw.Spacer(),
+        pw.Divider(thickness: 0.6),
+        pw.Row(
+          mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+          children: [
+            pw.Text('COD', style: const pw.TextStyle(fontSize: 9)),
+            pw.Text(Fmt.money((data['codAmount'] as num?)?.toInt() ?? 0),
+                style:
+                    pw.TextStyle(fontSize: 13, fontWeight: pw.FontWeight.bold)),
+          ],
+        ),
+        if (oStr(data['weight']).isNotEmpty)
+          pw.Text('KL: ${oStr(data['weight'])}',
+              style: const pw.TextStyle(fontSize: 8)),
+        if (oStr(data['note']).isNotEmpty)
+          pw.Text('Ghi chu: ${oStr(data['note'])}',
+              style: const pw.TextStyle(fontSize: 8)),
+      ],
+    ),
+  );
+  for (var i = 0; i < copies; i++) doc.addPage(buildPage());
+  return doc;
 }

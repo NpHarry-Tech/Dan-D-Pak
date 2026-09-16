@@ -313,6 +313,18 @@ extension ApiServiceOnlineApi on ApiService {
         errorMessage: 'Không in được tem vận đơn'));
   }
 
+  /// Dữ liệu THUẦN cho tem vận đơn (không đụng hàng đợi/máy in) — client tự
+  /// dựng PDF khổ tương ứng rồi gọi hộp thoại in của hệ điều hành.
+  Future<Map<String, dynamic>> getShippingLabelData(String orderId,
+      {String size = '100x150'}) async {
+    return mapFrom(await getJson(
+        '/api/print/shipping-label-data${_qs({
+              'order_id': orderId,
+              'size': size,
+            })}',
+        errorMessage: 'Không lấy được dữ liệu tem vận đơn'));
+  }
+
   /// Tải WAYBILL PDF CHÍNH THỨC của sàn (Shopee/Lazada/TikTok) — dùng đúng mẫu
   /// tem của sàn, không tự thiết kế. Trả về bytes PDF để mở/in.
   Future<List<int>> getConnectorWaybill(String provider, String ref) async {

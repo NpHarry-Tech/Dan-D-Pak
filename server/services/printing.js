@@ -2361,10 +2361,12 @@ function resolveLabelPrinter(branch_id, deviceId = '') {
     || null;
 }
 
-/// In TEM VẬN ĐƠN cho một đơn Retail Online. size: '100x150' (mặc định) hoặc
-/// '76x130'. Dựng payload waybill từ orders + external_orders + order_items,
+/// Dựng payload waybill từ orders + external_orders + order_items — dữ liệu
+/// THUẦN, không đụng máy in/hàng đợi. Dùng chung bởi printShippingLabel
+/// (hàng đợi máy in tem vật lý) VÀ route GET /print/shipping-label-data (client
+/// tự dựng PDF + hộp thoại in hệ điều hành, không cần cấu hình máy in tem).
 /// KHÔNG import online.js (tránh vòng phụ thuộc: online.js đã import printing.js).
-export function printShippingLabel(branch_id = 'sala', { order_id = '', size = '100x150', copies = 1, deviceId = '' } = {}) {
+export function buildShippingLabelPayload(branch_id = 'sala', order_id = '', size = '100x150') {
   const order = db.prepare(`SELECT * FROM orders WHERE id=? AND branch_id=? AND channel='online'`).get(String(order_id), branch_id);
   if (!order) { const e = new Error('Không tìm thấy đơn Retail Online để in tem.'); e.status = 404; throw e; }
   const ext = db.prepare(`SELECT * FROM external_orders WHERE internal_order_id=? ORDER BY updated_at DESC, created_at DESC LIMIT 1`).get(order.id) || {};
@@ -2382,7 +2384,7 @@ export function printShippingLabel(branch_id = 'sala', { order_id = '', size = '
   }[String(ext.provider || order.online_channel || '').toLowerCase()] || String(ext.provider || order.online_channel || 'ONLINE');
   const paid = order.status === 'paid';
   const paperWidthMm = String(size).startsWith('76') ? 76 : 100;
-  const payload = {
+  return {
     paperWidthMm,
     provider: ext.provider || order.online_channel || 'online',
     providerLabel: providerName,
@@ -2406,6 +2408,13 @@ export function printShippingLabel(branch_id = 'sala', { order_id = '', size = '
     weight: raw.total_weight || raw.weight || '',
     note: customer.note || raw.note || '',
   };
+}
+
+/// In TEM VẬN ĐƠN cho một đơn Retail Online qua hàng đợi máy in tem VẬT LÝ đã
+/// cấu hình (vẫn giữ cho chi nhánh nào có máy in tem chuyên dụng). size:
+/// '100x150' (mặc định) hoặc '76x130'.
+export function printShippingLabel(branch_id = 'sala', { order_id = '', size = '100x150', copies = 1, deviceId = '' } = {}) {
+  const payload = buildShippingLabelPayload(branch_id, order_id, size);
   const printer = resolveLabelPrinter(branch_id, deviceId);
   if (!printer) {
     const e = new Error('Chưa cấu hình máy in tem — thêm máy in loại "Tem nhãn" trong Cài đặt máy in.');
@@ -2422,7 +2431,7 @@ export function printShippingLabel(branch_id = 'sala', { order_id = '', size = '
       branch_id,
     }));
   }
-  audit('online.shipping_label.print', { order_id: order.id, size, copies: n, printer: printer.id }, branch_id);
+  audit('online.shipping_label.print', { order_id, size, copies: n, printer: printer.id }, branch_id);
   return { ok: true, printer: printer.id, jobs: jobs.length, size };
 }
 
