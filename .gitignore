@@ -115,3 +115,6 @@ qa-artifacts/
 .tmp-tests/
 .codex-test-temp/
 tmp/
+
+# Script scratch mot-lan cua Codex (vd: server/scripts/.codex-*.mjs) - khong commit
+server/scripts/.codex-*
