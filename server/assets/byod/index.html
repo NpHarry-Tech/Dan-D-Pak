@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#D81F26">
+<title>Dan D Pak · Gọi món tại bàn</title>
+<link rel="icon" href="/assets/DanOnLogo.png">
+<link rel="stylesheet" href="/byod-assets/app.css">
+</head>
+<body>
+<div id="offline-banner" class="hidden" role="status" aria-live="polite"></div>
+
+<div id="app">
+  <header id="app-header" class="hidden">
+    <div class="header-row">
+      <button type="button" id="btn-lang" class="icon-btn" data-act="open-lang" aria-label="Language / Ngôn ngữ">
+        <span id="lang-short" class="lang-btn-label">VI</span>
+      </button>
+      <div style="display:flex;align-items:center;justify-content:center">
+        <img class="brand-logo" src="/assets/DanOnLogo.png" alt="Dan D Pak">
+      </div>
+      <button type="button" id="btn-cart" class="icon-btn cart-btn" data-act="go-cart" aria-label="Cart / Giỏ hàng">
+        <svg width="21" height="21" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4.5 8h15l-1.2 11.1a1.6 1.6 0 0 1-1.6 1.4H7.3a1.6 1.6 0 0 1-1.6-1.4L4.5 8Z" stroke="#1A2230" stroke-width="1.7" stroke-linejoin="round"/><path d="M9 8V6.6a3 3 0 0 1 6 0V8" stroke="#1A2230" stroke-width="1.7" stroke-linecap="round"/></svg>
+        <span id="cart-badge" class="cart-badge hidden">0</span>
+      </button>
+    </div>
+    <div id="header-info" class="header-info"></div>
+  </header>
+
+  <main id="screens">
+    <section id="screen-welcome" class="screen hidden"></section>
+    <section id="screen-menu" class="screen hidden"></section>
+    <section id="screen-detail" class="screen hidden"></section>
+    <section id="screen-cart" class="screen hidden"></section>
+  </main>
+</div>
+
+<button type="button" id="btn-staff-call" class="staff-call-btn hidden" data-act="call-staff" aria-label="Gọi nhân viên">
+  <svg width="21" height="21" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 4.2a5.6 5.6 0 0 1 5.6 5.6v3.4l1.5 2.6H4.9l1.5-2.6V9.8A5.6 5.6 0 0 1 12 4.2Z" stroke="#fff" stroke-width="1.7" stroke-linejoin="round"/><path d="M10 18.6a2 2 0 0 0 4 0" stroke="#fff" stroke-width="1.7" stroke-linecap="round"/></svg>
+</button>
+<div id="toast" aria-live="polite"></div>
+<div id="sheet-root"></div>
+<div id="gate-root"></div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script type="module" src="/byod-assets/app.js"></script>
+</body>
+</html>

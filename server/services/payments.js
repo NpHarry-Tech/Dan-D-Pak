@@ -23,6 +23,7 @@ import { isStoreOffline } from './sync.js';
 import { enqueueSale as enqueueErpSale } from '../integrations/erp/outbox.js';
 import { enqueuePaidPosOrder } from './haravanConnector.js';
 import * as PaymentIntents from './paymentIntents.js';
+import { closeTableSessions } from './byod.js';
 
 // OUTBOX PATTERN (mission #12/#23): sau thanh toán ĐỦ + đã cấp bill_no, xếp hàng
 // sự kiện bán hàng để worker đẩy sang Business Central. NGOÀI transaction, bọc
@@ -746,6 +747,7 @@ export function payOrder(order_id, lines, options = {}, branch_id = 'sala') {
       db.prepare(`UPDATE tables SET status=? WHERE id=?`).run(stillOpen ? 'busy' : 'free', order.table_id);
       resolveStaffCall(order.table_id, branch_id, stageEvent);
       stageEvent('table:updated', getTableState(order.table_id));
+      if (!stillOpen) postCommitCallbacks.push(() => closeTableSessions(order.table_id, branch_id, 'paid'));
     }
     stageAudit('payment.done', {
       order: order_id,

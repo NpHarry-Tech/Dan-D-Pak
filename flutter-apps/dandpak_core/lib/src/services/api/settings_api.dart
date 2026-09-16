@@ -184,6 +184,25 @@ extension ApiServiceSettingsApi on ApiService {
         errorMessage: 'Không xóa được bàn');
   }
 
+  Future<Map<String, dynamic>> getTableByod(String id) async {
+    return mapFrom(await getJson('/api/settings/tables/$id/byod',
+        errorMessage: 'Không tải được QR BYOD'));
+  }
+
+  Future<Map<String, dynamic>> regenerateTableByod(
+      String id, String securityPin) async {
+    return mapFrom(await postJson('/api/settings/tables/$id/byod/regenerate',
+        body: {'security_pin': securityPin},
+        errorMessage: 'Không tạo lại được QR BYOD'));
+  }
+
+  Future<Map<String, dynamic>> setTableByodEnabled(
+      String id, bool enabled, String securityPin) async {
+    return mapFrom(await postJson('/api/settings/tables/$id/byod/status',
+        body: {'enabled': enabled, 'security_pin': securityPin},
+        errorMessage: 'Không đổi được trạng thái BYOD'));
+  }
+
   // ── Sơ đồ bàn: khu vực (zones) + vị trí lưới ──────────────────────────────
   Future<Map<String, dynamic>> getFloorPlan() async {
     return mapFrom(await getJson('/api/settings/floor-plan',

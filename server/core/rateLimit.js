@@ -6,9 +6,12 @@ import { clientIp } from './util.js';
 
 const buckets = new Map(); // `${key}:${ip}` -> { count, resetAt }
 
-export function rateLimit({ windowMs = 60_000, max = 30, key = 'rl', message = 'Quá nhiều yêu cầu trong thời gian ngắn. Vui lòng thử lại sau.' } = {}) {
+export function rateLimit({ windowMs = 60_000, max = 30, key = 'rl', keyFn = null, message = 'Quá nhiều yêu cầu trong thời gian ngắn. Vui lòng thử lại sau.' } = {}) {
   return function rateLimitMiddleware(req, res, next) {
-    const id = `${key}:${clientIp(req) || 'unknown'}`;
+    const discriminator = typeof keyFn === 'function'
+      ? String(keyFn(req) || 'unknown').slice(0, 256)
+      : (clientIp(req) || 'unknown');
+    const id = `${key}:${discriminator}`;
     const nowMs = Date.now();
     let e = buckets.get(id);
     if (!e || e.resetAt <= nowMs) { e = { count: 0, resetAt: nowMs + windowMs }; buckets.set(id, e); }

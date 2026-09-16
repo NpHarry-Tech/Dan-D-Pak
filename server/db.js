@@ -70,6 +70,80 @@ export function migrate(targetDb = globalDb) {
     status TEXT NOT NULL DEFAULT 'free'
   );
 
+  -- BYOD is only an authenticated guest/draft layer in front of the existing
+  -- table order lifecycle.  Tokens are never stored in clear text.
+  CREATE TABLE IF NOT EXISTS byod_qr_codes (
+    id TEXT PRIMARY KEY,
+    branch_id TEXT NOT NULL,
+    table_id TEXT NOT NULL,
+    token_hash TEXT NOT NULL UNIQUE,
+    enabled INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL,
+    revoked_at TEXT,
+    last_used_at TEXT,
+    generation INTEGER NOT NULL DEFAULT 1
+  );
+
+  CREATE TABLE IF NOT EXISTS byod_sessions (
+    id TEXT PRIMARY KEY,
+    qr_id TEXT NOT NULL,
+    branch_id TEXT NOT NULL,
+    table_id TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'active',
+    created_at TEXT NOT NULL,
+    last_active_at TEXT NOT NULL,
+    closed_at TEXT
+  );
+
+  CREATE TABLE IF NOT EXISTS byod_devices (
+    id TEXT PRIMARY KEY,
+    session_id TEXT NOT NULL,
+    device_key_hash TEXT NOT NULL,
+    friendly_name TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    last_active_at TEXT NOT NULL,
+    UNIQUE(session_id, device_key_hash)
+  );
+
+  CREATE TABLE IF NOT EXISTS byod_cart_items (
+    id TEXT PRIMARY KEY,
+    session_id TEXT NOT NULL,
+    device_id TEXT NOT NULL,
+    menu_item_id TEXT NOT NULL,
+    qty INTEGER NOT NULL,
+    note TEXT,
+    mods_json TEXT NOT NULL DEFAULT '[]',
+    combo_json TEXT NOT NULL DEFAULT '[]',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS byod_submissions (
+    id TEXT PRIMARY KEY,
+    session_id TEXT NOT NULL,
+    device_id TEXT NOT NULL,
+    idempotency_key TEXT NOT NULL,
+    order_id TEXT NOT NULL,
+    item_ids_json TEXT NOT NULL DEFAULT '[]',
+    created_at TEXT NOT NULL,
+    UNIQUE(session_id, idempotency_key)
+  );
+
+  CREATE TABLE IF NOT EXISTS byod_payment_requests (
+    id TEXT PRIMARY KEY,
+    session_id TEXT NOT NULL,
+    order_id TEXT,
+    status TEXT NOT NULL DEFAULT 'requested',
+    created_at TEXT NOT NULL,
+    acknowledged_at TEXT,
+    completed_at TEXT
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_byod_qr_table ON byod_qr_codes(branch_id,table_id,enabled);
+  CREATE INDEX IF NOT EXISTS idx_byod_session_table ON byod_sessions(branch_id,table_id,status);
+  CREATE INDEX IF NOT EXISTS idx_byod_cart_session ON byod_cart_items(session_id,device_id);
+  CREATE INDEX IF NOT EXISTS idx_byod_submission_order ON byod_submissions(order_id);
+
   CREATE TABLE IF NOT EXISTS categories (
     id TEXT PRIMARY KEY,
     branch_id TEXT NOT NULL DEFAULT 'sala',

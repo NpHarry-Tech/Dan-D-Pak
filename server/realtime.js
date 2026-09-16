@@ -8,6 +8,7 @@ import { normalizeIp } from './core/util.js';
 import { logger } from './core/logger.js';
 import { setRealtimeEmitter } from './core/realtimeBus.js';
 import { RealtimeEventJournal } from './core/realtimeEvents.js';
+import crypto from 'node:crypto';
 
 let io = null;
 const realtimeJournal = new RealtimeEventJournal();
@@ -21,6 +22,7 @@ const realtimeJournal = new RealtimeEventJournal();
 // phát receipt/tiền/khách (payment:done, stats, ca, két...) vào phòng này.
 const staffRoom = (b) => 'branch:' + b;
 const ipadRoom = (b) => 'branch:' + b + ':ipad';
+const byodRoom = (tableId) => 'byod:table:' + tableId;
 
 // Sự kiện kiosk khách ĐƯỢC nhận (trạng thái món / bàn / thực đơn). Mọi sự kiện khác
 // (payment/stats/shift/cash-drawer/inventory/purchase/invoice/sync/settings...) chỉ ở staffRoom.
@@ -148,6 +150,20 @@ export function initRealtime(httpServer) {
   io.use((socket, next) => {
     try {
       const device = socket.handshake.auth?.device || socket.handshake.query?.device || 'unknown';
+      if (device === 'byod') {
+        const raw = String(socket.handshake.auth?.token || socket.handshake.query?.token || '');
+        if (!ipadConnectAllowed(normalizeIp(socket.handshake.address))) {
+          return next(new Error('Quá nhiều kết nối, vui lòng thử lại sau.'));
+        }
+        const tokenHash = crypto.createHash('sha256').update(raw, 'utf8').digest('hex');
+        const qr = db.prepare(`SELECT q.branch_id,q.table_id FROM byod_qr_codes q
+          JOIN tables t ON t.id=q.table_id JOIN branches b ON b.id=q.branch_id
+          WHERE q.token_hash=? AND q.enabled=1 AND q.revoked_at IS NULL AND b.active=1`).get(tokenHash);
+        if (!qr) return next(new Error('QR BYOD không hợp lệ hoặc đã bị thu hồi.'));
+        socket.data.branch = qr.branch_id;
+        socket.data.tableId = qr.table_id;
+        return next();
+      }
       // iPad là thiết bị công cộng đặt tại bàn, không cần xác thực token nhân viên
       if (device === 'ipad') {
         if (!ipadConnectAllowed(normalizeIp(socket.handshake.address))) {
@@ -176,7 +192,7 @@ export function initRealtime(httpServer) {
         return next(new Error('Xác thực thất bại: Phiên làm việc không hợp lệ hoặc đã hết hạn.'));
       }
 
-      const branch = socket.handshake.auth?.branch || socket.handshake.query?.branch || 'sala';
+      const branch = socket.data.branch || socket.handshake.auth?.branch || socket.handshake.query?.branch || 'sala';
       if (!canAccessBranch(user, branch)) {
         return next(new Error('Xác thực thất bại: Không có quyền truy cập chi nhánh này.'));
       }
@@ -190,11 +206,11 @@ export function initRealtime(httpServer) {
 
   io.on('connection', (socket) => {
     try {
-      const branch = socket.handshake.auth?.branch || socket.handshake.query?.branch || 'sala';
+      const branch = socket.data.branch || socket.handshake.auth?.branch || socket.handshake.query?.branch || 'sala';
       const device = socket.handshake.auth?.device || socket.handshake.query?.device || 'unknown';
       // Kiosk khách (device='ipad', không token) → phòng công khai đã lọc PII.
       // Thiết bị nhân viên đã xác thực → phòng đầy đủ.
-      socket.join(device === 'ipad' ? ipadRoom(branch) : staffRoom(branch));
+      socket.join(device === 'byod' ? byodRoom(socket.data.tableId) : (device === 'ipad' ? ipadRoom(branch) : staffRoom(branch)));
       socket.data.branch = branch;
       socket.data.device = device;
       socket.data.deviceId = String(
@@ -207,6 +223,10 @@ export function initRealtime(httpServer) {
       emitPresenceThrottled(branch);
 
       socket.on('realtime:resume', (request = {}) => {
+        if (device === 'byod') {
+          socket.emit('realtime:resync_required', { reason: 'byod_scoped_refresh', branch_id: branch });
+          return;
+        }
         const replay = realtimeJournal.replay(branch, String(request?.after || ''));
         if (replay.status !== 'replay') {
           socket.emit('realtime:resync_required', {
@@ -254,8 +274,35 @@ export function emit(event, payload, branch = 'sala') {
         io.to(room).emit(event, sanitizeForIpad(event, enrichedPayload));
       }
     }
+    // BYOD sockets are credential-scoped to one table. Menu changes are safe
+    // branch-wide; order/table events are sent only when they belong to that table.
+    if (IPAD_EVENTS.has(event)) {
+      for (const socket of io.sockets.sockets.values()) {
+        if (socket.data?.device !== 'byod' || socket.data?.branch !== branch) continue;
+        const tableId = socket.data.tableId;
+        const payloadTable = payload?.table_id || payload?.order?.table_id
+          || (event === 'table:updated' ? payload?.id : null);
+        const orderId = payload?.order_id || payload?.order?.id;
+        const orderTable = !payloadTable && orderId
+          ? db.prepare(`SELECT table_id FROM orders WHERE id=? AND branch_id=?`).get(orderId, branch)?.table_id
+          : null;
+        if (event === 'menu:updated' || event === 'book-menu:updated' || event === 'payment:config'
+            || payloadTable === tableId || orderTable === tableId) {
+          socket.emit(event, sanitizeForIpad(event, enrichedPayload));
+        }
+      }
+    }
   } catch (err) {
     logger.warn('socket broadcast emit error', { message: err.message });
+  }
+}
+
+export function emitByodTable(tableId, event, payload = {}) {
+  try {
+    if (!io) return;
+    io.to(byodRoom(tableId)).emit(event, { ...payload, table_id: tableId, at: new Date().toISOString() });
+  } catch (err) {
+    logger.warn('BYOD socket broadcast error', { message: err.message });
   }
 }
 

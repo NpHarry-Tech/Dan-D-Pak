@@ -1,5 +1,15 @@
 // Panel "Cấu hình bàn" trong màn Cài đặt — bàn, khu vực và sơ đồ phòng bán.
+import 'dart:io';
+import 'dart:ui' as ui;
+
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
+import 'package:printing/printing.dart';
+import 'package:qr_flutter/qr_flutter.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../../services/api_service.dart';
 import '../../ui/app_theme.dart';
@@ -397,6 +407,18 @@ class _TableFormDialogState extends State<_TableFormDialog> {
               controller: _seats,
               keyboardType: TextInputType.number,
               decoration: InputDecoration(labelText: t('Số chỗ ngồi'))),
+          if (_isEdit) ...[
+            SizedBox(height: 22),
+            OutlinedButton.icon(
+              onPressed: () => showDialog<void>(
+                context: context,
+                builder: (_) => _ByodQrDialog(
+                    api: widget.api, table: widget.table!),
+              ),
+              icon: Icon(Icons.qr_code_2),
+              label: Text(t('Quản lý QR gọi món BYOD')),
+            ),
+          ],
         ],
       ),
     );
@@ -459,6 +481,165 @@ class _TableFormDialogState extends State<_TableFormDialog> {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _ByodQrDialog extends StatefulWidget {
+  final ApiService api;
+  final Map<String, dynamic> table;
+  const _ByodQrDialog({required this.api, required this.table});
+
+  @override
+  State<_ByodQrDialog> createState() => _ByodQrDialogState();
+}
+
+class _ByodQrDialogState extends State<_ByodQrDialog> {
+  Map<String, dynamic>? _qr;
+  bool _loading = true;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final qr = await widget.api.getTableByod(asText(widget.table['id']));
+      if (mounted) setState(() { _qr = qr; _loading = false; _error = null; });
+    } catch (e) {
+      if (mounted) setState(() { _loading = false; _error = e.toString().replaceFirst('Exception: ', ''); });
+    }
+  }
+
+  String _safe(String value) {
+    var out = value.trim().replaceAll(RegExp(r'[<>:"/\\|?*\x00-\x1F]'), '-');
+    out = out.replaceAll(RegExp(r'[. ]+$'), '').replaceAll(RegExp(r'\s+'), '-');
+    return out.isEmpty ? 'khong-ro' : out.substring(0, out.length > 60 ? 60 : out.length);
+  }
+
+  String get _fileName {
+    final branch = _safe(asText(_qr?['branch']?['code']).isNotEmpty
+        ? asText(_qr?['branch']?['code']) : asText(_qr?['branch']?['name']));
+    final area = _safe(asText(_qr?['table']?['zone']));
+    final table = _safe(asText(_qr?['table']?['code']));
+    return 'BYOD-$branch-$area-$table';
+  }
+
+  Future<Uint8List> _png() async {
+    final data = asText(_qr?['url']);
+    final painter = QrPainter(data: data, version: QrVersions.auto,
+        gapless: true, errorCorrectionLevel: QrErrorCorrectLevel.H);
+    final qrImage = await painter.toImage(1200);
+    final recorder = ui.PictureRecorder();
+    final canvas = ui.Canvas(recorder);
+    canvas.drawRect(ui.Rect.fromLTWH(0, 0, 1600, 2100), ui.Paint()..color = Colors.white);
+    void centered(String text, double top, double size,
+        {FontWeight weight = FontWeight.w500, Color color = DanColors.text}) {
+      final builder = ui.ParagraphBuilder(ui.ParagraphStyle(
+          textAlign: TextAlign.center, fontSize: size, fontWeight: weight))
+        ..pushStyle(ui.TextStyle(color: color))
+        ..addText(text);
+      final paragraph = builder.build()..layout(ui.ParagraphConstraints(width: 1400));
+      canvas.drawParagraph(paragraph, ui.Offset(100, top));
+    }
+    centered('DAN D PAK', 100, 86, weight: FontWeight.w900, color: DanColors.brand);
+    centered(asText(_qr?['branch']?['name']), 225, 42);
+    centered(asText(_qr?['table']?['zone']), 305, 38, color: DanColors.muted);
+    centered('Bàn ${asText(_qr?['table']?['code'])}', 370, 68, weight: FontWeight.w900);
+    canvas.drawImage(qrImage, ui.Offset(200, 520), ui.Paint());
+    centered('Quét để xem menu và gọi món', 1780, 48, weight: FontWeight.w800);
+    centered('Không cần cài ứng dụng · Không cần đăng nhập', 1860, 32, color: DanColors.muted);
+    final card = await recorder.endRecording().toImage(1600, 2100);
+    final bytes = await card.toByteData(format: ui.ImageByteFormat.png);
+    qrImage.dispose();
+    card.dispose();
+    if (bytes == null) throw Exception('Không tạo được ảnh QR');
+    return bytes.buffer.asUint8List();
+  }
+
+  Future<Uint8List> _pdf() async {
+    final doc = pw.Document();
+    doc.addPage(pw.Page(pageFormat: PdfPageFormat.a5,
+      build: (_) => pw.Center(child: pw.Column(mainAxisSize: pw.MainAxisSize.min, children: [
+        pw.Text('DAN D PAK', style: pw.TextStyle(fontSize: 27, fontWeight: pw.FontWeight.bold, color: PdfColor.fromHex('#008EAA'))),
+        pw.SizedBox(height: 8),
+        pw.Text(asText(_qr?['branch']?['name']), style: pw.TextStyle(fontSize: 14)),
+        pw.Text(asText(_qr?['table']?['zone']), style: pw.TextStyle(fontSize: 13)),
+        pw.Text('Ban ${asText(_qr?['table']?['code'])}', style: pw.TextStyle(fontSize: 25, fontWeight: pw.FontWeight.bold)),
+        pw.SizedBox(height: 18),
+        pw.BarcodeWidget(barcode: pw.Barcode.qrCode(), data: asText(_qr?['url']), width: 250, height: 250),
+        pw.SizedBox(height: 18),
+        pw.Text('Quet de xem menu va goi mon', style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold)),
+      ]))));
+    return doc.save();
+  }
+
+  Future<void> _download() async {
+    final bytes = await _png();
+    final name = '$_fileName.png';
+    if (Platform.isAndroid || Platform.isIOS) {
+      await Share.shareXFiles([XFile.fromData(bytes, mimeType: 'image/png', name: name)]);
+      return;
+    }
+    final path = await FilePicker.platform.saveFile(dialogTitle: t('Tải QR BYOD'),
+        fileName: name, type: FileType.custom, allowedExtensions: ['png']);
+    if (path != null) await File(path.toLowerCase().endsWith('.png') ? path : '$path.png').writeAsBytes(bytes, flush: true);
+  }
+
+  Future<void> _print() async => Printing.layoutPdf(
+      name: '$_fileName.pdf', onLayout: (_) => _pdf());
+
+  Future<void> _regenerate() async {
+    final pin = await settingsPin(context, t('Tạo lại QR BYOD. QR cũ sẽ ngừng hoạt động.'));
+    if (pin == null) return;
+    final qr = await widget.api.regenerateTableByod(asText(widget.table['id']), pin);
+    if (mounted) setState(() => _qr = qr);
+  }
+
+  Future<void> _toggle() async {
+    final enabled = _qr?['enabled'] == true;
+    final pin = await settingsPin(context, enabled ? t('Vô hiệu hóa BYOD cho bàn này.') : t('Kích hoạt BYOD cho bàn này.'));
+    if (pin == null) return;
+    final qr = await widget.api.setTableByodEnabled(asText(widget.table['id']), !enabled, pin);
+    if (!mounted) return;
+    setState(() => _qr = qr);
+    if (!enabled && asText(qr['url']).isEmpty) await _load();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final url = asText(_qr?['url']);
+    final enabled = _qr?['enabled'] == true;
+    return AlertDialog(
+      title: Text(t('QR gọi món BYOD')),
+      content: SizedBox(width: 420, child: _loading
+          ? Center(child: CircularProgressIndicator())
+          : _error != null ? Text(_error!)
+          : SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, children: [
+              if (enabled && url.isNotEmpty) QrImageView(data: url, size: 230, errorCorrectionLevel: QrErrorCorrectLevel.H)
+              else Icon(Icons.qr_code_2, size: 150, color: DanColors.faint),
+              SizedBox(height: 10),
+              Text('Bàn ${asText(_qr?['table']?['code'])}', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900)),
+              Text(asText(_qr?['table']?['zone']), style: TextStyle(color: DanColors.muted)),
+              SizedBox(height: 10),
+              Chip(label: Text(enabled ? t('Đang hoạt động') : t('Đã vô hiệu hóa')),
+                  avatar: Icon(enabled ? Icons.check_circle : Icons.block, size: 18)),
+              if (_qr?['last_used_at'] != null) Text('${t('Dùng gần nhất')}: ${asText(_qr?['last_used_at'])}', style: TextStyle(fontSize: 12, color: DanColors.faint)),
+              if (url.isNotEmpty) Padding(padding: EdgeInsets.only(top: 10), child: SelectableText(url, style: TextStyle(fontSize: 11, color: DanColors.muted))),
+            ]))),
+      actions: [
+        if (enabled && url.isNotEmpty) ...[
+          TextButton.icon(onPressed: () async { await Clipboard.setData(ClipboardData(text: url)); if (mounted) appToast(context, t('Đã sao chép đường dẫn')); }, icon: Icon(Icons.copy), label: Text(t('Sao chép'))),
+          TextButton.icon(onPressed: _download, icon: Icon(Icons.download), label: Text(t('Tải PNG'))),
+          TextButton.icon(onPressed: _print, icon: Icon(Icons.print), label: Text(t('In'))),
+          TextButton(onPressed: _regenerate, child: Text(t('Tạo lại QR'))),
+        ],
+        TextButton(onPressed: _toggle, child: Text(enabled ? t('Vô hiệu hóa') : t('Kích hoạt'))),
+        FilledButton(onPressed: () => Navigator.pop(context), child: Text(t('Đóng'))),
+      ],
     );
   }
 }

@@ -44,6 +44,7 @@ import { maintainRetailDrafts } from './services/retail.js';
 import { rateLimit } from './core/rateLimit.js';
 import { buildInfo } from './core/buildInfo.js';
 import { immutableUploadStaticOptions, bundledAssetStaticOptions } from './core/staticAssets.js';
+import { ensureTableQr } from './services/byod.js';
 
 // Gzip middleware dùng Node built-in zlib — không cần thêm npm package.
 // Với 50 thiết bị, menu JSON ~50KB → ~8KB sau nén, giảm tải mạng LAN 80%.
@@ -118,6 +119,12 @@ if (env.isReview) {
   const adminBootstrap = bootstrapDefaultAdmin();
   if (adminBootstrap.created) logger.warn('default admin account created', { username: adminBootstrap.username });
   if (adminBootstrap.pinReset) logger.warn('admin PIN reset via DANDPAK_ADMIN_RESET_PIN env (remove the env var after this run)', { username: adminBootstrap.username });
+}
+
+// Upgrade existing floor plans as well as newly-created tables. The operation
+// is idempotent and stores only a SHA-256 token hash.
+for (const table of db.prepare(`SELECT id,branch_id FROM tables`).all()) {
+  ensureTableQr(table.id, table.branch_id, 'system:migration');
 }
 
 const app = express();
@@ -360,6 +367,11 @@ app.get('/health', (req, res) => {
 
 app.use('/api', beginRequestTiming, requestContextMiddleware, requestLogger, api);
 app.use('/api', apiNotFound);
+app.use('/byod-assets', express.static(join(__dirname, 'assets', 'byod'), bundledAssetStaticOptions));
+app.get('/BYOD/:token', (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  res.sendFile(join(__dirname, 'assets', 'byod', 'index.html'));
+});
 app.use('/uploads', express.static(storagePath('uploads'), immutableUploadStaticOptions));
 app.use('/assets', express.static(ENGINE_ASSETS, bundledAssetStaticOptions));
 // Non-asset fallthroughs must never retain a stale error/HTML response.

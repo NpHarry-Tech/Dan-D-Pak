@@ -36,6 +36,7 @@ import { registerSettingsRoutes } from './modules/settings/routes.js';
 import { registerDatabaseRoutes } from './modules/database/routes.js';
 import { registerErpRoutes } from './modules/erp/routes.js';
 import { registerDocumentRoutes, fileCashDrawerReceipt, registerStorageFileOrRollback } from './modules/documents/routes.js';
+import { registerByodRoutes } from './modules/byod/routes.js';
 import * as Haravan from './services/haravanConnector.js';
 import { errorPayload, isUnexpectedSystemError } from './core/errors.js';
 import fs from 'node:fs';
@@ -298,6 +299,8 @@ registerInvoiceRoutes(api, {
 // Tables + Orders + KDS tickets — route ownership tách sang modules/orders (hành
 // vi giữ nguyên; nghiệp vụ vẫn ở services/orders.js).
 registerOrderRoutes(api, { wrap, guard, guardAny, branch, visibleBranch, actor });
+// BYOD is a guest/session layer over the canonical table-order service above.
+registerByodRoutes(api, { wrap, guardAny, branch, actor });
 // Dashboard + Report Center (preview/export) — route ownership: modules/reports.
 registerReportRoutes(api, { wrap, guard, branch, visibleBranch });
 // System logs hợp nhất + audit trail — route ownership: modules/audit.

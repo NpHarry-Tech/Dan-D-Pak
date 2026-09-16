@@ -13,6 +13,7 @@ import { orderVatTotals, salePrice } from './tax.js';
 import { sendPushForCategory } from './push.js';
 import { businessDayBoundsUtc, businessParts } from '../core/businessClock.js';
 import { logSystem } from './systemLogs.js';
+import { ensureTableQr, revokeForDeletedTable, closeTableSessions } from './byod.js';
 
 // Số Bill nội bộ: Dan{ddMMyy}{seq} — seq là số thứ tự đơn trong NGÀY (reset mỗi
 // ngày vận hành: ca sáng → ca tối đều trong 1 ngày dương lịch). VD Dan210626001.
@@ -709,6 +710,7 @@ export function resetTable(table_id, branch_id = 'sala', actor = 'system', reaso
     db.prepare(`UPDATE staff_calls SET status='done' WHERE table_id=? AND status='open'`).run(table_id);
     db.prepare('COMMIT').run();
 
+    closeTableSessions(table_id, branch_id, 'table_closed');
     for (const o of orders) archiveOrder(getOrder(o.id));
     audit('table.reset', {
       table: table_id, table_code: table.code || '',
@@ -753,6 +755,7 @@ export function moveTable(from_table_id, to_table_id, branch_id = 'sala', actor 
     tableDisplay: `${source.code} => BÀN ${target.code}`,
   });
   emit('order:updated', getOrder(order.id), branch_id);
+  closeTableSessions(from_table_id, branch_id, 'table_moved');
   emit('kds:refresh', {}, branch_id);
   archiveOrder(getOrder(order.id));
   return getOrder(order.id);
@@ -1112,6 +1115,7 @@ export function createTable({ branch_id = 'sala', zone, zone_id = null, code, se
       _num(pos_x, -1), _num(pos_y, -1), Math.max(1, _int(grid_w, 1)), Math.max(1, _int(grid_h, 1)));
 
   audit('table.create', { id, zone: cleanZone, code: cleanCode, seats }, branch_id);
+  ensureTableQr(id, branch_id);
   const state = getTableState(id);
   emit('table:updated', state, branch_id);
   emit('stats:dirty', {}, branch_id);
@@ -1258,6 +1262,9 @@ export function deleteTable(id, branch_id = 'sala') {
     throw new Error('Bàn đang có khách, không thể xóa!');
   }
 
+  // Revoke before deleting because the QR audit/session record intentionally
+  // survives the table row as evidence that the public credential is dead.
+  revokeForDeletedTable(id, branch_id);
   db.prepare(`DELETE FROM tables WHERE id=?`).run(id);
 
   audit('table.delete', { id, zone: table.zone, code: table.code }, branch_id);
