@@ -180,6 +180,15 @@ if [ "`$active_image" != "`$loaded_id" ]; then echo 'Activated container image I
 docker compose -f docker-compose.yml -f '$remoteOverride' exec -T app node -e "fetch('http://127.0.0.1:3000/health').then(async r=>{const b=await r.json();const x=b.build||{};const ok=r.ok&&b.ok&&b.database&&b.database.ok&&x.gitCommit==='$commit'&&x.sourceTreeSha256==='$expectedSourceHash'&&x.buildTimeUtc==='$expectedBuiltAt'&&x.schemaVersion===$expectedSchemaVersion;process.exit(ok?0:1)}).catch(()=>process.exit(1))" </dev/null
 trap - ERR
 docker image inspect '$rollbackTag' --format '{{.Id}}' </dev/null
+# Caddy pools keep-alive connections to the app container's OLD IP; "up -d app"
+# above gives it a NEW container (new IP on the bridge network) but Caddy keeps
+# retrying the dead old one ("dial tcp ...: connection refused", 502) until its
+# process restarts and rebuilds a fresh connection pool. This bit the same
+# manual deploy loop twice in one session before landing here — restart it
+# every deploy so guests/staff never hit that window. Best-effort: app is
+# already deployed+verified by this point, so a hiccup here must not trip the
+# rollback path above.
+docker compose -f docker-compose.yml -f '$remoteOverride' restart caddy </dev/null || echo 'WARN: caddy restart failed after deploy - may need a manual "docker compose restart caddy" to clear stale routing.' >&2
 "@
   $deployResult = Invoke-RemoteBashScript -SshExe $sshExe -SshOptions $sshOptions -Target $target -Script $remote
   Write-Host $deployResult.Stdout
