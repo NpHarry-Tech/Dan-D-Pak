@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -27,6 +28,13 @@ class CustomerDisplaySettingsPanel extends StatefulWidget {
 class _CustomerDisplaySettingsPanelState
     extends State<CustomerDisplaySettingsPanel> {
   static int _maxImages = 12;
+  static int _byodMaxImages = 8;
+
+  // Điện thoại/tablet chỉ có 1 màn hình → không có màn phụ hướng khách (tính
+  // năng riêng của desktop, xem settings_tab.dart _isMobile) — ẩn phần đó,
+  // NHƯNG banner BYOD vẫn dùng được (chỉ là ảnh hiển thị trên web menu khách,
+  // không phụ thuộc màn hình thứ 2) nên panel này vẫn hiện trên mobile.
+  bool get _isMobile => Platform.isAndroid || Platform.isIOS;
 
   bool _loading = true;
   bool _saving = false;
@@ -35,6 +43,10 @@ class _CustomerDisplaySettingsPanelState
   bool _enabled = false;
   int _seconds = 20;
   List<String> _images = [];
+
+  bool _byodEnabled = false;
+  int _byodSeconds = 5;
+  List<String> _byodImages = [];
 
   @override
   void initState() {
@@ -50,6 +62,7 @@ class _CustomerDisplaySettingsPanelState
     try {
       final s = await widget.api.getAppSettings();
       final cd = s['customer_display'];
+      final bb = s['byod_banner'];
       final localEnabled =
           await LocalStore.instance.getString('customer_display_enabled') ==
               'true';
@@ -62,6 +75,17 @@ class _CustomerDisplaySettingsPanelState
               : 20;
           _images = (cd['images'] is List)
               ? (cd['images'] as List)
+                  .map((e) => e.toString())
+                  .where((e) => e.isNotEmpty)
+                  .toList()
+              : <String>[];
+        }
+        if (bb is Map) {
+          _byodEnabled = bb['enabled'] == true;
+          _byodSeconds =
+              (bb['secondsPerImage'] is num) ? (bb['secondsPerImage'] as num).toInt() : 5;
+          _byodImages = (bb['images'] is List)
+              ? (bb['images'] as List)
                   .map((e) => e.toString())
                   .where((e) => e.isNotEmpty)
                   .toList()
@@ -81,17 +105,25 @@ class _CustomerDisplaySettingsPanelState
   Future<void> _save() async {
     setState(() => _saving = true);
     try {
-      await LocalStore.instance
-          .setString('customer_display_enabled', _enabled ? 'true' : 'false');
-      await widget.api.saveAppSettings({
-        'customer_display': {
+      final body = <String, dynamic>{
+        'byod_banner': {
+          'enabled': _byodEnabled,
+          'secondsPerImage': _byodSeconds,
+          'images': _byodImages,
+        },
+      };
+      if (!_isMobile) {
+        await LocalStore.instance.setString(
+            'customer_display_enabled', _enabled ? 'true' : 'false');
+        body['customer_display'] = {
           // Chỉ nội dung trình chiếu dùng chung; bật/tắt thuộc máy đang thao tác.
           'enabled': true,
           'secondsPerImage': _seconds,
           'images': _images,
-        },
-      });
-      if (mounted) {
+        };
+      }
+      await widget.api.saveAppSettings(body);
+      if (mounted && !_isMobile) {
         final display = context.read<CustomerDisplayController>();
         await display.loadConfig();
         if (_enabled) {
@@ -100,7 +132,7 @@ class _CustomerDisplaySettingsPanelState
           await SecondScreen.instance.close();
         }
       }
-      _toast(t('Đã lưu màn hình phụ'));
+      _toast(t('Đã lưu hiển thị khách hàng'));
     } catch (e) {
       _toast(e.toString().replaceFirst('Exception: ', ''), error: true);
     } finally {
@@ -145,13 +177,46 @@ class _CustomerDisplaySettingsPanelState
         ]);
   }
 
+  Future<void> _addByodImage() async {
+    if (_byodImages.length >= _byodMaxImages) {
+      _toast(t('Tối đa $_byodMaxImages ảnh'), error: true);
+      return;
+    }
+    final dataUrl = await pickAdFileAsDataUrl();
+    if (dataUrl == null) return;
+    if (!dataUrl.startsWith('data:image/')) return;
+    try {
+      final comma = dataUrl.indexOf(',');
+      if (comma <= 5) throw Exception(t('Dữ liệu ảnh không hợp lệ'));
+      final mime = dataUrl.substring(5, comma).split(';').first;
+      final response = await widget.api.uploadByodBannerImage(
+        data: dataUrl.substring(comma + 1),
+        mimeType: mime,
+        originalName:
+            'byod-banner-${DateTime.now().millisecondsSinceEpoch}.${mime.split('/').last}',
+      );
+      final url = '${response['url'] ?? ''}'.trim();
+      if (url.isEmpty) throw Exception(t('Server không trả về đường dẫn ảnh'));
+      if (mounted) setState(() => _byodImages = [..._byodImages, url]);
+    } catch (e) {
+      _toast(e.toString().replaceFirst('Exception: ', ''), error: true);
+    }
+  }
+
+  void _removeByodImage(int i) {
+    setState(() => _byodImages = [
+          for (int j = 0; j < _byodImages.length; j++)
+            if (j != i) _byodImages[j]
+        ]);
+  }
+
   void _toast(String msg, {bool error = false}) =>
       appToast(context, msg, isError: error);
 
   @override
   Widget build(BuildContext context) {
     return SettingsPanelScaffold(
-      title: t('Màn hình phụ'),
+      title: t('Hiển thị khách hàng'),
       onRefresh: _load,
       child: settingsState(
         loading: _loading,
@@ -160,6 +225,9 @@ class _CustomerDisplaySettingsPanelState
         child: ListView(
           padding: EdgeInsets.all(18),
           children: [
+            // Màn hình phụ (màn thứ 2 quay ra khách) — tính năng riêng của
+            // desktop, ẩn trên điện thoại/tablet (chỉ có 1 màn hình).
+            if (!_isMobile) ...[
             Panel(
               title: t('Kích hoạt'),
               child: Column(
@@ -245,7 +313,7 @@ class _CustomerDisplaySettingsPanelState
                       runSpacing: 10,
                       children: [
                         for (int i = 0; i < _images.length; i++)
-                          _thumb(_images[i], i),
+                          _thumb(_images[i], () => _removeImage(i)),
                       ],
                     ),
                   SizedBox(height: 12),
@@ -253,6 +321,80 @@ class _CustomerDisplaySettingsPanelState
                     alignment: Alignment.centerLeft,
                     child: OutlinedButton.icon(
                       onPressed: _addImage,
+                      icon: Icon(Icons.add_photo_alternate_outlined, size: 18),
+                      label: Text(t('Thêm ảnh')),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            SizedBox(height: 14),
+            ],
+            Panel(
+              title: t('BYOD — Banner thực đơn'),
+              trailing: Text('${_byodImages.length}/$_byodMaxImages',
+                  style: TextStyle(fontSize: 12, color: DanColors.faint)),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    t('Dải ảnh chạy đầu trang Menu khi khách tự gọi món bằng điện thoại (quét QR trên bàn).'),
+                    style: TextStyle(color: DanColors.muted, fontSize: 12.5),
+                  ),
+                  SizedBox(height: 10),
+                  SwitchListTile(
+                    value: _byodEnabled,
+                    onChanged: (v) => setState(() => _byodEnabled = v),
+                    contentPadding: EdgeInsets.zero,
+                    title: Text(t('Hiện banner trên trang Menu BYOD')),
+                  ),
+                  Row(
+                    children: [
+                      Text(t('Thời gian mỗi ảnh:')),
+                      SizedBox(width: 12),
+                      SizedBox(
+                        width: 120,
+                        child: DropdownButtonFormField<int>(
+                          initialValue: _byodSeconds.clamp(3, 30),
+                          decoration: InputDecoration(
+                              isDense: true, border: OutlineInputBorder()),
+                          items: [
+                            DropdownMenuItem(
+                                value: 4, child: Text(t('4 giây'))),
+                            DropdownMenuItem(
+                                value: 5, child: Text(t('5 giây'))),
+                            DropdownMenuItem(
+                                value: 8, child: Text(t('8 giây'))),
+                            DropdownMenuItem(
+                                value: 10, child: Text(t('10 giây'))),
+                          ],
+                          onChanged: (v) =>
+                              setState(() => _byodSeconds = v ?? 5),
+                        ),
+                      ),
+                    ],
+                  ),
+                  SizedBox(height: 12),
+                  if (_byodImages.isEmpty)
+                    Padding(
+                      padding: EdgeInsets.symmetric(vertical: 20),
+                      child: InlineMessage(
+                          t('Chưa có ảnh — banner sẽ ẩn trên trang Menu.')),
+                    )
+                  else
+                    Wrap(
+                      spacing: 10,
+                      runSpacing: 10,
+                      children: [
+                        for (int i = 0; i < _byodImages.length; i++)
+                          _thumb(_byodImages[i], () => _removeByodImage(i)),
+                      ],
+                    ),
+                  SizedBox(height: 12),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: OutlinedButton.icon(
+                      onPressed: _addByodImage,
                       icon: Icon(Icons.add_photo_alternate_outlined, size: 18),
                       label: Text(t('Thêm ảnh')),
                     ),
@@ -289,7 +431,7 @@ class _CustomerDisplaySettingsPanelState
         s.endsWith('.mkv');
   }
 
-  Widget _thumb(String src, int i) {
+  Widget _thumb(String src, VoidCallback onRemove) {
     return Stack(
       children: [
         ClipRRect(
@@ -334,7 +476,7 @@ class _CustomerDisplaySettingsPanelState
           top: 2,
           right: 2,
           child: InkWell(
-            onTap: () => _removeImage(i),
+            onTap: onRemove,
             child: Container(
               decoration:
                   BoxDecoration(color: DanColors.late, shape: BoxShape.circle),

@@ -102,6 +102,21 @@ const Map<String, String> viToEnMap = {
   '3. No thu thập thông tin cá nhân':
       '3. No collection of personal information',
   '30 giây': '30 seconds',
+  '4 giây': '4 seconds',
+  '5 giây': '5 seconds',
+  '8 giây': '8 seconds',
+  '10 giây': '10 seconds',
+  'Hiển thị khách hàng': 'Customer display',
+  'Màn thứ 2 hướng khách (desktop) và banner Menu BYOD.':
+      'Second screen facing the customer (desktop) and the BYOD menu banner.',
+  'Đã lưu hiển thị khách hàng': 'Customer display saved',
+  'BYOD — Banner thực đơn': 'BYOD — Menu banner',
+  'Dải ảnh chạy đầu trang Menu khi khách tự gọi món bằng điện thoại (quét QR trên bàn).':
+      'Image strip at the top of the Menu page when guests order from their own phone (scan the table QR).',
+  'Hiện banner trên trang Menu BYOD': 'Show banner on the BYOD Menu page',
+  'Chưa có ảnh — banner sẽ ẩn trên trang Menu.':
+      'No images yet — the banner stays hidden on the Menu page.',
+  'Tối đa 8 ảnh': 'Up to 8 images',
   '4. Contacts & Hỗ trợ': '4. Contacts & Support',
   '4. Contacts hỗ trợ': '4. Contacts support',
   '5 năm gần nhất': 'The last 5 years',

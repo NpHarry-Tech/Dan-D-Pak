@@ -55,6 +55,20 @@ extension ApiServiceSettingsApi on ApiService {
         errorMessage: 'Không tải được ảnh màn hình phụ'));
   }
 
+  Future<Map<String, dynamic>> uploadByodBannerImage({
+    required String data,
+    required String mimeType,
+    required String originalName,
+  }) async {
+    return mapFrom(await postJson('/api/settings/byod-banner/image-upload',
+        body: {
+          'data': data,
+          'mime_type': mimeType,
+          'original_name': originalName,
+        },
+        errorMessage: 'Không tải được ảnh banner BYOD'));
+  }
+
   // ── Settings: Users & permissions ──────────────────────────────────────
   Future<List<dynamic>> getSettingsUsers() async {
     return listFrom(await getJson('/api/settings/users',

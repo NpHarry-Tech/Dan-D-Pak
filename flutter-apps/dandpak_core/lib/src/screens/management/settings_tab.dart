@@ -1,5 +1,3 @@
-import 'dart:io' show Platform;
-
 import 'package:flutter/material.dart';
 
 import '../../app_flavor.dart';
@@ -84,8 +82,8 @@ class _SettingsTabState extends State<SettingsTab> {
         Icons.devices_other_outlined),
     _SettingsSection(
         'customer_display',
-        t('Màn hình phụ'),
-        t('Quảng cáo khi rảnh, hiển thị đơn & QR cho màn thứ 2.'),
+        t('Hiển thị khách hàng'),
+        t('Màn thứ 2 hướng khách (desktop) và banner Menu BYOD.'),
         Icons.desktop_windows_outlined),
     _SettingsSection(
         'loyalty',
@@ -101,11 +99,11 @@ class _SettingsTabState extends State<SettingsTab> {
 
   String _selected = 'users';
 
-  // Tablet/điện thoại (Android/iOS) chỉ có 1 màn hình → KHÔNG có t("Màn hình phụ")
-  // (màn khách trên màn thứ 2 là tính năng riêng của desktop). Ẩn mục này đi.
-  bool get _isMobile => Platform.isAndroid || Platform.isIOS;
+  // 'customer_display' KHÔNG còn bị ẩn hẳn trên mobile: màn thứ 2 hướng khách
+  // vẫn là tính năng riêng desktop (panel tự ẩn phần đó, xem
+  // settings_customer_display_panel.dart _isMobile), nhưng section này giờ
+  // cũng chứa banner Menu BYOD — dùng được từ điện thoại/tablet.
   List<_SettingsSection> get _visibleSections => _sections
-      .where((s) => !(_isMobile && s.key == 'customer_display'))
       .where((s) =>
           !(AppFlavor.current.isHandset && _anTrenDienThoai.contains(s.key)))
       .toList();

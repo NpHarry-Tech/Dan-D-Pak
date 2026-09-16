@@ -25,7 +25,7 @@ import { buildLiveDeviceRegistry } from '../../core/deviceRegistry.js';
 const ipadUnlockLimiter = rateLimit({ key: 'ipad-unlock', windowMs: 60_000, max: 20, message: 'Nhập sai quá nhiều lần. Vui lòng đợi một phút rồi thử lại.' });
 const selfCheckinLimiter = rateLimit({ key: 'self-checkin', windowMs: 60_000, max: 30 });
 
-export function registerSettingsRoutes(api, { wrap, guard, guardAny, branch, visibleBranch, actor, scopedUserBody, saveBase64Image, AVATAR_UPLOADS_DIR, CUSTOMER_DISPLAY_UPLOADS_DIR }) {
+export function registerSettingsRoutes(api, { wrap, guard, guardAny, branch, visibleBranch, actor, scopedUserBody, saveBase64Image, AVATAR_UPLOADS_DIR, CUSTOMER_DISPLAY_UPLOADS_DIR, BYOD_BANNER_UPLOADS_DIR }) {
 api.get('/settings/permissions', guardAny('settings.perms', 'settings.users'), wrap((req) => {
   // A granter can only see (and thus assign) permissions they personally hold —
   // everything they lack is hidden from the editor. Admin/owner sees the full set.
@@ -63,6 +63,11 @@ api.post('/settings/customer-display/image-upload', guardAny('settings.manage', 
   saveBase64Image(req, {
     dir: CUSTOMER_DISPLAY_UPLOADS_DIR, urlBase: '/uploads/customer-display',
     prefix: 'display_', auditAction: 'customer_display.image_upload',
+  })));
+api.post('/settings/byod-banner/image-upload', guardAny('settings.manage', 'settings.branch'), wrap((req) =>
+  saveBase64Image(req, {
+    dir: BYOD_BANNER_UPLOADS_DIR, urlBase: '/uploads/byod-banner',
+    prefix: 'banner_', auditAction: 'byod_banner.image_upload',
   })));
 api.post('/settings/users', guardAny('settings.users'), wrap((req) => {
   const branch_id = branch(req);

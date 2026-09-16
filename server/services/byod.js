@@ -4,6 +4,7 @@ import { emitByodTable } from '../realtime.js';
 import * as Catalog from './catalog.js';
 import * as Orders from './orders.js';
 import * as Payments from './payments.js';
+import { getByodBannerConfig } from './settings/byodBanner.js';
 
 const PUBLIC_ORIGIN = String(process.env.BYOD_PUBLIC_ORIGIN || 'https://dandpakpos.io.vn').replace(/\/$/, '');
 const DEVICE_RE = /^[A-Za-z0-9_-]{20,128}$/;
@@ -273,7 +274,7 @@ export function bootstrap(rawToken, deviceKey, hint = '', lang = 'vi') {
     table: { code: ctx.qr.table_code, zone: ctx.qr.zone, status: ctx.qr.table_status },
     categories: menuCategories(ctx.qr.branch_id, lang),
     menu: safeMenu(ctx.qr.branch_id, lang), cart: serializeCart(ctx, lang), orders: publicOrders(ctx),
-    payment_request: paymentRequest(ctx), server_time: now(),
+    payment_request: paymentRequest(ctx), banner: getByodBannerConfig(ctx.qr.branch_id), server_time: now(),
   };
 }
 

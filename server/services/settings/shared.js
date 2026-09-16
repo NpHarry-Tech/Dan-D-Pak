@@ -11,6 +11,7 @@ export const OPERATIONS_CONFIG_KEY = 'operations_config';
 export const NOTIFICATION_SOUND_KEY = 'notification_sound_config';
 export const TAX_FILING_PROFILE_KEY = 'tax_filing_profile';
 export const CUSTOMER_DISPLAY_KEY = 'customer_display';
+export const BYOD_BANNER_KEY = 'byod_banner';
 export const LOYALTY_CONFIG_KEY = 'loyalty_config';
 export const RETAIL_CONFIG_KEY = 'retail_config';
 export const SELL_CONFIG_KEY = 'sell_config';

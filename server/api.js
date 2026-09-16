@@ -48,6 +48,7 @@ const MENU_UPLOADS_DIR = storagePath('uploads', 'menu');
 const PRODUCT_UPLOADS_DIR = storagePath('uploads', 'products');
 const CATALOGUE_UPLOADS_DIR = storagePath('uploads', 'catalogue');
 const CUSTOMER_DISPLAY_UPLOADS_DIR = storagePath('uploads', 'customer-display');
+const BYOD_BANNER_UPLOADS_DIR = storagePath('uploads', 'byod-banner');
 const AVATAR_ALLOWED_MIME = new Set([
   'image/jpeg', 'image/png', 'image/webp', 'image/gif',
   'image/bmp', 'image/tiff', 'image/heif', 'image/heic',
@@ -348,7 +349,7 @@ registerClientLogRoutes(api, { wrap, guard, branch });
 // — NHẠY CẢM; pass scopedUserBody + saveBase64Image + AVATAR_UPLOADS_DIR.
 registerSettingsRoutes(api, {
   wrap, guard, guardAny, branch, visibleBranch, actor, scopedUserBody, saveBase64Image,
-  AVATAR_UPLOADS_DIR, CUSTOMER_DISPLAY_UPLOADS_DIR,
+  AVATAR_UPLOADS_DIR, CUSTOMER_DISPLAY_UPLOADS_DIR, BYOD_BANNER_UPLOADS_DIR,
 });
 // Database Management (backup/restore/integrity/reset) — NHẠY CẢM (thao tác huỷ).
 registerDatabaseRoutes(api, { wrap, guardAny, branch });

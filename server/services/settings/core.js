@@ -13,6 +13,7 @@ import { getSellConfig, sanitizeSellConfig } from './sell.js';
 import { getSalesModules, sanitizeSalesModules } from './salesModules.js';
 import { getLoyaltyConfig, sanitizeLoyaltyConfig } from './loyalty.js';
 import { getCustomerDisplayConfig, sanitizeCustomerDisplay } from './customerDisplay.js';
+import { getByodBannerConfig, sanitizeByodBanner } from './byodBanner.js';
 import { getNotificationRoutingConfig, getNotificationSoundConfig } from './notifications.js';
 import { getTaxFilingProfile, sanitizeTaxFilingProfile } from './taxProfile.js';
 import { firebaseConfigured, firebaseConfigurationStatus, setFirebaseServiceAccount } from './firebase.js';
@@ -47,6 +48,7 @@ export function getSettings(branch_id = 'sala') {
   out.notification_routing_config = getNotificationRoutingConfig(branch_id);
   out.tax_filing_profile = getTaxFilingProfile(branch_id);
   out.customer_display = getCustomerDisplayConfig(branch_id);
+  out.byod_banner = getByodBannerConfig(branch_id);
   out.loyalty_config = getLoyaltyConfig(branch_id);
   out.retail_config = getRetailConfig(branch_id);
   out.sell_config = getSellConfig(branch_id);
@@ -94,6 +96,9 @@ export function updateSettings(body = {}, branch_id = 'sala') {
   }
   if (body.customer_display !== undefined) {
     next.customer_display = sanitizeCustomerDisplay(body.customer_display);
+  }
+  if (body.byod_banner !== undefined) {
+    next.byod_banner = sanitizeByodBanner(body.byod_banner);
   }
   if (body.loyalty_config !== undefined) {
     next.loyalty_config = sanitizeLoyaltyConfig(body.loyalty_config);

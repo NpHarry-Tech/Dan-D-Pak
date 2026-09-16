@@ -14,6 +14,7 @@
 //    settings/retail.js          — Kho & bảng giá cho bán retail
 //    settings/loyalty.js         — Tích điểm, hạng thành viên
 //    settings/customerDisplay.js — Màn hình phụ hướng về khách
+//    settings/byodBanner.js      — Banner đầu menu BYOD (khách tự gọi món)
 //    settings/notifications.js   — Âm báo & định tuyến thông báo
 //    settings/taxProfile.js      — Hồ sơ khai thuế
 //    settings/firebase.js        — Khoá service-account FCM (mã hoá)
@@ -51,6 +52,8 @@ export {
 export { getLoyaltyConfig } from './settings/loyalty.js';
 
 export { getCustomerDisplayConfig } from './settings/customerDisplay.js';
+
+export { getByodBannerConfig } from './settings/byodBanner.js';
 
 export {
   getNotificationSoundConfig,

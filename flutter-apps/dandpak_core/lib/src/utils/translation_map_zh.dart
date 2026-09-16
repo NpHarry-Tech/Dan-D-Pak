@@ -102,6 +102,21 @@ const Map<String, String> viToZhMap = {
   '3. No thu thập thông tin cá nhân':
       '3. 不收集个人信息',
   '30 giây': '30 秒',
+  '4 giây': '4 秒',
+  '5 giây': '5 秒',
+  '8 giây': '8 秒',
+  '10 giây': '10 秒',
+  'Hiển thị khách hàng': '顾客显示屏',
+  'Màn thứ 2 hướng khách (desktop) và banner Menu BYOD.':
+      '面向顾客的第二屏幕（桌面端）以及 BYOD 菜单横幅。',
+  'Đã lưu hiển thị khách hàng': '顾客显示屏设置已保存',
+  'BYOD — Banner thực đơn': 'BYOD — 菜单横幅',
+  'Dải ảnh chạy đầu trang Menu khi khách tự gọi món bằng điện thoại (quét QR trên bàn).':
+      '顾客用手机自助点餐（扫描桌上二维码）时，菜单页顶部滚动显示的图片。',
+  'Hiện banner trên trang Menu BYOD': '在 BYOD 菜单页显示横幅',
+  'Chưa có ảnh — banner sẽ ẩn trên trang Menu.':
+      '暂无图片——横幅将在菜单页隐藏。',
+  'Tối đa 8 ảnh': '最多 8 张图片',
   '4. Contacts & Hỗ trợ': '4. 联系方式与支持',
   '4. Contacts hỗ trợ': '4. 联系支持',
   '5 năm gần nhất': '最近 5 年',
