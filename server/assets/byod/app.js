@@ -259,7 +259,10 @@ function renderHeader() {
     <span class="status-pill ${busy ? 'serving' : 'free'}"><span class="status-dot ${busy ? 'pulse' : ''}"></span>${esc(busy ? t(state.lang, 'serving') : t(state.lang, 'tableFree'))}</span>`;
 }
 
-const STAFF_CALL_BOTTOM = { welcome: '110px', menu: '108px', detail: '150px', cart: '122px' };
+// Clears each screen's own sticky/fixed footer with margin — recompute if a
+// footer's own height changes (note-row + add-row on detail, 1-2 buttons on
+// welcome depending on whether the guest already has cart/orders).
+const STAFF_CALL_BOTTOM = { welcome: '175px', menu: '108px', detail: '200px', cart: '122px' };
 function renderStaffCallButton() {
   const btn = $('#btn-staff-call');
   if (!state.data) { btn.classList.add('hidden'); return; }
@@ -334,6 +337,34 @@ function renderWelcome() {
 }
 
 // ---------------------------------------------------------------------------
+// Banner quảng cáo đầu menu (Cài đặt → Hiển thị khách hàng → BYOD). Xoay bằng
+// cách CHỈNH TRỰC TIẾP transform/dot trên node đã có, không gọi lại render() —
+// tránh việc cứ vài giây lại rebuild toàn bộ lưới món (mất vị trí cuộn, giật
+// UI), đúng nguyên nhân đã sửa cho nút gạt "Hiển thị" ở app Cài đặt.
+let bannerTimer = null;
+function stopBannerRotation() { clearInterval(bannerTimer); bannerTimer = null; }
+function bannerHtml(banner) {
+  const images = banner?.enabled ? (banner.images || []) : [];
+  if (!images.length) return '';
+  const slides = images.map(src => `<div class="menu-banner-slide" style="width:${100 / images.length}%"><img src="${attr(src)}" alt="" loading="lazy"></div>`).join('');
+  const dots = images.length > 1 ? `<div class="menu-banner-dots">${images.map((_, i) => `<i class="${i === 0 ? 'active' : ''}"></i>`).join('')}</div>` : '';
+  return `<div class="menu-banner"><div class="menu-banner-track" id="menu-banner-track" style="width:${images.length * 100}%">${slides}</div>${dots}</div>`;
+}
+function startBannerRotation(banner) {
+  stopBannerRotation();
+  const images = banner?.enabled ? (banner.images || []) : [];
+  if (images.length < 2) return;
+  let i = 0;
+  const seconds = Math.max(3, Math.min(30, Number(banner.secondsPerImage) || 5));
+  bannerTimer = setInterval(() => {
+    const track = document.getElementById('menu-banner-track');
+    if (!track || state.screen !== 'menu') { stopBannerRotation(); return; }
+    i = (i + 1) % images.length;
+    track.style.transform = `translateX(-${i * (100 / images.length)}%)`;
+    $$('.menu-banner-dots i').forEach((dot, idx) => dot.classList.toggle('active', idx === i));
+  }, seconds * 1000);
+}
+
 function renderMenu() {
   const d = state.data;
   const cats = Array.isArray(d.categories) ? d.categories : [];
@@ -364,6 +395,7 @@ function renderMenu() {
   }).join('') : `<div class="menu-empty">${esc(t(state.lang, 'searchEmpty'))}</div>`;
 
   $('#screen-menu').innerHTML = `
+    ${bannerHtml(d.banner)}
     <div class="menu-cats"><div class="menu-cats-row">${catsHtml}</div></div>
     <div class="menu-heading"><span class="title">${esc((catChips.find(c => c.id === state.category) || catChips[0]).name)}</span><span class="count">${filtered.length} ${esc(t(state.lang, 'items'))}</span></div>
     <div class="menu-grid">${gridHtml}</div>
@@ -372,6 +404,7 @@ function renderMenu() {
       <button type="button" class="pill-btn back" data-act="go-welcome" aria-label="${attr(t(state.lang, 'back'))}">${icon('back', 20)}</button>
       <button type="button" class="pill-btn search-bubble" data-act="open-search">${icon('search', 18, 'style="color:#677084;flex:none"')}<span class="q ${state.search ? 'filled' : ''}">${esc(state.search || t(state.lang, 'searchPlaceholder'))}</span></button>
     </div>`;
+  startBannerRotation(d.banner);
 }
 
 // ---------------------------------------------------------------------------
@@ -482,7 +515,10 @@ function renderDetail() {
   const unit = detailUnitPrice(item, d);
 
   $('#screen-detail').innerHTML = `
-    <div class="detail-photo">${item.image ? `<img src="${attr(item.image)}" alt="">` : `<span class="ph-icon">${icon('dish', 56, 'style="color:#DCD2C0"')}</span>`}</div>
+    <div class="detail-photo">
+      <button type="button" class="detail-back-btn" data-act="go-menu" aria-label="${attr(t(state.lang, 'back'))}">${icon('back', 19)}</button>
+      ${item.image ? `<img src="${attr(item.image)}" alt="">` : `<span class="ph-icon">${icon('dish', 56, 'style="color:#DCD2C0"')}</span>`}
+    </div>
     <div class="detail-head">
       <div class="detail-title">${esc(item.name)}</div>
       ${item.description ? `<div class="detail-desc">${esc(item.description)}</div>` : ''}
@@ -499,12 +535,14 @@ function renderDetail() {
     <div class="detail-bottom">
       <button type="button" class="detail-note-row" data-act="open-item-note">${icon('note', 17, 'style="color:#9AA3B2;flex:none"')}<span class="${d.itemNote ? 'filled' : ''}">${esc(d.itemNote || t(state.lang, 'itemNoteEmpty'))}</span></button>
       <div class="detail-add-row">
-        <div class="stepper">
-          <button type="button" data-act="detail-qty" data-delta="-1" aria-label="${attr(t(state.lang, 'remove'))}" ${d.qty <= 1 ? 'disabled' : ''}>${icon('minus', 14)}</button>
-          <span class="qty">${d.qty}</span>
-          <button type="button" data-act="detail-qty" data-delta="1" aria-label="+">${icon('plus', 14)}</button>
+        <div class="detail-add-top">
+          <div class="stepper">
+            <button type="button" data-act="detail-qty" data-delta="-1" aria-label="${attr(t(state.lang, 'remove'))}" ${d.qty <= 1 ? 'disabled' : ''}>${icon('minus', 14)}</button>
+            <span class="qty">${d.qty}</span>
+            <button type="button" data-act="detail-qty" data-delta="1" aria-label="+">${icon('plus', 14)}</button>
+          </div>
+          <div class="detail-total"><div class="lbl">${esc(t(state.lang, 'total'))}</div><div class="val">${esc(money(unit * d.qty))}</div></div>
         </div>
-        <div class="detail-total"><div class="lbl">${esc(t(state.lang, 'total'))}</div><div class="val">${esc(money(unit * d.qty))}</div></div>
         <button type="button" class="btn btn-primary detail-add-btn" data-act="add-to-cart" ${(!valid || !item.can_order || state.busyAdd) ? 'disabled' : ''}>${icon('cart', 18, 'style="color:#fff"')}${esc(t(state.lang, 'addToCart'))}</button>
       </div>
     </div>`;

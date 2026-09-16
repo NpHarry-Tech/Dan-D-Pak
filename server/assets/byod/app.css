@@ -54,7 +54,7 @@ img{ max-width:100%; display:block; }
 }
 
 /* ---------- app shell ---------- */
-#app{ max-width:680px; margin:0 auto; min-height:100vh; display:flex; flex-direction:column; background:var(--surface-base); position:relative; }
+#app{ max-width:680px; margin:0 auto; min-height:100vh; min-height:100dvh; display:flex; flex-direction:column; background:var(--surface-base); position:relative; }
 body.has-offline #app{ padding-top:40px; }
 body.tablet-portrait #app,body.desktop #app{ max-width:680px; box-shadow:0 0 0 1px var(--border); }
 body.desktop #app{ max-width:720px; }
@@ -83,10 +83,16 @@ header#app-header{ flex:none; position:sticky; top:0; z-index:20; background:#ff
 .status-dot.pulse{ animation:ddPulse 2s infinite; }
 
 main#screens{ flex:1; min-height:0; position:relative; }
-.screen{ padding:0; }
+/* Each screen must be AT LEAST as tall as the visible area (main's box, which
+   flexbox already sizes to exactly fill the viewport under the header) — a
+   plain block child shrinks to its own content by default, so short content
+   (empty cart, few option groups) left sticky footers stuck mid-page with a
+   blank gap below instead of the true screen bottom. min-height:100% (not a
+   fixed height) still lets long content grow/scroll normally. */
+.screen{ padding:0; min-height:100%; }
 
 /* ---------- welcome ---------- */
-#screen-welcome{ display:flex; flex-direction:column; min-height:calc(100vh - 0px); padding-bottom:0; }
+#screen-welcome{ display:flex; flex-direction:column; padding-bottom:0; }
 .welcome-top{ padding:calc(10px + var(--safe-t)) 14px 0; display:flex; justify-content:flex-end; }
 .welcome-lang{ height:40px; padding:0 14px; border-radius:20px; border:1px solid var(--border); background:#fff; display:flex; align-items:center; gap:7px; }
 .welcome-lang span{ font:700 12.5px/1 'Be Vietnam Pro',sans-serif; }
@@ -111,6 +117,13 @@ main#screens{ flex:1; min-height:0; position:relative; }
 .btn-sm{ height:44px; padding:0 16px; font-size:13px; }
 
 /* ---------- menu screen ---------- */
+.menu-banner{ margin:12px 14px 0; position:relative; border-radius:var(--r-card); overflow:hidden; background:var(--surface-image); height:132px; }
+.menu-banner-track{ display:flex; height:100%; transition:transform .55s cubic-bezier(.4,0,.2,1); }
+.menu-banner-slide{ flex:none; height:100%; }
+.menu-banner-slide img{ width:100%; height:100%; object-fit:cover; display:block; }
+.menu-banner-dots{ position:absolute; left:0; right:0; bottom:8px; display:flex; align-items:center; justify-content:center; gap:5px; pointer-events:none; }
+.menu-banner-dots i{ width:6px; height:6px; border-radius:3px; background:rgba(255,255,255,.55); transition:all .3s; }
+.menu-banner-dots i.active{ width:18px; background:#fff; }
 .menu-cats{ overflow-x:auto; overflow-y:hidden; scrollbar-width:none; padding:14px 14px 4px; }
 .menu-cats::-webkit-scrollbar{ display:none; }
 .menu-cats-row{ display:flex; gap:8px; width:max-content; }
@@ -148,6 +161,12 @@ main#screens{ flex:1; min-height:0; position:relative; }
 .detail-photo{ position:relative; width:100%; height:232px; background:var(--surface-image); display:flex; align-items:center; justify-content:center; overflow:hidden; }
 .detail-photo img{ width:100%; height:100%; object-fit:cover; }
 .detail-photo .ph-icon{ font-size:56px; opacity:.5; }
+.detail-back-btn{
+  position:absolute; left:12px; top:calc(12px + var(--safe-t)); z-index:2; width:40px; height:40px; border-radius:20px; border:none;
+  background:rgba(255,255,255,.92); backdrop-filter:blur(10px); display:flex; align-items:center; justify-content:center; padding:0;
+  box-shadow:0 4px 14px -6px rgba(26,34,48,.4);
+}
+.detail-back-btn:active{ transform:scale(.94); }
 .detail-head{ padding:16px 16px 0; }
 .detail-title{ font:800 20px/1.3 'Be Vietnam Pro',sans-serif; text-wrap:pretty; }
 .detail-sub{ margin:3px 0 0; font:500 12.5px/1.45 'Be Vietnam Pro',sans-serif; color:var(--ink-faint); }
@@ -184,7 +203,8 @@ main#screens{ flex:1; min-height:0; position:relative; }
 .detail-note-row{ padding:11px 14px; border-bottom:1px solid #F3EFE8; display:flex; align-items:center; gap:9px; width:100%; background:none; border-left:none; border-right:none; border-top:none; text-align:left; }
 .detail-note-row span{ flex:1; min-width:0; font:500 13px/1.3 'Be Vietnam Pro',sans-serif; color:var(--ink-faint); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .detail-note-row span.filled{ color:var(--ink); }
-.detail-add-row{ padding:11px 14px calc(20px + var(--safe-b)); display:flex; align-items:center; gap:11px; }
+.detail-add-row{ padding:11px 14px calc(14px + var(--safe-b)); display:flex; flex-direction:column; gap:10px; }
+.detail-add-top{ display:flex; align-items:center; gap:11px; }
 .stepper{ flex:none; display:flex; align-items:center; border:1px solid var(--border-input); border-radius:13px; overflow:hidden; }
 .stepper button{ width:38px; height:44px; border:none; background:var(--surface-base); display:flex; align-items:center; justify-content:center; padding:0; }
 .stepper button:disabled{ opacity:.4; }
@@ -192,7 +212,7 @@ main#screens{ flex:1; min-height:0; position:relative; }
 .detail-total{ flex:1; min-width:0; }
 .detail-total .lbl{ font:500 10.5px/1.2 'Be Vietnam Pro',sans-serif; color:var(--ink-faint); }
 .detail-total .val{ font:800 18px/1.25 'Be Vietnam Pro',sans-serif; color:var(--accent); }
-.detail-add-btn{ flex:none; height:50px; padding:0 20px; }
+.detail-add-btn{ width:100%; height:50px; }
 
 /* ---------- cart screen ---------- */
 #screen-cart{ padding-bottom:0; }
