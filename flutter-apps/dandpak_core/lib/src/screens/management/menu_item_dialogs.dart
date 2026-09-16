@@ -437,22 +437,6 @@ class _ItemFormDialogState extends State<_ItemFormDialog> {
                           onChanged: (v) =>
                               setState(() => _availableDineIn = v),
                         ),
-                        SwitchListTile(
-                          contentPadding: EdgeInsets.zero,
-                          value: _availableTakeaway,
-                          activeThumbColor: DanColors.brand,
-                          title: Text(t('Bán mang đi'),
-                              style: TextStyle(
-                                  fontSize: 13.5, fontWeight: FontWeight.w700)),
-                          subtitle: Text(
-                              t('Hiện lưu trạng thái để tham khảo/báo cáo — hệ '
-                                  'thống chưa có luồng đặt món "mang về" riêng '
-                                  'để tự chặn bán theo kênh.'),
-                              style: TextStyle(
-                                  fontSize: 11.5, color: DanColors.faint)),
-                          onChanged: (v) =>
-                              setState(() => _availableTakeaway = v),
-                        ),
                       ],
                     ),
                   ),
