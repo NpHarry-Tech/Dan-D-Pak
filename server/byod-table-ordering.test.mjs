@@ -140,6 +140,29 @@ test('gọi nhân viên từ BYOD dùng ĐÚNG bảng/sự kiện của Tablet S
   db.prepare(`UPDATE staff_calls SET status='done' WHERE table_id=?`).run(table.id);
 });
 
+test('bàn bỏ hoang quá lâu: thiết bị cũ bị buộc quét lại QR, thiết bị MỚI vẫn vào bình thường', () => {
+  const idleTable = Orders.createTable({ branch_id: 'sala', zone: 'Tầng trệt', code: 'BY02', seats: 4 });
+  const idleQr = Byod.getTableQr(idleTable.id, 'sala');
+  const deviceOld = 'device_old_1234567890123456789';
+  const deviceNew = 'device_new_1234567890123456789';
+
+  Byod.bootstrap(idleQr.token, deviceOld, 'iPhone'); // tạo phiên + thiết bị "cũ"
+  const session = db.prepare(`SELECT * FROM byod_sessions WHERE table_id=? AND status='active'`).get(idleTable.id);
+  // Giả lập bàn đã bỏ hoang > SESSION_IDLE_TIMEOUT_MINUTES (không ai thao tác).
+  db.prepare(`UPDATE byod_sessions SET last_active_at=datetime('now','-4 hours') WHERE id=?`).run(session.id);
+
+  // Thiết bị CŨ quay lại → phải bị chặn, buộc quét lại QR (không được lặng lẽ tiếp tục).
+  assert.throws(() => Byod.bootstrap(idleQr.token, deviceOld, 'iPhone'),
+    (e) => e.code === 'BYOD_SESSION_CLOSED', 'thiết bị từng dùng bàn phải bị buộc quét lại QR khi bàn đã bỏ hoang quá lâu');
+
+  // Thiết bị MỚI (khách mới quét QR) không hề liên quan tới phiên cũ → vào bình thường.
+  const freshView = Byod.bootstrap(idleQr.token, deviceNew, 'Android');
+  assert.deepEqual(freshView.cart.mine, []);
+
+  // Phiên cũ đã đóng, không còn 'active' — quán không bị lộ dữ liệu bàn cũ cho ai.
+  assert.equal(db.prepare(`SELECT status FROM byod_sessions WHERE id=?`).get(session.id).status, 'timeout');
+});
+
 test('regenerate và vô hiệu hóa thu hồi token/đóng phiên cũ', () => {
   const oldToken = qr.token;
   qr = Byod.regenerateTableQr(table.id, 'sala', 'tester');

@@ -10,6 +10,11 @@ const PUBLIC_ORIGIN = String(process.env.BYOD_PUBLIC_ORIGIN || 'https://dandpakp
 const DEVICE_RE = /^[A-Za-z0-9_-]{20,128}$/;
 const TOKEN_RE = /^[A-Za-z0-9_-]{32,128}$/;
 const ACTIVE_ORDER = new Set(['open', 'partially_paid']);
+// Bàn không ai thao tác quá lâu = coi như khách đã rời quán — phiên cũ hết hạn.
+// Không có mốc này, link BYOD (QR mỗi bàn là CỐ ĐỊNH, không đổi mỗi lượt khách)
+// còn hoạt động MÃI MÃI: khách rời quán, về nhà mở lại link cũ trên máy vẫn thao
+// tác được bàn như đang ngồi tại chỗ — xem context() bên dưới.
+const SESSION_IDLE_TIMEOUT_MINUTES = 180;
 
 function fail(message, status = 400, code = 'BYOD_INVALID') {
   throw Object.assign(new Error(message), { status, code });
@@ -176,16 +181,28 @@ function deviceFor(session, deviceKey, hint = '') {
 function context(rawToken, deviceKey, hint = '') {
   const qr = resolveQr(rawToken);
   const cleanKey = cleanDeviceKey(deviceKey);
+  const keyHash = hash(cleanKey);
   const recentPaid = db.prepare(`SELECT s.*,d.id device_id,d.friendly_name,d.device_key_hash,d.created_at device_created_at,d.last_active_at device_last_active_at
     FROM byod_sessions s JOIN byod_devices d ON d.session_id=s.id
     WHERE s.qr_id=? AND s.table_id=? AND s.status='paid' AND d.device_key_hash=?
       AND s.closed_at>=datetime('now','-10 minutes') ORDER BY s.closed_at DESC LIMIT 1`)
-    .get(qr.id, qr.table_id, hash(cleanKey));
+    .get(qr.id, qr.table_id, keyHash);
   if (recentPaid) {
     return { qr, session: recentPaid, device: { id: recentPaid.device_id,
       session_id: recentPaid.id, friendly_name: recentPaid.friendly_name,
       device_key_hash: recentPaid.device_key_hash, created_at: recentPaid.device_created_at,
       last_active_at: recentPaid.device_last_active_at } };
+  }
+  // Bàn bỏ hoang quá SESSION_IDLE_TIMEOUT_MINUTES → đóng phiên cũ TRƯỚC khi phục
+  // vụ request này, để không ai (cũ lẫn mới) lặng lẽ dùng chung 1 phiên đã "nguội".
+  // CHỈ báo lỗi rõ cho ĐÚNG thiết bị từng thuộc phiên đó — thiết bị khác (khách
+  // mới quét QR) vẫn vào bình thường, không bị ảnh hưởng bởi việc dọn dẹp này.
+  const stale = db.prepare(`SELECT id FROM byod_sessions WHERE qr_id=? AND table_id=? AND status='active'
+    AND last_active_at<datetime('now','-${SESSION_IDLE_TIMEOUT_MINUTES} minutes')`).get(qr.id, qr.table_id);
+  if (stale) {
+    const wasThisDevice = db.prepare(`SELECT 1 FROM byod_devices WHERE session_id=? AND device_key_hash=?`).get(stale.id, keyHash);
+    closeTableSessions(qr.table_id, qr.branch_id, 'timeout');
+    if (wasThisDevice) fail('Phiên gọi món của bàn đã kết thúc do không hoạt động lâu. Vui lòng quét lại mã QR trên bàn.', 410, 'BYOD_SESSION_CLOSED');
   }
   const session = sessionFor(qr);
   const device = deviceFor(session, cleanKey, hint);
