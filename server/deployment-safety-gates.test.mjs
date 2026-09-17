@@ -86,6 +86,9 @@ test('live backup is decrypt-restored, integrity-checked and hash-verified befor
   assert.match(liveBackup, /HOST_ENCRYPTED_SHA/);
   assert.match(liveBackup, /trap cleanup EXIT/);
   assert.match(liveBackup, /rm -f "\$HOST_BACKUP"/);
+  assert.match(liveBackup, /RETENTION_DAYS="\$\{BACKUP_RETENTION_DAYS:-30\}"/);
+  assert.match(liveBackup, /declare -A SEEN_DAYS/);
+  assert.match(liveBackup, /BACKUPS_PRUNED=/);
 });
 
 test('immutable server image builder gates source, tests, labels and exported hash', () => {

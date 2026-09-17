@@ -7,6 +7,7 @@ PLAIN="/app/server-data/store_${TIMESTAMP}.db"
 ENCRYPTED="${PLAIN}.enc"
 VERIFY="/app/server-data/store_${TIMESTAMP}.verify.db"
 HOST_BACKUP="${BACKUP_PATH}/store_${TIMESTAMP}.db.enc"
+RETENTION_DAYS="${BACKUP_RETENTION_DAYS:-30}"
 mkdir -p "$BACKUP_PATH"
 
 echo "=== Dan-D-Pak encrypted database backup ==="
@@ -51,6 +52,28 @@ if [ -n "$(docker compose ps -q app)" ]; then
   echo "Encrypted backup verified: $HOST_BACKUP"
   echo "BACKUP_SHA256=$HOST_ENCRYPTED_SHA"
   echo "RESTORED_DB_SHA256=$VERIFY_SHA"
+
+  # Deployment/evidence runs may create several identical recovery points in
+  # one day. Keep the newest verified copy per UTC day and retain 30 days by
+  # default. Special/manual backups use other names and are never touched.
+  PRUNED=0
+  declare -A SEEN_DAYS=()
+  while IFS= read -r FILE_NAME; do
+    DAY="${FILE_NAME:6:8}"
+    if [ -n "${SEEN_DAYS[$DAY]:-}" ]; then
+      rm -f -- "${BACKUP_PATH}/${FILE_NAME}"
+      PRUNED=$((PRUNED + 1))
+    else
+      SEEN_DAYS[$DAY]=1
+    fi
+  done < <(find "$BACKUP_PATH" -maxdepth 1 -type f \
+    -name 'store_????????_??????.db.enc' -printf '%f\n' | sort -r)
+  while IFS= read -r OLD_BACKUP; do
+    rm -f -- "$OLD_BACKUP"
+    PRUNED=$((PRUNED + 1))
+  done < <(find "$BACKUP_PATH" -maxdepth 1 -type f \
+    -name 'store_????????_??????.db.enc' -mtime "+${RETENTION_DAYS}" -print)
+  echo "BACKUPS_PRUNED=$PRUNED"
 else
   echo "App container is not running; backup skipped." >&2
   exit 1
