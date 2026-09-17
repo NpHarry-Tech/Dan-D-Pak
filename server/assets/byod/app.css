@@ -61,10 +61,13 @@ body.desktop #app{ max-width:720px; }
 
 header#app-header{ flex:none; position:sticky; top:0; z-index:20; background:#fff; box-shadow:0 1px 0 rgba(26,34,48,.07); padding-top:var(--safe-t); }
 .header-row{ height:56px; display:grid; grid-template-columns:44px 1fr 44px; align-items:center; gap:8px; padding:0 12px; }
-.icon-btn{ width:44px; height:44px; border-radius:22px; border:1px solid var(--border); background:var(--surface-base); display:flex; align-items:center; justify-content:center; padding:0; transition:transform .1s; }
+.icon-btn{ width:44px; height:44px; border-radius:22px; border:1px solid var(--border); background:var(--surface-base); display:flex; align-items:center; justify-content:center; padding:0; overflow:hidden; transition:transform .1s; }
 .icon-btn:active{ transform:scale(.95); }
 .icon-btn svg{ display:block; }
 .lang-flag{ width:22px; height:22px; border-radius:50%; object-fit:cover; display:block; flex:none; }
+/* Nút tròn header (44px) — cờ phải LẤP ĐẦY khung, không lơ lửng bé tí giữa
+   vòng tròn to; chỉ chừa đúng viền 1px của .icon-btn. */
+.icon-btn .lang-flag{ width:100%; height:100%; border-radius:0; }
 .lang-flag-lg{ width:36px; height:36px; }
 .brand-logo{ height:32px; width:auto; display:block; }
 .cart-btn{ position:relative; }

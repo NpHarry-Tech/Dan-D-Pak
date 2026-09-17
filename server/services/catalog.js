@@ -162,7 +162,9 @@ export function normalizeMenuItem(row, { forCustomer = false, includeRecipe = fa
   const priceIncludesVat = row.price_includes_vat !== 0;
   const vatRate = Number(row.vat_rate) || 0;
   // NHÓM TÙY CHỌN hợp nhất (size/đá + topping + combo) — nguồn chính cho Self-Order.
-  const optionGroups = enrichOptionGroups(row.option_groups_json, row.branch_id, vatRate, priceIncludesVat);
+  // Dịch tên option combo CHỈ cho khách (forCustomer) — quản lý luôn thấy tên gốc.
+  const optionGroups = enrichOptionGroups(row.option_groups_json, row.branch_id, vatRate, priceIncludesVat,
+    forCustomer ? normalizeMenuLang(lang) : 'vi');
   // Món ăn kèm & Extra — flat list riêng (không nhóm/không min-max), khách chọn
   // độc lập từng món trên Self-Order (xem ADDON_MOD_GROUP dưới đây).
   const addons = enrichAddons(row.addons_json, row.branch_id, vatRate, priceIncludesVat);
@@ -338,20 +340,28 @@ export function normalizeAddons(addons) {
 }
 
 function refAvailability(ref_item_id, branch_id = 'sala') {
-  const r = db.prepare(`SELECT name,emoji,image,price,available,hidden,deleted_at,schedule_json FROM menu_items WHERE id=? AND branch_id=?`).get(ref_item_id, branch_id);
+  const r = db.prepare(`SELECT name,emoji,image,price,available,hidden,deleted_at,schedule_json,translations_json FROM menu_items WHERE id=? AND branch_id=?`).get(ref_item_id, branch_id);
   if (!r) return { exists: false, available: false };
   const sched = safeJson(r.schedule_json, { mode: 'always' });
   // Add-on availability ignores `hidden`: an item can be hidden from the main menu
   // yet still sellable as an add-on. Only the green toggle (available), schedule,
   // and deletion gate it. Turn off the toggle to make the add-on show "Tạm hết".
   const available = !!r.available && !r.deleted_at && isScheduleAvailable(sched);
-  return { exists: true, available, name: r.name, emoji: r.emoji, image: r.image, price: r.price };
+  return { exists: true, available, name: r.name, emoji: r.emoji, image: r.image, price: r.price,
+    translations: normalizeMenuTranslations(r.translations_json, r) };
 }
 
 // Returns add-ons with live availability + effective price resolved.
 // Đọc: nhóm tùy chọn + resolve option combo (ref_item_id) lấy tên/giá/còn-hàng,
 // kèm sale_price (đã gồm VAT của món) để đặt món tính đúng tiền.
-function enrichOptionGroups(raw, branch_id, vatRate, priceIncludesVat) {
+//
+// `lang` (khi ≠ 'vi'): tên option/nhóm tự gõ trong option_groups_json KHÔNG có
+// bản dịch riêng (không giống name/description của món chính) — nếu option có
+// ref_item_id, ưu tiên bản dịch CỦA MÓN ĐƯỢC TRỎ TỚI (nó vốn đã có translations_json
+// đầy đủ) thay vì luôn hiện tên tiếng Việt admin gõ tay, kể cả khi khách đã đổi
+// ngôn ngữ. Không có ref_item_id (option gõ tay không link món) thì đành chịu —
+// không có nguồn dữ liệu nào để dịch.
+function enrichOptionGroups(raw, branch_id, vatRate, priceIncludesVat, lang = 'vi') {
   const groups = safeJson(raw, []) || [];
   return (Array.isArray(groups) ? groups : []).map(g => ({
     key: String(g.key || ''),
@@ -381,6 +391,8 @@ function enrichOptionGroups(raw, branch_id, vatRate, priceIncludesVat) {
           if (!out.name) out.name = ref.name;
           if (!out.emoji) out.emoji = ref.emoji;
           if (out.type !== 'free' && !out.price) out.price = ref.price;
+          const translated = lang !== 'vi' ? ref.translations?.[lang]?.name : '';
+          if (translated) out.name = translated;
         }
       }
       out.sale_price = salePrice(out.price, vatRate, priceIncludesVat);

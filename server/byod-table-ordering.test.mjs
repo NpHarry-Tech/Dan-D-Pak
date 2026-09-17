@@ -24,8 +24,8 @@ db.prepare(`INSERT INTO menu_items(id,branch_id,category_id,name,price,self_orde
   VALUES('byod_hidden','sala','byod_cat','Món nhân viên',1,1)`).run();
 // Thành phần combo "(CB) ..." — self_order_hidden=1 vì KHÔNG được đặt riêng lẻ,
 // nhưng PHẢI vẫn chọn được như một lựa chọn combo của món khác (byod_combo).
-db.prepare(`INSERT INTO menu_items(id,branch_id,category_id,name,price,self_order_hidden)
-  VALUES('byod_combo_part','sala','byod_cat','(CB) Salad kèm',0,1)`).run();
+db.prepare(`INSERT INTO menu_items(id,branch_id,category_id,name,price,self_order_hidden,translations_json)
+  VALUES('byod_combo_part','sala','byod_cat','(CB) Salad kèm',0,1,?)`).run(JSON.stringify({ en: { name: 'Side Salad' } }));
 db.prepare(`INSERT INTO menu_items(id,branch_id,category_id,name,price,option_groups_json)
   VALUES('byod_combo','sala','byod_cat','Combo trưa',150000,?)`).run(JSON.stringify([
     { name: 'Khai vị', mode: 'combo', min: 0, max: 1, options: [{ ref_item_id: 'byod_combo_part', price: 0 }] },
@@ -75,6 +75,16 @@ test('option combo trỏ tới món self_order_hidden VẪN chọn được (ch�
   const group = combo.option_groups.find(g => g.mode === 'combo');
   assert.equal(group.options.length, 1, 'option combo trỏ tới món self_order_hidden phải còn trong danh sách chọn');
   assert.equal(group.options[0].ref_item_id, 'byod_combo_part');
+});
+
+test('tên option combo trỏ tới món có translations_json phải đổi theo lang khách chọn (không kẹt tiếng Việt)', () => {
+  const viView = Byod.bootstrap(qr.token, deviceA, 'iPhone', 'vi');
+  const viOption = viView.menu.find(i => i.id === 'byod_combo').option_groups[0].options[0];
+  assert.equal(viOption.name, '(CB) Salad kèm', 'vi vẫn giữ tên gốc admin gõ');
+
+  const enView = Byod.bootstrap(qr.token, deviceA, 'iPhone', 'en');
+  const enOption = enView.menu.find(i => i.id === 'byod_combo').option_groups[0].options[0];
+  assert.equal(enOption.name, 'Side Salad', 'en phải lấy bản dịch của món được trỏ tới, không phải tên tiếng Việt admin gõ');
 });
 
 test('hai thiết bị có giỏ riêng/chung; không sửa được giỏ thiết bị khác; note chống HTML', () => {
