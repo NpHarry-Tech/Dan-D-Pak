@@ -202,7 +202,9 @@ function context(rawToken, deviceKey, hint = '') {
   if (stale) {
     const wasThisDevice = db.prepare(`SELECT 1 FROM byod_devices WHERE session_id=? AND device_key_hash=?`).get(stale.id, keyHash);
     closeTableSessions(qr.table_id, qr.branch_id, 'timeout');
-    if (wasThisDevice) fail('Phiên gọi món của bàn đã kết thúc do không hoạt động lâu. Vui lòng quét lại mã QR trên bàn.', 410, 'BYOD_SESSION_CLOSED');
+    // Mã lỗi RIÊNG (khác BYOD_SESSION_CLOSED do nhân viên đóng bàn) để frontend
+    // hiện đúng màn "quét lại QR" (S6.6) thay vì màn chung "nhờ nhân viên mở lại bàn".
+    if (wasThisDevice) fail('Phiên gọi món của bàn đã kết thúc do không hoạt động lâu. Vui lòng quét lại mã QR trên bàn.', 410, 'BYOD_SESSION_IDLE_TIMEOUT');
   }
   const session = sessionFor(qr);
   const device = deviceFor(session, cleanKey, hint);

@@ -61,11 +61,12 @@ test('errorMessage() có bản dịch cho MỌI mã lỗi BYOD_* mà server/serv
   }
 });
 
-test('isFullPageError() chỉ chặn toàn trang đúng 4 mã QR/chi nhánh — không chặn nhầm lỗi giỏ hàng', () => {
+test('isFullPageError() chỉ chặn toàn trang đúng 5 mã QR/chi nhánh/hết phiên do rời quán — không chặn nhầm lỗi giỏ hàng', () => {
   assert.ok(Lib.isFullPageError('BYOD_QR_INVALID'));
   assert.ok(Lib.isFullPageError('BYOD_QR_REVOKED'));
   assert.ok(Lib.isFullPageError('BYOD_BRANCH_INACTIVE'));
   assert.ok(Lib.isFullPageError('BYOD_TABLE_NOT_FOUND'));
+  assert.ok(Lib.isFullPageError('BYOD_SESSION_IDLE_TIMEOUT'));
   assert.ok(!Lib.isFullPageError('BYOD_ITEM_UNAVAILABLE'));
   assert.ok(!Lib.isFullPageError('BYOD_SESSION_CLOSED'));
   assert.ok(!Lib.isFullPageError(undefined));

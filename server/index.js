@@ -370,6 +370,9 @@ app.use('/api', apiNotFound);
 app.use('/byod-assets', express.static(join(__dirname, 'assets', 'byod'), bundledAssetStaticOptions));
 app.get('/BYOD/:token', (req, res) => {
   res.set('Cache-Control', 'no-store');
+  // Trang khách duy nhất cần camera (màn quét lại QR khi phiên hết hạn) — mở
+  // riêng cho ĐÚNG route này, giữ camera=() khoá mặc định ở mọi route khác.
+  res.setHeader('Permissions-Policy', 'geolocation=(), microphone=(), camera=(self)');
   res.sendFile(join(__dirname, 'assets', 'byod', 'index.html'));
 });
 app.use('/uploads', express.static(storagePath('uploads'), immutableUploadStaticOptions));

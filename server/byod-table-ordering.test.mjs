@@ -153,7 +153,7 @@ test('bàn bỏ hoang quá lâu: thiết bị cũ bị buộc quét lại QR, th
 
   // Thiết bị CŨ quay lại → phải bị chặn, buộc quét lại QR (không được lặng lẽ tiếp tục).
   assert.throws(() => Byod.bootstrap(idleQr.token, deviceOld, 'iPhone'),
-    (e) => e.code === 'BYOD_SESSION_CLOSED', 'thiết bị từng dùng bàn phải bị buộc quét lại QR khi bàn đã bỏ hoang quá lâu');
+    (e) => e.code === 'BYOD_SESSION_IDLE_TIMEOUT', 'thiết bị từng dùng bàn phải bị buộc quét lại QR khi bàn đã bỏ hoang quá lâu');
 
   // Thiết bị MỚI (khách mới quét QR) không hề liên quan tới phiên cũ → vào bình thường.
   const freshView = Byod.bootstrap(idleQr.token, deviceNew, 'Android');

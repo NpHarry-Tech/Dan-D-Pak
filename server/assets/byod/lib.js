@@ -104,6 +104,7 @@ const ERR_KEYS = {
   BYOD_QR_REVOKED: 'errQrInvalid',
   BYOD_BRANCH_INACTIVE: 'errBranchInactive',
   BYOD_SESSION_CLOSED: 'errSessionClosed',
+  BYOD_SESSION_IDLE_TIMEOUT: 'errSessionClosed',
   BYOD_TABLE_NOT_FOUND: 'errQrInvalid',
   BYOD_DEVICE_INVALID: 'errDeviceInvalid',
   BYOD_CART_NOT_FOUND: 'errCartNotFound',
@@ -130,7 +131,8 @@ export function errorMessage(code, fallbackMessage, lang = 'vi') {
 
 export function isFullPageError(code) {
   return code === 'BYOD_QR_INVALID' || code === 'BYOD_QR_REVOKED'
-    || code === 'BYOD_BRANCH_INACTIVE' || code === 'BYOD_TABLE_NOT_FOUND';
+    || code === 'BYOD_BRANCH_INACTIVE' || code === 'BYOD_TABLE_NOT_FOUND'
+    || code === 'BYOD_SESSION_IDLE_TIMEOUT';
 }
 
 // ---------------------------------------------------------------------------
@@ -190,6 +192,14 @@ export const STR = {
     loadingMenu: 'Đang tải thực đơn…', loadingApp: 'Đang mở bàn…',
     memberAddedGeneric: 'Có món mới vừa được thêm vào giỏ chung của bàn.',
     callStaff: 'Gọi nhân viên', callStaffSent: 'Đã gọi nhân viên tới bàn', callStaffAlready: 'Đã gọi nhân viên, đang chờ hỗ trợ',
+    sessionExpiredTitle: 'Phiên gọi món đã kết thúc',
+    sessionExpiredBody: 'Bàn của bạn đã ngừng hoạt động một thời gian nên phiên gọi món đã tự đóng. Vui lòng quét lại mã QR trên bàn để tiếp tục.',
+    rescanQr: 'Quét lại mã QR',
+    qrScanTitle: 'Quét mã QR trên bàn của bạn',
+    qrScanFrameHint: 'Đưa mã QR vào giữa khung',
+    qrScanHint: 'Mã QR dán trên bàn hoặc trên kẹp menu. Vui lòng cho phép truy cập camera khi trình duyệt hỏi.',
+    cameraDeniedTitle: 'Không thể truy cập camera',
+    cameraDenied: 'Vui lòng cho phép quyền camera trong phần cài đặt của trình duyệt, sau đó thử lại.',
   },
   en: {
     area: 'Area', tableWord: 'Table', serving: 'Serving', tableFree: 'Table free',
@@ -243,6 +253,14 @@ export const STR = {
     loadingMenu: 'Loading menu…', loadingApp: 'Opening your table…',
     memberAddedGeneric: 'A new item was just added to the table’s shared cart.',
     callStaff: 'Call staff', callStaffSent: 'Staff has been called to your table', callStaffAlready: 'Staff already called, waiting for help',
+    sessionExpiredTitle: 'Ordering session ended',
+    sessionExpiredBody: 'Your table has been inactive for a while, so the ordering session closed automatically. Please scan the QR code on your table to continue.',
+    rescanQr: 'Scan QR again',
+    qrScanTitle: 'Scan the QR code on your table',
+    qrScanFrameHint: 'Center the QR code in the frame',
+    qrScanHint: 'The code is on your table or the menu clip. Please allow camera access when your browser asks.',
+    cameraDeniedTitle: 'Can’t access the camera',
+    cameraDenied: 'Please allow camera access in your browser settings, then try again.',
   },
   zh: {
     area: '区域', tableWord: '桌号', serving: '服务中', tableFree: '空桌',
@@ -296,6 +314,14 @@ export const STR = {
     loadingMenu: '菜单加载中…', loadingApp: '正在打开桌台…',
     memberAddedGeneric: '有新菜品刚被加入本桌的共享购物车。',
     callStaff: '呼叫服务员', callStaffSent: '已呼叫服务员到您的桌台', callStaffAlready: '已呼叫服务员，正在等待处理',
+    sessionExpiredTitle: '点餐会话已结束',
+    sessionExpiredBody: '您的桌台已闲置一段时间，点餐会话已自动关闭。请重新扫描桌上的二维码以继续点餐。',
+    rescanQr: '重新扫码',
+    qrScanTitle: '扫描您桌上的二维码',
+    qrScanFrameHint: '将二维码对准取景框中间',
+    qrScanHint: '二维码贴在桌上或菜单夹上。浏览器询问时请允许使用摄像头。',
+    cameraDeniedTitle: '无法访问摄像头',
+    cameraDenied: '请在浏览器设置中允许摄像头权限，然后重试。',
   },
   ja: {
     area: 'エリア', tableWord: 'テーブル', serving: 'サービス中', tableFree: '空席',
@@ -349,6 +375,14 @@ export const STR = {
     loadingMenu: 'メニューを読み込み中…', loadingApp: 'テーブルを開いています…',
     memberAddedGeneric: 'テーブルの共有カートに新しい商品が追加されました。',
     callStaff: 'スタッフを呼ぶ', callStaffSent: 'テーブルにスタッフを呼びました', callStaffAlready: 'すでにスタッフを呼んでいます。対応をお待ちください',
+    sessionExpiredTitle: '注文セッションが終了しました',
+    sessionExpiredBody: 'テーブルが一定時間操作されなかったため、注文セッションが自動的に終了しました。続けるにはテーブルのQRコードを再スキャンしてください。',
+    rescanQr: 'QRコードを再スキャン',
+    qrScanTitle: 'テーブルのQRコードをスキャン',
+    qrScanFrameHint: 'QRコードを枠の中央に合わせてください',
+    qrScanHint: 'QRコードはテーブルまたはメニュークリップに貼ってあります。ブラウザが確認したらカメラへのアクセスを許可してください。',
+    cameraDeniedTitle: 'カメラにアクセスできません',
+    cameraDenied: 'ブラウザの設定でカメラへのアクセスを許可してから、もう一度お試しください。',
   },
   ko: {
     area: '구역', tableWord: '테이블', serving: '이용 중', tableFree: '빈 테이블',
@@ -402,6 +436,14 @@ export const STR = {
     loadingMenu: '메뉴를 불러오는 중…', loadingApp: '테이블을 여는 중…',
     memberAddedGeneric: '테이블 공용 장바구니에 새 메뉴가 추가되었습니다.',
     callStaff: '직원 호출', callStaffSent: '테이블로 직원을 호출했습니다', callStaffAlready: '이미 직원을 호출했습니다. 곧 도와드리겠습니다',
+    sessionExpiredTitle: '주문 세션이 종료되었습니다',
+    sessionExpiredBody: '테이블이 한동안 사용되지 않아 주문 세션이 자동으로 종료되었습니다. 계속하려면 테이블의 QR 코드를 다시 스캔해 주세요.',
+    rescanQr: 'QR 코드 다시 스캔',
+    qrScanTitle: '테이블의 QR 코드를 스캔하세요',
+    qrScanFrameHint: 'QR 코드를 프레임 중앙에 맞춰주세요',
+    qrScanHint: 'QR 코드는 테이블이나 메뉴 클립에 붙어 있습니다. 브라우저에서 물어보면 카메라 접근을 허용해 주세요.',
+    cameraDeniedTitle: '카메라에 접근할 수 없습니다',
+    cameraDenied: '브라우저 설정에서 카메라 권한을 허용한 후 다시 시도해 주세요.',
   },
 };
 

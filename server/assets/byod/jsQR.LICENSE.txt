@@ -1,0 +1,7 @@
+jsQR.min.js — https://github.com/cozmo/jsQR (npm package "jsqr", v1.4.0)
+Copyright (c) jsQR contributors. Licensed under the Apache License, Version 2.0:
+https://www.apache.org/licenses/LICENSE-2.0
+
+Vendored as a static, self-hosted file (no CDN reference at runtime) so the
+BYOD guest page's QR scanner works under this app's CSP (default-src 'self').
+Unmodified from the upstream minified build.

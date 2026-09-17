@@ -72,6 +72,8 @@ const state = {
   toast: null,
   data: null,
   gate: null, // { title, desc, code }
+  scanning: false, // S0 · qr_scan camera screen open
+  scanDenied: false, // camera permission was denied while scanning was true
   offline: !navigator.onLine,
   sessionClosed: false,
   busyAdd: false,
@@ -126,9 +128,15 @@ async function bootstrap(silent = false) {
       return;
     }
     if (isFullPageError(e.code) || e.code === 'BYOD_SECRET_MISSING') {
-      const titleKey = e.code === 'BYOD_BRANCH_INACTIVE' ? 'errBranchInactiveTitle' : 'errQrInvalidTitle';
-      const bodyKey = e.code === 'BYOD_BRANCH_INACTIVE' ? 'errBranchInactiveBody' : 'errQrInvalidBody';
-      state.gate = { code: e.code, title: t(state.lang, titleKey), desc: e.message || t(state.lang, bodyKey) };
+      // Luôn dùng bản dịch trong STR — KHÔNG ưu tiên e.message (message của
+      // server luôn là tiếng Việt cố định) — nếu không khách chọn ngôn ngữ khác
+      // vẫn thấy nguyên câu tiếng Việt ở đúng những màn full-page này.
+      const GATE_COPY_KEYS = {
+        BYOD_BRANCH_INACTIVE: ['errBranchInactiveTitle', 'errBranchInactiveBody'],
+        BYOD_SESSION_IDLE_TIMEOUT: ['sessionExpiredTitle', 'sessionExpiredBody'],
+      };
+      const [titleKey, bodyKey] = GATE_COPY_KEYS[e.code] || ['errQrInvalidTitle', 'errQrInvalidBody'];
+      state.gate = { code: e.code, title: t(state.lang, titleKey), desc: t(state.lang, bodyKey) };
       render();
       return;
     }
@@ -215,6 +223,7 @@ addEventListener('popstate', (e) => {
 });
 
 function render(opts = {}) {
+  if (state.scanning) { renderScanner(); $('#app').classList.add('hidden'); return; }
   if (state.gate) { renderGate(); $('#app').classList.add('hidden'); return; }
   $('#gate-root').innerHTML = '';
   $('#app').classList.remove('hidden');
@@ -239,19 +248,147 @@ function renderOffline() {
   if (show) el.textContent = t(state.lang, 'offlineBanner');
 }
 
+// Mã lỗi mà nút hành động chính nên mở MÀN QUÉT QR THẬT (S0) thay vì chỉ tải
+// lại trang — QR không hợp lệ/đã bị thu hồi/bàn không tồn tại hay phiên đã hết
+// hạn do rời quán đều cần khách quét một mã QR (đúng bàn hoặc bàn khác) để tiếp tục.
+const SCAN_GATE_CODES = new Set(['BYOD_QR_INVALID', 'BYOD_QR_REVOKED', 'BYOD_TABLE_NOT_FOUND', 'BYOD_SESSION_IDLE_TIMEOUT']);
 function renderGate() {
   const g = state.gate;
   const canRetry = g.code === 'NETWORK' || g.code === 'BYOD_SECRET_MISSING' || g.code === 'ERROR';
+  const canScan = SCAN_GATE_CODES.has(g.code);
+  const gateIcon = g.code === 'BYOD_BRANCH_INACTIVE' ? 'clock' : g.code === 'NETWORK' ? 'offline'
+    : g.code === 'BYOD_SESSION_IDLE_TIMEOUT' ? 'clock' : 'scan';
+  const actionHtml = canScan
+    ? `<button type="button" class="btn btn-primary btn-md" data-act="open-scan">${esc(t(state.lang, 'rescanQr'))}</button>`
+    : canRetry
+      ? `<button type="button" class="btn btn-primary btn-md" data-act="gate-retry">${esc(t(state.lang, 'retry'))}</button>`
+      : `<button type="button" class="btn btn-secondary btn-md" data-act="gate-reload">${esc(t(state.lang, 'reload'))}</button>`;
   $('#gate-root').innerHTML = `
     <div id="gate-screen">
       <div class="gate-header"><img src="/assets/DanOnLogo.png" alt="Dan D Pak" style="height:28px"></div>
       <div class="gate-body">
-        <div class="gate-icon" style="background:rgba(216,31,38,.09)">${icon(g.code === 'BYOD_BRANCH_INACTIVE' ? 'clock' : g.code === 'NETWORK' ? 'offline' : 'scan', 30, 'style="color:#D81F26"')}</div>
+        <div class="gate-icon" style="background:rgba(216,31,38,.09)">${icon(gateIcon, 30, 'style="color:#D81F26"')}</div>
         <div class="gate-title">${esc(g.title)}</div>
         <div class="gate-desc">${esc(g.desc)}</div>
-        <div class="gate-actions">
-          ${canRetry ? `<button type="button" class="btn btn-primary btn-md" data-act="gate-retry">${esc(t(state.lang, 'retry'))}</button>` : `<button type="button" class="btn btn-secondary btn-md" data-act="gate-reload">${esc(t(state.lang, 'reload'))}</button>`}
+        <div class="gate-actions">${actionHtml}</div>
+      </div>
+    </div>`;
+}
+
+// ---------------------------------------------------------------------------
+// S0 · qr_scan — quét QR THẬT bằng camera (getUserMedia + jsQR, xem index.html/
+// jsQR.min.js — thư viện thuần JS, tự host, không cần BarcodeDetector vốn Safari/
+// iOS không hỗ trợ, mà khách của quán chủ yếu dùng iPhone). Vào từ nút "Quét lại
+// mã QR" ở các gate thuộc SCAN_GATE_CODES phía trên.
+let scanStream = null;
+let scanTimer = null;
+let scanCanvas = null;
+let scanCtx = null;
+let scanGeneration = 0; // bumped on every open/close — lets a stale getUserMedia() resolving late tell it's no longer wanted, instead of leaking a live camera stream nobody stops.
+
+function stopScanTracking() {
+  scanGeneration += 1;
+  clearInterval(scanTimer);
+  scanTimer = null;
+  if (scanStream) { scanStream.getTracks().forEach(tr => tr.stop()); scanStream = null; }
+}
+
+function closeScanner() {
+  stopScanTracking();
+  state.scanning = false;
+  state.scanDenied = false;
+  render();
+}
+
+async function openScanner() {
+  stopScanTracking();
+  const myGen = scanGeneration;
+  state.scanning = true;
+  state.scanDenied = false;
+  render();
+  let stream;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+  } catch {
+    if (myGen !== scanGeneration) return;
+    state.scanDenied = true;
+    render();
+    return;
+  }
+  if (myGen !== scanGeneration || !state.scanning) { stream.getTracks().forEach(tr => tr.stop()); return; }
+  scanStream = stream;
+  const video = $('#scan-video');
+  if (!video) { stopScanTracking(); return; }
+  video.srcObject = scanStream;
+  await video.play().catch(() => {});
+  scanTimer = setInterval(scanTick, 220);
+}
+
+function scanTick() {
+  const video = $('#scan-video');
+  if (!video || video.readyState < 2 || typeof jsQR !== 'function') return;
+  const w = video.videoWidth, h = video.videoHeight;
+  if (!w || !h) return;
+  if (!scanCanvas) { scanCanvas = document.createElement('canvas'); scanCtx = scanCanvas.getContext('2d', { willReadFrequently: true }); }
+  scanCanvas.width = w; scanCanvas.height = h;
+  scanCtx.drawImage(video, 0, 0, w, h);
+  let code;
+  try { code = jsQR(scanCtx.getImageData(0, 0, w, h).data, w, h); } catch { return; }
+  if (code && code.data) handleScanResult(code.data);
+}
+
+// Mã QR in trên bàn luôn là link tuyệt đối "<PUBLIC_ORIGIN>/BYOD/<token>" (xem
+// publicUrl() trong server/services/byod.js) — chỉ cần khớp đúng hình dạng
+// đường dẫn này rồi ĐIỀU HƯỚNG THẬT sang đó, để trang mới tự bootstrap() và
+// server xác thực token lại từ đầu (không tự chấm token ở client).
+function handleScanResult(text) {
+  stopScanTracking();
+  let url = null;
+  try { url = new URL(text, location.origin); } catch { /* not a URL at all */ }
+  const validScheme = url && (url.protocol === 'https:' || url.protocol === 'http:');
+  const match = validScheme && url.pathname.match(/^\/BYOD\/([A-Za-z0-9_-]{32,128})$/i);
+  if (!match) {
+    state.scanning = false;
+    state.gate = { code: 'BYOD_QR_INVALID', title: t(state.lang, 'errQrInvalidTitle'), desc: t(state.lang, 'errQrInvalidBody') };
+    render();
+    return;
+  }
+  location.href = url.href;
+}
+
+function renderScanner() {
+  if (state.scanDenied) {
+    $('#gate-root').innerHTML = `
+      <div id="gate-screen">
+        <div class="gate-header"><img src="/assets/DanOnLogo.png" alt="Dan D Pak" style="height:28px"></div>
+        <div class="gate-body">
+          <div class="gate-icon" style="background:rgba(216,31,38,.09)">${icon('lock', 30, 'style="color:#D81F26"')}</div>
+          <div class="gate-title">${esc(t(state.lang, 'cameraDeniedTitle'))}</div>
+          <div class="gate-desc">${esc(t(state.lang, 'cameraDenied'))}</div>
+          <div class="gate-actions">
+            <button type="button" class="btn btn-primary btn-md" data-act="scan-retry">${esc(t(state.lang, 'retry'))}</button>
+            <button type="button" class="btn btn-secondary btn-md" data-act="scan-close">${esc(t(state.lang, 'back'))}</button>
+          </div>
         </div>
+      </div>`;
+    return;
+  }
+  $('#gate-root').innerHTML = `
+    <div id="gate-screen" class="scan-screen">
+      <div class="scan-header">
+        <button type="button" class="scan-close-btn" data-act="scan-close" aria-label="${attr(t(state.lang, 'back'))}">${icon('x', 18)}</button>
+        <div class="scan-title">${esc(t(state.lang, 'qrScanTitle'))}</div>
+      </div>
+      <div class="scan-viewport">
+        <div class="scan-square">
+          <video id="scan-video" autoplay muted playsinline></video>
+          <div class="scan-frame"><div class="scan-line"></div></div>
+          <div class="scan-frame-hint">${esc(t(state.lang, 'qrScanFrameHint'))}</div>
+        </div>
+      </div>
+      <div class="scan-footer">
+        <div class="scan-hint">${esc(t(state.lang, 'qrScanHint'))}</div>
+        <img class="scan-logo" src="/assets/DanOnLogo.png" alt="Dan D Pak">
       </div>
     </div>`;
 }
@@ -988,6 +1125,9 @@ document.addEventListener('click', (e) => {
   switch (act) {
     case 'gate-retry': state.gate = null; render(); bootstrap(); break;
     case 'gate-reload': location.reload(); break;
+    case 'open-scan': openScanner(); break;
+    case 'scan-close': closeScanner(); break;
+    case 'scan-retry': openScanner(); break;
     case 'go-menu': navigate('menu'); $('#screens').scrollTo({ top: 0 }); break;
     // "Back" thật sự (menu→welcome, chi tiết→menu) dùng history.back() thay vì
     // push thêm — giữ lịch sử ĐÚNG ngăn xếp để vuốt-back/nút back hệ thống và
