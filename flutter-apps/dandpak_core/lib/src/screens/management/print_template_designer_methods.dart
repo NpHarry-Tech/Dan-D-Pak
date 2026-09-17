@@ -201,19 +201,30 @@ extension _PrintDesignerMethods on _PrintTemplateDesignerState {
 
   // Phần tử BẢNG MÓN của phiếu bếp: server dựng bảng "Tên món | SL" có viền kèm
   // yêu cầu thêm/ghi chú (xem kitchenTableLines ở printing.js). Các công tắc quyết
-  // định hiện cột SL, yêu cầu thêm, ghi chú.
+  // định hiện cột SL, yêu cầu thêm, ghi chú. fontSize (mm) riêng cho TÊN MÓN —
+  // trước đây không chỉnh được (server cố định), cửa hàng thấy chữ món quá to
+  // (báo 17/09/2026) mà không có cách nào giảm. 6.0mm ~ cỡ vừa (rõ hơn thông
+  // tin phụ nhưng không choán hết mặt phiếu như trước).
   Map<String, dynamic> _itemsRow() => {
         'id': 'items_${_rowSeq++}',
         'type': 'items',
         'showQty': true,
         'showMods': true,
         'showNote': true,
+        'fontSize': 6.0,
       };
 
   // MẪU PHIẾU BẾP chuẩn: header khu vực + bàn CHỮ TO ĐẬM, giờ/ngày, nhân viên,
   // số TT, rồi BẢNG MÓN. Khác hẳn mẫu tem (bản clone cũ chỉ có 1 món + QR): phiếu
   // bếp cần bảng nhiều món để bếp làm. Server đọc đúng mẫu này (templates.kitchen_ticket)
   // khi có phần tử 'items', không thì rơi về bản dựng sẵn renderTicket.
+  //
+  // Giờ/Ngày, Nhân viên, Số TT trước đây dùng mặc định 3.2mm (_tRow không
+  // truyền fontSize) — dưới ngưỡng 4.2mm nên KHÔNG được phóng to chút nào trên
+  // máy in thật (markScaleOf ở printing.js), dù preview (trước khi sửa) trông
+  // không nhỏ đến vậy. Báo "chữ thông tin khác bé quá" 17/09/2026 — nâng lên
+  // 4.2mm (đúng 2 nấc bấm A+ hiện có) để thật sự vượt ngưỡng, có phóng to.
+  static const double _kInfoRowFontSize = 4.2;
   Map<String, dynamic> _defaultKitchen() {
     final width = _d(_labels['widthMm'], 80).clamp(48, 120).toDouble();
     final height = _d(_labels['heightMm'], 200).clamp(80, 520).toDouble();
@@ -228,9 +239,9 @@ extension _PrintDesignerMethods on _PrintTemplateDesignerState {
       'rows': [
         _tRow('{zone}', align: 'center', bold: true, fontSize: 7),
         _tRow('- BÀN {table}', align: 'center', bold: true, fontSize: 7),
-        _tRow('Giờ: {time}    Ngày: {date}', bold: true),
-        _tRow('Nhân viên: {staff}', bold: true),
-        _tRow('Số TT: {seq}', bold: true),
+        _tRow('Giờ: {time}    Ngày: {date}', bold: true, fontSize: _kInfoRowFontSize),
+        _tRow('Nhân viên: {staff}', bold: true, fontSize: _kInfoRowFontSize),
+        _tRow('Số TT: {seq}', bold: true, fontSize: _kInfoRowFontSize),
         _itemsRow(),
       ],
     };
@@ -1125,6 +1136,10 @@ extension _PrintDesignerMethods on _PrintTemplateDesignerState {
                       fontSize: 12.5,
                       fontWeight: FontWeight.w700,
                       color: DanColors.muted)),
+              Spacer(),
+              // Cỡ chữ TÊN MÓN — trước đây cố định ở server, không chỉnh được
+              // (báo "chữ món quá to" 17/09/2026).
+              _fontSizeStepper(id, row, fallback: 6.0),
             ]),
             SizedBox(height: 2),
             Wrap(spacing: 10, runSpacing: 0, children: [
@@ -1133,7 +1148,7 @@ extension _PrintDesignerMethods on _PrintTemplateDesignerState {
               sw('showNote', t('Ghi chú')),
             ]),
             Text(
-              t('Danh sách món, số lượng, yêu cầu thêm và ghi chú theo đúng thứ tự in.'),
+              t('Danh sách món, số lượng, yêu cầu thêm và ghi chú theo đúng thứ tự in. Tên món sát trái, số lượng sát phải.'),
               style: TextStyle(
                   fontSize: 10.5, color: DanColors.faint, height: 1.3),
             ),
@@ -1173,26 +1188,37 @@ extension _PrintDesignerMethods on _PrintTemplateDesignerState {
               () => _updateRow(id, (r) => r['bold'] = !bold)),
           if (_kind != 'bill') ...[
             SizedBox(width: 8),
-            _alignBtn(
-                Icons.text_decrease,
-                false,
-                () => _updateRow(
-                    id,
-                    (r) => r['fontSize'] =
-                        (_d(r['fontSize'], 3.2) - .5).clamp(2, 8))),
-            Text('${_d(row['fontSize'], 3.2).toStringAsFixed(1)}',
-                style: TextStyle(fontSize: 11, color: DanColors.muted)),
-            _alignBtn(
-                Icons.text_increase,
-                false,
-                () => _updateRow(
-                    id,
-                    (r) => r['fontSize'] =
-                        (_d(r['fontSize'], 3.2) + .5).clamp(2, 8))),
+            _fontSizeStepper(id, row),
           ],
         ]),
       ],
     );
+  }
+
+  /// Nút A-/A+ chỉnh fontSize (mm) của MỘT dòng mẫu — dùng chung cho dòng chữ
+  /// thường và khối "Bảng món" (items). Cùng đơn vị mm với server
+  /// (markScaleOf/sizeFromMm ở printing.js/receipt_doc.js) nên số hiện ở đây
+  /// khớp đúng cỡ chữ sẽ in ra máy thật.
+  Widget _fontSizeStepper(String id, Map<String, dynamic> row,
+      {double fallback = 3.2}) {
+    return Row(mainAxisSize: MainAxisSize.min, children: [
+      _alignBtn(
+          Icons.text_decrease,
+          false,
+          () => _updateRow(
+              id,
+              (r) => r['fontSize'] =
+                  (_d(r['fontSize'], fallback) - .5).clamp(2, 8))),
+      Text('${_d(row['fontSize'], fallback).toStringAsFixed(1)}',
+          style: TextStyle(fontSize: 11, color: DanColors.muted)),
+      _alignBtn(
+          Icons.text_increase,
+          false,
+          () => _updateRow(
+              id,
+              (r) => r['fontSize'] =
+                  (_d(r['fontSize'], fallback) + .5).clamp(2, 8))),
+    ]);
   }
 
   Widget _alignBtn(IconData icon, bool active, VoidCallback onTap) {
@@ -1383,8 +1409,10 @@ extension _PrintDesignerMethods on _PrintTemplateDesignerState {
     for (final row in _rows) {
       final type = asText(row['type']);
       if (type == 'items') {
-        for (final ln in _kitchenItemsSample(row).split('\n')) {
-          widgets.add(_pvText(ln, 'left', false, monospace: true));
+        for (final (ln, isNameRow) in _kitchenItemsSample(row)) {
+          widgets.add(_pvText(ln, 'left', false,
+              monospace: true,
+              fontSizeMm: isNameRow ? _d(row['fontSize'], 0) : 0));
         }
         continue;
       }
@@ -1474,7 +1502,8 @@ extension _PrintDesignerMethods on _PrintTemplateDesignerState {
           asText(row['text']).contains('{totalLine}');
       for (final paragraph in text.split('\n')) {
         if (paragraph.trim().isEmpty) continue;
-        widgets.add(_pvText(paragraph, align, bold, monospace: moneyColumns));
+        widgets.add(_pvText(paragraph, align, bold,
+            monospace: moneyColumns, fontSizeMm: _d(row['fontSize'], 0)));
       }
     }
     if (widgets.isEmpty)
@@ -1482,12 +1511,36 @@ extension _PrintDesignerMethods on _PrintTemplateDesignerState {
     return widgets;
   }
 
-  Widget _pvText(String s, String align, bool bold, {bool monospace = false}) {
+  // markScaleOf/_scaleHeightMult PHẢI khớp printing.js:markScaleOf + FONT_SCALE
+  // — đây là lý do preview từng "khác thực tế" (báo 17/09/2026): trước đây mọi
+  // dòng luôn vẽ ở 12.5px cố định, bỏ qua hẳn fontSize (mm) đã cấu hình, nên
+  // dòng 8mm và dòng 3.2mm trông y hệt nhau trong preview dù trên máy in thật
+  // một dòng to gấp đôi, dòng kia không hề phóng to. Quy đổi CÙNG bậc rời rạc
+  // (0-3) máy in nhiệt thật sự hỗ trợ, không phải một hàm liên tục tự chế.
+  static int _markScaleOf(double mm) {
+    if (mm >= 7) return 3;
+    if (mm >= 5.5) return 2;
+    if (mm >= 4.2) return 1;
+    return 0;
+  }
+
+  // Hệ số CHIỀU CAO thật trên máy in nhiệt cho từng bậc (xem FONT_SCALE ở
+  // server/services/printing.js — GS ! n): 0→1x, 1→2x, 2→3x, 3→2x (rộng x2
+  // nữa, nhưng preview chỉ mô phỏng chiều cao — tín hiệu chính khi so sánh
+  // "dòng nào to hơn dòng nào").
+  static const List<double> _scaleHeightMult = [1.0, 2.0, 3.0, 2.0];
+
+  Widget _pvText(String s, String align, bool bold,
+      {bool monospace = false, double fontSizeMm = 0}) {
     final ta = switch (align) {
       'center' => TextAlign.center,
       'right' => TextAlign.right,
       _ => TextAlign.left,
     };
+    const base = 12.5;
+    final size = fontSizeMm > 0
+        ? (base * _scaleHeightMult[_markScaleOf(fontSizeMm)]).clamp(base, 30.0)
+        : base;
     final text = Text(
       s,
       maxLines: monospace ? 1 : null,
@@ -1496,7 +1549,7 @@ extension _PrintDesignerMethods on _PrintTemplateDesignerState {
       textAlign: ta,
       style: TextStyle(
         fontFamily: monospace ? 'JetBrains Mono' : 'Be Vietnam Pro',
-        fontSize: 12.5,
+        fontSize: size,
         height: 1.36,
         color: _inkColor(bold),
         fontWeight: bold ? FontWeight.w800 : FontWeight.w500,
@@ -1656,13 +1709,18 @@ extension _PrintDesignerMethods on _PrintTemplateDesignerState {
         'copy': '1/1',
       };
 
-  // Preview semantic list — không giả bảng bằng ký tự +-|.
-  String _kitchenItemsSample(Map row) {
+  // Preview semantic list — không giả bảng bằng ký tự +-|. Trả về từng dòng
+  // kèm cờ "đây có phải dòng tên+SL không" để CHỈ dòng đó vẽ theo fontSize đã
+  // cấu hình — yêu cầu thêm/ghi chú/gạch ngăn giữ cỡ thường, khớp đúng
+  // kitchenTableLines (ESC/POS) và buildKitchenDoc (GDI).
+  List<(String, bool)> _kitchenItemsSample(Map row) {
     final showQty = row['showQty'] != false && row['showQty'] != '0';
     final showMods = row['showMods'] != false && row['showMods'] != '0';
     final showNote = row['showNote'] != false && row['showNote'] != '0';
     final width = _sampleWidth;
-    final nameW = (width - (showQty ? 4 : 0)).clamp(8, 60);
+    // BẢNG THẬT: tên sát trái — số lượng sát phải, cùng bố cục kitchenTableLines.
+    final qtyW = showQty ? 4 : 0;
+    final nameW = (width - qtyW).clamp(8, 60);
     String clipped(String value) =>
         value.length > nameW ? value.substring(0, nameW) : value;
 
@@ -1675,16 +1733,18 @@ extension _PrintDesignerMethods on _PrintTemplateDesignerState {
       },
       {'name': t('Mì Bò Kho Việt Nam'), 'qty': '1', 'mods': '', 'note': ''},
     ];
-    final lines = <String>[];
+    final lines = <(String, bool)>[];
     for (final it in sample) {
-      lines.add(clipped('${showQty ? '${it['qty']} x ' : ''}${it['name']}'));
+      final nameCell = clipped(it['name'] ?? '').padRight(nameW);
+      final qtyCell = showQty ? 'x${it['qty']}'.padLeft(qtyW) : '';
+      lines.add(('$nameCell$qtyCell', true));
       if (showMods && (it['mods'] ?? '').isNotEmpty)
-        lines.add(clipped('  + ${it['mods']}'));
+        lines.add((clipped('  + ${it['mods']}'), false));
       if (showNote && (it['note'] ?? '').isNotEmpty)
-        lines.add(clipped('  Ghi chú: ${it['note']}'));
-      lines.add('-' * width);
+        lines.add((clipped('  Ghi chú: ${it['note']}'), false));
+      lines.add(('-' * width, false));
     }
-    return lines.join('\n');
+    return lines;
   }
 
   Map<String, String> get _labelSample => {

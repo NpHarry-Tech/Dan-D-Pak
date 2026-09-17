@@ -271,6 +271,21 @@ function inferPrinterOutput(p = {}) {
   return 'kitchen_ticket';
 }
 
+// MỘT máy in vật lý có thể đảm nhận NHIỀU vai trò in cùng lúc (VD vừa in hóa
+// đơn vừa in phiếu bếp) — `outputs` là danh sách vai trò THẬT, LUÔN ≥1 phần tử.
+// `output` (số ít) vẫn được giữ = outputs[0] để mọi chỗ đọc field cũ (routing,
+// mẫu bill, các app khác chưa cập nhật) tiếp tục thấy đúng MỘT vai trò như trước
+// — xem printerOutputs() ở services/printing.js, nơi đọc lại đúng `outputs` này.
+const KNOWN_PRINTER_OUTPUTS = new Set([
+  'kitchen_ticket', 'receipt', 'cup_label', 'product_label',
+  'shipping_label', 'runner', 'report', 'custom',
+]);
+function sanitizePrinterOutputs(p = {}) {
+  const raw = Array.isArray(p.outputs) && p.outputs.length ? p.outputs : [p.output];
+  const cleaned = [...new Set(raw.map(v => String(v || '').toLowerCase()).filter(v => KNOWN_PRINTER_OUTPUTS.has(v)))];
+  return cleaned.length ? cleaned.slice(0, 8) : [inferPrinterOutput(p)];
+}
+
 function inferPrinterConnection(p = {}) {
   const raw = String(p.connection || p.transport || '').toLowerCase();
   if (['lan', 'system', 'browser'].includes(raw)) return raw;
@@ -294,13 +309,18 @@ export function sanitizePrintConfig(raw = {}) {
     labels: mergePlain(DEFAULT_PRINT_CONFIG.labels, input.labels),
     kitchen: mergePlain(DEFAULT_PRINT_CONFIG.kitchen, input.kitchen),
     bill,
-    printers: printers.map((p, i) => ({
+    printers: printers.map((p, i) => {
+      const outputs = sanitizePrinterOutputs(p);
+      return ({
       id: str(p?.id || `printer_${i + 1}`, 80) || `printer_${i + 1}`,
       name: str(p?.name || p?.systemName || '', 200),
       systemName: str(p?.systemName || p?.name || '', 200),
       label: str(p?.label || p?.type || `Printer ${i + 1}`, 120),
       type: str(p?.type || p?.label || '', 120),
-      output: inferPrinterOutput(p),
+      output: outputs[0],
+      // Danh sách VAI TRÒ IN mà tuyến này đảm nhận — LUÔN ≥1 phần tử, [0] khớp
+      // đúng `output` phía trên. Xem sanitizePrinterOutputs()/printerOutputs().
+      outputs,
       // Trạm chế biến (production_stations.code) mà máy in "Phiếu bếp" này nhận
       // job — rỗng = không giới hạn, dùng tuyến ngầm cũ (kitchen/bar) để giữ
       // đúng hành vi các cấu hình đã lưu từ trước. Xem stationPrinterId ở
@@ -349,7 +369,8 @@ export function sanitizePrintConfig(raw = {}) {
         ? str(p.renderMode, 10).toLowerCase() : 'escpos',
       // Font TrueType cho renderMode 'driver' (phải cài sẵn trên máy Windows in bill).
       driverFont: str(p?.driverFont || '', 40) || 'Segoe UI',
-    })),
+    });
+    }),
     templates: {
       label: sanitizePrintTemplate(input.templates?.label || input.label_template),
       bill: sanitizeBillTemplate(input.templates?.bill || input.bill_template, bill),

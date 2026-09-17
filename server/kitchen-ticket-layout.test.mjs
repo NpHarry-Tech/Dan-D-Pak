@@ -32,8 +32,9 @@ test('phieu bep IPOS: header to dam, bang Ten mon|SL, yeu cau + ghi chu duoi mon
   assert.match(raw, /\[\[B1\]\]BÀN A04\[\[B0\]\]/, 'chu BAN phai in dam');
   // Bang co vien + cot SL.
   assert.doesNotMatch(plain, /\+-+\+-+\+/);
-  // Mon + so luong o cot SL.
-  assert.match(plain, /2 x Trà đào cam sả/);
+  // BANG THAT (doi 17/09/2026): ten mon sat trai, so luong "xN" sat phai TREN
+  // CUNG MOT DONG — khong con gop "SL x Ten" thanh 1 chuoi nhu truoc.
+  assert.match(plain, /^Trà đào cam sả\s+x2$/m, 'ten mon sat trai, SL "x2" sat phai cung dong');
   // YEU CAU THEM in dung ten (khong phai [object Object]) va DUOI mon.
   assert.ok(!plain.includes('[object Object]'), 'khong duoc ra [object Object]');
   // Width nua giay -> text dai co the WRAP, nen chi tim chuoi NGAN (khong tach dong).

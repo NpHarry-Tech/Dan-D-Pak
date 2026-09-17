@@ -214,19 +214,24 @@ export function buildKitchenDoc(p = {}, printCfg = {}, opts = {}) {
   const blocks = [];
   const template = printCfg?.templates?.kitchen_ticket || p.print_config?.templates?.kitchen_ticket;
   const items = Array.isArray(p.items) && p.items.length ? p.items : [{ ...p }];
-  // "{qty} x {tên món}" MỘT dòng — ĐÚNG cùng cấu trúc với kitchenTableLines
-  // (ESC/POS) và preview thiết kế mẫu (_kitchenItemsSample). Trước đây dựng
-  // "row" 2 cột (tên trái, SL to bên phải) là MỘT bố cục hoàn toàn khác — dù
-  // to dễ đọc, nó khiến bản in Windows-driver không khớp preview lẫn bản in
-  // ESC/POS, đúng lỗi "preview khác thực tế". Vẫn giữ chữ THẬT TO (size 22)
-  // để bếp đọc từ xa, chỉ đổi cấu trúc dòng cho khớp.
+  const itemsRow = templateRows(template).find((row) => String(row?.type) === 'items') || {};
+  const showQty = itemsRow.showQty !== false && itemsRow.showQty !== '0';
+  // BẢNG THẬT: tên sát trái — số lượng sát phải, cùng bố cục 2 cột với
+  // kitchenTableLines (ESC/POS) và preview thiết kế mẫu (_kitchenItemsSample) —
+  // yêu cầu 17/09/2026. Cỡ chữ LẤY TỪ CẤU HÌNH (itemsRow.fontSize, mm, quy đổi
+  // bằng sizeFromMm() — CÙNG đơn vị mm với ESC/POS/preview) thay vì cố định
+  // size:22 như trước — cửa hàng chỉnh được, không còn 3 đường lệch nhau.
+  const nameSize = sizeFromMm(itemsRow.fontSize, 22);
   const appendItems = () => {
     for (const i of items) {
       const qty = Number(i.qty) || 1;
       const cancelled = i.cancelled === true
         || String(i.status || '').toLowerCase() === 'cancelled'
         || p.update_kind === 'cancel_item';
-      blocks.push({ type: 'text', text: `${qty} x ${String(i.name || '')}`, size: 22, bold: true, strike: cancelled });
+      blocks.push({ type: 'row', cols: [
+        { text: String(i.name || ''), flex: 5, align: 'left', size: nameSize, bold: true, strike: cancelled },
+        ...(showQty ? [{ text: `x${qty}`, flex: 1, align: 'right', size: nameSize, bold: true, strike: cancelled }] : []),
+      ] });
       const mods = modsToText(i.mods || i.modifiers);
       if (mods) blocks.push({ type: 'text', text: `+ ${mods}`, size: 13, strike: cancelled });
       const note = i.note || i.lineNote;

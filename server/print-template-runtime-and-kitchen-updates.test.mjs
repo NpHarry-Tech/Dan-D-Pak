@@ -76,11 +76,14 @@ test('kitchen updates allocate X-1, X-2; cancellation is struck and table move i
   const moved = jobs.find((j) => j.payload.update_kind === 'move_table');
   assert.equal(moved.payload.table, 'A08 => BÀN B03');
   const cancelDoc = JSON.parse(Print.pendingAgentJobs('sala', { deviceId: 'dev' }).find((x) => x.id === cancel.id).driverDoc);
-  // "{qty} x {tên}" MỘT dòng text (không phải bảng 2 cột riêng — xem
-  // driver-receipt-doc.test.mjs), gạch ngang áp cho CẢ dòng khi đã hủy.
-  const cancelledRow = cancelDoc.blocks.find((b) => b.type === 'text' && b.text === '2 x Cơm cá hồi');
+  // Bảng 2 cột THẬT (tên trái, SL phải — xem driver-receipt-doc.test.mjs),
+  // gạch ngang áp cho CẢ HAI cột khi đã hủy.
+  const cancelledRow = cancelDoc.blocks.find((b) => b.type === 'row'
+    && Array.isArray(b.cols) && b.cols.some((c) => c.text === 'Cơm cá hồi'));
   assert.ok(cancelledRow, 'phiếu hủy phải có đúng món đã hủy');
-  assert.equal(cancelledRow.strike, true, 'món hủy phải có gạch ngang');
+  assert.equal(cancelledRow.cols[1].text, 'x2');
+  assert.equal(cancelledRow.cols[0].strike, true, 'tên món hủy phải có gạch ngang');
+  assert.equal(cancelledRow.cols[1].strike, true, 'số lượng món hủy phải có gạch ngang');
 });
 
 test('real cancelItem and moveTable business flows create kitchen update tickets', () => {

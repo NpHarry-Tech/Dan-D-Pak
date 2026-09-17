@@ -4,6 +4,7 @@ import test from 'node:test';
 
 test('activity log keeps domain audit and drops duplicate technical noise', () => {
   const api = readFileSync(new URL('./api.js', import.meta.url), 'utf8');
+  const http = readFileSync(new URL('./core/http.js', import.meta.url), 'utf8');
   const errors = readFileSync(new URL('./core/errors.js', import.meta.url), 'utf8');
   const reports = readFileSync(new URL('./services/reports.js', import.meta.url), 'utf8');
   const logs = readFileSync(new URL('./services/systemLogs.js', import.meta.url), 'utf8');
@@ -17,8 +18,17 @@ test('activity log keeps domain audit and drops duplicate technical noise', () =
   // internal/business classification — see diagnostic-redaction.test.mjs) and api.js
   // imports it rather than keeping a second, drift-prone copy.
   assert.match(api, /if \(status < 500 && !isUnexpectedSystemError\(e\)\) return/);
-  assert.match(api, /import \{ errorPayload, isUnexpectedSystemError \} from '\.\/core\/errors\.js'/);
+  assert.match(api, /import \{ isUnexpectedSystemError \} from '\.\/core\/errors\.js'/);
   assert.match(errors, /export function isUnexpectedSystemError/);
+  // wrap() KHÔNG còn tự dựng response lỗi (errorPayload) — nó chỉ log rồi
+  // next(e), để error middleware DUY NHẤT (core/http.js errorHandler, wired ở
+  // index.js) quyết định status/payload. Tránh 2 nơi tự trả lỗi dẫn tới
+  // "Cannot set headers after they are sent" khi cả .then/.catch đều bắn.
+  assert.match(api, /const wrap = \(fn\) => \(req, res, next\) => \{/);
+  assert.match(api, /next\(e\)/);
+  assert.match(http, /import \{ errorPayload, isUnexpectedSystemError \} from '\.\/errors\.js'/);
+  assert.match(http, /export function errorHandler\(err, req, res, next\)/);
+  assert.match(http, /errorPayload\(err/);
   assert.doesNotMatch(api, /audit\('system\.error'/);
   for (const action of [
     'system.error',

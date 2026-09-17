@@ -90,3 +90,71 @@ test('đơn hỗn hợp: 2 món cùng trạm gộp vào 1 ticket, khác trạm t
   assert.equal(latestBep.items.length, 1);
   assert.equal(latestBep.items[0].name, 'Mì Bò Kho Việt Nam');
 });
+
+// SỰ CỐ THẬT báo 17/09/2026: máy in phiếu bếp khai stations:['kitchen'] (CHỈ
+// nhận trạm Bếp) vẫn nhận luôn phiếu trạm Bar khi cửa hàng chưa khai máy in
+// riêng cho Bar — vì bước rơi-về cũ lọc theo `output` (loại phiếu) mà không hề
+// biết tới `stations`, nên một máy đã tự giới hạn cho trạm KHÁC vẫn lọt qua làm
+// "máy dùng chung". Đúng ra phải báo lỗi rõ ràng (không có máy cho trạm Bar),
+// không được lặng lẽ in nhầm sang máy Bếp.
+test('máy in đã khai riêng cho Bếp KHÔNG được nhận job của Bar khi chưa có máy Bar', () => {
+  const BR2 = 'kstation_excl';
+  AppSettings.updateSettings({
+    print_config: {
+      printers: [
+        {
+          id: 'may_bep_rieng', name: 'Máy bếp', systemName: 'Máy bếp',
+          label: 'Phiếu bếp', output: 'kitchen_ticket', connection: 'system',
+          active: true, auto: true, stations: ['kitchen'],
+        },
+      ],
+    },
+  }, BR2);
+
+  const order = { id: 'o_test3', table_code: 'A03', bill_no: 'Dan_test3', zone: 'Tầng trệt' };
+  const items = [
+    { id: 'oi6', name: 'Bia Sài Gòn', qty: 2, station: 'bar' },
+  ];
+  Print.printKitchenTickets(order, items, BR2, 'tester');
+
+  const bepJobs = db.prepare(
+    `SELECT * FROM print_jobs WHERE branch_id=? AND printer=? AND type='kitchen_ticket'`,
+  ).all(BR2, 'may_bep_rieng');
+  assert.equal(bepJobs.length, 0,
+    'máy đã tự giới hạn cho trạm Bếp không được lặng lẽ in phiếu của trạm Bar');
+
+  const anyJob = db.prepare(
+    `SELECT COUNT(*) n FROM print_jobs WHERE branch_id=? AND type='kitchen_ticket'`,
+  ).get(BR2);
+  assert.equal(anyJob.n, 0, 'không có máy nào cho trạm Bar thì không được tạo job nào cả');
+});
+
+// Đối chứng: máy KHÔNG khai stations (mảng rỗng/không có field) vẫn là "dùng
+// chung cho mọi trạm" như hành vi cũ — không được vô tình siết luôn cả trường
+// hợp chưa ai cấu hình gì (đa số cửa hàng chỉ có 1 máy in bếp/bar).
+test('máy chưa khai stations vẫn nhận job của MỌI trạm (giữ hành vi cũ)', () => {
+  const BR3 = 'kstation_default';
+  AppSettings.updateSettings({
+    print_config: {
+      printers: [
+        {
+          id: 'may_chung', name: 'Máy bếp chung', systemName: 'Máy bếp chung',
+          label: 'Phiếu bếp', output: 'kitchen_ticket', connection: 'system',
+          active: true, auto: true,
+        },
+      ],
+    },
+  }, BR3);
+
+  const order = { id: 'o_test4', table_code: 'A04', bill_no: 'Dan_test4', zone: 'Tầng trệt' };
+  const items = [
+    { id: 'oi7', name: 'Bia Sài Gòn', qty: 1, station: 'bar' },
+    { id: 'oi8', name: 'Phở bò', qty: 1, station: 'kitchen' },
+  ];
+  Print.printKitchenTickets(order, items, BR3, 'tester');
+
+  const jobs = db.prepare(
+    `SELECT * FROM print_jobs WHERE branch_id=? AND printer=? AND type='kitchen_ticket'`,
+  ).all(BR3, 'may_chung');
+  assert.equal(jobs.length, 2, 'máy dùng chung phải nhận cả 2 ticket (bar + kitchen)');
+});

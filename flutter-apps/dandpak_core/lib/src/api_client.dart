@@ -525,7 +525,8 @@ class DanDpakApiClient {
       return response.bodyBytes;
     }
     throw ApiException(
-      errorMessage ?? 'Request failed (HTTP ${response.statusCode})',
+      _httpFailureMessage(
+          decodeBody(response.body), response.statusCode, errorMessage),
       statusCode: response.statusCode,
       method: 'GET',
       endpoint: path,
@@ -606,8 +607,6 @@ class DanDpakApiClient {
       return decoded;
     }
 
-    final serverMessage =
-        decoded is Map ? decoded['error'] ?? decoded['message'] : null;
     // Mã lỗi nghiệp vụ: server gửi ở decoded['code'] hoặc decoded['error']['code'].
     String serverCode = '';
     if (decoded is Map) {
@@ -618,14 +617,34 @@ class DanDpakApiClient {
     // HTTP lỗi = server ĐÃ trả lời → ApiException nghiệp vụ có statusCode,
     // KHÔNG phải offline. UI hiện message; ai cần status/code thì đọc được.
     throw ApiException(
-      serverMessage?.toString() ??
-          errorMessage ??
-          'Request failed (HTTP ${response.statusCode})',
+      _httpFailureMessage(decoded, response.statusCode, errorMessage),
       statusCode: response.statusCode,
       code: serverCode,
       method: method,
       endpoint: path,
     );
+  }
+
+  String _httpFailureMessage(
+      dynamic decoded, int statusCode, String? errorMessage) {
+    dynamic raw;
+    if (decoded is Map) {
+      final error = decoded['error'];
+      raw = error is Map
+          ? error['message'] ?? decoded['message']
+          : error ?? decoded['message'];
+    }
+    final serverMessage = raw?.toString().trim() ?? '';
+    // Server cố ý che lỗi nội bộ bằng "Request failed". Đừng chuyển nguyên câu
+    // vô nghĩa đó ra UI: mọi API đã cung cấp ngữ cảnh thao tác cụ thể.
+    if (serverMessage.isNotEmpty &&
+        serverMessage.toLowerCase() != 'request failed') {
+      return serverMessage;
+    }
+    final action = errorMessage?.trim().isNotEmpty == true
+        ? t(errorMessage!.trim())
+        : t('Máy chủ không xử lý được yêu cầu');
+    return '$action (HTTP $statusCode). ${t('Vui lòng thử lại; nếu lỗi lặp lại hãy báo kỹ thuật')}.';
   }
 
   dynamic decodeBody(String body) => _tryJsonDecode(body);

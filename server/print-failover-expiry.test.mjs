@@ -105,6 +105,32 @@ test('may in cam tai cho luon dung dau chuoi, bat ke so uu tien', () => {
   assert.ok(chuoi.some(p => p.id === 'lan_quay'), 'may in LAN van nam trong chuoi du phong');
 });
 
+// SỰ CỐ THẬT báo 17/09/2026: cửa hàng đánh dấu một tuyến "Ưu tiên 1" nhưng mọi
+// tuyến CHƯA đụng vào (còn ở mặc định "Theo thứ tự danh sách" = priority 0) vẫn
+// được thử TRƯỚC nó — vì priority=0 vốn là số NHỎ NHẤT nên luôn thắng khi sắp
+// tăng dần. "Theo thứ tự danh sách" phải là "không ép thứ tự" (xếp SAU mọi tuyến
+// đã khai ưu tiên rõ ràng), không phải "ưu tiên cao nhất".
+test('tuyen con o mac dinh "theo thu tu danh sach" KHONG duoc vuot mat tuyen da khai uu tien', () => {
+  const BR = 'failover_priority_semantics';
+  AppSettings.updateSettings({
+    print_config: {
+      printers: [
+        // Chưa ai đụng vào — giữ nguyên mặc định priority=0.
+        { id: 'con_mac_dinh', systemName: 'MAC-DINH', output: 'receipt', connection: 'system', active: true },
+        // Cửa hàng CHỦ ĐỘNG đánh dấu tuyến này là "Ưu tiên 1".
+        { id: 'da_khai_uu_tien', systemName: 'UU-TIEN-1', output: 'receipt', connection: 'system', active: true, priority: 1 },
+      ],
+    },
+  }, BR);
+  // Cả hai máy cùng cắm vào một máy POS (kịch bản thật: 2 máy in tại quầy).
+  System.setAgentPrinters(BR, [{ Name: 'MAC-DINH' }, { Name: 'UU-TIEN-1' }],
+    { deviceId: 'dev_quay', deviceName: 'POS-QUAY' });
+
+  const chuoi = Print.resolvePrinterChain('receipt', BR, { deviceId: 'dev_quay' });
+  assert.deepEqual(chuoi.map(p => p.id), ['da_khai_uu_tien', 'con_mac_dinh'],
+    'tuyen da danh dau "Uu tien 1" phai dung truoc tuyen con o mac dinh "theo thu tu danh sach"');
+});
+
 // ── 2. Phiếu quá hạn ────────────────────────────────────────────────────────
 test('bill de qua dem KHONG tu in vao sang hom sau', () => {
   const BR = 'qua_han';
@@ -235,4 +261,45 @@ test('IN LAI dinh tuyen theo may dang bam, khong sao chep tuyen ban goc', () => 
   const lai = Print.reprint(goc.id, BR, { deviceId: 'dev_quay' });
   assert.match(String(lai.printer), /^auto:dev_quay:/,
     'in lai phai ra o may dang bam, khong gui ve may cam tay');
+});
+
+// ── 5. MỘT máy in đảm nhận NHIỀU vai trò cùng lúc ──────────────────────────
+// Tính năng mới: một máy in vật lý (VD ở quầy) có thể vừa in hóa đơn vừa in
+// phiếu bếp, thay vì bắt cửa hàng khai hai tuyến riêng cho cùng một máy in thật.
+test('sanitizePrintConfig giữ đủ danh sách outputs, output (số ít) = vai trò đầu', () => {
+  const BR = 'multi_role_sanitize';
+  AppSettings.updateSettings({
+    print_config: {
+      printers: [{
+        id: 'gop_vai_tro', systemName: 'QUAY-GOP', connection: 'system', active: true,
+        outputs: ['receipt', 'kitchen_ticket', 'not_a_real_output'],
+      }],
+    },
+  }, BR);
+  const [p] = AppSettings.getPrintConfig(BR).printers;
+  assert.deepEqual(p.outputs, ['receipt', 'kitchen_ticket'], 'loại vai trò không hợp lệ, giữ đúng 2 vai trò thật');
+  assert.equal(p.output, 'receipt', 'output (số ít) phải khớp vai trò đầu tiên để chỗ cũ vẫn đọc được');
+});
+
+test('máy in gộp vai trò (hóa đơn + phiếu bếp) được chọn cho CẢ HAI loại phiếu', () => {
+  const BR = 'multi_role_routing';
+  AppSettings.updateSettings({
+    print_config: {
+      printers: [{
+        id: 'gop_vai_tro', systemName: 'QUAY-GOP', connection: 'system', active: true,
+        outputs: ['receipt', 'kitchen_ticket'], primaryDeviceId: 'dev_quay',
+      }],
+    },
+  }, BR);
+  System.setAgentPrinters(BR, [{ Name: 'QUAY-GOP' }], { deviceId: 'dev_quay', deviceName: 'POS-QUAY' });
+
+  const receiptPrinter = Print.resolveReceiptPrinter(BR, { deviceId: 'dev_quay' });
+  assert.equal(receiptPrinter.id, 'gop_vai_tro', 'phải nhận được vai trò hóa đơn của tuyến gộp');
+
+  const order = { id: 'o_multi', table_code: 'B01', bill_no: 'Dan_multi', zone: 'Tầng trệt' };
+  Print.printKitchenTickets(order, [{ id: 'oi_multi', name: 'Mì xào bò', qty: 1, station: 'kitchen' }], BR, 'tester');
+  const kitchenJobs = db.prepare(
+    `SELECT * FROM print_jobs WHERE branch_id=? AND printer=? AND type='kitchen_ticket'`,
+  ).all(BR, 'gop_vai_tro');
+  assert.equal(kitchenJobs.length, 1, 'cùng tuyến đó cũng phải nhận được vai trò phiếu bếp');
 });

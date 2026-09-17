@@ -737,7 +737,7 @@ class _ConnectionsPanelState extends State<ConnectionsPanel> {
             // _printers vẫn giữ NGUYÊN (không xóa) nên lưu lại không mất máy ẩn.
             for (int i = 0; i < _printers.length; i++)
               if (i < _printerControllersList.length &&
-                  _canSeePrinterType(asText(_printers[i]['output'])))
+                  _canSeePrinterRow(_printers[i]))
                 _printerEditorRow(i, _printers[i], _printerControllersList[i]),
           SizedBox(height: 12),
           Wrap(
@@ -771,6 +771,7 @@ class _ConnectionsPanelState extends State<ConnectionsPanel> {
                         'label': t('Nhãn in'),
                         'type': t('Nhãn in'),
                         'output': 'custom',
+                        'outputs': ['custom'],
                         'location': '',
                         'active': true,
                         'auto': false,
@@ -970,6 +971,14 @@ class _ConnectionsPanelState extends State<ConnectionsPanel> {
     return perm != null && context.read<AuthProvider>().hasPermission(perm);
   }
 
+  /// Hiện cả DÒNG máy in nếu người dùng thấy được ÍT NHẤT MỘT trong các vai
+  /// trò nó đảm nhận — một máy vừa Hóa đơn vừa Phiếu bếp phải hiện cho cả thu
+  /// ngân (chỉ có quyền receipt) lẫn bếp (chỉ có quyền kitchen_ticket).
+  bool _canSeePrinterRow(Map<String, dynamic> p) {
+    if (_canManageAllPrinters()) return true;
+    return _printerOutputsOf(p).any(_canSeePrinterType);
+  }
+
   // Dòng tóm tắt hiển thị khi máy in đang GỘP (kết nối · loại phiếu).
   String _printerSummary(int index) {
     if (index < 0 || index >= _printers.length) return '';
@@ -981,18 +990,23 @@ class _ConnectionsPanelState extends State<ConnectionsPanel> {
           'browser': t('Trình duyệt'),
         }[conn] ??
         conn;
-    final outLabel = {
-      'kitchen_ticket': t('Phiếu bếp'),
-      'receipt': t('Hóa đơn'),
-      'cup_label': t('Tem ly'),
-      'product_label': t('Tem sản phẩm'),
-      'shipping_label': t('Tem vận đơn'),
-      'runner': t('Chạy món'),
-      'report': t('Báo cáo'),
-      'custom': t('Khác'),
-    }[asText(p['output'])];
+    const outLabels = {
+      'kitchen_ticket': 'Phiếu bếp',
+      'receipt': 'Hóa đơn',
+      'cup_label': 'Tem ly',
+      'product_label': 'Tem sản phẩm',
+      'shipping_label': 'Tem vận đơn',
+      'runner': 'Chạy món',
+      'report': 'Báo cáo',
+      'custom': 'Khác',
+    };
+    // Máy in đảm nhận NHIỀU vai trò thì nối đủ tên bằng "+" — không chỉ hiện
+    // vai trò đầu, kẻo cửa hàng tưởng máy chỉ còn đúng một công dụng.
+    final outLabel = _printerOutputsOf(p)
+        .map((o) => t(outLabels[o] ?? o))
+        .join(' + ');
     return [connLabel, outLabel]
-        .where((e) => e != null && e.isNotEmpty)
+        .where((e) => e.isNotEmpty)
         .join(' · ');
   }
 
@@ -1136,52 +1150,73 @@ class _ConnectionsPanelState extends State<ConnectionsPanel> {
         ),
       );
 
-  Widget _printerOutputField(Map<String, dynamic> p, String output) =>
-      _printerField(
-        t('Định dạng in'),
-        DropdownButtonFormField<String>(
-          initialValue: output.isEmpty ? 'custom' : output,
-          isExpanded: true,
-          decoration: InputDecoration(isDense: true),
+  static const List<(String, String)> _printerOutputTypes = [
+    ('kitchen_ticket', 'Phiếu bếp (Kitchen ticket)'),
+    ('receipt', 'Hóa đơn / Tạm tính'),
+    ('cup_label', 'Tem ly (Cup label)'),
+    ('product_label', 'Tem sản phẩm (Product label)'),
+    ('shipping_label', 'Tem vận đơn (Shipping label)'),
+    ('runner', 'Phiếu chạy món (Runner)'),
+    ('report', 'Báo cáo (Report)'),
+  ];
+
+  /// MỘT máy in vật lý có thể đảm nhận NHIỀU vai trò cùng lúc — VD vừa in hóa
+  /// đơn vừa in phiếu bếp — thay vì phải khai N tuyến riêng cho cùng một máy in
+  /// thật. Chọn nhiều chip ở đây; `output` (số ít) vẫn được ghi khi lưu = vai
+  /// trò đầu tiên, để mọi nơi cũ chỉ đọc field đó không bị vỡ (xem
+  /// printerOutputs() ở server/services/printing.js).
+  Set<String> _printerOutputsOf(Map<String, dynamic> p) {
+    if (p['outputs'] is List && (p['outputs'] as List).isNotEmpty) {
+      return Set<String>.from((p['outputs'] as List).map((e) => asText(e)));
+    }
+    final legacy = asText(p['output']);
+    return legacy.isEmpty ? <String>{} : {legacy};
+  }
+
+  void _togglePrinterOutput(Map<String, dynamic> p, String code, bool on) {
+    setState(() {
+      final selected = _printerOutputsOf(p);
+      if (on) {
+        selected.add(code);
+      } else if (selected.length > 1) {
+        // Không cho bỏ chọn vai trò CUỐI CÙNG — một tuyến phải luôn có ít nhất
+        // một công dụng, không thì nó không còn khớp bất kỳ routing nào nữa.
+        selected.remove(code);
+      }
+      p['outputs'] = selected.toList();
+      p['output'] = selected.isNotEmpty ? selected.first : 'custom';
+    });
+  }
+
+  Widget _printerOutputField(Map<String, dynamic> p) {
+    final selected = _printerOutputsOf(p);
+    return _printerField(
+      t('Định dạng in (chọn được nhiều vai trò cho cùng 1 máy in)'),
+      Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        children: [
           // Chỉ hiện loại phiếu mà người dùng có quyền (giữ loại hiện tại để
-          // không vỡ dropdown). Loại "Khác/Custom" cần quyền printer.manage.
-          items: [
-            if (_canSeePrinterType('kitchen_ticket') ||
-                p['output'] == 'kitchen_ticket')
-              DropdownMenuItem(
-                  value: 'kitchen_ticket',
-                  child: Text(t('Phiếu bếp (Kitchen ticket)'))),
-            if (_canSeePrinterType('receipt') || p['output'] == 'receipt')
-              DropdownMenuItem(
-                  value: 'receipt', child: Text(t('Hóa đơn / Tạm tính'))),
-            if (_canSeePrinterType('cup_label') || p['output'] == 'cup_label')
-              DropdownMenuItem(
-                  value: 'cup_label', child: Text('Tem ly (Cup label)')),
-            if (_canSeePrinterType('product_label') ||
-                p['output'] == 'product_label')
-              DropdownMenuItem(
-                  value: 'product_label',
-                  child: Text(t('Tem sản phẩm (Product label)'))),
-            if (_canSeePrinterType('shipping_label') ||
-                p['output'] == 'shipping_label')
-              DropdownMenuItem(
-                  value: 'shipping_label',
-                  child: Text(t('Tem vận đơn (Shipping label)'))),
-            if (_canSeePrinterType('runner') || p['output'] == 'runner')
-              DropdownMenuItem(
-                  value: 'runner', child: Text(t('Phiếu chạy món (Runner)'))),
-            if (_canSeePrinterType('report') || p['output'] == 'report')
-              DropdownMenuItem(
-                  value: 'report', child: Text(t('Báo cáo (Report)'))),
-            if (_canManageAllPrinters() ||
-                p['output'] == 'custom' ||
-                output.isEmpty)
-              DropdownMenuItem(
-                  value: 'custom', child: Text(t('Khác (Custom)'))),
-          ],
-          onChanged: (val) => setState(() => p['output'] = val),
-        ),
-      );
+          // không làm mất lựa chọn đã lưu). Loại "Khác/Custom" cần printer.manage.
+          for (final ot in _printerOutputTypes)
+            if (_canSeePrinterType(ot.$1) || selected.contains(ot.$1))
+              FilterChip(
+                label: Text(t(ot.$2)),
+                selected: selected.contains(ot.$1),
+                onSelected: (on) => _togglePrinterOutput(p, ot.$1, on),
+              ),
+          if (_canManageAllPrinters() ||
+              selected.contains('custom') ||
+              selected.isEmpty)
+            FilterChip(
+              label: Text(t('Khác (Custom)')),
+              selected: selected.contains('custom'),
+              onSelected: (on) => _togglePrinterOutput(p, 'custom', on),
+            ),
+        ],
+      ),
+    );
+  }
 
   /// Kết nối 'system': chọn tên máy in do hệ điều hành báo về.
   ///
@@ -1387,7 +1422,7 @@ class _ConnectionsPanelState extends State<ConnectionsPanel> {
   Widget _printerEditorRow(
       int index, Map<String, dynamic> p, PrinterControllers ctrl) {
     final conn = asText(p['connection']);
-    final output = asText(p['output']);
+    final outputs = _printerOutputsOf(p);
     final live = _livePrinter(p, ctrl);
 
     return Container(
@@ -1440,7 +1475,7 @@ class _ConnectionsPanelState extends State<ConnectionsPanel> {
                   _printerFieldRow(700, [
                     _printerIdField(ctrl),
                     _printerConnField(p, conn),
-                    _printerOutputField(p, output),
+                    _printerOutputField(p),
                   ]),
                   SizedBox(height: 12),
                   if (conn == 'system') ...[
@@ -1452,7 +1487,7 @@ class _ConnectionsPanelState extends State<ConnectionsPanel> {
                   ],
                   _printerLabelLocationRow(ctrl),
                   SizedBox(height: 12),
-                  if (output == 'kitchen_ticket') ...[
+                  if (outputs.contains('kitchen_ticket')) ...[
                     _printerStationsField(p),
                     SizedBox(height: 12),
                   ],
@@ -1725,7 +1760,12 @@ class _ConnectionsPanelState extends State<ConnectionsPanel> {
         'port': int.tryParse(ctrl.port.text.trim()) ?? 9100,
         'label': ctrl.label.text.trim(),
         'type': ctrl.label.text.trim(),
-        'output': p['output'] ?? 'custom',
+        'output': _printerOutputsOf(p).isEmpty
+            ? 'custom'
+            : _printerOutputsOf(p).first,
+        'outputs': _printerOutputsOf(p).isEmpty
+            ? ['custom']
+            : _printerOutputsOf(p).toList(),
         'stations': (p['stations'] is List)
             ? List<String>.from((p['stations'] as List).map((e) => asText(e)))
             : <String>[],

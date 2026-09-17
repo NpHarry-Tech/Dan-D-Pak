@@ -106,6 +106,15 @@ function printerById(printer, branch_id = 'sala') {
   return printerRows(branch_id).find(p => p.id === printer) || null;
 }
 
+// MỘT máy in vật lý có thể đảm nhận NHIỀU vai trò (VD vừa in hóa đơn vừa in
+// phiếu bếp) — `outputs` (mảng, do sanitizePrintConfig ở settings/print.js sinh
+// ra) là nguồn thật; `output` (số ít) chỉ còn giữ để các bản ghi CŨ/đồng bộ
+// ngoài chưa gửi `outputs` vẫn khớp đúng một vai trò như trước.
+function printerOutputs(p = {}) {
+  if (Array.isArray(p.outputs) && p.outputs.length) return p.outputs;
+  return p.output ? [p.output] : [];
+}
+
 /**
  * Tuyến in của MỘT JOB — tra cấu hình TRƯỚC, không thấy thì dựng lại tuyến ngầm
  * 'auto:<device>:<tên máy in>'.
@@ -211,7 +220,7 @@ export function resolvePrinterForOutput(output, branch_id = 'sala', {
 } = {}) {
   const rows = Array.isArray(printers) ? printers : printerRows(branch_id);
   const usable = rows.filter(p => p && p.active !== false);
-  const sameOutput = usable.filter(p => p.output === output);
+  const sameOutput = usable.filter(p => printerOutputs(p).includes(output));
 
   // MÁY IN CẮM VÀO CHÍNH MÁY NÀY ĐƯỢC ƯU TIÊN TRƯỚC MỌI TUYẾN KHÁC.
   //
@@ -382,7 +391,7 @@ export function resolveReceiptPrinter(branch_id = 'sala', { deviceId = '' } = {}
  */
 export function resolvePrinterChain(output, branch_id = 'sala', { deviceId = '' } = {}) {
   const rows = printerRows(branch_id)
-    .filter(p => p && p.active !== false && p.output === output
+    .filter(p => p && p.active !== false && printerOutputs(p).includes(output)
       && (p.connection === 'lan' || p.connection === 'system'));
   const ownNames = deviceOwnPrinterNames(branch_id, deviceId);
 
@@ -402,8 +411,14 @@ export function resolvePrinterChain(output, branch_id = 'sala', { deviceId = '' 
     return 8;
   };
 
+  // uu: 0 ("Theo thứ tự danh sách") PHẢI xếp SAU mọi tuyến đã khai priority rõ
+  // ràng (1..5) — không phải TRƯỚC. Trước đây Number(p.priority)||0 làm 0 luôn
+  // bé nhất nên thắng cả "Ưu tiên 1": cửa hàng đánh dấu một tuyến là Ưu tiên 1
+  // nhưng mọi tuyến CHƯA đụng vào (còn ở mặc định 0) vẫn được thử trước nó —
+  // khiến việc chọn ưu tiên coi như vô tác dụng. 0 giờ quy về +Infinity (xếp
+  // cuối, đúng nghĩa "không ép thứ tự, để hệ thống xếp theo danh sách").
   const chain = rows
-    .map((p, i) => ({ p, bac: xepHang(p), uu: Number(p.priority) || 0, i }))
+    .map((p, i) => ({ p, bac: xepHang(p), uu: Number(p.priority) || Infinity, i }))
     .filter(x => x.bac < 9)
     .sort((a, b) => a.bac - b.bac || a.uu - b.uu || a.i - b.i)
     .map(x => x.p);
@@ -541,11 +556,28 @@ function kitchenDailySeq(order = {}) {
   return alt ? alt.slice(-4).toUpperCase() : '';
 }
 
+// SỰ CỐ báo 17/09/2026: chủ quán yêu cầu BẢNG THẬT — tên món sát lề trái, số
+// lượng sát lề phải, từng ô riêng — thay vì chuỗi gộp "SL x Tên" một cục (bản
+// trước đó cố tình chọn để khớp buildKitchenDoc/preview sau một sự cố lệch
+// renderer 2026-09-08). Lần này đổi CẢ BA đường (ESC/POS ở đây, GDI ở
+// buildKitchenDoc, preview ở print_template_designer_methods.dart) sang CÙNG
+// một bố cục bảng 2 cột, để không lặp lại đúng sự cố cũ theo chiều ngược lại.
 function kitchenTableLines(p = {}, W = 40, opt = {}) {
   const showQty = opt.showQty !== false && opt.showQty !== '0';
   const showMods = opt.showMods !== false && opt.showMods !== '0';
   const showNote = opt.showNote !== false && opt.showNote !== '0';
-  const NAME_W = Math.max(8, W - (showQty ? 5 : 0));
+  // Cỡ chữ RIÊNG cho bảng món (opt.fontSize, mm) — chỉ có khi đi qua mẫu tự
+  // thiết kế (renderEl truyền cả `el` làm opt). Đường renderTicket() mặc định
+  // KHÔNG truyền vì cả phiếu đó đã tự bọc [[S3]] từ bên ngoài — bọc thêm ở đây
+  // sẽ nhân đôi cỡ chữ.
+  const scale = opt.fontSize ? markScaleOf(opt.fontSize) : 0;
+  // scale 3 (GS ! 0x11) nhân đôi CẢ chiều rộng — chia đôi số cột logic như
+  // renderEl đã làm với chữ thường, nếu không bảng tràn mép giấy.
+  const Wt = scale >= 3 ? Math.max(8, Math.floor(W / 2)) : W;
+  const qtyW = showQty ? 4 : 0; // đủ cho "x99"; số lớn hơn tự tràn nhẹ, không vỡ layout
+  const nameW = Math.max(8, Wt - qtyW);
+  const truoc = scale ? `[[S${scale}]]` : '';
+  const sau = scale ? '[[S0]]' : '';
   const rows = [];
   const items = (Array.isArray(p.items) && p.items.length) ? p.items : [{ ...p }];
   for (const i of items) {
@@ -555,23 +587,26 @@ function kitchenTableLines(p = {}, W = 40, opt = {}) {
     const strike = (value) => cancelled
       ? [...String(value || '')].map(ch => ch === ' ' ? ch : `${ch}\u0336`).join('')
       : String(value || '');
-    const qty = showQty ? `${strike(i.qty || 1)} x ` : '';
-    const nameLines = wrap(`${qty}${strike(i.name || '')}`, NAME_W);
+    const qtyText = showQty ? strike(`x${i.qty || 1}`) : '';
+    const nameLines = wrap(strike(i.name || ''), nameW);
+    // Số lượng chỉ in ở DÒNG ĐẦU của tên — tên dài xuống dòng thì cột SL để
+    // trống, không lặp lại số lượng trên từng dòng tiếp theo.
     (nameLines.length ? nameLines : ['']).forEach((ln, idx) => {
-      rows.push(idx === 0 ? `[[B1]]${ln}[[B0]]` : `  ${ln}`);
+      const dong = fitVisible(ln, nameW) + (showQty ? fitVisible(idx === 0 ? qtyText : '', qtyW, 'right') : '');
+      rows.push(`${truoc}[[B1]]${dong}[[B0]]${sau}`);
     });
     // YÊU CẦU THÊM (mods) ngay dưới món.
     if (showMods) {
       const mods = itemMods(i);
       if (mods.length) {
-        for (const ln of wrap(`+ ${mods.join(', ')}`, NAME_W - 2)) rows.push(`  ${ln}`);
+        for (const ln of wrap(`+ ${mods.join(', ')}`, nameW - 2)) rows.push(`  ${ln}`);
       }
     }
     // GHI CHÚ dưới yêu cầu thêm.
     if (showNote && i.note) {
-      for (const ln of wrap(`Ghi chú: ${i.note}`, NAME_W - 2)) rows.push(`  ${ln}`);
+      for (const ln of wrap(`Ghi chú: ${i.note}`, nameW - 2)) rows.push(`  ${ln}`);
     }
-    rows.push(line('-', W));
+    rows.push(line('-', Wt));
   }
   return rows;
 }
@@ -2242,7 +2277,7 @@ async function writeSystemPrinter(name, text, {
 
 /** Tuyến này in máy in nhiệt (ESC/POS) hay máy in A4 qua driver? */
 function isThermal(printer = {}) {
-  return String(printer.output || '') !== 'report';
+  return !printerOutputs(printer).includes('report');
 }
 
 function patchJob(id, fields = {}) {
@@ -2317,7 +2352,7 @@ export function printProductLabel(branch_id = 'sala', { sku_id = '', sku = {}, c
     }
   }
   const printers = printerRows(branch_id);
-  const byOutput = (out) => printers.find(p => p.active !== false && p.output === out);
+  const byOutput = (out) => printers.find(p => p.active !== false && printerOutputs(p).includes(out));
   const printer = byOutput('product_label') ||
       byOutput('cup_label') ||
       printers.find(p => p.active !== false &&
@@ -2354,7 +2389,7 @@ export function printProductLabel(branch_id = 'sala', { sku_id = '', sku = {}, c
 // đơn để tránh nhả waybill ra máy in bill.
 function resolveLabelPrinter(branch_id, deviceId = '') {
   const printers = printerRows(branch_id).filter(p => p.active !== false);
-  const byOutput = (out) => printers.find(p => p.output === out);
+  const byOutput = (out) => printers.find(p => printerOutputs(p).includes(out));
   return byOutput('shipping_label') || byOutput('product_label') || byOutput('cup_label')
     || printers.find(p => /tem|label|van don|vận đơn|waybill/i.test(`${p.id} ${p.name} ${p.type}`))
     || (deviceId ? printers.find(p => isAttachedTo(p, deviceId, deviceOwnPrinterNames(branch_id, deviceId))) : null)
@@ -3299,11 +3334,20 @@ export function printKitchenTickets(order, items, branch_id = 'sala', staff = ''
     if (explicit) return explicit.id;
     const legacyId = STATION_PRINTER[station] || 'kitchen';
     if (!resolvedStation.has(legacyId)) {
+      // SỰ CỐ THẬT (báo 17/09): máy in phiếu bếp khai riêng stations:['kitchen']
+      // (chỉ nhận trạm Bếp) vẫn nhận luôn cả phiếu trạm Bar — vì bước rơi-về dưới
+      // đây trước nay lọc theo `output` (loại phiếu) mà KHÔNG biết gì về stations,
+      // nên một máy đã tự giới hạn cho trạm KHÁC vẫn lọt qua làm "máy in chung"
+      // cho trạm không hề khai. Loại thẳng những máy đã khai stations không rỗng
+      // và KHÔNG chứa trạm đang cần — chỉ máy chưa khai stations (rỗng/không có
+      // field) mới còn được coi là "máy dùng chung cho mọi trạm" như hành vi cũ.
+      const eligible = rows.filter(printer => !Array.isArray(printer.stations)
+        || !printer.stations.length || printer.stations.map(String).includes(String(station)));
       const found = resolvePrinterForOutput('kitchen_ticket', branch_id, {
         deviceId: deviceId || order.linked_pos_device || '',
         legacyId,
         preferDevice: true,
-        printers: rows,
+        printers: eligible,
       });
       resolvedStation.set(legacyId, found ? found.id : '');
     }

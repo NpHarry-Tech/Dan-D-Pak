@@ -1,4 +1,4 @@
-import { errorPayload } from './errors.js';
+import { errorPayload, isUnexpectedSystemError } from './errors.js';
 import { logger } from './logger.js';
 import { sanitizeText, sanitizeUrl } from './redaction.js';
 
@@ -13,7 +13,9 @@ export function apiNotFound(req, res) {
 
 export function errorHandler(err, req, res, next) {
   if (res.headersSent) return next(err);
-  const status = err.status || 500;
+  // `throw new Error('lý do nghiệp vụ')` là quy ước lâu đời của service layer:
+  // giữ nó ở 400, nhưng lỗi lập trình/driver không được giả làm lỗi nhập liệu.
+  const status = err.status || (isUnexpectedSystemError(err) ? 500 : 400);
   logger.error('request failed', {
     method: req.method,
     url: sanitizeUrl(req.originalUrl),

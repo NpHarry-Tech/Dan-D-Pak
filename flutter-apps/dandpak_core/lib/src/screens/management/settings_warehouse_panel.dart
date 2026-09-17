@@ -28,6 +28,7 @@ class _WarehouseSettingsPanelState extends State<WarehouseSettingsPanel> {
     'fnb': {'warehouse_id': '', 'price_book_id': 'default'},
   };
   bool _savingRetailCfg = false;
+  bool _savingWarehouse = false;
   bool _loading = true;
   String? _error;
 
@@ -169,6 +170,7 @@ class _WarehouseSettingsPanelState extends State<WarehouseSettingsPanel> {
       appToast(context, m, isError: error);
 
   Future<void> _save() async {
+    if (_savingWarehouse) return;
     final name = _nameCtrl.text.trim();
     if (name.isEmpty) {
       _toast(t('Nhập tên kho'), error: true);
@@ -186,13 +188,10 @@ class _WarehouseSettingsPanelState extends State<WarehouseSettingsPanel> {
         ? t('Tạo kho "$name".')
         : t('Cập nhật kho "$name".');
 
-    final pin = await settingsPin(context, reason);
-    if (pin == null) {
-      _toast(t('Đã hủy lưu cấu hình kho'), error: true);
-      return;
-    }
-
+    setState(() => _savingWarehouse = true);
     try {
+      final pin = await settingsPin(context, reason);
+      if (pin == null || !mounted) return;
       final body = <String, dynamic>{
         'name': name,
         'code': code,
@@ -218,6 +217,8 @@ class _WarehouseSettingsPanelState extends State<WarehouseSettingsPanel> {
       await _load();
     } catch (e) {
       _toast(e.toString().replaceFirst('Exception: ', ''), error: true);
+    } finally {
+      if (mounted) setState(() => _savingWarehouse = false);
     }
   }
 
@@ -1032,8 +1033,15 @@ class _WarehouseSettingsPanelState extends State<WarehouseSettingsPanel> {
                                 label: Text(t('Tạo kho mới')),
                               ),
                               FilledButton.icon(
-                                onPressed: _save,
-                                icon: Icon(Icons.save, size: 16),
+                                onPressed: _savingWarehouse ? null : _save,
+                                icon: _savingWarehouse
+                                    ? SizedBox(
+                                        width: 16,
+                                        height: 16,
+                                        child: CircularProgressIndicator(
+                                            strokeWidth: 2),
+                                      )
+                                    : Icon(Icons.save, size: 16),
                                 label: Text(_selectedId == null
                                     ? t('Tạo kho')
                                     : t('Lưu cấu hình kho')),

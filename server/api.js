@@ -38,7 +38,7 @@ import { registerErpRoutes } from './modules/erp/routes.js';
 import { registerDocumentRoutes, fileCashDrawerReceipt, registerStorageFileOrRollback } from './modules/documents/routes.js';
 import { registerByodRoutes } from './modules/byod/routes.js';
 import * as Haravan from './services/haravanConnector.js';
-import { errorPayload, isUnexpectedSystemError } from './core/errors.js';
+import { isUnexpectedSystemError } from './core/errors.js';
 import fs from 'node:fs';
 import { sanitizeText, sanitizeUrl } from './core/redaction.js';
 import nodePath from 'node:path';
@@ -188,17 +188,21 @@ function pickBackendEventType(path, status) {
   return status >= 500 ? 'backend_exception' : 'api_error';
 }
 
-const wrap = (fn) => (req, res) => {
+const wrap = (fn) => (req, res, next) => {
+  const fail = (e) => {
+    logRequestError(req, e);
+    next(e);
+  };
   try {
     const out = fn(req, res);
     if (out && typeof out.then === 'function') {
       out
-        .then(v => res.json(v ?? { ok: true }))
-        .catch(e => { logRequestError(req, e); res.status(e.status || 400).json(errorPayload(e)); });
+        .then(v => { if (!res.headersSent) res.json(v ?? { ok: true }); })
+        .catch(fail);
     }
-    else res.json(out ?? { ok: true });
+    else if (!res.headersSent) res.json(out ?? { ok: true });
   }
-  catch (e) { logRequestError(req, e); res.status(e.status || 400).json(errorPayload(e)); }
+  catch (e) { fail(e); }
 };
 
 // Lưu ảnh gửi lên dạng base64 (≤20MB, đúng mime ảnh) vào thư mục uploads và trả

@@ -38,8 +38,15 @@ test('lỗi NGHIỆP VỤ (e.code + e.status) giữ nguyên', () => {
 });
 
 test('lỗi nghiệp vụ 400 thường đi qua errorPayload (giữ message)', () => {
-  const e = Object.assign(new Error('Giỏ hàng trống'), { status: 400 });
+  const e = new Error('Giỏ hàng trống');
   const res = run(e);
   assert.equal(res._status, 400);
   assert.match(res._json.error, /trống/i);
+});
+
+test('lỗi lập trình không gắn status vẫn là 500 và không lộ chi tiết', () => {
+  const res = run(new TypeError('Cannot read properties of undefined'));
+  assert.equal(res._status, 500);
+  assert.equal(res._json.code, 'INTERNAL_ERROR');
+  assert.equal(res._json.message, 'Request failed');
 });

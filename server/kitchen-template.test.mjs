@@ -47,9 +47,10 @@ test('mau kitchen co phan tu items -> server render THEO MAU + bang mon co du mo
   assert.match(plain, /Tầng trệt|TẦNG TRỆT/i);
   assert.match(plain, /BAN A04/i);
   assert.match(plain, /So TT: 36a/);
-  // Bang mon co CA HAI mon + so luong.
-  assert.match(plain, /2 x Trà đào cam sả/);
-  assert.match(plain, /1 x Mì Bò Kho Việt Nam/);
+  // Bang mon co CA HAI mon + so luong — ten sat trai, "xN" sat phai CUNG DONG
+  // (bang that, doi 17/09/2026 — khong con gop "SL x Ten" mot chuoi).
+  assert.match(plain, /^Trà đào cam sả\s+x2$/m);
+  assert.match(plain, /^Mì Bò Kho Việt Nam\s+x1$/m);
   // Yeu cau them + ghi chu.
   assert.match(plain, /Ít đá/);
   assert.match(plain, /Ghi chú: không ống hút/);
@@ -86,5 +87,5 @@ test('khong cau hinh mau kitchen -> renderTicket dung san (khong doi hanh vi cu)
   const raw = Print.renderJobText({ type: 'kitchen_ticket', branch_id: 'ktpl-none', payload: PAYLOAD },
     'ktpl-none', { widthMm: 80 });
   assert.match(raw, /^\[\[S3\]\]/);
-  assert.match(Print.stripMarks(raw), /2 x Trà đào cam sả/);
+  assert.match(Print.stripMarks(raw), /^Trà đào cam sả\s+x2$/m);
 });
