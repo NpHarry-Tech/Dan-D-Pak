@@ -178,7 +178,12 @@ api.post('/settings/integrations', guardAny('settings.integrations'), wrap((req)
   if (!approvedBy) throw new Error('Cần nhập PIN của Manager hoặc Admin để xác nhận thay đổi cấu hình liên kết đối tác.');
   const incomingMisa = req.body?.channels?.misa;
   if (incomingMisa?.enabled === true) {
-    const cfg = AppSettings.mergeIntegrationChannelSecrets('misa', incomingMisa, branch_id);
+    // appId/apiBase/secretKey/integrationType không bao giờ đến từ Flutter —
+    // Flutter có gửi thừa gì thì cũng bị resolveServerCredentials đè bằng giá
+    // trị server ngay tại đây, trước khi kiểm tra điều kiện kích hoạt.
+    const cfg = Misa.resolveServerCredentials(
+      AppSettings.mergeIntegrationChannelSecrets('misa', incomingMisa, branch_id),
+    );
     const blockers = Misa.activationBlockers(cfg);
     if (blockers.length) throw new Error(`Chưa thể kích hoạt MISA: ${blockers.join('; ')}.`);
   }
@@ -195,6 +200,9 @@ api.post('/settings/integrations', guardAny('settings.integrations'), wrap((req)
   }
 
   const haravanWasEnabled = AppSettings.getIntegrationChannel('haravan', branch_id)?.enabled === true;
+  const misaBefore = AppSettings.getIntegrationChannel('misa', branch_id) || {};
+  const misaWasEnabled = misaBefore.enabled === true;
+  const misaOldUsername = misaBefore.username || '';
   const saved = AppSettings.updateIntegrations(req.body, branch_id);
   const haravanIsEnabled = saved?.channels?.haravan?.enabled === true;
   if (haravanWasEnabled !== haravanIsEnabled) {
@@ -210,6 +218,21 @@ api.post('/settings/integrations', guardAny('settings.integrations'), wrap((req)
       branch_id,
       approvedBy.username,
     );
+  }
+  // Ngắt kết nối / đổi tài khoản MISA — không bao giờ ghi username/password
+  // thật vào audit, chỉ ghi SỰ KIỆN (§L: "ghi audit ai thay đổi, lúc nào,
+  // không ghi secret").
+  const misaIsEnabled = saved?.channels?.misa?.enabled === true;
+  const misaNewUsername = saved?.channels?.misa?.username || '';
+  if (misaWasEnabled !== misaIsEnabled) {
+    audit(
+      misaIsEnabled ? 'integration.misa.enabled' : 'integration.misa.disabled',
+      { status: misaIsEnabled ? 'active' : 'inactive' },
+      branch_id,
+      approvedBy.username,
+    );
+  } else if (misaWasEnabled && misaIsEnabled && misaOldUsername && misaNewUsername && misaOldUsername !== misaNewUsername) {
+    audit('integration.misa.account_changed', { status: 'active' }, branch_id, approvedBy.username);
   }
   // Đổi cổng thanh toán là MỌI màn khách phải đổi theo NGAY: màn phụ đang hiện
   // QR cũ, iPad self-order đang ở bước chuyển khoản, catalogue ngoài quầy...
@@ -267,7 +290,9 @@ api.post('/settings/integrations/:channel/test', guardAny('settings.integrations
   const base = `${req.protocol}://${req.get('host')}`;
   const routedWebhook = (name) => `${base}/api/${name}/webhook?branch_id=${encodeURIComponent(branch(req))}`;
   if (channel === 'misa') {
-    const kq = await Misa.testConnection(cfg);
+    // appId/apiBase/environment CHỈ dùng cho lệnh gọi MISA thật — KHÔNG lưu
+    // xuống DB (cfg bên dưới vẫn là bản không có các trường này).
+    const kq = await Misa.testConnection(Misa.resolveServerCredentials(cfg));
     // GHI KẾT QUẢ XUỐNG DB — đây là mắt xích từng đứt hẳn.
     //
     // `configurationTestPassed` là một trong các điều kiện bắt buộc để MISA
@@ -284,6 +309,7 @@ api.post('/settings/integrations/:channel/test', guardAny('settings.integrations
       lastTestedAt: new Date().toISOString(),
       lastTestError: kq.ok ? '' : String(kq.message || '').slice(0, 500),
       lastTestStatus: kq.status || '',
+      lastTestStep: kq.step || '',
     };
     if (kq.company) {
       patch.companyName = kq.company.name || cfg.companyName || '';
@@ -303,7 +329,10 @@ api.post('/settings/integrations/:channel/test', guardAny('settings.integrations
       { channels: { misa: { ...cfg, ...patch } } },
       branch(req),
     );
-    return { channel, ...kq };
+    // baseUrl chỉ để chẩn đoán nội bộ — không phải thứ Flutter cần hiển thị,
+    // và endpoint kỹ thuật không nên rời server (§L).
+    const { baseUrl: _baseUrl, ...ketQuaAnToan } = kq;
+    return { channel, ...ketQuaAnToan };
   }
   if (channel === 'payos') {
     const payosWebhook = routedWebhook('payos');

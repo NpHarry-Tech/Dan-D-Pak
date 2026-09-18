@@ -252,7 +252,7 @@ export function createInvoiceRequest(order_id, customer_mode = 'WALK_IN', buyer_
   // kiểm toán vào là phạt). Giờ: MISA off → vẫn INSERT với trạng thái
   // PENDING_PROVIDER; bật MISA → requeuePendingProvider() đẩy tất cả vào
   // hàng đợi phát hành thật.
-  const misaCfg = getIntegrations(branch_id).channels?.misa || {};
+  const misaCfg = Misa.resolveServerCredentials(getIntegrations(branch_id).channels?.misa || {});
   const providerReady = Misa.isLive(misaCfg);
   // Store Edge records the legal intent atomically but never calls MISA. The
   // VPS becomes the single provider authority after the sale snapshot is ACKed.
@@ -372,7 +372,7 @@ export function createInvoiceRequest(order_id, customer_mode = 'WALK_IN', buyer_
  * (PENDING_PROVIDER) vào hàng đợi để phát hành thật. Idempotent.
  */
 export function requeuePendingProvider(branch_id = 'sala', actor = 'system') {
-  const misaCfg = getIntegrations(branch_id).channels?.misa || {};
+  const misaCfg = Misa.resolveServerCredentials(getIntegrations(branch_id).channels?.misa || {});
   if (!misaCfg.enabled) return { requeued: 0 };
   if (!Misa.isLive(misaCfg)) return { requeued: 0 };
   const provider = 'misa';
@@ -497,7 +497,7 @@ async function processJob(job) {
     reason: `Worker bắt đầu xử lý job (lần thử ${job.attempt_count + 1})`
   });
 
-  const misaCfg = getIntegrations(job.branch_id).channels?.misa || {};
+  const misaCfg = Misa.resolveServerCredentials(getIntegrations(job.branch_id).channels?.misa || {});
   const order = getOrder(job.order_id);
 
   if (!order) {
@@ -731,7 +731,7 @@ export async function syncInvoiceStatus(e_invoice_id, branch_id = null) {
   const job = get(e_invoice_id, branch_id);
   if (!job) throw new Error('Không tìm thấy yêu cầu hóa đơn');
 
-  const misaCfg = getIntegrations(job.branch_id).channels?.misa || {};
+  const misaCfg = Misa.resolveServerCredentials(getIntegrations(job.branch_id).channels?.misa || {});
   if (job.provider === 'misa' && Misa.isLive(misaCfg)) {
     try {
       const statusResult = await Misa.getInvoiceStatus({
@@ -820,7 +820,7 @@ export async function cancelInvoice(e_invoice_id, reason, actor = 'system', bran
   db.prepare(`UPDATE orders SET einvoice_status='CANCELLING'
     WHERE id=? AND branch_id=?`).run(job.order_id, job.branch_id);
 
-  const misaCfg = getIntegrations(job.branch_id).channels?.misa || {};
+  const misaCfg = Misa.resolveServerCredentials(getIntegrations(job.branch_id).channels?.misa || {});
   if (job.provider === 'misa' && Misa.isLive(misaCfg)) {
     try {
       const request = parseJson(job.request_snapshot, {});
@@ -938,7 +938,7 @@ export function upgradeBuyer(order_id, customer = {}, branch_id = 'sala', actor 
     throw new Error('Thiếu email nhận hóa đơn công ty');
   }
   const mode = isCompany ? 'COMPANY_TAX_INFO' : 'BUYER_PROVIDED_INFO';
-  const misaCfg = getIntegrations(branch_id).channels?.misa || {};
+  const misaCfg = Misa.resolveServerCredentials(getIntegrations(branch_id).channels?.misa || {});
   const providerReady = Misa.isLive(misaCfg);
   const provider = providerReady ? 'misa' : 'pending';
   const status = providerReady ? 'QUEUED' : 'PENDING_PROVIDER';
@@ -1070,7 +1070,7 @@ export function getReconciliation(branch_id = 'sala', filters = {}) {
  */
 export function getShiftInvoiceSummary(branch_id = 'sala', shift_id) {
   // If MISA integration is disabled, do not block closing shift
-  const misaCfg = getIntegrations(branch_id).channels?.misa || {};
+  const misaCfg = Misa.resolveServerCredentials(getIntegrations(branch_id).channels?.misa || {});
   if (!misaCfg.enabled) {
     const payments = db.prepare(`SELECT COUNT(DISTINCT p.order_id) as count
       FROM payments p JOIN orders o ON o.id=p.order_id

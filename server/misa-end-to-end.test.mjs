@@ -15,7 +15,7 @@ import { createServer } from 'node:http';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import test, { after, before } from 'node:test';
+import test, { after } from 'node:test';
 
 const temp = mkdtempSync(join(tmpdir(), 'dandpak-misa-e2e-'));
 process.env.SQLITE_PATH = join(temp, 'store.db');
@@ -23,17 +23,7 @@ process.env.STORAGE_PATH = join(temp, 'storage');
 process.env.DATA_ENCRYPTION_KEY = process.env.DATA_ENCRYPTION_KEY
   || '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
 process.env.PRINT_DISPATCH = 'agent';
-
-const { migrate, db } = await import('./db.js');
-const Misa = await import('./services/misa/index.js');
-const AppSettings = await import('./services/settings.js');
-const Einvoices = await import('./services/einvoice.js');
-const Invoices = await import('./services/invoices.js');
-const Inv = await import('./services/inventory.js');
-const Retail = await import('./services/retail.js');
-const Shifts = await import('./services/shifts.js');
-
-migrate();
+process.env.MISA_MEINVOICE_APP_ID = 'test-app-id';
 
 const BR = 'sala';
 const TAX = '0312345678';
@@ -52,110 +42,120 @@ const state = {
   seq: 0,
 };
 
-let server;
-let baseURL = '';
-
 function json(res, code, body) {
   res.writeHead(code, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify(body));
 }
 
-before(async () => {
-  server = createServer((req, res) => {
-    const url = new URL(req.url, 'http://x');
-    const path = url.pathname;
+const server = createServer((req, res) => {
+  const url = new URL(req.url, 'http://x');
+  const path = url.pathname;
 
-    if (path === '/api/v3/auth/token') {
-      state.soLanGoiAuth += 1;
-      let raw = '';
-      req.on('data', (c) => { raw += c; });
-      req.on('end', () => {
-        const b = JSON.parse(raw || '{}');
-        if (b.password !== 'dung-mat-khau') return json(res, 401, { message: 'Sai tài khoản hoặc mật khẩu' });
-        json(res, 200, { access_token: 'tok_' + Date.now(), expires_in: 3600 });
-      });
-      return;
-    }
+  if (path === '/api/v3/auth/token') {
+    state.soLanGoiAuth += 1;
+    let raw = '';
+    req.on('data', (c) => { raw += c; });
+    req.on('end', () => {
+      const b = JSON.parse(raw || '{}');
+      if (b.password !== 'dung-mat-khau') return json(res, 401, { message: 'Sai tài khoản hoặc mật khẩu' });
+      json(res, 200, { access_token: 'tok_' + Date.now(), expires_in: 3600 });
+    });
+    return;
+  }
 
-    // Mọi API nghiệp vụ đều phải có Bearer + CompanyTaxCode.
-    if (!String(req.headers.authorization || '').startsWith('Bearer ')) {
-      return json(res, 401, { message: 'Thiếu token' });
-    }
+  // Mọi API nghiệp vụ đều phải có Bearer + CompanyTaxCode.
+  if (!String(req.headers.authorization || '').startsWith('Bearer ')) {
+    return json(res, 401, { message: 'Thiếu token' });
+  }
 
-    if (path === '/api/v3/company') {
-      const mst = url.searchParams.get('taxcode');
-      if (mst !== TAX) return json(res, 200, { data: { TaxCode: '9999999999', CompanyName: 'Cong ty khac' } });
-      return json(res, 200, {
-        data: { TaxCode: TAX, CompanyName: 'Cong ty Dan D Pak', IsInvoiceWithCode: true, IsActive: true },
-      });
-    }
+  if (path === '/api/v3/company') {
+    const mst = url.searchParams.get('taxcode');
+    if (mst !== TAX) return json(res, 200, { data: { TaxCode: '9999999999', CompanyName: 'Cong ty khac' } });
+    return json(res, 200, {
+      data: { TaxCode: TAX, CompanyName: 'Cong ty Dan D Pak', IsInvoiceWithCode: true, IsActive: true },
+    });
+  }
 
-    if (path === '/api/v3/invoice-templates') {
-      return json(res, 200, {
-        data: [
-          { TemplateID: 'tpl-1', InvSeries: 'C26MBM', TemplateName: 'HD GTGT may tinh tien', IsInvoiceWithCode: true, IsInvoiceCalculatingMachine: true, IsActive: true },
-          { TemplateID: 'tpl-cu', InvSeries: 'C25XXX', TemplateName: 'Mau ngung dung', IsActive: false },
-        ],
-      });
-    }
+  if (path === '/api/v3/invoice-templates') {
+    return json(res, 200, {
+      data: [
+        { TemplateID: 'tpl-1', InvSeries: 'C26MBM', TemplateName: 'HD GTGT may tinh tien', IsInvoiceWithCode: true, IsInvoiceCalculatingMachine: true, IsActive: true },
+        { TemplateID: 'tpl-cu', InvSeries: 'C25XXX', TemplateName: 'Mau ngung dung', IsActive: false },
+      ],
+    });
+  }
 
-    if (path === '/api/v3/code/itg/invoice-calculating/invoiceandpublish') {
-      state.soLanGoiPublish += 1;
-      let raw = '';
-      req.on('data', (c) => { raw += c; });
-      req.on('end', () => {
-        const b = JSON.parse(raw || '{}');
-        const ref = b.RefID;
-        const publish = () => {
-          if (state.publishHang === 'timeout') {
-            // Nhận được rồi nhưng KHÔNG trả lời — đúng tình huống nguy hiểm nhất.
-            state.daPhatHanh.set(ref, mkInvoice(ref));
-            return; // treo, client sẽ hết giờ
-          }
-          if (state.daPhatHanh.has(ref)) {
-            return json(res, 400, { errorCode: 'DUPLICATE_REFID', message: 'RefID đã tồn tại' });
-          }
-          const inv = mkInvoice(ref);
-          state.daPhatHanh.set(ref, inv);
-          json(res, 200, { data: inv });
-        };
-        if (state.publishDelayMs > 0) setTimeout(publish, state.publishDelayMs);
-        else publish();
-      });
-      return;
-    }
+  if (path === '/api/v3/code/itg/invoice-calculating/invoiceandpublish') {
+    state.soLanGoiPublish += 1;
+    let raw = '';
+    req.on('data', (c) => { raw += c; });
+    req.on('end', () => {
+      const b = JSON.parse(raw || '{}');
+      const ref = b.RefID;
+      const publish = () => {
+        if (state.publishHang === 'timeout') {
+          // Nhận được rồi nhưng KHÔNG trả lời — đúng tình huống nguy hiểm nhất.
+          state.daPhatHanh.set(ref, mkInvoice(ref));
+          return; // treo, client sẽ hết giờ
+        }
+        if (state.daPhatHanh.has(ref)) {
+          return json(res, 400, { errorCode: 'DUPLICATE_REFID', message: 'RefID đã tồn tại' });
+        }
+        const inv = mkInvoice(ref);
+        state.daPhatHanh.set(ref, inv);
+        json(res, 200, { data: inv });
+      };
+      if (state.publishDelayMs > 0) setTimeout(publish, state.publishDelayMs);
+      else publish();
+    });
+    return;
+  }
 
-    if (path === '/api/v3/invoice/status') {
-      const ref = url.searchParams.get('refId');
-      const inv = state.daPhatHanh.get(ref);
-      if (!inv) return json(res, 404, { message: 'Chưa có hóa đơn' });
-      return json(res, 200, { data: inv });
-    }
+  if (path === '/api/v3/invoice/status') {
+    const ref = url.searchParams.get('refId');
+    const inv = state.daPhatHanh.get(ref);
+    if (!inv) return json(res, 404, { message: 'Chưa có hóa đơn' });
+    return json(res, 200, { data: inv });
+  }
 
-    if (path === '/api/v3/invoice/cancel') {
-      state.cancelCalls += 1;
-      let raw = '';
-      req.on('data', (c) => { raw += c; });
-      req.on('end', () => {
-        const finish = () => {
-          state.lastCancelBody = JSON.parse(raw || '{}');
-          if (state.cancelFail) return json(res, 503, { message: 'MISA cancel tam thoi loi' });
-          json(res, 200, { data: { RefID: state.lastCancelBody.RefID, Cancelled: true } });
-        };
-        if (state.cancelDelayMs > 0) setTimeout(finish, state.cancelDelayMs);
-        else finish();
-      });
-      return;
-    }
+  if (path === '/api/v3/invoice/cancel') {
+    state.cancelCalls += 1;
+    let raw = '';
+    req.on('data', (c) => { raw += c; });
+    req.on('end', () => {
+      const finish = () => {
+        state.lastCancelBody = JSON.parse(raw || '{}');
+        if (state.cancelFail) return json(res, 503, { message: 'MISA cancel tam thoi loi' });
+        json(res, 200, { data: { RefID: state.lastCancelBody.RefID, Cancelled: true } });
+      };
+      if (state.cancelDelayMs > 0) setTimeout(finish, state.cancelDelayMs);
+      else finish();
+    });
+    return;
+  }
 
-    json(res, 404, { message: 'not found' });
-  });
-
-  await new Promise((r) => server.listen(0, '127.0.0.1', r));
-  baseURL = `http://127.0.0.1:${server.address().port}/api/v3`;
+  json(res, 404, { message: 'not found' });
 });
 
+await new Promise((r) => server.listen(0, '127.0.0.1', r));
+const baseURL = `http://127.0.0.1:${server.address().port}/api/v3`;
+// appId/apiBase giờ là credential ứng dụng ở server (resolveServerCredentials
+// đọc thẳng process.env, snapshot NGAY LÚC import config/env.js) — phải set
+// và khởi động máy chủ giả TRƯỚC dòng import đầu tiên bên dưới.
+process.env.MISA_MEINVOICE_BASE_URL = baseURL;
+
 after(() => server?.close());
+
+const { migrate, db } = await import('./db.js');
+const Misa = await import('./services/misa/index.js');
+const AppSettings = await import('./services/settings.js');
+const Einvoices = await import('./services/einvoice.js');
+const Invoices = await import('./services/invoices.js');
+const Inv = await import('./services/inventory.js');
+const Retail = await import('./services/retail.js');
+const Shifts = await import('./services/shifts.js');
+
+migrate();
 
 function mkInvoice(ref) {
   state.seq += 1;

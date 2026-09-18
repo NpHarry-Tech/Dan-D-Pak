@@ -25,6 +25,8 @@ export {
   activationBlockers,
   isLive,
   configStatus,
+  serverConfigured,
+  resolveServerCredentials,
 } from './config.js';
 
 export { MisaError, sanitize } from './client.js';

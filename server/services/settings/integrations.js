@@ -16,6 +16,7 @@ import { decryptSecret, encryptSecret, isEncrypted, secretContext } from '../../
 import {
   INTEGRATIONS_KEY, bool, str, plainObject, writeJsonSetting,
 } from './shared.js';
+import { configStatus as misaConfigStatus } from '../misa/config.js';
 
 // ── 1. Mã hoá secret khi lưu xuống DB ───────────────────────────────────────
 const SECRET_SETTING_KEYS = /^(password|secretKey|apiKey|checksumKey|clientSecret|accessToken|refreshToken|webhookSecret|verifyToken)$/i;
@@ -74,10 +75,13 @@ const DEFAULT_INTEGRATIONS = {
   channels: {
     misa: {
       enabled: false,
+      // AppID/Secret Key/API Base URL/endpoint kỹ thuật KHÔNG còn ở đây — đó là
+      // credential của ỨNG DỤNG Dan D Pak POS với MISA (dùng chung mọi chi
+      // nhánh), sống ở biến môi trường server (MISA_MEINVOICE_APP_ID/ENV/
+      // BASE_URL, xem services/misa/config.js resolveServerCredentials).
+      // "Loại API MISA"/taxMethod/roundingPolicy cũng bỏ — không có tác dụng gì
+      // trong payload.js (dead field chỉ chặn kích hoạt), xem báo cáo bàn giao.
       environment: 'sandbox',
-      integrationType: 'UNCONFIRMED',
-      taxMethod: 'UNCONFIRMED',
-      roundingPolicy: 'UNCONFIRMED',
       templateId: '',
       // Ký hiệu hóa đơn — LUÔN lấy theo mẫu đã chọn (đồng bộ từ MISA), không
       // gõ tay: sai ký hiệu là phát hành dưới ký hiệu chưa đăng ký với cơ quan
@@ -93,25 +97,17 @@ const DEFAULT_INTEGRATIONS = {
       // hỏng ở khâu nào thay vì chỉ "không kết nối được".
       lastTestError: '',
       lastTestStatus: '',
+      // Bước nào lỗi ở lần kiểm tra gần nhất ('auth'|'company'|'templates') —
+      // để suy ra REAUTH_REQUIRED (sai tài khoản) khác DEGRADED (đăng nhập
+      // được nhưng dữ liệu MISA có vấn đề), xem configStatus().
+      lastTestStep: '',
       // Danh sách mẫu MISA trả về ở lần kiểm tra gần nhất (JSON), để chọn mẫu
       // không phải gọi lại MISA.
       availableTemplates: '',
-      // Ghi đè đường dẫn API theo hợp đồng riêng của doanh nghiệp. Để trống là
-      // dùng mặc định API v3. Có ô này thì lệch hợp đồng chỉ cần sửa Cài đặt,
-      // KHÔNG phải sửa code và build lại.
-      endpointAuth: '',
-      endpointCompany: '',
-      endpointTemplates: '',
-      endpointPublish: '',
-      endpointStatus: '',
-      endpointCancel: '',
-      apiBase: '',
       taxCode: '',
       companyName: '',
       username: '',
       password: '',
-      appId: '',
-      secretKey: '',
       autoIssue: false,
       syncInvoices: true,
       syncCustomers: true,
@@ -409,13 +405,25 @@ function maskSecretValue(v) {
   return `${MASKED_SECRET_PREFIX}${s.slice(-4)}`;
 }
 
+// Trường thuộc credential ỨNG DỤNG (server env), không phải của chi nhánh —
+// dù schema hiện tại không còn khai các khoá này, XOÁ HẲN nếu có (thay vì chỉ
+// che) để một bản ghi cũ/khách gửi thừa trường không bao giờ lọt ra Flutter.
+const SERVER_ONLY_FIELDS = {
+  misa: ['appId', 'apiBase', 'secretKey', 'integrationType',
+    'endpointAuth', 'endpointCompany', 'endpointTemplates', 'endpointPublish', 'endpointStatus', 'endpointCancel'],
+};
+
 function maskIntegrations(clean = {}) {
   const out = { ...clean, channels: {} };
   for (const [key, channel] of Object.entries(clean.channels || {})) {
     out.channels[key] = { ...channel };
+    // Trạng thái hiển thị (DISCONNECTED/READY/REAUTH_REQUIRED/…) tính từ dữ
+    // liệu GIẢI MÃ trước khi che — không có gì bí mật trong chính kết quả này.
+    if (key === 'misa') out.channels[key].status = misaConfigStatus(channel);
     for (const field of Object.keys(out.channels[key])) {
       if (isSecretField(field)) out.channels[key][field] = maskSecretValue(out.channels[key][field]);
     }
+    for (const field of SERVER_ONLY_FIELDS[key] || []) delete out.channels[key][field];
   }
   return out;
 }

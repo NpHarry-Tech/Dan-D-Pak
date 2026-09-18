@@ -14,7 +14,7 @@
 // Chưa có mẫu hợp lệ thì trạng thái là REQUIRES_TEMPLATE — kết nối đúng nhưng
 // CHƯA được bật tự phát hành.
 
-import { CONFIG_STATUS, activationBlockers, environmentMismatch, baseUrl } from './config.js';
+import { CONFIG_STATUS, activationBlockers, environmentMismatch, baseUrl, serverConfigured } from './config.js';
 import { getToken } from './auth.js';
 import { fetchCompany, fetchTemplates, filterTemplates } from './company.js';
 
@@ -30,6 +30,16 @@ function baoLoi(step, message, extra = {}) {
 
 /// Kiểm tra kết nối. KHÔNG ghi DB — người gọi (route) quyết định lưu gì.
 export async function testConnection(cfg = {}) {
+  // AppID là hạ tầng của server, không phải lỗi cửa hàng nhập sai — báo riêng,
+  // đừng để lẫn với "sai tài khoản/mật khẩu".
+  if (!serverConfigured()) {
+    return {
+      ok: false,
+      status: CONFIG_STATUS.SERVER_NOT_CONFIGURED,
+      step: 'server_config',
+      message: 'Cấu hình tích hợp phía server chưa đầy đủ. Liên hệ quản trị hệ thống.',
+    };
+  }
   // Thiếu thông tin cơ bản thì khỏi làm phiền MISA.
   const thieu = [];
   if (!String(cfg.taxCode || '').trim()) thieu.push('mã số thuế');

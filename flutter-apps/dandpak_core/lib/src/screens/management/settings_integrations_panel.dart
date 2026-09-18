@@ -12,6 +12,7 @@ import '../../ui/file_pick.dart';
 import '../../ui/app_theme.dart';
 import '../../ui/aspect_safe_thumbnail.dart';
 import '../online/marketplace_connect_panel.dart';
+import 'misa_meinvoice_panel.dart';
 import 'settings_erp_panel.dart';
 import 'settings_tab.dart';
 import 'settings_value_utils.dart';
@@ -61,11 +62,11 @@ List<IntegrationDef> get _integrationDefs => [
       IntegrationDef(
           key: 'misa',
           icon: '🧾',
-          name: 'MISA',
+          name: 'MISA meInvoice',
           desc: t(
-              'Xuất hóa đơn điện tử, đồng bộ khách hàng và trạng thái hóa đơn.'),
+              'Kết nối MISA meInvoice để tự động phát hành và quản lý hóa đơn điện tử.'),
           type: 'misa',
-          imageAsset: 'assets/brand/MISA.jpg'),
+          imageAsset: 'assets/brand/Misa_meinvoice_icon.png'),
       IntegrationDef(
           key: 'erp',
           icon: '🧩',
@@ -240,15 +241,8 @@ List<IntegrationDef> get _integrationDefs => [
     ];
 
 Map<String, List<String>> _channelTextFields = {
-  'misa': [
-    'apiBase',
-    'taxCode',
-    'companyName',
-    'username',
-    'password',
-    'appId',
-    'secretKey'
-  ],
+  // 'misa' không còn ở đây — MisaMeInvoicePanel tự quản lý form/lưu riêng
+  // (xem _buildDetailsPane), không đi qua form chung apiBase/appId/secretKey.
   'payos': [
     'clientId',
     'apiKey',
@@ -504,11 +498,6 @@ class _IntegrationsPanelState extends State<IntegrationsPanel> {
   String? _error;
   String _selectedKey = 'misa';
   bool _haravanBusy = false;
-
-  /// Mẫu hóa đơn MISA trả về ở lần "Kiểm tra kết nối" gần nhất.
-  /// KHÔNG hard-code danh sách này — mẫu là do doanh nghiệp khai trên MISA.
-  List<Map<String, dynamic>> _misaTemplates = const [];
-  String _misaStatus = '';
 
   /// Cấu hình màn khách catalogue — chỉ dùng cho mục "Mã QR tĩnh". Nằm ở
   /// endpoint riêng (/settings/catalogue) chứ không thuộc bảng liên kết, vì nó
@@ -804,29 +793,6 @@ class _IntegrationsPanelState extends State<IntegrationsPanel> {
       final res = await widget.api.testIntegration(def.key, testCfg);
       if (!mounted) return;
 
-      // MISA: kiểm tra kết nối cũng chính là lúc TẢI VỀ danh sách mẫu hóa đơn
-      // và thông tin doanh nghiệp. Giữ lại để người dùng chọn mẫu ngay, không
-      // phải bấm thêm nút nào nữa.
-      if (def.key == 'misa') {
-        setState(() {
-          _misaTemplates = (res['templates'] as List?)
-                  ?.whereType<Map>()
-                  .map((e) => Map<String, dynamic>.from(e))
-                  .toList() ??
-              const [];
-          final c = res['company'];
-          if (c is Map) {
-            _channels['misa']?['companyName'] = c['name'] ?? '';
-            final coMa = c['invoiceWithCode'];
-            if (coMa is bool) {
-              _channels['misa']?['invoiceCodeType'] =
-                  coMa ? 'WITH_CODE' : 'WITHOUT_CODE';
-            }
-          }
-          _misaStatus = '${res['status'] ?? ''}';
-        });
-      }
-
       final ok = res['ok'] != false;
       final msg = res['message'] ??
           (ok ? t('Kết nối thành công!') : t('Kết nối thất bại.'));
@@ -1088,184 +1054,6 @@ class _IntegrationsPanelState extends State<IntegrationsPanel> {
   }
 
   /// Ô "GHI CHÚ NỘI BỘ" — không gửi cho đối tác, chỉ phục vụ đối soát nội bộ.
-  /// KHỐI ĐIỀU KHIỂN RIÊNG CỦA MISA.
-  ///
-  /// Những mục ở đây đều là ĐIỀU KIỆN BẮT BUỘC để được phép phát hành hóa đơn
-  /// (xem `activationBlockers` phía server). Trước đây chúng có trong lược đồ
-  /// cấu hình nhưng KHÔNG có ô nhập nào trên màn hình, nên người dùng điền đủ
-  /// tài khoản mà hệ thống vẫn không bao giờ phát hành được — và không báo lỗi,
-  /// vì đó không phải lỗi, chỉ là "chưa cấu hình xong".
-  Widget _buildMisaControls(Map<String, dynamic> conf) {
-    Widget chon(String key, String nhan, Map<String, String> luaChon,
-        {String? goiY}) {
-      final hienTai = asText(conf[key]);
-      final hopLe = luaChon.containsKey(hienTai) ? hienTai : null;
-      return Padding(
-        padding: EdgeInsets.only(bottom: 12),
-        child: DropdownButtonFormField<String>(
-          initialValue: hopLe,
-          isExpanded: true,
-          decoration: InputDecoration(
-              labelText: t(nhan),
-              isDense: true,
-              helperText: goiY == null ? null : t(goiY),
-              helperMaxLines: 3),
-          items: [
-            for (final e in luaChon.entries)
-              DropdownMenuItem(value: e.key, child: Text(t(e.value))),
-          ],
-          onChanged: (v) => setState(() => conf[key] = v),
-        ),
-      );
-    }
-
-    final mauDaTai = _misaTemplates;
-    final mauDangChon = asText(conf['templateId']);
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Text(t('CẤU HÌNH HÓA ĐƠN'),
-            style: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w900,
-                letterSpacing: .5,
-                color: DanColors.faint)),
-        SizedBox(height: 10),
-
-        chon(
-            'environment',
-            'Môi trường',
-            {
-              'sandbox': 'Sandbox / Thử nghiệm',
-              'production': 'Production / Chính thức',
-            },
-            goiY:
-                'Để trống Địa chỉ API thì hệ thống tự dùng đúng máy chủ của môi trường đã chọn.'),
-
-        chon('integrationType', 'Loại API MISA', {
-          'MISA_API_V3': 'meInvoice API v3',
-          'UNCONFIRMED': 'Chưa xác nhận',
-        }),
-
-        chon(
-            'invoiceType',
-            'Loại nghiệp vụ hóa đơn',
-            {
-              'CASH_REGISTER': 'Hóa đơn khởi tạo từ máy tính tiền',
-              'VAT': 'Hóa đơn GTGT',
-              'SALES': 'Hóa đơn bán hàng',
-            },
-            goiY: 'Phải khớp với đăng ký của doanh nghiệp với cơ quan thuế.'),
-
-        chon(
-            'taxMethod',
-            'Phương pháp tính thuế',
-            {
-              'CREDIT_METHOD': 'Khấu trừ',
-              'DIRECT_METHOD': 'Trực tiếp',
-              'UNCONFIRMED': 'Chưa xác nhận',
-            },
-            goiY: 'Kế toán phải xác nhận trước khi phát hành hóa đơn thật.'),
-
-        chon('roundingPolicy', 'Quy tắc làm tròn', {
-          'PER_INVOICE': 'Làm tròn theo hóa đơn',
-          'PER_LINE': 'Làm tròn theo từng dòng',
-          'UNCONFIRMED': 'Chưa xác nhận',
-        }),
-
-        // Hình thức có mã / không mã LẤY TỪ MISA và khóa lại — chọn sai là hóa
-        // đơn bị cơ quan thuế từ chối.
-        Padding(
-          padding: EdgeInsets.only(bottom: 12),
-          child: TextField(
-            readOnly: true,
-            controller: TextEditingController(
-                text: asText(conf['invoiceCodeType']) == 'WITHOUT_CODE'
-                    ? t('Không có mã CQT')
-                    : asText(conf['invoiceCodeType']) == 'WITH_CODE'
-                        ? t('Có mã CQT')
-                        : t('Chưa xác định — bấm Kiểm tra kết nối')),
-            decoration: InputDecoration(
-                labelText: t('Hình thức hóa đơn'),
-                isDense: true,
-                helperText: t(
-                    'Lấy tự động từ MISA theo doanh nghiệp, không chỉnh tay.')),
-          ),
-        ),
-
-        // Mẫu hóa đơn: chỉ hiện những mẫu MISA THẬT SỰ trả về.
-        if (mauDaTai.isEmpty)
-          Container(
-            padding: EdgeInsets.all(12),
-            margin: EdgeInsets.only(bottom: 12),
-            decoration: BoxDecoration(
-              color: DanColors.surface2,
-              border: Border.all(color: DanColors.border),
-              borderRadius: BorderRadius.circular(DanRadius.md),
-            ),
-            child: Text(
-                mauDangChon.isEmpty
-                    ? t(
-                        'Chưa có mẫu hóa đơn. Bấm "Kiểm tra kết nối" để tải danh sách mẫu từ MISA.')
-                    : '${t('Đang dùng mẫu')} $mauDangChon · ${t('bấm "Kiểm tra kết nối" để tải lại danh sách')}',
-                style: TextStyle(
-                    fontSize: 12.5, color: DanColors.muted, height: 1.45)),
-          )
-        else
-          Padding(
-            padding: EdgeInsets.only(bottom: 12),
-            child: DropdownButtonFormField<String>(
-              initialValue: mauDaTai.any((m) => asText(m['id']) == mauDangChon)
-                  ? mauDangChon
-                  : null,
-              isExpanded: true,
-              decoration: InputDecoration(
-                  labelText: t('Mẫu hóa đơn'),
-                  isDense: true,
-                  helperText: t(
-                      'Lấy trực tiếp từ MISA. Ký hiệu đi kèm mẫu, không nhập tay.'),
-                  helperMaxLines: 2),
-              items: [
-                for (final m in mauDaTai)
-                  DropdownMenuItem(
-                    value: asText(m['id']),
-                    child: Text('${asText(m['name'])} · ${asText(m['series'])}',
-                        overflow: TextOverflow.ellipsis),
-                  ),
-              ],
-              onChanged: (v) => setState(() {
-                conf['templateId'] = v;
-                // Ký hiệu LUÔN đi theo mẫu — không để hai thứ lệch nhau.
-                final m = mauDaTai.firstWhere((e) => asText(e['id']) == v,
-                    orElse: () => const {});
-                conf['series'] = asText(m['series']);
-              }),
-            ),
-          ),
-
-        if (asText(conf['series']).isNotEmpty)
-          Padding(
-            padding: EdgeInsets.only(bottom: 12),
-            child: Text('${t('Ký hiệu hóa đơn')}: ${asText(conf['series'])}',
-                style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800)),
-          ),
-
-        if (_misaStatus.isNotEmpty)
-          Padding(
-            padding: EdgeInsets.only(bottom: 4),
-            child: Text('${t('Trạng thái cấu hình')}: $_misaStatus',
-                style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w800,
-                    color: _misaStatus == 'READY'
-                        ? DanColors.done
-                        : DanColors.doing)),
-          ),
-      ],
-    );
-  }
-
   Widget _buildInternalNote(IntegrationDef def) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1588,6 +1376,15 @@ class _IntegrationsPanelState extends State<IntegrationsPanel> {
     // ERP — Business Central dùng backend riêng (/erp/*), không theo hệ field
     // của các cổng thanh toán → render UI riêng, vẫn nằm trong khung "Liên kết".
     if (_selectedKey == 'erp') return ErpConfigView(api: widget.api);
+    // MISA meInvoice — luồng kết nối riêng kiểu KiotViet (chỉ nhập tài khoản
+    // MISA, không có form kỹ thuật apiBase/appId/secretKey). Padding khớp
+    // SingleChildScrollView của các kênh khác.
+    if (_selectedKey == 'misa') {
+      return Padding(
+        padding: const EdgeInsets.all(18),
+        child: MisaMeInvoicePanel(onChanged: _load),
+      );
+    }
     // Sàn TMĐT qua Connection Platform (Shopee/Lazada…): kết nối "1 chạm" — user
     // chỉ đăng nhập + đồng ý, KHÔNG nhập Partner ID/Key/token. Gộp thẳng vào detail
     // của màn Liên kết (một màn duy nhất), không dựng UI kết nối riêng.
@@ -1626,10 +1423,6 @@ class _IntegrationsPanelState extends State<IntegrationsPanel> {
                   ],
                   if (fields.isNotEmpty) ...[
                     _buildConfigFields(def, conf, fields),
-                    SizedBox(height: 16),
-                  ],
-                  if (def.key == 'misa') ...[
-                    _buildMisaControls(conf),
                     SizedBox(height: 16),
                   ],
                   _buildAdditionalControls(def, conf),

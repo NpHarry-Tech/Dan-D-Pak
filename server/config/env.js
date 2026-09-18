@@ -94,6 +94,12 @@ export function loadEnv(source = process.env) {
     HARAVAN_LOCATION_ID: clean(source.HARAVAN_LOCATION_ID) || '',
     HARAVAN_API_BASE_URL: clean(source.HARAVAN_API_BASE_URL) || 'https://apis.haravan.com',
     HARAVAN_DEFAULT_BRANCH_ID: clean(source.HARAVAN_DEFAULT_BRANCH_ID) || 'ONLINE',
+    // MISA meInvoice Open API v3 — AppID do MISA cấp CHO ỨNG DỤNG Dan D Pak POS
+    // (không phải cho từng cửa hàng), nên nằm ở server, KHÔNG phải cấu hình
+    // theo chi nhánh trong DB — tránh phải nhập/lộ AppID trên giao diện POS.
+    MISA_MEINVOICE_APP_ID: clean(source.MISA_MEINVOICE_APP_ID) || '',
+    MISA_MEINVOICE_ENV: clean(source.MISA_MEINVOICE_ENV) || '',
+    MISA_MEINVOICE_BASE_URL: clean(source.MISA_MEINVOICE_BASE_URL) || '',
     // 'auto' = server tự in trên phần cứng cùng máy (mô hình LAN 1 máy chủ).
     // 'agent' = server chỉ xếp hàng job; việc in vật lý + mở két do Hardware
     // Agent tại cửa hàng thực thi (mô hình VPS trung tâm — server ở datacenter

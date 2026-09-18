@@ -8,7 +8,7 @@ import { createServer } from 'node:http';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import test, { after, before } from 'node:test';
+import test, { after } from 'node:test';
 
 const temp = mkdtempSync(join(tmpdir(), 'dandpak-misa-shiftbatch-'));
 process.env.SQLITE_PATH = join(temp, 'store.db');
@@ -16,6 +16,40 @@ process.env.STORAGE_PATH = join(temp, 'storage');
 process.env.DATA_ENCRYPTION_KEY = process.env.DATA_ENCRYPTION_KEY
   || '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
 process.env.PRINT_DISPATCH = 'agent';
+process.env.MISA_MEINVOICE_APP_ID = 'test-app-id';
+
+let publishCalls = 0;
+let seq = 0;
+
+function json(res, code, body) {
+  res.writeHead(code, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify(body));
+}
+
+const server = createServer((req, res) => {
+  const path = new URL(req.url, 'http://x').pathname;
+  if (path === '/api/v3/auth/token') {
+    return json(res, 200, { access_token: 'tok', expires_in: 3600 });
+  }
+  if (path === '/api/v3/code/itg/invoice-calculating/invoiceandpublish') {
+    publishCalls += 1;
+    let raw = '';
+    req.on('data', (c) => { raw += c; });
+    req.on('end', () => {
+      const b = JSON.parse(raw || '{}');
+      seq += 1;
+      json(res, 200, { data: { InvNo: String(2000 + seq), InvSeries: 'C26MBM', LookupCode: 'LK' + seq, TransactionID: 'TX' + seq, RefID: b.RefID } });
+    });
+    return;
+  }
+  json(res, 404, { message: 'not found in fake server' });
+}).listen(0);
+await new Promise((resolve) => server.once('listening', resolve));
+const baseURL = `http://127.0.0.1:${server.address().port}`;
+// appId/apiBase giờ là credential ứng dụng ở server (resolveServerCredentials
+// đọc thẳng process.env, snapshot NGAY LÚC import config/env.js) — phải set
+// TRƯỚC dòng import đầu tiên bên dưới, không phải trong before().
+process.env.MISA_MEINVOICE_BASE_URL = baseURL;
 
 const { migrate, db } = await import('./db.js');
 const AppSettings = await import('./services/settings.js');
@@ -32,38 +66,6 @@ const TAX = '0312345678';
 // lệnh gọi, không tách hai lần kẻo lần sau xoá mất printers của lần trước.
 const PRINTER_CFG = { printers: [{ id: 'pos80c', name: 'POS-80C', systemName: 'POS-80C',
   label: 'in bill', output: 'receipt', connection: 'system', active: true, auto: true }] };
-
-let server; let baseURL = '';
-let publishCalls = 0;
-let seq = 0;
-
-function json(res, code, body) {
-  res.writeHead(code, { 'Content-Type': 'application/json' });
-  res.end(JSON.stringify(body));
-}
-
-before(async () => {
-  server = createServer((req, res) => {
-    const path = new URL(req.url, 'http://x').pathname;
-    if (path === '/api/v3/auth/token') {
-      return json(res, 200, { access_token: 'tok', expires_in: 3600 });
-    }
-    if (path === '/api/v3/code/itg/invoice-calculating/invoiceandpublish') {
-      publishCalls += 1;
-      let raw = '';
-      req.on('data', (c) => { raw += c; });
-      req.on('end', () => {
-        const b = JSON.parse(raw || '{}');
-        seq += 1;
-        json(res, 200, { data: { InvNo: String(2000 + seq), InvSeries: 'C26MBM', LookupCode: 'LK' + seq, TransactionID: 'TX' + seq, RefID: b.RefID } });
-      });
-      return;
-    }
-    json(res, 404, { message: 'not found in fake server' });
-  }).listen(0);
-  await new Promise((resolve) => server.once('listening', resolve));
-  baseURL = `http://127.0.0.1:${server.address().port}`;
-});
 after(() => new Promise((resolve) => server.close(resolve)));
 
 function batMisa() {

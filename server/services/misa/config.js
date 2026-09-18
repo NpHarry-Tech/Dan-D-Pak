@@ -6,10 +6,35 @@
 // API v3. Lệch hợp đồng thì sửa trong Cài đặt, KHÔNG phải sửa code rồi build
 // lại — đó là điều kiện để "nhập thông tin vào là chạy được liền".
 
+import { env } from '../../config/env.js';
+
 const DEFAULT_BASE = {
   sandbox: 'https://testapi.meinvoice.vn',
   production: 'https://api.meinvoice.vn',
 };
+
+/// AppID do MISA cấp cho Dan D Pak POS — luôn từ biến môi trường server,
+/// KHÔNG BAO GIỜ từ cấu hình theo chi nhánh/Flutter (§L). Cửa hàng chỉ nhập
+/// tài khoản MISA meInvoice của họ; AppID là của ỨNG DỤNG, dùng chung.
+export function serverConfigured() {
+  return !!String(env.MISA_MEINVOICE_APP_ID || '').trim();
+}
+
+/// Ghép cấu hình đã lưu theo chi nhánh với credential ứng dụng ở server. Mọi
+/// nơi gọi MISA (worker, testConnection, activationBlockers) PHẢI đi qua đây
+/// thay vì đọc thẳng cfg từ DB, để appId/apiBase/environment không bao giờ lấy
+/// từ dữ liệu do Flutter gửi lên.
+export function resolveServerCredentials(cfg = {}) {
+  return {
+    ...cfg,
+    appId: String(env.MISA_MEINVOICE_APP_ID || '').trim(),
+    apiBase: String(env.MISA_MEINVOICE_BASE_URL || '').trim(),
+    environment: String(env.MISA_MEINVOICE_ENV || '').trim() || cfg.environment || 'sandbox',
+    // Chỉ v3 được hỗ trợ — không còn "Loại API MISA" để người dùng chọn.
+    integrationType: 'MISA_API_V3',
+    secretKey: '',
+  };
+}
 
 /// Đường dẫn mặc định theo MISA meInvoice API v3. Ghi đè từng cái một qua
 /// `cfg.endpoints` — không cần khai đủ, thiếu cái nào thì dùng mặc định.
@@ -25,8 +50,16 @@ export const DEFAULT_ENDPOINTS = {
 /// Trạng thái cấu hình — dùng chung cho API trả về và cho màn Cài đặt.
 export const CONFIG_STATUS = {
   DISCONNECTED: 'DISCONNECTED',
+  // Server chưa có MISA_MEINVOICE_APP_ID — lỗi hạ tầng, không phải lỗi tài
+  // khoản, nên tách riêng khỏi ERROR để không bắt cửa hàng tự loay hoay.
+  SERVER_NOT_CONFIGURED: 'SERVER_NOT_CONFIGURED',
   AUTHENTICATED: 'AUTHENTICATED',
   REQUIRES_TEMPLATE: 'REQUIRES_TEMPLATE',
+  // Đăng nhập được nhưng bước sau (tra doanh nghiệp/mẫu) lỗi — kết nối còn đó,
+  // dữ liệu MISA đang có vấn đề.
+  DEGRADED: 'DEGRADED',
+  // Bước đăng nhập chính là bước lỗi — sai tài khoản/mật khẩu hoặc phiên hết.
+  REAUTH_REQUIRED: 'REAUTH_REQUIRED',
   READY: 'READY',
   ERROR: 'ERROR',
 };
@@ -108,17 +141,11 @@ export function environmentMismatch(cfg = {}) {
 /// production nghĩa là phát hành hóa đơn thật cho cơ quan thuế để thử.
 export function activationBlockers(cfg = {}) {
   const blockers = [];
+  if (!serverConfigured()) {
+    blockers.push('Cấu hình tích hợp phía server chưa đầy đủ (thiếu MISA_MEINVOICE_APP_ID)');
+  }
   if (!cfg.taxCode || !cfg.username || !cfg.password) {
     blockers.push('Thiếu mã số thuế / tài khoản / mật khẩu MISA');
-  }
-  if (!cfg.integrationType || cfg.integrationType === 'UNCONFIRMED') {
-    blockers.push('Chưa xác nhận loại API MISA');
-  }
-  if (!cfg.taxMethod || cfg.taxMethod === 'UNCONFIRMED') {
-    blockers.push('Phương pháp tính thuế chưa được kế toán xác nhận');
-  }
-  if (!cfg.roundingPolicy || cfg.roundingPolicy === 'UNCONFIRMED') {
-    blockers.push('Quy tắc làm tròn chưa được kế toán xác nhận');
   }
   if (!cfg.templateId) blockers.push('Chưa chọn mẫu hóa đơn từ MISA');
   if (!cfg.series) blockers.push('Chưa có ký hiệu hóa đơn (lấy theo mẫu đã chọn)');
@@ -137,10 +164,19 @@ export function isLive(cfg = {}) {
 
 /// Trạng thái cấu hình để hiển thị, suy từ chính dữ liệu đang lưu.
 export function configStatus(cfg = {}) {
+  if (!serverConfigured()) return CONFIG_STATUS.SERVER_NOT_CONFIGURED;
   if (!cfg.enabled) return CONFIG_STATUS.DISCONNECTED;
   if (isLive(cfg)) return CONFIG_STATUS.READY;
   if (cfg.configurationTestPassed === true && !cfg.templateId) {
     return CONFIG_STATUS.REQUIRES_TEMPLATE;
+  }
+  // Lần kiểm tra gần nhất lỗi ngay ở bước đăng nhập — sai tài khoản/mật khẩu
+  // hoặc phiên MISA hết hạn, cần đăng nhập lại chứ không phải lỗi dữ liệu.
+  if (cfg.lastTestStep === 'auth') return CONFIG_STATUS.REAUTH_REQUIRED;
+  // Đăng nhập qua được nhưng bước tra doanh nghiệp/mẫu hóa đơn lỗi — kết nối
+  // còn đó, dữ liệu phía MISA đang có vấn đề.
+  if (cfg.lastTestStep === 'company' || cfg.lastTestStep === 'templates') {
+    return CONFIG_STATUS.DEGRADED;
   }
   if (cfg.lastTestError) return CONFIG_STATUS.ERROR;
   return CONFIG_STATUS.DISCONNECTED;
