@@ -116,11 +116,51 @@ export async function callJson(url, opts = {}, timeoutMs = 15000) {
   return r.body;
 }
 
-/// Header nghiệp vụ chuẩn của MISA (mọi request sau khi đã có token).
+/// Header nghiệp vụ chuẩn của MISA API v3 (mọi request sau khi đã có token).
 export function authHeaders(token, taxCode) {
   return {
     'Content-Type': 'application/json',
     Authorization: `Bearer ${token}`,
     CompanyTaxCode: String(taxCode || ''),
   };
+}
+
+/// Header nghiệp vụ của MISA Developer Portal — khác v3: mang ClientID thay vì
+/// CompanyTaxCode (mã số thuế đã xác định qua bước đăng nhập taxcode/username/
+/// password, không lặp lại ở mỗi request nghiệp vụ theo tài liệu chuẩn mới).
+export function authHeadersDeveloperPortal(token, clientId) {
+  return {
+    'Content-Type': 'application/json',
+    Authorization: `Bearer ${token}`,
+    ClientID: String(clientId || ''),
+  };
+}
+
+/// MISA trả hạn token theo nhiều kiểu tùy gói dịch vụ/provider. Đọc được cái
+/// nào dùng cái đó; không đọc được thì coi như 30 phút — ngắn hơn thực tế thì
+/// chỉ tốn thêm một lần đăng nhập, còn dài hơn thực tế thì job hỏng giữa chừng.
+/// Dùng chung cho cả API v3 (auth.js) và Developer Portal (developerPortal.js).
+export function expiryFrom(body) {
+  const giay = Number(
+    body?.expires_in ?? body?.expiresIn ?? body?.ExpiresIn ?? body?.expire_in,
+  );
+  if (Number.isFinite(giay) && giay > 0) return Date.now() + giay * 1000;
+
+  const moc = body?.expires_at ?? body?.expiresAt ?? body?.ExpiredDate;
+  if (moc) {
+    const t = new Date(moc).getTime();
+    if (Number.isFinite(t) && t > Date.now()) return t;
+  }
+  return Date.now() + 30 * 60 * 1000;
+}
+
+export function tokenFrom(body) {
+  return body?.access_token
+    || body?.accessToken
+    || body?.token
+    || body?.Token
+    || body?.data?.access_token
+    || body?.data?.accessToken
+    || body?.data?.token
+    || '';
 }

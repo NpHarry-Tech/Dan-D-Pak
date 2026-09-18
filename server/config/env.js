@@ -100,6 +100,16 @@ export function loadEnv(source = process.env) {
     MISA_MEINVOICE_APP_ID: clean(source.MISA_MEINVOICE_APP_ID) || '',
     MISA_MEINVOICE_ENV: clean(source.MISA_MEINVOICE_ENV) || '',
     MISA_MEINVOICE_BASE_URL: clean(source.MISA_MEINVOICE_BASE_URL) || '',
+    // MISA Developer Portal (cơ chế mới thay API v3 cũ, xem developer.misa.vn) —
+    // ClientID/ClientSecret do MISA cấp sau khi duyệt subscription "Hóa đơn điện
+    // tử – Open API". Cũng là credential ỨNG DỤNG như AppID cũ: ở server, KHÔNG
+    // phải cấu hình theo chi nhánh. Có cả hai cặp credential cùng lúc (di trú
+    // dần) thì Developer Portal được ưu tiên — xem providerKind() trong
+    // services/misa/config.js. MISA_MEINVOICE_PROVIDER ép buộc rõ ràng
+    // ('legacy_v3' | 'developer_portal') để rollback nhanh nếu portal mới có sự cố.
+    MISA_MEINVOICE_CLIENT_ID: clean(source.MISA_MEINVOICE_CLIENT_ID) || '',
+    MISA_MEINVOICE_CLIENT_SECRET: clean(source.MISA_MEINVOICE_CLIENT_SECRET) || '',
+    MISA_MEINVOICE_PROVIDER: clean(source.MISA_MEINVOICE_PROVIDER) || '',
     // 'auto' = server tự in trên phần cứng cùng máy (mô hình LAN 1 máy chủ).
     // 'agent' = server chỉ xếp hàng job; việc in vật lý + mở két do Hardware
     // Agent tại cửa hàng thực thi (mô hình VPS trung tâm — server ở datacenter

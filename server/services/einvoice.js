@@ -564,22 +564,24 @@ async function processJob(job) {
     // Success! Update invoice record
     const updatedTime = now();
     db.prepare(`
-      UPDATE e_invoices 
-      SET invoice_status = 'ISSUED', 
-          invoice_no = ?, 
+      UPDATE e_invoices
+      SET invoice_status = 'ISSUED',
+          invoice_no = ?,
+          provider_invoice_id = ?,
           tax_authority_code = ?,
-          lookup_code = ?, 
-          lookup_url = ?, 
+          lookup_code = ?,
+          lookup_url = ?,
           issued_at = ?,
           attempt_count = attempt_count + 1,
           response_snapshot = ?,
           updated_at = ?
       WHERE id = ?
     `).run(
-      result.invoice_no, 
+      result.invoice_no,
+      result.transaction_id || null,
       result.tax_authority_code || null,
-      result.lookup_code, 
-      result.lookup_url, 
+      result.lookup_code,
+      result.lookup_url,
       updatedTime,
       JSON.stringify(result.raw || {}),
       updatedTime,
@@ -743,9 +745,10 @@ export async function syncInvoiceStatus(e_invoice_id, branch_id = null) {
       if (statusResult && statusResult.invoice_no) {
         const timeNow = now();
         db.prepare(`
-          UPDATE e_invoices 
-          SET invoice_status = 'ISSUED', 
-              invoice_no = ?, 
+          UPDATE e_invoices
+          SET invoice_status = 'ISSUED',
+              invoice_no = ?,
+              provider_invoice_id = ?,
               tax_authority_code = ?,
               lookup_code = ?,
               last_sync_at = ?,
@@ -753,6 +756,7 @@ export async function syncInvoiceStatus(e_invoice_id, branch_id = null) {
           WHERE id = ?
         `).run(
           statusResult.invoice_no,
+          statusResult.transaction_id || null,
           statusResult.tax_authority_code || null,
           statusResult.lookup_code,
           timeNow,

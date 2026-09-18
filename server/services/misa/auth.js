@@ -7,8 +7,9 @@
 // không ra được. Giờ token dùng chung, hết hạn mới lấy lại, và nhiều job cùng
 // lúc chỉ tạo ĐÚNG MỘT lượt đăng nhập (single-flight).
 
-import { callJson, MisaError } from './client.js';
-import { endpointUrl } from './config.js';
+import { callJson, MisaError, tokenFrom, expiryFrom } from './client.js';
+import { endpointUrl, isDeveloperPortal } from './config.js';
+import { loginDeveloperPortal } from './developerPortal.js';
 
 /// key -> { token, expiresAt (ms), inflight (Promise|null) }
 const cache = new Map();
@@ -17,6 +18,7 @@ const cache = new Map();
 /// trường là khóa khác → token cũ không bị dùng nhầm.
 function cacheKey(cfg) {
   return [
+    cfg.integrationType || 'MISA_API_V3',
     cfg.environment || 'sandbox',
     String(cfg.apiBase || '').trim(),
     cfg.taxCode || '',
@@ -27,35 +29,8 @@ function cacheKey(cfg) {
   ].join('|');
 }
 
-/// MISA trả hạn token theo nhiều kiểu tùy gói dịch vụ. Đọc được cái nào dùng
-/// cái đó; không đọc được thì coi như 30 phút — ngắn hơn thực tế thì chỉ tốn
-/// thêm một lần đăng nhập, còn dài hơn thực tế thì job hỏng giữa chừng.
-function expiryFrom(body) {
-  const giay = Number(
-    body?.expires_in ?? body?.expiresIn ?? body?.ExpiresIn ?? body?.expire_in,
-  );
-  if (Number.isFinite(giay) && giay > 0) return Date.now() + giay * 1000;
-
-  const moc = body?.expires_at ?? body?.expiresAt ?? body?.ExpiredDate;
-  if (moc) {
-    const t = new Date(moc).getTime();
-    if (Number.isFinite(t) && t > Date.now()) return t;
-  }
-  return Date.now() + 30 * 60 * 1000;
-}
-
-function tokenFrom(body) {
-  return body?.access_token
-    || body?.accessToken
-    || body?.token
-    || body?.Token
-    || body?.data?.access_token
-    || body?.data?.accessToken
-    || body?.data?.token
-    || '';
-}
-
-async function login(cfg) {
+/// Đăng nhập API v3 cũ (`appid` trong body, không header ClientID/ClientSecret).
+async function loginLegacy(cfg) {
   const url = endpointUrl(cfg, 'auth');
   const body = await callJson(url, {
     method: 'POST',
@@ -78,6 +53,12 @@ async function login(cfg) {
     );
   }
   return { token, expiresAt: expiryFrom(body) };
+}
+
+/// Đăng nhập — chọn API v3 cũ hay Developer Portal mới theo `cfg.integrationType`
+/// (đã được resolveServerCredentials() gắn từ providerKind() phía server).
+async function login(cfg) {
+  return isDeveloperPortal(cfg) ? loginDeveloperPortal(cfg) : loginLegacy(cfg);
 }
 
 /// Lấy token dùng được. [force] = bỏ cache, đăng nhập lại (dùng khi MISA vừa

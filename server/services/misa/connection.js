@@ -13,8 +13,12 @@
 //
 // Chưa có mẫu hợp lệ thì trạng thái là REQUIRES_TEMPLATE — kết nối đúng nhưng
 // CHƯA được bật tự phát hành.
+//
+// Developer Portal (cfg.integrationType='MISA_DEVELOPER_PORTAL'): đặc tả
+// chuẩn mới chỉ có token → templates → publish, không có bước 2 — bỏ qua tra
+// doanh nghiệp, chạy 2 bước còn lại.
 
-import { CONFIG_STATUS, activationBlockers, environmentMismatch, baseUrl, serverConfigured } from './config.js';
+import { CONFIG_STATUS, activationBlockers, environmentMismatch, baseUrl, serverConfigured, isDeveloperPortal } from './config.js';
 import { getToken } from './auth.js';
 import { fetchCompany, fetchTemplates, filterTemplates } from './company.js';
 
@@ -62,19 +66,25 @@ export async function testConnection(cfg = {}) {
   }
 
   // ── Bước 2: doanh nghiệp ─────────────────────────────────────────────────
-  let company;
-  try {
-    company = await fetchCompany(cfg);
-  } catch (e) {
-    return baoLoi('company', e.message || 'Không tra được thông tin doanh nghiệp', {
-      // Token đã lấy được — nói rõ để người dùng biết sai ở khâu nào.
-      authenticated: true,
-    });
-  }
-  if (company.active === false) {
-    return baoLoi('company', 'Doanh nghiệp đang không hoạt động trên MISA.', {
-      authenticated: true, company,
-    });
+  // Developer Portal: đặc tả chuẩn mới (token → templates → publish) KHÔNG có
+  // bước tra doanh nghiệp riêng — bỏ qua, không suy diễn một endpoint chưa có
+  // bằng chứng. `invoiceWithCode: null` để filterTemplates() không loại mẫu
+  // nào theo tiêu chí này (giống gói dịch vụ v3 không trả cờ đó).
+  let company = { taxCode: cfg.taxCode, name: '', invoiceWithCode: null, active: true };
+  if (!isDeveloperPortal(cfg)) {
+    try {
+      company = await fetchCompany(cfg);
+    } catch (e) {
+      return baoLoi('company', e.message || 'Không tra được thông tin doanh nghiệp', {
+        // Token đã lấy được — nói rõ để người dùng biết sai ở khâu nào.
+        authenticated: true,
+      });
+    }
+    if (company.active === false) {
+      return baoLoi('company', 'Doanh nghiệp đang không hoạt động trên MISA.', {
+        authenticated: true, company,
+      });
+    }
   }
 
   // ── Bước 3: mẫu hóa đơn ──────────────────────────────────────────────────

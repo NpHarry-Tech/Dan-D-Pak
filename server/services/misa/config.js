@@ -13,25 +13,68 @@ const DEFAULT_BASE = {
   production: 'https://api.meinvoice.vn',
 };
 
-/// AppID do MISA cấp cho Dan D Pak POS — luôn từ biến môi trường server,
-/// KHÔNG BAO GIỜ từ cấu hình theo chi nhánh/Flutter (§L). Cửa hàng chỉ nhập
-/// tài khoản MISA meInvoice của họ; AppID là của ỨNG DỤNG, dùng chung.
+/// Cổng gateway MISA Developer Portal (developer.misa.vn) — MỘT địa chỉ duy
+/// nhất, không tách sandbox/production theo host như API v3 cũ. Môi trường ở
+/// đây do gói subscription MISA cấp quyết định, không phải URL.
+const DEVELOPER_PORTAL_BASE = 'https://developer.misa.vn/apis/itg/meinvoice';
+
+export const PROVIDER_KIND = {
+  LEGACY_V3: 'MISA_API_V3',
+  DEVELOPER_PORTAL: 'MISA_DEVELOPER_PORTAL',
+};
+
+/// API nào đang dùng, suy từ credential nào server có + cờ ép buộc
+/// MISA_MEINVOICE_PROVIDER (dùng khi cần rollback nhanh về API v3 cũ mà không
+/// phải xoá ClientID/ClientSecret đang di trú dở). Có cả hai cặp credential
+/// cùng lúc thì Developer Portal (cơ chế mới) được ưu tiên.
+export function providerKind() {
+  const forced = String(env.MISA_MEINVOICE_PROVIDER || '').trim().toLowerCase();
+  if (forced === 'developer_portal') return PROVIDER_KIND.DEVELOPER_PORTAL;
+  if (forced === 'legacy_v3') return PROVIDER_KIND.LEGACY_V3;
+  const hasPortalCreds = !!String(env.MISA_MEINVOICE_CLIENT_ID || '').trim()
+    && !!String(env.MISA_MEINVOICE_CLIENT_SECRET || '').trim();
+  return hasPortalCreds ? PROVIDER_KIND.DEVELOPER_PORTAL : PROVIDER_KIND.LEGACY_V3;
+}
+
+/// AppID (v3 cũ) hoặc ClientID/ClientSecret (Developer Portal mới) do MISA cấp
+/// cho Dan D Pak POS — luôn từ biến môi trường server, KHÔNG BAO GIỜ từ cấu
+/// hình theo chi nhánh/Flutter (§L). Cửa hàng chỉ nhập tài khoản MISA meInvoice
+/// của họ; credential ứng dụng dùng chung mọi chi nhánh.
 export function serverConfigured() {
+  if (providerKind() === PROVIDER_KIND.DEVELOPER_PORTAL) {
+    return !!String(env.MISA_MEINVOICE_CLIENT_ID || '').trim()
+      && !!String(env.MISA_MEINVOICE_CLIENT_SECRET || '').trim();
+  }
   return !!String(env.MISA_MEINVOICE_APP_ID || '').trim();
 }
 
 /// Ghép cấu hình đã lưu theo chi nhánh với credential ứng dụng ở server. Mọi
 /// nơi gọi MISA (worker, testConnection, activationBlockers) PHẢI đi qua đây
-/// thay vì đọc thẳng cfg từ DB, để appId/apiBase/environment không bao giờ lấy
-/// từ dữ liệu do Flutter gửi lên.
+/// thay vì đọc thẳng cfg từ DB, để appId/clientId/clientSecret/apiBase/
+/// environment không bao giờ lấy từ dữ liệu do Flutter gửi lên.
 export function resolveServerCredentials(cfg = {}) {
+  const kind = providerKind();
+  if (kind === PROVIDER_KIND.DEVELOPER_PORTAL) {
+    return {
+      ...cfg,
+      appId: '',
+      clientId: String(env.MISA_MEINVOICE_CLIENT_ID || '').trim(),
+      clientSecret: String(env.MISA_MEINVOICE_CLIENT_SECRET || '').trim(),
+      apiBase: String(env.MISA_MEINVOICE_BASE_URL || '').trim(),
+      environment: String(env.MISA_MEINVOICE_ENV || '').trim() || cfg.environment || 'sandbox',
+      integrationType: PROVIDER_KIND.DEVELOPER_PORTAL,
+      secretKey: '',
+    };
+  }
   return {
     ...cfg,
     appId: String(env.MISA_MEINVOICE_APP_ID || '').trim(),
+    clientId: '',
+    clientSecret: '',
     apiBase: String(env.MISA_MEINVOICE_BASE_URL || '').trim(),
     environment: String(env.MISA_MEINVOICE_ENV || '').trim() || cfg.environment || 'sandbox',
     // Chỉ v3 được hỗ trợ — không còn "Loại API MISA" để người dùng chọn.
-    integrationType: 'MISA_API_V3',
+    integrationType: PROVIDER_KIND.LEGACY_V3,
     secretKey: '',
   };
 }
@@ -44,6 +87,26 @@ export const DEFAULT_ENDPOINTS = {
   templates: '/invoice-templates',
   publish: '/code/itg/invoice-calculating/invoiceandpublish',
   status: '/invoice/status',
+  cancel: '/invoice/cancel',
+};
+
+/// Đường dẫn mặc định theo MISA Developer Portal. `auth`/`templates`/`publish`
+/// lấy ĐÚNG NGUYÊN VĂN từ tài liệu chuẩn (developer.misa.vn/products-openapi/
+/// MEINVOICE). `status`/`view`/`cancel` KHÔNG có trong tài liệu đưa xuống —
+/// đây là PHỎNG ĐOÁN theo quy ước đặt tên của 3 đường dẫn đã xác nhận, cấu
+/// hình lại qua endpointStatus/endpointView/endpointCancel khi có tài liệu đầy
+/// đủ hoặc kiểm thử sandbox thật xác nhận đường dẫn khác. Xem báo cáo bàn giao.
+export const DEFAULT_ENDPOINTS_DEVELOPER_PORTAL = {
+  auth: '/invoice/token',
+  templates: '/invoice/templates',
+  unpublishview: '/invoice/unpublishview',
+  publish: '/invoice/publishing',
+  // GIẢ ĐỊNH CHƯA XÁC MINH — xem chú thích trên.
+  status: '/invoice/status',
+  view: '/invoice/view',
+  downloadPdf: '/invoice/downloadpdf',
+  downloadXml: '/invoice/downloadxml',
+  sendEmail: '/invoice/sendemail',
   cancel: '/invoice/cancel',
 };
 
@@ -68,11 +131,19 @@ export function isProduction(cfg = {}) {
   return String(cfg.environment || 'sandbox') === 'production';
 }
 
+export function isDeveloperPortal(cfg = {}) {
+  return cfg.integrationType === PROVIDER_KIND.DEVELOPER_PORTAL;
+}
+
 /// Địa chỉ gốc. `apiBase` do người dùng nhập được ưu tiên, nhưng phải là http(s)
-/// hợp lệ; không thì rơi về mặc định theo môi trường.
+/// hợp lệ; không thì rơi về mặc định theo môi trường/provider.
 export function baseUrl(cfg = {}) {
-  let base = '';
   const custom = String(cfg.apiBase || '').trim();
+  if (isDeveloperPortal(cfg)) {
+    // Developer Portal: MỘT gateway duy nhất, không tách host theo môi trường.
+    return /^https?:\/\//i.test(custom) ? custom.replace(/\/+$/, '') : DEVELOPER_PORTAL_BASE;
+  }
+  let base = '';
   if (/^https?:\/\//i.test(custom)) {
     base = custom.replace(/\/+$/, '');
   } else {
@@ -91,11 +162,13 @@ function overrideKey(name) {
   return `endpoint${name.charAt(0).toUpperCase()}${name.slice(1)}`;
 }
 
-/// Ghép URL đầy đủ cho một thao tác. [name] là khóa trong DEFAULT_ENDPOINTS.
+/// Ghép URL đầy đủ cho một thao tác. [name] là khóa trong DEFAULT_ENDPOINTS
+/// (hoặc DEFAULT_ENDPOINTS_DEVELOPER_PORTAL tuỳ provider của cfg).
 export function endpointUrl(cfg, name) {
+  const defaults = isDeveloperPortal(cfg) ? DEFAULT_ENDPOINTS_DEVELOPER_PORTAL : DEFAULT_ENDPOINTS;
   const nested = cfg?.endpoints && typeof cfg.endpoints === 'object' ? cfg.endpoints : {};
   const path = String(
-    cfg?.[overrideKey(name)] || nested[name] || DEFAULT_ENDPOINTS[name] || '',
+    cfg?.[overrideKey(name)] || nested[name] || defaults[name] || '',
   ).trim();
   if (!path) throw new Error(`Chưa khai đường dẫn API MISA cho thao tác "${name}"`);
   // Khai nguyên URL tuyệt đối cũng chấp nhận — có gói dịch vụ đặt vài thao tác
@@ -142,7 +215,9 @@ export function environmentMismatch(cfg = {}) {
 export function activationBlockers(cfg = {}) {
   const blockers = [];
   if (!serverConfigured()) {
-    blockers.push('Cấu hình tích hợp phía server chưa đầy đủ (thiếu MISA_MEINVOICE_APP_ID)');
+    blockers.push(providerKind() === PROVIDER_KIND.DEVELOPER_PORTAL
+      ? 'Cấu hình tích hợp phía server chưa đầy đủ (thiếu MISA_MEINVOICE_CLIENT_ID/MISA_MEINVOICE_CLIENT_SECRET)'
+      : 'Cấu hình tích hợp phía server chưa đầy đủ (thiếu MISA_MEINVOICE_APP_ID)');
   }
   if (!cfg.taxCode || !cfg.username || !cfg.password) {
     blockers.push('Thiếu mã số thuế / tài khoản / mật khẩu MISA');

@@ -9,9 +9,15 @@
 // "không đọc được", chứ không im lặng trả rỗng làm người dùng tưởng chưa khai
 // mẫu nào trên MISA.
 
-import { callJson, authHeaders } from './client.js';
-import { endpointUrl } from './config.js';
+import { callJson, authHeaders, authHeadersDeveloperPortal } from './client.js';
+import { endpointUrl, isDeveloperPortal } from './config.js';
 import { withToken } from './auth.js';
+
+function businessHeaders(token, cfg) {
+  return isDeveloperPortal(cfg)
+    ? authHeadersDeveloperPortal(token, cfg.clientId)
+    : authHeaders(token, cfg.taxCode);
+}
 
 function pick(obj, ...names) {
   for (const n of names) {
@@ -46,7 +52,7 @@ export async function fetchCompany(cfg) {
   const url = `${endpointUrl(cfg, 'company')}?taxcode=${encodeURIComponent(taxCode)}`;
   const body = await withToken(cfg, (token) => callJson(url, {
     method: 'GET',
-    headers: authHeaders(token, taxCode),
+    headers: businessHeaders(token, cfg),
   }, 15000));
 
   const d = unwrap(body);
@@ -108,11 +114,10 @@ function normalizeTemplate(row) {
 
 /// Danh sách mẫu hóa đơn CÒN HIỆU LỰC của doanh nghiệp.
 export async function fetchTemplates(cfg) {
-  const taxCode = String(cfg.taxCode || '').trim();
   const url = endpointUrl(cfg, 'templates');
   const body = await withToken(cfg, (token) => callJson(url, {
     method: 'GET',
-    headers: authHeaders(token, taxCode),
+    headers: businessHeaders(token, cfg),
   }, 15000));
 
   const rows = asList(unwrap(body));

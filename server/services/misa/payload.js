@@ -176,6 +176,11 @@ export function buildPublishPayload({ snapshot, cfg, company = {} }) {
     cfg?.defaultTaxRate || 8,
   );
   assertBalanced(totals);
+  // Giới hạn MISA: tối đa 400 dòng/hóa đơn (gồm cả dòng CTKM ItemType=4).
+  // Chặn ở đây thay vì để MISA từ chối — lỗi DỮ LIỆU, retry vô ích.
+  if (totals.lines.length > 400) {
+    throw new Error(`Hóa đơn có ${totals.lines.length} dòng, vượt giới hạn 400 dòng/hóa đơn của MISA`);
+  }
 
   const coMa = company.invoiceWithCode !== null && company.invoiceWithCode !== undefined
     ? !!company.invoiceWithCode

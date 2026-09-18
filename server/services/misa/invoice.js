@@ -1,9 +1,18 @@
 // MISA meInvoice — PHÁT HÀNH, TRA TRẠNG THÁI, HỦY hóa đơn.
 
-import { callJson, authHeaders, sanitize, MisaError } from './client.js';
-import { endpointUrl } from './config.js';
+import { callJson, authHeaders, authHeadersDeveloperPortal, sanitize, MisaError } from './client.js';
+import { endpointUrl, isDeveloperPortal } from './config.js';
 import { withToken } from './auth.js';
 import { buildPublishPayload, refId } from './payload.js';
+import { publishDeveloperPortal } from './developerPortal.js';
+
+/// Header nghiệp vụ đúng provider của cfg — v3 mang CompanyTaxCode, Developer
+/// Portal mang ClientID (xem client.js).
+function businessHeaders(token, cfg) {
+  return isDeveloperPortal(cfg)
+    ? authHeadersDeveloperPortal(token, cfg.clientId)
+    : authHeaders(token, cfg.taxCode);
+}
 
 function unwrap(body) {
   return body?.data ?? body?.Data ?? body ?? {};
@@ -43,7 +52,7 @@ export async function getInvoiceStatus(snapshotRef, cfg) {
   try {
     const body = await withToken(cfg, (token) => callJson(url, {
       method: 'GET',
-      headers: authHeaders(token, cfg.taxCode),
+      headers: businessHeaders(token, cfg),
     }, 15000));
     const d = unwrap(body);
     const kq = normalizeResult(d);
@@ -75,7 +84,14 @@ export async function issueInvoice({ snapshot, cfg, company = {}, mayHaveLanded 
     if (daCo?.invoice_no) return { ...daCo, deduplicated: true };
   }
 
-  const payload = buildPublishPayload({ snapshot, cfg, company });
+  let payload;
+  try {
+    payload = buildPublishPayload({ snapshot, cfg, company });
+  } catch (e) {
+    // Lỗi dựng payload (lệch tiền, vượt 400 dòng…) là lỗi DỮ LIỆU — retry
+    // không giúp gì, phải dừng ngay để người vận hành thấy lỗi thật.
+    throw e instanceof MisaError ? e : new MisaError(e.message, { retryable: false, code: 'PAYLOAD_ERROR' });
+  }
   const invoiceLines = payload.OrgInvoiceData.OriginalInvoiceDetail;
   const descriptionRows = invoiceLines.filter((line) => line.ItemType === 4).length;
   console.info(JSON.stringify({
@@ -86,19 +102,29 @@ export async function issueInvoice({ snapshot, cfg, company = {}, mayHaveLanded 
     unified_single_invoice: true,
   }));
   const url = endpointUrl(cfg, 'publish');
+  const portal = isDeveloperPortal(cfg);
 
-  let body;
+  let kq;
   try {
-    body = await withToken(cfg, (token) => callJson(url, {
-      method: 'POST',
-      headers: authHeaders(token, cfg.taxCode),
-      body: JSON.stringify(payload),
-    }, 25000));
+    if (portal) {
+      kq = await withToken(cfg, (token) => publishDeveloperPortal({
+        url, token, clientId: cfg.clientId, payload,
+      }));
+    } else {
+      const body = await withToken(cfg, (token) => callJson(url, {
+        method: 'POST',
+        headers: authHeaders(token, cfg.taxCode),
+        body: JSON.stringify(payload),
+      }, 25000));
+      kq = normalizeResult(unwrap(body));
+    }
   } catch (e) {
     // MISA báo RefID đã tồn tại = hóa đơn đã phát hành từ lần trước. Đồng bộ
-    // lại thay vì coi là lỗi.
+    // lại thay vì coi là lỗi. 'DUPLICATE_REFID'/regex = mã v3 cũ;
+    // 'InvoiceDuplicated' = mã Developer Portal (nguyên văn theo yêu cầu bàn giao).
     const trung = e instanceof MisaError
-      && (e.misaCode === 'DUPLICATE_REFID' || /đã tồn tại|already exist/i.test(e.message));
+      && (e.misaCode === 'DUPLICATE_REFID' || e.misaCode === 'InvoiceDuplicated'
+        || /đã tồn tại|already exist/i.test(e.message));
     if (trung) {
       const daCo = await getInvoiceStatus(ref, cfg);
       if (daCo?.invoice_no) return { ...daCo, deduplicated: true };
@@ -108,11 +134,10 @@ export async function issueInvoice({ snapshot, cfg, company = {}, mayHaveLanded 
     throw e;
   }
 
-  const kq = normalizeResult(unwrap(body));
   if (!kq.invoice_no && !kq.transaction_id) {
     throw new MisaError(
       'MISA nhận request nhưng không trả số hóa đơn lẫn mã giao dịch.',
-      { retryable: false, code: 'EMPTY_RESULT', body: sanitize(body) },
+      { retryable: false, code: 'EMPTY_RESULT', body: sanitize(kq.raw) },
     );
   }
   return kq;
@@ -129,7 +154,7 @@ export async function cancelInvoice({ snapshot, cfg, reason }) {
   const url = endpointUrl(cfg, 'cancel');
   const body = await withToken(cfg, (token) => callJson(url, {
     method: 'POST',
-    headers: authHeaders(token, cfg.taxCode),
+    headers: businessHeaders(token, cfg),
     body: JSON.stringify({ RefID: ref, CancelReason: String(reason || '').slice(0, 500) }),
   }, 20000));
   return sanitize(body);
