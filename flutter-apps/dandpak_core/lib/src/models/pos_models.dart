@@ -226,6 +226,9 @@ class MenuItem {
   // ('hidden' | 'manual' | 'schedule' | null) để hiện tooltip phù hợp.
   final bool available;
   final String? availabilityReason;
+  // Tồn kho — chỉ có ý nghĩa với hàng retail (null = món F&B, không theo dõi
+  // tồn). Dùng để hiện badge "Hết" trên lưới "Thêm retail" giống Retail POS.
+  final num? stock;
 
   MenuItem({
     required this.id,
@@ -239,6 +242,7 @@ class MenuItem {
     this.isRetail = false,
     this.available = true,
     this.availabilityReason,
+    this.stock,
   });
 
   factory MenuItem.fromJson(Map<String, dynamic> json) {
@@ -272,6 +276,7 @@ class MenuItem {
       // với payload không có trường này thì không được vô tình bị coi là khoá.
       available: json['available'] as bool? ?? true,
       availabilityReason: json['availability_reason'] as String?,
+      stock: json['stock'] as num?,
     );
   }
 }
@@ -295,6 +300,12 @@ class CartItem {
   final String? comboId;
   final String? comboName;
   final int comboPer;
+  // CTKM sản phẩm chọn TRƯỚC KHI dòng này persisted (chưa có orderItemId nên
+  // PosProvider.lineVouchers — khoá theo orderItemId — chưa lưu được). Server
+  // chỉ biết áp CTKM cho dòng đã gửi, nên số tiền hiển thị chưa đổi ngay; khi
+  // dòng persisted, PosProvider tự chuyển giá trị này vào lineVouchers và làm
+  // mới preview. Xem PosProvider.voucherIdFor/_mergeSubmittedItems.
+  String? pendingVoucherId;
 
   CartItem({
     required this.item,
@@ -308,6 +319,7 @@ class CartItem {
     this.comboId,
     this.comboName,
     this.comboPer = 1,
+    this.pendingVoucherId,
   });
 
   bool get isCombo => comboId != null;

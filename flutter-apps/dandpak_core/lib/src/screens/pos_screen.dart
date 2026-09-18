@@ -872,7 +872,7 @@ class _PosScreenState extends State<PosScreen> {
       builder: (_) => _FnbVoucherPickerDialog(
         title: '${t('CTKM cho')} "${item.item.name}"',
         vouchers: options,
-        selectedId: pos.lineVouchers[item.orderItemId],
+        selectedId: pos.voucherIdFor(item),
       ),
     );
     if (result == null) return;

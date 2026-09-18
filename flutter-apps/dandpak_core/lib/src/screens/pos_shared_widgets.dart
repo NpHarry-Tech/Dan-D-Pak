@@ -103,11 +103,15 @@ class _MenuPickCard extends StatelessWidget {
     required this.item,
     required this.price,
     required this.onTap,
+    this.promoLabel = '',
   });
 
   final MenuItem item;
   final String price;
   final VoidCallback onTap;
+  // Nhãn CTKM nhỏ góc phải (vd "20%") — cùng badge với Retail POS, tính ở
+  // _MenuPickerDialogState._promoLabelFor.
+  final String promoLabel;
 
   // Món ẩn/tạm hết/ngoài giờ bán vẫn hiện trên F&B POS (server không lọc bỏ
   // nữa — chỉ Self-Order mới bị ẩn hẳn) để nhân viên biết món này tồn tại và
@@ -131,6 +135,11 @@ class _MenuPickCard extends StatelessWidget {
         ? raw
         : '${context.read<AuthProvider>().serverUrl}${raw.startsWith('/') ? '' : '/'}$raw';
     final disabled = !item.available;
+    // Hết hàng chỉ có ý nghĩa với retail (item.stock null = món F&B, không
+    // theo dõi tồn) — cùng điều kiện với _SkuCard bên Retail POS.
+    final outOfStock =
+        item.isRetail && item.stock != null && item.stock! <= 0;
+    final blocked = disabled || outOfStock;
     final card = Container(
       padding: EdgeInsets.all(12),
       decoration: BoxDecoration(
@@ -178,11 +187,56 @@ class _MenuPickCard extends StatelessWidget {
         ],
       ),
     );
+    final badges = <Widget>[
+      // Badge khuyến mãi — chỉ hiện khi món thực sự có voucher (giống _SkuCard).
+      if (promoLabel.isNotEmpty)
+        Positioned(
+          top: 7,
+          right: 7,
+          child: Container(
+            padding: EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+            decoration: BoxDecoration(
+              color: DanColors.doing,
+              borderRadius: BorderRadius.circular(99),
+              boxShadow: [
+                BoxShadow(color: Colors.black.withValues(alpha: .12), blurRadius: 8),
+              ],
+            ),
+            child: Text(promoLabel,
+                style: TextStyle(
+                    fontSize: 9.5,
+                    color: Colors.white,
+                    fontWeight: FontWeight.w900)),
+          ),
+        ),
+      if (outOfStock)
+        Positioned(
+          top: 7,
+          left: 7,
+          child: Container(
+            padding: EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+            decoration: BoxDecoration(
+              color: DanColors.late,
+              borderRadius: BorderRadius.circular(99),
+            ),
+            child: Text(t('Hết'),
+                style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 9.5,
+                    fontWeight: FontWeight.w900)),
+          ),
+        ),
+    ];
     if (!disabled) {
-      return InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
-        child: card,
+      return Stack(
+        children: [
+          InkWell(
+            onTap: blocked ? null : onTap,
+            borderRadius: BorderRadius.circular(12),
+            child: card,
+          ),
+          ...badges,
+        ],
       );
     }
     final reason = _reasonLabel();
@@ -215,6 +269,7 @@ class _MenuPickCard extends StatelessWidget {
                   ),
           ),
         ),
+        ...badges,
       ],
     );
   }

@@ -503,6 +503,25 @@ class PosProvider extends ChangeNotifier {
         .toList();
   }
 
+  /// CTKM sản phẩm đang áp cho [item], dù dòng đã persisted (tra lineVouchers
+  /// theo orderItemId) hay chưa (tra pendingVoucherId cục bộ trên chính dòng).
+  String? voucherIdFor(CartItem item) =>
+      item.persisted ? _lineVouchers[item.orderItemId] : item.pendingVoucherId;
+
+  /// CTKM tốt nhất CHƯA áp cho dòng retail này (giống badge "Gợi ý" bên Retail
+  /// POS) — null khi đã chọn CTKM rồi hoặc không có ứng viên nào giảm được tiền.
+  RetailVoucher? bestLineVoucherSuggestion(CartItem item) {
+    if (voucherIdFor(item) != null) return null;
+    final options = lineVoucherOptionsFor(item);
+    if (options.isEmpty) return null;
+    final sorted = [...options]
+      ..sort((a, b) => b
+          .amountFor(item.totalPrice, qty: item.qty)
+          .compareTo(a.amountFor(item.totalPrice, qty: item.qty)));
+    final best = sorted.first;
+    return best.amountFor(item.totalPrice, qty: item.qty) > 0 ? best : null;
+  }
+
   /// Kết quả preview mới nhất từ server (subtotal/discount/total/appliedSkuPromos…).
   Map<String, dynamic>? get discountPlan => _discountPlan;
   List<Map<String, dynamic>> get appliedPromos {
@@ -546,13 +565,22 @@ class PosProvider extends ChangeNotifier {
     refreshDiscountPreview();
   }
 
-  /// [voucherId] null = bỏ CTKM đang chọn cho dòng này.
+  /// [voucherId] null = bỏ CTKM đang chọn cho dòng này. Dòng CHƯA persisted
+  /// (mới thêm, chưa gửi bếp/lưu) vẫn chọn được — giữ tạm ở pendingVoucherId
+  /// trên chính CartItem, không preview được ngay (server chưa biết dòng này)
+  /// nhưng KHÔNG bị mất: _mergeSubmittedItems tự chuyển vào lineVouchers ngay
+  /// khi dòng có orderItemId thật.
   void setLineVoucher(CartItem item, String? voucherId) {
-    if (item.orderItemId.isEmpty) return; // chưa gửi bếp/lưu → chưa có gì để áp
-    if (voucherId == null || voucherId.isEmpty) {
+    final v = (voucherId == null || voucherId.isEmpty) ? null : voucherId;
+    if (!item.persisted) {
+      item.pendingVoucherId = v;
+      notifyListeners();
+      return;
+    }
+    if (v == null) {
       _lineVouchers.remove(item.orderItemId);
     } else {
-      _lineVouchers[item.orderItemId] = voucherId;
+      _lineVouchers[item.orderItemId] = v;
     }
     notifyListeners();
     refreshDiscountPreview();
@@ -767,6 +795,15 @@ class PosProvider extends ChangeNotifier {
       final cartItem = stillSent[i];
       cartItem.orderItemId = row['id']?.toString() ?? '';
       cartItem.status = row['status']?.toString() ?? '';
+      // Dòng vừa persisted: CTKM đã chọn TRƯỚC khi gửi (pendingVoucherId, xem
+      // setLineVoucher) giờ mới có orderItemId thật để lineVouchers khoá theo
+      // — chuyển vào đó rồi xoá bản tạm. _hasActivePromoSelection sẽ tự thấy
+      // lineVouchers không rỗng và preview lại đúng số tiền ở dưới.
+      final pending = cartItem.pendingVoucherId;
+      if (pending != null && cartItem.orderItemId.isNotEmpty) {
+        _lineVouchers[cartItem.orderItemId] = pending;
+        cartItem.pendingVoucherId = null;
+      }
     }
   }
 

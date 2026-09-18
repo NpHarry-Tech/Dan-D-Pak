@@ -39,6 +39,10 @@ class _SelfOrderTableScreenState extends State<SelfOrderTableScreen> {
   bool _loading = true;
   String? _error;
   void Function(String, dynamic)? _socketListener;
+  // 'all' = mọi khu vực (như cũ, từng section xếp chồng); chọn 1 khu vực thì
+  // chỉ hiện đúng khu đó — cùng dropdown như "Sơ đồ bàn" bên F&B POS
+  // (pos_floor_widgets.dart#_zoneDropdown), thay vì cuộn qua từng khu.
+  String _selectedZoneId = 'all';
 
   @override
   void initState() {
@@ -239,6 +243,39 @@ class _SelfOrderTableScreenState extends State<SelfOrderTableScreen> {
     );
   }
 
+  /// Dropdown khu vực — cùng kiểu với "Sơ đồ bàn" bên F&B POS.
+  Widget _zoneDropdown() {
+    final items = <DropdownMenuItem<String>>[
+      DropdownMenuItem(value: 'all', child: Text(t('Tất cả'))),
+      for (final z in _zones) DropdownMenuItem(value: z.id, child: Text(z.name)),
+    ];
+    final hasValue = items.any((item) => item.value == _selectedZoneId);
+    if (!hasValue) {
+      items.add(DropdownMenuItem(value: _selectedZoneId, child: Text(_selectedZoneId)));
+    }
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10),
+      decoration: BoxDecoration(
+        color: DanColors.surface2,
+        borderRadius: BorderRadius.circular(9),
+        border: Border.all(color: DanColors.border),
+      ),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<String>(
+          value: _selectedZoneId,
+          isDense: true,
+          icon: Icon(Icons.expand_more, size: 18, color: DanColors.muted),
+          style: TextStyle(
+              fontSize: 13, fontWeight: FontWeight.w800, color: DanColors.text),
+          onChanged: (v) {
+            if (v != null) setState(() => _selectedZoneId = v);
+          },
+          items: items,
+        ),
+      ),
+    );
+  }
+
   Widget _body() {
     if (_loading) {
       return Center(child: CircularProgressIndicator(color: Color(0xFF0891B2)));
@@ -257,31 +294,54 @@ class _SelfOrderTableScreenState extends State<SelfOrderTableScreen> {
         ),
       );
     }
-    return ListView.builder(
-      padding: EdgeInsets.all(16),
-      itemCount: _zones.length,
-      itemBuilder: (_, zi) {
-        final zone = _zones[zi];
-        final zoneTables =
-            _tables.where((table) => table.zoneId == zone.id).toList();
-        if (zoneTables.isEmpty) return SizedBox.shrink();
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Padding(
-              padding: EdgeInsets.symmetric(vertical: 8),
-              child: Text(zone.name.toUpperCase(),
+    final zonesToShow = _selectedZoneId == 'all'
+        ? _zones
+        : _zones.where((z) => z.id == _selectedZoneId).toList();
+    return Column(
+      children: [
+        Padding(
+          padding: EdgeInsets.fromLTRB(16, 12, 16, 0),
+          child: Row(
+            children: [
+              Text(t('Khu vực'),
                   style: TextStyle(
-                      color: Color(0xFF0891B2),
-                      fontWeight: FontWeight.bold,
-                      fontSize: 13,
-                      letterSpacing: 1)),
-            ),
-            _zoneTablesLayout(zoneTables),
-            SizedBox(height: 14),
-          ],
-        );
-      },
+                      color: DanColors.muted,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700)),
+              SizedBox(width: 10),
+              _zoneDropdown(),
+            ],
+          ),
+        ),
+        Expanded(
+          child: ListView.builder(
+            padding: EdgeInsets.all(16),
+            itemCount: zonesToShow.length,
+            itemBuilder: (_, zi) {
+              final zone = zonesToShow[zi];
+              final zoneTables =
+                  _tables.where((table) => table.zoneId == zone.id).toList();
+              if (zoneTables.isEmpty) return SizedBox.shrink();
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Padding(
+                    padding: EdgeInsets.symmetric(vertical: 8),
+                    child: Text(zone.name.toUpperCase(),
+                        style: TextStyle(
+                            color: Color(0xFF0891B2),
+                            fontWeight: FontWeight.bold,
+                            fontSize: 13,
+                            letterSpacing: 1)),
+                  ),
+                  _zoneTablesLayout(zoneTables),
+                  SizedBox(height: 14),
+                ],
+              );
+            },
+          ),
+        ),
+      ],
     );
   }
 

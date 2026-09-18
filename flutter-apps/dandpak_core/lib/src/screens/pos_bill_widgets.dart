@@ -270,6 +270,10 @@ class _BillPane extends StatelessWidget {
                   separatorBuilder: (_, __) => SizedBox(height: 7),
                   itemBuilder: (context, index) {
                     final item = pos.cart[index];
+                    final appliedVoucherId = pos.voucherIdFor(item);
+                    final suggestion = item.item.isRetail && !item.isCombo
+                        ? pos.bestLineVoucherSuggestion(item)
+                        : null;
                     return _BillItemRow(
                       item: item,
                       money: money,
@@ -284,18 +288,24 @@ class _BillPane extends StatelessWidget {
                       // retail (có sku_id) — món F&B thường không có lựa chọn.
                       // Dòng đã thuộc 1 combo thì không chọn CTKM riêng nữa (đỡ
                       // rối — server cũng không cộng dồn 2 ưu đãi trên cùng dòng).
-                      appliedLineVoucherName: pos.lineVouchers
-                              .containsKey(item.orderItemId)
-                          ? pos.activeVouchers
-                              .where((v) =>
-                                  v.id == pos.lineVouchers[item.orderItemId])
+                      appliedLineVoucherName: appliedVoucherId == null
+                          ? null
+                          : pos.activeVouchers
+                              .where((v) => v.id == appliedVoucherId)
                               .map((v) => v.name)
-                              .firstOrNull
+                              .firstOrNull,
+                      // Chọn được NGAY khi vừa thêm (chưa gửi bếp/lưu) — giống
+                      // Retail POS. Dòng chưa persisted lưu tạm ở
+                      // CartItem.pendingVoucherId, PosProvider tự chuyển vào
+                      // lineVouchers khi dòng có orderItemId thật (xem
+                      // PosProvider.setLineVoucher/_mergeSubmittedItems).
+                      onPickVoucher: item.item.isRetail && !item.isCombo
+                          ? () => onPickLineVoucher(item)
                           : null,
-                      onPickVoucher:
-                          item.item.isRetail && item.persisted && !item.isCombo
-                              ? () => onPickLineVoucher(item)
-                              : null,
+                      voucherHint: suggestion == null
+                          ? null
+                          : '${t('Gợi ý')}: ${suggestion.displayName} ${t('giảm')} '
+                              '${money(suggestion.amountFor(item.totalPrice, qty: item.qty))}',
                     );
                   },
                 ),
@@ -430,6 +440,7 @@ class _BillItemRow extends StatelessWidget {
     this.onToggleSelect,
     this.appliedLineVoucherName,
     this.onPickVoucher,
+    this.voucherHint,
   });
 
   final CartItem item;
@@ -441,9 +452,11 @@ class _BillItemRow extends StatelessWidget {
   final bool selected;
   final VoidCallback? onToggleSelect;
   // CTKM sản phẩm cho dòng RETAIL (có sku_id) trong đơn F&B — null = dòng
-  // không đủ điều kiện (món F&B thường/chưa gửi bếp) nên không hiện icon.
+  // không đủ điều kiện (món F&B thường/dòng thuộc combo) nên không hiện icon.
   final String? appliedLineVoucherName;
   final VoidCallback? onPickVoucher;
+  // "Gợi ý: <CTKM> giảm <tiền>" — chỉ hiện khi CHƯA áp CTKM nào, giống Retail POS.
+  final String? voucherHint;
 
   @override
   Widget build(BuildContext context) {
@@ -593,6 +606,16 @@ class _BillItemRow extends StatelessWidget {
                         ),
                     ],
                   ),
+                  if (voucherHint != null) ...[
+                    SizedBox(height: 4),
+                    Text(voucherHint!,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                            color: DanColors.doing,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w800)),
+                  ],
                 ],
               ),
             ),

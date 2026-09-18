@@ -541,6 +541,24 @@ class _MenuPickerDialogState extends State<_MenuPickerDialog> {
     super.dispose();
   }
 
+  /// Nhãn CTKM nhỏ ở góc thẻ (vd "20%") — cùng cách tính với Retail POS
+  /// (_promoLabelForSku), chỉ khác nguồn dữ liệu là MenuItem thay vì Sku.
+  String _promoLabelFor(MenuItem item) {
+    if (!item.isRetail) return '';
+    final matches = widget.pos.activeVouchers
+        .where((v) => (v.isSku || v.isAllSku) && v.appliesToSku(item.id))
+        .toList();
+    if (matches.isEmpty) return '';
+    matches.sort((a, b) {
+      final ad = a.amountFor(item.price, qty: 1);
+      final bd = b.amountFor(item.price, qty: 1);
+      if (bd != ad) return bd.compareTo(ad);
+      if (a.isSku != b.isSku) return a.isSku ? -1 : 1;
+      return 0;
+    });
+    return matches.first.valueLabel;
+  }
+
   /// Máy quét USB gõ mã + Enter (hoặc camera trên tablet): khớp barcode →
   /// THÊM MÓN NGAY không cần bấm tay, giữ focus để quét liên tục.
   Future<void> _tryBarcodeAdd(String code) async {
@@ -714,6 +732,7 @@ class _MenuPickerDialogState extends State<_MenuPickerDialog> {
             imageUrl: m['image']?.toString() ?? '',
             modifiers: [],
             isRetail: true,
+            stock: m['stock'] as num?,
           );
         }).toList();
       } else {
@@ -932,6 +951,7 @@ class _MenuPickerDialogState extends State<_MenuPickerDialog> {
                         return _MenuPickCard(
                           item: item,
                           price: _vnd(item.price),
+                          promoLabel: _promoLabelFor(item),
                           onTap: () async {
                             // Nhúng cạnh giỏ hàng nên KHÔNG đóng sau mỗi lần
                             // thêm — cho phép bấm liên tiếp nhiều món, giỏ
