@@ -239,6 +239,36 @@ class _OnlineOrderDetailDialogState extends State<OnlineOrderDetailDialog> {
         _kv('Khách hàng', oStr(c['name'])),
         _kv('Điện thoại', oStr(c['phone'])),
         _kv('Địa chỉ', oStr(c['address'])),
+        if (oStr(_op['note']).isNotEmpty) ...[
+          const SizedBox(height: 6),
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: DanColors.surface2,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: DanColors.border),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Icon(Icons.sticky_note_2_outlined, size: 16),
+                const SizedBox(width: 8),
+                Expanded(child: Text(oStr(_op['note']))),
+              ],
+            ),
+          ),
+        ],
+        if (c['invoice_requested'] == true) ...[
+          const SizedBox(height: 10),
+          Text(t('Yêu cầu xuất hóa đơn'),
+              style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13)),
+          const SizedBox(height: 6),
+          _kv('Tên công ty', oStr(c['company'])),
+          _kv('Mã số thuế', oStr(c['tax_code'])),
+          if (oStr(c['company_address']).isNotEmpty)
+            _kv('Địa chỉ công ty', oStr(c['company_address'])),
+          _kv('Email nhận hóa đơn', oStr(c['email'])),
+        ],
         const SizedBox(height: 8),
         const Text('Sản phẩm',
             style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13)),

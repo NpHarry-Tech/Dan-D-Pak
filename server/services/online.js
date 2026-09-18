@@ -444,6 +444,7 @@ function onlineOperationRow(row) {
   if (!shopName) shopName = externalShopId ? `Gian hàng ${String(externalShopId).slice(-8)}` : 'Không xác định';
   return {
     id: row.id,
+    note: row.note || '',
     bill_no: row.bill_no || null,
     branch_id: row.branch_id,
     provider,
@@ -477,6 +478,10 @@ function onlineOperationRow(row) {
       phone: customer.phone || raw.phone || raw.customer?.phone || shipping.phone || '',
       email: customer.email || raw.email || raw.customer?.email || '',
       address: customer.address || shipping.address1 || '',
+      company: customer.company || '',
+      company_address: customer.company_address || '',
+      tax_code: customer.tax_code || '',
+      invoice_requested: !!customer.invoice_requested,
     },
     shipping: {
       carrier: fulfillments[0]?.tracking_company || raw.shipping_lines?.[0]?.title || '',

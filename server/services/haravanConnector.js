@@ -36,6 +36,27 @@ function parseJsonText(text) { return text ? JSON.parse(text) : {}; }
 function money(value) { return Math.round(Number(value || 0)); }
 function cleanId(value) { return String(value ?? '').trim(); }
 function normShop(value) { return cleanId(value).replace(/^https?:\/\//, '').replace(/\/.*$/, '').toLowerCase(); }
+
+// Haravan không có field riêng cho "yêu cầu xuất hoá đơn" (đã xác nhận: không
+// có trong Order API công khai) — khách nhập ở checkout thì Haravan đẩy vào
+// note_attributes (mảng {name,value} chuẩn Shopify) với nhãn tiếng Việt cố
+// định. Khớp nguyên văn nhãn quan sát được từ dữ liệu thật (đơn 1807402452).
+function haravanNoteAttrs(payload) {
+  const attrs = Array.isArray(payload?.note_attributes) ? payload.note_attributes : [];
+  const map = {};
+  for (const a of attrs) {
+    const name = cleanId(a?.name);
+    if (name) map[name] = cleanId(a?.value);
+  }
+  return {
+    deliveryTime: map['Thời gian giao hàng'] || '',
+    invoiceRequested: /^(có|yes|true|1)$/i.test(map['Xuất hóa đơn'] || ''),
+    company: map['Tên công ty'] || '',
+    companyAddress: map['Địa chỉ công ty'] || '',
+    taxCode: map['Mã số thuế'] || '',
+    invoiceEmail: map['Email nhận hóa đơn'] || '',
+  };
+}
 function hmac(rawBody, secret) { return crypto.createHmac('sha256', secret).update(rawBody).digest('base64'); }
 function base64urlJson(token) {
   try { return JSON.parse(Buffer.from(String(token).split('.')[1] || '', 'base64url').toString('utf8')); } catch { return {}; }
@@ -78,8 +99,18 @@ function signatureFrom(headers) {
   return header(headers, 'x-haravan-hmacsha256') || header(headers, 'x-haravan-hmac-sha256');
 }
 
+// Cấu hình Haravan kiểu cũ gắn cứng với 1 chi nhánh — production luôn là
+// 'sala' (shop Haravan thật chỉ thuộc Sala). Tenant khác (vd review) không có
+// chi nhánh 'sala' nên rơi về chi nhánh active DUY NHẤT của tenant đó, thay vì
+// luôn đọc 'sala' và luôn ra cấu hình rỗng (accessToken='' → sync im lặng
+// không làm gì, trông như thành công vì trả 200 nhanh nhưng thật ra bỏ qua).
+function legacyConfigBranchId() {
+  if (db.prepare(`SELECT 1 FROM branches WHERE id='sala' AND active=1`).get()) return 'sala';
+  const active = db.prepare(`SELECT id FROM branches WHERE active=1 ORDER BY sort,name`).all();
+  return active.length === 1 ? active[0].id : 'sala';
+}
 function legacyConfig() {
-  const c = getIntegrationChannel('haravan');
+  const c = getIntegrationChannel('haravan', legacyConfigBranchId());
   return {
     enabled: c.enabled || env.HARAVAN_ENABLED,
     shopDomain: normShop(c.shopDomain || env.HARAVAN_SHOP_DOMAIN || ''),
@@ -607,12 +638,19 @@ export function syncHaravanOrder(payload, topic = 'orders/create', shopDomain = 
     // Đơn đã 'paid' thì cột status CHỈ được ghi 'void' qua reverseCancelledPaidOrder()
     // (sau COMMIT) — giữ nguyên 'paid' ở đây để không xoá dấu vết tiền/kho trước khi đảo.
     const status = (wasPaid && rawStatus === 'void') ? 'paid' : rawStatus;
+    const noteAttrs = haravanNoteAttrs(payload);
+    const orderNote = [cleanId(payload.note), noteAttrs.deliveryTime ? `Giao hàng: ${noteAttrs.deliveryTime}` : '']
+      .filter(Boolean).join(' | ');
     const customerJson = json({
       id: customerId,
       name: payload.customer?.name || [payload.customer?.first_name, payload.customer?.last_name].filter(Boolean).join(' '),
       phone: payload.customer?.phone || payload.phone || '',
-      email: payload.customer?.email || payload.email || '',
+      email: noteAttrs.invoiceEmail || payload.customer?.email || payload.email || '',
       address: payload.shipping_address?.address1 || '',
+      company: noteAttrs.company,
+      company_address: noteAttrs.companyAddress,
+      tax_code: noteAttrs.taxCode,
+      invoice_requested: noteAttrs.invoiceRequested || !!noteAttrs.taxCode,
       provider: PROVIDER,
       shop_domain: shop,
     });
@@ -620,20 +658,20 @@ export function syncHaravanOrder(payload, topic = 'orders/create', shopDomain = 
     if (!internalId) {
       internalId = uid('o_');
       db.prepare(`INSERT INTO orders
-        (id,branch_id,table_id,channel,status,subtotal,discount,total,created_at,online_channel,online_ref,online_status,customer_json)
-        VALUES (?,?,NULL,'online',?,?,?,?,?,?,?,?,?)`)
+        (id,branch_id,table_id,channel,status,subtotal,discount,total,created_at,online_channel,online_ref,online_status,customer_json,note)
+        VALUES (?,?,NULL,'online',?,?,?,?,?,?,?,?,?,?)`)
         .run(internalId, branch_id, status, subtotal, discount, total, payload.created_at || now(),
-          PROVIDER, externalId, topic, customerJson);
+          PROVIDER, externalId, topic, customerJson, orderNote || null);
     } else {
       if (!priorState?.locked_at) db.prepare(`DELETE FROM order_items WHERE order_id=?`).run(internalId);
       if (priorState?.locked_at) {
-        db.prepare(`UPDATE orders SET status=?,online_status=?,customer_json=?,
+        db.prepare(`UPDATE orders SET status=?,online_status=?,customer_json=?,note=COALESCE(NULLIF(?,''),note),
           paid_at=CASE WHEN ?='paid' THEN COALESCE(paid_at,?) ELSE paid_at END WHERE id=?`)
-          .run(status, topic, customerJson, status, now(), internalId);
+          .run(status, topic, customerJson, orderNote, status, now(), internalId);
       } else {
-        db.prepare(`UPDATE orders SET status=?,subtotal=?,discount=?,total=?,online_status=?,customer_json=?,
+        db.prepare(`UPDATE orders SET status=?,subtotal=?,discount=?,total=?,online_status=?,customer_json=?,note=COALESCE(NULLIF(?,''),note),
           paid_at=CASE WHEN ?='paid' THEN COALESCE(paid_at,?) ELSE paid_at END WHERE id=?`)
-          .run(status, subtotal, discount, total, topic, customerJson, status, now(), internalId);
+          .run(status, subtotal, discount, total, topic, customerJson, orderNote, status, now(), internalId);
       }
       // Once the order has crossed the confirmation/payment boundary, its sale
       // lines are immutable snapshots. Later product edits or webhook retries may

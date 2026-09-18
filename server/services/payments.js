@@ -806,7 +806,7 @@ export function payOrder(order_id, lines, options = {}, branch_id = 'sala') {
           atomicCustomerMode = 'COMPANY_TAX_INFO';
           atomicBuyerInfo = {
             company: orderCust.company || ten, name: ten, tax_code: taxCode,
-            address: orderCust.address || '', email, phone: orderCust.phone || '',
+            address: orderCust.company_address || orderCust.address || '', email, phone: orderCust.phone || '',
           };
         } else if (ten && ten !== 'Bán cho người tiêu dùng') {
           atomicCustomerMode = 'BUYER_PROVIDED_INFO';

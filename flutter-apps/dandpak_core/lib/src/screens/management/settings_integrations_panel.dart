@@ -12,7 +12,6 @@ import '../../ui/file_pick.dart';
 import '../../ui/app_theme.dart';
 import '../../ui/aspect_safe_thumbnail.dart';
 import '../online/marketplace_connect_panel.dart';
-import '../online/haravan_connect_panel.dart';
 import 'settings_erp_panel.dart';
 import 'settings_tab.dart';
 import 'settings_value_utils.dart';
@@ -482,7 +481,6 @@ class _IntegrationsPanelState extends State<IntegrationsPanel> {
   /// Trạng thái kết nối của các sàn "1 chạm" — lấy từ Connection Platform,
   /// không phải cờ enabled cũ. Dùng để hiện "Đã/Chưa kết nối" ở danh sách.
   final Map<String, bool> _mpConnected = {};
-  bool _haravanConnected = false;
 
   Future<void> _loadMarketplaceState() async {
     for (final p in kMarketplaceOneClickProviders) {
@@ -496,14 +494,6 @@ class _IntegrationsPanelState extends State<IntegrationsPanel> {
       } catch (_) {
         // Chưa lấy được thì giữ nguyên trạng thái đã biết.
       }
-    }
-    try {
-      final status = await widget.api.getHaravanStatus();
-      final shops = (status['shops'] as List?) ?? const [];
-      _haravanConnected = shops.any((shop) =>
-          shop is Map && (shop['active'] == true || shop['active'] == 1));
-    } catch (_) {
-      // Keep the last known state when the connector status endpoint is offline.
     }
     if (mounted) setState(() {});
   }
@@ -744,8 +734,14 @@ class _IntegrationsPanelState extends State<IntegrationsPanel> {
         merged['note'] = noteCtrl.text.trim();
       }
 
-      final def = _integrationDefs.firstWhere((d) => d.key == ck);
-      if (def.type != 'misa' && def.channel != null) {
+      // Server có thể trả về kênh chưa có IntegrationDef ở màn này (vd
+      // 'lazadachat' quản lý riêng ở Omni inbox) — giữ nguyên cấu hình kênh đó
+      // thay vì crash cả vòng lặp lưu (firstWhere từng làm hỏng MỌI lần lưu).
+      IntegrationDef? def;
+      for (final d in _integrationDefs) {
+        if (d.key == ck) { def = d; break; }
+      }
+      if (def != null && def.type != 'misa' && def.channel != null) {
         merged['channel'] = def.channel;
       }
 
@@ -1592,9 +1588,6 @@ class _IntegrationsPanelState extends State<IntegrationsPanel> {
     // ERP — Business Central dùng backend riêng (/erp/*), không theo hệ field
     // của các cổng thanh toán → render UI riêng, vẫn nằm trong khung "Liên kết".
     if (_selectedKey == 'erp') return ErpConfigView(api: widget.api);
-    if (_selectedKey == 'haravan') {
-      return HaravanConnectPanel(onChanged: _loadMarketplaceState);
-    }
     // Sàn TMĐT qua Connection Platform (Shopee/Lazada…): kết nối "1 chạm" — user
     // chỉ đăng nhập + đồng ý, KHÔNG nhập Partner ID/Key/token. Gộp thẳng vào detail
     // của màn Liên kết (một màn duy nhất), không dựng UI kết nối riêng.
@@ -1879,11 +1872,9 @@ class _IntegrationsPanelState extends State<IntegrationsPanel> {
 
   bool _isConnectedOrEnabled(IntegrationDef def) {
     final conf = _channels[def.key] ?? {};
-    return def.key == 'haravan'
-        ? _haravanConnected
-        : kMarketplaceOneClickProviders.contains(def.key)
-            ? (_mpConnected[def.key] ?? false)
-            : asFlag(conf['enabled']);
+    return kMarketplaceOneClickProviders.contains(def.key)
+        ? (_mpConnected[def.key] ?? false)
+        : asFlag(conf['enabled']);
   }
 
   Widget _integrationList() => ListView.builder(
