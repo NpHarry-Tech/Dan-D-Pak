@@ -23,19 +23,19 @@ class _AuditLogTabState extends State<_AuditLogTab> {
   // Bộ lọc loại log — mỗi chip ánh xạ sang nguồn audit/system_logs và nhóm sự kiện.
   // filter server-side (levels / sources / event_types).
   static List<(String, String)> get _filters => <(String, String)>[
-    ('all', t('Tất cả')),
-    ('user', t('Hoạt động người dùng')),
-    ('system', t('Hệ thống')),
-    ('warn', t('Cảnh báo')),
-    ('error', t('Lỗi')),
-    ('crash', t('Crash nghiêm trọng')),
-    ('api', 'API'),
-    ('socket', 'Socket'),
-    ('payment', t('Thanh toán')),
-    ('printer', t('Máy in')),
-    ('sync', t('Đồng bộ')),
-    ('update', t('Cập nhật app')),
-  ];
+        ('all', t('Tất cả')),
+        ('user', t('Hoạt động người dùng')),
+        ('system', t('Hệ thống')),
+        ('warn', t('Cảnh báo')),
+        ('error', t('Lỗi')),
+        ('crash', t('Crash nghiêm trọng')),
+        ('api', 'API'),
+        ('socket', 'Socket'),
+        ('payment', t('Thanh toán')),
+        ('printer', t('Máy in')),
+        ('sync', t('Đồng bộ')),
+        ('update', t('Cập nhật app')),
+      ];
 
   final _search = TextEditingController();
   final List<_LogEntry> _rows = [];
@@ -72,7 +72,7 @@ class _AuditLogTabState extends State<_AuditLogTab> {
     super.initState();
     _load();
     // Timer GIỮ LÀM FALLBACK (§1.7): nếu realtime rớt vẫn còn nhịp làm tươi.
-    _timer = Timer.periodic(Duration(seconds: 5), (timer) {
+    _timer = Timer.periodic(Duration(seconds: 30), (timer) {
       if (_canLiveRefresh) _load(silent: true);
     });
     // Realtime: server phát 'activity:new' sau khi ghi audit_log → làm tươi NGAY

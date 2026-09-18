@@ -15,7 +15,8 @@ import '../app_flavor.dart';
 /// Cách hoạt động:
 /// 1. Mỗi sự kiện đáng giá (chạm màn hình, đổi màn hình, gọi API, sự kiện
 ///    realtime, lỗi Dart) được ghi 1 dòng vào file `bb_<role>_current.log`
-///    trong thư mục tạm — ghi ĐỒNG BỘ + flush ngay nên sống sót qua crash.
+///    trong thư mục tạm. Chỉ lỗi/khựng hình mới fsync ngay; trace thường để OS
+///    flush nhằm tránh chặn UI thread ở mỗi lần chạm/socket/API.
 /// 2. Thoát app đàng hoàng → dòng cuối là `## CLEAN-EXIT`.
 /// 3. Lần mở app kế tiếp: nếu file cũ KHÔNG có dấu thoát sạch → lần trước chết
 ///    bất thường → sao lưu file thành `bb_<role>_crash_<ts>.log` và GỬI phần
@@ -79,7 +80,8 @@ class BlackBox {
       _file = cur.openSync(mode: FileMode.write); // file mới cho lần chạy này
       _writeLine(
           '## START role=$role app=${AppFlavor.current.versionName}+${AppFlavor.current.buildNumber} '
-          'os=${Platform.operatingSystemVersion}');
+          'os=${Platform.operatingSystemVersion}',
+          flush: true);
       if (crashTail != null && api != null) {
         _reportPreviousCrash(api, crashTail, crashAt);
       }
@@ -96,7 +98,7 @@ class BlackBox {
       if (line.length > _maxLine) line = line.substring(0, _maxLine);
       _recent.add(line);
       if (_recent.length > _recentMax) _recent.removeAt(0);
-      _writeLine(line);
+      _writeLine(line, flush: category == 'error' || category == 'freeze');
     } catch (_) {}
   }
 
@@ -107,13 +109,13 @@ class BlackBox {
   /// "thoát sạch" để lần mở sau không báo crash oan.
   static void markCleanExit() {
     try {
-      _writeLine(_cleanMark);
+      _writeLine(_cleanMark, flush: true);
       _file?.closeSync();
       _file = null;
     } catch (_) {}
   }
 
-  static void _writeLine(String line) {
+  static void _writeLine(String line, {bool flush = false}) {
     final f = _file;
     if (f == null) return;
     try {
@@ -123,7 +125,7 @@ class BlackBox {
         f.setPositionSync(0);
       }
       f.writeStringSync('$line\n');
-      f.flushSync(); // flush từng dòng — sống sót qua crash native
+      if (flush) f.flushSync();
     } catch (_) {}
   }
 

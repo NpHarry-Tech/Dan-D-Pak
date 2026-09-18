@@ -1,6 +1,4 @@
 import 'dart:math' as math;
-import 'dart:ui' show ImageFilter;
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show HapticFeedback, LogicalKeyboardKey;
 import 'package:intl/intl.dart';
@@ -231,8 +229,7 @@ class _PosScreenState extends State<PosScreen> {
         voucher: orderVoucher,
         subtotal: pos.cartSubtotal,
         productDiscount: (breakdown?['product_promos'] as num?) ?? 0,
-        orderDiscount:
-            (breakdown?['voucher'] as num?) ?? pos.activeDiscount,
+        orderDiscount: (breakdown?['voucher'] as num?) ?? pos.activeDiscount,
         customerDiscount: (breakdown?['customer_perk'] as num?) ?? 0,
         manualDiscount: (breakdown?['manual'] as num?) ?? 0,
         total: pos.displayTotal,
@@ -1233,77 +1230,78 @@ class _PosScreenState extends State<PosScreen> {
       backgroundColor: DanColors.surface,
       builder: (_) => StatefulBuilder(
         builder: (context, setSheetState) => SafeArea(
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 14, 16, 4),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Text(item.item.name,
-                      style: const TextStyle(fontWeight: FontWeight.w800)),
-                ),
-                if (!sent) ...[
-                  IconButton(
-                    tooltip: t('Giảm'),
-                    onPressed: () => setSheetState(() {
-                      if (draftQty > 0) draftQty--;
-                    }),
-                    icon: const Icon(Icons.remove_circle_outline),
-                  ),
-                  SizedBox(
-                    width: 26,
-                    child: Text('$draftQty',
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(fontWeight: FontWeight.w900)),
-                  ),
-                  IconButton(
-                    tooltip: t('Tăng'),
-                    onPressed: () => setSheetState(() => draftQty++),
-                    icon: const Icon(Icons.add_circle_outline),
-                  ),
-                ] else
-                  Text('${item.qty}×',
-                      style: const TextStyle(fontWeight: FontWeight.w800)),
-              ],
-            ),
-          ),
-          if (!sent && draftQty <= 0)
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
-              child: Text(t('Số lượng 0 — đóng bảng này sẽ xoá món khỏi giỏ.'),
-                  style: TextStyle(fontSize: 11.5, color: DanColors.late)),
-            ),
-          ListTile(
-            leading: const Icon(Icons.edit_note),
-            title: Text(t('Ghi chú món')),
-            subtitle: item.notes.isEmpty ? null : Text(item.notes),
-            onTap: () => Navigator.pop(context, 'note'),
-          ),
-          if (!sent) ...[
-            ListTile(
-              leading: const Icon(Icons.sell_outlined),
-              title: Text(t('Chỉnh giá / giảm giá món')),
-              subtitle: Text(item.hasPriceOverride
-                  ? '${_vnd(item.unitPrice)}  (${t('gốc')} ${_vnd(item.listedUnitPrice)})'
-                  : _vnd(item.listedUnitPrice)),
-              onTap: () => Navigator.pop(context, 'price'),
-            ),
-            if (item.hasPriceOverride)
-              ListTile(
-                leading: const Icon(Icons.restart_alt),
-                title: Text(t('Về giá gốc')),
-                onTap: () => Navigator.pop(context, 'reset'),
+              padding: const EdgeInsets.fromLTRB(16, 14, 16, 4),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(item.item.name,
+                        style: const TextStyle(fontWeight: FontWeight.w800)),
+                  ),
+                  if (!sent) ...[
+                    IconButton(
+                      tooltip: t('Giảm'),
+                      onPressed: () => setSheetState(() {
+                        if (draftQty > 0) draftQty--;
+                      }),
+                      icon: const Icon(Icons.remove_circle_outline),
+                    ),
+                    SizedBox(
+                      width: 26,
+                      child: Text('$draftQty',
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(fontWeight: FontWeight.w900)),
+                    ),
+                    IconButton(
+                      tooltip: t('Tăng'),
+                      onPressed: () => setSheetState(() => draftQty++),
+                      icon: const Icon(Icons.add_circle_outline),
+                    ),
+                  ] else
+                    Text('${item.qty}×',
+                        style: const TextStyle(fontWeight: FontWeight.w800)),
+                ],
               ),
-          ] else
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 6),
-              child: Text(
-                  t('Món đã gửi bếp — chỉ đổi được ghi chú. Chỉnh giá thì hủy rồi thêm lại.'),
-                  style: TextStyle(fontSize: 11.5, color: DanColors.faint)),
             ),
-          const SizedBox(height: 8),
-        ]),
-      ),
+            if (!sent && draftQty <= 0)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+                child: Text(
+                    t('Số lượng 0 — đóng bảng này sẽ xoá món khỏi giỏ.'),
+                    style: TextStyle(fontSize: 11.5, color: DanColors.late)),
+              ),
+            ListTile(
+              leading: const Icon(Icons.edit_note),
+              title: Text(t('Ghi chú món')),
+              subtitle: item.notes.isEmpty ? null : Text(item.notes),
+              onTap: () => Navigator.pop(context, 'note'),
+            ),
+            if (!sent) ...[
+              ListTile(
+                leading: const Icon(Icons.sell_outlined),
+                title: Text(t('Chỉnh giá / giảm giá món')),
+                subtitle: Text(item.hasPriceOverride
+                    ? '${_vnd(item.unitPrice)}  (${t('gốc')} ${_vnd(item.listedUnitPrice)})'
+                    : _vnd(item.listedUnitPrice)),
+                onTap: () => Navigator.pop(context, 'price'),
+              ),
+              if (item.hasPriceOverride)
+                ListTile(
+                  leading: const Icon(Icons.restart_alt),
+                  title: Text(t('Về giá gốc')),
+                  onTap: () => Navigator.pop(context, 'reset'),
+                ),
+            ] else
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 6),
+                child: Text(
+                    t('Món đã gửi bếp — chỉ đổi được ghi chú. Chỉnh giá thì hủy rồi thêm lại.'),
+                    style: TextStyle(fontSize: 11.5, color: DanColors.faint)),
+              ),
+            const SizedBox(height: 8),
+          ]),
+        ),
       ),
     );
     if (!mounted) return;

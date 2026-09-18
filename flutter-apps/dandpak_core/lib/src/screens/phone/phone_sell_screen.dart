@@ -725,7 +725,9 @@ class _PhoneSellScreenState extends State<PhoneSellScreen> {
               _step = _Step.done;
             });
             trackReceiptPrintBanner(
-                api: _api, receipt: Map<String, dynamic>.from(order), orderId: orderId);
+                api: _api,
+                receipt: Map<String, dynamic>.from(order),
+                orderId: orderId);
             appToast(context, t('Hoá đơn đã được thanh toán.'));
             return;
           }
@@ -2389,111 +2391,107 @@ class _SkuCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final out = sku.stock <= 0;
-    return Opacity(
-      opacity: out ? .55 : 1,
-      child: Material(
-        color: DanColors.surface,
+    return Material(
+      color: DanColors.surface,
+      borderRadius: BorderRadius.circular(10),
+      child: InkWell(
+        onTap: out ? null : onTap,
         borderRadius: BorderRadius.circular(10),
-        child: InkWell(
-          onTap: out ? null : onTap,
-          borderRadius: BorderRadius.circular(10),
-          child: Container(
-            decoration: BoxDecoration(
-              border: Border.all(
-                  color: qtyInCart > 0 ? DanColors.brand : DanColors.border),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Container(
-                  height: 84,
-                  decoration: const BoxDecoration(
-                    color: DanColors.surface2,
-                    border: Border(bottom: BorderSide(color: DanColors.border)),
-                    borderRadius:
-                        BorderRadius.vertical(top: Radius.circular(9)),
-                  ),
-                  child: Stack(
-                    children: [
-                      Center(
-                        child: sku.image.isNotEmpty
-                            ? ClipRRect(
-                                borderRadius: const BorderRadius.vertical(
-                                    top: Radius.circular(9)),
-                                child: Image.network(imageUrl,
-                                    fit: BoxFit.cover,
-                                    width: double.infinity,
-                                    height: 84,
-                                    errorBuilder: (_, __, ___) => const Icon(
-                                        Icons.inventory_2_outlined,
-                                        size: 30,
-                                        color: Color(0xFFC6CEDA))),
-                              )
-                            : const Icon(Icons.inventory_2_outlined,
-                                size: 30, color: Color(0xFFC6CEDA)),
+        child: Container(
+          decoration: BoxDecoration(
+            border: Border.all(
+                color: qtyInCart > 0 ? DanColors.brand : DanColors.border),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Container(
+                height: 84,
+                decoration: const BoxDecoration(
+                  color: DanColors.surface2,
+                  border: Border(bottom: BorderSide(color: DanColors.border)),
+                  borderRadius: BorderRadius.vertical(top: Radius.circular(9)),
+                ),
+                child: Stack(
+                  children: [
+                    Center(
+                      child: sku.image.isNotEmpty
+                          ? ClipRRect(
+                              borderRadius: const BorderRadius.vertical(
+                                  top: Radius.circular(9)),
+                              child: Image.network(imageUrl,
+                                  fit: BoxFit.cover,
+                                  width: double.infinity,
+                                  height: 84,
+                                  errorBuilder: (_, __, ___) => const Icon(
+                                      Icons.inventory_2_outlined,
+                                      size: 30,
+                                      color: Color(0xFFC6CEDA))),
+                            )
+                          : const Icon(Icons.inventory_2_outlined,
+                              size: 30, color: Color(0xFFC6CEDA)),
+                    ),
+                    if (out)
+                      Positioned(
+                        top: 6,
+                        left: 6,
+                        child: PhoneBadge(t('Hết hàng'), tone: PhoneTone.bad),
                       ),
-                      if (out)
-                        Positioned(
-                          top: 6,
-                          left: 6,
-                          child: PhoneBadge(t('Hết hàng'), tone: PhoneTone.bad),
+                    if (qtyInCart > 0)
+                      Positioned(
+                        top: 6,
+                        left: 6,
+                        child: Container(
+                          constraints: const BoxConstraints(minWidth: 20),
+                          height: 20,
+                          padding: const EdgeInsets.symmetric(horizontal: 5),
+                          decoration: BoxDecoration(
+                              color: DanColors.brand,
+                              borderRadius: BorderRadius.circular(99)),
+                          alignment: Alignment.center,
+                          child: Text('$qtyInCart',
+                              style: const TextStyle(
+                                  fontSize: 10.5,
+                                  fontWeight: FontWeight.w800,
+                                  color: Colors.white)),
                         ),
-                      if (qtyInCart > 0)
-                        Positioned(
-                          top: 6,
-                          left: 6,
-                          child: Container(
-                            constraints: const BoxConstraints(minWidth: 20),
-                            height: 20,
-                            padding: const EdgeInsets.symmetric(horizontal: 5),
-                            decoration: BoxDecoration(
-                                color: DanColors.brand,
-                                borderRadius: BorderRadius.circular(99)),
-                            alignment: Alignment.center,
-                            child: Text('$qtyInCart',
-                                style: const TextStyle(
-                                    fontSize: 10.5,
-                                    fontWeight: FontWeight.w800,
-                                    color: Colors.white)),
-                          ),
-                        ),
+                      ),
+                  ],
+                ),
+              ),
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(10, 9, 10, 10),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: Text(sku.name,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                                fontSize: 12.5,
+                                fontWeight: FontWeight.w700,
+                                height: 1.3)),
+                      ),
+                      Text(phoneMoney(sku.price),
+                          style: const TextStyle(
+                              fontSize: 14.5,
+                              fontWeight: FontWeight.w800,
+                              color: DanColors.brand,
+                              fontFeatures: [FontFeature.tabularFigures()])),
+                      const SizedBox(height: 2),
+                      Text('${t('Tồn')} ${phoneInt(sku.stock)} ${sku.unit}',
+                          style: TextStyle(
+                              fontSize: 10.5,
+                              fontWeight: FontWeight.w700,
+                              color: out ? DanColors.late : DanColors.muted)),
                     ],
                   ),
                 ),
-                Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(10, 9, 10, 10),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Expanded(
-                          child: Text(sku.name,
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                  fontSize: 12.5,
-                                  fontWeight: FontWeight.w700,
-                                  height: 1.3)),
-                        ),
-                        Text(phoneMoney(sku.price),
-                            style: const TextStyle(
-                                fontSize: 14.5,
-                                fontWeight: FontWeight.w800,
-                                color: DanColors.brand,
-                                fontFeatures: [FontFeature.tabularFigures()])),
-                        const SizedBox(height: 2),
-                        Text('${t('Tồn')} ${phoneInt(sku.stock)} ${sku.unit}',
-                            style: TextStyle(
-                                fontSize: 10.5,
-                                fontWeight: FontWeight.w700,
-                                color: out ? DanColors.late : DanColors.muted)),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),

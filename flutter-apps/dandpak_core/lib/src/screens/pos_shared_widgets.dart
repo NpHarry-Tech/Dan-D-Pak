@@ -186,35 +186,36 @@ class _MenuPickCard extends StatelessWidget {
       );
     }
     final reason = _reasonLabel();
-    return Opacity(
-      opacity: 0.45,
-      child: Stack(
-        children: [
-          ImageFiltered(
-            imageFilter: ImageFilter.blur(sigmaX: 1.2, sigmaY: 1.2),
-            child: IgnorePointer(child: card),
-          ),
-          Positioned.fill(
-            child: Center(
-              child: reason == null
-                  ? SizedBox.shrink()
-                  : Container(
-                      padding:
-                          EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                      decoration: BoxDecoration(
-                        color: Colors.black.withValues(alpha: .55),
-                        borderRadius: BorderRadius.circular(999),
-                      ),
-                      child: Text(reason,
-                          style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 11,
-                              fontWeight: FontWeight.w800)),
-                    ),
+    return Stack(
+      children: [
+        IgnorePointer(child: card),
+        Positioned.fill(
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: DanColors.surface.withValues(alpha: .58),
+              borderRadius: BorderRadius.circular(12),
             ),
           ),
-        ],
-      ),
+        ),
+        Positioned.fill(
+          child: Center(
+            child: reason == null
+                ? SizedBox.shrink()
+                : Container(
+                    padding: EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: .55),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Text(reason,
+                        style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w800)),
+                  ),
+          ),
+        ),
+      ],
     );
   }
 }

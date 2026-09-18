@@ -280,115 +280,111 @@ class _SkuCard extends StatelessWidget {
     return InkWell(
       onTap: out ? null : onTap,
       borderRadius: BorderRadius.circular(DanRadius.md),
-      child: Opacity(
-        opacity: out ? .52 : 1,
-        child: Container(
-          decoration: BoxDecoration(
-            color: DanColors.surface,
-            border: Border.all(color: DanColors.border),
-            borderRadius: BorderRadius.circular(DanRadius.md),
-            boxShadow: [
-              BoxShadow(
-                  color: Colors.black.withValues(alpha: .025),
-                  blurRadius: 6,
-                  offset: Offset(0, 2)),
-            ],
-          ),
-          clipBehavior: Clip.antiAlias,
-          child: Stack(
-            children: [
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  SizedBox(height: 122, child: _image()),
-                  Expanded(
-                    child: Padding(
-                      padding: EdgeInsets.fromLTRB(9, 6, 9, 7),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          // Flexible: tên co lại nếu thiếu chỗ, không đẩy tràn card.
-                          Flexible(
-                            child: Text(sku.name,
-                                maxLines: 2,
+      child: Container(
+        decoration: BoxDecoration(
+          color: DanColors.surface,
+          border: Border.all(color: DanColors.border),
+          borderRadius: BorderRadius.circular(DanRadius.md),
+          boxShadow: [
+            BoxShadow(
+                color: Colors.black.withValues(alpha: .025),
+                blurRadius: 6,
+                offset: Offset(0, 2)),
+          ],
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: Stack(
+          children: [
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                SizedBox(height: 122, child: _image()),
+                Expanded(
+                  child: Padding(
+                    padding: EdgeInsets.fromLTRB(9, 6, 9, 7),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        // Flexible: tên co lại nếu thiếu chỗ, không đẩy tràn card.
+                        Flexible(
+                          child: Text(sku.name,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w800,
+                                  height: 1.18)),
+                        ),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(Fmt.money(sku.price),
+                                maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: TextStyle(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w800,
-                                    height: 1.18)),
-                          ),
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text(Fmt.money(sku.price),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                      fontSize: 14,
-                                      fontWeight: FontWeight.w900,
-                                      color: DanColors.brand)),
-                              Text(
-                                  '${t('Tồn')}: ${Fmt.int0(sku.stock)} ${sku.unit}',
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                      fontSize: 10.5,
-                                      color: out
-                                          ? DanColors.late
-                                          : DanColors.muted,
-                                      fontWeight: FontWeight.w600)),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              // Badge khuyến mãi chỉ hiện khi SKU thực sự có voucher.
-              if (promoLabel.isNotEmpty)
-                Positioned(
-                  top: 7,
-                  right: 7,
-                  child: Container(
-                    padding: EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                    decoration: BoxDecoration(
-                      color: DanColors.doing,
-                      borderRadius: BorderRadius.circular(99),
-                      boxShadow: [
-                        BoxShadow(
-                            color: Colors.black.withValues(alpha: .12),
-                            blurRadius: 8)
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w900,
+                                    color: DanColors.brand)),
+                            Text(
+                                '${t('Tồn')}: ${Fmt.int0(sku.stock)} ${sku.unit}',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                    fontSize: 10.5,
+                                    color:
+                                        out ? DanColors.late : DanColors.muted,
+                                    fontWeight: FontWeight.w600)),
+                          ],
+                        ),
                       ],
                     ),
-                    child: Text(promoLabel,
-                        style: TextStyle(
-                            fontSize: 9.5,
-                            color: Colors.white,
-                            fontWeight: FontWeight.w900)),
                   ),
                 ),
-              if (out)
-                Positioned(
-                  top: 7,
-                  left: 7,
-                  child: Container(
-                    padding: EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                    decoration: BoxDecoration(
-                      color: DanColors.late,
-                      borderRadius: BorderRadius.circular(99),
-                    ),
-                    child: Text(t('Hết'),
-                        style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 9.5,
-                            fontWeight: FontWeight.w900)),
+              ],
+            ),
+            // Badge khuyến mãi chỉ hiện khi SKU thực sự có voucher.
+            if (promoLabel.isNotEmpty)
+              Positioned(
+                top: 7,
+                right: 7,
+                child: Container(
+                  padding: EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: DanColors.doing,
+                    borderRadius: BorderRadius.circular(99),
+                    boxShadow: [
+                      BoxShadow(
+                          color: Colors.black.withValues(alpha: .12),
+                          blurRadius: 8)
+                    ],
                   ),
+                  child: Text(promoLabel,
+                      style: TextStyle(
+                          fontSize: 9.5,
+                          color: Colors.white,
+                          fontWeight: FontWeight.w900)),
                 ),
-            ],
-          ),
+              ),
+            if (out)
+              Positioned(
+                top: 7,
+                left: 7,
+                child: Container(
+                  padding: EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: DanColors.late,
+                    borderRadius: BorderRadius.circular(99),
+                  ),
+                  child: Text(t('Hết'),
+                      style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 9.5,
+                          fontWeight: FontWeight.w900)),
+                ),
+              ),
+          ],
         ),
       ),
     );
