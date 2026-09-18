@@ -505,19 +505,20 @@ const OPERATION_SELECT = `SELECT o.*,eo.provider,eo.shop_domain,eo.external_shop
 export function listOnlineOperations(branch_id = 'sala', query = {}) {
   const limit = Math.max(1, Math.min(200, Number(query.limit) || 50));
   const offset = Math.max(0, Number(query.offset) || 0);
-  const wantedStatus = String(query.status || query.bucket || '').trim();
+  const wantedStatuses = String(query.status || query.bucket || '').trim()
+    .split(',').map((s) => s.trim()).filter(Boolean);
   const provider = String(query.provider || '').trim().toLowerCase();
   const shop = String(query.shop_domain || query.shopDomain || '').trim().toLowerCase();
   const search = String(query.q || query.search || '').trim().toLowerCase();
   const conditions = [];
   const params = [branch_id];
-  if (wantedStatus === 'product_attention') {
+  if (wantedStatuses.length === 1 && wantedStatuses[0] === 'product_attention') {
     conditions.push(`EXISTS (SELECT 1 FROM order_items missing WHERE missing.order_id=o.id
       AND missing.sku_id IS NULL AND missing.menu_item_id IS NULL)`);
-  } else if (wantedStatus && wantedStatus !== 'all') {
+  } else if (wantedStatuses.length && !wantedStatuses.includes('all')) {
     conditions.push(`COALESCE(s.workflow_status,CASE WHEN o.status='void' THEN 'cancelled'
-      WHEN o.status='paid' THEN 'processed' ELSE 'pending' END)=?`);
-    params.push(wantedStatus);
+      WHEN o.status='paid' THEN 'processed' ELSE 'pending' END) IN (${wantedStatuses.map(() => '?').join(',')})`);
+    params.push(...wantedStatuses);
   }
   if (provider) { conditions.push(`LOWER(COALESCE(eo.provider,o.online_channel,''))=?`); params.push(provider); }
   if (shop) { conditions.push(`LOWER(COALESCE(NULLIF(eo.external_shop_id,''),eo.shop_domain,''))=?`); params.push(shop); }

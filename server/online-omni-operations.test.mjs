@@ -122,6 +122,14 @@ test('Dan D Pak Omni tach khoi capability cua connector Haravan', () => {
   assert.match(capabilities.conversations.reason, /Harasocial/);
 });
 
+test('badge "Da xu ly" cong 3 bucket phai khop voi list nhieu trang thai', () => {
+  const summary = Online.onlineOperationsSummary('sala');
+  const badgeCount = summary.buckets.processed + summary.buckets.preparing + summary.buckets.ready_to_ship;
+  const list = Online.listOnlineOperations('sala', { status: 'processed,preparing,ready_to_ship' });
+  assert.equal(list.total, badgeCount);
+  assert.ok(list.rows.some(r => r.workflow_status === 'ready_to_ship'));
+});
+
 test.after(() => {
   db.close();
   rmSync(temp, { recursive: true, force: true });

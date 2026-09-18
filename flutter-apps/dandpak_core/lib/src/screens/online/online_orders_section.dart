@@ -111,7 +111,7 @@ class _OnlineOrdersSectionState extends State<OnlineOrdersSection> {
     if (!silent) setState(() => _loading = true);
     try {
       final res = await context.read<ApiService>().getOnlineOperations(
-            status: kOrderTabs[_tab].key,
+            status: kOrderTabs[_tab].countBuckets.join(','),
             provider: _provider,
             shopDomain: _shop,
             q: _query,
