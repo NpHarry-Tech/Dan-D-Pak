@@ -71,11 +71,6 @@ extension ApiServiceDatabaseApi on ApiService {
         errorMessage: 'Không kiểm tra được CSDL'));
   }
 
-  Future<Map<String, dynamic>> databaseResetTransactions(String pin) async {
-    return mapFrom(await postJson('/api/database/reset-transactions',
-        body: {'pin': pin}, errorMessage: 'Không reset được giao dịch'));
-  }
-
   // ── Client log sink ────────────────────────────────────────────────────
   /// Ship a client-side error to the selected server so it lands in the same
   /// log stream as the server's request logs (one place to look).

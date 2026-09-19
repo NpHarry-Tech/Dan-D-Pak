@@ -1,8 +1,7 @@
-// Route ownership: Database Management (status, integrity-check, reset-transactions,
+// Route ownership: Database Management (status, integrity-check,
 // decrypt-audit, docs). NHẠY CẢM: có thao tác HUỶ/tái tạo dữ liệu —
 // route dời NGUYÊN VĂN, không đổi logic.
-import * as Auth from '../../services/auth.js';
-import { db, audit, decryptDecompress, listBackups } from '../../db.js';
+import { db, decryptDecompress, listBackups } from '../../db.js';
 import { scanCriticalOrphans } from '../../db/integrity.js';
 
 export function registerDatabaseRoutes(api, { wrap, guardAny, branch }) {
@@ -180,43 +179,6 @@ api.post('/database/integrity-check', guardAny('settings.manage'), wrap(async ()
     ? scanCriticalOrphans(db)
     : { ok: false, checkedRelations: 0, orphanCount: null, findings: [] };
   return { ok: result === 'ok' && logical.ok, result, logical };
-}));
-
-// POST /api/database/reset-transactions
-api.post('/database/reset-transactions', guardAny('settings.manage'), wrap(async (req) => {
-  const { pin } = req.body;
-  if (!pin) throw new Error('Cần cung cấp mã PIN xác nhận.');
-
-  const user = Auth.verifyManagerOwnerPin(pin, branch(req));
-  if (!user) {
-    throw new Error('Mã PIN không đúng hoặc không có quyền Admin/Manager.');
-  }
-
-  const transactionTables = [
-    'payment_lines', 'payments', 'order_items',
-    'invoice_allocations', 'invoice_audit_logs', 'e_invoices', 'invoices',
-    'bank_transactions', 'print_jobs', 'staff_calls', 'orders',
-    'cash_drawer_reimbursement_allocations', 'cash_drawer_entries', 'shifts',
-    'purchase_order_lines', 'purchase_payments', 'purchase_orders',
-    'purchase_return_lines', 'purchase_returns',
-    'expenses', 'sync_queue', 'audit_log'
-  ];
-
-  // node:sqlite (DatabaseSync) không có .transaction() — dùng BEGIN/COMMIT/ROLLBACK.
-  db.exec('BEGIN');
-  try {
-    for (const table of transactionTables) {
-      db.exec(`DELETE FROM ${table}`);
-    }
-    db.exec(`UPDATE tables SET status = 'free'`);
-    db.exec('COMMIT');
-  } catch (e) {
-    db.exec('ROLLBACK');
-    throw e;
-  }
-  audit('db.reset_transactions', 'Dọn dẹp toàn bộ dữ liệu giao dịch về trạng thái sạch.', branch(req), user.username);
-
-  return { ok: true, message: 'Đã dọn dẹp sạch toàn bộ dữ liệu giao dịch thành công.' };
 }));
 
 // POST /api/database/decrypt-audit

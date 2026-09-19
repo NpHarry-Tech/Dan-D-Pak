@@ -12,7 +12,6 @@ import '../../services/socket_service.dart';
 import '../../services/system_log.dart';
 import '../../ui/app_theme.dart';
 import '../../widgets/dan_top_bar.dart';
-import '../../widgets/manager_pin_dialog.dart';
 import '../documents/documents_screen.dart';
 import '../management/management_widgets.dart';
 import '../../utils/business_datetime.dart';
@@ -344,25 +343,6 @@ class _DatabaseTabState extends State<_DatabaseTab> {
     }
   }
 
-  Future<void> _resetTransactions() async {
-    final api = context.read<ApiService>();
-    final pin = await requestManagerPin(
-      context,
-      t('Xóa toàn bộ dữ liệu giao dịch như đơn, thanh toán, ca và phiếu. Giữ lại cấu hình. Cần PIN Admin.'),
-    );
-    if (pin == null) return;
-    setState(() => _busy = true);
-    try {
-      await api.databaseResetTransactions(pin);
-      _toast(t('Đã reset dữ liệu giao dịch'));
-      await _load();
-    } catch (e) {
-      _toast(e.toString().replaceFirst('Exception: ', ''), error: true);
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
-  }
-
   // §3/§5 — Trạng thái HIỆN TẠI của Desktop (tên human-facing, phiên bản, build,
   // môi trường/backend production, thiết bị). Dời từ "Thông tin ứng dụng" ở
   // Cài đặt → Kết nối về đây. KHÔNG lộ internal name 'dandpak_desktop' cho người
@@ -407,8 +387,8 @@ class _DatabaseTabState extends State<_DatabaseTab> {
         child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
           SizedBox(
             width: 96,
-            child: Text(k,
-                style: TextStyle(fontSize: 12, color: DanColors.faint)),
+            child:
+                Text(k, style: TextStyle(fontSize: 12, color: DanColors.faint)),
           ),
           Expanded(
             child: Text(v,
@@ -543,34 +523,6 @@ class _DatabaseTabState extends State<_DatabaseTab> {
                   SizedBox(
                     width: cardWidth,
                     child: _DbCard(
-                      icon: Icons.cleaning_services_outlined,
-                      title: t('Dọn dữ liệu giao dịch'),
-                      description: t(
-                          'Dọn đơn hàng chạy thử trước khi khai trương. Không tạo database phụ.'),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          OutlinedButton.icon(
-                            onPressed: _busy ? null : _resetTransactions,
-                            icon: Icon(Icons.cleaning_services),
-                            style: OutlinedButton.styleFrom(
-                              foregroundColor: DanColors.late,
-                              side: BorderSide(color: DanColors.late),
-                            ),
-                            label: Text(t('Dọn sạch giao dịch & reset bàn')),
-                          ),
-                          SizedBox(height: 12),
-                          _notice(
-                            t('Thao tác dọn sạch giao dịch sẽ xóa vĩnh viễn toàn bộ hóa đơn, ca làm và chi phí trong database chính.'),
-                            danger: true,
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  SizedBox(
-                    width: cardWidth,
-                    child: _DbCard(
                       icon: Icons.bar_chart_outlined,
                       title: t('Thống kê Cơ sở dữ liệu'),
                       description: t(
@@ -601,11 +553,6 @@ class _DatabaseTabState extends State<_DatabaseTab> {
                 ],
               );
             },
-          ),
-          SizedBox(height: 16),
-          Panel(
-            title: t('Bảng cấu hình (giữ khi reset)'),
-            child: _countGrid(config),
           ),
           SizedBox(height: 16),
           Panel(
@@ -733,26 +680,6 @@ class _DatabaseTabState extends State<_DatabaseTab> {
             ),
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _notice(String text, {bool danger = false}) {
-    return Container(
-      padding: EdgeInsets.all(10),
-      decoration: BoxDecoration(
-        color: danger ? Color(0xFFFFF1F1) : DanColors.surface2,
-        borderRadius: BorderRadius.circular(DanRadius.sm),
-        border: Border.all(color: danger ? DanColors.late : DanColors.border),
-      ),
-      child: Text(
-        text,
-        style: TextStyle(
-          color: danger ? DanColors.late : DanColors.muted,
-          fontSize: 11.5,
-          height: 1.35,
-          fontWeight: FontWeight.w600,
-        ),
       ),
     );
   }
