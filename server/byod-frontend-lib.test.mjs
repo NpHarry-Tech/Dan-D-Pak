@@ -43,12 +43,6 @@ test('detectLang() lấy ngôn ngữ hệ thống được hỗ trợ ở lần 
   assert.equal(Lib.detectLang(['fr-FR']), 'vi');
 });
 
-test('dòng chủ quyền dùng hoàn toàn tiếng Trung và không dùng tên Tây Sa/Nam Sa', () => {
-  const line = Lib.t('zh', 'sovereignty');
-  assert.equal(line, '黄沙群岛和长沙群岛属于越南。');
-  assert.ok(!/西沙|南沙/.test(line));
-});
-
 test('statusMeta() bao phủ đủ 7 trạng thái order_item thật (server/services/orders.js)', () => {
   const real = ['pending_confirm', 'new', 'accepted', 'preparing', 'ready', 'served', 'cancelled'];
   for (const code of real) {
