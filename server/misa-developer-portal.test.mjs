@@ -42,6 +42,7 @@ const state = {
   receivedSendEmail: null,
   receivedDownload: null,
   receivedHeaders: { token: null, templates: null, publish: null },
+  templatesMode: null, // null | 'business_error'
   publishMode: null, // null | 'timeout' | 'duplicate_elem' | 'not_continuous' | 'system_error' | 'request_level_fail'
   seq: 0,
 };
@@ -116,6 +117,14 @@ const server = createServer((req, res) => {
       || !url.searchParams.has('year') || !url.searchParams.has('haveTempOld')) {
       return json(res, 200, { Success: true, ErrorCode: null, DescriptionErrorCode: null, Errors: [], Data: '', CustomData: '' });
     }
+    if (state.templatesMode === 'business_error') {
+      return json(res, 200, {
+        Success: false,
+        ErrorCode: 'TemplatePermissionDenied',
+        DescriptionErrorCode: 'Tài khoản không có quyền lấy mẫu hóa đơn',
+        Errors: [], Data: '', CustomData: '',
+      });
+    }
     // Field THẬT theo class InvoiceTemplateData (xac nhan tai lieu chuan
     // 2026-09-19): IPTemplateID (khong phai TemplateID) + Inactive (nguoc cuc
     // voi IsActive, khong co ca 2 cung luc tren mot mau). Khong co
@@ -123,10 +132,12 @@ const server = createServer((req, res) => {
     // tra field nay.
     return json(res, 200, {
       Success: true, ErrorCode: null, DescriptionErrorCode: null, Errors: [], CustomData: '',
-      Data: [
+      // Response thật trong ảnh audit MISA: Data là STRING chứa JSON escaped,
+      // dù schema logic của nó là danh sách InvoiceTemplateData.
+      Data: JSON.stringify([
         { IPTemplateID: 'tpl-1', InvSeries: 'C26MBM', TemplateName: 'HD GTGT Developer Portal', Inactive: false },
         { IPTemplateID: 'tpl-cu', InvSeries: 'C25XXX', TemplateName: 'Mau ngung dung', Inactive: true },
-      ],
+      ]),
     });
   }
 
@@ -360,6 +371,27 @@ test('TC-CONN-01: testConnection Developer Portal chi 2 buoc (auth+templates), b
   assert.equal(kq.ok, true);
   assert.deepEqual(kq.templates.map((t) => t.id), ['tpl-1'], 'mau ngung dung bi loc, khong hien ra');
   assert.equal(kq.company.invoiceWithCode, null, 'khong co du lieu company o Developer Portal, khong duoc bia');
+});
+
+test('TC-CONN-01B: Data dang chuoi JSON escaped van doc duoc mau con hieu luc', async () => {
+  const templates = await Misa.fetchTemplates(cfgMau());
+  assert.equal(templates.length, 1);
+  assert.equal(templates[0].id, 'tpl-1');
+  assert.equal(templates[0].series, 'C26MBM');
+  assert.equal(templates[0].active, true);
+});
+
+test('TC-CONN-01C: HTTP 200 nhung Success=false phai bao loi MISA, khong duoc gia thanh danh sach rong', async () => {
+  state.templatesMode = 'business_error';
+  try {
+    await assert.rejects(
+      () => Misa.fetchTemplates(cfgMau()),
+      (error) => error.misaCode === 'TemplatePermissionDenied'
+        && /không có quyền lấy mẫu/i.test(error.message),
+    );
+  } finally {
+    state.templatesMode = null;
+  }
 });
 
 // ── 3. PHÁT HÀNH: thành công, lưu TransactionID/InvNo ────────────────────────

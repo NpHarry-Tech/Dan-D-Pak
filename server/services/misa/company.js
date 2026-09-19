@@ -9,7 +9,9 @@
 // "không đọc được", chứ không im lặng trả rỗng làm người dùng tưởng chưa khai
 // mẫu nào trên MISA.
 
-import { callJson, authHeaders, authHeadersDeveloperPortal } from './client.js';
+import {
+  callJson, authHeaders, authHeadersDeveloperPortal, MisaError, sanitize,
+} from './client.js';
 import { endpointUrl, isDeveloperPortal } from './config.js';
 import { withToken } from './auth.js';
 import { businessParts } from '../../core/businessClock.js';
@@ -27,16 +29,64 @@ function pick(obj, ...names) {
   return undefined;
 }
 
+/// Developer Portal khai báo `Data` là string và response thật trả một chuỗi JSON
+/// escape (ví dụ `"[{\"IPTemplateID\":...}]"`), không phải mảng JSON trực tiếp.
+/// Một số gateway còn bọc chuỗi nhiều hơn một lần, nên giải mã có giới hạn thay
+/// vì chỉ gọi JSON.parse đúng một lượt.
+function decodeJsonString(value) {
+  let decoded = value;
+  for (let i = 0; i < 3 && typeof decoded === 'string'; i += 1) {
+    const text = decoded.trim();
+    if (!text || (!text.startsWith('[') && !text.startsWith('{') && !text.startsWith('"'))) break;
+    try {
+      decoded = JSON.parse(text);
+    } catch {
+      break;
+    }
+  }
+  return decoded;
+}
+
+function asBoolean(value) {
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    if (normalized === 'true' || normalized === '1') return true;
+    if (normalized === 'false' || normalized === '0') return false;
+  }
+  if (value === 1) return true;
+  if (value === 0) return false;
+  return !!value;
+}
+
+function assertSuccessfulResponse(body, operation) {
+  const success = pick(body, 'Success', 'success', 'IsSuccess', 'isSuccess');
+  if (success !== undefined && !asBoolean(success)) {
+    const message = String(
+      pick(body, 'DescriptionErrorCode', 'ErrorMessage', 'errorMessage', 'Message', 'message')
+        || (Array.isArray(body?.Errors) ? body.Errors.join(', ') : '')
+        || `MISA từ chối thao tác ${operation}`,
+    ).slice(0, 500);
+    const code = String(pick(body, 'ErrorCode', 'errorCode', 'Code', 'code') || '').slice(0, 80);
+    throw new MisaError(message, { retryable: false, code, body: sanitize(body) });
+  }
+}
+
 /// MISA bọc dữ liệu theo nhiều kiểu: {data}, {Data}, {data:{items}}, mảng thô…
 function unwrap(body) {
   const d = body?.data ?? body?.Data ?? body;
-  return d ?? {};
+  return decodeJsonString(d) ?? {};
 }
 
 function asList(value) {
-  if (Array.isArray(value)) return value;
+  const decoded = decodeJsonString(value);
+  if (Array.isArray(decoded)) return decoded;
+  if (decoded && typeof decoded === 'object'
+    && pick(decoded, 'IPTemplateID', 'TemplateID', 'TemplateId', 'templateId', 'Id', 'id')) {
+    return [decoded];
+  }
   for (const key of ['items', 'Items', 'list', 'List', 'templates', 'Templates', 'data', 'Data']) {
-    if (Array.isArray(value?.[key])) return value[key];
+    const nested = decodeJsonString(decoded?.[key]);
+    if (Array.isArray(nested)) return nested;
   }
   return [];
 }
@@ -55,6 +105,7 @@ export async function fetchCompany(cfg) {
     method: 'GET',
     headers: businessHeaders(token, cfg),
   }, 15000));
+  assertSuccessfulResponse(body, 'tra cứu doanh nghiệp');
 
   const d = unwrap(body);
   const traVeMst = String(
@@ -106,14 +157,14 @@ function normalizeTemplate(row) {
     ).trim(),
     withCode: (() => {
       const v = pick(row, 'IsInvoiceWithCode', 'isInvoiceWithCode', 'InvoiceWithCode');
-      return v === undefined ? null : !!v;
+      return v === undefined ? null : asBoolean(v);
     })(),
     // Developer Portal (InvoiceTemplateData) KHÔNG có field này (xác nhận tài
     // liệu chuẩn) — giữ null khi thiếu để filterTemplates() không loại oan,
     // giống hệt cách withCode xử lý ở trên.
     fromCashRegister: (() => {
       const v = pick(row, 'IsInvoiceCalculatingMachine', 'isInvoiceCalculatingMachine');
-      return v === undefined ? null : !!v;
+      return v === undefined ? null : asBoolean(v);
     })(),
     // Inactive (Developer Portal) và IsActive (v3 cũ) NGƯỢC CỰC NHAU — không
     // được gộp vào chung một lượt pick(), kẻo mẫu đang active thật
@@ -121,8 +172,9 @@ function normalizeTemplate(row) {
     // 2026-09-19).
     active: (() => {
       const inactive = pick(row, 'Inactive', 'inactive');
-      if (inactive !== undefined) return inactive !== true;
-      return pick(row, 'IsActive', 'isActive') !== false;
+      if (inactive !== undefined) return !asBoolean(inactive);
+      const isActive = pick(row, 'IsActive', 'isActive');
+      return isActive === undefined ? true : asBoolean(isActive);
     })(),
     raw: row,
   };
@@ -153,8 +205,17 @@ export async function fetchTemplates(cfg) {
     method: 'GET',
     headers: businessHeaders(token, cfg),
   }, 15000));
+  assertSuccessfulResponse(body, 'lấy danh sách mẫu hóa đơn');
 
-  const rows = asList(unwrap(body));
+  const payload = unwrap(body);
+  if (typeof payload === 'string' && payload.trim()) {
+    throw new MisaError('MISA trả dữ liệu mẫu hóa đơn không đúng định dạng JSON.', {
+      retryable: false,
+      code: 'INVALID_TEMPLATE_DATA',
+      body: sanitize(body),
+    });
+  }
+  const rows = asList(payload);
   return rows
     .map(normalizeTemplate)
     // Mẫu không có ký hiệu thì không phát hành được — bày ra chỉ để người dùng

@@ -334,6 +334,7 @@ class _MisaSetupModalState extends State<_MisaSetupModal> {
         'username': _usernameCtrl.text.trim(),
         if (_passwordCtrl.text.isNotEmpty) 'password': _passwordCtrl.text,
         'invoiceType': 'CASH_REGISTER',
+        'invoiceCodeType': _invoiceCodeType,
       };
 
   Future<void> _testConnection() async {
@@ -478,7 +479,17 @@ class _MisaSetupModalState extends State<_MisaSetupModal> {
               RadioGroup<String>(
                 groupValue: _invoiceCodeType,
                 onChanged: (v) {
-                  if (v != null) setState(() => _invoiceCodeType = v);
+                  if (v != null && v != _invoiceCodeType) {
+                    setState(() {
+                      _invoiceCodeType = v;
+                      // Loại hóa đơn là query của /invoice/templates. Kết quả
+                      // kiểm tra cũ và mẫu cũ không còn hợp lệ sau khi đổi radio.
+                      _testResult = null;
+                      _templates = [];
+                      _selectedTemplateId = null;
+                      _error = null;
+                    });
+                  }
                 },
                 child: Column(
                   children: [
