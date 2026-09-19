@@ -63,6 +63,11 @@ function messageOf(body, status) {
       || body.error
       || body.errorMessage
       || body.ErrorMessage
+      // MISA Developer Portal (developer.misa.vn): {Success:false,ErrorCode,
+      // DescriptionErrorCode,Errors:[...]} — xác nhận từ response thật, khác
+      // hẳn shape của v3 cũ ở trên.
+      || body.DescriptionErrorCode
+      || (Array.isArray(body.Errors) ? body.Errors.join(', ') : '')
       || (typeof body.raw === 'string' ? body.raw : '')
       || `HTTP ${status}`,
   ).slice(0, 500);
@@ -162,5 +167,9 @@ export function tokenFrom(body) {
     || body?.data?.access_token
     || body?.data?.accessToken
     || body?.data?.token
+    // MISA Developer Portal (developer.misa.vn): "Data" (viet hoa) la JWT
+    // dang CHUOI TRUC TIEP, khac shape "data.token" o tren — xac nhan tu
+    // response that /invoice/token (2026-09-19, HTTP 200, Success:true).
+    || (typeof body?.Data === 'string' ? body.Data : '')
     || '';
 }

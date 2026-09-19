@@ -77,13 +77,24 @@ const server = createServer((req, res) => {
       const b = JSON.parse(raw || '{}');
       // Contract chuẩn: ClientID/ClientSecret ở HEADER, không phải body — nếu
       // adapter lỡ nhét vào body thì taxcode/username/password mới đúng field.
+      // Shape lỗi {Success,ErrorCode,DescriptionErrorCode,Errors,Data,
+      // CustomData} + HTTP 400 XÁC NHẬN THẬT từ MISA Developer Portan (2026-09-19,
+      // không còn là giả định) — xem client.js::messageOf.
       if (req.headers.clientid !== 'client-id-that' || req.headers.clientsecret !== SECRET_CANARY) {
-        return json(res, 401, { errorCode: 'INVALID_CLIENT', message: 'Sai ClientID/ClientSecret' });
+        return json(res, 400, {
+          Success: false, ErrorCode: 'UnAuthorize', DescriptionErrorCode: 'Sai ClientID/ClientSecret',
+          Errors: ['MisaIdError'], Data: '', CustomData: '',
+        });
       }
       if (b.password !== 'dung-mat-khau') {
-        return json(res, 401, { message: 'Sai tài khoản hoặc mật khẩu' });
+        return json(res, 400, {
+          Success: false, ErrorCode: 'UnAuthorize', DescriptionErrorCode: 'Sai thông tin đăng nhập',
+          Errors: ['MisaIdError'], Data: '', CustomData: '',
+        });
       }
-      json(res, 200, { access_token: 'portal-tok-' + Date.now(), expires_in: 1209600 }); // 14 ngày
+      // Shape thanh cong THAT: Data la JWT dang CHUOI TRUC TIEP (khong phai
+      // {access_token}) — xac nhan tu response that (2026-09-19, HTTP 200).
+      json(res, 200, { Success: true, ErrorCode: null, Data: 'portal-tok-' + Date.now(), CustomData: '' });
     });
     return;
   }
@@ -242,6 +253,15 @@ test('TC-AUTH-01: dang nhap gui dung ClientID/ClientSecret o HEADER (khong phai 
 test('TC-AUTH-02: sai mat khau -> tu choi, khong retry vo ich', async () => {
   Misa.clearToken();
   await assert.rejects(() => Misa.getToken(cfgMau({ password: 'sai' }), { force: true }));
+});
+
+test('TC-AUTH-02B: loi that tu MISA (Success/ErrorCode/DescriptionErrorCode/Errors) hien dung noi dung, KHONG con "HTTP 400" chung chung', async () => {
+  Misa.clearToken();
+  const kq = await Misa.testConnection(cfgMau({ password: 'sai' }));
+  assert.equal(kq.ok, false);
+  assert.equal(kq.step, 'auth');
+  assert.equal(kq.message, 'Sai thông tin đăng nhập');
+  assert.notEqual(kq.message, 'HTTP 400');
 });
 
 test('TC-AUTH-03: token duoc CACHE, khong dang nhap lai moi request nghiep vu', async () => {
