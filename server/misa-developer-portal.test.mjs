@@ -108,18 +108,24 @@ const server = createServer((req, res) => {
 
   if (path === '/invoice/templates') {
     state.receivedHeaders.templates = { clientId: req.headers.clientid };
-    // Contract that GET /invoice/templates without invoiceWithCode/ticket/year
-    // silently returns Data:"" (confirmed real response, 2026-09-19) — the fake
-    // server enforces the same shape so a regression (dropping the query again)
-    // fails this test instead of coming back in production.
-    if (!url.searchParams.has('invoiceWithCode') || !url.searchParams.has('ticket') || !url.searchParams.has('year')) {
+    // Contract that GET /invoice/templates without invoiceWithCode/ticket/year/
+    // haveTempOld silently returns Data:"" (confirmed real response, 2026-09-19)
+    // — the fake server enforces the same shape so a regression (dropping the
+    // query again) fails this test instead of coming back in production.
+    if (!url.searchParams.has('invoiceWithCode') || !url.searchParams.has('ticket')
+      || !url.searchParams.has('year') || !url.searchParams.has('haveTempOld')) {
       return json(res, 200, { Success: true, ErrorCode: null, DescriptionErrorCode: null, Errors: [], Data: '', CustomData: '' });
     }
+    // Field THẬT theo class InvoiceTemplateData (xac nhan tai lieu chuan
+    // 2026-09-19): IPTemplateID (khong phai TemplateID) + Inactive (nguoc cuc
+    // voi IsActive, khong co ca 2 cung luc tren mot mau). Khong co
+    // IsInvoiceCalculatingMachine/IsInvoiceWithCode - Developer Portal khong
+    // tra field nay.
     return json(res, 200, {
       Success: true, ErrorCode: null, DescriptionErrorCode: null, Errors: [], CustomData: '',
       Data: [
-        { TemplateID: 'tpl-1', InvSeries: 'C26MBM', TemplateName: 'HD GTGT Developer Portal', IsInvoiceCalculatingMachine: true, IsActive: true },
-        { TemplateID: 'tpl-cu', InvSeries: 'C25XXX', TemplateName: 'Mau ngung dung', IsActive: false },
+        { IPTemplateID: 'tpl-1', InvSeries: 'C26MBM', TemplateName: 'HD GTGT Developer Portal', Inactive: false },
+        { IPTemplateID: 'tpl-cu', InvSeries: 'C25XXX', TemplateName: 'Mau ngung dung', Inactive: true },
       ],
     });
   }

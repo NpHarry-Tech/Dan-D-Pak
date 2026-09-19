@@ -85,8 +85,10 @@ export async function fetchCompany(cfg) {
 
 /// Chuẩn hóa một mẫu hóa đơn về đúng những gì hệ thống cần.
 function normalizeTemplate(row) {
+  // IPTemplateID: field ID THẬT của Developer Portal (xác nhận tài liệu chuẩn
+  // 2026-09-19, class InvoiceTemplateData) — khác hẳn TemplateID của v3 cũ.
   const id = String(
-    pick(row, 'TemplateID', 'TemplateId', 'templateId', 'Id', 'id', 'InvTemplateNo') || '',
+    pick(row, 'IPTemplateID', 'TemplateID', 'TemplateId', 'templateId', 'Id', 'id', 'InvTemplateNo') || '',
   ).trim();
   const series = String(
     pick(row, 'InvSeries', 'invSeries', 'Series', 'series', 'Symbol', 'InvoiceSymbol') || '',
@@ -106,9 +108,22 @@ function normalizeTemplate(row) {
       const v = pick(row, 'IsInvoiceWithCode', 'isInvoiceWithCode', 'InvoiceWithCode');
       return v === undefined ? null : !!v;
     })(),
-    fromCashRegister: !!pick(row, 'IsInvoiceCalculatingMachine', 'isInvoiceCalculatingMachine'),
-    active: pick(row, 'IsActive', 'isActive', 'Inactive') !== false
-      && !pick(row, 'Inactive', 'inactive'),
+    // Developer Portal (InvoiceTemplateData) KHÔNG có field này (xác nhận tài
+    // liệu chuẩn) — giữ null khi thiếu để filterTemplates() không loại oan,
+    // giống hệt cách withCode xử lý ở trên.
+    fromCashRegister: (() => {
+      const v = pick(row, 'IsInvoiceCalculatingMachine', 'isInvoiceCalculatingMachine');
+      return v === undefined ? null : !!v;
+    })(),
+    // Inactive (Developer Portal) và IsActive (v3 cũ) NGƯỢC CỰC NHAU — không
+    // được gộp vào chung một lượt pick(), kẻo mẫu đang active thật
+    // (Inactive:false) bị tính nhầm thành inactive (đã xảy ra thật, xác nhận
+    // 2026-09-19).
+    active: (() => {
+      const inactive = pick(row, 'Inactive', 'inactive');
+      if (inactive !== undefined) return inactive !== true;
+      return pick(row, 'IsActive', 'isActive') !== false;
+    })(),
     raw: row,
   };
 }
@@ -126,6 +141,11 @@ export async function fetchTemplates(cfg) {
       invoiceWithCode: String(invoiceWithCode),
       ticket: 'false',
       year: String(businessParts().year),
+      // haveTempOld=true: bao gồm cả mẫu kiểu cũ (IsInheritFromOldTemplate) —
+      // không có cách nào Dan D Pak biết trước mẫu doanh nghiệp đã đăng ký là
+      // kiểu mới hay cũ, nên luôn xin đủ cả hai, để filterTemplates() (payload.js)
+      // quyết định mẫu nào dùng được, không phải MISA lọc hộ.
+      haveTempOld: 'true',
     });
     url += `?${query}`;
   }
