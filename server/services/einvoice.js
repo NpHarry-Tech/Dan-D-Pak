@@ -52,6 +52,29 @@ function firePrintInvoiceConfirmation(job, order, snapshot, misaCfg, result) {
   }
 }
 
+// Gửi email hóa đơn cho khách NGAY sau khi phát hành thành công — best-effort,
+// KHÔNG được làm hỏng hóa đơn đã phát hành nếu gửi email lỗi (đây là tiện ích
+// giao hàng, không phải nghĩa vụ pháp lý như phát hành). Chỉ Developer Portal
+// (API xác nhận thật 2026-09-19) và chỉ khi có email người mua.
+async function fireSendInvoiceEmail(job, misaCfg, buyer, result) {
+  const email = String(buyer?.email || '').trim();
+  if (!email || !Misa.isDeveloperPortal(misaCfg) || !result.transaction_id) return;
+  try {
+    const kq = await Misa.sendInvoiceEmail(misaCfg, {
+      transactionId: result.transaction_id,
+      receiverName: buyer?.name || '',
+      receiverEmail: email,
+    });
+    writeAuditLog({
+      order_id: job.order_id, e_invoice_id: job.id, actor_id: 'worker', actor_role: 'system',
+      action: 'SEND_EMAIL', old_status: 'ISSUED', new_status: 'ISSUED',
+      reason: `Tự động gửi email hóa đơn tới ${email} — trạng thái MISA: ${kq.status}`,
+    });
+  } catch (e) {
+    audit('einvoice.send_email_failed', { order: job.order_id, error: e.message }, job.branch_id);
+  }
+}
+
 const RETRY_BACKOFF = [10, 30, 60, 300, 900, 1800]; // seconds backoff
 const MAX_ATTEMPTS = 10;
 const SENDING_LEASE_MS = 10 * 60 * 1000;
@@ -605,6 +628,7 @@ async function processJob(job) {
     emit('einvoice:issued', { id: job.id, order_id: job.order_id, invoice_no: result.invoice_no, status: 'ISSUED' }, job.branch_id);
     try { enqueueIssuedInvoice(job.id); } catch { /* Haravan không được chặn phát hành hóa đơn */ }
     firePrintInvoiceConfirmation(job, order, snapshot, misaCfg, result);
+    await fireSendInvoiceEmail(job, misaCfg, buyer, result);
     archiveOrder(order);
     return true;
 
@@ -877,6 +901,50 @@ export async function cancelInvoice(e_invoice_id, reason, actor = 'system', bran
   emit('einvoice:cancelled', { id: e_invoice_id, order_id: job.order_id, status: 'CANCELLED' }, job.branch_id);
 
   return { ok: true, status: 'CANCELLED' };
+}
+
+/// Gửi lại email hóa đơn ĐÃ PHÁT HÀNH cho khách — thao tác thủ công (nhân viên
+/// bấm nút, hoặc gửi tới email khác với email đã lưu trên hóa đơn).
+export async function resendInvoiceEmail(e_invoice_id, overrideEmail, branch_id = null) {
+  const job = get(e_invoice_id, branch_id);
+  if (!job) throw new Error('Không tìm thấy hóa đơn');
+  if (job.invoice_status !== 'ISSUED') {
+    throw new Error('Chỉ có thể gửi email cho hóa đơn đã phát hành thành công');
+  }
+  if (!job.provider_invoice_id) {
+    throw new Error('Hóa đơn thiếu mã giao dịch (TransactionID) — không gửi được email');
+  }
+  const email = String(overrideEmail || job.buyer_email || '').trim();
+  if (!email) throw new Error('Thiếu email người nhận');
+
+  const misaCfg = Misa.resolveServerCredentials(getIntegrations(job.branch_id).channels?.misa || {});
+  const kq = await Misa.sendInvoiceEmail(misaCfg, {
+    transactionId: job.provider_invoice_id,
+    receiverName: job.buyer_name || '',
+    receiverEmail: email,
+  });
+  writeAuditLog({
+    order_id: job.order_id, e_invoice_id, actor_id: 'staff', actor_role: 'staff',
+    action: 'SEND_EMAIL', old_status: job.invoice_status, new_status: job.invoice_status,
+    reason: `Gửi email hóa đơn tới ${email} — trạng thái MISA: ${kq.status}`,
+  });
+  return { ok: true, ...kq };
+}
+
+/// Tải file hóa đơn ĐÃ PHÁT HÀNH (PDF mặc định) — để nhân viên xem/in cho khách.
+export async function downloadInvoicePdf(e_invoice_id, branch_id = null) {
+  const job = get(e_invoice_id, branch_id);
+  if (!job) throw new Error('Không tìm thấy hóa đơn');
+  if (job.invoice_status !== 'ISSUED') {
+    throw new Error('Chỉ có thể tải hóa đơn đã phát hành thành công');
+  }
+  if (!job.provider_invoice_id) {
+    throw new Error('Hóa đơn thiếu mã giao dịch (TransactionID) — không tải được file');
+  }
+  const misaCfg = Misa.resolveServerCredentials(getIntegrations(job.branch_id).channels?.misa || {});
+  const [file] = await Misa.downloadInvoiceFile(misaCfg, { transactionIds: [job.provider_invoice_id] });
+  if (!file?.data) throw new Error('MISA không trả về dữ liệu file hóa đơn');
+  return { transactionId: file.transactionId, pdfBase64: file.data };
 }
 
 /**

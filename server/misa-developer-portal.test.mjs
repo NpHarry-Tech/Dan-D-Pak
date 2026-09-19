@@ -38,6 +38,9 @@ const state = {
   daPhatHanh: new Map(), // RefID -> invoice đã "phát hành"
   soLanGoiAuth: 0,
   soLanGoiPublish: 0,
+  soLanGoiSendEmail: 0,
+  receivedSendEmail: null,
+  receivedDownload: null,
   receivedHeaders: { token: null, templates: null, publish: null },
   publishMode: null, // null | 'timeout' | 'duplicate_elem' | 'not_continuous' | 'system_error' | 'request_level_fail'
   seq: 0,
@@ -105,8 +108,16 @@ const server = createServer((req, res) => {
 
   if (path === '/invoice/templates') {
     state.receivedHeaders.templates = { clientId: req.headers.clientid };
+    // Contract that GET /invoice/templates without invoiceWithCode/ticket/year
+    // silently returns Data:"" (confirmed real response, 2026-09-19) — the fake
+    // server enforces the same shape so a regression (dropping the query again)
+    // fails this test instead of coming back in production.
+    if (!url.searchParams.has('invoiceWithCode') || !url.searchParams.has('ticket') || !url.searchParams.has('year')) {
+      return json(res, 200, { Success: true, ErrorCode: null, DescriptionErrorCode: null, Errors: [], Data: '', CustomData: '' });
+    }
     return json(res, 200, {
-      data: [
+      Success: true, ErrorCode: null, DescriptionErrorCode: null, Errors: [], CustomData: '',
+      Data: [
         { TemplateID: 'tpl-1', InvSeries: 'C26MBM', TemplateName: 'HD GTGT Developer Portal', IsInvoiceCalculatingMachine: true, IsActive: true },
         { TemplateID: 'tpl-cu', InvSeries: 'C25XXX', TemplateName: 'Mau ngung dung', IsActive: false },
       ],
@@ -173,6 +184,39 @@ const server = createServer((req, res) => {
     const inv = state.daPhatHanh.get(ref);
     if (!inv) return json(res, 404, { message: 'Chua co hoa don' });
     return json(res, 200, { data: inv });
+  }
+
+  if (path === '/invoice/sendemail') {
+    state.soLanGoiSendEmail += 1;
+    let raw = '';
+    req.on('data', (c) => { raw += c; });
+    req.on('end', () => {
+      const b = JSON.parse(raw || '{}');
+      state.receivedSendEmail = { clientId: req.headers.clientid, body: b };
+      const first = b.SendEmailDatas?.[0] || {};
+      if (!first.ReceiverEmail) {
+        return json(res, 200, { Success: false, ErrorCode: 'InvalidEmail', DescriptionErrorCode: 'Thieu email nguoi nhan', Errors: [], Data: '', CustomData: '' });
+      }
+      return json(res, 200, {
+        Success: true, ErrorCode: null, DescriptionErrorCode: null, Errors: [], CustomData: '',
+        Data: [{ TransactionID: first.TransactionID, RefID: 'ref-1', SendEmailStatus: 3, ErrorCode: null }],
+      });
+    });
+    return;
+  }
+
+  if (path === '/invoice/Download') {
+    let raw = '';
+    req.on('data', (c) => { raw += c; });
+    req.on('end', () => {
+      const ids = JSON.parse(raw || '[]');
+      state.receivedDownload = { clientId: req.headers.clientid, ids, query: Object.fromEntries(url.searchParams) };
+      return json(res, 200, {
+        Success: true, ErrorCode: null, DescriptionErrorCode: null, Errors: [], CustomData: '',
+        Data: ids.map((id) => ({ TransactionID: id, data: 'ZmFrZS1wZGYtYnl0ZXM=', ErrorCode: null })),
+      });
+    });
+    return;
   }
 
   json(res, 404, { message: 'not found in fake developer portal server' });
@@ -500,4 +544,69 @@ test('TC-PRINT-01: hoa don loi (RETRYING) khong tao phieu xac nhan in — chi in
   assert.equal(einvOf(orderId).invoice_status, 'ISSUED');
   const jobsAfterSuccess = db.prepare(`SELECT COUNT(*) n FROM print_jobs WHERE type='invoice_confirmation'`).get().n;
   assert.equal(jobsAfterSuccess, jobsBefore + 1, 'ISSUED that roi moi duoc co dung 1 phieu xac nhan');
+});
+
+// ── 10. Gửi email + tải PDF hóa đơn (API xác nhận thật 2026-09-19) ──────────
+
+test('TC-EMAIL-01: phat hanh hoa don co email nguoi mua -> tu dong goi /invoice/sendemail dung TransactionID', async () => {
+  state.publishMode = null;
+  state.soLanGoiSendEmail = 0;
+  state.receivedSendEmail = null;
+  batMisa();
+  const receipt = banMotDon('sku_portal_email1');
+  const orderId = receipt.order_id || receipt.id;
+  Einvoices.createInvoiceRequest(orderId, 'BUYER_PROVIDED_INFO', { name: 'Khach le', email: 'khach@test.local' }, BR, 'test');
+
+  await Einvoices.processInvoiceQueue();
+
+  const after = einvOf(orderId);
+  assert.equal(after.invoice_status, 'ISSUED');
+  assert.equal(state.soLanGoiSendEmail, 1, 'co email nguoi mua thi phai tu dong goi sendemail dung 1 lan');
+  assert.equal(state.receivedSendEmail.clientId, 'client-id-that');
+  assert.equal(state.receivedSendEmail.body.SendEmailDatas[0].TransactionID, after.provider_invoice_id);
+  assert.equal(state.receivedSendEmail.body.SendEmailDatas[0].ReceiverEmail, 'khach@test.local');
+});
+
+test('TC-EMAIL-02: khong co email nguoi mua (WALK_IN) -> KHONG goi sendemail', async () => {
+  state.publishMode = null;
+  state.soLanGoiSendEmail = 0;
+  batMisa();
+  const receipt = banMotDon('sku_portal_email2');
+  const orderId = receipt.order_id || receipt.id;
+
+  await Einvoices.processInvoiceQueue();
+
+  assert.equal(einvOf(orderId).invoice_status, 'ISSUED');
+  assert.equal(state.soLanGoiSendEmail, 0, 'khach le khong email thi khong duoc goi MISA');
+});
+
+test('TC-EMAIL-03: resendInvoiceEmail gui thu cong toi email khac voi email da luu', async () => {
+  state.soLanGoiSendEmail = 0;
+  batMisa();
+  const receipt = banMotDon('sku_portal_email3');
+  const orderId = receipt.order_id || receipt.id;
+  await Einvoices.processInvoiceQueue();
+  const inv = einvOf(orderId);
+  assert.equal(inv.invoice_status, 'ISSUED');
+
+  const kq = await Einvoices.resendInvoiceEmail(inv.id, 'khac@test.local', BR);
+  assert.equal(kq.ok, true);
+  assert.equal(kq.status, 'SENT');
+  assert.equal(state.soLanGoiSendEmail, 1);
+  assert.equal(state.receivedSendEmail.body.SendEmailDatas[0].ReceiverEmail, 'khac@test.local');
+});
+
+test('TC-DOWNLOAD-01: downloadInvoicePdf tai dung TransactionID, tra ve du lieu base64', async () => {
+  batMisa();
+  const receipt = banMotDon('sku_portal_dl1');
+  const orderId = receipt.order_id || receipt.id;
+  await Einvoices.processInvoiceQueue();
+  const inv = einvOf(orderId);
+  assert.equal(inv.invoice_status, 'ISSUED');
+
+  const kq = await Einvoices.downloadInvoicePdf(inv.id, BR);
+  assert.equal(kq.transactionId, inv.provider_invoice_id);
+  assert.equal(kq.pdfBase64, 'ZmFrZS1wZGYtYnl0ZXM=');
+  assert.deepEqual(state.receivedDownload.ids, [inv.provider_invoice_id]);
+  assert.equal(state.receivedDownload.query.downloadDataType, 'Pdf');
 });

@@ -101,12 +101,14 @@ export const DEFAULT_ENDPOINTS_DEVELOPER_PORTAL = {
   templates: '/invoice/templates',
   unpublishview: '/invoice/unpublishview',
   publish: '/invoice/publishing',
+  // sendEmail/download: ĐÃ XÁC NHẬN từ tài liệu chuẩn (developer.misa.vn/
+  // products-openapi/MEINVOICE, 2026-09-19) — bao gồm cả query bắt buộc
+  // (xem invoice.js::sendInvoiceEmail/downloadInvoiceFile).
+  sendEmail: '/invoice/sendemail',
+  download: '/invoice/Download',
   // GIẢ ĐỊNH CHƯA XÁC MINH — xem chú thích trên.
   status: '/invoice/status',
   view: '/invoice/view',
-  downloadPdf: '/invoice/downloadpdf',
-  downloadXml: '/invoice/downloadxml',
-  sendEmail: '/invoice/sendemail',
   cancel: '/invoice/cancel',
 };
 

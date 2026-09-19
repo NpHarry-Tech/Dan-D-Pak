@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
@@ -458,6 +460,12 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
           final returns = (data['returns'] as List?) ?? const [];
           final timeline = (data['timeline'] as List?) ?? const [];
           final returnStatus = _s(bill['return_status']).toLowerCase();
+          final actions = (data['available_actions'] as List?)
+                  ?.map((e) => e.toString())
+                  .toSet() ??
+              const <String>{};
+          final eInvoiceId = _s(bill['e_invoice_id']);
+          final lookupUrl = _s(bill['lookup_url']);
           return Container(
             width: double.infinity,
             padding: const EdgeInsets.all(16),
@@ -510,12 +518,35 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
                     label: Text(t('Xem bill')),
                   ),
                   if (_s(bill['einvoice_status']).toUpperCase() == 'ISSUED' &&
-                      (_s(bill['pdf_url']).isNotEmpty ||
-                          _s(bill['lookup_url']).isNotEmpty))
+                      (_s(bill['pdf_url']).isNotEmpty || lookupUrl.isNotEmpty))
                     OutlinedButton.icon(
                       onPressed: () => _openVatViewer(bill),
                       icon: const Icon(Icons.picture_as_pdf, size: 16),
                       label: Text(t('Xem hóa đơn (VAT)')),
+                    ),
+                  if (lookupUrl.isNotEmpty)
+                    OutlinedButton.icon(
+                      onPressed: () => openExternalUrl(lookupUrl),
+                      icon: const Icon(Icons.open_in_new, size: 16),
+                      label: Text(t('Tra cứu online')),
+                    ),
+                  if (eInvoiceId.isNotEmpty &&
+                      actions.contains('SEND_EMAIL'))
+                    OutlinedButton.icon(
+                      onPressed: () =>
+                          _sendInvoiceEmail(eInvoiceId, _s(buyer['email'])),
+                      icon: const Icon(Icons.email_outlined, size: 16),
+                      label: Text(t('Gửi email')),
+                    ),
+                  if (eInvoiceId.isNotEmpty &&
+                      actions.contains('DOWNLOAD_PDF'))
+                    OutlinedButton.icon(
+                      onPressed: () => _downloadInvoicePdf(eInvoiceId,
+                          _s(bill['invoice_no']).isEmpty
+                              ? t('Hóa đơn VAT')
+                              : '${t('Hóa đơn VAT')} ${_s(bill['invoice_no'])}'),
+                      icon: const Icon(Icons.download_outlined, size: 16),
+                      label: Text(t('Tải PDF')),
                     ),
                 ]),
                 const SizedBox(height: 6),
@@ -975,6 +1006,96 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
                         ]),
                       ),
                     ),
+            ),
+          ]),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _sendInvoiceEmail(String eInvoiceId, String prefillEmail) async {
+    final controller = TextEditingController(text: prefillEmail);
+    final email = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(t('Gửi email hóa đơn')),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          keyboardType: TextInputType.emailAddress,
+          decoration: InputDecoration(labelText: t('Email người nhận')),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: Text(t('Hủy'))),
+          FilledButton(
+            onPressed: () =>
+                Navigator.pop(dialogContext, controller.text.trim()),
+            child: Text(t('Gửi')),
+          ),
+        ],
+      ),
+    );
+    if (email == null || email.isEmpty || !mounted) return;
+    try {
+      await context.read<ApiService>().sendInvoiceEmail(eInvoiceId, email: email);
+      if (mounted) appToast(context, t('Đã gửi email hóa đơn tới $email'));
+    } catch (e) {
+      if (mounted) {
+        appToast(
+            context,
+            t('Gửi email thất bại: ${e.toString().replaceFirst('Exception: ', '')}'),
+            isError: true);
+      }
+    }
+  }
+
+  Future<void> _downloadInvoicePdf(String eInvoiceId, String title) async {
+    Uint8List bytes;
+    try {
+      final b64 =
+          await context.read<ApiService>().downloadInvoicePdfBase64(eInvoiceId);
+      bytes = base64Decode(b64);
+    } catch (e) {
+      if (mounted) {
+        appToast(
+            context,
+            t('Không tải được PDF hóa đơn: ${e.toString().replaceFirst('Exception: ', '')}'),
+            isError: true);
+      }
+      return;
+    }
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => Dialog(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 760, maxHeight: 700),
+          child: Column(children: [
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: const BoxDecoration(
+                  border: Border(bottom: BorderSide(color: DanColors.border))),
+              child: Row(children: [
+                Expanded(
+                    child: Text(title,
+                        style: const TextStyle(
+                            fontSize: 16, fontWeight: FontWeight.w900))),
+                IconButton(
+                    onPressed: () => Navigator.pop(dialogContext),
+                    icon: const Icon(Icons.close)),
+              ]),
+            ),
+            Expanded(
+              child: PdfPreview(
+                build: (_) async => bytes,
+                allowPrinting: false,
+                allowSharing: false,
+                canChangeOrientation: false,
+                canChangePageFormat: false,
+                pdfFileName: '$title.pdf',
+              ),
             ),
           ]),
         ),

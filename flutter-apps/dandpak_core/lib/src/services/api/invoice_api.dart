@@ -75,4 +75,25 @@ extension ApiServiceInvoiceApi on ApiService {
       errorMessage: 'Không thể tải tổng hợp HĐĐT của ca',
     ));
   }
+
+  /// Gửi (lại) email hóa đơn ĐÃ PHÁT HÀNH cho khách. [email] rỗng = dùng lại
+  /// email đã lưu trên hóa đơn (server tự chọn, xem einvoice.js::resendInvoiceEmail).
+  Future<Map<String, dynamic>> sendInvoiceEmail(String eInvoiceId,
+      {String? email}) async {
+    return mapFrom(await postJson(
+      '/api/einvoice/$eInvoiceId/send-email',
+      body: (email == null || email.isEmpty) ? {} : {'email': email},
+      errorMessage: 'Không gửi được email hóa đơn',
+    ));
+  }
+
+  /// Tải file PDF hóa đơn ĐÃ PHÁT HÀNH từ MISA — trả về chuỗi base64
+  /// (giải mã bằng base64Decode ở nơi gọi, xem invoices_screen.dart).
+  Future<String> downloadInvoicePdfBase64(String eInvoiceId) async {
+    final res = mapFrom(await getJson('/api/einvoice/$eInvoiceId/pdf',
+        errorMessage: 'Không tải được file hóa đơn'));
+    final b64 = (res['pdfBase64'] ?? '').toString();
+    if (b64.isEmpty) throw Exception('MISA không trả về dữ liệu file hóa đơn');
+    return b64;
+  }
 }

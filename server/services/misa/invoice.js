@@ -143,6 +143,88 @@ export async function issueInvoice({ snapshot, cfg, company = {}, mayHaveLanded 
   return kq;
 }
 
+/// SendEmailStatus nguyên văn theo tài liệu Developer Portal (xác nhận thật
+/// 2026-09-19): 0 chưa gửi, 1 đang gửi, 2 lỗi, 3 đã gửi, 4 yêu cầu gửi.
+const SEND_EMAIL_STATUS = { 0: 'NOT_SENT', 1: 'SENDING', 2: 'SEND_ERROR', 3: 'SENT', 4: 'SEND_REQUESTED' };
+
+/// Gửi email hóa đơn ĐÃ PHÁT HÀNH cho khách. CHỈ Developer Portal — API v3 cũ
+/// không có đường dẫn này trong tài liệu đưa xuống.
+export async function sendInvoiceEmail(cfg, { transactionId, receiverName = '', receiverEmail, ccEmail = '', replyEmail = '' } = {}) {
+  if (!isDeveloperPortal(cfg)) {
+    throw new MisaError('Gửi email hóa đơn hiện chỉ hỗ trợ MISA Developer Portal.', { retryable: false, code: 'UNSUPPORTED_PROVIDER' });
+  }
+  if (!transactionId) throw new MisaError('Thiếu mã giao dịch (TransactionID) để gửi email.', { retryable: false, code: 'MISSING_TRANSACTION_ID' });
+  if (!receiverEmail) throw new MisaError('Thiếu email người nhận.', { retryable: false, code: 'MISSING_EMAIL' });
+
+  const url = endpointUrl(cfg, 'sendEmail');
+  const body = await withToken(cfg, (token) => callJson(url, {
+    method: 'POST',
+    headers: businessHeaders(token, cfg),
+    body: JSON.stringify({
+      SendEmailDatas: [{
+        TransactionID: transactionId,
+        ReceiverName: receiverName,
+        ReceiverEmail: receiverEmail,
+        CCEmail: ccEmail,
+        ReplyEmail: replyEmail,
+      }],
+      IsInvoiceCode: String(cfg.invoiceCodeType || '') !== 'WITHOUT_CODE',
+      IsInvoiceCalculatingMachine: String(cfg.invoiceType || '') === 'CASH_REGISTER',
+    }),
+  }, 20000));
+
+  const rows = Array.isArray(body?.Data) ? body.Data : (Array.isArray(body?.data) ? body.data : []);
+  const row = rows.find((r) => pick(r, 'TransactionID', 'transactionId') === transactionId) || rows[0] || {};
+  const statusCode = Number(pick(row, 'SendEmailStatus', 'sendEmailStatus'));
+  if (body?.Success === false || statusCode === 2) {
+    throw new MisaError(
+      String(pick(row, 'ErrorCode') || body?.DescriptionErrorCode || 'MISA từ chối gửi email hóa đơn.'),
+      { retryable: true, code: String(pick(row, 'ErrorCode') || body?.ErrorCode || ''), body: sanitize(body) },
+    );
+  }
+  return {
+    transactionId: String(pick(row, 'TransactionID', 'transactionId') || transactionId),
+    status: SEND_EMAIL_STATUS[statusCode] || 'UNKNOWN',
+  };
+}
+
+/// Tải file hóa đơn ĐÃ PHÁT HÀNH (mặc định PDF; Xml/Html/All qua downloadDataType).
+/// CHỈ Developer Portal — API v3 cũ không có đường dẫn này trong tài liệu đưa xuống.
+export async function downloadInvoiceFile(cfg, { transactionIds, downloadDataType = 'Pdf' } = {}) {
+  if (!isDeveloperPortal(cfg)) {
+    throw new MisaError('Tải hóa đơn hiện chỉ hỗ trợ MISA Developer Portal.', { retryable: false, code: 'UNSUPPORTED_PROVIDER' });
+  }
+  const ids = (Array.isArray(transactionIds) ? transactionIds : [transactionIds]).filter(Boolean);
+  if (!ids.length) throw new MisaError('Thiếu mã giao dịch (TransactionID) để tải hóa đơn.', { retryable: false, code: 'MISSING_TRANSACTION_ID' });
+
+  const query = new URLSearchParams({
+    downloadDataType,
+    invoiceWithCode: String(String(cfg.invoiceCodeType || '') !== 'WITHOUT_CODE'),
+    invoiceCalcu: String(String(cfg.invoiceType || '') === 'CASH_REGISTER'),
+  });
+  const url = `${endpointUrl(cfg, 'download')}?${query}`;
+  const body = await withToken(cfg, (token) => callJson(url, {
+    method: 'POST',
+    headers: businessHeaders(token, cfg),
+    body: JSON.stringify(ids),
+  }, 20000));
+
+  if (body?.Success === false) {
+    throw new MisaError(
+      String(body?.DescriptionErrorCode || body?.ErrorCode || 'MISA từ chối tải hóa đơn.'),
+      { retryable: true, code: String(body?.ErrorCode || ''), body: sanitize(body) },
+    );
+  }
+  const rows = Array.isArray(body?.Data) ? body.Data : (Array.isArray(body?.data) ? body.data : []);
+  return rows.map((r) => ({
+    transactionId: String(pick(r, 'TransactionID', 'transactionId') || ''),
+    // Field "data" (chữ thường) đúng theo tài liệu — khác mọi field khác trong
+    // API này đều viết hoa chữ cái đầu.
+    data: String(pick(r, 'data', 'Data') || ''),
+    errorCode: String(pick(r, 'ErrorCode', 'errorCode') || ''),
+  }));
+}
+
 /// Hủy hóa đơn đã phát hành.
 export async function cancelInvoice({ snapshot, cfg, reason }) {
   const ref = refId({

@@ -27,6 +27,7 @@ export {
   configStatus,
   serverConfigured,
   resolveServerCredentials,
+  isDeveloperPortal,
 } from './config.js';
 
 export { MisaError, sanitize } from './client.js';
@@ -40,5 +41,7 @@ export {
   assertBalanced,
   buildPublishPayload,
 } from './payload.js';
-export { issueInvoice, getInvoiceStatus, cancelInvoice } from './invoice.js';
+export {
+  issueInvoice, getInvoiceStatus, cancelInvoice, sendInvoiceEmail, downloadInvoiceFile,
+} from './invoice.js';
 export { testConnection } from './connection.js';

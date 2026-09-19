@@ -12,6 +12,7 @@
 import { callJson, authHeaders, authHeadersDeveloperPortal } from './client.js';
 import { endpointUrl, isDeveloperPortal } from './config.js';
 import { withToken } from './auth.js';
+import { businessParts } from '../../core/businessClock.js';
 
 function businessHeaders(token, cfg) {
   return isDeveloperPortal(cfg)
@@ -114,7 +115,20 @@ function normalizeTemplate(row) {
 
 /// Danh sách mẫu hóa đơn CÒN HIỆU LỰC của doanh nghiệp.
 export async function fetchTemplates(cfg) {
-  const url = endpointUrl(cfg, 'templates');
+  let url = endpointUrl(cfg, 'templates');
+  if (isDeveloperPortal(cfg)) {
+    // Developer Portal: GET /invoice/templates BẮT BUỘC 3 query param theo
+    // đúng ví dụ trong tài liệu chuẩn (developer.misa.vn/products-openapi/
+    // MEINVOICE, xác nhận thật 2026-09-19) — thiếu là MISA vẫn trả HTTP 200
+    // Success:true nhưng Data rỗng, KHÔNG báo lỗi gì để biết mà sửa.
+    const invoiceWithCode = String(cfg.invoiceCodeType || '') !== 'WITHOUT_CODE';
+    const query = new URLSearchParams({
+      invoiceWithCode: String(invoiceWithCode),
+      ticket: 'false',
+      year: String(businessParts().year),
+    });
+    url += `?${query}`;
+  }
   const body = await withToken(cfg, (token) => callJson(url, {
     method: 'GET',
     headers: businessHeaders(token, cfg),

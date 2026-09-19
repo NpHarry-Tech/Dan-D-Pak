@@ -168,9 +168,13 @@ export function ledgerDetail(order_id, branch_id = 'sala') {
   if (bill.einvoice_status === 'NOT_ISSUED') actions.push('ISSUE');
   if (bill.einvoice_status === 'FAILED') actions.push('RETRY');
   if (bill.einvoice_status === 'PROCESSING') actions.push('SYNC');
-  if (bill.pdf_url) actions.push('DOWNLOAD_PDF');
-  if (bill.xml_url) actions.push('DOWNLOAD_XML');
-  if (bill.einvoice_status === 'ISSUED' && bill.buyer?.email) actions.push('SEND_EMAIL');
+  // Tải PDF / gửi email đều gọi MISA TRỰC TIẾP theo TransactionID lúc bấm
+  // (Misa.downloadInvoiceFile/sendInvoiceEmail), không phụ thuộc pdf_url/
+  // xml_url đã lưu sẵn (2 cột này không hề được ghi ở đâu — luôn rỗng). Gửi
+  // email không đòi buyer.email có sẵn: màn Hóa đơn cho nhập email tại chỗ.
+  if (bill.einvoice_status === 'ISSUED') {
+    actions.push('DOWNLOAD_PDF', 'SEND_EMAIL');
+  }
   // Trả hàng liên quan + SL đã trả theo từng dòng (§4 màn Hóa đơn: hiện returned qty).
   const returnedMap = returnedQtyByItem(order_id);
   const returns = listReturnsForOrder(order_id, branch_id);

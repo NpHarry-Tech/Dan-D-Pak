@@ -48,6 +48,14 @@ export function registerInvoiceRoutes(api, {
     return Einvoices.cancelInvoice(req.params.id, req.body.reason, actor(req), branch(req));
   }));
 
+  api.post('/einvoice/:id/send-email', guardAny('pay', 'invoice.retry'), wrap((req) =>
+    Einvoices.resendInvoiceEmail(req.params.id, req.body?.email, branch(req))
+  ));
+
+  api.get('/einvoice/:id/pdf', guardAny('pay', 'invoice.view'), wrap((req) =>
+    Einvoices.downloadInvoicePdf(req.params.id, branch(req))
+  ));
+
   api.get('/einvoice/reconciliation', guardAny('reports', 'pay', 'invoice.view'), wrap((req) =>
     Einvoices.getReconciliation(branch(req), req.query)
   ));
