@@ -28,6 +28,7 @@ export {
   serverConfigured,
   resolveServerCredentials,
   isDeveloperPortal,
+  isCashRegisterInvoice,
 } from './config.js';
 
 export { MisaError, sanitize } from './client.js';

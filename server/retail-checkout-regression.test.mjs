@@ -312,7 +312,7 @@ test('one paid order cannot be split across multiple active e-invoices', () => {
   assert.throws(() => Einvoices.createInvoiceRequest(
     receipt.order_id,
     'COMPANY_TAX_INFO',
-    { company: 'Dan D Pak', tax_code: '0312345678', email: 'invoice@example.com' },
+    { company: 'Dan D Pak', tax_code: '0312345678', address: '1 Nguyen Hue', email: 'invoice@example.com' },
     'sala',
     'Tester',
     { amount: 12000, idempotency_key: 'invoice_split_2' },
@@ -323,7 +323,7 @@ test('one paid order cannot be split across multiple active e-invoices', () => {
   const replay = Einvoices.createInvoiceRequest(
     receipt.order_id,
     'COMPANY_TAX_INFO',
-    { company: 'Dan D Pak', tax_code: '0312345678', email: 'invoice@example.com' },
+    { company: 'Dan D Pak', tax_code: '0312345678', address: '1 Nguyen Hue', email: 'invoice@example.com' },
     'sala',
     'Tester',
     { idempotency_key: 'whole_invoice_replay' },

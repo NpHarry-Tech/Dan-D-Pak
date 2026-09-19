@@ -18,7 +18,10 @@
 // chuẩn mới chỉ có token → templates → publish, không có bước 2 — bỏ qua tra
 // doanh nghiệp, chạy 2 bước còn lại.
 
-import { CONFIG_STATUS, activationBlockers, environmentMismatch, baseUrl, serverConfigured, isDeveloperPortal } from './config.js';
+import {
+  CONFIG_STATUS, activationBlockers, environmentMismatch, baseUrl, serverConfigured,
+  isDeveloperPortal, isCashRegisterInvoice,
+} from './config.js';
 import { getToken } from './auth.js';
 import { fetchCompany, fetchTemplates, filterTemplates } from './company.js';
 
@@ -99,7 +102,7 @@ export async function testConnection(cfg = {}) {
 
   const phuHop = filterTemplates(templates, {
     invoiceWithCode: company.invoiceWithCode,
-    fromCashRegister: String(cfg.invoiceType || '') === 'CASH_REGISTER' ? true : null,
+    fromCashRegister: cfg.series ? isCashRegisterInvoice(cfg) : null,
   });
 
   const base = baseUrl(cfg);

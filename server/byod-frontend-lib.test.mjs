@@ -30,7 +30,23 @@ test('normalizeLang() chặn mã ngôn ngữ lạ, không làm vỡ bootstrap ?l
   assert.equal(Lib.normalizeLang('fr'), 'vi');
   assert.equal(Lib.normalizeLang(''), 'vi');
   assert.equal(Lib.normalizeLang('EN'), 'en');
+  assert.equal(Lib.normalizeLang('vi-VN'), 'vi');
+  assert.equal(Lib.normalizeLang('zh-CN'), 'zh');
+  assert.equal(Lib.normalizeLang('zh-Hant-TW'), 'zh');
   assert.equal(Lib.normalizeLang(undefined), 'vi');
+});
+
+test('detectLang() lấy ngôn ngữ hệ thống được hỗ trợ ở lần truy cập đầu', () => {
+  assert.equal(Lib.detectLang(['vi-VN', 'en-US']), 'vi');
+  assert.equal(Lib.detectLang(['zh-CN', 'en-US']), 'zh');
+  assert.equal(Lib.detectLang(['fr-FR', 'ja-JP']), 'ja');
+  assert.equal(Lib.detectLang(['fr-FR']), 'vi');
+});
+
+test('dòng chủ quyền dùng hoàn toàn tiếng Trung và không dùng tên Tây Sa/Nam Sa', () => {
+  const line = Lib.t('zh', 'sovereignty');
+  assert.equal(line, '黄沙群岛和长沙群岛属于越南。');
+  assert.ok(!/西沙|南沙/.test(line));
 });
 
 test('statusMeta() bao phủ đủ 7 trạng thái order_item thật (server/services/orders.js)', () => {

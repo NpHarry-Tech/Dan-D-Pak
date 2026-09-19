@@ -410,7 +410,7 @@ class _ReceiptPaneState extends State<_ReceiptPane> {
           MstField(
             lookup: _taxLookup,
             label: '',
-            hint: t('MST (nếu xuất cho công ty)'),
+            hint: t('MST công ty (10 hoặc 13 số)'),
             onMessage: (m, {bool error = false}) =>
                 ScaffoldMessenger.of(context).showSnackBar(SnackBar(
               content: Text(m),
@@ -418,7 +418,7 @@ class _ReceiptPaneState extends State<_ReceiptPane> {
             )),
           ),
           SizedBox(height: 8),
-          Text(t('Tên người mua / công ty'),
+          Text(t('Tên công ty'),
               style: TextStyle(
                   fontSize: 11,
                   color: DanColors.muted,
@@ -429,7 +429,7 @@ class _ReceiptPaneState extends State<_ReceiptPane> {
             readOnly: _taxLookup.companyLocked,
             decoration:
                 taxLockedDecoration(label: '', locked: _taxLookup.companyLocked)
-                    .copyWith(hintText: t('Tên cá nhân hoặc công ty')),
+                    .copyWith(hintText: t('Tên pháp lý của công ty')),
           ),
           SizedBox(height: 8),
           Text(t('Địa chỉ'),
@@ -449,7 +449,7 @@ class _ReceiptPaneState extends State<_ReceiptPane> {
             locked: _taxLookup.addressLocked,
           ),
           SizedBox(height: 8),
-          Text(t('Email nhận hóa đơn'),
+          Text(t('Email nhận hóa đơn (không bắt buộc)'),
               style: TextStyle(
                   fontSize: 11,
                   color: DanColors.muted,
@@ -473,11 +473,26 @@ class _ReceiptPaneState extends State<_ReceiptPane> {
               Expanded(
                 child: FilledButton(
                   onPressed: () {
+                    final taxCode =
+                        _invoiceTaxCtrl.text.replaceAll(RegExp(r'\D'), '');
+                    final name = _invoiceNameCtrl.text.trim();
+                    final address = _invoiceAddrCtrl.text.trim();
+                    if (!RegExp(r'^\d{10}(\d{3})?$').hasMatch(taxCode) ||
+                        name.isEmpty ||
+                        address.isEmpty) {
+                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                        content: Text(t(
+                            'Cần đủ MST 10/13 số, tên pháp lý và địa chỉ công ty')),
+                        backgroundColor: DanColors.late,
+                      ));
+                      return;
+                    }
                     Navigator.of(dialogCtx).pop();
                     widget.onIssueInvoice?.call({
-                      'name': _invoiceNameCtrl.text.trim(),
-                      'tax_code': _invoiceTaxCtrl.text.trim(),
-                      'address': _invoiceAddrCtrl.text.trim(),
+                      'name': name,
+                      'company': name,
+                      'tax_code': taxCode,
+                      'address': address,
                       'address_detail': _invoiceAddrDetailCtrl.text.trim(),
                       'address_ward': _invoiceAddrWardCtrl.text.trim(),
                       'address_province': _invoiceAddrProvinceCtrl.text.trim(),

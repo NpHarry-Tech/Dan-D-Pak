@@ -80,7 +80,7 @@ test('invoice form upgrades the consumer placeholder, receipt name and customer 
     'new invoice buyer must be saved into Customers automatically');
 });
 
-test('personal invoice with only a new customer name is saved once in Customers', () => {
+test('personal invoice with complete supplied identity is saved once in Customers', () => {
   const paidAt = new Date().toISOString();
   db.prepare(`INSERT INTO orders
     (id,branch_id,channel,status,total,created_at,paid_at,bill_no,customer_json)
@@ -90,7 +90,7 @@ test('personal invoice with only a new customer name is saved once in Customers'
   Einvoices.createInvoiceRequest(
     'name_only_invoice',
     'BUYER_PROVIDED_INFO',
-    { name: 'Trần Khách Mới' },
+    { name: 'Trần Khách Mới', address: '3 Lê Lợi', personal_id: '012345678901', phone: '0900000001' },
     'history_year',
     'Cashier',
   );
@@ -165,7 +165,7 @@ test('self-service buyer upgrade updates the immutable provider request and rece
 
   const result = Einvoices.customerRequest('self_upgrade_invoice', {
     decision: 'issue',
-    customer: { name: 'Lê Khách QR' },
+    customer: { name: 'Lê Khách QR', address: '5 Lê Lợi', personal_id: '012345678902' },
   }, 'history_year');
 
   assert.equal(result.invoice.id, placeholder.id);

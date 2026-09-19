@@ -1,7 +1,7 @@
 // MISA meInvoice — PHÁT HÀNH, TRA TRẠNG THÁI, HỦY hóa đơn.
 
 import { callJson, authHeaders, authHeadersDeveloperPortal, sanitize, MisaError } from './client.js';
-import { endpointUrl, isDeveloperPortal } from './config.js';
+import { endpointUrl, isDeveloperPortal, isCashRegisterInvoice } from './config.js';
 import { withToken } from './auth.js';
 import { buildPublishPayload, refId } from './payload.js';
 import { publishDeveloperPortal, portalRefId } from './developerPortal.js';
@@ -35,11 +35,11 @@ function normalizeResult(d) {
   return {
     provider: 'misa',
     invoice_no: String(pick(d, 'InvNo', 'invoiceNo', 'invoice_no', 'InvoiceNo', 'InvNumber') || ''),
-    series: String(pick(d, 'InvSeries', 'invSeries', 'Series') || ''),
+    series: String(pick(d, 'InvSeries', 'invSeries', 'InvoiceSeries', 'invoiceSeries', 'Series') || ''),
     lookup_code: String(pick(d, 'LookupCode', 'lookupCode', 'lookup_code') || ''),
     transaction_id: String(pick(d, 'TransactionID', 'transactionId', 'TransactionId') || ''),
     tax_authority_code: String(
-      pick(d, 'TaxAuthorityCode', 'taxAuthorityCode', 'tax_authority_code', 'CQTCode') || '',
+      pick(d, 'TaxAuthorityCode', 'taxAuthorityCode', 'tax_authority_code', 'CQTCode', 'InvoiceCode') || '',
     ),
     lookup_url: String(pick(d, 'lookupUrl', 'LookupUrl', 'ViewUrl') || 'https://www.meinvoice.vn/tra-cuu'),
     raw: sanitize(d),
@@ -56,7 +56,7 @@ export async function getInvoiceStatus(snapshotRef, cfg) {
   const portal = isDeveloperPortal(cfg);
   const ref = portal ? portalRefId(logicalRef) : logicalRef;
   const url = portal
-    ? `${endpointUrl(cfg, 'status')}?inputType=2&invoiceWithCode=${String(cfg.invoiceCodeType !== 'WITHOUT_CODE')}&invoiceCalcu=${String(cfg.invoiceType === 'CASH_REGISTER')}`
+    ? `${endpointUrl(cfg, 'status')}?inputType=2&invoiceWithCode=${String(cfg.invoiceCodeType !== 'WITHOUT_CODE')}&invoiceCalcu=${String(isCashRegisterInvoice(cfg))}`
     : `${endpointUrl(cfg, 'status')}?refId=${encodeURIComponent(ref)}`;
   try {
     const body = await withToken(cfg, (token) => callJson(url, {
@@ -175,6 +175,8 @@ export async function issueInvoice({ snapshot, cfg, company = {}, mayHaveLanded 
       kq.lookup_url = '';
     }
   }
+  // Link publishview co thoi han; chi dung link moi lay tai thoi diem nguoi dung mo.
+  if (portal) kq.lookup_url = '';
   return kq;
 }
 
@@ -238,7 +240,7 @@ export async function sendInvoiceEmail(cfg, { transactionId, receiverName = '', 
         ReplyEmail: replyEmail,
       }],
       IsInvoiceCode: String(cfg.invoiceCodeType || '') !== 'WITHOUT_CODE',
-      IsInvoiceCalculatingMachine: String(cfg.invoiceType || '') === 'CASH_REGISTER',
+      IsInvoiceCalculatingMachine: isCashRegisterInvoice(cfg),
     }),
   }, 20000));
 
@@ -269,7 +271,7 @@ export async function downloadInvoiceFile(cfg, { transactionIds, downloadDataTyp
   const query = new URLSearchParams({
     downloadDataType,
     invoiceWithCode: String(String(cfg.invoiceCodeType || '') !== 'WITHOUT_CODE'),
-    invoiceCalcu: String(String(cfg.invoiceType || '') === 'CASH_REGISTER'),
+    invoiceCalcu: String(isCashRegisterInvoice(cfg)),
   });
   const url = `${endpointUrl(cfg, 'download')}?${query}`;
   const body = await withToken(cfg, (token) => callJson(url, {
@@ -284,14 +286,22 @@ export async function downloadInvoiceFile(cfg, { transactionIds, downloadDataTyp
       { retryable: true, code: String(body?.ErrorCode || ''), body: sanitize(body) },
     );
   }
-  const rows = Array.isArray(body?.Data) ? body.Data : (Array.isArray(body?.data) ? body.data : []);
-  return rows.map((r) => ({
+  const decoded = unwrap(body);
+  const rows = Array.isArray(decoded) ? decoded : [];
+  const files = rows.map((r) => ({
     transactionId: String(pick(r, 'TransactionID', 'transactionId') || ''),
     // Field "data" (chữ thường) đúng theo tài liệu — khác mọi field khác trong
     // API này đều viết hoa chữ cái đầu.
     data: String(pick(r, 'data', 'Data') || ''),
     errorCode: String(pick(r, 'ErrorCode', 'errorCode') || ''),
   }));
+  const failed = files.find((file) => file.errorCode && !file.data);
+  if (failed) {
+    throw new MisaError(`MISA khong tao duoc file hoa don: ${failed.errorCode}`, {
+      retryable: false, code: failed.errorCode, body: sanitize(body),
+    });
+  }
+  return files;
 }
 
 /// Hủy hóa đơn đã phát hành.

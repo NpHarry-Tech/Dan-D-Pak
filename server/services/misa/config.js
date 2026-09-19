@@ -138,6 +138,15 @@ export function isDeveloperPortal(cfg = {}) {
   return cfg.integrationType === PROVIDER_KIND.DEVELOPER_PORTAL;
 }
 
+/// Xac dinh hoa don khoi tao tu may tinh tien tu KY HIEU mau da chon.
+/// invoiceType co the bi cu sau khi nguoi dung doi mau; ky hieu MISA moi la
+/// nguon su that (1C26MBM/C26MBM = MTT, 1C26TBM/C26TBM = hoa don thuong).
+export function isCashRegisterInvoice(cfg = {}) {
+  const series = String(cfg.series || '').trim().toUpperCase();
+  if (/^\d?[CK]\d{2}[A-Z]/.test(series)) return /^\d?[CK]\d{2}M/.test(series);
+  return String(cfg.invoiceType || '') === 'CASH_REGISTER';
+}
+
 /// Địa chỉ gốc. `apiBase` do người dùng nhập được ưu tiên, nhưng phải là http(s)
 /// hợp lệ; không thì rơi về mặc định theo môi trường/provider.
 export function baseUrl(cfg = {}) {

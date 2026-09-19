@@ -96,4 +96,13 @@ extension ApiServiceInvoiceApi on ApiService {
     if (b64.isEmpty) throw Exception('MISA không trả về dữ liệu file hóa đơn');
     return b64;
   }
+
+  /// Link MISA co thoi han, nen luon xin link moi tai thoi diem mo.
+  Future<String> getInvoiceViewUrl(String eInvoiceId) async {
+    final res = mapFrom(await getJson('/api/einvoice/$eInvoiceId/view',
+        errorMessage: 'Khong lay duoc link xem hoa don'));
+    final url = (res['url'] ?? '').toString();
+    if (url.isEmpty) throw Exception('MISA khong tra ve link xem hoa don');
+    return url;
+  }
 }

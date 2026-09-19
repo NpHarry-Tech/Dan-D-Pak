@@ -39,6 +39,7 @@ const state = {
   soLanGoiPublishView: 0,
   receivedSendEmail: null,
   receivedDownload: null,
+  downloadMode: null,
   receivedHeaders: { token: null, templates: null, publish: null },
   templatesMode: null, // null | 'business_error'
   publishMode: null, // null | 'timeout' | 'duplicate_elem' | 'not_continuous' | 'system_error' | 'request_level_fail'
@@ -259,9 +260,16 @@ const server = createServer((req, res) => {
     req.on('end', () => {
       const ids = JSON.parse(raw || '[]');
       state.receivedDownload = { clientId: req.headers.clientid, ids, query: Object.fromEntries(url.searchParams) };
+      if (state.downloadMode === 'template_not_support') {
+        return json(res, 200, {
+          Success: true, ErrorCode: null,
+          Data: JSON.stringify(ids.map((id) => ({ TransactionID: id, Data: null, ErrorCode: 'TemplateNotSupport' }))),
+        });
+      }
       return json(res, 200, {
         Success: true, ErrorCode: null, DescriptionErrorCode: null, Errors: [], CustomData: '',
-        Data: ids.map((id) => ({ TransactionID: id, data: 'ZmFrZS1wZGYtYnl0ZXM=', ErrorCode: null })),
+        // Response production tra Data la JSON string, khong phai mang truc tiep.
+        Data: JSON.stringify(ids.map((id) => ({ TransactionID: id, data: 'ZmFrZS1wZGYtYnl0ZXM=', ErrorCode: null }))),
       });
     });
     return;
@@ -323,6 +331,16 @@ function banMotDon(sku) {
 }
 
 const einvOf = (orderId) => db.prepare(`SELECT * FROM e_invoices WHERE order_id=?`).get(orderId);
+
+test('buyer MST trung seller MST bi chan truoc khi gui MISA', () => {
+  batMisa();
+  const receipt = banMotDon('sku_same_tax_buyer');
+  const orderId = receipt.order_id || receipt.id;
+  assert.throws(() => Einvoices.createInvoiceRequest(orderId, 'COMPANY_TAX_INFO', {
+    company: 'Chinh doanh nghiep ban', name: 'Chinh doanh nghiep ban',
+    tax_code: TAX, address: 'Dia chi doanh nghiep',
+  }, BR, 'test'), (error) => error?.code === 'BUYER_EQUALS_SELLER' && error?.status === 422);
+});
 
 // ── 0. PROVIDER SELECTION ────────────────────────────────────────────────────
 
@@ -443,8 +461,11 @@ test('TC-ISSUE-01: phat hanh that qua Developer Portal, luu du InvNo + Transacti
   assert.ok(after1.invoice_no, 'phai luu InvNo');
   assert.ok(after1.provider_invoice_id, 'phai luu TransactionID vao provider_invoice_id de doi chieu/tra cuu');
   assert.match(after1.provider_invoice_id, /^PORTAL-TX-/);
-  assert.equal(after1.lookup_url, `https://download.meinvoice.vn/view/${after1.provider_invoice_id}`);
+  assert.equal(after1.lookup_url, '', 'khong luu link publishview co thoi han');
   assert.ok(state.soLanGoiPublishView > 0, 'phai lay link xem that bang TransactionID');
+
+  const freshView = await Einvoices.getInvoiceViewLink(after1.id, BR);
+  assert.equal(freshView.url, `https://download.meinvoice.vn/view/${after1.provider_invoice_id}`);
 });
 
 test('TC-ISSUE-01B: config cu thieu templateNo tu dong dong bo lai theo templateId', async () => {
@@ -636,7 +657,10 @@ test('TC-EMAIL-01: phat hanh hoa don co email nguoi mua -> tu dong goi /invoice/
   batMisa();
   const receipt = banMotDon('sku_portal_email1');
   const orderId = receipt.order_id || receipt.id;
-  Einvoices.createInvoiceRequest(orderId, 'BUYER_PROVIDED_INFO', { name: 'Khach le', email: 'khach@test.local' }, BR, 'test');
+  Einvoices.createInvoiceRequest(orderId, 'BUYER_PROVIDED_INFO', {
+    name: 'Khach le', address: '4 Le Loi', personal_id: '012345678903',
+    phone: '0900000002', email: 'khach@test.local',
+  }, BR, 'test');
 
   await Einvoices.processInvoiceQueue();
 
@@ -678,6 +702,7 @@ test('TC-EMAIL-03: resendInvoiceEmail gui thu cong toi email khac voi email da l
 });
 
 test('TC-DOWNLOAD-01: downloadInvoicePdf tai dung TransactionID, tra ve du lieu base64', async () => {
+  state.downloadMode = null;
   batMisa();
   const receipt = banMotDon('sku_portal_dl1');
   const orderId = receipt.order_id || receipt.id;
@@ -690,4 +715,29 @@ test('TC-DOWNLOAD-01: downloadInvoicePdf tai dung TransactionID, tra ve du lieu 
   assert.equal(kq.pdfBase64, 'ZmFrZS1wZGYtYnl0ZXM=');
   assert.deepEqual(state.receivedDownload.ids, [inv.provider_invoice_id]);
   assert.equal(state.receivedDownload.query.downloadDataType, 'Pdf');
+});
+
+test('TC-DOWNLOAD-02: ky hieu T quyet dinh hoa don thuong du invoiceType cu dang CASH_REGISTER', async () => {
+  state.downloadMode = null;
+  const cfg = cfgMau({ invoiceType: 'CASH_REGISTER', series: '1C26TBM' });
+  const [file] = await Misa.downloadInvoiceFile(cfg, { transactionIds: ['TX-NORMAL'] });
+  assert.equal(file.data, 'ZmFrZS1wZGYtYnl0ZXM=');
+  assert.equal(state.receivedDownload.query.invoiceCalcu, 'false');
+});
+
+test('TC-DOWNLOAD-03: bao dung loi tung file khi MISA tra TemplateNotSupport trong Data string', async () => {
+  state.downloadMode = 'template_not_support';
+  const cfg = cfgMau({ series: '1C26TBM' });
+  await assert.rejects(
+    () => Misa.downloadInvoiceFile(cfg, { transactionIds: ['TX-BAD-TEMPLATE'] }),
+    (error) => error?.misaCode === 'TemplateNotSupport',
+  );
+  state.downloadMode = null;
+});
+
+test('TC-CONFIG-01: suy ra dung loai hoa don tu ky tu thu 5 cua ky hieu MISA', () => {
+  assert.equal(Misa.isCashRegisterInvoice({ invoiceType: 'CASH_REGISTER', series: '1C26TBM' }), false);
+  assert.equal(Misa.isCashRegisterInvoice({ invoiceType: 'STANDARD', series: '1C26MBM' }), true);
+  assert.equal(Misa.isCashRegisterInvoice({ series: 'C26TBM' }), false);
+  assert.equal(Misa.isCashRegisterInvoice({ series: 'C26MBM' }), true);
 });

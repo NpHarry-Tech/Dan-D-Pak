@@ -498,10 +498,10 @@ class _SelfOrderPaymentScreenState extends State<SelfOrderPaymentScreen> {
 
   // ── Form MST ─────────────────────────────────────────────────────────────
   Widget _invoiceFormView() {
-    final canSubmit = _mstCtrl.text.trim().length >= 10 &&
+    final canSubmit = RegExp(r'^\d{10}(\d{3})?$')
+            .hasMatch(_mstCtrl.text.trim().replaceAll(RegExp(r'\D'), '')) &&
         _companyCtrl.text.trim().isNotEmpty &&
-        _emailCtrl.text.trim().contains('@') &&
-        _phoneCtrl.text.trim().length >= 8;
+        _addressCtrl.text.trim().isNotEmpty;
     return Center(
       child: SingleChildScrollView(
         padding: EdgeInsets.all(24),

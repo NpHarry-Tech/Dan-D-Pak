@@ -10,6 +10,36 @@ import { silentSaveFromInvoice } from './customers.js';
 import { printInvoiceConfirmation } from './printing.js';
 import { getBranch } from './branches.js';
 
+function digits(value) {
+  return String(value || '').replace(/\D/g, '');
+}
+
+function sellerTaxCode(branch_id) {
+  const cfg = Misa.resolveServerCredentials(getIntegrations(branch_id).channels?.misa || {});
+  return digits(cfg.taxCode);
+}
+
+function validateBuyer(customer_mode, buyer, branch_id) {
+  if (customer_mode === 'COMPANY_TAX_INFO') {
+    if (!/^\d{10}(\d{3})?$/.test(buyer.tax_code)) {
+      throw new Error('Mã số thuế doanh nghiệp phải gồm 10 hoặc 13 chữ số');
+    }
+    if (!buyer.name) throw new Error('Thiếu tên doanh nghiệp mua hàng');
+    if (!buyer.address) throw new Error('Thiếu địa chỉ doanh nghiệp mua hàng');
+    const sellerTax = sellerTaxCode(branch_id);
+    if (sellerTax && buyer.tax_code === sellerTax) {
+      throw Object.assign(new Error(
+        'MST người mua trùng MST người bán. Không thể tự xuất hóa đơn bán lẻ cho chính doanh nghiệp; nếu là tiêu dùng nội bộ, hãy xử lý theo quy trình kế toán riêng.'),
+      { status: 422, code: 'BUYER_EQUALS_SELLER' });
+    }
+  }
+  if (customer_mode === 'BUYER_PROVIDED_INFO') {
+    if (!buyer.name || !buyer.address || !/^\d{12}$/.test(buyer.tax_code)) {
+      throw new Error('Hóa đơn người tiêu dùng có thông tin phải có họ tên, địa chỉ và số định danh cá nhân 12 chữ số; nếu khách không cung cấp đủ, hãy dùng "Bán cho người tiêu dùng".');
+    }
+  }
+}
+
 // Phiếu XÁC NHẬN PHÁT HÀNH — best-effort, KHÔNG được làm hỏng/chặn việc phát
 // hành hóa đơn (lỗi in chỉ log, không throw). Chỉ gọi NGAY sau khi
 // invoice_status đã thật sự chuyển ISSUED với invoice_no thật từ MISA — không
@@ -159,6 +189,7 @@ export function createInvoiceRequest(order_id, customer_mode = 'WALK_IN', buyer_
     finalBuyer.name = 'Bán cho người tiêu dùng';
   } else if (customer_mode === 'BUYER_PROVIDED_INFO') {
     finalBuyer.name = buyer_info.name || 'Khách hàng cá nhân';
+    finalBuyer.tax_code = digits(buyer_info.personal_id || buyer_info.tax_code);
     finalBuyer.email = buyer_info.email || '';
     finalBuyer.phone = buyer_info.phone || '';
     finalBuyer.address = buyer_info.address || '';
@@ -173,8 +204,8 @@ export function createInvoiceRequest(order_id, customer_mode = 'WALK_IN', buyer_
       throw new Error('Mã số thuế doanh nghiệp phải gồm 10 hoặc 13 chữ số');
     }
     if (!finalBuyer.name) throw new Error('Thiếu tên công ty/tổ chức');
-    if (!finalBuyer.email) throw new Error('Thiếu email nhận hóa đơn');
   }
+  validateBuyer(customer_mode, finalBuyer, branch_id);
 
   // Payment creates a consumer placeholder for every paid bill. If the buyer
   // subsequently chooses "Xuất hóa đơn" before provider submission, upgrade
@@ -437,8 +468,14 @@ export function backfillPaidBills(limit = 1000) {
   let created = 0;
   for (const row of rows) {
     const buyer = parseJson(row.customer_json, {});
-    const mode = buyer.tax_code && buyer.email && (buyer.company || buyer.name) ? 'COMPANY_TAX_INFO'
-      : (buyer.name || buyer.phone || buyer.email ? 'BUYER_PROVIDED_INFO' : 'WALK_IN');
+    const explicitlyRequested = buyer.invoice_request === true || buyer.auto_invoice === true;
+    const taxCode = digits(buyer.tax_code);
+    const hasCompanyInfo = /^\d{10}(\d{3})?$/.test(taxCode)
+      && Boolean(buyer.company || buyer.name) && Boolean(buyer.company_address || buyer.address);
+    const hasPersonalInfo = Boolean(buyer.name && buyer.address)
+      && /^\d{12}$/.test(digits(buyer.personal_id || buyer.tax_code));
+    const mode = explicitlyRequested && hasCompanyInfo ? 'COMPANY_TAX_INFO'
+      : (explicitlyRequested && hasPersonalInfo ? 'BUYER_PROVIDED_INFO' : 'WALK_IN');
     try {
       createInvoiceRequest(row.id, mode, buyer, row.branch_id, 'system_backfill');
       created++;
@@ -947,6 +984,19 @@ export async function downloadInvoicePdf(e_invoice_id, branch_id = null) {
   return { transactionId: file.transactionId, pdfBase64: file.data };
 }
 
+/// Link publishview cua MISA co thoi han. Luon xin link moi tai thoi diem xem,
+/// khong dung lai lookup_url da luu tu luc phat hanh.
+export async function getInvoiceViewLink(e_invoice_id, branch_id = null) {
+  const job = get(e_invoice_id, branch_id);
+  if (!job) throw new Error('Khong tim thay hoa don');
+  if (job.invoice_status !== 'ISSUED') throw new Error('Hoa don chua phat hanh thanh cong');
+  if (!job.provider_invoice_id) throw new Error('Hoa don thieu TransactionID');
+  const misaCfg = Misa.resolveServerCredentials(getIntegrations(job.branch_id).channels?.misa || {});
+  const [view] = await Misa.getPublishedInvoiceViews(misaCfg, [job.provider_invoice_id]);
+  if (!view?.link) throw new Error('MISA khong tra ve link xem hoa don');
+  return { transactionId: job.provider_invoice_id, url: view.link };
+}
+
 /**
  * Returns single invoice request by ID
  */
@@ -977,7 +1027,8 @@ export function getInvoiceByOrder(order_id, branch_id = null) {
  * Khách yêu cầu hóa đơn cá nhân/công ty SAU khi thanh toán (từ Lịch sử):
  * nâng cấp thông tin người mua trên CÙNG bản ghi HĐĐT nếu CHƯA phát hành —
  * tuyệt đối không tạo hóa đơn thứ hai cho một giao dịch. Đã phát hành rồi
- * thì phải đi đường hủy/thay thế theo NĐ 70.
+ * thì phải xử lý điều chỉnh/thay thế theo loại hóa đơn; hóa đơn máy tính tiền
+ * phải lập hóa đơn thay thế theo Thông tư 91/2026/TT-BTC.
  */
 export function upgradeBuyer(order_id, customer = {}, branch_id = 'sala', actor = 'staff') {
   const inv = getInvoiceByOrder(order_id, branch_id);
@@ -985,7 +1036,7 @@ export function upgradeBuyer(order_id, customer = {}, branch_id = 'sala', actor 
   if (inv.invoice_status === 'ISSUED') {
     throw new Error(
       `Bill đã có HĐĐT${inv.invoice_no ? ` số ${inv.invoice_no}` : ''} đã phát hành. ` +
-      'Muốn đổi sang hóa đơn công ty phải HỦY/THAY THẾ hóa đơn cũ trước — không được xuất trùng 2 hóa đơn cho 1 giao dịch.');
+      'Muốn đổi thông tin người mua phải xử lý ĐIỀU CHỈNH/THAY THẾ theo loại hóa đơn — không hủy hoặc xuất trùng hóa đơn cho cùng giao dịch.');
   }
   const mutable = new Set([
     'NOT_CREATED', 'PENDING_PROVIDER', 'PENDING_EDGE_SYNC',
@@ -999,17 +1050,20 @@ export function upgradeBuyer(order_id, customer = {}, branch_id = 'sala', actor 
       'Hóa đơn đã bắt đầu gửi nhà cung cấp nên không thể đổi thông tin người mua. Hãy lập hóa đơn điều chỉnh/thay thế.'),
     { status: 409 });
   }
-  const tax_code = String(customer.tax_code || '').replace(/\D/g, '');
-  const isCompany = !!tax_code;
-  if (isCompany && !/^\d{10}(\d{3})?$/.test(tax_code)) {
-    throw new Error('Mã số thuế phải gồm 10 hoặc 13 chữ số');
+  const tax_code = digits(customer.personal_id || customer.tax_code);
+  const isCompany = /^\d{10}(\d{3})?$/.test(tax_code);
+  if (tax_code && !isCompany && !/^\d{12}$/.test(tax_code)) {
+    throw new Error('MST doanh nghiệp phải gồm 10 hoặc 13 chữ số; số định danh cá nhân phải gồm 12 chữ số');
   }
   const name = String(customer.name || customer.company || '').trim();
   if (!name) throw new Error('Thiếu tên người mua / công ty');
-  if (isCompany && !String(customer.email || '').trim()) {
-    throw new Error('Thiếu email nhận hóa đơn công ty');
-  }
   const mode = isCompany ? 'COMPANY_TAX_INFO' : 'BUYER_PROVIDED_INFO';
+  validateBuyer(mode, {
+    name,
+    tax_code,
+    address: String(customer.address || '').trim(),
+    phone: String(customer.phone || '').trim(),
+  }, branch_id);
   const misaCfg = Misa.resolveServerCredentials(getIntegrations(branch_id).channels?.misa || {});
   const providerReady = Misa.isLive(misaCfg);
   const provider = providerReady ? 'misa' : 'pending';
@@ -1302,20 +1356,17 @@ export function customerRequest(order_id, { decision = 'issue', customer = {} } 
     return { ok: true, choice: 'updated', invoice: updated };
   }
 
-  const phone = String(customer.phone || '').trim();
-  const email = String(customer.email || '').trim();
-  if (!phone || !email) throw new Error('Vui lòng nhập số điện thoại và email để nhận hóa đơn');
-
   const buyerInfo = {
     name: customer.name || customer.company || '',
     company: customer.company || customer.name || '',
-    tax_code: String(customer.tax_code || '').replace(/\s+/g, ''),
+    tax_code: digits(customer.personal_id || customer.tax_code),
     address: customer.address || '',
-    phone,
-    email
+    phone: String(customer.phone || '').trim(),
+    email: String(customer.email || '').trim(),
   };
 
-  const mode = buyerInfo.tax_code ? 'COMPANY_TAX_INFO' : 'BUYER_PROVIDED_INFO';
+  const mode = /^\d{10}(\d{3})?$/.test(buyerInfo.tax_code)
+    ? 'COMPANY_TAX_INFO' : 'BUYER_PROVIDED_INFO';
   const inv = createInvoiceRequest(order_id, mode, buyerInfo, branch_id, 'customer_self_service');
   db.prepare(`UPDATE orders SET invoice_choice = 'issued' WHERE id = ?`).run(order_id);
   emit('invoice:choice', { order_id, choice: 'issued', invoice_no: inv.invoice_no }, branch_id);

@@ -1,8 +1,7 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import 'package:http/http.dart' as http;
 import 'package:printing/printing.dart';
 import 'package:provider/provider.dart';
 
@@ -209,8 +208,7 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
                 SizedBox(
                     width: width,
                     child: KpiCard(
-                        label: t('Tổng bill'),
-                        value: Fmt.int0(totalBills))),
+                        label: t('Tổng bill'), value: Fmt.int0(totalBills))),
                 SizedBox(
                     width: width,
                     child: KpiCard(
@@ -465,7 +463,6 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
                   .toSet() ??
               const <String>{};
           final eInvoiceId = _s(bill['e_invoice_id']);
-          final lookupUrl = _s(bill['lookup_url']);
           return Container(
             width: double.infinity,
             padding: const EdgeInsets.all(16),
@@ -518,30 +515,34 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
                     label: Text(t('Xem bill')),
                   ),
                   if (_s(bill['einvoice_status']).toUpperCase() == 'ISSUED' &&
-                      (_s(bill['pdf_url']).isNotEmpty || lookupUrl.isNotEmpty))
+                      eInvoiceId.isNotEmpty)
                     OutlinedButton.icon(
-                      onPressed: () => _openVatViewer(bill),
+                      onPressed: () => _downloadInvoicePdf(
+                          eInvoiceId,
+                          _s(bill['invoice_no']).isEmpty
+                              ? 'Hoa don VAT'
+                              : 'Hoa don VAT ${_s(bill['invoice_no'])}'),
                       icon: const Icon(Icons.picture_as_pdf, size: 16),
                       label: Text(t('Xem hóa đơn (VAT)')),
                     ),
-                  if (lookupUrl.isNotEmpty)
+                  if (_s(bill['einvoice_status']).toUpperCase() == 'ISSUED' &&
+                      eInvoiceId.isNotEmpty)
                     OutlinedButton.icon(
-                      onPressed: () => openExternalUrl(lookupUrl),
+                      onPressed: () => _openInvoiceOnline(eInvoiceId),
                       icon: const Icon(Icons.open_in_new, size: 16),
                       label: Text(t('Tra cứu online')),
                     ),
-                  if (eInvoiceId.isNotEmpty &&
-                      actions.contains('SEND_EMAIL'))
+                  if (eInvoiceId.isNotEmpty && actions.contains('SEND_EMAIL'))
                     OutlinedButton.icon(
                       onPressed: () =>
                           _sendInvoiceEmail(eInvoiceId, _s(buyer['email'])),
                       icon: const Icon(Icons.email_outlined, size: 16),
                       label: Text(t('Gửi email')),
                     ),
-                  if (eInvoiceId.isNotEmpty &&
-                      actions.contains('DOWNLOAD_PDF'))
+                  if (eInvoiceId.isNotEmpty && actions.contains('DOWNLOAD_PDF'))
                     OutlinedButton.icon(
-                      onPressed: () => _downloadInvoicePdf(eInvoiceId,
+                      onPressed: () => _downloadInvoicePdf(
+                          eInvoiceId,
                           _s(bill['invoice_no']).isEmpty
                               ? t('Hóa đơn VAT')
                               : '${t('Hóa đơn VAT')} ${_s(bill['invoice_no'])}'),
@@ -683,7 +684,9 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
                         const SizedBox(width: 5),
                         Tooltip(
                           message: st.label,
-                          child: Icon(st.icon, size: 14, color: st.color,
+                          child: Icon(st.icon,
+                              size: 14,
+                              color: st.color,
                               semanticLabel: st.label),
                         ),
                       ]),
@@ -869,8 +872,7 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
                   }
                 } catch (e) {
                   if (mounted) {
-                    appToast(
-                        context,
+                    appToast(context,
                         t('Không gửi được lệnh in lại hóa đơn: ${e.toString().replaceFirst('Exception: ', '')}'),
                         isError: true);
                   }
@@ -894,118 +896,6 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
                       fontFamily: 'JetBrains Mono', height: 1.35),
                 ),
               ),
-            ),
-          ]),
-        ),
-      ),
-    );
-  }
-
-  Future<void> _openVatViewer(Map bill) async {
-    final pdfUrl = _s(bill['pdf_url']);
-    final lookupUrl = _s(bill['lookup_url']);
-    final title = _s(bill['invoice_no']).isEmpty
-        ? t('Hóa đơn VAT')
-        : '${t('Hóa đơn VAT')} ${_s(bill['invoice_no'])}';
-    Uint8List? pdfBytes;
-
-    Future<Uint8List?> loadPdf() async {
-      if (pdfBytes != null) return pdfBytes;
-      if (pdfUrl.isEmpty) return null;
-      final response = await http.get(Uri.parse(pdfUrl));
-      if (response.statusCode < 200 ||
-          response.statusCode >= 300 ||
-          !isPrintablePdf(response.bodyBytes)) {
-        throw Exception(t('Tài liệu hóa đơn không phải PDF hợp lệ'));
-      }
-      return pdfBytes = response.bodyBytes;
-    }
-
-    if (!mounted) return;
-    await showDialog<void>(
-      context: context,
-      builder: (dialogContext) => Dialog(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 760, maxHeight: 700),
-          child: Column(children: [
-            _viewerHeader(
-              dialogContext,
-              title,
-              onPrint: pdfUrl.isEmpty
-                  ? null
-                  : () async {
-                      try {
-                        final bytes = await loadPdf();
-                        if (bytes != null && mounted) {
-                          appToast(context,
-                              t('Bridge in hóa đơn VAT đang chuẩn bị tài liệu Windows.'),
-                              isError: true);
-                        }
-                      } catch (e) {
-                        if (mounted) appToast(context, '$e', isError: true);
-                      }
-                    },
-              printLabel: t('In hóa đơn'),
-              extra: [
-                if (lookupUrl.isNotEmpty)
-                  OutlinedButton.icon(
-                    onPressed: () => openExternalUrl(lookupUrl),
-                    icon: const Icon(Icons.open_in_new, size: 17),
-                    label: Text(t('Mở trên trình duyệt')),
-                  ),
-                if (lookupUrl.isNotEmpty)
-                  IconButton(
-                    tooltip: t('Copy link'),
-                    onPressed: () async {
-                      await Clipboard.setData(ClipboardData(text: lookupUrl));
-                      if (mounted) appToast(context, t('Đã copy link hóa đơn'));
-                    },
-                    icon: const Icon(Icons.copy_outlined, size: 18),
-                  ),
-              ],
-            ),
-            Expanded(
-              child: pdfUrl.isNotEmpty
-                  ? PdfPreview(
-                      build: (_) async {
-                        final bytes = await loadPdf();
-                        if (bytes == null) {
-                          throw Exception(t('Không tải được tài liệu hóa đơn'));
-                        }
-                        return bytes;
-                      },
-                      allowPrinting: false,
-                      allowSharing: false,
-                      canChangeOrientation: false,
-                      canChangePageFormat: false,
-                      pdfFileName: '$title.pdf',
-                    )
-                  : Center(
-                      child: Padding(
-                        padding: const EdgeInsets.all(24),
-                        child:
-                            Column(mainAxisSize: MainAxisSize.min, children: [
-                          const Icon(Icons.picture_as_pdf_outlined,
-                              size: 64, color: DanColors.brand),
-                          const SizedBox(height: 14),
-                          Text(title,
-                              style: const TextStyle(
-                                  fontSize: 18, fontWeight: FontWeight.w800)),
-                          const SizedBox(height: 8),
-                          Text(
-                              pdfUrl.isNotEmpty
-                                  ? t('Tài liệu PDF chính thức đã sẵn sàng để xem hoặc in.')
-                                  : t('Chưa có tài liệu PDF. Có thể mở đường dẫn tra cứu của nhà cung cấp.'),
-                              textAlign: TextAlign.center),
-                          if (lookupUrl.isNotEmpty) ...[
-                            const SizedBox(height: 12),
-                            SelectableText(lookupUrl,
-                                textAlign: TextAlign.center,
-                                style: const TextStyle(color: DanColors.brand)),
-                          ],
-                        ]),
-                      ),
-                    ),
             ),
           ]),
         ),
@@ -1039,12 +929,13 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
     );
     if (email == null || email.isEmpty || !mounted) return;
     try {
-      await context.read<ApiService>().sendInvoiceEmail(eInvoiceId, email: email);
+      await context
+          .read<ApiService>()
+          .sendInvoiceEmail(eInvoiceId, email: email);
       if (mounted) appToast(context, t('Đã gửi email hóa đơn tới $email'));
     } catch (e) {
       if (mounted) {
-        appToast(
-            context,
+        appToast(context,
             t('Gửi email thất bại: ${e.toString().replaceFirst('Exception: ', '')}'),
             isError: true);
       }
@@ -1059,8 +950,7 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
       bytes = base64Decode(b64);
     } catch (e) {
       if (mounted) {
-        appToast(
-            context,
+        appToast(context,
             t('Không tải được PDF hóa đơn: ${e.toString().replaceFirst('Exception: ', '')}'),
             isError: true);
       }
@@ -1101,6 +991,20 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
         ),
       ),
     );
+  }
+
+  Future<void> _openInvoiceOnline(String eInvoiceId) async {
+    try {
+      final url =
+          await context.read<ApiService>().getInvoiceViewUrl(eInvoiceId);
+      await openExternalUrl(url);
+    } catch (e) {
+      if (mounted) {
+        appToast(context,
+            'Khong mo duoc hoa don: ${e.toString().replaceFirst('Exception: ', '')}',
+            isError: true);
+      }
+    }
   }
 
   Widget _viewerHeader(BuildContext dialogContext, String title,

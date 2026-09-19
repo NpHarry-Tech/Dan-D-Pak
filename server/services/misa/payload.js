@@ -14,6 +14,7 @@
 // cuối nhận phần dư làm tròn, để tổng các dòng khớp TUYỆT ĐỐI tổng bill.
 
 import { allocateProportion, divideMoney, money, multiplyMoney, netFromGross } from '../../core/money.js';
+import { isCashRegisterInvoice } from './config.js';
 
 /// Múi giờ NGHIỆP VỤ. Ngày hóa đơn quyết định kỳ kê khai thuế nên tuyệt đối
 /// không được phụ thuộc múi giờ của máy chủ.
@@ -194,7 +195,7 @@ export function buildPublishPayload({ snapshot, cfg, company = {} }) {
       version: snapshot?.schema_version || 1,
     }),
     OrgInvoiceData: {
-      IsInvoiceCalculatingMachine: String(cfg?.invoiceType || '') === 'CASH_REGISTER',
+      IsInvoiceCalculatingMachine: isCashRegisterInvoice(cfg),
       IsInvoiceWithCode: coMa,
       // Mẫu và ký hiệu LẤY TỪ CẤU HÌNH ĐÃ CHỌN (đồng bộ từ MISA), không đặt
       // giá trị dự phòng cứng trong code.

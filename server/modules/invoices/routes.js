@@ -42,10 +42,9 @@ export function registerInvoiceRoutes(api, {
   ));
 
   api.post('/einvoice/:id/cancel', guardAny('pay', 'invoice.cancel'), wrap((req) => {
-    const pin = req.body?.security_pin;
-    const approvedBy = Auth.verifyManagerOwnerPin(pin, branch(req));
-    if (!approvedBy) throw new Error('Can nhap PIN Manager hoac Admin de huy hoa don.');
-    return Einvoices.cancelInvoice(req.params.id, req.body.reason, actor(req), branch(req));
+    throw Object.assign(new Error(
+      'Không được hủy hóa đơn đã phát hành tại đây. Hóa đơn lập sai phải xử lý điều chỉnh hoặc thay thế theo loại hóa đơn; riêng hóa đơn máy tính tiền phải lập hóa đơn thay thế theo Thông tư 91/2026/TT-BTC.'),
+    { status: 409, code: 'INVOICE_REPLACEMENT_REQUIRED' });
   }));
 
   api.post('/einvoice/:id/send-email', guardAny('pay', 'invoice.retry'), wrap((req) =>
@@ -54,6 +53,10 @@ export function registerInvoiceRoutes(api, {
 
   api.get('/einvoice/:id/pdf', guardAny('pay', 'invoice.view'), wrap((req) =>
     Einvoices.downloadInvoicePdf(req.params.id, branch(req))
+  ));
+
+  api.get('/einvoice/:id/view', guardAny('pay', 'invoice.view'), wrap((req) =>
+    Einvoices.getInvoiceViewLink(req.params.id, branch(req))
   ));
 
   api.get('/einvoice/reconciliation', guardAny('reports', 'pay', 'invoice.view'), wrap((req) =>

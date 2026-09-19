@@ -275,9 +275,10 @@ function normalizeInvoiceCustomer(input) {
   const name = cleanText(input.name, 140) || company;
   const email = cleanText(input.email, 120);
   const phone = cleanText(input.phone, 40);
+  const address = cleanText(input.address, 260);
   if (!/^\d{10}(\d{3})?$/.test(tax_code)) throw new Error('MST công ty phải gồm 10 hoặc 13 chữ số');
-  if (!name) throw new Error('Thiếu tên khách hàng xuất hóa đơn');
-  if (!email) throw new Error('Thiếu email nhận hóa đơn');
+  if (!company && !name) throw new Error('Thiếu tên doanh nghiệp mua hàng');
+  if (!address) throw new Error('Thiếu địa chỉ doanh nghiệp mua hàng');
   return {
     invoice_request: true,
     invoice_type: 'company',
@@ -286,7 +287,7 @@ function normalizeInvoiceCustomer(input) {
     tax_code,
     company,
     name,
-    address: cleanText(input.address, 260),
+    address,
     address_detail: cleanText(input.address_detail, 180),
     address_ward: cleanText(input.address_ward, 120),
     address_province: cleanText(input.address_province, 120),
@@ -802,16 +803,14 @@ export function payOrder(order_id, lines, options = {}, branch_id = 'sala') {
         const taxCode = String(orderCust.tax_code || '').replace(/\D/g, '');
         const ten = String(orderCust.name || orderCust.company || '').trim();
         const email = String(orderCust.email || '').trim();
-        if (/^\d{10}(\d{3})?$/.test(taxCode) && email && (orderCust.company || ten)) {
+        const requestedInvoice = orderCust.invoice_request === true || orderCust.auto_invoice === true;
+        const address = String(orderCust.company_address || orderCust.address || '').trim();
+        if (requestedInvoice && /^\d{10}(\d{3})?$/.test(taxCode)
+            && (orderCust.company || ten) && address) {
           atomicCustomerMode = 'COMPANY_TAX_INFO';
           atomicBuyerInfo = {
             company: orderCust.company || ten, name: ten, tax_code: taxCode,
-            address: orderCust.company_address || orderCust.address || '', email, phone: orderCust.phone || '',
-          };
-        } else if (ten && ten !== 'Bán cho người tiêu dùng') {
-          atomicCustomerMode = 'BUYER_PROVIDED_INFO';
-          atomicBuyerInfo = {
-            name: ten, email, phone: orderCust.phone || '', address: orderCust.address || '',
+            address, email, phone: orderCust.phone || '',
           };
         }
       }

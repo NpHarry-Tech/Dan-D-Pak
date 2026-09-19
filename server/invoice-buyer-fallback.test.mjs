@@ -1,6 +1,7 @@
 // NGƯỜI MUA trên HĐĐT phải theo đúng KHÁCH đã gắn vào đơn (chọn ở POS), không ép
-// "Bán cho người tiêu dùng". MST+email đủ → hóa đơn công ty; chỉ có tên → cá nhân;
-// không khách → consumer. MST mà THIẾU email KHÔNG được làm hỏng thu tiền.
+// "Bán cho người tiêu dùng". Chỉ xuất thông tin doanh nghiệp khi khách yêu cầu
+// rõ ràng và có đủ MST + tên + địa chỉ; email chỉ là kênh nhận, không phải điều
+// kiện pháp lý. Khách được gắn vào đơn nhưng không yêu cầu hóa đơn vẫn là consumer.
 import assert from 'node:assert/strict';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -25,12 +26,12 @@ function buyerOf(orderId) {
   return db.prepare(`SELECT buyer_name, customer_mode FROM e_invoices WHERE order_id=?`).get(orderId);
 }
 
-test('khach CO MST + email -> nguoi mua HD = CONG TY (khong phai consumer)', () => {
+test('khach yeu cau HD va co MST + ten + dia chi -> nguoi mua HD = CONG TY', () => {
   const r = Retail.checkout({
     items: [{ sku_id: 'sku_buyer', qty: 1 }],
     payments: [{ method: 'cash', amount: 20000 }],
     branch_id: 'sala', cashier: 'Admin', client_request_id: 'reqCty',
-    customer: { name: 'Nguyen Phuc Huy', company: 'Cong ty ABC', tax_code: '0316756674', email: 'huy@abc.vn', phone: '0363045747' },
+    invoice_customer: { invoice_request: true, name: 'Nguyen Phuc Huy', company: 'Cong ty ABC', tax_code: '0316756674', address: '1 Nguyen Hue', email: 'huy@abc.vn', phone: '0363045747' },
   });
   const b = buyerOf(r.order_id);
   assert.equal(b.customer_mode, 'COMPANY_TAX_INFO', 'phai la hoa don cong ty');
@@ -38,7 +39,7 @@ test('khach CO MST + email -> nguoi mua HD = CONG TY (khong phai consumer)', () 
   assert.match(b.buyer_name, /ABC|Huy/);
 });
 
-test('khach chi co TEN (khong MST) -> nguoi mua CA NHAN dung ten', () => {
+test('khach chi duoc gan vao don nhung khong yeu cau HD -> consumer', () => {
   const r = Retail.checkout({
     items: [{ sku_id: 'sku_buyer', qty: 1 }],
     payments: [{ method: 'cash', amount: 20000 }],
@@ -46,8 +47,8 @@ test('khach chi co TEN (khong MST) -> nguoi mua CA NHAN dung ten', () => {
     customer: { name: 'Tran Thi B', phone: '0900000000' },
   });
   const b = buyerOf(r.order_id);
-  assert.equal(b.customer_mode, 'BUYER_PROVIDED_INFO');
-  assert.equal(b.buyer_name, 'Tran Thi B');
+  assert.equal(b.customer_mode, 'WALK_IN');
+  assert.equal(b.buyer_name, 'Bán cho người tiêu dùng');
 });
 
 test('KHONG khach -> consumer nhu cu', () => {
@@ -61,16 +62,15 @@ test('KHONG khach -> consumer nhu cu', () => {
   assert.equal(b.buyer_name, 'Bán cho người tiêu dùng');
 });
 
-test('khach co MST nhung THIEU email -> KHONG lam hong thu tien (ha ve an toan)', () => {
+test('khach yeu cau HD cong ty du MST + ten + dia chi nhung thieu email van hop le', () => {
   const r = Retail.checkout({
     items: [{ sku_id: 'sku_buyer', qty: 1 }],
     payments: [{ method: 'cash', amount: 20000 }],
     branch_id: 'sala', cashier: 'Admin', client_request_id: 'reqNoEmail',
-    customer: { name: 'Cong ty X', company: 'Cong ty X', tax_code: '0316756674' },
+    invoice_customer: { invoice_request: true, name: 'Cong ty X', company: 'Cong ty X', tax_code: '0316756674', address: '2 Le Loi' },
   });
   // Thu tien phai thanh cong (khong throw), va van tao duoc ban ghi HDDT.
   assert.ok(r.order_id, 'thu tien thanh cong du thieu email');
   const b = buyerOf(r.order_id);
-  // Thieu email cho mode cong ty -> ha ve ca nhan (hien ten) hoac consumer, khong throw.
-  assert.notEqual(b.customer_mode, 'COMPANY_TAX_INFO');
+  assert.equal(b.customer_mode, 'COMPANY_TAX_INFO');
 });

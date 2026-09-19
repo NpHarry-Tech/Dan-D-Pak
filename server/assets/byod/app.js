@@ -1,5 +1,5 @@
 import {
-  LANGS, normalizeLang, money, clampQty, statusMeta, comboOptionLabel,
+  LANGS, normalizeLang, detectLang, money, clampQty, statusMeta, comboOptionLabel,
   modsLabel, errorMessage, isFullPageError, t,
 } from './lib.js';
 
@@ -53,7 +53,8 @@ function icon(name, size = 18, extra = '') {
 // ---------------------------------------------------------------------------
 function loadLang() {
   const saved = localStorage.getItem(LANG_KEY_NAME);
-  return normalizeLang(saved || navigator.language || 'vi');
+  if (saved) return normalizeLang(saved);
+  return detectLang(navigator.languages?.length ? navigator.languages : [navigator.language]);
 }
 
 const state = {
@@ -554,7 +555,7 @@ function renderMenu() {
     <div class="menu-cats"><div class="menu-cats-row">${catsHtml}</div></div>
     <div class="menu-heading"><span class="title">${esc((catChips.find(c => c.id === state.category) || catChips[0]).name)}</span><span class="count">${filtered.length} ${esc(t(state.lang, 'items'))}</span></div>
     <div class="menu-grid">${gridHtml}</div>
-    <div class="menu-vat-note">${esc(t(state.lang, 'vatIncluded'))}</div>
+    <div class="menu-vat-note">${esc(t(state.lang, 'vatIncluded'))}${state.lang === 'zh' ? `<div class="menu-sovereignty-note">${esc(t(state.lang, 'sovereignty'))}</div>` : ''}</div>
     <div class="floating-bottom">
       <button type="button" class="pill-btn back" data-act="go-welcome" aria-label="${attr(t(state.lang, 'back'))}">${icon('back', 20)}</button>
       <button type="button" class="pill-btn search-bubble" data-act="open-search">${icon('search', 18, 'style="color:#677084;flex:none"')}<span class="q ${state.search ? 'filled' : ''}">${esc(state.search || t(state.lang, 'searchPlaceholder'))}</span></button>

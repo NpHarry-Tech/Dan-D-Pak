@@ -137,6 +137,7 @@ main#screens{ flex:1; min-height:0; position:relative; }
 .menu-heading .count{ font:500 11.5px/1.2 'Be Vietnam Pro',sans-serif; color:var(--ink-faint); flex:none; }
 .menu-grid{ padding:12px 14px 18px; display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
 .menu-vat-note{ padding:4px 14px 18px; font:500 11px/1.5 'Be Vietnam Pro',sans-serif; color:var(--ink-fainter); text-align:center; }
+.menu-sovereignty-note{ margin-top:3px; font-weight:600; color:var(--ink-faint); }
 .dish-card{ background:#fff; border:1px solid var(--border); border-radius:var(--r-card); overflow:hidden; text-align:left; display:flex; flex-direction:column; box-shadow:var(--shadow-card); padding:0; }
 .dish-card:disabled{ opacity:.7; }
 .dish-photo{ position:relative; width:100%; height:110px; background:var(--surface-image); display:flex; align-items:center; justify-content:center; overflow:hidden; }

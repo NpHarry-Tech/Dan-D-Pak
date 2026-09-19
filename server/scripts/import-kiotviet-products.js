@@ -465,8 +465,12 @@ async function run() {
       const expiryDate = col.expiry < 0 ? null : parseExpiry(row[col.expiry]);
       const qtyRaw = col.qty < 0 ? '' : clean(fixMojibake(row[col.qty]));
       if (!lotNoRaw && !expiryDate && !qtyRaw) continue;
+      const qty = numOr(qtyRaw, 0);
+      // KiotViet exports every historical lot slot. Production only needs lots
+      // that still carry stock; importing depleted lots would create noise.
+      if (qty <= 0) continue;
       const lotNo = lotNoRaw || `AUTO-${expiryDate?.replace(/-/g, '') || col.n}`;
-      lots.push({ lot_no: lotNo, expiry_date: expiryDate, qty: numOr(qtyRaw, 0) });
+      lots.push({ lot_no: lotNo, expiry_date: expiryDate, qty });
     }
     const trackLot = truthy(cell(row, idx, 'trackLot')) || lots.length > 0 ? 1 : 0;
     const brand = cell(row, idx, 'brand');
@@ -518,6 +522,8 @@ async function run() {
   const lotCount = records.reduce((sum, x) => sum + x.lots.length, 0);
   const expiryCount = records.reduce((sum, x) => sum + x.lots.filter(l => l.expiry_date).length, 0);
   const positiveLotCount = records.reduce((sum, x) => sum + x.lots.filter(l => l.qty > 0).length, 0);
+  const lotQty = records.reduce((sum, x) => sum + x.lots.reduce((lotSum, lot) => lotSum + lot.qty, 0), 0);
+  const lotSkuCount = records.filter(x => x.lots.length > 0).length;
   const missing = {
     maHang: records.filter(x => !x.code).length,
     maVach: records.filter(x => !x.barcode).length,
@@ -530,6 +536,7 @@ async function run() {
   };
   console.log(`   Trùng mã hàng: ${duplicateCodes} · trùng barcode: ${duplicateBarcodes} · có ảnh URL: ${records.filter(x => x.image).length}`);
   console.log(`   Lô: ${lotCount} · lô có hạn sử dụng: ${expiryCount} · lô còn tồn > 0: ${positiveLotCount}`);
+  console.log(`   Sản phẩm có lô: ${lotSkuCount} · tổng số lượng trong lô: ${lotQty}`);
   console.log(`   Thiếu/0: ${Object.entries(missing).map(([k, v]) => `${k}=${v}`).join(' · ')}`);
   console.log(`   Ví dụ 3 dòng đầu:`);
   for (const s of records.slice(0, 3)) {
@@ -581,9 +588,7 @@ async function run() {
     INSERT INTO stock_lots
       (id,branch_id,warehouse_id,item_type,item_id,lot_no,mfg_date,expiry_date,received_at,qty_on_hand,unit_cost,supplier,status,created_at)
     VALUES (?,?,?,?,?,?,NULL,?,?,?,?,?,'active',?)
-    ON CONFLICT(warehouse_id,item_type,item_id,lot_no) DO UPDATE SET
-      expiry_date=excluded.expiry_date, qty_on_hand=excluded.qty_on_hand,
-      unit_cost=excluded.unit_cost, supplier=excluded.supplier, status='active'`);
+  `);
   const deactivate = db.prepare(`UPDATE skus SET active=0 WHERE id=?`);
   const existingStmt = db.prepare(`SELECT id FROM skus WHERE warehouse_id=? AND branch_id=?`);
 

@@ -15,8 +15,17 @@ export const LANGS = [
 export const MENU_LANGS = ['vi', 'en', 'zh', 'ja', 'ko'];
 
 export function normalizeLang(lang) {
-  const code = String(lang || 'vi').toLowerCase().trim();
+  const code = String(lang || 'vi').toLowerCase().trim().split(/[-_]/)[0];
   return MENU_LANGS.includes(code) ? code : 'vi';
+}
+
+export function detectLang(languages = []) {
+  const list = Array.isArray(languages) ? languages : [languages];
+  for (const language of list) {
+    const code = String(language || '').toLowerCase().trim().split(/[-_]/)[0];
+    if (MENU_LANGS.includes(code)) return code;
+  }
+  return 'vi';
 }
 
 export function money(n) {
@@ -145,7 +154,7 @@ export const STR = {
     welcome: 'Chào mừng đến Dan D Pak', viewMenu: 'Xem menu', viewCart: 'Xem giỏ hàng / đơn hàng',
     shareNote: 'Các thiết bị cùng bàn có thể cùng chọn món. Món của bạn sẽ vào giỏ chung của {table}.',
     all: 'Tất cả', soldOut: 'Hết món', addToCart: 'Thêm vào giỏ hàng', total: 'Tổng tiền',
-    vatIncluded: 'Giá đã gồm thuế', items: 'món', cart: 'Giỏ hàng', ordered: 'Đơn đã đặt',
+    vatIncluded: 'Giá đã gồm thuế', sovereignty: 'Hoàng Sa và Trường Sa là của Việt Nam.', items: 'món', cart: 'Giỏ hàng', ordered: 'Đơn đã đặt',
     viewMembers: 'Giỏ hàng cả bàn', viewMine: 'Giỏ hàng của tôi',
     empty: 'Giỏ hàng đang trống', emptyHint: 'Quay lại menu để chọn món cho {table}.',
     addItems: 'Thêm món', placeOrder: 'Đặt món', requestPayment: 'Yêu cầu thanh toán',
@@ -206,7 +215,7 @@ export const STR = {
     welcome: 'Welcome to Dan D Pak', viewMenu: 'View menu', viewCart: 'View cart / orders',
     shareNote: 'Everyone at this table can order from their own phone. Your items go to {table}’s shared cart.',
     all: 'All', soldOut: 'Sold out', addToCart: 'Add to cart', total: 'Total',
-    vatIncluded: 'Tax included', items: 'items', cart: 'Cart', ordered: 'Placed orders',
+    vatIncluded: 'Tax included', sovereignty: 'Hoàng Sa and Trường Sa belong to Vietnam.', items: 'items', cart: 'Cart', ordered: 'Placed orders',
     viewMembers: 'Table cart', viewMine: 'My cart',
     empty: 'Your cart is empty', emptyHint: 'Go back to the menu to pick something for {table}.',
     addItems: 'Add items', placeOrder: 'Place order', requestPayment: 'Request payment',
@@ -267,7 +276,7 @@ export const STR = {
     welcome: '欢迎来到 Dan D Pak', viewMenu: '查看菜单', viewCart: '查看购物车 / 订单',
     shareNote: '同桌的所有设备都可以一起点餐。您选的菜会进入{table}的共享购物车。',
     all: '全部', soldOut: '已售完', addToCart: '加入购物车', total: '总计',
-    vatIncluded: '价格已含税', items: '项', cart: '购物车', ordered: '已下单',
+    vatIncluded: '价格已含税', sovereignty: '黄沙群岛和长沙群岛属于越南。', items: '项', cart: '购物车', ordered: '已下单',
     viewMembers: '全桌购物车', viewMine: '我的购物车',
     empty: '购物车是空的', emptyHint: '返回菜单为{table}选购菜品。',
     addItems: '加菜', placeOrder: '下单', requestPayment: '请求结账',
@@ -328,7 +337,7 @@ export const STR = {
     welcome: 'Dan D Pak へようこそ', viewMenu: 'メニューを見る', viewCart: 'カート / 注文を見る',
     shareNote: '同じテーブルの端末は一緒に注文できます。選んだ商品は{table}の共有カートに入ります。',
     all: 'すべて', soldOut: '売り切れ', addToCart: 'カートに追加', total: '合計',
-    vatIncluded: '税込価格', items: '点', cart: 'カート', ordered: '注文済み',
+    vatIncluded: '税込価格', sovereignty: 'Hoàng Sa と Trường Sa はベトナムの領土です。', items: '点', cart: 'カート', ordered: '注文済み',
     viewMembers: 'テーブル全体のカート', viewMine: '自分のカート',
     empty: 'カートは空です', emptyHint: 'メニューに戻って{table}の商品を選んでください。',
     addItems: '追加注文', placeOrder: '注文する', requestPayment: '会計を依頼',
@@ -389,7 +398,7 @@ export const STR = {
     welcome: 'Dan D Pak에 오신 것을 환영합니다', viewMenu: '메뉴 보기', viewCart: '장바구니 / 주문 보기',
     shareNote: '같은 테이블의 모든 기기가 함께 주문할 수 있습니다. 선택한 메뉴는 {table}의 공용 장바구니에 담깁니다.',
     all: '전체', soldOut: '품절', addToCart: '장바구니에 담기', total: '합계',
-    vatIncluded: '세금 포함 가격', items: '개', cart: '장바구니', ordered: '주문 완료',
+    vatIncluded: '세금 포함 가격', sovereignty: 'Hoàng Sa와 Trường Sa는 베트남의 영토입니다.', items: '개', cart: '장바구니', ordered: '주문 완료',
     viewMembers: '테이블 전체 장바구니', viewMine: '내 장바구니',
     empty: '장바구니가 비어 있습니다', emptyHint: '메뉴로 돌아가 {table}의 메뉴를 선택하세요.',
     addItems: '메뉴 추가', placeOrder: '주문하기', requestPayment: '결제 요청',

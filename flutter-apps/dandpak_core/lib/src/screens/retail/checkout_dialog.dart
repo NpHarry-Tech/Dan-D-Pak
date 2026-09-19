@@ -626,17 +626,12 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
     final email = _emailCtrl.text.trim();
     final phone = _phoneCtrl.text.trim();
 
-    final hasAny = taxCode.isNotEmpty ||
-        company.isNotEmpty ||
-        name.isNotEmpty ||
-        address.isNotEmpty ||
-        email.isNotEmpty ||
-        phone.isNotEmpty;
-
-    if (!hasAny) throw Exception(t('Nhập thông tin xuất hóa đơn'));
-    if (name.isEmpty && company.isEmpty) {
-      throw Exception(t('Nhập tên khách hoặc tên công ty xuất hóa đơn'));
+    if (!RegExp(r'^\d{10}(\d{3})?$').hasMatch(taxCode)) {
+      throw Exception(t('MST công ty phải gồm 10 hoặc 13 chữ số'));
     }
+    if (company.isEmpty) throw Exception(t('Nhập tên công ty xuất hóa đơn'));
+    if (address.isEmpty)
+      throw Exception(t('Nhập địa chỉ công ty xuất hóa đơn'));
 
     return {
       'invoice_request': true,
@@ -782,7 +777,8 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
           final order = await widget.api.getOrderById(effectiveOrderId.trim());
           if (!mounted) return;
           if (order['status']?.toString() == 'paid') {
-            _toast(t('Hoá đơn đã được thanh toán (chuyển khoản tự động hoặc thiết bị khác).'));
+            _toast(t(
+                'Hoá đơn đã được thanh toán (chuyển khoản tự động hoặc thiết bị khác).'));
             Navigator.of(context).pop(Map<String, dynamic>.from(order));
             return;
           }
