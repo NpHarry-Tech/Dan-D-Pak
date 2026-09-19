@@ -36,6 +36,7 @@ const state = {
   soLanGoiAuth: 0,
   soLanGoiPublish: 0,
   soLanGoiSendEmail: 0,
+  soLanGoiPublishView: 0,
   receivedSendEmail: null,
   receivedDownload: null,
   receivedHeaders: { token: null, templates: null, publish: null },
@@ -213,6 +214,22 @@ const server = createServer((req, res) => {
       const inv = state.daPhatHanh.get(ref);
       if (!inv) return json(res, 404, { message: 'Chua co hoa don' });
       return json(res, 200, { Success: true, Data: JSON.stringify([inv]) });
+    });
+    return;
+  }
+
+  if (path === '/invoice/publishview') {
+    state.soLanGoiPublishView += 1;
+    let raw = '';
+    req.on('data', (c) => { raw += c; });
+    req.on('end', () => {
+      const [transactionId] = JSON.parse(raw || '[]');
+      assert.match(transactionId, /^PORTAL-TX-/);
+      // Shape response thật: Data là URL trực tiếp khi request có một ID.
+      return json(res, 200, {
+        Success: true, ErrorCode: null, Errors: [],
+        Data: `https://download.meinvoice.vn/view/${transactionId}`,
+      });
     });
     return;
   }
@@ -426,6 +443,8 @@ test('TC-ISSUE-01: phat hanh that qua Developer Portal, luu du InvNo + Transacti
   assert.ok(after1.invoice_no, 'phai luu InvNo');
   assert.ok(after1.provider_invoice_id, 'phai luu TransactionID vao provider_invoice_id de doi chieu/tra cuu');
   assert.match(after1.provider_invoice_id, /^PORTAL-TX-/);
+  assert.equal(after1.lookup_url, `https://download.meinvoice.vn/view/${after1.provider_invoice_id}`);
+  assert.ok(state.soLanGoiPublishView > 0, 'phai lay link xem that bang TransactionID');
 });
 
 test('TC-ISSUE-01B: config cu thieu templateNo tu dong dong bo lai theo templateId', async () => {

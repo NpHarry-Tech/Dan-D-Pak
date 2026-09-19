@@ -206,7 +206,10 @@ function normalizePortalResult(d) {
     tax_authority_code: String(
       pick(d, 'TaxAuthorityCode', 'taxAuthorityCode', 'CQTCode') || '',
     ),
-    lookup_url: String(pick(d, 'lookupUrl', 'LookupUrl', 'ViewUrl') || 'https://www.meinvoice.vn/tra-cuu'),
+    // InvCode thường null trên Developer Portal. Không được trỏ về trang tra
+    // cứu chung vì UI sẽ nhầm InvNo thành mã tra cứu; link thật lấy riêng từ
+    // POST /invoice/publishview bằng TransactionID.
+    lookup_url: String(pick(d, 'lookupUrl', 'LookupUrl', 'ViewUrl') || ''),
     template_no: String(pick(d, 'InvTemplateNo', 'invTemplateNo', 'TemplateID') || ''),
     raw: sanitize(d),
   };

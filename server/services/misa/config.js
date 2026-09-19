@@ -106,6 +106,7 @@ export const DEFAULT_ENDPOINTS_DEVELOPER_PORTAL = {
   // (xem invoice.js::sendInvoiceEmail/downloadInvoiceFile).
   sendEmail: '/invoice/sendemail',
   download: '/invoice/Download',
+  publishView: '/invoice/publishview',
   // GIẢ ĐỊNH CHƯA XÁC MINH — xem chú thích trên.
   status: '/invoice/status',
   view: '/invoice/view',

@@ -164,7 +164,52 @@ export async function issueInvoice({ snapshot, cfg, company = {}, mayHaveLanded 
       { retryable: false, code: 'EMPTY_RESULT', body: sanitize(kq.raw) },
     );
   }
+  if (portal && kq.transaction_id) {
+    // Hóa đơn đã phát hành là kết quả pháp lý chính. Lấy link xem là bước phụ;
+    // nếu MISA tạm lỗi ở endpoint view thì không được biến hóa đơn đã cấp số
+    // thành FAILED rồi khiến worker phát hành lại.
+    try {
+      const [view] = await getPublishedInvoiceViews(cfg, [kq.transaction_id]);
+      kq.lookup_url = view?.link || '';
+    } catch {
+      kq.lookup_url = '';
+    }
+  }
   return kq;
+}
+
+/// Lấy link xem hóa đơn ĐÃ PHÁT HÀNH theo TransactionID.
+export async function getPublishedInvoiceViews(cfg, transactionIds) {
+  if (!isDeveloperPortal(cfg)) {
+    throw new MisaError('Xem hóa đơn hiện chỉ hỗ trợ MISA Developer Portal.', {
+      retryable: false, code: 'UNSUPPORTED_PROVIDER',
+    });
+  }
+  const ids = (Array.isArray(transactionIds) ? transactionIds : [transactionIds]).filter(Boolean);
+  if (!ids.length) throw new MisaError('Thiếu TransactionID để xem hóa đơn.', {
+    retryable: false, code: 'MISSING_TRANSACTION_ID',
+  });
+  const body = await withToken(cfg, (token) => callJson(endpointUrl(cfg, 'publishView'), {
+    method: 'POST',
+    headers: businessHeaders(token, cfg),
+    body: JSON.stringify(ids),
+  }, 20000));
+  if (body?.Success === false) {
+    throw new MisaError(
+      String(body?.DescriptionErrorCode || body?.ErrorCode || 'MISA từ chối tạo link xem hóa đơn.'),
+      { retryable: true, code: String(body?.ErrorCode || ''), body: sanitize(body) },
+    );
+  }
+  // Response thật trả Data là URL trực tiếp cho một TransactionID; tài liệu
+  // cũng cho phép Data là mảng {TransactionID, Link} khi gửi nhiều ID.
+  if (typeof body?.Data === 'string' && body.Data.trim()) {
+    return [{ transactionId: String(ids[0]), link: body.Data.trim() }];
+  }
+  const rows = Array.isArray(body?.Data) ? body.Data : (Array.isArray(body?.data) ? body.data : []);
+  return rows.map((row, index) => ({
+    transactionId: String(pick(row, 'TransactionID', 'transactionId') || ids[index] || ''),
+    link: String(pick(row, 'Link', 'link', 'Url', 'url') || ''),
+  }));
 }
 
 /// SendEmailStatus nguyên văn theo tài liệu Developer Portal (xác nhận thật

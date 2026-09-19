@@ -43,5 +43,6 @@ export {
 } from './payload.js';
 export {
   issueInvoice, getInvoiceStatus, cancelInvoice, sendInvoiceEmail, downloadInvoiceFile,
+  getPublishedInvoiceViews,
 } from './invoice.js';
 export { testConnection } from './connection.js';
