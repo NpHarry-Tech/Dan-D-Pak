@@ -26,6 +26,7 @@
 // PHẢI xác nhận lại bằng tài liệu API đầy đủ hoặc kiểm thử sandbox thật khi
 // MISA cấp ClientID/ClientSecret — xem "Blocker" trong báo cáo bàn giao.
 
+import { createHash } from 'node:crypto';
 import { callJson, MisaError, sanitize, tokenFrom, expiryFrom, authHeadersDeveloperPortal } from './client.js';
 import { endpointUrl } from './config.js';
 
@@ -62,10 +63,91 @@ function pick(obj, ...names) {
   return undefined;
 }
 
-/// Bọc MỘT hóa đơn (payload từ payload.js::buildPublishPayload) thành request
-/// batch của Developer Portal. Luôn đúng 1 phần tử — xem ghi chú đầu file.
-export function buildPublishEnvelope(payload) {
-  return { Data: [payload] };
+function decodeJson(value) {
+  let result = value;
+  for (let i = 0; i < 3 && typeof result === 'string'; i += 1) {
+    try { result = JSON.parse(result); } catch { break; }
+  }
+  return result;
+}
+
+/// Developer Portal bắt buộc RefID là GUID. Băm khóa nghiệp vụ cũ thành UUID
+/// v5 ổn định để mọi lần retry của cùng bill luôn gửi đúng cùng một RefID.
+export function portalRefId(logicalRef) {
+  const bytes = createHash('sha256').update(String(logicalRef || '')).digest().subarray(0, 16);
+  bytes[6] = (bytes[6] & 0x0f) | 0x50;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = bytes.toString('hex');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
+/// Chuyển payload dùng chung sang đúng InvoiceData của Developer Portal.
+export function buildPublishEnvelope(payload, { templateNo = '', signType = 2 } = {}) {
+  const src = payload?.OrgInvoiceData || {};
+  const productLines = (src.OriginalInvoiceDetail || []).filter((x) => x?.ItemType !== 4);
+  const taxGroups = new Map();
+  const details = (src.OriginalInvoiceDetail || []).map((line) => {
+    if (line?.ItemType === 4) return { ...line };
+    const amount = Number(line.Amount || 0);
+    const vat = Number(line.VATAmount || 0);
+    const rate = String(line.VATRateName || '0%');
+    const group = taxGroups.get(rate) || { VATRateName: rate, AmountWithoutVATOC: 0, VATAmountOC: 0 };
+    group.AmountWithoutVATOC += amount;
+    group.VATAmountOC += vat;
+    taxGroups.set(rate, group);
+    return {
+      ItemType: line.ItemType,
+      SortOrder: line.SortOrder,
+      LineNumber: line.LineNumber,
+      ItemCode: line.ItemCode,
+      ItemName: line.ItemName,
+      UnitName: line.UnitName,
+      Quantity: line.Quantity,
+      UnitPrice: line.UnitPrice,
+      AmountOC: amount,
+      Amount: amount,
+      DiscountRate: 0,
+      DiscountAmountOC: 0,
+      DiscountAmount: 0,
+      AmountWithoutVATOC: amount,
+      AmountWithoutVAT: amount,
+      VATRateName: rate,
+      VATAmountOC: vat,
+      VATAmount: vat,
+    };
+  });
+  const net = Number(src.TotalAmountWithoutVAT || productLines.reduce((s, x) => s + Number(x.Amount || 0), 0));
+  const vat = Number(src.TotalVATAmount || productLines.reduce((s, x) => s + Number(x.VATAmount || 0), 0));
+  const total = Number(src.TotalAmount || net + vat);
+  const invoice = {
+    RefID: portalRefId(payload?.RefID),
+    InvSeries: src.InvSeries || '',
+    InvTemplateNo: templateNo,
+    InvDate: String(src.InvDate || '').slice(0, 10),
+    CurrencyCode: 'VND',
+    ExchangeRate: 1,
+    IsInvoiceSummary: false,
+    PaymentMethodName: src.PaymentMethodName || 'TM/CK',
+    BuyerLegalName: src.BuyerLegalName || '',
+    BuyerTaxCode: src.BuyerTaxCode || '',
+    BuyerAddress: src.BuyerAddress || '',
+    BuyerEmail: src.BuyerEmail || '',
+    BuyerPhoneNumber: src.BuyerPhone || '',
+    TotalSaleAmountOC: net,
+    TotalSaleAmount: net,
+    TotalDiscountAmountOC: 0,
+    TotalDiscountAmount: 0,
+    DiscountRate: 0,
+    TotalAmountWithoutVATOC: net,
+    TotalAmountWithoutVAT: net,
+    TotalVATAmountOC: vat,
+    TotalVATAmount: vat,
+    TotalAmountOC: total,
+    TotalAmount: total,
+    OriginalInvoiceDetail: details,
+    TaxRateInfo: [...taxGroups.values()],
+  };
+  return { SignType: signType, InvoiceData: [invoice] };
 }
 
 /// Mã lỗi nghiệp vụ MISA trả TRONG `publishInvoiceResult[i]` dù HTTP 200 —
@@ -83,9 +165,11 @@ export function classifyPortalErrorCode(code) {
 /// Trích ĐÚNG phần tử của [ref] trong `publishInvoiceResult`. MISA có thể trả
 /// mảng không đúng thứ tự gửi lên — luôn khớp lại bằng RefID, không dùng index.
 function findResultFor(body, ref) {
-  const results = body?.publishInvoiceResult || body?.PublishInvoiceResult
-    || body?.data?.publishInvoiceResult || body?.Data?.PublishInvoiceResult || [];
-  const list = Array.isArray(results) ? results : [results];
+  const decodedData = decodeJson(body?.Data ?? body?.data);
+  const results = decodeJson(body?.publishInvoiceResult || body?.PublishInvoiceResult
+    || decodedData?.publishInvoiceResult || decodedData?.PublishInvoiceResult
+    || body?.createInvoiceResult || decodedData?.createInvoiceResult || []);
+  const list = Array.isArray(results) ? results : (results ? [results] : []);
   if (list.length === 1) return list[0];
   return list.find((r) => pick(r, 'RefID', 'refId', 'ref_id') === ref) || list[0];
 }
@@ -102,7 +186,8 @@ function requestLevelError(body) {
 
 function messageAndCode(d) {
   const message = String(
-    pick(d, 'ErrorMessage', 'errorMessage', 'Message', 'message') || 'MISA từ chối request',
+    pick(d, 'DescriptionErrorCode', 'descriptionErrorCode', 'ErrorMessage', 'errorMessage', 'Message', 'message')
+      || 'MISA từ chối request',
   ).slice(0, 500);
   const code = String(pick(d, 'ErrorCode', 'errorCode', 'Code', 'code') || '').slice(0, 80);
   return { message, code };
@@ -129,11 +214,12 @@ function normalizePortalResult(d) {
 
 /// Gửi phát hành tới Developer Portal và trả kết quả CHUẨN HÓA, hoặc ném
 /// MisaError đã phân loại đúng theo mã lỗi nghiệp vụ (không chỉ HTTP status).
-export async function publishDeveloperPortal({ url, token, clientId, payload }) {
+export async function publishDeveloperPortal({ url, token, clientId, payload, templateNo }) {
+  const envelope = buildPublishEnvelope(payload, { templateNo });
   const body = await callJson(url, {
     method: 'POST',
     headers: authHeadersDeveloperPortal(token, clientId),
-    body: JSON.stringify(buildPublishEnvelope(payload)),
+    body: JSON.stringify(envelope),
   }, 25000);
 
   const reqErr = requestLevelError(body);
@@ -145,7 +231,7 @@ export async function publishDeveloperPortal({ url, token, clientId, payload }) 
     });
   }
 
-  const result = findResultFor(body, payload.RefID);
+  const result = findResultFor(body, envelope.InvoiceData[0].RefID);
   if (!result) {
     throw new MisaError('MISA Developer Portal không trả kết quả cho hóa đơn đã gửi.', {
       retryable: true, code: 'EMPTY_RESULT', body: sanitize(body),
@@ -153,7 +239,7 @@ export async function publishDeveloperPortal({ url, token, clientId, payload }) 
   }
 
   const elemOk = pick(result, 'IsSuccess', 'isSuccess', 'success', 'Success');
-  if (elemOk === false) {
+  if (elemOk === false || pick(result, 'ErrorCode', 'errorCode')) {
     const { message, code } = messageAndCode(result);
     // `code` giữ NGUYÊN VĂN mã lỗi MISA (vd 'InvoiceDuplicated') — invoice.js
     // nhận diện đúng mã này để tra trạng thái cũ thay vì coi là hóa đơn mới,

@@ -83,6 +83,7 @@ const DEFAULT_INTEGRATIONS = {
       // trong payload.js (dead field chỉ chặn kích hoạt), xem báo cáo bàn giao.
       environment: 'sandbox',
       templateId: '',
+      templateNo: '',
       // Ký hiệu hóa đơn — LUÔN lấy theo mẫu đã chọn (đồng bộ từ MISA), không
       // gõ tay: sai ký hiệu là phát hành dưới ký hiệu chưa đăng ký với cơ quan
       // thuế.

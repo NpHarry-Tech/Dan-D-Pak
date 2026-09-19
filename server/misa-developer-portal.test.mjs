@@ -6,11 +6,8 @@
 // kịch bản đã test ở đó (toán VAT, worker lease, cancel…), chỉ test phần khác
 // biệt của provider mới + không phá vỡ luồng chung (queue/idempotency/in phiếu).
 //
-// GIẢ ĐỊNH CHƯA XÁC MINH VỚI MISA (xem services/misa/developerPortal.js và
-// báo cáo bàn giao): tên khóa bọc mảng request publish ("Data"), field trong
-// publishInvoiceResult ngoài các field đã nêu rõ trong yêu cầu bàn giao. Máy
-// chủ giả ở đây PHẢN ÁNH ĐÚNG những gì code hiện tại gửi/đọc — không phải bằng
-// chứng MISA thật sự dùng đúng những tên này.
+// Contract publish/status dưới đây bám đúng tài liệu Developer Portal chính
+// thức: SignType + InvoiceData, RefID GUID, và POST status với inputType=2.
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { mkdtempSync } from 'node:fs';
@@ -59,7 +56,7 @@ function mkInvoice(ref) {
     InvNo: String(5000 + state.seq),
     InvCode: 'CODE' + state.seq,
     InvSeries: 'C26MBM',
-    InvTemplateNo: 'tpl-1',
+    InvTemplateNo: '1',
     TransactionID: 'PORTAL-TX-' + state.seq,
     IsSuccess: true,
   };
@@ -135,7 +132,7 @@ const server = createServer((req, res) => {
       // Response thật trong ảnh audit MISA: Data là STRING chứa JSON escaped,
       // dù schema logic của nó là danh sách InvoiceTemplateData.
       Data: JSON.stringify([
-        { IPTemplateID: 'tpl-1', InvSeries: 'C26MBM', TemplateName: 'HD GTGT Developer Portal', Inactive: false },
+        { IPTemplateID: 'tpl-1', InvTemplateNo: '1', InvSeries: 'C26MBM', TemplateName: 'HD GTGT Developer Portal', Inactive: false },
         { IPTemplateID: 'tpl-cu', InvSeries: 'C25XXX', TemplateName: 'Mau ngung dung', Inactive: true },
       ]),
     });
@@ -148,10 +145,18 @@ const server = createServer((req, res) => {
     req.on('end', () => {
       state.receivedHeaders.publish = { clientId: req.headers.clientid };
       const b = JSON.parse(raw || '{}');
-      const invoice = b.Data?.[0];
+      const invoice = b.InvoiceData?.[0];
       const ref = invoice?.RefID;
-      assert.equal(Array.isArray(b.Data), true, 'request publish phai la mang (Data)');
-      assert.equal(b.Data.length, 1, 'Dan D Pak luon gui dung 1 hoa don/request');
+      assert.equal(b.SignType, 2);
+      assert.equal(Array.isArray(b.InvoiceData), true, 'request publish phai co mang InvoiceData');
+      assert.equal(b.InvoiceData.length, 1, 'Dan D Pak luon gui dung 1 hoa don/request');
+      assert.match(ref, /^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
+      assert.equal(invoice.InvTemplateNo, '1');
+      assert.match(invoice.InvDate, /^\d{4}-\d{2}-\d{2}$/);
+      assert.equal(invoice.OrgInvoiceData, undefined);
+      assert.equal(invoice.TotalAmountOC, invoice.TotalAmount);
+      assert.equal(invoice.OriginalInvoiceDetail[0].AmountOC, invoice.OriginalInvoiceDetail[0].Amount);
+      assert.ok(Array.isArray(invoice.TaxRateInfo) && invoice.TaxRateInfo.length > 0);
 
       const respond = () => {
         if (state.publishMode === 'request_level_fail') {
@@ -189,7 +194,9 @@ const server = createServer((req, res) => {
         }
         const inv = mkInvoice(ref);
         state.daPhatHanh.set(ref, inv);
-        json(res, 200, { IsSuccess: true, publishInvoiceResult: [inv] });
+        // Tài liệu khai báo publishInvoiceResult là string; response thật có
+        // thể JSON-escape danh sách kết quả giống endpoint templates.
+        json(res, 200, { success: true, publishInvoiceResult: JSON.stringify([inv]) });
       };
       respond();
     });
@@ -197,10 +204,17 @@ const server = createServer((req, res) => {
   }
 
   if (path === '/invoice/status') {
-    const ref = url.searchParams.get('refId');
-    const inv = state.daPhatHanh.get(ref);
-    if (!inv) return json(res, 404, { message: 'Chua co hoa don' });
-    return json(res, 200, { data: inv });
+    assert.equal(req.method, 'POST');
+    assert.equal(url.searchParams.get('inputType'), '2');
+    let raw = '';
+    req.on('data', (c) => { raw += c; });
+    req.on('end', () => {
+      const [ref] = JSON.parse(raw || '[]');
+      const inv = state.daPhatHanh.get(ref);
+      if (!inv) return json(res, 404, { message: 'Chua co hoa don' });
+      return json(res, 200, { Success: true, Data: JSON.stringify([inv]) });
+    });
+    return;
   }
 
   if (path === '/invoice/sendemail') {
@@ -272,7 +286,7 @@ function batMisa(extra = {}) {
     channels: { misa: {
       enabled: true, environment: 'sandbox', taxCode: TAX, username: 'user', password: 'dung-mat-khau',
       invoiceType: 'CASH_REGISTER', defaultTaxRate: '8',
-      templateId: 'tpl-1', series: 'C26MBM', configurationTestPassed: true,
+      templateId: 'tpl-1', templateNo: '1', series: 'C26MBM', configurationTestPassed: true,
       ...extra,
     } },
   }, BR);
@@ -355,7 +369,7 @@ test('TC-SEC-02: getPublicIntegrations KHONG BAO GIO tra clientId/clientSecret c
     channels: { misa: {
       enabled: true, taxCode: TAX, username: 'ketoan', password: 'matkhauthat',
       clientId: 'lo-ra-ngoai', clientSecret: SECRET_CANARY,
-      templateId: 'tpl-1', series: 'C26MBM', configurationTestPassed: true,
+      templateId: 'tpl-1', templateNo: '1', series: 'C26MBM', configurationTestPassed: true,
     } },
   }, BR);
   const pub = IntegrationsSvc.getPublicIntegrations(BR);
@@ -377,6 +391,7 @@ test('TC-CONN-01B: Data dang chuoi JSON escaped van doc duoc mau con hieu luc', 
   const templates = await Misa.fetchTemplates(cfgMau());
   assert.equal(templates.length, 1);
   assert.equal(templates[0].id, 'tpl-1');
+  assert.equal(templates[0].templateNo, '1');
   assert.equal(templates[0].series, 'C26MBM');
   assert.equal(templates[0].active, true);
 });
@@ -411,6 +426,15 @@ test('TC-ISSUE-01: phat hanh that qua Developer Portal, luu du InvNo + Transacti
   assert.ok(after1.invoice_no, 'phai luu InvNo');
   assert.ok(after1.provider_invoice_id, 'phai luu TransactionID vao provider_invoice_id de doi chieu/tra cuu');
   assert.match(after1.provider_invoice_id, /^PORTAL-TX-/);
+});
+
+test('TC-ISSUE-01B: config cu thieu templateNo tu dong dong bo lai theo templateId', async () => {
+  state.publishMode = null;
+  batMisa({ templateNo: '' });
+  const receipt = banMotDon('sku_portal_old_config');
+  const orderId = receipt.order_id || receipt.id;
+  await Einvoices.processInvoiceQueue();
+  assert.equal(einvOf(orderId).invoice_status, 'ISSUED');
 });
 
 test('TC-ISSUE-02: replay cung bill (processInvoiceQueue lan 2) KHONG tao hoa don thu hai', async () => {

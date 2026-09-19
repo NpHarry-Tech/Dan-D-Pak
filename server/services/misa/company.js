@@ -146,6 +146,11 @@ function normalizeTemplate(row) {
   ).trim();
   return {
     id,
+    // Mã mẫu hiển thị/nghiệp vụ (ví dụ "1" hoặc "01GTKT0/001") khác với
+    // IPTemplateID là GUID nội bộ. API /invoice/publishing bắt buộc trường này.
+    templateNo: String(
+      pick(row, 'InvTemplateNo', 'invTemplateNo', 'TemplateNo', 'templateNo') || '',
+    ).trim(),
     // Ký hiệu hóa đơn LẤY TỪ MẪU, không cho gõ tay: gõ sai là hóa đơn phát
     // hành dưới ký hiệu chưa đăng ký với cơ quan thuế.
     series,

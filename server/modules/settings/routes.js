@@ -319,11 +319,14 @@ api.post('/settings/integrations/:channel/test', guardAny('settings.integrations
     }
     if (Array.isArray(kq.templates)) {
       patch.availableTemplates = JSON.stringify(
-        kq.templates.map((t) => ({ id: t.id, name: t.name, series: t.series })),
+        kq.templates.map((t) => ({
+          id: t.id, templateNo: t.templateNo, name: t.name, series: t.series,
+        })),
       ).slice(0, 20000);
     }
     // Ký hiệu hóa đơn LUÔN đi theo mẫu đã chọn, không cho lệch nhau.
     if (kq.selectedTemplate?.series) patch.series = kq.selectedTemplate.series;
+    if (kq.selectedTemplate?.templateNo) patch.templateNo = kq.selectedTemplate.templateNo;
 
     AppSettings.updateIntegrations(
       { channels: { misa: { ...cfg, ...patch } } },

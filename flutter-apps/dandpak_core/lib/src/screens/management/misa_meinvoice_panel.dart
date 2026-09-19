@@ -122,6 +122,7 @@ class _MisaMeInvoicePanelState extends State<MisaMeInvoicePanel> {
             'password': '',
             'taxCode': '',
             'templateId': '',
+            'templateNo': '',
             'series': '',
             'configurationTestPassed': false,
           }
@@ -215,7 +216,9 @@ class _MisaMeInvoicePanelState extends State<MisaMeInvoicePanel> {
             ? t('Không có mã CQT')
             : t('Có mã CQT')
       ),
-      ('Mẫu số', oStr(_cfg['templateId'])),
+      ('Mẫu số', oStr(_cfg['templateNo']).isNotEmpty
+          ? oStr(_cfg['templateNo'])
+          : oStr(_cfg['templateId'])),
       ('Ký hiệu', oStr(_cfg['series'])),
       ('Lần kiểm tra gần nhất', oStr(_cfg['lastTestedAt'])),
     ];
@@ -410,6 +413,7 @@ class _MisaSetupModalState extends State<_MisaSetupModal> {
             'enabled': true,
             'invoiceCodeType': _invoiceCodeType,
             'templateId': _selectedTemplateId ?? '',
+            'templateNo': oStr(selectedTemplate['templateNo']),
             'series': oStr(selectedTemplate['series']),
             'configurationTestPassed': true,
           }

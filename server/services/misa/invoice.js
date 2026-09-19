@@ -4,7 +4,8 @@ import { callJson, authHeaders, authHeadersDeveloperPortal, sanitize, MisaError 
 import { endpointUrl, isDeveloperPortal } from './config.js';
 import { withToken } from './auth.js';
 import { buildPublishPayload, refId } from './payload.js';
-import { publishDeveloperPortal } from './developerPortal.js';
+import { publishDeveloperPortal, portalRefId } from './developerPortal.js';
+import { fetchTemplates } from './company.js';
 
 /// Header nghiệp vụ đúng provider của cfg — v3 mang CompanyTaxCode, Developer
 /// Portal mang ClientID (xem client.js).
@@ -15,7 +16,11 @@ function businessHeaders(token, cfg) {
 }
 
 function unwrap(body) {
-  return body?.data ?? body?.Data ?? body ?? {};
+  let value = body?.data ?? body?.Data ?? body ?? {};
+  for (let i = 0; i < 3 && typeof value === 'string'; i += 1) {
+    try { value = JSON.parse(value); } catch { break; }
+  }
+  return value;
 }
 
 function pick(d, ...names) {
@@ -47,14 +52,20 @@ function normalizeResult(d) {
 /// với "gọi lỗi". Người gọi cần phân biệt để quyết định có được phép phát hành
 /// hay không.
 export async function getInvoiceStatus(snapshotRef, cfg) {
-  const ref = typeof snapshotRef === 'string' ? snapshotRef : refId(snapshotRef);
-  const url = `${endpointUrl(cfg, 'status')}?refId=${encodeURIComponent(ref)}`;
+  const logicalRef = typeof snapshotRef === 'string' ? snapshotRef : refId(snapshotRef);
+  const portal = isDeveloperPortal(cfg);
+  const ref = portal ? portalRefId(logicalRef) : logicalRef;
+  const url = portal
+    ? `${endpointUrl(cfg, 'status')}?inputType=2&invoiceWithCode=${String(cfg.invoiceCodeType !== 'WITHOUT_CODE')}&invoiceCalcu=${String(cfg.invoiceType === 'CASH_REGISTER')}`
+    : `${endpointUrl(cfg, 'status')}?refId=${encodeURIComponent(ref)}`;
   try {
     const body = await withToken(cfg, (token) => callJson(url, {
-      method: 'GET',
+      method: portal ? 'POST' : 'GET',
       headers: businessHeaders(token, cfg),
+      ...(portal ? { body: JSON.stringify([ref]) } : {}),
     }, 15000));
-    const d = unwrap(body);
+    const unwrapped = unwrap(body);
+    const d = Array.isArray(unwrapped) ? unwrapped[0] : unwrapped;
     const kq = normalizeResult(d);
     // Không có số hóa đơn lẫn transaction id = MISA chưa nhận gì.
     if (!kq.invoice_no && !kq.transaction_id) return null;
@@ -107,8 +118,21 @@ export async function issueInvoice({ snapshot, cfg, company = {}, mayHaveLanded 
   let kq;
   try {
     if (portal) {
+      // Cấu hình cũ chỉ lưu GUID mẫu. Tự đồng bộ lại mẫu số thật một lần để
+      // bill đang FAILED có thể retry ngay sau deploy, không buộc cập nhật app.
+      let templateNo = String(cfg.templateNo || '').trim();
+      if (!templateNo) {
+        const templates = await fetchTemplates(cfg);
+        const selected = templates.find((t) => t.id === cfg.templateId);
+        templateNo = String(selected?.templateNo || '').trim();
+      }
+      if (!templateNo) {
+        throw new MisaError('Không tìm thấy mẫu số InvTemplateNo của mẫu hóa đơn đã chọn.', {
+          retryable: false, code: 'MISSING_TEMPLATE_NO',
+        });
+      }
       kq = await withToken(cfg, (token) => publishDeveloperPortal({
-        url, token, clientId: cfg.clientId, payload,
+        url, token, clientId: cfg.clientId, payload, templateNo,
       }));
     } else {
       const body = await withToken(cfg, (token) => callJson(url, {
