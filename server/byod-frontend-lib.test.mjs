@@ -43,6 +43,22 @@ test('detectLang() lấy ngôn ngữ hệ thống được hỗ trợ ở lần 
   assert.equal(Lib.detectLang(['fr-FR']), 'vi');
 });
 
+test('dòng ghi công Deron được dịch ở đủ 5 ngôn ngữ', () => {
+  assert.deepEqual(
+    Object.fromEntries(Lib.MENU_LANGS.map(lang => [lang, Lib.t(lang, 'poweredBy')])),
+    {
+      vi: 'Được phát triển bởi Harry (Deron)',
+      en: 'Powered by Harry (Deron)',
+      zh: '由 Harry（Deron）提供技术支持',
+      ja: 'Harry（Deron）によって開発',
+      ko: 'Harry(Deron)가 개발',
+    },
+  );
+  const app = readFileSync(new URL('./assets/byod/app.js', import.meta.url), 'utf8');
+  assert.match(app, /href="https:\/\/deron\.vn\/#about"/);
+  assert.match(app, /rel="noopener noreferrer"/);
+});
+
 test('statusMeta() bao phủ đủ 7 trạng thái order_item thật (server/services/orders.js)', () => {
   const real = ['pending_confirm', 'new', 'accepted', 'preparing', 'ready', 'served', 'cancelled'];
   for (const code of real) {
