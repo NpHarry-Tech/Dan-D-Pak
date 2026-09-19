@@ -36,6 +36,24 @@ test('normalizeLang() chặn mã ngôn ngữ lạ, không làm vỡ bootstrap ?l
   assert.equal(Lib.normalizeLang(undefined), 'vi');
 });
 
+test('token BYOD chỉ được nhận từ URL QR hợp lệ, URL gốc không mang lại phiên bàn cũ', () => {
+  const token = 'A'.repeat(32);
+  assert.equal(Lib.byodTokenFromPath(`/BYOD/${token}`), token);
+  assert.equal(Lib.byodTokenFromPath(`/byod/${token}/`), token);
+  assert.equal(Lib.byodTokenFromPath('/BYOD'), '');
+  assert.equal(Lib.byodTokenFromPath('/BYOD/'), '');
+  assert.equal(Lib.byodTokenFromPath('/history'), '');
+  assert.equal(Lib.byodTokenFromPath('/BYOD/too-short'), '');
+});
+
+test('frontend xóa token khỏi lịch sử và buộc URL gốc/khôi phục bfcache quét lại QR', () => {
+  const app = readFileSync(new URL('./assets/byod/app.js', import.meta.url), 'utf8');
+  assert.match(app, /history\.replaceState\(\{ screen: 'welcome' \}, '', '\/BYOD'\)/);
+  assert.match(app, /history\.replaceState\(\{ screen: 'scan' \}, '', '\/BYOD'\)/);
+  assert.match(app, /event\.persisted && token/);
+  assert.match(app, /location\.replace\('\/BYOD'\)/);
+});
+
 test('detectLang() lấy ngôn ngữ hệ thống được hỗ trợ ở lần truy cập đầu', () => {
   assert.equal(Lib.detectLang(['vi-VN', 'en-US']), 'vi');
   assert.equal(Lib.detectLang(['zh-CN', 'en-US']), 'zh');

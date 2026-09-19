@@ -1,12 +1,12 @@
 import {
-  LANGS, normalizeLang, detectLang, money, clampQty, statusMeta, comboOptionLabel,
+  LANGS, normalizeLang, detectLang, byodTokenFromPath, money, clampQty, statusMeta, comboOptionLabel,
   modsLabel, errorMessage, isFullPageError, t,
 } from './lib.js';
 
 // ---------------------------------------------------------------------------
 // Device identity + token (unchanged contract from the previous minimal UI —
 // server/services/byod.js validates this exact device-key shape).
-const token = decodeURIComponent(location.pathname.split('/').filter(Boolean).pop() || '');
+const token = byodTokenFromPath(location.pathname);
 const DEVICE_KEY_NAME = 'dandpak_byod_device';
 const LANG_KEY_NAME = 'dandpak_byod_lang';
 let device = localStorage.getItem(DEVICE_KEY_NAME);
@@ -354,7 +354,7 @@ function handleScanResult(text) {
     render();
     return;
   }
-  location.href = url.href;
+  location.replace(url.href);
 }
 
 function renderScanner() {
@@ -1272,4 +1272,16 @@ async function changeLang(lang) {
 
 // ---------------------------------------------------------------------------
 document.documentElement.lang = state.lang;
-bootstrap();
+// Never leave the table credential in browser history. It remains only in this
+// page's memory; reload/history restore starts from the scanner root again.
+if (token) {
+  history.replaceState({ screen: 'welcome' }, '', '/BYOD');
+  bootstrap();
+} else {
+  history.replaceState({ screen: 'scan' }, '', '/BYOD');
+  openScanner();
+}
+
+addEventListener('pageshow', (event) => {
+  if (event.persisted && token) location.replace('/BYOD');
+});

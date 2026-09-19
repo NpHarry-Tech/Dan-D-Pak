@@ -19,6 +19,11 @@ export function normalizeLang(lang) {
   return MENU_LANGS.includes(code) ? code : 'vi';
 }
 
+export function byodTokenFromPath(pathname) {
+  const match = String(pathname || '').match(/^\/BYOD\/([A-Za-z0-9_-]{32,128})\/?$/i);
+  return match ? match[1] : '';
+}
+
 export function detectLang(languages = []) {
   const list = Array.isArray(languages) ? languages : [languages];
   for (const language of list) {
