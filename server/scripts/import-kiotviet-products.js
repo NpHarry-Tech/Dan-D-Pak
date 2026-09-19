@@ -28,6 +28,7 @@ const WAREHOUSE_ID = 'wh_retail';
 
 const args = process.argv.slice(2);
 const COMMIT = args.includes('--commit');
+const PROFILE = args.includes('--profile');
 const PRODUCT_IMAGE_ROOT = process.env.KIOTVIET_IMAGE_ROOT || 'E:\\Trash\\Product DDP\\04 Product';
 
 function imageKey(value) {
@@ -142,11 +143,20 @@ function parseVat(v) {
 // KiotViet timestamp "22/06/2026 11:51:06" -> ISO "2026-06-22T11:51:06". Keep raw if unparseable.
 function parseCreated(v) {
   const s = clean(v);
+  const excel = Number(s);
+  if (Number.isFinite(excel) && excel > 1) {
+    const d = new Date(Date.UTC(1899, 11, 30) + excel * 86400000);
+    return Number.isNaN(d.getTime()) ? null : d.toISOString().replace(/\.\d{3}Z$/, '');
+  }
   const m = /^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:[ T](\d{1,2}):(\d{2})(?::(\d{2}))?)?/.exec(s);
   if (!m) return s || null;
   const [, d, mo, y, hh = '0', mm = '0', ss = '0'] = m;
   const p = (x, n = 2) => String(x).padStart(n, '0');
   return `${y}-${p(mo)}-${p(d)}T${p(hh)}:${p(mm)}:${p(ss)}`;
+}
+function parseExpiry(v) {
+  const parsed = parseCreated(v);
+  return parsed ? parsed.slice(0, 10) : null;
 }
 function truthy(v) { const s = clean(v).toLowerCase(); return s === '1' || s === 'true' || s === 'có' || s === 'co' || s === 'x'; }
 function normHeader(h) {
@@ -330,6 +340,7 @@ const FIELD_ALIASES = {
   pricePre:   ['gia ban truoc thue'],
   vatSell:    ['vat hang ban'],
   priceAfter: ['gia ban sau thue'],
+  cost:       ['gia nhap', 'gia nhap vao', 'gia von'],
   stock:      ['ton kho'],
   minStock:   ['ton nho nhat'],
   unit:       ['dvt'],
@@ -359,10 +370,22 @@ function categoryOf(group) {
   const g = clean(group);
   if (!g) return 'BCM';
   const parts = g.split('>>').map(s => clean(s)).filter(Boolean);
+  if (parts.length === 1 && normHeader(parts[0]) === 'hang cong ty') return 'Dan D Pak';
   return parts[parts.length - 1] || 'BCM';
 }
+function exclusionReason(type, group) {
+  if (normHeader(type) !== 'hang hoa') return 'Không phải Hàng hóa';
+  const parts = clean(group).split('>>').map(normHeader).filter(Boolean);
+  const normalized = parts.join('>>');
+  if (normalized === 'dien giai giam gia') return 'Nhóm Diễn giải giảm giá';
+  if (normalized === 'sourcing show 2026' || normalized === 'sourcing showw 2026') return 'Nhóm SOURCING SHOW 2026';
+  if (normalized === 'hang cong ty>>vietfood2026') return 'Nhóm Hàng Công Ty>>Vietfood2026';
+  if (normalized === 'hang sieu thi>>nvl') return 'Nhóm Hàng Siêu Thị>>NVL';
+  return null;
+}
 function skuIdFor(code, used) {
-  const base = 'kv_' + clean(code).replace(/[^a-zA-Z0-9]+/g, '').toLowerCase() || 'kv_' + Math.random().toString(36).slice(2, 8);
+  const key = clean(code).replace(/[^a-zA-Z0-9]+/g, '').toLowerCase();
+  const base = key ? 'kv_' + key : 'kv_' + Math.random().toString(36).slice(2, 8);
   let id = base, n = 2;
   while (used.has(id)) id = `${base}_${n++}`;
   used.add(id);
@@ -389,23 +412,73 @@ async function run() {
     process.exitCode = 1; return;
   }
 
+  if (PROFILE) {
+    console.log('\nHeaders:');
+    rows[0].forEach((header, i) => console.log(`${i}: ${clean(fixMojibake(header))} [${normHeader(header)}]`));
+    const valuesFor = (field) => {
+      const at = idx[field];
+      if (at == null) return [];
+      const counts = new Map();
+      for (const row of rows.slice(1)) {
+        const value = clean(fixMojibake(row[at]));
+        counts.set(value, (counts.get(value) || 0) + 1);
+      }
+      return [...counts.entries()].sort((a, b) => b[1] - a[1]);
+    };
+    console.log('\nLoại hàng:');
+    for (const [value, count] of valuesFor('type')) console.log(`${count}\t${value}`);
+    console.log('\nNhóm hàng:');
+    for (const [value, count] of valuesFor('group')) console.log(`${count}\t${value}`);
+    return;
+  }
+
   const used = new Set();
   const existingRows = db.prepare(`SELECT id,code,barcode,image FROM skus WHERE branch_id=? AND warehouse_id=?`).all(BRANCH_ID, WAREHOUSE_ID);
   const existingByCode = new Map(existingRows.filter(x => clean(x.code)).map(x => [clean(x.code).toLowerCase(), x]));
   const existingByBarcode = new Map(existingRows.filter(x => clean(x.barcode)).map(x => [clean(x.barcode).toLowerCase(), x]));
   const records = [];
+  const skipped = new Map();
+  const normalizedHeaders = rows[0].map(normHeader);
+  const lotColumns = [];
+  for (let n = 1; n <= 100; n++) {
+    const lot = normalizedHeaders.indexOf(`lo ${n}`);
+    const expiry = normalizedHeaders.indexOf(`han su dung ${n}`);
+    const qty = normalizedHeaders.indexOf(`ton ${n}`);
+    if (lot < 0 && expiry < 0 && qty < 0) break;
+    lotColumns.push({ n, lot, expiry, qty });
+  }
   for (let r = 1; r < rows.length; r++) {
     const row = rows[r];
     const code = cell(row, idx, 'code');
     const name = cell(row, idx, 'name');
     if (!name) continue;
-    const trackLot = truthy(cell(row, idx, 'trackLot')) ? 1 : 0;
+    const type = cell(row, idx, 'type');
     const group = cell(row, idx, 'group');
+    const reason = exclusionReason(type, group);
+    if (reason) {
+      skipped.set(reason, (skipped.get(reason) || 0) + 1);
+      continue;
+    }
+    const lots = [];
+    for (const col of lotColumns) {
+      const lotNoRaw = col.lot < 0 ? '' : clean(fixMojibake(row[col.lot]));
+      const expiryDate = col.expiry < 0 ? null : parseExpiry(row[col.expiry]);
+      const qtyRaw = col.qty < 0 ? '' : clean(fixMojibake(row[col.qty]));
+      if (!lotNoRaw && !expiryDate && !qtyRaw) continue;
+      const lotNo = lotNoRaw || `AUTO-${expiryDate?.replace(/-/g, '') || col.n}`;
+      lots.push({ lot_no: lotNo, expiry_date: expiryDate, qty: numOr(qtyRaw, 0) });
+    }
+    const trackLot = truthy(cell(row, idx, 'trackLot')) || lots.length > 0 ? 1 : 0;
     const brand = cell(row, idx, 'brand');
     const barcode = cell(row, idx, 'barcode') || code;
     const existing = existingByCode.get(code.toLowerCase()) || existingByBarcode.get(barcode.toLowerCase());
     const id = existing && !used.has(existing.id) ? existing.id : skuIdFor(code || barcode, used);
     used.add(id);
+    const vat = parseVat(cell(row, idx, 'vatSell'));
+    let pricePreTax = moneyToInt(cell(row, idx, 'pricePre'));
+    let priceAfterTax = moneyToInt(cell(row, idx, 'priceAfter'));
+    if (!priceAfterTax && pricePreTax) priceAfterTax = Math.round(pricePreTax * (1 + (vat || 0) / 100));
+    if (!pricePreTax && priceAfterTax) pricePreTax = Math.round(priceAfterTax / (1 + (vat || 0) / 100));
     records.push({
       id,
       branch_id: BRANCH_ID,
@@ -413,8 +486,8 @@ async function run() {
       name,
       emoji: '🛍️',
       image: existing?.image || clean(cell(row, idx, 'images').split(',')[0]) || null,
-      price: moneyToInt(cell(row, idx, 'priceAfter')),
-      cost: 0,
+      price: priceAfterTax,
+      cost: moneyToInt(cell(row, idx, 'cost')),
       stock: numOr(cell(row, idx, 'stock'), 0),
       min_stock: numOr(cell(row, idx, 'minStock'), 0),
       unit: cell(row, idx, 'unit') || 'cái',
@@ -423,29 +496,47 @@ async function run() {
       supplier: brand || 'BCM',
       source_url: null,
       track_lot: trackLot,
-      expiry_required: trackLot,
+      expiry_required: trackLot || lots.some(x => x.expiry_date) ? 1 : 0,
       active: cell(row, idx, 'active') === '0' ? 0 : 1,
       // KiotViet product-list parity fields
       code,
-      price_pre_tax: moneyToInt(cell(row, idx, 'pricePre')),
-      vat: parseVat(cell(row, idx, 'vatSell')),
+      price_pre_tax: pricePreTax,
+      vat,
       brand: brand || null,
       group_path: group || null,
       weight: numOr(cell(row, idx, 'weight'), 0),
       sellable: cell(row, idx, 'sellable') === '0' ? 0 : 1,
       created_at: parseCreated(cell(row, idx, 'created')),
+      lots,
     });
   }
 
-  console.log(`\n📦 Đọc được ${records.length} dòng sản phẩm từ ${FILE}`);
+  console.log(`\n📦 Chọn ${records.length}/${rows.length - 1} dòng Hàng hóa từ ${FILE}`);
+  for (const [reason, count] of skipped) console.log(`   Bỏ ${count}: ${reason}`);
   const duplicateCodes = records.length - new Set(records.map(x => x.code.toLowerCase())).size;
   const duplicateBarcodes = records.filter(x => x.barcode).length - new Set(records.filter(x => x.barcode).map(x => x.barcode.toLowerCase())).size;
-  console.log(`   Trùng mã hàng: ${duplicateCodes} · trùng barcode: ${duplicateBarcodes} · có ảnh: ${records.filter(x => x.image).length}`);
+  const lotCount = records.reduce((sum, x) => sum + x.lots.length, 0);
+  const expiryCount = records.reduce((sum, x) => sum + x.lots.filter(l => l.expiry_date).length, 0);
+  const positiveLotCount = records.reduce((sum, x) => sum + x.lots.filter(l => l.qty > 0).length, 0);
+  const missing = {
+    maHang: records.filter(x => !x.code).length,
+    maVach: records.filter(x => !x.barcode).length,
+    giaTruocThue: records.filter(x => !x.price_pre_tax).length,
+    giaSauThue: records.filter(x => !x.price).length,
+    giaNhap: records.filter(x => !x.cost).length,
+    donViTinh: records.filter(x => !x.unit).length,
+    vat: records.filter(x => x.vat == null).length,
+    anh: records.filter(x => !x.image).length,
+  };
+  console.log(`   Trùng mã hàng: ${duplicateCodes} · trùng barcode: ${duplicateBarcodes} · có ảnh URL: ${records.filter(x => x.image).length}`);
+  console.log(`   Lô: ${lotCount} · lô có hạn sử dụng: ${expiryCount} · lô còn tồn > 0: ${positiveLotCount}`);
+  console.log(`   Thiếu/0: ${Object.entries(missing).map(([k, v]) => `${k}=${v}`).join(' · ')}`);
   console.log(`   Ví dụ 3 dòng đầu:`);
   for (const s of records.slice(0, 3)) {
     console.log(`   • [${s.code}] ${s.name}`);
     console.log(`       trước thuế ${s.price_pre_tax.toLocaleString('vi-VN')}đ · VAT ${s.vat == null ? 'KCT' : s.vat + '%'} · sau thuế ${s.price.toLocaleString('vi-VN')}đ`);
     console.log(`       tồn ${s.stock} ${s.unit} · nhóm ${s.category} · TH ${s.brand || '—'} · tạo ${s.created_at || '—'}`);
+    if (s.lots.length) console.log(`       lô mẫu ${JSON.stringify(s.lots.slice(0, 3))}`);
   }
 
   if (!COMMIT) {
@@ -480,22 +571,40 @@ async function run() {
     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     ON CONFLICT(id) DO UPDATE SET
       barcode=excluded.barcode, name=excluded.name, image=excluded.image, price=excluded.price,
-      stock=excluded.stock, min_stock=excluded.min_stock, unit=excluded.unit, category=excluded.category,
+      cost=excluded.cost, stock=excluded.stock, min_stock=excluded.min_stock, unit=excluded.unit, category=excluded.category,
       supplier=excluded.supplier, track_lot=excluded.track_lot, expiry_required=excluded.expiry_required,
       active=excluded.active, warehouse_id=excluded.warehouse_id,
       code=excluded.code, price_pre_tax=excluded.price_pre_tax, vat=excluded.vat, brand=excluded.brand,
       group_path=excluded.group_path, weight=excluded.weight, sellable=excluded.sellable, created_at=excluded.created_at`);
+  const deleteLots = db.prepare(`DELETE FROM stock_lots WHERE branch_id=? AND warehouse_id=? AND item_type='sku'`);
+  const upsertLot = db.prepare(`
+    INSERT INTO stock_lots
+      (id,branch_id,warehouse_id,item_type,item_id,lot_no,mfg_date,expiry_date,received_at,qty_on_hand,unit_cost,supplier,status,created_at)
+    VALUES (?,?,?,?,?,?,NULL,?,?,?,?,?,'active',?)
+    ON CONFLICT(warehouse_id,item_type,item_id,lot_no) DO UPDATE SET
+      expiry_date=excluded.expiry_date, qty_on_hand=excluded.qty_on_hand,
+      unit_cost=excluded.unit_cost, supplier=excluded.supplier, status='active'`);
   const deactivate = db.prepare(`UPDATE skus SET active=0 WHERE id=?`);
   const existingStmt = db.prepare(`SELECT id FROM skus WHERE warehouse_id=? AND branch_id=?`);
 
   let deactivated = 0;
   db.exec('BEGIN');
   try {
-    for (const s of records) upsert.run(
-      s.id, s.branch_id, s.barcode, s.name, s.emoji, s.image, s.price, s.cost,
-      s.stock, s.min_stock, s.unit, s.warehouse_id, s.category, s.supplier,
-      s.source_url, s.track_lot, s.expiry_required, s.active,
-      s.code, s.price_pre_tax, s.vat, s.brand, s.group_path, s.weight, s.sellable, s.created_at);
+    deleteLots.run(BRANCH_ID, WAREHOUSE_ID);
+    for (const s of records) {
+      upsert.run(
+        s.id, s.branch_id, s.barcode, s.name, s.emoji, s.image, s.price, s.cost,
+        s.stock, s.min_stock, s.unit, s.warehouse_id, s.category, s.supplier,
+        s.source_url, s.track_lot, s.expiry_required, s.active,
+        s.code, s.price_pre_tax, s.vat, s.brand, s.group_path, s.weight, s.sellable, s.created_at);
+      for (let i = 0; i < s.lots.length; i++) {
+        const lot = s.lots[i];
+        const lotId = `lot_${s.id}_${i + 1}`.replace(/[^a-zA-Z0-9_-]/g, '_');
+        upsertLot.run(
+          lotId, BRANCH_ID, WAREHOUSE_ID, 'sku', s.id, lot.lot_no,
+          lot.expiry_date, s.created_at || now(), lot.qty, s.cost, s.supplier, now());
+      }
+    }
     // Deactivate stale SKUs in this warehouse that were NOT in the KiotViet file
     // (i.e. the old scraped bcm_* guesses) — KiotViet is now the source of truth.
     const keep = new Set(records.map(s => s.id));
