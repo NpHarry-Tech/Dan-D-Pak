@@ -377,9 +377,13 @@ function renderScanner() {
   $('#gate-root').innerHTML = `
     <div id="gate-screen" class="scan-screen">
       <div class="scan-header">
-        <button type="button" class="scan-close-btn" data-act="scan-close" aria-label="${attr(t(state.lang, 'back'))}">${icon('x', 18)}</button>
-        <div class="scan-title">${esc(t(state.lang, 'qrScanTitle'))}</div>
+        ${token
+          ? `<button type="button" class="scan-close-btn" data-act="scan-close" aria-label="${attr(t(state.lang, 'back'))}">${icon('x', 18)}</button>`
+          : '<span class="scan-header-side" aria-hidden="true"></span>'}
+        <img class="scan-header-logo" src="/assets/DanOnLogo.png" alt="Dan D Pak">
+        <span class="scan-header-side" aria-hidden="true"></span>
       </div>
+      <div class="scan-title">${esc(t(state.lang, 'qrScanTitle'))}</div>
       <div class="scan-viewport">
         <div class="scan-square">
           <video id="scan-video" autoplay muted playsinline></video>
@@ -389,7 +393,6 @@ function renderScanner() {
       </div>
       <div class="scan-footer">
         <div class="scan-hint">${esc(t(state.lang, 'qrScanHint'))}</div>
-        <img class="scan-logo" src="/assets/DanOnLogo.png" alt="Dan D Pak">
       </div>
     </div>`;
 }

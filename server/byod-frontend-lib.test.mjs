@@ -54,6 +54,15 @@ test('frontend xóa token khỏi lịch sử và buộc URL gốc/khôi phục b
   assert.match(app, /location\.replace\('\/BYOD'\)/);
 });
 
+test('QR scanner has a top logo, high-contrast title and a square 1:1 camera', () => {
+  const app = readFileSync(new URL('./assets/byod/app.js', import.meta.url), 'utf8');
+  const css = readFileSync(new URL('./assets/byod/app.css', import.meta.url), 'utf8');
+  assert.match(app, /scan-header-logo[\s\S]*scan-title/);
+  assert.match(css, /\.scan-title\{[^}]*color:var\(--ink\)/);
+  assert.match(css, /\.scan-square\{[^}]*aspect-ratio:1\/1/);
+  assert.doesNotMatch(css, /\.scan-square\{[^}]*height:100%/);
+});
+
 test('detectLang() lấy ngôn ngữ hệ thống được hỗ trợ ở lần truy cập đầu', () => {
   assert.equal(Lib.detectLang(['vi-VN', 'en-US']), 'vi');
   assert.equal(Lib.detectLang(['zh-CN', 'en-US']), 'zh');

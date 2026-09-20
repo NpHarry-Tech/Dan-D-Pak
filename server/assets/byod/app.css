@@ -382,23 +382,31 @@ body.has-offline .staff-call-btn{ margin-top:0; }
 .gate-actions{ width:100%; margin-top:6px; display:flex; flex-direction:column; gap:8px; }
 
 /* ---------- S0 · qr_scan — real camera QR scanner ---------- */
-.scan-screen{ background:#0B0D12; }
+#gate-screen.scan-screen{ background:var(--surface-base); }
 .scan-header{
-  flex:none; height:56px; padding:var(--safe-t) 8px 0; display:flex; align-items:center; gap:6px;
+  flex:none; height:64px; padding:var(--safe-t) 14px 0; display:flex; align-items:center; justify-content:space-between;
   background:transparent; border-bottom:none; position:relative; z-index:2;
 }
 .scan-close-btn{
-  width:38px; height:38px; border-radius:19px; border:none; background:rgba(255,255,255,.14);
-  display:flex; align-items:center; justify-content:center; color:#fff; flex:none;
+  width:40px; height:40px; border-radius:20px; border:1px solid var(--border); background:#fff;
+  display:flex; align-items:center; justify-content:center; color:var(--ink); flex:none;
 }
-.scan-title{ flex:1; text-align:center; margin-right:38px; font:700 14px/1.3 'Be Vietnam Pro',sans-serif; color:#fff; text-wrap:pretty; }
+.scan-header-side{ width:40px; height:40px; flex:none; }
+.scan-header-logo{
+  position:absolute; left:50%; top:calc(var(--safe-t) + 8px); transform:translateX(-50%);
+  height:42px; width:auto; object-fit:contain;
+}
+.scan-title{
+  flex:none; padding:10px 24px 2px; text-align:center;
+  font:800 17px/1.35 'Be Vietnam Pro',sans-serif; color:var(--ink); text-wrap:pretty;
+}
 .scan-viewport{
-  flex:1; position:relative; display:flex; align-items:center; justify-content:center; padding:24px;
+  flex:1; min-height:0; position:relative; display:flex; align-items:center; justify-content:center; padding:18px 24px;
 }
 /* Viewport khung camera đúng 1:1 (giống thiết kế) — không kéo dài theo chiều
    dọc còn lại của màn hình, phần nền tối bao quanh (letterbox) mới là .scan-viewport. */
 .scan-square{
-  position:relative; width:100%; height:100%; max-width:min(100%,480px);
+  position:relative; width:min(100%,480px,calc(100dvh - 250px)); flex:none;
   aspect-ratio:1/1; border-radius:20px; overflow:hidden; background:#0B0D12;
 }
 .scan-square video{ position:absolute; inset:0; width:100%; height:100%; object-fit:cover; }
@@ -416,8 +424,7 @@ body.has-offline .staff-call-btn{ margin-top:0; }
   font:600 12.5px/1.3 'Be Vietnam Pro',sans-serif; color:#fff; text-shadow:0 1px 4px rgba(0,0,0,.5);
 }
 .scan-footer{ flex:none; padding:16px 26px calc(22px + var(--safe-b)); text-align:center; }
-.scan-hint{ font:500 12px/1.55 'Be Vietnam Pro',sans-serif; color:rgba(255,255,255,.75); text-wrap:pretty; }
-.scan-logo{ height:20px; width:auto; margin:12px auto 0; opacity:.7; filter:brightness(0) invert(1); }
+.scan-hint{ font:500 12px/1.55 'Be Vietnam Pro',sans-serif; color:var(--ink-muted); text-wrap:pretty; }
 
 /* ---------- skeleton loading ---------- */
 .skeleton-card{ background:#fff; border:1px solid var(--border); border-radius:14px; padding:11px; }
