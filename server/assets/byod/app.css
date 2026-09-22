@@ -76,7 +76,7 @@ header#app-header{ flex:none; position:sticky; top:0; z-index:20; background:#ff
 .icon-btn .lang-flag{ width:100%; height:100%; border-radius:0; }
 .lang-flag-lg{ width:36px; height:36px; }
 .brand-logo{ height:32px; width:auto; display:block; }
-.cart-btn{ position:relative; }
+.cart-btn{ position:relative; overflow:visible; }
 .cart-badge{
   position:absolute; top:-2px; right:-2px; min-width:20px; height:20px; padding:0 5px; border-radius:10px;
   background:var(--accent); color:#fff; font:800 11px/20px 'Be Vietnam Pro',sans-serif; text-align:center; border:2px solid #fff;
@@ -309,6 +309,15 @@ main#screens{ flex:1; min-height:0; position:relative; }
 .staff-call-btn:active{ transform:scale(.94); }
 .staff-call-btn:disabled{ opacity:.55; }
 body.has-offline .staff-call-btn{ margin-top:0; }
+
+/* Menu-only cart shortcut, stacked directly below the call-staff button
+   (48px button + 10px gap below its 108px fallback position). */
+.menu-cart-btn{
+  position:fixed; right:calc(14px + max(var(--safe-r),var(--visual-r))); bottom:calc(50px + var(--safe-b) + var(--visual-b)); z-index:30; width:48px; height:48px; border-radius:24px; border:none;
+  background:var(--accent); display:flex; align-items:center; justify-content:center; padding:0;
+  box-shadow:0 10px 22px -10px rgba(26,34,48,.8); transition:transform .1s;
+}
+.menu-cart-btn:active{ transform:scale(.94); }
 
 /* ---------- payment / status banner (in-page, not a sheet) ---------- */
 .pay-banner{ margin:12px 14px 0; padding:12px 14px; border-radius:14px; background:var(--note-bg); color:var(--note-fg); font:600 12.5px/1.5 'Be Vietnam Pro',sans-serif; }

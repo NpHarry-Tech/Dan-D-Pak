@@ -261,6 +261,7 @@ function render(opts = {}) {
   renderHeader();
   renderScreens(opts);
   renderStaffCallButton();
+  renderMenuCartFab();
   // A background refresh (realtime event, silent bootstrap) must never blow
   // away a note the guest is mid-typing — only (re)build the note sheet when
   // it isn't already open. Explicit open/save/chip handlers call renderSheet()
@@ -426,14 +427,17 @@ function renderScanner() {
     </div>`;
 }
 
+function cartCount() {
+  return (state.data?.cart?.table || []).reduce((s, r) => s + (r.qty || 0), 0);
+}
+
 function renderHeader() {
   const header = $('#app-header');
   if (state.screen === 'welcome' || !state.data) { header.classList.add('hidden'); return; }
   header.classList.remove('hidden');
   $('#lang-flag').src = (LANGS.find(l => l.code === state.lang) || LANGS[0]).flag;
   const d = state.data;
-  const tableRows = d.cart?.table || [];
-  const count = tableRows.reduce((s, r) => s + (r.qty || 0), 0);
+  const count = cartCount();
   const badge = $('#cart-badge');
   badge.textContent = String(count);
   badge.classList.toggle('hidden', count === 0);
@@ -447,18 +451,37 @@ function renderHeader() {
     <span class="status-pill ${busy ? 'serving' : 'free'}"><span class="status-dot ${busy ? 'pulse' : ''}"></span>${esc(busy ? t(state.lang, 'serving') : t(state.lang, 'tableFree'))}</span>`;
 }
 
-// Clears each screen's own sticky/fixed footer with margin — recompute if a
-// footer's own height changes (note-row + add-row on detail, 1-2 buttons on
-// welcome depending on whether the guest already has cart/orders).
-const STAFF_CALL_BOTTOM = { welcome: '175px', menu: '108px', detail: '200px', cart: '122px' };
+// menu has no sticky footer to clear (items add straight from the grid) —
+// every other screen has one (welcome-actions/detail-bottom/cart-bottom) whose
+// real rendered height already bakes in safe-area/visual-viewport insets, so
+// measuring it beats hand-guessing a pixel offset per screen (that guess drifted
+// out of sync with the welcome screen's actual button and started overlapping it).
+const STAFF_CALL_FALLBACK_BOTTOM = '108px';
 function renderStaffCallButton() {
   const btn = $('#btn-staff-call');
   if (!state.data) { btn.classList.add('hidden'); return; }
   btn.classList.remove('hidden');
-  btn.style.setProperty('--staff-bottom', STAFF_CALL_BOTTOM[state.screen] || '110px');
+  const footer = $('#screens .screen:not(.hidden) .welcome-actions, #screens .screen:not(.hidden) .detail-bottom, #screens .screen:not(.hidden) .cart-bottom');
+  if (footer) {
+    btn.style.bottom = `${Math.max(0, window.innerHeight - footer.getBoundingClientRect().top) + 14}px`;
+    btn.style.removeProperty('--staff-bottom');
+  } else {
+    btn.style.removeProperty('bottom');
+    btn.style.setProperty('--staff-bottom', STAFF_CALL_FALLBACK_BOTTOM);
+  }
   btn.setAttribute('aria-label', t(state.lang, 'callStaff'));
   const cooling = Date.now() < state.staffCallCooldownUntil;
   btn.disabled = state.busyStaffCall || cooling;
+}
+
+// Cart shortcut FAB: menu screen only (per product decision — elsewhere the
+// header cart icon already covers it), shown once there's something to see.
+function renderMenuCartFab() {
+  const btn = $('#btn-menu-cart');
+  const count = state.data ? cartCount() : 0;
+  const show = state.data && state.screen === 'menu' && count > 0;
+  btn.classList.toggle('hidden', !show);
+  if (show) $('#menu-cart-badge').textContent = String(count);
 }
 
 // Signature of everything about a menu item that could make an already-open
