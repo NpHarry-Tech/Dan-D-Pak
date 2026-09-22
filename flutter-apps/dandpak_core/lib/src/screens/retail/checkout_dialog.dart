@@ -17,7 +17,6 @@ import '../../widgets/online_only_gate.dart';
 import '../../widgets/tax_lookup.dart';
 import '../../ui/format.dart';
 import '../../utils/translation.dart';
-import 'temporary_transfer_confirm_button.dart';
 
 /// Đổi phương thức sau khi đã có đúng một dòng thanh toán đủ toàn bộ bill là
 /// thao tác SỬA lựa chọn, không phải split tender. Quy tắc này không phụ thuộc
@@ -1263,8 +1262,10 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                       icon: Icon(Icons.refresh, size: 16),
                       label: Text(t('Tạo lại QR')),
                     ),
-                    TemporaryTransferConfirmButton(
+                    OutlinedButton.icon(
                       onPressed: _paying ? null : _temporaryConfirmBank,
+                      icon: const Icon(Icons.check_circle_outline, size: 18),
+                      label: const Text('Xác nhận đã chuyển khoản'),
                     ),
                     if (retailS(data?['orderCode']).isNotEmpty)
                       OutlinedButton.icon(

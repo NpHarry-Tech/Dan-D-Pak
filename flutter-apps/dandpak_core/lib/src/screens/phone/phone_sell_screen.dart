@@ -18,7 +18,6 @@ import '../../widgets/order_note_dialog.dart';
 import '../../widgets/manager_pin_dialog.dart';
 import '../scanner/barcode_scanner_screen.dart';
 import '../management/management_widgets.dart';
-import '../retail/temporary_transfer_confirm_button.dart';
 import '../retail/combo_support.dart';
 import '../../widgets/app_loading.dart';
 import 'phone_customer_screen.dart';
@@ -2269,8 +2268,10 @@ class _PhoneSellScreenState extends State<PhoneSellScreen> {
             ),
           ],
           const SizedBox(height: 12),
-          TemporaryTransferConfirmButton(
+          OutlinedButton.icon(
             onPressed: _paying ? null : _confirm,
+            icon: const Icon(Icons.check_circle_outline, size: 18),
+            label: const Text('Xác nhận đã chuyển khoản'),
           ),
         ],
       ),

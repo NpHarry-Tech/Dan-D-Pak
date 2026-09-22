@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:convert';
 
 import 'package:barcode_widget/barcode_widget.dart';
@@ -7,6 +6,7 @@ import 'package:qr_flutter/qr_flutter.dart';
 
 import '../../services/api_service.dart';
 import '../../ui/app_theme.dart';
+import '../../ui/debouncer.dart';
 import '../../ui/file_pick.dart';
 import '../../utils/translation.dart';
 import 'settings_value_utils.dart';
@@ -42,7 +42,7 @@ class PrintTemplateDesigner extends StatefulWidget {
 }
 
 class _PrintTemplateDesignerState extends State<PrintTemplateDesigner> {
-  final _saveDebounce = _Debouncer(Duration(milliseconds: 700));
+  final _saveDebounce = Debouncer(delay: Duration(milliseconds: 700));
 
   late Map<String, dynamic> _printConfig;
   late Map<String, dynamic> _bill;
@@ -194,20 +194,6 @@ class _DashedPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
-}
-
-class _Debouncer {
-  final Duration delay;
-  Timer? _timer;
-  _Debouncer(this.delay);
-
-  void run(VoidCallback action) {
-    _timer?.cancel();
-    _timer = Timer(delay, action);
-  }
-
-  void cancel() => _timer?.cancel();
-  void dispose() => _timer?.cancel();
 }
 
 Map<String, dynamic> _copyMap(dynamic value) {

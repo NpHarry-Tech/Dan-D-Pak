@@ -549,7 +549,7 @@ extension _PrintDesignerMethods on _PrintTemplateDesignerState {
     final bill = _copyMap(_bill);
     final labels = _copyMap(_labels);
     final printLang = asText(_printConfig['printLang']);
-    _saveDebounce.run(() => _saveNow(
+    _saveDebounce(() => _saveNow(
           kind: kind,
           template: template,
           bill: bill,
