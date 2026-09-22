@@ -8,19 +8,19 @@ printing workflows.
 ```bat
 cd flutter-apps\dandpak_phone
 flutter pub get
-flutter run -d windows
+flutter run
 ```
 
 ## Build
 
 ```bat
-flutter build windows --release
+flutter build apk --release
 ```
 
 The release output is under:
 
 ```text
-build\windows\x64\runner\Release\
+build\app\outputs\flutter-apk\
 ```
 
 ## Backend
