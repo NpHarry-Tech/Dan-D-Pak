@@ -34,8 +34,11 @@ try {
     for (const [name, type] of columns) addColumn(table, name, type);
   }
   db.exec(`UPDATE order_items SET
-    item_code=COALESCE(item_code,(SELECT code FROM skus WHERE skus.id=order_items.sku_id)),
-    item_barcode=COALESCE(item_barcode,(SELECT barcode FROM skus WHERE skus.id=order_items.sku_id)),
+    item_code=COALESCE(item_code,
+      (SELECT code FROM skus WHERE skus.id=order_items.sku_id),
+      (SELECT code FROM menu_items WHERE menu_items.id=order_items.menu_item_id)),
+    item_barcode=COALESCE(item_barcode,
+      (SELECT barcode FROM skus WHERE skus.id=order_items.sku_id)),
     unit_snapshot=COALESCE(unit_snapshot,(SELECT unit FROM skus WHERE skus.id=order_items.sku_id),
       CASE WHEN sku_id IS NOT NULL THEN 'cái' ELSE 'phần' END);`);
   db.exec(`UPDATE inventory_document_lines SET

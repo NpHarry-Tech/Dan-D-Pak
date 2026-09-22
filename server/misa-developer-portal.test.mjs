@@ -157,9 +157,13 @@ const server = createServer((req, res) => {
       assert.match(ref, /^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
       assert.equal(invoice.InvTemplateNo, '1');
       assert.match(invoice.InvDate, /^\d{4}-\d{2}-\d{2}$/);
+      assert.equal(invoice.PaymentMethodName, 'TM');
       assert.equal(invoice.OrgInvoiceData, undefined);
       assert.equal(invoice.TotalAmountOC, invoice.TotalAmount);
       assert.equal(invoice.OriginalInvoiceDetail[0].AmountOC, invoice.OriginalInvoiceDetail[0].Amount);
+      assert.ok(invoice.OriginalInvoiceDetail
+        .filter((line) => line.ItemType !== 4)
+        .every((line) => String(line.ItemCode || '').trim()), 'moi dong VAT phai co ma item');
       assert.ok(Array.isArray(invoice.TaxRateInfo) && invoice.TaxRateInfo.length > 0);
 
       const respond = () => {

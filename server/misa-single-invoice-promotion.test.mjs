@@ -10,7 +10,9 @@ const sample = {
   total: 180000,
   items: [
     {
+      item_code: 'ITEM-91980024',
       product_code: '91980024',
+      sku_id: 'sku-internal-1',
       product_name: 'Socola Đen Bọc Hạnh Nhân 170g',
       quantity: 1,
       original_price: 120000,
@@ -45,6 +47,8 @@ test('nested promotions become adjacent ItemType=4 rows in one MISA invoice', ()
   assert.ok(payload.OrgInvoiceData, 'exactly one parent invoice must be produced');
   const lines = payload.OrgInvoiceData.OriginalInvoiceDetail;
   assert.equal(lines.length, 3);
+  assert.equal(lines[0].ItemCode, 'ITEM-91980024', 'VAT must use the immutable item code');
+  assert.equal(payload.OrgInvoiceData.PaymentMethodName, 'TM');
 
   assert.deepEqual(lines.map((line) => [line.LineNumber, line.ItemType, line.ItemName]), [
     [1, 1, 'Socola Đen Bọc Hạnh Nhân 170g'],
@@ -78,4 +82,14 @@ test('inactive or unnamed promotion does not inject a description row', () => {
   });
   assert.equal(payload.OrgInvoiceData.OriginalInvoiceDetail.length, 2);
   assert.equal(payload.OrgInvoiceData.OriginalInvoiceDetail.some((line) => line.ItemType === 4), false);
+});
+
+test('VAT payment method remains TM for every actual tender type', () => {
+  const snapshot = structuredClone(sample);
+  snapshot.payments = [{ method: 'card' }, { method: 'transfer' }];
+  const payload = buildPublishPayload({
+    snapshot,
+    cfg: { taxCode: '0316756674', defaultTaxRate: 8 },
+  });
+  assert.equal(payload.OrgInvoiceData.PaymentMethodName, 'TM');
 });

@@ -40,14 +40,9 @@ export function localInvDate(value) {
   return `${p.year}-${p.month}-${p.day}T${p.hour}:${p.minute}:${p.second}`;
 }
 
-/// Hình thức thanh toán ghi trên hóa đơn, suy từ các dòng thanh toán thật.
-export function paymentMethodName(payments = []) {
-  const methods = [...new Set(payments.map((p) => String(p?.method || '')))].filter(Boolean);
-  if (!methods.length) return 'TM/CK';
-  const coTienMat = methods.includes('cash');
-  const coKhac = methods.some((m) => m !== 'cash');
-  if (coTienMat && coKhac) return 'TM/CK';
-  return coTienMat ? 'TM' : 'CK';
+/// Hình thức thanh toán pháp lý thống nhất trên mọi hóa đơn VAT.
+export function paymentMethodName() {
+  return 'TM';
 }
 
 /// Khóa chống trùng gửi lên MISA. Gắn với PHÁP NHÂN + CHI NHÁNH + BILL nên hai
@@ -100,7 +95,8 @@ export function buildInvoiceLines(items, totalAmount, defaultVatRate = 8) {
     return {
       ItemType: 1,
       SortOrder: i + 1,
-      ItemCode: String(it?.product_code ?? it?.sku_id ?? it?.code ?? '').slice(0, 100),
+      ItemCode: String(it?.item_code ?? it?.product_code ?? it?.code
+        ?? it?.sku_id ?? it?.menu_item_id ?? '').slice(0, 100),
       ItemName: String(it?.product_name ?? it?.name ?? '').slice(0, 500),
       UnitName: String(it?.unit_name ?? it?.unit ?? 'cái').slice(0, 50),
       Quantity: qty,

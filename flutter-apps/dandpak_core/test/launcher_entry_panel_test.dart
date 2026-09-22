@@ -16,6 +16,14 @@ AppModule module(String key, {bool visible = true, String status = 'active'}) =>
     );
 
 void main() {
+  test('chỉ tự vào POS khi tài khoản có đủ quyền module và bán hàng', () {
+    expect(canAutoOpenPos(['module.accounting', 'invoice']), false);
+    expect(canAutoOpenPos(['module.pos']), false);
+    expect(canAutoOpenPos(['sell']), false);
+    expect(canAutoOpenPos(['module.pos', 'sell']), true);
+    expect(canAutoOpenPos(['*']), true);
+  });
+
   test('entry policy is role-aware and never selects a hidden module', () {
     final modules = [
       module('pos'),

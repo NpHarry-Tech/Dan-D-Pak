@@ -48,6 +48,12 @@ const _backOfficeKeys = <String>{
   'printing',
 };
 
+bool canAutoOpenPos(Iterable<String> permissions) {
+  final set = permissions.toSet();
+  return set.contains('*') ||
+      (set.contains('module.pos') && set.contains('sell'));
+}
+
 AppModule? preferredSellingModule(String role, Iterable<AppModule> modules) {
   final visible = modules.where((m) => m.visible && m.isActive).toList();
   final order = switch (role) {
@@ -155,7 +161,10 @@ class _LauncherScreenState extends State<LauncherScreen> {
       final auth = context.read<AuthProvider>();
       if (auth.justLoggedIn) {
         auth.consumeJustLoggedIn();
-        Navigator.of(context).push(MaterialPageRoute(builder: (_) => PosScreen()));
+        if (canAutoOpenPos(auth.currentUser?.permissions ?? const [])) {
+          Navigator.of(context)
+              .push(MaterialPageRoute(builder: (_) => PosScreen()));
+        }
       }
     });
   }

@@ -127,7 +127,7 @@ export function buildPublishEnvelope(payload, { templateNo = '', signType = 2 } 
     CurrencyCode: 'VND',
     ExchangeRate: 1,
     IsInvoiceSummary: false,
-    PaymentMethodName: src.PaymentMethodName || 'TM/CK',
+    PaymentMethodName: 'TM',
     BuyerLegalName: src.BuyerLegalName || '',
     BuyerTaxCode: src.BuyerTaxCode || '',
     BuyerAddress: src.BuyerAddress || '',
