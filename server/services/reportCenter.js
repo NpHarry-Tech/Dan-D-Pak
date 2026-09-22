@@ -473,8 +473,10 @@ function buildMenu(branch_id, query) {
   const range = rangeFromQuery(query);
   const selected = new Set(String(query.product_id || '').split(',').map(s => s.trim()).filter(Boolean));
   const menu = db.prepare(`
-    SELECT m.id,m.name,m.price,m.station,m.available,m.hidden,c.name category
-    FROM menu_items m LEFT JOIN categories c ON c.id=m.category_id
+    SELECT m.*,c.name category,ps.name station_name
+    FROM menu_items m
+    LEFT JOIN categories c ON c.id=m.category_id AND c.branch_id=m.branch_id
+    LEFT JOIN production_stations ps ON ps.id=m.station_id AND ps.branch_id=m.branch_id
     WHERE m.branch_id=? AND m.deleted_at IS NULL
     ORDER BY c.sort,m.sort,m.name`).all(branch_id).filter(r => !selected.size || selected.has(r.id));
   const byId = new Map(menu.map(r => [r.id, { ...r, sold_qty: 0, revenue: 0, bills: new Set() }]));
@@ -515,6 +517,51 @@ function buildMenu(branch_id, query) {
     stat('Số lượng bán thuần', qty(totalQty), totalQty),
     stat('Doanh thu thuần', money(totalRevenue), totalRevenue),
   ];
+  report.sections.push(section('Danh sách thực đơn', [
+    { key: 'item_code', label: 'Mã item' },
+    { key: 'item_id', label: 'ID hệ thống' },
+    { key: 'name', label: 'Tên món' },
+    { key: 'category', label: 'Danh mục' },
+    { key: 'category_id', label: 'ID danh mục' },
+    { key: 'emoji', label: 'Biểu tượng' },
+    { key: 'description', label: 'Mô tả' },
+    { key: 'image', label: 'Ảnh' },
+    { key: 'price_fmt', label: 'Giá cấu hình', align: 'right' },
+    { key: 'vat_rate', label: '% VAT', align: 'right' },
+    { key: 'price_includes_vat_label', label: 'Giá gồm VAT' },
+    { key: 'station_name', label: 'Trạm chế biến' },
+    { key: 'station', label: 'Mã trạm' },
+    { key: 'station_id', label: 'ID trạm' },
+    { key: 'sla_minutes', label: 'SLA (phút)', align: 'right' },
+    { key: 'available_label', label: 'Khả dụng' },
+    { key: 'dine_in_label', label: 'Bán tại chỗ' },
+    { key: 'takeaway_label', label: 'Bán mang đi' },
+    { key: 'hidden_label', label: 'Ẩn POS' },
+    { key: 'self_order_hidden_label', label: 'Ẩn self-order' },
+    { key: 'schedule_json', label: 'Lịch bán' },
+    { key: 'ingredients_json', label: 'Nguyên liệu (JSON)' },
+    { key: 'allergens_json', label: 'Dị ứng (JSON)' },
+    { key: 'modifiers_json', label: 'Tùy chọn cũ (JSON)' },
+    { key: 'addons_json', label: 'Add-on (JSON)' },
+    { key: 'option_groups_json', label: 'Nhóm tùy chọn (JSON)' },
+    { key: 'translations_json', label: 'Bản dịch (JSON)' },
+    { key: 'sort', label: 'Thứ tự', align: 'right' },
+    { key: 'updated_at', label: 'Cập nhật', format: 'datetime' },
+  ], items.map(r => ({
+    ...r,
+    item_code: r.code || '',
+    item_id: r.id,
+    category: r.category || 'Chưa phân loại',
+    unit_price: Number(r.price) || 0,
+    price_fmt: money(r.price),
+    station_name: r.station_name || (r.station === 'bar' ? 'Bar' : 'Bếp'),
+    price_includes_vat_label: r.price_includes_vat !== 0 ? 'Có' : 'Không',
+    available_label: r.available ? 'Có' : 'Không',
+    dine_in_label: r.available_dine_in !== 0 ? 'Có' : 'Không',
+    takeaway_label: r.available_takeaway !== 0 ? 'Có' : 'Không',
+    hidden_label: r.hidden ? 'Có' : 'Không',
+    self_order_hidden_label: r.self_order_hidden ? 'Có' : 'Không',
+  }))));
   report.sections.push(section('Hiệu quả theo món', [
     { key: 'category', label: 'Danh mục' },
     { key: 'name', label: 'Món' },
