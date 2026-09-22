@@ -84,19 +84,6 @@ export function handleZaloWebhook(rawBody, headers = {}) {
   return { handled: true, ingested: 1, conversation: res?.conversation?.id };
 }
 
-export async function sendZaloMessage(branchId, userId, text) {
-  const cfg = zaloConfig(branchId);
-  if (!cfg.accessToken) throw new Error('Zalo OA chưa có access token.');
-  const res = await fetch(`${cfg.apiBase}/oa/message`, {
-    method: 'POST', headers: { 'content-type': 'application/json', access_token: cfg.accessToken },
-    body: JSON.stringify({ recipient: { user_id: cleanId(userId) }, message: { text: cleanId(text) } }),
-  });
-  const data = await res.json().catch(() => ({}));
-  if (data.error && Number(data.error) !== 0) throw new Error(`Zalo gửi tin lỗi: ${data.message || data.error}`);
-  audit('zalo.message.sent', { user_id: userId }, branchId, 'zalo');
-  return { message_id: data.data?.message_id };
-}
-
 export async function zaloRefreshToken(branchId) {
   const cfg = zaloConfig(branchId);
   if (!cfg.appId || !cfg.secretKey) throw new Error('Zalo thiếu App ID / App Secret.');

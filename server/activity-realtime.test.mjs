@@ -2,12 +2,11 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import {
-  setRealtimeEmitter, publishRealtime, hasRealtimeEmitter,
+  setRealtimeEmitter, publishRealtime,
 } from './core/realtimeBus.js';
 
 test('realtimeBus is a no-op until an emitter is registered', () => {
   setRealtimeEmitter(null);
-  assert.equal(hasRealtimeEmitter(), false);
   // Must not throw when no socket layer is present (unit test / cron / worker).
   assert.equal(publishRealtime('activity:new', { id: 'a_1' }, 'sala'), false);
 });
@@ -15,7 +14,6 @@ test('realtimeBus is a no-op until an emitter is registered', () => {
 test('realtimeBus forwards event/payload/branch to the registered emitter', () => {
   const seen = [];
   setRealtimeEmitter((event, payload, branch) => seen.push({ event, payload, branch }));
-  assert.equal(hasRealtimeEmitter(), true);
   const ok = publishRealtime('activity:new', { id: 'a_2', action: 'x' }, 'branch-7');
   assert.equal(ok, true);
   assert.deepEqual(seen, [{ event: 'activity:new', payload: { id: 'a_2', action: 'x' }, branch: 'branch-7' }]);

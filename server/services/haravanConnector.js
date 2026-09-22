@@ -1383,53 +1383,6 @@ export function haravanCapabilities(branch_id = '') {
   };
 }
 
-export function listHaravanProductMappings({ branchId = 'sala', shopDomain = '', status = 'all', q = '', limit = 50, offset = 0 } = {}) {
-  const shop = normShop(shopDomain);
-  const take = Math.max(1, Math.min(200, Number(limit) || 50));
-  const skip = Math.max(0, Number(offset) || 0);
-  const query = cleanId(q).toLowerCase();
-  const where = [`ep.provider=?`, `s.branch_id=?`];
-  const params = [PROVIDER, branchId];
-  if (shop) { where.push(`ep.shop_domain=?`); params.push(shop); }
-  if (status === 'catalog_linked') where.push(`ep.internal_variant_id IS NOT NULL AND ep.internal_variant_id NOT LIKE 'hvn_%'`);
-  if (status === 'shadow_import') where.push(`ep.internal_variant_id LIKE 'hvn_%'`);
-  if (query) {
-    where.push(`LOWER(COALESCE(ep.sku,'')||' '||COALESCE(s.name,'')||' '||ep.external_product_id||' '||ep.external_variant_id) LIKE ?`);
-    params.push(`%${query}%`);
-  }
-  const from = `FROM external_products ep JOIN skus s ON s.id=ep.internal_variant_id WHERE ${where.join(' AND ')}`;
-  const rows = db.prepare(`SELECT ep.shop_domain,ep.external_product_id,ep.external_variant_id,ep.sku,
-      ep.internal_variant_id sku_id,s.name,s.barcode,s.stock,s.price,s.active,
-      CASE WHEN ep.internal_variant_id LIKE 'hvn_%' THEN 'shadow_import' ELSE 'catalog_linked' END mapping_status
-    ${from} ORDER BY ep.updated_at DESC LIMIT ? OFFSET ?`).all(...params, take, skip);
-  const total = Number(db.prepare(`SELECT COUNT(*) n ${from}`).get(...params)?.n || 0);
-  return { rows, total, limit: take, offset: skip };
-}
-
-export function linkHaravanProduct({ branchId = 'sala', shopDomain = '', externalProductId, externalVariantId, skuId, actor = 'system' } = {}) {
-  const shop = normShop(shopDomain);
-  const productId = cleanId(externalProductId);
-  const variantId = cleanId(externalVariantId);
-  const targetSku = cleanId(skuId);
-  const mapping = db.prepare(`SELECT internal_variant_id FROM external_products
-    WHERE provider=? AND shop_domain=? AND external_product_id=? AND external_variant_id=?`)
-    .get(PROVIDER, shop, productId, variantId);
-  if (!mapping) throw new Error('Không tìm thấy biến thể Haravan cần liên kết.');
-  const sku = db.prepare(`SELECT id FROM skus WHERE id=? AND branch_id=? AND active=1`).get(targetSku, branchId);
-  if (!sku) throw new Error('Sản phẩm POS không tồn tại trong chi nhánh này.');
-  db.prepare(`UPDATE external_products SET internal_product_id=?,internal_variant_id=?,updated_at=?
-    WHERE provider=? AND shop_domain=? AND external_product_id=? AND external_variant_id=?`)
-    .run(targetSku, targetSku, now(), PROVIDER, shop, productId, variantId);
-  const previous = cleanId(mapping.internal_variant_id);
-  if (previous && previous !== targetSku && previous.startsWith('hvn_')) {
-    const used = db.prepare(`SELECT 1 FROM order_items WHERE sku_id=? LIMIT 1`).get(previous);
-    if (!used) db.prepare(`UPDATE skus SET active=0 WHERE id=? AND branch_id=?`).run(previous, branchId);
-  }
-  audit('haravan.product.link', { shop_domain: shop, external_product_id: productId,
-    external_variant_id: variantId, previous_sku_id: previous || null, sku_id: targetSku }, branchId, actor);
-  return { shop_domain: shop, external_product_id: productId, external_variant_id: variantId, sku_id: targetSku };
-}
-
 export function listHaravanInventoryReconciliation({ branchId = 'sala', onlyDifferent = true, limit = 100 } = {}) {
   const take = Math.max(1, Math.min(500, Number(limit) || 100));
   const actions = onlyDifferent === false || String(onlyDifferent) === 'false'

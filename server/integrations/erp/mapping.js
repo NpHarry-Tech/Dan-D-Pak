@@ -23,12 +23,6 @@ export function setMapping(branch_id, kind, posKey, navValue, extra = null) {
   return id;
 }
 
-export function resolveMapping(branch_id, kind, posKey, fallback = '') {
-  const row = db.prepare(`SELECT nav_value FROM erp_mapping WHERE branch_id=? AND kind=? AND pos_key=?`)
-    .get(branch_id, kind, String(posKey));
-  return row?.nav_value || fallback;
-}
-
 export function listMappings(branch_id, kind = null) {
   const rows = kind
     ? db.prepare(`SELECT * FROM erp_mapping WHERE branch_id=? AND kind=? ORDER BY pos_key`).all(branch_id, kind)

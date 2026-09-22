@@ -69,7 +69,6 @@ test('gio mang theo TEN MAY va nguon goc de POS doi nhan tab', () => {
 
 test('quan ly doi ten may thi ten moi duoc dung', () => {
   Catalogue.renameCatalogueDevice(BR, { device: 'tab_a', name: 'Ke hat dieu (moi)' });
-  assert.equal(Catalogue.catalogueDeviceName(BR, 'tab_a'), 'Ke hat dieu (moi)');
   // May bao danh lai KHONG duoc de len ten quan ly vua dat.
   const lai = Catalogue.registerCatalogueDevice(BR, { device: 'tab_a', name: 'Ten may tu khai' });
   assert.equal(lai.name, 'Ke hat dieu (moi)');

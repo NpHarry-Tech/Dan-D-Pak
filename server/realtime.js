@@ -50,7 +50,7 @@ function sanitizeForIpad(event, payload) {
     return { order_id: payload?.order_id || payload?.receipt?.order_id || null, paid: true };
   }
   if (!payload || typeof payload !== 'object') return payload;
-  const clone = JSON.parse(JSON.stringify(payload)); // payload realtime nhỏ → clone an toàn
+  const clone = structuredClone(payload);
   scrubPii(clone);
   return clone;
 }

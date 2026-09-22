@@ -106,8 +106,3 @@ test('ket qua cu duoc giu nguyen hinh dang, khong bi bop meo', async () => {
     async () => ({ khac: true }));
   assert.deepEqual(lai, goc);
 });
-
-test('don dep khoa cu khong dung toi khoa vua tao', () => {
-  const bo = Idem.maintainIdempotencyKeys({ hours: 24 });
-  assert.equal(bo, 0, 'khoa vua tao trong phien test khong duoc xoa');
-});

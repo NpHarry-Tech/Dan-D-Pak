@@ -137,7 +137,7 @@ test('comboOptionLabel() resolve đúng tên từ option_groups mode:combo theo 
   assert.equal(Lib.comboOptionLabel({}, 'a1'), null);
 });
 
-test('comboLabels() và modsLabel() không bao giờ lộ group kỹ thuật __addon__ ra tên hiển thị', () => {
+test('modsLabel() không bao giờ lộ group kỹ thuật __addon__ ra tên hiển thị', () => {
   const mods = [{ group: '__addon__', name: 'Salad' }, { group: 'Size', name: 'Lớn' }];
   assert.deepEqual(Lib.modsLabel(mods), ['Salad', 'Lớn']);
   assert.ok(!Lib.modsLabel(mods).some(n => n.includes('__addon__')));

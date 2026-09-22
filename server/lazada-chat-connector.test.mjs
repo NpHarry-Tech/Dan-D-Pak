@@ -54,10 +54,6 @@ test('thieu buyer_id trong payload bi tu choi 400 (khong doan bua danh tinh)', (
   assert.throws(() => LazadaChat.handleLazadaChatPush(body, { authorization: validSig }), (e) => e.status === 400);
 });
 
-test('capability khong gia vo da ket noi khi chua co credential', () => {
-  assert.equal(LazadaChat.lazadaChatCapabilities('br-fresh').status, 'pending_credentials');
-});
-
 test('kenh bi tat (enabled=false) thi bo qua, khong ingest, khong throw', () => {
   Settings.updateIntegrations({ channels: {
     lazada: { enabled: true, sellerId: 'seller-44' },

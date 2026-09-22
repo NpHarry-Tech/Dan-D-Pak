@@ -1,4 +1,4 @@
-import { db, audit } from '../db.js';
+import { db, audit, uid } from '../db.js';
 import { salePrice } from './tax.js';
 import { matchesSearch, searchTokens } from '../core/search.js';
 import { businessParts } from '../core/businessClock.js';
@@ -329,7 +329,7 @@ function localDate(d) {
 export function normalizeAddons(addons) {
   if (!Array.isArray(addons)) return [];
   return addons.map((a, i) => ({
-    key: a.key || ('ad_' + i + '_' + Math.random().toString(36).slice(2, 6)),
+    key: a.key || uid(`ad_${i}_`),
     name: String(a.name || '').trim(),
     kind: a.kind === 'combo' ? 'combo' : 'extra',     // combo = món ăn kèm; extra = topping/extra
     type: a.type === 'free' ? 'free' : 'paid',         // free = tặng kèm; paid = mua thêm/bù tiền
@@ -517,7 +517,7 @@ export function listCategories(branch_id = 'sala') {
 export function createCategory(body, branch_id = 'sala') {
   const name = String(body.name || '').trim();
   if (!name) throw new Error('Thiếu tên danh mục');
-  const id = 'c_' + Math.random().toString(36).slice(2, 8);
+  const id = uid('c_');
   const sort = (db.prepare(`SELECT COALESCE(MAX(sort),0)+1 n FROM categories WHERE branch_id=?`).get(branch_id).n) || 1;
   const stationId = String(body.default_station_id || '').trim() || null;
   if (stationId && !db.prepare(`SELECT 1 FROM production_stations WHERE id=? AND branch_id=? AND active=1`).get(stationId, branch_id)) {

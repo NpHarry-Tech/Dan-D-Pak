@@ -306,7 +306,6 @@ const DEFAULT_ROLE_PERMS = {
     'printer.shipping_label',
   ],
 };
-export const ROLE_PERMS = DEFAULT_ROLE_PERMS; // kept for backwards-compat imports
 
 // Editable role→permission mapping is persisted so admins can change it live.
 db.exec(`CREATE TABLE IF NOT EXISTS role_perms (role TEXT NOT NULL, perm TEXT NOT NULL, PRIMARY KEY(role,perm));`);

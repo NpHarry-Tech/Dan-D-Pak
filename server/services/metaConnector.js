@@ -122,20 +122,6 @@ export function handleMetaWebhook(rawBody, headers = {}) {
   return { handled: true, ingested: results.length };
 }
 
-// Gửi tin ra Messenger/IG (khi có Page token + Advanced Access).
-export async function sendMetaMessage(branchId, provider, recipientId, text) {
-  const cfg = metaChannel(provider, branchId);
-  if (!cfg.accessToken) throw new Error(`${provider} chưa có Page access token.`);
-  const res = await fetch(`${cfg.apiBase}/me/messages?access_token=${encodeURIComponent(cfg.accessToken)}`, {
-    method: 'POST', headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ recipient: { id: cleanId(recipientId) }, messaging_type: 'RESPONSE', message: { text: cleanId(text) } }),
-  });
-  const data = await res.json().catch(() => ({}));
-  if (data.error) throw new Error(`${provider} gửi tin lỗi: ${data.error.message}`);
-  audit('meta.message.sent', { provider, recipient: recipientId }, branchId, provider);
-  return { message_id: data.message_id };
-}
-
 export function metaCapabilities(branchId = 'sala') {
   const out = {};
   for (const provider of ['facebook', 'instagram']) {

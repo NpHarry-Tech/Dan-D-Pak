@@ -131,13 +131,3 @@ export function handleLazadaChatPush(rawBody, headers = {}) {
   audit('lazada.chat.accepted', { seller_id: sellerId, conversation: res?.conversation?.id }, branchId, 'lazadachat');
   return { handled: true, ingested: 1, conversation: res?.conversation?.id };
 }
-
-export function lazadaChatCapabilities(branchId = 'sala') {
-  const cfg = lazadaChatConfig(branchId);
-  const configured = !!(cfg.appId && cfg.secretKey);
-  return {
-    provider: 'lazadachat', enabled: cfg.enabled, configured,
-    status: configured ? 'active_unverified_schema' : 'pending_credentials',
-    capabilities: { inbound_messages: configured, send: false },
-  };
-}

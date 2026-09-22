@@ -124,20 +124,6 @@ export function tiktokAuthLink(branchId, _redirect, stateValue = '') {
 function persistTokens(branchId, patch) {
   updateIntegrations({ channels: { tiktokshop: patch } }, branchId);
 }
-export async function tiktokExchangeToken(branchId, authCode) {
-  const result = await exchangeTiktokCodeRaw(branchId, authCode);
-  const first = result.shops[0];
-  // Compatibility for an explicitly enabled legacy callback only. Shared OAuth
-  // stores these credentials in the encrypted marketplace vault instead.
-  persistTokens(branchId, {
-    accessToken: result.access_token,
-    refreshToken: result.refresh_token,
-    ...(result.shops.length === 1 ? { shopId: first.shop_id, shopCipher: first.shop_cipher } : {}),
-  });
-  audit('tiktok.oauth.token.legacy', { shop_count: result.shops.length }, branchId, 'tiktok');
-  return { ok: true, expire_in: result.access_expires_at };
-}
-
 function unixExpiry(value) {
   const seconds = Number(value || 0);
   return seconds > 1_000_000_000 ? new Date(seconds * 1000).toISOString() : null;

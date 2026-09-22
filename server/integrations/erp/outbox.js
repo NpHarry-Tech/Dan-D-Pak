@@ -165,4 +165,3 @@ export function startErpWorker() {
   }, 30_000);
   if (erpTimer.unref) erpTimer.unref();
 }
-export function stopErpWorker() { if (erpTimer) { clearInterval(erpTimer); erpTimer = null; } }

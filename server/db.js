@@ -1273,7 +1273,7 @@ export function migrate(targetDb = globalDb) {
       const name = String(zone).trim();
       let z = db.prepare(`SELECT id FROM zones WHERE branch_id=? AND name=?`).get(bz, name);
       if (!z) {
-        const zid = 'zone_' + Math.random().toString(36).slice(2, 10);
+        const zid = uid('zone_');
         db.prepare(`INSERT INTO zones (id,branch_id,name,sort) VALUES (?,?,?,?)`)
           .run(zid, bz, name, seedSort++);
         z = { id: zid };

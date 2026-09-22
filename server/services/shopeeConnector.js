@@ -649,14 +649,6 @@ export function startShopeePushWorker() {
   setInterval(() => { try { maintainShopeePushInbox(); } catch { /* maintenance must not crash */ } }, 6 * 60 * 60 * 1000).unref?.();
 }
 
-// Compatibility cho test/caller cũ: vẫn xử lý đồng bộ, nhưng production HTTP route
-// phải dùng receiveShopeePush() để ACK nhanh.
-export async function handleShopeePush(rawBody, headers = {}, candidateUrls = []) {
-  const accepted = receiveShopeePush(rawBody, headers, candidateUrls);
-  await processShopeePushQueue(1);
-  return accepted;
-}
-
 // ── Tem vận đơn (waybill PDF) ────────────────────────────────────────────────
 export async function shopeeWaybill(branchId = 'sala', orderSn, { type = 'THERMAL_AIR_WAYBILL' } = {}) {
   const cfg = shopeeConfig(branchId);

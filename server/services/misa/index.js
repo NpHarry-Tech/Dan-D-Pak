@@ -16,10 +16,8 @@
 // mạng, và sửa một chỗ là đụng cả ba việc.
 
 export {
-  DEFAULT_ENDPOINTS,
   CONFIG_STATUS,
   baseUrl,
-  endpointUrl,
   isProduction,
   environmentMismatch,
   activationBlockers,
@@ -32,8 +30,8 @@ export {
 } from './config.js';
 
 export { MisaError, sanitize } from './client.js';
-export { getToken, clearToken, withToken } from './auth.js';
-export { fetchCompany, fetchTemplates, filterTemplates } from './company.js';
+export { getToken, clearToken } from './auth.js';
+export { fetchCompany, fetchTemplates } from './company.js';
 export {
   localInvDate,
   paymentMethodName,

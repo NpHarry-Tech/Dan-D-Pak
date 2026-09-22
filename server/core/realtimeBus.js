@@ -19,11 +19,6 @@ export function setRealtimeEmitter(fn) {
   emitter = typeof fn === 'function' ? fn : null;
 }
 
-// Có socket layer đang chạy hay chưa (dùng cho test/health).
-export function hasRealtimeEmitter() {
-  return emitter != null;
-}
-
 // Phát một domain event tới đúng chi nhánh. GỌI SAU KHI ĐÃ GHI DB THÀNH CÔNG
 // (post-commit) — DatabaseSync ghi đồng bộ nên khi statement.run() trả về là đã
 // commit ở chế độ autocommit. Best-effort, nuốt lỗi.

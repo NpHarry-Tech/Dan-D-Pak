@@ -76,10 +76,10 @@ test('lien ket hang Haravan vao SKU co san khong tao them san pham nghiep vu', (
     { id: 601, sku: 'WEB-001', title: 'Default Title', price: 99000, inventory_quantity: 2 },
   ] }, 'shop.myharavan.com');
   const before = db.prepare(`SELECT COUNT(*) n FROM skus`).get().n;
-  Haravan.linkHaravanProduct({ branchId: 'sala', shopDomain: 'shop.myharavan.com',
-    externalProductId: 501, externalVariantId: 601, skuId: 'sku_real', actor: 'test' });
-  const mapping = Haravan.listHaravanProductMappings({ branchId: 'sala', shopDomain: 'shop.myharavan.com' });
-  assert.equal(mapping.rows[0].sku_id, 'sku_real');
+  Online.linkProduct({ branch_id: 'sala', provider: 'haravan', shop_domain: 'shop.myharavan.com',
+    external_product_id: 501, external_variant_id: 601, sku_id: 'sku_real', actor: 'test' });
+  const mapping = Online.listProductMappings('sala', { provider: 'haravan', shop_domain: 'shop.myharavan.com' });
+  assert.equal(mapping.rows[0].pos.sku_id, 'sku_real');
   assert.equal(mapping.rows[0].mapping_status, 'catalog_linked');
   assert.equal(db.prepare(`SELECT COUNT(*) n FROM skus`).get().n, before);
 });

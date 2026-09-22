@@ -101,13 +101,6 @@ export function modsLabel(mods) {
   return (Array.isArray(mods) ? mods : []).map(m => m?.name).filter(Boolean);
 }
 
-export function comboLabels(menuItem, combo) {
-  return (Array.isArray(combo) ? combo : []).map(c => {
-    const resolved = comboOptionLabel(menuItem, c.ref_item_id);
-    return { text: resolved ? resolved.name : c.ref_item_id, note: c.note || null };
-  });
-}
-
 // ---------------------------------------------------------------------------
 // Server error codes (server/services/byod.js `fail(message, status, code)`)
 // mapped to localized, guest-facing copy. Falls back to the server's own

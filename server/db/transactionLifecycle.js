@@ -80,8 +80,6 @@ export function enqueueAfterCommit(callback, onError = null) {
   else runCallbacks([item]);
 }
 
-export function trackedTransactionDepth() { return frames.length; }
-
 export function synchronizeTransactionState(isTransaction) {
   if (!isTransaction) frames = [];
   else if (!frames.length) frames = [{ name: null, callbacks: [] }];

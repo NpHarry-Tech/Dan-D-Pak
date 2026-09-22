@@ -72,13 +72,6 @@ export function renameCatalogueDevice(branch_id, { device = '', name = '' } = {}
   return { device_id: id, name: ten };
 }
 
-export function catalogueDeviceName(branch_id, device) {
-  const id = txt(device);
-  if (!id) return '';
-  return txt(db.prepare(`SELECT name FROM catalogue_devices WHERE branch_id=? AND device_id=?`)
-    .get(branch_id, id)?.name);
-}
-
 // ── 2. Cấu hình thanh toán màn khách ────────────────────────────────────────
 
 const DEFAULT_CATALOGUE_CONFIG = {

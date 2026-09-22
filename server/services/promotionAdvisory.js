@@ -32,10 +32,6 @@ export function promotionAdvisory(discount, subtotal, { thresholdPct = advisoryT
   return { advise, discount_pct: Math.round(pct * 100) / 100, threshold_pct: thresholdPct };
 }
 
-/** Wording cảnh báo (KHÔNG dùng "vi phạm pháp luật" — hệ thống không đủ dữ kiện kết luận). */
-export const ADVISORY_MESSAGE =
-  'Chương trình này có mức ưu đãi cao. Vui lòng kiểm tra quy định khuyến mại hiện hành và hồ sơ chương trình trước khi áp dụng cho khách hàng.';
-
 // ── TAXONOMY canonical (phân loại, KHÔNG enforce) ───────────────────────────
 export const PROMOTION_TAXONOMY = Object.freeze({
   STANDARD_PROMOTION: 'STANDARD_PROMOTION',

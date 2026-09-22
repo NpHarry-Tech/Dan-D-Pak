@@ -54,18 +54,20 @@ test('push chu ky HMAC(url|body) hop le duoc chap nhan; sai chu ky bi tu choi', 
   const body = JSON.stringify({ shop_id: SHOP_ID, code: 1, data: { note: 'shop_authorization' } });
   const good = crypto.createHmac('sha256', PARTNER_KEY).update(`${url}|${body}`).digest('hex');
 
-  const ok = await Shopee.handleShopeePush(Buffer.from(body), { authorization: good }, [url]);
+  const ok = Shopee.receiveShopeePush(Buffer.from(body), { authorization: good }, [url]);
+  await Shopee.processShopeePushQueue(1);
   assert.equal(ok.accepted, true);
   assert.equal(ok.code, 1);
 
-  await assert.rejects(
-    () => Shopee.handleShopeePush(Buffer.from(body), { authorization: 'deadbeef' }, [url]),
+  assert.throws(
+    () => Shopee.receiveShopeePush(Buffer.from(body), { authorization: 'deadbeef' }, [url]),
     (e) => e.status === 401);
 });
 
 test('push body-only signature cung duoc chap nhan (fallback)', async () => {
   const body = JSON.stringify({ shop_id: SHOP_ID, code: 1 });
   const bodyOnly = crypto.createHmac('sha256', PARTNER_KEY).update(body).digest('hex');
-  const ok = await Shopee.handleShopeePush(Buffer.from(body), { authorization: bodyOnly }, ['https://any/x']);
+  const ok = Shopee.receiveShopeePush(Buffer.from(body), { authorization: bodyOnly }, ['https://any/x']);
+  await Shopee.processShopeePushQueue(1);
   assert.equal(ok.accepted, true);
 });

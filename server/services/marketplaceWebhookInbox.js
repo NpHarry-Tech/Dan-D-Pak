@@ -135,11 +135,3 @@ export function startMarketplaceWebhookWorker() {
   timer = setInterval(() => processMarketplaceWebhookQueue().catch(() => {}), 1000);
   timer.unref?.();
 }
-
-export function marketplaceWebhookHealth(provider = '') {
-  ensureMarketplaceWebhookInbox();
-  const where = provider ? ' WHERE provider=?' : '';
-  const rows = db.prepare(`SELECT status,COUNT(*) count FROM marketplace_webhook_inbox${where} GROUP BY status`)
-    .all(...(provider ? [provider] : []));
-  return Object.fromEntries(rows.map(r => [r.status, Number(r.count)]));
-}

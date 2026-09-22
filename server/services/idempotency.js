@@ -29,10 +29,6 @@ db.exec(`CREATE TABLE IF NOT EXISTS idempotency_keys (
   PRIMARY KEY(scope, key)
 );`);
 
-// Giữ 24 giờ là quá đủ: một lần bấm của khách không thể kéo dài hơn thế. Dọn
-// định kỳ để bảng không phình theo năm tháng.
-const TTL_GIO = 24;
-
 // Lệnh đang chạy dở bao lâu thì coi là đã chết (server restart giữa chừng).
 // Ngắn hơn thì lần thử lại hợp lệ bị chặn oan; dài hơn thì khách phải chờ lâu.
 const CHAY_DO_TOI_DA_MS = 90_000;
@@ -103,14 +99,5 @@ export async function withIdempotency(scope, key, branch_id, fn) {
     // sửa rồi gửi lại bằng chính mã đó — giữ lại là khách bấm mãi không được.
     db.prepare(`DELETE FROM idempotency_keys WHERE scope=? AND key=?`).run(s, k);
     throw err;
-  }
-}
-
-export function maintainIdempotencyKeys({ hours = TTL_GIO } = {}) {
-  try {
-    const cutoff = new Date(Date.now() - hours * 3_600_000).toISOString();
-    return db.prepare(`DELETE FROM idempotency_keys WHERE created_at < ?`).run(cutoff).changes;
-  } catch {
-    return 0;
   }
 }

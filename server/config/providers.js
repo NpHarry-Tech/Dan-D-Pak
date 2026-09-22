@@ -1,15 +1,9 @@
-import { publicEnvSnapshot } from './env.js';
-
 export const PROVIDERS = Object.freeze({
   database: ['sqlite'],
   realtime: ['socketio'],
   storage: ['local'],
   deploymentTarget: ['local', 'vps'],
 });
-
-export function providerSummary() {
-  return publicEnvSnapshot().providers;
-}
 
 export function assertKnownProviders(env) {
   const issues = [];
