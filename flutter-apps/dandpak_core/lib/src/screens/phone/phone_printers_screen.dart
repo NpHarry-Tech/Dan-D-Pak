@@ -67,6 +67,8 @@ class _PhonePrintersScreenState extends State<PhonePrintersScreen> {
     'inventory_document': 'Phiếu kho',
     'purchase': 'Phiếu mua hàng',
     'refund': 'Hoàn / trả hàng',
+    'return_voucher': 'Phiếu trả hàng',
+    'invoice_confirmation': 'Phiếu xác nhận hóa đơn điện tử',
   };
 
   @override

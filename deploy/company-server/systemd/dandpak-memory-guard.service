@@ -1,0 +1,8 @@
+[Unit]
+Description=Dan D Pak POS memory pressure guard
+After=docker.service
+Wants=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/dan-d-pak/deploy/company-server/scripts/memory-guard.sh

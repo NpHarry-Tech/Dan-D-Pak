@@ -76,7 +76,7 @@ function firePrintInvoiceConfirmation(job, order, snapshot, misaCfg, result) {
       template: misaCfg?.templateId || '',
       series: misaCfg?.series || '',
       lookupCode: result.lookup_code,
-    }, job.branch_id, {});
+    }, job.branch_id, { deviceId: String(order.linked_pos_device || '').trim() });
   } catch (e) {
     audit('einvoice.print_confirmation_failed', { order: job.order_id, error: e.message }, job.branch_id);
   }

@@ -433,6 +433,70 @@ export function buildReturnVoucherDoc(p = {}, printCfg = {}, opts = {}) {
   return { font, blocks, offsetMm: Number(printCfg?.labels?.offsetMm ?? -2) || -2 };
 }
 
+// PHIẾU XÁC NHẬN HÓA ĐƠN ĐIỆN TỬ (driver/GDI). Payload này khác receipt
+// thông thường: số tiền và VAT là snapshot đã gửi/được MISA phát hành, vì vậy
+// phải dựng tài liệu riêng thay vì cố nhét vào buildReceiptDoc rồi mất món.
+export function buildInvoiceConfirmationDoc(p = {}, printCfg = {}, opts = {}) {
+  const tr = printTr(printCfg);
+  const font = opts.font || printCfg?.driverFont || 'Segoe UI';
+  const blocks = [];
+  if (p.shopName) blocks.push({ type: 'text', text: String(p.shopName), size: 15, bold: true, align: 'center' });
+  if (p.address) blocks.push({ type: 'text', text: String(p.address), size: 11, align: 'center' });
+  if (p.phone) blocks.push({ type: 'text', text: `${tr('ĐT: ')}${p.phone}`, size: 11, align: 'center' });
+  blocks.push({ type: 'line', style: 'solid' });
+  blocks.push({ type: 'text', text: tr('PHIẾU XÁC NHẬN HÓA ĐƠN ĐIỆN TỬ'), size: 18, bold: true, align: 'center' });
+  blocks.push({ type: 'text', text: tr('ĐÃ PHÁT HÀNH'), size: 13, bold: true, align: 'center' });
+  blocks.push({ type: 'line', style: 'solid' });
+  if (p.billNo) blocks.push({ type: 'text', text: `${tr('Bill: ')}${p.billNo}`, size: 12 });
+  if (p.branchName) blocks.push({ type: 'text', text: `${tr('Chi nhánh: ')}${p.branchName}`, size: 12 });
+  if (p.shiftLabel) blocks.push({ type: 'text', text: `${tr('Ca: ')}${p.shiftLabel}`, size: 12 });
+  if (p.issuedAt) {
+    try { blocks.push({ type: 'text', text: `${tr('Phát hành lúc: ')}${businessDateTime(p.issuedAt)}`, size: 12 }); } catch {}
+  }
+  if (p.cashier) blocks.push({ type: 'text', text: `${tr('Thu ngân: ')}${p.cashier}`, size: 12 });
+  blocks.push({ type: 'text', text: `${tr('Khách hàng: ')}${p.buyerName || tr('Bán cho người tiêu dùng')}`, size: 12 });
+  blocks.push({ type: 'line', style: 'dot' });
+  blocks.push({ type: 'row', cols: [
+    { text: tr('Mặt hàng'), flex: 5, align: 'left', size: 11, bold: true },
+    { text: tr('SL'), flex: 1, align: 'right', size: 11, bold: true },
+    { text: tr('VAT'), flex: 2, align: 'right', size: 11, bold: true },
+    { text: tr('Thành tiền'), flex: 3, align: 'right', size: 11, bold: true },
+  ] });
+  for (const it of (Array.isArray(p.items) ? p.items : [])) {
+    const prefix = Number(it.itemType) === 4 ? `${tr('KM')}: ` : '';
+    blocks.push({ type: 'row', cols: [
+      { text: `${prefix}${String(it.name || '')}`, flex: 5, align: 'left', size: 12 },
+      { text: String(it.qty ?? ''), flex: 1, align: 'right', size: 12 },
+      { text: String(it.vatRateName || ''), flex: 2, align: 'right', size: 12 },
+      { text: so(it.amount || 0), flex: 3, align: 'right', size: 12 },
+    ] });
+  }
+  blocks.push({ type: 'line', style: 'dot' });
+  blocks.push({ type: 'row', cols: [
+    { text: tr('Tạm tính'), flex: 3, align: 'left', size: 12 },
+    { text: money(p.subtotal || 0), flex: 4, align: 'right', size: 12 },
+  ] });
+  blocks.push({ type: 'row', cols: [
+    { text: tr('Tiền VAT'), flex: 3, align: 'left', size: 12 },
+    { text: money(p.vatTotal || 0), flex: 4, align: 'right', size: 12 },
+  ] });
+  if (Number(p.discount) > 0) blocks.push({ type: 'row', cols: [
+    { text: tr('Chiết khấu'), flex: 3, align: 'left', size: 12 },
+    { text: `-${money(p.discount)}`, flex: 4, align: 'right', size: 12 },
+  ] });
+  blocks.push({ type: 'row', cols: [
+    { text: tr('TỔNG THANH TOÁN'), flex: 3, align: 'left', size: 15, bold: true },
+    { text: money(p.total || 0), flex: 4, align: 'right', size: 16, bold: true },
+  ] });
+  if (p.paymentMethod) blocks.push({ type: 'text', text: `${tr('Thanh toán: ')}${p.paymentMethod}`, size: 11 });
+  blocks.push({ type: 'line', style: 'solid' });
+  blocks.push({ type: 'text', text: `${tr('Số hóa đơn: ')}${p.invoiceNo || ''}`, size: 13, bold: true });
+  if (p.template) blocks.push({ type: 'text', text: `${tr('Mẫu số: ')}${p.template}`, size: 11 });
+  if (p.series) blocks.push({ type: 'text', text: `${tr('Ký hiệu: ')}${p.series}`, size: 11 });
+  if (p.lookupCode) blocks.push({ type: 'text', text: `${tr('Mã tra cứu: ')}${p.lookupCode}`, size: 11 });
+  return { font, blocks, offsetMm: Number(printCfg?.labels?.offsetMm ?? -2) || -2 };
+}
+
 // Payload bill MẪU cho nút "In thử" ở chế độ driver — để cửa hàng in thử ngay
 // trên K80 thật, so sánh font (đổi driverFont rồi in lại). Xem mission #57.
 export function sampleReceiptPayload() {

@@ -4,7 +4,7 @@
 // tiền, nhưng chưa in được: Chưa cấu hình tuyến máy in auto:dev_...", trong khi
 // IN THỬ vẫn tốt. Máy in gắn liền của máy cầm tay chưa ai khai tuyến, nên bill
 // đi vào TUYẾN NGẦM 'auto:<device>:<tên máy in>'. Vòng quét hàng đợi và
-// resolveAgentJobFast đã biết dựng lại tuyến đó, nhưng dispatchJob (đường mà
+// resolveAgentJob đã biết dựng lại tuyến đó, nhưng dispatchJob (đường mà
 // /print/jobs/:id/print gọi — chính là nút app bấm ngay sau thanh toán) thì
 // chưa: nó chỉ tra print_config nên luôn ném "chưa cấu hình".
 //

@@ -1,7 +1,19 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { renderJobText, markReceiptReprint } from './services/printing.js';
-import { moneyToWords } from './services/history.js';
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
+const temp = mkdtempSync(join(tmpdir(), 'dandpak-receipt-golden-'));
+process.env.SQLITE_PATH = join(temp, 'store.db');
+process.env.STORAGE_PATH = join(temp, 'storage');
+process.env.DATA_ENCRYPTION_KEY = process.env.DATA_ENCRYPTION_KEY
+  || '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
+
+const { migrate } = await import('./db.js');
+const { renderJobText, markReceiptReprint } = await import('./services/printing.js');
+const { moneyToWords } = await import('./services/history.js');
+migrate();
 
 test('Golden Receipt Parity & Formatter Validation', () => {
   // 1. Money to Words validation

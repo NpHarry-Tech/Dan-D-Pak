@@ -25,6 +25,7 @@ export const REPORT_GROUPS = [
 
 export const REPORTS = [
   { key: 'sales_overview', group: 'sales', label: 'Báo cáo bán hàng', description: 'Doanh thu, mặt hàng, hóa đơn, kênh bán hàng và phương thức thanh toán.' },
+  { key: 'menu', group: 'sales', label: 'Báo cáo thực đơn', description: 'Hiệu quả từng món, danh mục và món chưa phát sinh bán.' },
   { key: 'sales_online', group: 'sales', label: 'Bán hàng Online', description: 'GrabFood/ShopeeFood/Website và trạng thái fulfillment.' },
   { key: 'purchase_orders', group: 'purchase', label: 'Báo cáo mua hàng', description: 'Đơn mua theo kỳ/NCC, đã nhận, đã trả và công nợ phải trả.' },
   { key: 'purchase_price_analysis', group: 'purchase', label: 'Biến động & So sánh giá nhập', description: 'Biến động giá nhập theo thời gian, so sánh giá giữa các nhà cung cấp, và chi phí mua hàng từ két.' },
@@ -131,8 +132,9 @@ function rowsSum(rows, key) {
 function section(title, columns, rows, totals = null) {
   return { title, columns, rows, totals };
 }
-function stat(label, value, raw = null) {
-  return raw === null ? { label, value } : { label, value, raw };
+function stat(label, value, raw = null, tone = null) {
+  const out = raw === null ? { label, value } : { label, value, raw };
+  return tone ? { ...out, tone } : out;
 }
 function reportShell(type, query) {
   const spec = REPORTS.find(r => r.key === type) || REPORTS[0];
@@ -222,15 +224,29 @@ function combineBranchReports(type, scope, query, reports) {
   }
   const allRows = [...sectionMap.values()].flatMap(sec => sec.rows || []);
   if (['sales_overview', 'sales_online'].includes(type)) {
-    const detailRows = allRows.filter(r => r.order_id && r.amount !== undefined);
-    const bills = new Set(detailRows.map(r => `${r._branch_id}:${r.order_id}`));
-    const amount = rowsSum(detailRows, 'amount');
-    const quantity = rowsSum(detailRows, 'qty');
+    const sumRaw = label => reports.reduce((sum, r) =>
+      sum + (Number((r.summary || []).find(s => s.label === label)?.raw) || 0), 0);
+    const amount = sumRaw('Doanh thu');
+    const returned = sumRaw('Giảm trừ trả hàng');
+    const gross = sumRaw('Doanh số gộp');
+    const bills = sumRaw('Số bill');
+    const quantity = sumRaw('Số lượng');
     report.summary = [
       stat('Doanh thu', money(amount), amount),
-      stat('Số bill', bills.size, bills.size),
+      stat('Giảm trừ trả hàng', money(returned), returned, 'negative'),
+      stat('Doanh số gộp', money(gross), gross, 'positive'),
+      stat('Số bill', bills, bills),
       stat('Số lượng', qty(quantity), quantity),
-      stat('Bình quân/bill', money(bills.size ? amount / bills.size : 0), bills.size ? amount / bills.size : 0),
+      stat('Bình quân/bill', money(bills ? amount / bills : 0), bills ? amount / bills : 0),
+    ];
+  } else if (type === 'menu') {
+    const sumRaw = label => reports.reduce((sum, r) =>
+      sum + (Number((r.summary || []).find(s => s.label === label)?.raw) || 0), 0);
+    report.summary = [
+      stat('Số món trong thực đơn', sumRaw('Số món trong thực đơn'), sumRaw('Số món trong thực đơn')),
+      stat('Món có bán', sumRaw('Món có bán'), sumRaw('Món có bán')),
+      stat('Số lượng bán thuần', qty(sumRaw('Số lượng bán thuần')), sumRaw('Số lượng bán thuần')),
+      stat('Doanh thu thuần', money(sumRaw('Doanh thu thuần')), sumRaw('Doanh thu thuần')),
     ];
   } else {
     report.summary = [
@@ -303,34 +319,65 @@ function buildSales(type, branch_id, query) {
   const range = rangeFromQuery(query);
   const w = paidOrderWhere(branch_id, range, type === 'sales_online' ? `AND COALESCE(o.online_channel,'')!=''` : '');
   const orders = db.prepare(`SELECT id, paid_at, total FROM orders o WHERE ${w.sql} ORDER BY paid_at DESC`).all(...w.params);
-  const bills = new Set(orders.map(r => r.id));
-  const revenue = rowsSum(orders, 'total');
-  const quantity = rowsSum(rows, 'qty');
+  const eventExtra = type === 'sales_online' ? `AND COALESCE(o.online_channel,'')!=''` : '';
+  const paymentEvents = db.prepare(`SELECT p.order_id,p.total,p.created_at
+    FROM payments p JOIN orders o ON o.id=p.order_id
+    WHERE o.branch_id=? AND p.created_at>=? AND p.created_at<=? ${eventExtra}
+    ORDER BY p.created_at DESC`).all(branch_id, range.from, range.to);
+  const bills = new Set(paymentEvents.filter(r => Number(r.total) > 0).map(r => r.order_id));
+  const grossRevenue = paymentEvents.reduce((sum, r) => sum + Math.max(0, Number(r.total) || 0), 0);
+  const returnedAmount = paymentEvents.reduce((sum, r) => sum + Math.max(0, -(Number(r.total) || 0)), 0);
+  const revenue = grossRevenue - returnedAmount;
+  const hasReturns = !!db.prepare(`SELECT 1 FROM sqlite_master WHERE type='table' AND name='order_returns'`).get();
+  const returnRows = hasReturns ? db.prepare(`
+    SELECT ri.original_order_id order_id,ri.order_item_id,ri.sku_id,ri.name item_name,
+      ri.qty,ri.amount,r.created_at,oi.menu_item_id,oi.item_code sku_code,oi.item_barcode sku_barcode,
+      o.bill_no,o.channel,o.online_channel
+    FROM order_return_items ri
+    JOIN order_returns r ON r.id=ri.return_id
+    JOIN orders o ON o.id=ri.original_order_id
+    LEFT JOIN order_items oi ON oi.id=ri.order_item_id
+    WHERE r.branch_id=? AND r.status='completed' AND r.created_at>=? AND r.created_at<=? ${eventExtra}
+    ORDER BY r.created_at DESC`).all(branch_id, range.from, range.to) : [];
+  const returnedQty = rowsSum(returnRows, 'qty');
+  const quantity = rowsSum(rows, 'qty') - returnedQty;
   report.summary = [
     stat('Doanh thu', money(revenue), revenue),
+    stat('Giảm trừ trả hàng', money(returnedAmount), returnedAmount, 'negative'),
+    stat('Doanh số gộp', money(grossRevenue), grossRevenue, 'positive'),
     stat('Số bill', bills.size, bills.size),
     stat('Số lượng', qty(quantity), quantity),
     stat('Bình quân/bill', money(bills.size ? revenue / bills.size : 0), bills.size ? revenue / bills.size : 0),
   ];
   const byDay = new Map();
-  for (const order of orders) {
-    const date = dateOnly(order.paid_at); // ngày VN, không phải UTC
-    const day = byDay.get(date) || { date, bills: 0, revenue: 0 };
-    day.bills += 1;
-    day.revenue += Number(order.total) || 0;
+  for (const event of paymentEvents) {
+    const date = dateOnly(event.created_at); // ngày VN, không phải UTC
+    const day = byDay.get(date) || { date, billIds: new Set(), gross: 0, returns: 0, revenue: 0 };
+    const amount = Number(event.total) || 0;
+    if (amount > 0) { day.billIds.add(event.order_id); day.gross += amount; }
+    if (amount < 0) day.returns += -amount;
+    day.revenue += amount;
     byDay.set(date, day);
   }
   report.sections.push(section('Doanh thu theo ngày', [
     { key: 'date_fmt', label: 'Ngày', format: 'date' },
     { key: 'bills', label: 'Hóa đơn', align: 'right' },
-    { key: 'revenue_fmt', label: 'Doanh thu', align: 'right' },
+    { key: 'gross_fmt', label: 'Doanh số gộp', align: 'right' },
+    { key: 'returns_fmt', label: 'Trả hàng', align: 'right' },
+    { key: 'revenue_fmt', label: 'Doanh thu thuần', align: 'right' },
   ], [...byDay.values()].sort((a, b) => b.date.localeCompare(a.date))
-    .map(day => ({ ...day, date_fmt: dMy(day.date), revenue_fmt: money(day.revenue) }))));
+    .map(day => ({ ...day, bills: day.billIds.size, date_fmt: dMy(day.date), gross_fmt: money(day.gross), returns_fmt: money(day.returns), revenue_fmt: money(day.revenue) }))));
   const byProduct = new Map();
   for (const r of rows) {
     const k = r.menu_item_id || r.sku_id || r.item_name;
     const cur = byProduct.get(k) || { item_name: r.item_name, sku_code: r.sku_code || '', sku_barcode: r.sku_barcode || '', qty: 0, amount: 0 };
     cur.qty += Number(r.qty) || 0; cur.amount += Number(r.amount) || 0;
+    byProduct.set(k, cur);
+  }
+  for (const r of returnRows) {
+    const k = r.menu_item_id || r.sku_id || r.item_name;
+    const cur = byProduct.get(k) || { item_name: r.item_name, sku_code: r.sku_code || '', sku_barcode: r.sku_barcode || '', qty: 0, amount: 0 };
+    cur.qty -= Number(r.qty) || 0; cur.amount -= Number(r.amount) || 0;
     byProduct.set(k, cur);
   }
   report.sections.push(section('Tổng hợp theo sản phẩm', [
@@ -342,12 +389,11 @@ function buildSales(type, branch_id, query) {
   ], [...byProduct.values()].sort((a, b) => b.amount - a.amount).map(r => ({ ...r, qty_fmt: qty(r.qty), amount_fmt: money(r.amount) }))));
 
   // Phương thức thanh toán theo từng bill (gộp từ payment_lines của các đơn trong kỳ).
-  const billIds = [...bills];
-  const payLines = billIds.length
-    ? db.prepare(`SELECT p.order_id, pl.method, pl.amount
-        FROM payments p JOIN payment_lines pl ON pl.payment_id=p.id
-        WHERE p.order_id IN (${billIds.map(() => '?').join(',')})`).all(...billIds)
-    : [];
+  const payLines = db.prepare(`SELECT p.order_id, pl.method, pl.amount
+      FROM payments p JOIN payment_lines pl ON pl.payment_id=p.id
+      JOIN orders o ON o.id=p.order_id
+      WHERE o.branch_id=? AND p.created_at>=? AND p.created_at<=? ${eventExtra}`)
+    .all(branch_id, range.from, range.to);
   const methodsByOrder = new Map(); // order_id -> Map(method -> amount)
   const byMethod = new Map();        // method -> { bills:Set, amount }
   for (const l of payLines) {
@@ -405,6 +451,118 @@ function buildSales(type, branch_id, query) {
     promo_name: r.promo_name || '',
     order_note: r.order_note || '',
     pay_ref: r.pay_ref || '',
+  }))));
+  if (returnRows.length) {
+    report.sections.push(section('Chi tiết trả hàng / giảm trừ', [
+      { key: 'created_at', label: 'Thời gian trả', format: 'datetime' },
+      { key: 'bill', label: 'Bill gốc' },
+      { key: 'item_name', label: 'Sản phẩm / món' },
+      { key: 'qty_fmt', label: 'SL trả', align: 'right' },
+      { key: 'amount_fmt', label: 'Giảm doanh thu', align: 'right' },
+    ], returnRows.map(r => ({
+      ...r,
+      bill: r.bill_no || String(r.order_id).slice(-6).toUpperCase(),
+      qty_fmt: qty(r.qty),
+      amount_fmt: money(r.amount),
+    }))));
+  }
+  return report;
+}
+function buildMenu(branch_id, query) {
+  const report = reportShell('menu', query);
+  const range = rangeFromQuery(query);
+  const selected = new Set(String(query.product_id || '').split(',').map(s => s.trim()).filter(Boolean));
+  const menu = db.prepare(`
+    SELECT m.id,m.name,m.price,m.station,m.available,m.hidden,c.name category
+    FROM menu_items m LEFT JOIN categories c ON c.id=m.category_id
+    WHERE m.branch_id=? AND m.deleted_at IS NULL
+    ORDER BY c.sort,m.sort,m.name`).all(branch_id).filter(r => !selected.size || selected.has(r.id));
+  const byId = new Map(menu.map(r => [r.id, { ...r, sold_qty: 0, revenue: 0, bills: new Set() }]));
+  for (const row of saleRows(branch_id, query, 'fnb')) {
+    const item = byId.get(row.menu_item_id);
+    if (!item) continue;
+    item.sold_qty += Number(row.qty) || 0;
+    item.revenue += Number(row.amount) || 0;
+    item.bills.add(row.order_id);
+  }
+  const hasReturns = !!db.prepare(`SELECT 1 FROM sqlite_master WHERE type='table' AND name='order_returns'`).get();
+  if (hasReturns) {
+    const params = [branch_id, range.from, range.to];
+    let extra = '';
+    if (query.channel) { extra = ' AND o.channel=?'; params.push(query.channel); }
+    const returns = db.prepare(`
+      SELECT oi.menu_item_id,ri.qty,ri.amount
+      FROM order_return_items ri
+      JOIN order_returns r ON r.id=ri.return_id
+      JOIN orders o ON o.id=ri.original_order_id
+      LEFT JOIN order_items oi ON oi.id=ri.order_item_id
+      WHERE r.branch_id=? AND r.status='completed' AND r.created_at>=? AND r.created_at<=?
+        AND oi.menu_item_id IS NOT NULL${extra}`).all(...params);
+    for (const row of returns) {
+      const item = byId.get(row.menu_item_id);
+      if (!item) continue;
+      item.sold_qty -= Number(row.qty) || 0;
+      item.revenue -= Number(row.amount) || 0;
+    }
+  }
+  const items = [...byId.values()];
+  const totalQty = rowsSum(items, 'sold_qty');
+  const totalRevenue = rowsSum(items, 'revenue');
+  const sold = items.filter(r => r.sold_qty || r.revenue);
+  report.summary = [
+    stat('Số món trong thực đơn', items.length, items.length),
+    stat('Món có bán', sold.length, sold.length),
+    stat('Số lượng bán thuần', qty(totalQty), totalQty),
+    stat('Doanh thu thuần', money(totalRevenue), totalRevenue),
+  ];
+  report.sections.push(section('Hiệu quả theo món', [
+    { key: 'category', label: 'Danh mục' },
+    { key: 'name', label: 'Món' },
+    { key: 'station_label', label: 'Trạm chế biến' },
+    { key: 'price_fmt', label: 'Giá hiện tại', align: 'right' },
+    { key: 'qty_fmt', label: 'SL bán thuần', align: 'right' },
+    { key: 'bills_count', label: 'Số bill', align: 'right' },
+    { key: 'revenue_fmt', label: 'Doanh thu thuần', align: 'right' },
+    { key: 'share_fmt', label: 'Tỷ trọng', align: 'right' },
+    { key: 'status', label: 'Trạng thái' },
+  ], items.sort((a, b) => b.revenue - a.revenue).map(r => ({
+    ...r,
+    category: r.category || 'Chưa phân loại',
+    station_label: r.station === 'bar' ? 'Bar' : 'Bếp',
+    price_fmt: money(r.price),
+    qty_fmt: qty(r.sold_qty),
+    bills_count: r.bills.size,
+    revenue_fmt: money(r.revenue),
+    share_fmt: totalRevenue ? `${(r.revenue * 100 / totalRevenue).toLocaleString('vi-VN', { maximumFractionDigits: 1 })}%` : '0%',
+    status: r.hidden ? 'Đang ẩn' : r.available ? 'Đang bán' : 'Tạm hết',
+  }))));
+  const categories = new Map();
+  for (const item of items) {
+    const name = item.category || 'Chưa phân loại';
+    const row = categories.get(name) || { category: name, items: 0, sold_items: 0, sold_qty: 0, revenue: 0 };
+    row.items += 1;
+    if (item.sold_qty || item.revenue) row.sold_items += 1;
+    row.sold_qty += item.sold_qty;
+    row.revenue += item.revenue;
+    categories.set(name, row);
+  }
+  report.sections.push(section('Tổng hợp theo danh mục', [
+    { key: 'category', label: 'Danh mục' },
+    { key: 'items', label: 'Số món', align: 'right' },
+    { key: 'sold_items', label: 'Món có bán', align: 'right' },
+    { key: 'qty_fmt', label: 'SL bán thuần', align: 'right' },
+    { key: 'revenue_fmt', label: 'Doanh thu thuần', align: 'right' },
+  ], [...categories.values()].sort((a, b) => b.revenue - a.revenue).map(r => ({
+    ...r, qty_fmt: qty(r.sold_qty), revenue_fmt: money(r.revenue),
+  }))));
+  report.sections.push(section('Món chưa phát sinh bán', [
+    { key: 'category', label: 'Danh mục' },
+    { key: 'name', label: 'Món' },
+    { key: 'price_fmt', label: 'Giá hiện tại', align: 'right' },
+    { key: 'status', label: 'Trạng thái' },
+  ], items.filter(r => !r.sold_qty && !r.revenue).map(r => ({
+    ...r, category: r.category || 'Chưa phân loại', price_fmt: money(r.price),
+    status: r.hidden ? 'Đang ẩn' : r.available ? 'Đang bán' : 'Tạm hết',
   }))));
   return report;
 }
@@ -1176,6 +1334,7 @@ function buildSingleReport(type = 'sales_overview', branch_id = 'sala', query = 
   if (['sales_fnb', 'sales_retail', 'sales_by_product'].includes(type)) type = 'sales_overview';
   let report;
   if (['sales_overview', 'sales_online'].includes(type)) report = buildSales(type, branch_id, query);
+  else if (type === 'menu') report = buildMenu(branch_id, query);
   else if (type === 'purchase_orders') report = buildPurchaseOrders(branch_id, query);
   else if (type === 'purchase_price_analysis') report = buildPurchasePriceAnalysis(branch_id, query);
   else if (type === 'expenses') report = buildExpenses(branch_id, query);
@@ -1239,6 +1398,7 @@ export function renderReportHtml(report, { mode = 'preview' } = {}) {
     h1{font-size:22px;margin:0 0 4px} h2{font-size:15px;margin:18px 0 8px}
     .meta{color:#667085;margin-bottom:12px}.summary{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:12px 0 14px}
     .sum{border:1px solid #d9dee7;border-radius:6px;padding:8px}.sum b{display:block;font-size:15px;margin-top:4px}
+    .sum.negative{border-color:#fda4af;background:#fff1f2}.sum.negative b{color:#dc2626}.sum.positive b{color:#059669}
     table{width:100%;border-collapse:collapse;margin-bottom:12px;page-break-inside:auto} tr{page-break-inside:avoid;page-break-after:auto}
     th{background:#eef3f8;color:#445065;text-transform:uppercase;font-size:10px;letter-spacing:.3px}
     th,td{border:1px solid #d9dee7;padding:6px 7px;vertical-align:top} td.r,th.r{text-align:right}.empty{text-align:center;color:#98a2b3}
@@ -1248,7 +1408,7 @@ export function renderReportHtml(report, { mode = 'preview' } = {}) {
     <div class="no-print" style="text-align:right;margin-bottom:10px"><button onclick="window.print()">In / Lưu PDF</button></div>
     <h1>${esc(report.title)}</h1>
     <div class="meta">Kỳ báo cáo: ${esc(report.range.label)} · Xuất lúc: ${esc(dateTime(report.generated_at))}</div>
-    <div class="summary">${report.summary.map(s => `<div class="sum">${esc(s.label)}<b>${esc(s.value)}</b></div>`).join('')}</div>
+    <div class="summary">${report.summary.map(s => `<div class="sum ${s.tone === 'negative' ? 'negative' : s.tone === 'positive' ? 'positive' : ''}">${esc(s.label)}<b>${esc(s.value)}</b></div>`).join('')}</div>
     ${report.sections.map(tableHtml).join('')}
     <div class="foot">Dan-D Pak POS/ERP · Báo cáo được tạo tự động từ dữ liệu lưu trữ nội bộ.</div>
   </div></body></html>`;
@@ -1432,4 +1592,3 @@ export async function renderReportPdf(report) {
     rm(dir, { recursive: true, force: true }).catch(() => {});
   }
 }
-

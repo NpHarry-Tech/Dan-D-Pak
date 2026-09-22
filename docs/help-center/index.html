@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+  <meta name="theme-color" content="#ffffff">
+  <meta name="color-scheme" content="light">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="description" content="Trung tâm hướng dẫn sử dụng Dan D Pak POS">
+  <title>Dan D Pak POS · Hướng dẫn sử dụng</title>
+  <link rel="icon" type="image/png" href="/assets/help/DanOnLogo.png">
+  <link rel="stylesheet" href="/assets/help/styles.css?v=20260921-iphone-duo-safe-area">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/vi/" data-home-link aria-label="Dan D Pak Help Center">
+      <img class="brand-logo" src="/assets/help/DanOnLogo.png" alt="Dan D Pak">
+      <span><strong>DAN D PAK POS</strong><small data-ui="helpCenter">Trung tâm hướng dẫn</small></span>
+    </a>
+    <div class="top-actions">
+      <button class="search-button" type="button" data-search-open><span>⌕</span><span data-ui="search">Tìm hướng dẫn</span><kbd>Ctrl K</kbd></button>
+      <label class="language"><span class="sr-only">Language</span><select data-language aria-label="Language"><option value="vi">Tiếng Việt</option><option value="en">English</option><option value="zh">中文</option></select></label>
+    </div>
+  </header>
+
+  <div class="shell">
+    <aside class="sidebar" data-sidebar>
+      <button class="mobile-close" type="button" data-sidebar-close aria-label="Close">×</button>
+      <nav data-navigation aria-label="Help topics"></nav>
+      <div class="support-card"><strong data-ui="needHelp">Bạn vẫn cần hỗ trợ?</strong><p data-ui="supportCopy">Gửi mã đơn, ảnh màn hình và thời điểm phát sinh để được xử lý nhanh.</p><a href="mailto:support@dandpak.io.vn">support@dandpak.io.vn</a></div>
+      <footer class="sidebar-footer">Copyright © 2026 <a href="https://bcmarketing.vn/" target="_blank" rel="noopener noreferrer">bcm</a>. <a href="https://deron.vn/#about" target="_blank" rel="noopener noreferrer">Powered by Harry (Deron)</a>.</footer>
+    </aside>
+    <button class="sidebar-scrim" type="button" data-sidebar-close aria-label="Close navigation" tabindex="-1"></button>
+
+    <main class="main">
+      <button class="mobile-menu" type="button" data-sidebar-open aria-expanded="false">☰ <span data-ui="contents">Danh mục</span></button>
+      <div data-page></div>
+    </main>
+  </div>
+
+  <div class="search-modal" data-search-modal hidden>
+    <div class="search-dialog" role="dialog" aria-modal="true" aria-label="Search">
+      <div class="search-input-wrap"><span>⌕</span><input data-search-input autocomplete="off" placeholder="Tìm kiếm hướng dẫn…"><button type="button" data-search-close>Esc</button></div>
+      <div class="search-results" data-search-results></div>
+    </div>
+  </div>
+
+  <script src="/assets/help/content.js?v=20260920-operations"></script>
+  <script src="/assets/help/content-operations.js?v=20260920-operations"></script>
+  <script src="/assets/help/content-detail.js?v=20260920-detail"></script>
+  <script src="/assets/help/app.js?v=20260921-mobile-safe-area"></script>
+</body>
+</html>

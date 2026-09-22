@@ -118,17 +118,20 @@ export async function issueInvoice({ snapshot, cfg, company = {}, mayHaveLanded 
   let kq;
   try {
     if (portal) {
-      // Cấu hình cũ chỉ lưu GUID mẫu. Tự đồng bộ lại mẫu số thật một lần để
-      // bill đang FAILED có thể retry ngay sau deploy, không buộc cập nhật app.
-      let templateNo = String(cfg.templateNo || '').trim();
-      if (!templateNo) {
-        const templates = await fetchTemplates(cfg);
-        const selected = templates.find((t) => t.id === cfg.templateId);
-        templateNo = String(selected?.templateNo || '').trim();
-      }
-      if (!templateNo) {
-        throw new MisaError('Không tìm thấy mẫu số InvTemplateNo của mẫu hóa đơn đã chọn.', {
-          retryable: false, code: 'MISSING_TEMPLATE_NO',
+      // Luôn đối chiếu lại mẫu trước khi phát hành. fetchTemplates chỉ xin
+      // haveTempOld=false, vì vậy cấu hình cũ trỏ vào mẫu nghị định cũ sẽ bị
+      // chặn trước khi MISA tạo một hóa đơn có PDF tra cứu trắng.
+      const templates = await fetchTemplates(cfg);
+      const configuredNo = String(cfg.templateNo || '').trim();
+      const configuredSeries = String(cfg.series || '').trim();
+      const selected = templates.find((t) => t.id === cfg.templateId)
+        || templates.find((t) => configuredNo && t.templateNo === configuredNo
+          && (!configuredSeries || t.series === configuredSeries));
+      const templateNo = String(selected?.templateNo || '').trim();
+      if (!selected || !templateNo) {
+        throw new MisaError(
+          'Mẫu hóa đơn đang chọn không còn được MISA cho phép tích hợp. Hãy tạo/chọn ký hiệu mẫu mới rồi kiểm tra kết nối lại.', {
+          retryable: false, code: 'MISA_TEMPLATE_NOT_USABLE',
         });
       }
       kq = await withToken(cfg, (token) => publishDeveloperPortal({

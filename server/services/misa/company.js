@@ -198,11 +198,9 @@ export async function fetchTemplates(cfg) {
       invoiceWithCode: String(invoiceWithCode),
       ticket: 'false',
       year: String(businessParts().year),
-      // haveTempOld=true: bao gồm cả mẫu kiểu cũ (IsInheritFromOldTemplate) —
-      // không có cách nào Dan D Pak biết trước mẫu doanh nghiệp đã đăng ký là
-      // kiểu mới hay cũ, nên luôn xin đủ cả hai, để filterTemplates() (payload.js)
-      // quyết định mẫu nào dùng được, không phải MISA lọc hộ.
-      haveTempOld: 'true',
+      // Mẫu kế thừa nghị định cũ không dùng được cho tích hợp và có thể làm PDF
+      // tra cứu trắng. Chỉ xin các mẫu hiện hành mà MISA cho phép phát hành.
+      haveTempOld: 'false',
     });
     url += `?${query}`;
   }

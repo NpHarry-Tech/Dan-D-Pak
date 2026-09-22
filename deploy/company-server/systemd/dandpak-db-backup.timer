@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily verified encrypted backup of Dan D Pak POS SQLite database
+
+[Timer]
+OnCalendar=*-*-* 02:30:00 Asia/Ho_Chi_Minh
+RandomizedDelaySec=10m
+Persistent=true
+
+[Install]
+WantedBy=timers.target

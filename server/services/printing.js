@@ -14,7 +14,7 @@ import { moneyToWords } from './history.js';
 import { listSystemPrinters, getAgentDevices } from './system.js';
 import { logSystem } from './systemLogs.js';
 import { receiptTaxNote } from './tax.js';
-import { buildReceiptDoc, buildKitchenDoc, buildShippingLabelDoc, buildExpenseVoucherDoc, buildReturnVoucherDoc, sampleReceiptPayload } from './receipt_doc.js';
+import { buildReceiptDoc, buildKitchenDoc, buildShippingLabelDoc, buildExpenseVoucherDoc, buildReturnVoucherDoc, buildInvoiceConfirmationDoc, sampleReceiptPayload } from './receipt_doc.js';
 import { businessDateTime, businessParts, businessTime } from '../core/businessClock.js';
 import { translatePrinterStatus } from './printerI18n.js';
 import { printTr } from './printI18n.js';
@@ -64,7 +64,8 @@ const TYPE_LABEL = {
   inventory_document: 'Phiếu kho',
   purchase: 'Phiếu mua hàng',
   refund: 'Hoàn / trả hàng',
-  invoice_confirmation: 'Xác nhận phát hành HĐĐT',
+  return_voucher: 'Phiếu trả hàng',
+  invoice_confirmation: 'Phiếu xác nhận hóa đơn điện tử',
 };
 
 function parsePayload(raw) {
@@ -124,7 +125,7 @@ function printerOutputs(p = {}) {
  * Lý do: in thử chọn từ danh sách tuyến ĐÃ KHAI nên không bao giờ chạm tuyến
  * ngầm, còn dispatchJob chỉ tra print_config. Máy in gắn liền của máy cầm tay
  * KHÔNG nằm trong print_config (agent báo lên lúc chạy), nên mọi bill đi qua
- * dispatchJob đều chết ở đây. Ba chỗ khác (pendingAgentJobs, resolveAgentJobFast,
+ * dispatchJob đều chết ở đây. Ba chỗ khác (pendingAgentJobs, resolveAgentJob,
  * rebuildImplicit) đã biết dựng lại tuyến này — thiếu đúng một chỗ.
  */
 function printerForJob(printerId, branch_id = 'sala') {
@@ -434,14 +435,66 @@ export function resolvePrinterChain(output, branch_id = 'sala', { deviceId = '' 
 /** Tuyến KẾ TIẾP trong chuỗi sau khi [printerId] in hỏng. Hết chuỗi → null. */
 function nextPrinterInChain(job, branch_id, deviceId = '') {
   const chain = resolvePrinterChain(outputOfJobType(job.type), branch_id, { deviceId });
-  const idx = chain.findIndex(p => p.id === job.printer);
-  if (idx < 0) return chain[0] || null;
-  return chain[idx + 1] || null;
+  // Mỗi lần failover có thể do một thiết bị khác báo lỗi, nên thứ tự `chain`
+  // có thể được xếp lại (máy gắn tại chỗ của thiết bị đang báo luôn đứng đầu).
+  // Không được chỉ lấy phần tử đứng sau printer hiện tại: cách đó có thể quay
+  // ngược về máy A đã lỗi sau khi job vừa được chuyển sang máy B.
+  const daHong = new Set([
+    ...(Array.isArray(job?.payload?.failed_printers) ? job.payload.failed_printers : []),
+    job?.printer,
+  ].filter(Boolean).map(String));
+  return chain.find(p => !daHong.has(String(p.id))) || null;
+}
+
+/**
+ * Kết thúc job ở tuyến hỏng và tạo một job mới trên tuyến dự phòng.
+ * Trả null khi đã có tiến trình khác xử lý row này hoặc không còn tuyến thay thế.
+ */
+function createFailoverJob(existing, branch_id, deviceId, error) {
+  const ke = nextPrinterInChain(existing, branch_id, deviceId);
+  if (!ke || ke.id === existing.printer) return null;
+
+  // Chốt có điều kiện để hai agent cùng phát hiện tuyến offline không tạo hai
+  // bản in dự phòng giống nhau.
+  const lyDo = String(error || 'Máy in không khả dụng');
+  const claimed = db.prepare(
+    `UPDATE print_jobs
+       SET status='cancelled', error=?, claimed_by=NULL, claimed_at=NULL
+     WHERE id=? AND status IN ('queued','failed')`,
+  ).run(`Đã hủy tại ${existing.printer || '?'} sau lỗi: ${lyDo}`, existing.id);
+  if (!claimed.changes) return null;
+
+  const cancelled = getJob(existing.id);
+  emit('print:failed', cancelled, branch_id);
+  const job = createJob({
+    printer: ke.id,
+    type: existing.type,
+    title: existing.title,
+    payload: {
+      ...(existing.payload || {}),
+      failed_printers: [...new Set([
+        ...(Array.isArray(existing.payload?.failed_printers)
+          ? existing.payload.failed_printers : []),
+        existing.printer,
+      ].filter(Boolean))],
+      failover_of: existing.payload?.failover_of || existing.id,
+    },
+    branch_id,
+  });
+  logSystem({
+    level: 'warn', source: 'printer', eventType: 'print_failover',
+    title: `Chuyển phiếu sang máy in kế tiếp: ${ke.label || ke.id}`,
+    message: `Đã hủy job ${existing.id} tại tuyến ${existing.printer} sau lỗi (${lyDo}) và tạo job ${job.id} trên tuyến ưu tiên kế tiếp.`,
+    branchId: branch_id, username: 'agent', action: `print:${job.type}`,
+    extra: { job_cu: existing.id, job_moi: job.id, tu: existing.printer, sang: ke.id },
+  });
+  return job;
 }
 
 /** Loại phiếu (job.type) → loại đầu ra của tuyến in (printer.output). */
 function outputOfJobType(type) {
-  if (type === 'receipt' || type === 'test' || type === 'cash_drawer' || type === 'invoice_confirmation') return 'receipt';
+  if (type === 'receipt' || type === 'test' || type === 'cash_drawer'
+    || type === 'invoice_confirmation' || type === 'return_voucher') return 'receipt';
   if (type === 'cup_label') return 'cup_label';
   if (type === 'product_label') return 'product_label';
   if (type === 'runner') return 'runner';
@@ -724,10 +777,6 @@ function replaceVars(text = '', vars = {}) {
 
 function isReprintPayload(p = {}, job = {}) {
   return p.reprint === true || !!p.reprint_of || !!job.reprint_of;
-}
-
-function reprintMarkFor() {
-  return ' (in lại)';
 }
 
 export function markReceiptReprint(text = '') {
@@ -1352,21 +1401,6 @@ function danDateTime(iso) {
   const p = vietnamParts(iso);
   return `${p.day}.${p.month}.${p.year} ${p.hour}.${p.minute}`;
 }
-function danItemRow(i = {}) {
-  const qty = Number(i.qty) || 1;
-  const price = Number(i.unit_price ?? i.price) || 0;
-  // Two rows per item (mirrors web/shared/danBill.js): full name on top, then
-  // the figures below aligned under the SL / Đ.Giá / T.Tiền columns.
-  const nameLines = wrap(i.name || '', DAN_W);
-  const figures = ' '.repeat(DAN_NAME)
-    + ' ' + String(qty).padStart(DAN_QTY)
-    + ' ' + money(price).padStart(DAN_PRICE + 2)
-    + ' ' + money(price * qty).padStart(DAN_AMT + 2);
-  const promo = promoText(i.promo, { thermal: true });
-  const promoLines = promo ? wrap(`  KM: ${promo}`, DAN_W) : [];
-  return [...nameLines, figures, ...promoLines].join('\n');
-}
-
 // [W] = số ký tự/dòng của ĐÚNG máy in sẽ in phiếu này. Mặc định 40 giữ nguyên
 // hành vi cũ. Máy POS cầm tay (Sunmi 58mm) truyền 32 vào, máy để bàn K80 truyền
 // 48 — hai máy cùng chi nhánh nhưng khác khổ giấy, không thể dùng chung một số.
@@ -2749,7 +2783,7 @@ export async function dispatchJob(id, branch_id = 'sala', { force = false } = {}
     return job;
   }
 
-  const text = renderJobText(job);
+  const text = renderJobText(job, branch_id, printer);
   patchJob(id, {
     status: 'printing',
     attempts: Number(job.attempts || 0) + 1,
@@ -2800,6 +2834,11 @@ export async function dispatchJob(id, branch_id = 'sala', { force = false } = {}
       message: job.error, branchId: branch_id,
       action: `print:${job.type}`, extra: { job: id, transport: connection, target },
     });
+    // Chế độ server in trực tiếp cũng phải có cùng quy tắc với Hardware Agent:
+    // A lỗi thì đóng job A và tạo job B. createJob sẽ tự dispatch B nếu tuyến
+    // dự phòng bật auto; không còn tuyến nào mới trả lỗi cho caller như cũ.
+    const moved = createFailoverJob(job, branch_id, '', e.message || String(e));
+    if (moved) return moved;
     throw e;
   }
 }
@@ -2826,9 +2865,9 @@ const AGENT_SCAN_WINDOW = 300;
 const AGENT_CLAIM_TTL_MS = 60_000;
 
 // Báo hỏng bao nhiêu lần thì đổi sang máy in kế tiếp trong chuỗi ưu tiên.
-// Agent tại chỗ đã tự thử lại (kèm cooldown) trước khi báo về, nên 2 lần báo
-// hỏng là đủ kết luận máy in đó đang không dùng được.
-const AGENT_FAILOVER_AFTER = 2;
+// Agent tại chỗ đã tự thử lại (kèm cooldown) trước khi báo về, nên một lần báo
+// hỏng là đủ kết luận tuyến vật lý đó đang không dùng được.
+const AGENT_FAILOVER_AFTER = 1;
 
 // ── PHIẾU QUÁ HẠN THÌ KHÔNG TỰ IN NỮA ───────────────────────────────────────
 // SỰ CỐ THẬT (03/08/2026 12:52 → sáng 04/08): thu ngân kéo bill trên máy POS
@@ -2883,7 +2922,7 @@ export function pendingAgentJobs(branch_id = 'sala', { limit = 40, deviceId = ''
       ORDER BY created_at ASC LIMIT ?`,
   ).all(branch_id, me, claimCutoff, AGENT_SCAN_WINDOW);
 
-  // Nạp cấu hình in ĐÚNG 1 LẦN cho cả loạt job — trước đây resolveAgentJob() gọi
+  // Nạp cấu hình in một lần cho cả loạt job.
   // lại getPrintConfig() (đọc DB + JSON.parse + sanitize) cho TỪNG job, nên agent
   // hỏi hàng đợi mỗi 1.5s làm server lặp lại việc này tới ~40 lần/lần hỏi, tốn
   // gần 2 giây CPU liên tục 24/7 → nghẽn cứng cả server (đã gây sự cố thật).
@@ -2928,7 +2967,14 @@ export function pendingAgentJobs(branch_id = 'sala', { limit = 40, deviceId = ''
     // Máy in LAN thì máy nào trong mạng cũng in được nên không lọc.
     if (connection === 'system' && meIsKnown) {
       const canName = String(printer.systemName || printer.name || '').trim().toLowerCase();
-      if (canName && !myPrinterNames.has(canName)) continue;
+      const routePrimary = String(printer.primaryDeviceId || '').trim();
+      const ownerOffline = routePrimary
+        && routePrimary !== KHOA_MAY_KHONG_DINH_DANH
+        && !onlineDeviceIds.has(routePrimary);
+      // Bình thường máy không cắm printer này phải bỏ qua. Riêng chủ trì đã
+      // offline thì cho đi tiếp tới nhánh failover bên dưới; nếu continue ở đây
+      // sẽ không có thiết bị nào đủ khả năng phát hiện và chuyển job sang B.
+      if (canName && !myPrinterNames.has(canName) && !ownerOffline) continue;
     }
 
     // MÁY CHỦ TRÌ: nhiều máy POS cùng với tới một máy in thì phiếu phải luôn ra ở
@@ -2946,6 +2992,19 @@ export function pendingAgentJobs(branch_id = 'sala', { limit = 40, deviceId = ''
     // đơn đều mang primaryDeviceId = 'agent-khong-dinh-danh'.
     const primary = String(printer.primaryDeviceId || '').trim();
     const chuTriThat = primary && primary !== KHOA_MAY_KHONG_DINH_DANH;
+
+    // Máy in USB/Windows chỉ thiết bị chủ trì mới với tới được. Nếu thiết bị đó
+    // đã offline thì sẽ không bao giờ có ACK lỗi để kích hoạt agentReportResult.
+    // Bất kỳ agent còn sống nào đang poll được phép kết thúc job ở A và tạo job
+    // mới cho tuyến B. Không có B thì giữ nguyên để A online lại còn in được.
+    if (connection === 'system' && chuTriThat && !onlineDeviceIds.has(primary)) {
+      const offlineJob = getJob(row.id);
+      const moved = offlineJob && createFailoverJob(
+        offlineJob, branch_id, me,
+        `Thiết bị chủ trì ${primary} đang offline`,
+      );
+      if (moved) continue;
+    }
     if ((row.printer || '').startsWith('auto:')) {
       const parts = row.printer.split(':');
       const targetDevice = parts[1] || '';
@@ -2960,7 +3019,10 @@ export function pendingAgentJobs(branch_id = 'sala', { limit = 40, deviceId = ''
 
     // Tới đây job chắc chắn được trả về — giờ mới dựng đầy đủ (parse payload,
     // render text). Tối đa `want` lần thay vì cả cửa sổ quét.
-    const resolved = resolveAgentJobFast(getJob(row.id), printers, printCfg, devices);
+    const job = getJob(row.id);
+    const resolved = resolveAgentJob(job,
+      printers.find(p => p.id === job?.printer) || rebuildImplicit(job?.printer, devices),
+      printCfg);
     if (!resolved) continue;
     out.push(resolved);
     if (out.length >= want) break;
@@ -3010,16 +3072,17 @@ function claimJob(id, deviceId, claimCutoff) {
 function driverFieldsFor(job, printer, printCfg) {
   if (!printer || printer.renderMode !== 'driver') return null;
   if ((printer.connection || 'browser') !== 'system') return null;
-  // receipt = payload thật; test = bill mẫu (so font); kitchen_ticket = phiếu bếp
-  // font LỚN qua GDI (không giới hạn 2x của ESC/POS).
-  if (job.type !== 'receipt' && job.type !== 'test' && job.type !== 'kitchen_ticket'
-    && job.type !== 'shipping_label' && job.type !== 'expense_voucher' && job.type !== 'return_voucher') return null;
+  const builder = {
+    kitchen_ticket: buildKitchenDoc,
+    shipping_label: buildShippingLabelDoc,
+    expense_voucher: buildExpenseVoucherDoc,
+    return_voucher: buildReturnVoucherDoc,
+    invoice_confirmation: buildInvoiceConfirmationDoc,
+  }[job.type];
+  if (!builder && job.type !== 'receipt' && job.type !== 'test') return null;
   try {
     let doc;
-    if (job.type === 'kitchen_ticket') doc = buildKitchenDoc(job.payload || {}, printCfg || {}, { font: printer.driverFont });
-    else if (job.type === 'shipping_label') doc = buildShippingLabelDoc(job.payload || {}, printCfg || {}, { font: printer.driverFont });
-    else if (job.type === 'expense_voucher') doc = buildExpenseVoucherDoc(job.payload || {}, printCfg || {}, { font: printer.driverFont });
-    else if (job.type === 'return_voucher') doc = buildReturnVoucherDoc(job.payload || {}, printCfg || {}, { font: printer.driverFont });
+    if (builder) doc = builder(job.payload || {}, printCfg || {}, { font: printer.driverFont });
     else {
       const payload = job.type === 'test' ? sampleReceiptPayload() : (job.payload || {});
       const width = Number(printer?.widthMm)
@@ -3054,13 +3117,7 @@ function driverFieldsFor(job, printer, printCfg) {
   }
 }
 
-function resolveAgentJobFast(job, printers, printCfg, devices = []) {
-  if (!job) return null;
-  // Tuyến ngầm (máy in cắm sẵn, chưa ai khai tuyến) không nằm trong print_config
-  // nên phải dựng lại ở ĐÂY NỮA — vòng quét ngoài đã nhận nó, tới bước dựng job
-  // mà tra lại danh sách cấu hình thì lại rơi về null và job im lặng biến mất.
-  const printer = printers.find(p => p.id === job.printer)
-    || rebuildImplicit(job.printer, devices);
+function resolveAgentJob(job, printer, printCfg) {
   if (!printer || printer.active === false) return null;
   const connection = printer.connection || 'browser';
   return {
@@ -3089,35 +3146,6 @@ function resolveAgentJobFast(job, printers, printCfg, devices = []) {
   };
 }
 
-// Gói mọi thứ agent cần để in 1 job: text đã render + đích + có mở két không.
-function resolveAgentJob(job, branch_id) {
-  if (!job) return null;
-  const printer = printerForJob(job.printer, branch_id);
-  if (!printer || printer.active === false) return null;
-  const connection = printer.connection || 'browser';
-  return {
-    id: job.id,
-    type: job.type,
-    connection,
-    ip: printer.ip || '',
-    port: printer.port || 9100,
-    systemName: printer.systemName || printer.name || '',
-    drawer: !!(printer.openDrawerOnPrint && job.type === 'receipt') || job.type === 'cash_drawer',
-    ...(driverFieldsFor(job, printer, getPrintConfig(branch_id)) || {}),
-    // Truyền máy in vào để phiếu dựng theo ĐÚNG khổ giấy của nó (máy cầm tay
-    // 58mm khác máy để bàn K80 dù cùng chi nhánh).
-    text: renderJobText(job, branch_id, printer),
-    density: getPrintConfig(branch_id)?.bill?.printDensity || 'dark',
-    raw: isThermal(printer),
-    charset: charsetOf(printer),
-    fontScale: fontScaleFor(job.type, getPrintConfig(branch_id)?.bill),
-    buzzer: job.type === 'receipt'
-      && getPrintConfig(branch_id)?.bill?.buzzer !== false
-      && getPrintConfig(branch_id)?.bill?.buzzer !== '0',
-    created_at: job.created_at,
-  };
-}
-
 export function agentJob(id, branch_id = 'sala', { deviceId = '' } = {}) {
   const job = getJobForBranch(id, branch_id);
   if (!job) return null;
@@ -3125,7 +3153,7 @@ export function agentJob(id, branch_id = 'sala', { deviceId = '' } = {}) {
   if (dev && job.claimed_by && String(job.claimed_by).trim() !== dev) {
     throw new Error('Lệnh in không thuộc về thiết bị này');
   }
-  return resolveAgentJob(job, branch_id);
+  return resolveAgentJob(job, printerForJob(job.printer, branch_id), getPrintConfig(branch_id));
 }
 
 // Agent gọi khi đã in xong / in lỗi trên máy in vật lý tại cửa hàng.
@@ -3137,6 +3165,7 @@ export function agentReportResult(id, branch_id, { ok, error, deviceId = '' } = 
   if (dev && existing.claimed_by && String(existing.claimed_by).trim() !== dev) {
     throw new Error('Thiết bị không giữ chỗ lệnh in này');
   }
+  if (existing.status === 'cancelled' || existing.status === 'expired') return existing;
   if (ok) {
     const job = patchJob(id, { status: 'printed', printed_at: now(), printed_by: 'agent', error: null });
     emit('print:done', job, branch_id);
@@ -3169,22 +3198,11 @@ export function agentReportResult(id, branch_id, { ok, error, deviceId = '' } = 
   // Trước đây job cứ nằm 'failed' rồi quay lại hàng đợi cho ĐÚNG tuyến đó —
   // cửa hàng có 2-3 máy in mà bill vẫn không ra tờ nào.
   if (lanThu >= AGENT_FAILOVER_AFTER) {
-    const ke = nextPrinterInChain(job, branch_id, dev);
-    if (ke && ke.id !== job.printer) {
-      job = patchJob(id, {
-        printer: ke.id, status: 'queued', error: null, attempts: 0,
-        claimed_by: null, claimed_at: null,
-      });
-      logSystem({
-        level: 'warn', source: 'printer', eventType: 'print_failover',
-        title: `Chuyển phiếu sang máy in kế tiếp: ${ke.label || ke.id}`,
-        message: `Tuyến ${existing.printer} in hỏng ${lanThu} lần (${error || '?'}) — đẩy sang tuyến ưu tiên kế tiếp.`,
-        branchId: branch_id, username: 'agent',
-        action: `print:${job?.type}`, extra: { job: id, tu: existing.printer, sang: ke.id },
-      });
-      emit('print:new', job, branch_id);
-      return job;
-    }
+    // Kết thúc hẳn tiến trình ở thiết bị A rồi tạo MỘT lệnh mới cho thiết bị B.
+    // Không đổi printer ngay trên cùng một row: lịch sử khi đó nói dối rằng
+    // lệnh của A đã chạy trên B và ACK muộn của A có thể làm sai trạng thái B.
+    const moved = createFailoverJob(job, branch_id, dev, error);
+    if (moved) return moved;
   }
 
   emit('print:failed', job, branch_id);
@@ -3453,14 +3471,19 @@ export function printReceipt(receipt, branch_id = 'sala', { deviceId = '' } = {}
   const linked = receipt.linked_printer_id
     ? printerById(receipt.linked_printer_id, branch_id)
     : null;
-  const localPrinter = deviceId ? resolveReceiptPrinter(branch_id, { deviceId }) : null;
+  const ownPrinterNames = deviceOwnPrinterNames(branch_id, deviceId);
+  const localPrinter = deviceId && ownPrinterNames.size
+    ? resolveReceiptPrinter(branch_id, { deviceId }) : null;
   const linkedIsUsableHardware = linked && linked.active !== false && linked.connection !== 'browser';
-  let printer = (linkedIsUsableHardware ? linked : null) || localPrinter || linked || resolveReceiptPrinter(branch_id, { deviceId });
+  // Máy in vật lý của CHÍNH thiết bị đang thao tác luôn thắng. linked_printer_id
+  // chỉ là dấu vết của lần định tuyến trước và có thể đã trỏ sang một quầy khác.
+  let printer = localPrinter || (linkedIsUsableHardware ? linked : null)
+    || linked || resolveReceiptPrinter(branch_id, { deviceId });
   // THIẾT BỊ KHÔNG CẮM MÁY IN NÀO (thiết bị C): không có máy in riêng để "in nhầm
   // chỗ", nên TRẢ BILL VỀ MÁY IN ƯU TIÊN của tuyến 'receipt' (đầu chuỗi failover)
   // thay vì báo lỗi. Máy A khỏe → bill ra A; A hỏng → chuỗi tự nhảy máy kế. Thiết
   // bị CÓ máy in riêng mà thiếu tuyến thì GIỮ NGUYÊN (không giành máy của máy khác).
-  if (!printer && deviceOwnPrinterNames(branch_id, deviceId).size === 0) {
+  if (!printer && ownPrinterNames.size === 0) {
     const chain = resolvePrinterChain('receipt', branch_id, { deviceId });
     if (chain.length) printer = chain[0];
   }
@@ -3526,9 +3549,27 @@ export function enqueueReceiptPrint(receipt, branch_id = 'sala', { deviceId = ''
  * resolveReceiptPrinter tự rơi về tuyến in hóa đơn mặc định của chi nhánh.
  */
 export function printInvoiceConfirmation(order, data, branch_id = 'sala', { deviceId = '' } = {}) {
+  // Phiếu được tạo bởi worker nền sau khi MISA phát hành xong, nên caller thường
+  // không còn request/header của POS. Order vẫn giữ đúng device đã bán hàng.
+  deviceId = String(deviceId || order.linked_pos_device || '').trim();
   const linked = order.linked_printer_id ? printerById(order.linked_printer_id, branch_id) : null;
-  const linkedIsUsableHardware = linked && linked.active !== false && linked.connection !== 'browser';
-  const printer = (linkedIsUsableHardware ? linked : null) || resolveReceiptPrinter(branch_id, { deviceId });
+  // linked_printer_id là dấu vết của máy đã tạo bill và có thể trỏ vào bếp/tem
+  // hoặc một tuyến cũ. Phiếu xác nhận HĐĐT chỉ được dùng lại tuyến đó khi máy
+  // thực sự có vai trò "Hóa đơn / Tạm tính"; nếu không phải phân giải lại đúng
+  // nhóm receipt. Trước đây chỉ kiểm tra máy còn bật nên phiếu có thể bị gửi
+  // sang máy bếp rồi người dùng tưởng hệ thống không in.
+  const linkedIsUsableHardware = linked && linked.active !== false
+    && linked.connection !== 'browser' && printerOutputs(linked).includes('receipt');
+  const ownPrinterNames = deviceOwnPrinterNames(branch_id, deviceId);
+  const localPrinter = deviceId && ownPrinterNames.size
+    ? resolveReceiptPrinter(branch_id, { deviceId }) : null;
+  let printer = localPrinter || (linkedIsUsableHardware ? linked : null)
+    || resolveReceiptPrinter(branch_id, { deviceId });
+  // Thiết bị phát hành không có máy in vật lý: đưa phiếu lên chuỗi dùng chung để
+  // một thiết bị khác đang kết nối nhận và in theo priority đã cấu hình.
+  if (!printer && ownPrinterNames.size === 0) {
+    printer = resolvePrinterChain('receipt', branch_id, { deviceId })[0] || null;
+  }
   if (!printer) {
     logSystem({
       level: 'error', source: 'printer', eventType: 'invoice_confirmation_printer_missing',

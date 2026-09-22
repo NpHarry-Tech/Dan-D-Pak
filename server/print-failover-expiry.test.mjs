@@ -63,28 +63,64 @@ test('may in dau hong thi phieu tu sang may ke tiep theo thu tu uu tien', async 
   const id = jobs[0].id;
   assert.equal(Print.getJob(id).printer, 'quay1');
 
-  // Agent báo hỏng: lần đầu chỉ ghi lỗi, chưa vội đổi máy (có thể kẹt giấy tạm).
-  Print.agentReportResult(id, BR, { ok: false, error: 'het giay', deviceId: 'dev1' });
-  assert.equal(Print.getJob(id).printer, 'quay1', 'mot lan hong chua doi may');
-  assert.equal(Print.getJob(id).status, 'failed');
-
-  // Lần thứ hai thì kết luận máy đó không dùng được → sang máy 2, và job phải
-  // quay lại hàng đợi chứ không nằm 'failed'.
-  Print.agentReportResult(id, BR, { ok: false, error: 'het giay', deviceId: 'dev1' });
-  assert.equal(Print.getJob(id).printer, 'quay2', 'phai chuyen sang may in ke tiep');
-  assert.equal(Print.getJob(id).status, 'queued');
-  assert.equal(Print.getJob(id).error, null);
+  // Agent chỉ báo về sau khi đã tự retry tại chỗ. Server phải hủy job A và tạo
+  // ngay một job mới cho B, để lịch sử và quyền claim không bị nhập nhằng.
+  const job2 = Print.agentReportResult(id, BR,
+    { ok: false, error: 'het giay', deviceId: 'dev1' });
+  assert.equal(Print.getJob(id).status, 'cancelled', 'job tai may hong phai ket thuc');
+  Print.agentReportResult(id, BR, { ok: true, deviceId: 'dev1' });
+  assert.equal(Print.getJob(id).status, 'cancelled', 'ACK muon khong duoc hoi sinh job A');
+  assert.notEqual(job2.id, id, 'failover phai tao mot lenh in moi');
+  assert.equal(job2.printer, 'quay2', 'phai chuyen sang may in ke tiep');
+  assert.equal(job2.status, 'queued');
 
   // Máy 2 cũng hỏng → sang máy 3.
-  Print.agentReportResult(id, BR, { ok: false, error: 'mat ket noi', deviceId: 'dev1' });
-  Print.agentReportResult(id, BR, { ok: false, error: 'mat ket noi', deviceId: 'dev1' });
-  assert.equal(Print.getJob(id).printer, 'quay3');
+  const job3 = Print.agentReportResult(job2.id, BR,
+    { ok: false, error: 'mat ket noi', deviceId: 'dev1' });
+  assert.equal(Print.getJob(job2.id).status, 'cancelled');
+  assert.equal(job3.printer, 'quay3');
 
   // Hết chuỗi thì dừng ở 'failed' — không quay vòng vô tận về máy đầu.
-  Print.agentReportResult(id, BR, { ok: false, error: 'hong', deviceId: 'dev1' });
-  Print.agentReportResult(id, BR, { ok: false, error: 'hong', deviceId: 'dev1' });
-  assert.equal(Print.getJob(id).printer, 'quay3', 'het chuoi thi dung lai');
-  assert.equal(Print.getJob(id).status, 'failed');
+  Print.agentReportResult(job3.id, BR, { ok: false, error: 'hong', deviceId: 'dev1' });
+  assert.equal(Print.getJob(job3.id).printer, 'quay3', 'het chuoi thi dung lai');
+  assert.equal(Print.getJob(job3.id).status, 'failed');
+});
+
+test('failover khong quay lai may da hong khi thiet bi B sap xep lai chuoi', () => {
+  const BR = 'failover_no_cycle';
+  AppSettings.updateSettings({ print_config: { printers: [
+    { id: 'a', systemName: 'A', output: 'receipt', connection: 'system', active: true, primaryDeviceId: 'devA' },
+    { id: 'b', systemName: 'B', output: 'receipt', connection: 'system', active: true, primaryDeviceId: 'devB' },
+  ] } }, BR);
+  System.setAgentPrinters(BR, [{ Name: 'A' }], { deviceId: 'devA', deviceName: 'POS-A' });
+  System.setAgentPrinters(BR, [{ Name: 'B' }], { deviceId: 'devB', deviceName: 'POS-B' });
+
+  const a = Print.printReceipt(bill(), BR, { deviceId: 'devA' })[0];
+  const b = Print.agentReportResult(a.id, BR, { ok: false, error: 'A hong', deviceId: 'devA' });
+  assert.equal(b.printer, 'b');
+  Print.agentReportResult(b.id, BR, { ok: false, error: 'B hong', deviceId: 'devB' });
+  assert.equal(Print.getJob(b.id).status, 'failed', 'khong duoc quay lai A');
+});
+
+test('thiet bi chu tri A offline thi agent B tu tao lenh du phong', () => {
+  const BR = 'failover_offline_owner';
+  AppSettings.updateSettings({ print_config: { printers: [
+    { id: 'a', systemName: 'A', output: 'receipt', connection: 'system', active: true, priority: 1, primaryDeviceId: 'devA' },
+    { id: 'b', systemName: 'B', output: 'receipt', connection: 'system', active: true, priority: 2, primaryDeviceId: 'devB' },
+  ] } }, BR);
+  // Chỉ B online; A đã tắt app nên không thể tự ACK lỗi.
+  System.setAgentPrinters(BR, [{ Name: 'B' }], { deviceId: 'devB', deviceName: 'POS-B' });
+  const original = Print.createJob({
+    printer: 'a', type: 'receipt', title: 'A offline', payload: bill(), branch_id: BR,
+  });
+
+  Print.pendingAgentJobs(BR, { deviceId: 'devB' });
+  assert.equal(Print.getJob(original.id).status, 'cancelled');
+  const replacement = db.prepare(
+    `SELECT * FROM print_jobs WHERE branch_id=? AND printer='b' ORDER BY created_at DESC LIMIT 1`,
+  ).get(BR);
+  assert.ok(replacement, 'phai tao lenh moi cho B ngay ca khi A khong the bao loi');
+  assert.equal(replacement.status, 'queued');
 });
 
 test('may in cam tai cho luon dung dau chuoi, bat ke so uu tien', () => {

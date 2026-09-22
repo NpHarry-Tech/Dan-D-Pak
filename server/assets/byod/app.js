@@ -22,6 +22,35 @@ const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
 function esc(v) { const d = document.createElement('div'); d.textContent = String(v ?? ''); return d.innerHTML; }
 function attr(v) { return esc(v).replace(/"/g, '&quot;'); }
 
+// Keep fixed/sticky controls inside the actually visible browser viewport.
+// On iOS the visual viewport changes when browser chrome or the keyboard opens;
+// iPhone Duo additionally has an asymmetric system-control area on the right.
+function updateViewportLayout() {
+  const viewport = window.visualViewport;
+  const left = Math.max(0, viewport?.offsetLeft || 0);
+  const top = Math.max(0, viewport?.offsetTop || 0);
+  const width = viewport?.width || window.innerWidth;
+  const height = viewport?.height || window.innerHeight;
+  const right = Math.max(0, window.innerWidth - left - width);
+  const bottom = Math.max(0, window.innerHeight - top - height);
+  const root = document.documentElement;
+  root.style.setProperty('--visual-l', `${left}px`);
+  root.style.setProperty('--visual-t', `${top}px`);
+  root.style.setProperty('--visual-r', `${right}px`);
+  root.style.setProperty('--visual-b', `${bottom}px`);
+  root.style.setProperty('--viewport-h', `${height}px`);
+
+  const iosLike = /iPhone|iPad|iPod/i.test(navigator.userAgent)
+    || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const shortestSide = Math.min(window.innerWidth, window.innerHeight);
+  document.body.classList.toggle('iphone-duo-inner', iosLike && shortestSide >= 900);
+}
+updateViewportLayout();
+window.visualViewport?.addEventListener('resize', updateViewportLayout, { passive: true });
+window.visualViewport?.addEventListener('scroll', updateViewportLayout, { passive: true });
+window.addEventListener('resize', updateViewportLayout, { passive: true });
+window.addEventListener('orientationchange', updateViewportLayout, { passive: true });
+
 // ---------------------------------------------------------------------------
 const ICONS = {
   back: '<path d="M14.5 5.5 8 12l6.5 6.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>',
@@ -426,7 +455,7 @@ function renderStaffCallButton() {
   const btn = $('#btn-staff-call');
   if (!state.data) { btn.classList.add('hidden'); return; }
   btn.classList.remove('hidden');
-  btn.style.bottom = STAFF_CALL_BOTTOM[state.screen] || '110px';
+  btn.style.setProperty('--staff-bottom', STAFF_CALL_BOTTOM[state.screen] || '110px');
   btn.setAttribute('aria-label', t(state.lang, 'callStaff'));
   const cooling = Date.now() < state.staffCallCooldownUntil;
   btn.disabled = state.busyStaffCall || cooling;

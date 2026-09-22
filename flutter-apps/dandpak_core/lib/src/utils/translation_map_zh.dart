@@ -75,8 +75,7 @@ const Map<String, String> viToZhMap = {
   '(mẫu trống)': '（空白模板）',
   ')}:\${d.minute.toString().padLeft(2, ':
       ')}:\${d.minute.toString().padLeft(2, ',
-  '--title=Select hình ảnh hoặc video quảng cáo':
-      '--title=选择宣传图片或视频',
+  '--title=Select hình ảnh hoặc video quảng cáo': '--title=选择宣传图片或视频',
   '--title=Select ảnh hóa đơn': '--title=选择发票图片',
   '/assets/menu-book/\${(_pages(_book() ?? {}).length + 1).toString().padLeft(2, ':
       '/assets/menu-book/\${(_pages(_book() ?? {}).length + 1).toString().padLeft(2, ',
@@ -86,21 +85,17 @@ const Map<String, String> viToZhMap = {
       '1 张图片 → 固定显示。多张图片 → 按所选时间轮播。',
   '1. Quyền truy cập Camera (Máy ảnh)': '1. 摄像头访问权限（相机）',
   '1. Quyền truy cập thiết bị': '1. 设备访问权限',
-  '1. Đối chiếu tiền-về chưa khớp':
-      '1. 到账对账不一致',
+  '1. Đối chiếu tiền-về chưa khớp': '1. 到账对账不一致',
   '10 hoặc 13 chữ số': '10 位或 13 位数字',
   '12 tháng gần nhất': '最近 12 个月',
   '15 giây': '15 秒',
-  '2. Connection Network nội bộ & Printternet':
-      '2. 内部网络连接与打印网络',
+  '2. Connection Network nội bộ & Printternet': '2. 内部网络连接与打印网络',
   '2. Lý do / ghi chú đối soát': '2. 原因/对账备注',
   '2. Thu thập thông tin cá nhân': '2. 个人信息收集',
   '20 giây': '20 秒',
   '25 giây': '25 秒',
-  '3. Chia sẻ thông tin với bên thứ ba':
-      '3. 与第三方共享信息',
-  '3. No thu thập thông tin cá nhân':
-      '3. 不收集个人信息',
+  '3. Chia sẻ thông tin với bên thứ ba': '3. 与第三方共享信息',
+  '3. No thu thập thông tin cá nhân': '3. 不收集个人信息',
   '30 giây': '30 秒',
   '4 giây': '4 秒',
   '5 giây': '5 秒',
@@ -114,8 +109,7 @@ const Map<String, String> viToZhMap = {
   'Dải ảnh chạy đầu trang Menu khi khách tự gọi món bằng điện thoại (quét QR trên bàn).':
       '顾客用手机自助点餐（扫描桌上二维码）时，菜单页顶部滚动显示的图片。',
   'Hiện banner trên trang Menu BYOD': '在 BYOD 菜单页显示横幅',
-  'Chưa có ảnh — banner sẽ ẩn trên trang Menu.':
-      '暂无图片——横幅将在菜单页隐藏。',
+  'Chưa có ảnh — banner sẽ ẩn trên trang Menu.': '暂无图片——横幅将在菜单页隐藏。',
   'Tối đa 8 ảnh': '最多 8 张图片',
   '4. Contacts & Hỗ trợ': '4. 联系方式与支持',
   '4. Contacts hỗ trợ': '4. 联系支持',
@@ -127,10 +121,8 @@ const Map<String, String> viToZhMap = {
   'API Base URL': 'API 基础地址',
   'Account kết nối': '已连接的账户',
   'Account ngân hàng nhận chuyển khoản': '接收转账的银行账户',
-  'Account này chưa có quyền xem báo cáo nào.':
-      '该账户尚无查看任何报表的权限。',
-  'Account, vai trò và quyền truy cập của nhân viên.':
-      '员工的账户、角色及访问权限。',
+  'Account này chưa có quyền xem báo cáo nào.': '该账户尚无查看任何报表的权限。',
+  'Account, vai trò và quyền truy cập của nhân viên.': '员工的账户、角色及访问权限。',
   'Active — đang hoạt động': 'Active — 启用中',
   'Add bàn': '添加桌台',
   'Add chi nhánh': '添加分店',
@@ -162,8 +154,7 @@ const Map<String, String> viToZhMap = {
   'Address giao / nhận hàng': '送货/收货地址',
   'Address nhận hàng': '收货地址',
   'Address trên hóa đơn': '发票上的地址',
-  'Admin luôn có toàn quyền, không cần chỉnh.':
-      '管理员始终拥有完整权限，无需调整。',
+  'Admin luôn có toàn quyền, không cần chỉnh.': '管理员始终拥有完整权限，无需调整。',
   'All chi nhánh': '全部分店',
   'All danh mục': '全部分类',
   'All kênh': '全部渠道',
@@ -201,10 +192,8 @@ const Map<String, String> viToZhMap = {
   'Bình thường': '正常',
   'Bạn chịu trách nhiệm xác nhận khoản thu này — được ghi vào nhật ký.':
       '您需负责确认此笔收入 — 该操作将被记入日志。',
-  'Bạn có đồng ý cấp quyền truy cập Camera không?':
-      '您是否同意授予摄像头访问权限？',
-  'Bạn không có quyền thực hiện thao tác này':
-      '您没有权限执行此操作',
+  'Bạn có đồng ý cấp quyền truy cập Camera không?': '您是否同意授予摄像头访问权限？',
+  'Bạn không có quyền thực hiện thao tác này': '您没有权限执行此操作',
   'Bản': '版本',
   'Bản cập nhật tải về rỗng': '更新下载内容为空',
   'Bảng cấu hình': '配置表',
@@ -219,8 +208,7 @@ const Map<String, String> viToZhMap = {
   'Bật cho tablet/iPad dọc; mỗi hotspot mở đúng món thật trong backend.':
       '为竖屏平板/iPad 启用；每个热点会在后台打开对应的实际商品。',
   'Bật chương trình "\${v.name}".': '开启"\${v.name}"活动。',
-  'Bật chương trình tích điểm theo số điện thoại':
-      '开启按手机号积分的活动',
+  'Bật chương trình tích điểm theo số điện thoại': '开启按手机号积分的活动',
   'Bật màn hình phụ (màn thứ 2)': '开启副屏（第二屏）',
   'Bật âm thanh thông báo': '开启通知提示音',
   'Bắt đầu làm': '开始使用',
@@ -245,8 +233,7 @@ const Map<String, String> viToZhMap = {
   'Ca: chưa mở': '班次：尚未开班',
   'Ca: đang mở': '班次：进行中',
   'Cam kết Security & Quyền riêng tư': '安全与隐私承诺',
-  'Cam kết bảo mật dữ liệu và quyền sử dụng camera.':
-      '承诺保障数据安全及摄像头使用权限。',
+  'Cam kết bảo mật dữ liệu và quyền sử dụng camera.': '承诺保障数据安全及摄像头使用权限。',
   'Cancel URL (Cancel thanh toán)': '取消 URL（取消支付）',
   'Cancel bill / hủy món': '取消账单/取消点单',
   'Cancel bỏ': '取消',
@@ -268,11 +255,9 @@ const Map<String, String> viToZhMap = {
   'Cash trong ngày': '当日现金',
   'Cash: 100.000đ': '现金：100,000đ',
   'Casso · Đối soát chuyển khoản': 'Casso · 转账对账',
-  'Casso — tự đối soát chuyển khoản':
-      'Casso — 自动转账对账',
+  'Casso — tự đối soát chuyển khoản': 'Casso — 自动转账对账',
   'Category mới': '新建分类',
-  'Category, món ăn, recipe trừ kho và lịch bán.':
-      '分类、菜品、扣减库存的配方及销售排期。',
+  'Category, món ăn, recipe trừ kho và lịch bán.': '分类、菜品、扣减库存的配方及销售排期。',
   'Chi tiêu': '支出',
   'Chi tiêu tối thiểu': '最低消费',
   'Chi trực tiếp': '直接支出',
@@ -280,16 +265,14 @@ const Map<String, String> viToZhMap = {
   'Chi từ két': '从保险柜支出',
   'Chi từ két tiền': '从钱箱支出',
   'Cho phép đăng nhập': '允许登录',
-  'Cho phép đổi điểm thành giảm giá':
-      '允许将积分兑换为折扣',
+  'Cho phép đổi điểm thành giảm giá': '允许将积分兑换为折扣',
   'Chuyển bàn': '转台',
   'Chuyển bàn \${table.code} sang': '将 \${table.code} 桌转至',
   'Chuyển kho': '仓库调拨',
   'Chuyển tới: \$stationName': '转至：\$stationName',
   'Chuyển đi': '转出',
   'Chuyển đến': '转入',
-  'Chào mừng bạn đến với tính năng Tax & Kế toán!':
-      '欢迎使用税务与会计功能！',
+  'Chào mừng bạn đến với tính năng Tax & Kế toán!': '欢迎使用税务与会计功能！',
   'Chào mừng quý khách': '欢迎光临',
   'Chúng tôi cam kết:\\n': '我们承诺：\\n',
   'Chưa bán món nào': '尚未售出任何菜品',
@@ -304,13 +287,11 @@ const Map<String, String> viToZhMap = {
   'Chưa có cấu hình menu quyển': '尚未配置菜单册',
   'Chưa có doanh thu hôm nay': '今天暂无营业额',
   'Chưa có doanh thu trong kỳ này': '本期暂无营业额',
-  'Chưa có dòng nào — bấm “+ Dòng chữ” bên dưới.':
-      '暂无任何文字行 — 点击下方“+ 文字行”添加。',
+  'Chưa có dòng nào — bấm “+ Dòng chữ” bên dưới.': '暂无任何文字行 — 点击下方“+ 文字行”添加。',
   'Chưa có dòng thanh toán': '暂无付款行',
   'Chưa có dữ liệu': '暂无数据',
   'Chưa có dữ liệu hóa đơn': '暂无发票数据',
-  'Chưa có giao dịch két trong ca này':
-      '本班次暂无钱箱交易',
+  'Chưa có giao dịch két trong ca này': '本班次暂无钱箱交易',
   'Chưa có hóa đơn nào': '暂无发票',
   'Chưa có job in nào': '暂无打印任务',
   'Chưa có khoản chi nào': '暂无支出记录',
@@ -322,8 +303,7 @@ const Map<String, String> viToZhMap = {
   'Chưa có lệnh in nào': '暂无打印指令',
   'Chưa có lịch sử kho': '暂无仓库历史记录',
   'Chưa có lịch sử đặt hàng chi tiết': '暂无详细订货记录',
-  'Chưa có máy in nào được cấu hình trong Category in':
-      '打印分类中尚未配置任何打印机',
+  'Chưa có máy in nào được cấu hình trong Category in': '打印分类中尚未配置任何打印机',
   'Chưa có máy in nào. Bấm "+ Add danh mục in" bên dưới để thêm.':
       '暂无打印机。点击下方的"+ 添加打印分类"进行添加。',
   'Chưa có món kèm / extra.': '暂无配菜/附加项。',
@@ -340,10 +320,8 @@ const Map<String, String> viToZhMap = {
   'Chưa có đơn online nào': '暂无线上订单',
   'Chưa có địa chỉ nhận hàng riêng': '暂无单独的收货地址',
   'Chưa có ảnh': '暂无图片',
-  'Chưa có ảnh — màn hình phụ sẽ hiện logo khi rảnh.':
-      '暂无图片 — 空闲时副屏将显示Logo。',
-  'Chưa có ảnh — sẽ in dòng chữ [\${_s(row[':
-      '暂无图片 — 将打印文字 [\${_s(row[',
+  'Chưa có ảnh — màn hình phụ sẽ hiện logo khi rảnh.': '暂无图片 — 空闲时副屏将显示Logo。',
+  'Chưa có ảnh — sẽ in dòng chữ [\${_s(row[': '暂无图片 — 将打印文字 [\${_s(row[',
   'Chưa đặt tên': '未命名',
   'Chưa cấu hình máy in nào': '尚未配置任何打印机',
   'Chưa giao': '未配送',
@@ -360,8 +338,7 @@ const Map<String, String> viToZhMap = {
   'Chậm': '慢',
   'Chỉ 1 lần': '仅一次',
   'Chỉ một ngày': '仅一天',
-  'Chỉ tích điểm khi khách có số điện thoại':
-      '仅当客户提供手机号码时才累积积分',
+  'Chỉ tích điểm khi khách có số điện thoại': '仅当客户提供手机号码时才累积积分',
   'Chỉ áp dụng cho các danh mục chọn': '仅适用于所选分类',
   'Chờ bếp': '等待厨房',
   'Chờ in': '等待打印',
@@ -374,10 +351,8 @@ const Map<String, String> viToZhMap = {
       '确认退款 \${Fmt.money(_n(widget.receipt[',
   'Confirm hoàn chi': '确认退款',
   'Confirm quyền': '确认权限',
-  'Confirm thay đổi cấu hình danh mục máy in.':
-      '确认更改打印分类配置。',
-  'Confirm thay đổi cấu hình máy POS thẻ.':
-      '确认更改刷卡POS机配置。',
+  'Confirm thay đổi cấu hình danh mục máy in.': '确认更改打印分类配置。',
+  'Confirm thay đổi cấu hình máy POS thẻ.': '确认更改刷卡POS机配置。',
   'Confirm thông tin hồ sơ': '确认档案信息',
   'Confirm thủ công': '手动确认',
   'Confirm đã hủy': '确认已取消',
@@ -395,8 +370,7 @@ const Map<String, String> viToZhMap = {
   'CÔNG TY': '公司',
   'Cá nhân': '个人',
   'Các dòng thanh toán': '付款行',
-  'Cách hoạt động (Đường B — tự đối soát)':
-      '工作原理（方案B — 自助对账）',
+  'Cách hoạt động (Đường B — tự đối soát)': '工作原理（方案B — 自助对账）',
   'Cách nhận đơn': '接单方式',
   'Cách tích điểm tự động': '自动累积积分方式',
   'Còn \$daysLeft ngày': '还剩 \$daysLeft 天',
@@ -418,8 +392,7 @@ const Map<String, String> viToZhMap = {
       '班次内已付款的账单会先暂缓；交班时，系统会依次将该班次所有符合条件的账单提交至MISA，并为每张成功开具的账单自动打印确认单。',
   'Mỗi bill thanh toán xong được gửi MISA ngay (trong vài giây) và tự in phiếu xác nhận khi có số hóa đơn.':
       '每笔账单付款完成后会立即（几秒内）提交至MISA，一旦获得发票号码即自动打印确认单。',
-  'Xác nhận đổi thời điểm phát hành hóa đơn điện tử.':
-      '确认更改电子发票开具时机。',
+  'Xác nhận đổi thời điểm phát hành hóa đơn điện tử.': '确认更改电子发票开具时机。',
   'CẤU HÌNH CHI TIẾT': '详细配置',
   'Cấu hình Server': '服务器配置',
   'Cấu hình Server (Server)': '服务器配置（Server）',
@@ -434,12 +407,10 @@ const Map<String, String> viToZhMap = {
   'Cấu hình máy in, in thử và lịch sử lệnh in đã có trong module "Printers" ở màn hình ứng dụng.':
       '打印机配置、试打印及打印记录历史均可在应用界面的"Printers"（打印机）模块中查看。',
   'Cấu hình thông báo': '通知配置',
-  'Cấu hình trong hệ thống ERP/POS (Tại đây)':
-      '在ERP/POS系统中配置（此处）',
+  'Cấu hình trong hệ thống ERP/POS (Tại đây)': '在ERP/POS系统中配置（此处）',
   'Cần giữ lại ít nhất một quyển menu': '至少需保留一本菜单册',
   'Cần mở ca làm việc trước khi bán hàng.': '销售前需先开班。',
-  'Cần mở ca làm việc trước khi bán retail.':
-      '零售销售前需先开班。',
+  'Cần mở ca làm việc trước khi bán retail.': '零售销售前需先开班。',
   'Cần nhập khu vực và số bàn': '需输入区域和桌号',
   'Cần nhập tên chi nhánh': '需输入分店名称',
   'Cần nhập tên liên hệ': '需输入联系人姓名',
@@ -460,8 +431,7 @@ const Map<String, String> viToZhMap = {
   'Danh bạ khách hàng': '客户通讯录',
   'Date bán (YYYY-MM-DD)': '销售日期（YYYY-MM-DD）',
   'Date bắt đầu kê khai': '申报开始日期',
-  'Date chuyển sang phương pháp kê khai *':
-      '转为申报方式的日期 *',
+  'Date chuyển sang phương pháp kê khai *': '转为申报方式的日期 *',
   'Date giao dịch cuối': '最后交易日期',
   'Date giờ': '日期时间',
   'Date giờ chi': '支出日期时间',
@@ -474,8 +444,7 @@ const Map<String, String> viToZhMap = {
   'Delete danh mục "\${c.name}".': '删除分类 "\${c.name}"。',
   'Delete dòng': '删除该行',
   'Delete giỏ': '删除购物车',
-  'Delete khoản chi \${Fmt.money(_n(e[':
-      '删除支出 \${Fmt.money(_n(e[',
+  'Delete khoản chi \${Fmt.money(_n(e[': '删除支出 \${Fmt.money(_n(e[',
   'Delete liên hệ': '删除联系人',
   'Delete lọc': '删除筛选条件',
   'Delete lọc ngày': '删除日期筛选',
@@ -502,8 +471,7 @@ const Map<String, String> viToZhMap = {
       '将此URL粘贴到SePay → 集成 → Webhooks配置中。SePay会附带请求头Authorization: Apikey <API Key>。当到账金额与内容DANBILL+账单号匹配且金额足够时，系统会自动结账并打印发票。',
   'Dán URL này vào payOS Dashboard → Kênh thanh toán → Cấu hình Webhook. payOS sẽ gọi về đây khi khách thanh toán xong.':
       '将此URL粘贴到payOS后台 → 支付渠道 → Webhook配置中。客户完成付款后，payOS会回调此地址。',
-  'Dán nội dung JSON cấu hình đã xuất...':
-      '粘贴已导出的配置JSON内容……',
+  'Dán nội dung JSON cấu hình đã xuất...': '粘贴已导出的配置JSON内容……',
   'Dòng chữ': '文字行',
   'Dòng cấu hình': '配置行',
   'Dòng giao dịch': '交易流水',
@@ -543,8 +511,7 @@ const Map<String, String> viToZhMap = {
   'FEFO tự động': '自动先到期先出（FEFO）',
   'FILE': '文件',
   'Failed to open URL: \$e': '打开链接失败：\$e',
-  'File cấu hình phải là JSON object':
-      '配置文件必须是JSON对象',
+  'File cấu hình phải là JSON object': '配置文件必须是JSON对象',
   'GHI CHÚ': '备注',
   'GHI CHÚ NỘI BỘ': '内部备注',
   'GIAO DỊCH KÉT CA NÀY': '本班次钱箱交易',
@@ -553,8 +520,7 @@ const Map<String, String> viToZhMap = {
   'Ghi thanh toán': '记录付款',
   'Ghi đè theo nhân viên': '按员工覆盖',
   'Giao dịch bị hủy hoặc thất bại.': '交易已取消或失败。',
-  'Giao dịch bị từ chối hoặc thất bại.':
-      '交易被拒绝或失败。',
+  'Giao dịch bị từ chối hoặc thất bại.': '交易被拒绝或失败。',
   'Giao dịch không khớp / chưa đủ tiền được ghi vào nhật ký để đối soát thủ công.':
       '金额不匹配/不足的交易将记录到日志中，以便人工对账。',
   'Giá': '价格',
@@ -577,13 +543,11 @@ const Map<String, String> viToZhMap = {
   'Gộp bàn': '合并桌台',
   'Gộp bàn \${table.code} vào': '将桌台 \${table.code} 并入',
   'Gợi ý voucher đang hoạt động': '代金券推荐已启用',
-  'Gợi ý: \${bestVoucher.displayName}':
-      '推荐：\${bestVoucher.displayName}',
+  'Gợi ý: \${bestVoucher.displayName}': '推荐：\${bestVoucher.displayName}',
   'Gợi ý: \${bestVoucher.displayName} giảm \${Fmt.money(best)}':
       '推荐：\${bestVoucher.displayName}，可减 \${Fmt.money(best)}',
   'Gửi món vào bếp': '送单到厨房',
-  'Gửi món vào bếp/bar trước khi thanh toán.':
-      '结账前请先将订单送至厨房/吧台。',
+  'Gửi món vào bếp/bar trước khi thanh toán.': '结账前请先将订单送至厨房/吧台。',
   'Gửi yêu cầu →': '发送请求 →',
   'Hao hụt / hủy': '损耗/作废',
   'Header bắt buộc mọi request: x-client-id + x-api-key':
@@ -636,8 +600,7 @@ const Map<String, String> viToZhMap = {
   'Import PIN Management để xác nhận đưa các hóa đơn lỗi vào hàng đợi gửi lại sau và kết ca:':
       '输入管理员密码，以确认将错误发票放入稍后重发队列并结束本班：',
   'Import PubHTML5': '导入PubHTML5',
-  'Import approval code thủ công rồi thêm dòng thanh toán':
-      '手动输入授权码后再添加付款项',
+  'Import approval code thủ công rồi thêm dòng thanh toán': '手动输入授权码后再添加付款项',
   'Import bên nhận tiền / NCC': '输入收款方/供应商',
   'Import chữ hoặc chèn {dữ liệu}…': '输入文字或插入{数据}…',
   'Import giá trị': '输入数值',
@@ -645,8 +608,7 @@ const Map<String, String> viToZhMap = {
       '输入或选择实际打印机名称（例如：EPSON TM-T82）',
   'Import kho thất bại': '仓库导入失败',
   'Import lý do chi': '输入支出原因',
-  'Import lý do nếu từ chối (ví dụ: hết món...)':
-      '如拒绝请输入原因（例如：菜品售罄等）',
+  'Import lý do nếu từ chối (ví dụ: hết món...)': '如拒绝请输入原因（例如：菜品售罄等）',
   'Import mã PIN': '输入密码',
   'Import mã số thuế trước khi truy xuất': '请先输入税号再查询',
   'Import mã voucher giấy, voucher công ty, đối tác hoặc UrBox. CTKM sản phẩm chọn bằng icon hộp quà trên từng dòng hàng.':
@@ -661,30 +623,23 @@ const Map<String, String> viToZhMap = {
   'Import số tiền chi': '输入支出金额',
   'Import thông tin xuất hóa đơn': '输入开票信息',
   'Import tài khoản quản trị': '输入管理员账号',
-  'Import tài khoản và mã PIN quản trị viên':
-      '输入管理员账号和密码',
+  'Import tài khoản và mã PIN quản trị viên': '输入管理员账号和密码',
   'Import tên chương trình khuyến mại': '输入促销活动名称',
   'Import tên kho': '输入仓库名称',
-  'Import tên khách hoặc tên công ty xuất hóa đơn':
-      '输入开票客户姓名或公司名称',
+  'Import tên khách hoặc tên công ty xuất hóa đơn': '输入开票客户姓名或公司名称',
   'Import tên mặt hàng': '输入商品名称',
-  'Import tên, SĐT hoặc tên công ty':
-      '输入姓名、电话号码或公司名称',
+  'Import tên, SĐT hoặc tên công ty': '输入姓名、电话号码或公司名称',
   'Import tồn đầu': '输入期初库存',
   'Import vào kho': '入库',
-  'Import địa chỉ API của máy chủ trung tâm:':
-      '输入中央服务器的API地址：',
+  'Import địa chỉ API của máy chủ trung tâm:': '输入中央服务器的API地址：',
   'Info đăng ký kinh doanh': '营业登记信息',
-  'Invoices \${id.toString().padLeft(2, ':
-      '发票 \${id.toString().padLeft(2, ',
+  'Invoices \${id.toString().padLeft(2, ': '发票 \${id.toString().padLeft(2, ',
   'Invoices / Tạm tính': '发票 / 预结单',
   'Invoices / toàn bill': '发票 / 整单',
-  'Invoices không có số tiền cần thanh toán.':
-      '该发票没有需要支付的金额。',
+  'Invoices không có số tiền cần thanh toán.': '该发票没有需要支付的金额。',
   'Invoices tối thiểu': '最低发票金额',
   'Invoices điện tử': '电子发票',
-  'Invoices điện tử, kế toán và nền tảng bán hàng.':
-      '电子发票、会计与销售平台。',
+  'Invoices điện tử, kế toán và nền tảng bán hàng.': '电子发票、会计与销售平台。',
   'Job in gần đây': '最近的打印任务',
   'KHỔ IN': '打印尺寸',
   'KIỂM TRA ĐƠN HÀNG': '检查订单',
@@ -695,8 +650,7 @@ const Map<String, String> viToZhMap = {
   'Kho bếp / vật dụng': '厨房仓库 / 用具',
   'Kho nhận': '接收仓库',
   'Kho trống': '空仓库',
-  'Kho tài liệu nội bộ dùng cho vận hành và đào tạo.':
-      '用于运营和培训的内部文档库。',
+  'Kho tài liệu nội bộ dùng cho vận hành và đào tạo.': '用于运营和培训的内部文档库。',
   'Khuyến mại / Voucher': '促销 / 优惠券',
   'Khuyến mại / voucher': '促销 / 优惠券',
   'Khuyến mại theo': '促销依据',
@@ -717,8 +671,7 @@ const Map<String, String> viToZhMap = {
   'Khách trả hàng': '顾客退货',
   'Khách tự gọi món (iPad)': '顾客自助点餐（iPad）',
   'Khách yêu cầu xuất hóa đơn': '顾客要求开具发票',
-  'Khách đã chuyển? Xác nhận thủ công':
-      '顾客是否已转账？手动确认',
+  'Khách đã chuyển? Xác nhận thủ công': '顾客是否已转账？手动确认',
   'Khách đã thanh toán qua payOS': '顾客已通过payOS付款',
   'Khách đưa (VND)': '顾客支付（VND）',
   'Kiểm kho': '盘点库存',
@@ -733,8 +686,7 @@ const Map<String, String> viToZhMap = {
   'KÉT SAU HOÀN CHI': '支出报销后钱箱余额',
   'Két trước hoàn chi': '支出报销前钱箱余额',
   'Kênh': '渠道',
-  'Kênh bán hàng đang nối với kho này':
-      '该销售渠道正连接此仓库',
+  'Kênh bán hàng đang nối với kho này': '该销售渠道正连接此仓库',
   'Kênh online': '线上渠道',
   'Kênh online chung': '通用线上渠道',
   'Kênh đặt món từ website, QR bàn, landing page hoặc kiosk tự gọi món.':
@@ -745,8 +697,7 @@ const Map<String, String> viToZhMap = {
   'Kế toán': '会计',
   'Kế toán / người giao': '会计 / 送货员',
   'Kết ca': '结班',
-  'Kết ca hiện tại? Hệ thống sẽ chốt báo cáo ca.':
-      '确定结束当前班次？系统将生成班次报告。',
+  'Kết ca hiện tại? Hệ thống sẽ chốt báo cáo ca.': '确定结束当前班次？系统将生成班次报告。',
   'Kết quả: \${_s(result[': '结果：\${_s(result[',
   'Kỳ báo cáo: \${r.rangeLabel}\${r.generatedAt.isNotEmpty ? ':
       '报表周期：\${r.rangeLabel}\${r.generatedAt.isNotEmpty ? ',
@@ -780,10 +731,8 @@ const Map<String, String> viToZhMap = {
   'Loyalty Points & CTKM': '会员积分与促销活动',
   'Loyalty Points & Khuyến mại': '会员积分与促销',
   'Loyalty Points khách hàng': '客户会员积分',
-  'Loyalty Points theo giá trị mua hàng':
-      '按购买金额计算的会员积分',
-  'Loyalty Points theo số lần giao dịch':
-      '按交易次数计算的会员积分',
+  'Loyalty Points theo giá trị mua hàng': '按购买金额计算的会员积分',
+  'Loyalty Points theo số lần giao dịch': '按交易次数计算的会员积分',
   'Loại': '类型',
   'Loại database': '数据库类型',
   'Loại kho': '仓库类型',
@@ -819,8 +768,7 @@ const Map<String, String> viToZhMap = {
   'MST (nếu xuất cho công ty)': '税号（如需为公司开票）',
   'MST khách': '客户税号',
   'Management danh mục': '分类管理',
-  'Management kho hàng và liên kết kênh bán.':
-      '管理仓库并关联销售渠道。',
+  'Management kho hàng và liên kết kênh bán.': '管理仓库并关联销售渠道。',
   'Management nhân viên': '员工管理',
   'Management quyền và vai trò': '管理权限与角色',
   'Management thực đơn': '菜单管理',
@@ -839,18 +787,15 @@ const Map<String, String> viToZhMap = {
   'Mua \${value.round()} tặng 1': '买\${value.round()}送1',
   'Mua X tặng 1': '买X送1',
   'Mua thêm': '继续购买',
-  'MÃ CỦA CƠ QUAN THUẾ:\\n\${_s(invoice[':
-      '税务机关代码：\\n\${_s(invoice[',
+  'MÃ CỦA CƠ QUAN THUẾ:\\n\${_s(invoice[': '税务机关代码：\\n\${_s(invoice[',
   'MÃ KH': '客户编号',
   'MÃ SỐ THUẾ': '税号',
   'MÓN': '菜品',
   'MÓN ĐÃ HỦY': '已取消菜品',
   'Màn bếp (KDS)': '厨房显示屏（KDS）',
   'Màn hình phụ': '副屏',
-  'Màn hình phụ đang hiển thị đúng QR của hóa đơn này.':
-      '副屏正在显示此发票对应的正确二维码。',
-  'Màn hình self-order và thiết bị cho khách.':
-      '自助点餐屏幕与顾客设备。',
+  'Màn hình phụ đang hiển thị đúng QR của hóa đơn này.': '副屏正在显示此发票对应的正确二维码。',
+  'Màn hình self-order và thiết bị cho khách.': '自助点餐屏幕与顾客设备。',
   'Màn hình tự order (iPad / máy khách)': '自助点餐屏幕（iPad / 客户端）',
   'Màu nút': '按钮颜色',
   'Máy in': '打印机',
@@ -873,24 +818,20 @@ const Map<String, String> viToZhMap = {
   'Mã phê duyệt / Approval code': '审批码/Approval code',
   'Mã phường/xã': '坊/乡代码',
   'Mã số thuế': '税号',
-  'Mã số thuế (MST) (bỏ qua nếu chưa có)':
-      '税号(MST)(暂无可跳过)',
+  'Mã số thuế (MST) (bỏ qua nếu chưa có)': '税号(MST)(暂无可跳过)',
   'Mã tham chiếu / approval': '参考码/approval',
   'Mã trạng thái': '状态代码',
   'Mã tỉnh/thành': '省/市代码',
   'Mã voucher': '优惠券代码',
-  'Mã voucher không tồn tại hoặc chưa đủ điều kiện.':
-      '优惠券代码不存在或不满足使用条件。',
+  'Mã voucher không tồn tại hoặc chưa đủ điều kiện.': '优惠券代码不存在或不满足使用条件。',
   'Mã địa điểm kinh doanh...': '经营地点编号...',
   'Mã địa điểm: \${_s(loc[': '地点编号:\${_s(loc[',
   'Món & tiền': '菜品与金额',
   'Món khách vừa gọi': '顾客刚点的菜品',
   'Món mới lên màn hình bếp (KDS)': '新菜品出现在厨房显示屏(KDS)上',
   'Món ăn kèm & Extra': '配菜与加料',
-  'Món đang ẩn — không hiện trên thiết bị khách hàng':
-      '该菜品已隐藏——不会显示在顾客设备上',
-  'Món đã sẵn sàng — mời quý khách dùng bữa':
-      '菜品已准备好——请慢用',
+  'Món đang ẩn — không hiện trên thiết bị khách hàng': '该菜品已隐藏——不会显示在顾客设备上',
+  'Món đã sẵn sàng — mời quý khách dùng bữa': '菜品已准备好——请慢用',
   'Món được mở khi bấm': '点击后展开的菜品',
   'Mô hình HKD quy mô lớn. Nghĩa vụ thuế và báo cáo tài chính bắt buộc tương đương doanh nghiệp.':
       '大规模个体工商户模式。纳税义务和财务报告要求与企业相同。',
@@ -931,8 +872,7 @@ const Map<String, String> viToZhMap = {
   'Name mẫu in': '打印模板名称',
   'Name mặt hàng': '商品名称',
   'Name ngân hàng': '银行名称',
-  'Name người / nhà cung cấp nhận tiền':
-      '收款人/收款供应商名称',
+  'Name người / nhà cung cấp nhận tiền': '收款人/收款供应商名称',
   'Name người mua / công ty': '买方/公司名称',
   'Name người phụ trách bên NCC': '供应商负责人姓名',
   'Name nhân viên': '员工姓名',
@@ -966,17 +906,13 @@ const Map<String, String> viToZhMap = {
   'Nhãn sau tên': '名称后标签',
   'Nhóm': '分组',
   'Nhóm 1 (< 1 tỷ/năm)': '第1组(年营收<10亿越南盾)',
-  'Nhóm 1: Revenue < 1 tỷ đồng / năm':
-      '第1组:年营收<10亿越南盾',
+  'Nhóm 1: Revenue < 1 tỷ đồng / năm': '第1组:年营收<10亿越南盾',
   'Nhóm 2 (1 tỷ - 3 tỷ/năm)': '第2组(年营收10亿-30亿越南盾)',
-  'Nhóm 2: Revenue 1 tỷ – 3 tỷ đồng / năm':
-      '第2组:年营收10亿-30亿越南盾',
+  'Nhóm 2: Revenue 1 tỷ – 3 tỷ đồng / năm': '第2组:年营收10亿-30亿越南盾',
   'Nhóm 3 (3 tỷ - 50 tỷ/năm)': '第3组(年营收30亿-500亿越南盾)',
-  'Nhóm 3: Revenue 3 tỷ – 50 tỷ đồng / năm':
-      '第3组:年营收30亿-500亿越南盾',
+  'Nhóm 3: Revenue 3 tỷ – 50 tỷ đồng / năm': '第3组:年营收30亿-500亿越南盾',
   'Nhóm 4 (> 50 tỷ/năm)': '第4组(年营收>500亿越南盾)',
-  'Nhóm 4: Revenue > 50 tỷ đồng / năm':
-      '第4组:年营收>500亿越南盾',
+  'Nhóm 4: Revenue > 50 tỷ đồng / năm': '第4组:年营收>500亿越南盾',
   'Nhóm hàng': '商品分组',
   'Nhóm khách hàng': '客户分组',
   'Nhóm ngành': '行业分组',
@@ -990,12 +926,10 @@ const Map<String, String> viToZhMap = {
   'Nhật ký hoạt động': '操作日志',
   'Nhật ký hoạt động hệ thống được lưu trong SQLite local tối đa 3 năm. Các dòng lỗi có thể mở ra để xem nguyên nhân chi tiết.':
       '系统操作日志保存在本地SQLite中,最长保留3年。错误记录可展开查看详细原因。',
-  'Nhật ký này chưa có id để giải mã':
-      '此日志尚无可用于解密的id',
+  'Nhật ký này chưa có id để giải mã': '此日志尚无可用于解密的id',
   'No bật/tắt được voucher': '无法启用/禁用优惠券',
   'No chuyển được bàn': '无法转台',
-  'No chuyển được bàn: \${_cleanError(e)}':
-      '无法转台:\${_cleanError(e)}',
+  'No chuyển được bàn: \${_cleanError(e)}': '无法转台:\${_cleanError(e)}',
   'No còn số tiền cần thu': '没有剩余应收金额',
   'No có bàn phù hợp': '没有合适的桌台',
   'No có chi tiết bổ sung': '没有补充详情',
@@ -1005,8 +939,7 @@ const Map<String, String> viToZhMap = {
   'No có món': '没有菜品',
   'No có món nào': '没有菜品',
   'No có món nào chờ xác nhận.': '没有待确认的菜品。',
-  'No có món nào đang chờ\${_station != ':
-      '没有菜品在等待\${_station != ',
+  'No có món nào đang chờ\${_station != ': '没有菜品在等待\${_station != ',
   'No có nhân viên phù hợp.': '没有合适的员工。',
   'No có nhật ký trong bộ lọc này': '此筛选条件下没有日志',
   'No có sản phẩm': '没有商品',
@@ -1033,21 +966,17 @@ const Map<String, String> viToZhMap = {
   'No giới hạn': '不限',
   'No gọi được nhân viên': '无法呼叫员工',
   'No gộp được bàn': '无法并桌',
-  'No gộp được bàn: \${_cleanError(e)}':
-      '无法并桌:\${_cleanError(e)}',
+  'No gộp được bàn: \${_cleanError(e)}': '无法并桌:\${_cleanError(e)}',
   'No gửi món vào bếp': '无法将菜品送往厨房',
   'No gửi được lệnh in': '无法发送打印任务',
   'No gửi được lệnh in lại hóa đơn': '无法发送发票重打任务',
-  'No gửi được món: \${_cleanError(e)}':
-      '无法发送菜品:\${_cleanError(e)}',
+  'No gửi được món: \${_cleanError(e)}': '无法发送菜品:\${_cleanError(e)}',
   'No hủy được hóa đơn': '无法取消发票',
-  'No hủy được món: \${_cleanError(e)}':
-      '无法取消菜品:\${_cleanError(e)}',
+  'No hủy được món: \${_cleanError(e)}': '无法取消菜品:\${_cleanError(e)}',
   'No hủy được đơn': '无法取消订单',
   'No in lại được': '无法重新打印',
   'No in thử được': '无法试打印',
-  'No in được tạm tính: \${_cleanError(e)}':
-      '无法打印预结单:\${_cleanError(e)}',
+  'No in được tạm tính: \${_cleanError(e)}': '无法打印预结单:\${_cleanError(e)}',
   'No kiểm tra được CSDL': '无法检查数据库',
   'No kiểm tra được cập nhật': '无法检查更新',
   'No kiểm tra được kết nối': '无法检查连接',
@@ -1062,14 +991,12 @@ const Map<String, String> viToZhMap = {
   'No lưu được mẫu in': '无法保存打印模板',
   'No lưu được phân quyền': '无法保存权限',
   'No lưu được đơn mua': '无法保存采购单',
-  'No lưu được đơn: \${_cleanError(e)}':
-      '无法保存订单:\${_cleanError(e)}',
+  'No lưu được đơn: \${_cleanError(e)}': '无法保存订单:\${_cleanError(e)}',
   'No mở được ca làm việc': '无法开班',
   'No mở được camera để quét.': '无法打开摄像头进行扫描。',
   'No mở được màn tự gọi món\\n\${_clean(_error!)}':
       '无法打开自助点餐界面\\n\${_clean(_error!)}',
-  'No mở được thanh toán: \${_cleanError(e)}':
-      '无法打开付款:\${_cleanError(e)}',
+  'No mở được thanh toán: \${_cleanError(e)}': '无法打开付款:\${_cleanError(e)}',
   'No nhận': '未接收',
   'No nhận được hàng': '无法收货',
   'No nhập kiểm đếm thì hệ thống dùng \${fmtMoney(pos.openingSuggestion)} từ ca trước / tiền két gốc.':
@@ -1079,26 +1006,21 @@ const Map<String, String> viToZhMap = {
   'No ràng buộc': '无约束',
   'No rõ': '不明确',
   'No thanh toán được hóa đơn': '无法支付发票',
-  'No thấy lệnh in bill vừa thanh toán':
-      '未找到刚结账账单的打印任务',
+  'No thấy lệnh in bill vừa thanh toán': '未找到刚结账账单的打印任务',
   'No thể hủy hóa đơn điện tử': '无法取消电子发票',
   'No thể kết nối đến thiết bị POS (\$targetIp:\$targetPort) qua USB/LAN. Vui lòng bật "Chia sẻ kết nối Printternet qua USB" (USB Tethering) trên máy POS, hoặc kiểm tra địa chỉ IP cấu hình. Details lỗi: \$e':
       '无法通过USB/LAN连接到POS设备(\$targetIp:\$targetPort)。请在POS机上启用“通过USB共享Printternet连接”(USB网络共享),或检查已配置的IP地址。错误详情:\$e',
   'No thể phát hành lại hóa đơn': '无法重新开具发票',
-  'No thể tải danh sách món chờ xác nhận':
-      '无法加载待确认菜品列表',
-  'No thể tải tổng hợp HĐĐT của ca':
-      '无法加载本班次的电子发票汇总',
+  'No thể tải danh sách món chờ xác nhận': '无法加载待确认菜品列表',
+  'No thể tải tổng hợp HĐĐT của ca': '无法加载本班次的电子发票汇总',
   'No thể từ chối món ăn': '无法拒绝该菜品',
   'No thể xác nhận món ăn': '无法确认该菜品',
   'No thể đồng bộ trạng thái hóa đơn': '无法同步发票状态',
   'No tra cứu được MST': '无法查询税号',
-  'No tra cứu được thông tin theo MST này.':
-      '无法查询到该税号对应的信息。',
+  'No tra cứu được thông tin theo MST này.': '无法查询到该税号对应的信息。',
   'No trả được đơn': '无法退单',
   'No tách được bill': '无法拆分账单',
-  'No tách được bill: \${_cleanError(e)}':
-      '无法拆分账单:\${_cleanError(e)}',
+  'No tách được bill: \${_cleanError(e)}': '无法拆分账单:\${_cleanError(e)}',
   'No tạo được QR thanh toán': '无法生成支付二维码',
   'No tạo được bàn': '无法创建桌台',
   'No tạo được chi nhánh': '无法创建门店',
@@ -1108,44 +1030,36 @@ const Map<String, String> viToZhMap = {
   'No tạo được nhóm': '无法创建分组',
   'No tạo được tài khoản': '无法创建账户',
   'No tạo được voucher': '无法创建优惠券',
-  'No tải thêm được nhật ký (\$_error)':
-      '无法加载更多日志(\$_error)',
+  'No tải thêm được nhật ký (\$_error)': '无法加载更多日志(\$_error)',
   'No tải được bàn': '无法加载桌台',
   'No tải được báo cáo': '无法加载报表',
-  'No tải được báo cáo (\$_reportError)':
-      '无法加载报表(\$_reportError)',
+  'No tải được báo cáo (\$_reportError)': '无法加载报表(\$_reportError)',
   'No tải được ca làm việc': '无法加载班次',
   'No tải được chi nhánh': '无法加载门店',
   'No tải được chi phí': '无法加载费用',
   'No tải được chi phí (\$_error)': '无法加载费用(\$_error)',
   'No tải được chi tiết hóa đơn': '无法加载发票详情',
-  'No tải được chi tiết hóa đơn (\$_receiptError)':
-      '无法加载发票详情(\$_receiptError)',
+  'No tải được chi tiết hóa đơn (\$_receiptError)': '无法加载发票详情(\$_receiptError)',
   'No tải được cấu hình': '无法加载配置',
-  'No tải được cấu hình màn hình phụ':
-      '无法加载副屏配置',
+  'No tải được cấu hình màn hình phụ': '无法加载副屏配置',
   'No tải được cấu hình vận hành': '无法加载运营配置',
   'No tải được danh bạ': '无法加载通讯录',
   'No tải được danh bạ (\$_error)': '无法加载通讯录(\$_error)',
   'No tải được danh mục báo cáo': '无法加载报表分类',
-  'No tải được danh mục báo cáo (\$_catalogError)':
-      '无法加载报表分类(\$_catalogError)',
+  'No tải được danh mục báo cáo (\$_catalogError)': '无法加载报表分类(\$_catalogError)',
   'No tải được danh mục chi phí': '无法加载费用分类列表',
   'No tải được danh sách kho': '无法加载仓库列表',
-  'No tải được danh sách máy in hệ điều hành':
-      '无法加载操作系统打印机列表',
+  'No tải được danh sách máy in hệ điều hành': '无法加载操作系统打印机列表',
   'No tải được danh sách nhân viên': '无法加载员工列表',
   'No tải được danh sách voucher': '无法加载优惠券列表',
-  'No tải được dữ liệu kho (\$_error)':
-      '无法加载仓库数据 (\$_error)',
+  'No tải được dữ liệu kho (\$_error)': '无法加载仓库数据 (\$_error)',
   'No tải được file': '无法加载文件',
   'No tải được giao dịch ngân hàng': '无法加载银行交易记录',
   'No tải được hóa đơn': '无法加载发票',
   'No tải được hóa đơn (\$_error)': '无法加载发票 (\$_error)',
   'No tải được kho (\$_error)': '无法加载仓库 (\$_error)',
   'No tải được khách hàng': '无法加载客户',
-  'No tải được khách hàng: \${_cleanError(e)}':
-      '无法加载客户：\${_cleanError(e)}',
+  'No tải được khách hàng: \${_cleanError(e)}': '无法加载客户：\${_cleanError(e)}',
   'No tải được két tiền': '无法加载钱箱',
   'No tải được kênh bán': '无法加载销售渠道',
   'No tải được liên kết': '无法加载链接',
@@ -1160,12 +1074,10 @@ const Map<String, String> viToZhMap = {
   'No tải được máy in (\$_error)': '无法加载打印机 (\$_error)',
   'No tải được nguyên liệu': '无法加载原材料',
   'No tải được nhật ký hoạt động': '无法加载操作日志',
-  'No tải được nhật ký hoạt động (\$_error)':
-      '无法加载操作日志 (\$_error)',
+  'No tải được nhật ký hoạt động (\$_error)': '无法加载操作日志 (\$_error)',
   'No tải được nội dung bill': '无法加载账单内容',
   'No tải được phiếu bếp': '无法加载厨房单',
-  'No tải được phiếu bếp (\$_error)':
-      '无法加载厨房单 (\$_error)',
+  'No tải được phiếu bếp (\$_error)': '无法加载厨房单 (\$_error)',
   'No tải được phiếu kho': '无法加载仓库单据',
   'No tải được phân quyền': '无法加载权限设置',
   'No tải được sản phẩm': '无法加载商品',
@@ -1175,12 +1087,10 @@ const Map<String, String> viToZhMap = {
   'No tải được thông tin HĐĐT': '无法加载电子发票信息',
   'No tải được thực đơn': '无法加载菜单',
   'No tải được thực đơn (\$_error)': '无法加载菜单 (\$_error)',
-  'No tải được trang sản phẩm \$page':
-      '无法加载商品第 \$page 页',
+  'No tải được trang sản phẩm \$page': '无法加载商品第 \$page 页',
   'No tải được trang thực đơn \$page': '无法加载菜单第 \$page 页',
   'No tải được trạng thái CSDL': '无法加载数据库状态',
-  'No tải được trạng thái CSDL (\$_error)':
-      '无法加载数据库状态 (\$_error)',
+  'No tải được trạng thái CSDL (\$_error)': '无法加载数据库状态 (\$_error)',
   'No tải được trạng thái kết nối': '无法加载连接状态',
   'No tải được tài liệu': '无法加载文档',
   'No tải được tài liệu (\$_error)': '无法加载文档 (\$_error)',
@@ -1189,11 +1099,9 @@ const Map<String, String> viToZhMap = {
   'No tải được xu hướng doanh thu': '无法加载营收趋势',
   'No tải được đơn': '无法加载订单',
   'No tải được đơn mua': '无法加载采购单',
-  'No tải được đơn mua (\$_error)':
-      '无法加载采购单 (\$_error)',
+  'No tải được đơn mua (\$_error)': '无法加载采购单 (\$_error)',
   'No tải được đơn online': '无法加载线上订单',
-  'No tải được đơn online (\$_error)':
-      '无法加载线上订单 (\$_error)',
+  'No tải được đơn online (\$_error)': '无法加载线上订单 (\$_error)',
   'No tải được ảnh trang': '无法加载页面图片',
   'No tải được: \$_error': '无法加载：\$_error',
   'No xuất được báo cáo': '无法导出报表',
@@ -1226,16 +1134,13 @@ const Map<String, String> viToZhMap = {
   'Not found sản phẩm \$q': '未找到商品 \$q',
   'Notes món': '菜品备注',
   'Notes nội bộ': '内部备注',
-  'Notes nội bộ / mô tả cách chạy CTKM':
-      '内部备注 / 促销活动执行说明',
-  'Notes phục vụ đối soát, vận hành nội bộ...':
-      '备注用于内部核对、运营管理...',
+  'Notes nội bộ / mô tả cách chạy CTKM': '内部备注 / 促销活动执行说明',
+  'Notes phục vụ đối soát, vận hành nội bộ...': '备注用于内部核对、运营管理...',
   'Notifications Quyền Camera': '摄像头权限通知',
   'Notifications đơn hàng & sự kiện': '订单与事件通知',
   'Nếu credential chưa đủ hoặc API lỗi, hệ thống vẫn dùng QR public từ thông tin ngân hàng để không đứng bill.':
       '如果凭证信息不完整或 API 出错，系统仍会使用银行信息生成的公开二维码，以避免账单无法收款。',
-  'Nền tảng này chưa hỗ trợ tự cập nhật':
-      '该平台暂不支持自动更新',
+  'Nền tảng này chưa hỗ trợ tự cập nhật': '该平台暂不支持自动更新',
   'NỘI DUNG MẪU': '示例内容',
   'Nội dung CK': '转账备注',
   'Nội dung mới': '新内容',
@@ -1249,35 +1154,29 @@ const Map<String, String> viToZhMap = {
   'PIN của bạn (hoặc Admin)': '您的密码(或管理员)',
   'PIN hiện tại: ': '当前密码： ',
   'PIN không đúng': '密码不正确',
-  'PIN không đúng hoặc không đăng nhập được: \$e':
-      '密码错误或无法登录：\$e',
+  'PIN không đúng hoặc không đăng nhập được: \$e': '密码错误或无法登录：\$e',
   'PIN mới (4 số)': '新密码(4位数字)',
-  'PIN mới (để trống nếu giữ nguyên)':
-      '新密码(留空则保持不变)',
+  'PIN mới (để trống nếu giữ nguyên)': '新密码(留空则保持不变)',
   'PIN nhân viên': '员工密码',
   'PIN này dùng để nhân viên mở khóa/thoát chế độ tự order trên thiết bị khách.':
       '此密码用于员工在客户设备上解锁/退出自助点单模式。',
   'PIN phải đúng 4 chữ số': '密码必须为 4 位数字',
-  'PIN tài khoản đang đăng nhập / Admin':
-      '当前登录账户 / 管理员的密码',
+  'PIN tài khoản đang đăng nhập / Admin': '当前登录账户 / 管理员的密码',
   'POS nhà hàng': '餐厅 POS',
   'POSIX path of (choose file with prompt "Select hình ảnh hoặc video quảng cáo" of type {"public.image","public.movie"})':
       'POSIX path of (choose file with prompt "选择图片或宣传视频" of type {"public.image","public.movie"})',
   'POSIX path of (choose file with prompt "Select ảnh hóa đơn" of type {"public.image","com.adobe.pdf"})':
       'POSIX path of (choose file with prompt "选择发票图片" of type {"public.image","com.adobe.pdf"})',
-  'Paid, nhưng chưa in được: \$printError':
-      '已支付，但打印失败：\$printError',
+  'Paid, nhưng chưa in được: \$printError': '已支付，但打印失败：\$printError',
   'Paper Size gợi ý': '建议纸张尺寸',
   'Payment công nợ': '支付欠款',
   'Payment hóa đơn': '支付发票',
   'Payment quá thời gian chờ. App sẽ tự kiểm tra lại bill; nếu bill chưa đóng, vui lòng thử lại.':
       '支付超时。应用将自动重新检查账单；如账单尚未结清，请重试。',
-  'Payment retail \${widget.invoiceLabel}':
-      '零售支付 \${widget.invoiceLabel}',
+  'Payment retail \${widget.invoiceLabel}': '零售支付 \${widget.invoiceLabel}',
   'Payment thất bại': '支付失败',
   'Pending lưu': '待保存',
-  'Pending quẹt thẻ trên máy \$terminalName':
-      '等待在 \$terminalName 机器上刷卡',
+  'Pending quẹt thẻ trên máy \$terminalName': '等待在 \$terminalName 机器上刷卡',
   'Phiếu bếp': '厨房单',
   'Phiếu bếp (Kitchen ticket)': '厨房单 (Kitchen ticket)',
   'Phiếu chạy': '传菜单',
@@ -1286,11 +1185,9 @@ const Map<String, String> viToZhMap = {
   'Phiếu kho': '仓库单据',
   'Phiếu mua hàng': '采购单',
   'Phiếu nhập/xuất': '入库/出库单',
-  'Phát âm khi có order mới, gọi nhân viên, thanh toán…':
-      '有新订单、呼叫员工、付款时播报语音…',
+  'Phát âm khi có order mới, gọi nhân viên, thanh toán…': '有新订单、呼叫员工、付款时播报语音…',
   'Phân loại doanh thu': '营收分类',
-  'Phân loại nhóm doanh thu kinh doanh':
-      '经营营收分组分类',
+  'Phân loại nhóm doanh thu kinh doanh': '经营营收分组分类',
   'Phân quyền chi tiết': '详细权限设置',
   'Phân quyền in & Kích hoạt': '打印权限与启用',
   'Phân quyền vai trò \${_roleLabel(widget.role)}':
@@ -1315,18 +1212,15 @@ const Map<String, String> viToZhMap = {
       '打印机 #\${index + 1} (\${ctrl.id.text.isNotEmpty ? ctrl.id.text : "未命名"})',
   'Printers hệ thống': '系统打印机',
   'Printers hệ điều hành (OS)': '操作系统打印机 (OS)',
-  'Printers nhiệt in logo dạng chữ [\${_s(row[':
-      '热敏打印机以文字打印徽标 [\${_s(row[',
+  'Printers nhiệt in logo dạng chữ [\${_s(row[': '热敏打印机以文字打印徽标 [\${_s(row[',
   'Processing thanh toán, vui lòng chờ.': '正在处理支付，请稍候。',
-  'Profile khai thuế Hộ kinh doanh':
-      '个体工商户税务申报档案',
+  'Profile khai thuế Hộ kinh doanh': '个体工商户税务申报档案',
   'Profile thuế': '税务档案',
   'Promotions / giảm giá': '促销 / 折扣',
   'Promotions sản phẩm': '商品促销',
   'Public URL (Website)': '公开链接 (Website)',
   'QR thanh toán': '支付二维码',
-  'Quantity bảng ghi hiện tại trong hệ thống CSDL local':
-      '本地数据库系统中当前记录的数量',
+  'Quantity bảng ghi hiện tại trong hệ thống CSDL local': '本地数据库系统中当前记录的数量',
   'Quantity không hợp lệ': '数量无效',
   'Quy mô doanh thu': '营收规模',
   'Quy đổi': '换算',
@@ -1346,7 +1240,8 @@ const Map<String, String> viToZhMap = {
       '空闲时播放广告，并在第二屏显示订单和二维码。',
   'Quầy / Table': '柜台 / 餐桌',
   'Quầy nước': '水吧',
-  'Quẹt thẻ trên máy POS rồi nhập mã phê duyệt để đối soát.': '在 POS 机上刷卡，然后输入授权码以进行核对。',
+  'Quẹt thẻ trên máy POS rồi nhập mã phê duyệt để đối soát.':
+      '在 POS 机上刷卡，然后输入授权码以进行核对。',
   'RT\${_tab.id.toString().padLeft(2, ': 'RT\${_tab.id.toString().padLeft(2, ',
   'Receive vào kho': '入库',
   'Recipe trừ kho': '按配方扣库存',
@@ -1383,17 +1278,14 @@ const Map<String, String> viToZhMap = {
   'SePay · Đối soát chuyển khoản': 'SePay · 转账对账',
   'SePay — tự đối soát chuyển khoản': 'SePay — 自动转账对账',
   'Select Món': '选择菜品',
-  'Select NCC hoặc nhập tên nơi mua':
-      '选择供应商或输入采购来源名称',
+  'Select NCC hoặc nhập tên nơi mua': '选择供应商或输入采购来源名称',
   'Select SKU áp dụng': '选择适用 SKU',
   'Select bàn cho iPad': '为 iPad 选择餐桌',
   'Select chi nhánh': '选择分店',
-  'Select các dòng khách muốn thanh toán riêng.':
-      '选择客户需要单独结账的行。',
+  'Select các dòng khách muốn thanh toán riêng.': '选择客户需要单独结账的行。',
   'Select các khoản chi được hoàn': '选择需要报销的费用',
   'Select cơ sở': '选择门店',
-  'Select cơ sở / chi nhánh để bắt đầu ca làm':
-      '选择门店/分店以开始班次',
+  'Select cơ sở / chi nhánh để bắt đầu ca làm': '选择门店/分店以开始班次',
   'Select cột hiển thị': '选择显示列',
   'Select danh mục hàng hóa áp dụng:': '选择适用的商品分类：',
   'Select giao dịch tiền-về khớp, hoặc nhập lý do xác nhận tay.':
@@ -1407,8 +1299,7 @@ const Map<String, String> viToZhMap = {
   'Select món trên màn hình': '在屏幕上选择商品',
   'Select một bàn để xem bill': '选择一个餐桌以查看账单',
   'Select một báo cáo': '选择一份报表',
-  'Select một nút để chỉnh món, vị trí và màu.':
-      '选择一个按钮以调整菜品、位置和颜色。',
+  'Select một nút để chỉnh món, vị trí và màu.': '选择一个按钮以调整菜品、位置和颜色。',
   'Select một đơn để xem chi tiết': '选择一个订单以查看详情',
   'Select ngày': '选择日期',
   'Select nền tem': '选择标签背景',
@@ -1433,30 +1324,25 @@ const Map<String, String> viToZhMap = {
   'Sinh nhật khách': '顾客生日',
   'Skip & Kết ca': '跳过并结班',
   'Sound thông báo': '通知提示音',
-  'Sound và định tuyến thông báo sự kiện.':
-      '事件通知的提示音与路由设置。',
+  'Sound và định tuyến thông báo sự kiện.': '事件通知的提示音与路由设置。',
   'Staff cần đọc lại với khách, kiểm tra topping/ghi chú trước khi duyệt chuyển xuống bếp.':
       '员工需与顾客复述确认，检查配料/备注后再批准送至厨房。',
   'Staff hủy': '员工已取消',
   'Staff mới sẽ nhận quyền theo vai trò, sau đó có thể chỉnh riêng từng người.':
       '新员工将按角色获得权限，之后可为每个人单独调整。',
-  'Staff nhập PIN để chọn/đổi bàn cho iPad này.':
-      '员工输入密码以为此iPad选择/更改桌台。',
+  'Staff nhập PIN để chọn/đổi bàn cho iPad này.': '员工输入密码以为此iPad选择/更改桌台。',
   'Staff xác nhận': '员工已确认',
   'Statistics Cơ sở dữ liệu': '数据库统计',
   'Status kết nối:': '连接状态：',
   'Status máy in': '打印机状态',
-  'Status thiết bị, máy in và đồng bộ cloud.':
-      '设备、打印机状态及云端同步。',
+  'Status thiết bị, máy in và đồng bộ cloud.': '设备、打印机状态及云端同步。',
   'Sync máy in hệ điều hành': '同步操作系统打印机',
   'Sync sản phẩm': '同步产品',
-  'Sync sản phẩm retail, tồn kho và đơn hàng mart.':
-      '同步零售产品、库存及商城订单。',
+  'Sync sản phẩm retail, tồn kho và đơn hàng mart.': '同步零售产品、库存及商城订单。',
   'Sync thông tin khách hàng': '同步客户信息',
   'Sync trạng thái hóa đơn': '同步发票状态',
   'Sync tồn kho': '同步库存',
-  'System gặp lỗi khi xử lý một thao tác.':
-      '系统在处理某项操作时发生错误。',
+  'System gặp lỗi khi xử lý một thao tác.': '系统在处理某项操作时发生错误。',
   'System khớp đúng bill theo nội dung; đủ tiền thì tự đóng bill, in hoá đơn, đẩy realtime cho POS/iPad.':
       '系统根据转账内容自动匹配账单；金额足够时自动关闭账单、打印发票，并实时推送至POS/iPad。',
   'System liên kết trực tiếp với nhà cung cấp MISA meInvoice để phát hành hóa đơn tự động từ máy tính tiền.':
@@ -1483,14 +1369,12 @@ const Map<String, String> viToZhMap = {
   'Số lô (tuỳ chọn)': '批次号（可选）',
   'Số lần/khách': '次数/顾客',
   'Số ngày nợ': '欠款天数',
-  'Số nhà, tên đường, ấp/tổ/khu phố':
-      '门牌号、街道名、村/组/街区',
+  'Số nhà, tên đường, ấp/tổ/khu phố': '门牌号、街道名、村/组/街区',
   'Số phải hoàn (đã chọn)': '应退金额（已选）',
   'Số tiền': '金额',
   'Số tiền *': '金额 *',
   'Số tiền giảm (VND)': '折扣金额（越南盾）',
-  'Số tiền khách đưa không đủ':
-      '顾客给的金额不足',
+  'Số tiền khách đưa không đủ': '顾客给的金额不足',
   'Số tiền không hợp lệ': '金额无效',
   'Số tài khoản': '账号',
   'Số tài khoản nhận tiền': '收款账号',
@@ -1506,8 +1390,7 @@ const Map<String, String> viToZhMap = {
   'Table đang gọi nhân viên': '桌台正在呼叫服务员',
   'Table đang trống sẽ hiện thao tác thêm món sau khi chọn':
       '空闲桌台在选中后将显示添加菜品的操作',
-  'Table đã thanh toán xong. Cảm ơn quý khách!':
-      '桌台已完成支付，感谢您的光临！',
+  'Table đã thanh toán xong. Cảm ơn quý khách!': '桌台已完成支付，感谢您的光临！',
   'Table/Nơi': '桌台/位置',
   'Tax GTGT/TNCN tính theo tỷ lệ %. Kê khai thuế theo Quý, bắt buộc sử dụng HĐĐT và Sổ S2a.':
       '增值税/个人所得税按百分比计算。按季度申报纳税，须使用电子发票及S2a账簿。',
@@ -1538,15 +1421,11 @@ const Map<String, String> viToZhMap = {
   'Thiết bị & POS đang hoạt động (\${connections.length})':
       '活跃设备与POS（\${connections.length}）',
   'Thiết bị khách': '客户端设备',
-  'Thiết bị máy in (\${_printers.length})':
-      '打印机设备（\${_printers.length}）',
+  'Thiết bị máy in (\${_printers.length})': '打印机设备（\${_printers.length}）',
   'Thiết kế mẫu in': '打印模板设计',
-  'Thiết kế mẫu in hóa đơn và tem sản phẩm.':
-      '设计发票及产品标签的打印模板。',
-  'Thiết lập bàn, khu vực và sơ đồ phòng bán.':
-      '设置桌台、区域及营业厅布局图。',
-  'Thiết lập chi nhánh, kho và phân vùng bán hàng.':
-      '设置分店、仓库及销售分区。',
+  'Thiết kế mẫu in hóa đơn và tem sản phẩm.': '设计发票及产品标签的打印模板。',
+  'Thiết lập bàn, khu vực và sơ đồ phòng bán.': '设置桌台、区域及营业厅布局图。',
+  'Thiết lập chi nhánh, kho và phân vùng bán hàng.': '设置分店、仓库及销售分区。',
   'Thiết lập hồ sơ kê khai thuế lần đầu': '首次设置报税资料',
   'Thiếu mã bill để tìm lệnh in': '缺少账单号，无法查找打印任务',
   'Thiếu mã hóa đơn để thanh toán.': '缺少用于支付的发票号。',
@@ -1556,8 +1435,7 @@ const Map<String, String> viToZhMap = {
   'Thành điểm': '转为积分',
   'Thương hiệu': '品牌',
   'Thưởng theo sản phẩm ưu tiên': '按优先产品给予奖励',
-  'Thủ công — thu ngân tự quẹt rồi nhập approval code':
-      '手动——收银员自行刷卡后输入授权码',
+  'Thủ công — thu ngân tự quẹt rồi nhập approval code': '手动——收银员自行刷卡后输入授权码',
   'Thủ kho': '仓库管理员',
   'Thứ trong tuần': '星期',
   'Thử lại': '重试',
@@ -1594,8 +1472,7 @@ const Map<String, String> viToZhMap = {
   'Trang trước': '上一页',
   'Trong tháng sinh nhật': '在生日当月',
   'Trung tâm báo cáo': '报表中心',
-  'Truy xuất thông tin công ty từ Cục Tax':
-      '从税务局检索公司信息',
+  'Truy xuất thông tin công ty từ Cục Tax': '从税务局检索公司信息',
   'Trà đào cam sả': '蜜桃香茅茶',
   'Trình duyệt': '浏览器',
   'Trình duyệt (Browser)': '浏览器',
@@ -1618,14 +1495,11 @@ const Map<String, String> viToZhMap = {
   'Tìm món, mã món...': '查找菜品、菜品代码...',
   'Tìm món...': '查找菜品...',
   'Tìm mặt hàng…': '查找商品…',
-  'Tìm nhân viên theo tên hoặc tài khoản...':
-      '按姓名或账号查找员工...',
+  'Tìm nhân viên theo tên hoặc tài khoản...': '按姓名或账号查找员工...',
   'Tìm nhân viên...': '查找员工...',
-  'Tìm sản phẩm hoặc quét/nhập mã vạch rồi Enter...':
-      '查找产品或扫描/输入条码后按回车...',
+  'Tìm sản phẩm hoặc quét/nhập mã vạch rồi Enter...': '查找产品或扫描/输入条码后按回车...',
   'Tìm số HĐ, khách, MST…': '查找发票号、顾客、税号...',
-  'Tìm theo hành động, nhân viên, nội dung...':
-      '按操作、员工、内容搜索...',
+  'Tìm theo hành động, nhân viên, nội dung...': '按操作、员工、内容搜索...',
   'Tìm theo loại, máy in, mã…': '按类型、打印机、代码搜索...',
   'Tìm theo tên / SĐT / MST': '按姓名/电话号码/税号搜索',
   'Tìm theo tên, SĐT, MST…': '按姓名、电话号码、税号搜索...',
@@ -1658,14 +1532,12 @@ const Map<String, String> viToZhMap = {
       '创建支付链接：POST /v2/payment-requests',
   'Tạo lại QR': '重新生成二维码',
   'Tạo món': '创建菜品',
-  'Tạo món mới "\${_name.text.trim()}".':
-      '创建新菜品"\${_name.text.trim()}"。',
+  'Tạo món mới "\${_name.text.trim()}".': '创建新菜品"\${_name.text.trim()}"。',
   'Tạo môi trường thử nghiệm hoặc dọn dẹp các đơn hàng chạy thử trước khi khai trương':
       '在开业前创建测试环境或清理试运行订单',
   'Tạo mới': '新建',
   'Tạo quyển': '创建发票册',
-  'Tạo tài khoản "\${_name.text.trim()}".':
-      '创建账号"\${_name.text.trim()}"。',
+  'Tạo tài khoản "\${_name.text.trim()}".': '创建账号"\${_name.text.trim()}"。',
   'Tạo đơn': '创建订单',
   'Tạo đơn mua': '创建采购单',
   'Tải bản cập nhật thất bại': '下载更新失败',
@@ -1696,19 +1568,16 @@ const Map<String, String> viToZhMap = {
   'Tự bật xuất hóa đơn': '自动开启发票开具',
   'Tự dùng \${fmtMoney(pos.openingSuggestion)}':
       '自用 \${fmtMoney(pos.openingSuggestion)}',
-  'Tự in bill hệ thống sau khi quẹt thẻ thành công':
-      '刷卡成功后自动打印系统账单',
+  'Tự in bill hệ thống sau khi quẹt thẻ thành công': '刷卡成功后自动打印系统账单',
   'Tự in khi có đơn mới': '有新订单时自动打印',
   'Tự nhận đơn hợp lệ': '自动接收有效订单',
   'Tự phát hành hóa đơn sau thanh toán': '付款后自动开具发票',
   'Tự sinh nếu để trống': '留空则自动生成',
-  'Tự tách phường/xã, tỉnh/thành':
-      '自动拆分坊/乡、省/市',
+  'Tự tách phường/xã, tỉnh/thành': '自动拆分坊/乡、省/市',
   'Tự xác nhận nếu còn hàng': '有库存则自动确认',
   'Tự đóng bill bằng chính VietQR: nếu gói VietQR của bạn có callback, dán URL này vào mục đăng ký callback của VietQR. Khi khách trả tiền, VietQR gọi về đây → hệ thống tự đóng đúng bill (khớp theo nội dung DANBILL+mã bill). Khi đó không cần SePay. VietQR thường gửi kèm Basic Auth = chính username/password ở trên.':
       '直接用 VietQR 自动结账：如果您的 VietQR 套餐支持回调（callback），请将此 URL 粘贴到 VietQR 的回调注册栏。客户付款后，VietQR 会调用此地址 → 系统自动结清对应账单（根据 DANBILL 内容 + 账单编号匹配）。这样就不需要使用 SePay 了。VietQR 通常会附带 Basic Auth，即上方的用户名/密码。',
-  'Tự động chọn xuất hóa đơn VAT khi thanh toán':
-      '付款时自动选择开具增值税发票',
+  'Tự động chọn xuất hóa đơn VAT khi thanh toán': '付款时自动选择开具增值税发票',
   'Tự động in': '自动打印',
   'Tự động nếu bỏ trống': '留空则自动',
   'Tự động — máy tự quẹt thẻ qua app ngân hàng (cần app POS Android)':
@@ -1717,19 +1586,16 @@ const Map<String, String> viToZhMap = {
       '按各行业类别营业额计算的税率（%）：',
   'Tỷ lệ thuế suất áp dụng': '适用税率',
   'URL ảnh trang menu': '菜单页图片 URL',
-  'Update bàn "\${_code.text.trim()}".':
-      '更新桌台"\${_code.text.trim()}"。',
+  'Update bàn "\${_code.text.trim()}".': '更新桌台"\${_code.text.trim()}"。',
   'Update danh mục "\${c.name}".': '更新分类"\${c.name}"。',
   'Update hồ sơ': '更新资料',
   'Update món "\${_name.text.trim()}".': '更新商品"\${_name.text.trim()}"。',
-  'Update nhân viên "\${_name.text.trim()}".':
-      '更新员工"\${_name.text.trim()}"。',
+  'Update nhân viên "\${_name.text.trim()}".': '更新员工"\${_name.text.trim()}"。',
   'Update quyền mặc định vai trò "\${_roleLabel(widget.role)}".':
       '更新角色"\${_roleLabel(widget.role)}"的默认权限。',
   'VAT hàng bán': '销售增值税',
   'VAT hàng bán (%)': '销售增值税（%）',
-  'VD: 192.168.42.129 hoặc 127.0.0.1':
-      '例如：192.168.42.129 或 127.0.0.1',
+  'VD: 192.168.42.129 hoặc 127.0.0.1': '例如：192.168.42.129 或 127.0.0.1',
   'VD: Bún bò Huế': '例如：顺化牛肉粉',
   'VD: Bếp, Bar, Bill': '例如：厨房、吧台、账单',
   'VD: Chợ Bình Điền': '例如：平田市场',
@@ -1740,27 +1606,18 @@ const Map<String, String> viToZhMap = {
   'VD: Khách trả hàng': '例如：顾客退货',
   'VD: Quầy, Bếp nóng, Bar': '例如：柜台、热厨、吧台',
   'VD: Tầng 1, Sân vườn': '例如：1楼、花园',
-  'VD: ít cay, không hành, tách sốt…':
-      '例如：少辣、不要葱、酱料分开…',
+  'VD: ít cay, không hành, tách sốt…': '例如：少辣、不要葱、酱料分开…',
   'Voucher ngoài': '外部代金券',
   'Voucher toàn bill': '整单代金券',
-  'Vui lòng chọn ít nhất một món để từ chối.':
-      '请至少选择一项菜品以拒绝。',
-  'Vui lòng chọn ít nhất một món để xác nhận.':
-      '请至少选择一项菜品以确认。',
-  'Vui lòng kiểm tra đơn và thanh toán':
-      '请检查订单并完成付款',
-  'Vui lòng kiểm đếm số tiền thực nhận':
-      '请清点实际收到的金额',
-  'Vui lòng nhập ID cho dòng máy in thứ \${i + 1}':
-      '请输入第 \${i + 1} 个打印机型号的 ID',
-  'Vui lòng nhập lý do từ chối để đối soát.':
-      '请输入拒绝原因以便对账核查。',
+  'Vui lòng chọn ít nhất một món để từ chối.': '请至少选择一项菜品以拒绝。',
+  'Vui lòng chọn ít nhất một món để xác nhận.': '请至少选择一项菜品以确认。',
+  'Vui lòng kiểm tra đơn và thanh toán': '请检查订单并完成付款',
+  'Vui lòng kiểm đếm số tiền thực nhận': '请清点实际收到的金额',
+  'Vui lòng nhập ID cho dòng máy in thứ \${i + 1}': '请输入第 \${i + 1} 个打印机型号的 ID',
+  'Vui lòng nhập lý do từ chối để đối soát.': '请输入拒绝原因以便对账核查。',
   'Vui lòng nhập mã PIN': '请输入密码',
-  'Vui lòng nhập tên Hộ kinh doanh':
-      '请输入个体工商户名称',
-  'Vào Settings để cấu hình sơ đồ bàn.':
-      '前往设置以配置桌位图。',
+  'Vui lòng nhập tên Hộ kinh doanh': '请输入个体工商户名称',
+  'Vào Settings để cấu hình sơ đồ bàn.': '前往设置以配置桌位图。',
   'Ví dụ: kho bếp nối iPad/POS nhà hàng; kho bán lẻ nối Retail POS, GrabMart hoặc Website.':
       '例如：厨房仓库连接 iPad/餐厅 POS；零售仓库连接零售 POS、GrabMart 或网站。',
   'Ví điện tử': '电子钱包',
@@ -1802,8 +1659,7 @@ const Map<String, String> viToZhMap = {
   '])} chỗ': '])}个位',
   '])} lúc \${_fmtDateTime(raw?[': '])}于\${_fmtDateTime(raw?[',
   '])} mở \${_s(raw?[': '])}开放\${_s(raw?[',
-  '])}]; ảnh dùng để xem/tham chiếu.':
-      '])}]; 照片仅供查看/参考。',
+  '])}]; ảnh dùng để xem/tham chiếu.': '])}]; 照片仅供查看/参考。',
   '])}đ': '])}đ',
   '])}đ)': '])}đ)',
   '])}′ · \${_stationLabel(_s(it[': '])}′ · \${_stationLabel(_s(it[',
@@ -1811,8 +1667,7 @@ const Map<String, String> viToZhMap = {
   ']} dòng · \${g[': ']}行 · \${g[',
   ']} món cần duyệt': ']}项待审核',
   ']} món · Kiểm tra trước khi duyệt': ']}项 · 审核前请检查',
-  '^(Tỉnh|Thành phố|TP\\.?|Phường|Xã|Thị trấn)\\s+':
-      '^(省|市|市\\.?|坊|乡|镇)\\s+',
+  '^(Tỉnh|Thành phố|TP\\.?|Phường|Xã|Thị trấn)\\s+': '^(省|市|市\\.?|坊|乡|镇)\\s+',
   'assets/brand/DanOnLogo.png': 'assets/brand/DanOnLogo.png',
   'bill|receipt|hóa|hoa': 'bill|receipt|化学|花',
   'bottomLeft': 'bottomLeft',
@@ -1917,8 +1772,7 @@ const Map<String, String> viToZhMap = {
   'Đã cập nhật thực đơn.': '菜单已更新。',
   'Đã cập nhật tài liệu.': '文档已更新。',
   'Đã cập nhật voucher.': '代金券已更新。',
-  'Đã dọn sạch dữ liệu giao dịch và reset bàn.':
-      '已清空交易数据并重置桌台。',
+  'Đã dọn sạch dữ liệu giao dịch và reset bàn.': '已清空交易数据并重置桌台。',
   'Đã ghi nhận chi tiền két': '已记录钱柜支出',
   'Đã ghi nhận hoàn chi': '已记录退款',
   'Đã ghi nhận thanh toán nhưng thiếu mã bill để gửi lệnh in. Vui lòng mở lịch sử bán hàng để in lại.':
@@ -1926,8 +1780,7 @@ const Map<String, String> viToZhMap = {
   'Đã ghi nhận thanh toán.': '付款已记录。',
   'Đã gộp bàn \${table.code} vào \${target.code}.':
       '已将桌台 \${table.code} 合并至 \${target.code}。',
-  'Đã gửi \${jobs.length} lệnh in lại hóa đơn':
-      '已发送 \${jobs.length} 条发票重打指令',
+  'Đã gửi \${jobs.length} lệnh in lại hóa đơn': '已发送 \${jobs.length} 条发票重打指令',
   'Đã gửi job in thử': '已发送测试打印任务',
   'Đã gửi lệnh in lại hóa đơn': '已发送发票重打指令',
   'Đã gửi lệnh in thử tới \${_s(p[': '已将测试打印指令发送至 \${_s(p[',
@@ -1954,8 +1807,7 @@ const Map<String, String> viToZhMap = {
   'Đã lưu danh mục': '分类已保存',
   'Đã lưu danh mục in thành công': '打印类别已成功保存',
   'Đã lưu chính sách phát hành hóa đơn': '发票开具政策已保存',
-  'Đã lưu hồ sơ kê khai thuế thành công!':
-      '税务申报资料已成功保存！',
+  'Đã lưu hồ sơ kê khai thuế thành công!': '税务申报资料已成功保存！',
   'Đã lưu liên kết': '关联已保存',
   'Đã lưu menu quyển': '菜单册已保存',
   'Đã lưu màn hình phụ': '副屏已保存',
@@ -1981,8 +1833,7 @@ const Map<String, String> viToZhMap = {
   'Đã tạo nhóm \$name': '已创建分组 \$name',
   'Đã tải bản cập nhật về \${file.path}. Mở file này để cài (Android).':
       '更新已下载到 \${file.path}。请打开此文件进行安装（Android）。',
-  'Đã tải tài liệu lên hệ thống.':
-      '文件已上传至系统。',
+  'Đã tải tài liệu lên hệ thống.': '文件已上传至系统。',
   'Đã tắt món': '菜品已停用',
   'Đã từ chối các món ăn đã chọn.': '所选菜品已拒绝。',
   'Đã xuất HĐĐT': '电子发票已开具',
@@ -1992,11 +1843,9 @@ const Map<String, String> viToZhMap = {
   'Đã xuất kho': '已出库',
   'Đã xác nhận': '已确认',
   'Đã xác nhận giao hàng': '已确认送货',
-  'Đã xác nhận món ăn và gửi xuống bếp/bar.':
-      '已确认菜品并发送至厨房/吧台。',
+  'Đã xác nhận món ăn và gửi xuống bếp/bar.': '已确认菜品并发送至厨房/吧台。',
   'Đã xác nhận thanh toán': '已确认付款',
-  'Đã xác nhận xử lý yêu cầu gọi phục vụ':
-      '呼叫服务员的请求已确认处理',
+  'Đã xác nhận xử lý yêu cầu gọi phục vụ': '呼叫服务员的请求已确认处理',
   'Đã xác nhận đơn': '订单已确认',
   'Đã xác thực Cục Tax — xóa MST để nhập/kiểm tra lại':
       '已通过税务总局验证 — 删除税号可重新输入/核对',
@@ -2008,8 +1857,7 @@ const Map<String, String> viToZhMap = {
   'Đã xóa đơn': '订单已删除',
   'Đã xử lý': '已处理',
   'Đã xử lý đổi trả bán lẻ.': '零售退换货已处理。',
-  'Đã điền thông tin công ty từ dữ liệu Cục Tax':
-      '已从税务总局数据自动填写公司信息',
+  'Đã điền thông tin công ty từ dữ liệu Cục Tax': '已从税务总局数据自动填写公司信息',
   'Đã đính kèm tài liệu': '文件已附加',
   'Đã đóng': '已关闭',
   'Đã đồng bộ \${_systemPrinters.length} máy in từ hệ điều hành':
@@ -2020,8 +1868,7 @@ const Map<String, String> viToZhMap = {
   'ĐĂNG NHẬP': '登录',
   'ĐĂNG NHẬP THU NGÂN': '收银员登录',
   'Đăng ký số điện thoại': '注册手机号',
-  'Đăng ký webhook: POST /confirm-webhook':
-      '注册webhook：POST /confirm-webhook',
+  'Đăng ký webhook: POST /confirm-webhook': '注册webhook：POST /confirm-webhook',
   'ĐƠN GIÁ': '单价',
   'Đơn F&B tại bàn / POS': '餐饮台桌 / POS点单',
   'Đơn của bàn': '台桌订单',
@@ -2034,8 +1881,7 @@ const Map<String, String> viToZhMap = {
   'Đường B: đọc biến động số dư ngân hàng, khi khách chuyển khoản/quét VietQR đúng nội dung bill thì tự đóng bill. Rẻ nhất cho chuyển khoản.':
       'B方案：读取银行余额变动，当客户转账/扫描VietQR的内容与账单一致时自动关闭账单。转账方式中成本最低。',
   'Đường D9, KĐT Sala, TP.HCM': '胡志明市Sala新城区D9街',
-  'Đường dẫn API payOS (soạn sẵn để nối sau)':
-      'payOS API地址（预留，后续对接）',
+  'Đường dẫn API payOS (soạn sẵn để nối sau)': 'payOS API地址（预留，后续对接）',
   'Đường kẻ': '线条',
   'Đường kẻ ngang': '横线',
   'Đặt làm trụ sở chính': '设为总部',
@@ -2055,8 +1901,7 @@ const Map<String, String> viToZhMap = {
   'Đối chiếu giao dịch tiền-về': '核对到账交易',
   'Đổi PIN': '修改密码',
   'Đổi cơ sở': '切换门店',
-  'Đổi mật khẩu mở khóa thiết bị khách.':
-      '修改客户端设备解锁密码（密码）。',
+  'Đổi mật khẩu mở khóa thiết bị khách.': '修改客户端设备解锁密码（密码）。',
   'Đổi tiền két gốc mặc định.': '修改默认起始备用金金额。',
   'Đổi trả': '退换货',
   'Đổi trả / Hoàn hàng': '退换货 / 退货',
@@ -2133,8 +1978,7 @@ const Map<String, String> viToZhMap = {
   '🔥 Top món bán chạy hôm nay': '🔥 今日热销榜',
   'Bán hàng': '销售',
   'Bán lẻ': '零售',
-  'Bán lẻ, mã vạch, lô/HSD, voucher và đổi trả.':
-      '零售、条码、批次/有效期、优惠券与退换货。',
+  'Bán lẻ, mã vạch, lô/HSD, voucher và đổi trả.': '零售、条码、批次/有效期、优惠券与退换货。',
   'Bàn, order, giảm giá, thanh toán, in bill và realtime với bếp.':
       '台桌、点单、折扣、结账、打印账单及与厨房的实时同步。',
   'Cài đặt & nền tảng': '设置与平台',
@@ -2147,15 +1991,13 @@ const Map<String, String> viToZhMap = {
   'Không tải được máy in': '无法加载打印机',
   'Kho & cung ứng': '仓储与供应链',
   'Kỹ thuật & dữ liệu': '技术与数据',
-  'Màn hình bếp/bar, SLA và trạng thái món realtime.':
-      '厨房/吧台显示屏、SLA及菜品实时状态。',
+  'Màn hình bếp/bar, SLA và trạng thái món realtime.': '厨房/吧台显示屏、SLA及菜品实时状态。',
   'POS FnB': '餐饮POS',
   'Sao lưu, phục hồi, reset giao dịch và tài liệu hệ thống.':
       '备份、恢复、重置交易及系统文档。',
   'Tùy biến': '个性化设置',
   'Yêu cầu': '请求',
-  'Vui lòng kiểm tra server/máy in rồi thử lại':
-      '请检查服务器/打印机后重试',
+  'Vui lòng kiểm tra server/máy in rồi thử lại': '请检查服务器/打印机后重试',
   'giây': '秒',
   'không kết nối được máy chủ': '无法连接服务器',
   'thao tác CHƯA được ghi nhận': '操作尚未被记录',
@@ -2171,8 +2013,7 @@ const Map<String, String> viToZhMap = {
   'Hủy': '取消',
   'Lưu & Kết nối': '保存并连接',
   'Chọn cơ sở': '选择门店',
-  'Chọn cơ sở / chi nhánh để bắt đầu ca làm':
-      '选择门店/分店以开始班次',
+  'Chọn cơ sở / chi nhánh để bắt đầu ca làm': '选择门店/分店以开始班次',
   'Tải lại': '重新加载',
   'Đang tải…': '加载中…',
   'Cập nhật ngay': '立即更新',
@@ -2190,8 +2031,7 @@ const Map<String, String> viToZhMap = {
   'Nhập tài khoản quản trị': '请输入管理员账号',
   'Đóng': '关闭',
   'Đăng nhập quản trị': '管理员登录',
-  'Nhập tài khoản và mã PIN quản trị viên':
-      '请输入管理员账号及密码',
+  'Nhập tài khoản và mã PIN quản trị viên': '请输入管理员账号及密码',
   'Tài khoản': '账号',
   'Tất cả kênh': '所有渠道',
   'Tiền mặt': '现金',
@@ -2223,8 +2063,7 @@ const Map<String, String> viToZhMap = {
   'Không tìm thấy bill đang mở để thanh toán. Vui lòng chọn lại bàn.':
       '找不到可结账的账单，请重新选择台桌。',
   'Không có bàn phù hợp': '没有符合条件的台桌',
-  'Chọn các dòng khách muốn thanh toán riêng.':
-      '选择需要单独结账的客户行。',
+  'Chọn các dòng khách muốn thanh toán riêng.': '选择需要单独结账的客户行。',
   'Chọn khách đã lưu hoặc tạo mới. Khách có ưu đãi sẽ tự áp giảm giá vào đơn.':
       '选择已保存的客户或新建客户。享有优惠的客户，系统会自动为订单套用折扣。',
   'Tên khách': '客户姓名',
@@ -2238,8 +2077,7 @@ const Map<String, String> viToZhMap = {
   'Thêm retail': '添加零售商品',
   'Lịch sử': '历史记录',
   'Khu vực': '区域',
-  'Vào Cài đặt để cấu hình sơ đồ bàn.':
-      '请前往设置配置台桌布局图。',
+  'Vào Cài đặt để cấu hình sơ đồ bàn.': '请前往设置配置台桌布局图。',
   'Đã in tạm tính': '已打印预结单',
   'Chưa có món': '暂无菜品',
   'Đã đủ món': '菜品已齐',
@@ -2260,8 +2098,7 @@ const Map<String, String> viToZhMap = {
   'Chọn khách': '选择客户',
   'Không rõ': '未知',
   'Không có món nào chờ xác nhận.': '没有待确认的菜品。',
-  'Nhập lý do nếu từ chối (ví dụ: hết món...)':
-      '如需拒绝请输入原因（例如：菜品已售罄……）',
+  'Nhập lý do nếu từ chối (ví dụ: hết món...)': '如需拒绝请输入原因（例如：菜品已售罄……）',
   'Từ chối (Reject)': '拒绝（Reject）',
   'Xác nhận (Accept)': '确认（Accept）',
   'Nhân viên cần đọc lại với khách, kiểm tra topping/ghi chú trước khi duyệt chuyển xuống bếp.':
@@ -2291,8 +2128,7 @@ const Map<String, String> viToZhMap = {
   'Nhập bên nhận tiền / NCC': '请输入收款方 / 供应商',
   'Nhập lý do chi': '请输入支出原因',
   'Ngày giờ chi': '支出日期和时间',
-  'Tên người / nhà cung cấp nhận tiền':
-      '收款人 / 供应商名称',
+  'Tên người / nhà cung cấp nhận tiền': '收款人 / 供应商名称',
   'Ghi chú': '备注',
   'Xác nhận chi tiền': '确认支出',
   'Chọn ảnh / PDF hóa đơn': '选择发票照片 / PDF',
@@ -2313,14 +2149,11 @@ const Map<String, String> viToZhMap = {
       '过去4小时内没有未匹配的到账。如果客人已转账但webhook尚未返回,请使用下方的第2步。',
   'Mở rộng giỏ hàng': '展开购物车',
   'Nhập mã số thuế trước khi truy xuất': '请先输入税号再查询',
-  'Không tra cứu được thông tin theo MST này.':
-      '无法根据该税号查询到信息。',
-  'Đã điền thông tin công ty từ dữ liệu Cục Thuế':
-      '已从税务局数据自动填写公司信息',
+  'Không tra cứu được thông tin theo MST này.': '无法根据该税号查询到信息。',
+  'Đã điền thông tin công ty từ dữ liệu Cục Thuế': '已从税务局数据自动填写公司信息',
   'Đã xác thực Cục Thuế — xóa MST để nhập/kiểm tra lại':
       '已通过税务局验证 — 删除税号可重新输入/核对',
-  'Truy xuất thông tin công ty từ Cục Thuế':
-      '从税务局查询公司信息',
+  'Truy xuất thông tin công ty từ Cục Thuế': '从税务局查询公司信息',
   'Truy xuất Cục Thuế': '查询税务局',
   'Nhà cung cấp': '供应商',
   'Nhân viên': '员工',
@@ -2347,8 +2180,7 @@ const Map<String, String> viToZhMap = {
   'Xóa liên hệ': '删除联系方式',
   'Xóa': '删除',
   'Sửa liên hệ': '编辑联系方式',
-  'Khách hàng, nhà cung cấp hoặc nhân viên':
-      '客户、供应商或员工',
+  'Khách hàng, nhà cung cấp hoặc nhân viên': '客户、供应商或员工',
   'Tên nhân viên': '员工姓名',
   'Tên khách / tên nhà cung cấp': '客户姓名 / 供应商名称',
   'Tên công ty (nếu có)': '公司名称(如有)',
@@ -2356,14 +2188,12 @@ const Map<String, String> viToZhMap = {
   'Địa chỉ giao / nhận hàng': '发货 / 收货地址',
   'Không ưu đãi': '无优惠',
   'Ghi chú nội bộ': '内部备注',
-  ' (bỏ chọn = Inactive, lưu trữ — không xóa)':
-      '(取消勾选 = 停用,归档 — 不删除)',
+  ' (bỏ chọn = Inactive, lưu trữ — không xóa)': '(取消勾选 = 停用,归档 — 不删除)',
   'Chọn ảnh': '选择照片',
   'Xóa ảnh': '删除照片',
   'Đóng (Esc)': '关闭 (Esc)',
   'Khuyến mãi / giảm giá': '促销 / 折扣',
-  'Kéo để di chuyển  •  Nhấp đúp để phóng to / thu nhỏ':
-      '拖动以移动 • 双击以放大 / 缩小',
+  'Kéo để di chuyển  •  Nhấp đúp để phóng to / thu nhỏ': '拖动以移动 • 双击以放大 / 缩小',
   'Cách sử dụng': '使用方法',
   'Lịch sử thao tác hệ thống, lỗi phát sinh và truy vết theo thời gian.':
       '按时间记录的系统操作历史、发生的错误及追踪信息。',
@@ -2377,8 +2207,7 @@ const Map<String, String> viToZhMap = {
       '备份/恢复分类、人员、菜单、设置。不包含订单交易数据',
   'Tải xuống cấu hình (.json)': '下载配置 (.json)',
   'Thống kê Cơ sở dữ liệu': '数据库统计',
-  'Số lượng bảng ghi hiện tại trong hệ thống CSDL local':
-      '本地数据库系统中当前的记录数量',
+  'Số lượng bảng ghi hiện tại trong hệ thống CSDL local': '本地数据库系统中当前的记录数量',
   'Tổng số hóa đơn': '发票总数',
   'Tổng số ca làm': '班次总数',
   'Hoạt động người dùng': '用户活动',
@@ -2399,8 +2228,7 @@ const Map<String, String> viToZhMap = {
   'Thu gọn': '收起',
   'Không có chi tiết bổ sung': '没有其他详细信息',
   'Chi tiết': '详情',
-  'Hệ thống gặp lỗi khi xử lý một thao tác.':
-      '系统在处理某项操作时发生错误。',
+  'Hệ thống gặp lỗi khi xử lý một thao tác.': '系统在处理某项操作时发生错误。',
   'Đã hủy hóa đơn.': '发票已作废。',
   'Loại sự kiện': '事件类型',
   'Nguồn': '来源',
@@ -2447,8 +2275,7 @@ const Map<String, String> viToZhMap = {
   'Hóa đơn': '发票',
   'Tổng tiền HĐ': '发票总金额',
   'Màn hình bếp (KDS)': '厨房显示屏 (KDS)',
-  'Không có món nào đang chờ ở station này':
-      '此工作站没有待处理的菜品',
+  'Không có món nào đang chờ ở station này': '此工作站没有待处理的菜品',
   'Không có món nào đang chờ': '没有待处理的菜品',
   'Xác nhận đã hủy': '已确认取消',
   'Đã giao': '已出餐',
@@ -2462,12 +2289,18 @@ const Map<String, String> viToZhMap = {
   'Thêm nút': '添加按钮',
   'Trang này chưa có nút. Bấm "Thêm nút" hoặc bấm lên ảnh để tạo nhanh.':
       '此页面还没有按钮。点击"添加按钮"或点击图片可快速创建。',
-  'Chọn một nút để chỉnh món, vị trí và màu.':
-      '选择一个按钮以编辑菜品、位置和颜色。',
+  'Chọn một nút để chỉnh món, vị trí và màu.': '选择一个按钮以编辑菜品、位置和颜色。',
   'Ngày': '日',
   'Tháng': '月',
   'Năm': '年',
   'Doanh thu ca hôm nay': '今日班次营业额',
+  'Doanh thu thuần ca hôm nay': '今日班次净营业额',
+  'Doanh thu thuần': '净营业额',
+  'Doanh số gộp': '销售总额',
+  'Giảm trừ trả hàng': '退货扣减',
+  'Doanh số gộp trong ngày': '当日销售总额',
+  'Giảm trừ trả hàng trong ngày': '当日退货扣减',
+  'Doanh thu thuần trong ngày': '当日净营业额',
   'Cảnh báo kho': '库存警告',
   'Doanh thu theo giờ': '按小时营业额',
   'Doanh thu theo thời gian': '按时间营业额',
@@ -2523,8 +2356,7 @@ const Map<String, String> viToZhMap = {
   'Không ống hút': '不要吸管',
   'Tất cả chi nhánh': '所有门店',
   'Chọn chi nhánh': '选择门店',
-  'Tài khoản này chưa có quyền xem báo cáo nào.':
-      '该账户尚无查看任何报表的权限。',
+  'Tài khoản này chưa có quyền xem báo cáo nào.': '该账户尚无查看任何报表的权限。',
   'Xóa lọc ngày': '清除日期筛选',
   'Chọn một báo cáo': '选择一个报表',
   'Kỳ báo cáo': '报表周期',
@@ -2532,8 +2364,7 @@ const Map<String, String> viToZhMap = {
   'Không có dữ liệu': '暂无数据',
   'Đã mở màn hình phụ. Rê chuột lên mép trên của nó để kéo đi chỗ khác hoặc nhấp đúp để phóng to / thu nhỏ.':
       '已打开副屏。将鼠标移到其顶部边缘可拖动到其他位置，双击可放大/缩小。',
-  'Bật màn hình phụ (màn hình hướng về khách)':
-      '开启副屏（面向顾客的显示屏）',
+  'Bật màn hình phụ (màn hình hướng về khách)': '开启副屏（面向顾客的显示屏）',
   'Màn hình thứ hai quay về phía khách hàng: chiếu quảng cáo khi quầy rảnh, hiện chi tiết đơn hàng khi nhân viên đang lên món / quét hàng, và hiện mã QR chuyển khoản khi thanh toán. Dùng chung cho cả nhà hàng và bán lẻ.':
       '第二块屏幕面向顾客：柜台空闲时播放广告，员工点单/扫码时显示订单详情，结账时显示转账二维码。餐饮、零售均可使用。',
   'Thời gian mỗi ảnh:': '每张图片显示时长：',
@@ -2549,8 +2380,7 @@ const Map<String, String> viToZhMap = {
   'Tích điểm & CTKM': '积分与促销活动',
   'Đổi điểm & cashback': '积分兑换与返现',
   'Tích điểm theo giá trị mua hàng': '按消费金额累积积分',
-  'Tích điểm theo số lần giao dịch':
-      '按交易次数累积积分',
+  'Tích điểm theo số lần giao dịch': '按交易次数累积积分',
   'Hóa đơn tối thiểu': '最低消费金额',
   'Thêm hạng': '添加等级',
   'Tên hạng': '等级名称',
@@ -2562,8 +2392,7 @@ const Map<String, String> viToZhMap = {
       '开具电子发票，同步客户信息及发票状态。',
   'Chuẩn bị cấu hình merchant, store và webhook cho đơn từ Be.':
       '为来自 Be 的订单配置商户、门店及 webhook。',
-  'Đồng bộ sản phẩm retail, tồn kho và đơn hàng mart.':
-      '同步零售商品、库存及商超订单。',
+  'Đồng bộ sản phẩm retail, tồn kho và đơn hàng mart.': '同步零售商品、库存及商超订单。',
   'Tài khoản / Username': '账号 / Username',
   'Mật khẩu / Token / Password': '密码 / Token / Password',
   'Return URL (Thành công)': 'Return URL（成功）',
@@ -2571,8 +2400,7 @@ const Map<String, String> viToZhMap = {
   'Kết nối thành công!': '连接成功！',
   'Kết nối thất bại.': '连接失败。',
   'Lỗi kết nối': '连接错误',
-  'Ghi chú phục vụ đối soát, vận hành nội bộ...':
-      '用于对账、内部运营等的备注……',
+  'Ghi chú phục vụ đối soát, vận hành nội bộ...': '用于对账、内部运营等的备注……',
   'Lưu kết nối đang chọn': '保存当前选中的连接',
   'Nhân viên xác nhận': '员工已确认',
   'Đồng bộ trạng thái hóa đơn': '同步发票状态',
@@ -2605,29 +2433,23 @@ const Map<String, String> viToZhMap = {
   'Bán lẻ (Retail POS)': '零售（Retail POS）',
   'Bán buôn/Bán lẻ': '批发 / 零售',
   'Thuế suất': '税率',
-  'Chào mừng bạn đến với tính năng Thuế & Kế toán!':
-      '欢迎使用税务与会计功能！',
+  'Chào mừng bạn đến với tính năng Thuế & Kế toán!': '欢迎使用税务与会计功能！',
   'Hệ thống sẽ hướng dẫn bạn thiết lập hồ sơ kê khai thuế, tự động gán thuế suất mặc định và hỗ trợ xuất biểu mẫu kê khai theo quy định mới nhất.':
       '系统将引导您设置报税档案，自动分配默认税率，并支持按最新规定导出申报表。',
   'Thông tin đăng ký kinh doanh': '营业登记信息',
   'Tên Hộ kinh doanh *': '个体经营户名称 *',
-  'Ngày chuyển sang phương pháp kê khai *':
-      '转为申报方式的日期 *',
+  'Ngày chuyển sang phương pháp kê khai *': '转为申报方式的日期 *',
   'Chi nhánh & Địa điểm kinh doanh': '门店与经营地点',
   'Nhập mã địa điểm kinh doanh (MST 13 số nếu có) và chọn trụ sở chính:':
       '输入经营地点代码（如有13位税号请填写）并选择总部：',
-  'Nhóm 1: Doanh thu < 1 tỷ đồng / năm':
-      '第1组：年营业额 < 10亿越南盾',
-  'Nhóm 2: Doanh thu 1 tỷ – 3 tỷ đồng / năm':
-      '第2组：年营业额 10亿–30亿越南盾',
+  'Nhóm 1: Doanh thu < 1 tỷ đồng / năm': '第1组：年营业额 < 10亿越南盾',
+  'Nhóm 2: Doanh thu 1 tỷ – 3 tỷ đồng / năm': '第2组：年营业额 10亿–30亿越南盾',
   'Thuế GTGT/TNCN tính theo tỷ lệ %. Kê khai thuế theo Quý, bắt buộc sử dụng HĐĐT và Sổ S2a.':
       '增值税/个人所得税按百分比税率计算。按季度申报纳税，须使用电子发票及S2a账簿。',
-  'Nhóm 3: Doanh thu 3 tỷ – 50 tỷ đồng / năm':
-      '第3组：年营业额 30亿–500亿越南盾',
+  'Nhóm 3: Doanh thu 3 tỷ – 50 tỷ đồng / năm': '第3组：年营业额 30亿–500亿越南盾',
   'Thuế GTGT/TNCN tính theo tỷ lệ %. Kê khai thuế theo Quý/Năm, bắt buộc sử dụng Bộ 4 sổ và HĐĐT.':
       '增值税/个人所得税按百分比税率计算。按季度/年度申报纳税，须使用4本账簿及电子发票。',
-  'Nhóm 4: Doanh thu > 50 tỷ đồng / năm':
-      '第4组：年营业额 > 500亿越南盾',
+  'Nhóm 4: Doanh thu > 50 tỷ đồng / năm': '第4组：年营业额 > 500亿越南盾',
   'Chọn phạm vi áp dụng thuế cho các mặt hàng trong thực đơn:':
       '选择菜单商品适用的征税范围：',
   'Tất cả thực đơn': '所有菜单',
@@ -2639,8 +2461,7 @@ const Map<String, String> viToZhMap = {
   'Quay lại': '返回',
   'Hoàn thành & Kích hoạt': '完成并启用',
   'Tiếp tục': '继续',
-  'Hồ sơ khai thuế Hộ kinh doanh':
-      '个体经营户报税档案',
+  'Hồ sơ khai thuế Hộ kinh doanh': '个体经营户报税档案',
   'Cập nhật hồ sơ': '更新档案',
   'Cấu hình kết nối Hóa đơn điện tử (MISA meInvoice)':
       '配置电子发票连接（MISA meInvoice）',
@@ -2659,8 +2480,7 @@ const Map<String, String> viToZhMap = {
   'Ca làm việc & Két tiền': '班次与钱箱',
   'Bắt buộc mở ca trước khi bán': '销售前必须开班',
   'In thử': '测试打印',
-  'Xác nhận thay đổi cấu hình máy POS thẻ.':
-      '确认刷卡POS机配置的更改。',
+  'Xác nhận thay đổi cấu hình máy POS thẻ.': '确认刷卡POS机配置的更改。',
   'Kết nối': '连接',
   'Mạng & kết nối': '网络与连接',
   'Không ra được internet': '无法访问互联网',
@@ -2672,8 +2492,7 @@ const Map<String, String> viToZhMap = {
   'Lưu trữ cục bộ': '本地存储',
   'Lưu trữ lâu dài': '长期存储',
   'Trạng thái máy in': '打印机状态',
-  'Chưa có máy in nào được cấu hình trong Danh mục in':
-      '打印目录中尚未配置任何打印机',
+  'Chưa có máy in nào được cấu hình trong Danh mục in': '打印目录中尚未配置任何打印机',
   'Mất kết nối': '连接已断开',
   'Không kết nối': '未连接',
   'Máy in hệ thống': '系统打印机',
@@ -2698,8 +2517,7 @@ const Map<String, String> viToZhMap = {
   'Nhập hoặc chọn tên máy in thật (VD: EPSON TM-T82)':
       '输入或选择实际打印机名称（例如：EPSON TM-T82）',
   'Có két': '有钱箱',
-  'Xác nhận thay đổi cấu hình danh mục máy in.':
-      '确认打印目录配置的更改。',
+  'Xác nhận thay đổi cấu hình danh mục máy in.': '确认打印目录配置的更改。',
   'Thiết bị đang kết nối': '设备正在连接',
   'API server sống + độ trễ thật': 'API服务器存活状态及真实延迟',
   'server có lỗi': '服务器出现错误',
@@ -2725,28 +2543,21 @@ const Map<String, String> viToZhMap = {
   'Tháng áp dụng': '适用月份',
   'Ngày trong tháng': '每月日期',
   'Tất cả nhân viên': '所有员工',
-  'Ghi chú nội bộ / mô tả cách chạy CTKM':
-      '内部备注 / 促销活动执行说明',
+  'Ghi chú nội bộ / mô tả cách chạy CTKM': '内部备注 / 促销活动执行说明',
   'Bỏ qua': '跳过',
   'Lưu CTKM': '保存促销活动',
   'Lưu chỉnh sửa': '保存修改',
   'Danh sách chương trình': '活动列表',
   'từ': '词',
   'Tất cả lot của SKU': '该SKU的所有批次',
-  'Tài khoản, vai trò và quyền truy cập của nhân viên.':
-      '员工账户、角色及访问权限。',
+  'Tài khoản, vai trò và quyền truy cập của nhân viên.': '员工账户、角色及访问权限。',
   'Thực đơn (Menu)': '菜单（Menu）',
-  'Danh mục, món ăn, recipe trừ kho và lịch bán.':
-      '分类、菜品、扣减库存的配方及售卖时段。',
-  'Hóa đơn điện tử, kế toán và nền tảng bán hàng.':
-      '电子发票、会计与销售平台对接。',
-  'Trạng thái thiết bị, máy in và đồng bộ cloud.':
-      '设备状态、打印机及云端同步。',
-  'Quản lý kho hàng và liên kết kênh bán.':
-      '仓库管理及销售渠道对接。',
+  'Danh mục, món ăn, recipe trừ kho và lịch bán.': '分类、菜品、扣减库存的配方及售卖时段。',
+  'Hóa đơn điện tử, kế toán và nền tảng bán hàng.': '电子发票、会计与销售平台对接。',
+  'Trạng thái thiết bị, máy in và đồng bộ cloud.': '设备状态、打印机及云端同步。',
+  'Quản lý kho hàng và liên kết kênh bán.': '仓库管理及销售渠道对接。',
   'Tích điểm & Khuyến mại': '积分与促销',
-  'Âm thanh và định tuyến thông báo sự kiện.':
-      '事件通知的声音与路由设置。',
+  'Âm thanh và định tuyến thông báo sự kiện.': '事件通知的声音与路由设置。',
   'Tích điểm': '积分',
   'Nhân viên mới sẽ nhận quyền theo vai trò, sau đó có thể chỉnh riêng từng người.':
       '新员工将根据其角色获得权限，之后可为每个人单独调整。',
@@ -2776,8 +2587,7 @@ const Map<String, String> viToZhMap = {
   'Lịch sử lệnh in': '打印任务记录',
   'Tất cả trạng thái': '全部状态',
   'Mua hàng': '采购',
-  'Chọn NCC hoặc nhập tên nơi mua':
-      '选择供应商或输入采购地点名称',
+  'Chọn NCC hoặc nhập tên nơi mua': '选择供应商或输入采购地点名称',
   'Thêm ít nhất một dòng hàng': '至少添加一行商品',
   'Tên nơi mua': '采购地点名称',
   'Nhập vào kho': '入库',
@@ -2794,15 +2604,12 @@ const Map<String, String> viToZhMap = {
   'Nhận hàng vào kho': '收货入库',
   'Thanh toán NCC': '供应商付款',
   'Chuyển khoản QR': '二维码转账',
-  'Nhập approval code thủ công rồi thêm dòng thanh toán':
-      '手动输入授权码后再添加付款记录',
+  'Nhập approval code thủ công rồi thêm dòng thanh toán': '手动输入授权码后再添加付款记录',
   'Nhập số tiền > 0': '请输入大于0的金额',
   'Không còn số tiền cần thu': '已无待收款项',
   'Nhập thông tin xuất hóa đơn': '输入开票信息',
-  'Nhập tên khách hoặc tên công ty xuất hóa đơn':
-      '输入开票的客户姓名或公司名称',
-  'In bill bán lẻ thất bại sau thanh toán':
-      '支付后零售小票打印失败',
+  'Nhập tên khách hoặc tên công ty xuất hóa đơn': '输入开票的客户姓名或公司名称',
+  'In bill bán lẻ thất bại sau thanh toán': '支付后零售小票打印失败',
   'Thanh toán bán lẻ thất bại': '零售支付失败',
   'Xuất hóa đơn công ty': '开具公司发票',
   'Số điện thoại': '电话号码',
@@ -2821,22 +2628,19 @@ const Map<String, String> viToZhMap = {
   'Xóa giỏ': '清空购物车',
   'Nhập mã voucher giấy, voucher công ty, đối tác hoặc UrBox. CTKM sản phẩm chọn bằng icon hộp quà trên từng dòng hàng.':
       '输入纸质代金券、公司代金券、合作伙伴代金券或 UrBox 代码。商品促销请点击每行商品上的礼盒图标选择。',
-  'Không có voucher ngoài đang hoạt động':
-      '目前没有生效中的外部代金券',
+  'Không có voucher ngoài đang hoạt động': '目前没有生效中的外部代金券',
   'Không dùng': '不使用',
   'Không yêu cầu bill tối thiểu': '无最低消费要求',
   'Giỏ hàng đang trống': '购物车是空的',
   'Chọn khách hàng': '选择客户',
-  'Nhập tên, SĐT hoặc tên công ty':
-      '输入姓名、电话号码或公司名称',
+  'Nhập tên, SĐT hoặc tên công ty': '输入姓名、电话号码或公司名称',
   'Thêm khách hàng': '添加客户',
   'Không mở được camera để quét.': '无法打开摄像头进行扫描。',
   'Món bạn hay gọi': '常点菜品',
   'Món đã gửi bếp': '菜品已送厨房',
   'tiền mặt': '现金',
   'quẹt thẻ': '刷卡',
-  'Khách hàng chưa đăng ký thành viên':
-      '该客户尚未注册会员',
+  'Khách hàng chưa đăng ký thành viên': '该客户尚未注册会员',
   'Khách hàng chưa đặt tên': '客户未命名',
   'Chưa kết nối được tích điểm — bạn vẫn có thể gọi món bình thường.':
       '积分功能尚未连接——您仍可正常点餐。',
@@ -2851,15 +2655,12 @@ const Map<String, String> viToZhMap = {
       '累积会员积分并保存您喜欢的菜品（可选）',
   'Ví dụ: 0901234567': '例如：0901234567',
   'Bỏ qua & Gọi món': '跳过并点餐',
-  'Số điện thoại chưa đúng, vui lòng kiểm tra lại':
-      '电话号码不正确，请重新检查',
+  'Số điện thoại chưa đúng, vui lòng kiểm tra lại': '电话号码不正确，请重新检查',
   'Xin chào %s!': '你好，%s！',
-  'Đã tạo thẻ thành viên cho bạn 🎉':
-      '已为您创建会员卡 🎉',
+  'Đã tạo thẻ thành viên cho bạn 🎉': '已为您创建会员卡 🎉',
   'Điểm tích lũy': '累计积分',
   'Thực đơn': '菜单',
-  '⭐ Món bạn hay gọi — chạm để gọi lại':
-      '⭐ 常点菜品——点击再次下单',
+  '⭐ Món bạn hay gọi — chạm để gọi lại': '⭐ 常点菜品——点击再次下单',
   'Chưa chọn món ăn nào': '尚未选择任何菜品',
   'GỬI BẾP': '送厨房',
   'Xóa hết': '全部删除',
@@ -2876,8 +2677,7 @@ const Map<String, String> viToZhMap = {
   'Đang chờ thanh toán…': '等待支付中…',
   'Đã nhận thanh toán. Cảm ơn quý khách!': '已收到付款，感谢惠顾！',
   '← Quay lại': '← 返回',
-  'Nhập mã số thuế để nhận hóa đơn điện tử qua email':
-      '输入税号以通过邮箱接收电子发票',
+  'Nhập mã số thuế để nhận hóa đơn điện tử qua email': '输入税号以通过邮箱接收电子发票',
   'Có, xuất hóa đơn': '是，开具发票',
   'Không, cảm ơn': '不用了，谢谢',
   'Truy xuất': '查询',
@@ -2887,8 +2687,7 @@ const Map<String, String> viToZhMap = {
   'Cảm ơn quý khách!': '感谢惠顾！',
   'Hẹn gặp lại quý khách lần sau 💙': '期待您下次光临 💙',
   'Khách tự gọi món': '顾客自助点餐',
-  'Chọn bàn cho khách rồi đưa máy':
-      '为顾客选择桌台后将设备交给顾客',
+  'Chọn bàn cho khách rồi đưa máy': '为顾客选择桌台后将设备交给顾客',
   'Đang phục vụ': '服务中',
   'món hay gọi': '常点菜品',
   'Số lượng không hợp lệ': '数量无效',
@@ -2918,11 +2717,9 @@ const Map<String, String> viToZhMap = {
 
   // Generated missing static i18n keys (2026-07-14 pass 2).
   'Có bản cập nhật mới': '有新版本更新',
-  'PIN không đúng hoặc không đăng nhập được':
-      '密码不正确或无法登录',
+  'PIN không đúng hoặc không đăng nhập được': '密码不正确或无法登录',
   'Chưa có nhân viên để hiển thị.': '暂无员工可显示。',
-  'Dùng "Đăng nhập quản trị viên" bên dưới.':
-      '请使用下方的"管理员登录"。',
+  'Dùng "Đăng nhập quản trị viên" bên dưới.': '请使用下方的"管理员登录"。',
   'Đăng nhập': '登录',
   'HÓA ĐƠN ĐIỆN TỬ KHỞI TẠO TỪ MÁY TÍNH TIỀN\\nCẢM ƠN QUÝ KHÁCH - HẸN GẶP LẠI!':
       '收银机开具的电子发票\\n感谢惠顾，期待再次光临！',
@@ -2936,8 +2733,7 @@ const Map<String, String> viToZhMap = {
   'Chưa đủ món': '菜品未齐',
   'Chưa có tài liệu nào.\\n(Tải lên tài liệu mới sẽ bổ sung sau khi tích hợp chọn file.)':
       '暂无任何文件。\\n（待接入文件选择功能后即可上传新文件。）',
-  'Doanh thu được tính từ lúc mở ca đầu ngày':
-      '营业额从当天首个班次开班时起计算',
+  'Doanh thu được tính từ lúc mở ca đầu ngày': '营业额从当天首个班次开班时起计算',
   'đến': '至',
   'Chưa có ca được mở hôm nay, tạm tính theo ngày lịch từ':
       '今日尚未开班，暂按自然日计算，起始于',
@@ -2971,8 +2767,7 @@ const Map<String, String> viToZhMap = {
       '暂无任何文件。\n（待接入文件选择功能后即可上传新文件。）',
   'Nhập mã PIN hiện tại.': '输入当前密码。',
   'PIN mới phải gồm 4–6 chữ số.': '新密码须为 4–6 位数字。',
-  'PIN mới quá dễ đoán. Hãy chọn dãy số khác.':
-      '新密码过于容易猜到，请更换一组数字。',
+  'PIN mới quá dễ đoán. Hãy chọn dãy số khác.': '新密码过于容易猜到，请更换一组数字。',
   'Hai lần nhập PIN mới không khớp.': '两次输入的新密码不一致。',
   'Đổi mã PIN mặc định': '修改默认密码',
   'Tài khoản Admin đang dùng mã PIN mặc định. Vì an toàn của cửa hàng, hãy đặt mã PIN mới trước khi tiếp tục.':
@@ -3008,8 +2803,7 @@ const Map<String, String> viToZhMap = {
   'Kênh bán hàng online Haravan: nhận đơn, khách hàng, sản phẩm và tồn kho qua backend.':
       'Haravan 线上销售渠道：通过后端接收订单、客户、商品和库存信息。',
   'Chi nhánh mặc định': '默认门店',
-  'Đã lưu trên server — để trống nếu giữ nguyên':
-      '已保存在服务器上——保持不变请留空',
+  'Đã lưu trên server — để trống nếu giữ nguyên': '已保存在服务器上——保持不变请留空',
   'Webhook Haravan dùng URL /webhooks/haravan. Token và webhook secret chỉ lưu trên server, không đưa xuống POS.':
       'Haravan 的 Webhook 使用地址 /webhooks/haravan。Token 和 Webhook 密钥仅保存在服务器上，不会下发到 POS。',
   'Mật khẩu quá dễ đoán (0000/1111/1234…). Hãy chọn 4 số khác.':
@@ -3035,11 +2829,9 @@ const Map<String, String> viToZhMap = {
   'Kho': '库存',
   'Theo kênh bán': '按销售渠道',
   'Cấu hình bán retail': '零售销售配置',
-  'Đồng bộ cả 2 (F&B dùng y cấu hình Retail POS)':
-      '两者同步（F&B 与零售 POS 使用相同配置）',
+  'Đồng bộ cả 2 (F&B dùng y cấu hình Retail POS)': '两者同步（F&B 与零售 POS 使用相同配置）',
   'RETAIL POS (bán lẻ)': 'RETAIL POS（零售）',
-  'RETAIL TRONG F&B (thêm retail ở POS nhà hàng)':
-      'F&B 中的零售（在餐饮 POS 中新增零售功能）',
+  'RETAIL TRONG F&B (thêm retail ở POS nhà hàng)': 'F&B 中的零售（在餐饮 POS 中新增零售功能）',
   'Đổi tên bảng giá': '重命名价格表',
   'Tên bảng giá': '价格表名称',
   'VD: Giá sỉ, Giá GrabMart…': '例如：批发价、GrabMart 价格……',
@@ -3051,8 +2843,7 @@ const Map<String, String> viToZhMap = {
   'Thoát mà không lưu?': '不保存直接退出？',
   'Ở lại': '留在此页',
   'Thoát, bỏ phiếu': '退出并放弃单据',
-  'Chọn nhà cung cấp hoặc nhập tên nơi mua':
-      '选择供应商或输入采购来源名称',
+  'Chọn nhà cung cấp hoặc nhập tên nơi mua': '选择供应商或输入采购来源名称',
   'Trả hàng nhập': '进货退货',
   'Nhập hàng': '进货',
   'Kho xuất hàng': '发出仓库',
@@ -3083,8 +2874,7 @@ const Map<String, String> viToZhMap = {
   'Không đọc được file': '无法读取文件',
   'Đã trả hàng': '已退货',
   'Đã nhập hàng': '已入库',
-  'Phiếu này chưa có dòng hàng đã nhận để trả':
-      '此单据没有可退的已收货商品行',
+  'Phiếu này chưa có dòng hàng đã nhận để trả': '此单据没有可退的已收货商品行',
   'Trả hàng từ phiếu': '按单据退货',
   'Đã ghi thanh toán': '已记录付款',
   'Theo mã phiếu trả': '按退货单号',
@@ -3092,10 +2882,8 @@ const Map<String, String> viToZhMap = {
   'Xuất file': '导出文件',
   'Mã nhập hàng': '进货单号',
   'Không tìm thấy kết quả': '未找到结果',
-  'Bấm "+ Trả hàng nhập" để tạo phiếu trả':
-      '点击"+ 采购退货"创建退货单',
-  'Bấm "+ Nhập hàng" để tạo phiếu nhập':
-      '点击"+ 入库"创建入库单',
+  'Bấm "+ Trả hàng nhập" để tạo phiếu trả': '点击"+ 采购退货"创建退货单',
+  'Bấm "+ Nhập hàng" để tạo phiếu nhập': '点击"+ 入库"创建入库单',
   'Công nợ phải trả': '应付账款',
   'Hôm nay': '今天',
   '7 ngày qua': '最近7天',
@@ -3123,8 +2911,7 @@ const Map<String, String> viToZhMap = {
   'Lưu file mẫu': '保存模板文件',
   'Tải về file mẫu': '下载模板文件',
   'Đã lưu file mẫu': '模板文件已保存',
-  'Hoặc tìm hàng hóa phía trên để thêm từng dòng':
-      '或在上方搜索商品逐行添加',
+  'Hoặc tìm hàng hóa phía trên để thêm từng dòng': '或在上方搜索商品逐行添加',
   'Đã thêm': '已添加',
   'Mã phiếu tự động': '自动生成单号',
   'Lưu tạm': '保存草稿',
@@ -3137,11 +2924,9 @@ const Map<String, String> viToZhMap = {
   'Lưu giá': '保存价格',
   'Đã cập nhật giá': '价格已更新',
   'Giá bán': '售价',
-  'Thử đổi từ khóa hoặc bỏ bớt bộ lọc':
-      '请尝试更换关键词或减少筛选条件',
+  'Thử đổi từ khóa hoặc bỏ bớt bộ lọc': '请尝试更换关键词或减少筛选条件',
   'Sửa giá': '编辑价格',
-  'Tạo/sửa bảng giá: Cài đặt → Kho & kênh bán':
-      '创建/编辑价目表：设置 → 仓库与销售渠道',
+  'Tạo/sửa bảng giá: Cài đặt → Kho & kênh bán': '创建/编辑价目表：设置 → 仓库与销售渠道',
   'Dưới định mức tồn': '低于库存定额',
   'Vượt định mức tồn': '超过库存定额',
   'Còn hàng trong kho': '有库存',
@@ -3155,8 +2940,7 @@ const Map<String, String> viToZhMap = {
   'Phiếu kiểm chưa lưu': '盘点单尚未保存',
   'Lưu tạm & thoát': '保存草稿并退出',
   'Chọn kho kiểm': '选择盘点仓库',
-  'Thêm ít nhất một dòng kiểm và nhập SL thực tế':
-      '请至少添加一行盘点记录并输入实际数量',
+  'Thêm ít nhất một dòng kiểm và nhập SL thực tế': '请至少添加一行盘点记录并输入实际数量',
   'Nhập kiểm kho từ file': '从文件导入盘点数据',
   'Mở file mẫu (Excel/CSV) → copy toàn bộ bảng → dán vào đây. Cột: Mã hàng | Số lượng | Lô 1 | Hạn sử dụng 1 | Số lượng 1 | Lô 2 | …':
       '打开模板文件（Excel/CSV）→ 复制整张表格 → 粘贴到此处。列：商品编码 | 数量 | 批次1 | 有效期1 | 数量1 | 批次2 | …',
@@ -3180,8 +2964,7 @@ const Map<String, String> viToZhMap = {
   'Tổng chênh lệch': '差异总计',
   'SL lệch tăng': '盘盈数量',
   'SL lệch giảm': '盘亏数量',
-  'Bấm "+ Kiểm kho" để tạo phiếu kiểm mới':
-      '点击"+ 盘点"创建新的盘点单',
+  'Bấm "+ Kiểm kho" để tạo phiếu kiểm mới': '点击"+ 盘点"创建新的盘点单',
   'HSD': '有效期',
   'Thực tế': '实际',
   'Chuyển hàng': '调拨',
@@ -3191,18 +2974,15 @@ const Map<String, String> viToZhMap = {
   'Từ kho': '调出仓库',
   'Tới kho': '调入仓库',
   'Số dòng': '行数',
-  'Phiếu đang nhập dở sẽ MẤT nếu thoát bây giờ.':
-      '如果现在退出，正在编辑的单据将会丢失。',
+  'Phiếu đang nhập dở sẽ MẤT nếu thoát bây giờ.': '如果现在退出，正在编辑的单据将会丢失。',
   'Chọn kho': '选择仓库',
-  'Kho đích phải khác kho nguồn':
-      '目标仓库不能与源仓库相同',
+  'Kho đích phải khác kho nguồn': '目标仓库不能与源仓库相同',
   'Kho xuất': '出库仓库',
   'SL chuyển': '调拨数量',
   'SL xuất': '出库数量',
   'Số mặt hàng': '商品项数',
   'Tổng số lượng': '总数量',
-  'Hàng chuyển đi giữ nguyên lô/HSD ở kho đích.':
-      '调拨的商品在目标仓库保留原有批次/有效期。',
+  'Hàng chuyển đi giữ nguyên lô/HSD ở kho đích.': '调拨的商品在目标仓库保留原有批次/有效期。',
   'Xuất cho cửa hàng tự dùng — trừ tồn theo lô gần hết hạn trước (FEFO).':
       '用于门店自用出库——按先到期先出（FEFO）原则扣减库存。',
   'Vượt tồn kho': '超出库存',
@@ -3365,8 +3145,10 @@ const Map<String, String> viToZhMap = {
   // Comprehensive sweep — 1016 previously-missing t() keys (2026-09-12)
   'Không lưu được một số món': '部分菜品保存失败',
   'Mã ngân hàng (napas) — dùng để tạo mã QR': '银行代码（napas）— 用于生成二维码',
-  'VD: BIDV, VCB, MB, ACB... — PHẢI đúng ngân hàng thật, nếu không QR sẽ tạo sai ngân hàng và bị từ chối khi quét': '例如：BIDV、VCB、MB、ACB…—— 必须填写真实银行，否则二维码会生成错误的银行信息，扫码时会被拒绝',
-  'Một số ngân hàng (BIDV...) yêu cầu Tài khoản ảo (VA) để tạo QR — không phải số tài khoản thường': '部分银行（BIDV 等）需要虚拟账户（VA）才能生成二维码——并非普通账号',
+  'VD: BIDV, VCB, MB, ACB... — PHẢI đúng ngân hàng thật, nếu không QR sẽ tạo sai ngân hàng và bị từ chối khi quét':
+      '例如：BIDV、VCB、MB、ACB…—— 必须填写真实银行，否则二维码会生成错误的银行信息，扫码时会被拒绝',
+  'Một số ngân hàng (BIDV...) yêu cầu Tài khoản ảo (VA) để tạo QR — không phải số tài khoản thường':
+      '部分银行（BIDV 等）需要虚拟账户（VA）才能生成二维码——并非普通账号',
   'Tiền tố thực dùng': '实际使用的前缀',
   'Catalogue bán lẻ chưa được bật trong Cài đặt': '零售目录尚未在设置中启用',
   'Sản phẩm này chưa có trong danh mục bán lẻ': '该商品尚未加入零售目录',
@@ -3375,7 +3157,8 @@ const Map<String, String> viToZhMap = {
   'Thoát': '退出',
   'Xem chi tiết sản phẩm': '查看商品详情',
   'Catalogue': '目录',
-  'Vuốt để lật trang. Bấm "Xem chi tiết sản phẩm" ở đáy trang để xem thông tin.': '滑动翻页。点击页面底部的“查看商品详情”以查看更多信息。',
+  'Vuốt để lật trang. Bấm "Xem chi tiết sản phẩm" ở đáy trang để xem thông tin.':
+      '滑动翻页。点击页面底部的“查看商品详情”以查看更多信息。',
   'Tình trạng': '状态',
   'Tạm hết hàng': '暂时缺货',
   'Thêm vào giỏ': '加入购物车',
@@ -3391,7 +3174,8 @@ const Map<String, String> viToZhMap = {
   'Đang chờ xác nhận chuyển khoản...': '正在等待转账确认…',
   'Thanh toán thành công. Hẹn gặp lại quý khách.': '支付成功。期待您的再次光临。',
   'Mời quý khách chờ trong giây lát': '请稍候片刻',
-  'Nhân viên sẽ tới hỗ trợ thanh toán. Tổng cộng: \${Fmt.money(_cartTotal)}': '工作人员将前来协助付款。总计：\${Fmt.money(_cartTotal)}',
+  'Nhân viên sẽ tới hỗ trợ thanh toán. Tổng cộng: \${Fmt.money(_cartTotal)}':
+      '工作人员将前来协助付款。总计：\${Fmt.money(_cartTotal)}',
   'Đã hiểu': '知道了',
   'Cần ít nhất tên, công ty, MST, SĐT hoặc email': '至少需要填写姓名、公司、税号、电话或邮箱中的一项',
   'Không tải được danh bạ (\$_error)': '无法加载通讯录（\$_error）',
@@ -3401,15 +3185,18 @@ const Map<String, String> viToZhMap = {
   'Năm \${from.year}': '\${from.year}年',
   'Không tải được nhật ký hoạt động (\$_error)': '无法加载操作日志（\$_error）',
   'Không tải thêm được nhật ký (\$_error)': '无法加载更多日志（\$_error）',
-  'Bill bán lẻ đã bị xóa khỏi lịch sử (trả hàng / hoàn hàng).': '该零售账单已从历史记录中删除（退货/退款）。',
-  'Bill F&B đã bị xóa khỏi lịch sử (trả hàng / hoàn hàng).': '该餐饮账单已从历史记录中删除（退货/退款）。',
+  'Bill bán lẻ đã bị xóa khỏi lịch sử (trả hàng / hoàn hàng).':
+      '该零售账单已从历史记录中删除（退货/退款）。',
+  'Bill F&B đã bị xóa khỏi lịch sử (trả hàng / hoàn hàng).':
+      '该餐饮账单已从历史记录中删除（退货/退款）。',
   'Đánh giá': '给应用评分',
   'Ứng dụng hiện tại': '当前应用',
   'Ứng dụng': '应用',
   'Phiên bản': '版本',
   'Máy chủ': '服务器',
   'Không tải được trạng thái CSDL (\$_error)': '无法加载数据库状态（\$_error）',
-  'Dọn đơn hàng chạy thử trước khi khai trương. Không tạo database phụ.': '开业前清除测试订单。不会创建附加数据库。',
+  'Dọn đơn hàng chạy thử trước khi khai trương. Không tạo database phụ.':
+      '开业前清除测试订单。不会创建附加数据库。',
   'Độ trễ xử lý (event loop)': '处理延迟（事件循环）',
   'Bộ nhớ đang dùng': '内存使用量',
   'Hàng đợi in tồn đọng': '打印队列积压',
@@ -3417,7 +3204,8 @@ const Map<String, String> viToZhMap = {
   'Sự sống của server (tự làm mới mỗi 5s)': '服务器健康状态（每5秒自动刷新）',
   'Kiểm tra lúc \${_hm(checkedAt)}': '检查时间：\${_hm(checkedAt)}',
   'Không tải được tài liệu (\$_error)': '无法加载文件（\$_error）',
-  'Chưa có tài liệu nào.nẢnh hóa đơn khoản chi và file các nghiệp vụ sẽ tự xuất hiện tại đây.': '暂无文件。支出凭证照片及各类业务文件将自动显示在此处。',
+  'Chưa có tài liệu nào.nẢnh hóa đơn khoản chi và file các nghiệp vụ sẽ tự xuất hiện tại đây.':
+      '暂无文件。支出凭证照片及各类业务文件将自动显示在此处。',
   'Thiếu file': '缺少文件',
   'Dữ liệu cũ': '数据过旧',
   'Không tải được chi phí (\$_error)': '无法加载支出（\$_error）',
@@ -3441,14 +3229,17 @@ const Map<String, String> viToZhMap = {
   'Không tải được nội dung bill': '无法加载账单内容',
   'Hóa đơn VAT': '增值税发票',
   'Tài liệu hóa đơn không phải PDF hợp lệ': '发票文件不是有效的PDF',
-  'Bridge in hóa đơn VAT đang chuẩn bị tài liệu Windows.': '增值税发票打印桥接程序正在准备 Windows 文档。',
+  'Bridge in hóa đơn VAT đang chuẩn bị tài liệu Windows.':
+      '增值税发票打印桥接程序正在准备 Windows 文档。',
   'In hóa đơn': '打印发票',
   'Mở trên trình duyệt': '在浏览器中打开',
   'Copy link': '复制链接',
   'Đã copy link hóa đơn': '发票链接已复制',
   'Không tải được tài liệu hóa đơn': '无法加载发票文件',
-  'Tài liệu PDF chính thức đã sẵn sàng để xem hoặc in.': '正式的PDF文件已准备好，可供查看或打印。',
-  'Chưa có tài liệu PDF. Có thể mở đường dẫn tra cứu của nhà cung cấp.': '暂无PDF文件。可以打开供应商的查询链接。',
+  'Tài liệu PDF chính thức đã sẵn sàng để xem hoặc in.':
+      '正式的PDF文件已准备好，可供查看或打印。',
+  'Chưa có tài liệu PDF. Có thể mở đường dẫn tra cứu của nhà cung cấp.':
+      '暂无PDF文件。可以打开供应商的查询链接。',
   'Không tải được phiếu bếp (\$_error)': '无法加载厨房单（\$_error）',
   'Chưa gán hàng hoá': '尚未关联商品',
   'Đã lưu catalogue': '目录已保存',
@@ -3463,34 +3254,42 @@ const Map<String, String> viToZhMap = {
   'Để trống nếu trang này không mở đầu mục nào': '如果该页面不是某个分类的开始，请留空',
   'Đã lưu cấu hình catalogue': '目录设置已保存',
   'Đặt tên thiết bị': '设置设备名称',
-  'Tên này hiện thay cho "Hóa đơn 01" trên POS khi khách chọn hàng từ máy đó — đặt theo vị trí đặt máy, ví dụ "Kệ hạt điều".': '当顾客在该设备上选购商品时，此名称会替代POS上的“01号账单”——请按设备摆放位置命名，例如“腰果货架”。',
+  'Tên này hiện thay cho "Hóa đơn 01" trên POS khi khách chọn hàng từ máy đó — đặt theo vị trí đặt máy, ví dụ "Kệ hạt điều".':
+      '当顾客在该设备上选购商品时，此名称会替代POS上的“01号账单”——请按设备摆放位置命名，例如“腰果货架”。',
   'Đã đổi tên thiết bị': '设备已重命名',
   'Không tải được cấu hình (\$_error)': '无法加载设置（\$_error）',
   'Quyển catalogue': '目录册',
   'Màn khách & thiết bị': '顾客屏幕与设备',
   'Màn hình khách': '顾客屏幕',
-  'Khách bấm Thanh toán thì tab bên POS chuyển ĐỎ. Màn khách KHÔNG tự tạo đơn và không thu tiền — nhân viên vẫn xác nhận và thu như bình thường.': '当顾客点击“结账”时，POS端的标签页会变红。顾客屏幕不会自动创建订单，也不会收款——员工仍需照常确认并收款。',
+  'Khách bấm Thanh toán thì tab bên POS chuyển ĐỎ. Màn khách KHÔNG tự tạo đơn và không thu tiền — nhân viên vẫn xác nhận và thu như bình thường.':
+      '当顾客点击“结账”时，POS端的标签页会变红。顾客屏幕不会自动创建订单，也不会收款——员工仍需照常确认并收款。',
   'Lời chào trên màn khách': '顾客屏幕上的欢迎语',
-  'Hình thức thanh toán và ảnh mã QR: Cài đặt → Liên kết.': '付款方式与二维码图片：设置 → 关联。',
-  'Mật khẩu thoát màn khách: Cài đặt → Thiết bị khách (dùng chung với iPad khách).': '退出顾客屏幕的密码：设置 → 顾客设备（与顾客iPad共用）。',
+  'Hình thức thanh toán và ảnh mã QR: Cài đặt → Liên kết.':
+      '付款方式与二维码图片：设置 → 关联。',
+  'Mật khẩu thoát màn khách: Cài đặt → Thiết bị khách (dùng chung với iPad khách).':
+      '退出顾客屏幕的密码：设置 → 顾客设备（与顾客iPad共用）。',
   'Lưu cấu hình': '保存设置',
   'Thiết bị catalogue (\${_devices.length})': '目录设备（\${_devices.length}）',
-  'Mỗi máy mở màn khách sẽ tự xuất hiện ở đây. Đặt tên theo vị trí đặt máy — tên đó thay cho "Hóa đơn 01" trên POS để thu ngân biết khách đang đứng ở đâu.': '每台打开顾客屏幕的设备都会自动显示在此处。请按设备摆放位置命名——该名称会替代POS上的“01号账单”，方便收银员知道顾客所在位置。',
+  'Mỗi máy mở màn khách sẽ tự xuất hiện ở đây. Đặt tên theo vị trí đặt máy — tên đó thay cho "Hóa đơn 01" trên POS để thu ngân biết khách đang đứng ở đâu.':
+      '每台打开顾客屏幕的设备都会自动显示在此处。请按设备摆放位置命名——该名称会替代POS上的“01号账单”，方便收银员知道顾客所在位置。',
   'Chưa có máy nào mở màn khách': '尚无设备打开顾客屏幕',
   'Không tải được số liệu (\$_error)': '无法加载数据（\$_error）',
   'Đã lưu sơ đồ bàn': '桌位布局已保存',
   'Tạo khu vực mới': '创建新区域',
   'Tên khu vực (VD: Tầng trệt)': '区域名称（例如：一楼）',
   'Đã tạo khu vực': '区域已创建',
-  'Bàn thuộc khu vực này sẽ về "chưa xếp" (không bị xóa). Tiếp tục?': '该区域内的桌位将变为“未分配”（不会被删除）。是否继续？',
+  'Bàn thuộc khu vực này sẽ về "chưa xếp" (không bị xóa). Tiếp tục?':
+      '该区域内的桌位将变为“未分配”（不会被删除）。是否继续？',
   'Đã xóa khu vực': '区域已删除',
   'Không tải được sơ đồ (\$_error)': '无法加载布局（\$_error）',
   'KHU VỰC': '区域',
   'Tạo khu vực': '创建区域',
   'Chưa gán khu vực': '尚未分配区域',
-  'Danh sách tất cả bàn (chỉ xem). Chọn một khu vực bên trái để kéo-thả sắp xếp.': '所有桌位列表（仅供查看）。请在左侧选择一个区域以拖放排列。',
+  'Danh sách tất cả bàn (chỉ xem). Chọn một khu vực bên trái để kéo-thả sắp xếp.':
+      '所有桌位列表（仅供查看）。请在左侧选择一个区域以拖放排列。',
   'Chưa có bàn nào': '尚无桌位',
-  'Kéo bàn tự do đặt bất kỳ đâu. Dấu "+" là điểm góc để tham chiếu. Lưới chỉ hiện ở Cài đặt; POS/Tablet chỉ xem.': '自由拖动餐桌放置到任意位置。"+" 标记是用于参照的角点。网格仅在"设置"中显示；POS/平板端仅可查看。',
+  'Kéo bàn tự do đặt bất kỳ đâu. Dấu "+" là điểm góc để tham chiếu. Lưới chỉ hiện ở Cài đặt; POS/Tablet chỉ xem.':
+      '自由拖动餐桌放置到任意位置。"+" 标记是用于参照的角点。网格仅在"设置"中显示；POS/平板端仅可查看。',
   'Hít góc': '吸附到角点',
   'Kéo để di chuyển · Nhấp đúp để bỏ khỏi sơ đồ': '拖动以移动 · 双击以从布局中移除',
   'Bàn chưa xếp vị trí': '尚未布局的餐桌',
@@ -3502,12 +3301,15 @@ const Map<String, String> viToZhMap = {
   'Đơn giá đã gồm VAT': '单价已含增值税',
   'Ẩn khỏi thực đơn (cả POS lẫn khách)': '从菜单中隐藏（POS 和顾客端均隐藏）',
   'Hiện ở Tablet Self-Order': '在自助点餐平板上显示',
-  'Tắt = ẩn khỏi màn khách tự gọi, vẫn hiện ở F&B POS.': '关闭 = 从自助点餐屏幕隐藏，但仍在餐饮 POS 中显示。',
+  'Tắt = ẩn khỏi màn khách tự gọi, vẫn hiện ở F&B POS.':
+      '关闭 = 从自助点餐屏幕隐藏，但仍在餐饮 POS 中显示。',
   'Bán tại chỗ': '堂食',
   'Bán mang đi': '外带',
-  'Ảnh (*.jpg;*.jpeg;*.png;*.webp;*.gif;*.bmp;*.tif;*.tiff;*.heic;*.heif)|*.jpg;*.jpeg;*.png;*.webp;*.gif;*.bmp;*.tif;*.tiff;*.heic;*.heif': '图片 (*.jpg;*.jpeg;*.png;*.webp;*.gif;*.bmp;*.tif;*.tiff;*.heic;*.heif)|*.jpg;*.jpeg;*.png;*.webp;*.gif;*.bmp;*.tif;*.tiff;*.heic;*.heif',
+  'Ảnh (*.jpg;*.jpeg;*.png;*.webp;*.gif;*.bmp;*.tif;*.tiff;*.heic;*.heif)|*.jpg;*.jpeg;*.png;*.webp;*.gif;*.bmp;*.tif;*.tiff;*.heic;*.heif':
+      '图片 (*.jpg;*.jpeg;*.png;*.webp;*.gif;*.bmp;*.tif;*.tiff;*.heic;*.heif)|*.jpg;*.jpeg;*.png;*.webp;*.gif;*.bmp;*.tif;*.tiff;*.heic;*.heif',
   'Nhóm tùy chọn (size / topping / combo)': '选项组（规格/加料/套餐）',
-  'Khách chọn khi đặt ở Self-Order. "Chọn 1" cho size; "Nhiều" cho topping. Bật 🔗 để lựa chọn là một món (combo).': '顾客在自助点餐时选择。"单选"用于规格；"多选"用于加料。开启 🔗 可将选项设为套餐商品。',
+  'Khách chọn khi đặt ở Self-Order. "Chọn 1" cho size; "Nhiều" cho topping. Bật 🔗 để lựa chọn là một món (combo).':
+      '顾客在自助点餐时选择。"单选"用于规格；"多选"用于加料。开启 🔗 可将选项设为套餐商品。',
   'Thêm nhóm tùy chọn': '添加选项组',
   'vd Size, Topping': '例如：规格、加料',
   'Trên': '上方',
@@ -3525,20 +3327,25 @@ const Map<String, String> viToZhMap = {
   'Tên trạm mới': '新工作站名称',
   'Xóa danh mục "\${c.name}".': '删除分类"\${c.name}"。',
   'Cập nhật danh mục "\${c.name}".': '已更新分类"\${c.name}"。',
-  'Xóa món ăn "\${item.name}". Cần PIN Manager hoặc Admin.': '删除商品"\${item.name}"。需要经理或管理员密码。',
+  'Xóa món ăn "\${item.name}". Cần PIN Manager hoặc Admin.':
+      '删除商品"\${item.name}"。需要经理或管理员密码。',
   'Không tải được thực đơn (\$_error)': '菜单加载失败（\$_error）',
   'Tại chỗ': '堂食',
   'Chỉnh sửa': '编辑',
   'Xem trước': '预览',
   '{storeName}n{address}nĐT: {phone}': '{storeName}n{address}n电话：{phone}',
-  'Số bill: {billNo}n{place}nThu ngân: {cashier}nNgày: {time}': '账单号：{billNo}n{place}n收银员：{cashier}n日期：{time}',
+  'Số bill: {billNo}n{place}nThu ngân: {cashier}nNgày: {time}':
+      '账单号：{billNo}n{place}n收银员：{cashier}n日期：{time}',
   'Mẫu phiếu bếp chuẩn': '标准厨房单模板',
   '{billNo} · {time}': '{billNo} · {time}',
-  '{address}nĐT: {phone} · MST: {taxCode}': '{address}n电话：{phone} · 税号：{taxCode}',
-  'Số bill: {billNo}n{place}nThu ngân: {cashier}nNgày: {time}nKhách: {customerName}': '账单号：{billNo}n{place}n收银员：{cashier}n日期：{time}n客户：{customerName}',
+  '{address}nĐT: {phone} · MST: {taxCode}':
+      '{address}n电话：{phone} · 税号：{taxCode}',
+  'Số bill: {billNo}n{place}nThu ngân: {cashier}nNgày: {time}nKhách: {customerName}':
+      '账单号：{billNo}n{place}n收银员：{cashier}n日期：{time}n客户：{customerName}',
   'Cột SL': '数量列',
   'Yêu cầu thêm': '附加要求',
-  'Danh sách món, số lượng, yêu cầu thêm và ghi chú theo đúng thứ tự in.': '商品清单、数量、附加要求和备注按打印顺序排列。',
+  'Danh sách món, số lượng, yêu cầu thêm và ghi chú theo đúng thứ tự in.':
+      '商品清单、数量、附加要求和备注按打印顺序排列。',
   'Tổng tiền bằng chữ': '总金额大写',
   'Hình thức thanh toán': '支付方式',
   'Ghi chú đơn hàng': '订单备注',
@@ -3563,31 +3370,39 @@ const Map<String, String> viToZhMap = {
   'không ống hút': '不要吸管',
   'Mì Bò Kho Việt Nam': '越南红烧牛肉面',
   'Cỡ chữ bản in': '打印字体大小',
-  'Chữ to hơn dễ đọc và tốn thêm giấy. Ba mức đầu giữ nguyên số cột nên bố cục bill không đổi; mức cuối làm số cột giảm một nửa.': '字体越大越易读，但更耗纸张。前三档保持列数不变，账单布局不变；最后一档会将列数减半。',
-  'Không tải được danh mục báo cáo (\$_catalogError)': '报表目录加载失败（\$_catalogError）',
+  'Chữ to hơn dễ đọc và tốn thêm giấy. Ba mức đầu giữ nguyên số cột nên bố cục bill không đổi; mức cuối làm số cột giảm một nửa.':
+      '字体越大越易读，但更耗纸张。前三档保持列数不变，账单布局不变；最后一档会将列数减半。',
+  'Không tải được danh mục báo cáo (\$_catalogError)':
+      '报表目录加载失败（\$_catalogError）',
   'Không tải được báo cáo (\$_reportError)': '报表加载失败（\$_reportError）',
   'Module bán hàng tại chi nhánh': '门店销售模块',
-  'Chỉ bật những luồng chi nhánh thực sự sử dụng. Thay đổi áp dụng cho mọi thiết bị của chi nhánh.': '仅启用门店实际使用的流程。更改将应用于该门店的所有设备。',
+  'Chỉ bật những luồng chi nhánh thực sự sử dụng. Thay đổi áp dụng cho mọi thiết bị của chi nhánh.':
+      '仅启用门店实际使用的流程。更改将应用于该门店的所有设备。',
   'Sơ đồ bàn, gọi món và thanh toán F&B': '餐饮的餐桌布局、点餐与结账',
   'Bán hàng mã vạch và thêm hàng retail vào bill F&B': '条码销售，并可将零售商品加入餐饮账单',
   'Màn hình bếp KDS': '厨房显示屏（KDS）',
-  'Theo dõi trạng thái chế biến; vẫn có thể in phiếu bếp khi tắt': '跟踪制作状态；关闭后仍可打印厨房单',
+  'Theo dõi trạng thái chế biến; vẫn có thể in phiếu bếp khi tắt':
+      '跟踪制作状态；关闭后仍可打印厨房单',
   'Tem vận đơn': '运单标签',
   'Server lỗi (HTTP \$apiStatus)': '服务器错误（HTTP \$apiStatus）',
   'Tem vận đơn (Shipping label)': '运单标签（Shipping Label）',
   'Bấm mũi tên để máy tự dò máy in đang cắm': '点击箭头自动检测已连接的打印机',
   'Dò máy in đang kết nối': '检测已连接的打印机',
-  'Không thấy máy in nào đang kết nối. Kiểm tra dây/nguồn máy in và Hardware Agent trên máy đó rồi bấm dò lại.': '未发现已连接的打印机。请检查打印机的连接线/电源以及该设备上的 Hardware Agent，然后重新检测。',
-  'Máy in đang kết nối (\${_systemPrinters.length})': '已连接的打印机（\${_systemPrinters.length}）',
+  'Không thấy máy in nào đang kết nối. Kiểm tra dây/nguồn máy in và Hardware Agent trên máy đó rồi bấm dò lại.':
+      '未发现已连接的打印机。请检查打印机的连接线/电源以及该设备上的 Hardware Agent，然后重新检测。',
+  'Máy in đang kết nối (\${_systemPrinters.length})':
+      '已连接的打印机（\${_systemPrinters.length}）',
   'đang sẵn sàng': '就绪',
   'đang offline': '离线',
   'Máy chủ trì (máy in chính)': '主控设备（主打印机）',
-  'Máy in cắm vào máy nào thì chọn máy đó. Bỏ trống chỉ dùng khi CHẮC CHẮN không có hai máy in trùng tên.': '打印机连接到哪台设备，就选择哪台设备。只有在确定不存在两台同名打印机时，才可留空。',
+  'Máy in cắm vào máy nào thì chọn máy đó. Bỏ trống chỉ dùng khi CHẮC CHẮN không có hai máy in trùng tên.':
+      '打印机连接到哪台设备，就选择哪台设备。只有在确定不存在两台同名打印机时，才可留空。',
   '— Không chỉ định —': '— 未指定 —',
   'máy này': '本机',
   'Lần cuối': '最近一次',
   'Trạm chế biến nhận job': '接收任务的制作工作站',
-  'Để trống = dùng tuyến mặc định (Bếp/Bar) như trước.': '留空 = 使用默认路线（厨房/吧台），与之前相同。',
+  'Để trống = dùng tuyến mặc định (Bếp/Bar) như trước.':
+      '留空 = 使用默认路线（厨房/吧台），与之前相同。',
   'Khổ giấy riêng của máy in': '该打印机专用纸张尺寸',
   'Không đồng bộ sang máy khác': '不同步到其他设备',
   'Theo mẫu bill chung': '采用通用账单模板',
@@ -3595,8 +3410,10 @@ const Map<String, String> viToZhMap = {
   'Máy in tại chỗ luôn được thử trước': '本地打印机始终优先尝试',
   'Theo thứ tự danh sách': '按列表顺序',
   'Ưu tiên \$i': '优先级 \$i',
-  'In bill bằng driver Windows (font đẹp, tiếng Việt chuẩn)': '使用 Windows 驱动打印账单（字体美观，越南语显示正确）',
-  'Font in (TrueType — phải cài sẵn trên máy Windows)': '打印字体（TrueType — 必须已安装在该 Windows 设备上）',
+  'In bill bằng driver Windows (font đẹp, tiếng Việt chuẩn)':
+      '使用 Windows 驱动打印账单（字体美观，越南语显示正确）',
+  'Font in (TrueType — phải cài sẵn trên máy Windows)':
+      '打印字体（TrueType — 必须已安装在该 Windows 设备上）',
   'Bấm In thử để xem font trên máy in thật': '点击"试打印"查看实际打印机上的字体效果',
   'Bảng mã tiếng Việt': '越南语编码',
   'In thử để kiểm tra chữ có dấu': '试打印以检查带声调符号的文字',
@@ -3608,7 +3425,8 @@ const Map<String, String> viToZhMap = {
   'Server không trả về đường dẫn ảnh': '服务器未返回图片路径',
   'Đã lưu cấu hình Business Central': 'Business Central 配置已保存',
   'Không kết nối được': '无法连接',
-  'Microsoft Dynamics 365 Business Central': 'Microsoft Dynamics 365 Business Central',
+  'Microsoft Dynamics 365 Business Central':
+      'Microsoft Dynamics 365 Business Central',
   'ĐANG BẬT': '已开启',
   'ĐANG TẮT': '已关闭',
   'Chờ': '等待中',
@@ -3617,7 +3435,8 @@ const Map<String, String> viToZhMap = {
   'Lỗi (dead)': '错误（dead）',
   'Đẩy hàng đợi ngay': '立即推送队列',
   'Bật đồng bộ sang Business Central': '启用同步到 Business Central',
-  'Tắt = không gửi gì. Bật = mỗi hoá đơn được xếp hàng đẩy sang BC (BC lỗi thì POS vẫn bán).': '关闭 = 不发送任何内容。开启 = 每张发票都会排队推送到 BC（BC 出错时 POS 仍可正常销售）。',
+  'Tắt = không gửi gì. Bật = mỗi hoá đơn được xếp hàng đẩy sang BC (BC lỗi thì POS vẫn bán).':
+      '关闭 = 不发送任何内容。开启 = 每张发票都会排队推送到 BC（BC 出错时 POS 仍可正常销售）。',
   'Tenant ID (Azure AD)': 'Tenant ID（Azure AD）',
   'Client ID (App registration)': 'Client ID（应用注册）',
   'Client Secret': '客户端密钥',
@@ -3629,29 +3448,42 @@ const Map<String, String> viToZhMap = {
   'Kiểm tra kết nối': '检查连接',
   'Hàng đợi gần đây': '最近队列',
   'Chưa có sự kiện nào': '暂无事件',
-  'Đồng bộ bán hàng sang Microsoft Dynamics 365 Business Central.': '将销售数据同步到 Microsoft Dynamics 365 Business Central。',
+  'Đồng bộ bán hàng sang Microsoft Dynamics 365 Business Central.':
+      '将销售数据同步到 Microsoft Dynamics 365 Business Central。',
   'Mã QR tĩnh (đối soát tay)': '静态二维码（人工对账）',
-  'Ảnh QR cố định của cửa hàng, hiện trên màn khách catalogue khi chưa đấu nối được cổng thanh toán. Không tự đối soát.': '门店固定的二维码图片，在未接入支付网关时显示在顾客目录屏幕上。不会自动对账。',
-  'Haravan: đồng bộ khách hàng, sản phẩm và tồn kho. Đơn hàng được quản lý trực tiếp trên Haravan.': 'Haravan：同步客户、商品和库存。订单直接在 Haravan 上管理。',
-  'Shopee Open Platform: nhận đơn, đồng bộ hàng hóa và tồn kho. Cần Partner ID + Shop được ủy quyền.': 'Shopee 开放平台：接收订单，同步商品和库存。需要 Partner ID 和已授权的店铺。',
-  'TikTok Shop Partner: nhận đơn, đồng bộ hàng và tồn. Cần app được ủy quyền và shop cipher.': 'TikTok Shop Partner：接收订单，同步商品和库存。需要已授权的应用和 shop cipher。',
-  'Lazada Open Platform: nhận đơn và đồng bộ sản phẩm/tồn kho. Cần App Key/Secret và seller token.': 'Lazada 开放平台：接收订单并同步商品/库存。需要 App Key/Secret 和卖家令牌（seller token）。',
-  'Tiki Integration: nhận đơn và đồng bộ hàng hóa/tồn. Cần Client ID/Secret của seller.': 'Tiki 集成：接收订单并同步商品/库存。需要卖家的 Client ID/Secret。',
-  'Nhận tin nhắn Trang qua Meta webhook (X-Hub-Signature-256). Cần Meta App, Page token và Advanced Access.': '通过 Meta webhook（X-Hub-Signature-256）接收主页消息。需要 Meta App、Page token 和 Advanced Access。',
-  'Nhận tin nhắn Instagram Professional qua Meta webhook. Cần tài khoản Professional và Advanced Access.': '通过 Meta webhook 接收 Instagram 专业账户消息。需要专业账户和 Advanced Access。',
-  'Zalo Official Account OpenAPI + webhook. Cần OA App, access token và webhook secret được cấp.': 'Zalo 官方账号 OpenAPI + webhook。需要 OA App、access token 和已签发的 webhook secret。',
+  'Ảnh QR cố định của cửa hàng, hiện trên màn khách catalogue khi chưa đấu nối được cổng thanh toán. Không tự đối soát.':
+      '门店固定的二维码图片，在未接入支付网关时显示在顾客目录屏幕上。不会自动对账。',
+  'Haravan: đồng bộ khách hàng, sản phẩm và tồn kho. Đơn hàng được quản lý trực tiếp trên Haravan.':
+      'Haravan：同步客户、商品和库存。订单直接在 Haravan 上管理。',
+  'Shopee Open Platform: nhận đơn, đồng bộ hàng hóa và tồn kho. Cần Partner ID + Shop được ủy quyền.':
+      'Shopee 开放平台：接收订单，同步商品和库存。需要 Partner ID 和已授权的店铺。',
+  'TikTok Shop Partner: nhận đơn, đồng bộ hàng và tồn. Cần app được ủy quyền và shop cipher.':
+      'TikTok Shop Partner：接收订单，同步商品和库存。需要已授权的应用和 shop cipher。',
+  'Lazada Open Platform: nhận đơn và đồng bộ sản phẩm/tồn kho. Cần App Key/Secret và seller token.':
+      'Lazada 开放平台：接收订单并同步商品/库存。需要 App Key/Secret 和卖家令牌（seller token）。',
+  'Tiki Integration: nhận đơn và đồng bộ hàng hóa/tồn. Cần Client ID/Secret của seller.':
+      'Tiki 集成：接收订单并同步商品/库存。需要卖家的 Client ID/Secret。',
+  'Nhận tin nhắn Trang qua Meta webhook (X-Hub-Signature-256). Cần Meta App, Page token và Advanced Access.':
+      '通过 Meta webhook（X-Hub-Signature-256）接收主页消息。需要 Meta App、Page token 和 Advanced Access。',
+  'Nhận tin nhắn Instagram Professional qua Meta webhook. Cần tài khoản Professional và Advanced Access.':
+      '通过 Meta webhook 接收 Instagram 专业账户消息。需要专业账户和 Advanced Access。',
+  'Zalo Official Account OpenAPI + webhook. Cần OA App, access token và webhook secret được cấp.':
+      'Zalo 官方账号 OpenAPI + webhook。需要 OA App、access token 和已签发的 webhook secret。',
   'Chọn ảnh mã QR': '选择二维码图片',
   'CẤU HÌNH HÓA ĐƠN': '发票配置',
   'Không có mã CQT': '无税务机关码',
   'Có mã CQT': '有税务机关码',
   'Chưa xác định — bấm Kiểm tra kết nối': '尚未确定——点击"检查连接"',
   'Hình thức hóa đơn': '发票形式',
-  'Lấy tự động từ MISA theo doanh nghiệp, không chỉnh tay.': '根据企业信息自动从 MISA 获取，无需手动调整。',
-  'Chưa có mẫu hóa đơn. Bấm "Kiểm tra kết nối" để tải danh sách mẫu từ MISA.': '暂无发票模板。点击"检查连接"以从 MISA 加载模板列表。',
+  'Lấy tự động từ MISA theo doanh nghiệp, không chỉnh tay.':
+      '根据企业信息自动从 MISA 获取，无需手动调整。',
+  'Chưa có mẫu hóa đơn. Bấm "Kiểm tra kết nối" để tải danh sách mẫu từ MISA.':
+      '暂无发票模板。点击"检查连接"以从 MISA 加载模板列表。',
   'Đang dùng mẫu': '当前使用模板',
   'bấm "Kiểm tra kết nối" để tải lại danh sách': '点击"检查连接"以重新加载列表',
   'Mẫu hóa đơn': '发票模板',
-  'Lấy trực tiếp từ MISA. Ký hiệu đi kèm mẫu, không nhập tay.': '直接从 MISA 获取。发票符号随模板提供，无需手动输入。',
+  'Lấy trực tiếp từ MISA. Ký hiệu đi kèm mẫu, không nhập tay.':
+      '直接从 MISA 获取。发票符号随模板提供，无需手动输入。',
   'Trạng thái cấu hình': '配置状态',
   'Đồng bộ Haravan hoàn tất': 'Haravan 同步完成',
   'bản ghi': '条记录',
@@ -3664,29 +3496,38 @@ const Map<String, String> viToZhMap = {
   'Đang đồng bộ...': '同步中...',
   'Đồng bộ ngay': '立即同步',
   'Xem các phiên đồng bộ': '查看同步会话',
-  'Khách quét mã này để chuyển khoản, sau đó nhân viên đối soát bằng mắt rồi mới xác nhận đơn.': '顾客扫描此二维码进行转账，随后由员工目视核对后再确认订单。',
+  'Khách quét mã này để chuyển khoản, sau đó nhân viên đối soát bằng mắt rồi mới xác nhận đơn.':
+      '顾客扫描此二维码进行转账，随后由员工目视核对后再确认订单。',
   'Tải ảnh QR lên': '上传二维码图片',
   'Đổi ảnh QR': '更换二维码图片',
   'Ghi chú hiện dưới mã QR trên màn khách': '顾客屏幕上二维码下方显示的备注',
   'Dùng QR ngân hàng (VietQR)': '使用银行二维码（VietQR）',
-  'Tắt đi và không bật cổng nào thì mã QR tĩnh ở trên được dùng cho mọi màn hình thanh toán.': '若关闭且未启用任何支付网关，则上方的静态二维码将用于所有支付屏幕。',
-  'Đồng bộ đơn hàng và gửi thông báo khách mua tại POS': '同步订单，并在顾客于 POS 端购买时发送通知',
+  'Tắt đi và không bật cổng nào thì mã QR tĩnh ở trên được dùng cho mọi màn hình thanh toán.':
+      '若关闭且未启用任何支付网关，则上方的静态二维码将用于所有支付屏幕。',
+  'Đồng bộ đơn hàng và gửi thông báo khách mua tại POS':
+      '同步订单，并在顾客于 POS 端购买时发送通知',
   'Combo (mua N món bất kỳ trong tập)': '套餐组合（购买套内任意 N 件商品）',
   'Giá combo cố định (N món = X đ)': '固定套餐价（N 件 = X đ）',
-  'Combo cần chọn ít nhất 1 SKU hoặc 1 nhóm hàng': '套餐组合至少需要选择 1 个 SKU 或 1 个商品分组',
-  'XÓA HẲN chương trình "\${v.name}"? Không thể hoàn tác.': '彻底删除方案"\${v.name}"？此操作无法撤销。',
+  'Combo cần chọn ít nhất 1 SKU hoặc 1 nhóm hàng':
+      '套餐组合至少需要选择 1 个 SKU 或 1 个商品分组',
+  'XÓA HẲN chương trình "\${v.name}"? Không thể hoàn tác.':
+      '彻底删除方案"\${v.name}"？此操作无法撤销。',
   'Đã xóa "\${v.name}"': '已删除"\${v.name}"',
   'SKU trong combo': '套餐组合中的 SKU',
   'Chọn 1 hoặc nhiều SKU': '选择一个或多个 SKU',
   'Nhóm hàng trong combo': '套餐组合中的商品分组',
   'Chọn nhóm hàng (tùy chọn)': '选择商品分组（可选）',
   'Số lượng cần mua (N)': '所需购买数量（N）',
-  'Khách mua đủ N món BẤT KỲ trong tập (SKU + nhóm hàng) → áp ưu đãi. Mua 2N món = 2 combo.': '顾客购买该集合中（SKU + 商品分组）任意 N 件商品即可享受优惠。购买 2N 件 = 2 份套餐。',
-  'Chương trình này có mức ưu đãi cao (\${_i(_value.text)}% > ngưỡng \${_advisoryThresholdPct!.round()}%). Vui lòng kiểm tra quy định khuyến mại hiện hành và hồ sơ chương trình trước khi áp dụng. Đây chỉ là nhắc nhở — không chặn lưu.': '该方案的优惠幅度较高（\${_i(_value.text)}% > 阈值 \${_advisoryThresholdPct!.round()}%）。请在应用前核实现行促销法规及方案资料。这仅为提醒——不会阻止保存。',
+  'Khách mua đủ N món BẤT KỲ trong tập (SKU + nhóm hàng) → áp ưu đãi. Mua 2N món = 2 combo.':
+      '顾客购买该集合中（SKU + 商品分组）任意 N 件商品即可享受优惠。购买 2N 件 = 2 份套餐。',
+  'Chương trình này có mức ưu đãi cao (\${_i(_value.text)}% > ngưỡng \${_advisoryThresholdPct!.round()}%). Vui lòng kiểm tra quy định khuyến mại hiện hành và hồ sơ chương trình trước khi áp dụng. Đây chỉ là nhắc nhở — không chặn lưu.':
+      '该方案的优惠幅度较高（\${_i(_value.text)}% > 阈值 \${_advisoryThresholdPct!.round()}%）。请在应用前核实现行促销法规及方案资料。这仅为提醒——不会阻止保存。',
   'Lưu ý pháp lý & tuân thủ': '法律与合规提示',
-  'Chưa cấu hình tài liệu quy định. Người quản trị có thể thêm link hướng dẫn ở Cấu hình vận hành (promotions.legalNoteUrl).': '尚未配置法规文件。管理员可在运营配置（promotions.legalNoteUrl）中添加指南链接。',
+  'Chưa cấu hình tài liệu quy định. Người quản trị có thể thêm link hướng dẫn ở Cấu hình vận hành (promotions.legalNoteUrl).':
+      '尚未配置法规文件。管理员可在运营配置（promotions.legalNoteUrl）中添加指南链接。',
   'Chương trình dùng NỘI BỘ (không bán cho khách)': '内部使用方案（不对顾客销售）',
-  'QA / dùng bếp / dùng sản xuất — tách khỏi CTKM tiêu dùng trong báo cáo & đối soát.': 'QA / 厨房使用 / 生产使用——在报表与对账中与面向消费者的促销方案区分开。',
+  'QA / dùng bếp / dùng sản xuất — tách khỏi CTKM tiêu dùng trong báo cáo & đối soát.':
+      'QA / 厨房使用 / 生产使用——在报表与对账中与面向消费者的促销方案区分开。',
   'Loại sử dụng nội bộ': '内部使用类型',
   'Ghi chú tuân thủ (compliance note)': '合规备注（compliance note）',
   'VD: CT đã khai báo Sở Công Thương / căn cứ nội bộ': '例如：方案已向工贸厅申报／内部依据',
@@ -3713,10 +3554,12 @@ const Map<String, String> viToZhMap = {
   'Đã tạo vai trò': '角色已创建',
   'Đã xóa vai trò': '角色已删除',
   'Thêm vai trò': '新增角色',
-  'Nhân viên mới sẽ nhận quyền theo vai trò, sau đó có thể chỉnh riêng từng người. Vai trò tùy chỉnh có thể xóa.': '新员工将根据角色获得权限，之后可为每个人单独调整。自定义角色可以删除。',
+  'Nhân viên mới sẽ nhận quyền theo vai trò, sau đó có thể chỉnh riêng từng người. Vai trò tùy chỉnh có thể xóa.':
+      '新员工将根据角色获得权限，之后可为每个人单独调整。自定义角色可以删除。',
   'Xóa vai trò': '删除角色',
   'Cập nhật nhân viên "\${_name.text.trim()}".': '更新员工"\${_name.text.trim()}"。',
-  'Cập nhật quyền mặc định vai trò "\${_roleLabel(widget.role)}".': '更新角色"\${_roleLabel(widget.role)}"的默认权限。',
+  'Cập nhật quyền mặc định vai trò "\${_roleLabel(widget.role)}".':
+      '更新角色"\${_roleLabel(widget.role)}"的默认权限。',
   'Thêm và sửa sản phẩm kho': '新增和编辑仓库商品',
   'Nhập hàng vào kho': '商品入库',
   'Xuất kho và xuất dùng nội bộ': '出库及内部领用出库',
@@ -3732,31 +3575,37 @@ const Map<String, String> viToZhMap = {
   'Tiền ra': '支出',
   'Tiền theo tài khoản': '按账户统计的资金',
   'Chi theo danh mục': '按类别统计的支出',
-  '* Số dư ngân hàng tuyệt đối cần khai số dư đầu kỳ (chưa có API số dư). Hiện chỉ tính biến động vào/ra.': '* 银行账户的绝对余额需要申报期初余额（目前尚无余额 API）。当前仅计算收支变动。',
+  '* Số dư ngân hàng tuyệt đối cần khai số dư đầu kỳ (chưa có API số dư). Hiện chỉ tính biến động vào/ra.':
+      '* 银行账户的绝对余额需要申报期初余额（目前尚无余额 API）。当前仅计算收支变动。',
   'Thẻ / POS': '银行卡 / POS',
   'Sau': '之后',
   'ngày': '天',
   'Không lấy được liên kết uỷ quyền': '无法获取授权链接',
   'Ngắt kết nối': '断开连接',
-  'Gian hàng sẽ ngừng đồng bộ. Lịch sử đơn được giữ lại. Có thể kết nối lại sau.': '店铺将停止同步。订单历史记录将被保留。之后可以重新连接。',
+  'Gian hàng sẽ ngừng đồng bộ. Lịch sử đơn được giữ lại. Có thể kết nối lại sau.':
+      '店铺将停止同步。订单历史记录将被保留。之后可以重新连接。',
   'Đã ngắt kết nối': '已断开连接',
   'Thêm gian hàng': '添加店铺',
   'Kết nối gian hàng': '连接店铺',
-  'để đồng bộ đơn hàng, hàng hóa, tồn kho và giá bán. Bạn chỉ cần đăng nhập và đồng ý — không phải nhập Partner ID/Key hay token.': '以同步订单、商品、库存和售价。您只需登录并同意授权即可——无需输入 Partner ID/Key 或 token。',
+  'để đồng bộ đơn hàng, hàng hóa, tồn kho và giá bán. Bạn chỉ cần đăng nhập và đồng ý — không phải nhập Partner ID/Key hay token.':
+      '以同步订单、商品、库存和售价。您只需登录并同意授权即可——无需输入 Partner ID/Key 或 token。',
   'Chưa kết nối gian hàng nào': '尚未连接任何店铺',
   'Gian hàng': '店铺',
   'Kết nối lại': '重新连接',
   'Cần kết nối lại': '需要重新连接',
   'Chưa hoàn tất kết nối': '尚未完成连接',
   'Đang chờ xác nhận trên': '正在等待确认于',
-  'Hoàn tất đăng nhập và cấp quyền trong cửa sổ trình duyệt vừa mở. Màn này sẽ tự cập nhật khi xong.': '请在刚打开的浏览器窗口中完成登录并授权。完成后本界面会自动更新。',
+  'Hoàn tất đăng nhập và cấp quyền trong cửa sổ trình duyệt vừa mở. Màn này sẽ tự cập nhật khi xong.':
+      '请在刚打开的浏览器窗口中完成登录并授权。完成后本界面会自动更新。',
   'Phiên kết nối đã hết hạn. Bấm "Thử lại".': '连接会话已过期。请点击“重试”。',
   'Kết nối không thành công. Bấm "Thử lại".': '连接失败。请点击“重试”。',
-  'Không tự mở được trình duyệt — sao chép liên kết và mở tay:': '无法自动打开浏览器——请复制链接后手动打开：',
+  'Không tự mở được trình duyệt — sao chép liên kết và mở tay:':
+      '无法自动打开浏览器——请复制链接后手动打开：',
   'Đã sao chép liên kết': '已复制链接',
   'Sao chép liên kết uỷ quyền': '复制授权链接',
   'Chưa đọc': '未读',
-  'Chưa kết nối kênh chat nào — vào Cài đặt → Kết nối để thêm Facebook/Zalo/Shopee…': '尚未连接任何聊天渠道——请前往“设置→连接”添加 Facebook/Zalo/Shopee…',
+  'Chưa kết nối kênh chat nào — vào Cài đặt → Kết nối để thêm Facebook/Zalo/Shopee…':
+      '尚未连接任何聊天渠道——请前往“设置→连接”添加 Facebook/Zalo/Shopee…',
   'Chưa có hội thoại': '暂无对话',
   'Chọn một hội thoại để bắt đầu': '选择一个对话以开始',
   'Đánh dấu Mở': '标记为开启',
@@ -3764,7 +3613,8 @@ const Map<String, String> viToZhMap = {
   'Ghi chú hội thoại': '对话备注',
   'Đã cập nhật': '已更新',
   'Gửi': '发送',
-  'Gửi tin ra kênh này mở khi connector được cấp quyền (\${providerMeta(provider).name}).': '连接器获得授权后（\${providerMeta(provider).name}），才能向该渠道发送消息。',
+  'Gửi tin ra kênh này mở khi connector được cấp quyền (\${providerMeta(provider).name}).':
+      '连接器获得授权后（\${providerMeta(provider).name}），才能向该渠道发送消息。',
   'Đã chọn': '已选择',
   'đơn': '单',
   'In phiếu giao': '打印发货单',
@@ -3804,7 +3654,8 @@ const Map<String, String> viToZhMap = {
   'Không tìm thấy SKU khớp': '未找到匹配的 SKU',
   'Đã liên kết hàng hóa': '已关联商品',
   'Hủy liên kết': '取消关联',
-  'Bỏ liên kết listing này với SKU kho? Đơn của listing sẽ cần liên kết lại để trừ kho.': '确定取消此商品与库存 SKU 的关联吗？该商品的订单将需要重新关联才能扣减库存。',
+  'Bỏ liên kết listing này với SKU kho? Đơn của listing sẽ cần liên kết lại để trừ kho.':
+      '确定取消此商品与库存 SKU 的关联吗？该商品的订单将需要重新关联才能扣减库存。',
   'Đã hủy liên kết': '已取消关联',
   'Hàng trong kho': '库存商品',
   'Liên kết sàn': '平台链接',
@@ -3813,11 +3664,13 @@ const Map<String, String> viToZhMap = {
   'Kho chưa có mặt hàng nào': '库存中暂无商品',
   'Hàng trong kho bán online': '用于在线销售的库存商品',
   'đơn online trừ trực tiếp tồn kho này': '笔在线订单直接扣减此库存',
-  'Chưa có listing sàn nào. Bấm "Đồng bộ sản phẩm" để kéo hàng từ Shopee/Lazada/TikTok về, hoặc kết nối kênh trong Thiết lập.': '尚无平台商品。点击“同步商品”以从 Shopee/Lazada/TikTok 拉取商品，或在设置中连接渠道。',
+  'Chưa có listing sàn nào. Bấm "Đồng bộ sản phẩm" để kéo hàng từ Shopee/Lazada/TikTok về, hoặc kết nối kênh trong Thiết lập.':
+      '尚无平台商品。点击“同步商品”以从 Shopee/Lazada/TikTok 拉取商品，或在设置中连接渠道。',
   'Chọn tay': '手动选择',
   'Sao chép': '复制',
   '(Không có tên listing)': '（无商品名称）',
-  'Chưa gắn mặt hàng POS — bấm "Sao chép" để tự đối chiếu SKU/ID.': '尚未关联 POS 商品——点击“复制”以自动按 SKU/ID 匹配。',
+  'Chưa gắn mặt hàng POS — bấm "Sao chép" để tự đối chiếu SKU/ID.':
+      '尚未关联 POS 商品——点击“复制”以自动按 SKU/ID 匹配。',
   'Tìm sản phẩm trong kho': '搜索库存中的商品',
   'Không tìm thấy mặt hàng': '未找到商品',
   'Chi tiết đối soát': '对账详情',
@@ -3827,7 +3680,8 @@ const Map<String, String> viToZhMap = {
   'Chưa TT': '未付款',
   'Không tải được đơn online (\$_error)': '无法加载在线订单（\$_error）',
   'Không tải được lịch sử (\$_listError)': '无法加载历史记录（\$_listError）',
-  'Không tải được chi tiết hóa đơn (\$_receiptError)': '无法加载发票详情（\$_receiptError）',
+  'Không tải được chi tiết hóa đơn (\$_receiptError)':
+      '无法加载发票详情（\$_receiptError）',
   'Đã trả hết': '已全部退货',
   'Đã trả một phần': '已部分退货',
   'Trả hàng / hoàn hàng': '退货/退回商品',
@@ -3845,7 +3699,8 @@ const Map<String, String> viToZhMap = {
   'CHÂN BILL': '小票底部',
   'BẢN IN': '打印',
   'Độ đậm bản in': '打印浓度',
-  'Bố cục chi tiết của bill (thứ tự các dòng, logo, cỡ chữ) thiết kế ở bản máy để bàn. Màn này đổi khổ giấy và phần chữ — không phá bố cục đã căn.': '小票的详细排版（行顺序、徽标、字号）在桌面版中设计。此界面只更改纸张尺寸和文字部分——不会破坏已调整好的排版。',
+  'Bố cục chi tiết của bill (thứ tự các dòng, logo, cỡ chữ) thiết kế ở bản máy để bàn. Màn này đổi khổ giấy và phần chữ — không phá bố cục đã căn.':
+      '小票的详细排版（行顺序、徽标、字号）在桌面版中设计。此界面只更改纸张尺寸和文字部分——不会破坏已调整好的排版。',
   'XEM TRƯỚC': '预览',
   'Giá trị tồn': '库存价值',
   'Tất cả loại hàng': '所有商品类型',
@@ -3887,18 +3742,21 @@ const Map<String, String> viToZhMap = {
   'Nhập họ và tên khách': '输入客户姓名',
   'Thông tin chính': '主要信息',
   'Thông tin xuất hóa đơn': '开票信息',
-  'Ưu đãi khách được TRỪ THẲNG vào đơn khi chọn khách này ở màn bán lẻ.': '在零售销售界面选择该客户时,客户优惠会直接从订单中扣除。',
+  'Ưu đãi khách được TRỪ THẲNG vào đơn khi chọn khách này ở màn bán lẻ.':
+      '在零售销售界面选择该客户时,客户优惠会直接从订单中扣除。',
   'Lưu khách hàng': '保存客户',
   'Loại ưu đãi': '优惠类型',
   'Tìm tên hoặc mã vạch': '搜索名称或条形码',
   'Không tìm thấy hàng hóa': '未找到商品',
   'Thử từ khóa khác': '请尝试其他关键词',
   'Thiếu tên hàng hóa': '缺少商品名称',
-  'Hàng bắt buộc hạn sử dụng: phải chọn HSD cho lô tồn đầu kỳ': '该商品要求有效期:必须为期初库存批次选择有效期',
+  'Hàng bắt buộc hạn sử dụng: phải chọn HSD cho lô tồn đầu kỳ':
+      '该商品要求有效期:必须为期初库存批次选择有效期',
   'Hàng hóa mới': '新商品',
   'Hạn sử dụng lô tồn đầu kỳ': '期初库存批次有效期',
   'Chưa chọn — bắt buộc': '未选择 — 必填',
-  'Tồn đầu kỳ được ghi thành một lô "OPENING" để sổ lô và tồn kho luôn khớp nhau.': '期初库存会记录为一个"OPENING"批次,以确保批次台账与库存始终一致。',
+  'Tồn đầu kỳ được ghi thành một lô "OPENING" để sổ lô và tồn kho luôn khớp nhau.':
+      '期初库存会记录为一个"OPENING"批次,以确保批次台账与库存始终一致。',
   'Cần ít nhất một dòng hàng': '至少需要一行商品',
   'Phiếu nhập mới': '新建入库单',
   'Chưa có dòng hàng nào': '尚无商品行',
@@ -3909,12 +3767,14 @@ const Map<String, String> viToZhMap = {
   'Kho xuất và kho nhận phải khác nhau': '调出仓库和调入仓库不能相同',
   'Phiếu chuyển mới': '新建调拨单',
   'Bấm dấu + ở trên để thêm hàng cần chuyển': '点击上方的 + 号添加需要调拨的商品',
-  'Số lượng chuyển không được vượt tồn thực tế ở kho xuất — máy chủ sẽ từ chối cả phiếu nếu có một dòng vượt.': '调拨数量不得超过调出仓库的实际库存 — 只要有一行超出,服务器就会拒绝整张单据。',
+  'Số lượng chuyển không được vượt tồn thực tế ở kho xuất — máy chủ sẽ từ chối cả phiếu nếu có một dòng vượt.':
+      '调拨数量不得超过调出仓库的实际库存 — 只要有一行超出,服务器就会拒绝整张单据。',
   'Xuất chuyển': '调出',
   'Số tiền chi phải lớn hơn 0': '支出金额必须大于 0',
   'Danh mục chi phí': '支出类别',
   'Nguồn chi': '支出来源',
-  'Chọn "Chi từ két" sẽ trừ thẳng vào tiền mặt của ca đang mở và hiện trong đối chiếu cuối ca.': '选择"从钱箱支出"将直接从当前开启班次的现金中扣除,并显示在交班对账中。',
+  'Chọn "Chi từ két" sẽ trừ thẳng vào tiền mặt của ca đang mở và hiện trong đối chiếu cuối ca.':
+      '选择"从钱箱支出"将直接从当前开启班次的现金中扣除,并显示在交班对账中。',
   'Kỳ này chưa có số liệu': '本期尚无数据',
   'Chọn kỳ khác để xem': '请选择其他期间查看',
   'Xuất báo cáo PDF': '导出 PDF 报表',
@@ -3954,7 +3814,8 @@ const Map<String, String> viToZhMap = {
   'Đã bán': '已售',
   'Ca & két tiền': '班次与钱箱',
   'Chưa mở ca': '尚未开班',
-  'Chưa có ca nào đang mở. Bấm "Mở ca" bên dưới để bắt đầu.': '目前没有开启的班次。点击下方的"开班"以开始。',
+  'Chưa có ca nào đang mở. Bấm "Mở ca" bên dưới để bắt đầu.':
+      '目前没有开启的班次。点击下方的"开班"以开始。',
   'CA LÀM VIỆC': '班次',
   'Mã ca': '班次编号',
   'Mở lúc': '开班时间',
@@ -3976,11 +3837,13 @@ const Map<String, String> viToZhMap = {
   'Có': '是',
   'Tự nhận từ máy này': '由本机自动识别',
   'Sửa máy in': '编辑打印机',
-  'Máy in này được máy tự nhận, không nằm trong cấu hình nên không sửa hay xoá được. Rút máy in ra là nó tự biến mất.': '该打印机是设备自动识别的,不在配置中,因此无法编辑或删除。拔掉打印机后它会自动消失。',
+  'Máy in này được máy tự nhận, không nằm trong cấu hình nên không sửa hay xoá được. Rút máy in ra là nó tự biến mất.':
+      '该打印机是设备自动识别的,不在配置中,因此无法编辑或删除。拔掉打印机后它会自动消失。',
   'máy in': '打印机',
   'Thiết bị máy in': '打印机设备',
   'Máy này chưa cắm máy in nào': '本机尚未连接任何打印机',
-  'Máy in của máy POS khác do Quản lý/Admin xem và thiết lập.': '其他 POS 机的打印机由管理员/店长查看和设置。',
+  'Máy in của máy POS khác do Quản lý/Admin xem và thiết lập.':
+      '其他 POS 机的打印机由管理员/店长查看和设置。',
   'Bán một đơn để thấy lệnh in': '完成一笔销售即可查看打印任务',
   'Lọc theo trạng thái': '按状态筛选',
   'thử': '测试',
@@ -3989,13 +3852,15 @@ const Map<String, String> viToZhMap = {
   'In lúc': '打印时间',
   'Không sẵn sàng': '未就绪',
   'Máy này': '本机',
-  'Máy này không thấy máy in nào đang cắm. Kiểm tra dây/nguồn máy in rồi bấm dò lại.': '本机未检测到任何已连接的打印机。请检查打印机的线缆/电源,然后点击重新扫描。',
+  'Máy này không thấy máy in nào đang cắm. Kiểm tra dây/nguồn máy in rồi bấm dò lại.':
+      '本机未检测到任何已连接的打印机。请检查打印机的线缆/电源,然后点击重新扫描。',
   'Cần đặt tên cho máy in': '需要为打印机设置名称',
   'Máy in mạng cần địa chỉ IP': '网络打印机需要 IP 地址',
   'Địa chỉ IP phải có dạng 192.168.1.50': 'IP 地址格式必须类似 192.168.1.50',
   'Chọn máy in của máy này': '选择本机的打印机',
   'Xoá máy in này?': '删除该打印机?',
-  'Phiếu đang chờ ở máy in này sẽ không in được nữa. Có thể thêm lại bất cứ lúc nào.': '该打印机上等待中的任务将无法再打印。您可以随时重新添加。',
+  'Phiếu đang chờ ở máy in này sẽ không in được nữa. Có thể thêm lại bất cứ lúc nào.':
+      '该打印机上等待中的任务将无法再打印。您可以随时重新添加。',
   'Xoá máy in': '删除打印机',
   'Xác nhận xoá máy in này.': '确认删除该打印机。',
   'Mật khẩu Admin / Manager': '管理员/店长密码',
@@ -4007,8 +3872,10 @@ const Map<String, String> viToZhMap = {
   'Máy in này in loại phiếu nào': '该打印机打印哪些单据类型',
   'Khổ giấy của máy in này': '该打印机的纸张尺寸',
   'Có nối ngăn kéo đựng tiền': '已连接钱箱',
-  'Máy in mạng phải cùng mạng Wi-Fi với máy này. Cổng thường là 9100.': '网络打印机必须与本机连接同一个 Wi-Fi 网络。端口通常为 9100。',
-  'Máy in gắn liền và máy in cắm USB không có địa chỉ IP — bấm mũi tên để máy tự dò tên, ĐỪNG gõ tay: sai một ký tự là phiếu không bao giờ ra giấy.': '内置打印机和 USB 打印机没有 IP 地址 — 请点击箭头让设备自动检测名称,不要手动输入:错一个字符,单据就永远打印不出来。',
+  'Máy in mạng phải cùng mạng Wi-Fi với máy này. Cổng thường là 9100.':
+      '网络打印机必须与本机连接同一个 Wi-Fi 网络。端口通常为 9100。',
+  'Máy in gắn liền và máy in cắm USB không có địa chỉ IP — bấm mũi tên để máy tự dò tên, ĐỪNG gõ tay: sai một ký tự là phiếu không bao giờ ra giấy.':
+      '内置打印机和 USB 打印机没有 IP 地址 — 请点击箭头让设备自动检测名称,不要手动输入:错一个字符,单据就永远打印不出来。',
   'Xoá máy in này': '删除该打印机',
   'Không xác định được hóa đơn': '无法确定发票',
   'Chọn ít nhất một món để trả': '请至少选择一件商品退货',
@@ -4032,9 +3899,11 @@ const Map<String, String> viToZhMap = {
   'Chưa phân bổ': '尚未分配',
   'Xong': '完成',
   'Bỏ chia tiền': '取消分摊付款',
-  'Chỉnh giá bán "\${line.sku.name}" — cần PIN Quản lý/Admin.': '修改"\${line.sku.name}"的售价——需要经理/管理员密码。',
+  'Chỉnh giá bán "\${line.sku.name}" — cần PIN Quản lý/Admin.':
+      '修改"\${line.sku.name}"的售价——需要经理/管理员密码。',
   'PIN Quản lý / Admin': '经理／管理员密码',
-  'Đơn này có thể đã nhận được tiền — kiểm tra rồi hãy sửa giỏ hàng.': '该订单可能已经收款——请先核实再修改购物车。',
+  'Đơn này có thể đã nhận được tiền — kiểm tra rồi hãy sửa giỏ hàng.':
+      '该订单可能已经收款——请先核实再修改购物车。',
   'Ngân hàng đã xác nhận — bill tự đóng': '银行已确认——账单自动关闭',
   'Quét mã hàng': '扫描商品码',
   'Không có mã \$code — tìm theo từ khóa': '未找到编码 \$code——请按关键字搜索',
@@ -4070,7 +3939,8 @@ const Map<String, String> viToZhMap = {
   'Chưa mở ca — mở ca ngay': '尚未开班——立即开班',
   'ĐÃ CHIA TIỀN': '已分摊付款',
   'Tổng đã chia': '已分摊总额',
-  'Nhấn "Sửa chia tiền" để điều chỉnh, hoặc "Hoàn tất thanh toán" để chốt.': '点击"编辑分摊付款"进行调整，或点击"完成付款"以确认。',
+  'Nhấn "Sửa chia tiền" để điều chỉnh, hoặc "Hoàn tất thanh toán" để chốt.':
+      '点击"编辑分摊付款"进行调整，或点击"完成付款"以确认。',
   'KHÁCH ĐƯA': '顾客支付',
   'Vừa đủ': '刚好',
   'Tiền thừa trả khách': '找零给顾客',
@@ -4081,14 +3951,16 @@ const Map<String, String> viToZhMap = {
   'Nội dung': '内容',
   'bill tự đóng khi ngân hàng xác nhận': '银行确认后账单自动关闭',
   'Luôn chờ ngân hàng xác nhận...': '始终等待银行确认……',
-  'Chưa tạo được đơn — bill KHÔNG tự đóng, phải bấm xác nhận': '订单创建失败——账单不会自动关闭，须点击确认',
+  'Chưa tạo được đơn — bill KHÔNG tự đóng, phải bấm xác nhận':
+      '订单创建失败——账单不会自动关闭，须点击确认',
   'Quẹt thẻ trên máy POS rồi bấm xác nhận': '在POS机上刷卡，然后点击确认',
   'Nhận voucher của khách rồi bấm xác nhận': '收取顾客的代金券，然后点击确认',
   'Khách trả bằng \${m.label} rồi bấm xác nhận': '顾客使用\${m.label}支付后点击确认',
   'Số tiền: \${phoneMoney(_total)}': '金额：\${phoneMoney(_total)}',
   'Đã thu tiền': '已收款',
   'TIỀN THỪA': '找零',
-  'Bill được gửi tới máy in tự động. In lỗi KHÔNG tạo giao dịch thứ hai — vào Hóa đơn để in lại.': '账单会自动发送至打印机。打印失败不会产生第二笔交易——请前往发票页面重新打印。',
+  'Bill được gửi tới máy in tự động. In lỗi KHÔNG tạo giao dịch thứ hai — vào Hóa đơn để in lại.':
+      '账单会自动发送至打印机。打印失败不会产生第二笔交易——请前往发票页面重新打印。',
   'Bán tiếp': '继续销售',
   'Chọn khuyến mãi': '选择促销活动',
   'Chưa tải được danh sách bảng giá': '价目表加载失败',
@@ -4096,7 +3968,8 @@ const Map<String, String> viToZhMap = {
   'Đã lưu thiết lập bán hàng': '销售设置已保存',
   'Thiết lập bán hàng': '销售设置',
   'BẢNG GIÁ': '价目表',
-  'Chỉ có Bảng giá chung. Tạo thêm bảng giá ở Cài đặt → Kho & kênh bán.': '目前只有通用价目表。请在设置→仓库与销售渠道中新建价目表。',
+  'Chỉ có Bảng giá chung. Tạo thêm bảng giá ở Cài đặt → Kho & kênh bán.':
+      '目前只有通用价目表。请在设置→仓库与销售渠道中新建价目表。',
   'bảng giá': '价目表',
   'áp cho POS bán lẻ; giá trên màn bán đổi theo ngay': '适用于零售POS；销售界面价格会立即更新',
   'HÀNG HÓA & QUÉT MÃ': '商品与扫码',
@@ -4107,7 +3980,8 @@ const Map<String, String> viToZhMap = {
   'Tự điền tiền khách đưa': '自动填写顾客支付金额',
   'Gợi ý đúng số khách cần trả': '自动提示应付的准确金额',
   'Tự hoàn tất khi ngân hàng xác nhận': '银行确认后自动完成',
-  'Tiền về là chốt bill luôn, thu ngân không phải bấm': '款项到账后账单立即自动结清，收银员无需手动点击',
+  'Tiền về là chốt bill luôn, thu ngân không phải bấm':
+      '款项到账后账单立即自动结清，收银员无需手动点击',
   'Phương thức mặc định': '默认方式',
   'IN & CHIA SẺ': '打印与分享',
   'Gộp hàng giống nhau khi in': '打印时合并相同商品',
@@ -4118,7 +3992,8 @@ const Map<String, String> viToZhMap = {
   'Đã tạo bảng giá': '价目表已创建',
   'Không xoá được bảng giá chung': '无法删除通用价目表',
   'Xoá': '删除',
-  'Giá riêng của các mặt hàng trong bảng giá này sẽ mất. Kênh nào đang áp bảng giá này sẽ quay về giá chung.': '该价目表中各商品的专属价格将丢失。正在使用此价目表的渠道将恢复为通用价格。',
+  'Giá riêng của các mặt hàng trong bảng giá này sẽ mất. Kênh nào đang áp bảng giá này sẽ quay về giá chung.':
+      '该价目表中各商品的专属价格将丢失。正在使用此价目表的渠道将恢复为通用价格。',
   'Xoá bảng giá': '删除价目表',
   'kho': '仓库',
   'BÁN RETAIL LẤY HÀNG Ở ĐÂU': '零售销售从哪个仓库取货',
@@ -4127,7 +4002,8 @@ const Map<String, String> viToZhMap = {
   'Chưa có kho nào': '尚无仓库',
   'Tạo kho để gán kênh bán': '创建仓库以分配销售渠道',
   '+ Tạo bảng giá': '+ 新建价目表',
-  'Đặt giá riêng cho từng mặt hàng trong một bảng giá làm ở màn Kho trên máy để bàn — ở đây tạo/xoá bảng giá và chọn bảng giá áp cho từng kênh.': '在桌面端的仓库界面中为价目表内的各商品设置专属价格——在此处可新建/删除价目表，并为各渠道选择所适用的价目表。',
+  'Đặt giá riêng cho từng mặt hàng trong một bảng giá làm ở màn Kho trên máy để bàn — ở đây tạo/xoá bảng giá và chọn bảng giá áp cho từng kênh.':
+      '在桌面端的仓库界面中为价目表内的各商品设置专属价格——在此处可新建/删除价目表，并为各渠道选择所适用的价目表。',
   'Kho lấy hàng': '取货仓库',
   'Đang tắt': '关闭',
   'Giá chung của hàng hóa · không sửa/xoá được': '商品通用价格 · 不可编辑/删除',
@@ -4137,11 +4013,13 @@ const Map<String, String> viToZhMap = {
   'Tạo kho "\$ten".': '已创建仓库"\$ten"。',
   'Chưa lưu': '尚未保存',
   'KÊNH BÁN NỐI VỚI KHO NÀY': '与此仓库关联的销售渠道',
-  'Kênh nào nối tới kho này thì hàng bán qua kênh đó trừ tồn ở đây. Không nối kênh nào thì kho chỉ dùng để nhập/chuyển hàng.': '凡是连接到此仓库的销售渠道,通过该渠道售出的商品都会在此扣减库存。如果未连接任何渠道,该仓库仅用于入库/调拨商品。',
+  'Kênh nào nối tới kho này thì hàng bán qua kênh đó trừ tồn ở đây. Không nối kênh nào thì kho chỉ dùng để nhập/chuyển hàng.':
+      '凡是连接到此仓库的销售渠道,通过该渠道售出的商品都会在此扣减库存。如果未连接任何渠道,该仓库仅用于入库/调拨商品。',
   'Chưa đặt khu vực': '尚未设置区域',
   'khu vực': '区域',
   'Chạm dấu + để thêm bàn': '点击 + 添加桌台',
-  'Chạm một bàn để sửa hoặc xoá. Sơ đồ bàn kéo thả nằm ở bản máy để bàn.': '点击某个桌台可编辑或删除。拖放式桌台布局仅桌面版提供。',
+  'Chạm một bàn để sửa hoặc xoá. Sơ đồ bàn kéo thả nằm ở bản máy để bàn.':
+      '点击某个桌台可编辑或删除。拖放式桌台布局仅桌面版提供。',
   'Cập nhật bàn "\${_ma.text.trim()}".': '更新桌台"\${_ma.text.trim()}"。',
   'Tạo bàn "\${_ma.text.trim()}".': '创建桌台"\${_ma.text.trim()}"。',
   'Xoá bàn': '删除桌台',
@@ -4149,7 +4027,8 @@ const Map<String, String> viToZhMap = {
   'Chọn âm báo': '选择提示音',
   'ÂM RIÊNG TỪNG SỰ KIỆN': '各事件独立提示音',
   'AI NHẬN THÔNG BÁO NÀO': '谁接收哪些通知',
-  'Ngoại lệ theo từng nhân viên (bật/tắt riêng cho một người) chỉnh ở bản máy để bàn — màn này chỉ đổi theo vai trò và không xoá phần ngoại lệ đã lưu.': '按员工设置的例外(为单个人员单独开启/关闭)需在桌面版中调整——本界面仅按角色更改设置,不会删除已保存的例外。',
+  'Ngoại lệ theo từng nhân viên (bật/tắt riêng cho một người) chỉnh ở bản máy để bàn — màn này chỉ đổi theo vai trò và không xoá phần ngoại lệ đã lưu.':
+      '按员工设置的例外(为单个人员单独开启/关闭)需在桌面版中调整——本界面仅按角色更改设置,不会删除已保存的例外。',
   'chi nhánh': '分店',
   'MODULE BÁN HÀNG CỦA CHI NHÁNH': '分店销售模块',
   'quét mã': '扫码',
@@ -4163,19 +4042,23 @@ const Map<String, String> viToZhMap = {
   'CHỈ CÓ TRÊN MÁY ĐỂ BÀN': '仅限桌面版',
   'Đổi người dùng / cơ sở': '切换用户/门店',
   'Đổi người dùng': '切换用户',
-  'Cả hai đều đăng xuất khỏi máy này. Ca đang mở KHÔNG bị ảnh hưởng — ca thuộc về cơ sở, không thuộc về máy.': '两种方式都会退出此设备的登录。当前营业中的班次不受影响——班次归属于门店,而非设备。',
+  'Cả hai đều đăng xuất khỏi máy này. Ca đang mở KHÔNG bị ảnh hưởng — ca thuộc về cơ sở, không thuộc về máy.':
+      '两种方式都会退出此设备的登录。当前营业中的班次不受影响——班次归属于门店,而非设备。',
   'Nhiều hơn': '更多',
   'Chọn ca làm việc trước': '请先选择班次',
   'Kết ca hiện tại?': '结束当前班次?',
-  'Hệ thống chốt báo cáo ca và ĐĂNG XUẤT khỏi máy này — giống hệt bản desktop. Ca đã kết thì không mở lại được.': '系统将结算班次报表并从此设备登出——与桌面版完全相同。班次一旦结束将无法重新开启。',
+  'Hệ thống chốt báo cáo ca và ĐĂNG XUẤT khỏi máy này — giống hệt bản desktop. Ca đã kết thì không mở lại được.':
+      '系统将结算班次报表并从此设备登出——与桌面版完全相同。班次一旦结束将无法重新开启。',
   'Để ca chạy tiếp': '继续本班次',
   'Đã kết ca (quản lý bỏ qua)': '已结班(管理员已跳过)',
   'Cần PIN Quản lý': '需要管理员密码',
   'Chưa mở ca — không bán, không thu tiền được': '尚未开班——无法销售、无法收款',
   'Chưa mở ca — không thể bán, thu tiền hay in bill.': '尚未开班——无法销售、收款或打印账单。',
   'TIỀN MẶT DỰ KIẾN': '预计现金',
-  'Không gõ tiền thì hệ thống ghi 0đ kiểm đếm cuối ca. Chênh lệch so với dự kiến vẫn được ghi vào báo cáo.': '如果不输入金额,系统会将班末盘点记为0đ。与预计金额的差额仍会记录在报表中。',
-  'Không gõ tiền thì hệ thống dùng tiền két gốc / ca trước.': '如果不输入金额,系统将使用原始备用金/上一班次的金额。',
+  'Không gõ tiền thì hệ thống ghi 0đ kiểm đếm cuối ca. Chênh lệch so với dự kiến vẫn được ghi vào báo cáo.':
+      '如果不输入金额,系统会将班末盘点记为0đ。与预计金额的差额仍会记录在报表中。',
+  'Không gõ tiền thì hệ thống dùng tiền két gốc / ca trước.':
+      '如果不输入金额,系统将使用原始备用金/上一班次的金额。',
   'Đúng bằng dự kiến': '与预计一致',
   'Theo gợi ý': '按建议金额',
   'Đang mở trình cài đặt — chọn "Cài đặt" để hoàn tất': '正在打开安装程序——选择"安装"以完成',
@@ -4183,14 +4066,17 @@ const Map<String, String> viToZhMap = {
   'Có bản mới': '有新版本',
   'Đang dùng bản mới nhất': '当前已是最新版本',
   'Bản đang chạy': '当前运行版本',
-  'Đang tải bản cập nhật (hơn 100 MB), giữ máy nối mạng...': '正在下载更新(超过100 MB),请保持设备联网…',
-  'Bản này bắt buộc — hãy cập nhật trước khi tiếp tục bán hàng.': '此更新为强制更新——请先更新后再继续销售。',
+  'Đang tải bản cập nhật (hơn 100 MB), giữ máy nối mạng...':
+      '正在下载更新(超过100 MB),请保持设备联网…',
+  'Bản này bắt buộc — hãy cập nhật trước khi tiếp tục bán hàng.':
+      '此更新为强制更新——请先更新后再继续销售。',
   'Bàn \${table.code}': '桌台\${table.code}',
   'Thoát chọn nhiều món để hủy': '退出多选取消',
   'Chọn nhiều món để hủy': '选择多个菜品以取消',
   'Đóng bill đang xem': '关闭当前查看的账单',
   'Chọn món để hủy': '选择要取消的菜品',
-  'Hủy \${multiCancelSelection.length} món đã chọn': '取消已选的\${multiCancelSelection.length}道菜品',
+  'Hủy \${multiCancelSelection.length} món đã chọn':
+      '取消已选的\${multiCancelSelection.length}道菜品',
   'CTKM': '促销',
   'Hủy cả combo': '取消整个套餐',
   'đang tính': '计算中',
@@ -4200,23 +4086,28 @@ const Map<String, String> viToZhMap = {
   'Về sơ đồ bàn': '返回桌台布局图',
   'Chưa có CTKM nào đang chạy áp được ở đây.': '目前没有可在此处应用的促销活动。',
   'Khu vực này chưa có bàn': '该区域尚无桌台',
-  'Chọn "Tất cả" để xem toàn bộ, hoặc thêm bàn ở Cài đặt.': '选择"全部"以查看所有内容,或在设置中添加桌台。',
+  'Chọn "Tất cả" để xem toàn bộ, hoặc thêm bàn ở Cài đặt.':
+      '选择"全部"以查看所有内容,或在设置中添加桌台。',
   'Không lưu được đơn: \${_cleanError(e)}': '无法保存订单:\${_cleanError(e)}',
-  'Đã nhận một phần. Còn thiếu \${_vnd(remaining)}': '已收部分款项。还差\${_vnd(remaining)}',
+  'Đã nhận một phần. Còn thiếu \${_vnd(remaining)}':
+      '已收部分款项。还差\${_vnd(remaining)}',
   'Đã thanh toán, nhưng chưa in được: \$printError': '已完成付款,但打印失败:\$printError',
   'Xác nhận món trước khi thanh toán.': '结账前请确认商品。',
-  'Không tính được CTKM đã chọn. Bỏ chọn CTKM hoặc thử lại trước khi thanh toán.': '无法计算所选促销。请取消该促销或在结账前重试。',
+  'Không tính được CTKM đã chọn. Bỏ chọn CTKM hoặc thử lại trước khi thanh toán.':
+      '无法计算所选促销。请取消该促销或在结账前重试。',
   'Không mở được thanh toán: \${_cleanError(e)}': '无法打开结账:\${_cleanError(e)}',
   'Không chuyển được bàn: \${_cleanError(e)}': '无法转台:\${_cleanError(e)}',
   'Không gộp được bàn: \${_cleanError(e)}': '无法并台:\${_cleanError(e)}',
   'Không tách được bill: \${_cleanError(e)}': '无法拆分账单:\${_cleanError(e)}',
-  'Không tải được khách hàng: \${_cleanError(e)}': '无法加载客户信息:\${_cleanError(e)}',
+  'Không tải được khách hàng: \${_cleanError(e)}':
+      '无法加载客户信息:\${_cleanError(e)}',
   'Đang tìm...': '搜索中…',
   'Chọn CTKM cho cả bill': '为整张账单选择促销',
   'CTKM cho "\${item.item.name}"': '"\${item.item.name}"的促销',
   'Không in được tạm tính: \${_cleanError(e)}': '无法打印预结单:\${_cleanError(e)}',
   'Dọn sạch bàn \${table.code}?': '清空桌台\${table.code}?',
-  'Bàn \${table.code} đang trống. Dọn lại để chắc chắn không còn dữ liệu treo?': '桌台\${table.code}目前为空。是否再次清理以确保没有残留数据?',
+  'Bàn \${table.code} đang trống. Dọn lại để chắc chắn không còn dữ liệu treo?':
+      '桌台\${table.code}目前为空。是否再次清理以确保没有残留数据?',
   'Xóa bàn': '删除桌台',
   'Đã dọn sạch bàn \${table.code}.': '桌台\${table.code}已清空。',
   'Không dọn được bàn: \$loi': '无法清空桌台:\$loi',
@@ -4229,16 +4120,22 @@ const Map<String, String> viToZhMap = {
   'Đã hoàn tiền và dọn bàn \${table.code}.': '已退款并清空桌台\${table.code}。',
   'Không hoàn tiền được: \${_cleanError(e)}': '无法退款:\${_cleanError(e)}',
   'Không gửi được món: \${_cleanError(e)}': '无法将菜品送至厨房:\${_cleanError(e)}',
-  'Xóa món ĐÃ chế biến "\${item.item.name}". Cần PIN người có quyền "xóa món đã chế biến".': '删除已制作的菜品"\${item.item.name}"。需要拥有"删除已制作菜品"权限人员的密码。',
-  'Hủy món "\${item.item.name}". Cần PIN người có quyền hủy món.': '取消菜品"\${item.item.name}"。需要有取消菜品权限人员的密码。',
+  'Xóa món ĐÃ chế biến "\${item.item.name}". Cần PIN người có quyền "xóa món đã chế biến".':
+      '删除已制作的菜品"\${item.item.name}"。需要拥有"删除已制作菜品"权限人员的密码。',
+  'Hủy món "\${item.item.name}". Cần PIN người có quyền hủy món.':
+      '取消菜品"\${item.item.name}"。需要有取消菜品权限人员的密码。',
   'Không hủy được món: \${_cleanError(e)}': '无法取消菜品:\${_cleanError(e)}',
-  'Xóa combo (có món ĐÃ chế biến). Cần PIN người có quyền "xóa món đã chế biến".': '删除套餐(含已制作的菜品)。需要拥有"删除已制作菜品"权限人员的密码。',
-  'Hủy combo đã gửi bếp. Cần PIN người có quyền hủy món.': '取消已送厨房的套餐。需要有取消菜品权限人员的密码。',
+  'Xóa combo (có món ĐÃ chế biến). Cần PIN người có quyền "xóa món đã chế biến".':
+      '删除套餐(含已制作的菜品)。需要拥有"删除已制作菜品"权限人员的密码。',
+  'Hủy combo đã gửi bếp. Cần PIN người có quyền hủy món.':
+      '取消已送厨房的套餐。需要有取消菜品权限人员的密码。',
   'Lý do hủy combo': '取消套餐原因',
   'Đã hủy combo.': '套餐已取消。',
   'Không hủy được combo: \${_cleanError(e)}': '无法取消套餐:\${_cleanError(e)}',
-  'Xóa \${items.length} món (có món ĐÃ chế biến). Cần PIN người có quyền "xóa món đã chế biến".': '删除\${items.length}道菜品(含已制作的菜品)。需要拥有"删除已制作菜品"权限人员的密码。',
-  'Hủy \${items.length} món đã gửi bếp. Cần PIN người có quyền hủy món.': '取消已送厨房的\${items.length}道菜品。需要有取消菜品权限人员的密码。',
+  'Xóa \${items.length} món (có món ĐÃ chế biến). Cần PIN người có quyền "xóa món đã chế biến".':
+      '删除\${items.length}道菜品(含已制作的菜品)。需要拥有"删除已制作菜品"权限人员的密码。',
+  'Hủy \${items.length} món đã gửi bếp. Cần PIN người có quyền hủy món.':
+      '取消已送厨房的\${items.length}道菜品。需要有取消菜品权限人员的密码。',
   'Đã hủy \${items.length} món.': '已取消\${items.length}道菜品。',
   'Giảm': '减少',
   'Tăng': '增加',
@@ -4246,7 +4143,8 @@ const Map<String, String> viToZhMap = {
   'Chỉnh giá / giảm giá món': '调整菜品价格/折扣',
   'gốc': '原价',
   'Về giá gốc': '恢复原价',
-  'Món đã gửi bếp — chỉ đổi được ghi chú. Chỉnh giá thì hủy rồi thêm lại.': '菜品已送厨房——只能修改备注。如需调整价格,请先取消再重新添加。',
+  'Món đã gửi bếp — chỉ đổi được ghi chú. Chỉnh giá thì hủy rồi thêm lại.':
+      '菜品已送厨房——只能修改备注。如需调整价格,请先取消再重新添加。',
   'Ghi chú "\${item.item.name}"': '"\${item.item.name}"的备注',
   'Ví dụ: ít cay, không hành…': '例如:少辣、不加葱…',
   'Không lưu được ghi chú: \${_cleanError(e)}': '无法保存备注:\${_cleanError(e)}',
@@ -4256,36 +4154,49 @@ const Map<String, String> viToZhMap = {
   'Giá không hợp lệ.': '价格无效。',
   'Quá hạn': '已过期',
   'Đã huỷ': '已取消',
-  'Máy này chưa cắm máy in nào. Máy in của máy POS khác do Quản lý/Admin xem và thiết lập.': '此设备尚未连接任何打印机。其他POS设备的打印机由管理层/管理员负责查看和设置。',
+  'Máy này chưa cắm máy in nào. Máy in của máy POS khác do Quản lý/Admin xem và thiết lập.':
+      '此设备尚未连接任何打印机。其他POS设备的打印机由管理层/管理员负责查看和设置。',
   'Lưu tạm hay xóa phiếu?': '暂存还是删除单据?',
-  'Phiếu nhập đang làm dở. "Lưu tạm" để giữ lại làm tiếp sau, hoặc "Xóa phiếu" để bỏ hẳn.': '入库单尚未完成。选择"暂存"可稍后继续,或选择"删除单据"以彻底放弃。',
+  'Phiếu nhập đang làm dở. "Lưu tạm" để giữ lại làm tiếp sau, hoặc "Xóa phiếu" để bỏ hẳn.':
+      '入库单尚未完成。选择"暂存"可稍后继续,或选择"删除单据"以彻底放弃。',
   'Xóa phiếu': '删除单据',
-  'Còn \$unmatched dòng CHƯA KHỚP MÃ — bấm "Khớp mã" trên từng dòng trước khi Hoàn thành': '还有\$unmatched行商品编码尚未匹配——请在每行点击"匹配编码"后再完成',
-  '\${bad.length} dòng có đơn giá bất thường (vd "\${f.name}"): \${f.costWarning}. Hãy soát lại cột giá / mã vạch trước khi Hoàn thành.': '有\${bad.length}行单价异常(例如"\${f.name}"):\${f.costWarning}。请在完成前检查价格/条码栏。',
+  'Còn \$unmatched dòng CHƯA KHỚP MÃ — bấm "Khớp mã" trên từng dòng trước khi Hoàn thành':
+      '还有\$unmatched行商品编码尚未匹配——请在每行点击"匹配编码"后再完成',
+  '\${bad.length} dòng có đơn giá bất thường (vd "\${f.name}"): \${f.costWarning}. Hãy soát lại cột giá / mã vạch trước khi Hoàn thành.':
+      '有\${bad.length}行单价异常(例如"\${f.name}"):\${f.costWarning}。请在完成前检查价格/条码栏。',
   'NSX': '生产日期',
   'Đã thêm NCC "\$nm"': '已添加供应商"\$nm"',
   'Cân bằng mặt hàng nhập': '核对导入商品',
-  'Không tìm thấy mã chính xác. Hãy xác nhận đây là hàng cũ hay tạo mặt hàng mới; hệ thống không tự tạo bản trùng.': '未找到完全匹配的编码。请确认这是旧商品还是要新建商品；系统不会自动创建重复项。',
+  'Không tìm thấy mã chính xác. Hãy xác nhận đây là hàng cũ hay tạo mặt hàng mới; hệ thống không tự tạo bản trùng.':
+      '未找到完全匹配的编码。请确认这是旧商品还是要新建商品；系统不会自动创建重复项。',
   'Mặt hàng cần liên kết': '待关联的商品',
   'Tạo mặt hàng mới từ dòng Excel': '从 Excel 行创建新商品',
   'Bỏ qua dòng này': '跳过此行',
   'File này đã được nạp vào phiếu hiện tại.': '此文件已加载到当前单据中。',
-  'Không lưu được file gốc vào Tài liệu — đã HỦY nhập. Thử lại.': '无法将原始文件保存到“文档”——导入已取消。请重试。',
-  'Đã nạp \$added dòng — \$unmatched dòng CHƯA KHỚP MÃ, bấm "Khớp mã" trên từng dòng': '已加载 \$added 行——\$unmatched 行未匹配编码，请在每行点击“匹配编码”',
+  'Không lưu được file gốc vào Tài liệu — đã HỦY nhập. Thử lại.':
+      '无法将原始文件保存到“文档”——导入已取消。请重试。',
+  'Đã nạp \$added dòng — \$unmatched dòng CHƯA KHỚP MÃ, bấm "Khớp mã" trên từng dòng':
+      '已加载 \$added 行——\$unmatched 行未匹配编码，请在每行点击“匹配编码”',
   'Đã nạp \$added dòng từ file': '已从文件加载 \$added 行',
-  'Đã nạp \$added dòng; không thấy mã: \${missed.take(5).join(", ")}\${missed.length > 5 ? "…" : ""}': '已加载 \$added 行；未找到编码：\${missed.take(5).join(", ")}\${missed.length > 5 ? "…" : ""}',
+  'Đã nạp \$added dòng; không thấy mã: \${missed.take(5).join(", ")}\${missed.length > 5 ? "…" : ""}':
+      '已加载 \$added 行；未找到编码：\${missed.take(5).join(", ")}\${missed.length > 5 ? "…" : ""}',
   'Khớp mã': '匹配编码',
   'Không tải được dữ liệu (\$_error)': '无法加载数据（\$_error）',
   'Đã xuất \${list.length} phiếu': '已导出 \${list.length} 份单据',
   'Không tải được danh sách kho (\$_error)': '无法加载仓库列表（\$_error）',
-  'Hoá đơn đã được thanh toán (chuyển khoản tự động hoặc thiết bị khác)': '该发票已完成付款（自动转账或其他设备处理）',
+  'Hoá đơn đã được thanh toán (chuyển khoản tự động hoặc thiết bị khác)':
+      '该发票已完成付款（自动转账或其他设备处理）',
   'Hóa đơn đã được thanh toán tự động': '发票已自动完成付款',
   'Khong tao duoc don de cap ma chuyen khoan.': '无法创建订单以附加转账代码。',
-  'Không tạo được đơn để chuyển khoản tự động khớp — vẫn xác nhận thủ công được': '无法创建订单以进行自动转账匹配——仍可手动确认',
+  'Không tạo được đơn để chuyển khoản tự động khớp — vẫn xác nhận thủ công được':
+      '无法创建订单以进行自动转账匹配——仍可手动确认',
   'Đã thanh toán, nhưng chưa in được: \$err': '已付款，但打印失败：\$err',
-  'Hoá đơn đã được thanh toán (chuyển khoản tự động hoặc thiết bị khác).': '该发票已完成付款（自动转账或其他设备处理）。',
-  'Chua xac dinh ket qua thanh toan (\$state). Gio hang duoc giu nguyen; vui long kiem tra lai, khong thu tien lan nua.': '尚未确定付款结果（\$state）。购物车保持不变；请重新核实，切勿再次收款。',
-  'Mat ket noi khi xac nhan. Gio hang duoc giu nguyen; hay kiem tra lich su truoc khi thu tien lai.': '确认时连接中断。购物车保持不变；请在再次收款前查看历史记录。',
+  'Hoá đơn đã được thanh toán (chuyển khoản tự động hoặc thiết bị khác).':
+      '该发票已完成付款（自动转账或其他设备处理）。',
+  'Chua xac dinh ket qua thanh toan (\$state). Gio hang duoc giu nguyen; vui long kiem tra lai, khong thu tien lan nua.':
+      '尚未确定付款结果（\$state）。购物车保持不变；请重新核实，切勿再次收款。',
+  'Mat ket noi khi xac nhan. Gio hang duoc giu nguyen; hay kiem tra lich su truoc khi thu tien lai.':
+      '确认时连接中断。购物车保持不变；请在再次收款前查看历史记录。',
   'Nội dung sẽ được in trên bill': '将打印在账单上的内容',
   'Đang tự động xác nhận khi có tiền về...': '收到款项后将自动确认…',
   'Xác nhận \${Fmt.money(_payable)}': '确认 \${Fmt.money(_payable)}',
@@ -4300,7 +4211,8 @@ const Map<String, String> viToZhMap = {
   'Chưa mở được hóa đơn đồng bộ, đang dùng chế độ cũ': '无法打开同步发票，正在使用旧模式',
   'Hóa đơn đang khóa chỉnh sửa': '发票正被锁定，无法编辑',
   'Tiếp quản quyền sửa?': '接管编辑权限？',
-  'Hóa đơn đang được mở/sửa ở thiết bị khác. Tiếp quản sẽ thu quyền sửa về máy này; thiết bị kia chuyển sang chỉ xem. Tiếp tục?': '该发票正在其他设备上打开/编辑。接管后编辑权限将转移到本设备；另一台设备将切换为只读模式。是否继续？',
+  'Hóa đơn đang được mở/sửa ở thiết bị khác. Tiếp quản sẽ thu quyền sửa về máy này; thiết bị kia chuyển sang chỉ xem. Tiếp tục?':
+      '该发票正在其他设备上打开/编辑。接管后编辑权限将转移到本设备；另一台设备将切换为只读模式。是否继续？',
   'Tiếp quản': '接管',
   'Đã tiếp quản quyền sửa hóa đơn': '已接管发票的编辑权限',
   'Không tiếp quản được quyền sửa': '无法接管编辑权限',
@@ -4314,21 +4226,28 @@ const Map<String, String> viToZhMap = {
   'Hoàn qua': '退款方式',
   'Theo phương thức gốc': '按原支付方式',
   'TIỀN HOÀN': '退款金额',
-  '\${sku.name}: tồn hiển thị 0 — kiểm tra lại nếu cần': '\${sku.name}：显示库存为 0——如有需要请重新核对',
-  '\${sku.name}: vượt tồn hiển thị (server sẽ kiểm tra lại)': '\${sku.name}：超出显示库存（服务器将重新核实）',
+  '\${sku.name}: tồn hiển thị 0 — kiểm tra lại nếu cần':
+      '\${sku.name}：显示库存为 0——如有需要请重新核对',
+  '\${sku.name}: vượt tồn hiển thị (server sẽ kiểm tra lại)':
+      '\${sku.name}：超出显示库存（服务器将重新核实）',
   'Không tìm thấy sản phẩm \$q': '未找到商品 \$q',
-  'Có \${matches.length} sản phẩm trùng khớp, hãy chạm sản phẩm cần bán': '有 \${matches.length} 个匹配的商品，请点击要销售的商品',
+  'Có \${matches.length} sản phẩm trùng khớp, hãy chạm sản phẩm cần bán':
+      '有 \${matches.length} 个匹配的商品，请点击要销售的商品',
   '\${line.sku.name}: vượt tồn hiển thị': '\${line.sku.name}：超出显示库存',
-  'Chưa xác nhận được hóa đơn đã thanh toán — giỏ hàng được giữ lại. Vui lòng kiểm tra Lịch sử.': '无法确认发票已付款——购物车已保留。请查看历史记录。',
+  'Chưa xác nhận được hóa đơn đã thanh toán — giỏ hàng được giữ lại. Vui lòng kiểm tra Lịch sử.':
+      '无法确认发票已付款——购物车已保留。请查看历史记录。',
   'Bill này đã được trả hết.': '此账单已全部退货。',
-  '\${tab.title} đang có \${tab.cart.length} mặt hàng. Xóa toàn bộ giỏ này? Thao tác không thể hoàn tác.': '\${tab.title} 目前有 \${tab.cart.length} 件商品。是否清空整个购物车？此操作无法撤销。',
+  '\${tab.title} đang có \${tab.cart.length} mặt hàng. Xóa toàn bộ giỏ này? Thao tác không thể hoàn tác.':
+      '\${tab.title} 目前有 \${tab.cart.length} 件商品。是否清空整个购物车？此操作无法撤销。',
   'Giỏ đang được mở ở thiết bị khác': '购物车正在其他设备上打开',
-  'Nếu tiếp tục, hai thiết bị sẽ cùng nhìn thấy cập nhật realtime. Hệ thống sẽ chặn ghi đè khi phiên bản đã cũ.': '如果继续，两台设备将同时看到实时更新。当版本过旧时，系统将阻止覆盖。',
+  'Nếu tiếp tục, hai thiết bị sẽ cùng nhìn thấy cập nhật realtime. Hệ thống sẽ chặn ghi đè khi phiên bản đã cũ.':
+      '如果继续，两台设备将同时看到实时更新。当版本过旧时，系统将阻止覆盖。',
   'Vẫn mở giỏ': '仍要打开购物车',
   'Có thiết bị khác đang mở giỏ này': '有其他设备正在打开此购物车',
   'Đang tải sản phẩm…': '正在加载商品…',
   'Không tải được sản phẩm (mạng?)': '无法加载商品（网络问题？）',
-  'Camera quét mã lỗi (\${error.errorCode.name})': '条码扫描相机出错（\${error.errorCode.name}）',
+  'Camera quét mã lỗi (\${error.errorCode.name})':
+      '条码扫描相机出错（\${error.errorCode.name}）',
   'đ\${widget.cartTotal}': 'đ\${widget.cartTotal}',
   'Vui lòng chọn: \${g.name}': '请选择：\${g.name}',
   'Ghi chú: \${_cart[index].item.name}': '备注：\${_cart[index].item.name}',
@@ -4343,10 +4262,12 @@ const Map<String, String> viToZhMap = {
   'đ\${item.price}': 'đ\${item.price}',
   'đ\${item.totalPrice}': 'đ\${item.totalPrice}',
   'Thêm ghi chú': '添加备注',
-  'Thanh toán \$methodLabelVi — \${widget.table.name}': '付款 \$methodLabelVi — \${widget.table.name}',
+  'Thanh toán \$methodLabelVi — \${widget.table.name}':
+      '付款 \$methodLabelVi — \${widget.table.name}',
   'đ\$_total': 'đ\$_total',
   'Không tải được sơ đồ bànn\$_error': '无法加载桌位布局\n\$_error',
-  'Không nhập kiểm đếm thì hệ thống dùng \${fmtMoney(pos.openingSuggestion)} từ ca trước / tiền két gốc.': '如果不输入盘点金额，系统将使用上一班次的 \${fmtMoney(pos.openingSuggestion)} / 原始备用金金额。',
+  'Không nhập kiểm đếm thì hệ thống dùng \${fmtMoney(pos.openingSuggestion)} từ ca trước / tiền két gốc.':
+      '如果不输入盘点金额，系统将使用上一班次的 \${fmtMoney(pos.openingSuggestion)} / 原始备用金金额。',
   'Không đọc được file để lưu vào Tài liệu': '无法读取文件以保存到“文档”',
   'Không thấy mã "\$code" trong kho này': '在此仓库中未找到编码“\$code”',
   'đã gồm VAT': '含增值税',
@@ -4354,20 +4275,24 @@ const Map<String, String> viToZhMap = {
   'Đơn giá cấu hình': '配置单价',
   'Không tải được bảng giá (\$_error)': '无法加载价目表（\$_error）',
   '\${list.length} hàng hóa': '\${list.length} 件商品',
-  'Bạn chưa lưu tạm phiếu kiểm này. Lưu tạm để kiểm tiếp sau, hay thoát và bỏ hết?': '您尚未暂存此盘点单。是暂存以便稍后继续盘点，还是退出并放弃全部内容？',
+  'Bạn chưa lưu tạm phiếu kiểm này. Lưu tạm để kiểm tiếp sau, hay thoát và bỏ hết?':
+      '您尚未暂存此盘点单。是暂存以便稍后继续盘点，还是退出并放弃全部内容？',
   'Đã thêm \$added dòng kiểm': '已添加 \$added 行盘点记录',
-  'Tồn kho sẽ được điều chỉnh theo số lượng thực tế trên phiếu. Thao tác này không hoàn tác được.': '库存将根据单据上的实际数量进行调整。此操作无法撤销。',
+  'Tồn kho sẽ được điều chỉnh theo số lượng thực tế trên phiếu. Thao tác này không hoàn tác được.':
+      '库存将根据单据上的实际数量进行调整。此操作无法撤销。',
   'Không tải được phiếu kiểm kho (\$_error)': '无法加载盘点单（\$_error）',
   'Số lượng (\$unit)': '数量（\$unit）',
   'Không tải được phiếu (\$_error)': '无法加载单据（\$_error）',
-  'Bấm "+ \${widget.docType.title}" để tạo phiếu mới': '点击“+ \${widget.docType.title}”以创建新单据',
+  'Bấm "+ \${widget.docType.title}" để tạo phiếu mới':
+      '点击“+ \${widget.docType.title}”以创建新单据',
   'Hàng hóa': '商品',
   'Vật dụng': '用品',
   'Không tải được kho (\$_error)': '无法加载仓库（\$_error）',
   'Không tải được dữ liệu kho (\$_error)': '无法加载仓库数据（\$_error）',
   'Chỉnh sửa sản phẩm': '编辑商品',
   'Tên sản phẩm và đơn vị gốc là bắt buộc': '商品名称和基本单位为必填项',
-  'Tên đơn vị phải khác nhau và hệ số quy đổi phải lớn hơn 0': '单位名称必须互不相同，且换算系数必须大于 0',
+  'Tên đơn vị phải khác nhau và hệ số quy đổi phải lớn hơn 0':
+      '单位名称必须互不相同，且换算系数必须大于 0',
   'Hóa đơn đã in': '发票已打印',
   'Hóa đơn \$orderId đã được máy in xác nhận.': '发票 \$orderId 已由打印机确认。',
   'Đã thanh toán · in hóa đơn thất bại': '已付款 · 发票打印失败',
@@ -4377,13 +4302,17 @@ const Map<String, String> viToZhMap = {
   'Nhập tên, công ty, MST, SĐT hoặc email': '输入姓名、公司、税号、电话或邮箱',
   'Chọn ngày giờ': '选择日期和时间',
   'Bây giờ': '现在',
-  'Cập nhật \${info.version} build \${info.buildNumber}': '更新 \${info.version} 构建 \${info.buildNumber}',
+  'Cập nhật \${info.version} build \${info.buildNumber}':
+      '更新 \${info.version} 构建 \${info.buildNumber}',
   'Không thể mở xác nhận quản lý. Vui lòng thử lại.': '无法打开管理员确认。请重试。',
   'Không tải được: \$_error': '加载失败：\$_error',
-  'Xác nhận đã thu \${Fmt.money(widget.amount)}': '确认已收款 \${Fmt.money(widget.amount)}',
-  'chế độ CHỈ ĐỌC. Không thể bán/thanh toán/trả hàng/sửa kho cho tới khi kết nối lại máy chủ.': '只读模式。在重新连接服务器之前，无法进行销售/收款/退货/修改库存。',
+  'Xác nhận đã thu \${Fmt.money(widget.amount)}':
+      '确认已收款 \${Fmt.money(widget.amount)}',
+  'chế độ CHỈ ĐỌC. Không thể bán/thanh toán/trả hàng/sửa kho cho tới khi kết nối lại máy chủ.':
+      '只读模式。在重新连接服务器之前，无法进行销售/收款/退货/修改库存。',
   'Mất kết nối máy chủ': '服务器连接已断开',
-  'không thể thao tác tiền/hàng khi mất kết nối. Vui lòng thử lại sau khi có mạng.': '断开连接时无法进行资金/商品操作。请在恢复网络后重试。',
+  'không thể thao tác tiền/hàng khi mất kết nối. Vui lòng thử lại sau khi có mạng.':
+      '断开连接时无法进行资金/商品操作。请在恢复网络后重试。',
   'Nhập ghi chú cho đơn hàng': '输入订单备注',
   'Đã trả hàng — bill gốc vẫn được giữ trong lịch sử.': '已退货——原始账单仍保留在历史记录中。',
   'Cần Quản lý/Admin duyệt thao tác trả hàng.': '退货操作需要经理/管理员审批。',
@@ -4430,7 +4359,8 @@ const Map<String, String> viToZhMap = {
   'Copy': '复制',
   'CTKM / Voucher': '促销活动／代金券',
   'Website / QR order': '网站／扫码点单',
-  'phát hiện tiền về tài khoản → gọi Webhook URL ở trên.': '检测到账户收款 → 调用上方 Webhook URL。',
+  'phát hiện tiền về tài khoản → gọi Webhook URL ở trên.':
+      '检测到账户收款 → 调用上方 Webhook URL。',
   'POS Cashier': '收银台',
   'iPad self-order': 'iPad 自助点餐',
   'Retail POS': '零售收银台',
@@ -4467,8 +4397,10 @@ const Map<String, String> viToZhMap = {
   'Quy tắc làm tròn': '四舍五入规则',
   'Làm tròn theo hóa đơn': '按发票四舍五入',
   'Làm tròn theo từng dòng': '按每行四舍五入',
-  'Để trống Địa chỉ API thì hệ thống tự dùng đúng máy chủ của môi trường đã chọn.': '留空 API 地址，系统将自动使用所选环境对应的服务器。',
-  'Phải khớp với đăng ký của doanh nghiệp với cơ quan thuế.': '必须与企业在税务机关的登记信息一致。',
+  'Để trống Địa chỉ API thì hệ thống tự dùng đúng máy chủ của môi trường đã chọn.':
+      '留空 API 地址，系统将自动使用所选环境对应的服务器。',
+  'Phải khớp với đăng ký của doanh nghiệp với cơ quan thuế.':
+      '必须与企业在税务机关的登记信息一致。',
   'Kế toán phải xác nhận trước khi phát hành hóa đơn thật.': '会计需先确认，才能开具正式发票。',
   'Chuông cửa': '门铃',
   'Chuông thông báo': '通知铃声',
@@ -4524,4 +4456,6 @@ const Map<String, String> viToZhMap = {
   'chọn tối thiểu': '最少选择',
   'tối đa': '最多',
   'tùy chọn, tối đa': '可选，最多',
+  'Phiếu trả hàng': '退货单',
+  'Phiếu xác nhận hóa đơn điện tử': '电子发票确认单',
 };

@@ -44,6 +44,37 @@
     }
 }
 
+# Public customer-order origin printed into every table QR. Keep it separate
+# from the API hostname so browsers receive a valid certificate for the exact
+# URL on the QR, while the tenant guard still sees the canonical API host.
+dandpakpos.io.vn, www.dandpakpos.io.vn {
+    encode zstd gzip
+
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        X-Content-Type-Options "nosniff"
+        Referrer-Policy "strict-origin-when-cross-origin"
+        -Server
+    }
+
+    handle /socket.io/* {
+        reverse_proxy app:3000 {
+            header_up Host {$APP_DOMAIN}
+            flush_interval -1
+            transport http {
+                dial_timeout 10s
+                response_header_timeout 60s
+                read_timeout 0
+                write_timeout 0
+            }
+        }
+    }
+
+    reverse_proxy app:3000 {
+        header_up Host {$APP_DOMAIN}
+    }
+}
+
 api-review.dandpakpos.io.vn {
     encode zstd gzip
 
@@ -82,4 +113,17 @@ review.dandpakpos.io.vn {
     }
 
     reverse_proxy review-portal:80
+}
+
+{$HELP_DOMAIN:help.dandpakpos.io.vn} {
+    encode zstd gzip
+
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        X-Content-Type-Options "nosniff"
+        Referrer-Policy "strict-origin-when-cross-origin"
+        -Server
+    }
+
+    reverse_proxy help-center:80
 }

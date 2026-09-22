@@ -29,13 +29,8 @@ class _DashboardTabState extends State<DashboardTab> {
     'byQuarter',
     'byYear'
   ];
-  static List<String> get _trendLabels => [
-        t('Ngày'),
-        t('Tuần'),
-        t('Tháng'),
-        t('Quý'),
-        t('Năm')
-      ];
+  static List<String> get _trendLabels =>
+      [t('Ngày'), t('Tuần'), t('Tháng'), t('Quý'), t('Năm')];
   static Map<String, String> get _trendSub => {
         'byDay': t('7 ngày gần nhất'),
         'byWeek': t('8 tuần gần nhất'),
@@ -148,9 +143,19 @@ class _DashboardTabState extends State<DashboardTab> {
   Widget _kpiRow(DashboardData d, double maxWidth) {
     final cards = [
       KpiCard(
-          label: t('Doanh thu ca hôm nay'),
+          label: t('Doanh thu thuần ca hôm nay'),
           value: Fmt.money(d.revenue),
           valueColor: DanColors.brand),
+      if (d.returnedAmount > 0)
+        KpiCard(
+            label: t('Giảm trừ trả hàng'),
+            value: '-${Fmt.money(d.returnedAmount)}',
+            valueColor: DanColors.late),
+      if (d.returnedAmount > 0)
+        KpiCard(
+            label: t('Doanh số gộp'),
+            value: Fmt.money(d.grossRevenue),
+            valueColor: DanColors.done),
       KpiCard(
           label: t('Số bill'),
           value: Fmt.int0(d.bills),

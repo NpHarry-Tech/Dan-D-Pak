@@ -4,7 +4,6 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart' show visibleForTesting;
 
 import 'api_service.dart';
-import 'system_log.dart';
 
 /// AGENT IN CHẠY NGAY TRONG APP — dành cho máy POS cầm tay có máy in gắn liền
 /// (Sunmi V2, iMin, Landi...).
@@ -64,15 +63,6 @@ class LocalPrintAgent {
   Timer? _hen;
   bool _dangChay = false;
 
-  /// Các job đang in dở — chặn in trùng khi một vòng quét chưa xong mà vòng sau
-  /// đã tới (mạng cửa hàng chậm là chuyện thường).
-  final Set<String> _dangIn = {};
-
-  /// Số lần đã thử của từng job. Job hỏng thật thì bỏ sau vài lần, không quay
-  /// vòng vô tận làm nóng máy và tốn pin.
-  final Map<String, int> _soLanThu = {};
-  static const _toiDaThu = 3;
-
   bool get dangHoatDong => _hen != null;
 
   /// Bật agent. Gọi sau khi đăng nhập xong (cần phiên để gọi API).
@@ -102,8 +92,6 @@ class LocalPrintAgent {
   void dungLai() {
     _hen?.cancel();
     _hen = null;
-    _dangIn.clear();
-    _soLanThu.clear();
   }
 
   Future<void> _baoMayIn() async {
@@ -133,11 +121,7 @@ class LocalPrintAgent {
       final jobs = await api.getAgentPendingJobs(limit: 20);
       for (final j in jobs) {
         final id = '${j['id'] ?? ''}';
-        if (id.isEmpty || _dangIn.contains(id)) continue;
-        if ((_soLanThu[id] ?? 0) >= _toiDaThu) continue;
-        _dangIn.add(id);
-        unawaited(
-            _inMotJob(api, inRa, id, j).whenComplete(() => _dangIn.remove(id)));
+        if (id.isNotEmpty) await _inMotJob(api, inRa, id, j);
       }
     } catch (_) {
       // Hỏng mạng giữa ca bán hàng là chuyện thường — vòng sau thử lại.
@@ -152,7 +136,6 @@ class LocalPrintAgent {
     String id,
     Map<String, dynamic> job,
   ) async {
-    _soLanThu[id] = (_soLanThu[id] ?? 0) + 1;
     try {
       final text = '${job['text'] ?? ''}';
       if (text.isEmpty) throw Exception('Job không có nội dung để in');
@@ -163,24 +146,11 @@ class LocalPrintAgent {
           fontScale: job['fontScale'],
           buzzer: job['buzzer'] == true));
       await api.reportAgentJobResult(id, ok: true);
-      _soLanThu.remove(id);
     } catch (e) {
       final loi = e.toString().replaceFirst('Exception: ', '');
       try {
         await api.reportAgentJobResult(id, ok: false, error: loi);
       } catch (_) {/* báo lỗi thất bại thì vòng sau thử lại */}
-      // Chỉ ghi nhật ký khi đã hết lượt thử — tránh spam nhật ký vì một lần
-      // giấy kẹt tạm thời.
-      if ((_soLanThu[id] ?? 0) >= _toiDaThu) {
-        SystemLog.log(
-          level: 'error',
-          source: 'printer',
-          eventType: 'local_print_failed',
-          title: 'Máy in tích hợp không in được phiếu',
-          message: loi,
-          action: 'print',
-        );
-      }
     }
   }
 

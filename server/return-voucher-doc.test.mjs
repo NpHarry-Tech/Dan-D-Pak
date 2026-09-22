@@ -11,8 +11,12 @@ process.env.STORAGE_PATH = join(temp, 'storage');
 process.env.DATA_ENCRYPTION_KEY = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
 process.env.NODE_ENV = 'development';
 
+const { db, migrate } = await import('./db.js');
 const { buildReturnVoucherDoc } = await import('./services/receipt_doc.js');
-const { renderJobText } = await import('./services/printing.js');
+const Print = await import('./services/printing.js');
+const AppSettings = await import('./services/settings.js');
+const { renderJobText } = Print;
+migrate();
 
 const payload = {
   shopName: 'Dan D Pak', code: 'BILL-001', datetime: '2026-08-23T10:00:00.000Z',
@@ -44,4 +48,17 @@ test('ESC/POS text: chứa tiêu đề + tên món + tổng hoàn (ASCII hoá ch
   assert.match(text, /But bi/i);
   assert.match(text, /TONG HOAN/i);
   assert.match(text, /130[.,]?000/); // tổng hoàn
+});
+
+test('in lai phieu tra hang van chon may Hoa don / Tam tinh, khong roi sang may bep', () => {
+  AppSettings.updateSettings({ print_config: { printers: [
+    { id: 'bill-a', name: 'Bill A', output: 'receipt', connection: 'lan', ip: '127.0.0.1', active: true, priority: 1 },
+    { id: 'kitchen-a', name: 'Bep A', output: 'kitchen_ticket', connection: 'lan', ip: '127.0.0.2', active: true, priority: 1 },
+  ] } }, 'return-route');
+  const original = Print.createJob({
+    printer: 'bill-a', type: 'return_voucher', title: 'Phiếu trả hàng', payload,
+    branch_id: 'return-route',
+  });
+  const again = Print.reprint(original.id, 'return-route', { deviceId: 'pos-test' });
+  assert.equal(again.printer, 'bill-a');
 });

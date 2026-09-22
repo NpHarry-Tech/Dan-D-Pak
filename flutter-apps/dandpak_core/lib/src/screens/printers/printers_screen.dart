@@ -50,6 +50,8 @@ Map<String, String> get _typeLabels => {
       'inventory_document': t('Phiếu kho'),
       'purchase': t('Phiếu mua hàng'),
       'refund': t('Hoàn / trả hàng'),
+      'return_voucher': t('Phiếu trả hàng'),
+      'invoice_confirmation': t('Phiếu xác nhận hóa đơn điện tử'),
     };
 
 String _deviceIcon(Map<String, dynamic> p) {

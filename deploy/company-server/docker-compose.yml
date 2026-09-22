@@ -2,11 +2,15 @@ services:
   caddy:
     image: caddy:2
     restart: unless-stopped
+    memswap_limit: 256M
+    oom_score_adj: -250
+    pids_limit: 64
     ports:
       - "80:80"
       - "443:443"
     environment:
       APP_DOMAIN: ${APP_DOMAIN:-localhost}
+      HELP_DOMAIN: ${HELP_DOMAIN:-help.dandpakpos.io.vn}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
@@ -17,6 +21,18 @@ services:
     depends_on:
       app:
         condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 192M
+          pids: 64
+        reservations:
+          memory: 64M
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
 
   app:
     build:
@@ -28,6 +44,7 @@ services:
     environment:
       PORT: 3000
       NODE_ENV: production
+      NODE_OPTIONS: --max-old-space-size=512
       DEPLOYMENT_TARGET: vps
       DISABLE_DEMO_SEED: "true"
       # MÚI GIỜ NGHIỆP VỤ. Container mặc định chạy UTC, lệch 7 tiếng so với giờ
@@ -64,10 +81,22 @@ services:
     # cả VPS 2GB (kernel OOM-kill lung tung, cả Caddy lẫn app) — container vượt
     # ngưỡng bị Docker restart SẠCH (restart: unless-stopped ở trên tự hồi phục)
     # thay vì cả máy bị treo. ulimit nofile đề phòng rò rỉ file descriptor.
+    memswap_limit: 1280M
+    oom_score_adj: -500
+    pids_limit: 192
+    stop_grace_period: 30s
     deploy:
       resources:
         limits:
-          memory: 1536M
+          memory: 896M
+          pids: 192
+        reservations:
+          memory: 256M
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
     ulimits:
       nofile:
         soft: 65536

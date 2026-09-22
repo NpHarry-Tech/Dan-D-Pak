@@ -1,0 +1,8 @@
+[Unit]
+Description=Bound Dan D Pak release and Docker storage growth
+After=docker.service
+Wants=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/dan-d-pak/deploy/company-server/scripts/storage-maintenance.sh

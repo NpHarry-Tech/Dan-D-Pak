@@ -39,6 +39,7 @@ const state = {
   soLanGoiPublishView: 0,
   receivedSendEmail: null,
   receivedDownload: null,
+  templatesQuery: null,
   downloadMode: null,
   receivedHeaders: { token: null, templates: null, publish: null },
   templatesMode: null, // null | 'business_error'
@@ -108,6 +109,7 @@ const server = createServer((req, res) => {
 
   if (path === '/invoice/templates') {
     state.receivedHeaders.templates = { clientId: req.headers.clientid };
+    state.templatesQuery = Object.fromEntries(url.searchParams.entries());
     // Contract that GET /invoice/templates without invoiceWithCode/ticket/year/
     // haveTempOld silently returns Data:"" (confirmed real response, 2026-09-19)
     // — the fake server enforces the same shape so a regression (dropping the
@@ -429,6 +431,8 @@ test('TC-CONN-01B: Data dang chuoi JSON escaped van doc duoc mau con hieu luc', 
   assert.equal(templates[0].templateNo, '1');
   assert.equal(templates[0].series, 'C26MBM');
   assert.equal(templates[0].active, true);
+  assert.equal(state.templatesQuery.haveTempOld, 'false',
+    'khong duoc lay mau hoa don ke thua nghi dinh cu');
 });
 
 test('TC-CONN-01C: HTTP 200 nhung Success=false phai bao loi MISA, khong duoc gia thanh danh sach rong', async () => {

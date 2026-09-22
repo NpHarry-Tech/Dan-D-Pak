@@ -184,14 +184,19 @@ export function shiftReport(shift_id, branch_id = 'sala', { billLimit = 0 } = {}
     .reduce((s, k) => s + (Number(methodTotals[k]) || 0), 0);
   const pos = ['card', 'visa', 'pos_card'].reduce((s, k) => s + (Number(methodTotals[k]) || 0), 0);
   const total_revenue = payments.reduce((s, p) => s + (Number(p.total) || 0), 0);
+  const gross_sales = payments.reduce((s, p) => s + Math.max(0, Number(p.total) || 0), 0);
+  const returned_amount = payments.reduce((s, p) => s + Math.max(0, -(Number(p.total) || 0)), 0);
+  const bill_count = new Set(payments.filter(p => Number(p.total) > 0).map(p => p.order_id)).size;
   const drawer = CashDrawer.summaryForShift(shift_id, branch_id);
   const drawer_expenses = drawer?.expenses || 0;
   const drawer_reimbursements = drawer?.reimbursements || 0;
   const expected_cash = shift.opening_cash + cash - drawer_expenses + drawer_reimbursements;
   return {
     shift,
-    bill_count: payments.length,
+    bill_count,
     total_revenue,
+    gross_sales,
+    returned_amount,
     opening_cash: shift.opening_cash,
     cash_sales: cash,
     drawer_expenses,
@@ -243,6 +248,9 @@ export function operationDayReport(branch_id = 'sala', endAt = null) {
   const byChannel = {};
   for (const p of payments) byChannel[p.channel] = (byChannel[p.channel] || 0) + (Number(p.total) || 0);
   const total_revenue = payments.reduce((s, p) => s + (Number(p.total) || 0), 0);
+  const gross_sales = payments.reduce((s, p) => s + Math.max(0, Number(p.total) || 0), 0);
+  const returned_amount = payments.reduce((s, p) => s + Math.max(0, -(Number(p.total) || 0)), 0);
+  const bill_count = new Set(payments.filter(p => Number(p.total) > 0).map(p => p.order_id)).size;
   const shift_count = db.prepare(`
     SELECT COUNT(*) n FROM shifts
     WHERE branch_id=? AND opened_at>=? AND opened_at<?`).get(branch_id, bounds.start, bounds.end).n;
@@ -252,8 +260,10 @@ export function operationDayReport(branch_id = 'sala', endAt = null) {
     source: firstShift ? 'shift' : 'calendar',
     closed: !!(lastShift?.status === 'closed' && lastShift.closed_at && end === lastShift.closed_at),
     shift_count,
-    bill_count: payments.length,
+    bill_count,
     total_revenue,
+    gross_sales,
+    returned_amount,
     cash_sales: cash,
     transfer_sales: transfer,
     pos_sales: pos,

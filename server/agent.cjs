@@ -27,6 +27,7 @@ const { join, dirname } = require('node:path');
 const { promisify } = require('node:util');
 
 const execFileAsync = promisify(execFile);
+const IS_WINDOWS = platform() === 'win32';
 
 // Đóng gói SEA: process.execPath là chính file .exe này (không có "module file"
 // thật trên đĩa để suy ra thư mục từ đường dẫn source như file .js thường).
@@ -46,17 +47,17 @@ function pidAlive(pid) {
 }
 function acquireSingletonLock() {
   try {
-    const existingPid = parseInt(readFileSync(LOCK_PATH, 'utf8').trim(), 10);
-    if (existingPid && pidAlive(existingPid)) return false;
-    try { unlinkSync(LOCK_PATH); } catch {} // lock mồ côi — dọn rồi giành lại bên dưới
-  } catch {} // chưa có lock nào — bình thường
-  try {
-    const fd = openSync(LOCK_PATH, 'w');
+    const fd = openSync(LOCK_PATH, 'wx');
     writeFileSync(fd, String(process.pid));
     closeSync(fd);
     return true;
   } catch {
-    return false;
+    try {
+      const pid = parseInt(readFileSync(LOCK_PATH, 'utf8'), 10);
+      if (pid && pidAlive(pid)) return false;
+      unlinkSync(LOCK_PATH);
+      return acquireSingletonLock();
+    } catch { return false; }
   }
 }
 
@@ -76,7 +77,6 @@ function loadConfig() {
     deviceName: String(cfg.DEVICE_NAME || '').trim() || hostname(),
     pollMs: Number(cfg.AGENT_POLL_MS) || 200,
     printersMs: Number(cfg.AGENT_PRINTERS_MS) || 20000,
-    maxAttempts: Number(cfg.AGENT_MAX_ATTEMPTS) || 3,
     cooldownMs: Number(cfg.AGENT_COOLDOWN_MS) || 20000,
   };
   if (!c.username || !c.pin) {
@@ -90,7 +90,7 @@ function loadEnvFile(path) {
   const out = {};
   try {
     if (!existsSync(path)) return out;
-    for (const line of require('node:fs').readFileSync(path, 'utf8').split(/\r?\n/)) {
+    for (const line of readFileSync(path, 'utf8').split(/\r?\n/)) {
       const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*)\s*$/i);
       if (m) out[m[1]] = m[2].replace(/^["']|["']$/g, '');
     }
@@ -111,6 +111,7 @@ async function apiFetch(path, { method = 'GET', body, retryAuth = true } = {}) {
       'Content-Type': 'application/json',
       ...(token ? { 'x-auth-token': token, Authorization: `Bearer ${token}` } : {}),
       'x-branch-id': CFG.branch,
+      'x-device-id': CFG.deviceId,
     },
     body: body == null ? undefined : JSON.stringify(body),
   });
@@ -561,7 +562,7 @@ async function writeSystemPrinter(name, text, opts) {
       drawer: opts.drawer, density: opts.density,
       charset: opts.charset, fontScale: opts.fontScale, buzzer: opts.buzzer,
     });
-    if (platform() === 'win32') {
+    if (IS_WINDOWS) {
       // Tên máy in Windows có thể có dấu — RAW dùng tên GỐC, không lọc ký tự.
       await writeSystemPrinterRaw(name, buffer);
       return;
@@ -583,7 +584,7 @@ async function writeSystemPrinter(name, text, opts) {
   const file = join(dir, 'job.txt');
   writeFileSync(file, stripMarks(text) + '\n', 'utf8');
   try {
-    if (platform() === 'win32') {
+    if (IS_WINDOWS) {
       await execFileAsync('powershell.exe', [
         '-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command',
         `Get-Content -Raw -LiteralPath ${JSON.stringify(file)} | Out-Printer -Name ${JSON.stringify(safeName)}`,
@@ -597,7 +598,10 @@ async function writeSystemPrinter(name, text, opts) {
 }
 
 async function printJob(j) {
-  const drawer = !!j.drawer;
+  const opts = {
+    drawer: !!j.drawer, density: j.density, charset: j.charset,
+    fontScale: j.fontScale, buzzer: j.buzzer,
+  };
   // WindowsDriverBackend: server gửi semantic doc (renderMode='driver') → in bill
   // bằng GDI + font TrueType qua driver Windows. Chỉ máy in 'system'. Server bản
   // cũ không gửi trường này thì rơi về ESC/POS như thường.
@@ -608,68 +612,51 @@ async function printJob(j) {
   }
   if (j.connection === 'lan') {
     if (!j.ip) throw new Error('Máy in LAN thiếu IP');
-    await writeLan(j.ip, j.port || 9100, escposBuffer(j.text, {
-      drawer: drawer, density: j.density,
-      charset: j.charset, fontScale: j.fontScale, buzzer: j.buzzer,
-    }));
+    await writeLan(j.ip, j.port || 9100, escposBuffer(j.text, opts));
   } else if (j.connection === 'system') {
     if (!j.systemName) throw new Error('Thiếu tên máy in hệ điều hành');
     // j.raw = máy in nhiệt → gửi nguyên byte ESC/POS qua spooler (datatype RAW),
     // nhờ vậy độ đậm, cắt giấy và xung mở két đều tới được máy in. Server bản cũ
     // không gửi cờ này thì rơi về đường driver như trước, không vỡ gì.
-    await writeSystemPrinter(j.systemName, j.text, {
-      raw: j.raw !== false,
-      drawer: drawer,
-      density: j.density,
-      charset: j.charset,
-      fontScale: j.fontScale,
-      buzzer: j.buzzer,
-    });
+    await writeSystemPrinter(j.systemName, j.text, { ...opts, raw: j.raw !== false });
   } else {
     throw new Error(`Tuyến "${j.connection}" không thuộc phạm vi agent`);
   }
 }
 
 // ── Vòng lặp: nhận job → in → báo kết quả ───────────────────────────────────
-const inFlight = new Set();
-const attempts = new Map();
 const cooldown = new Map();
+let polling = false;
 
 async function pollJobs() {
-  let res;
+  if (polling) return;
+  polling = true;
   try {
-    res = await apiFetch(`/api/agent/print/pending?limit=40&device_id=${encodeURIComponent(CFG.deviceId)}`);
+    const res = await apiFetch(`/api/agent/print/pending?limit=40&device_id=${encodeURIComponent(CFG.deviceId)}`);
+    for (const j of (res && res.jobs) || []) {
+      if (Date.now() < (cooldown.get(j.id) || 0)) continue;
+      await handleJob(j);
+    }
   } catch (e) {
     log('không lấy được hàng đợi in:', e.message);
-    return;
-  }
-  const jobs = (res && res.jobs) || [];
-  for (const j of jobs) {
-    if (inFlight.has(j.id)) continue;
-    const cd = cooldown.get(j.id) || 0;
-    if (Date.now() < cd) continue;
-    const tried = attempts.get(j.id) || 0;
-    if (tried >= CFG.maxAttempts) continue;
-    inFlight.add(j.id);
-    handleJob(j, tried).finally(() => inFlight.delete(j.id));
+  } finally {
+    polling = false;
   }
 }
 
-async function handleJob(j, tried) {
+async function handleJob(j) {
   try {
     await printJob(j);
-    attempts.delete(j.id);
     cooldown.delete(j.id);
     await apiFetch(`/api/agent/print/jobs/${j.id}/result`, { method: 'POST', body: { ok: true } });
     log(`đã in ${j.type} (${j.connection}${j.ip ? ' ' + j.ip : ''})`);
   } catch (e) {
-    attempts.set(j.id, tried + 1);
     cooldown.set(j.id, Date.now() + CFG.cooldownMs);
     try {
       await apiFetch(`/api/agent/print/jobs/${j.id}/result`,
         { method: 'POST', body: { ok: false, error: e.message } });
     } catch {}
-    log(`in lỗi ${j.type} (lần ${tried + 1}/${CFG.maxAttempts}):`, e.message);
+    log(`in lỗi ${j.type}:`, e.message);
   }
 }
 
@@ -688,7 +675,7 @@ async function reportPrinters() {
 
 async function listLocalPrinters() {
   try {
-    if (platform() === 'win32') {
+    if (IS_WINDOWS) {
       const { stdout } = await execFileAsync('powershell.exe', [
         '-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command',
         '$p=Get-CimInstance Win32_Printer | Select-Object Name,Default,WorkOffline,PrinterStatus,PortName,DriverName,ShareName; $p | ConvertTo-Json -Compress -Depth 3',

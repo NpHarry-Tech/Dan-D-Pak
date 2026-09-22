@@ -22,13 +22,8 @@ class ReportsTab extends StatefulWidget {
 
 class _ReportsTabState extends State<ReportsTab> {
   static final _periodKeys = ['day', 'week', 'month', 'quarter', 'year'];
-  static List<String> get _periodLabels => [
-        t('Ngày'),
-        t('Tuần'),
-        t('Tháng'),
-        t('Quý'),
-        t('Năm')
-      ];
+  static List<String> get _periodLabels =>
+      [t('Ngày'), t('Tuần'), t('Tháng'), t('Quý'), t('Năm')];
   static final _ymd = DateFormat('yyyy-MM-dd');
 
   ReportCatalog? _catalog;
@@ -517,8 +512,13 @@ class _ReportsTabState extends State<ReportsTab> {
               child: Container(
                 padding: EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: DanColors.surface,
-                  border: Border.all(color: DanColors.border),
+                  color: s.tone == 'negative'
+                      ? DanColors.late.withValues(alpha: .07)
+                      : DanColors.surface,
+                  border: Border.all(
+                      color: s.tone == 'negative'
+                          ? DanColors.late.withValues(alpha: .35)
+                          : DanColors.border),
                   borderRadius: BorderRadius.circular(DanRadius.md),
                 ),
                 child: Column(
@@ -534,7 +534,13 @@ class _ReportsTabState extends State<ReportsTab> {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                            fontSize: 17, fontWeight: FontWeight.w900)),
+                            fontSize: 17,
+                            fontWeight: FontWeight.w900,
+                            color: s.tone == 'negative'
+                                ? DanColors.late
+                                : s.tone == 'positive'
+                                    ? DanColors.done
+                                    : DanColors.text)),
                   ],
                 ),
               ),

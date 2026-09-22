@@ -42,17 +42,26 @@ function businessWindow(branch_id = 'sala') {
 export function dashboard(branch_id = 'sala') {
   const window = businessWindow(branch_id);
   const paid = db.prepare(`SELECT * FROM orders WHERE branch_id=? AND status='paid' AND paid_at>=? AND paid_at<=?`).all(branch_id, window.start, window.end);
-  const revenue = paid.reduce((s, o) => s + o.total, 0);
-  const bills = paid.length;
+  // Financial KPIs must follow payment events, not the immutable sale total on
+  // orders. Returns append a negative payment, while the original paid order is
+  // intentionally kept unchanged for audit/e-invoice traceability.
+  const paymentEvents = db.prepare(`
+    SELECT p.order_id,p.total,p.created_at,o.channel
+    FROM payments p JOIN orders o ON o.id=p.order_id
+    WHERE o.branch_id=? AND p.created_at>=? AND p.created_at<=?`).all(branch_id, window.start, window.end);
+  const grossRevenue = paymentEvents.reduce((s, p) => s + Math.max(0, Number(p.total) || 0), 0);
+  const returnedAmount = paymentEvents.reduce((s, p) => s + Math.max(0, -(Number(p.total) || 0)), 0);
+  const revenue = grossRevenue - returnedAmount;
+  const bills = new Set(paymentEvents.filter(p => Number(p.total) > 0).map(p => p.order_id)).size;
   const avg = bills ? Math.round(revenue / bills) : 0;
   const openOrders = db.prepare(`SELECT COUNT(*) n FROM orders WHERE branch_id=? AND status IN ('open','partially_paid')`).get(branch_id).n;
 
   // revenue by hour — GIỜ VIỆT NAM (+7). Container chạy UTC nên getHours() trả giờ
   // UTC → biểu đồ doanh thu theo giờ lệch 7 tiếng (sự cố 07/08/2026).
   const byHour = Array.from({ length: 24 }, () => 0);
-  for (const o of paid) {
-    const vnHour = new Date(new Date(o.paid_at).getTime() + 7 * 3600 * 1000).getUTCHours();
-    byHour[vnHour] += o.total;
+  for (const event of paymentEvents) {
+    const vnHour = new Date(new Date(event.created_at).getTime() + 7 * 3600 * 1000).getUTCHours();
+    byHour[vnHour] += Number(event.total) || 0;
   }
 
   // payment methods
@@ -60,11 +69,30 @@ export function dashboard(branch_id = 'sala') {
     SELECT pl.method, SUM(pl.amount) amt FROM payment_lines pl
     JOIN payments p ON p.id=pl.payment_id
     JOIN orders o ON o.id=p.order_id
-    WHERE o.branch_id=? AND o.paid_at>=? AND o.paid_at<=? GROUP BY pl.method`).all(branch_id, window.start, window.end);
+    WHERE o.branch_id=? AND p.created_at>=? AND p.created_at<=? GROUP BY pl.method`).all(branch_id, window.start, window.end);
 
   // top items today
-  const topItems = db.prepare(`
-    SELECT oi.name, oi.emoji, SUM(oi.qty) qty,
+  const hasReturns = !!db.prepare(`SELECT 1 FROM sqlite_master WHERE type='table' AND name='order_returns'`).get();
+  const topItems = hasReturns ? db.prepare(`
+    SELECT name,MAX(emoji) emoji,SUM(qty) qty,SUM(revenue) revenue
+    FROM (
+      SELECT oi.name,oi.emoji,oi.qty,
+        oi.qty*oi.unit_price - CASE WHEN json_valid(oi.promo_json)
+          THEN COALESCE(json_extract(oi.promo_json,'$.amount'),0) ELSE 0 END revenue
+      FROM order_items oi JOIN orders o ON o.id=oi.order_id
+      WHERE o.branch_id=? AND o.status='paid' AND o.paid_at>=? AND o.paid_at<=? AND oi.status!='cancelled'
+      UNION ALL
+      SELECT ri.name,COALESCE(oi.emoji,''),-ri.qty,-ri.amount
+      FROM order_return_items ri
+      JOIN order_returns r ON r.id=ri.return_id
+      LEFT JOIN order_items oi ON oi.id=ri.order_item_id
+      WHERE r.branch_id=? AND r.status='completed' AND r.created_at>=? AND r.created_at<=?
+    ) activity
+    GROUP BY name HAVING SUM(qty)>0 OR SUM(revenue)>0
+    ORDER BY qty DESC LIMIT 8`).all(
+      branch_id, window.start, window.end,
+      branch_id, window.start, window.end) : db.prepare(`
+    SELECT oi.name,oi.emoji,SUM(oi.qty) qty,
       SUM(oi.qty*oi.unit_price - CASE WHEN json_valid(oi.promo_json)
         THEN COALESCE(json_extract(oi.promo_json,'$.amount'),0) ELSE 0 END) revenue
     FROM order_items oi JOIN orders o ON o.id=oi.order_id
@@ -73,7 +101,9 @@ export function dashboard(branch_id = 'sala') {
 
   // revenue by channel
   const byChannel = {};
-  for (const o of paid) byChannel[o.channel] = (byChannel[o.channel] || 0) + o.total;
+  for (const event of paymentEvents) {
+    byChannel[event.channel] = (byChannel[event.channel] || 0) + (Number(event.total) || 0);
+  }
 
   const lowStock = [
     ...db.prepare(`SELECT name,stock,min_stock,unit FROM inventory_items WHERE branch_id=? AND stock<=min_stock`).all(branch_id),
@@ -85,7 +115,7 @@ export function dashboard(branch_id = 'sala') {
     SELECT oi.station, COUNT(*) n FROM order_items oi JOIN orders o ON o.id=oi.order_id
     WHERE o.branch_id=? AND oi.status IN ('new','accepted','preparing') GROUP BY oi.station`).all(branch_id);
 
-  const report = { revenue, bills, avg, openOrders, byHour, byChannel, methods, topItems, lowStock, stations, window };
+  const report = { revenue, grossRevenue, returnedAmount, bills, avg, openOrders, byHour, byChannel, methods, topItems, lowStock, stations, window };
   archiveDashboardReport(report, branch_id);
   return report;
 }
@@ -99,7 +129,9 @@ export function revenueTrends(branch_id = 'sala') {
   // earliest data we need is for the 5-year series
   const cutoff = new Date(Date.UTC(vnNow.getUTCFullYear() - 4, 0, 1) - _VN_OFFSET_MS).toISOString();
   const rows = db.prepare(
-    `SELECT paid_at, total FROM orders WHERE branch_id=? AND status='paid' AND paid_at>=?`
+    `SELECT p.created_at paid_at, p.total
+     FROM payments p JOIN orders o ON o.id=p.order_id
+     WHERE o.branch_id=? AND p.created_at>=?`
   ).all(branch_id, cutoff);
 
   const dayKey = (d) => `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`;

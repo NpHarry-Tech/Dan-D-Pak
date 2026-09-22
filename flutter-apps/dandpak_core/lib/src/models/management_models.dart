@@ -95,6 +95,8 @@ class StationLoad {
 
 class DashboardData {
   final num revenue;
+  final num grossRevenue;
+  final num returnedAmount;
   final int bills;
   final num avg;
   final int openOrders;
@@ -108,6 +110,8 @@ class DashboardData {
 
   const DashboardData({
     required this.revenue,
+    required this.grossRevenue,
+    required this.returnedAmount,
     required this.bills,
     required this.avg,
     required this.openOrders,
@@ -141,6 +145,8 @@ class DashboardData {
 
     return DashboardData(
       revenue: _num(j['revenue']),
+      grossRevenue: _num(j['grossRevenue'] ?? j['revenue']),
+      returnedAmount: _num(j['returnedAmount']),
       bills: _int(j['bills']),
       avg: _num(j['avg']),
       openOrders: _int(j['openOrders']),
@@ -197,8 +203,8 @@ class AdminCategory {
         id: _str(j['id']),
         name: _str(j['name']),
         icon: _str(j['icon']),
-        selfOrderHidden: j['self_order_hidden'] == true ||
-            j['self_order_hidden'] == 1,
+        selfOrderHidden:
+            j['self_order_hidden'] == true || j['self_order_hidden'] == 1,
       );
 }
 
@@ -651,7 +657,8 @@ class ReportSection {
 class ReportSummaryStat {
   final String label;
   final String value;
-  const ReportSummaryStat(this.label, this.value);
+  final String tone;
+  const ReportSummaryStat(this.label, this.value, [this.tone = '']);
 }
 
 class ReportData {
@@ -677,7 +684,8 @@ class ReportData {
     final summary = (j['summary'] is List)
         ? (j['summary'] as List)
             .whereType<Map>()
-            .map((e) => ReportSummaryStat(_str(e['label']), _str(e['value'])))
+            .map((e) => ReportSummaryStat(
+                _str(e['label']), _str(e['value']), _str(e['tone'])))
             .toList()
         : <ReportSummaryStat>[];
     final sections = (j['sections'] is List)

@@ -620,6 +620,20 @@ class _ShiftDialogState extends State<ShiftDialog> {
         children: [
           _Brow(label: t('Số bill'), value: '${_num(r['bill_count']).round()}'),
           _Brow(
+              label: t('Doanh số gộp'),
+              value: fmtMoney(_num(r['gross_sales'])),
+              valueColor: DanColors.done),
+          if (_num(r['returned_amount']) > 0)
+            _Brow(
+                label: t('Giảm trừ trả hàng'),
+                value: '-${fmtMoney(_num(r['returned_amount']))}',
+                valueColor: DanColors.late),
+          _Brow(
+              label: t('Doanh thu thuần'),
+              value: fmtMoney(_num(r['total_revenue'])),
+              bold: true),
+          _DashDivider(),
+          _Brow(
               label: t('Tiền mặt bán hàng'),
               value: fmtMoney(_num(r['cash_sales']))),
           _Brow(
@@ -659,7 +673,16 @@ class _ShiftDialogState extends State<ShiftDialog> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 _Brow(
-                    label: t('Tổng ngày vận hành'),
+                    label: t('Doanh số gộp trong ngày'),
+                    value: fmtMoney(_num(day['gross_sales'])),
+                    valueColor: DanColors.done),
+                if (_num(day['returned_amount']) > 0)
+                  _Brow(
+                      label: t('Giảm trừ trả hàng trong ngày'),
+                      value: '-${fmtMoney(_num(day['returned_amount']))}',
+                      valueColor: DanColors.late),
+                _Brow(
+                    label: t('Doanh thu thuần trong ngày'),
                     value: fmtMoney(_num(day['total_revenue'])),
                     bold: true),
                 _Brow(

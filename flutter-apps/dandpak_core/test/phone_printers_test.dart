@@ -80,6 +80,22 @@ class _FakeApi extends ApiService {
           'error': 'Không kết nối được máy in LAN 192.168.1.50:9100',
           'created_at': '2026-07-31T09:12:00.000Z',
         },
+        {
+          'id': 'pj_3',
+          'type': 'invoice_confirmation',
+          'printer': 'pos80c',
+          'status': 'printed',
+          'attempts': 1,
+          'created_at': '2026-07-31T09:11:00.000Z',
+        },
+        {
+          'id': 'pj_4',
+          'type': 'return_voucher',
+          'printer': 'pos80c',
+          'status': 'printed',
+          'attempts': 1,
+          'created_at': '2026-07-31T09:10:00.000Z',
+        },
       ];
     }
     return <dynamic>[];
@@ -165,8 +181,10 @@ void main() {
   testWidgets('lịch sử hiện trạng thái và cho xem lý do lỗi', (tester) async {
     await _pump(tester);
     expect(find.text('Hóa đơn / Tạm tính'), findsOneWidget);
-    expect(find.text('Đã in'), findsOneWidget);
+    expect(find.text('Đã in'), findsWidgets);
     expect(find.text('Lỗi'), findsOneWidget);
+    expect(find.text('Phiếu xác nhận hóa đơn điện tử'), findsOneWidget);
+    expect(find.text('Phiếu trả hàng'), findsOneWidget);
 
     await tester.tap(find.text('Phiếu bếp'));
     await tester.pumpAndSettle();

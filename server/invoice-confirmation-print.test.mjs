@@ -19,6 +19,7 @@ process.env.PRINT_DISPATCH = 'agent';
 const { db, migrate } = await import('./db.js');
 const Print = await import('./services/printing.js');
 const AppSettings = await import('./services/settings.js');
+const System = await import('./services/system.js');
 const Orders = await import('./services/orders.js');
 
 migrate();
@@ -28,6 +29,10 @@ AppSettings.updateSettings({
     printers: [{
       id: 'pos80c', name: 'POS-80C', systemName: 'POS-80C', label: 'in bill',
       output: 'receipt', connection: 'system', active: true, auto: true,
+      renderMode: 'driver', driverFont: 'Segoe UI',
+    }, {
+      id: 'kitchen', name: 'Bếp', systemName: 'Bếp', label: 'in bếp',
+      output: 'kitchen_ticket', connection: 'system', active: true, auto: true,
     }],
   },
 }, BR);
@@ -72,6 +77,39 @@ test('goi lai (worker replay) KHONG tao ban in thu hai — idempotency theo orde
   const count = db.prepare(`SELECT COUNT(*) n FROM print_jobs WHERE idempotency_key=?`)
     .get(`invconf:${BR}:${order.id}`).n;
   assert.equal(count, 1);
+});
+
+test('linked printer khong phai may hoa don thi van in vao tuyen Hoa don / Tam tinh', () => {
+  const order = { ...fixtureOrder(), linked_printer_id: 'kitchen' };
+  const job = Print.printInvoiceConfirmation(order, fixtureData(), BR, {});
+  assert.equal(job.printer, 'pos80c', 'khong duoc gui phieu xac nhan sang may bep');
+});
+
+test('phieu xac nhan uu tien may in vat ly cua thiet bi da ban hang', () => {
+  const localBranch = 'invoice-local-device';
+  AppSettings.updateSettings({ print_config: { printers: [{
+    id: 'quay-chung', systemName: 'QUAY-CHUNG', output: 'receipt',
+    connection: 'system', active: true, priority: 1, primaryDeviceId: 'dev-quay',
+  }] } }, localBranch);
+  System.setAgentPrinters(localBranch, [{ Name: 'InnerPrinter', widthMm: 58 }],
+    { deviceId: 'dev-cam-tay', deviceName: 'SUNMI' });
+
+  const order = { ...fixtureOrder(), branch_id: localBranch, linked_pos_device: 'dev-cam-tay' };
+  const job = Print.printInvoiceConfirmation(order, fixtureData(), localBranch, {});
+  assert.match(job.printer, /^auto:dev-cam-tay:/,
+    'phai in tren may gan lien thay vi day thang len quay chung');
+});
+
+test('may hoa don dung Windows driver nhan du driverDoc cua invoice confirmation', () => {
+  const order = fixtureOrder();
+  const job = Print.printInvoiceConfirmation(order, fixtureData(), BR, {});
+  const pending = Print.pendingAgentJobs(BR, { deviceId: 'agent-test', limit: 100 })
+    .find(x => x.id === job.id);
+  assert.ok(pending, 'agent phai nhan duoc job');
+  assert.equal(pending.renderMode, 'driver');
+  const doc = JSON.parse(pending.driverDoc);
+  assert.match(JSON.stringify(doc.blocks), /PHIẾU XÁC NHẬN HÓA ĐƠN ĐIỆN TỬ/);
+  assert.match(JSON.stringify(doc.blocks), /00000123/);
 });
 
 test('chua co tuyen may in hoa don thi khong throw, chi log, tra ve null', () => {

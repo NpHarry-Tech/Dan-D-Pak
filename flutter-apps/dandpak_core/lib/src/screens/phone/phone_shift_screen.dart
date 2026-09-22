@@ -358,6 +358,21 @@ class _PhoneShiftControlScreenState extends State<PhoneShiftControlScreen> {
                                   ),
                                 if (dangMo)
                                   (
+                                    t('Doanh số gộp'),
+                                    phoneMoney(_n(bc['gross_sales']))
+                                  ),
+                                if (dangMo && _n(bc['returned_amount']) > 0)
+                                  (
+                                    t('Giảm trừ trả hàng'),
+                                    '-${phoneMoney(_n(bc['returned_amount']))}'
+                                  ),
+                                if (dangMo)
+                                  (
+                                    t('Doanh thu thuần'),
+                                    phoneMoney(_n(bc['total_revenue']))
+                                  ),
+                                if (dangMo)
+                                  (
                                     t('Tiền mặt bán hàng'),
                                     phoneMoney(_n(bc['cash_sales']))
                                   ),

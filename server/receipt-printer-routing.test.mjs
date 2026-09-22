@@ -114,11 +114,12 @@ test('máy chưa cắm máy in nào vẫn in được, không chặn bán hàng'
   assert.ok(['pos80c', 'ap250'].includes(jobs[0].printer));
 });
 
-test('tuyến gắn sẵn trên đơn được tôn trọng, nhưng tuyến đã XOÁ thì không', () => {
+test('máy local thắng tuyến cũ gắn trên đơn; không có local mới dùng tuyến gắn sẵn', () => {
   haiMayPOSDangChay();
   const gan = Print.printReceipt(
     { ...receiptMau('Dan3007260005'), linked_printer_id: 'ap250' }, 'sala', { deviceId: 'dev_pos1' });
-  assert.equal(gan[0].printer, 'ap250', 'tuyến gắn sẵn phải được dùng');
+  assert.equal(gan[0].printer, 'pos80c',
+    'thiết bị đang có máy in vật lý phải in tại chỗ, không chạy sang tuyến cũ ở máy khác');
 
   const khongCoLocal = Print.printReceipt(
     { ...receiptMau('Dan3007260005B'), linked_printer_id: 'ap250' }, 'sala', { deviceId: 'dev_khong_may_in' });

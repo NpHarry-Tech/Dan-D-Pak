@@ -1,0 +1,31 @@
+services:
+  help-center:
+    image: nginx:1.27-alpine
+    container_name: dandpak-help-center
+    restart: unless-stopped
+    memswap_limit: 96M
+    oom_score_adj: 500
+    pids_limit: 64
+    volumes:
+      - ./current:/usr/share/nginx/html:ro
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    networks:
+      dandpak-ingress:
+        aliases:
+          - help-center
+    deploy:
+      resources:
+        limits:
+          memory: 64M
+          pids: 64
+        reservations:
+          memory: 16M
+    logging:
+      driver: json-file
+      options:
+        max-size: 5m
+        max-file: "2"
+
+networks:
+  dandpak-ingress:
+    external: true
