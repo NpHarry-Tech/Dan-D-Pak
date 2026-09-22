@@ -149,6 +149,14 @@ class _LauncherScreenState extends State<LauncherScreen> {
       // Đăng ký nhận thông báo đẩy KỂ CẢ KHI APP ĐÃ TẮT (trước đây app chỉ
       // biết có bản cập nhật mới khi tự mở lên — thụ động, đúng vấn đề đã báo).
       PushNotifications.register(context.read<ApiService>());
+      // Vừa đăng nhập xong (không phải quay lại đây bằng nút back từ POS) →
+      // vào thẳng POS Cashier, khỏi dừng ở màn Cốt lõi. Tiêu cờ ngay để bấm
+      // back từ PosScreen quay lại đây thì ở lại đây, không bị đẩy lặp vô hạn.
+      final auth = context.read<AuthProvider>();
+      if (auth.justLoggedIn) {
+        auth.consumeJustLoggedIn();
+        Navigator.of(context).push(MaterialPageRoute(builder: (_) => PosScreen()));
+      }
     });
   }
 

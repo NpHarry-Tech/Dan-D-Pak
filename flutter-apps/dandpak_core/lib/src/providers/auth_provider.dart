@@ -41,6 +41,13 @@ class AuthProvider extends ChangeNotifier {
   // app phải ép đổi PIN NGAY trước khi cho dùng tiếp (chặn ở login gate).
   bool _mustChangePin = false;
 
+  // Đặt true đúng lúc login() thành công; LauncherScreen đọc 1 lần lúc build
+  // đầu để tự đẩy sang PosScreen rồi tự tắt cờ — quay lại Launcher bằng nút
+  // back sau đó thì cờ đã tắt, không bị đẩy lặp lại vô hạn.
+  bool _justLoggedIn = false;
+  bool get justLoggedIn => _justLoggedIn;
+  void consumeJustLoggedIn() => _justLoggedIn = false;
+
   AuthProvider({required this.apiService}) {
     SocketService().addListener(_onSocketEvent);
     _loadPreferences();
@@ -339,6 +346,7 @@ class AuthProvider extends ChangeNotifier {
       );
 
       _isLoading = false;
+      _justLoggedIn = true;
       notifyListeners();
     } catch (e) {
       _isLoading = false;
