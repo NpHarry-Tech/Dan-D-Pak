@@ -25,7 +25,17 @@ function attr(v) { return esc(v).replace(/"/g, '&quot;'); }
 // Keep fixed/sticky controls inside the actually visible browser viewport.
 // On iOS the visual viewport changes when browser chrome or the keyboard opens;
 // iPhone Duo additionally has an asymmetric system-control area on the right.
+// Android Chrome fires visualViewport resize/scroll repeatedly WHILE the page
+// is being scrolled (its collapsing URL bar changes viewport height mid-
+// gesture) — writing CSS vars synchronously on every one of those forces a
+// reflow mid-scroll, which is what made the gesture hard to trigger. Coalesce
+// to at most once per animation frame instead of once per event.
+let viewportLayoutRaf = 0;
 function updateViewportLayout() {
+  if (viewportLayoutRaf) return;
+  viewportLayoutRaf = requestAnimationFrame(() => { viewportLayoutRaf = 0; applyViewportLayout(); });
+}
+function applyViewportLayout() {
   const viewport = window.visualViewport;
   const left = Math.max(0, viewport?.offsetLeft || 0);
   const top = Math.max(0, viewport?.offsetTop || 0);
@@ -49,6 +59,29 @@ updateViewportLayout();
 window.visualViewport?.addEventListener('resize', updateViewportLayout, { passive: true });
 window.visualViewport?.addEventListener('scroll', updateViewportLayout, { passive: true });
 window.addEventListener('resize', updateViewportLayout, { passive: true });
+
+// TEMP DIAGNOSTIC — chẩn đoán lỗi không cuộn được trên Android. Xóa khối này
+// sau khi xác định xong nguyên nhân, KHÔNG để lại trong bản chính thức.
+function __scrollDebug() {
+  let el = document.getElementById('__scroll_debug');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = '__scroll_debug';
+    el.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:999999;background:rgba(0,0,0,.85);color:#0f0;font:10px/1.4 monospace;padding:4px 6px;white-space:pre-wrap;pointer-events:none;';
+    document.documentElement.appendChild(el);
+  }
+  const de = document.documentElement;
+  const appEl = document.getElementById('app');
+  const screensEl = document.getElementById('screens');
+  el.textContent = [
+    `innerH=${window.innerHeight} scrollH=${de.scrollHeight} bodyScrollH=${document.body.scrollHeight}`,
+    `vvH=${Math.round(window.visualViewport?.height || 0)} htmlOvY=${getComputedStyle(de).overflowY} bodyOvY=${getComputedStyle(document.body).overflowY} bodyPos=${getComputedStyle(document.body).position}`,
+    `appH=${appEl?.offsetHeight} appOvY=${appEl ? getComputedStyle(appEl).overflowY : '?'} screensH=${screensEl?.offsetHeight} screensOvY=${screensEl ? getComputedStyle(screensEl).overflowY : '?'}`,
+    `scrollY=${window.scrollY} touchAction=${getComputedStyle(document.body).touchAction}`,
+    `UA=${navigator.userAgent.slice(0, 70)}`,
+  ].join('\n');
+}
+setInterval(__scrollDebug, 800);
 window.addEventListener('orientationchange', updateViewportLayout, { passive: true });
 
 // ---------------------------------------------------------------------------
