@@ -260,7 +260,6 @@ function render(opts = {}) {
   renderOffline();
   renderHeader();
   renderScreens(opts);
-  renderStaffCallButton();
   renderMenuCartFab();
   // A background refresh (realtime event, silent bootstrap) must never blow
   // away a note the guest is mid-typing — only (re)build the note sheet when
@@ -433,14 +432,14 @@ function cartCount() {
 
 function renderHeader() {
   const header = $('#app-header');
+  // Header is hidden on 'welcome' — the call-staff button lives inside it, so
+  // this also removes the button from the welcome screen for free (by design:
+  // welcome has no sticky footer, so a call-staff control there is unneeded).
   if (state.screen === 'welcome' || !state.data) { header.classList.add('hidden'); return; }
   header.classList.remove('hidden');
   $('#lang-flag').src = (LANGS.find(l => l.code === state.lang) || LANGS[0]).flag;
   const d = state.data;
-  const count = cartCount();
-  const badge = $('#cart-badge');
-  badge.textContent = String(count);
-  badge.classList.toggle('hidden', count === 0);
+  renderStaffCallButton();
   const busy = d.table?.status === 'busy';
   $('#header-info').innerHTML = `
     <span class="crumb">${icon('pin', 13)}${esc(d.branch?.name || 'Dan D Pak')}</span>
@@ -451,31 +450,20 @@ function renderHeader() {
     <span class="status-pill ${busy ? 'serving' : 'free'}"><span class="status-dot ${busy ? 'pulse' : ''}"></span>${esc(busy ? t(state.lang, 'serving') : t(state.lang, 'tableFree'))}</span>`;
 }
 
-// menu has no sticky footer to clear (items add straight from the grid) —
-// every other screen has one (welcome-actions/detail-bottom/cart-bottom) whose
-// real rendered height already bakes in safe-area/visual-viewport insets, so
-// measuring it beats hand-guessing a pixel offset per screen (that guess drifted
-// out of sync with the welcome screen's actual button and started overlapping it).
-const STAFF_CALL_FALLBACK_BOTTOM = '108px';
+// Header button, not a floating overlay — labelled (not a bare icon) and
+// gated behind a confirm sheet (see 'call-staff'/'confirm-call-staff') so a
+// stray tap on a guest's own phone can't page staff by accident.
 function renderStaffCallButton() {
   const btn = $('#btn-staff-call');
-  if (!state.data) { btn.classList.add('hidden'); return; }
-  btn.classList.remove('hidden');
-  const footer = $('#screens .screen:not(.hidden) .welcome-actions, #screens .screen:not(.hidden) .detail-bottom, #screens .screen:not(.hidden) .cart-bottom');
-  if (footer) {
-    btn.style.bottom = `${Math.max(0, window.innerHeight - footer.getBoundingClientRect().top) + 14}px`;
-    btn.style.removeProperty('--staff-bottom');
-  } else {
-    btn.style.removeProperty('bottom');
-    btn.style.setProperty('--staff-bottom', STAFF_CALL_FALLBACK_BOTTOM);
-  }
+  $('#staff-call-label').textContent = t(state.lang, 'callStaff');
   btn.setAttribute('aria-label', t(state.lang, 'callStaff'));
   const cooling = Date.now() < state.staffCallCooldownUntil;
   btn.disabled = state.busyStaffCall || cooling;
 }
 
-// Cart shortcut FAB: menu screen only (per product decision — elsewhere the
-// header cart icon already covers it), shown once there's something to see.
+// Cart shortcut FAB: menu screen only — welcome has its own "view cart"
+// button and every other screen is one tap from the grid, so this is the
+// only place a floating cart shortcut earns its keep.
 function renderMenuCartFab() {
   const btn = $('#btn-menu-cart');
   const count = state.data ? cartCount() : 0;
@@ -598,7 +586,10 @@ function renderMenu() {
         <div class="dish-name">${esc(it.name)}</div>
         ${it.description ? `<div class="dish-desc">${esc(it.description)}</div>` : ''}
         <div class="dish-foot">
-          <span class="dish-price">${esc(money(it.price))}</span>
+          <span class="dish-price-col">
+            <span class="dish-price">${esc(money(it.price))}</span>
+            ${it.sla_minutes ? `<span class="dish-prep-time">${icon('clock', 11)}${esc(t(state.lang, 'prepTime', { min: it.sla_minutes }))}</span>` : ''}
+          </span>
           <span class="dish-add ${soldOut ? 'disabled' : ''}">${icon(soldOut ? 'x' : 'plus', 15)}</span>
         </div>
       </div>
@@ -738,6 +729,7 @@ function renderDetail() {
       <div class="detail-price-row">
         <span class="detail-price">${esc(money(item.price))}</span>
         <span class="detail-vat-tag">${esc(t(state.lang, 'vatIncluded'))}</span>
+        ${item.sla_minutes ? `<span class="detail-prep-time">${icon('clock', 12)}${esc(t(state.lang, 'prepTime', { min: item.sla_minutes }))}</span>` : ''}
         ${!item.can_order ? `<span class="detail-soldout-tag">${esc(t(state.lang, 'soldOut'))}</span>` : ''}
       </div>
     </div>
@@ -911,6 +903,7 @@ function renderSheet() {
   if (state.sheet === 'language') inner = languageSheetHtml();
   else if (state.sheet === 'note') inner = noteSheetHtml();
   else if (state.sheet === 'confirmTable') inner = confirmTableSheetHtml();
+  else if (state.sheet === 'confirmStaffCall') inner = confirmStaffCallSheetHtml();
   else if (state.sheet === 'success') inner = successSheetHtml();
   root.innerHTML = overlay + inner;
   if (state.sheet === 'note') { const ta = $('#note-textarea'); if (ta) { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); } }
@@ -972,6 +965,20 @@ function confirmTableSheetHtml() {
     <div class="sheet-actions">
       <button type="button" class="btn btn-secondary" data-act="close-sheet">${esc(t(state.lang, 'backCheck'))}</button>
       <button type="button" class="btn btn-primary" data-act="confirm-send-table" ${state.busySubmit ? 'disabled' : ''}>${esc(t(state.lang, 'confirmSend'))}</button>
+    </div>
+  </div>`;
+}
+
+function confirmStaffCallSheetHtml() {
+  return `<div class="sheet" role="dialog" aria-modal="true"><div class="sheet-grip"></div>
+    <div class="sheet-center">
+      <div class="sheet-icon" style="background:rgba(26,34,48,.08)">${icon('bell', 26, 'style="color:#1A2230"')}</div>
+      <div class="gate-title" style="font-size:17.5px">${esc(t(state.lang, 'callStaffConfirmTitle'))}</div>
+      <div class="gate-desc">${esc(t(state.lang, 'callStaffConfirmBody'))}</div>
+    </div>
+    <div class="sheet-actions">
+      <button type="button" class="btn btn-secondary" data-act="close-sheet">${esc(t(state.lang, 'cancel'))}</button>
+      <button type="button" class="btn btn-primary" data-act="confirm-call-staff">${esc(t(state.lang, 'callStaff'))}</button>
     </div>
   </div>`;
 }
@@ -1255,7 +1262,8 @@ document.addEventListener('click', (e) => {
     case 'confirm-send-table': doSubmit('table'); break;
     case 'goto-ordered': navigate('cart', { cartTab: 'ordered' }); break;
     case 'request-payment': doRequestPayment(); break;
-    case 'call-staff': doCallStaff(); break;
+    case 'call-staff': state.sheet = 'confirmStaffCall'; render(); break;
+    case 'confirm-call-staff': state.sheet = null; doCallStaff(); break;
     default: break;
   }
 });
