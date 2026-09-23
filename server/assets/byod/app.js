@@ -574,18 +574,16 @@ function startBannerRotation(banner) {
   }, seconds * 1000);
 }
 
-function renderMenu() {
-  const d = state.data;
-  const cats = Array.isArray(d.categories) ? d.categories : [];
-  const catChips = [{ id: 'all', name: t(state.lang, 'all') }, ...cats];
-  const menu = d.menu || [];
+// Lọc danh sách món + dựng HTML lưới, TÁCH khỏi renderMenu để việc đổi nhóm món
+// chỉ cần cập nhật riêng phần lưới (không rebuild cả màn — xem selectCategory).
+function filteredMenu() {
+  const menu = state.data?.menu || [];
   const q = state.search.trim().toLocaleLowerCase();
-  const filtered = menu.filter(it => (state.category === 'all' || it.category_id === state.category)
+  return menu.filter(it => (state.category === 'all' || it.category_id === state.category)
     && (!q || `${it.name} ${it.description || ''}`.toLocaleLowerCase().includes(q)));
-
-  const catsHtml = catChips.map(c => `<button type="button" class="chip-cat ${state.category === c.id ? 'active' : ''}" data-act="pick-cat" data-cat="${attr(c.id)}">${esc(c.name)}</button>`).join('');
-
-  const gridHtml = filtered.length ? filtered.map(it => {
+}
+function dishGridHtml(filtered) {
+  return filtered.length ? filtered.map(it => {
     const soldOut = !it.can_order;
     return `<button type="button" class="dish-card" data-act="open-item" data-id="${attr(it.id)}" aria-label="${attr(it.name)}">
       <div class="dish-photo">
@@ -605,6 +603,17 @@ function renderMenu() {
       </div>
     </button>`;
   }).join('') : `<div class="menu-empty">${esc(t(state.lang, 'searchEmpty'))}</div>`;
+}
+
+function renderMenu() {
+  const d = state.data;
+  const cats = Array.isArray(d.categories) ? d.categories : [];
+  const catChips = [{ id: 'all', name: t(state.lang, 'all') }, ...cats];
+  const filtered = filteredMenu();
+
+  const catsHtml = catChips.map(c => `<button type="button" class="chip-cat ${state.category === c.id ? 'active' : ''}" data-act="pick-cat" data-cat="${attr(c.id)}">${esc(c.name)}</button>`).join('');
+
+  const gridHtml = dishGridHtml(filtered);
 
   $('#screen-menu').innerHTML = `
     ${bannerHtml(d.banner)}
@@ -620,6 +629,27 @@ function renderMenu() {
       <button type="button" class="pill-btn search-bubble" data-act="open-search">${icon('search', 18, 'style="color:#677084;flex:none"')}<span class="q ${state.search ? 'filled' : ''}">${esc(state.search || t(state.lang, 'searchPlaceholder'))}</span></button>
     </div>`;
   startBannerRotation(d.banner);
+}
+
+// Đổi nhóm món mà KHÔNG rebuild cả màn menu: giữ nguyên thanh chip cùng VỊ TRÍ
+// CUỘN NGANG của nó. Trước đây pick-cat gọi render() dựng lại toàn bộ #screen-menu
+// nên thanh chip nhảy về đầu ("All") mỗi lần chọn, khách phải lướt lại rất xa.
+// Giờ chỉ đổi chip active + tiêu đề + lưới món tại chỗ (cùng nguyên tắc "không
+// gọi lại render()" đã dùng cho banner phía trên).
+function selectCategory(catId) {
+  if (!catId || state.category === catId) return;
+  state.category = catId;
+  const cats = Array.isArray(state.data?.categories) ? state.data.categories : [];
+  const catChips = [{ id: 'all', name: t(state.lang, 'all') }, ...cats];
+  const filtered = filteredMenu();
+  $$('#screen-menu .chip-cat').forEach(btn => btn.classList.toggle('active', btn.dataset.cat === catId));
+  const heading = $('#screen-menu .menu-heading');
+  if (heading) {
+    const name = (catChips.find(c => c.id === catId) || catChips[0]).name;
+    heading.innerHTML = `<span class="title">${esc(name)}</span><span class="count">${filtered.length} ${esc(t(state.lang, 'items'))}</span>`;
+  }
+  const grid = $('#screen-menu .menu-grid');
+  if (grid) grid.innerHTML = dishGridHtml(filtered);
 }
 
 // ---------------------------------------------------------------------------
@@ -1213,7 +1243,7 @@ document.addEventListener('click', (e) => {
     case 'open-lang': state.sheet = 'language'; render(); break;
     case 'close-sheet': state.sheet = null; render(); break;
     case 'pick-lang': changeLang(t0.dataset.lang); break;
-    case 'pick-cat': state.category = t0.dataset.cat; render(); break;
+    case 'pick-cat': selectCategory(t0.dataset.cat); break;
     case 'open-item': openItem(t0.dataset.id); break;
     case 'open-item-from-search': state.searchOpen = false; openItem(t0.dataset.id); break;
     case 'open-search': state.searchOpen = true; render(); break;
