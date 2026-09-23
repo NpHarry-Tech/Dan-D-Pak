@@ -511,4 +511,9 @@ body.iphone-duo-inner #toast{ left:calc(50% + 36px); right:calc(14px + max(var(-
 
 /* long CJK / Vietnamese strings must never force horizontal scroll */
 .dish-name,.detail-title,.cart-title-row .name,.order-title-row .name,.opt-label,.welcome-title{ overflow-wrap:break-word; }
-body{ overflow-x:hidden; }
+/* NOTE: do NOT re-add `body{ overflow-x:hidden }` here. Horizontal clipping is
+   handled once, on `html` (line ~37). Declaring overflow-x on `body` too makes
+   BOTH html and body scroll containers (overflow-x:hidden forces overflow-y to
+   `auto` per CSS spec), and Android Chrome then routes single-finger vertical
+   swipes unreliably between the two — the page won't scroll until a pinch-zoom
+   forces a layout recompute. This duplicate is what caused the scroll-lock. */
