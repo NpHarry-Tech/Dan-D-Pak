@@ -178,7 +178,7 @@ class _DevicesPanelState extends State<DevicesPanel> {
                           style: TextStyle(fontWeight: FontWeight.w700)),
                       Text(_currentPin.isEmpty ? t('(chưa đặt)') : '••••',
                           style: TextStyle(
-                              fontFamily: 'JetBrains Mono',
+                              fontFamily: 'packages/dandpak_core/JetBrains Mono',
                               fontWeight: FontWeight.w800)),
                     ],
                   ),

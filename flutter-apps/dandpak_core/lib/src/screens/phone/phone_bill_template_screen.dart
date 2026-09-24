@@ -368,7 +368,7 @@ class _PhoneBillTemplateScreenState extends State<PhoneBillTemplateScreen> {
             scrollDirection: Axis.horizontal,
             child: Text(dong.join('\n'),
                 style: const TextStyle(
-                    fontFamily: 'JetBrains Mono',
+                    fontFamily: 'packages/dandpak_core/JetBrains Mono',
                     fontSize: 10,
                     height: 1.6,
                     color: DanColors.text)),

@@ -31,7 +31,7 @@ class AppNotifier {
   const AppNotifier._();
 
   static const _androidChannel = MethodChannel('com.dandpak.pos/notifications');
-  static final _logo = rootBundle.load('assets/brand/DanOnLogo.png');
+  static final _logo = rootBundle.load('packages/dandpak_core/assets/brand/DanOnLogo.png');
 
   /// Hàm MỞ MỤC THÔNG BÁO — màn đang hiển thị (POS/phone) tự đăng ký ở initState.
   /// Banner thông báo khách (gọi món/gọi nhân viên) hiện nút "Xem" gọi hàm này để

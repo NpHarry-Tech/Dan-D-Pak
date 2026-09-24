@@ -28,7 +28,7 @@ class _ReceiptPaper extends StatelessWidget {
         child: SelectableText(
           text,
           style: TextStyle(
-            fontFamily: 'JetBrains Mono',
+            fontFamily: 'packages/dandpak_core/JetBrains Mono',
             fontSize: 12,
             height: 1.45,
             color: DanColors.text,
@@ -192,7 +192,7 @@ class _ReceiptCard extends StatelessWidget {
                   'MÃ CỦA CƠ QUAN THUẾ:\n${_s(invoice['lookup_code'])}',
                   textAlign: TextAlign.center,
                   style: TextStyle(
-                    fontFamily: 'JetBrains Mono',
+                    fontFamily: 'packages/dandpak_core/JetBrains Mono',
                     fontWeight: FontWeight.w900,
                   ),
                 ),

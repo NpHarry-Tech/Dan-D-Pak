@@ -406,7 +406,7 @@ class _TicketCard extends StatelessWidget {
               children: [
                 Text('#$order5',
                     style: TextStyle(
-                        fontFamily: 'JetBrains Mono',
+                        fontFamily: 'packages/dandpak_core/JetBrains Mono',
                         fontWeight: FontWeight.w700,
                         fontSize: 12,
                         color: DanColors.brand)),
@@ -417,14 +417,14 @@ class _TicketCard extends StatelessWidget {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                          fontFamily: 'JetBrains Mono',
+                          fontFamily: 'packages/dandpak_core/JetBrains Mono',
                           fontSize: 11,
                           color: DanColors.muted)),
                 ),
                 Spacer(),
                 Text('${late ? '⚠ ' : ''}$mm:${ss.toString().padLeft(2, '0')}',
                     style: TextStyle(
-                        fontFamily: 'JetBrains Mono',
+                        fontFamily: 'packages/dandpak_core/JetBrains Mono',
                         fontSize: 13,
                         fontWeight: FontWeight.w700,
                         color: late ? DanColors.late : DanColors.text)),
@@ -443,7 +443,7 @@ class _TicketCard extends StatelessWidget {
                     children: [
                       Text('${ticketData.qty}× ',
                           style: TextStyle(
-                              fontFamily: 'JetBrains Mono',
+                              fontFamily: 'packages/dandpak_core/JetBrains Mono',
                               fontWeight: FontWeight.w800,
                               fontSize: 15,
                               color: DanColors.brand)),

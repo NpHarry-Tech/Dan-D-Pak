@@ -665,7 +665,7 @@ class _EmptyCart extends StatelessWidget {
             ConstrainedBox(
               constraints: BoxConstraints(maxWidth: 132, maxHeight: 80),
               child: Image.asset(
-                'assets/brand/DanOnLogo.png',
+                'packages/dandpak_core/assets/brand/DanOnLogo.png',
                 fit: BoxFit.contain,
                 errorBuilder: (_, __, ___) => Icon(Icons.shopping_bag_outlined,
                     size: 52, color: DanColors.faint),

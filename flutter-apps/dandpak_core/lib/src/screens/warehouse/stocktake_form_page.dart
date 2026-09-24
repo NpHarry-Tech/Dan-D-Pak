@@ -335,7 +335,7 @@ class _StocktakeFormPageState extends State<StocktakeFormPage> {
                 controller: ctrl,
                 autofocus: true,
                 maxLines: 12,
-                style: TextStyle(fontFamily: 'JetBrains Mono', fontSize: 12),
+                style: TextStyle(fontFamily: 'packages/dandpak_core/JetBrains Mono', fontSize: 12),
                 decoration: InputDecoration(
                   hintText:
                       'Mã hàng\tSố lượng\tLô 1\tHạn sử dụng 1\tSố lượng 1\n00060\t\tL001\t15/10/2020\t1',
@@ -639,7 +639,7 @@ class _StocktakeFormPageState extends State<StocktakeFormPage> {
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                    fontFamily: 'JetBrains Mono',
+                    fontFamily: 'packages/dandpak_core/JetBrains Mono',
                     fontSize: 11.5,
                     fontWeight: FontWeight.w700,
                     color: DanColors.brand)),

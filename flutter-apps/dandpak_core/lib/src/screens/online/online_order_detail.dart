@@ -149,13 +149,13 @@ class _OnlineOrderDetailDialogState extends State<OnlineOrderDetailDialog> {
               if (billNo.isNotEmpty)
                 Text('#$billNo',
                     style: const TextStyle(
-                        fontFamily: 'JetBrains Mono',
+                        fontFamily: 'packages/dandpak_core/JetBrains Mono',
                         fontWeight: FontWeight.w800,
                         color: DanColors.brand)),
               if (code.isNotEmpty)
                 Text('· ${t("Đối tác")}: #$code',
                     style: const TextStyle(
-                        fontFamily: 'JetBrains Mono',
+                        fontFamily: 'packages/dandpak_core/JetBrains Mono',
                         fontWeight: FontWeight.w700,
                         color: DanColors.muted)),
               OnlinePill(wf.label, wf.color),

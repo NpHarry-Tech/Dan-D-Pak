@@ -409,7 +409,7 @@ class _PriceBookPageState extends State<PriceBookPage> {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                      fontFamily: 'JetBrains Mono',
+                      fontFamily: 'packages/dandpak_core/JetBrains Mono',
                       fontSize: 12,
                       fontWeight: FontWeight.w700,
                       color: DanColors.brand)),

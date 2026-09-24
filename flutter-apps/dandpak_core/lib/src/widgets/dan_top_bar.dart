@@ -428,7 +428,7 @@ class _Brand extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         Image.asset(
-          'assets/brand/DanOnLogo.png',
+          'packages/dandpak_core/assets/brand/DanOnLogo.png',
           height: 44,
           fit: BoxFit.contain,
           errorBuilder: (_, __, ___) => SizedBox(width: 44, height: 44),
@@ -522,7 +522,7 @@ class _LiveClockState extends State<_LiveClock> {
       Fmt.hms(_now),
       style: TextStyle(
         color: DanColors.muted,
-        fontFamily: 'JetBrains Mono',
+        fontFamily: 'packages/dandpak_core/JetBrains Mono',
         fontSize: 13,
         fontWeight: FontWeight.w500,
         fontFeatures: [FontFeature.tabularFigures()],

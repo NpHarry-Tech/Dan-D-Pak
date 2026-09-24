@@ -88,7 +88,7 @@ class _NotificationSettingsPanelState extends State<NotificationSettingsPanel> {
   Future<List<Map<String, dynamic>>> _loadCatalog() async {
     try {
       final raw = await rootBundle
-          .loadString('assets/brand/sounds/notifications/catalog.json');
+          .loadString('packages/dandpak_core/assets/brand/sounds/notifications/catalog.json');
       final json = jsonDecode(raw);
       final sounds = (json is Map && json['sounds'] is List)
           ? (json['sounds'] as List)

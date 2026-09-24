@@ -66,7 +66,7 @@ List<IntegrationDef> get _integrationDefs => [
           desc: t(
               'Kết nối MISA meInvoice để tự động phát hành và quản lý hóa đơn điện tử.'),
           type: 'misa',
-          imageAsset: 'assets/brand/Misa_meinvoice_icon.png'),
+          imageAsset: 'packages/dandpak_core/assets/brand/Misa_meinvoice_icon.png'),
       IntegrationDef(
           key: 'erp',
           icon: '🧩',
@@ -82,7 +82,7 @@ List<IntegrationDef> get _integrationDefs => [
               'Cổng thanh toán QR/thẻ payOS — tạo link thanh toán và nhận webhook xác nhận đã thanh toán.'),
           type: 'payos',
           channel: 'payos',
-          imageAsset: 'assets/brand/payoslogo.png'),
+          imageAsset: 'packages/dandpak_core/assets/brand/payoslogo.png'),
       IntegrationDef(
           key: 'vietqr',
           icon: '🇻🇳',
@@ -91,7 +91,7 @@ List<IntegrationDef> get _integrationDefs => [
               'Sinh mã QR thanh toán động cho từng bill iPad/POS và sẵn sàng đối soát khi VietQR callback.'),
           type: 'vietqr',
           channel: 'vietqr',
-          imageAsset: 'assets/brand/vietqr.png'),
+          imageAsset: 'packages/dandpak_core/assets/brand/vietqr.png'),
       // QR TINH — phuong an TAM khi chua dau noi cong thanh toan theo phap
       // nhan. Dat canh VietQR vi cung tra loi mot cau hoi "khach quet gi de
       // chuyen khoan", chi khac: QR dong sinh theo tung bill va tu doi soat,
@@ -111,7 +111,7 @@ List<IntegrationDef> get _integrationDefs => [
               'Đường B: đọc biến động số dư ngân hàng, khi khách chuyển khoản/quét VietQR đúng nội dung bill thì tự đóng bill. Rẻ nhất cho chuyển khoản.'),
           type: 'bank_webhook',
           channel: 'sepay',
-          imageAsset: 'assets/brand/sepay.webp'),
+          imageAsset: 'packages/dandpak_core/assets/brand/sepay.webp'),
       IntegrationDef(
           key: 'casso',
           icon: '🏦',
@@ -120,7 +120,7 @@ List<IntegrationDef> get _integrationDefs => [
               'Đường B (phương án thay thế SePay): đọc giao dịch ngân hàng và bắn webhook xác nhận tiền về theo nội dung bill.'),
           type: 'bank_webhook',
           channel: 'casso',
-          imageAsset: 'assets/brand/Casso.png'),
+          imageAsset: 'packages/dandpak_core/assets/brand/Casso.png'),
       IntegrationDef(
           key: 'grabmerchant',
           icon: '🟢',
@@ -129,7 +129,7 @@ List<IntegrationDef> get _integrationDefs => [
               'Nhận đơn, đồng bộ menu, trạng thái món và tồn khả dụng cho kênh Grab.'),
           type: 'delivery',
           channel: 'grabmerchant',
-          imageAsset: 'assets/brand/grabmerchantlogo.webp'),
+          imageAsset: 'packages/dandpak_core/assets/brand/grabmerchantlogo.webp'),
       IntegrationDef(
           key: 'shopeefood',
           icon: '🟠',
@@ -138,7 +138,7 @@ List<IntegrationDef> get _integrationDefs => [
               'Nhận đơn Shopee Food, quản lý xác nhận đơn và đồng bộ món bán online.'),
           type: 'delivery',
           channel: 'shopeefood',
-          imageAsset: 'assets/brand/shopeefoodlogo.png'),
+          imageAsset: 'packages/dandpak_core/assets/brand/shopeefoodlogo.png'),
       IntegrationDef(
           key: 'befood',
           icon: '🟡',
@@ -147,7 +147,7 @@ List<IntegrationDef> get _integrationDefs => [
               t('Chuẩn bị cấu hình merchant, store và webhook cho đơn từ Be.'),
           type: 'delivery',
           channel: 'befood',
-          imageAsset: 'assets/brand/befoodlogo.png'),
+          imageAsset: 'packages/dandpak_core/assets/brand/befoodlogo.png'),
       IntegrationDef(
           key: 'grabmart',
           icon: '🛒',
@@ -155,7 +155,7 @@ List<IntegrationDef> get _integrationDefs => [
           desc: t('Đồng bộ sản phẩm retail, tồn kho và đơn hàng mart.'),
           type: 'mart',
           channel: 'grabmart',
-          imageAsset: 'assets/brand/grabmartlogo.png'),
+          imageAsset: 'packages/dandpak_core/assets/brand/grabmartlogo.png'),
       IntegrationDef(
           key: 'website',
           icon: '🌐',
@@ -164,7 +164,7 @@ List<IntegrationDef> get _integrationDefs => [
               'Kênh đặt món từ website, QR bàn, landing page hoặc kiosk tự gọi món.'),
           type: 'website',
           channel: 'website',
-          imageAsset: 'assets/brand/DanOnLogo.png'),
+          imageAsset: 'packages/dandpak_core/assets/brand/DanOnLogo.png'),
       IntegrationDef(
           key: 'haravan',
           icon: 'H',
@@ -173,7 +173,7 @@ List<IntegrationDef> get _integrationDefs => [
               'Haravan: đồng bộ khách hàng, sản phẩm và tồn kho. Đơn hàng được quản lý trực tiếp trên Haravan.'),
           type: 'haravan',
           channel: 'haravan',
-          imageAsset: 'assets/brand/Haravan.png'),
+          imageAsset: 'packages/dandpak_core/assets/brand/Haravan.png'),
       // ── Sàn TMĐT (Dan-D Pak Omni) — kết nối đơn/hàng/tồn qua Open Platform ──
       IntegrationDef(
           key: 'shopee',
@@ -183,7 +183,7 @@ List<IntegrationDef> get _integrationDefs => [
               'Shopee Open Platform: nhận đơn, đồng bộ hàng hóa và tồn kho. Cần Partner ID + Shop được ủy quyền.'),
           type: 'marketplace',
           channel: 'shopee',
-          imageAsset: 'assets/brand/shopee.png'),
+          imageAsset: 'packages/dandpak_core/assets/brand/shopee.png'),
       IntegrationDef(
           key: 'tiktokshop',
           icon: 'T',
@@ -192,7 +192,7 @@ List<IntegrationDef> get _integrationDefs => [
               'TikTok Shop Partner: nhận đơn, đồng bộ hàng và tồn. Cần app được ủy quyền và shop cipher.'),
           type: 'marketplace',
           channel: 'tiktokshop',
-          imageAsset: 'assets/brand/tiktok.png'),
+          imageAsset: 'packages/dandpak_core/assets/brand/tiktok.png'),
       IntegrationDef(
           key: 'lazada',
           icon: '🛒',
@@ -201,7 +201,7 @@ List<IntegrationDef> get _integrationDefs => [
               'Lazada Open Platform: nhận đơn và đồng bộ sản phẩm/tồn kho. Cần App Key/Secret và seller token.'),
           type: 'marketplace',
           channel: 'lazada',
-          imageAsset: 'assets/brand/Lazada.png'),
+          imageAsset: 'packages/dandpak_core/assets/brand/Lazada.png'),
       IntegrationDef(
           key: 'tiki',
           icon: '🔷',
@@ -219,7 +219,7 @@ List<IntegrationDef> get _integrationDefs => [
               'Nhận tin nhắn Trang qua Meta webhook (X-Hub-Signature-256). Cần Meta App, Page token và Advanced Access.'),
           type: 'social',
           channel: 'facebook',
-          imageAsset: 'assets/brand/Facebook_Logo.png'),
+          imageAsset: 'packages/dandpak_core/assets/brand/Facebook_Logo.png'),
       IntegrationDef(
           key: 'instagram',
           icon: '📷',
@@ -228,7 +228,7 @@ List<IntegrationDef> get _integrationDefs => [
               'Nhận tin nhắn Instagram Professional qua Meta webhook. Cần tài khoản Professional và Advanced Access.'),
           type: 'social',
           channel: 'instagram',
-          imageAsset: 'assets/brand/Instagram_Glyph_Gradient.png'),
+          imageAsset: 'packages/dandpak_core/assets/brand/Instagram_Glyph_Gradient.png'),
       IntegrationDef(
           key: 'zalooa',
           icon: '💬',
@@ -237,7 +237,7 @@ List<IntegrationDef> get _integrationDefs => [
               'Zalo Official Account OpenAPI + webhook. Cần OA App, access token và webhook secret được cấp.'),
           type: 'social',
           channel: 'zalooa',
-          imageAsset: 'assets/brand/Zalo_logo.png'),
+          imageAsset: 'packages/dandpak_core/assets/brand/Zalo_logo.png'),
     ];
 
 Map<String, List<String>> _channelTextFields = {
@@ -959,7 +959,7 @@ class _IntegrationsPanelState extends State<IntegrationsPanel> {
                 child: Text(
                   webhookUrl,
                   style: TextStyle(
-                    fontFamily: 'JetBrains Mono',
+                    fontFamily: 'packages/dandpak_core/JetBrains Mono',
                     fontSize: 12,
                     fontWeight: FontWeight.w700,
                     color: Color(0xFF334155),

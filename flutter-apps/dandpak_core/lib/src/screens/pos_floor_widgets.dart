@@ -561,7 +561,7 @@ class _TableCardState extends State<_TableCard>
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      fontFamily: 'JetBrains Mono',
+                      fontFamily: 'packages/dandpak_core/JetBrains Mono',
                       fontSize: 15,
                       fontWeight: FontWeight.w800,
                     ),
@@ -585,7 +585,7 @@ class _TableCardState extends State<_TableCard>
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         color: DanColors.brand,
-                        fontFamily: 'JetBrains Mono',
+                        fontFamily: 'packages/dandpak_core/JetBrains Mono',
                         fontSize: 11,
                         fontWeight: FontWeight.w700,
                       ),

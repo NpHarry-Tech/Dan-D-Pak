@@ -986,7 +986,7 @@ class _SelfOrderMenuScreenState extends State<SelfOrderMenuScreen> {
                                         Opacity(
                                           opacity: 0.55,
                                           child: Image.asset(
-                                            'assets/brand/DanOnLogo.png',
+                                            'packages/dandpak_core/assets/brand/DanOnLogo.png',
                                             width: 140,
                                             fit: BoxFit.contain,
                                             errorBuilder: (_, __, ___) => Icon(

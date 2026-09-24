@@ -508,7 +508,7 @@ class _PosScreenState extends State<PosScreen> {
                             subtitle: Text(_vnd(item.totalPrice),
                                 style: TextStyle(
                                     color: DanColors.brand,
-                                    fontFamily: 'JetBrains Mono')),
+                                    fontFamily: 'packages/dandpak_core/JetBrains Mono')),
                             onChanged: (v) => setModalState(() {
                               if (v == true) {
                                 selected.add(item.orderItemId);

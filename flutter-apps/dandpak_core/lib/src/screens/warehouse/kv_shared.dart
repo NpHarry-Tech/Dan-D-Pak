@@ -660,7 +660,7 @@ class _KvItemSearchFieldState extends State<KvItemSearchField> {
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: TextStyle(
-                                  fontFamily: 'JetBrains Mono',
+                                  fontFamily: 'packages/dandpak_core/JetBrains Mono',
                                   fontSize: 11.5,
                                   fontWeight: FontWeight.w700,
                                   color: DanColors.brand)),

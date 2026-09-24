@@ -95,7 +95,7 @@ class _AppLoadingViewState extends State<AppLoadingView>
                 );
               },
               child: Image.asset(
-                'assets/brand/DanOnLogo.png',
+                'packages/dandpak_core/assets/brand/DanOnLogo.png',
                 height: 68,
                 fit: BoxFit.contain,
                 errorBuilder: (_, __, ___) => Text('Dan-D Pak',

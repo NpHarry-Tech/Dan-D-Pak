@@ -1086,7 +1086,7 @@ class _PhoneNotifySettingsScreenState extends State<PhoneNotifySettingsScreen> {
   Future<List<Map<String, dynamic>>> _napKhoAm() async {
     try {
       final raw = await rootBundle
-          .loadString('assets/brand/sounds/notifications/catalog.json');
+          .loadString('packages/dandpak_core/assets/brand/sounds/notifications/catalog.json');
       final json = jsonDecode(raw);
       if (json is Map && json['sounds'] is List) {
         final ds = (json['sounds'] as List)

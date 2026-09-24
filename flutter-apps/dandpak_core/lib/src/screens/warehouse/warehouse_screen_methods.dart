@@ -634,7 +634,7 @@ extension _WarehouseScreenMethods on _WarehouseScreenState {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                      fontFamily: 'JetBrains Mono',
+                      fontFamily: 'packages/dandpak_core/JetBrains Mono',
                       fontSize: 12,
                       fontWeight: FontWeight.w700,
                       color: DanColors.brand)),
@@ -1356,7 +1356,7 @@ extension _WarehouseScreenMethods on _WarehouseScreenState {
                     Text(
                         '#${_s(d['code']).isEmpty ? _s(d['id']) : _s(d['code'])}',
                         style: TextStyle(
-                            fontFamily: 'JetBrains Mono',
+                            fontFamily: 'packages/dandpak_core/JetBrains Mono',
                             fontWeight: FontWeight.w800,
                             color: DanColors.brand)),
                     Text(

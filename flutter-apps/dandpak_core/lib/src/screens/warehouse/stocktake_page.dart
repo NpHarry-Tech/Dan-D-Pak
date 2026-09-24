@@ -330,7 +330,7 @@ class _StocktakePageState extends State<StocktakePage> {
                   width: 116,
                   child: Text(kvs(r['code']).isEmpty ? id : kvs(r['code']),
                       style: TextStyle(
-                          fontFamily: 'JetBrains Mono',
+                          fontFamily: 'packages/dandpak_core/JetBrains Mono',
                           fontSize: 12,
                           fontWeight: FontWeight.w800,
                           color: DanColors.brand)),
@@ -406,7 +406,7 @@ class _StocktakePageState extends State<StocktakePage> {
                   children: [
                     Text(kvs(d['code']).isEmpty ? kvs(d['id']) : kvs(d['code']),
                         style: TextStyle(
-                            fontFamily: 'JetBrains Mono',
+                            fontFamily: 'packages/dandpak_core/JetBrains Mono',
                             fontSize: 15,
                             fontWeight: FontWeight.w900,
                             color: DanColors.text)),
@@ -471,7 +471,7 @@ class _StocktakePageState extends State<StocktakePage> {
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
                                     style: TextStyle(
-                                        fontFamily: 'JetBrains Mono',
+                                        fontFamily: 'packages/dandpak_core/JetBrains Mono',
                                         fontSize: 11.5,
                                         color: DanColors.brand)),
                               ),

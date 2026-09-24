@@ -456,7 +456,7 @@ class _CashReimbursementDialogState extends State<CashReimbursementDialog> {
                     style: TextStyle(
                         fontSize: 17,
                         fontWeight: FontWeight.w900,
-                        fontFamily: 'JetBrains Mono',
+                        fontFamily: 'packages/dandpak_core/JetBrains Mono',
                         color: color)),
               ],
             ),
@@ -488,7 +488,7 @@ class _CashReimbursementDialogState extends State<CashReimbursementDialog> {
                   style: TextStyle(
                       fontSize: 17,
                       fontWeight: FontWeight.w900,
-                      fontFamily: 'JetBrains Mono',
+                      fontFamily: 'packages/dandpak_core/JetBrains Mono',
                       color: Color(0xFF047857))),
             ],
           ),
@@ -624,7 +624,7 @@ class _CashReimbursementDialogState extends State<CashReimbursementDialog> {
             ),
             Text(fmtMoney(_num(e['outstanding_amount'])),
                 style: TextStyle(
-                    fontFamily: 'JetBrains Mono',
+                    fontFamily: 'packages/dandpak_core/JetBrains Mono',
                     fontWeight: FontWeight.w800,
                     fontSize: 12.5,
                     color: DanColors.late)),

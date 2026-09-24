@@ -365,7 +365,7 @@ class _LauncherScreenState extends State<LauncherScreen> {
                           child: Column(
                             children: [
                               Image.asset(
-                                'assets/brand/logo.png',
+                                'packages/dandpak_core/assets/brand/logo.png',
                                 width: 390,
                                 fit: BoxFit.contain,
                               ),

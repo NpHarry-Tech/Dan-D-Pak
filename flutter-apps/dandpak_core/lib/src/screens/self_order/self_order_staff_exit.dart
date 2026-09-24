@@ -107,7 +107,7 @@ class _SelfOrderStaffLogoState extends State<SelfOrderStaffLogo> {
         width: 44,
         height: 44,
         child: Image.asset(
-          'assets/brand/logo.png',
+          'packages/dandpak_core/assets/brand/logo.png',
           fit: BoxFit.contain,
           // Nếu thiếu asset thì vẫn hiện ô chữ D (không để trống/hỏng UI).
           errorBuilder: (_, __, ___) => Container(

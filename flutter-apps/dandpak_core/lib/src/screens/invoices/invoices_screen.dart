@@ -364,7 +364,7 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
                           Text(
                             'Bill $billCode',
                             style: TextStyle(
-                                fontFamily: 'JetBrains Mono',
+                                fontFamily: 'packages/dandpak_core/JetBrains Mono',
                                 fontWeight: FontWeight.w900,
                                 color: DanColors.brand),
                           ),
@@ -374,7 +374,7 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
                                   ? t('(chưa cấp số)')
                                   : '#${_s(inv['invoice_no'])}',
                               style: TextStyle(
-                                  fontFamily: 'JetBrains Mono',
+                                  fontFamily: 'packages/dandpak_core/JetBrains Mono',
                                   fontWeight: FontWeight.w800,
                                   color: DanColors.brand)),
                           SizedBox(width: 8),
@@ -899,7 +899,7 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
                       ? t('Không tải được nội dung bill')
                       : stripReceiptControlTokens(receiptText),
                   style: const TextStyle(
-                      fontFamily: 'JetBrains Mono', height: 1.35),
+                      fontFamily: 'packages/dandpak_core/JetBrains Mono', height: 1.35),
                 ),
               ),
             ),

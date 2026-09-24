@@ -184,7 +184,7 @@ class _MenuPickCard extends StatelessWidget {
             price,
             style: TextStyle(
               color: DanColors.brand,
-              fontFamily: 'JetBrains Mono',
+              fontFamily: 'packages/dandpak_core/JetBrains Mono',
               fontSize: 12,
               fontWeight: FontWeight.w800,
             ),

@@ -628,7 +628,7 @@ class _HistoryRow extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       color: DanColors.brand,
-                      fontFamily: 'JetBrains Mono',
+                      fontFamily: 'packages/dandpak_core/JetBrains Mono',
                       fontWeight: FontWeight.w900,
                     ),
                   ),

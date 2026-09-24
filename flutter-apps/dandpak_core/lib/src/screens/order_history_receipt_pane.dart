@@ -134,7 +134,7 @@ class _ReceiptPaneState extends State<_ReceiptPane> {
                     Text(
                       '#${_s(widget.receipt['bill_no'] ?? widget.receipt['number'])}',
                       style: TextStyle(
-                        fontFamily: 'JetBrains Mono',
+                        fontFamily: 'packages/dandpak_core/JetBrains Mono',
                         fontSize: 16,
                         color: DanColors.brand,
                         fontWeight: FontWeight.w900,
@@ -188,7 +188,7 @@ class _ReceiptPaneState extends State<_ReceiptPane> {
                       Text('Mã đối soát CK: ${_s(row['reference'])}',
                           style: TextStyle(
                               fontWeight: FontWeight.w800,
-                              fontFamily: 'JetBrains Mono',
+                              fontFamily: 'packages/dandpak_core/JetBrains Mono',
                               color: DanColors.text)),
                       SizedBox(width: 6),
                       IconButton(

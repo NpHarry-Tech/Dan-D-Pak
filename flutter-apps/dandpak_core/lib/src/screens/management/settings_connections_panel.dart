@@ -516,7 +516,7 @@ class _ConnectionsPanelState extends State<ConnectionsPanel> {
             t('Địa chỉ đo (endpoint)'),
             Text(target.isEmpty ? '—' : '$target/health',
                 style: TextStyle(
-                    fontFamily: 'JetBrains Mono',
+                    fontFamily: 'packages/dandpak_core/JetBrains Mono',
                     fontSize: 12,
                     fontWeight: FontWeight.w600,
                     color: DanColors.muted))),
@@ -525,7 +525,7 @@ class _ConnectionsPanelState extends State<ConnectionsPanel> {
             t('Địa chỉ Server (IP LAN)'),
             Text(ips.isEmpty ? '—' : ips.join(', '),
                 style: TextStyle(
-                    fontFamily: 'JetBrains Mono',
+                    fontFamily: 'packages/dandpak_core/JetBrains Mono',
                     fontSize: 12.5,
                     fontWeight: FontWeight.w700,
                     color: DanColors.brand))),

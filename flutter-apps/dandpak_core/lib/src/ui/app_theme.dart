@@ -82,7 +82,7 @@ class DanTheme {
       useMaterial3: true,
       brightness: Brightness.light,
       scaffoldBackgroundColor: DanColors.bg,
-      fontFamily: 'Be Vietnam Pro',
+      fontFamily: 'packages/dandpak_core/Be Vietnam Pro',
       colorScheme: ColorScheme.fromSeed(
         seedColor: DanColors.brand,
         brightness: Brightness.light,
@@ -104,7 +104,7 @@ class DanTheme {
       textTheme: base.textTheme.apply(
         bodyColor: DanColors.text,
         displayColor: DanColors.text,
-        fontFamily: 'Be Vietnam Pro',
+        fontFamily: 'packages/dandpak_core/Be Vietnam Pro',
       ),
       cardTheme: CardThemeData(
         color: DanColors.surface,

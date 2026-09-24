@@ -390,7 +390,7 @@ class _BillEmpty extends StatelessWidget {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Image.asset(
-              'assets/brand/DanOnLogo.png',
+              'packages/dandpak_core/assets/brand/DanOnLogo.png',
               width: 110,
               fit: BoxFit.contain,
               errorBuilder: (_, __, ___) => SizedBox(width: 110, height: 62),
@@ -510,7 +510,7 @@ class _BillItemRow extends StatelessWidget {
                           money(item.listedUnitPrice * item.qty),
                           style: TextStyle(
                             color: DanColors.faint,
-                            fontFamily: 'JetBrains Mono',
+                            fontFamily: 'packages/dandpak_core/JetBrains Mono',
                             fontSize: 10.5,
                             decoration: TextDecoration.lineThrough,
                           ),
@@ -523,7 +523,7 @@ class _BillItemRow extends StatelessWidget {
                           color: item.hasPriceOverride
                               ? DanColors.brand
                               : DanColors.muted,
-                          fontFamily: 'JetBrains Mono',
+                          fontFamily: 'packages/dandpak_core/JetBrains Mono',
                           fontSize: 12,
                           fontWeight: FontWeight.w600,
                         ),
@@ -757,7 +757,7 @@ class _BillFooter extends StatelessWidget {
                 money(total),
                 style: TextStyle(
                   color: DanColors.brand,
-                  fontFamily: 'JetBrains Mono',
+                  fontFamily: 'packages/dandpak_core/JetBrains Mono',
                   fontSize: 18,
                   fontWeight: FontWeight.w800,
                 ),
@@ -959,7 +959,7 @@ class _BillTotalLine extends StatelessWidget {
             value,
             style: TextStyle(
               color: DanColors.muted,
-              fontFamily: 'JetBrains Mono',
+              fontFamily: 'packages/dandpak_core/JetBrains Mono',
               fontSize: 12,
             ),
           ),

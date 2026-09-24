@@ -121,7 +121,7 @@ class _LoginGateScreenState extends State<LoginGateScreen> {
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             Image.asset(
-                              'assets/brand/DanOnLogo.png',
+                              'packages/dandpak_core/assets/brand/DanOnLogo.png',
                               width: 78,
                               fit: BoxFit.contain,
                             ),
@@ -450,7 +450,7 @@ class _PinDialogState extends State<_PinDialog> {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     if (phone) ...[
-                      Image.asset('assets/brand/DanOnLogo.png',
+                      Image.asset('packages/dandpak_core/assets/brand/DanOnLogo.png',
                           width: 66, fit: BoxFit.contain),
                       const SizedBox(height: 18),
                     ] else
@@ -759,7 +759,7 @@ class _PinKey extends StatelessWidget {
         style: TextStyle(
           fontSize: 25,
           fontWeight: FontWeight.w700,
-          fontFamily: 'JetBrains Mono',
+          fontFamily: 'packages/dandpak_core/JetBrains Mono',
         ),
       ),
     );

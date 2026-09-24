@@ -406,7 +406,7 @@ class _PrinterCard extends StatelessWidget {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
-                  fontFamily: 'JetBrains Mono',
+                  fontFamily: 'packages/dandpak_core/JetBrains Mono',
                   fontSize: 11,
                   color: DanColors.muted)),
           SizedBox(height: 4),

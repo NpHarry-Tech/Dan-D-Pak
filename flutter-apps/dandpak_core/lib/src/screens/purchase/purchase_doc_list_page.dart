@@ -546,7 +546,7 @@ class _PurchaseDocListPageState extends State<PurchaseDocListPage> {
                   width: 122,
                   child: Text(kvs(r['code']).isEmpty ? id : kvs(r['code']),
                       style: TextStyle(
-                          fontFamily: 'JetBrains Mono',
+                          fontFamily: 'packages/dandpak_core/JetBrains Mono',
                           fontSize: 12,
                           fontWeight: FontWeight.w800,
                           color: DanColors.brand)),
@@ -623,7 +623,7 @@ class _PurchaseDocListPageState extends State<PurchaseDocListPage> {
             children: [
               Text(kvs(r['code']),
                   style: TextStyle(
-                      fontFamily: 'JetBrains Mono',
+                      fontFamily: 'packages/dandpak_core/JetBrains Mono',
                       fontSize: 15,
                       fontWeight: FontWeight.w900)),
               SizedBox(width: 8),
@@ -681,7 +681,7 @@ class _PurchaseDocListPageState extends State<PurchaseDocListPage> {
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: TextStyle(
-                                  fontFamily: 'JetBrains Mono',
+                                  fontFamily: 'packages/dandpak_core/JetBrains Mono',
                                   fontSize: 11.5,
                                   color: DanColors.brand)),
                         ),

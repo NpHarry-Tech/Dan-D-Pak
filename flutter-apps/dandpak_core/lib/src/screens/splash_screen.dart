@@ -14,7 +14,7 @@ class SplashScreen extends StatelessWidget {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Image.asset(
-              'assets/brand/DanOnLogo.png',
+              'packages/dandpak_core/assets/brand/DanOnLogo.png',
               width: 240,
               height: 240,
               fit: BoxFit.contain,

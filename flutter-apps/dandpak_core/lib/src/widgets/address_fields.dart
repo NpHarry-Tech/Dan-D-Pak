@@ -30,7 +30,7 @@ class VnAddressBook {
 
   static Future<VnAddressBook> load() async {
     final raw =
-        await rootBundle.loadString('assets/data/vn_admin_units_2026.json');
+        await rootBundle.loadString('packages/dandpak_core/assets/data/vn_admin_units_2026.json');
     final json = jsonDecode(raw) as Map<String, dynamic>;
     final provinces = (json['provinces'] as List? ?? [])
         .whereType<Map>()

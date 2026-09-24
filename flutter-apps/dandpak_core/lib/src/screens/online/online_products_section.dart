@@ -577,7 +577,7 @@ class _OnlineProductsSectionState extends State<OnlineProductsSection> {
                 style: const TextStyle(
                     fontSize: 11,
                     color: DanColors.muted,
-                    fontFamily: 'JetBrains Mono'),
+                    fontFamily: 'packages/dandpak_core/JetBrains Mono'),
               ),
             ],
           ),

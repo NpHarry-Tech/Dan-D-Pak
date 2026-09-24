@@ -419,7 +419,7 @@ class _CustomerDisplayScreenState extends State<CustomerDisplayScreen> {
         mainAxisSize: MainAxisSize.min,
         children: [
           Image.asset(
-            'assets/brand/DanOnLogo.png',
+            'packages/dandpak_core/assets/brand/DanOnLogo.png',
             height: 180,
             fit: BoxFit.contain,
             errorBuilder: (_, __, ___) =>

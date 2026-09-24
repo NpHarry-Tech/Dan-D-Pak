@@ -610,7 +610,7 @@ class _OnlineOrdersSectionState extends State<OnlineOrdersSection> {
                                   fontWeight: FontWeight.w700,
                                   color: DanColors.brand,
                                   decoration: TextDecoration.underline,
-                                  fontFamily: 'JetBrains Mono')),
+                                  fontFamily: 'packages/dandpak_core/JetBrains Mono')),
                         ]),
                       ),
                     ],
@@ -724,7 +724,7 @@ class _OnlineOrdersSectionState extends State<OnlineOrdersSection> {
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
-                    fontFamily: 'JetBrains Mono',
+                    fontFamily: 'packages/dandpak_core/JetBrains Mono',
                     fontSize: 11.5,
                     fontWeight: FontWeight.w700,
                     color: DanColors.text)),

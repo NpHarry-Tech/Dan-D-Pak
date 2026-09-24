@@ -1801,7 +1801,7 @@ extension _PrintDesignerMethods on _PrintTemplateDesignerState {
                   SizedBox(height: 4),
                   Text(e.value,
                       style: TextStyle(
-                          fontFamily: 'JetBrains Mono',
+                          fontFamily: 'packages/dandpak_core/JetBrains Mono',
                           fontSize: 12.5,
                           height: 1.5)),
                   SizedBox(height: 12),

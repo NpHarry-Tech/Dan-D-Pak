@@ -147,7 +147,7 @@ class _BranchSelectScreenState extends State<BranchSelectScreen> {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Image.asset(
-                          'assets/brand/logo.png',
+                          'packages/dandpak_core/assets/brand/logo.png',
                           width: 300,
                           fit: BoxFit.contain,
                         ),

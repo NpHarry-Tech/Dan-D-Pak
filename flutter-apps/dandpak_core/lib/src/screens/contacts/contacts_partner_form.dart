@@ -533,7 +533,7 @@ class _PartnerFormState extends State<_PartnerForm> {
                           child: RichText(
                             text: TextSpan(
                               style: TextStyle(
-                                fontFamily: 'Be Vietnam Pro',
+                                fontFamily: 'packages/dandpak_core/Be Vietnam Pro',
                                 fontSize: 13,
                                 color: DanColors.text,
                               ),
@@ -566,7 +566,7 @@ class _PartnerFormState extends State<_PartnerForm> {
                             child: Text(
                               t('Tự động chọn xuất hóa đơn VAT khi thanh toán'),
                               style: TextStyle(
-                                fontFamily: 'Be Vietnam Pro',
+                                fontFamily: 'packages/dandpak_core/Be Vietnam Pro',
                                 fontSize: 13,
                                 color: DanColors.text,
                               ),

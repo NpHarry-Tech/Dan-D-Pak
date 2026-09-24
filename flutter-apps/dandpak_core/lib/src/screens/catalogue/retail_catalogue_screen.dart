@@ -533,7 +533,7 @@ class _RetailCatalogueScreenState extends State<RetailCatalogueScreen> {
             borderRadius: BorderRadius.circular(8),
             child: Padding(
               padding: const EdgeInsets.all(6),
-              child: Image.asset('assets/brand/DanOnLogo.png',
+              child: Image.asset('packages/dandpak_core/assets/brand/DanOnLogo.png',
                   height: 34,
                   errorBuilder: (_, __, ___) => const Icon(Icons.storefront,
                       size: 30, color: DanColors.brand)),

@@ -213,7 +213,7 @@ class _WarehouseDocPageState extends State<WarehouseDocPage> {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                          fontFamily: 'JetBrains Mono',
+                          fontFamily: 'packages/dandpak_core/JetBrains Mono',
                           fontSize: 12,
                           fontWeight: FontWeight.w800,
                           color: DanColors.brand)),
@@ -827,7 +827,7 @@ class _WarehouseDocFormPageState extends State<WarehouseDocFormPage> {
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                    fontFamily: 'JetBrains Mono',
+                    fontFamily: 'packages/dandpak_core/JetBrains Mono',
                     fontSize: 11.5,
                     fontWeight: FontWeight.w700,
                     color: DanColors.brand)),

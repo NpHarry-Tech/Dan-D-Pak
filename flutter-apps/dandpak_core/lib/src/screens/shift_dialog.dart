@@ -513,7 +513,7 @@ class _ShiftDialogState extends State<ShiftDialog> {
                       style: TextStyle(
                           fontSize: 17,
                           fontWeight: FontWeight.w900,
-                          fontFamily: 'JetBrains Mono'),
+                          fontFamily: 'packages/dandpak_core/JetBrains Mono'),
                     ),
                   ],
                 ),
@@ -750,7 +750,7 @@ class _DenomField extends StatelessWidget {
               style: TextStyle(
                   fontSize: 12,
                   color: DanColors.muted,
-                  fontFamily: 'JetBrains Mono',
+                  fontFamily: 'packages/dandpak_core/JetBrains Mono',
                   fontWeight: FontWeight.w700)),
           SizedBox(height: 6),
           SizedBox(
@@ -765,7 +765,7 @@ class _DenomField extends StatelessWidget {
                 if (controller.text == '0') controller.clear();
               },
               style: TextStyle(
-                  fontFamily: 'JetBrains Mono',
+                  fontFamily: 'packages/dandpak_core/JetBrains Mono',
                   fontWeight: FontWeight.w800,
                   fontSize: 15),
               decoration: InputDecoration(
@@ -813,7 +813,7 @@ class _Brow extends StatelessWidget {
           Text(value,
               style: TextStyle(
                 fontSize: bold ? 14 : 13,
-                fontFamily: 'JetBrains Mono',
+                fontFamily: 'packages/dandpak_core/JetBrains Mono',
                 fontWeight: bold ? FontWeight.w900 : FontWeight.w700,
                 color: valueColor ?? (bold ? DanColors.text : DanColors.text),
               )),
