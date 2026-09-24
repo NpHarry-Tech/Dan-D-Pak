@@ -76,6 +76,7 @@ export function registerPaymentRoutes(api, {
       promotions: transactionalPromotions,
       customer: req.body.customer || null,
       invoice_customer: req.body.invoice_customer || null,
+      issue_einvoice: req.body.issue_einvoice === true,
       note: req.body.note || '',
       cashier: req.user?.name || req.user?.username || '',
       idempotency_key: req.body.idempotency_key || req.headers['idempotency-key'] || null,

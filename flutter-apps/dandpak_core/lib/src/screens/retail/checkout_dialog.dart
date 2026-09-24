@@ -648,14 +648,14 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
     };
   }
 
-  Future<void> _confirm() async {
+  Future<void> _confirm({bool issueEinvoice = false}) async {
     // ONLINE-ONLY: mất kết nối máy chủ ⇒ KHÔNG thu tiền/chốt bill local, KHÔNG
     // queue thanh toán. Server là nguồn dữ liệu duy nhất.
     if (!ensureOnlineForMutation(context, action: t('Thanh toán'))) return;
     if (_lines.isEmpty && _pendingAmount > 0) _addLine(_pendingAmount);
     Map<String, dynamic>? invoiceCustomer;
     try {
-      invoiceCustomer = _invoicePayload();
+      invoiceCustomer = issueEinvoice ? _invoicePayload() : null;
     } catch (e) {
       _toast(e.toString().replaceFirst('Exception: ', ''), error: true);
       return;
@@ -679,6 +679,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
       'payments': [for (final l in _lines) l.toJson()],
       'customer': widget.customer?.toCheckoutCustomer(),
       'customer_id': widget.customer?.id,
+      'issue_einvoice': issueEinvoice,
       'invoice_customer': invoiceCustomer,
       'manual_discount': _adjustment.round(),
       'note': _noteCtrl.text.trim(),
@@ -719,6 +720,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                 'selected_combos': widget.selectedCombos,
                 'manual_discount': _adjustment.round(),
                 'customer': widget.customer?.toCheckoutCustomer(),
+                'issue_einvoice': issueEinvoice,
                 'invoice_customer': invoiceCustomer,
                 'note': _noteCtrl.text.trim(),
                 'idempotency_key': _clientRequestId,
@@ -1405,17 +1407,24 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
             child: Text(t('Hủy')),
           ),
           Spacer(),
+          OutlinedButton.icon(
+            onPressed: _paying ? null : () => _confirm(),
+            style: OutlinedButton.styleFrom(minimumSize: Size(160, 46)),
+            icon: Icon(Icons.receipt_long_outlined),
+            label: Text(t('In hóa đơn')),
+          ),
+          SizedBox(width: 8),
           FilledButton.icon(
-            onPressed: _paying ? null : _confirm,
-            style: FilledButton.styleFrom(minimumSize: Size(180, 46)),
+            onPressed: _paying ? null : () => _confirm(issueEinvoice: true),
+            style: FilledButton.styleFrom(minimumSize: Size(160, 46)),
             icon: _paying
                 ? SizedBox(
                     width: 18,
                     height: 18,
                     child: CircularProgressIndicator(
                         strokeWidth: 2, color: Colors.white))
-                : Icon(Icons.payments_outlined),
-            label: Text(t('Xác nhận ${Fmt.money(_payable)}')),
+                : Icon(Icons.request_quote_outlined),
+            label: Text(t('In VAT')),
           ),
         ],
       ),

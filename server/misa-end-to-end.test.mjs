@@ -264,6 +264,7 @@ function banMotDon(ma) {
     items: [{ sku_id: ma, qty: 1 }],
     payments: [{ method: 'cash', amount: 108000 }],
     branch_id: BR, cashier: 'test', device_id: 'dev_test',
+    issue_einvoice: true,
   });
 }
 

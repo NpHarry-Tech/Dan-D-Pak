@@ -268,8 +268,9 @@ test('partial payments are idempotent and deduct stock only when fully settled',
   assert.equal(ledger.items[0].paid_total, 10000);
   const detail = Invoices.ledgerDetail(first.order_id, 'sala');
   assert.equal(detail.payment_history.length, 2);
-  assert.ok(detail.timeline.some(row => row.action === 'SNAPSHOT_CREATED'));
   assert.equal(detail.item_snapshot[0].name, 'Partial SKU');
+  assert.equal(db.prepare(`SELECT COUNT(*) n FROM sale_snapshots WHERE order_id=?`).get(first.order_id).n, 1);
+  assert.equal(db.prepare(`SELECT COUNT(*) n FROM e_invoices WHERE order_id=?`).get(first.order_id).n, 0);
 });
 
 test('payment fail phải rollback voucher và promo metadata cùng transaction', () => {
@@ -307,6 +308,7 @@ test('one paid order cannot be split across multiple active e-invoices', () => {
     client_request_id: 'invoice_split_checkout',
     branch_id: 'sala',
     cashier: 'Tester',
+    issue_einvoice: true,
   });
   assert.equal(db.prepare(`SELECT COUNT(*) n FROM e_invoices WHERE order_id=?`).get(receipt.order_id).n, 1);
   assert.throws(() => Einvoices.createInvoiceRequest(

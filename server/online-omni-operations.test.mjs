@@ -54,7 +54,7 @@ test('connector don web Haravan dung read model hien co va khoa snapshot khi da 
   assert.ok(canonical.paid_at);
   assert.equal(db.prepare(`SELECT COUNT(*) n FROM payments WHERE order_id=?`).get(first.internal_order_id).n, 1);
   assert.equal(db.prepare(`SELECT COUNT(*) n FROM sale_snapshots WHERE order_id=?`).get(first.internal_order_id).n, 1);
-  assert.equal(db.prepare(`SELECT COUNT(*) n FROM e_invoices WHERE order_id=?`).get(first.internal_order_id).n, 1);
+  assert.equal(db.prepare(`SELECT COUNT(*) n FROM e_invoices WHERE order_id=?`).get(first.internal_order_id).n, 0);
 
   Haravan.syncHaravanOrder({
     id: 9001,
@@ -93,7 +93,7 @@ test('don web da thanh toan di qua kho, bao cao va hoa don dung mot lan', () => 
   assert.equal(db.prepare(`SELECT stock FROM skus WHERE id='sku_real'`).get().stock, beforeStock - 2);
   assert.equal(db.prepare(`SELECT COUNT(*) n FROM stock_movements WHERE ref=? AND type='sale'`).get(result.internal_order_id).n, 1);
   assert.equal(db.prepare(`SELECT COUNT(*) n FROM payments WHERE order_id=?`).get(result.internal_order_id).n, 1);
-  assert.equal(db.prepare(`SELECT COUNT(*) n FROM e_invoices WHERE order_id=?`).get(result.internal_order_id).n, 1);
+  assert.equal(db.prepare(`SELECT COUNT(*) n FROM e_invoices WHERE order_id=?`).get(result.internal_order_id).n, 0);
   Haravan.syncHaravanOrder({
     id: 9002, order_number: 'WEB9002', financial_status: 'paid', total_price: 198000,
     line_items: [{ id: 2, product_id: 501, variant_id: 601, sku: 'WEB-001', name: 'Retry', quantity: 2, price: 99000 }],

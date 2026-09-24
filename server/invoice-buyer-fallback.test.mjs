@@ -31,6 +31,7 @@ test('khach yeu cau HD va co MST + ten + dia chi -> nguoi mua HD = CONG TY', () 
     items: [{ sku_id: 'sku_buyer', qty: 1 }],
     payments: [{ method: 'cash', amount: 20000 }],
     branch_id: 'sala', cashier: 'Admin', client_request_id: 'reqCty',
+    issue_einvoice: true,
     invoice_customer: { invoice_request: true, name: 'Nguyen Phuc Huy', company: 'Cong ty ABC', tax_code: '0316756674', address: '1 Nguyen Hue', email: 'huy@abc.vn', phone: '0363045747' },
   });
   const b = buyerOf(r.order_id);
@@ -44,6 +45,7 @@ test('khach chi duoc gan vao don nhung khong yeu cau HD -> consumer', () => {
     items: [{ sku_id: 'sku_buyer', qty: 1 }],
     payments: [{ method: 'cash', amount: 20000 }],
     branch_id: 'sala', cashier: 'Admin', client_request_id: 'reqCaNhan',
+    issue_einvoice: true,
     customer: { name: 'Tran Thi B', phone: '0900000000' },
   });
   const b = buyerOf(r.order_id);
@@ -56,6 +58,7 @@ test('KHONG khach -> consumer nhu cu', () => {
     items: [{ sku_id: 'sku_buyer', qty: 1 }],
     payments: [{ method: 'cash', amount: 20000 }],
     branch_id: 'sala', cashier: 'Admin', client_request_id: 'reqWalkin',
+    issue_einvoice: true,
   });
   const b = buyerOf(r.order_id);
   assert.equal(b.customer_mode, 'WALK_IN');
@@ -67,6 +70,7 @@ test('khach yeu cau HD cong ty du MST + ten + dia chi nhung thieu email van hop 
     items: [{ sku_id: 'sku_buyer', qty: 1 }],
     payments: [{ method: 'cash', amount: 20000 }],
     branch_id: 'sala', cashier: 'Admin', client_request_id: 'reqNoEmail',
+    issue_einvoice: true,
     invoice_customer: { invoice_request: true, name: 'Cong ty X', company: 'Cong ty X', tax_code: '0316756674', address: '2 Le Loi' },
   });
   // Thu tien phai thanh cong (khong throw), va van tao duoc ban ghi HDDT.

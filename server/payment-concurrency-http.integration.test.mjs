@@ -198,7 +198,7 @@ test('50 HTTP payments cùng key qua hai server → một payment/outbox/invoice
   const responses = await Promise.all(Array.from({ length: 50 }, (_, index) =>
     request(BASES[index % 2], '/api/orders/order_same_key/pay', {
       method: 'POST', key: 'same-http-payment',
-      body: { lines: [{ method: 'cash', amount: 50000 }] },
+      body: { lines: [{ method: 'cash', amount: 50000 }], issue_einvoice: true },
     })));
   assertSplitAcrossBothProcesses(responses);
   assert.ok(responses.every(response => response.status === 200),
@@ -216,7 +216,7 @@ test('50 HTTP payments khác key qua hai server → một success, còn lại 40
   const responses = await Promise.all(Array.from({ length: 50 }, (_, index) =>
     request(BASES[index % 2], '/api/orders/order_different_keys/pay', {
       method: 'POST', key: `different-http-payment-${index}`,
-      body: { lines: [{ method: 'cash', amount: 50000 }] },
+      body: { lines: [{ method: 'cash', amount: 50000 }], issue_einvoice: true },
     })));
   assertSplitAcrossBothProcesses(responses);
   assert.equal(responses.filter(response => response.status === 200).length, 1);
@@ -239,6 +239,7 @@ test('Retail 50 HTTP retries qua hai server → một order/payment/stock mutati
         client_request_id: 'same-retail-checkout',
         items: [{ sku_id: 'sku_concurrency', qty: 1 }],
         payments: [{ method: 'cash', amount: 20000 }],
+        issue_einvoice: true,
       },
     })));
   assertSplitAcrossBothProcesses(responses);

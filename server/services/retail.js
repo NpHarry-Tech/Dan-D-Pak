@@ -83,7 +83,7 @@ export function priceCart({ items, voucher_id = null, customer = null, customer_
 }
 
 // lines (cart): [{sku_id, qty, lot_id}]; payments: [{method, amount, reference}]
-export function checkout({ items, payments, voucher_id = null, customer = null, customer_id = null, invoice_customer = null, note = '', manual_discount = 0, branch_id = 'sala', cashier = '', client_request_id = null, device_id = '', selected_combos = null, cart_slot = null, cart_version = null }) {
+export function checkout({ items, payments, voucher_id = null, customer = null, customer_id = null, invoice_customer = null, issue_einvoice = false, note = '', manual_discount = 0, branch_id = 'sala', cashier = '', client_request_id = null, device_id = '', selected_combos = null, cart_slot = null, cart_version = null }) {
   if (!items?.length) throw new Error('Giỏ hàng trống');
   const requestId = String(client_request_id || '').trim();
   if (requestId.length > 128) throw new Error('client_request_id tối đa 128 ký tự');
@@ -121,6 +121,7 @@ export function checkout({ items, payments, voucher_id = null, customer = null, 
             cashier,
             idempotency_key: requestId,
             device_id,
+            issue_einvoice,
           }, branch_id);
           replay.idempotent_replay = true;
           db.prepare('COMMIT').run();
@@ -206,6 +207,7 @@ export function checkout({ items, payments, voucher_id = null, customer = null, 
       cashier,
       customer: snap,
       invoice_customer,
+      issue_einvoice,
       note,
       skipTransaction: true,
       discount_breakdown: discountBreakdown,

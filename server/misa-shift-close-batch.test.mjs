@@ -93,6 +93,7 @@ function banMotDon(sku) {
     items: [{ sku_id: sku, qty: 1 }],
     payments: [{ method: 'cash', amount: 108000 }],
     branch_id: BR, cashier: 'test', device_id: 'dev_test',
+    issue_einvoice: true,
   });
 }
 

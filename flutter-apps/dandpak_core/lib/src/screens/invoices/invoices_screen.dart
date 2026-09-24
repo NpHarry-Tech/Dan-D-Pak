@@ -532,6 +532,12 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
                       icon: const Icon(Icons.open_in_new, size: 16),
                       label: Text(t('Tra cứu online')),
                     ),
+                  if (actions.contains('ISSUE'))
+                    FilledButton.icon(
+                      onPressed: () => _issueVat(orderId, buyer),
+                      icon: const Icon(Icons.request_quote_outlined, size: 16),
+                      label: Text(t('Xuất VAT')),
+                    ),
                   if (eInvoiceId.isNotEmpty && actions.contains('SEND_EMAIL'))
                     OutlinedButton.icon(
                       onPressed: () =>
@@ -901,6 +907,85 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
         ),
       ),
     );
+  }
+
+  Future<void> _issueVat(String orderId, Map buyer) async {
+    final tax = TextEditingController(text: _s(buyer['tax_code']));
+    final name = TextEditingController(text: _s(buyer['name']));
+    final address = TextEditingController(text: _s(buyer['address']));
+    final email = TextEditingController(text: _s(buyer['email']));
+    try {
+      final ok = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: Text(t('Xuất VAT')),
+          content: SizedBox(
+            width: 420,
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              TextField(
+                  controller: tax,
+                  decoration: const InputDecoration(labelText: 'MST')),
+              TextField(
+                  controller: name,
+                  decoration: InputDecoration(labelText: t('Tên công ty'))),
+              TextField(
+                  controller: address,
+                  decoration: InputDecoration(labelText: t('Địa chỉ'))),
+              TextField(
+                  controller: email,
+                  decoration: const InputDecoration(labelText: 'Email')),
+            ]),
+          ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(dialogContext, false),
+                child: Text(t('Hủy'))),
+            FilledButton(
+                onPressed: () => Navigator.pop(dialogContext, true),
+                child: Text(t('Xuất VAT'))),
+          ],
+        ),
+      );
+      if (ok != true) return;
+      final taxCode = tax.text.replaceAll(RegExp(r'\D'), '');
+      if (taxCode.isNotEmpty &&
+          (!RegExp(r'^\d{10}(\d{3})?$').hasMatch(taxCode) ||
+              name.text.trim().isEmpty ||
+              address.text.trim().isEmpty)) {
+        if (mounted) {
+          appToast(context,
+              t('Cần đủ MST 10/13 số, tên công ty và địa chỉ để xuất VAT công ty'),
+              isError: true);
+        }
+        return;
+      }
+      await context.read<ApiService>().issueInvoice({
+        'order_id': orderId,
+        'customer': taxCode.isEmpty
+            ? <String, dynamic>{}
+            : {
+                'tax_code': taxCode,
+                'company': name.text.trim(),
+                'name': name.text.trim(),
+                'address': address.text.trim(),
+                'email': email.text.trim(),
+              },
+      });
+      if (mounted) {
+        appToast(context, t('Đã đưa hóa đơn VAT vào hàng đợi phát hành'));
+        await _load();
+      }
+    } catch (e) {
+      if (mounted) {
+        appToast(context, e.toString().replaceFirst('Exception: ', ''),
+            isError: true);
+      }
+    } finally {
+      tax.dispose();
+      name.dispose();
+      address.dispose();
+      email.dispose();
+    }
   }
 
   Future<void> _sendInvoiceEmail(String eInvoiceId, String prefillEmail) async {

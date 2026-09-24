@@ -103,6 +103,7 @@ api.post('/retail/checkout', guard('pay'), wrap((req) => {
     client_request_id: req.body?.client_request_id || req.headers['idempotency-key'],
     branch_id,
     cashier: req.user?.name || req.user?.username || '',
+    issue_einvoice: req.body?.issue_einvoice === true,
     // MÁY đang thu tiền → bill ra ở máy in của CHÍNH máy đó.
     //
     // Thiếu dòng này là lỗi làm bill không bao giờ tự in trên máy POS cầm tay:

@@ -3477,7 +3477,13 @@ const Map<String, String> viToEnMap = {
       'The invoice document is not a valid PDF',
   'Bridge in hóa đơn VAT đang chuẩn bị tài liệu Windows.':
       'The VAT invoice print bridge is preparing the Windows document.',
-  'In hóa đơn': 'Print invoice',
+  'In hóa đơn': 'Print receipt',
+  'In VAT': 'Issue VAT',
+  'Xuất VAT': 'Issue VAT',
+  'Cần đủ MST 10/13 số, tên công ty và địa chỉ để xuất VAT công ty':
+      'Enter a 10/13-digit tax code, company name, and address to issue a company VAT invoice.',
+  'Đã đưa hóa đơn VAT vào hàng đợi phát hành':
+      'VAT invoice has been queued for issuance.',
   'Mở trên trình duyệt': 'Open in browser',
   'Copy link': 'Copy link',
   'Đã copy link hóa đơn': 'Invoice link copied',

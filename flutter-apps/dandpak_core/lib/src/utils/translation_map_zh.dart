@@ -3231,7 +3231,12 @@ const Map<String, String> viToZhMap = {
   'Tài liệu hóa đơn không phải PDF hợp lệ': '发票文件不是有效的PDF',
   'Bridge in hóa đơn VAT đang chuẩn bị tài liệu Windows.':
       '增值税发票打印桥接程序正在准备 Windows 文档。',
-  'In hóa đơn': '打印发票',
+  'In hóa đơn': '打印账单',
+  'In VAT': '开具增值税发票',
+  'Xuất VAT': '开具增值税发票',
+  'Cần đủ MST 10/13 số, tên công ty và địa chỉ để xuất VAT công ty':
+      '开具公司增值税发票需填写10/13位税号、公司名称和地址。',
+  'Đã đưa hóa đơn VAT vào hàng đợi phát hành': '增值税发票已加入开具队列。',
   'Mở trên trình duyệt': '在浏览器中打开',
   'Copy link': '复制链接',
   'Đã copy link hóa đơn': '发票链接已复制',

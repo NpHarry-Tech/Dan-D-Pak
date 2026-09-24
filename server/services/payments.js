@@ -486,6 +486,7 @@ export function payOrder(order_id, lines, options = {}, branch_id = 'sala') {
     cashier,
     customer,
     invoice_customer,
+    issue_einvoice = false,
     skipTransaction = false,
     discount_breakdown = null,
     voucher = null,
@@ -586,7 +587,12 @@ export function payOrder(order_id, lines, options = {}, branch_id = 'sala') {
       db.prepare(`UPDATE orders SET discount=? WHERE id=?`).run(discount, order_id);
     }
     recomputeTotals(order_id);
-    const invoiceCustomer = normalizeInvoiceCustomer(invoice_customer);
+    const shouldIssueEinvoice = issue_einvoice === true
+      || String(issue_einvoice).toLowerCase() === 'true'
+      || options.invoice_mode === 'vat';
+    const invoiceCustomer = shouldIssueEinvoice
+      ? normalizeInvoiceCustomer(invoice_customer)
+      : null;
     const customerSnapshot = mergeInvoiceCustomer(customer, invoiceCustomer);
     if (customerSnapshot) {
       if (invoiceCustomer) {
@@ -782,6 +788,7 @@ export function payOrder(order_id, lines, options = {}, branch_id = 'sala') {
         canonicalSaleTime.business_date, now());
     const receiptPrintOutboxId = enqueueReceiptPrint(receipt, branch_id, { deviceId: device_id });
 
+    if (shouldIssueEinvoice) {
     // Persist the paid bill and its e-invoice snapshot in the same transaction.
     // This only queues provider work; no MISA/network call happens here.
     let atomicCustomerMode = options.customer_mode || 'WALK_IN';
@@ -829,6 +836,10 @@ export function payOrder(order_id, lines, options = {}, branch_id = 'sala') {
         deferSideEffect: callback => postCommitCallbacks.push(callback),
         stageAudit,
       });
+    }
+    } else {
+      db.prepare(`UPDATE orders SET invoice_choice='receipt' WHERE id=? AND branch_id=?`)
+        .run(order_id, branch_id);
     }
 
     if (inTx) {
