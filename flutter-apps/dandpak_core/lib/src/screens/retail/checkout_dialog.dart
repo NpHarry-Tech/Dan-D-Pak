@@ -648,7 +648,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
     };
   }
 
-  Future<void> _confirm({bool issueEinvoice = false}) async {
+  Future<void> _confirm({bool issueEinvoice = false, bool retriedTakeover = false}) async {
     // ONLINE-ONLY: mất kết nối máy chủ ⇒ KHÔNG thu tiền/chốt bill local, KHÔNG
     // queue thanh toán. Server là nguồn dữ liệu duy nhất.
     if (!ensureOnlineForMutation(context, action: t('Thanh toán'))) return;
@@ -762,6 +762,24 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
       });
     } catch (e) {
       if (!mounted) return;
+      // QR PaymentIntent đang "sống" (thường do phiên/thiết bị khác tạo) chặn thu
+      // tay — server trả 409 PAYMENT_INTENT_TAKEOVER_REQUIRED. Thu ngân đã CHỦ
+      // ĐỘNG bấm xác nhận phương thức này (vd tiền mặt) → tự hủy intent đang chờ
+      // rồi thử lại ĐÚNG 1 lần, thay vì bắt thu ngân đi hủy QR bằng tay. An toàn
+      // tiền: giữ nguyên idempotency_key + lần thử lại server tính lại remainingDue,
+      // nếu QR kia đã thực trả thì trả ALREADY_SETTLED (nhánh dưới xử lý) — không
+      // thu trùng.
+      if (!retriedTakeover &&
+          e is ApiException &&
+          e.code == 'PAYMENT_INTENT_TAKEOVER_REQUIRED' &&
+          effectiveOrderId != null) {
+        try {
+          await widget.api.cancelOrderPaymentIntent(effectiveOrderId.trim());
+        } catch (_) {}
+        if (!mounted) return;
+        _paymentIntentId = null;
+        return _confirm(issueEinvoice: issueEinvoice, retriedTakeover: true);
+      }
       setState(() => _paying = false);
       // Unknown outcome: the request may have committed (hoặc bị server từ
       // chối/rollback THẬT) trước khi ta biết kết quả — KHÔNG được suy diễn
