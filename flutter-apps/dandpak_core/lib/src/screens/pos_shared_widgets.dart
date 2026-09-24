@@ -134,7 +134,12 @@ class _MenuPickCard extends StatelessWidget {
             raw.startsWith('data:'))
         ? raw
         : '${context.read<AuthProvider>().serverUrl}${raw.startsWith('/') ? '' : '/'}$raw';
-    final disabled = !item.available;
+    // F&B POS nội bộ: món "Ngoài lịch" (ngoài giờ bán) hoặc "Ẩn" VẪN đặt được
+    // bình thường — giới hạn lịch/ẩn chỉ dành cho KHÁCH (BYOD/tablet self-order).
+    // Nhân viên tự quyết; chỉ "Tạm hết" thủ công + retail hết tồn mới thật sự chặn.
+    final scheduleOrHidden = item.availabilityReason == 'schedule' ||
+        item.availabilityReason == 'hidden';
+    final disabled = !item.available && !scheduleOrHidden;
     // Hết hàng chỉ có ý nghĩa với retail (item.stock null = món F&B, không
     // theo dõi tồn) — cùng điều kiện với _SkuCard bên Retail POS.
     final outOfStock =
