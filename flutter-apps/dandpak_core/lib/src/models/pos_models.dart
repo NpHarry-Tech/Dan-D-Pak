@@ -247,17 +247,33 @@ class MenuItem {
 
   factory MenuItem.fromJson(Map<String, dynamic> json) {
     var mods = json['modifiers'] ?? json['toppings'];
+    // Nhóm mode:'combo' ("Món đi kèm") CHỈ dành cho khách tự gọi (BYOD / tablet
+    // self-order — vốn dùng SoMenuItem riêng, KHÔNG đụng model này). F&B POS
+    // (nhân viên) không được hiện combo: nhân viên order thẳng, và quan trọng hơn
+    // là tránh lỗi "Tuỳ chọn không có trong thực đơn" khi gửi bếp — server khớp
+    // mod theo group+name, nhưng _addMenuItem gửi mod KHÔNG kèm group nên mọi
+    // option combo (có group) đều bị từ chối. Lấy tên nhóm combo từ option_groups
+    // để lọc các dòng modifiers phẳng tương ứng bên dưới.
+    final comboGroups = <String>{
+      if (json['option_groups'] is List)
+        for (final g in (json['option_groups'] as List))
+          if (g is Map && g['mode'] == 'combo')
+            (g['name'] ?? '').toString().trim(),
+    };
     List<Modifier> parsedMods = [];
     if (mods is List) {
       // Server gộp CHUNG "Món ăn kèm & Extra" (group kỹ thuật '__addon__', xem
       // ADDON_MOD_GROUP/catalog.js) vào cùng mảng modifiers để Self-Order dùng
       // 1 đường resolveOrderMods duy nhất. F&B POS (nhân viên tự thêm món) thì
       // KHÔNG dùng — nhân viên thêm món tuỳ ý, không cần bị chặn qua popup chọn
-      // món ăn kèm vốn chỉ thiết kế cho khách trên tablet self-order. Lọc bỏ ở
-      // đây để dialog "chọn modifier" (pos_screen.dart#_addMenuItem) chỉ còn
-      // hiện cho NHÓM TÙY CHỌN thật (size/topping/combo), đúng hành vi cũ.
+      // món ăn kèm vốn chỉ thiết kế cho khách trên tablet self-order. Lọc bỏ addon
+      // VÀ combo ở đây để dialog "chọn modifier" (pos_screen.dart#_addMenuItem)
+      // chỉ còn hiện cho nhóm tùy chọn thật (size/topping), đúng hành vi cũ.
       parsedMods = mods
-          .where((m) => m is Map && m['group'] != '__addon__')
+          .where((m) =>
+              m is Map &&
+              m['group'] != '__addon__' &&
+              !comboGroups.contains((m['group'] ?? '').toString().trim()))
           .map((m) => Modifier.fromJson(m))
           .toList();
     }
