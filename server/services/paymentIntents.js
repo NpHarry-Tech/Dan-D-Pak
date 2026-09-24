@@ -2,18 +2,9 @@
 // namespace, not to a branch, bill number, register, or client display slot.
 import crypto from 'node:crypto';
 import { db, uid, now } from '../db.js';
-import { businessParts } from '../core/businessClock.js';
 import { getOperationsConfig } from './settings.js';
 
 db.exec(`
-  CREATE TABLE IF NOT EXISTS payment_reference_counters (
-    tenant_id TEXT NOT NULL,
-    payment_account_id TEXT NOT NULL,
-    business_date TEXT NOT NULL,
-    last_sequence INTEGER NOT NULL DEFAULT 0,
-    updated_at TEXT NOT NULL,
-    PRIMARY KEY(tenant_id,payment_account_id,business_date)
-  );
   CREATE TABLE IF NOT EXISTS payment_intents (
     id TEXT PRIMARY KEY,
     tenant_id TEXT NOT NULL,
@@ -35,8 +26,11 @@ db.exec(`
     confirmed_at TEXT,
     updated_at TEXT NOT NULL
   );
-  CREATE UNIQUE INDEX IF NOT EXISTS ux_payment_intent_reference
-    ON payment_intents(tenant_id,payment_account_id,transfer_reference);
+  -- transfer_reference giờ = orders.pay_ref: một đơn có thể có nhiều intent (tạo
+  -- lại QR / supersede) cùng mã, nên KHÔNG còn ràng buộc duy nhất theo mã ở đây.
+  -- Tính duy nhất do UNIQUE(orders.branch_id,pay_ref) + một intent hoạt động / đơn
+  -- (ux_payment_intent_active_order) bảo đảm.
+  DROP INDEX IF EXISTS ux_payment_intent_reference;
   CREATE UNIQUE INDEX IF NOT EXISTS ux_payment_intent_client_request
     ON payment_intents(tenant_id,client_request_id) WHERE client_request_id IS NOT NULL;
   CREATE INDEX IF NOT EXISTS idx_payment_intent_order ON payment_intents(branch_id,order_id,created_at);
@@ -101,31 +95,6 @@ export function paymentAccountIdentity(branch_id = 'sala') {
   return { id: `bank_${digest}`, bankCode, account, payment };
 }
 
-function businessDateParts() {
-  const p = businessParts();
-  const yy = String(p.year).slice(-2);
-  const mm = String(p.month).padStart(2, '0');
-  const dd = String(p.day).padStart(2, '0');
-  return { key: `${p.year}-${mm}-${dd}`, compact: `${yy}${mm}${dd}` };
-}
-
-function allocateReference(tenant_id, payment_account_id, prefix) {
-  const date = businessDateParts();
-  const stamp = now();
-  db.prepare(`INSERT INTO payment_reference_counters
-      (tenant_id,payment_account_id,business_date,last_sequence,updated_at)
-      VALUES(?,?,?,1,?)
-      ON CONFLICT(tenant_id,payment_account_id,business_date) DO UPDATE SET
-        last_sequence=last_sequence+1,updated_at=excluded.updated_at`)
-    .run(tenant_id, payment_account_id, date.key, stamp);
-  const row = db.prepare(`SELECT last_sequence FROM payment_reference_counters
-    WHERE tenant_id=? AND payment_account_id=? AND business_date=?`)
-    .get(tenant_id, payment_account_id, date.key);
-  const sequence = Number(row.last_sequence);
-  if (sequence > 999999) throw Object.assign(new Error('Đã hết dải mã chuyển khoản trong ngày.'), { status: 409, code: 'PAYMENT_REFERENCE_EXHAUSTED' });
-  return `${prefix}${date.compact}${String(sequence).padStart(6, '0')}`;
-}
-
 export function createPaymentIntent({ branch_id = 'sala', order_id, amount, method = 'qrcode', client_request_id = null,
   ttlMs = 15 * 60_000, order_revision = 0, snapshot = {}, user_id = null, device_id = null, register_id = null } = {}) {
   const tenant_id = tenantId();
@@ -135,12 +104,15 @@ export function createPaymentIntent({ branch_id = 'sala', order_id, amount, meth
     if (replay) return replay;
   }
   const account = paymentAccountIdentity(branch_id);
-  const prefix = providerSafe(account.payment.transferPrefix || 'DANBILL', 8) || 'DANBILL';
   const stamp = now();
   const owns = !db.isTransaction;
   if (owns) db.prepare('BEGIN IMMEDIATE').run();
   try {
-    const reference = allocateReference(tenant_id, account.id, prefix);
+    // MỘT mã duy nhất theo đơn: dùng thẳng orders.pay_ref (cấp lúc mở đơn) làm mã
+    // đối soát chuyển khoản. Không cấp thêm dãy số riêng cho từng intent → mã trên
+    // QR, trên sao kê và khoá khớp webhook luôn là cùng một chuỗi đi theo giỏ hàng.
+    const reference = String(db.prepare(`SELECT pay_ref FROM orders WHERE id=? AND branch_id=?`).get(order_id, branch_id)?.pay_ref || '').trim();
+    if (!reference) throw Object.assign(new Error('Đơn chưa có mã đối soát (pay_ref).'), { status: 409, code: 'ORDER_PAY_REF_MISSING' });
     const id = uid('pi_');
     const expires = new Date(Date.parse(stamp) + ttlMs).toISOString();
     const previous = db.prepare(`SELECT id FROM payment_intents WHERE tenant_id=? AND branch_id=? AND order_id=?
@@ -152,7 +124,7 @@ export function createPaymentIntent({ branch_id = 'sala', order_id, amount, meth
        created_by_device_id,created_by_register_id,created_at,updated_at)
       VALUES(?,?,?,?,?,?,?,?,'VND',?,?,'AWAITING_FUNDS',?,?,?,?,?,?,?,?,?)`)
       .run(id, tenant_id, branch_id, order_id, account.id, account.account, method, Math.round(Number(amount) || 0),
-        prefix, reference, expires, requestId, Number(order_revision) || 0, JSON.stringify(snapshot || {}),
+        '', reference, expires, requestId, Number(order_revision) || 0, JSON.stringify(snapshot || {}),
         user_id, device_id, register_id, stamp, stamp);
     if (previous) db.prepare(`UPDATE payment_intents SET superseded_by=? WHERE id=?`).run(id, previous.id);
     if (owns) db.prepare('COMMIT').run();
@@ -187,8 +159,18 @@ export function findExactWaitingIntent({ accountNumber = '', reference = '', amo
   const rows = db.prepare(`SELECT * FROM payment_intents WHERE transfer_reference=?
     AND payment_account_number=?`).all(normalized, account);
   const exact = rows.filter(row => Number(row.amount) === Math.round(Number(amount) || 0));
-  if (exact.length === 1) return { status: ACTIVE_STATES.includes(exact[0].state) ? 'MATCHED' : 'LATE', intent: exact[0] };
-  return { status: exact.length > 1 ? 'AMBIGUOUS' : 'UNMATCHED', intent: null };
+  // Một đơn có thể để lại nhiều intent cùng mã (tạo lại QR / supersede). Chỉ có
+  // TỐI ĐA MỘT intent đang hoạt động / đơn (ux_payment_intent_active_order) nên
+  // ưu tiên khớp intent đó; nếu không còn intent hoạt động mà vẫn có mã+số tiền
+  // đúng thì là tiền về muộn (LATE) cho QR đã hết hạn/hủy.
+  const active = exact.filter(row => ACTIVE_STATES.includes(row.state));
+  if (active.length === 1) return { status: 'MATCHED', intent: active[0] };
+  if (active.length > 1) return { status: 'AMBIGUOUS', intent: null };
+  if (exact.length) {
+    const latest = exact.reduce((a, b) => (String(a.created_at) >= String(b.created_at) ? a : b));
+    return { status: 'LATE', intent: latest };
+  }
+  return { status: 'UNMATCHED', intent: null };
 }
 
 export function markIntent(id, state, { provider = null, provider_transaction_id = null, confirmation_source = null,

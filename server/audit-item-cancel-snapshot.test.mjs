@@ -32,7 +32,7 @@ db.prepare(`INSERT OR REPLACE INTO tables (id,branch_id,code,zone,seats,status)
 
 function auditCancelMoiNhat() {
   const row = db.prepare(
-    `SELECT detail FROM audit_log WHERE action='item.cancel' ORDER BY created_at DESC, rowid DESC LIMIT 1`).get();
+    `SELECT detail FROM audit_log WHERE action='order.item.cancel' ORDER BY created_at DESC, rowid DESC LIMIT 1`).get();
   return row ? JSON.parse(row.detail) : null;
 }
 

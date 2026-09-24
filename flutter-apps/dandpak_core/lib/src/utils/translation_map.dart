@@ -988,8 +988,6 @@ const Map<String, String> viToEnMap = {
   'Nhận đơn, đồng bộ menu, trạng thái món và tồn khả dụng cho kênh Grab.':
       'Receive orders, synchronize menus, order status and availability for Grab channel.',
   'Nhật ký hoạt động': 'Activity log',
-  'Nhật ký hoạt động hệ thống được lưu trong SQLite local tối đa 3 năm. Các dòng lỗi có thể mở ra để xem nguyên nhân chi tiết.':
-      'System activity logs are saved in local SQLite for up to 3 years. Error lines can be opened to view detailed causes.',
   'Nhật ký này chưa có id để giải mã':
       'This log does not yet have an id for decryption',
   'No bật/tắt được voucher': 'No way to enable/disable vouchers',

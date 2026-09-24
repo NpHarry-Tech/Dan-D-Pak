@@ -376,7 +376,7 @@ function assertBillEditable(order_id, req, action = '') {
     e.code = 'SHIFT_LOCKED'; e.status = 423;
     throw e;
   }
-  audit('bill.locked_edit', { action, order_id, approved_by: approver.username }, branch_id, approver.username);
+  audit('order.locked_edit', { action, order_id, approved_by: approver.username }, branch_id, approver.username);
   return approver;
 }
 

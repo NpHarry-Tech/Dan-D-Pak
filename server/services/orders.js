@@ -1,5 +1,6 @@
 // Order lifecycle: create/append items, route to KDS stations, and drive
 // kitchen ticket status transitions.
+import crypto from 'node:crypto';
 import { db, uid, now, audit, buildAuditEntry, insertAuditRow, auditPostCommit } from '../db.js';
 import { parseJson } from '../core/util.js';
 import { emit } from '../realtime.js';
@@ -53,37 +54,55 @@ function nextPaySeq(branch_id = 'sala', prefix = 'Dan') {
 // (branch_id,bill_no) bị đụng (server khác vừa chèn cùng seq), tăng seq và thử lại.
 // ĐƠN MỞ RA CHƯA CÓ SỐ HOÁ ĐƠN.
 //
-// Chỉ cấp `pay_ref` — mã để khách chuyển khoản và để webhook khớp tiền về.
-// `bill_no` để TRỐNG, chỉ điền khi thanh toán xong (xem capSoBillKhiThanhToan).
-// Nhờ vậy đơn huỷ chưa trả tiền không tiêu số hoá đơn nào.
-// seq cho PAY_REF = MAX seq trong PAY_REF hôm nay + 1. PHẢI đếm theo pay_ref (mã
-// cấp lúc MỞ đơn), KHÔNG theo bill_no (chỉ cấp lúc THANH TOÁN): nhiều đơn treo
-// (mở, chưa trả) sẽ giữ pay_ref nhưng chưa có bill_no, nên đếm bill_no cho ra seq
-// thấp → trùng pay_ref của đơn treo → UNIQUE constraint failed (sự cố 07/08/2026).
-function nextPayRefSeq(branch_id = 'sala') {
-  const ddMMyy = todayDdMMyy();
-  const { start, end } = businessDayBoundsUtc();
-  const rows = db.prepare(`SELECT pay_ref FROM orders WHERE branch_id=? AND pay_ref LIKE ? AND created_at>=? AND created_at<?`)
-    .all(branch_id, `Dan${ddMMyy}%`, start.toISOString(), end.toISOString());
-  const re = new RegExp(`^Dan${ddMMyy}(\\d+)$`);
-  let max = 0;
-  for (const r of rows) {
-    const m = re.exec(r.pay_ref || '');
-    if (m) { const n = parseInt(m[1], 10); if (n > max) max = n; }
+// MÃ ĐỐI SOÁT `pay_ref` — cấp lúc MỞ đơn, đi theo giỏ/bàn suốt từ order tới khi
+// thanh toán / xoá bàn / xoá hết món, và LÀ nội dung chuyển khoản trên QR + khoá
+// khớp tiền của webhook (một mã duy nhất, không còn dãy đối soát riêng).
+//
+// Dạng cố định 12 ký tự: [3 số máy POS][DDMMYY][3 số ngẫu nhiên]. Không liên quan
+// tới số hoá đơn (bill_no chỉ cấp lúc thanh toán, xem capSoBillKhiThanhToan) nên
+// đơn huỷ chưa trả tiền không tiêu số hoá đơn nào. Ngẫu nhiên để chống đoán; UNIQUE
+// (branch_id,pay_ref) + vòng lặp tạo lại bảo đảm không bao giờ trùng.
+// ponytail: 1000 mã / máy / ngày. Nếu một máy vượt ~300 đơn/ngày, vòng tạo-lại
+// bắt đầu tốn — chạm trần thì nới random lên 4 số.
+
+// Số hiệu máy POS trong chi nhánh (1,2,3…): gán lần đầu thiết bị mở đơn rồi giữ
+// cố định. Đơn không gắn máy (online / khách tự gọi) = 0 → "000".
+function registerNoFor(branch_id, device_id) {
+  const dev = String(device_id || '').trim();
+  if (!dev) return 0;
+  const found = db.prepare(`SELECT register_no FROM device_registers WHERE branch_id=? AND device_id=?`).get(branch_id, dev);
+  if (found) return found.register_no;
+  for (let attempt = 0; attempt < 50; attempt++) {
+    const next = (db.prepare(`SELECT COALESCE(MAX(register_no),0) m FROM device_registers WHERE branch_id=?`).get(branch_id).m) + 1;
+    try {
+      db.prepare(`INSERT INTO device_registers (branch_id,device_id,register_no,created_at) VALUES (?,?,?,?)`).run(branch_id, dev, next, now());
+      return next;
+    } catch (e) {
+      const again = db.prepare(`SELECT register_no FROM device_registers WHERE branch_id=? AND device_id=?`).get(branch_id, dev);
+      if (again) return again.register_no;          // máy này vừa được gán số song song
+      if (/unique|constraint/i.test(String(e?.message))) continue; // số đã bị máy khác lấy → thử số kế
+      throw e;
+    }
   }
-  return max + 1;
+  return 0; // không chặn mở đơn: cùng lắm rơi về "000"
 }
 
-function insertOpenOrder({ branch_id = 'sala', table_id = null, channel = 'dine_in' }) {
+function makePayRef(branch_id, device_id) {
+  const reg = String(registerNoFor(branch_id, device_id) % 1000).padStart(3, '0');
+  const rand = String(crypto.randomInt(1000)).padStart(3, '0');
+  return `${reg}${todayDdMMyy()}${rand}`;
+}
+
+function insertOpenOrder({ branch_id = 'sala', table_id = null, channel = 'dine_in', device_id = null }) {
   const id = uid('o_');
-  let seq = nextPayRefSeq(branch_id);
   const ins = db.prepare(`INSERT INTO orders (id,branch_id,table_id,channel,status,pay_ref,created_at) VALUES (?,?,?,?,'open',?,?)`);
   for (let attempt = 0; ; attempt++) {
     try {
-      ins.run(id, branch_id, table_id, channel, billNoForSeq(seq), now());
+      ins.run(id, branch_id, table_id, channel, makePayRef(branch_id, device_id), now());
       break;
     } catch (e) {
-      if (attempt < 500 && /unique|constraint/i.test(String(e?.message))) { seq++; continue; }
+      // Trùng pay_ref (cùng máy + ngày + random) → tạo mã mới rồi thử lại.
+      if (attempt < 500 && /unique|constraint/i.test(String(e?.message))) continue;
       throw e;
     }
   }
@@ -315,7 +334,7 @@ export function createOrUpdateOrder(options) {
     }
     const isNew = !order;
     if (isNew) {
-      order = insertOpenOrder({ branch_id, table_id: table_id || null, channel });
+      order = insertOpenOrder({ branch_id, table_id: table_id || null, channel, device_id: linked_pos_device || null });
     }
 
     if (linked_pos_device || linked_printer_id) {
@@ -601,7 +620,7 @@ export function updateItemNote(item_id, note, branch_id = 'sala', actor = 'syste
   if (!item) throw new Error('Món không tồn tại');
   const clean = String(note || '').trim().slice(0, 200) || null;
   db.prepare(`UPDATE order_items SET note=? WHERE id=?`).run(clean, item_id);
-  audit('order.item_note', { order: item.order_id, item: item_id }, branch_id, actor);
+  audit('order.item.note', { order: item.order_id, item: item_id }, branch_id, actor);
   const full = getOrder(item.order_id);
   archiveOrder(full);
   emit('order:updated', full, branch_id);
@@ -808,14 +827,14 @@ export function splitOrderItems(order_id, item_ids = [], branch_id = 'sala', act
   const selected = ids.filter(id => active.includes(id));
   if (!selected.length) throw new Error('Không tìm thấy dòng hợp lệ để tách');
   if (selected.length >= active.length) throw new Error('Không cần tách nếu chọn toàn bộ bill');
-  const newId = insertOpenOrder({ branch_id, table_id: order.table_id || null, channel: order.channel || 'dine_in' }).id;
+  const newId = insertOpenOrder({ branch_id, table_id: order.table_id || null, channel: order.channel || 'dine_in', device_id: order.linked_pos_device || null }).id;
   const upd = db.prepare(`UPDATE order_items SET order_id=? WHERE id=? AND order_id=?`);
   for (const id of selected) upd.run(newId, id, order_id);
   recomputeTotals(order_id);
   recomputeTotals(newId);
   if (order.table_id) setTableByOpenOrders(order.table_id, branch_id);
   const table = order.table_id ? db.prepare(`SELECT code FROM tables WHERE id=?`).get(order.table_id) : null;
-  audit('bill.split', { source_order: order_id, split_order: newId, table: order.table_id, table_code: table?.code, items: selected.length }, branch_id, actor);
+  audit('order.split', { source_order: order_id, split_order: newId, table: order.table_id, table_code: table?.code, items: selected.length }, branch_id, actor);
   emit('order:updated', getOrder(order_id), branch_id);
   emit('order:updated', getOrder(newId), branch_id);
   const sourceOrder = getOrder(order_id);
@@ -927,7 +946,7 @@ export function setItemStatus(item_id, status, branch_id = 'sala', actor = 'syst
   if (set) db.prepare(`UPDATE order_items SET status=?, ${set}=? WHERE id=?`).run(status, ts, item_id);
   else db.prepare(`UPDATE order_items SET status=? WHERE id=?`).run(status, item_id);
 
-  audit('item.status', { item: item_id, status }, branch_id, actor);
+  audit('order.item.status', { item: item_id, status }, branch_id, actor);
   const order = getOrder(item.order_id);
   archiveOrder(order);
   // When a dish becomes ready, auto-print a per-dish runner slip (with table no.).
@@ -962,7 +981,7 @@ export function cancelItem(item_id, reason, branch_id = 'sala', actor = 'system'
   // SNAPSHOT tại thời điểm huỷ — để nhật ký đọc được bằng tiếng Việt ngay cả khi
   // sau này món bị đổi tên/xoá. Dữ liệu đã có sẵn (cancelledItem/beforeCancel),
   // chỉ cần ghi vào detail. Giữ nguyên `item`+`reason` cũ (tương thích ngược).
-  audit('item.cancel', {
+  audit('order.item.cancel', {
     item: item_id,
     reason,
     item_name: cancelledItem.name || null,
@@ -1033,7 +1052,7 @@ export function cancelItemsBatch(order_id, item_ids, reason, branch_id = 'sala',
 
   for (const row of rows) {
     setItemStatus(row.id, 'cancelled', branch_id, actor);
-    audit('item.cancel', {
+    audit('order.item.cancel', {
       item: row.id,
       reason: cleanReason,
       item_name: row.name || null,

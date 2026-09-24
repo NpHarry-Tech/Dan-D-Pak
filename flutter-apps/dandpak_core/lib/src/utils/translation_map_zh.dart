@@ -924,8 +924,6 @@ const Map<String, String> viToZhMap = {
   'Nhận đơn, đồng bộ menu, trạng thái món và tồn khả dụng cho kênh Grab.':
       '接收订单,同步Grab渠道的菜单、菜品状态及可用库存。',
   'Nhật ký hoạt động': '操作日志',
-  'Nhật ký hoạt động hệ thống được lưu trong SQLite local tối đa 3 năm. Các dòng lỗi có thể mở ra để xem nguyên nhân chi tiết.':
-      '系统操作日志保存在本地SQLite中,最长保留3年。错误记录可展开查看详细原因。',
   'Nhật ký này chưa có id để giải mã': '此日志尚无可用于解密的id',
   'No bật/tắt được voucher': '无法启用/禁用优惠券',
   'No chuyển được bàn': '无法转台',

@@ -114,32 +114,17 @@ function vietQrSafe(value = '', max = 23) {
     .slice(0, max);
 }
 
-// Số hoá đơn (billNoForSeq trong orders.js) luôn có dạng chữ+số: "Dan{ddMMyy}{seq}".
-// Phần CHỮ ("Dan") chỉ là quy ước đặt tên hoá đơn nội bộ — không liên quan gì tới
-// "Tiền tố nội dung CK" (transferPrefix) cấu hình ở Kế toán, vốn để phân biệt giao
-// dịch của CỬA HÀNG này trên sao kê ngân hàng dùng chung. Ghép thẳng cả hai (VD
-// "TEST" + "DAN270726004") ra "TESTDAN270726004" — thừa chữ "DAN" không cần thiết
-// và không đúng như người dùng cấu hình. Bỏ hẳn phần chữ đầu bill_no, chỉ lấy phần
-// số ({ddMMyy}{seq}) ghép sau tiền tố — dùng CHUNG một hàm để QR hiển thị và hàm
-// khớp webhook (findOpenOrderByContent) LUÔN tính ra cùng 1 giá trị.
-function billNoDigits(order) {
-  // MÃ ĐỐI SOÁT lấy từ `pay_ref` — cấp ngay lúc mở đơn nên luôn có sẵn khi
-  // khách quét QR. `bill_no` chỉ có SAU khi thanh toán xong nên không dùng
-  // được ở đây; giữ lại làm phương án cho đơn cũ trước khi tách đôi hai khái
-  // niệm này (xem addColumnIfMissing('orders','pay_ref') ở db.js).
-  const raw = String(order?.pay_ref || order?.bill_no || order?.id || Date.now());
-  const digits = raw.replace(/^\D+/, '');
-  return digits || vietQrSafe(raw, 23);
-}
-
-function paymentReferenceForOrder(order, ops, max = 23) {
-  const prefix = vietQrSafe(ops.payment?.transferPrefix || 'DANBILL', 8) || 'DANBILL';
-  const code = vietQrSafe(billNoDigits(order), Math.max(1, max - prefix.length));
-  return `${prefix}${code}`.slice(0, max);
+// MÃ ĐỐI SOÁT chuyển khoản = orders.pay_ref (cấp lúc MỞ đơn, dạng [reg3][DDMMYY]
+// [rand3]). Dùng CHUNG một mã cho QR hiển thị, sao kê ngân hàng và khớp webhook
+// (findOpenOrderByContent) nên luôn ra cùng một giá trị. `bill_no`/`id` chỉ là
+// phương án dự phòng cho đơn cũ chưa có pay_ref.
+function paymentReferenceForOrder(order, _ops, max = 23) {
+  return vietQrSafe(order?.pay_ref || order?.bill_no || order?.id || String(Date.now()), max)
+    || vietQrSafe(String(Date.now()), max);
 }
 
 function vietQrOrderId(order) {
-  return vietQrSafe(order.pay_ref || order.bill_no || order.id || Date.now(), 13)
+  return vietQrSafe(order?.pay_ref || order?.bill_no || order?.id || Date.now(), 13)
     || `DAN${Date.now()}`.slice(0, 13);
 }
 
@@ -1252,26 +1237,16 @@ function recordBankTx({ provider, externalId, branch_id, amount, content, accoun
   }
 }
 
-// Tìm bill đang mở mà mã đối soát (DANBILL...) xuất hiện trong nội dung chuyển khoản.
-// FIX: Thay vì N+1 query (load 500 orders rồi getOrder() mỗi cái), query trực tiếp bill_no.
+// Tìm bill đang mở mà mã đối soát pay_ref xuất hiện trong nội dung chuyển khoản.
+// Chỉ load 2 cột (không load items); pay_ref = đúng chuỗi QR hiển thị nên khớp
+// trực tiếp, không phải dựng lại theo công thức tiền tố như trước.
 function findOpenOrderByContent(content) {
   const needle = vietQrSafe(content, 250);
   if (!needle) return null;
-  // Lấy bill_no của tất cả đơn đang mở (chỉ 2 cột, không load items)
-  const rows = db.prepare(`SELECT id, branch_id, pay_ref, bill_no, voucher_code FROM orders WHERE status IN ('open','partially_paid') ORDER BY created_at DESC LIMIT 500`).all();
+  const rows = db.prepare(`SELECT id, pay_ref FROM orders WHERE status IN ('open','partially_paid') ORDER BY created_at DESC LIMIT 500`).all();
   for (const row of rows) {
-    // Tính reference từ bill_no thay vì load toàn bộ order + items — PHẢI dùng
-    // đúng cùng công thức với paymentReferenceForOrder() (billNoDigits + prefix),
-    // nếu không QR hiển thị 1 kiểu mà chỗ khớp webhook lại chờ 1 kiểu khác, không
-    // bao giờ khớp được dù nội dung chuyển khoản đúng y hệt QR.
-    const ops = getOperationsConfig(row.branch_id || 'sala');
-    const prefix = vietQrSafe(ops.payment?.transferPrefix || 'DANBILL', 8) || 'DANBILL';
-    const code = vietQrSafe(billNoDigits(row), Math.max(1, 23 - prefix.length));
-    const ref = `${prefix}${code}`.slice(0, 23);
-    if (ref && needle.includes(ref)) {
-      // Chỉ gọi getOrder() khi đã khớp — thay vì 500 lần
-      return getOrder(row.id);
-    }
+    const ref = vietQrSafe(row.pay_ref || '', 32);
+    if (ref && needle.includes(ref)) return getOrder(row.id);
   }
   return null;
 }

@@ -16,6 +16,7 @@ import {
 import { backupDatabase, listBackups } from './db/maintenance.js';
 import { inTransaction } from './db/transaction.js';
 import { CRITICAL_RELATIONS } from './db/integrity.js';
+import { AUDIT_ACTION_RENAMES } from './db/auditRenames.js';
 
 export {
   db, DB_PATH, DB_WAS_EMPTY, ROOT, now, uid, audit, encryptCompress, decryptDecompress,
@@ -521,6 +522,19 @@ export function migrate(targetDb = globalDb) {
     idempotency_key TEXT
   );
 
+  -- Số hiệu máy POS (register) theo chi nhánh: gán tăng dần 1,2,3… cho từng
+  -- thiết bị lần đầu mở đơn. Dùng làm 3 số đầu của mã đối soát pay_ref
+  -- ([reg3][DDMMYY][rand3]). Đơn không có máy (online/self-order) = 000.
+  CREATE TABLE IF NOT EXISTS device_registers (
+    branch_id TEXT NOT NULL,
+    device_id TEXT NOT NULL,
+    register_no INTEGER NOT NULL,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY(branch_id, device_id)
+  );
+  CREATE UNIQUE INDEX IF NOT EXISTS ux_device_registers_no
+    ON device_registers(branch_id, register_no);
+
   CREATE TABLE IF NOT EXISTS receipt_print_outbox (
     id TEXT PRIMARY KEY,
     branch_id TEXT NOT NULL,
@@ -928,6 +942,11 @@ export function migrate(targetDb = globalDb) {
   addColumnIfMissing('order_items', 'item_code', 'TEXT');
   addColumnIfMissing('order_items', 'item_barcode', 'TEXT');
   addColumnIfMissing('order_items', 'unit_snapshot', 'TEXT');
+  // Chuẩn hoá tên sự kiện audit cũ → taxonomy chấm nhất quán (idempotent, chạy 1
+  // lần mỗi boot trên hàng SQLite nóng; archive cũ được rename-on-read ở audit.js).
+  for (const [oldA, newA] of Object.entries(AUDIT_ACTION_RENAMES)) {
+    try { db.prepare(`UPDATE audit_log SET action=? WHERE action=?`).run(newA, oldA); } catch { /* audit_log chưa có/khác schema — bỏ qua */ }
+  }
   addColumnIfMissing('branches', 'code', 'TEXT');
   addColumnIfMissing('branches', 'phone', 'TEXT');
   addColumnIfMissing('branches', 'active', 'INTEGER NOT NULL DEFAULT 1');
@@ -1493,14 +1512,6 @@ export function migrate(targetDb = globalDb) {
   CREATE INDEX IF NOT EXISTS idx_bank_tx_order ON bank_transactions(order_id);
   CREATE INDEX IF NOT EXISTS idx_bank_tx_time ON bank_transactions(branch_id, created_at);
 
-  CREATE TABLE IF NOT EXISTS payment_reference_counters (
-    tenant_id TEXT NOT NULL,
-    payment_account_id TEXT NOT NULL,
-    business_date TEXT NOT NULL,
-    last_sequence INTEGER NOT NULL DEFAULT 0,
-    updated_at TEXT NOT NULL,
-    PRIMARY KEY(tenant_id,payment_account_id,business_date)
-  );
   CREATE TABLE IF NOT EXISTS payment_intents (
     id TEXT PRIMARY KEY,
     tenant_id TEXT NOT NULL,

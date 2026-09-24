@@ -153,6 +153,12 @@ extension ApiServicePosApi on ApiService {
         errorMessage: 'Không tải được chi tiết hóa đơn'));
   }
 
+  /// Nhật ký gọi món của một đơn — tra bằng pay_ref / order_id / bill_no.
+  Future<Map<String, dynamic>> getOrderTimeline(String ref) async {
+    return mapFrom(await getJson('/api/orders/${Uri.encodeComponent(ref)}/timeline',
+        errorMessage: 'Không tải được nhật ký gọi món'));
+  }
+
   /// Nội dung bill render bằng đúng engine + mẫu in đã cấu hình trong Cài đặt
 
   Future<String> getOrderReceiptText(String orderId,

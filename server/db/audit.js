@@ -9,6 +9,7 @@ import {
   deleteMonthlyArchive, readDayEntriesForMonth, deleteDayFilesForMonth,
 } from '../services/archive.js';
 import { now, uid } from './ids.js';
+import { canonicalizeAction } from './auditRenames.js';
 import { decryptSecret, encryptSecret, secretContext } from '../core/crypto.js';
 import { businessPeriodStartUtc } from '../core/businessClock.js';
 import { publishRealtime } from '../core/realtimeBus.js';
@@ -185,9 +186,10 @@ export function reconcileAuditFromArchive(days = 2) {
     if (!entries.length) return 0;
     const stmt = db.prepare(`INSERT OR IGNORE INTO audit_log (id,branch_id,actor,action,detail,created_at) VALUES (?,?,?,?,?,?)`);
     for (const e of entries) {
-      if (TECHNICAL_ONLY_ACTIONS.has(e.action)) continue;
+      const action = canonicalizeAction(e.action);
+      if (TECHNICAL_ONLY_ACTIONS.has(action)) continue;
       const detail = typeof e.detail === 'string' ? e.detail : JSON.stringify(e.detail ?? null);
-      const r = stmt.run(e.id, e.branch_id ?? 'sala', e.actor ?? 'system', e.action, detail, e.created_at);
+      const r = stmt.run(e.id, e.branch_id ?? 'sala', e.actor ?? 'system', action, detail, e.created_at);
       if (r.changes > 0) restored++;
     }
   } catch (e) {
@@ -284,7 +286,9 @@ function rollUpAuditMonth(branch, ym) {
   const startIso = ymStartIso(ym), endIso = ymEndIso(ym);
   const byId = new Map();
   const add = (e) => {
-    if (!e || !e.id || !e.action || TECHNICAL_ONLY_ACTIONS.has(e.action)) return;
+    if (!e || !e.id || !e.action) return;
+    const action = canonicalizeAction(e.action);
+    if (TECHNICAL_ONLY_ACTIONS.has(action)) return;
     const detail = typeof e.detail === 'string'
       ? decryptDecompress(e.detail)
       : (e.detail == null ? '' : JSON.stringify(e.detail));
@@ -292,7 +296,7 @@ function rollUpAuditMonth(branch, ym) {
       id: e.id,
       branch_id: e.branch_id || branch,
       actor: e.actor || 'system',
-      action: e.action,
+      action,
       detail,
       created_at: e.created_at,
     });
@@ -358,9 +362,10 @@ export function rehydrateAuditMonths(branch, months = []) {
     db.exec('BEGIN TRANSACTION;');
     try {
       for (const e of entries) {
-        if (TECHNICAL_ONLY_ACTIONS.has(e.action)) continue;
+        const action = canonicalizeAction(e.action);
+        if (TECHNICAL_ONLY_ACTIONS.has(action)) continue;
         const detail = typeof e.detail === 'string' ? e.detail : JSON.stringify(e.detail ?? null);
-        ins.run(e.id, e.branch_id || branch, e.actor || 'system', e.action, detail, e.created_at, hotUntil);
+        ins.run(e.id, e.branch_id || branch, e.actor || 'system', action, detail, e.created_at, hotUntil);
       }
       db.exec('COMMIT;');
     } catch (err) {

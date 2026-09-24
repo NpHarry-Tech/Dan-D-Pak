@@ -356,11 +356,6 @@ class _AuditLogTabState extends State<_AuditLogTab> {
       child: ListView(
         padding: EdgeInsets.all(18),
         children: [
-          Text(
-            t('Nhật ký hoạt động hệ thống được lưu trong SQLite local tối đa 3 năm. Các dòng lỗi có thể mở ra để xem nguyên nhân chi tiết.'),
-            style: TextStyle(color: DanColors.muted, fontSize: 13),
-          ),
-          SizedBox(height: 14),
           _filterBar(),
           SizedBox(height: 16),
           if (_loading && !_hasLoadedOnce)
@@ -1093,6 +1088,25 @@ _AuditSummary _summaryFor(
       return _AuditSummary(t('Đã phục hồi cấu hình hệ thống.'), '');
     case 'payment.done':
       return _AuditSummary(t('Đã ghi nhận thanh toán.'), target);
+    case 'order.confirm':
+      return _AuditSummary(t('Đã gửi món vào bếp.'), target);
+    case 'order.item.status':
+      return _AuditSummary(t('Đã đổi trạng thái món.'), _stringify(detail['status']));
+    case 'order.item.note':
+      return _AuditSummary(t('Đã ghi chú món.'), target);
+    case 'order.item.cancel':
+      return _AuditSummary(
+          t('Đã huỷ món.'), _stringify(detail['reason'] ?? detail['reject_reason']));
+    case 'order.reject':
+      return _AuditSummary(t('Đã từ chối món.'), target);
+    case 'order.split':
+      return _AuditSummary(t('Đã tách bill.'), target);
+    case 'order.locked_edit':
+      return _AuditSummary(t('Đã sửa bill sau khi khoá ca (có duyệt).'), target);
+    case 'role.perms.update':
+      return _AuditSummary(t('Đã cập nhật phân quyền vai trò.'), target);
+    case 'app.update.success':
+      return _AuditSummary(t('App đã cập nhật thành công.'), target);
     case 'retail.refund':
       return _AuditSummary(
           t('Bill bán lẻ đã bị xóa khỏi lịch sử (trả hàng / hoàn hàng).'),

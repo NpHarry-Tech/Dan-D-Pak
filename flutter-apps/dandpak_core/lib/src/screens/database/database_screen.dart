@@ -19,6 +19,7 @@ import '../../utils/translation.dart';
 
 part 'database_audit_tab.dart';
 part 'database_system_log.dart';
+part 'database_order_log.dart';
 
 String _s(dynamic v) => _repairMojibake(v?.toString() ?? '');
 num _n(dynamic v) => v is num ? v : num.tryParse(_s(v)) ?? 0;
@@ -100,12 +101,14 @@ class _DatabaseScreenState extends State<DatabaseScreen> {
   static List<String> get _titles => [
         t('Cơ sở dữ liệu'),
         t('Nhật ký hoạt động'),
+        t('Nhật ký gọi món'),
         t('Tài liệu'),
       ];
 
   static List<String> get _descriptions => [
         t('Theo dõi máy chủ dữ liệu đang chọn, sao lưu cấu hình và thống kê hệ thống.'),
         t('Lịch sử thao tác hệ thống, lỗi phát sinh và truy vết theo thời gian.'),
+        t('Dòng thời gian gọi món từng đơn theo mã tham chiếu: thêm/sửa/huỷ món, trạng thái bếp và thời gian phục vụ.'),
         t('Kho tài liệu nội bộ dùng cho vận hành và đào tạo.'),
       ];
 
@@ -179,7 +182,9 @@ class _DatabaseScreenState extends State<DatabaseScreen> {
               ? _DatabaseTab()
               : _tab == 1
                   ? _AuditLogTab()
-                  : DocumentsBody(),
+                  : _tab == 2
+                      ? _OrderLogTab()
+                      : DocumentsBody(),
         ),
       ],
     );
@@ -189,7 +194,8 @@ class _DatabaseScreenState extends State<DatabaseScreen> {
     final items = [
       _NavItem(0, t('Cơ sở dữ liệu'), Icons.storage_outlined),
       _NavItem(1, t('Nhật ký hoạt động'), Icons.history_rounded),
-      _NavItem(2, t('Tài liệu'), Icons.folder_copy_outlined),
+      _NavItem(2, t('Nhật ký gọi món'), Icons.receipt_long_outlined),
+      _NavItem(3, t('Tài liệu'), Icons.folder_copy_outlined),
     ];
 
     if (compact) {

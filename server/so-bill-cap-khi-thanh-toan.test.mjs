@@ -58,7 +58,9 @@ test('don vua mo: CO ma doi soat, CHUA co so hoa don', () => {
   const o = moDon();
   const row = docDon(o.id);
   assert.ok(row.pay_ref, 'phai co pay_ref ngay de khach quet QR chuyen khoan duoc');
-  assert.match(row.pay_ref, /^Dan\d+$/);
+  // Mã đối soát mới: [3 số máy POS][DDMMYY][3 số ngẫu nhiên] = 12 chữ số, không
+  // tiền tố chữ, không liên quan số hoá đơn (bill_no vẫn giữ dạng Dan… bên dưới).
+  assert.match(row.pay_ref, /^\d{12}$/);
   assert.ok(!row.bill_no,
     'chua thanh toan thi KHONG duoc tieu so hoa don — day chinh la loi cu');
 });

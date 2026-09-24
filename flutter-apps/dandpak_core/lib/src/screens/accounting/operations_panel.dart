@@ -33,7 +33,6 @@ class _OperationsPanelState extends State<OperationsPanel> {
   final _bankCode = TextEditingController();
   final _bankAccount = TextEditingController();
   final _accountName = TextEditingController();
-  final _transferPrefix = TextEditingController();
   final _drawerCash = TextEditingController();
 
   late List<Map<String, dynamic>> _methods;
@@ -64,7 +63,6 @@ class _OperationsPanelState extends State<OperationsPanel> {
     _bankCode.dispose();
     _bankAccount.dispose();
     _accountName.dispose();
-    _transferPrefix.dispose();
     _drawerCash.dispose();
     _wizTaxCode.dispose();
     _wizBusinessName.dispose();
@@ -194,7 +192,6 @@ class _OperationsPanelState extends State<OperationsPanel> {
         _bankCode.text = asText(pay['bankCode']);
         _bankAccount.text = asText(pay['bankAccount']);
         _accountName.text = asText(pay['accountName']);
-        _transferPrefix.text = asText(pay['transferPrefix']);
         _methods = (pay['methods'] is List)
             ? (pay['methods'] as List)
                 .whereType<Map>()
@@ -258,7 +255,6 @@ class _OperationsPanelState extends State<OperationsPanel> {
     pay['bankCode'] = _bankCode.text.trim().toUpperCase();
     pay['bankAccount'] = _bankAccount.text.trim();
     pay['accountName'] = _accountName.text.trim();
-    pay['transferPrefix'] = _transferPrefix.text.trim();
     pay['methods'] = _methods;
 
     final shifts = _ops['shifts'] is Map
@@ -1171,12 +1167,10 @@ class _OperationsPanelState extends State<OperationsPanel> {
                         hint: t(
                             'Một số ngân hàng (BIDV...) yêu cầu Tài khoản ảo (VA) để tạo QR — không phải số tài khoản thường')),
                     _field(t('Tên chủ tài khoản'), _accountName),
-                    _field(t('Tiền tố nội dung CK (memo)'), _transferPrefix,
-                        hint: 'VD: DANBILL'),
                     Align(
                       alignment: Alignment.centerLeft,
                       child: Text(
-                        '${t('Tiền tố thực dùng')}: ${_transferPrefix.text.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '').toUpperCase()}',
+                        t('Nội dung chuyển khoản là mã tham chiếu cố định của mỗi đơn: [số máy][ngày][ngẫu nhiên], cấp ngay khi mở đơn và không cần đặt tiền tố.'),
                         style: TextStyle(fontSize: 11, color: DanColors.muted),
                       ),
                     ),

@@ -631,7 +631,7 @@ export function setRolePerms(role, perms, branch_id = 'sala', actor = null) {
   const ins = db.prepare(`INSERT OR IGNORE INTO role_perms (role,perm) VALUES (?,?)`);
   for (const p of finalPerms) ins.run(role, p);
   loadPerms();
-  audit('perms.update', { role, count: finalPerms.size, by: actor?.username || 'system' }, branch_id, actor?.username || 'system');
+  audit('role.perms.update', { role, count: finalPerms.size, by: actor?.username || 'system' }, branch_id, actor?.username || 'system');
   return permMatrix();
 }
 

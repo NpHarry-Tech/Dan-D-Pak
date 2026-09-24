@@ -40,11 +40,11 @@ export function processUpdateEvent({ headers = {}, body = {}, branch_id = 'sala'
   if (fromBuild != null && toBuild <= fromBuild) return { ok: true, ignored: 'not-an-upgrade' };
 
   const dupe = db.prepare(
-    `SELECT 1 FROM audit_log WHERE branch_id=? AND action='app.update_success' AND detail LIKE ? LIMIT 1`,
+    `SELECT 1 FROM audit_log WHERE branch_id=? AND action='app.update.success' AND detail LIKE ? LIMIT 1`,
   ).get(branch_id, `%"key":"${key}"%`);
   if (dupe) return { ok: true, deduped: true };
 
-  audit('app.update_success',
+  audit('app.update.success',
     { fromBuild, toBuild, version, key, deviceId: String(headers['x-device-id'] || '').slice(0, 120) },
     branch_id, actor);
   return { ok: true, logged: true };

@@ -31,7 +31,7 @@ const b64 = (s) => Buffer.from(s).toString('base64');
 const uploadsDoc = (stored) => storagePath('uploads', 'documents', stored);
 
 const successRows = () =>
-  db.prepare(`SELECT COUNT(*) c FROM audit_log WHERE action='app.update_success'`).get().c;
+  db.prepare(`SELECT COUNT(*) c FROM audit_log WHERE action='app.update.success'`).get().c;
 
 migrate();
 

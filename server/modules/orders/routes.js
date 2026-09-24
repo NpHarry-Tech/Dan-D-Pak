@@ -138,6 +138,9 @@ api.post('/orders', guard('sell'), wrap((req) => {
 api.get('/orders/pending-confirmation', guard('sell'), wrap((req) => Orders.listPendingConfirmations(branch(req))));
 api.get('/orders/history', guard('pay'), wrap((req) => History.listOrderHistory(branch(req), req.query)));
 api.get('/orders/:id/receipt', guard('pay'), wrap((req) => History.orderReceipt(req.params.id, branch(req))));
+// Nhật ký gọi món: dòng thời gian một đơn (thêm/sửa/ghi chú/huỷ món, trạng thái
+// bếp, thời gian phục vụ từng món) — khoá theo pay_ref / order_id / bill_no.
+api.get('/orders/:id/timeline', guard('pay'), wrap((req) => History.orderTimeline(req.params.id, branch(req))));
 // Nội dung bill render bằng ĐÚNG engine + mẫu in đã cấu hình — app dùng làm
 // preview trong Lịch sử để khớp 100% với tờ in.
 api.get('/orders/:id/receipt/text', guard('pay'), wrap((req) => {

@@ -25,15 +25,20 @@ Settings.updateSettings({ operations_config: { payment: {
 } } }, 'sala');
 Settings.updateIntegrations({ channels: { sepay: { enabled: true, apiKey: 'intent-key' } } }, 'sala');
 
-test('references are server allocated, sanitized, unique and sequential per receiving account/day', async () => {
+test('reference = orders.pay_ref: sanitized 12-digit code [reg3][DDMMYY][rand3], unique per order, and STABLE for the life of the cart', async () => {
   Inventory.createSku({ id: 'sku_pi_1', name: 'PI one', price: 10000, stock: 5 }, 'sala');
   const first = Retail.createDraftOrder({ items: [{ sku_id: 'sku_pi_1', qty: 1 }], branch_id: 'sala' });
   const second = Retail.createDraftOrder({ items: [{ sku_id: 'sku_pi_1', qty: 1 }], branch_id: 'sala' });
   const qr1 = await Payments.generateCustomerPaymentQr(first.id, { method: 'qrcode' }, 'sala');
   const qr2 = await Payments.generateCustomerPaymentQr(second.id, { method: 'qrcode' }, 'sala');
-  assert.match(qr1.reference, /^BCMVF\d{12}$/);
+  // Dạng mới: 12 chữ số [3 số máy POS][DDMMYY][3 số ngẫu nhiên], không tiền tố chữ.
+  // Mã CHÍNH LÀ orders.pay_ref — cấp lúc mở đơn, không phải dãy đối soát riêng nữa.
+  assert.match(qr1.reference, /^\d{12}$/);
+  assert.equal(qr1.reference, db.prepare(`SELECT pay_ref FROM orders WHERE id=?`).get(first.id).pay_ref);
   assert.notEqual(qr1.reference, qr2.reference);
-  assert.equal(Number(qr2.reference.slice(-6)), Number(qr1.reference.slice(-6)) + 1);
+  // Đi theo giỏ hàng: tạo lại QR cho CÙNG đơn vẫn ra đúng một mã (không đổi).
+  const qr1again = await Payments.generateCustomerPaymentQr(first.id, { method: 'qrcode' }, 'sala');
+  assert.equal(qr1again.reference, qr1.reference);
 });
 
 test('bank auto-confirm requires exact account, reference and amount', async () => {
@@ -57,6 +62,18 @@ test('bank auto-confirm requires exact account, reference and amount', async () 
   assert.equal(internal.payment_reconciliation[0].reference, qr.reference);
   assert.equal(JSON.stringify(internal.lines).includes(qr.reference), false);
   assert.equal(JSON.stringify(db.prepare(`SELECT snapshot_json FROM sale_snapshots WHERE order_id=?`).get(order.id)).includes(qr.reference), false);
+});
+
+test('leading 3 digits = POS register number (per branch), stable per device; orders with no machine get 000', () => {
+  Inventory.createSku({ id: 'sku_reg', name: 'Reg', price: 12000, stock: 9 }, 'sala');
+  const reg = (o) => db.prepare(`SELECT pay_ref FROM orders WHERE id=?`).get(o.id).pay_ref.slice(0, 3);
+  const a1 = Retail.createDraftOrder({ items: [{ sku_id: 'sku_reg', qty: 1 }], branch_id: 'sala', device_id: 'dev_reg_A' });
+  const b1 = Retail.createDraftOrder({ items: [{ sku_id: 'sku_reg', qty: 1 }], branch_id: 'sala', device_id: 'dev_reg_B' });
+  const a2 = Retail.createDraftOrder({ items: [{ sku_id: 'sku_reg', qty: 1 }], branch_id: 'sala', device_id: 'dev_reg_A' });
+  const none = Retail.createDraftOrder({ items: [{ sku_id: 'sku_reg', qty: 1 }], branch_id: 'sala' });
+  assert.equal(reg(a1), reg(a2), 'cùng máy → cùng số hiệu register');
+  assert.notEqual(reg(a1), reg(b1), 'máy khác → số hiệu khác');
+  assert.equal(reg(none), '000', 'đơn không gắn máy → 000');
 });
 
 test('expired QR receiving money is retained as late reconciliation and never closes order', async () => {

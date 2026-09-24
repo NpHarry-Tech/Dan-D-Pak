@@ -52,7 +52,7 @@ export function listOrderHistory(branch_id = 'sala', {
   limit = 100, page = 1, q = '', channel = '', from = '', to = '',
 } = {}) {
   const params = [branch_id];
-  let sql = `SELECT o.id, o.bill_no, o.channel, o.status, o.total, o.subtotal, o.discount, o.created_at, o.paid_at,
+  let sql = `SELECT o.id, o.bill_no, o.pay_ref, o.channel, o.status, o.total, o.subtotal, o.discount, o.created_at, o.paid_at,
       o.online_channel, o.online_ref, o.invoice_id, o.customer_json, t.code AS table_code, i.invoice_no
     FROM orders o
     LEFT JOIN tables t ON t.id=o.table_id
@@ -149,6 +149,91 @@ export function billShiftStatus(order_id, branch_id = 'sala') {
     JOIN orders o ON o.id=p.order_id
     WHERE p.order_id=? AND o.branch_id=? ORDER BY p.created_at DESC LIMIT 1`).get(order_id, branch_id);
   return row?.status || null;
+}
+
+// ── Nhật ký gọi món (order/dish timeline) ──────────────────────────────────
+// Read-only: dựng dòng thời gian một đơn từ dữ liệu ĐÃ có (order_items lifecycle
+// + audit_log), KHÔNG cần bảng mới. Khoá theo pay_ref — mã đi theo giỏ hàng.
+function secBetween(a, b) {
+  if (!a || !b) return null;
+  const s = Math.round((Date.parse(b) - Date.parse(a)) / 1000);
+  return Number.isFinite(s) ? Math.max(0, s) : null;
+}
+
+// Các hành động audit thuộc vòng đời gọi món — gắn tên định danh (event_type) để
+// dịch gọn ở client. Giữ đúng action đang ghi trong orders.js.
+const ORDER_EVENT_ACTIONS = new Set([
+  'order.confirm', 'order.item.note', 'order.reject', 'order.item.status', 'order.item.cancel', 'order.split',
+]);
+
+export function orderTimeline(ref, branch_id = 'sala') {
+  const key = String(ref || '').trim();
+  const o = db.prepare(`SELECT * FROM orders WHERE branch_id=? AND (id=? OR pay_ref=? OR bill_no=?) LIMIT 1`)
+    .get(branch_id, key, key, key);
+  if (!o) throw new Error('Đơn không tồn tại');
+  const table = o.table_id ? db.prepare(`SELECT code,zone FROM tables WHERE id=?`).get(o.table_id) : null;
+  const inv = o.invoice_id ? db.prepare(`SELECT invoice_no,issued_at FROM invoices WHERE id=?`).get(o.invoice_id) : null;
+  const cashierRow = db.prepare(`SELECT COALESCE(p.cashier,s.user_name) cashier, p.created_at paid_at
+    FROM payments p LEFT JOIN shifts s ON s.id=p.shift_id WHERE p.order_id=? ORDER BY p.created_at DESC LIMIT 1`).get(o.id);
+
+  // Vòng đời TỪNG món: gọi (created_at) → bếp nhận (accepted_at) → xong (ready_at)
+  // → phục vụ (served_at). Thời gian làm món & phục vụ tính theo mốc thực KDS.
+  const items = db.prepare(`SELECT id,name,emoji,qty,unit_price,note,station,sla_minutes,status,reject_reason,
+      created_at,accepted_at,ready_at,served_at
+    FROM order_items WHERE order_id=? ORDER BY created_at`).all(o.id)
+    .map(it => ({
+      ...it,
+      prep_seconds: secBetween(it.accepted_at || it.created_at, it.ready_at), // bếp nhận → xong
+      serve_seconds: secBetween(it.created_at, it.served_at),                 // gọi → bưng ra
+    }));
+  const nameOfItem = new Map(items.map(it => [it.id, it.name]));
+
+  // Dòng sự kiện: "thêm món" suy từ order_items.created_at (bước tạo không audit
+  // riêng), phần còn lại (gửi bếp / đổi trạng thái / ghi chú / huỷ món / tách bill)
+  // lấy từ audit_log kèm NGƯỜI thao tác + thời điểm chính xác.
+  const events = items.map(it => ({
+    at: it.created_at, event_type: 'order.item.added', actor: null,
+    item_id: it.id, item: it.name, qty: it.qty, note: it.note || '', station: it.station,
+  }));
+  const ids = [o.id, ...items.map(it => it.id)];
+  if (ids.length) {
+    const likeClauses = ids.map(() => 'detail LIKE ?').join(' OR ');
+    const rows = db.prepare(`SELECT actor,action,detail,created_at FROM audit_log
+      WHERE branch_id=? AND (${likeClauses}) ORDER BY created_at`).all(branch_id, ...ids.map(id => `%${id}%`));
+    for (const r of rows) {
+      if (!ORDER_EVENT_ACTIONS.has(r.action)) continue;
+      let d = {}; try { d = JSON.parse(r.detail || '{}') || {}; } catch {}
+      const itemId = d.item || d.item_id || null;
+      events.push({
+        at: r.created_at, event_type: r.action, actor: r.actor && r.actor !== 'system' ? r.actor : null,
+        item_id: itemId, item: itemId ? (nameOfItem.get(itemId) || d.item_name || '') : '',
+        status: d.status || null, reason: d.reason || d.reject_reason || null, note: d.note || null,
+      });
+    }
+  }
+  events.sort((a, b) => String(a.at).localeCompare(String(b.at)) || (a.event_type < b.event_type ? -1 : 1));
+
+  const firstAdd = items.length ? items[0].created_at : o.created_at;
+  const lastServed = items.map(it => it.served_at).filter(Boolean).sort().pop() || null;
+  return {
+    pay_ref: o.pay_ref || null,
+    bill_no: o.bill_no || null,
+    invoice_no: inv?.invoice_no || null,
+    order_id: o.id,
+    channel: o.channel,
+    table_code: table?.code || null,
+    table_zone: table?.zone || null,
+    status: o.status,
+    cashier: cashierRow?.cashier || null,
+    created_at: o.created_at,
+    first_item_at: firstAdd,
+    paid_at: o.paid_at || cashierRow?.paid_at || null,
+    total_serve_seconds: secBetween(firstAdd, o.paid_at || lastServed),
+    total: o.total,
+    item_count: items.filter(it => it.status !== 'cancelled').reduce((s, it) => s + Number(it.qty || 0), 0),
+    items,
+    events,
+  };
 }
 
 export function orderReceipt(order_id, branch_id = 'sala') {
