@@ -17,6 +17,11 @@ double _doubleValue(dynamic value) {
   return double.tryParse(value?.toString() ?? '') ?? 0.0;
 }
 
+int _qtyValue(Map<String, dynamic> item) {
+  final v = item['qty'] ?? item['quantity'];
+  return math.max(1, v is num ? v.toInt() : int.tryParse('$v') ?? 1);
+}
+
 class PosProvider extends ChangeNotifier {
   final ApiService apiService;
 
@@ -382,7 +387,7 @@ class PosProvider extends ChangeNotifier {
 
       return CartItem(
         item: foundItem,
-        qty: i['qty'] is num ? (i['qty'] as num).toInt() : 1,
+        qty: _qtyValue(i),
         selectedModifiers: selectedMods,
         notes: i['note']?.toString() ?? '',
         orderItemId: i['id']?.toString() ?? '',
@@ -413,6 +418,7 @@ class PosProvider extends ChangeNotifier {
     // Check if duplicate item exists in cart
     for (var cartItem in _cart) {
       if (cartItem.item.id == item.id &&
+          !cartItem.persisted &&
           _areModifiersEqual(cartItem.selectedModifiers, selectedModifiers) &&
           cartItem.notes == notes) {
         cartItem.qty += 1;
@@ -514,10 +520,9 @@ class PosProvider extends ChangeNotifier {
     if (voucherIdFor(item) != null) return null;
     final options = lineVoucherOptionsFor(item);
     if (options.isEmpty) return null;
-    final sorted = [...options]
-      ..sort((a, b) => b
-          .amountFor(item.totalPrice, qty: item.qty)
-          .compareTo(a.amountFor(item.totalPrice, qty: item.qty)));
+    final sorted = [...options]..sort((a, b) => b
+        .amountFor(item.totalPrice, qty: item.qty)
+        .compareTo(a.amountFor(item.totalPrice, qty: item.qty)));
     final best = sorted.first;
     return best.amountFor(item.totalPrice, qty: item.qty) > 0 ? best : null;
   }
@@ -775,10 +780,8 @@ class PosProvider extends ChangeNotifier {
     ];
 
     final List<dynamic> items = orderDetails['items'] ?? [];
-    final knownIds = _cart
-        .map((c) => c.orderItemId)
-        .where((id) => id.isNotEmpty)
-        .toSet();
+    final knownIds =
+        _cart.map((c) => c.orderItemId).where((id) => id.isNotEmpty).toSet();
     // Dòng "mới" = server trả về nhưng client CHƯA biết id (chưa gán cho món
     // nào trong giỏ) — đó chính là các dòng vừa được chèn cho lượt gửi này.
     // Server chèn ĐÚNG theo thứ tự payload đã gửi (trừ các dòng bị bỏ qua ở
@@ -788,8 +791,9 @@ class PosProvider extends ChangeNotifier {
         .map((raw) => Map<String, dynamic>.from(raw as Map))
         .where((row) => !knownIds.contains(row['id']?.toString() ?? ''))
         .toList();
-    final count =
-        stillSent.length < freshRows.length ? stillSent.length : freshRows.length;
+    final count = stillSent.length < freshRows.length
+        ? stillSent.length
+        : freshRows.length;
     for (var i = 0; i < count; i++) {
       final row = freshRows[i];
       final cartItem = stillSent[i];
@@ -905,10 +909,8 @@ class PosProvider extends ChangeNotifier {
     for (final draft in drafts) {
       _cart.remove(draft);
     }
-    final persistedIds = items
-        .where((c) => c.persisted)
-        .map((c) => c.orderItemId)
-        .toList();
+    final persistedIds =
+        items.where((c) => c.persisted).map((c) => c.orderItemId).toList();
     if (persistedIds.isEmpty) {
       notifyListeners();
       return;
