@@ -472,6 +472,7 @@ Xem [docs/DATA_SAFETY.md](docs/DATA_SAFETY.md), [docs/PROTECTED_ZONES.md](docs/P
 
 ## Checklist kiểm thử
 
+- `npm test` chạy toàn bộ regression backend bằng runner chuẩn, cách ly từng file test.
 - `npm start` khởi động không lỗi cú pháp.
 - `GET /health` trả JSON (có trạng thái DB + provider).
 - `GET /api/ping` trả JSON.
@@ -486,12 +487,9 @@ Xem [docs/DATA_SAFETY.md](docs/DATA_SAFETY.md), [docs/PROTECTED_ZONES.md](docs/P
 
 ## Vấn đề đã biết
 
-- Một số dữ liệu được bảo vệ từng bị git theo dõi trước đây cần gỡ khỏi index (không xóa khỏi đĩa).
-- Adapter PostgreSQL, S3, WebSocket vẫn là scaffold, chưa thay thế live.
-- Các trang HTML lớn còn lẫn UI + workflow nghiệp vụ, cần tách dần.
-- Một số thao tác xóa hiện xóa vật lý bản ghi cấu hình; cần một pass data-model để chuyển sang append-only an toàn cho production.
-
-Xem [docs/KNOWN_CASES.md](docs/KNOWN_CASES.md).
+Không duy trì danh sách lỗi trùng lặp trong README. Xem
+[docs/KNOWN_CASES.md](docs/KNOWN_CASES.md) cho các trường hợp ổn định và
+[handover mới nhất](docs/HANDOVER_2026-09-23.md) cho việc đang xử lý.
 
 ---
 

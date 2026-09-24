@@ -1,6 +1,6 @@
 # Repository Structure
 
-Last updated: 2026-08-01
+Last updated: 2026-09-24
 
 This document maps the **target architecture** (public VPS zone vs. private company
 server zone) onto the **current repository layout**. A full directory rename of a
@@ -14,7 +14,7 @@ documented here. Renames will happen incrementally and safely.
 | Public/mobile/desktop app shell | `apps/` | `flutter-apps/` | Current app source lives here |
 | VPS gateway (proxy/buffer/relay) | `vps-gateway/` | `deploy/company-server/` | Company-server deploy scaffold exists; gateway relay remains planned |
 | Private company server (source of truth) | `company-server/` | `server/` | Keep current name; same role |
-| Deploy definitions | `deploy/` | `deploy/` | Exists (`deploy/vps`) |
+| Deploy definitions | `deploy/` | `deploy/` | Company server, store edge, review and help center |
 | Documentation | `docs/` | `docs/` | Exists |
 
 > **Rule:** Flutter app code is the public, non-sensitive shell. `server/` is the private
@@ -64,6 +64,9 @@ Dan-D-Pak/
 
   deploy/
     company-server/            Docker/Caddy/Postgres scaffold for company server
+    store-edge/                Offline store-edge deployment
+    review/                    Isolated review environment
+    help-center/               Static help-center deployment
 
   docs/                        architecture, workflows, data-ownership, runbooks
 
@@ -86,7 +89,7 @@ Route ownership hiện có trong `server/modules/` (mỗi module có `routes.js`
 Nghiệp vụ luôn ở `server/services/*`.
 
 ```text
-server/modules/   (22 module — route ownership; api.js là registrar)
+server/modules/   (28 modules — route ownership; api.js là registrar)
   ✅ inventory/ invoices/ payments/ tax/                          (đã tách trước đó)
   ✅ orders/ reports/ audit/ purchase/ expenses/ online/ printing/ (tách 2026-07-13)
   ✅ retail/ contacts/ catalog/ agent/ appRelease/ sync/           (tách 2026-07-13)

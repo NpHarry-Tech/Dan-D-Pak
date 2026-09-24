@@ -83,8 +83,6 @@ async function main() {
       results.push(r);
       const tag = r.status === 'PASS' ? 'PASS' : r.status;
       console.log(`${tag.padEnd(7)} ${f}  pass=${r.pass} fail=${r.fail} skip=${r.skip} ${(r.dur / 1000).toFixed(1)}s`);
-      // killTree(child) đã dọn cây con lúc timeout; drain cổng TIME_WAIT giữa file.
-      await new Promise((res) => setTimeout(res, 1200));
     }
   }
   await Promise.all(Array.from({ length: CONCURRENCY }, () => worker()));
