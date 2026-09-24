@@ -455,6 +455,37 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
     }
   }
 
+  // Dòng hàng giỏ (retail) — dùng CHUNG cho tạo đơn nháp + retailCheckout.
+  List<Map<String, dynamic>> _cartItemsPayload() => [
+        for (final c in widget.cart)
+          {
+            'sku_id': c.sku.id,
+            'qty': c.qty,
+            'lot_id': c.lotId,
+            'voucher_id': c.voucherId,
+            if (c.priceOverride != null)
+              'price_override': c.priceOverride!.round(),
+            if (c.note != null) 'note': c.note,
+          },
+      ];
+
+  // Trường dùng CHUNG cho tạo đơn nháp + retailCheckout. Server tự tính lại
+  // khuyến mãi/giảm giá từ voucher_id + customer + manual_discount (xem
+  // buildOrderDiscountPlan) — client chỉ gửi các khoá này, không tính hộ.
+  Map<String, dynamic> _sharedCheckoutFields() => {
+        'voucher_id': widget.voucher?.id,
+        'customer': widget.customer?.toCheckoutCustomer(),
+        'customer_id': widget.customer?.id,
+        'manual_discount': widget.manualDiscount.round(),
+        'note': _noteCtrl.text.trim(),
+        'client_request_id': _clientRequestId,
+        'selected_combos': widget.selectedCombos,
+        // PIN: ưu tiên PIN chỉnh giá (Quản lý) nếu có, không thì PIN xác nhận
+        // thủ công. Server dùng chung field security_pin cho cả hai.
+        if (((widget.securityPin ?? _manualPin) ?? '').isNotEmpty)
+          'security_pin': widget.securityPin ?? _manualPin,
+      };
+
   /// Tạo đơn nháp THẬT trên server cho đơn Bán lẻ mới (chưa có widget.orderId)
   /// ngay khi chọn "Chuyển khoản" — để webhook SePay/Casso/payOS có "đơn đang
   /// mở" mà khớp nội dung chuyển khoản và tự đóng bill, thay vì phải đợi bấm
@@ -466,27 +497,8 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
     _creatingDraft = true;
     try {
       final order = await widget.api.createRetailDraft({
-        'items': [
-          for (final c in widget.cart)
-            {
-              'sku_id': c.sku.id,
-              'qty': c.qty,
-              'lot_id': c.lotId,
-              'voucher_id': c.voucherId,
-              if (c.priceOverride != null)
-                'price_override': c.priceOverride!.round(),
-              if (c.note != null) 'note': c.note,
-            },
-        ],
-        'voucher_id': widget.voucher?.id,
-        'customer': widget.customer?.toCheckoutCustomer(),
-        'customer_id': widget.customer?.id,
-        'manual_discount': widget.manualDiscount.round(),
-        'note': _noteCtrl.text.trim(),
-        'client_request_id': _clientRequestId,
-        'selected_combos': widget.selectedCombos,
-        if (((widget.securityPin ?? _manualPin) ?? '').isNotEmpty)
-          'security_pin': widget.securityPin ?? _manualPin,
+        'items': _cartItemsPayload(),
+        ..._sharedCheckoutFields(),
       });
       if (!mounted) return;
       setState(() {
@@ -658,40 +670,18 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
 
     setState(() => _paying = true);
     final body = {
-      'items': [
-        for (final c in widget.cart)
-          {
-            'sku_id': c.sku.id,
-            'qty': c.qty,
-            'lot_id': c.lotId,
-            'voucher_id': c.voucherId,
-            if (c.priceOverride != null)
-              'price_override': c.priceOverride!.round(),
-            if (c.note != null) 'note': c.note,
-          },
-      ],
-      'voucher_id': widget.voucher?.id,
+      'items': _cartItemsPayload(),
       'payments': [for (final l in _lines) l.toJson()],
-      'customer': widget.customer?.toCheckoutCustomer(),
-      'customer_id': widget.customer?.id,
       'issue_einvoice': issueEinvoice,
       'invoice_customer': invoiceCustomer,
-      'manual_discount': widget.manualDiscount.round(),
-      'note': _noteCtrl.text.trim(),
-      'client_request_id': _clientRequestId,
-      'selected_combos': widget.selectedCombos,
+      ..._sharedCheckoutFields(),
       // §2 canonical: order_id → server dùng checkout lock + markDraftPaid (một
       // finalizer, PAID terminal). device_id → chốt lock đúng thiết bị + in bill
-      // đúng máy đang thu.
+      // đúng máy đang thu. cart_slot/version → chống thanh toán trùng (2 máy 1 bill).
       if ((widget.mdOrderId ?? '').isNotEmpty) 'order_id': widget.mdOrderId,
       if ((widget.mdDeviceId ?? '').isNotEmpty) 'device_id': widget.mdDeviceId,
-      // Ô giỏ + phiên bản → server chống thanh toán trùng (2 máy cùng 1 hóa đơn).
       if (widget.cartSlot != null) 'cart_slot': widget.cartSlot,
       if (widget.cartVersion != null) 'cart_version': widget.cartVersion,
-      // PIN: ưu tiên PIN chỉnh giá (Quản lý) nếu có, không thì PIN xác nhận thủ
-      // công. Server dùng chung field security_pin cho cả hai.
-      if (((widget.securityPin ?? _manualPin) ?? '').isNotEmpty)
-        'security_pin': widget.securityPin ?? _manualPin,
     };
     // Đơn đã có sẵn (POS/tại bàn — widget.orderId) HOẶC đơn nháp vừa tạo cho QR
     // (_draftOrderId) đều là đơn THẬT trên server rồi → settle bằng payOrder()

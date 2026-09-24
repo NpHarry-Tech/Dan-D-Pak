@@ -429,8 +429,9 @@ function settlePaymentLines(lines, total) {
   total = Math.min(total, paid);
   let change = paid - total;
   const cashTendered = settled.filter(line => line.method === 'cash').reduce((sum, line) => sum + line.tendered_amount, 0);
+  // Tiền thối chỉ trả được từ tiền mặt: nếu phần dư lớn hơn tiền mặt khách đưa
+  // (vd thu bằng chuyển khoản/thẻ mà lại dư) thì không có nguồn để thối.
   if (change > cashTendered) throw new Error('Số tiền thanh toán không tiền mặt vượt quá số còn nợ');
-  if (change > cashTendered) throw new Error('Số tiền dư chỉ có thể trả lại từ khoản thanh toán tiền mặt');
   for (let index = settled.length - 1; index >= 0 && change > 0; index--) {
     const line = settled[index];
     if (line.method !== 'cash') continue;
