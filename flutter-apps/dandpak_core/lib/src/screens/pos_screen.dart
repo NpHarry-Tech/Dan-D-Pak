@@ -1296,7 +1296,9 @@ class _PosScreenState extends State<PosScreen> {
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 6),
                 child: Text(
-                    t('Món đã gửi bếp — chỉ đổi được ghi chú. Chỉnh giá thì hủy rồi thêm lại.'),
+                    item.sentToKitchen
+                        ? t('Món đã gửi bếp — chỉ đổi được ghi chú. Chỉnh giá thì hủy rồi thêm lại.')
+                        : t('Món đang CHỜ XÁC NHẬN (chưa gửi bếp) — đổi được ghi chú. Đổi số lượng/giá thì xoá rồi thêm lại; xoá không in phiếu hủy.'),
                     style: TextStyle(fontSize: 11.5, color: DanColors.faint)),
               ),
             const SizedBox(height: 8),

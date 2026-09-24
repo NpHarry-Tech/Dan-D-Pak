@@ -342,6 +342,12 @@ class CartItem {
 
   bool get persisted => orderItemId.isNotEmpty;
 
+  // ĐÃ gửi bếp thật sự (bếp đã thấy) = đã lưu server VÀ không còn "chờ xác nhận".
+  // Món 'pending_confirm' tuy đã lưu (có orderItemId) nhưng CHƯA bấm "Xác nhận"
+  // nên bếp CHƯA in — phải cho sửa số lượng/giá/ghi chú tự do và xoá KHÔNG in
+  // phiếu hủy, giống món nháp. Chỉ dòng này mới cần khoá sửa + PIN + phiếu hủy.
+  bool get sentToKitchen => persisted && status != 'pending_confirm';
+
   // Giá niêm yết/đơn vị (đã gồm modifier) — dùng làm "giá gốc" khi có chỉnh giá.
   double get listedUnitPrice {
     double total = item.price;

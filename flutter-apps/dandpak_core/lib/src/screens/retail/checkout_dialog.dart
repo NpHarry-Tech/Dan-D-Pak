@@ -110,7 +110,6 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
   final String _clientRequestId =
       'retail_${DateTime.now().microsecondsSinceEpoch}';
   final _amountCtrl = TextEditingController();
-  final _adjustmentCtrl = TextEditingController();
   final _refCtrl = TextEditingController();
   final _taxCtrl = TextEditingController();
   final _companyCtrl = TextEditingController();
@@ -189,9 +188,6 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
     _method = methods.isNotEmpty ? methods.first.key : 'cash';
     _amountCtrl.text = _payable.round().toString();
     _noteCtrl.text = widget.initialNote;
-    if (widget.manualDiscount > 0) {
-      _adjustmentCtrl.text = widget.manualDiscount.round().toString();
-    }
     _applyDefaultRef();
     // Bill co the bi dong boi webhook SePay/Casso/payOS (tu doi soat chuyen khoan)
     // hoac mot thiet bi khac trong luc dialog nay con mo — truoc day khong co cach
@@ -291,7 +287,6 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
     _display?.resume(); // customer screen back to ads/order
     _taxLookup.dispose();
     _amountCtrl.dispose();
-    _adjustmentCtrl.dispose();
     _refCtrl.dispose();
     _taxCtrl.dispose();
     _companyCtrl.dispose();
@@ -345,9 +340,9 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
             .contains(m.key);
   }
 
-  num get _adjustment => retailN(_adjustmentCtrl.text.trim())
-      .clamp(0, (widget.total + widget.manualDiscount).toDouble());
-  num get _payable => (widget.total - _adjustment).clamp(0, double.infinity);
+  // widget.total đã trừ sẵn mọi khuyến mãi + giảm giá (giỏ hàng) → thu đúng bằng
+  // đây. KHÔNG trừ thêm "điều chỉnh hóa đơn" nữa (đã bỏ, xem phần dựng tổng tiền).
+  num get _payable => widget.total.clamp(0, double.infinity);
   num get _vatPayable => widget.total > 0
       ? (widget.vatAmount * _payable / widget.total).round()
       : 0;
@@ -486,7 +481,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
         'voucher_id': widget.voucher?.id,
         'customer': widget.customer?.toCheckoutCustomer(),
         'customer_id': widget.customer?.id,
-        'manual_discount': _adjustment.round(),
+        'manual_discount': widget.manualDiscount.round(),
         'note': _noteCtrl.text.trim(),
         'client_request_id': _clientRequestId,
         'selected_combos': widget.selectedCombos,
@@ -681,7 +676,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
       'customer_id': widget.customer?.id,
       'issue_einvoice': issueEinvoice,
       'invoice_customer': invoiceCustomer,
-      'manual_discount': _adjustment.round(),
+      'manual_discount': widget.manualDiscount.round(),
       'note': _noteCtrl.text.trim(),
       'client_request_id': _clientRequestId,
       'selected_combos': widget.selectedCombos,
@@ -718,7 +713,7 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
                 if (widget.lineVouchers.isNotEmpty)
                   'line_vouchers': widget.lineVouchers,
                 'selected_combos': widget.selectedCombos,
-                'manual_discount': _adjustment.round(),
+                'manual_discount': widget.manualDiscount.round(),
                 'customer': widget.customer?.toCheckoutCustomer(),
                 'issue_einvoice': issueEinvoice,
                 'invoice_customer': invoiceCustomer,
@@ -1056,23 +1051,13 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
             _totalRow(t('Ưu đãi khách hàng'),
                 '-${Fmt.money(widget.customerDiscount)}',
                 accent: DanColors.done),
-          SizedBox(height: 8),
-          TextField(
-            controller: _adjustmentCtrl,
-            keyboardType: TextInputType.number,
-            decoration: InputDecoration(
-              labelText: t('Điều chỉnh hóa đơn (đ)'),
-              isDense: true,
-            ),
-            onChanged: (_) => setState(() {
-              if (_lines.isEmpty) {
-                _amountCtrl.text = _payable.round().toString();
-              }
-            }),
-          ),
-          if (_adjustment > 0)
-            _totalRow(t('Điều chỉnh hóa đơn'), '-${Fmt.money(_adjustment)}',
-                accent: DanColors.late),
+          // "Giảm giá" (nhập ở giỏ, nút Giảm giá / % Giảm giá) — chỉ HIỂN THỊ ở
+          // đây, KHÔNG cho nhập lại. Trước đây có ô "Điều chỉnh hóa đơn" tự điền
+          // lại đúng số đã giảm rồi trừ THÊM lần nữa → giảm gấp đôi (50k→10k thay
+          // vì 30k). Bỏ ô đó: giảm giá chỉ một nguồn duy nhất là giỏ hàng.
+          if (widget.manualDiscount > 0)
+            _totalRow(t('Giảm giá'), '-${Fmt.money(widget.manualDiscount)}',
+                accent: DanColors.done),
           Divider(height: 18, color: DanColors.border),
           if (_vatPayable > 0)
             _totalRow(t('Trong đó VAT'), Fmt.money(_vatPayable)),
