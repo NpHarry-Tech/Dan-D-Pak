@@ -423,7 +423,17 @@ class _CheckoutDialogState extends State<CheckoutDialog> {
       };
     });
     try {
-      final data = await widget.api.orderPaymentQr(orderId, method: _method);
+      // Gửi kèm giảm giá đang áp → server ra số tiền QR theo tổng ĐÃ giảm, khớp
+      // với số còn nợ lúc chốt (nếu không sẽ lệch "Số tiền PaymentIntent không
+      // còn khớp đơn" khi thu chuyển khoản trên đơn có giảm giá).
+      final data = await widget.api.orderPaymentQr(orderId, method: _method, discount: {
+        'sync_discount': true,
+        'voucher_id': widget.voucher?.id,
+        if (widget.lineVouchers.isNotEmpty) 'line_vouchers': widget.lineVouchers,
+        'manual_discount': widget.manualDiscount.round(),
+        'customer': widget.customer?.toCheckoutCustomer(),
+        'selected_combos': widget.selectedCombos,
+      });
       if (!mounted ||
           requestedRevision != _methodRevision ||
           requestedMethod != _method ||

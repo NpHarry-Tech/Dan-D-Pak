@@ -111,10 +111,12 @@ extension ApiServiceRetailApi on ApiService {
   /// toán, hoặc đơn nháp chưa kịp tạo, là mã trên QR không còn khớp với thứ
   /// server chờ và tiền về thành 'unmatched'.
   Future<Map<String, dynamic>> orderPaymentQr(String orderId,
-      {String method = 'qrcode'}) async {
+      {String method = 'qrcode', Map<String, dynamic>? discount}) async {
     return mapFrom(await postJson(
         '/api/orders/${Uri.encodeComponent(orderId)}/payment-qr',
-        body: {'method': method},
+        // discount: khi thu ngân đã áp giảm giá, gửi kèm để server ra số tiền QR
+        // theo tổng ĐÃ giảm (khớp lúc chốt) — xem generateCustomerPaymentQr.
+        body: {'method': method, ...?discount},
         errorMessage: 'Không tạo được QR cho hóa đơn'));
   }
 

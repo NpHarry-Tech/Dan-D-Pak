@@ -958,13 +958,27 @@ export function requestPayment(table_id, branch_id = 'sala') {
   emit('table:updated', getTableState(table_id), branch_id);
 }
 
-export async function generateCustomerPaymentQr(order_id, { method = 'qrcode', client_request_id = null } = {}, branch_id = 'sala') {
-  const order = getOrder(order_id);
+export async function generateCustomerPaymentQr(order_id, { method = 'qrcode', client_request_id = null,
+  sync_discount = false, voucher_id = null, line_vouchers = null, manual_discount = 0, customer = null,
+  selected_combos = null } = {}, branch_id = 'sala') {
+  let order = getOrder(order_id);
   if (!order) throw new Error('Order khong ton tai');
   if (order.branch_id && branch_id && order.branch_id !== branch_id) throw new Error('Order khong thuoc chi nhanh hien tai');
   if (!['open', 'partially_paid'].includes(order.status)) throw new Error('Order da dong');
   const pending = order.items.filter(i => i.status === 'pending_confirm');
   if (pending.length) throw new Error(`Con ${pending.length} dong mon dang cho nhan vien xac nhan`);
+  // Thu ngân đã áp giảm giá (sync_discount): GHI giảm giá vào đơn + tính lại tổng
+  // NGAY BÂY GIỜ, dùng CHUNG engine (buildOrderDiscountPlan + recomputeTotals) y
+  // hệt lúc chốt (route /pay). Nhờ vậy số tiền QR = số còn nợ lúc finalize →
+  // hết lỗi "Số tiền PaymentIntent không còn khớp đơn" khi thu bằng chuyển khoản
+  // trên đơn ĐÃ giảm giá. Set (không cộng dồn) nên finalize áp lại cùng số =
+  // idempotent. Self-Order/BYOD KHÔNG gửi sync_discount → giữ nguyên order.total.
+  if (sync_discount && order.status === 'open') {
+    const plan = buildOrderDiscountPlan(order_id, { voucher_id, line_vouchers, manual_discount, customer, selected_combos, branch_id });
+    db.prepare(`UPDATE orders SET discount=? WHERE id=?`).run(Math.round(Number(plan.discount) || 0), order_id);
+    recomputeTotals(order_id);
+    order = getOrder(order_id);
+  }
   const amountW = Math.max(0, money(order.total) - paidForOrder(order_id));
   if (!amountW) throw new Error('Bill hien tai khong co so tien can thanh toan.');
   let intent = PaymentIntents.activeIntentForOrder(order.id, branch_id);
