@@ -20,6 +20,7 @@ import '../../utils/translation.dart';
 part 'database_audit_tab.dart';
 part 'database_system_log.dart';
 part 'database_order_log.dart';
+part 'database_ops_log.dart';
 
 String _s(dynamic v) => _repairMojibake(v?.toString() ?? '');
 num _n(dynamic v) => v is num ? v : num.tryParse(_s(v)) ?? 0;
@@ -102,6 +103,8 @@ class _DatabaseScreenState extends State<DatabaseScreen> {
         t('Cơ sở dữ liệu'),
         t('Nhật ký hoạt động'),
         t('Nhật ký gọi món'),
+        t('Job in gần đây'),
+        t('Phiên đồng bộ'),
         t('Tài liệu'),
       ];
 
@@ -109,6 +112,8 @@ class _DatabaseScreenState extends State<DatabaseScreen> {
         t('Theo dõi máy chủ dữ liệu đang chọn, sao lưu cấu hình và thống kê hệ thống.'),
         t('Lịch sử thao tác hệ thống, lỗi phát sinh và truy vết theo thời gian.'),
         t('Dòng thời gian gọi món từng đơn theo mã tham chiếu: thêm/sửa/huỷ món, trạng thái bếp và thời gian phục vụ.'),
+        t('Các lệnh in gần đây và trạng thái in của từng phiếu.'),
+        t('Các phiên đồng bộ với nền tảng đã kết nối và kết quả từng phiên.'),
         t('Kho tài liệu nội bộ dùng cho vận hành và đào tạo.'),
       ];
 
@@ -184,7 +189,11 @@ class _DatabaseScreenState extends State<DatabaseScreen> {
                   ? _AuditLogTab()
                   : _tab == 2
                       ? _OrderLogTab()
-                      : DocumentsBody(),
+                      : _tab == 3
+                          ? _PrintJobsTab()
+                          : _tab == 4
+                              ? _SyncSessionsTab()
+                              : DocumentsBody(),
         ),
       ],
     );
@@ -195,7 +204,9 @@ class _DatabaseScreenState extends State<DatabaseScreen> {
       _NavItem(0, t('Cơ sở dữ liệu'), Icons.storage_outlined),
       _NavItem(1, t('Nhật ký hoạt động'), Icons.history_rounded),
       _NavItem(2, t('Nhật ký gọi món'), Icons.receipt_long_outlined),
-      _NavItem(3, t('Tài liệu'), Icons.folder_copy_outlined),
+      _NavItem(3, t('Job in gần đây'), Icons.print_outlined),
+      _NavItem(4, t('Phiên đồng bộ'), Icons.sync_rounded),
+      _NavItem(5, t('Tài liệu'), Icons.folder_copy_outlined),
     ];
 
     if (compact) {
