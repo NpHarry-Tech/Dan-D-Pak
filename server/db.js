@@ -976,6 +976,7 @@ export function migrate(targetDb = globalDb) {
   addColumnIfMissing('menu_items', 'schedule_json', `TEXT DEFAULT '{"mode":"always"}'`);
   addColumnIfMissing('menu_items', 'addons_json', `TEXT DEFAULT '[]'`);   // combos & extras
   addColumnIfMissing('menu_items', 'translations_json', `TEXT DEFAULT '{}'`);
+  addColumnIfMissing('menu_items', 'unit', `TEXT DEFAULT 'phần'`);   // đơn vị tính (đvt) — hiện trên báo cáo/bill
   // NHÓM TÙY CHỌN hợp nhất (size/đá + topping + combo) cho Self-Order: mảng
   // [{key,name,position:top|bottom,min,max,options:[{name,price,type,ref_item_id}]}].
   addColumnIfMissing('menu_items', 'option_groups_json', `TEXT DEFAULT '[]'`);

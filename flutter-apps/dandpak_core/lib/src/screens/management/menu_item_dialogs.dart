@@ -31,6 +31,7 @@ class _ItemFormDialogState extends State<_ItemFormDialog> {
   late final TextEditingController _vatRate;
   late final TextEditingController _emoji;
   late final TextEditingController _sla;
+  late final TextEditingController _unit;
   late final TextEditingController _image;
   late final TextEditingController _description;
   late final TextEditingController _ingredients;
@@ -68,6 +69,7 @@ class _ItemFormDialogState extends State<_ItemFormDialog> {
     _vatRate = TextEditingController(text: (i?.vatRate ?? 8).toString());
     _emoji = TextEditingController(text: i?.emoji ?? '');
     _sla = TextEditingController(text: (i?.slaMinutes ?? 10).toString());
+    _unit = TextEditingController(text: i?.unit ?? 'phần');
     _image = TextEditingController(text: i?.image ?? '');
     _description = TextEditingController(text: i?.description ?? '');
     _ingredients =
@@ -148,6 +150,7 @@ class _ItemFormDialogState extends State<_ItemFormDialog> {
       _vatRate,
       _emoji,
       _sla,
+      _unit,
       _image,
       _description,
       _ingredients,
@@ -222,6 +225,7 @@ class _ItemFormDialogState extends State<_ItemFormDialog> {
       'price_includes_vat': _priceIncludesVat,
       'emoji': _emoji.text.trim(),
       'sla_minutes': int.tryParse(_sla.text.trim()) ?? 10,
+      'unit': _unit.text.trim().isEmpty ? 'phần' : _unit.text.trim(),
       'image': _image.text.trim(),
       'description': _description.text.trim(),
       'translations': _translationPayload(),
@@ -361,6 +365,10 @@ class _ItemFormDialogState extends State<_ItemFormDialog> {
                             Expanded(
                                 child: _field(t('VAT (%)'), _vatRate,
                                     number: true)),
+                            SizedBox(width: 12),
+                            Expanded(
+                                child: _field(t('ĐVT'), _unit,
+                                    hint: t('phần / ly / cái'))),
                             SizedBox(width: 12),
                             Expanded(
                               child: SwitchListTile(

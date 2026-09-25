@@ -89,8 +89,8 @@ api.post('/menu', guard('menu.manage'), wrap(async (req) => {
     translations: b.translations,
   });
   db.prepare(`INSERT INTO menu_items
-    (id,branch_id,category_id,name,code,emoji,image,description,price,price_includes_vat,vat_rate,station,station_id,sla_minutes,available,available_dine_in,available_takeaway,hidden,self_order_hidden,ingredients_json,allergens_json,schedule_json,modifiers_json,addons_json,option_groups_json,translations_json,sort,updated_at)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
+    (id,branch_id,category_id,name,code,emoji,image,description,price,price_includes_vat,vat_rate,station,station_id,sla_minutes,available,available_dine_in,available_takeaway,hidden,self_order_hidden,ingredients_json,allergens_json,schedule_json,modifiers_json,addons_json,option_groups_json,translations_json,unit,sort,updated_at)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
     id,
     branch_id,
     b.category_id,
@@ -117,6 +117,7 @@ api.post('/menu', guard('menu.manage'), wrap(async (req) => {
     JSON.stringify(Catalog.normalizeAddons(b.addons)),
     JSON.stringify(Catalog.normalizeOptionGroups(b.option_groups)),
     JSON.stringify(translations),
+    String(b.unit || 'phần').trim().slice(0, 20) || 'phần',
     sort,
     now());
   Catalog.replaceRecipe(id, b.recipe || [], branch_id);
@@ -151,7 +152,7 @@ api.post('/menu/:id/update', guard('menu.manage'), wrap(async (req) => {
   db.prepare(`UPDATE menu_items SET
       name=?, code=?, emoji=?, image=?, description=?, price=?, price_includes_vat=?, vat_rate=?, category_id=?, station=?, station_id=?, sla_minutes=?,
       ingredients_json=?, allergens_json=?, schedule_json=?, hidden=?, self_order_hidden=?, addons_json=?, option_groups_json=?, translations_json=?,
-      available_dine_in=?, available_takeaway=?, sort=?, updated_at=?
+      available_dine_in=?, available_takeaway=?, sort=?, unit=?, updated_at=?
     WHERE id=? AND branch_id=?`).run(
     nextName,
     b.code !== undefined ? (String(b.code || '').trim().slice(0, 40) || null) : cur.code,
@@ -176,6 +177,7 @@ api.post('/menu/:id/update', guard('menu.manage'), wrap(async (req) => {
     b.available_dine_in !== undefined ? (b.available_dine_in ? 1 : 0) : (cur.available_dine_in ?? 1),
     b.available_takeaway !== undefined ? (b.available_takeaway ? 1 : 0) : (cur.available_takeaway ?? 1),
     b.sort !== undefined ? (parseInt(b.sort) || 0) : cur.sort,
+    b.unit !== undefined ? (String(b.unit || 'phần').trim().slice(0, 20) || 'phần') : (cur.unit || 'phần'),
     now(),
     req.params.id, branch_id);
   if (Array.isArray(b.recipe)) Catalog.replaceRecipe(req.params.id, b.recipe || [], branch_id);

@@ -285,14 +285,21 @@ function saleRows(branch_id, query = {}, kind = 'all') {
   }
   const raw = db.prepare(`
     SELECT o.id order_id, o.bill_no, o.channel, o.online_channel, o.online_ref, o.paid_at, o.note order_note, o.pay_ref,
-      o.customer_json, o.invoice_id, o.invoice_choice,
+      o.customer_json, o.invoice_id, o.invoice_choice, i.invoice_no,
       t.code table_code, oi.menu_item_id, oi.sku_id, oi.name item_name, oi.station,
       oi.qty, oi.unit_price, oi.vat_rate, oi.qty * oi.unit_price gross, oi.promo_json,
       oi.item_code sku_code, oi.item_barcode sku_barcode,
-      COALESCE(oi.unit_snapshot,CASE WHEN oi.sku_id IS NOT NULL THEN 'cái' ELSE 'phần' END) unit
+      -- Nhóm hàng: F&B lấy tên nhóm thực đơn, Retail lấy category của SKU.
+      COALESCE(c.name, s.category, '') category,
+      -- ĐVT: ưu tiên đvt đã chốt lúc bán (snapshot), rồi tới đvt cấu hình của món/SKU.
+      COALESCE(oi.unit_snapshot, mi.unit, s.unit, CASE WHEN oi.sku_id IS NOT NULL THEN 'cái' ELSE 'phần' END) unit
     FROM order_items oi
     JOIN orders o ON o.id=oi.order_id
     LEFT JOIN tables t ON t.id=o.table_id
+    LEFT JOIN invoices i ON i.id=o.invoice_id
+    LEFT JOIN menu_items mi ON mi.id=oi.menu_item_id
+    LEFT JOIN categories c ON c.id=mi.category_id
+    LEFT JOIN skus s ON s.id=oi.sku_id
     WHERE ${w.sql} AND oi.status!='cancelled' ${itemFilter}
     ORDER BY o.paid_at DESC, oi.created_at DESC`).all(...params);
   // NET = tiền hàng gốc TRỪ khuyến mãi/combo (promo_json.amount). Trước đây báo cáo
@@ -311,6 +318,7 @@ function saleRows(branch_id, query = {}, kind = 'all') {
         : 0,
       promo_name: promo?.name || promo?.code || '',
       customer_name: customerDisplayName(r.customer_json, r.invoice_id, r.invoice_choice),
+      discount_amount: promoAmount, // tiền giảm giá của dòng = gộp giảm KM/combo
     };
   });
 }
@@ -435,32 +443,45 @@ function buildSales(type, branch_id, query) {
   }
 
   report.sections.push(section('Chi tiết giao dịch', [
-    { key: 'time_fmt', label: 'Thời gian mua', format: 'datetime' },
-    { key: 'bill', label: 'Bill' },
+    // Thứ tự cột theo mẫu chuẩn: Ngày · Số c.từ · Số hóa đơn (VAT/MISA) · Mã hàng ·
+    // Tên hàng · SL · Tổng trước giảm · Tiền giảm · Thành tiền · Nhóm hàng · ĐVT · Hình thức.
+    { key: 'time_fmt', label: 'Ngày', format: 'datetime' },
+    { key: 'bill', label: 'Số c.từ' },
+    { key: 'invoice_no', label: 'Số hóa đơn' },
+    { key: 'sku_code', label: 'Mã hàng' },
+    { key: 'item_name', label: 'Tên hàng' },
+    { key: 'qty_fmt', label: 'Số lượng', align: 'right' },
+    { key: 'price_fmt', label: 'Đơn giá', align: 'right' },
+    { key: 'gross_fmt', label: 'Tổng tiền trước giảm giá', align: 'right' },
+    { key: 'discount_fmt', label: 'Tiền giảm giá', align: 'right' },
+    { key: 'amount_fmt', label: 'Thành tiền', align: 'right' },
+    { key: 'category', label: 'Nhóm hàng' },
+    { key: 'unit', label: 'ĐVT' },
+    { key: 'method_label', label: 'Hình thức' },
+    // Cột bổ trợ (giữ lại cho đối soát nội bộ) — không có trong mẫu tối giản.
     { key: 'channel_label', label: 'Kênh' },
     { key: 'customer_name', label: 'Khách hàng' },
-    { key: 'method_label', label: 'Thanh toán' },
-    { key: 'sku_code', label: 'Mã hàng' },
-    { key: 'sku_barcode', label: 'Mã vạch' },
-    { key: 'item_name', label: 'Sản phẩm / món' },
-    { key: 'qty_fmt', label: 'SL', align: 'right' },
-    { key: 'price_fmt', label: 'Đơn giá', align: 'right' },
-    { key: 'amount_fmt', label: 'Thành tiền', align: 'right' },
     { key: 'promo_name', label: 'CTKM' },
+    { key: 'sku_barcode', label: 'Mã vạch' },
     { key: 'order_note', label: 'Ghi chú' },
     { key: 'pay_ref', label: 'Nội dung CK' },
   ], rows.map(r => ({
     ...r,
     time_fmt: r.paid_at,
     bill: r.bill_no || String(r.order_id).slice(-6).toUpperCase(),
+    invoice_no: r.invoice_no || '',
     channel_label: r.online_channel || channelLabel(r.channel),
     method_label: orderMethodLabel(r.order_id),
     sku_code: r.sku_code || '',
     sku_barcode: r.sku_barcode || '',
+    category: r.category || '',
+    unit: r.unit || '',
     qty_fmt: qty(r.qty),
     // Báo cáo phải hiện đúng giá thực thu trên dòng. Giá gốc vẫn nằm trong dữ
     // liệu order_item/promo để audit, nhưng không được trình bày như giá bán.
     price_fmt: money(r.effective_unit_price),
+    gross_fmt: money(r.gross),
+    discount_fmt: money(r.discount_amount),
     amount_fmt: money(r.amount),
     promo_name: r.promo_name || '',
     order_note: r.order_note || '',

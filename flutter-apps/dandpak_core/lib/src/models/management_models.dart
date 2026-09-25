@@ -373,6 +373,7 @@ class AdminMenuItem {
   final String categoryId;
   final String station;
   final int slaMinutes;
+  final String unit;
   final bool available;
   final bool availableDineIn;
   final bool availableTakeaway;
@@ -402,6 +403,7 @@ class AdminMenuItem {
     required this.categoryId,
     required this.station,
     required this.slaMinutes,
+    this.unit = 'phần',
     required this.available,
     this.availableDineIn = true,
     this.availableTakeaway = true,
@@ -436,6 +438,7 @@ class AdminMenuItem {
       categoryId: _str(j['category_id']),
       station: _str(j['station']).isEmpty ? 'kitchen' : _str(j['station']),
       slaMinutes: _int(j['sla_minutes'] ?? 10),
+      unit: _str(j['unit']).isEmpty ? 'phần' : _str(j['unit']),
       available: j['available'] != 0 && j['available'] != false,
       availableDineIn:
           j['available_dine_in'] != 0 && j['available_dine_in'] != false,

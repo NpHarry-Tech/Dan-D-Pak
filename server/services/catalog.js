@@ -183,6 +183,7 @@ export function normalizeMenuItem(row, { forCustomer = false, includeRecipe = fa
   }));
   const out = {
     ...row,
+    unit: row.unit || 'phần',
     price_includes_vat: priceIncludesVat,
     sale_price: salePrice(row.price, vatRate, priceIncludesVat),
     available_flag: !!row.available,

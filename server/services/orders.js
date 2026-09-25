@@ -531,8 +531,8 @@ export function getOrder(order_id) {
   const skuIds = [...new Set(rawItems.filter(i => !i.menu_item_id && i.sku_id).map(i => i.sku_id))];
   const miImg = new Map(), miUnit = new Map();
   if (miIds.length) {
-    for (const r of db.prepare(`SELECT id,image FROM menu_items WHERE branch_id=? AND id IN (${miIds.map(() => '?').join(',')})`).all(order.branch_id, ...miIds)) {
-      miImg.set(r.id, r.image || null); miUnit.set(r.id, 'phần');
+    for (const r of db.prepare(`SELECT id,image,unit FROM menu_items WHERE branch_id=? AND id IN (${miIds.map(() => '?').join(',')})`).all(order.branch_id, ...miIds)) {
+      miImg.set(r.id, r.image || null); miUnit.set(r.id, r.unit || 'phần');
     }
   }
   const skuImg = new Map(), skuUnit = new Map();
