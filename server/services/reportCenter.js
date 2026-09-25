@@ -285,6 +285,7 @@ function saleRows(branch_id, query = {}, kind = 'all') {
   }
   const raw = db.prepare(`
     SELECT o.id order_id, o.bill_no, o.channel, o.online_channel, o.online_ref, o.paid_at, o.note order_note, o.pay_ref,
+      o.customer_json, o.invoice_id, o.invoice_choice,
       t.code table_code, oi.menu_item_id, oi.sku_id, oi.name item_name, oi.station,
       oi.qty, oi.unit_price, oi.vat_rate, oi.qty * oi.unit_price gross, oi.promo_json,
       oi.item_code sku_code, oi.item_barcode sku_barcode,
@@ -309,8 +310,20 @@ function saleRows(branch_id, query = {}, kind = 'all') {
         ? ((Number(r.gross) || 0) - promoAmount) / Number(r.qty)
         : 0,
       promo_name: promo?.name || promo?.code || '',
+      customer_name: customerDisplayName(r.customer_json, r.invoice_id, r.invoice_choice),
     };
   });
+}
+
+// Tên khách trên báo cáo: khách vãng lai → "Bán cho người tiêu dùng"; khách CÓ tài
+// khoản (customer_json.id) hoặc có XUẤT hóa đơn (invoice_id / invoice_choice='issued'
+// / invoice_request) → tên khách hoặc tên công ty. Cùng quy tắc với hóa đơn.
+export function customerDisplayName(customer_json, invoice_id, invoice_choice) {
+  let c = {};
+  try { c = JSON.parse(customer_json || '{}') || {}; } catch { /* snapshot hỏng → vãng lai */ }
+  const named = !!c.id || !!invoice_id || String(invoice_choice || '') === 'issued' || c.invoice_request === true;
+  if (named) return String(c.name || c.company || '').trim() || 'Bán cho người tiêu dùng';
+  return 'Bán cho người tiêu dùng';
 }
 function buildSales(type, branch_id, query) {
   const report = reportShell(type, query);
@@ -425,6 +438,7 @@ function buildSales(type, branch_id, query) {
     { key: 'time_fmt', label: 'Thời gian mua', format: 'datetime' },
     { key: 'bill', label: 'Bill' },
     { key: 'channel_label', label: 'Kênh' },
+    { key: 'customer_name', label: 'Khách hàng' },
     { key: 'method_label', label: 'Thanh toán' },
     { key: 'sku_code', label: 'Mã hàng' },
     { key: 'sku_barcode', label: 'Mã vạch' },
