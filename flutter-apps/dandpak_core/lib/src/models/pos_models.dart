@@ -342,11 +342,13 @@ class CartItem {
 
   bool get persisted => orderItemId.isNotEmpty;
 
+  bool get awaitingConfirmation => status == 'pending_confirm';
+
   // ĐÃ gửi bếp thật sự (bếp đã thấy) = đã lưu server VÀ không còn "chờ xác nhận".
   // Món 'pending_confirm' tuy đã lưu (có orderItemId) nhưng CHƯA bấm "Xác nhận"
-  // nên bếp CHƯA in — phải cho sửa số lượng/giá/ghi chú tự do và xoá KHÔNG in
-  // phiếu hủy, giống món nháp. Chỉ dòng này mới cần khoá sửa + PIN + phiếu hủy.
-  bool get sentToKitchen => persisted && status != 'pending_confirm';
+  // nên bếp CHƯA in; xóa dòng này tuyệt đối KHÔNG in phiếu hủy. Chỉ món đã gửi
+  // thật mới cần PIN + phiếu hủy.
+  bool get sentToKitchen => persisted && !awaitingConfirmation;
 
   // Giá niêm yết/đơn vị (đã gồm modifier) — dùng làm "giá gốc" khi có chỉnh giá.
   double get listedUnitPrice {

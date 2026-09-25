@@ -79,7 +79,7 @@ class _BillPane extends StatelessWidget {
   Widget _buildSelectedBill(BuildContext context, TableModel table) {
     final hasItems = pos.cart.isNotEmpty;
     final hasSavedItems = pos.cart.any((item) => item.persisted);
-    final hasPending = pos.cart.any((item) => item.status == 'pending_confirm');
+    final hasPending = pos.cart.any((item) => item.awaitingConfirmation);
     return Column(
       children: [
         Container(
@@ -625,7 +625,9 @@ class _BillItemRow extends StatelessWidget {
                 onPressed: onCancel,
                 tooltip: item.isCombo
                     ? t('Hủy cả combo')
-                    : (item.persisted ? t('Hủy món') : t('Xóa món nháp')),
+                    : (item.sentToKitchen
+                        ? t('Hủy món')
+                        : t('Xóa món chưa gửi bếp')),
                 icon: Icon(Icons.close, size: 18),
                 color: DanColors.faint,
                 constraints: BoxConstraints.tightFor(width: 32, height: 32),

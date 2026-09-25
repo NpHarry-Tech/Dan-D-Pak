@@ -222,7 +222,10 @@ api.post('/orders/items/:id/note', guard('sell'), wrap((req) =>
 api.post('/orders/items/:id/cancel', guard('sell'), wrap((req) => {
   const branch_id = visibleBranch(req);
   const itemId = req.params.id;
-  const item = db.prepare(`SELECT * FROM order_items WHERE id=?`).get(itemId);
+  const item = db.prepare(
+    `SELECT oi.* FROM order_items oi JOIN orders o ON o.id=oi.order_id
+     WHERE oi.id=? AND o.branch_id=?`,
+  ).get(itemId, branch_id);
   if (!item) throw new Error('Món không tồn tại');
 
   // Phân quyền nhiều cấp (Admin/Owner bỏ qua mọi kiểm tra vì canUser=true):
@@ -231,7 +234,7 @@ api.post('/orders/items/:id/cancel', guard('sell'), wrap((req) => {
   //  • ĐÃ chế biến (preparing/ready/served)      → cần quyền RIÊNG 'void.made'.
   // Nếu người thao tác không đủ quyền → cho phép người CÓ quyền nhập PIN duyệt.
   const made = ['preparing', 'ready', 'served'].includes(item.status);
-  if (item.status !== 'pending_confirm') {
+  if (!Orders.isPendingConfirmation(item)) {
     const needPerm = made ? 'void.made' : 'void';
     const actorOk = Auth.canUser(req.user, needPerm);
     if (!actorOk) {
@@ -255,7 +258,9 @@ api.post('/orders/items/:id/cancel', guard('sell'), wrap((req) => {
     }
   }
   const res = Orders.cancelItem(itemId, req.body.reason || 'Nhân viên hủy', branch_id, actor(req));
-  emit('kds:refresh', { station: item.station }, branch_id);
+  // pending_confirm chưa xuất hiện ở bếp/KDS; discard nó không được đánh thức
+  // bếp như một thao tác hủy món đã gửi.
+  if (!Orders.isPendingConfirmation(item)) emit('kds:refresh', { station: item.station }, branch_id);
   return res;
 }));
 
@@ -268,12 +273,14 @@ api.post('/orders/:id/items/cancel-batch', guard('sell'), wrap((req) => {
   const itemIds = Array.isArray(req.body.item_ids) ? req.body.item_ids : [];
   if (!itemIds.length) throw new Error('Chưa chọn món để hủy');
   const rows = db.prepare(
-    `SELECT * FROM order_items WHERE order_id=? AND status!='cancelled' AND id IN (${itemIds.map(() => '?').join(',')})`
-  ).all(orderId, ...itemIds);
+    `SELECT oi.* FROM order_items oi JOIN orders o ON o.id=oi.order_id
+     WHERE oi.order_id=? AND o.branch_id=? AND oi.status!='cancelled'
+       AND oi.id IN (${itemIds.map(() => '?').join(',')})`
+  ).all(orderId, branch_id, ...itemIds);
   if (!rows.length) throw new Error('Không có món để hủy');
 
   const needsMade = rows.some(r => ['preparing', 'ready', 'served'].includes(r.status));
-  const needsVoid = rows.some(r => r.status !== 'pending_confirm');
+  const needsVoid = rows.some(r => !Orders.isPendingConfirmation(r));
   const needPerm = needsMade ? 'void.made' : (needsVoid ? 'void' : null);
   if (needPerm) {
     const actorOk = Auth.canUser(req.user, needPerm);
@@ -298,7 +305,7 @@ api.post('/orders/:id/items/cancel-batch', guard('sell'), wrap((req) => {
     }
   }
   const res = Orders.cancelItemsBatch(orderId, itemIds, req.body.reason || 'Nhân viên hủy', branch_id, actor(req));
-  for (const station of new Set(rows.map(r => r.station))) {
+  for (const station of new Set(rows.filter(r => !Orders.isPendingConfirmation(r)).map(r => r.station))) {
     emit('kds:refresh', { station }, branch_id);
   }
   return res;

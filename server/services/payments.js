@@ -5,7 +5,10 @@ import {
 } from '../db.js';
 import { cleanText, headerVal, safeEqual } from '../core/util.js';
 import { publishRealtime as emit } from '../core/realtimeBus.js';
-import { getOrder, getTableState, recomputeTotals, resolveStaffCall, capSoBillKhiThanhToan } from './orders.js';
+import {
+  getOrder, getTableState, recomputeTotals, resolveStaffCall,
+  capSoBillKhiThanhToan, isPendingConfirmation,
+} from './orders.js';
 import { deductForOrder } from './inventory.js';
 import { enqueueReceiptPrint, processReceiptPrintOutbox, printConfigForJob } from './printing.js';
 import { canonicalMethodKey, getIntegrations, getOperationsConfig, getPrintConfig } from './settings.js';
@@ -594,7 +597,7 @@ export function payOrder(order_id, lines, options = {}, branch_id = 'sala') {
       }
     }
     const fresh = getOrder(order_id);
-    const pending = fresh.items.filter(i => i.status === 'pending_confirm');
+    const pending = fresh.items.filter(isPendingConfirmation);
     if (pending.length) throw new Error(`Còn ${pending.length} dòng món đang chờ nhân viên xác nhận`);
 
     const ops = getOperationsConfig(branch_id);
@@ -950,7 +953,7 @@ export async function generateCustomerPaymentQr(order_id, { method = 'qrcode', c
   if (!order) throw new Error('Order khong ton tai');
   if (order.branch_id && branch_id && order.branch_id !== branch_id) throw new Error('Order khong thuoc chi nhanh hien tai');
   if (!['open', 'partially_paid'].includes(order.status)) throw new Error('Order da dong');
-  const pending = order.items.filter(i => i.status === 'pending_confirm');
+  const pending = order.items.filter(isPendingConfirmation);
   if (pending.length) throw new Error(`Con ${pending.length} dong mon dang cho nhan vien xac nhan`);
   // Thu ngân đã áp giảm giá (sync_discount): GHI giảm giá vào đơn + tính lại tổng
   // NGAY BÂY GIỜ, dùng CHUNG engine (buildOrderDiscountPlan + recomputeTotals) y
@@ -1154,7 +1157,7 @@ export function customerQrPay(order_id, { method = 'qrcode', reference = '' } = 
   const order = getOrder(order_id);
   if (!order) throw new Error('Order khong ton tai');
   if (!['open', 'partially_paid'].includes(order.status)) throw new Error('Order da dong');
-  const pending = order.items.filter(i => i.status === 'pending_confirm');
+  const pending = order.items.filter(isPendingConfirmation);
   if (pending.length) throw new Error(`Con ${pending.length} dong mon dang cho nhan vien xac nhan`);
   const ops = getOperationsConfig(branch_id);
   const cfg = (ops.payment?.methods || []).find(m => m.key === chosen);

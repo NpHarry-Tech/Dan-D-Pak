@@ -41,6 +41,7 @@ test('item.cancel ghi SNAPSHOT đọc được: tên món, SKU, SL, bàn, đơn'
     branch_id: BR, table_id: 'B01', channel: 'dine_in', source: 'staff_pos',
     actor: 'thu-ngan', items: [{ menu_item_id: 'mi_c', qty: 3 }],
   });
+  Orders.confirmPendingItems(order.id, [], BR, 'thu-ngan');
   const oi = db.prepare(`SELECT id,name,qty,unit_price FROM order_items WHERE order_id=?`).get(order.id);
 
   Orders.cancelItem(oi.id, 'khach doi y', BR, 'thu-ngan');
@@ -61,6 +62,7 @@ test('snapshot tên món KHÔNG đổi khi menu đổi tên sau đó', () => {
     branch_id: BR, table_id: 'B01', channel: 'dine_in', source: 'staff_pos',
     actor: 'thu-ngan', items: [{ menu_item_id: 'mi_c', qty: 1 }],
   });
+  Orders.confirmPendingItems(order.id, [], BR, 'thu-ngan');
   const oi = db.prepare(`SELECT id FROM order_items WHERE order_id=? ORDER BY created_at DESC LIMIT 1`).get(order.id);
   Orders.cancelItem(oi.id, 'het hang', BR, 'thu-ngan');
   const tenLucHuy = auditCancelMoiNhat().item_name;

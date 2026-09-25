@@ -127,6 +127,10 @@ test('cancelItem does not print a cancellation ticket for an item never sent to 
   Orders.cancelItem('oi-cancel-unsent', 'Khách đổi ý', 'sala', 'Nhan vien A');
   const jobsAfter = Print.listJobs('sala', 200).length;
   assert.equal(jobsAfter, jobsBefore, 'không được tạo job in nào cho món chưa từng gửi bếp');
+  assert.equal(db.prepare(`SELECT 1 FROM order_items WHERE id='oi-cancel-unsent'`).get(), undefined,
+    'món chưa xác nhận phải được xóa như dòng nháp, không lưu thành món đã hủy');
+  assert.equal(db.prepare(`SELECT COUNT(*) n FROM audit_log WHERE action='order.item.cancel' AND detail LIKE '%oi-cancel-unsent%'`).get().n, 0,
+    'xóa món chưa gửi không được ghi nhận như nghiệp vụ hủy món bếp');
 });
 
 // Thu ngân chọn NHIỀU món (đã gửi bếp) rồi hủy chung 1 lượt qua nút Xác nhận
@@ -149,8 +153,26 @@ test('cancelItemsBatch cancels multiple sent items with exactly one combined tic
   const newJobs = Print.listJobs('sala', 200).filter((j) => j.payload.order_id === 'o-cancel-batch');
   assert.equal(newJobs.length, 1, 'phải gộp 2 món đã gửi bếp vào ĐÚNG 1 phiếu hủy');
   assert.equal(newJobs[0].payload.items.length, 2, 'phiếu hủy chỉ chứa 2 món đã từng gửi bếp, không có món pending_confirm');
-  const statuses = db.prepare(`SELECT status FROM order_items WHERE order_id='o-cancel-batch'`).all().map((r) => r.status);
-  assert.deepEqual(new Set(statuses), new Set(['cancelled']));
+  const remaining = db.prepare(`SELECT id,status FROM order_items WHERE order_id='o-cancel-batch' ORDER BY id`).all()
+    .map(row => ({ ...row }));
+  assert.deepEqual(remaining, [
+    { id: 'oi-batch-1', status: 'cancelled' },
+    { id: 'oi-batch-2', status: 'cancelled' },
+  ], 'món đã gửi được lưu vết hủy; món pending phải bị discard khỏi đơn');
+});
+
+test('moving a table does not print pending items that were never sent to kitchen', () => {
+  db.prepare(`INSERT INTO tables(id,branch_id,zone,code,status) VALUES(?,?,?,?,?)`).run('tb-mp-a', 'sala', 'Trệt', 'P01', 'busy');
+  db.prepare(`INSERT INTO tables(id,branch_id,zone,code,status) VALUES(?,?,?,?,?)`).run('tb-mp-b', 'sala', 'Trệt', 'P02', 'free');
+  const stamp = new Date().toISOString();
+  db.prepare(`INSERT INTO orders(id,branch_id,table_id,channel,status,pay_ref,created_at) VALUES(?,?,?,?,?,?,?)`)
+    .run('o-move-pending', 'sala', 'tb-mp-a', 'dine_in', 'open', 'Dan160826025', stamp);
+  db.prepare(`INSERT INTO order_items(id,order_id,name,qty,unit_price,station,status,created_at) VALUES(?,?,?,?,?,?,?,?)`)
+    .run('oi-move-pending', 'o-move-pending', 'Món chưa xác nhận', 1, 10000, 'kitchen', 'pending_confirm', stamp);
+  const jobsBefore = Print.listJobs('sala', 200).length;
+  Orders.moveTable('tb-mp-a', 'tb-mp-b', 'sala', 'Nhan vien A');
+  assert.equal(Print.listJobs('sala', 200).length, jobsBefore,
+    'chuyển bàn không được biến món pending thành phiếu bếp');
 });
 
 test('GDI agent applies the requested physical -2mm left offset and strikeout font', () => {

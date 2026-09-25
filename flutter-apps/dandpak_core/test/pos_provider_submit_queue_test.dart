@@ -96,6 +96,9 @@ void main() {
         {'Trà đào', 'Mì hoành thánh', 'Cơm cá hồi'});
     expect(pos.cart.every((c) => c.persisted), isTrue,
         reason: 'mọi món phải được server xác nhận (có orderItemId)');
+    expect(pos.cart.every((c) => c.awaitingConfirmation), isTrue);
+    expect(pos.cart.every((c) => !c.sentToKitchen), isTrue,
+        reason: 'có orderItemId chưa có nghĩa món đã được gửi bếp');
 
     final totalSentItems = api.orderCalls
         .fold<int>(0, (s, call) => s + (call['items'] as List).length);

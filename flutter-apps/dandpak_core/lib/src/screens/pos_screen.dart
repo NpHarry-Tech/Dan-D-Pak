@@ -287,7 +287,7 @@ class _PosScreenState extends State<PosScreen> {
           selected?.activeOrderId != null) {
         await pos.selectTable(selected);
       }
-      if (pos.cart.any((item) => item.status == 'pending_confirm')) {
+      if (pos.cart.any((item) => item.awaitingConfirmation)) {
         if (mounted) _toast(t('Xác nhận món trước khi thanh toán.'));
         return;
       }
@@ -1064,16 +1064,17 @@ class _PosScreenState extends State<PosScreen> {
     String? pin;
     var reason = t('Nhân viên hủy');
 
-    // Món nháp (chưa gửi lên server): xóa tự do, không cần quyền.
+    // Món nháp cục bộ: xóa tự do, không gọi server.
     if (!item.persisted) {
       await pos.cancelCartItem(item);
       return;
     }
 
-    // Món chờ khách xác nhận (self-order) — server không đòi quyền; các trạng
+    // Món chờ xác nhận dù đã có orderItemId vẫn CHƯA gửi bếp — server discard
+    // dòng nháp, không tạo phiếu hủy. Các trạng
     // thái còn lại phân 2 cấp: ĐÃ chế biến cần quyền riêng "void.made", còn lại
     // (đã gửi nhưng chưa làm) cần quyền "void". Admin/owner bỏ qua tất cả.
-    if (item.status != 'pending_confirm') {
+    if (item.sentToKitchen) {
       final made = ['preparing', 'ready', 'served'].contains(item.status);
       final needPerm = made ? 'void.made' : 'void';
       final selfHasPerm = auth.hasPermission(needPerm);
@@ -1100,7 +1101,11 @@ class _PosScreenState extends State<PosScreen> {
     }
     try {
       await pos.cancelCartItem(item, reason: reason, managerPin: pin);
-      if (mounted) _toast(t('Đã hủy món.'));
+      if (mounted) {
+        _toast(item.sentToKitchen
+            ? t('Đã hủy món.')
+            : t('Đã xóa món chưa gửi bếp.'));
+      }
     } catch (e) {
       if (mounted) _toast(t('Không hủy được món: ${_cleanError(e)}'));
     }
@@ -1118,8 +1123,7 @@ class _PosScreenState extends State<PosScreen> {
     String? pin;
     var reason = t('Nhân viên hủy');
 
-    final anySent =
-        group.any((i) => i.persisted && i.status != 'pending_confirm');
+    final anySent = group.any((i) => i.sentToKitchen);
     if (anySent) {
       final made =
           group.any((i) => ['preparing', 'ready', 'served'].contains(i.status));
@@ -1175,8 +1179,7 @@ class _PosScreenState extends State<PosScreen> {
     String? pin;
     var reason = t('Nhân viên hủy');
 
-    final anySent =
-        items.any((i) => i.persisted && i.status != 'pending_confirm');
+    final anySent = items.any((i) => i.sentToKitchen);
     if (anySent) {
       final made =
           items.any((i) => ['preparing', 'ready', 'served'].contains(i.status));
@@ -1218,9 +1221,9 @@ class _PosScreenState extends State<PosScreen> {
   // tránh lệch với bill đã lưu trên server.
   Future<void> _editCartItem(CartItem item) async {
     final pos = context.read<PosProvider>();
-    // Món đã gửi bếp: CHỈ cho sửa ghi chú (qua API, không đụng tiền). Chỉnh giá chỉ
-    // áp cho món NHÁP chưa gửi — tránh lệch tiền trên bill đã lưu.
-    final sent = item.persisted;
+    // Dòng đã lưu server (kể cả pending) chỉ sửa ghi chú qua API. Số lượng/giá
+    // không được đổi cục bộ vì sẽ lệch với bill server; muốn đổi thì xóa và thêm lại.
+    final savedOnServer = item.persisted;
     // +/- số lượng chỉ đổi state CỤC BỘ của sheet (không đụng giỏ hàng ngay) —
     // để người dùng có thể giảm về 0 rồi đổi ý bấm + lại mà không bị mất món
     // giữa chừng. Chốt thật (xoá nếu về 0 / cập nhật SL) khi sheet đóng.
@@ -1239,7 +1242,7 @@ class _PosScreenState extends State<PosScreen> {
                     child: Text(item.item.name,
                         style: const TextStyle(fontWeight: FontWeight.w800)),
                   ),
-                  if (!sent) ...[
+                  if (!savedOnServer) ...[
                     IconButton(
                       tooltip: t('Giảm'),
                       onPressed: () => setSheetState(() {
@@ -1264,7 +1267,7 @@ class _PosScreenState extends State<PosScreen> {
                 ],
               ),
             ),
-            if (!sent && draftQty <= 0)
+            if (!savedOnServer && draftQty <= 0)
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
                 child: Text(
@@ -1277,7 +1280,7 @@ class _PosScreenState extends State<PosScreen> {
               subtitle: item.notes.isEmpty ? null : Text(item.notes),
               onTap: () => Navigator.pop(context, 'note'),
             ),
-            if (!sent) ...[
+            if (!savedOnServer) ...[
               ListTile(
                 leading: const Icon(Icons.sell_outlined),
                 title: Text(t('Chỉnh giá / giảm giá món')),
@@ -1307,11 +1310,11 @@ class _PosScreenState extends State<PosScreen> {
       ),
     );
     if (!mounted) return;
-    if (!sent && draftQty <= 0) {
+    if (!savedOnServer && draftQty <= 0) {
       pos.removeFromCart(item);
       return;
     }
-    if (!sent && draftQty != item.qty) {
+    if (!savedOnServer && draftQty != item.qty) {
       pos.updateQty(item, draftQty);
     }
     if (action == null) return;
@@ -1322,8 +1325,8 @@ class _PosScreenState extends State<PosScreen> {
         initial: item.notes,
       );
       if (note == null || !mounted) return;
-      if (sent) {
-        // Món đã gửi → lưu qua server rồi tải lại đơn để đồng bộ mọi thiết bị.
+      if (savedOnServer) {
+        // Dòng đã lưu → cập nhật server rồi tải lại để đồng bộ mọi thiết bị.
         try {
           await context
               .read<ApiService>()

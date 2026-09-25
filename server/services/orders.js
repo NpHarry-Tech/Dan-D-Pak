@@ -16,6 +16,16 @@ import { businessDayBoundsUtc, businessParts } from '../core/businessClock.js';
 import { logSystem } from './systemLogs.js';
 import { ensureTableQr, revokeForDeletedTable, closeTableSessions } from './byod.js';
 
+// Nguồn sự thật duy nhất cho ranh giới "đã lưu giỏ" / "đã xác nhận".
+// orderItem có id chưa đồng nghĩa bếp đã nhận món.
+export function isPendingConfirmation(item) {
+  return item?.status === 'pending_confirm';
+}
+
+function wasSentToKitchen(item) {
+  return item?.station !== 'retail' && !isPendingConfirmation(item);
+}
+
 // Số Bill nội bộ: Dan{ddMMyy}{seq} — seq là số thứ tự đơn trong NGÀY (reset mỗi
 // ngày vận hành: ca sáng → ca tối đều trong 1 ngày dương lịch). VD Dan210626001.
 function todayDdMMyy() {
@@ -461,7 +471,10 @@ export function createOrUpdateOrder(options) {
     deferSideEffect(() => archiveOrder(full));
     const printable = created.filter(i => i.status === 'new' && i.station !== 'retail');
     if (printable.length) deferSideEffect(() => printKitchenTickets(full, printable, branch_id, actor));
-    deferSideEffect(() => printCupLabels(full, created, branch_id));
+    // Món pending_confirm mới chỉ được lưu để giữ giỏ của bàn. Chưa bấm xác
+    // nhận thì không được phát sinh BẤT KỲ chứng từ sản xuất nào, kể cả tem ly.
+    // Tem sẽ được in đúng một lần trong confirmPendingItems bên dưới.
+    if (!needsStaffConfirm) deferSideEffect(() => printCupLabels(full, created, branch_id));
     publishEvent('order:new', {
       order: full, newItems: created, isNew,
       pendingConfirm: needsStaffConfirm,
@@ -768,11 +781,17 @@ export function moveTable(from_table_id, to_table_id, branch_id = 'sala', actor 
   setTableByOpenOrders(from_table_id, branch_id);
   setTableByOpenOrders(to_table_id, branch_id);
   audit('table.move', { order: order.id, from: from_table_id, to: to_table_id, from_code: source.code, to_code: target.code }, branch_id, actor);
-  printKitchenUpdate(order, items, branch_id, actor, 'move_table', {
-    // Mẫu phiếu đã có tiền tố "BÀN ", vì vậy giá trị này tạo đúng:
-    // "BÀN A08 => BÀN B03" (không bị thiếu chữ BÀN ở bàn đích).
-    tableDisplay: `${source.code} => BÀN ${target.code}`,
-  });
+  // Chỉ báo chuyển bàn cho những món bếp đã thực sự nhận. Dòng
+  // pending_confirm chỉ là giỏ đã lưu; in nó ở đây sẽ khiến bếp tưởng món đã
+  // được gửi dù thu ngân chưa hề bấm Xác nhận.
+  const sentKitchenItems = items.filter(wasSentToKitchen);
+  if (sentKitchenItems.length) {
+    printKitchenUpdate(order, sentKitchenItems, branch_id, actor, 'move_table', {
+      // Mẫu phiếu đã có tiền tố "BÀN ", vì vậy giá trị này tạo đúng:
+      // "BÀN A08 => BÀN B03" (không bị thiếu chữ BÀN ở bàn đích).
+      tableDisplay: `${source.code} => BÀN ${target.code}`,
+    });
+  }
   emit('order:updated', getOrder(order.id), branch_id);
   closeTableSessions(from_table_id, branch_id, 'table_moved');
   emit('kds:refresh', {}, branch_id);
@@ -959,7 +978,11 @@ export function setItemStatus(item_id, status, branch_id = 'sala', actor = 'syst
 }
 
 export function cancelItem(item_id, reason, branch_id = 'sala', actor = 'system') {
-  const cancelledItem = db.prepare(`SELECT * FROM order_items WHERE id=?`).get(item_id);
+  const cancelledItem = db.prepare(
+    `SELECT oi.* FROM order_items oi
+     JOIN orders o ON o.id=oi.order_id
+     WHERE oi.id=? AND o.branch_id=?`,
+  ).get(item_id, branch_id);
   if (!cancelledItem) throw new Error('Item không tồn tại');
   // Món đi kèm (combo) không tự hủy riêng được — chỉ hủy CÙNG món chính (xem
   // dưới). UI Self-Order/POS không lộ nút hủy trên dòng đi kèm, nhưng server
@@ -967,64 +990,16 @@ export function cancelItem(item_id, reason, branch_id = 'sala', actor = 'system'
   if (cancelledItem.parent_item_id) {
     throw new Error('Món đi kèm không thể huỷ riêng — huỷ món chính để huỷ cả nhóm.');
   }
-  // Hủy món chính → hủy dây chuyền toàn bộ món đi kèm còn active của nó, gộp
-  // chung MỘT phiếu hủy theo trạm (xem cancelItemsBatch — đã có logic gộp này).
-  const childIds = db.prepare(`SELECT id FROM order_items WHERE parent_item_id=? AND status!='cancelled'`)
-    .all(item_id).map(r => r.id);
-  if (childIds.length) {
-    return cancelItemsBatch(cancelledItem.order_id, [item_id, ...childIds], reason, branch_id, actor);
-  }
-  const beforeCancel = getOrder(cancelledItem.order_id);
-  setItemStatus(item_id, 'cancelled', branch_id, actor);
-  const item = db.prepare(`SELECT order_id FROM order_items WHERE id=?`).get(item_id);
-  recomputeTotals(item.order_id);
-  // SNAPSHOT tại thời điểm huỷ — để nhật ký đọc được bằng tiếng Việt ngay cả khi
-  // sau này món bị đổi tên/xoá. Dữ liệu đã có sẵn (cancelledItem/beforeCancel),
-  // chỉ cần ghi vào detail. Giữ nguyên `item`+`reason` cũ (tương thích ngược).
-  audit('order.item.cancel', {
-    item: item_id,
-    reason,
-    item_name: cancelledItem.name || null,
-    sku: cancelledItem.sku_id || cancelledItem.item_code || null,
-    qty: cancelledItem.qty ?? null,
-    unit_price: cancelledItem.unit_price ?? null,
-    station: cancelledItem.station || null,
-    order_id: cancelledItem.order_id,
-    table_id: beforeCancel?.table_id || null,
-    bill_no: beforeCancel?.bill_no || null,
-  }, branch_id, actor);
-  // Món còn 'pending_confirm' CHƯA từng gửi bếp (chưa bấm "Gửi món vào bếp") —
-  // bếp chưa hề nhận phiếu nào cho món này nên không có gì để "hủy" trên giấy.
-  // In phiếu hủy ở đây chỉ đúng cho món ĐÃ gửi bếp thật sự (new/preparing/…).
-  if (cancelledItem.station !== 'retail' && cancelledItem.status !== 'pending_confirm') {
-    printKitchenUpdate(beforeCancel, [{ ...cancelledItem, cancelled: true }], branch_id, actor,
-      'cancel_item');
-  }
-
-  // Hủy DÒNG ACTIVE CUỐI CÙNG của đơn → đóng đơn rỗng và GIẢI PHÓNG BÀN (giống
-  // rejectPendingItems ở trên). Thiếu bước này thì đơn vẫn 'open' và tables.status
-  // vẫn 'busy' → bàn kẹt "Đang phục vụ" dù giỏ đã trống (đúng lỗi "xóa hết món
-  // mà bàn vẫn bị giữ"). setTableByOpenOrders tự emit table:updated về 'free'.
-  const ord = db.prepare(`SELECT id, table_id, status FROM orders WHERE id=?`).get(item.order_id);
-  if (ord && ord.status === 'open') {
-    const activeLeft = db.prepare(`SELECT COUNT(*) n FROM order_items WHERE order_id=? AND status!='cancelled'`).get(item.order_id).n;
-    if (!activeLeft) {
-      db.prepare(`UPDATE orders SET status='void', subtotal=0, goods_amount=0, vat_amount=0, total=0 WHERE id=?`).run(item.order_id);
-      if (ord.table_id) setTableByOpenOrders(ord.table_id, branch_id);
-    }
-  }
-
-  const order = getOrder(item.order_id);
-  archiveOrder(order);
-  emit('order:updated', order, branch_id);
-  return order;
+  // Một món chỉ là batch một phần tử. Một implementation duy nhất giữ cho
+  // discard pending, combo, audit và in bếp không thể lệch nhau.
+  return cancelItemsBatch(cancelledItem.order_id, [item_id], reason, branch_id, actor);
 }
 
 /** HỦY NHIỀU MÓN CÙNG LÚC — nút "Xác nhận" dùng khi thu ngân chọn nhiều món
  *  rồi hủy chung một lượt: mọi món ĐÃ từng gửi bếp trong lượt này gộp vào
  *  ĐÚNG MỘT phiếu hủy (thay vì mỗi món một phiếu rời như hủy tuần tự từng
- *  món). Món còn 'pending_confirm' (chưa từng gửi bếp) bị loại khỏi phiếu vì
- *  không có gì để retract — giống cancelItem một món. In NGAY khi hàm này
+ *  món). Món còn 'pending_confirm' được discard khỏi đơn và không vào phiếu vì
+ *  chưa có gì để retract. In NGAY khi hàm này
  *  chạy (không hoãn) để bếp luôn được báo kịp thời, không phụ thuộc bước nào
  *  khác của người dùng. */
 export function cancelItemsBatch(order_id, item_ids, reason, branch_id = 'sala', actor = 'system') {
@@ -1038,8 +1013,11 @@ export function cancelItemsBatch(order_id, item_ids, reason, branch_id = 'sala',
   ).all(order_id, ...ids);
   if (childRows.length) ids = [...new Set([...ids, ...childRows.map(r => r.id)])];
   const rows = db.prepare(
-    `SELECT * FROM order_items WHERE order_id=? AND status!='cancelled' AND id IN (${ids.map(() => '?').join(',')})`
-  ).all(order_id, ...ids);
+    `SELECT oi.* FROM order_items oi
+     JOIN orders o ON o.id=oi.order_id
+     WHERE oi.order_id=? AND o.branch_id=? AND oi.status!='cancelled'
+       AND oi.id IN (${ids.map(() => '?').join(',')})`
+  ).all(order_id, branch_id, ...ids);
   if (!rows.length) throw new Error('Không có món để hủy');
   // Món đi kèm bị nhắm hủy riêng (không đi cùng món chính trong CÙNG lượt) —
   // chặn cứng, giống cancelItem một món (xem chú thích ở đó).
@@ -1048,10 +1026,39 @@ export function cancelItemsBatch(order_id, item_ids, reason, branch_id = 'sala',
     throw new Error('Món đi kèm không thể huỷ riêng — huỷ món chính để huỷ cả nhóm.');
   }
   const beforeCancel = getOrder(order_id);
-  if (!beforeCancel) throw new Error('Bill không tồn tại hoặc đã đóng');
+  if (!beforeCancel || !['open', 'partially_paid'].includes(beforeCancel.status)) {
+    throw new Error('Bill không tồn tại hoặc đã đóng');
+  }
 
-  for (const row of rows) {
-    setItemStatus(row.id, 'cancelled', branch_id, actor);
+  const pendingRows = rows.filter(isPendingConfirmation);
+  const sentRows = rows.filter(row => !isPendingConfirmation(row));
+
+  // Dòng chờ xác nhận chưa phải là một món bếp. Xóa vật lý dòng nháp thay vì
+  // biến nó thành "món đã hủy": như vậy lịch sử/KDS/báo cáo không thể hiểu nhầm
+  // rằng bếp từng nhận món này. Vẫn ghi audit riêng để truy vết thao tác giỏ.
+  if (pendingRows.length) {
+    db.prepare(
+      `DELETE FROM order_items WHERE status='pending_confirm' AND id IN (${pendingRows.map(() => '?').join(',')})`,
+    ).run(...pendingRows.map(row => row.id));
+    for (const row of pendingRows) {
+      audit('order.item.discard', {
+        item: row.id,
+        item_name: row.name || null,
+        qty: row.qty ?? null,
+        order_id,
+        table_id: beforeCancel.table_id || null,
+      }, branch_id, actor);
+    }
+  }
+
+  // Một UPDATE cho cả lượt; tránh N lần getOrder/archive/realtime từ
+  // setItemStatus rồi lại làm chính các việc đó thêm một lần ở cuối batch.
+  if (sentRows.length) {
+    db.prepare(
+      `UPDATE order_items SET status='cancelled' WHERE id IN (${sentRows.map(() => '?').join(',')})`,
+    ).run(...sentRows.map(row => row.id));
+  }
+  for (const row of sentRows) {
     audit('order.item.cancel', {
       item: row.id,
       reason: cleanReason,
@@ -1067,7 +1074,7 @@ export function cancelItemsBatch(order_id, item_ids, reason, branch_id = 'sala',
   }
   recomputeTotals(order_id);
 
-  const printable = rows.filter(r => r.station !== 'retail' && r.status !== 'pending_confirm');
+  const printable = sentRows.filter(wasSentToKitchen);
   if (printable.length) {
     printKitchenUpdate(beforeCancel, printable.map(r => ({ ...r, cancelled: true })), branch_id, actor,
       'cancel_item');

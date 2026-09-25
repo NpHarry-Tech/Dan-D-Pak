@@ -869,7 +869,7 @@ class PosProvider extends ChangeNotifier {
     // Xác nhận chỉ gửi phần đã lên server, phần lỗi nằm lại giỏ không ai biết).
     await submitOrder();
     if (_activeOrderId == null) return;
-    if (!_cart.any((c) => c.status == 'pending_confirm')) return;
+    if (!_cart.any((c) => c.awaitingConfirmation)) return;
     // Gửi bếp = flow có correlationId (request confirm + phiếu bếp in ra).
     await SystemLog.runFlow('send_kitchen', () async {
       final order =
@@ -890,15 +890,15 @@ class PosProvider extends ChangeNotifier {
       notifyListeners();
       return;
     }
+    // Server tự phân nhánh: pending_confirm = discard, đã xác nhận = cancel.
     await apiService.cancelItem(item.orderItemId, reason,
         managerPin: managerPin);
     await reloadActiveOrder();
   }
 
   // Hủy NHIỀU món đã chọn cùng lúc — gộp thành 1 phiếu hủy bếp thay vì mỗi
-  // món 1 phiếu rời khi hủy tuần tự (đúng góp ý người dùng: chọn nhiều rồi
-  // hủy 1 lần). Món nháp cục bộ (chưa persisted) chỉ cần xóa khỏi giỏ, không
-  // gọi server; phần còn lại gộp vào MỘT lệnh cancelItemsBatch duy nhất.
+  // món 1 phiếu rời khi hủy tuần tự. Món nháp cục bộ chỉ xóa khỏi giỏ; mọi dòng
+  // đã lưu gửi chung một request, server discard pending và chỉ in phần đã xác nhận.
   Future<void> cancelCartItems(
     List<CartItem> items, {
     String reason = 'Nhân viên hủy',
@@ -985,9 +985,8 @@ class PosProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Xoá cả nhóm combo. Dòng chưa lưu (nháp) chỉ cần bỏ khỏi giỏ cục bộ; dòng
-  /// đã lưu (persisted) phải hủy qua server (gộp 1 phiếu, giống hủy nhiều món
-  /// thường — xem cancelCartItems) vì đã có order_item thật cần đối soát.
+  /// Xoá cả nhóm combo qua cùng luồng cancelCartItems; server tự phân biệt dòng
+  /// pending cần discard và dòng đã gửi bếp cần phiếu hủy.
   Future<void> removeCombo(String comboId,
       {String reason = 'Hủy combo', String? managerPin}) async {
     final group = (comboItemGroups[comboId] ?? const []).toList();

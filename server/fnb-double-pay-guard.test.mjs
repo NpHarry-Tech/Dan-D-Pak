@@ -93,6 +93,11 @@ test('đơn đã đóng thì thêm/xóa món cũng bị chặn (bàn không th�
     }),
     /không tồn tại hoặc đã đóng|đã đóng/i,
     'đơn đã đóng không được nối thêm món');
+  const item = db.prepare(`SELECT id FROM order_items WHERE order_id=? LIMIT 1`).get(o.id);
+  assert.throws(
+    () => Orders.cancelItem(item.id, 'không được phép', BR, 'test'),
+    /không tồn tại hoặc đã đóng|đã đóng/i,
+    'đơn đã đóng không được xóa món');
 });
 
 test('audit payment.done thất bại → rollback tiền/đơn/bàn/outbox và không emit success', () => {
